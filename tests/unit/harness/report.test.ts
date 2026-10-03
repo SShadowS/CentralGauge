@@ -1010,3 +1010,683 @@ Deno.test("renderReport (M6-02e): the exploratory line carries the conditioning-
     line,
   );
 });
+
+// --- M11-11: confirmatory contrasts, held-out exclusion, measure binding ---
+
+import { taskSetHash } from "../../../src/harness/identity.ts";
+import type { MeasureRecord } from "../../../src/harness/measures.ts";
+import {
+  type Prereg,
+  PreregSchema,
+  protocolSha,
+} from "../../../src/harness/prereg.ts";
+import type { ReportLogs } from "../../../src/harness/report.ts";
+
+const F_ARMS = ["cc-p", "cc-l", "cc-r", "cc-rl"];
+const F_CONTRASTS = [
+  {
+    id: "C1",
+    name: "LSP without the realistic setup",
+    baseline: "cc-p",
+    variant: "cc-l",
+  },
+  {
+    id: "C2",
+    name: "LSP with the realistic setup",
+    baseline: "cc-r",
+    variant: "cc-rl",
+  },
+  {
+    id: "C3",
+    name: "realistic setup without LSP",
+    baseline: "cc-p",
+    variant: "cc-r",
+  },
+];
+const F_INTERACTION = {
+  name: "interaction",
+  status: "exploratory" as const,
+  plain: "cc-p",
+  lsp: "cc-l",
+  realistic: "cc-r",
+  realistic_lsp: "cc-rl",
+};
+const F_TASKS = Array.from({ length: 8 }, (_, i) => `HX-00${i + 1}`);
+const F_HELD = ["HX-007", "HX-008"];
+const F_REL = "preregistration/cc-v2-factorial.yml";
+const F_COST: Record<string, number> = {
+  "cc-p": 2,
+  "cc-l": 1,
+  "cc-r": 2,
+  "cc-rl": 1,
+};
+
+/**
+ * Four arms (P, L, R, RL) over 8 tasks x 2 repeats, every cell passing. L is
+ * cheaper than P and RL than R; R costs the same as P. The two held-out
+ * tasks cost `heldOutLCost` per cell in L, so counting them would move C1.
+ */
+async function factorialRecords(
+  heldOutLCost = 100,
+  primary: "cost_per_solved_task" | "pass_rate" = "cost_per_solved_task",
+): Promise<CampaignRecords> {
+  const experiment = ExperimentSchema.parse({
+    id: "cc-v2-factorial",
+    hypothesis: "LSP and the realistic setup cut cost per solved task.",
+    primary_metric: primary,
+    baseline: "cc-p",
+    variants: ["cc-l", "cc-r", "cc-rl"],
+    vary: ["skills"],
+    tasks: "harness-tasks/tasks/*",
+    repeats: 2,
+    contrasts: F_CONTRASTS,
+    interaction: F_INTERACTION,
+    preregistration: F_REL,
+  });
+  const tasks = F_TASKS.map((id, i) => ({
+    id,
+    refapp_commit: "c".repeat(40),
+    visible: (i + 1).toString(16).padStart(64, "0"),
+    oracle: (i + 1).toString(16).padStart(64, "f"),
+  }));
+  const arms = await Promise.all(F_ARMS.map(async (id, i) => {
+    const m = manifest(
+      id,
+      i === 0
+        ? {}
+        : { skills: { path: "bundles/s", hash: H(String(i + 4)), files: [] } },
+    );
+    return { config_id: id, manifest_hash: await manifestHash(m), manifest: m };
+  }));
+  const base = await campaign();
+  const c: CampaignRecord = {
+    ...base,
+    experiment,
+    experiment_hash: await experimentHash(experiment),
+    task_set: { identity: await taskSetHash(tasks), provisional: false, tasks },
+    tasks_meta: tasks.map((t) => ({
+      id: t.id,
+      kind: "bugfix" as const,
+      coupling: ["events"],
+      limits: {},
+    })),
+    arms,
+    blocks: planBlocks(F_TASKS, 2, F_ARMS, base.seed),
+    preregistration: {
+      path: F_REL,
+      sha256: H("9"),
+      protocol_sha256: H("8"),
+      decision_sha256: H("7"),
+      stage_b_decision_sha256: H("6"),
+    },
+  };
+  const executions = [];
+  const judgments = [];
+  for (const arm of F_ARMS) {
+    for (const task of F_TASKS) {
+      for (const repeat of [1, 2]) {
+        const cost = arm === "cc-l" && F_HELD.includes(task)
+          ? heldOutLCost
+          : F_COST[arm]!;
+        const e = execution(c, { arm, task, repeat }, {
+          telemetry: telemetry(cost),
+        });
+        executions.push(e);
+        judgments.push(judgment(c, e, true));
+      }
+    }
+  }
+  return { campaign: c, executions, artifacts: [], judgments };
+}
+
+const STAGE_A_F = {
+  v: 1,
+  experiment: "cc-v2-factorial",
+  protocol: {
+    arms: F_ARMS,
+    contrasts: F_CONTRASTS,
+    interaction: F_INTERACTION,
+  },
+  approval: "OWNER-APPROVED: stage A (2026-10-21T12:00:00Z)",
+  population: "Frozen v2 task set.",
+  primary_metric: "cost_per_solved_task",
+  confirmatory: true,
+  family: ["C1", "C2", "C3"],
+  alpha: 0.05,
+  test: {
+    sides: "two",
+    p_value: "percentile_bootstrap_plus_one",
+    adjustment: "holm",
+    direction: "sign_of_delta",
+  },
+  intervals: {
+    reported: "per_contrast_unadjusted",
+    beside: "bonferroni_same_draws",
+  },
+  bootstrap: { unit: "task", resamples: 10000, seed: 20261021, level: 0.95 },
+  zero_solve: { rule: "suppress_any_undefined" },
+  missing_pairs: "per_contrast_matched",
+  held_out: {
+    count: 4,
+    rule: "pickHeldOut at harness-v2-screen-start",
+    seal: "harness-v2-screen-start",
+    tasks: ["HX-050", "HX-051", "HX-052", "HX-053"],
+    in_family: false,
+  },
+  measures: {
+    fingerprint: H("f"),
+    unknown_symbol_codes: ["AL0118"],
+    ruleset_sha256: H("d"),
+    canary_codes: ["AA0137"],
+    workflow_execution: "used_execution",
+    effort_execution: "every_attempt",
+  },
+  exploratory_metrics: ["pass_rate"],
+  simulation: { script_sha256: H("1"), args: { sims: 1000 } },
+  design_rule: "the frozen design rule",
+  stage_a: null,
+  experiment_hash: null,
+  selection: null,
+  design: null,
+  power_simulation: null,
+  compiler_identity: null,
+  stage_b_approval: null,
+  amendments: [],
+};
+
+async function stageBFor(
+  c: CampaignRecord,
+  over: object = {},
+): Promise<Prereg> {
+  return PreregSchema.parse({
+    ...STAGE_A_F,
+    stage_a: { sha256: await protocolSha(PreregSchema.parse(STAGE_A_F)) },
+    experiment_hash: c.experiment_hash,
+    selection: {
+      path: "harness-tasks/v2/selection.json",
+      sha256: H("5"),
+      selected: F_TASKS.filter((t) => !F_HELD.includes(t)),
+      held_out: F_HELD,
+    },
+    design: { tasks: 6, repeats: 2 },
+    power_simulation: {
+      inputs: [{ path: "x.json", sha256: H("2") }],
+      output: { path: "harness/preregistration/sim-b.json", sha256: H("3") },
+    },
+    compiler_identity: "artifact|bccontainerhelper 6.1.14",
+    stage_b_approval: "OWNER-APPROVED: stage B (2026-10-29T12:00:00Z)",
+    bootstrap: { unit: "task", resamples: 1000, seed: 20261021, level: 0.95 },
+    held_out: { ...STAGE_A_F.held_out, count: 2, tasks: F_HELD },
+    ...over,
+  });
+}
+
+const preregOf = (recs: CampaignRecords, doc: Prereg) => ({
+  doc,
+  sha256: recs.campaign.preregistration!.sha256,
+  problems: [] as string[],
+});
+
+/** One measure record for the first judgment, as the cell's own provenance, with `over` applied. */
+function logsWithMeasure(
+  recs: CampaignRecords,
+  doc: Prereg | null,
+  over: Partial<MeasureRecord> = {},
+): ReportLogs {
+  const j = recs.judgments[0]!;
+  const e = recs.executions.find((x) => x.id === j.execution_id)!;
+  const na = { status: "not_applicable" as const, reason: "test" };
+  const rec: MeasureRecord = {
+    v: 1,
+    judgment_id: j.id,
+    execution_id: e.id,
+    task_id: e.task_id,
+    workspace_hash: e.workspace_hash!,
+    oracle_hash: j.task_oracle_hash,
+    measure_fingerprint: doc ? doc.measures.fingerprint : H("f"),
+    analyzers: doc
+      ? {
+        compiler: doc.compiler_identity!,
+        ruleset_sha256: doc.measures.ruleset_sha256,
+        canary_codes: [...doc.measures.canary_codes],
+      }
+      : null,
+    final_code: na,
+    reuse: na,
+    partial_credit: na,
+    ...over,
+  };
+  return {
+    host: new Map(),
+    verdict: new Map(),
+    measures: new Map([[j.id, rec]]),
+  };
+}
+
+Deno.test("buildReport (M11): confirmatory C1-C3 from the pre-registration over selected tasks only", async () => {
+  const recs = await factorialRecords();
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const r = await buildReport(recs, { prereg, resamples: 50, seed: 99 });
+  const k = confirmed(r);
+  assertEquals(k.bootstrap.resamples, 1000);
+  assertEquals(k.bootstrap.seed, 20261021);
+  assertEquals(k.tasks, prereg.doc.selection!.selected);
+  assertEquals(k.family, ["C1", "C2", "C3"]);
+  assertEquals(
+    k.results.map((x) => [x.id, x.confirmatory]),
+    [["C1", true], ["C2", true], ["C3", true], ["interaction", false]],
+  );
+  assertEquals(k.results[0]!.tasks, prereg.doc.selection!.selected.length);
+  assertEquals(k.results[0]!.resamples, 1000);
+  assertEquals(
+    k.results.map((x) => x.decision),
+    ["variant_lower", "variant_lower", "no_decision", "no_decision"],
+  );
+  assertEquals(k.held_out.tasks, prereg.doc.selection!.held_out);
+  assert(r.comparisons.every((c) => c.label === "exploratory"));
+  assert(r.comparisons.every((c) => !c.primary));
+  assertStringIncludes(
+    renderReport(r),
+    "Confirmatory contrasts (pre-registered",
+  );
+});
+
+Deno.test("buildReport (M11): held-out tasks never enter C1-C3 and get their own descriptive summary", async () => {
+  const wild = await factorialRecords(100);
+  const calm = await factorialRecords(1);
+  const a = confirmed(
+    await buildReport(wild, {
+      prereg: preregOf(wild, await stageBFor(wild.campaign)),
+    }),
+  );
+  const b = confirmed(
+    await buildReport(calm, {
+      prereg: preregOf(calm, await stageBFor(calm.campaign)),
+    }),
+  );
+  assertEquals(a.results[0]!.delta, -1);
+  assertEquals(
+    a.results.map((x) => [x.delta, x.p_value, x.ci]),
+    b.results.map((
+      x,
+    ) => [x.delta, x.p_value, x.ci]),
+  );
+  assertEquals(a.held_out.arms.map((x) => x.arm), F_ARMS);
+  assertEquals(a.held_out.arms.map((x) => x.cost_per_solved_task), [
+    2,
+    100,
+    2,
+    1,
+  ]);
+  assertEquals(b.held_out.arms[1]!.cost_per_solved_task, 1);
+});
+
+Deno.test("buildReport (M11): missing, changed or inconsistent pre-registration is refused", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign);
+  await assertRejects(
+    () => buildReport(recs, {}),
+    ValidationError,
+    "preregistration",
+  );
+  await assertRejects(
+    () =>
+      buildReport(recs, {
+        prereg: { doc, sha256: "0".repeat(64), problems: [] },
+      }),
+    ValidationError,
+    "does not match the campaign",
+  );
+  await assertRejects(
+    () =>
+      buildReport(recs, {
+        prereg: preregOf(recs, { ...doc, family: ["C2", "C1", "C3"] }),
+      }),
+    ValidationError,
+    "family",
+  );
+  await assertRejects(
+    () =>
+      buildReport(recs, {
+        prereg: { ...preregOf(recs, doc), problems: ["stage-B file edited"] },
+      }),
+    ValidationError,
+    "stage-B file edited",
+  );
+});
+
+Deno.test("buildReport (M11): a measure record from another fingerprint, ruleset, compiler or canary is refused", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign);
+  const prereg = preregOf(recs, doc);
+  const analyzers = {
+    compiler: doc.compiler_identity!,
+    ruleset_sha256: doc.measures.ruleset_sha256,
+    canary_codes: ["AA0137"],
+  };
+  const cases: Array<[string, Partial<MeasureRecord>]> = [
+    ["fingerprint", { measure_fingerprint: H("a") }],
+    ["ruleset", { analyzers: { ...analyzers, ruleset_sha256: H("a") } }],
+    ["compiler", { analyzers: { ...analyzers, compiler: "other" } }],
+    ["canary", { analyzers: { ...analyzers, canary_codes: ["AL0001"] } }],
+  ];
+  for (const [field, over] of cases) {
+    await assertRejects(
+      () =>
+        buildReport(recs, { prereg, logs: logsWithMeasure(recs, doc, over) }),
+      ValidationError,
+      field,
+    );
+  }
+  // The cell's own record passes.
+  await buildReport(recs, { prereg, logs: logsWithMeasure(recs, doc) });
+});
+
+Deno.test("buildReport (M11): a measure record counts only for its cell's judgment, execution, workspace and oracle", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign);
+  const prereg = preregOf(recs, doc);
+  const cases: Array<[string, Partial<MeasureRecord>]> = [
+    ["judgment", { judgment_id: "00000000-0000-4000-a000-0000000000ff" }],
+    ["execution", { execution_id: recs.executions[1]!.id }],
+    ["workspace", { workspace_hash: "f".repeat(64) }],
+    ["oracle", { oracle_hash: "e".repeat(64) }],
+  ];
+  for (const [field, over] of cases) {
+    await assertRejects(
+      () =>
+        buildReport(recs, { prereg, logs: logsWithMeasure(recs, doc, over) }),
+      ValidationError,
+      field,
+    );
+  }
+  // The same check applies without a pre-registration.
+  const plain = await records();
+  await buildReport(plain, { logs: logsWithMeasure(plain, null) });
+  await assertRejects(
+    () =>
+      buildReport(plain, {
+        logs: logsWithMeasure(plain, null, { workspace_hash: "f".repeat(64) }),
+      }),
+    ValidationError,
+    "workspace",
+  );
+});
+
+Deno.test("renderReport (M11): amendments print first, Holm is named the sole rule, both intervals and held-out shown", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    amendments: [{
+      key: "design",
+      from: { tasks: 8, repeats: 2 },
+      to: { tasks: 6, repeats: 2 },
+      reason: "two tasks held out",
+      approval: "OWNER-APPROVED: design (2026-10-29T12:00:00Z)",
+    }],
+  });
+  const text = stripAnsiCode(
+    renderReport(await buildReport(recs, { prereg: preregOf(recs, doc) })),
+  );
+  const lines = text.split("\n");
+  assertEquals(lines[0], "Harness report: cc-v2-factorial");
+  assertStringIncludes(
+    lines[1]!,
+    "pre-registration amended after screening: design",
+  );
+  assertStringIncludes(text, "Holm is the only decision rule");
+  assertStringIncludes(text, "Bonferroni interval [");
+  assertStringIncludes(text, "(unadjusted)");
+  assertStringIncludes(text, "[exploratory] outside the Holm family");
+  assertStringIncludes(
+    text,
+    "Held-out tasks (descriptive robustness check, not in C1-C3): HX-007, HX-008",
+  );
+});
+
+Deno.test("buildReport (M11 review): with contrasts the headline is exploratory and no decision is read off an interval", async () => {
+  const recs = await factorialRecords();
+  const r = await buildReport(recs, {
+    prereg: preregOf(recs, await stageBFor(recs.campaign)),
+  });
+  assertEquals(r.metric_labels.cost_per_solved_task, "exploratory");
+  const text = stripAnsiCode(renderReport(r));
+  const primary = text.split("\n").filter((l) =>
+    /^ {2}cc-\w+: cost per solved task.*; spend /.test(l)
+  );
+  assertEquals(primary.length, 4);
+  assert(primary.every((l) => l.includes("[exploratory]")), primary.join("\n"));
+  assert(!text.includes("distinguishable"));
+  assert(confirmed(r).results.every((x) => x.distinguishable === null));
+  const json = JSON.stringify(r.confirmatory);
+  assert(!json.includes('"distinguishable":true'));
+  assert(!json.includes('"distinguishable":false'));
+});
+
+Deno.test("buildReport (M11 review): every contrast uses all selected tasks; the Bonferroni level is shown", async () => {
+  const recs = await factorialRecords();
+  const r = await buildReport(recs, {
+    prereg: preregOf(recs, await stageBFor(recs.campaign)),
+  });
+  assertEquals(confirmed(r).results.map((x) => x.tasks), [6, 6, 6, 6]);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "6 selected tasks)");
+  assertStringIncludes(text, "over 6 of 6 selected tasks");
+  assertStringIncludes(text, "at level 98.3%");
+});
+
+Deno.test("buildReport (M11 review): a measure record filed under another judgment's key is refused", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign);
+  const logs = logsWithMeasure(recs, doc);
+  const rec = [...logs.measures!.values()][0]!;
+  await assertRejects(
+    () =>
+      buildReport(recs, {
+        prereg: preregOf(recs, doc),
+        logs: { ...logs, measures: new Map([[recs.judgments[1]!.id, rec]]) },
+      }),
+    ValidationError,
+    "judgment",
+  );
+});
+
+/** The confirmatory section of a report that has one (not withheld). */
+function confirmed(r: HarnessReport) {
+  const k = r.confirmatory;
+  if (!k || "withheld" in k) throw new Error("confirmatory section withheld");
+  return k;
+}
+
+Deno.test("buildReport (M11 ruling): the confirmatory analysis is withheld unless the data are exactly the pre-registered design", async () => {
+  const recs = await factorialRecords();
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const campaignOracles = new Map(
+    recs.campaign.task_set.tasks.map((t) => [t.id, t.oracle]),
+  );
+  const noRepeat2 = (e: { task_id: string; repeat: number }) =>
+    !(e.task_id === "HX-001" && e.repeat === 2);
+  const executions = recs.executions.filter(noRepeat2);
+  const kept = new Set(executions.map((e) => e.id));
+  const cases: Array<[string, CampaignRecords, object, string]> = [
+    ["repeats cut", recs, { repeats: 1 }, "repeats"],
+    [
+      "pending cell in a selected task",
+      { ...recs, judgments: recs.judgments.slice(1) },
+      {},
+      "1 pending and 0 unrun",
+    ],
+    [
+      "judging current",
+      recs,
+      { judging: { source: "current", oracle: campaignOracles } },
+      "judging",
+    ],
+    [
+      "a selected task missing a repeat",
+      {
+        ...recs,
+        executions,
+        judgments: recs.judgments.filter((j) => kept.has(j.execution_id)),
+      },
+      {},
+      "0 pending and 4 unrun",
+    ],
+  ];
+  for (const [name, data, over, reason] of cases) {
+    const r = await buildReport(data, { prereg, ...over });
+    const k = r.confirmatory;
+    assert(k && "withheld" in k, name);
+    assertEquals(Object.keys(k), ["withheld"], name);
+    assertStringIncludes(k.withheld, reason);
+    const text = stripAnsiCode(renderReport(r));
+    assertStringIncludes(
+      text,
+      `Confirmatory analysis withheld: ${k.withheld}`,
+    );
+    assert(!text.includes("Confirmatory contrasts ("), name);
+    assert(r.comparisons.every((c) => c.label === "exploratory"), name);
+  }
+  // The full design is still analysed.
+  assertEquals(confirmed(await buildReport(recs, { prereg })).tasks.length, 6);
+});
+
+Deno.test("buildReport (M11 review): exploratory comparison rows carry no interval verdict when the experiment has contrasts", async () => {
+  const recs = await factorialRecords();
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  for (const opts of [{ prereg }, { prereg, repeats: 1 }]) {
+    const r = await buildReport(recs, opts);
+    assert(r.comparisons.length > 0);
+    assert(r.comparisons.every((c) => c.distinguishable === null));
+    assert(!JSON.stringify(r).includes('"distinguishable":true'));
+    assert(!JSON.stringify(r).includes('"distinguishable":false'));
+  }
+  // Without contrasts the v1 verdict is unchanged.
+  const v1 = await buildReport(await records(), { resamples: 200, seed: 1 });
+  assert(v1.comparisons.some((c) => c.distinguishable !== null));
+});
+
+Deno.test("buildReport (M11 run 002): a terminal cell without cost data in a selected task withholds the confirmatory analysis", async () => {
+  const recs = await factorialRecords();
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const unknownCost = (task: string) => ({
+    ...recs,
+    executions: recs.executions.map((e) =>
+      e.task_id === task && e.repeat === 1 && e.arm === "cc-p"
+        ? {
+          ...e,
+          telemetry: telemetry(null),
+          validity: {
+            ...e.validity,
+            incomplete_telemetry: ["cost_usd" as const],
+          },
+        }
+        : e
+    ),
+  });
+  const r = await buildReport(unknownCost("HX-001"), { prereg });
+  assertEquals(r.confirmatory, { withheld: "1 cells without cost data" });
+  assert(
+    stripAnsiCode(renderReport(r)).includes(
+      "Confirmatory analysis withheld: 1 cells without cost data",
+    ),
+  );
+  // The same loss in a held-out task is not part of C1-C3.
+  assertEquals(
+    confirmed(await buildReport(unknownCost("HX-007"), { prereg })).tasks
+      .length,
+    6,
+  );
+});
+
+Deno.test("buildReport (M11 run 002): a pass_rate experiment is still analysed on the pre-registered cost metric, and missing cost withholds it", async () => {
+  const base = await factorialRecords(100, "pass_rate");
+  const recs = {
+    ...base,
+    executions: base.executions.map((e) =>
+      e.task_id === "HX-001" && e.repeat === 1 && e.arm === "cc-p"
+        ? {
+          ...e,
+          telemetry: telemetry(null),
+          validity: {
+            ...e.validity,
+            incomplete_telemetry: ["cost_usd" as const],
+          },
+        }
+        : e
+    ),
+  };
+  const prereg = preregOf(recs, await stageBFor(recs.campaign));
+  const r = await buildReport(recs, { prereg });
+  assertEquals(r.confirmatory, { withheld: "1 cells without cost data" });
+  const full = confirmed(
+    await buildReport(base, { prereg: preregOf(base, prereg.doc) }),
+  );
+  assertEquals(
+    full.results.map((x) => x.metric),
+    Array(4).fill("cost_per_solved_task"),
+  );
+});
+
+const AM_EXPLORATORY = {
+  key: "confirmatory",
+  from: true,
+  to: false,
+  reason: "family unpowered",
+  approval: "OWNER-APPROVED: downgrade (2026-10-29T12:00:00Z)",
+};
+
+Deno.test("buildReport (M11 run 002): an approved downgrade to exploratory is emitted and rendered as exploratory, never confirmatory", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    confirmatory: false,
+    family: [],
+    amendments: [AM_EXPLORATORY],
+  });
+  const r = await buildReport(recs, { prereg: preregOf(recs, doc) });
+  assertEquals(r.confirmatory, undefined);
+  const x = r.exploratory_contrasts!;
+  assertEquals(x.family, []);
+  assertEquals(
+    x.results.map((c) => [c.id, c.confirmatory, c.decision, c.distinguishable]),
+    ["C1", "C2", "C3", "interaction"].map((id) => [
+      id,
+      false,
+      "no_decision",
+      null,
+    ]),
+  );
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text.split("\n")[1]!,
+    "amended after screening: confirmatory",
+  );
+  assertStringIncludes(text, "Exploratory contrasts (pre-registered");
+  assert(!text.includes("Confirmatory"), text);
+  assert(!text.includes("Holm"), text);
+  assertStringIncludes(text, "Held-out tasks (descriptive");
+});
+
+Deno.test("buildReport (M11 run 002): amendments stay disclosed in the header when the confirmatory section is withheld", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    amendments: [{
+      key: "design",
+      from: { tasks: 8, repeats: 2 },
+      to: { tasks: 6, repeats: 2 },
+      reason: "two tasks held out",
+      approval: "OWNER-APPROVED: design (2026-10-29T12:00:00Z)",
+    }],
+  });
+  const r = await buildReport(recs, {
+    prereg: preregOf(recs, doc),
+    repeats: 1,
+  });
+  assertEquals(Object.keys(r.confirmatory!), ["withheld"]);
+  assertEquals(r.preregistration!.amendments.map((a) => a.key), ["design"]);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text.split("\n")[1]!,
+    "pre-registration amended after screening: design",
+  );
+  assertStringIncludes(text, "Confirmatory analysis withheld");
+});
