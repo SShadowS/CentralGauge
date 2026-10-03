@@ -17,9 +17,9 @@ Tests live in the test app of the repository, not in the app they test.
 - Each test procedure has the `[Test]` attribute and tests one behaviour.
   Name it after that behaviour, so a failing test name says what broke.
 - Structure the body with `// [GIVEN]`, `// [WHEN]` and `// [THEN]` comments.
-- Create the data the test needs inside the test, with the library codeunits
-  (`Library - Sales`, `Library - Inventory`, `Library - Random` and the like) or
-  the test app's own helpers. Do not depend on demo data being present.
+- Create the data the test needs inside the test, with the helpers and
+  libraries the test app already depends on (read its `app.json`). Do not add
+  new dependencies to the test app. Do not depend on demo data being present.
 - Do not depend on the order in which tests run.
 
 ## Assertions

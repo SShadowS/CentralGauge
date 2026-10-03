@@ -6,9 +6,9 @@ beats a rule applied halfway.
 
 ## Naming
 
-- Objects, procedures, variables and parameters use PascalCase.
-- Object names carry the prefix the app already uses. Look at existing objects
-  in the same app before you name a new one.
+- Procedures, variables and parameters use PascalCase.
+- Object names are words separated by spaces, after the prefix the app already
+  uses. Look at existing objects in the same app before you name a new one.
 - New object IDs come from the ID range in the app's `app.json` (`idRanges`).
   Take the next free ID in that range; never reuse an ID from another app.
 - Record variables are named after their table, without the prefix, so a
@@ -18,15 +18,18 @@ beats a rule applied halfway.
 ## Files
 
 - One object per file.
-- File name: `<Name>.<ObjectType>.al`, the object name without spaces or the
-  prefix, for example `CustomerBalance.Codeunit.al` or `ShipmentStatus.Enum.al`.
+- File name: `<Name>.<ObjectType>.al`, where `<Name>` is the object name with
+  the prefix and the spaces removed, for example `CustomerBalance.Codeunit.al` or `ShipmentStatus.Enum.al`.
 - Put the file in the folder of the app that owns the object, next to objects of
   the same kind if the app groups them that way.
 
 ## Text and errors
 
-- Every user-facing text is a label: `Error`, `Message`, `Confirm` and captions
-  never take a literal string.
+- Texts passed to `Error`, `Message`, `Confirm` and `StrSubstNo` come from
+  `Label` variables, never from literal strings in code.
+- Captions are set with the `Caption` property. Add a `Comment` when the text
+  needs context for translators, and `Locked = true` when it must not be
+  translated.
 - Label names end in `Err`, `Msg`, `Qst` or `Lbl` by purpose.
 - Use placeholders (`%1`, `%2`) with a `Comment` that says what each one is.
 - Raise errors with `Error(SomeErr, ...)`, where `SomeErr` is a label.
@@ -64,6 +67,6 @@ beats a rule applied halfway.
 
 - Keep procedures short and give each one a single job.
 - Use `begin ... end` only where it is needed.
-- Use named enums instead of magic option or integer values.
+- Use enums instead of `Option` fields for new choice fields.
 - Remove code you made unused. Do not leave commented-out code behind.
 - Fix every compiler and code analysis warning your change introduces.
