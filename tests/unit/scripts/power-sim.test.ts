@@ -553,6 +553,46 @@ const withProtocol = (f: (p: Prereg["protocol"]) => void): Prereg => {
   return d;
 };
 
+Deno.test("stageBContract (M11-13b): an exploratory-only pre-registration is refused, never given C1-C3", () => {
+  let checked = 0;
+  for (const over of [{ confirmatory: false, family: [] }, { family: [] }]) {
+    // confirmatory with an empty family fails the schema itself; the
+    // exploratory one parses and must be refused here.
+    let d: Prereg;
+    try {
+      d = preregDoc(over);
+    } catch {
+      continue;
+    }
+    assertThrows(
+      () => stageBContract(d, SIMARGS),
+      Error,
+      "exploratory-only",
+    );
+    checked++;
+  }
+  assertEquals(checked, 1, "the exploratory document parsed and was refused");
+});
+
+Deno.test("stageBContract (M11-13b): a duplicated protocol contrast id is refused before the arm map is built", () => {
+  const d = preregDoc();
+  const dup = {
+    ...d,
+    protocol: {
+      ...d.protocol,
+      contrasts: [
+        ...d.protocol.contrasts,
+        { id: "C1", name: "LSP on plain again", baseline: "r", variant: "rl" },
+      ],
+    },
+  } as Prereg;
+  assertThrows(
+    () => stageBContract(dup, SIMARGS),
+    Error,
+    "duplicate protocol contrast id C1",
+  );
+});
+
 Deno.test("stageBContract: maps the frozen contrasts to simulation arms and refuses every mismatch", () => {
   const ok = stageBContract(preregDoc(), SIMARGS);
   assertEquals(ok.family, ["C1", "C2", "C3", "interaction"]);
