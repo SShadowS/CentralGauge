@@ -5,11 +5,17 @@
 //                      documentSymbol, shutdown. stderr only, so the
 //                      inventory's single stdout line stays intact.
 //   --script <steps>   run S1 steps with expectations; one JSON object on stdout.
-// Every exit path kills the server's whole process tree, each process by
-// identity (pid plus creation time, killed through the handle that verified
-// it); a clean shutdown must end the tree within CG_LSP_SHUTDOWN_MS. Each
-// cleanup command (CIM table, identity kill) has its own deadline,
-// CG_LSP_CMD_MS. A cleanup that cannot be verified exits 3.
+// Every exit path, a clean one included, ends with a sweep of the server's
+// whole process tree, and a clean shutdown must end the tree within
+// CG_LSP_SHUTDOWN_MS. Each cleanup command (CIM table, identity kill) has its
+// own deadline, CG_LSP_CMD_MS. A cleanup that cannot be verified exits 3.
+// Identity is PID plus microsecond creation time: no handle is retained from
+// discovery, so it is best effort (a PID reused with the same microsecond
+// creation time, or a child a reused parent PID started inside the
+// parent-death bound, would be taken for ours). The check and the kill share
+// one handle, so nothing is killed between a verified check and the kill.
+// The probe runs inside a per-cell container, so this residual cannot reach
+// host processes.
 // Exit: 0 ok, 2 timeout, 3 server/protocol/cleanup, 4 configuration, 6 assertion.
 // node: built-ins only (Node in the image, Deno in the unit tests).
 import { Buffer } from "node:buffer";
@@ -18,6 +24,11 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, normalize, relative, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  fileTimeBounds,
+  headerBytes,
+  MAX_HEADER_BYTES,
+} from "./lsp-probe-lib.mjs";
 
 const EXIT = { ok: 0, timeout: 2, server: 3, config: 4, assertion: 6 };
 /** A duration setting: finite and > 0, else exit 4 (0 would disable a deadline). */
@@ -44,8 +55,6 @@ const CMD_MS = ms("CG_LSP_CMD_MS", "30000");
 const ROOT_VAR = "$" + "{CLAUDE_PLUGIN_ROOT}";
 // Largest accepted frame body; a bigger Content-Length is a protocol failure.
 const MAX_FRAME_BYTES = 64 * 1024 * 1024;
-// Largest header block before its blank line.
-const MAX_HEADER_BYTES = 8192;
 let child = null;
 let childExited = false;
 // Creation times are Windows FILETIMEs (100 ns since 1601) cut to whole
@@ -53,7 +62,9 @@ let childExited = false;
 // cuts Process.StartTime the same way, so both compare exactly. spawnedAt is
 // taken before spawn: a process created earlier is not one the probe started.
 let spawnedAt = 0n;
-const fileTimeNow = () => (BigInt(Date.now()) + 11644473600000n) * 10000n;
+// Clock reads are rounded outward (lsp-probe-lib.mjs fileTimeBounds).
+const fileTimeLow = () => fileTimeBounds(Date.now()).low;
+const fileTimeHigh = () => fileTimeBounds(Date.now()).high;
 
 const runSync = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, {
@@ -95,20 +106,23 @@ function processTable() {
 // process between it and the server exits (its ppid then names a dead pid).
 const tracked = new Map();
 let rootCreated = null;
+// When the server's exit was seen (FILETIME): an upper bound on its death.
+let rootDeadBy = null;
 const key = (r) => `${r.pid}:${r.created}`;
 const isAlive = (table, t) =>
   table.some((r) => r.pid === t.pid && r.created === t.created);
 
 /**
- * Takes a process table and adds to `tracked` every child of a process whose
- * identity holds right now: the server while its creation time still matches,
- * and every tracked process still alive. A child must be created after its
- * parent, so a reused parent pid cannot adopt older processes. Returns the
- * table.
+ * Takes a process table and adds to `tracked` every child of the server or of
+ * any tracked process, alive or dead. A child of parent P is P's when it was
+ * created no earlier than P and no later than P's death (first seen dead; for
+ * the server, its exit event), and, if P's pid is now held by another
+ * process Q, before Q was created (a child of a reused pid is newer than the
+ * reuser). Returns the table.
  */
-function snapshot(rootHeld = false) {
+function snapshot() {
   const table = processTable();
-  const now = fileTimeNow();
+  const now = fileTimeHigh();
   const root = table.find((r) => r.pid === child.pid);
   if (
     rootCreated === null && root && !childExited &&
@@ -117,18 +131,23 @@ function snapshot(rootHeld = false) {
     // Test only: CG_LSP_TEST_ROOT_CREATED records a wrong creation time.
     rootCreated = process.env.CG_LSP_TEST_ROOT_CREATED ?? root.created;
   }
-  const parents = [...tracked.values()].filter((t) => isAlive(table, t));
-  // rootHeld: the server is dead but this process still holds its handle,
-  // so its pid cannot have been reused and children naming it are its own.
-  if ((root && root.created === rootCreated) || (rootHeld && rootCreated)) {
-    parents.push({ pid: child.pid, created: rootCreated });
+  const parents = [...tracked.values()];
+  if (rootCreated !== null) {
+    parents.push({ pid: child.pid, created: rootCreated, root: true });
   }
   for (let i = 0; i < parents.length; i++) {
     const p = parents[i];
+    const occupant = table.find((r) => r.pid === p.pid);
+    const alive = occupant?.created === p.created;
+    if (!alive && !p.root) p.deadBy ??= now;
+    const upper = alive ? now : p.root ? (rootDeadBy ?? now) : p.deadBy;
+    const reusedAt = occupant && !alive ? BigInt(occupant.created) : null;
     for (const r of table) {
+      const c = BigInt(r.created);
       if (
         r.ppid === p.pid && r.pid !== child.pid && !tracked.has(key(r)) &&
-        BigInt(r.created) >= BigInt(p.created) && BigInt(r.created) <= now
+        c >= BigInt(p.created) && c <= upper &&
+        (reusedAt === null || c < reusedAt)
       ) {
         tracked.set(key(r), r);
         parents.push(r);
@@ -234,19 +253,19 @@ function killTree() {
     } catch { /* reported below */ }
     why ??= `server pid ${child.pid} not confirmed dead`;
   }
+  if (held && rootDead) rootDeadBy ??= fileTimeHigh();
   let open = first.open.filter((t) => t !== root);
-  // Sweep: children the server started after the last snapshot still name its
-  // (held, so not reused) pid as parent; find and kill them, with their trees.
-  if (held && rootDead && rootCreated) {
-    try {
-      const after = snapshot(true);
-      const late = [...tracked.values()].filter((t) =>
-        isAlive(after, t) && !targets.includes(t)
-      );
-      open = open.concat(killByIdentity(late).open);
-    } catch (e) {
-      why ??= `process table unreadable after the kill (${errText(e)})`;
-    }
+  // Final sweep, always: children started since the last snapshot (by the
+  // server or any tracked process, dead or alive) still name their parent's
+  // pid; find and kill them, with their trees.
+  try {
+    const after = snapshot();
+    const late = [...tracked.values()].filter((t) =>
+      isAlive(after, t) && !targets.includes(t)
+    );
+    open = open.concat(killByIdentity(late).open);
+  } catch (e) {
+    why ??= `process table unreadable after the kill (${errText(e)})`;
   }
   if (open.length > 0) {
     why ??= `${open.length} process(es) not confirmed dead: ${
@@ -298,21 +317,33 @@ function serverSpec() {
 }
 
 /**
- * The body length of a header block (complete CRLF lines, no blank line), or
- * a string saying why the block is not acceptable: every line a
- * `field: value` header, exactly one Content-Length (field name
- * case-insensitive) whose value is digits only and at most MAX_FRAME_BYTES.
+ * The body length of a header block (the bytes before CRLF CRLF), or a
+ * string saying why the block is not acceptable. Lines are split on CRLF
+ * only, and no line may hold a control character other than tab (so a bare
+ * CR or LF is refused); every line a `field: value` header, exactly one
+ * Content-Length (field name case-insensitive) whose value is digits only
+ * and at most MAX_FRAME_BYTES.
  */
 function frameLength(block) {
   const lengths = [];
+  const show = (line) => JSON.stringify(line.slice(0, 80));
   for (const line of block.split("\r\n")) {
-    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+:/.test(line)) {
-      return `not a header line: ${JSON.stringify(line.slice(0, 80))}`;
+    // deno-lint-ignore no-control-regex
+    if (/[\x00-\x08\x0a-\x1f\x7f]/.test(line)) {
+      return `control character in header line ${show(line)}`;
     }
-    if (/^content-length:/i.test(line)) {
-      const m = /^Content-Length:[ \t]*(\d+)[ \t]*$/i.exec(line);
-      if (!m) return `bad Content-Length: ${JSON.stringify(line.slice(0, 80))}`;
-      lengths.push(m[1]);
+    const colon = line.indexOf(":");
+    if (colon < 1 || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+:/.test(line)) {
+      return `not a header line: ${show(line)}`;
+    }
+    if (line.slice(0, colon).toLowerCase() === "content-length") {
+      // One token between optional spaces or tabs, digits only.
+      const tokens = line.slice(colon + 1).split(/[ \t]+/).filter(Boolean);
+      const value = tokens.length === 1 ? tokens[0] : "";
+      if (value === "" || [...value].some((ch) => ch < "0" || ch > "9")) {
+        return `bad Content-Length: ${show(line)}`;
+      }
+      lengths.push(value);
     }
   }
   if (lengths.length !== 1) {
@@ -360,7 +391,7 @@ function firstAl(dir) {
 }
 
 function connect(spec) {
-  spawnedAt = fileTimeNow();
+  spawnedAt = fileTimeLow();
   child = spawn(spec.command, spec.args, {
     env: spec.env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -378,6 +409,7 @@ function connect(spec) {
   const exited = new Promise((res) =>
     child.once("exit", () => {
       childExited = true;
+      rootDeadBy ??= fileTimeHigh();
       res(true);
     })
   );
@@ -395,12 +427,11 @@ function connect(spec) {
     buf = Buffer.concat([buf, d]);
     for (;;) {
       const sep = buf.indexOf("\r\n\r\n");
-      if (sep < 0) {
-        if (buf.length > MAX_HEADER_BYTES) {
-          fail(EXIT.server, `frame header over ${MAX_HEADER_BYTES} bytes`);
-        }
-        return;
+      // The bound holds whether or not the block's terminator has arrived.
+      if (headerBytes(buf, sep) > MAX_HEADER_BYTES) {
+        fail(EXIT.server, `frame header over ${MAX_HEADER_BYTES} bytes`);
       }
+      if (sep < 0) return;
       const len = frameLength(buf.subarray(0, sep).toString("latin1"));
       if (typeof len === "string") fail(EXIT.server, `frame header: ${len}`);
       const end = sep + 4 + len;
@@ -570,7 +601,9 @@ async function session(fn) {
     if (!gone) {
       fail(EXIT.server, `server did not exit within ${SHUTDOWN_MS} ms of exit`);
     }
-    const table = processTable();
+    // Final sweep after the exit: also finds children started since the last
+    // snapshot (they still name the dead server or a tracked pid as parent).
+    const table = snapshot();
     // Same pid and same creation time: the very process tracked earlier.
     const survivors = [...tracked.values()].filter((t) => isAlive(table, t));
     if (survivors.length > 0) {

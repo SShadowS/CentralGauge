@@ -3759,3 +3759,66 @@ Deno.test("H-01 run 005: a failed pi config staging (non-zero, exec error, timeo
     }
   }
 });
+
+// H-01u run 002 (review H-01u-001 P1): the pi adapter's pi_config_invalid must
+// survive the final outcome choice. A stop reason (capture overflow here; an
+// interrupt or a recovered run takes the same branch) would otherwise turn it
+// into harness_crash, which is judged when work happened.
+Deno.test("H-01u: a pi run with Invalid settings file on stderr stays setup_failed (never judged) when a stop reason would make it harness_crash; a clean stderr does not", async () => {
+  const warning =
+    "Warning: Invalid settings file C:\\pi-agent\\settings.json: Lock file is already being held";
+  for (
+    const [label, stderr, want] of [
+      ["invalid", `${warning}\r\n`, "setup_failed"],
+      ["clean", "", "harness_crash"],
+    ] as const
+  ) {
+    const t = await piEnv("unplaced");
+    t.env.maxCaptureBytes = 64;
+    t.docker.behavior = async (_call, io) => {
+      await Deno.writeTextFile(t.docker.lastCapture!.stderrPath, stderr);
+      await io.stdout("x".repeat(256)); // over the cap: capture_overflow
+      return 0;
+    };
+    const e = (await runCell(t.env, await piCell(t))).executions[0]!;
+    assertEquals(e.termination, want, label);
+    if (label === "invalid") {
+      assertEquals(await t.env.store.judgments(e.id), [], label);
+    }
+  }
+});
+
+// H-01u run 003 (review H-01u-002 P1): the stderr verdict must not depend on
+// adapter.parse succeeding. A stream the parser refuses (two cg_entry records)
+// used to drop the adapter's problems and leave harness_crash with real work.
+Deno.test("H-01u: a pi run with Invalid settings file on stderr is setup_failed and never judged even when its stream is refused by the parser and the workspace changed", async () => {
+  const warning =
+    "Warning: Invalid settings file C:\\pi-agent\\settings.json: Lock file is already being held";
+  const entry = JSON.stringify({
+    type: "cg_entry",
+    pi_version: "0.87.1",
+    max_budget_usd: 2,
+    ready: true,
+  });
+  for (
+    const [label, stderr, want] of [
+      ["invalid", `${warning}\r\n`, "setup_failed"],
+      ["clean", "", "harness_crash"],
+    ] as const
+  ) {
+    const t = await piEnv("unplaced");
+    t.docker.behavior = async (call, io) => {
+      await Deno.writeTextFile(t.docker.lastCapture!.stderrPath, stderr);
+      const ws = call.mounts.get("C:\\workspace")!.src;
+      await Deno.writeTextFile(join(ws, "agent-work.al"), "// changed\n");
+      await io.stdout(entry);
+      await io.stdout(entry); // a duplicate cg_entry: the parser refuses it
+      return 0;
+    };
+    const e = (await runCell(t.env, await piCell(t))).executions[0]!;
+    assertEquals(e.termination, want, label);
+    if (label === "invalid") {
+      assertEquals(await t.env.store.judgments(e.id), [], label);
+    }
+  }
+});

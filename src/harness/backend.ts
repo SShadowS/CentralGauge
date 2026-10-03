@@ -9,6 +9,7 @@
 
 import { join, SEPARATOR } from "@std/path";
 import { z } from "zod";
+import type { BuildDiagnostic } from "./build-log.ts";
 import type { SymbolPackage } from "./identity.ts";
 import {
   HARNESS_FIXTURE_TEST_RANGE,
@@ -83,6 +84,12 @@ export interface HostLogLine {
   container: string | null;
   retries: number;
   message?: string;
+  /** M11: error diagnostics of this build; absent in pre-M11 logs (missing, never zero). */
+  diagnostic_list?: BuildDiagnostic[];
+  /** M11: workspace apps that differ from the pristine workspace at this request. */
+  changed_apps?: string[];
+  /** M11: whether the build succeeded; null when nothing was built (snapshot refused). */
+  build_ok?: boolean | null;
 }
 
 export interface OpContext {
