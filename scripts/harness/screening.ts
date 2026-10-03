@@ -735,18 +735,21 @@ export const tasksGlob = (ids: string[]): string =>
 
 // ---- I/O ----
 
-async function git(root: string, args: string[]): Promise<string> {
+async function git(
+  root: string,
+  args: string[],
+  /** M8-02b run 002: any stderr output is a failure even when git exits 0. */
+  strict = false,
+): Promise<string> {
   const out = await new Deno.Command("git", {
     args,
     cwd: root,
     stdout: "piped",
     stderr: "piped",
   }).output();
-  if (!out.success) {
-    throw new ValidationError(
-      `git ${args.join(" ")}: ${new TextDecoder().decode(out.stderr).trim()}`,
-      args,
-    );
+  const err = new TextDecoder().decode(out.stderr).trim();
+  if (!out.success || (strict && err !== "")) {
+    throw new ValidationError(`git ${args.join(" ")}: ${err}`, args);
   }
   return new TextDecoder().decode(out.stdout);
 }
@@ -846,8 +849,13 @@ export async function loadLedgerAnchors(
   // M8-02b: null only when the readable tree at `rev` has no seals.yml entry
   // (ls-tree throws on an unreadable commit or tree). A path entry whose blob
   // cannot be read throws in `git show`, as does any other git failure.
+  // Run 002: the traversal must also be error-free; git reports an unreadable
+  // intermediate tree on stderr (git 2.55 also exits 1, other versions may
+  // exit 0), so any stderr from ls-tree is a throw, never an absence.
   const ledgerAt = async (rev: string): Promise<SealEntry[] | null> => {
-    if ((await git(root, ["ls-tree", rev, "--", SEALS_PATH])).trim() === "") {
+    if (
+      (await git(root, ["ls-tree", rev, "--", SEALS_PATH], true)).trim() === ""
+    ) {
       return null;
     }
     const text = await git(root, ["show", `${rev}:${SEALS_PATH}`]);

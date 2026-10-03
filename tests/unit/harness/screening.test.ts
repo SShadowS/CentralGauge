@@ -966,3 +966,52 @@ Deno.test("screeningHistory (M8-02b): a campaign's record problems are reported"
     "campaign c1: cell HX-007/1/cc-v2-plain has 2 scored manual reruns",
   ]);
 });
+
+Deno.test("loadLedgerAnchors (M8-02b run 002): a missing intermediate tree on the ledger path is never absent", async () => {
+  const dir = await tempDir({ prefix: "cg-screening-" });
+  const origin = join(dir, "origin.git");
+  const repo = join(dir, "repo");
+  await Deno.mkdir(join(repo, "harness-tasks", "v2"), { recursive: true });
+  await sh(dir, "init", "-q", "--bare", origin);
+  await sh(repo, "init", "-q");
+  await sh(repo, "remote", "add", "origin", origin);
+  // The start seal's commit already holds a seals.yml (it must hold none).
+  const seals = join(repo, "harness-tasks", "v2", "seals.yml");
+  await Deno.writeTextFile(seals, "# ledger present at the start seal\n");
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "seal");
+  await sh(repo, "tag", "-a", "-m", "s", START);
+  await sh(repo, "push", "-q", "origin", START);
+  const v2Tree = await sh(repo, "rev-parse", `${START}:harness-tasks/v2`);
+  const entry: SealEntry = {
+    ...SEAL0,
+    tag_object: await sh(repo, "rev-parse", `refs/tags/${START}`),
+    commit: await sh(repo, "rev-parse", `${START}^{commit}`),
+  };
+  await Deno.writeTextFile(seals, stringify({ v: 2, seals: [entry] }));
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "ledger");
+  await sh(repo, "tag", "-a", "-m", "l", `${START}-ledger`);
+  await sh(repo, "push", "-q", "origin", `${START}-ledger`);
+  // Delete the start seal's harness-tasks/v2 TREE object (loose; no gc).
+  assert(
+    v2Tree !== await sh(repo, "rev-parse", "HEAD:harness-tasks/v2"),
+    "the ledger commit holds a different v2 tree",
+  );
+  await Deno.remove(
+    join(repo, ".git", "objects", v2Tree.slice(0, 2), v2Tree.slice(2)),
+  );
+  let problems: string[] | null = null;
+  try {
+    problems = await ledgerProblems(
+      [entry],
+      await loadLedgerAnchors(repo, [entry]),
+    );
+  } catch (err) {
+    assert(err instanceof ValidationError, String(err));
+  }
+  assert(
+    problems === null || problems.length > 0,
+    "a missing intermediate tree passed as an absent ledger",
+  );
+});
