@@ -35,6 +35,7 @@ import {
   requestedComponents,
 } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
+import { inventoried } from "./adapters/claude-code.ts";
 import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, DeployContext } from "./bc-lane.ts";
@@ -994,6 +995,8 @@ interface DraftInput {
   stub: StubProvenance | null;
   /** egress_preflight_failed, egress_violation, egress_log_failed or egress_proxy_failed (M1-33, M1-33d); privilege_check_failed (H-01); pi_config_staging_failed (H-01 run 005). */
   egressStop?: string | null;
+  /** The component inventory refused the arm before any credential was released: nothing paid, cost exactly 0. */
+  preStart?: boolean;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -1038,8 +1041,10 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   // M1-32 ruling: stream problems with no usable result expose infra; with
   // a usable result they make the cost unprovable.
   const problems = started ? streamProblems(parsed.telemetry.raw_usage) : [];
-  let telemetry = parsed.telemetry;
-  if (parsed.termination !== null && problems.length > 0) {
+  let telemetry = f.preStart
+    ? notStarted(f.sandbox.exitCode).telemetry
+    : parsed.telemetry;
+  if (!f.preStart && parsed.termination !== null && problems.length > 0) {
     telemetry = {
       ...telemetry,
       cost_usd: null,
@@ -1160,7 +1165,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     termination,
     did_work,
     validity: {
-      incomplete_telemetry: started
+      incomplete_telemetry: started && !f.preStart
         ? incompleteTelemetry(adapter.declared, telemetry)
         : [],
       incomplete_observed: check.unverified.length > 0
@@ -1460,6 +1465,8 @@ export async function runExecution(
   let egressFailure: string | null = null;
   /** H-01: the harness's privilege check on the running sandbox failed (setup_failed, campaign stops). */
   let privilegeFailure: string | null = null;
+  /** M9-05: the component inventory refused the arm before any release (setup_failed, cost 0, no campaign stop). */
+  let inventoryRefused: string | null = null;
   let egressStop: string | null = null;
   const egressFail = (m: string) => {
     egressFailure = m;
@@ -1726,6 +1733,14 @@ export async function runExecution(
       // the image's run.ps1) gets its config staged admin-owned, still before
       // anything is released; a failure is handled like the check's.
       let setupStep = "sandbox privilege check";
+      // Spec v2 gate 1 (M9-05): an inventoried image proves its components
+      // before anything is released, the proxy credential included.
+      const inv = manifest.harness === "claude-code" &&
+        inventoried(manifest.image.revision);
+      let runEnded = false;
+      running.then(() => (runEnded = true), () => (runEnded = true));
+      /** A run that ended on its own before it was seen running: the inventory decides, not the privilege check. */
+      let endedEarly: string | null = null;
       try {
         await waitRunning(env.docker, name, running, opMs);
         await checkSandboxPrivilege(env.docker, name, opMs);
@@ -1735,10 +1750,36 @@ export async function runExecution(
         }
       } catch (err) {
         if (!stop.aborted) {
-          privilegeError = `${setupStep} failed: ${msg(err)}`;
-          privilegeStop = setupStep === "pi config staging"
-            ? "pi_config_staging_failed"
-            : "privilege_check_failed";
+          const m = `${setupStep} failed: ${msg(err)}`;
+          if (inv && runEnded && setupStep === "sandbox privilege check") {
+            endedEarly = m;
+          } else {
+            privilegeError = m;
+            privilegeStop = setupStep === "pi config staging"
+              ? "pi_config_staging_failed"
+              : "privilege_check_failed";
+            egressAbort.abort(new Error(privilegeError));
+          }
+        }
+      }
+      if (inv && privilegeError === null && !stop.aborted) {
+        // Fail closed: only a parsed ok record lets the run continue; a
+        // refusal, a missing record (run ended, timeout) or a malformed one
+        // releases nothing and is a pre-start refusal (never a campaign stop).
+        const refused = await inventoryRefusal(
+          p,
+          adapter,
+          manifest,
+          () => runEnded || stop.aborted,
+        );
+        if (refused !== null && !stop.aborted) {
+          inventoryRefused = `component inventory: ${refused.join("; ")}`;
+          egressStop = "component_inventory_refused";
+          egressAbort.abort(new Error(inventoryRefused));
+        } else if (endedEarly !== null && !stop.aborted) {
+          // The run ended with a proven inventory but never reached ready:
+          // that is the privilege check's failure after all.
+          privilegeError = endedEarly;
           egressAbort.abort(new Error(privilegeError));
         }
       }
@@ -1820,6 +1861,10 @@ export async function runExecution(
       }
       sandbox = settledRun = await running;
       if (releaseError !== null) throw releaseError;
+      // Pre-start refusal: setup_failed, never judged, never a campaign stop.
+      if (inventoryRefused !== null) {
+        throw new ConfigurationError(inventoryRefused);
+      }
       // A sandbox that never started ran nothing: the start-failure rules apply.
       if (privilegeError !== null && sandbox.started) {
         egressStop = privilegeStop;
@@ -1937,6 +1982,7 @@ export async function runExecution(
     mode,
     stub,
     egressStop,
+    preStart: inventoryRefused !== null,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
   if (privilegeFailure !== null) {
@@ -2008,6 +2054,47 @@ async function sandboxAddress(
   return sandboxSource(
     await bounded(docker.networks(name), opMs, `docker inspect ${name}`),
   );
+}
+
+/**
+ * M9-05: wait for run.ps1's cg_inventory line in the raw log (the run ends or
+ * PREFLIGHT_TIMEOUT_MS passes first: fail closed), then let the adapter's own
+ * parser judge it. null: the inventory is proven (or the operator stopped the
+ * run); otherwise the adapter's problems, which refuse the arm before release.
+ */
+async function inventoryRefusal(
+  p: ReturnType<typeof privatePaths>,
+  adapter: ReturnType<typeof adapterFor>,
+  manifest: ResolvedManifest,
+  over: () => boolean,
+): Promise<string[] | null> {
+  const deadline = performance.now() + PREFLIGHT_TIMEOUT_MS;
+  const recorded = async () => {
+    const text = await Deno.readTextFile(p.raw).catch(() => "");
+    // Complete lines only: the last one may still be mid-write.
+    return text.split("\n").slice(0, -1).some((l) =>
+      l.includes('"cg_inventory"')
+    );
+  };
+  while (!await recorded() && !over() && performance.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  // A run that ended (or timed out) without a record is named by the parse below.
+  try {
+    const parsed = await adapter.parse({
+      rawLog: p.raw,
+      stderrLog: p.stderr,
+      exitCode: null,
+      manifest,
+      pricing: { at: "", models: {} },
+      traceOut: p.trace,
+    });
+    const problems = parsed.inventoryProblems ?? [];
+    return problems.length > 0 ? problems : null;
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err;
+    return [`inventory not provable: ${err.message}`];
+  }
 }
 
 /** Wait (bounded) until the sandbox runs; a run that settles first fails the wait. */

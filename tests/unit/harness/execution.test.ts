@@ -3884,105 +3884,162 @@ const INV = (over: Record<string, unknown> = {}) =>
     problems: [],
     ...over,
   });
-/** The probe records with every assistant record's model replaced by `model`. */
-async function probeWithModel(model: string): Promise<string[]> {
-  return (await probeLines()).map((l) =>
-    l.includes('"type":"assistant"')
-      ? l.replaceAll('"model":"claude-sonnet-5"', `"model":"${model}"`)
-      : l
-  );
-}
-
-/** Runs one cell whose container prints `lines` and exits `code`; returns the execution and its side file. */
-async function inventoryCell(lines: string[], code = 0) {
+/**
+ * Runs one cell the way run.ps1 behaves: `pre` is printed before the ready wait
+ * (the inventory), `post` after ready (init and probe). Returns the execution and its side file.
+ */
+async function inventoryCell(
+  pre: { lines: string[]; exit?: number },
+  post: string[] = [],
+) {
   const t = await inventoriedEnv();
+  t.docker.preReady = pre;
   t.docker.behavior = async (_call, io) => {
-    for (const l of lines) await io.stdout(l);
-    return code;
+    for (const l of post) await io.stdout(l);
+    return 0;
   };
-  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
-    .executions[0]!;
-  return { t, e, side: await sideOf(t, e.id) };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  return { t, e, cell, side: await sideOf(t, e.id) };
 }
 
-Deno.test("component inventory (spec v2 gate 1): every inventory failure is setup_failed and never judged; a proven arm completes", async () => {
+Deno.test("component inventory (spec v2 gate 1): every inventory refusal is a pre-start setup_failed, cost 0, no credential released, never judged; a proven arm completes", async () => {
   const probe = await probeLines();
-  const cases: [string, string[], number, string][] = [
-    ["no record", [V2_INIT, ...probe], 0, "no cg_inventory record"],
+  const refusedRec = INV({
+    ok: false,
+    installed: [],
+    problems: ["instructions: CLAUDE.md is staged but not installed"],
+  });
+  const cases: [string, { lines: string[]; exit?: number }, string][] = [
+    [
+      "no record (run ended before ready)",
+      { lines: [], exit: 0 },
+      "no cg_inventory record",
+    ],
     [
       "duplicate",
-      [INV(), INV(), V2_INIT, ...probe],
-      0,
+      { lines: [INV(), INV()] },
       "2 cg_inventory records",
     ],
     [
       "malformed",
-      [INV({ extra: 1 }), V2_INIT, ...probe],
-      0,
+      { lines: [INV({ extra: 1 })] },
       "not of the recorded shape",
     ],
     [
       "refused",
-      [
-        INV({
-          ok: false,
-          installed: [],
-          problems: ["instructions: CLAUDE.md is staged but not installed"],
-        }),
-        V2_INIT,
-        ...probe,
-      ],
-      0,
+      { lines: [refusedRec] },
       "component inventory: instructions: CLAUDE.md is staged but not installed",
     ],
     [
       "record only, exit 5",
-      [
-        INV({
+      {
+        lines: [INV({
           ok: false,
           installed: [],
           problems: ["hooks is staged but this image cannot install it"],
-        }),
-      ],
-      5,
+        })],
+        exit: 5,
+      },
       "hooks is staged",
     ],
     [
       "installer threw before the inventory (no output, exit 1)",
-      [],
-      1,
+      { lines: [], exit: 1 },
       "no cg_inventory record",
     ],
   ];
-  for (const [name, lines, code, want] of cases) {
-    const { t, e, side } = await inventoryCell(lines, code);
+  for (const [name, pre, want] of cases) {
+    // Whatever the container would print after ready is never reached.
+    const { t, e, side } = await inventoryCell(pre, [V2_INIT, ...probe]);
     assertEquals(e.termination, "setup_failed", name);
     assertStringIncludes(side.setup_error, want, name);
+    assertEquals(e.telemetry.cost_usd, 0, `${name}: pre-start cost is 0`);
+    assertEquals(t.docker.readySeen, false, `${name}: ready never written`);
+    assertEquals(
+      t.docker.secretsAtKill ?? [],
+      [],
+      `${name}: no secret file in the mount`,
+    );
+    assert(
+      !await exists(privatePaths(t.env, e.id).custody),
+      `${name}: no custody (nothing released)`,
+    );
     assertEquals(
       await t.env.store.judgments(e.id),
       [],
       `${name}: never judged`,
     );
   }
-  const { e } = await inventoryCell([INV(), V2_INIT, ...probe]);
+  const { t, e } = await inventoryCell({ lines: [INV()] }, [V2_INIT, ...probe]);
   assertEquals(e.termination, "completed");
+  assertEquals(t.docker.readySeen, true);
 });
 
-// Round 3 (orchestrator; interfaces section 3 "Refusal outcome" (b)): a problem found
-// AFTER the agent started (here: an unpinned model ran) is setup_failed and never judged,
-// but the credential was released and paid work happened, so its cost is KEPT.
-Deno.test("component inventory: a post-start problem keeps the run's cost", async () => {
-  const { t, e } = await inventoryCell([
-    INV(),
-    V2_INIT,
-    ...await probeWithModel("anthropic/claude-other"),
-  ]);
+// Contract (b): a problem found AFTER the agent started is setup_failed and never
+// judged, but the credential was released and paid work happened: usage and cost KEPT.
+Deno.test("component inventory: a post-start init mismatch keeps the priced cost and usage", async () => {
+  const probe = await probeLines();
+  const ok = await inventoryCell({ lines: [INV()] }, [V2_INIT, ...probe]);
+  assertEquals(ok.e.termination, "completed");
+  // An agent the arm did not install: init differs from the built-ins.
+  const rogue = JSON.stringify({
+    ...JSON.parse(V2_INIT),
+    agents: [...B282.agents, "rogue-agent"],
+  });
+  const { t, e } = await inventoryCell({ lines: [INV()] }, [rogue, ...probe]);
   assertEquals(e.termination, "setup_failed");
   assertEquals(await t.env.store.judgments(e.id), []);
-  // The unpriced model leaves no list-price estimate (cost_usd null), so the
-  // kept cost is the vendor-reported one.
-  assert(
-    e.telemetry.reported_cost_usd !== null && e.telemetry.reported_cost_usd > 0,
-    "post-start refusal must keep the reported cost, never 0",
+  assertEquals(t.docker.readySeen, true, "the credential was released");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "component inventory:",
   );
+  // PROBE_COST is computed from the probe's usage and the test book alone.
+  assert(e.telemetry.cost_usd !== null && e.telemetry.cost_usd > 0);
+  assertAlmostEquals(e.telemetry.cost_usd, PROBE_COST, 1e-12);
+  assertEquals(e.telemetry.cost_usd, ok.e.telemetry.cost_usd);
+  assertEquals(
+    e.telemetry.per_model.map((m) => [
+      m.tokens_in_uncached,
+      m.tokens_cache_read,
+      m.tokens_out,
+    ]),
+    [[10, 120646, 2181]],
+  );
+  // Spend totals (outcome.ts) sum telemetry.cost_usd per execution.
+  assertAlmostEquals(
+    [e].reduce((a, x) => a + (x.telemetry.cost_usd ?? 0), 0),
+    PROBE_COST,
+    1e-12,
+  );
+});
+
+// A refusal is published like any setup_failed: recovery and a repeat run do not replay it.
+Deno.test("component inventory: a pre-start refusal is finalized; recovery re-executes nothing", async () => {
+  const { t, e, cell } = await inventoryCell({
+    lines: [
+      INV({ ok: false, installed: [], problems: ["x is not installed"] }),
+    ],
+    exit: 5,
+  });
+  assertEquals(e.termination, "setup_failed");
+  const runs = t.docker.runs.length;
+  assertEquals(intentIds(t), [], "intent finalized");
+  assertEquals(await recoverInterrupted(t.env, loadTask), []);
+  assertEquals(t.docker.runs.length, runs);
+  assertEquals((await t.env.store.executions(cell.campaignId)).length, 1);
+});
+
+// Only inventoried images wait for an inventory: others release without any cg_inventory line.
+Deno.test("component inventory: a non-inventoried image releases without waiting for an inventory", async () => {
+  const t = await makeEnv();
+  t.docker.waitForReady = true;
+  t.docker.behavior = ccBehavior(
+    join(t.repo.tasksDir, "HX-001"),
+    null,
+  );
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "completed");
+  assertEquals(t.docker.readySeen, true);
 });
