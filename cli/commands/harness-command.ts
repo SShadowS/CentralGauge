@@ -458,7 +458,11 @@ export async function harnessReport(
     seed: opts.seed,
     ...(prereg ? { prereg } : {}),
     ...(opts.repeats !== undefined ? { repeats: opts.repeats } : {}),
-    logs: await loadReportLogs(opts.resultsDir, records),
+    logs: await loadReportLogs(
+      opts.resultsDir,
+      records,
+      prereg?.doc.measures.fingerprint,
+    ),
     traces: await loadTraces(opts.resultsDir, executions),
     ...(opts.judging === "current"
       ? { judging: await currentJudging(opts.root) }

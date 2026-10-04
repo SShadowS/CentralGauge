@@ -178,7 +178,9 @@ export async function runQualificationProbe(
       }
     },
   });
-  try {
+  const body = async (): Promise<
+    { sandbox: SandboxResult | null; problems: string[]; evidence: string }
+  > => {
     const lp = await bounded(
       o.egress.listeners(),
       opMs,
@@ -261,7 +263,17 @@ export async function runQualificationProbe(
     }
     settled = await running;
     return { sandbox: settled, problems, evidence };
-  } finally {
+  };
+  let result: Awaited<ReturnType<typeof body>> | undefined;
+  let bodyError: unknown;
+  let bodyFailed = false;
+  try {
+    result = await body();
+  } catch (err) {
+    bodyError = err;
+    bodyFailed = true;
+  }
+  {
     // M5-08a: credentials cut first (run aborted, backend token revoked,
     // proxy shut down), then the sandbox confirmed gone, then its secrets.
     if (pending && !settled) stop.abort();
@@ -310,6 +322,7 @@ export async function runQualificationProbe(
     }
     if (problems.length > 0) {
       // Fail closed and loud; the next start sweeps the container, then the secrets.
+      // As before, this replaces a body error.
       throw new ContainerError(
         `qualification probe ${o.spec.name}: teardown not confirmed (${
           problems.join("; ")
@@ -319,4 +332,6 @@ export async function runQualificationProbe(
       );
     }
   }
+  if (bodyFailed) throw bodyError;
+  return result!;
 }
