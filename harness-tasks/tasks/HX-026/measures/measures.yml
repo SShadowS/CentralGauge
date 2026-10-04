@@ -9,6 +9,10 @@ partial_credit:
     "85980/RefreshKeepsExplicitBranch": 1
     "85980/NewContractTakesBranchContextBranch": 1
   hidden_regressions: []
+# reuse: null by exemption (decisions\2026-10-04-hx-026-reuse-exemption.md): CGR Session Context must delegate
+# CurrentBranch to CGR Branch Context, so an unchanged CGR Rental Mgt reaches any Branch Context target through that
+# delegation and the M11-06 probe cannot tell a migrated caller from an unchanged one. The CreateContract caller
+# migration is UNMEASURED (card).
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
