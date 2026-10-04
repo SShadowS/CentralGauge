@@ -14,7 +14,9 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental, Integration]
   tests:
-    - { codeunit: 85860, procedures: [SuspendedCheckoutQueuesNothing, SuspendedDirectQueueQueuesNothing, ResumedCheckoutQueues, NestedSuspendNeedsTwoResumes, StrayResumeIsIgnored, SuspensionSeenByEveryInstance, NotSuspendedQueuesAsBefore, SuspensionOutlivesRolledBackStep] }
+    - { codeunit: 85860, procedures: [SuspendedCheckoutQueuesNothing, SuspendedDirectQueueQueuesNothing, NestedSuspendNeedsTwoResumes, StrayResumeIsIgnored, SuspensionSeenByEveryInstance, SuspensionOutlivesRolledBackStep] }
+    - { codeunit: 85862, procedures: [ResumedCheckoutQueues] }
+    - { codeunit: 85863, procedures: [NotSuspendedQueuesAsBefore] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

@@ -36,23 +36,6 @@ codeunit 85860 "HX020 Queue Pause Oracle"
     end;
 
     [Test]
-    procedure ResumedCheckoutQueues()
-    var
-        FacadeA: Codeunit "CGR Integration Facade";
-        RentalMgt: Codeunit "CGR Rental Mgt";
-    begin
-        Prepare('HX020-3');
-        CreateOpenContract('HX020-C3', 'HX020-3');
-
-        FacadeA.SuspendQueueing();
-        FacadeA.ResumeQueueing();
-        Assert.IsFalse(FacadeA.QueueingSuspended(), 'One resume ends one suspension');
-        RentalMgt.CheckOut('HX020-C3');
-
-        Assert.AreEqual(1, EntryCount('HX020-3'), 'A checkout after the resume queues its entry');
-    end;
-
-    [Test]
     procedure NestedSuspendNeedsTwoResumes()
     var
         FacadeA: Codeunit "CGR Integration Facade";
@@ -100,26 +83,6 @@ codeunit 85860 "HX020 Queue Pause Oracle"
 
         FacadeB.ResumeQueueing();
         Assert.IsFalse(FacadeA.QueueingSuspended(), 'A resume through another facade variable ends the suspension');
-    end;
-
-    [Test]
-    procedure NotSuspendedQueuesAsBefore()
-    var
-        Entry: Record "CGR Outbox Entry";
-        FacadeA: Codeunit "CGR Integration Facade";
-        RentalMgt: Codeunit "CGR Rental Mgt";
-    begin
-        Prepare('HX020-7');
-        CreateOpenContract('HX020-C7', 'HX020-7');
-
-        Assert.IsFalse(FacadeA.QueueingSuspended(), 'Queueing is not suspended');
-        RentalMgt.CheckOut('HX020-C7');
-
-        Assert.AreEqual(1, EntryCount('HX020-7'), 'A checkout without a suspension queues one entry');
-        Entry.SetRange("Vehicle No.", 'HX020-7');
-        Entry.FindFirst();
-        Assert.AreEqual('vehicleCheckedOut', Entry."Event Type", 'Outbox event type');
-        Assert.AreEqual(FacadeA.VehicleCheckedOutPayload('HX020-7'), Entry.Payload, 'Outbox payload');
     end;
 
     [Test]
