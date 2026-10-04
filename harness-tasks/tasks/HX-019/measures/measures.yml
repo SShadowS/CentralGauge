@@ -13,3 +13,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/error-on-calclines: { partial_credit: 0.75 }
+  naive/ignore-on-preview: { partial_credit: 0.875 }
+  naive/no-scope: { partial_credit: 0.875 }
+  naive/preview-only-event: { partial_credit: 0.5 }
