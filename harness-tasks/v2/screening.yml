@@ -50,10 +50,46 @@ candidates:
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
   - id: HX-015
     prior: intermediate
-    size: { objects: 3, files: 3, reuse: null, traces: null }
+    size: { objects: 3, files: 3, reuse: "CGR Rental Pricing.CalcAmount", traces: null }
   - id: HX-018
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Service Plan Mgt.OnAfterServiceRegistered" }
   - id: HX-016
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Dispatcher.OnSendEntry" }
+  - id: HX-019
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Rental Pricing.OnAfterCalcLines" }
+  - id: HX-020
+    prior: easy
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Core Events.OnAfterVehicleCheckedOut" }
+  - id: HX-021
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
+  - id: HX-022
+    prior: intermediate
+    size: { objects: 4, files: 4, reuse: null, traces: null }
+  - id: HX-023
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: "CGR Export Format.FormatAmount", traces: null }
+  - id: HX-024
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-025
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Service Plan Mgt.OnAfterServiceRegistered" }
+  - id: HX-026
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-027
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Lease Mgt.BuildSchedule", traces: null }
+  - id: HX-028
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: "CGR Working Days.IsWeekend", traces: null }
+  - id: HX-029
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+  - id: HX-030
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }

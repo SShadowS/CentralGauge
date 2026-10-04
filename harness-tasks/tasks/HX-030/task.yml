@@ -1,0 +1,16 @@
+id: HX-030
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Core, Test]
+coupling: [temporary-table, single-instance]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80053, procedures: [DailyPreviewMatchesPricing, PreviewMatchesPricingAtCoarsePrecision, RebuildReplacesPreviousLines, LineAmountsUseSetupPrecision, WeekendPackageIsOneLine] }
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+fail_to_pass: null
+mutants: [total-ignores-filter, excess-at-allowance, package-two-day-allowance, uncached-setup, blank-contract-no]
+contamination: null
+limits: { timeout_min: 30 }

@@ -1,0 +1,21 @@
+v: 1
+partial_credit:
+  weights:
+    "85880/SimulatesEveryReturnedContract": 1
+    "85880/SimulationChangesNothing": 1
+    "85880/OnlyReturnedContractsInFilter": 1
+    "85880/RejectedContractReported": 1
+    "85880/CommittingExtensionLeavesNothing": 1
+    "85880/ExtensionWritesNotKept": 1
+    "85880/TwoRejectionsBothReported": 1
+    "85880/BuffersAreReplaced": 1
+    "85880/SimulatedEntryEqualsPostedEntry": 1
+    "85880/CommittingExtensionNotKept": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/by-value-buffer: { partial_credit: 0 }
+  naive/compute-only: { partial_credit: 0.7 }
+  naive/no-ignore: { partial_credit: 0.8 }
+  naive/post-and-undo: { partial_credit: 0.8 }

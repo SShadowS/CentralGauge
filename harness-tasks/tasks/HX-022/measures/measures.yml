@@ -1,0 +1,19 @@
+v: 1
+partial_credit:
+  weights:
+    "85900/RentalRecordsFollow": 1
+    "85900/DamageEntriesFollow": 1
+    "85900/LeaseContractsFollow": 1
+    "85900/LeaseInvoiceLinesFollow": 1
+    "85900/OutboxEntriesFollowPayloadKept": 1
+    "85900/VehicleKeepsItsData": 1
+    "85900/TakenNumberRefused": 1
+    "85900/OtherVehicleUntouched": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/copy-and-delete: { partial_credit: 0.75 }
+  naive/leasing-only: { partial_credit: 0.75 }
+  naive/pending-outbox-only: { partial_credit: 0.875 }
+  naive/rename-only: { partial_credit: 0.375 }

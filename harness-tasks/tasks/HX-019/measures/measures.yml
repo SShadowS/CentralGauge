@@ -1,0 +1,19 @@
+v: 1
+partial_credit:
+  weights:
+    "85840/ExtensionLineInPreview": 1
+    "85840/ExtensionLineFollowsOwnLines": 1
+    "85840/ExtensionLineSinglePosted": 1
+    "85840/ExtensionLineBatchPosted": 1
+    "85840/CommittingExtensionFailsPreview": 1
+    "85840/CommittingExtensionSinglePostPosts": 1
+    "85840/CommittingExtensionBatchPosts": 1
+    "85840/PreviewWithoutExtensionUnchanged": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/error-on-calclines: { partial_credit: 0.75 }
+  naive/ignore-on-preview: { partial_credit: 0.875 }
+  naive/no-scope: { partial_credit: 0.875 }
+  naive/preview-only-event: { partial_credit: 0.5 }

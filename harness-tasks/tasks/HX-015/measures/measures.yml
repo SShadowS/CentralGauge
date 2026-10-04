@@ -11,9 +11,16 @@ partial_credit:
     "85760/PreviewAmountAtCoarsePrecision": 1
     "85760/PostingStillRunsEvents": 1
   hidden_regressions: []
-reuse: null
+reuse:
+  targets:
+    - { codeunit: 70203, procedure: CalcAmount, signature: "(Contract: Record \"CGR Rental Contract\"): Decimal", file: Rental/src/RentalPricing.Codeunit.al, perturb: "exit(0);" }
+    - { codeunit: 70203, procedure: CalcLines, signature: "(Contract: Record \"CGR Rental Contract\"; var PriceLine: Record \"CGR Invoice Preview Line\")", file: Rental/src/RentalPricing.Codeunit.al, perturb: "PriceLine.Reset(); PriceLine.DeleteAll();" }
+  tests:
+    - { codeunit: 85760, procedures: [PreviewRunsNoPostingEvents, PreviewIgnoresCommittingExtension] }
 expect:
-  correct: { partial_credit: 1, final_errors: 0 }
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
   naive/append-to-buffer: { partial_credit: 0.8888888888888888 }
   naive/copied-pricing: { partial_credit: 0.8888888888888888 }
   naive/no-status-check: { partial_credit: 0.7777777777777778 }

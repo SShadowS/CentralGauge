@@ -1,0 +1,29 @@
+v: 1
+partial_credit:
+  weights:
+    "85920/FormatAmountPadsToTwoDecimals": 1
+    "85920/FormatAmountHasNoGroupSeparator": 1
+    "85920/FormatAmountWholeValueHasDecimals": 1
+    "85920/FormatDateIsYearMonthDay": 1
+    "85920/LeaseLineGroupedAmount": 1
+    "85920/LeaseLineHalfAmount": 1
+    "85920/LeaseLineWholeAmount": 1
+    "85920/RentalEntryGroupedValues": 1
+    "85920/RentalEntryWholeAmount": 1
+    "85920/RentalEntrySmallValues": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70012, procedure: FormatAmount, signature: "(Amount: Decimal): Text", file: Core/src/ExportFormat.Codeunit.al, perturb: "exit('');" }
+    - { codeunit: 70012, procedure: FormatDate, signature: "(Value: Date): Text", file: Core/src/ExportFormat.Codeunit.al, perturb: "exit('');" }
+  tests:
+    - { codeunit: 85920, procedures: [LeaseLineGroupedAmount, LeaseLineHalfAmount, LeaseLineWholeAmount, RentalEntryGroupedValues, RentalEntryWholeAmount, RentalEntrySmallValues] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  naive/date-kept: { partial_credit: 0.3 }
+  naive/format-9-amount: { partial_credit: 0.2 }
+  naive/km-two-decimals: { partial_credit: 0.7 }
+  naive/lease-only: { partial_credit: 0.7 }
+  naive/precision-locale: { partial_credit: 0.7 }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }

@@ -1,0 +1,22 @@
+id: HX-022
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Fleet, Core, Rental, Leasing, Integration]
+coupling: [events, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, PostCreatesLedgerEntry] }
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Integration]
+  tests:
+    - { codeunit: 85900, procedures: [RentalRecordsFollow, DamageEntriesFollow, LeaseContractsFollow, LeaseInvoiceLinesFollow, OutboxEntriesFollowPayloadKept, VehicleKeepsItsData, TakenNumberRefused, OtherVehicleUntouched] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

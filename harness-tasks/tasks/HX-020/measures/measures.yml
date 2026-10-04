@@ -1,0 +1,20 @@
+v: 1
+partial_credit:
+  weights:
+    "85860/SuspendedCheckoutQueuesNothing": 1
+    "85860/SuspendedDirectQueueQueuesNothing": 1
+    "85862/ResumedCheckoutQueues": 1
+    "85860/NestedSuspendNeedsTwoResumes": 1
+    "85860/StrayResumeIsIgnored": 1
+    "85860/SuspensionSeenByEveryInstance": 1
+    "85863/NotSuspendedQueuesAsBefore": 1
+    "85860/SuspensionOutlivesRolledBackStep": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/boolean-flag: { partial_credit: 0.875 }
+  naive/plain-global: { partial_credit: 0.5 }
+  naive/stored-counter: { partial_credit: 0.875 }
+  naive/subscriber-guard: { partial_credit: 0.5 }
+  naive/unclamped-counter: { partial_credit: 0.875 }

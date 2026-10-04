@@ -1,0 +1,19 @@
+id: HX-026
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Core, Rental]
+coupling: [single-instance, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80050, procedures: [SetupIsCachedUntilRefresh, CurrentBranchFallsBackToSetupDefault, StateIsSharedAcrossInstances, NewContractTakesCurrentBranch] }
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 85980, procedures: [BranchSharedAcrossInstances, SetThroughSessionReadThroughBranch, SetThroughBranchReadThroughSession, ResetClearsBranchContext, DefaultFollowsLoadedSetup, RefreshKeepsExplicitBranch, NewContractTakesBranchContextBranch] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

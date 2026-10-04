@@ -1,0 +1,22 @@
+id: HX-020
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Integration, Core, Rental]
+coupling: [single-instance, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+  - { codeunit: 80050, procedures: [StateIsSharedAcrossInstances] }
+  - { codeunit: 80057, procedures: [DeliveredEntryIsSent, RejectedEntryKeepsItsError, EntryFailsAtMaxAttempts, UndeliveredWithoutTransport] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Integration]
+  tests:
+    - { codeunit: 85860, procedures: [SuspendedCheckoutQueuesNothing, SuspendedDirectQueueQueuesNothing, NestedSuspendNeedsTwoResumes, StrayResumeIsIgnored, SuspensionSeenByEveryInstance, SuspensionOutlivesRolledBackStep] }
+    - { codeunit: 85862, procedures: [ResumedCheckoutQueues] }
+    - { codeunit: 85863, procedures: [NotSuspendedQueuesAsBefore] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

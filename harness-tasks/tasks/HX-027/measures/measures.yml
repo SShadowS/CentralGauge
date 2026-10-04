@@ -1,0 +1,31 @@
+v: 1
+partial_credit:
+  weights:
+    "86000/BuildMatchesCreatedSchedule": 1
+    "86000/BuildSavesNothing": 1
+    "86000/BuildKeepsSavedSchedule": 1
+    "86000/BuildWorksForInvoicedLease": 1
+    "86000/BuildReplacesBuffer": 1
+    "86000/BuildReplacesFilteredBuffer": 1
+    "86000/BuildWithoutMonthsFails": 1
+    "86000/BuildOneMonthLease": 1
+    "86000/CreateStillRefusesInvoicedLease": 1
+    "86000/CreateScheduleUnchanged": 1
+    "86000/CreateReplacesUninvoicedSchedule": 1
+    "86000/CreateWithoutMonthsFails": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70300, procedure: BuildSchedule, signature: '(ContractNo: Code[20]; var ScheduleBuffer: Record "CGR Lease Schedule Line" temporary)', file: Leasing/src/LeaseMgt.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 86000, procedures: [CreateScheduleUnchanged, CreateReplacesUninvoicedSchedule] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/append-buffer: { partial_credit: 0.8333333333333334 }
+  naive/buffer-delete-only: { partial_credit: 0.9166666666666666 }
+  naive/filtered-clear: { partial_credit: 0.9166666666666666 }
+  naive/helper-by-value: { partial_credit: 0.16666666666666666 }
+  naive/real-delete: { partial_credit: 0.8333333333333334 }
+  naive/shared-invoiced-check: { partial_credit: 0.9166666666666666 }

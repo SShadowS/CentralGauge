@@ -1,0 +1,24 @@
+v: 1
+partial_credit:
+  weights:
+    "85980/BranchSharedAcrossInstances": 1
+    "85980/SetThroughSessionReadThroughBranch": 1
+    "85980/SetThroughBranchReadThroughSession": 1
+    "85980/ResetClearsBranchContext": 1
+    "85980/DefaultFollowsLoadedSetup": 1
+    "85980/RefreshKeepsExplicitBranch": 1
+    "85980/NewContractTakesBranchContextBranch": 1
+  hidden_regressions: []
+# reuse: null by exemption (decisions\2026-10-04-hx-026-reuse-exemption.md): CGR Session Context must delegate
+# CurrentBranch to CGR Branch Context, so an unchanged CGR Rental Mgt reaches any Branch Context target through that
+# delegation and the M11-06 probe cannot tell a migrated caller from an unchanged one. The CreateContract caller
+# migration is UNMEASURED (card).
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/not-single-instance: { partial_credit: 0 }
+  naive/refresh-clears-branch: { partial_credit: 0.8571428571428571 }
+  naive/reset-keeps-cache: { partial_credit: 0.7142857142857143 }
+  naive/reset-own-only: { partial_credit: 0.7142857142857143 }
+  naive/two-copies: { partial_credit: 0.5714285714285714 }
+  naive/uncached-default: { partial_credit: 0.8571428571428571 }

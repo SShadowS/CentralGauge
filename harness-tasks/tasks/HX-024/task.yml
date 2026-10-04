@@ -1,0 +1,20 @@
+id: HX-024
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Reporting, Rental, Leasing]
+coupling: [facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, PostCreatesLedgerEntry] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 85940, procedures: [AmpersandNameLeaseAmount, AmpersandNameRentalCount, RangeLikeNameRentalCount, RangeLikeNameLeaseAmount, PlainNameUnchanged, WildcardNameRentalCount, WildcardNameLeaseAmount, ApostropheNameRentalCount] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
