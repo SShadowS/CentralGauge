@@ -13,3 +13,8 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/boolean-flag: { partial_credit: 0.875 }
+  naive/plain-global: { partial_credit: 0.5 }
+  naive/stored-counter: { partial_credit: 0.875 }
+  naive/subscriber-guard: { partial_credit: 0.5 }
+  naive/unclamped-counter: { partial_credit: 0.875 }
