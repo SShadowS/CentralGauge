@@ -208,11 +208,15 @@ codeunit 85900 "HX022 Vehicle Renumber Oracle"
         InvoiceLine: Record "CGR Lease Invoice Line";
         Entry: Record "CGR Outbox Entry";
         DamageEntry: Record "CGR Damage Entry";
+        LedgerEntry: Record "CGR Rental Ledger Entry";
         FleetMgt: Codeunit "CGR Fleet Mgt";
         DamageMgt: Codeunit "CGR Damage Mgt";
         OwnOutboxNo: Integer;
         OtherOutboxNo: Integer;
         OtherDamageNo: Integer;
+        OwnDamageNo: Integer;
+        OtherLedgerNo: Integer;
+        OwnLedgerNo: Integer;
     begin
         InitRun();
         ClearVehicle('HX022-8N');
@@ -225,6 +229,9 @@ codeunit 85900 "HX022 Vehicle Renumber Oracle"
         OwnOutboxNo := QueueOutbox('HX022-8O');
         OtherOutboxNo := QueueOutbox('HX022-8X');
         OtherDamageNo := DamageMgt.RegisterDamage('HX022-8X', 'HX022 scratched bumper');
+        OwnDamageNo := DamageMgt.RegisterDamage('HX022-8O', 'HX022 cracked mirror');
+        OwnLedgerNo := InsertLedgerEntry('HX022-8C', 'HX022-8O');
+        OtherLedgerNo := InsertLedgerEntry('HX022-8XC', 'HX022-8X');
 
         FleetMgt.ChangeVehicleNo('HX022-8O', 'HX022-8N');
 
@@ -239,6 +246,8 @@ codeunit 85900 "HX022 Vehicle Renumber Oracle"
         Assert.AreEqual('HX022-8X', Entry."Vehicle No.", 'The other outbox entry is untouched');
         DamageEntry.Get(OtherDamageNo);
         Assert.AreEqual('HX022-8X', DamageEntry."Vehicle No.", 'The other damage entry is untouched');
+        LedgerEntry.Get(OtherLedgerNo);
+        Assert.AreEqual('HX022-8X', LedgerEntry."Vehicle No.", 'The other rental ledger entry is untouched');
 
         Contract.Get('HX022-8C');
         Assert.AreEqual('HX022-8N', Contract."Vehicle No.", 'The renumbered vehicle''s rental contract moved');
@@ -248,6 +257,10 @@ codeunit 85900 "HX022 Vehicle Renumber Oracle"
         Assert.AreEqual('HX022-8N', InvoiceLine."Vehicle No.", 'The renumbered vehicle''s lease invoice line moved');
         Entry.Get(OwnOutboxNo);
         Assert.AreEqual('HX022-8N', Entry."Vehicle No.", 'The renumbered vehicle''s outbox entry moved');
+        DamageEntry.Get(OwnDamageNo);
+        Assert.AreEqual('HX022-8N', DamageEntry."Vehicle No.", 'The renumbered vehicle''s damage entry moved');
+        LedgerEntry.Get(OwnLedgerNo);
+        Assert.AreEqual('HX022-8N', LedgerEntry."Vehicle No.", 'The renumbered vehicle''s rental ledger entry moved');
     end;
 
     local procedure InitRun()
