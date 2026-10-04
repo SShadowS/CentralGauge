@@ -7,10 +7,14 @@ partial_credit:
     "85960/SameDateCounts": 1
     "85960/LateOlderResendKeepsNewer": 1
     "85960/LateOlderResendHigherKm": 1
-    "85960/KmAboveMileageSkipped": 1
-    "85960/UnknownVehicleSkipped": 1
     "85960/ExtensionsNotifiedPerRecord": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "85960/KmAboveMileageSkipped"
+    - "85960/UnknownVehicleSkipped"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/date-only: { partial_credit: 0.42857142857142855 }
+  naive/evaluate-9: { partial_credit: 0.14285714285714285 }
+  naive/older-by-km: { partial_credit: 0.7142857142857143 }
+  naive/swap-after-evaluate: { partial_credit: 0.42857142857142855 }
