@@ -13,3 +13,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/copy-and-delete: { partial_credit: 0.75 }
+  naive/leasing-only: { partial_credit: 0.75 }
+  naive/pending-outbox-only: { partial_credit: 0.875 }
+  naive/rename-only: { partial_credit: 0.375 }
