@@ -18,6 +18,7 @@ import {
   CAMPAIGN_CALIBRATED,
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
+  claudeCodeHarnessNative,
   LSP_PLUGINS,
   pluginIs,
   unqualifiedClaudeCode,
@@ -2978,7 +2979,9 @@ Deno.test("inventory (H-03): on r3+ every same-session init must name the manife
   ];
   assertEquals((await v2(resume({}))).inventoryProblems, []);
   // Another version that IS qualified must not escape on a later segment.
+  // 2.1.296 has its own entry since H-03's qualification: restore it, never delete it.
   const inv = BUILTIN_INVENTORY as Record<string, typeof B>;
+  const real296 = inv["2.1.296"];
   inv["2.1.296"] = B;
   try {
     assertStringIncludes(
@@ -2986,7 +2989,8 @@ Deno.test("inventory (H-03): on r3+ every same-session init must name the manife
       "init 2: system/init claude_code_version 2.1.296 differs from the manifest's resolved 2.1.282",
     );
   } finally {
-    delete inv["2.1.296"];
+    if (real296) inv["2.1.296"] = real296;
+    else delete inv["2.1.296"];
   }
   const noVersion = JSON.parse(v2Init());
   delete noVersion.claude_code_version;
@@ -3019,9 +3023,10 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
   const u = claudeCodeAdapter.unqualified!;
   assertEquals(u(manifest("cc", V2()), "dev"), null);
   assertEquals(u(manifest("cc", V2()), "campaign"), null, "untracked r3");
+  // 2.1.296 was the refused version here until its H-03 qualification entry.
   assertStringIncludes(
-    u(manifest("cc", V2({ harness_version: "2.1.296" })), "dev")!,
-    "Claude Code 2.1.296 is not qualified for development use (qualified: 2.1.282)",
+    u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296)",
   );
   // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
   for (const revision of [undefined, "2"]) {
@@ -3080,4 +3085,71 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
     );
   }
   assertEquals(CAMPAIGN_CALIBRATED, {}, "nothing is calibrated yet");
+});
+
+// ---- H-03: Claude Code 2.1.296 dev qualification (level 1) ----
+// The raw.jsonl of stub cells cc475242 (plain) and 14715acf (LSP) on dev image
+// sha256:51c3095a, byte-exact except the cg_inventory line's CRLF (written by
+// PowerShell) is stored as LF. The stub provider holds no secret.
+const STUB_296 = {
+  plain: "tests/fixtures/harness/claude-code/stub-2.1.296-plain.jsonl",
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.296-lsp.jsonl",
+};
+const arm296 = (lsp: boolean) => ({
+  harness_version: "2.1.296",
+  models: { main: "anthropic/claude-sonnet-5" },
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-03",
+  },
+  settings: {
+    requested: {},
+    native: {
+      api_models: { main: "claude-sonnet-5" },
+      ...claudeCodeHarnessNative(),
+      ...(lsp ? { lsp: ["al"] } : {}),
+    },
+  },
+  instructions: comp("bundles/env/instructions", ["CLAUDE.md"]),
+  lsp: lsp
+    ? [{ name: "al", version: "al-lsp@1", tool_schema_hash: "a".repeat(64) }]
+    : [],
+});
+
+Deno.test("qualification (H-03): the 2.1.296 stub captures (plain + LSP) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_296.lsp : STUB_296.plain);
+    const { r, dir } = await parse(text, 0, arm296(lsp));
+    const tag = lsp ? "lsp" : "plain";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.296");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    assertEquals(r.observed.models, ["anthropic/claude-sonnet-5"]);
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
+    assertAlmostEquals(r.telemetry.cost_usd!, (90 * 2 + 45 * 10) / 1e6, 1e-12);
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12);
+    assertEquals([r.telemetry.turns, r.telemetry.stop_reason], [9, "end_turn"]);
+    assertEquals(r.termination, "completed");
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    assertEquals(
+      unqualifiedClaudeCode(manifest("cc", arm296(lsp)), "dev"),
+      null,
+      tag,
+    );
+  }
 });

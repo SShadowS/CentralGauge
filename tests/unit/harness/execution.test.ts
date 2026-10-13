@@ -4910,7 +4910,8 @@ async function unqualifiedCell(t: TestEnv) {
   const cell = await cellFor(t);
   const armManifest = {
     ...cell.armManifest,
-    harness_version: "2.1.296",
+    // Not 2.1.296: that version is dev-qualified since H-03's BUILTIN_INVENTORY entry.
+    harness_version: "2.1.999",
     image: { ...cell.armManifest.image, revision: "3-dev-H-03" },
   };
   return {
@@ -4927,7 +4928,7 @@ Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is ref
   await assertRejects(
     async () => runCell(t.env, await unqualifiedCell(t)),
     ConfigurationError,
-    "Claude Code 2.1.296 is not qualified for development use",
+    "Claude Code 2.1.999 is not qualified for development use",
   );
   assert(
     !await exists(join(t.env.privateRoot, "intents")) ||
@@ -4943,5 +4944,16 @@ Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it c
   await stubEnv(t);
   const e = (await runCell(t.env, await unqualifiedCell(t))).executions[0]!;
   assertEquals(t.docker.runs.length, 1);
-  assertEquals(e.manifest.harness_version, "2.1.296");
+  assertEquals(e.manifest.harness_version, "2.1.999");
+});
+
+// H-03: the cell record says which memory limit its sandbox ran with: the
+// --memory value docker run received, in the unhashed side file.
+Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed as --memory", async () => {
+  const t = await makeEnv();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const args = t.docker.runs[0]!.args;
+  const passed = args[args.indexOf("--memory") + 1];
+  assertEquals(passed, "4g");
+  assertEquals((await sideOf(t, e.id)).sandbox.memory, passed);
 });

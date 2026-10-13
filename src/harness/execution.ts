@@ -96,6 +96,7 @@ import {
   redactText,
   restrictPath,
   runSandbox,
+  SANDBOX_MEMORY,
   SANDBOX_PREFIX,
   sandboxName,
   type SandboxResult,
@@ -1143,7 +1144,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   ], scrub);
   const side = redactDeep({
     v: 1,
-    sandbox: f.sandbox,
+    // H-03: the --memory every sandbox runs with (buildRunArgs); unhashed side file.
+    sandbox: { ...f.sandbox, memory: SANDBOX_MEMORY },
     setup_error: f.setupError ?? mismatch,
     unverified: check.unverified,
     stop_reason: stopReason,

@@ -601,6 +601,71 @@ export const BUILTIN_INVENTORY: Readonly<
     ],
     qualified: "M9-01 spike (H:\\cg-coord\\m9\\spike-01\\findings.md item 7)",
   },
+  // H-03 dev qualification. Against 2.1.282: skill plugin-authoring added;
+  // plugin agents-md@builtin renamed cc-plugin-agents-md@builtin; plugin
+  // cc-plugin-plugin-authoring@builtin added; agents and the 18 tools left
+  // after DISALLOWED_TOOLS unchanged (the six disallowed tools are hidden by
+  // --disallowedTools, so they are carried over from 2.1.282 unobserved).
+  "2.1.296": {
+    agents: [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup",
+    ],
+    skills: [
+      "deep-research",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "schedule",
+      "claude-api",
+      "workflow-authoring",
+      "run",
+      "run-skill-generator",
+      "plugin-authoring",
+    ],
+    plugins: [
+      "cc-plugin-agents-md@builtin",
+      "cc-plugin-plugin-authoring@builtin",
+    ],
+    tools: [
+      "Task",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListAgents",
+      "NotebookEdit",
+      "Read",
+      "RemoteTrigger",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Skill",
+      "TaskStop",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Workflow",
+      "Write",
+    ],
+    qualified:
+      "H-03 stub cells on image sha256:51c3095af96c3310f5f6674f494d7c349e7e9a4655a9f2aaf546c8820dd6290d (plain cc475242-f676-443b-a5e1-680bcbb65253, a428cda9-dfbf-40e6-8abf-8fe13cc1c0f3; LSP 14715acf-615c-45a0-90ae-23fa33c05b50, 0e26f343-de26-4b06-a853-8b8ae6cf2935; review H:\\cg-coord\\tasks\\H-03\\infra-qualify-2.1.296.md)",
+  },
 };
 
 /**

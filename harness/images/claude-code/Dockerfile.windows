@@ -14,11 +14,14 @@ ARG CLAUDE_CODE_URL
 ARG CLAUDE_CODE_INTEGRITY
 ARG CLAUDE_CODE_WIN_URL
 ARG CLAUDE_CODE_WIN_INTEGRITY
-COPY install-claude-code.ps1 C:/cg-install-claude-code.ps1
+# Build time only, removed after a checked success. It sits under the locked C:\cg-lsp like
+# install-lsp.ps1 (H-01 run 004: every COPY lands in a locked path); never under C:\cg-npm,
+# which install-claude-code.ps1 requires to hold only node_modules.
+COPY install-claude-code.ps1 C:/cg-lsp/install-claude-code.ps1
 RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
-    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-install-claude-code.ps1 -Version $env:CLAUDE_CODE_VERSION -MainUrl $env:CLAUDE_CODE_URL -MainIntegrity $env:CLAUDE_CODE_INTEGRITY -WinUrl $env:CLAUDE_CODE_WIN_URL -WinIntegrity $env:CLAUDE_CODE_WIN_INTEGRITY; \
+    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lsp\install-claude-code.ps1 -Version $env:CLAUDE_CODE_VERSION -MainUrl $env:CLAUDE_CODE_URL -MainIntegrity $env:CLAUDE_CODE_INTEGRITY -WinUrl $env:CLAUDE_CODE_WIN_URL -WinIntegrity $env:CLAUDE_CODE_WIN_INTEGRITY; \
     if ($LASTEXITCODE -ne 0) { throw ('install-claude-code failed: ' + $LASTEXITCODE) }; \
-    Remove-Item -Force C:\cg-install-claude-code.ps1; \
+    Remove-Item -Force C:\cg-lsp\install-claude-code.ps1; \
     [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm\node_modules\@anthropic-ai\claude-code\bin;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 # M10: the AL language server plugin (al-lsp-for-agents wrapper, Microsoft AL extension, private
 # .NET 10), recipe in lsp/al-lsp.json. Every arm's image has it; only an arm that declares
