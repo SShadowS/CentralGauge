@@ -557,15 +557,11 @@ export async function reuseCheck(
       workDir: join(o.workDir, `${kind}-judge-${i}`),
     });
     // M11-14b: infra (a session crash, a container fault) is not a non-building
-    // probe. Same classification as rejudge (infraSignature), cause kept. A
-    // dependent's "dependency X did not build" is a consequence, not a
-    // diagnostic of its own: a crashed build with dependents has only those.
-    const own = log.diagnostics.filter((d) =>
-      !(d.code === "CG0001" && /^dependency .+ did not build$/.test(d.message))
-    );
+    // probe. Same classification as rejudge (infraSignature, which ignores the
+    // dependency cascade since H-04).
     const sig = judgment.verdict === "unscored"
       ? "unscored"
-      : infraSignature(judgment, { ...log, diagnostics: own });
+      : infraSignature(judgment, log);
     // The cause is the signature: log text (errors, notes) is unscrubbed
     // probe output and never reaches the record (run 002 P1).
     if (sig !== null) {

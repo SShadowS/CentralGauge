@@ -14,6 +14,7 @@ import {
   buildFailureCodes,
   currentScorerFingerprint,
   infraSignature,
+  isCascadeDiagnostic,
   isCurrentJudgment,
   judge,
   SCORER_SUITE,
@@ -682,6 +683,145 @@ Deno.test("infraSignature (C-03 run 003): a judge error after real oracle rows i
     scorers: j.scorers.map((s) => ({ ...s, tests: [] })),
   });
   assertEquals(infraSignature(bare, log), "judge_error");
+});
+
+// ---- H-04: a crashed build is infrastructure, never a scored model failure ----
+
+const CASCADE = {
+  app: "candidate/Test",
+  code: "CG0001",
+  message: "dependency Rental did not build",
+};
+
+Deno.test("judge (H-04): a candidate build crash in a multi-app workspace (no diagnostic, dependents cascade) is unscored, never a fail", async () => {
+  const bc = script();
+  bc.crashFor = (p) =>
+    /\/apps\/.*\/Rental$/.test(p) || p.endsWith("/apps/Rental");
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  // The fixture is multi-app: the dependent's cascade diagnostic is there.
+  assert(
+    log.diagnostics.some((d) => d.code === "CG0001"),
+    JSON.stringify(log.diagnostics),
+  );
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null]);
+  assertEquals(bc.tests, []);
+  assertStringIncludes(log.error ?? "", "no compiler diagnostic");
+});
+
+Deno.test("judge (H-04): an oracle build crash is unscored, never a fail_to_pass failure", async () => {
+  const bc = script();
+  bc.crashFor = (p) => p.endsWith("/oracle");
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(
+    judgment.scorers.find((s) => s.name === "fail_to_pass")!.passed,
+    null,
+  );
+  assertEquals(
+    judgment.scorers.flatMap((s) => s.tests).filter((t) =>
+      t.failure === "compile"
+    ),
+    [],
+  );
+  assertStringIncludes(log.error ?? "", "oracle");
+});
+
+Deno.test("judge (H-04): a genuine compile error with the same cascade stays the model's failure", async () => {
+  const bc = script();
+  const { input } = await setup("correct", {
+    "Rental/src/Broken.al": "COMPILE_ERROR",
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assert(log.diagnostics.some((d) => d.code === "CG0001"));
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(judgment.scorers.map((s) => s.passed), [false, false, false]);
+  assertEquals(log.error, null);
+});
+
+Deno.test("judge (H-04): a genuine oracle compile error stays a fail_to_pass failure", async () => {
+  const bc = script();
+  bc.errorsFor = (folder) =>
+    folder === "oracle"
+      ? [{
+        code: "AL0118",
+        message: "oracle broke",
+        file: "O.al",
+        line: 1,
+        column: 1,
+        severity: "error",
+      }]
+      : [];
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(judgment.scorers[2]!.tests[0]!.failure, "compile");
+  assertEquals(log.error, null);
+});
+
+Deno.test("infraSignature (H-04): only the dependency cascade is no diagnostic; any genuine one still is", () => {
+  const id = "00000000-0000-4000-a000-00000000c040";
+  const eid = "00000000-0000-4000-9000-00000000c040";
+  const j = JudgmentRecordSchema.parse({
+    v: 1,
+    id,
+    execution_id: eid,
+    workspace_hash: "0".repeat(64),
+    task_id: "HX-001",
+    task_oracle_hash: "a".repeat(64),
+    scorer_versions: { build: "1" },
+    scorer_fingerprint: "b".repeat(64),
+    scorers: [
+      { name: "build", passed: false, tests: [] },
+      { name: "fail_to_pass", passed: false, tests: [] },
+    ],
+    verdict: "fail",
+    verdict_container: null,
+    started_at: "2026-10-13T11:38:35.000Z",
+    ended_at: "2026-10-13T11:39:06.426Z",
+  });
+  const log = {
+    v: 1,
+    judgment_id: id,
+    execution_id: eid,
+    violations: [],
+    diagnostics: [CASCADE],
+    test_messages: [],
+    notes: ["build failed: Rental (no diagnostics); Test CG0001"],
+    error: null,
+  };
+  assertEquals(infraSignature(j, log), "build_failed_no_diagnostics_no_tests");
+  for (
+    const d of [
+      { app: "candidate/Rental", code: "AL0118", message: "m" },
+      // Other synthetic CG0001 refusals are the agent's own build failure.
+      {
+        app: "candidate/Test",
+        code: "CG0001",
+        message: "dependency x is not in the symbols lock or the workspace",
+      },
+    ]
+  ) {
+    assertEquals(
+      infraSignature(j, { ...log, diagnostics: [CASCADE, d] }),
+      null,
+      d.message,
+    );
+  }
+});
+
+Deno.test("isCascadeDiagnostic (H-04): exactly the dependency-did-not-build entry", () => {
+  assertEquals(isCascadeDiagnostic(CASCADE), true);
+  assertEquals(isCascadeDiagnostic({ ...CASCADE, code: "AL0001" }), false);
+  assertEquals(
+    isCascadeDiagnostic({
+      ...CASCADE,
+      message: "dependency x is not in the symbols lock or the workspace",
+    }),
+    false,
+  );
 });
 
 Deno.test("judge (M4-17a): a test added to a shipped test codeunit runs under pass_to_pass from the generated codeunit; a failing one fails it", async () => {
