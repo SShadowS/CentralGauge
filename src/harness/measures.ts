@@ -14,7 +14,7 @@ import { type BcLane, buildApps, type LockedSymbols } from "./bc-lane.ts";
 import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
 import { readAppJson, type StagedApp } from "./staging.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
-import { judge, type JudgeInput } from "./verdict.ts";
+import { infraSignature, judge, type JudgeInput } from "./verdict.ts";
 import { safeCopyTree } from "./fsutil.ts";
 import { hashJson } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
@@ -34,9 +34,12 @@ const ProcKey = z.string().regex(/^8\d{4}\/[A-Za-z_][A-Za-z0-9_]*$/);
 export const VARIANT =
   /^(correct|reference-tests|naive\/[A-Za-z0-9_-]+|fixture\/[A-Za-z0-9_-]+)$/;
 
+/** M11-14b: an AL identifier as ReuseSchema.marker_evidence can record it. */
+const Ident = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,119}$/);
+
 export const ReuseTargetSchema = z.strictObject({
-  codeunit: z.number().int().positive(),
-  procedure: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  codeunit: z.number().int().positive().max(2 ** 31 - 1),
+  procedure: Ident,
   /** As declared, e.g. "(Amount: Decimal): Decimal"; compared without whitespace, case-insensitive. */
   signature: z.string().min(2),
   /** Workspace-relative file holding the codeunit in the pristine workspace. */
@@ -65,9 +68,14 @@ export const TaskMeasuresSchema = z.strictObject({
     targets: z.array(ReuseTargetSchema).min(1),
     tests: z.array(z.strictObject({
       codeunit: z.number().int().min(85000).max(89999),
-      procedures: z.array(z.string().min(1)).min(1),
+      procedures: z.array(Ident).min(1),
     })).min(1),
-  }).nullable().default(null),
+  }).refine(
+    (r) =>
+      r.targets.length *
+          r.tests.reduce((n, x) => n + x.procedures.length, 0) <= 256,
+    "targets x reuse tests must be at most 256 (marker_evidence bound)",
+  ).nullable().default(null),
   expect: z.record(
     z.string().regex(VARIANT),
     z.strictObject({
@@ -254,6 +262,15 @@ export const ReuseSchema = z.strictObject({
   executed: z.boolean(),
   effective: z.boolean(),
   via: z.string().nullable(),
+  /**
+   * M11-14b: which reuse test's message carried REUSE_MARKER under which
+   * target's probe. Normalized (never the raw message: it is agent-reachable
+   * output) and bounded. Optional so records without it stay valid under reuse "1".
+   */
+  marker_evidence: z.array(z.strictObject({
+    test: z.string().regex(/^8\d{4}\/[A-Za-z_][A-Za-z0-9_]{0,119}$/),
+    target: z.string().regex(/^\d{1,10}\/[A-Za-z_][A-Za-z0-9_]{0,119}$/),
+  })).max(256).optional(),
 });
 
 export const MeasureRecordSchema = z.strictObject({
@@ -483,9 +500,7 @@ export interface ReuseInput {
 export async function reuseCheck(
   lane: BcLane,
   o: ReuseInput,
-): Promise<
-  Measure<{ executed: boolean; effective: boolean; via: string | null }>
-> {
+): Promise<Measure<z.output<typeof ReuseSchema>>> {
   const r = o.measures.reuse;
   if (!r) return na("no reuse target");
   const wanted = r.tests.flatMap((x) =>
@@ -541,8 +556,23 @@ export async function reuseCheck(
       artifact: art,
       workDir: join(o.workDir, `${kind}-judge-${i}`),
     });
-    if (judgment.verdict === "unscored") {
-      return { problem: "infra during a reuse probe" };
+    // M11-14b: infra (a session crash, a container fault) is not a non-building
+    // probe. Same classification as rejudge (infraSignature), cause kept. A
+    // dependent's "dependency X did not build" is a consequence, not a
+    // diagnostic of its own: a crashed build with dependents has only those.
+    const own = log.diagnostics.filter((d) =>
+      !(d.code === "CG0001" && /^dependency .+ did not build$/.test(d.message))
+    );
+    const sig = judgment.verdict === "unscored"
+      ? "unscored"
+      : infraSignature(judgment, { ...log, diagnostics: own });
+    // The cause is the signature: log text (errors, notes) is unscrubbed
+    // probe output and never reaches the record (run 002 P1).
+    if (sig !== null) {
+      return {
+        problem:
+          `infra: ${sig} (${kind} probe of ${t.codeunit}/${t.procedure})`,
+      };
     }
     if (judgment.scorers.find((s) => s.name === "build")?.passed !== true) {
       return {
@@ -587,6 +617,7 @@ export async function reuseCheck(
   const effBy = new Map<string, string[]>();
   const note = (m: Map<string, string[]>, k: string, id: string) =>
     m.set(k, [...(m.get(k) ?? []), id]);
+  const evidence: { test: string; target: string }[] = [];
   for (const [i, t] of r.targets.entries()) {
     const ex = await probe(i, "executed", t, `Error('${REUSE_MARKER}');`);
     if (ex === null) continue;
@@ -600,7 +631,10 @@ export async function reuseCheck(
     }
     if ("problem" in ef) return missing(ef.problem);
     const id = `${t.codeunit}/${t.procedure}`;
-    for (const k of ex.marker) note(execBy, k, id);
+    for (const k of ex.marker) {
+      note(execBy, k, id);
+      evidence.push({ test: k, target: id });
+    }
     for (const k of ef.failed) note(effBy, k, id);
   }
   if (located === 0) {
@@ -617,7 +651,7 @@ export async function reuseCheck(
   const via = cover === null
     ? null
     : [...new Set(wanted.map((k) => cover.get(k)![0]!))].join("+");
-  return ok({ executed, effective, via });
+  return ok({ executed, effective, via, marker_evidence: evidence });
 }
 
 export interface FinalCounts {

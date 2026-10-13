@@ -150,6 +150,57 @@ export async function bounded<T>(
   }
 }
 
+/** Byte budget shared by the stdout and stderr captures of one run. */
+export interface CaptureBudget {
+  maxBytes: number;
+  total: number;
+  overflowed: boolean;
+  onOverflow(): void;
+}
+
+/**
+ * Copies `stream` into `file` and closes the file. Writes happen explicitly:
+ * on Deno/Windows `pipeTo(file.writable)` holds the bytes back until the
+ * stream closes, so a reader of the file would see nothing while the child runs.
+ */
+export async function captureStream(
+  stream: ReadableStream<Uint8Array>,
+  file: Deno.FsFile,
+  budget: CaptureBudget,
+  signal?: AbortSignal,
+): Promise<void> {
+  const reader = stream.getReader();
+  const onAbort = () => reader.cancel().catch(() => {});
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    for (;;) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      // After the first dropped chunk nothing more is kept: the capture is a prefix.
+      if (budget.overflowed || budget.total + chunk.length > budget.maxBytes) {
+        if (!budget.overflowed) {
+          budget.overflowed = true;
+          budget.onOverflow();
+        }
+        continue; // keep draining so the process never blocks on a full pipe
+      }
+      budget.total += chunk.length;
+      for (let off = 0; off < chunk.length;) {
+        off += await file.write(chunk.subarray(off));
+      }
+    }
+  } catch (err) {
+    reader.cancel().catch(() => {});
+    throw err;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      file.close();
+    } catch { /* already closed by the deadline */ }
+  }
+}
+
 export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
   const dec = new TextDecoder();
   const out = async (args: string[]) => {
@@ -233,30 +284,18 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         else signal?.addEventListener("abort", arm, { once: true });
       });
       deadline.catch(() => {});
-      let total = 0;
-      let overflowed = false;
-      const cap = () =>
-        new TransformStream<Uint8Array, Uint8Array>({
-          transform(chunk, ctl) {
-            // After the first dropped chunk nothing more is kept: the capture is a prefix.
-            if (overflowed || total + chunk.length > c.maxBytes) {
-              if (!overflowed) {
-                overflowed = true;
-                c.onOverflow();
-              }
-              return; // keep draining so the process never blocks on a full pipe
-            }
-            total += chunk.length;
-            ctl.enqueue(chunk);
-          },
-        });
-      const opts = signal ? { signal } : {};
+      const budget: CaptureBudget = {
+        maxBytes: c.maxBytes,
+        total: 0,
+        overflowed: false,
+        onOverflow: c.onOverflow,
+      };
       try {
         // allSettled: run() settles only once both capture files are closed.
         const piped = await Promise.race([
           Promise.allSettled([
-            child.stdout.pipeThrough(cap()).pipeTo(o.writable, opts),
-            child.stderr.pipeThrough(cap()).pipeTo(e.writable, opts),
+            captureStream(child.stdout, o, budget, signal),
+            captureStream(child.stderr, e, budget, signal),
           ]),
           deadline,
         ]);
