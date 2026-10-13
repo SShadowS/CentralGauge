@@ -68,7 +68,7 @@ codeunit 86200 "HX037 Contract Check Oracle"
         Runner: Codeunit "HX037 Check Runner";
         Ok: Boolean;
     begin
-        InsertHX37Contract('HX037-4', 'HX037-4V', true, 'Customer Four', true);
+        InsertHX37Contract('HX037-4', 'HX037-4V', false, '', true);
         Extension.AddProblem('HX037 ext A');
         BindSubscription(Extension);
         Runner.SetContracts('HX037-4', '');
@@ -77,10 +77,12 @@ codeunit 86200 "HX037 Contract Check Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'Own and extension problems together raise no error: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.GetFirstResult(), 'A contract on a blocked vehicle fails the check');
-        Assert.AreEqual(2, Runner.ProblemCount(), 'The vehicle problem and the extension problem are listed');
-        Assert.AreEqual('Vehicle HX037-4V has open damages.', Runner.ProblemAt(1), 'Own problems come before the extension problems');
-        Assert.AreEqual('HX037 ext A', Runner.ProblemAt(2), 'The extension problem follows the own problems');
+        Assert.IsFalse(Runner.GetFirstResult(), 'A contract with own and extension problems fails the check');
+        Assert.AreEqual(4, Runner.ProblemCount(), 'All three own problems and the extension problem are listed');
+        Assert.AreEqual('Rental contract HX037-4 must be returned before it is posted.', Runner.ProblemAt(1), 'The status problem is listed first');
+        Assert.AreEqual('Rental contract HX037-4 has no customer name.', Runner.ProblemAt(2), 'The customer problem is listed second');
+        Assert.AreEqual('Vehicle HX037-4V has open damages.', Runner.ProblemAt(3), 'The vehicle problem is listed third');
+        Assert.AreEqual('HX037 ext A', Runner.ProblemAt(4), 'The extension problem follows the own problems');
     end;
 
     [Test]
@@ -150,6 +152,8 @@ codeunit 86200 "HX037 Contract Check Oracle"
         Vehicle."No." := VehicleNo;
         Vehicle.Mileage := 1000;
         Vehicle.Blocked := VehicleBlocked;
+        if VehicleBlocked then
+            Vehicle."Open Damages" := 1;
         Vehicle.Insert();
 
         if Contract.Get(ContractNo) then
