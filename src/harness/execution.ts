@@ -38,6 +38,7 @@ import { adapterFor } from "./adapters/mod.ts";
 import {
   inventoried,
   INVENTORY_KEYS,
+  parseClaudeStream,
   strings,
 } from "./adapters/claude-code.ts";
 import { readRecords } from "./adapters/jsonl.ts";
@@ -1474,6 +1475,8 @@ export async function runExecution(
   let privilegeFailure: string | null = null;
   /** M9-05: the component inventory refused the arm before any release (setup_failed, cost 0, no campaign stop). */
   let inventoryRefused: string | null = null;
+  /** M10-08c: the sandbox ended or was replaced before the provider release (setup_failed, cost 0). */
+  let notLive: string | null = null;
   let egressStop: string | null = null;
   const egressFail = (m: string) => {
     egressFailure = m;
@@ -1746,6 +1749,25 @@ export async function runExecution(
         inventoried(manifest.image.revision);
       let runEnded = false;
       running.then(() => (runEnded = true), () => (runEnded = true));
+      /** M10-08c: right before each release, the sandbox still runs as this execution (not ended, removed or replaced). */
+      const stillLive = async () => {
+        const st = runEnded ? null : await bounded(
+          env.docker.state(name),
+          opMs,
+          `docker inspect ${name}`,
+        );
+        if (runEnded || !st?.running || st.execution !== id) {
+          throw new Error(
+            `${name} is no longer live as execution ${id} (${
+              runEnded
+                ? "its run ended"
+                : st === null
+                ? "gone"
+                : `running ${st.running}, execution ${st.execution ?? "(none)"}`
+            }); nothing released`,
+          );
+        }
+      };
       /**
        * A run that ended on its own before it was seen running (run.ps1's exit 5).
        * Downgraded only when a cg_inventory refusal is proven; every other
@@ -1776,23 +1798,25 @@ export async function runExecution(
         }
       }
       if (inv && privilegeError === null && !stop.aborted) {
-        // Fail closed: only a parsed ok record lets the run continue; a
-        // refusal, a missing record (run ended, timeout) or a malformed one
-        // releases nothing and is a pre-start refusal (never a campaign stop).
-        const refused = await inventoryRefusal(
-          p,
-          adapter,
+        // Fail closed: only an ok record seen live lets the run continue; a
+        // refusal, a missing or late record (run ended, timeout) or a
+        // malformed one releases nothing and is a pre-start refusal (never a
+        // campaign stop).
+        const proof = await inventoryProof(
+          p.raw,
           manifest,
-          () => runEnded || stop.aborted,
+          () => runEnded,
+          stop,
           env.inventoryTimeoutMs ?? PREFLIGHT_TIMEOUT_MS,
         );
-        if (stop.aborted) {
+        if (stop.aborted || proof.kind === "cancelled") {
           // The operator's interrupt already stops the run.
         } else if (
-          refused !== null && (endedEarly === null || refused.provenRefusal)
+          proof.kind !== "proven" &&
+          (endedEarly === null || proof.kind === "image_refusal")
         ) {
           inventoryRefused = `component inventory: ${
-            refused.problems.join("; ")
+            proof.problems.join("; ")
           }`;
           egressStop = "component_inventory_refused";
           egressAbort.abort(new Error(inventoryRefused));
@@ -1823,6 +1847,7 @@ export async function runExecution(
           reg = r.reg;
           credForms = proxyCredentialForms(r.credential);
           await commitCustody(credForms);
+          await stillLive();
           await writeSecretFiles(dir, [credForms[0]!]);
           const lines = await bounded(
             eg.probe(name, hosts),
@@ -1872,6 +1897,16 @@ export async function runExecution(
       }
       if (!stop.aborted) {
         try {
+          // After the inventory wait and the preflight: a sandbox that ended
+          // or was replaced meanwhile gets no provider secret and no ready.
+          await stillLive();
+        } catch (err) {
+          notLive = msg(err);
+          egressAbort.abort(new Error(notLive));
+        }
+      }
+      if (!stop.aborted) {
+        try {
           await release();
           armed = true;
         } catch (err) {
@@ -1885,6 +1920,7 @@ export async function runExecution(
       if (inventoryRefused !== null) {
         throw new ConfigurationError(inventoryRefused);
       }
+      if (notLive !== null) throw new ConfigurationError(notLive);
       // A sandbox that never started ran nothing: the start-failure rules apply.
       if (privilegeError !== null && sandbox.started) {
         egressStop = privilegeStop;
@@ -2002,7 +2038,7 @@ export async function runExecution(
     mode,
     stub,
     egressStop,
-    preStart: inventoryRefused !== null,
+    preStart: inventoryRefused !== null || notLive !== null,
   });
   await publishDraft(env, cell, draft, staged.pristine, true);
   if (privilegeFailure !== null) {
@@ -2077,26 +2113,40 @@ async function sandboxAddress(
 }
 
 /**
- * M9-05: wait for run.ps1's cg_inventory line in the raw log (the run ends or
- * PREFLIGHT_TIMEOUT_MS passes first: fail closed), then let the adapter's own
- * parser judge it. null: the inventory is proven (or the operator stopped the
- * run); otherwise the adapter's problems, which refuse the arm before release.
- * provenRefusal: exactly one record, a JSON cg_inventory with ok false and
- * non-empty problems (the image itself refused; not a missing or odd record).
+ * The outcome of the inventory wait (M9-05, M10-08c). proven: exactly one
+ * complete record of the strict shape, ok, seen live. cancelled: the operator
+ * stopped the run. image_refusal: exactly one strict ok-false record (the
+ * image itself refused; may be seen late: a refusal releases nothing).
+ * not_live: no complete record before the deadline while the run ran (a late
+ * record is a diagnostic only). malformed: a live record the adapter refuses.
  */
-async function inventoryRefusal(
-  p: ReturnType<typeof privatePaths>,
-  adapter: ReturnType<typeof adapterFor>,
+export type InventoryProof =
+  | { kind: "proven" }
+  | { kind: "cancelled" }
+  | {
+    kind: "image_refusal" | "not_live" | "malformed";
+    problems: string[];
+  };
+
+/**
+ * M9-05: wait for run.ps1's cg_inventory line in the raw log (the run ends or
+ * waitMs passes first: fail closed), then let the adapter's own parser judge
+ * it. M10-08c: every poll reads one immutable snapshot of the raw log; only a
+ * snapshot read before the deadline and while the run had not ended (both
+ * checked after the read) can prove; the verdict is that snapshot's alone.
+ */
+export async function inventoryProof(
+  raw: string,
   manifest: ResolvedManifest,
-  over: () => boolean,
+  ended: () => boolean,
+  stop: AbortSignal,
   waitMs: number,
-): Promise<{ problems: string[]; provenRefusal: boolean } | null> {
+): Promise<InventoryProof> {
   const deadline = performance.now() + waitMs;
   /** Every complete line whose DECODED JSON type is cg_inventory (as the adapter counts; M9-05b run 002). */
   // M9-05b run 003: the adapter's own reader (BOM stripping, line splitting,
   // decoding, an unterminated final line included), so both see the same records.
-  const records = async () => {
-    const text = await Deno.readTextFile(p.raw).catch(() => "");
+  const records = (text: string) => {
     const { lines } = readRecords<{
       type?: unknown;
       v?: unknown;
@@ -2113,13 +2163,19 @@ async function inventoryRefusal(
       terminated: l.line < segments,
     }));
   };
-  while (
-    !(await records()).some((r) => r.terminated) && !over() &&
-    performance.now() < deadline
-  ) {
+  let text = "";
+  let live = true;
+  for (;;) {
+    if (stop.aborted) return { kind: "cancelled" };
+    text = await Deno.readTextFile(raw).catch(() => "");
+    // After the read: a run never restarts, so a snapshot taken while it
+    // still runs, before the deadline, was seen live.
+    live = !ended() && performance.now() < deadline;
+    if (!live || records(text).some((r) => r.terminated)) break;
     await new Promise((r) => setTimeout(r, 50));
   }
-  const recs = await records();
+  if (stop.aborted) return { kind: "cancelled" };
+  const recs = records(text);
   // The record, only when exactly one exists, newline-terminated, with the
   // adapter's strict shape (same keys, v 1, string lists), ok false and problems.
   let refusalRecord: string[] | null = null;
@@ -2131,30 +2187,51 @@ async function inventoryRefusal(
   ) {
     refusalRecord = r.problems;
   }
-  // A run that ended (or timed out) without a record is named by the parse below.
+  // A run that ended (or timed out) without a record is named by the parse
+  // below: the adapter's parser on the same snapshot, never a second read.
+  let problems: string[];
   try {
-    const parsed = await adapter.parse({
-      rawLog: p.raw,
-      stderrLog: p.stderr,
+    problems = parseClaudeStream(text, {
+      rawLog: raw,
       exitCode: null,
       manifest,
       pricing: { at: "", models: {} },
-      traceOut: p.trace,
-    });
-    const problems = parsed.inventoryProblems ?? [];
-    // The proof is exactly one decoded record of the strict shape (above); the
-    // adapter's problems being precisely the record's own is an extra check.
-    const provenRefusal = refusalRecord !== null &&
-      problems.length === refusalRecord.length &&
-      problems.every((x, i) => x === refusalRecord![i]);
-    return problems.length > 0 ? { problems, provenRefusal } : null;
+    }).inventoryProblems ?? [];
   } catch (err) {
     if (!(err instanceof ValidationError)) throw err;
+    problems = [`inventory not provable: ${err.message}`];
+  }
+  // The proof is exactly one decoded record of the strict shape (above); the
+  // adapter's problems being precisely the record's own is an extra check.
+  if (
+    refusalRecord !== null && problems.length === refusalRecord.length &&
+    problems.every((x, i) => x === refusalRecord![i])
+  ) {
+    return { kind: "image_refusal", problems };
+  }
+  if (!live) {
+    const late = problems.length > 0
+      ? problems
+      : recs.length > 0
+      ? ["a cg_inventory record arrived only afterwards (never proof)"]
+      : [];
     return {
-      problems: [`inventory not provable: ${err.message}`],
-      provenRefusal: false,
+      kind: "not_live",
+      problems: [
+        "no complete cg_inventory record seen live (before the deadline, while the sandbox ran)",
+        ...late,
+      ],
     };
   }
+  if (problems.length === 0 && recs.length === 1 && recs[0]!.terminated) {
+    return { kind: "proven" };
+  }
+  return {
+    kind: "malformed",
+    problems: problems.length > 0
+      ? problems
+      : ["cg_inventory record is not exactly one complete line"],
+  };
 }
 
 /** Wait (bounded) until the sandbox runs; a run that settles first fails the wait. */
@@ -2600,7 +2677,9 @@ export async function runCell(
  * Startup: remove this owner's leftover sandboxes, then its stale secret
  * custody dirs (M1-20 handoff: the mounts are released first), then complete
  * every attempt a killed runner left behind (review gate 5, round 2 item 3,
- * round 3 B3).
+ * round 3 B3). M10-08c: env.owner is the private root's namespace owner,
+ * whose lock the environment holds: another environment's live sandboxes are
+ * never listed.
  */
 export async function recoverInterrupted(
   env: HarnessEnv,

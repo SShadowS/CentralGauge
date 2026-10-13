@@ -6,7 +6,8 @@
  * container absent) before anyone may touch the workspace.
  */
 
-import { basename, dirname, join } from "@std/path";
+import { createHash } from "node:crypto";
+import { basename, dirname, join, resolve } from "@std/path";
 import { dockerContextEnv } from "../container/docker-context.ts";
 import {
   CentralGaugeError,
@@ -20,7 +21,23 @@ import { redactPatterns, redactPatternText } from "./redact-patterns.ts";
 export type { SecretValue } from "./fsutil.ts";
 
 export const SANDBOX_PREFIX = "cg-harness-";
+/** Name prefix of the never-started containers that read a file from an image. */
+export const READ_PREFIX = `${SANDBOX_PREFIX}read-`;
 export const OWNER_LABEL = "centralgauge.harness.owner";
+
+/**
+ * M10-08c: the owner of one recovery namespace (a private root) on a host.
+ * Environments with another private root (another worktree or lane) carry
+ * another owner, so their sweeps never list each other's sandboxes; one live
+ * environment per private root is the namespace lock's job.
+ */
+export function namespaceOwner(host: string, privateRoot: string): string {
+  const root = resolve(privateRoot);
+  const key = Deno.build.os === "windows" ? root.toLowerCase() : root;
+  return `${host}-${
+    createHash("sha256").update(key).digest("hex").slice(0, 12)
+  }`;
+}
 export const EXECUTION_LABEL = "centralgauge.harness.execution";
 export const MIN_SECRET_LENGTH = 16;
 export const OP_TIMEOUT_MS = 60_000;
@@ -398,7 +415,7 @@ export function imageReadCreateArgs(image: string, owner: string): string[] {
   return [
     "create",
     "--name",
-    `${SANDBOX_PREFIX}read-${crypto.randomUUID().slice(0, 12)}`,
+    `${READ_PREFIX}${crypto.randomUUID().slice(0, 12)}`,
     "--label",
     `${OWNER_LABEL}=${owner}`,
     image,
@@ -797,10 +814,16 @@ export async function runSandbox(
   return r;
 }
 
+/**
+ * Remove every container of `owner` whose name has `prefix`, each confirmed
+ * gone (or throw). M10-08c: `owner` is a namespace owner (namespaceOwner)
+ * whose namespace lock the caller holds, so no live environment is touched.
+ */
 export async function sweepOwnedSandboxes(
   docker: DockerCli,
   owner: string,
   opTimeoutMs = OP_TIMEOUT_MS,
+  prefix = SANDBOX_PREFIX,
 ): Promise<string[]> {
   const names = await bounded(
     docker.listOwned(owner),
@@ -809,7 +832,7 @@ export async function sweepOwnedSandboxes(
   );
   // The owner label is filtered by docker; the prefix is re-checked here, so
   // a container needs both to be touched.
-  const ours = names.filter((n) => n.startsWith(SANDBOX_PREFIX));
+  const ours = names.filter((n) => n.startsWith(prefix));
   const failed: string[] = [];
   for (const n of ours) {
     try {

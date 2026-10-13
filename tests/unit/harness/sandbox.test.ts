@@ -12,9 +12,12 @@ import { exists, validatedDir } from "../../../src/harness/fsutil.ts";
 import {
   buildRunArgs,
   EXECUTION_LABEL,
+  imageReadCreateArgs,
+  namespaceOwner,
   OWNER_LABEL,
   prepareSecrets,
   publishRedacted,
+  READ_PREFIX,
   realDocker,
   redactText,
   removeSecrets,
@@ -1317,22 +1320,64 @@ Deno.test("buildRunArgs (M10-01d): --memory 3g right after --isolation hyperv, f
 });
 
 // M10-08c: a sweep removes only the sweeping process's own executions; another
-// live process on the same host (same owner label) keeps its containers.
-// API assumption: a 4th argument lists the sweeper's own execution ids. The
-// call is cast so the red test fails on its assertion, not at type-check.
+// live process on the same host keeps its containers. API: every environment
+// labels its sandboxes with its private root's namespace owner (namespaceOwner,
+// one live environment per root under the root's lock), so two environments
+// on one host never list each other's sandboxes.
 Deno.test("sweep removes only containers of its own executions, not another process's on the same host", async () => {
   const d = new FakeDocker();
+  const own = namespaceOwner("HOST1", "C:/cg/lane-a/private");
+  const foreign = namespaceOwner("HOST1", "C:/cg/lane-b/private");
+  const ownerOf = new Map([
+    ["cg-harness-aaaaaaaa-11111111", own],
+    ["cg-harness-bbbbbbbb-22222222", foreign],
+  ]);
   d.owned = ["cg-harness-aaaaaaaa-11111111", "cg-harness-bbbbbbbb-22222222"];
   d.containers.set("cg-harness-aaaaaaaa-11111111", "exec-own");
   d.containers.set("cg-harness-bbbbbbbb-22222222", "exec-foreign");
-  const sweep = sweepOwnedSandboxes as unknown as (
-    docker: FakeDocker,
-    owner: string,
-    opMs: number,
-    own: ReadonlySet<string>,
-  ) => Promise<string[]>;
-  const swept = await sweep(d, "HOST1", 50, new Set(["exec-own"]));
+  // Like realDocker.listOwned: docker filters on the owner label.
+  d.listOwned = (o) =>
+    Promise.resolve(d.owned.filter((n) => ownerOf.get(n) === o));
+  const swept = await sweepOwnedSandboxes(d, own, 50);
   assertEquals(swept, ["cg-harness-aaaaaaaa-11111111"]);
   assertEquals(d.removed, ["cg-harness-aaaaaaaa-11111111"]);
   assert(d.containers.has("cg-harness-bbbbbbbb-22222222"), "foreign survives");
+});
+
+Deno.test("namespaceOwner (M10-08c): one owner per private root, stable across restarts, distinct per root, a valid custody owner", async () => {
+  const a = namespaceOwner("HOST1", "C:/cg/lane-a/private");
+  assertEquals(namespaceOwner("HOST1", "C:/cg/lane-a/private"), a, "restart");
+  assert(a !== namespaceOwner("HOST1", "C:/cg/lane-b/private"));
+  assert(a !== namespaceOwner("HOST2", "C:/cg/lane-a/private"));
+  assert(/^HOST1-[0-9a-f]{12}$/.test(a), a);
+  if (Deno.build.os === "windows") {
+    assertEquals(namespaceOwner("HOST1", "c:\\CG\\Lane-A\\private"), a);
+  }
+  // Custody dirs carry the owner in their name (sweepStaleSecrets lists them).
+  const root = await tmp();
+  await Deno.mkdir(join(root, "secrets", `cg-harness-secrets-${a}.x`), {
+    recursive: true,
+  });
+  assertEquals(await sweepStaleSecrets(root, a), [`cg-harness-secrets-${a}.x`]);
+});
+
+// M10-08c review: image-read throwaway containers (never started, no execution
+// label) stay covered: an environment's read carries its namespace owner and
+// its sweep removes it; a READ_PREFIX sweep touches read containers only.
+Deno.test("image-read orphans (M10-08c): swept with their owner's namespace; a read-only sweep leaves sandboxes alone", async () => {
+  const own = namespaceOwner("HOST1", "C:/cg/lane-a/private");
+  const args = imageReadCreateArgs("sha256:" + "a".repeat(64), own);
+  const read = args[args.indexOf("--name") + 1]!;
+  assert(read.startsWith(READ_PREFIX), read);
+  assertEquals(args[args.indexOf("--label") + 1], `${OWNER_LABEL}=${own}`);
+  // The environment's startup sweep: its read leftover goes with its sandboxes.
+  const d = new FakeDocker();
+  d.owned = [read, "cg-harness-aaaaaaaa-11111111"];
+  assertEquals(await sweepOwnedSandboxes(d, own, 50), d.owned);
+  assertEquals(d.removed, d.owned);
+  // `images build` (bare host owner, no private root): read containers only.
+  const b = new FakeDocker();
+  b.owned = [read, "cg-harness-aaaaaaaa-11111111"];
+  assertEquals(await sweepOwnedSandboxes(b, "HOST1", 50, READ_PREFIX), [read]);
+  assertEquals(b.removed, [read]);
 });

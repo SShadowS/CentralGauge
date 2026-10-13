@@ -151,7 +151,11 @@ import {
   loadQualifyManifest,
   variantAllowed,
 } from "../../src/harness/qualify.ts";
-import { realDocker } from "../../src/harness/sandbox.ts";
+import {
+  READ_PREFIX,
+  realDocker,
+  sweepOwnedSandboxes,
+} from "../../src/harness/sandbox.ts";
 import { applyOverlay, TASK_SOURCES } from "../../src/harness/staging.ts";
 import {
   altoolReader,
@@ -996,7 +1000,10 @@ export async function harnessImagesBuild(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );
   }
-  // Same owner as a harness env (the hostname): a leftover read container is swept.
+  // M10-08c: harness envs read under their private root's owner; a build
+  // reads under the bare hostname and sweeps that owner's read leftovers (a
+  // read container is never started and holds no secret).
+  await sweepOwnedSandboxes(docker, Deno.hostname(), undefined, READ_PREFIX);
   const f = await imageFacts(docker, tag, Deno.hostname());
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(

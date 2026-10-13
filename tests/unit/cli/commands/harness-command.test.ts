@@ -86,7 +86,7 @@ import { FakeBc } from "../../harness/fake-bc.ts";
 import { ADMIN_GROUPS_CSV, FakeDocker } from "../../harness/fake-docker.ts";
 import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
 import { holdExclusive } from "../../harness/hold-file.ts";
-import { READY_FILE } from "../../../../src/harness/sandbox.ts";
+import { namespaceOwner, READY_FILE } from "../../../../src/harness/sandbox.ts";
 import {
   CATALOG,
   ccBehavior,
@@ -6042,4 +6042,44 @@ Deno.test("harnessReport (M11-12): a pre-registered campaign reads measure recor
     x.arm === "plain" && x.metric === "final_errors"
   )!;
   assertEquals([row.value, row.cells], [2, 1]);
+});
+
+// M10-08c: concurrent environments on one host (another worktree or lane, its
+// own private root) never sweep each other's sandboxes; a second environment
+// on the same private root is refused by the root's lock before any sweep; a
+// restart on the root recovers its predecessor's leftovers under the same owner.
+Deno.test("openHarnessEnv (M10-08c): one namespace owner per private root; its lock refuses a second environment before any sweep; a restart sweeps the same owner", async () => {
+  const t = await makeEnv();
+  const other = await makeEnv();
+  const owners: string[] = [];
+  const track = (order: string[]) => {
+    const d = deps(order);
+    const docker = d.docker();
+    const listOwned = docker.listOwned.bind(docker);
+    docker.listOwned = (o) => {
+      owners.push(o);
+      return listOwned(o);
+    };
+    return d;
+  };
+  const own = namespaceOwner("HOST1", t.env.privateRoot);
+  const a = await openHarnessEnv(envOpts(t), track([]));
+  assertEquals(a.env.owner, own);
+  assertEquals(owners, [own, own], "startup and recovery sweep a's owner");
+  const b = await openHarnessEnv(envOpts(other), track([]));
+  assert(b.env.owner !== own && b.env.owner.startsWith("HOST1-"));
+  assertEquals(owners.slice(2), [b.env.owner, b.env.owner], "b lists only b's");
+  const order: string[] = [];
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), track(order)),
+    BenchLockHeldError,
+  );
+  assertEquals(order, ["lock", "release"], "refused before any sweep");
+  await b.close();
+  await a.close();
+  const restart: string[] = [];
+  const r = await openHarnessEnv(envOpts(t), track(restart));
+  assertEquals(r.env.owner, own, "a restart keeps the owner");
+  assertEquals(owners.slice(4), [own, own]);
+  await r.close();
 });

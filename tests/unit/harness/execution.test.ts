@@ -22,6 +22,7 @@ import {
 import {
   type CellRef,
   type HarnessEnv,
+  inventoryProof,
   privatePaths,
   type PublishStep,
   recoverInterrupted,
@@ -4397,4 +4398,128 @@ Deno.test("component inventory: a record delivered only after the sandbox ended 
   assertEquals(t.docker.readySeen, false);
   assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
   assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// M10-08c review: the verdict is one immutable snapshot, read while the run
+// still ran and before the deadline; a record that lands after the read (the
+// run ending or the deadline passing meanwhile) is never proof.
+Deno.test("inventoryProof: read and deadline races, an unterminated success, cancellation and a late image refusal keep distinct outcomes", async () => {
+  const t = await inventoriedEnv();
+  const manifest = (await cellFor(t, "cc-v2-inv")).armManifest;
+  const dir = await Deno.makeTempDir({ dir: t.env.privateRoot });
+  const raw = join(dir, "raw.jsonl");
+  const go = new AbortController().signal;
+  const proof = (ended: () => boolean, waitMs = 2000, stop = go) =>
+    inventoryProof(raw, manifest, ended, stop, waitMs);
+  const land = (text: string) => Deno.writeTextFileSync(raw, text);
+
+  land(INV() + "\n");
+  assertEquals(await proof(() => false), { kind: "proven" }, "live control");
+
+  // Read race: the record lands right after the read and the run ends.
+  land("");
+  let r = await proof(() => (land(INV() + "\n"), true));
+  assertEquals(r.kind, "not_live", "read race");
+  assertStringIncludes((r as { problems: string[] }).problems[0]!, "live");
+
+  // Deadline race: the record lands after the read, the deadline has passed.
+  land("");
+  r = await proof(() => (land(INV() + "\n"), false), 0);
+  assertEquals(r.kind, "not_live", "deadline race");
+
+  // An unterminated success is never complete: refused at the deadline.
+  land(INV());
+  r = await proof(() => false, 200);
+  assertEquals(r.kind, "not_live", "unterminated success");
+
+  // The same record after the run ended: a diagnostic only.
+  land(INV() + "\n");
+  r = await proof(() => true);
+  assertEquals(r.kind, "not_live", "late ok record");
+  assertStringIncludes(
+    (r as { problems: string[] }).problems.join("; "),
+    "never proof",
+  );
+
+  // A strict image refusal stays a refusal, even late.
+  land(INV({ ok: false, installed: [], problems: ["x"] }) + "\n");
+  assertEquals(await proof(() => true), {
+    kind: "image_refusal",
+    problems: ["x"],
+  });
+
+  // A live record the adapter refuses is malformed, not a refusal.
+  land(INV({ extra: 1 }) + "\n");
+  assertEquals((await proof(() => false)).kind, "malformed");
+
+  const stop = new AbortController();
+  stop.abort();
+  assertEquals(await proof(() => false, 2000, stop.signal), {
+    kind: "cancelled",
+  });
+});
+
+// M10-08c review: a sandbox removed during the preflight (another process's
+// rm -f) gets no proxy credential: liveness and identity are rechecked first.
+Deno.test("enforced run: a sandbox removed before the proxy credential release gets no credential", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const register = eg.register;
+  eg.register = (o) => {
+    const r = register(o);
+    void t.docker.rm(t.docker.runs[0]!.name);
+    return r;
+  };
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "no longer live",
+  );
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed");
+  assertEquals(t.docker.secretsAtKill ?? [], [], "no proxy credential");
+  assert(!eg.events.includes("probe"), "no preflight");
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e!.id), []);
+});
+
+Deno.test("enforced run: a sandbox removed after the preflight gets no provider secret and no ready", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const verify = eg.verify;
+  let calls = 0;
+  eg.verify = () => {
+    if (++calls === 2) void t.docker.rm(t.docker.runs[0]!.name);
+    return verify();
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e.id)).setup_error, "no longer live");
+  assertEquals(t.docker.secretsAtKill, ["proxy-credential"]);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+Deno.test("a sandbox replaced under its name before the release gets nothing (identity rechecked)", async () => {
+  const t = await makeEnv();
+  const exec = t.docker.exec.bind(t.docker);
+  t.docker.exec = async (name, user, argv) => {
+    const r = await exec(name, user, argv);
+    // Ours is removed and another execution's container takes the name.
+    await t.docker.rm(name);
+    t.docker.containers.set(name, "another-execution");
+    return r;
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e.id)).setup_error, "no longer live");
+  assertEquals(t.docker.secretsAtKill, []);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assert(
+    t.docker.containers.has(t.docker.runs[0]!.name),
+    "the other execution's container is left alone",
+  );
 });

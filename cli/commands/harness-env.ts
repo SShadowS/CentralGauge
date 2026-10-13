@@ -51,6 +51,7 @@ import { loadPricingBook } from "../../src/harness/pricing.ts";
 import { RecordStore } from "../../src/harness/records.ts";
 import {
   bounded,
+  namespaceOwner,
   realDocker,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
@@ -415,7 +416,15 @@ export async function openHarnessEnv(
     await store.sweepTemp();
     await sweepWorkspaceTemp(o.resultsDir, o.privateRoot);
     const docker = deps.docker();
-    const owner = deps.owner();
+    // M10-08c: the sweeps here and in recoverInterrupted are crash recovery
+    // of this private root only (its intents, secrets and sandboxes): its
+    // exclusive lock first, then its own owner label, never the host's.
+    closers.push(
+      acquireBenchLock(o.privateRoot, {
+        command: `${o.command} (private root)`,
+      }),
+    );
+    const owner = namespaceOwner(deps.owner(), o.privateRoot);
     const swept = await sweepOwnedSandboxes(docker, owner);
     if (swept.length > 0) {
       console.log(
