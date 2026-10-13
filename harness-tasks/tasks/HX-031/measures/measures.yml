@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "86080/SinglePostCounted": 1
+    "86080/BatchPostCounted": 1
+    "86080/RefusedBatchContractCountsFailed": 1
+    "86080/RefusedSinglePostCountsFailed": 1
+    "86080/UnreturnedContractCountsFailed": 1
+    "86080/PostRightAfterReturnKeepsPostingError": 1
+    "86080/FiguresSharedAcrossInstances": 1
+    "86080/ResetClearsFigures": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
