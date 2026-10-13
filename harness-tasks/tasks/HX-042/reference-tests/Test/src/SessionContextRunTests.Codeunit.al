@@ -63,16 +63,16 @@ codeunit 80086 "CGR Session Context Run Tests"
         CachedPrecision := Loaded."Amount Rounding Precision";
         CachedCurrentBranch := SessionContext.CurrentBranch();
 
-        Assert.AreEqual('', FirstBranch, 'Without a setup row the loaded setup is empty');
-        Assert.AreEqual(0.0, FirstPrecision, 'Without a setup row the loaded setup is empty');
-        Assert.AreEqual('', CachedBranch, 'A setup row created later does not reach the loaded setup');
-        Assert.AreEqual(0.0, CachedPrecision, 'A setup row created later does not reach the loaded setup');
+        Assert.AreEqual('', FirstBranch, 'Without a setup row the loaded Default Branch Code is empty');
+        Assert.AreEqual(0.0, FirstPrecision, 'Without a setup row the loaded Amount Rounding Precision is 0');
+        Assert.AreEqual('', CachedBranch, 'A setup row created later does not reach the loaded Default Branch Code');
+        Assert.AreEqual(0.0, CachedPrecision, 'A setup row created later does not reach the loaded Amount Rounding Precision');
         Assert.AreEqual('', CachedCurrentBranch, 'The default branch comes from the loaded, empty setup');
 
         SessionContext.RefreshSetup();
         SessionContext.GetSetup(Loaded);
-        Assert.AreEqual('NORTH', Loaded."Default Branch Code", 'After a refresh the new setup row is loaded');
-        Assert.AreEqual(0.05, Loaded."Amount Rounding Precision", 'After a refresh the new setup row is loaded');
+        Assert.AreEqual('NORTH', Loaded."Default Branch Code", 'After a refresh the Default Branch Code of the new setup row is loaded');
+        Assert.AreEqual(0.05, Loaded."Amount Rounding Precision", 'After a refresh the Amount Rounding Precision of the new setup row is loaded');
     end;
 
     [Test]
