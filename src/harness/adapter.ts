@@ -78,6 +78,12 @@ export interface HarnessAdapter {
     repoRoot: string;
     qualify: QualifyManifest | null;
   }): { src: string; dst: string }[];
+  /**
+   * H-03: why this manifest's harness version may not run at a level (dev:
+   * any non-stub execution; campaign: a campaign arm), or null. Asked before
+   * any reservation or secret read.
+   */
+  unqualified?(m: ResolvedManifest, level: "dev" | "campaign"): string | null;
 }
 
 /** Declared fields that came back null or empty (they go to validity.incomplete_telemetry). */

@@ -58,6 +58,7 @@ import {
   AL_LSP_SHIPPED,
   AL_TOOLS_DEF,
   BASE_IMAGE,
+  CLAUDE_CODE_RESOLVED,
   FROZEN_IMAGE_TAGS,
   imageTag,
   lspLabel,
@@ -91,8 +92,14 @@ import {
 import { FakeBc } from "../../harness/fake-bc.ts";
 import {
   ADMIN_GROUPS_CSV,
+  CC_MAIN_URL,
+  CC_REL,
+  ccFetch,
+  ccLabels,
+  ccRel,
+  ccResolvedJson,
+  ccWinUrl,
   FakeDocker,
-  fakeFetch,
   LSP_REL,
   lspReleaseLabels,
   lspResolvedJson,
@@ -1145,20 +1152,22 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
     li > 0 && baseArgs[li - 1] === "--label" && li < baseArgs.indexOf("-t"),
     `base build labels al-tools before -t: ${baseArgs.join(" ")}`,
   );
+  // H-03: claude-code builds resolve their version; the generic build path
+  // (an explicit --version) is shown on the pi harness.
   const labels = {
-    "centralgauge.harness": "claude-code",
-    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness": "pi",
+    "centralgauge.harness.version": "0.87.1",
     "centralgauge.harness.base_digest": baseId,
   };
-  // H-01 run 005: the changed Dockerfile builds under the r2 tag, never the frozen 2.1.282.
-  docker.buildResults.set("centralgauge/harness-claude-code:2.1.282-r2", {
+  // H-01 run 005: the changed Dockerfile builds under the r2 tag, never the frozen 0.87.1.
+  docker.buildResults.set("centralgauge/harness-pi:0.87.1-r2", {
     id: `sha256:${"c".repeat(64)}`,
     labels: { ...labels, "centralgauge.harness.revision": "2" },
     layers: ["l1", "l2", "l3"],
   });
   const f = await harnessImagesBuild(
-    "claude-code",
-    { root, version: "2.1.282", revision: "2" },
+    "pi",
+    { root, version: "0.87.1", revision: "2" },
     docker,
   );
   const args = docker.builds[1]!.join(" ");
@@ -1170,14 +1179,13 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
   assertStringIncludes(args, `centralgauge.harness.base_digest=${baseId}`);
   assertEquals(f.digest, `sha256:${"c".repeat(64)}`);
   // A new tag (an existing one is refused) whose layers miss the base's.
-  docker.buildResults.set("centralgauge/harness-claude-code:2.1.283", {
+  docker.buildResults.set("centralgauge/harness-pi:0.87.2", {
     id: `sha256:${"d".repeat(64)}`,
-    labels: { ...labels, "centralgauge.harness.version": "2.1.283" },
+    labels: { ...labels, "centralgauge.harness.version": "0.87.2" },
     layers: ["x1", "l3"],
   });
   await assertRejects(
-    () =>
-      harnessImagesBuild("claude-code", { root, version: "2.1.283" }, docker),
+    () => harnessImagesBuild("pi", { root, version: "0.87.2" }, docker),
     ConfigurationError,
     "layers",
   );
@@ -1208,23 +1216,24 @@ Deno.test("harnessImagesBuild: a base tag that moves between inspect and build c
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
-  // H-01 run 005: the r2 tag (2.1.282 itself is frozen and never built).
-  const tag = "centralgauge/harness-claude-code:2.1.282-r2";
+  // H-01 run 005: the r2 tag (0.87.1 itself is frozen and never built).
+  // H-03: on pi, since claude-code builds resolve their version.
+  const tag = "centralgauge/harness-pi:0.87.1-r2";
   docker.build = (args) => {
     docker.builds.push(args);
     // Someone rebuilds the base tag while this build runs.
     docker.addImage(BASE_IMAGE, `sha256:${"9".repeat(64)}`, {}, ["m1"]);
     docker.addImage(tag, `sha256:${"c".repeat(64)}`, {
-      "centralgauge.harness": "claude-code",
-      "centralgauge.harness.version": "2.1.282",
+      "centralgauge.harness": "pi",
+      "centralgauge.harness.version": "0.87.1",
       "centralgauge.harness.base_digest": baseId,
       "centralgauge.harness.revision": "2",
     }, ["l1", "l2", "l3"]);
     return Promise.resolve(0);
   };
   const f = await harnessImagesBuild(
-    "claude-code",
-    { root, version: "2.1.282", revision: "2" },
+    "pi",
+    { root, version: "0.87.1", revision: "2" },
     docker,
   );
   const args = docker.builds[0]!.join(" ");
@@ -4032,12 +4041,13 @@ Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
+  // H-03: the explicit --version path, on pi (claude-code builds resolve).
   const labels = {
-    "centralgauge.harness": "claude-code",
-    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness": "pi",
+    "centralgauge.harness.version": "0.87.1",
     "centralgauge.harness.base_digest": baseId,
   };
-  const r2 = "centralgauge/harness-claude-code:2.1.282-r2";
+  const r2 = "centralgauge/harness-pi:0.87.1-r2";
   docker.buildResults.set(r2, {
     id: `sha256:${"c".repeat(64)}`,
     labels: { ...labels, "centralgauge.harness.revision": "2" },
@@ -4047,8 +4057,8 @@ Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag
   let f;
   try {
     f = await harnessImagesBuild(
-      "claude-code",
-      { root, version: "2.1.282", revision: "2" },
+      "pi",
+      { root, version: "0.87.1", revision: "2" },
       docker,
     );
   } finally {
@@ -4086,7 +4096,7 @@ Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag
   assertEquals(f.revision, null);
 
   // A label that did not land on the image is refused, as is a bad shape.
-  docker.buildResults.set("centralgauge/harness-claude-code:2.1.282-r3", {
+  docker.buildResults.set("centralgauge/harness-pi:0.87.1-r3", {
     id: `sha256:${"e".repeat(64)}`,
     labels,
     layers: ["l1", "l2", "l3"],
@@ -4094,8 +4104,8 @@ Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag
   await assertRejects(
     () =>
       harnessImagesBuild(
-        "claude-code",
-        { root, version: "2.1.282", revision: "3" },
+        "pi",
+        { root, version: "0.87.1", revision: "3" },
         docker,
       ),
     ConfigurationError,
@@ -4106,8 +4116,8 @@ Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag
     await assertRejects(
       () =>
         harnessImagesBuild(
-          "claude-code",
-          { root, version: "2.1.282", revision: bad },
+          "pi",
+          { root, version: "0.87.1", revision: bad },
           docker,
         ),
       ConfigurationError,
@@ -5473,21 +5483,28 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
   const [lk, lv] = (await lspLabel(root))!;
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
-  const tag = "centralgauge/harness-claude-code:2.1.282-r3";
+  // H-03: the resolved Claude Code version names the tag; the alias rides along.
+  const tag = imageTag("claude-code", CC_REL.version, "3");
+  const alias = imageTag("claude-code", "latest", "3");
   const id = `sha256:${"c".repeat(64)}`;
   const labels = {
     "centralgauge.harness": "claude-code",
-    "centralgauge.harness.version": "2.1.282",
     "centralgauge.harness.base_digest": baseId,
     "centralgauge.harness.revision": "3",
+    ...ccLabels(),
   };
   // An existing tag is refused: each build starts with no tag and produces it.
   docker.buildResults.set(tag, { id, labels, layers: ["l1", "l2"] });
-  const o = { root, version: "2.1.282", revision: "3" };
+  docker.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson());
+  const o = {
+    root,
+    revision: "3",
+    publishLockDir: join(root, "publish-lock"),
+  };
   // M10-10 fixture: the GitHub API is injected (never called for real); the
   // built image carries the release labels and resolved file.
   await assertRejects(
-    () => harnessImagesBuild("claude-code", o, docker, fakeFetch()),
+    () => harnessImagesBuild("claude-code", o, docker, ccFetch()),
     ConfigurationError,
     `label ${lk} did not land`,
   );
@@ -5495,6 +5512,7 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
   const i = args.indexOf(`${lk}=${lv}`);
   assert(i > 0 && args[i - 1] === "--label" && i < args.indexOf("-t"));
   docker.tags.delete(tag);
+  docker.tags.delete(alias);
   docker.buildResults.set(tag, {
     id,
     labels: { ...labels, [lk]: lv, ...lspReleaseLabels() },
@@ -5503,7 +5521,7 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
   docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
   assertEquals(
-    (await harnessImagesBuild("claude-code", o, docker, fakeFetch())).lsp
+    (await harnessImagesBuild("claude-code", o, docker, ccFetch())).lsp
       ?.["al"]
       ?.tool_schema_hash,
     lv.split(" ")[1],
@@ -6318,26 +6336,17 @@ Deno.test("harnessImagesBuild (M10-08c review 7): each build reads under its own
   const owners: string[][] = [];
   for (const version of ["2.1.290", "2.1.291"]) {
     const id = `sha256:${version === "2.1.290" ? "c" : "d"}`.padEnd(71, "0");
-    docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
-      id,
-      labels: {
-        "centralgauge.harness": "claude-code",
-        "centralgauge.harness.version": version,
-        "centralgauge.harness.base_digest": baseId,
-        [lk]: lv,
-        ...lspReleaseLabels(), // M10-10 fixture
-      },
-      layers: ["l1", "l2"],
-    });
+    // H-03: the registry resolves the version; one dev revision per build.
+    const b = ccBuild(docker, root, id, {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.base_digest": baseId,
+      [lk]: lv,
+      ...lspReleaseLabels(), // M10-10 fixture
+    }, { version, revision: `3-dev-${version.replaceAll(".", "-")}` });
     docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
     docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
     const before = docker.reads.length;
-    await harnessImagesBuild(
-      "claude-code",
-      { root, version },
-      docker,
-      fakeFetch(),
-    );
+    await harnessImagesBuild("claude-code", b.opts, docker, b.fetch);
     owners.push([...new Set(docker.reads.slice(before).map((r) => r.owner))]);
   }
   const host = Deno.hostname();
@@ -6556,18 +6565,13 @@ Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read c
   const [lk, lv] = (await lspLabel(root))!;
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
-  const version = "2.1.290";
   const id = `sha256:${"c".repeat(64)}`;
-  docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
-    id,
-    labels: {
-      "centralgauge.harness": "claude-code",
-      "centralgauge.harness.version": version,
-      "centralgauge.harness.base_digest": baseId,
-      [lk]: lv,
-      ...lspReleaseLabels(), // M10-10 fixture
-    },
-    layers: ["l1", "l2"],
+  // H-03: the registry resolves the version.
+  const b = ccBuild(docker, root, id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+    [lk]: lv,
+    ...lspReleaseLabels(), // M10-10 fixture
   });
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
   docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
@@ -6595,12 +6599,7 @@ Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read c
   const liveRead = "cg-harness-read-live00000000";
   docker.listOwned = (o) =>
     Promise.resolve(o === dead ? [deadRead] : o === live ? [liveRead] : []);
-  await harnessImagesBuild(
-    "claude-code",
-    { root, version },
-    docker,
-    fakeFetch(),
-  );
+  await harnessImagesBuild("claude-code", b.opts, docker, b.fetch);
   assert(
     docker.removed.includes(deadRead),
     "the crashed build's read is swept",
@@ -6652,23 +6651,19 @@ Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed co
     const baseId = `sha256:${"b".repeat(64)}`;
     docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
     const id = `sha256:${"c".repeat(64)}`;
-    docker.buildResults.set("centralgauge/harness-claude-code:2.1.290", {
-      id,
-      labels: {
-        "centralgauge.harness": "claude-code",
-        "centralgauge.harness.version": "2.1.290",
-        "centralgauge.harness.base_digest": baseId,
-        [lk]: lv,
-        ...lspReleaseLabels(), // M10-10 fixture
-      },
-      layers: ["l1", "l2"],
+    // H-03: the registry resolves the version.
+    const b = ccBuild(docker, root, id, {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.base_digest": baseId,
+      [lk]: lv,
+      ...lspReleaseLabels(), // M10-10 fixture
     });
     docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
     docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
     const builds = join(root, "results", "harness", "image-builds");
     const dead = join(builds, `${Deno.hostname()}-build-dead0000`);
     await Deno.mkdir(dead, { recursive: true });
-    return { root, docker, builds, dead };
+    return { root, docker, builds, dead, b };
   };
   const real = Deno.remove;
   // Another build wins the remove of every namespace dir: gone, then ours.
@@ -6688,9 +6683,9 @@ Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed co
   try {
     await harnessImagesBuild(
       "claude-code",
-      { root: raced.root, version: "2.1.290" },
+      raced.b.opts,
       raced.docker,
-      fakeFetch(),
+      raced.b.fetch,
     );
   } finally {
     race.restore();
@@ -6713,9 +6708,9 @@ Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed co
       () =>
         harnessImagesBuild(
           "claude-code",
-          { root: denied.root, version: "2.1.290" },
+          denied.b.opts,
           denied.docker,
-          fakeFetch(),
+          denied.b.fetch,
         ),
       Deno.errors.PermissionDenied,
     );
@@ -6957,17 +6952,12 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
   const [lk, lv] = (await lspLabel(root))!;
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
-  const version = "2.1.290";
   const id = `sha256:${"c".repeat(64)}`;
-  docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
-    id,
-    labels: {
-      "centralgauge.harness": "claude-code",
-      "centralgauge.harness.version": version,
-      "centralgauge.harness.base_digest": baseId,
-      [lk]: lv,
-    },
-    layers: ["l1", "l2"],
+  // H-03: the registry resolves the version.
+  const b = ccBuild(docker, root, id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+    [lk]: lv,
   });
   // `docker cp` lands the file here: the capture itself succeeds.
   const capture = await Deno.makeTempDir();
@@ -6996,13 +6986,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
   );
   try {
     await assertRejects(
-      () =>
-        harnessImagesBuild(
-          "claude-code",
-          { root, version },
-          docker,
-          fakeFetch(),
-        ),
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
       ContainerError,
       "cg-harness-read-",
     );
@@ -7037,18 +7021,13 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read con
   const [lk, lv] = (await lspLabel(root))!;
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
-  const version = "2.1.290";
   const id = `sha256:${"c".repeat(64)}`;
-  docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
-    id,
-    labels: {
-      "centralgauge.harness": "claude-code",
-      "centralgauge.harness.version": version,
-      "centralgauge.harness.base_digest": baseId,
-      [lk]: lv,
-      ...lspReleaseLabels(), // M10-10 fixture
-    },
-    layers: ["l1", "l2"],
+  // H-03: the registry resolves the version.
+  const b = ccBuild(docker, root, id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+    [lk]: lv,
+    ...lspReleaseLabels(), // M10-10 fixture
   });
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
   docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
@@ -7056,12 +7035,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read con
   docker.owned = [legacyRead];
   docker.listOwned = (o) =>
     Promise.resolve(o === Deno.hostname() ? [...docker.owned] : []);
-  await harnessImagesBuild(
-    "claude-code",
-    { root, version },
-    docker,
-    fakeFetch(),
-  );
+  await harnessImagesBuild("claude-code", b.opts, docker, b.fetch);
   assertEquals(docker.removed, [], "no legacy read container removed");
   assert(await docker.state(legacyRead), "the older build's read survives");
 });
@@ -7113,22 +7087,30 @@ Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP rele
   const [lk, lv] = (await lspLabel(root))!;
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
-  const tag = "centralgauge/harness-claude-code:2.1.282-r3";
+  // H-03: the Claude Code version is resolved too (its own tests); this one is about the LSP release.
+  const tag = imageTag("claude-code", CC_REL.version, "3");
+  const alias = imageTag("claude-code", "latest", "3");
   const labels = {
     "centralgauge.harness": "claude-code",
-    "centralgauge.harness.version": "2.1.282",
     "centralgauge.harness.base_digest": baseId,
     "centralgauge.harness.revision": "3",
     [lk]: lv,
+    ...ccLabels(),
   };
-  const o = { root, version: "2.1.282", revision: "3" };
+  const o = {
+    root,
+    revision: "3",
+    publishLockDir: join(root, "publish-lock"),
+  };
+  const GITHUB =
+    "https://api.github.com/repos/SShadowS/al-lsp-for-agents/releases/latest";
   await assertRejects(
     () =>
       harnessImagesBuild(
         "claude-code",
         o,
         docker,
-        fakeFetch({ message: "x" }, 500),
+        ccFetch({ status: { [GITHUB]: 500 } }),
       ),
     ConfigurationError,
     "HTTP 500",
@@ -7143,14 +7125,19 @@ Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP rele
   });
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
   docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
+  docker.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson());
   const calls: { url: string }[] = [];
   const f = await harnessImagesBuild(
     "claude-code",
     o,
     docker,
-    fakeFetch(undefined, 200, calls),
+    ccFetch({ calls }),
   );
-  assertEquals(calls.length, 1, "resolved once");
+  assertEquals(
+    calls.filter((c) => c.url === GITHUB).length,
+    1,
+    "resolved once",
+  );
   const args = docker.builds.at(-1)!;
   for (
     const [flag, value] of [
@@ -7178,13 +7165,284 @@ Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP rele
 
   // Release labels that did not land on the built image are refused.
   docker.tags.delete(tag);
+  docker.tags.delete(alias);
   const id2 = `sha256:${"d".repeat(64)}`;
   docker.buildResults.set(tag, { id: id2, labels, layers: ["l1", "l2"] });
   docker.shipFile(id2, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
   docker.shipFile(id2, AL_LSP_RESOLVED, lspResolvedJson());
+  docker.shipFile(id2, CLAUDE_CODE_RESOLVED, ccResolvedJson());
   await assertRejects(
-    () => harnessImagesBuild("claude-code", o, docker, fakeFetch()),
+    () => harnessImagesBuild("claude-code", o, docker, ccFetch()),
     ConfigurationError,
     "centralgauge.lsp.al.release",
   );
+});
+
+// ---- H-03: claude-code builds resolve the newest Claude Code ----
+
+/** A claude-code build now resolves its version: the options, the fetch, and the image the build produces (both tags). */
+function ccBuild(
+  docker: FakeDocker,
+  root: string,
+  id: string,
+  labels: Record<string, string>,
+  o: { version?: string; revision?: string } = {},
+) {
+  const revision = o.revision ?? "3-dev-T";
+  const rel = ccRel(o.version ?? CC_REL.version);
+  docker.buildResults.set(imageTag("claude-code", rel.version, revision), {
+    id,
+    labels: {
+      ...labels,
+      "centralgauge.harness.revision": revision,
+      ...ccLabels(rel),
+    },
+    layers: ["l1", "l2"],
+  });
+  docker.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson({}, rel));
+  return {
+    opts: { root, revision, publishLockDir: join(root, "publish-lock") },
+    fetch: ccFetch({ version: rel.version }),
+  };
+}
+
+async function ccRoot() {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  return { root, docker, baseId };
+}
+
+Deno.test("harnessImagesBuild (H-03): claude-code resolves the newest release, builds both tags in one build with the package labels, reads them back and prints the freeze record", async () => {
+  const { root, docker, baseId } = await ccRoot();
+  const id = `sha256:${"c".repeat(64)}`;
+  const b = ccBuild(docker, root, id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+  }, { revision: "3" });
+  const calls: { url: string }[] = [];
+  const printed: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => {
+    printed.push(a.map(String).join(" "));
+  });
+  let f;
+  try {
+    f = await harnessImagesBuild(
+      "claude-code",
+      b.opts,
+      docker,
+      ccFetch({ calls }),
+    );
+  } finally {
+    log.restore();
+  }
+  assertEquals(calls.map((c) => c.url), [CC_MAIN_URL, ccWinUrl()]);
+  assertEquals(docker.builds.length, 1, "one build");
+  const args = docker.builds[0]!;
+  const tags = args.flatMap((a, i) => a === "-t" ? [args[i + 1]] : []);
+  assertEquals(tags, [
+    "centralgauge/harness-claude-code:2.1.296-r3",
+    "centralgauge/harness-claude-code:latest-r3",
+  ]);
+  for (
+    const [flag, value] of [
+      ["--build-arg", `CLAUDE_CODE_VERSION=${CC_REL.version}`],
+      ["--build-arg", `CLAUDE_CODE_INTEGRITY=${CC_REL.main.integrity}`],
+      [
+        "--build-arg",
+        `CLAUDE_CODE_WIN_INTEGRITY=${CC_REL.win32_x64.integrity}`,
+      ],
+      ...Object.entries(ccLabels()).map(([k, v]) => ["--label", `${k}=${v}`]),
+    ]
+  ) {
+    const i = args.indexOf(value!);
+    assert(i > 0 && args[i - 1] === flag && i < args.indexOf("-t"), value);
+  }
+  assertEquals(
+    args.filter((a) => a.startsWith("centralgauge.harness.version=")),
+    [`centralgauge.harness.version=${CC_REL.version}`],
+  );
+  assertEquals(f.version, CC_REL.version);
+  assertEquals(f.package?.integrity.main, CC_REL.main.integrity);
+  const out = printed.join("\n");
+  assertStringIncludes(
+    out,
+    `Claude Code ${CC_REL.version} (npm latest): @anthropic-ai/claude-code ${CC_REL.main.integrity} + @anthropic-ai/claude-code-win32-x64 ${CC_REL.win32_x64.integrity}`,
+  );
+  assertStringIncludes(out, "freeze record");
+  assertStringIncludes(out, `"digest":"${id}"`);
+  assert(
+    !await exists(join(root, "publish-lock", ".bench-running.json")),
+    "the publication lock is released",
+  );
+});
+
+Deno.test("harnessImagesBuild (H-03): --version is refused for claude-code (an existing or frozen tag first); the revision must be 3 or later", async () => {
+  const { root, docker } = await ccRoot();
+  const lock = join(root, "publish-lock");
+  const calls: { url: string }[] = [];
+  const fetch = ccFetch({ calls });
+  await assertRejects(
+    () =>
+      harnessImagesBuild(
+        "claude-code",
+        { root, version: "2.1.296", revision: "3", publishLockDir: lock },
+        docker,
+        fetch,
+      ),
+    ConfigurationError,
+    "--version 2.1.296 is refused",
+  );
+  for (const revision of [undefined, "1", "2", "2-dev-H-03"]) {
+    await assertRejects(
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root, publishLockDir: lock, ...(revision ? { revision } : {}) },
+          docker,
+          fetch,
+        ),
+      ConfigurationError,
+      "--revision 3 or later",
+      String(revision),
+    );
+  }
+  assertEquals([calls, docker.builds], [[], []], "nothing resolved or built");
+});
+
+Deno.test("harnessImagesBuild (H-03): either existing tag, a held publication lock or a recorded (frozen) revision refuses before any build", async () => {
+  const { root, docker, baseId } = await ccRoot();
+  const id = `sha256:${"c".repeat(64)}`;
+  const b = ccBuild(docker, root, id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+  }, { revision: "3" });
+  for (
+    const tag of [
+      "centralgauge/harness-claude-code:2.1.296-r3",
+      "centralgauge/harness-claude-code:latest-r3",
+    ]
+  ) {
+    docker.addImage(tag, `sha256:${"9".repeat(64)}`, {}, ["l1"]);
+    await assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+      `${tag} already exists`,
+    );
+    docker.tags.delete(tag);
+  }
+  // Another build on this host holds the publication lock: refused, not waited.
+  const held = acquireBenchLock(b.opts.publishLockDir, {
+    command: "other build",
+  });
+  try {
+    await assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      BenchLockHeldError,
+    );
+  } finally {
+    await held();
+  }
+  // A recorded revision is never built again, present locally or not.
+  const calls: { url: string }[] = [];
+  await assertRejects(
+    () =>
+      harnessImagesBuild(
+        "claude-code",
+        {
+          ...b.opts,
+          frozen: {
+            "3": {
+              version: "2.1.290",
+              digest: `sha256:${"7".repeat(64)}`,
+              integrity: {
+                main: CC_REL.main.integrity,
+                win32_x64: CC_REL.win32_x64.integrity,
+              },
+            },
+          },
+        },
+        docker,
+        ccFetch({ calls }),
+      ),
+    ConfigurationError,
+    "claude-code revision 3 is frozen",
+  );
+  assertEquals(calls, [], "refused before resolution");
+  assertEquals(docker.builds, [], "no build");
+});
+
+Deno.test("harnessImagesBuild (H-03): the read-back must match this build's resolution: alias on the same id, version, package, shipped resolved file", async () => {
+  const cases: [string, (d: FakeDocker, id: string) => void, string][] = [
+    ["alias elsewhere", (d) => {
+      const realBuild = d.build.bind(d);
+      d.build = async (args) => {
+        const code = await realBuild(args);
+        d.tags.set(
+          "centralgauge/harness-claude-code:latest-r3",
+          `sha256:${"9".repeat(64)}`,
+        );
+        return code;
+      };
+    }, "latest-r3"],
+    ["version", (d, id) => {
+      const r = d.buildResults.get(
+        "centralgauge/harness-claude-code:2.1.296-r3",
+      )!;
+      d.buildResults.set("centralgauge/harness-claude-code:2.1.296-r3", {
+        ...r,
+        labels: { ...r.labels, ...ccLabels(ccRel("2.1.295")) },
+      });
+      d.shipFile(
+        id,
+        CLAUDE_CODE_RESOLVED,
+        ccResolvedJson({}, ccRel("2.1.295")),
+      );
+    }, "2.1.295"],
+    ["no package", (d) => {
+      const r = d.buildResults.get(
+        "centralgauge/harness-claude-code:2.1.296-r3",
+      )!;
+      const labels = { ...r.labels };
+      delete labels["centralgauge.harness.track"];
+      delete labels["centralgauge.harness.package"];
+      d.buildResults.set("centralgauge/harness-claude-code:2.1.296-r3", {
+        ...r,
+        labels,
+      });
+    }, "centralgauge.harness.package"],
+    ["resolved file", (d, id) => {
+      d.shipFile(
+        id,
+        CLAUDE_CODE_RESOLVED,
+        ccResolvedJson({ version: "2.1.295" }),
+      );
+    }, "claude-code-resolved.json"],
+  ];
+  for (const [name, tamper, msg] of cases) {
+    const { root, docker, baseId } = await ccRoot();
+    const id = `sha256:${"c".repeat(64)}`;
+    const b = ccBuild(docker, root, id, {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.base_digest": baseId,
+    }, { revision: "3" });
+    tamper(docker, id);
+    const log = stub(console, "log", () => {});
+    try {
+      const err = await assertRejects(
+        () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+        ConfigurationError,
+        undefined,
+        name,
+      );
+      assertStringIncludes(err.message, msg, name);
+    } finally {
+      log.restore();
+    }
+    assert(
+      !await exists(join(b.opts.publishLockDir, ".bench-running.json")),
+      `${name}: the publication lock is released on failure`,
+    );
+  }
 });

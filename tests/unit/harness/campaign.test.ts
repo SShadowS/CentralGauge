@@ -22,7 +22,11 @@ import { hashFile, sha256Hex } from "../../../src/harness/hash.ts";
 import { PreregSchema, protocolSha } from "../../../src/harness/prereg.ts";
 import { experimentHash } from "../../../src/harness/records.ts";
 import { PROXY_ISOLATION } from "../../../src/harness/egress-proxy.ts";
-import { imageTag, mcpLabel } from "../../../src/harness/images.ts";
+import {
+  CLAUDE_CODE_RESOLVED,
+  imageTag,
+  mcpLabel,
+} from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
 import { buildReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
@@ -33,6 +37,7 @@ import {
   benchLockLost,
 } from "../../../src/utils/bench-lock.ts";
 import { git, write } from "./refapp-fixture.ts";
+import { ccLabels, ccRel, ccResolvedJson } from "./fake-docker.ts";
 import {
   CATALOG,
   cellFor,
@@ -1553,4 +1558,50 @@ Deno.test("M10-08c (O1): concurrency 2 inside one environment holding its privat
       Math.max(...block(0).map((x) => x.end)),
     "the two blocks ran in parallel",
   );
+});
+
+Deno.test("runCampaign (H-03): a tracked Claude Code arm without M8-07c calibration on its digest is refused before any record or cell, dry run too", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  for (
+    const [id, settings] of [["cc-latest-a", "{}"], [
+      "cc-latest-b",
+      "{ effort: high }",
+    ]]
+  ) {
+    await write(
+      t.harnessRoot,
+      `configs/${id}.yml`,
+      `id: ${id}
+harness: claude-code
+harness_version: latest
+image_revision: "3"
+models: { main: anthropic/claude-sonnet-5 }
+settings: ${settings}
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+    );
+  }
+  // A dev-qualified version (2.1.282 has its BUILTIN_INVENTORY entry), resolved and tracked.
+  const rel = ccRel("2.1.282");
+  const id = `sha256:${"e".repeat(64)}`;
+  t.docker.addImage(imageTag("claude-code", "latest", "3"), id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    "centralgauge.harness.revision": "3",
+    ...ccLabels(rel),
+  });
+  t.docker.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson({}, rel));
+  await experiment(t, "cc-latest", "cc-latest-a", ["cc-latest-b"]);
+  enforce(t);
+  for (const dryRun of [true, false]) {
+    await assertRejects(
+      () => runCampaign(t.env, "cc-latest", opts({ dryRun }), io()),
+      ConfigurationError,
+      `image ${id} (Claude Code 2.1.282) has no M8-07c real calibration`,
+    );
+  }
+  assertEquals(await t.env.store.campaigns("cc-latest"), []);
+  assertEquals(t.docker.runs, []);
 });

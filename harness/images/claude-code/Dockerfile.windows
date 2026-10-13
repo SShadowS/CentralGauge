@@ -1,13 +1,25 @@
-# Claude Code harness image. Built by `harness images build claude-code --version 2.1.282 --revision 3 (proofs: --revision 3-dev-<task id>)`.
+# Claude Code harness image. Built by `harness images build claude-code --revision 3` (proofs: --revision 3-dev-<task id>).
+# H-03: the build resolves the newest @anthropic-ai/claude-code (npm dist-tag latest); no version is hand-pinned here.
 # BASE has no default: `harness images build` passes the inspected immutable base image and then
 # verifies that the built image's layers start with the base's layers (M1-24).
 ARG BASE
 FROM ${BASE}
-# A machine-wide npm prefix (H-01): ContainerUser can read and run it; the default
-# prefix sits in ContainerAdministrator's profile.
+# H-03: the release `harness images build` resolved from the npm registry (version, both tarball URLs,
+# both sha512 integrities). No defaults: install-claude-code.ps1 refuses absent or malformed values,
+# installs only the two verified archives (npm offline without scripts, else tar.exe on the same
+# files) into the machine-wide prefix C:\cg-npm (H-01: ContainerUser can read and run it), and
+# claude.exe is on the Machine PATH directly (no npm shim).
+ARG CLAUDE_CODE_VERSION
+ARG CLAUDE_CODE_URL
+ARG CLAUDE_CODE_INTEGRITY
+ARG CLAUDE_CODE_WIN_URL
+ARG CLAUDE_CODE_WIN_INTEGRITY
+COPY install-claude-code.ps1 C:/cg-install-claude-code.ps1
 RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
-    npm install -g --prefix C:\cg-npm @anthropic-ai/claude-code@2.1.282; \
-    [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
+    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-install-claude-code.ps1 -Version $env:CLAUDE_CODE_VERSION -MainUrl $env:CLAUDE_CODE_URL -MainIntegrity $env:CLAUDE_CODE_INTEGRITY -WinUrl $env:CLAUDE_CODE_WIN_URL -WinIntegrity $env:CLAUDE_CODE_WIN_INTEGRITY; \
+    if ($LASTEXITCODE -ne 0) { throw ('install-claude-code failed: ' + $LASTEXITCODE) }; \
+    Remove-Item -Force C:\cg-install-claude-code.ps1; \
+    [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm\node_modules\@anthropic-ai\claude-code\bin;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 # M10: the AL language server plugin (al-lsp-for-agents wrapper, Microsoft AL extension, private
 # .NET 10), recipe in lsp/al-lsp.json. Every arm's image has it; only an arm that declares
 # components.lsp loads it. The probe is two files that must sit side by side.

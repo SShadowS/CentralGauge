@@ -37,7 +37,7 @@ import type {
 } from "../../src/harness/campaign.ts";
 import type { CellResult, HarnessEnv } from "../../src/harness/execution.ts";
 import type { QualifyManifest } from "../../src/harness/qualify.ts";
-import type { ImageFacts } from "../../src/harness/images.ts";
+import type { FrozenClaudeCode, ImageFacts } from "../../src/harness/images.ts";
 import type { ManifestReader } from "../../src/harness/symbols.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
 import type { EnvOptions, OpenEnv } from "./harness-env.ts";
@@ -52,6 +52,7 @@ import {
   checkModelsInCatalog,
   HarnessConfigSchema,
   IMAGE_REVISION,
+  LATEST,
   loadConfig,
   loadExperiment,
   VARY_KEYS,
@@ -78,6 +79,7 @@ import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
+import { BUILTIN_INVENTORY } from "../../src/harness/adapters/claude-code.ts";
 import {
   forcedRefusal,
   measureExecution,
@@ -135,6 +137,9 @@ import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
 import {
   BASE_IMAGE,
   BASE_VERSION,
+  CLAUDE_CODE_PACKAGE,
+  claudeCodeArgs,
+  FROZEN_CLAUDE_CODE,
   FROZEN_IMAGE_TAGS,
   hasBaseLayers,
   IMAGE_LABELS,
@@ -144,6 +149,7 @@ import {
   lspReleaseArgs,
   mcpFacts,
   mcpLabel,
+  resolveClaudeCode,
   resolveLspRelease,
   runtimeFacts,
   serverDefinitions,
@@ -938,9 +944,17 @@ async function removeNamespace(dir: string) {
  */
 export async function harnessImagesBuild(
   harness: string,
-  o: { root: string; version?: string; revision?: string },
+  o: {
+    root: string;
+    version?: string;
+    revision?: string;
+    /** H-03: the host-wide claude-code publication lock (default under %LOCALAPPDATA%). */
+    publishLockDir?: string;
+    /** H-03: the frozen claude-code revisions (default FROZEN_CLAUDE_CODE). */
+    frozen?: Readonly<Record<string, FrozenClaudeCode>>;
+  },
   docker: DockerCli = realDocker(),
-  /** The GitHub API call that resolves the newest LSP release (tests inject it). */
+  /** The GitHub API and npm registry calls that resolve the newest releases (tests inject them). */
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageFacts> {
   const images = join(o.root, "harness", "images");
@@ -1008,7 +1022,11 @@ export async function harnessImagesBuild(
       mcp,
     };
   }
-  if (!o.version) throw new ConfigurationError(`pass --version for ${harness}`);
+  // H-03: claude-code resolves the newest Claude Code; every other harness names its version.
+  const cc = harness === "claude-code";
+  if (!cc && !o.version) {
+    throw new ConfigurationError(`pass --version for ${harness}`);
+  }
   if (o.revision !== undefined && !IMAGE_REVISION.test(o.revision)) {
     throw new ConfigurationError(
       `--revision must be a positive integer without leading zero, got "${o.revision}"`,
@@ -1020,9 +1038,58 @@ export async function harnessImagesBuild(
       "build the base image first: centralgauge harness images build base",
     );
   }
-  const tag = imageTag(harness, o.version, o.revision);
-  const lspL = harness === "claude-code" ? await lspLabel(o.root) : null;
+  if (cc && o.version !== undefined) {
+    // The tag it names may be frozen or present: that refusal is the more specific one.
+    await refuseExisting(
+      imageTag(harness, o.version, o.revision),
+      "use a new --version or --revision",
+    );
+    throw new ConfigurationError(
+      `claude-code resolves the newest ${CLAUDE_CODE_PACKAGE} from the npm registry at build time: --version ${o.version} is refused (H-03)`,
+    );
+  }
+  if (cc && !(Number.parseInt(o.revision ?? "0", 10) >= 3)) {
+    throw new ConfigurationError(
+      `claude-code builds need --revision 3 or later (3-dev-<task id> for a proof), got ${
+        o.revision ?? "none"
+      }`,
+    );
+  }
+  // H-03: one publication at a time on this host (the Docker daemon is per
+  // host), from the freeze-record check through both tags' refusal, the build
+  // and the read-back. A held lock refuses; it never waits.
+  await using _publish = cc ? publicationLock(o.publishLockDir) : null;
+  const frozen = o.frozen ?? FROZEN_CLAUDE_CODE;
+  if (cc && Object.hasOwn(frozen, o.revision!)) {
+    const r = frozen[o.revision!]!;
+    throw new ConfigurationError(
+      `claude-code revision ${o.revision} is frozen (Claude Code ${r.version}, ${r.digest}) and is never built again, present locally or not: use the next --revision and new configs`,
+    );
+  }
+  // H-03: resolved once, before the build; install-claude-code.ps1 verifies
+  // both archives against these integrities and the labels record them.
+  const ccRel = cc ? await resolveClaudeCode(fetchFn) : null;
+  if (ccRel) {
+    console.log(
+      `${
+        colors.green("[OK]")
+      } Claude Code ${ccRel.version} (npm latest): ${CLAUDE_CODE_PACKAGE} ${ccRel.main.integrity} + ${CLAUDE_CODE_PACKAGE}-win32-x64 ${ccRel.win32_x64.integrity}`,
+    );
+    if (!Object.hasOwn(BUILTIN_INVENTORY, ccRel.version)) {
+      console.warn(
+        `${
+          colors.yellow("[WARN]")
+        } Claude Code ${ccRel.version} is not qualified yet: only stub cells run on this image until its BUILTIN_INVENTORY entry lands`,
+      );
+    }
+  }
+  const version = ccRel?.version ?? o.version!;
+  const tag = imageTag(harness, version, o.revision);
+  // The config alias (harness_version latest) on the same image.
+  const alias = ccRel ? imageTag(harness, LATEST, o.revision) : null;
+  const lspL = cc ? await lspLabel(o.root) : null;
   await refuseExisting(tag, "use a new --version or --revision");
+  if (alias) await refuseExisting(alias, "use a new --revision");
   // M10-10: resolved once, before the build; install-lsp.ps1 verifies the zip
   // against this digest and the labels record it.
   const rel = lspL ? await resolveLspRelease(o.root, fetchFn) : null;
@@ -1043,8 +1110,8 @@ export async function harnessImagesBuild(
     `BASE=${base.Id}`,
     "--label",
     `${IMAGE_LABELS.harness}=${harness}`,
-    "--label",
-    `${IMAGE_LABELS.version}=${o.version}`,
+    // claudeCodeArgs carries the resolved version label with the package labels.
+    ...(ccRel ? [] : ["--label", `${IMAGE_LABELS.version}=${version}`]),
     "--label",
     `${IMAGE_LABELS.base}=${base.Id}`,
     ...(o.revision === undefined
@@ -1052,8 +1119,10 @@ export async function harnessImagesBuild(
       : ["--label", `${IMAGE_LABELS.revision}=${o.revision}`]),
     ...(lspL ? ["--label", `${lspL[0]}=${lspL[1]}`] : []),
     ...(rel ? lspReleaseArgs(rel) : []),
+    ...(ccRel ? claudeCodeArgs(ccRel) : []),
     "-t",
     tag,
+    ...(alias ? ["-t", alias] : []),
     join(images, harness),
   ]);
   if (code !== 0) {
@@ -1106,6 +1175,34 @@ export async function harnessImagesBuild(
       }, the build asked for ${o.revision ?? "none"}`,
     );
   }
+  if (ccRel) {
+    // H-03: read back against this build's intent, not merely self-consistency
+    // (imageFacts already compared the shipped resolved file with the labels).
+    const aliasId =
+      (await docker.inspectImage(alias!) as { Id?: string } | null)
+        ?.Id;
+    if (aliasId !== f.digest) {
+      throw new ConfigurationError(
+        `${alias}: is ${
+          aliasId ?? "absent"
+        }, not this build's ${f.digest} (${tag})`,
+      );
+    }
+    const p = f.package;
+    if (
+      f.version !== ccRel.version || p?.version !== ccRel.version ||
+      p.integrity.main !== ccRel.main.integrity ||
+      p.integrity.win32_x64 !== ccRel.win32_x64.integrity
+    ) {
+      throw new ConfigurationError(
+        `${tag}: the built image's ${IMAGE_LABELS.version} ${f.version} and ${IMAGE_LABELS.package} ${
+          p
+            ? `${p.version} ${p.integrity.main} ${p.integrity.win32_x64}`
+            : "absent"
+        } differ from this build's resolution (${ccRel.version} ${ccRel.main.integrity} ${ccRel.win32_x64.integrity})`,
+      );
+    }
+  }
   if (
     lspL &&
     `${f.lsp?.["al"]?.version} ${f.lsp?.["al"]?.tool_schema_hash}` !== lspL[1]
@@ -1135,9 +1232,51 @@ export async function harnessImagesBuild(
       al?.release === undefined
         ? ""
         : ` lsp.al release ${al.release} asset ${al.asset} dependency_source ${al.dependency_source}`
+    }${
+      f.package
+        ? ` ${IMAGE_LABELS.track}=${f.package.track} ${IMAGE_LABELS.package}=${f.package.name}@${f.package.version} ${f.package.integrity.main} ${f.package.integrity.win32_x64}`
+        : ""
     }`,
   );
+  if (ccRel && alias) {
+    console.log(`  alias: ${alias} = ${f.digest}`);
+  }
+  if (ccRel && /^\d+$/.test(o.revision!)) {
+    const record: FrozenClaudeCode = {
+      version: ccRel.version,
+      digest: f.digest,
+      integrity: {
+        main: ccRel.main.integrity,
+        win32_x64: ccRel.win32_x64.integrity,
+      },
+    };
+    console.log(
+      `${
+        colors.green("[OK]")
+      } freeze record (paste into FROZEN_CLAUDE_CODE after acceptance): ${
+        JSON.stringify({ [o.revision!]: record })
+      }`,
+    );
+  }
   return f;
+}
+
+/** H-03: the host-wide publication lock for claude-code builds, released on dispose. */
+function publicationLock(dir: string | undefined): AsyncDisposable {
+  const local = Deno.env.get("LOCALAPPDATA");
+  const at = dir ??
+    (local
+      ? join(local, "centralgauge", "harness", "image-publish", "claude-code")
+      : null);
+  if (!at) {
+    throw new ConfigurationError(
+      "LOCALAPPDATA is not set: no host-wide claude-code publication lock",
+    );
+  }
+  const release = acquireBenchLock(at, {
+    command: "harness images build claude-code",
+  });
+  return { [Symbol.asyncDispose]: () => release() };
 }
 
 export async function harnessSymbolsLock(
@@ -2687,7 +2826,10 @@ export function registerHarnessCommand(
         "build <harness:string>",
         "Build the base image or a harness image",
       )
-      .option("--version <v:string>", "Harness version (image tag and label)")
+      .option(
+        "--version <v:string>",
+        "Harness version (image tag and label); claude-code resolves the newest release instead (H-03)",
+      )
       .option(
         "--revision <n:string>",
         "Image revision: tag <version>-r<n> and label centralgauge.harness.revision (configs name it as image_revision)",

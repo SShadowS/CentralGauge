@@ -1377,6 +1377,14 @@ export async function runExecution(
       `${cell.arm}: egress enforcement is set but no egress runtime is configured; refusing (fail closed)`,
     );
   }
+  // H-03: an unqualified harness version never runs a real cell, whatever the
+  // caller; a stub cell is how it gets qualified (no credential either way).
+  const unqualified = mode === "normal"
+    ? adapter.unqualified?.(cell.armManifest, "dev") ?? null
+    : null;
+  if (unqualified) {
+    throw new ConfigurationError(`${cell.arm}: ${unqualified}`);
+  }
   const record = env.recordOAuthHosts === true;
   const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
   if (record) {

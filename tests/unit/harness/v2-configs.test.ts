@@ -27,7 +27,8 @@ Deno.test("v2 arms: one harness, campaign image revision, model, settings and li
   for (const c of cfgs) {
     assertEquals(
       [c.harness, c.harness_version, c.image_revision, c.settings],
-      ["claude-code", "2.1.282", "3", {}],
+      // H-03: the campaign arms track the newest Claude Code (resolved at the r3 build).
+      ["claude-code", "latest", "3", {}],
       c.id,
     );
     assertEquals(c.models, plain!.models, c.id);
@@ -67,9 +68,10 @@ Deno.test("v2 probe configs: developmental, same model; never in an experiment",
   const revs = new Set<string | undefined>();
   for (const id of PROBES) {
     const c = await loadConfig("harness", id);
+    // H-03: the historical probes stay on their 2.1.282 proof images (frozen evidence).
     assertEquals(
       [c.harness_version, c.models],
-      [plain.harness_version, plain.models],
+      ["2.1.282", plain.models],
       id,
     );
     assert(
@@ -113,7 +115,17 @@ Deno.test("M10 probe configs: their arm with id and image revision 3-dev-M10-08 
   for (const [id, armId] of M10_PROBES) {
     const c = await loadConfig("harness", id);
     const arm = await loadConfig("harness", armId);
-    assertEquals(c, { ...arm, id, image_revision: "3-dev-M10-08" }, id);
+    // H-03: the arm now tracks latest; the proof stays on its 2.1.282 image.
+    assertEquals(
+      c,
+      {
+        ...arm,
+        id,
+        harness_version: "2.1.282",
+        image_revision: "3-dev-M10-08",
+      },
+      id,
+    );
     const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
       .split(/\r?\n/)[0];
     assertEquals(
@@ -125,6 +137,34 @@ Deno.test("M10 probe configs: their arm with id and image revision 3-dev-M10-08 
   for await (const e of Deno.readDir("harness/experiments")) {
     const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
     for (const [p] of M10_PROBES) {
+      assert(!text.includes(p), `${e.name} names ${p}`);
+    }
+  }
+});
+
+/** H-03: the qualification stub-cell configs (plain + LSP) on the dev image of the resolved version. */
+const H03_PROBES: [string, string][] = [
+  ["cc-v2-probe-h03-plain", "cc-v2-plain"],
+  ["cc-v2-probe-h03-lsp", "cc-v2-plain-lsp"],
+];
+
+Deno.test("H-03 probe configs: their arm (latest) with id and image revision 3-dev-H-03 only; developmental; never in an experiment", async () => {
+  for (const [id, armId] of H03_PROBES) {
+    const c = await loadConfig("harness", id);
+    const arm = await loadConfig("harness", armId);
+    assertEquals(c, { ...arm, id, image_revision: "3-dev-H-03" }, id);
+    assertEquals(c.harness_version, "latest", id);
+    const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
+      .split(/\r?\n/)[0];
+    assertEquals(
+      first,
+      "# H-03 qualification config (developmental). Never part of an experiment.",
+      id,
+    );
+  }
+  for await (const e of Deno.readDir("harness/experiments")) {
+    const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
+    for (const [p] of H03_PROBES) {
       assert(!text.includes(p), `${e.name} names ${p}`);
     }
   }

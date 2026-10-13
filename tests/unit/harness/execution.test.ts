@@ -4902,3 +4902,46 @@ Deno.test("stub provider (M10-10 r2): an --image with the LSP release labels rec
   });
   assertEquals(e.manifest.lsp, []);
 });
+
+// H-03: the core execution path refuses an unqualified Claude Code version on
+// r3+ before the intent, any reservation and any secret read; a stub cell (the
+// qualification capture) still runs.
+async function unqualifiedCell(t: TestEnv) {
+  const cell = await cellFor(t);
+  const armManifest = {
+    ...cell.armManifest,
+    harness_version: "2.1.296",
+    image: { ...cell.armManifest.image, revision: "3-dev-H-03" },
+  };
+  return {
+    ...cell,
+    armManifest,
+    armManifestHash: await manifestHash(armManifest),
+  };
+}
+
+Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is refused before the intent, the ledger and any secret read", async () => {
+  const t = await makeEnv();
+  // A secret read would fail on this missing source instead of the refusal.
+  await Deno.remove(t.env.secretsSource, { recursive: true });
+  await assertRejects(
+    async () => runCell(t.env, await unqualifiedCell(t)),
+    ConfigurationError,
+    "Claude Code 2.1.296 is not qualified for development use",
+  );
+  assert(
+    !await exists(join(t.env.privateRoot, "intents")) ||
+      intentIds(t).length === 0,
+    "no intent written",
+  );
+  assert(!await exists(t.env.credentialLedger!), "no slot reserved");
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it captures the qualification evidence)", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  const e = (await runCell(t.env, await unqualifiedCell(t))).executions[0]!;
+  assertEquals(t.docker.runs.length, 1);
+  assertEquals(e.manifest.harness_version, "2.1.296");
+});

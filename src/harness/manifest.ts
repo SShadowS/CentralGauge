@@ -16,7 +16,7 @@ import { join } from "@std/path";
 import { z } from "zod";
 import { ConfigurationError, ValidationError } from "../errors.ts";
 import type { HarnessConfig, VaryKey } from "./config.ts";
-import { effectiveLimits, ImageRevisionSchema } from "./config.ts";
+import { effectiveLimits, ImageRevisionSchema, LATEST } from "./config.ts";
 import { HASH_RULES_VERSION, hashFile, hashJson, listTree } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
 import type { HarnessTask } from "./task.ts";
@@ -46,6 +46,22 @@ const LspReleaseShape = {
 };
 /** An LSP entry: an image built since M10-10 adds the release; older ones have none. */
 const LspServer = z.union([Server.extend(LspReleaseShape), Server]);
+
+/** H-03: a strict semver release (no prerelease, no build metadata). */
+export const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+/** An npm dist.integrity: sha512, base64 of 64 bytes. */
+export const SRI_SHA512 = /^sha512-[A-Za-z0-9+/]{86}==$/;
+/** The Claude Code package a tracked image installed (H-03): absent on untracked images. */
+export const ClaudePackageSchema = z.strictObject({
+  name: z.literal("@anthropic-ai/claude-code"),
+  version: z.string().regex(SEMVER),
+  track: z.literal("npm-latest"),
+  integrity: z.strictObject({
+    main: z.string().regex(SRI_SHA512),
+    win32_x64: z.string().regex(SRI_SHA512),
+  }),
+});
+export type ClaudePackage = z.output<typeof ClaudePackageSchema>;
 
 export const ResolvedManifestSchema = z.strictObject({
   v: z.literal(1),
@@ -87,6 +103,11 @@ export const ResolvedManifestSchema = z.strictObject({
     installed: z.strictObject({
       lsp: z.record(z.string(), z.strictObject(LspReleaseShape)),
     }).optional(),
+    /**
+     * H-03: the Claude Code package a tracked image resolved and installed.
+     * Absent otherwise (never null), so older manifests keep their hashes.
+     */
+    package: ClaudePackageSchema.optional(),
   }),
   backend_version: z.string().min(1),
   /** Provider route per model slot; every slot in `models` has one. */
@@ -98,6 +119,12 @@ export const ResolvedManifestSchema = z.strictObject({
     return slots.length === routes.size && slots.every((s) => routes.has(s));
   },
   { message: "provider_routes must cover exactly the model slots" },
+).refine(
+  (m) => !m.image.package || m.image.package.version === m.harness_version,
+  {
+    message: "image.package.version must equal harness_version",
+    path: ["image", "package"],
+  },
 );
 export type ResolvedManifest = z.output<typeof ResolvedManifestSchema>;
 
@@ -108,12 +135,15 @@ export interface InstalledLsp {
 }
 
 export interface RuntimeFacts {
+  /** H-03: the image's resolved harness version; required when the config says LATEST. */
+  harness_version?: string;
   native_settings: Record<string, unknown>;
   image: {
     digest: string;
     base_digest: string;
     revision?: string;
     installed?: { lsp: Record<string, InstalledLsp> };
+    package?: ClaudePackage;
   };
   backend_version: string;
   servers: Record<
@@ -191,6 +221,13 @@ export async function resolveManifest(
       }`,
     );
   }
+  // H-03: a manifest records the version that runs, never the word "latest".
+  const harness_version = facts.harness_version ?? config.harness_version;
+  if (harness_version === LATEST) {
+    throw new ConfigurationError(
+      `${config.id}: harness_version ${LATEST} has no resolved version in the runtime facts`,
+    );
+  }
   const c = config.components;
   const opt = (p: string | null) =>
     p === null ? Promise.resolve(null) : pathComponent(harnessRoot, p);
@@ -203,7 +240,7 @@ export async function resolveManifest(
     rules: HASH_RULES_VERSION,
     config_id: config.id,
     harness: config.harness,
-    harness_version: config.harness_version,
+    harness_version,
     models: config.models,
     settings: { requested: config.settings, native: facts.native_settings },
     limits: config.limits,

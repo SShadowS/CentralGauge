@@ -15,6 +15,7 @@
 
 import { basename } from "@std/path";
 import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
+import type { ResolvedManifest } from "../manifest.ts";
 import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
@@ -603,6 +604,44 @@ export const BUILTIN_INVENTORY: Readonly<
 };
 
 /**
+ * H-03 qualification level 2: the M8-07c real calibration of a tracked
+ * campaign image, keyed by its exact digest, for its exact resolved version.
+ * Written after M8-07c is accepted; level 1 (dev use) is BUILTIN_INVENTORY.
+ */
+export const CAMPAIGN_CALIBRATED: Readonly<
+  Record<string, { version: string; calibration: string }>
+> = {};
+
+/**
+ * Why a manifest's Claude Code may not run at a level, or null (H-03). Frozen
+ * images (revision < 3) keep the M2 rules and are never refused here.
+ */
+export function unqualifiedClaudeCode(
+  m: ResolvedManifest,
+  level: "dev" | "campaign",
+  calibrated: Readonly<
+    Record<string, { version: string; calibration: string }>
+  > = CAMPAIGN_CALIBRATED,
+): string | null {
+  if (!inventoried(m.image.revision)) return null;
+  const v = m.harness_version;
+  if (!Object.hasOwn(BUILTIN_INVENTORY, v)) {
+    return `Claude Code ${v} is not qualified for development use (qualified: ${
+      Object.keys(BUILTIN_INVENTORY).join(", ")
+    }): run the qualification stub cells (plain + LSP), review the capture, add its BUILTIN_INVENTORY entry and reparse the captured records clean`;
+  }
+  if (level === "campaign" && m.image.package) {
+    const c = Object.hasOwn(calibrated, m.image.digest)
+      ? calibrated[m.image.digest]!
+      : null;
+    if (c?.version !== v) {
+      return `image ${m.image.digest} (Claude Code ${v}) has no M8-07c real calibration on this digest (CAMPAIGN_CALIBRATED): a campaign needs it`;
+    }
+  }
+  return null;
+}
+
+/**
  * The plugin each declared LSP component may show in system/init (cross-plan
  * ruling 3: the allow-list follows the arm's declared components; appendix
  * section 4). M10-06 owns the values (from its S1 capture
@@ -705,6 +744,16 @@ function componentInventory(
   for (const [n, init] of inits.entries()) {
     const r = initInventory(init, installed, manifest);
     const tag = inits.length > 1 ? `init ${n + 1}: ` : "";
+    // H-03: every segment runs the manifest's resolved version; a resumed
+    // segment on another (even qualified) version never escapes.
+    const v = init.rec.claude_code_version;
+    if (v !== manifest.harness_version) {
+      problems.push(
+        `${tag}system/init claude_code_version ${
+          typeof v === "string" ? v : "(missing)"
+        } differs from the manifest's resolved ${manifest.harness_version}`,
+      );
+    }
     problems.push(...r.problems.map((p) => tag + p));
     common = common === null
       ? r.loaded
@@ -1449,6 +1498,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
     );
   },
   extraMounts: () => Promise.resolve([]),
+  unqualified: (m, level) => unqualifiedClaudeCode(m, level),
   async parse(input) {
     let text = "";
     const problems: string[] = [];
