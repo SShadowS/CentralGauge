@@ -6996,7 +6996,13 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
   );
   try {
     await assertRejects(
-      () => harnessImagesBuild("claude-code", { root, version }, docker),
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root, version },
+          docker,
+          fakeFetch(),
+        ),
       ContainerError,
       "cg-harness-read-",
     );
