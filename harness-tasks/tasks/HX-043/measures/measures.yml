@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "86320/PendingEntriesDispatched": 1
+    "86320/FailedSendKeepsAttempt": 1
+    "86320/CommittingPreparationFailsRun": 1
+    "86320/FailingPreparationKeepsNothing": 1
+    "86320/PreparedEntryDispatchedSameRun": 1
+    "86320/NothingPendingCompletes": 1
+    "86320/FailedEntryAtMaxAttempts": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
