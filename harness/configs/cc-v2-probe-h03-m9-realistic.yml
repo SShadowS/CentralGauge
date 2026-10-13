@@ -1,0 +1,14 @@
+# H-03 qualification config (developmental). Never part of an experiment.
+id: cc-v2-probe-h03-m9-realistic
+harness: claude-code
+harness_version: "latest"
+image_revision: "3-dev-H-03b"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/realistic/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+limits: { timeout_min: 30, max_budget_usd: 5 }

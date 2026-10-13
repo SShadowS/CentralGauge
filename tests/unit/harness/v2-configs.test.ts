@@ -169,3 +169,53 @@ Deno.test("H-03 probe configs: their arm (latest) with id and image revision 3-d
     }
   }
 });
+
+/**
+ * H-03 run 002 (orchestrator): the M8-07c arms and the M9-07/M9-13 probes on the H-03 dev image.
+ * Each is its source config with only id, harness_version "latest" and image_revision
+ * 3-dev-H-03b changed; the old probe configs stay as frozen evidence.
+ */
+const H03_COPIES: [string, string][] = [
+  ["cc-v2-probe-h03-realistic", "cc-v2-realistic"],
+  ["cc-v2-probe-h03-realistic-lsp", "cc-v2-realistic-lsp"],
+  ["cc-v2-probe-h03-m9-plain", "cc-v2-probe-plain"],
+  ["cc-v2-probe-h03-m9-realistic", "cc-v2-probe-realistic"],
+  ["cc-v2-probe-h03-m9-hooks", "cc-v2-probe-hooks"],
+  ["cc-v2-probe-h03-m9-budget", "cc-v2-probe-budget"],
+  ["cc-v2-probe-h03-m9-subagent", "cc-v2-probe-subagent"],
+];
+
+Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest and 3-dev-H-03b only; sources unchanged; never in an experiment", async () => {
+  for (const [id, srcId] of H03_COPIES) {
+    const c = await loadConfig("harness", id);
+    const src = await loadConfig("harness", srcId);
+    assertEquals(
+      c,
+      {
+        ...src,
+        id,
+        harness_version: "latest",
+        image_revision: "3-dev-H-03b",
+      },
+      id,
+    );
+    const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
+      .split(/\r?\n/)[0];
+    assertEquals(
+      first,
+      "# H-03 qualification config (developmental). Never part of an experiment.",
+      id,
+    );
+  }
+  // The frozen M9 probes keep their own version and image.
+  for (const id of PROBES) {
+    const c = await loadConfig("harness", id);
+    assertEquals(c.harness_version, "2.1.282", id);
+  }
+  for await (const e of Deno.readDir("harness/experiments")) {
+    const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
+    for (const [p] of H03_COPIES) {
+      assert(!text.includes(p), `${e.name} names ${p}`);
+    }
+  }
+});
