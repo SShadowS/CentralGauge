@@ -514,8 +514,12 @@ export interface SandboxSpec {
  */
 export const SANDBOX_USER = "ContainerUser";
 
-/** Every sandbox, every arm (decisions/2026-10-03-m10-03-s1-gate.md): the ~1 GB default ran at 97-99.5%. */
-export const SANDBOX_MEMORY = "3g";
+/**
+ * Every sandbox, every arm (decisions/2026-10-03-m10-03-s1-gate.md): the ~1 GB default ran at 97-99.5%.
+ * 3g -> 4g (M10-02k, decisions/2026-10-13-m10-02i-callh-oom.md): 3g failed 3/5 on the full workspace
+ * in both LSP modes (container job limit), 4g passed 5/5.
+ */
+export const SANDBOX_MEMORY = "4g";
 /**
  * An agent entrypoint that finds itself admin exits with this code and marker
  * (harness/images/base/cg-nonadmin.ps1). Diagnostic only: an agent can print
