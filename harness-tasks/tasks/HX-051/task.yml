@@ -1,0 +1,17 @@
+id: HX-051
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Rental, Core, Integration, Test]
+coupling: [ishandled, events, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SuspendRentalsBlocksCheckout] }
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80000, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
+fail_to_pass: null
+mutants: [handled-true-ignored, stop-only-at-checkout, stop-needs-setup-row, returned-contract-checkout, unknown-vehicle-available]
+contamination: null
+limits: { timeout_min: 30 }
