@@ -25,6 +25,7 @@ fail_to_pass:
     - { codeunit: 86130, procedures: [DamagedListedOnceInOrder] }
     - { codeunit: 86131, procedures: [DamagedListContentReplaced] }
     - { codeunit: 86132, procedures: [FailedReturnNotListed] }
+    - { codeunit: 86134, procedures: [EarlierDamagedListUnchanged] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

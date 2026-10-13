@@ -13,11 +13,12 @@ partial_credit:
     "86130/DamagedListedOnceInOrder": 1
     "86131/DamagedListContentReplaced": 1
     "86132/FailedReturnNotListed": 1
+    "86134/EarlierDamagedListUnchanged": 1
   hidden_regressions: []
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/shared-list: { partial_credit: 0.75 }
-  naive/plain-codeunit: { partial_credit: 0.0833333 }
-  naive/append-list: { partial_credit: 0.8333333 }
-  naive/every-return-damaged: { partial_credit: 0.9166667 }
+  naive/shared-list: { partial_credit: 0.6923077 }
+  naive/plain-codeunit: { partial_credit: 0.0769231 }
+  naive/append-list: { partial_credit: 0.8461538 }
+  naive/every-return-damaged: { partial_credit: 0.9230769 }
