@@ -1466,6 +1466,7 @@ async function measurableCampaign() {
       "canary/app.json",
       "canary/expect.json",
       "canary/src/Canary.Codeunit.al",
+      "canary/src/Canary.Page.al",
     ]
   ) {
     const dst = join(t.env.harnessRoot, "analysis", rel);
