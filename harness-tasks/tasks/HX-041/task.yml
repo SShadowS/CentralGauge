@@ -1,0 +1,17 @@
+id: HX-041
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Fleet, Core, Test]
+coupling: [events, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, ReturnWithoutDamageReleasesVehicle, ReturnBelowStartKmFails, SwapMovesContractToFreeVehicle] }
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80000, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
+fail_to_pass: null
+mutants: [swap-onto-checked-out, swap-open-contract, swap-unknown-vehicle-ignored, return-at-start-km-refused, return-damage-dropped]
+contamination: null
+limits: { timeout_min: 30 }
