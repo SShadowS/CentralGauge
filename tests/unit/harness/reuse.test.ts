@@ -9,6 +9,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import type { CompilationResult } from "../../../src/container/types.ts";
+import { ContainerError } from "../../../src/errors.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
@@ -59,12 +60,15 @@ const ALT_TARGET = {
   perturb: "exit(-1);",
 };
 
-/** M11-14b: one marker hit, as persisted in the record. */
+/** M11-14b: one marker hit, as persisted in the record (normalized: no raw message). */
 const hit = (test: string, target = "70210/CalcSurcharge") => ({
   test: `85000/${test}`,
   target,
-  message: `Error: ${REUSE_MARKER}`,
 });
+
+/** M11-14b run 002: probe output a record must never carry. */
+const SECRET = "sk-ant-LEAK0123456789abcdef";
+const PRIVATE = "C:\\cg-private\\work\\leak";
 
 /** How one oracle test reaches a target; null: duplicated logic, no call. */
 type Path = { target: number; uses: boolean; caught?: boolean } | null;
@@ -371,28 +375,75 @@ Deno.test("reuseCheck: a session crash in a probe build is infra (missing, reaso
   const paths = { FixWorks: { target: 70210, uses: true } };
   const fake = new CrashingBc(bc(paths).script);
   const r = await run(fake);
-  assertEquals(r.status, "missing", JSON.stringify(r));
-  const reason = r.status === "missing" ? r.reason : "";
-  assertEquals(reason.startsWith("infra: "), true, reason);
-  assertStringIncludes(reason, "effective probe of 70210/CalcSurcharge");
-  // The cause is kept: the judge's build-failed note.
-  assertStringIncludes(reason, "build failed: ");
-  assertStringIncludes(reason, "build_failed_no_diagnostics_no_tests");
-  // The dependent's cascade diagnostic was present and filtered, not absent.
-  assertStringIncludes(reason, "CG0001");
-  assertEquals(reason.includes("probe did not build"), false, reason);
+  // The cause is the signature (structural: no log text reaches the record).
+  // Without the cascade filter the dependent's CG0001 blocks the signature
+  // and this reads "probe did not build".
+  assertEquals(r, {
+    status: "missing",
+    reason:
+      "infra: build_failed_no_diagnostics_no_tests (effective probe of 70210/CalcSurcharge)",
+  });
 });
 
 Deno.test("reuseCheck: a container fault during a probe is infra (missing, reason infra:)", async () => {
   const run = await one();
   const fake = bc({ FixWorks: { target: 70210, uses: true } });
   fake.broken.add("C1");
+  assertEquals(await run(fake), {
+    status: "missing",
+    reason: "infra: unscored (executed probe of 70210/CalcSurcharge)",
+  });
+});
+
+Deno.test("reuseCheck: a secret or private path in a marker message never reaches the record (run 002 P1)", async () => {
+  const run = await one();
+  const fake = bc({ FixWorks: { target: 70210, uses: true } });
+  const inner = fake.script;
+  fake.script = (cu, deployed, c) => {
+    const r = inner(cu, deployed, c);
+    return {
+      ...r,
+      results: r.results.map((x) =>
+        x.error?.includes(REUSE_MARKER)
+          ? { ...x, error: `${x.error} ${SECRET} at ${PRIVATE}` }
+          : x
+      ),
+    };
+  };
   const r = await run(fake);
-  assertEquals(r.status, "missing", JSON.stringify(r));
-  const reason = r.status === "missing" ? r.reason : "";
-  assertEquals(reason.startsWith("infra: "), true, reason);
-  assertStringIncludes(reason, "executed probe of 70210/CalcSurcharge");
-  assertStringIncludes(reason, "fake infra fault on C1");
+  assertEquals(r, {
+    status: "ok",
+    value: {
+      executed: true,
+      effective: true,
+      via: "70210/CalcSurcharge",
+      marker_evidence: [hit("FixWorks")],
+    },
+  });
+  const text = JSON.stringify(r);
+  assertEquals(text.includes(SECRET) || text.includes("cg-private"), false);
+});
+
+Deno.test("reuseCheck: a secret or private path in an infra error never reaches the record (run 002 P1)", async () => {
+  const run = await one();
+  class LeakyBc extends FakeBc {
+    override compileProject(container: string): Promise<CompilationResult> {
+      return Promise.reject(
+        new ContainerError(
+          `session crashed: ${SECRET} in ${PRIVATE}`,
+          container,
+          "compile",
+        ),
+      );
+    }
+  }
+  const r = await run(
+    new LeakyBc(bc({ FixWorks: { target: 70210, uses: true } }).script),
+  );
+  assertEquals(r, {
+    status: "missing",
+    reason: "infra: unscored (executed probe of 70210/CalcSurcharge)",
+  });
 });
 
 Deno.test("reuseCheck: a real compile error in a probe is still a non-building probe, not infra", async () => {
@@ -414,4 +465,42 @@ Deno.test("ReuseSchema: marker_evidence is optional (records under reuse 1 witho
   const withEvidence = { ...base, marker_evidence: [hit("FixWorks")] };
   assertEquals(ReuseSchema.parse(withEvidence), withEvidence);
   assertEquals(MEASURE_SUITE["reuse"], "1");
+});
+
+Deno.test("TaskMeasuresSchema: a reuse block whose evidence could not be recorded is refused at load", () => {
+  const ok = (targets: unknown[], procedures: string[]) =>
+    TaskMeasuresSchema.safeParse({
+      v: 1,
+      reuse: { targets, tests: [{ codeunit: 85000, procedures }] },
+    }).success;
+  assertEquals(ok([TARGET], ["FixWorks"]), true);
+  assertEquals(ok([TARGET], ['"Fix Works"']), false);
+  assertEquals(ok([TARGET], ["F".repeat(121)]), false);
+  assertEquals(ok([{ ...TARGET, procedure: "P".repeat(121) }], ["A"]), false);
+  assertEquals(ok([{ ...TARGET, codeunit: 2 ** 31 }], ["A"]), false);
+  // Evidence is at most targets x reuse tests entries (ReuseSchema caps 256).
+  const procs = (n: number) => Array.from({ length: n }, (_, i) => `T${i}`);
+  assertEquals(ok(Array(16).fill(TARGET), procs(16)), true);
+  assertEquals(ok(Array(16).fill(TARGET), procs(17)), false);
+});
+
+Deno.test("ReuseSchema: marker_evidence is normalized and bounded (no raw message, count and length capped)", () => {
+  const base = { executed: true, effective: true, via: "70210/CalcSurcharge" };
+  const bad = (marker_evidence: unknown) =>
+    ReuseSchema.safeParse({ ...base, marker_evidence }).success;
+  assertEquals(
+    bad([{ ...hit("FixWorks"), message: `Error: ${REUSE_MARKER}` }]),
+    false,
+  );
+  assertEquals(
+    bad([{ test: `85000/${"x".repeat(200)}`, target: "1/A" }]),
+    false,
+  );
+  assertEquals(
+    bad([{ test: `85000/${SECRET} ${PRIVATE}`, target: "1/A" }]),
+    false,
+  );
+  assertEquals(bad([{ test: "85000/A", target: PRIVATE }]), false);
+  assertEquals(bad(Array.from({ length: 257 }, () => hit("FixWorks"))), false);
+  assertEquals(bad(Array.from({ length: 256 }, () => hit("FixWorks"))), true);
 });

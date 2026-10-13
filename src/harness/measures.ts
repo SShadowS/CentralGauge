@@ -34,9 +34,12 @@ const ProcKey = z.string().regex(/^8\d{4}\/[A-Za-z_][A-Za-z0-9_]*$/);
 export const VARIANT =
   /^(correct|reference-tests|naive\/[A-Za-z0-9_-]+|fixture\/[A-Za-z0-9_-]+)$/;
 
+/** M11-14b: an AL identifier as ReuseSchema.marker_evidence can record it. */
+const Ident = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,119}$/);
+
 export const ReuseTargetSchema = z.strictObject({
-  codeunit: z.number().int().positive(),
-  procedure: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  codeunit: z.number().int().positive().max(2 ** 31 - 1),
+  procedure: Ident,
   /** As declared, e.g. "(Amount: Decimal): Decimal"; compared without whitespace, case-insensitive. */
   signature: z.string().min(2),
   /** Workspace-relative file holding the codeunit in the pristine workspace. */
@@ -65,9 +68,14 @@ export const TaskMeasuresSchema = z.strictObject({
     targets: z.array(ReuseTargetSchema).min(1),
     tests: z.array(z.strictObject({
       codeunit: z.number().int().min(85000).max(89999),
-      procedures: z.array(z.string().min(1)).min(1),
+      procedures: z.array(Ident).min(1),
     })).min(1),
-  }).nullable().default(null),
+  }).refine(
+    (r) =>
+      r.targets.length *
+          r.tests.reduce((n, x) => n + x.procedures.length, 0) <= 256,
+    "targets x reuse tests must be at most 256 (marker_evidence bound)",
+  ).nullable().default(null),
   expect: z.record(
     z.string().regex(VARIANT),
     z.strictObject({
@@ -255,14 +263,14 @@ export const ReuseSchema = z.strictObject({
   effective: z.boolean(),
   via: z.string().nullable(),
   /**
-   * M11-14b: the test messages that carried REUSE_MARKER, per reuse test and
-   * target. Optional so records written before it stay valid under reuse "1".
+   * M11-14b: which reuse test's message carried REUSE_MARKER under which
+   * target's probe. Normalized (never the raw message: it is agent-reachable
+   * output) and bounded. Optional so records without it stay valid under reuse "1".
    */
   marker_evidence: z.array(z.strictObject({
-    test: z.string(),
-    target: z.string(),
-    message: z.string(),
-  })).optional(),
+    test: z.string().regex(/^8\d{4}\/[A-Za-z_][A-Za-z0-9_]{0,119}$/),
+    target: z.string().regex(/^\d{1,10}\/[A-Za-z_][A-Za-z0-9_]{0,119}$/),
+  })).max(256).optional(),
 });
 
 export const MeasureRecordSchema = z.strictObject({
@@ -519,8 +527,8 @@ export async function reuseCheck(
       },
     },
   };
-  /** Per reuse test: failed under this probe, and failed with the marker (its message). */
-  type Run = { failed: Set<string>; marker: Map<string, string> } | {
+  /** Per reuse test: failed under this probe, and failed with the marker. */
+  type Run = { failed: Set<string>; marker: Set<string> } | {
     problem: string;
   };
   const probe = async (
@@ -558,14 +566,12 @@ export async function reuseCheck(
     const sig = judgment.verdict === "unscored"
       ? "unscored"
       : infraSignature(judgment, { ...log, diagnostics: own });
+    // The cause is the signature: log text (errors, notes) is unscrubbed
+    // probe output and never reaches the record (run 002 P1).
     if (sig !== null) {
-      const cause = log.error ??
-        log.notes.filter((n) => n.startsWith("build failed: ")).join("; ");
       return {
         problem:
-          `infra: ${sig} (${kind} probe of ${t.codeunit}/${t.procedure})${
-            cause ? `: ${cause}` : ""
-          }`,
+          `infra: ${sig} (${kind} probe of ${t.codeunit}/${t.procedure})`,
       };
     }
     if (judgment.scorers.find((s) => s.name === "build")?.passed !== true) {
@@ -595,14 +601,14 @@ export async function reuseCheck(
       };
     }
     const failed = new Set(wanted.filter((k) => ran(k)!.outcome === "fail"));
-    const marker = new Map<string, string>();
-    for (const k of failed) {
-      const m = log.test_messages.find((m) =>
-        `${m.codeunit}/${m.procedure}` === k &&
-        m.message.includes(REUSE_MARKER)
-      );
-      if (m) marker.set(k, m.message);
-    }
+    const marker = new Set(
+      [...failed].filter((k) =>
+        log.test_messages.some((m) =>
+          `${m.codeunit}/${m.procedure}` === k &&
+          m.message.includes(REUSE_MARKER)
+        )
+      ),
+    );
     return { failed, marker };
   };
   let located = 0;
@@ -611,7 +617,7 @@ export async function reuseCheck(
   const effBy = new Map<string, string[]>();
   const note = (m: Map<string, string[]>, k: string, id: string) =>
     m.set(k, [...(m.get(k) ?? []), id]);
-  const evidence: { test: string; target: string; message: string }[] = [];
+  const evidence: { test: string; target: string }[] = [];
   for (const [i, t] of r.targets.entries()) {
     const ex = await probe(i, "executed", t, `Error('${REUSE_MARKER}');`);
     if (ex === null) continue;
@@ -625,9 +631,9 @@ export async function reuseCheck(
     }
     if ("problem" in ef) return missing(ef.problem);
     const id = `${t.codeunit}/${t.procedure}`;
-    for (const [k, message] of ex.marker) {
+    for (const k of ex.marker) {
       note(execBy, k, id);
-      evidence.push({ test: k, target: id, message });
+      evidence.push({ test: k, target: id });
     }
     for (const k of ef.failed) note(effBy, k, id);
   }
