@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "86160/SisterVehiclesCountedThere": 1
+    "86160/SisterStopApplies": 1
+    "86160/OwnStopDoesNotApplyToSister": 1
+    "86160/SisterOnlyVehicleCounted": 1
+    "86160/SisterWithoutSetupRowNotSuspended": 1
+  hidden_regressions:
+    - "86160/OwnCompanyCounted"
+    - "86160/OwnStopAppliesToOwnCompany"
+    - "86160/OwnCompanyWithoutSetupNotSuspended"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/own-company-stop: { partial_credit: 0.6 }
+  naive/helper-own-record: { partial_credit: 0.2 }
+  naive/create-sister-setup: { partial_credit: 0.8 }

@@ -1,0 +1,20 @@
+id: HX-040
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Core, Rental, Fleet]
+coupling: [single-instance, ishandled, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SuspendRentalsBlocksCheckout] }
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80050, procedures: [SetupIsCachedUntilRefresh, CurrentBranchFallsBackToSetupDefault, StateIsSharedAcrossInstances, NewContractTakesCurrentBranch] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86260, procedures: [RentalsSuspendedFollowsSetup, StopAppliesAfterSetupLoaded, LiftedStopAppliesAtOnce, AskingKeepsSessionSetup, NoSetupRowNotSuspended, BlockedVehicleStillUnavailable, StopAppliesThroughAvailability] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

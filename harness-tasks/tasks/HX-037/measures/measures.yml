@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "86200/TwoOwnProblemsListed": 1
+    "86200/ExtensionProblemsListed": 1
+    "86200/OwnThenExtensionProblems": 1
+    "86200/SingleProblemNotRaised": 1
+    "86200/ListReplacedOnEachCall": 1
+  hidden_regressions:
+    - "86200/ReadyContractHasNoProblems"
+    - "86200/OrdinaryExtensionErrorStopsCheck"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/drain-without-clear: { partial_credit: 0 }
+  naive/no-collect: { partial_credit: 0.6 }
+  naive/clear-after-scope: { partial_credit: 0 }

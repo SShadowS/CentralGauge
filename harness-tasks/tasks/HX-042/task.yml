@@ -1,0 +1,17 @@
+id: HX-042
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Core, Test]
+coupling: [single-instance]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80050, procedures: [SetupIsCachedUntilRefresh, CurrentBranchFallsBackToSetupDefault, StateIsSharedAcrossInstances, NewContractTakesCurrentBranch] }
+  - { codeunit: 80052, procedures: [ZeroPrecisionFallsBackToCents, SetupPrecisionApplied, WholeUnitPrecision] }
+  - { codeunit: 80053, procedures: [DailyPreviewMatchesPricing, PreviewMatchesPricingAtCoarsePrecision, RebuildReplacesPreviousLines, LineAmountsUseSetupPrecision, WeekendPackageIsOneLine] }
+fail_to_pass: null
+mutants: [empty-branch-ignored, missing-setup-not-cached, default-branch-uncached, eager-refresh, default-equal-branch-dropped]
+contamination: null
+limits: { timeout_min: 30 }

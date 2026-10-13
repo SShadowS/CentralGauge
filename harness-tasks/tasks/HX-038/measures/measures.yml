@@ -1,0 +1,28 @@
+v: 1
+partial_credit:
+  weights:
+    "86220/ProposalMatchesInvoicedLines": 1
+    "86220/ProposalChangesNothing": 1
+    "86220/ProposalRaisesNoEvents": 1
+    "86220/ProposalReplacesBuffer": 1
+    "86220/ProposalInvoiceDateSkipsWeekend": 1
+    "86220/NothingDueClearsBuffer": 1
+    "86220/InvoicingAppliesBeforeEventChanges": 1
+    "86220/HandledLineNotInsertedButInvoiced": 1
+    "86220/InvoiceDueLinesUnchanged": 1
+    "86220/ProposalUsesSetupPrecision": 1
+    "86220/ProposalSkipsInvoicedLines": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70311, procedure: ProposeInvoiceLines, signature: '(ContractNo: Code[20]; UpToDate: Date; var InvoiceBuffer: Record "CGR Lease Invoice Line" temporary)', file: Leasing/src/LeaseInvoicing.Codeunit.al, perturb: "InvoiceBuffer.Reset(); InvoiceBuffer.DeleteAll();" }
+  tests:
+    - { codeunit: 86220, procedures: [InvoicingAppliesBeforeEventChanges, HandledLineNotInsertedButInvoiced, InvoiceDueLinesUnchanged] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/append-buffer: { partial_credit: 0.8181818181818182 }
+  naive/direct-insert: { partial_credit: 0.8181818181818182 }
+  naive/buffer-by-value: { partial_credit: 0.18181818181818182 }
+  naive/proposal-raises-events: { partial_credit: 0.8181818181818182 }

@@ -93,3 +93,39 @@ candidates:
   - id: HX-030
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-031
+    prior: hard
+    size: { objects: 3, files: 3, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
+  - id: HX-032
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Dispatcher.OnSendEntry" }
+  - id: HX-033
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: null }
+  - id: HX-034
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Core Events.OnAfterVehicleReturned" }
+  - id: HX-035
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-036
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-037
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Contract Check.OnCheckContractForPosting" }
+  - id: HX-038
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Lease Invoicing.ProposeInvoiceLines", traces: null }
+  - id: HX-039
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: "CGR Rental Mgt.TryPost", traces: null }
+  - id: HX-040
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: "CGR Session Context.RentalsSuspended", traces: null }
+  - id: HX-041
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Core Events.OnAfterVehicleReturned" }
+  - id: HX-042
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }

@@ -1,0 +1,20 @@
+id: HX-031
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Rental, Core]
+coupling: [single-instance, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry, DailyPriceWithWeekendSurcharge, ExcessKmCharged] }
+  - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
+  - { codeunit: 80050, procedures: [StateIsSharedAcrossInstances] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86080, procedures: [SinglePostCounted, BatchPostCounted, RefusedBatchContractCountsFailed, RefusedSinglePostCountsFailed, UnreturnedContractCountsFailed, PostRightAfterReturnKeepsPostingError, FiguresSharedAcrossInstances, ResetClearsFigures] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
