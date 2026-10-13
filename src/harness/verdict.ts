@@ -96,6 +96,45 @@ export function buildFailureCodes(codes: string[]): string[] {
   return real.length > 0 ? real : all;
 }
 
+/**
+ * H-04: a dependent's "dependency X did not build" entry (bc-lane synthetic):
+ * a consequence of another app's failure, never a diagnostic of its own.
+ */
+export function isCascadeDiagnostic(
+  d: { code: string; message: string },
+): boolean {
+  return d.code === "CG0001" && /^dependency .+ did not build$/.test(d.message);
+}
+
+/**
+ * H-04: a failed build no compiler diagnostic explains (nothing but the
+ * cascade) crashed (BC session or compile service died): infrastructure,
+ * thrown as such, never the model's failure. Any genuine diagnostic, the
+ * other synthetic CG0001 refusals included, keeps it a build failure.
+ */
+function throwIfCrashed(
+  built: {
+    folder: string;
+    ok: boolean;
+    diagnostics: { code: string; message: string }[];
+  }[],
+  container: string,
+  label: string,
+): void {
+  const failed = built.filter((b) => !b.ok);
+  if (failed.length === 0) return;
+  if (failed.some((b) => b.diagnostics.some((d) => !isCascadeDiagnostic(d)))) {
+    return;
+  }
+  throw new ContainerError(
+    `${label} build of ${
+      failed.map((b) => b.folder).join(", ")
+    } failed with no compiler diagnostic (crashed build)`,
+    container,
+    "compile",
+  );
+}
+
 export interface JudgeInput {
   executionId: string;
   workspaceHash: string;
@@ -420,6 +459,7 @@ async function buildOracle(
       message: d.message,
     });
   }
+  throwIfCrashed([b], prep.container, "oracle");
   if (!b.ok || b.file === null) {
     ctx.log.notes.push(
       `oracle build failed: ${
@@ -470,6 +510,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     lock: i.lock,
   });
   recordBuild(ctx, prep, "candidate");
+  throwIfCrashed(prep.built, prep.container, "candidate");
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
 
@@ -696,6 +737,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     });
   const prep = await prepare(vw.dir, vw.apps, vw.changed, "apps-reference");
   recordBuild(ctx, prep, "reference");
+  throwIfCrashed(prep.built, prep.container, "reference");
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
 
@@ -721,6 +763,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     });
     const sp = await prepare(sw.dir, sw.apps, sw.changed, "apps-p2p");
     recordBuild(ctx, sp, "pass_to_pass");
+    throwIfCrashed(sp.built, sp.container, "pass_to_pass");
     if (!sp.buildOk) {
       throw new ValidationError(
         `${t.id}: the reference with the shipped tests does not build`,
@@ -893,6 +936,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       });
       const mp = await prepare(mv.dir, mv.apps, mv.changed, `apps-mutant-${m}`);
       recordBuild(ctx, mp, target);
+      throwIfCrashed(mp.built, mp.container, target);
       if (!mp.buildOk) {
         mkRows.push(...allRows("compile"));
         outcomes.push("survived"); // not a kill
@@ -1034,7 +1078,13 @@ export function infraSignature(
     l.notes.some((n) =>
       typeof n === "string" && n.startsWith("build failed: ")
     ) &&
-    Array.isArray(l.diagnostics) && l.diagnostics.length === 0
+    // H-04: a dependent's cascade entry is no diagnostic of its own.
+    Array.isArray(l.diagnostics) &&
+    l.diagnostics.every((d) =>
+      typeof d === "object" && d !== null &&
+      typeof d.code === "string" && typeof d.message === "string" &&
+      isCascadeDiagnostic(d)
+    )
   ) {
     return "build_failed_no_diagnostics_no_tests";
   }

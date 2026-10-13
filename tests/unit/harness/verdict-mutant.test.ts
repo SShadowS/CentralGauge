@@ -203,6 +203,74 @@ Deno.test("mutant_kill: a mutant that does not compile is not a kill", async () 
   assertEquals(judgment.verdict, "fail");
 });
 
+Deno.test("mutant_kill (H-04): a mutant build that crashes (no diagnostic) is infra, never a survivor", async () => {
+  const fake = bc();
+  // The mutant's own (candidate) build, not its staged prerequisites.
+  fake.crashFor = (p) =>
+    p.includes("/apps-mutant-") && !p.includes("/prereq/") &&
+    p.endsWith("/Rental");
+  const { judgment, log } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, { suite: "reference-tests" }),
+  );
+  const mk = sc(judgment, "mutant_kill");
+  assert(
+    mk.tests.some((t) =>
+      t.target === "mutant:off-by-one" && t.failure === "infra"
+    ),
+    JSON.stringify(mk.tests),
+  );
+  assert(mk.tests.every((t) => t.failure !== "compile"));
+  assertEquals(mk.passed, null);
+  assertEquals(judgment.verdict, "unscored");
+  assertStringIncludes(log.notes.join("\n"), "no compiler diagnostic");
+});
+
+Deno.test("mutant_kill (H-04): a reference build that crashes (no diagnostic) is unscored, never a build failure", async () => {
+  const fake = bc();
+  fake.crashFor = (p) =>
+    p.includes("/apps-reference/") && p.endsWith("/Rental");
+  const { judgment, log } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, { suite: "reference-tests" }),
+  );
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(sc(judgment, "build").passed, null);
+  assertStringIncludes(log.error ?? "", "no compiler diagnostic");
+});
+
+Deno.test("mutant_kill (H-04): a crashed mutant next to a survivor is still a definite fail", async () => {
+  const fake = bc();
+  fake.crashFor = (p) =>
+    p.includes("/apps-mutant-crash") && !p.includes("/prereq/") &&
+    p.endsWith("/Rental");
+  const { judgment } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ same: "exit(10);  ", crash: "exit(9);" }, {
+      suite: "reference-tests",
+    }),
+  );
+  const mk = sc(judgment, "mutant_kill");
+  assert(
+    mk.tests.some((t) => t.target === "mutant:crash" && t.failure === "infra"),
+    JSON.stringify(mk.tests),
+  );
+  assertEquals(mk.passed, false);
+  assertEquals(judgment.verdict, "fail");
+});
+
+Deno.test("mutant_kill (H-04): a crashed pass_to_pass control build is unscored, not a task error", async () => {
+  const fake = bc();
+  fake.crashFor = (p) => p.includes("/apps-p2p/") && !p.includes("/prereq/");
+  const { judgment, log } = await judge(
+    new BcLane(fake, ["C1"]),
+    await setup({ "off-by-one": "exit(9);" }, { suite: "reference-tests" }),
+  );
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(sc(judgment, "pass_to_pass").passed, null);
+  assertStringIncludes(log.error ?? "", "pass_to_pass build of");
+});
+
 Deno.test("mutant_kill: the conformance fixture's infra rule is for trusted suites; in an agent suite, a missing B is the agent's, A's assertion still kills", async () => {
   const fx = JSON.parse(
     await Deno.readTextFile(

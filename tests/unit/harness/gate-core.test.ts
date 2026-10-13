@@ -433,6 +433,24 @@ Deno.test("summarize: oracle missing from builds of a fully built refapp is infr
   assertEquals(summarize(F2P, result({ usesOracle: true })).infra, true);
 });
 
+Deno.test("summarize (H-04): a compile failure with no diagnostic code is infra, even when the runner did not say so", () => {
+  const crashed = (codes: string[]) =>
+    summarize(
+      F2P,
+      result({
+        builds: [
+          ...BUILT(["Core", "Fleet"]),
+          { app: "Rental", stage: "compile", ok: false, codes },
+        ],
+        tests: [],
+      }),
+    );
+  assertEquals(crashed([]).infra, true);
+  assertEquals(crashed([]).refapp, "compile_fail");
+  // A genuine diagnostic stays the candidate's failure.
+  assertEquals(crashed(["AL0118"]).infra, false);
+});
+
 Deno.test("summarize: apps skipped after a compile failure stay attributed to it", () => {
   const s = summarize(
     F2P,

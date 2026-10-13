@@ -345,6 +345,11 @@ export function summarize(task: HarnessTask, run: RunResult): RunSummary {
   const infraPublish = ordered.some((st, i) =>
     st === "publish_fail" && !collided(apps[i]!)
   );
+  // H-04: a compile failure with no diagnostic code crashed (session or
+  // compile service): infra, whether or not the runner said so.
+  const crashedCompile = run.builds.some((b) =>
+    b.stage === "compile" && !b.ok && b.codes.length === 0
+  );
   const testBuilt = appState(run, "Test") === "ok";
   const p2p = tally(run.tests, task.pass_to_pass);
   const f2p = task.fail_to_pass && oracle === "ok"
@@ -360,6 +365,7 @@ export function summarize(task: HarnessTask, run: RunResult): RunSummary {
     own,
     // Missing results from an app that built are infra, never evidence (GH #13 rule).
     infra: run.infra !== undefined || unexplainedNotRun || infraPublish ||
+      crashedCompile ||
       (testBuilt && p2p.missing > 0) ||
       (f2p !== null && f2p.missing > 0) ||
       (testBuilt && own !== null && own.missing > 0),
