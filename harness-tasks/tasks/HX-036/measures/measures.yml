@@ -8,6 +8,8 @@ partial_credit:
     "86180/LaterRateNotUsedForContract": 1
     "86180/NoRateUsesVehicleRate": 1
     "86180/PackageUsesRate": 1
+    "86180/RateStartingOnStartDateApplies": 1
+    "86180/MixedValidRatesLatestWins": 1
   hidden_regressions: []
 reuse: null
 expect:

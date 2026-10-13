@@ -57,6 +57,24 @@ codeunit 86180 "HX036 Rate Card Oracle"
     end;
 
     [Test]
+    procedure RateStartingOnStartDateApplies()
+    begin
+        Prepare('HX036-V8');
+        AddRate('HX036-V8', 20260101D, 0D, 50);
+        AddRate('HX036-V8', 20270304D, 0D, 75);
+        AssertDailyPrice('HX036-V8', 'HX036-C8', 75, 'A rate starting on the contract start date 2027-03-04 applies and is the latest valid rate');
+    end;
+
+    [Test]
+    procedure MixedValidRatesLatestWins()
+    begin
+        Prepare('HX036-V9');
+        AddRate('HX036-V9', 20260101D, 0D, 50);
+        AddRate('HX036-V9', 20270201D, 20270331D, 65);
+        AssertDailyPrice('HX036-V9', 'HX036-C9', 65, 'Of an open-ended rate from 2026-01-01 and a rate 2027-02-01..2027-03-31, the later starting one applies');
+    end;
+
+    [Test]
     procedure PackageUsesRate()
     var
         Contract: Record "CGR Rental Contract";
