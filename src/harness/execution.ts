@@ -89,11 +89,14 @@ import {
   MIN_SECRET_LENGTH,
   OP_TIMEOUT_MS,
   publishRedacted,
+  READ_PREFIX,
   readSecretValues,
   READY_FILE,
   redactText,
+  removeConfirmed,
   restrictPath,
   runSandbox,
+  SANDBOX_PREFIX,
   sandboxName,
   type SandboxResult,
   type SecretValue,
@@ -198,6 +201,8 @@ export interface HarnessEnv {
   qualifyManifest?: QualifyManifest | null;
   /** Operator interrupt (Ctrl+C, M1-24). */
   stop?: AbortSignal;
+  /** M10-08c: true once another process took the private root's lock; no execution starts then. */
+  namespaceLost?: () => boolean;
   now?: () => Date;
   timeoutMsFor?: (minutes: number) => number;
   killGraceMs?: number;
@@ -1475,7 +1480,7 @@ export async function runExecution(
   let privilegeFailure: string | null = null;
   /** M9-05: the component inventory refused the arm before any release (setup_failed, cost 0, no campaign stop). */
   let inventoryRefused: string | null = null;
-  /** M10-08c: the sandbox ended or was replaced before the provider release (setup_failed, cost 0). */
+  /** M10-08c: the sandbox ended or was replaced before the proxy credential or provider release (setup_failed, cost 0, stop_reason sandbox_not_live, no campaign stop). */
   let notLive: string | null = null;
   let egressStop: string | null = null;
   const egressFail = (m: string) => {
@@ -1847,7 +1852,13 @@ export async function runExecution(
           reg = r.reg;
           credForms = proxyCredentialForms(r.credential);
           await commitCustody(credForms);
-          await stillLive();
+          try {
+            await stillLive();
+          } catch (err) {
+            // M10-08c review 3: the same pre-start refusal as after the preflight.
+            if (!stop.aborted) notLive = msg(err);
+            throw err;
+          }
           await writeSecretFiles(dir, [credForms[0]!]);
           const lines = await bounded(
             eg.probe(name, hosts),
@@ -1883,12 +1894,15 @@ export async function runExecution(
         } catch (err) {
           // An operator interrupt already stops the run; nothing was
           // released and it is not an egress failure.
-          if (!stop.aborted) preflightError = msg(err);
+          if (!stop.aborted && notLive === null) preflightError = msg(err);
         }
         const failed = reg?.failure ??
           (eg.proxyFailed ? "egress_proxy_failed" : null);
         if (failed !== null) onRegFailure(failed);
-        else if (preflightError !== null) {
+        else if (notLive !== null) {
+          egressStop = "sandbox_not_live";
+          egressAbort.abort(new Error(notLive));
+        } else if (preflightError !== null) {
           egressStop = "egress_preflight_failed";
           egressAbort.abort(
             new Error(`egress preflight failed: ${preflightError}`),
@@ -1902,6 +1916,7 @@ export async function runExecution(
           await stillLive();
         } catch (err) {
           notLive = msg(err);
+          egressStop = "sandbox_not_live";
           egressAbort.abort(new Error(notLive));
         }
       }
@@ -2619,6 +2634,13 @@ export async function runCell(
   const executions: ExecutionRecord[] = [];
   let at = first;
   for (;;) {
+    // M10-08c review 4: this process was suspended past the stale window and
+    // another one reclaimed the root (and may sweep it): start nothing more.
+    if (env.namespaceLost?.()) {
+      throw new ConfigurationError(
+        `the lock on private root ${env.privateRoot} was taken over by another process: no execution starts`,
+      );
+    }
     const { execution: e, usageResetAt } = await runExecution(env, cell, at);
     executions.push(e);
     const policy = outcomePolicy(e.termination, e.did_work);
@@ -2671,6 +2693,40 @@ export async function runCell(
     }
     at = next;
   }
+}
+
+/**
+ * M10-08c review 2: before namespace owners, sandboxes carried the bare
+ * hostname. Under the private root's lock, remove (confirmed gone) those
+ * whose execution is one of this root's intents, so recovery never removes
+ * the work dir or custody of a sandbox still running; others are left alone.
+ */
+export async function sweepLegacySandboxes(
+  docker: DockerCli,
+  host: string,
+  privateRoot: string,
+  opMs = OP_TIMEOUT_MS,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  try {
+    for (const e of Deno.readDirSync(join(privateRoot, "intents"))) {
+      if (e.isFile && e.name.endsWith(".json") && !e.name.includes(".tmp-")) {
+        ids.add(e.name.slice(0, -".json".length));
+      }
+    }
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  if (ids.size === 0) return [];
+  const names = await bounded(docker.listOwned(host), opMs, "docker ps");
+  const ours: string[] = [];
+  for (const n of names) {
+    if (!n.startsWith(SANDBOX_PREFIX) || n.startsWith(READ_PREFIX)) continue;
+    const st = await bounded(docker.state(n), opMs, `docker inspect ${n}`);
+    if (st?.execution && ids.has(st.execution)) ours.push(n);
+  }
+  await removeConfirmed(docker, ours, opMs);
+  return ours;
 }
 
 /**

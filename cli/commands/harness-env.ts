@@ -41,7 +41,10 @@ import {
   SANDBOX_NETWORK,
   verifyEgressState,
 } from "../../src/harness/egress.ts";
-import { recoverInterrupted } from "../../src/harness/execution.ts";
+import {
+  recoverInterrupted,
+  sweepLegacySandboxes,
+} from "../../src/harness/execution.ts";
 import { sweepWorkspaceTemp } from "../../src/harness/fsutil.ts";
 import {
   loadSymbolsLock,
@@ -59,6 +62,8 @@ import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
   acquireBenchLock,
+  BenchLockHeldError,
+  benchLockLost,
   DEFAULT_BENCH_LOCK_DIR,
 } from "../../src/utils/bench-lock.ts";
 import { setupContainers } from "./bench/container-setup.ts";
@@ -374,6 +379,23 @@ export async function openHarnessEnv(
   };
   let closing: Promise<void> | null = null;
   try {
+    // M10-08c: the sweeps below and in recoverInterrupted are crash recovery
+    // of this private root only (its temp, intents, secrets and sandboxes):
+    // its exclusive lock first, before any of them, then its own owner label.
+    try {
+      closers.push(
+        deps.acquireLock(o.privateRoot, {
+          command: `${o.command} (private root)`,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof BenchLockHeldError) {
+        err.message +=
+          `; another harness environment uses --private-dir ${o.privateRoot}: wait for it or pass another --private-dir`;
+      }
+      throw err;
+    }
+    const namespaceLost = benchLockLost(o.privateRoot);
     // M1-33e: the marker's proxy_isolation, fixed here under the lock for
     // the life of the environment (a later change refuses the next cell).
     const proxyIsolation = await markerProxyIsolation(sharedResults);
@@ -416,16 +438,11 @@ export async function openHarnessEnv(
     await store.sweepTemp();
     await sweepWorkspaceTemp(o.resultsDir, o.privateRoot);
     const docker = deps.docker();
-    // M10-08c: the sweeps here and in recoverInterrupted are crash recovery
-    // of this private root only (its intents, secrets and sandboxes): its
-    // exclusive lock first, then its own owner label, never the host's.
-    closers.push(
-      acquireBenchLock(o.privateRoot, {
-        command: `${o.command} (private root)`,
-      }),
-    );
     const owner = namespaceOwner(deps.owner(), o.privateRoot);
-    const swept = await sweepOwnedSandboxes(docker, owner);
+    const swept = [
+      ...await sweepOwnedSandboxes(docker, owner),
+      ...await sweepLegacySandboxes(docker, deps.owner(), o.privateRoot),
+    ];
     if (swept.length > 0) {
       console.log(
         `${
@@ -496,6 +513,7 @@ export async function openHarnessEnv(
       credentialLedger: o.credentialLedger,
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
+      namespaceLost,
     };
     const recovered = await recoverInterrupted(env, loadTask);
     for (const e of recovered) {

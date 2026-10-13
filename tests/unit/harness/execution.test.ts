@@ -4376,6 +4376,11 @@ Deno.test("component inventory: a record delivered only at kill is not proof at 
   const e = (await runCell(t.env, cell)).executions[0]!;
   assertEquals(e.termination, "setup_failed");
   assertStringIncludes((await sideOf(t, e.id)).setup_error, "live");
+  // M10-08c review 8: the exact refusal, never another "live" message.
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "no complete cg_inventory record seen live",
+  );
   assertEquals(e.telemetry.cost_usd, 0);
   assertEquals(t.docker.readySeen, false);
   assertEquals(t.docker.secretsAtKill ?? [], []);
@@ -4394,6 +4399,8 @@ Deno.test("component inventory: a record delivered only after the sandbox ended 
   assertEquals(e.termination, "setup_failed");
   const err = (await sideOf(t, e.id)).setup_error as string;
   assertStringIncludes(err, "live");
+  // M10-08c review 8: the exact refusal, never another "live" message.
+  assertStringIncludes(err, "no complete cg_inventory record seen live");
   assert(!err.includes("requested components did not load"), err);
   assertEquals(t.docker.readySeen, false);
   assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
@@ -4471,9 +4478,11 @@ Deno.test("enforced run: a sandbox removed before the proxy credential release g
     return r;
   };
   const cell = await cellFor(t);
-  await assertRejects(
-    () => runCell(t.env, cell),
-    ContainerError,
+  // M10-08c review 3: the same pre-start refusal as a sandbox gone after the
+  // preflight (setup_failed, no campaign stop), never egress_preflight_failed.
+  const { executions } = await runCell(t.env, cell);
+  assertStringIncludes(
+    (await sideOf(t, executions[0]!.id)).setup_error,
     "no longer live",
   );
   const [e] = await t.env.store.executions(cell.campaignId);
@@ -4522,4 +4531,77 @@ Deno.test("a sandbox replaced under its name before the release gets nothing (id
     t.docker.containers.has(t.docker.runs[0]!.name),
     "the other execution's container is left alone",
   );
+});
+
+// M10-08c review 3 and 8: a sandbox gone before the proxy credential and one
+// gone after the preflight are the same pre-start setup_failed (no campaign
+// stop); every secret file write is observed at the write itself (never at the
+// kill, which happens at the removal): none lands after the removal.
+Deno.test("enforced run (M10-08c review 3, 8): a sandbox gone before the proxy credential or after the preflight is the same pre-start setup_failed, no campaign stop, no secret written after the removal", async () => {
+  for (const when of ["before the credential", "after the preflight"]) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    const gone = () => {
+      const name = t.docker.runs[0]!.name;
+      void t.docker.rm(name);
+    };
+    if (when === "before the credential") {
+      const register = eg.register;
+      eg.register = (o) => {
+        const r = register(o);
+        gone();
+        return r;
+      };
+    } else {
+      const verify = eg.verify;
+      let calls = 0;
+      eg.verify = () => {
+        if (++calls === 2) gone();
+        return verify();
+      };
+    }
+    const late: string[] = [];
+    const write = Deno.writeTextFile;
+    Deno.writeTextFile = (path, data, o) => {
+      const run = t.docker.runs[0];
+      const mount = run?.mounts.get("C:\\cg-secrets")?.src;
+      if (
+        run && mount && !t.docker.containers.has(run.name) &&
+        String(path).startsWith(mount)
+      ) {
+        late.push(String(path));
+      }
+      return write(path, data, o);
+    };
+    let e: ExecutionRecord;
+    try {
+      e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+    } finally {
+      Deno.writeTextFile = write;
+    }
+    assertEquals(e.termination, "setup_failed", when);
+    const side = await sideOf(t, e.id);
+    assertStringIncludes(side.setup_error, "no longer live", when);
+    // runCell resolved: no campaign stop; one distinct label on both paths.
+    assertEquals(side.stop_reason, "sandbox_not_live", when);
+    assertEquals(e.telemetry.cost_usd, 0, when);
+    assertEquals(late, [], `${when}: no secret written after the removal`);
+    assertEquals(t.docker.readySeen, false, when);
+    assertEquals(await t.env.store.judgments(e.id), [], when);
+  }
+});
+
+// M10-08c review 4: an environment whose private-root lock another process
+// reclaimed (this one suspended past the stale window) starts no execution.
+Deno.test("runCell (M10-08c review 4): an environment that lost its private root's lock starts nothing", async () => {
+  const t = await makeEnv();
+  t.env.namespaceLost = () => true;
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "lock",
+  );
+  assertEquals(t.docker.runs, []);
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
 });

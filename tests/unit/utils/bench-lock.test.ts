@@ -4,6 +4,7 @@ import {
   acquireBenchLock,
   BENCH_LOCK_FILENAME,
   BenchLockHeldError,
+  benchLockLost,
   benchLockPath,
   isBenchRunning,
   readBenchLock,
@@ -206,4 +207,27 @@ Deno.test("bench-lock", async (t) => {
       await cleanupTempDir(dir);
     }
   });
+});
+
+// M10-08c review 4: a holder suspended past the stale window learns that
+// another process reclaimed its lock (the heartbeat alone only stops quietly).
+Deno.test("benchLockLost: false while the marker carries our token, true once another process reclaimed it; refuses without a marker", async () => {
+  const dir = await createTempDir("bench-lock-lost");
+  try {
+    assertThrows(() => benchLockLost(dir), Error, "no lock");
+    const release = acquireBenchLock(dir, { command: "ours" });
+    const lost = benchLockLost(dir);
+    assertFalse(lost());
+    const old = new Date(Date.now() - 121_000);
+    Deno.utimeSync(benchLockPath(dir), old, old);
+    assertFalse(lost(), "stale but not reclaimed: still ours");
+    const other = tryAcquireBenchLock(dir, { command: "reclaimer" });
+    assert(other.acquired, "the stale lock is reclaimed");
+    assert(lost(), "reclaimed: lost");
+    await release();
+    assertEquals(readBenchLock(dir)?.command, "reclaimer");
+    if (other.acquired) await other.release();
+  } finally {
+    await cleanupTempDir(dir);
+  }
 });

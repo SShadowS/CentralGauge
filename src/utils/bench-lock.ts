@@ -261,6 +261,18 @@ export function tryAcquireBenchLock(
 }
 
 /**
+ * Call right after acquiring the lock in `dir`: a check that turns true once
+ * the marker no longer carries the current token (another process reclaimed
+ * it while this one was suspended past the stale window; the heartbeat only
+ * stops quietly). Throws when there is no marker to hold.
+ */
+export function benchLockLost(dir: string): () => boolean {
+  const token = readBenchLock(dir)?.token;
+  if (!token) throw new Error(`no lock to hold in ${benchLockPath(dir)}`);
+  return () => readBenchLock(dir)?.token !== token;
+}
+
+/**
  * Take the exclusive bench lock or throw {@link BenchLockHeldError}. Returns
  * the release function; call it from a `finally`.
  */

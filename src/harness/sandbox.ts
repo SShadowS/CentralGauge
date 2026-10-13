@@ -833,8 +833,18 @@ export async function sweepOwnedSandboxes(
   // The owner label is filtered by docker; the prefix is re-checked here, so
   // a container needs both to be touched.
   const ours = names.filter((n) => n.startsWith(prefix));
+  await removeConfirmed(docker, ours, opTimeoutMs);
+  return ours;
+}
+
+/** Remove each named container, each confirmed gone (or throw naming every failure). */
+export async function removeConfirmed(
+  docker: DockerCli,
+  names: string[],
+  opTimeoutMs = OP_TIMEOUT_MS,
+): Promise<void> {
   const failed: string[] = [];
-  for (const n of ours) {
+  for (const n of names) {
     try {
       const r = await bounded(docker.rm(n), opTimeoutMs, `docker rm -f ${n}`);
       if (r.code !== 0 && !/no such container/i.test(r.stderr)) {
@@ -855,7 +865,6 @@ export async function sweepOwnedSandboxes(
       "setup",
     );
   }
-  return ours;
 }
 
 export const SECRETS_DIR_PREFIX = "cg-harness-secrets-";

@@ -1000,11 +1000,17 @@ export async function harnessImagesBuild(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );
   }
-  // M10-08c: harness envs read under their private root's owner; a build
-  // reads under the bare hostname and sweeps that owner's read leftovers (a
-  // read container is never started and holds no secret).
+  // M10-08c: harness envs read under their private root's owner; each build
+  // reads under its own owner, so concurrent builds never remove each other's
+  // read container. Older builds read under the bare hostname: those read
+  // leftovers are swept (never started, no secret).
+  // ponytail: a crashed build's own read container is never swept (harmless); a lock if they pile up.
   await sweepOwnedSandboxes(docker, Deno.hostname(), undefined, READ_PREFIX);
-  const f = await imageFacts(docker, tag, Deno.hostname());
+  const f = await imageFacts(
+    docker,
+    tag,
+    `${Deno.hostname()}-build-${crypto.randomUUID().slice(0, 8)}`,
+  );
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(
       `${tag}: label ${IMAGE_LABELS.revision} is ${
