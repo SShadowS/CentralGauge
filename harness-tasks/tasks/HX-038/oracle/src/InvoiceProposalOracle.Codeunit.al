@@ -156,6 +156,7 @@ codeunit 86220 "HX038 Invoice Proposal Oracle"
         repeat
             Assert.AreEqual(99.99, InvoiceLine.Amount, StrSubstNo('Invoice line %1 keeps the amount a subscriber set', InvoiceLine."Schedule Line No."));
         until InvoiceLine.Next() = 0;
+        Assert.AreEqual(2, Spy.BeforeEvents(), 'One before event per line');
         Assert.AreEqual(2, Spy.AfterEvents(), 'One after event per created line');
     end;
 
@@ -206,22 +207,70 @@ codeunit 86220 "HX038 Invoice Proposal Oracle"
         Assert.AreEqual(3, ScheduleLine.Count(), 'All three schedule lines marked invoiced');
     end;
 
+    [Test]
+    procedure ProposalUsesSetupPrecision()
+    var
+        TempInvoiceLine: Record "CGR Lease Invoice Line" temporary;
+        LeaseInvoicing: Codeunit "CGR Lease Invoicing";
+    begin
+        InitRun();
+        SetPrecision(1);
+        InsertLeaseAtRate('HX38-PRECISION', 101);
+
+        LeaseInvoicing.ProposeInvoiceLines('HX38-PRECISION', 20270301D, TempInvoiceLine);
+
+        TempInvoiceLine.Reset();
+        Assert.AreEqual(1, TempInvoiceLine.Count(), 'Only the March line is due up to 1 March');
+        Assert.IsTrue(TempInvoiceLine.Get('HX38-PRECISION', 10000), 'The March line is proposed');
+        Assert.AreEqual(104.00, TempInvoiceLine.Amount, '104.03 rounded to whole units by the Setup precision');
+    end;
+
+    [Test]
+    procedure ProposalSkipsInvoicedLines()
+    var
+        TempInvoiceLine: Record "CGR Lease Invoice Line" temporary;
+        LeaseInvoicing: Codeunit "CGR Lease Invoicing";
+    begin
+        InitRun();
+        InsertLease('HX38-PARTIAL');
+        Assert.AreEqual(1, LeaseInvoicing.InvoiceDueLines('HX38-PARTIAL', 20270301D), 'March is invoiced first');
+
+        LeaseInvoicing.ProposeInvoiceLines('HX38-PARTIAL', 20270501D, TempInvoiceLine);
+
+        TempInvoiceLine.Reset();
+        Assert.AreEqual(2, TempInvoiceLine.Count(), 'Only the lines not yet invoiced are proposed');
+        Assert.IsFalse(TempInvoiceLine.Get('HX38-PARTIAL', 10000), 'The invoiced March line is not proposed');
+        AssertInvoiceLine(TempInvoiceLine, 'HX38-PARTIAL', 20000, 20270401D, 20270401D, 103.00);
+        AssertInvoiceLine(TempInvoiceLine, 'HX38-PARTIAL', 30000, 20270501D, 20270503D, 103.00);
+    end;
+
     local procedure InitRun()
     var
-        Setup: Record "CGR Setup";
         NonWorkingDay: Record "CGR Non-Working Day";
-        SessionContext: Codeunit "CGR Session Context";
     begin
         WorkDate(20270301D);
-        Setup.GetOrCreate();
-        Setup."Amount Rounding Precision" := 0.01;
-        Setup.Modify();
-        SessionContext.Reset();
+        SetPrecision(0.01);
         NonWorkingDay.SetRange("Non-Working Date", 20270301D, 20270531D);
         NonWorkingDay.DeleteAll();
     end;
 
+    local procedure SetPrecision(RoundingPrecision: Decimal)
+    var
+        Setup: Record "CGR Setup";
+        SessionContext: Codeunit "CGR Session Context";
+    begin
+        Setup.GetOrCreate();
+        Setup."Amount Rounding Precision" := RoundingPrecision;
+        Setup.Modify();
+        SessionContext.Reset();
+    end;
+
     local procedure InsertLease(LeaseNo: Code[20])
+    begin
+        InsertLeaseAtRate(LeaseNo, 100);
+    end;
+
+    local procedure InsertLeaseAtRate(LeaseNo: Code[20]; BaseRate: Decimal)
     var
         Contract: Record "CGR Lease Contract";
         InvoiceLine: Record "CGR Lease Invoice Line";
@@ -240,7 +289,7 @@ codeunit 86220 "HX038 Invoice Proposal Oracle"
         Contract."Customer Name" := 'HX038 Customer';
         Contract."Start Date" := 20270301D;
         Contract.Months := 3;
-        Contract."Base Rate" := 100;
+        Contract."Base Rate" := BaseRate;
         Contract.Insert();
         LeaseMgt.CreateSchedule(LeaseNo);
     end;

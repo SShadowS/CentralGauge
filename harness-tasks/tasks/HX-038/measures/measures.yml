@@ -10,6 +10,8 @@ partial_credit:
     "86220/InvoicingAppliesBeforeEventChanges": 1
     "86220/HandledLineNotInsertedButInvoiced": 1
     "86220/InvoiceDueLinesUnchanged": 1
+    "86220/ProposalUsesSetupPrecision": 1
+    "86220/ProposalSkipsInvoicedLines": 1
   hidden_regressions: []
 reuse:
   targets:
