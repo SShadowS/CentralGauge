@@ -41,6 +41,8 @@ try {
     Assert-ExeManifest $Arg1 (Get-Content -LiteralPath $Arg2 -Raw | ConvertFrom-Json)
   } elseif ($Op -eq 'zip') {
     Assert-ZipSafe $Arg1
+  } elseif ($Op -eq 'get') {
+    Get-Pinned (Get-Content -LiteralPath $Arg1 -Raw | ConvertFrom-Json) $Arg2
   } elseif ($Op -eq 'mkzip') {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $z = [IO.Compression.ZipFile]::Open($Arg1, 'Create')
@@ -186,5 +188,61 @@ Deno.test({
         assertStringIncludes(r.out, "unsafe archive entry");
       }
     });
+  },
+});
+
+// M10-08a: the VS Marketplace answers the AL vsix with Content-Encoding: gzip, and the pin
+// is the hash of that raw gzip body. Get-Pinned must save the bytes on the wire, not a
+// transport-decoded body: the raw pin is accepted, the decoded body's hash is refused.
+Deno.test({
+  name:
+    "install-lsp.ps1 (PS 5.1): Get-Pinned saves the raw Content-Encoding: gzip body and checks the pin against it, not the decoded body",
+  ignore: !WIN,
+  async fn() {
+    const plain = new TextEncoder().encode(
+      "CentralGauge test fixture: gzip-on-the-wire body\n".repeat(64),
+    );
+    const gz = new Uint8Array(
+      await new Response(
+        new Blob([plain]).stream().pipeThrough(new CompressionStream("gzip")),
+      ).arrayBuffer(),
+    );
+    const server = Deno.serve(
+      { hostname: "127.0.0.1", port: 0, onListen() {} },
+      () =>
+        new Response(gz, {
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-encoding": "gzip",
+          },
+        }),
+    );
+    try {
+      const url = `http://127.0.0.1:${server.addr.port}/al.vsix`;
+      await withTemp(async (t, run) => {
+        const pin = async (name: string, hash: string) => {
+          const p = join(t, name);
+          await Deno.writeTextFile(
+            p,
+            JSON.stringify({ url, algorithm: "SHA256", hash }),
+          );
+          return p;
+        };
+        const out = join(t, "raw.vsix");
+        const ok = await run("get", await pin("raw.json", await sha(gz)), out);
+        assertEquals([ok.code, ok.out.trim()], [0, "OK"]);
+        assertEquals(await Deno.readFile(out), gz);
+
+        const bad = await run(
+          "get",
+          await pin("decoded.json", await sha(plain)),
+          join(t, "decoded.vsix"),
+        );
+        assertEquals(bad.code, 3, bad.out);
+        assertStringIncludes(bad.out, "hash mismatch for " + url);
+      });
+    } finally {
+      await server.shutdown();
+    }
   },
 });
