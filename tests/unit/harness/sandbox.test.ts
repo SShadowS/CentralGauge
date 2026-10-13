@@ -11,6 +11,7 @@ import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { exists, validatedDir } from "../../../src/harness/fsutil.ts";
 import {
   buildRunArgs,
+  captureStream,
   EXECUTION_LABEL,
   imageReadCreateArgs,
   namespaceOwner,
@@ -1380,4 +1381,45 @@ Deno.test("image-read orphans (M10-08c): swept with their owner's namespace; a r
   b.owned = [read, "cg-harness-aaaaaaaa-11111111"];
   assertEquals(await sweepOwnedSandboxes(b, "HOST1", 50, READ_PREFIX), [read]);
   assertEquals(b.removed, [read]);
+});
+
+Deno.test("captureStream: bytes reach the capture file while the child still runs", async () => {
+  const dir = await Deno.makeTempDir();
+  const path = join(dir, "out.txt");
+  const file = await Deno.open(path, { write: true, createNew: true });
+  const child = new Deno.Command(Deno.execPath(), {
+    args: [
+      "eval",
+      'console.log("FIRST"); await new Promise((r) => setTimeout(r, 3000)); console.log("END");',
+    ],
+    stdin: "null",
+    stdout: "piped",
+    stderr: "null",
+  }).spawn();
+  const budget = {
+    maxBytes: 1024,
+    total: 0,
+    overflowed: false,
+    onOverflow: () => {},
+  };
+  const done = captureStream(child.stdout, file, budget);
+  try {
+    let seen = "";
+    for (let i = 0; i < 20 && !seen.includes("FIRST"); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      seen = await Deno.readTextFile(path);
+    }
+    assertStringIncludes(seen, "FIRST", "line not in file while child runs");
+    await done;
+    await child.status;
+    const final = await Deno.readTextFile(path);
+    assertStringIncludes(final, "FIRST");
+    assertStringIncludes(final, "END");
+  } finally {
+    try {
+      child.kill();
+    } catch { /* exited */ }
+    await done.catch(() => {});
+    await Deno.remove(dir, { recursive: true });
+  }
 });
