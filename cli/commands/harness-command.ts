@@ -156,6 +156,11 @@ import {
   realDocker,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
+import {
+  acquireBenchLock,
+  benchLockLost,
+  tryAcquireBenchLock,
+} from "../../src/utils/bench-lock.ts";
 import { applyOverlay, TASK_SOURCES } from "../../src/harness/staging.ts";
 import {
   altoolReader,
@@ -880,6 +885,41 @@ async function servercorePin(root: string): Promise<string> {
 }
 
 /**
+ * M10-08c run 002 item 6: the read containers of every build namespace under
+ * `builds` whose lock this process can take (its build crashed: no heartbeat
+ * for 120 s, or it never held one) are removed, confirmed gone, under that
+ * lock; then the namespace goes. A live build's lock is held: skipped.
+ */
+async function sweepDeadBuilds(docker: DockerCli, builds: string) {
+  let names: string[] = [];
+  try {
+    names = [...Deno.readDirSync(builds)]
+      .filter((e) => e.isDirectory && /^[A-Za-z0-9_-]+$/.test(e.name))
+      .map((e) => e.name);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  for (const n of names) {
+    const dir = join(builds, n);
+    const got = tryAcquireBenchLock(dir, {
+      command: "harness images build (sweep)",
+    });
+    if (!got.acquired) continue;
+    const lost = benchLockLost(dir, got.token);
+    try {
+      await sweepOwnedSandboxes(docker, n, undefined, READ_PREFIX, () => {
+        if (lost()) {
+          throw new ConfigurationError(`build namespace ${dir} taken over`);
+        }
+      });
+    } finally {
+      await got.release();
+    }
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+/**
  * Base image from the digest pin; a harness image from the inspected base.
  * Provenance is checked, not asserted: the build gets the inspected base id
  * (never the tag), and the new image's layers must start with that id's
@@ -1003,14 +1043,24 @@ export async function harnessImagesBuild(
   // M10-08c: harness envs read under their private root's owner; each build
   // reads under its own owner, so concurrent builds never remove each other's
   // read container. Older builds read under the bare hostname: those read
-  // leftovers are swept (never started, no secret).
-  // ponytail: a crashed build's own read container is never swept (harmless); a lock if they pile up.
+  // leftovers are swept (never started, no secret). Run 002 item 6: the
+  // owner is a namespace held by a lock while the build reads; a crashed
+  // build's (lock stale) is swept by the next build.
   await sweepOwnedSandboxes(docker, Deno.hostname(), undefined, READ_PREFIX);
-  const f = await imageFacts(
-    docker,
-    tag,
-    `${Deno.hostname()}-build-${crypto.randomUUID().slice(0, 8)}`,
-  );
+  const builds = join(o.root, "results", "harness", "image-builds");
+  await sweepDeadBuilds(docker, builds);
+  const owner = `${Deno.hostname()}-build-${crypto.randomUUID().slice(0, 8)}`;
+  const held = acquireBenchLock(join(builds, owner), {
+    command: "harness images build",
+  });
+  let f: ImageFacts;
+  try {
+    f = await imageFacts(docker, tag, owner);
+  } finally {
+    // A failed read keeps the namespace: the next build sweeps it.
+    await held();
+  }
+  await Deno.remove(join(builds, owner), { recursive: true });
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(
       `${tag}: label ${IMAGE_LABELS.revision} is ${

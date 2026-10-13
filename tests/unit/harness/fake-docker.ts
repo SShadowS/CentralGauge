@@ -104,6 +104,8 @@ export class FakeDocker implements DockerCli {
   rmFails = new Set<string>();
   /** Containers `state` still reports as present after rm. */
   lingering = new Set<string>();
+  /** Present but exited: `state` reports running false (M10-08c run 002). */
+  exited = new Set<string>();
   killFails = false;
   killHangs = false;
   rmHangs = false;
@@ -281,7 +283,7 @@ export class FakeDocker implements DockerCli {
       this.containers.has(name) ||
       (this.owned.includes(name) && !this.deleted.has(name))
     ) {
-      return Promise.resolve({ running: true, execution });
+      return Promise.resolve({ running: !this.exited.has(name), execution });
     }
     return Promise.resolve(null);
   }

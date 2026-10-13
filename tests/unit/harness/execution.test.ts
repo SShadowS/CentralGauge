@@ -4605,3 +4605,102 @@ Deno.test("runCell (M10-08c review 4): an environment that lost its private root
   assertEquals(t.docker.runs, []);
   assertEquals(await t.env.store.executions(cell.campaignId), []);
 });
+
+// M10-08c run 002 item 1: the lock is checked again right before the sandbox
+// starts. Lost between runCell's check and the start: nothing starts, nothing
+// is published and the intent stays for the new holder's recovery.
+Deno.test("runExecution (M10-08c run 002 item 1): a lock lost between runCell's check and the sandbox start starts nothing and leaves the intent", async () => {
+  const t = await makeEnv();
+  let checks = 0;
+  t.env.namespaceLost = () => checks++ > 0;
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "lock");
+  assertEquals(checks > 1, true, "checked again after runCell's check");
+  assertEquals(t.docker.runs, [], "no sandbox started");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  const intents = [
+    ...Deno.readDirSync(join(t.env.privateRoot, "intents")),
+  ].filter((e) => e.name.endsWith(".json"));
+  assertEquals(intents.length, 1, "the intent is the new holder's to recover");
+});
+
+// M10-08c run 002 item 1: recovery holds the lock through every destructive
+// step: lost mid-recovery, the interrupted attempt is neither removed nor
+// published nor cleaned up.
+Deno.test("recoverInterrupted (M10-08c run 002 item 1): a lock lost during recovery stops it before anything more is removed or published", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  let sandbox = "";
+  t.docker.behavior = async (call, io) => {
+    sandbox = call.name;
+    t.docker.lingering.add(call.name);
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  const intent = join(t.env.privateRoot, "intents");
+  const before = [...Deno.readDirSync(intent)].map((e) => e.name);
+  assertEquals(before.length, 1);
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  const state = t.docker.state.bind(t.docker);
+  t.docker.state = (n) => {
+    // Another process reclaims the root while recovery inspects the sandbox.
+    if (n === sandbox) lost = true;
+    return state(n);
+  };
+  const removed = t.docker.removed.length;
+  await assertRejects(
+    () => recoverInterrupted(t.env, loadTask),
+    ConfigurationError,
+    "lock",
+  );
+  assertEquals(t.docker.removed.slice(removed), [], "nothing removed");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assertEquals([...Deno.readDirSync(intent)].map((e) => e.name), before);
+  // The sandbox is gone now; lost again at the inspect: nothing published.
+  lost = false;
+  t.docker.lingering.clear();
+  await assertRejects(
+    () => recoverInterrupted(t.env, loadTask),
+    ConfigurationError,
+    "lock",
+  );
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assertEquals([...Deno.readDirSync(intent)].map((e) => e.name), before);
+});
+
+// M10-08c run 002 item 5: a raw log that cannot be read (not merely not yet
+// written) is its own outcome, never folded into "not seen live".
+Deno.test("inventoryProof (M10-08c run 002 item 5): an absent raw log is not live; a read error is a transport failure naming it", async () => {
+  const t = await inventoriedEnv();
+  const manifest = (await cellFor(t, "cc-v2-inv")).armManifest;
+  const dir = await Deno.makeTempDir({ dir: t.env.privateRoot });
+  const raw = join(dir, "raw.jsonl");
+  const go = new AbortController().signal;
+  const absent = await inventoryProof(raw, manifest, () => true, go, 200);
+  assertEquals(absent.kind, "not_live", "not yet written");
+  Deno.writeTextFileSync(raw, INV() + "\n");
+  const read = stub(
+    Deno,
+    "readTextFile",
+    () => Promise.reject(new Deno.errors.PermissionDenied("access denied")),
+  );
+  let r;
+  try {
+    r = await inventoryProof(raw, manifest, () => false, go, 2000);
+  } finally {
+    read.restore();
+  }
+  assertEquals(r.kind, "transport_failure");
+  assertStringIncludes(
+    (r as { problems: string[] }).problems.join("; "),
+    "access denied",
+  );
+});

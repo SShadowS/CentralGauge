@@ -824,6 +824,7 @@ export async function sweepOwnedSandboxes(
   owner: string,
   opTimeoutMs = OP_TIMEOUT_MS,
   prefix = SANDBOX_PREFIX,
+  hold: () => void = () => {},
 ): Promise<string[]> {
   const names = await bounded(
     docker.listOwned(owner),
@@ -833,18 +834,24 @@ export async function sweepOwnedSandboxes(
   // The owner label is filtered by docker; the prefix is re-checked here, so
   // a container needs both to be touched.
   const ours = names.filter((n) => n.startsWith(prefix));
-  await removeConfirmed(docker, ours, opTimeoutMs);
+  await removeConfirmed(docker, ours, opTimeoutMs, hold);
   return ours;
 }
 
-/** Remove each named container, each confirmed gone (or throw naming every failure). */
+/**
+ * Remove each named container, each confirmed gone (or throw naming every
+ * failure). `hold` runs right before each removal and throws to stop (M10-08c
+ * run 002: the namespace lock is still this process's).
+ */
 export async function removeConfirmed(
   docker: DockerCli,
   names: string[],
   opTimeoutMs = OP_TIMEOUT_MS,
+  hold: () => void = () => {},
 ): Promise<void> {
   const failed: string[] = [];
   for (const n of names) {
+    hold();
     try {
       const r = await bounded(docker.rm(n), opTimeoutMs, `docker rm -f ${n}`);
       if (r.code !== 0 && !/no such container/i.test(r.stderr)) {

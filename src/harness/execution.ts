@@ -1468,6 +1468,8 @@ export async function runExecution(
   let secrets: SecretValue[] = [];
   let drained = true;
   let refusal: unknown = null;
+  /** M10-08c run 002: the private root's lock was lost before the start. */
+  let lockLost: unknown = null;
   // M1-33: placed runs (qualified or authorized marker) sit on the internal
   // network behind the environment's shared proxy, registered per execution
   // (M1-33d); secrets and ready follow the authenticated preflight. A stub cell is never placed (M2-08: egress not consulted; its
@@ -1699,6 +1701,14 @@ export async function runExecution(
         );
         await Deno.writeTextFile(join(dir, READY_FILE), "");
       };
+      // M10-08c run 002 item 1: right before the start, the private root is
+      // still this process's; lost, nothing starts and nothing is published
+      // or discarded (the intent is the new holder's to recover).
+      try {
+        holdNamespace(env, `${name} not started`);
+      } catch (err) {
+        throw lockLost = err;
+      }
       // Every kind starts with an empty mount: nothing is released before
       // the harness's privilege check on the running sandbox (H-01); placed
       // runs then also wait for the preflight (M1-33 A3).
@@ -2005,6 +2015,7 @@ export async function runExecution(
       drained = await revoking;
     }
   } catch (err) {
+    if (err === lockLost) throw err;
     if (err === refusal) {
       // Refused before any secret: no execution, no private state left.
       await discardAttempt(env, id);
@@ -2134,12 +2145,14 @@ async function sandboxAddress(
  * image itself refused; may be seen late: a refusal releases nothing).
  * not_live: no complete record before the deadline while the run ran (a late
  * record is a diagnostic only). malformed: a live record the adapter refuses.
+ * transport_failure: the raw log could not be read (other than not yet
+ * written; M10-08c run 002).
  */
 export type InventoryProof =
   | { kind: "proven" }
   | { kind: "cancelled" }
   | {
-    kind: "image_refusal" | "not_live" | "malformed";
+    kind: "image_refusal" | "not_live" | "malformed" | "transport_failure";
     problems: string[];
   };
 
@@ -2182,7 +2195,19 @@ export async function inventoryProof(
   let live = true;
   for (;;) {
     if (stop.aborted) return { kind: "cancelled" };
-    text = await Deno.readTextFile(raw).catch(() => "");
+    // Run 002 item 5: an absent log is not yet written; any other read
+    // error is a transport failure of its own (never "not seen live").
+    try {
+      text = await Deno.readTextFile(raw);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        return {
+          kind: "transport_failure",
+          problems: [`inventory transport failed: ${raw}: ${msg(err)}`],
+        };
+      }
+      text = "";
+    }
     // After the read: a run never restarts, so a snapshot taken while it
     // still runs, before the deadline, was seen live.
     live = !ended() && performance.now() < deadline;
@@ -2636,11 +2661,7 @@ export async function runCell(
   for (;;) {
     // M10-08c review 4: this process was suspended past the stale window and
     // another one reclaimed the root (and may sweep it): start nothing more.
-    if (env.namespaceLost?.()) {
-      throw new ConfigurationError(
-        `the lock on private root ${env.privateRoot} was taken over by another process: no execution starts`,
-      );
-    }
+    holdNamespace(env, "no execution starts");
     const { execution: e, usageResetAt } = await runExecution(env, cell, at);
     executions.push(e);
     const policy = outcomePolicy(e.termination, e.did_work);
@@ -2696,20 +2717,43 @@ export async function runCell(
 }
 
 /**
+ * M10-08c run 002 item 1: throws once another process took the private
+ * root's lock (this one was suspended past the stale window). Called right
+ * before every start, sweep, removal and recovery step, so a lost lock stops
+ * with nothing more destroyed.
+ */
+export function holdNamespace(
+  env: Pick<HarnessEnv, "privateRoot" | "namespaceLost">,
+  what: string,
+): void {
+  if (env.namespaceLost?.()) {
+    throw new ConfigurationError(
+      `the lock on private root ${env.privateRoot} was taken over by another process: ${what}`,
+    );
+  }
+}
+
+/**
  * M10-08c review 2: before namespace owners, sandboxes carried the bare
  * hostname. Under the private root's lock, remove (confirmed gone) those
  * whose execution is one of this root's intents, so recovery never removes
  * the work dir or custody of a sandbox still running; others are left alone.
+ * Run 002 item 2: older runners take only the repository lock, so a running
+ * one may be live: only a proven-dead one (exited, or its intent finalized as
+ * published) is removed; a running one refuses the start. Item 4: then this
+ * root's legacy custody dirs (cg-harness-secrets-<host>.*) go.
  */
 export async function sweepLegacySandboxes(
   docker: DockerCli,
   host: string,
   privateRoot: string,
   opMs = OP_TIMEOUT_MS,
+  hold: () => void = () => {},
 ): Promise<string[]> {
+  const dir = join(privateRoot, "intents");
   const ids = new Set<string>();
   try {
-    for (const e of Deno.readDirSync(join(privateRoot, "intents"))) {
+    for (const e of Deno.readDirSync(dir)) {
       if (e.isFile && e.name.endsWith(".json") && !e.name.includes(".tmp-")) {
         ids.add(e.name.slice(0, -".json".length));
       }
@@ -2717,15 +2761,34 @@ export async function sweepLegacySandboxes(
   } catch (err) {
     if (!(err instanceof Deno.errors.NotFound)) throw err;
   }
-  if (ids.size === 0) return [];
-  const names = await bounded(docker.listOwned(host), opMs, "docker ps");
   const ours: string[] = [];
-  for (const n of names) {
-    if (!n.startsWith(SANDBOX_PREFIX) || n.startsWith(READ_PREFIX)) continue;
-    const st = await bounded(docker.state(n), opMs, `docker inspect ${n}`);
-    if (st?.execution && ids.has(st.execution)) ours.push(n);
+  if (ids.size > 0) {
+    const names = await bounded(docker.listOwned(host), opMs, "docker ps");
+    const live: string[] = [];
+    for (const n of names) {
+      if (!n.startsWith(SANDBOX_PREFIX) || n.startsWith(READ_PREFIX)) continue;
+      const st = await bounded(docker.state(n), opMs, `docker inspect ${n}`);
+      if (!st?.execution || !ids.has(st.execution)) continue;
+      const finalized = await readJson<Intent>(
+        join(dir, `${st.execution}.json`),
+      ).then((i) => i?.phase === "published", () => false);
+      (st.running && !finalized ? live : ours).push(n);
+    }
+    if (live.length > 0) {
+      throw new ConfigurationError(
+        `legacy sandbox(es) ${
+          live.join(", ")
+        } (owner ${host}, an older harness) still run an execution of --private-dir ${privateRoot}; nothing removed. Once no older harness uses that private dir, remove them (one-shot): docker rm -f ${
+          live.join(" ")
+        } (DOCKER_CONTEXT=desktop-windows), then start again`,
+      );
+    }
+    await removeConfirmed(docker, ours, opMs, hold);
   }
-  await removeConfirmed(docker, ours, opMs);
+  // Every legacy sandbox of this root's intents is confirmed gone: its
+  // custody dirs (this root only, never another owner's) can go.
+  hold();
+  await sweepStaleSecrets(privateRoot, host);
   return ours;
 }
 
@@ -2742,10 +2805,16 @@ export async function recoverInterrupted(
   loadTaskFn: (dir: string) => Promise<LoadedTask>,
 ): Promise<ExecutionRecord[]> {
   const opMs = env.opTimeoutMs ?? OP_TIMEOUT_MS;
-  await sweepOwnedSandboxes(env.docker, env.owner, opMs);
+  // M10-08c run 002 item 1: the lock is rechecked right before each destructive step.
+  const hold = () =>
+    holdNamespace(env, "recovery stopped; nothing more removed");
+  hold();
+  await sweepOwnedSandboxes(env.docker, env.owner, opMs, undefined, hold);
+  hold();
   await sweepStaleSecrets(env.privateRoot, env.owner);
   // Temp files of an interrupted writeAtomic are never needed (the final
   // name is renamed into place), and a custody temp holds plaintext secrets.
+  hold();
   await removeTemps(join(env.privateRoot, "custody"));
   await removeTemps(join(env.privateRoot, "redaction"));
   const dir = join(env.privateRoot, "intents");
@@ -2762,6 +2831,7 @@ export async function recoverInterrupted(
     if (!(err instanceof Deno.errors.NotFound)) throw err;
   }
   for (const n of names) {
+    hold();
     let intent: Intent | null;
     try {
       intent = await readJson<Intent>(join(dir, n));
@@ -2784,6 +2854,7 @@ export async function recoverInterrupted(
       store: new RecordStore(intent.results_root),
     };
     if (intent.phase === "published") {
+      hold();
       await finishCleanup(own, id);
       continue;
     }
@@ -2826,6 +2897,7 @@ export async function recoverInterrupted(
           `docker inspect ${intent.sandbox}`,
         );
       if (await st() !== null) {
+        hold();
         await bounded(
           env.docker.rm(intent.sandbox),
           opMs,
@@ -2839,6 +2911,7 @@ export async function recoverInterrupted(
           );
         }
       }
+      hold();
       const released = intent.phase === "released";
       let secrets: SecretValue[] = [];
       // M1-33d: a placed attempt holds the proxy credential in custody
@@ -2893,6 +2966,7 @@ export async function recoverInterrupted(
         stub: intent.stub ?? null,
       });
     }
+    hold();
     await publishDraft(own, cell, draft, null, taskUnchanged);
     if (!taskUnchanged) {
       console.warn(

@@ -42,6 +42,7 @@ import {
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import {
+  holdNamespace,
   recoverInterrupted,
   sweepLegacySandboxes,
 } from "../../src/harness/execution.ts";
@@ -63,7 +64,6 @@ import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
   acquireBenchLock,
   BenchLockHeldError,
-  benchLockLost,
   DEFAULT_BENCH_LOCK_DIR,
 } from "../../src/utils/bench-lock.ts";
 import { setupContainers } from "./bench/container-setup.ts";
@@ -101,7 +101,11 @@ export interface EnvOptions {
 export interface EnvDeps {
   /** The allocated spelling of a container, or a throw (coord allocation.json, fail closed). */
   allocated(name: string): Promise<string>;
-  acquireLock: (dir: string, o: { command: string }) => () => Promise<void>;
+  /** The release; `lost` checks this acquisition's own token (M10-08c run 002, required for the private root). */
+  acquireLock: (
+    dir: string,
+    o: { command: string },
+  ) => (() => Promise<void>) & { lost?: () => boolean };
   docker: () => DockerCli;
   setup(
     names: string[],
@@ -369,10 +373,20 @@ export async function openHarnessEnv(
     );
   }
   const sharedResults = join(o.repoRoot, "results", "harness");
-  const release = deps.acquireLock(
-    join(o.repoRoot, DEFAULT_BENCH_LOCK_DIR),
-    { command: o.command },
-  );
+  let release: () => Promise<void>;
+  try {
+    release = deps.acquireLock(
+      join(o.repoRoot, DEFAULT_BENCH_LOCK_DIR),
+      { command: o.command },
+    );
+  } catch (err) {
+    // M10-08c run 002 item 7: a second environment in this checkout meets this lock first.
+    if (err instanceof BenchLockHeldError) {
+      err.message +=
+        `; a harness environment or bench already runs in this checkout: wait for it, or run another environment from its own worktree with its own --private-dir (this one: ${o.privateRoot})`;
+    }
+    throw err;
+  }
   const closers: (() => Promise<void>)[] = [release];
   const closeAll = async () => {
     for (const c of closers) await c().catch(() => {});
@@ -382,12 +396,19 @@ export async function openHarnessEnv(
     // M10-08c: the sweeps below and in recoverInterrupted are crash recovery
     // of this private root only (its temp, intents, secrets and sandboxes):
     // its exclusive lock first, before any of them, then its own owner label.
+    let namespaceLost: () => boolean;
     try {
-      closers.push(
-        deps.acquireLock(o.privateRoot, {
-          command: `${o.command} (private root)`,
-        }),
-      );
+      const held = deps.acquireLock(o.privateRoot, {
+        command: `${o.command} (private root)`,
+      });
+      closers.push(held);
+      // M10-08c run 002 item 1: the token this acquisition took, never a later holder's.
+      if (!held.lost) {
+        throw new ConfigurationError(
+          `the lock on private root ${o.privateRoot} carries no ownership check`,
+        );
+      }
+      namespaceLost = held.lost;
     } catch (err) {
       if (err instanceof BenchLockHeldError) {
         err.message +=
@@ -395,7 +416,13 @@ export async function openHarnessEnv(
       }
       throw err;
     }
-    const namespaceLost = benchLockLost(o.privateRoot);
+    /** Right before every sweep and removal: the lock is still ours, or stop. */
+    const hold = () =>
+      holdNamespace(
+        { privateRoot: o.privateRoot, namespaceLost },
+        "nothing swept",
+      );
+    hold();
     // M1-33e: the marker's proxy_isolation, fixed here under the lock for
     // the life of the environment (a later change refuses the next cell).
     const proxyIsolation = await markerProxyIsolation(sharedResults);
@@ -435,13 +462,21 @@ export async function openHarnessEnv(
     }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
+    hold();
     await store.sweepTemp();
     await sweepWorkspaceTemp(o.resultsDir, o.privateRoot);
     const docker = deps.docker();
     const owner = namespaceOwner(deps.owner(), o.privateRoot);
+    hold();
     const swept = [
-      ...await sweepOwnedSandboxes(docker, owner),
-      ...await sweepLegacySandboxes(docker, deps.owner(), o.privateRoot),
+      ...await sweepOwnedSandboxes(docker, owner, undefined, undefined, hold),
+      ...await sweepLegacySandboxes(
+        docker,
+        deps.owner(),
+        o.privateRoot,
+        undefined,
+        hold,
+      ),
     ];
     if (swept.length > 0) {
       console.log(
