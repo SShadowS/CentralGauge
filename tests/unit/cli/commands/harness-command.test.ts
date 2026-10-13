@@ -1465,6 +1465,42 @@ Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is n
   assertEquals([again.rejudged, await count()], [0, [3, 1]]);
 });
 
+/** n newer, non-forced, infra-unscored copies of the execution's first judgment. */
+async function unscoredJudgments(t: TestEnv, executionId: string, n: number) {
+  const [j] = await t.env.store.judgments(executionId);
+  for (let i = 0; i < n; i++) {
+    const at = new Date(Date.now() + i).toISOString();
+    await t.env.store.writeJudgment({
+      ...j!,
+      id: crypto.randomUUID(),
+      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      verdict: "unscored",
+      started_at: at,
+      ended_at: at,
+    });
+  }
+}
+
+Deno.test("rejudge (H-04b): an execution with 2 non-forced unscored judgments is due; with 3 it hit the rejudge budget and is not", async () => {
+  for (const [n, due] of [[2, 1], [3, 0]] as const) {
+    const t = await makeEnv();
+    await writeCatalog(t);
+    t.env.supervised = false;
+    t.docker.behavior = mockImageBehavior();
+    await mockExperiment(t);
+    await runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const es = await t.env.store.executions(c.id);
+    await unscoredJudgments(t, es[0]!.id, n);
+    const r = await harnessRejudge("contract", runOpts(t), opener(t));
+    assertEquals(r.rejudged, due, `${n} unscored judgments`);
+  }
+});
+
 /** A two-cell mock campaign, judged, with the frozen analysis files in the harness root. */
 async function measurableCampaign() {
   const t = await makeEnv();

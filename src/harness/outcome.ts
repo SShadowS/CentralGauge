@@ -29,7 +29,14 @@ import {
   retryProblem,
   type RunKind,
 } from "./records.ts";
-import type { Cell, CellStatus } from "./stats.ts";
+import {
+  type Cell,
+  type CellStatus,
+  REJUDGE_BUDGET,
+  REJUDGE_BUDGET_REASON,
+} from "./stats.ts";
+
+export { REJUDGE_BUDGET_REASON };
 
 /** Which oracle each task is judged against. Must cover every task. */
 export interface JudgingContext {
@@ -82,6 +89,22 @@ export function selectJudgment(
   return best;
 }
 
+/**
+ * H-04b: the execution has REJUDGE_BUDGET non-forced infra-unscored
+ * judgments in the context selectJudgment uses (decisions\2026-10-13-rejudge-budget.md).
+ */
+export function rejudgeBudgetExhausted(
+  e: ExecutionRecord,
+  judgments: JudgmentRecord[],
+  oracle: string,
+): boolean {
+  return judgments.filter((j) =>
+    j.execution_id === e.id && j.task_id === e.task_id &&
+    j.workspace_hash === e.workspace_hash && j.task_oracle_hash === oracle &&
+    !j.forced && j.verdict === "unscored"
+  ).length >= REJUDGE_BUDGET;
+}
+
 /** A Cell plus the provenance the report shows. */
 export interface CellRecord extends Cell {
   used_execution: string | null;
@@ -106,6 +129,7 @@ interface Resolved {
   status: CellStatus;
   pass: boolean | null;
   judgment: JudgmentRecord | null;
+  reason?: string;
 }
 
 function resolveChain(
@@ -119,6 +143,14 @@ function resolveChain(
     const j = selectJudgment(last, judgments(last), oracle);
     if (j && j.verdict !== "unscored") {
       return { status: "scored", pass: j.verdict === "pass", judgment: j };
+    }
+    if (j && rejudgeBudgetExhausted(last, judgments(last), oracle)) {
+      return {
+        status: "unscored",
+        pass: null,
+        judgment: j,
+        reason: REJUDGE_BUDGET_REASON,
+      };
     }
     // No compatible verdict yet, or a verdict-side infra fault awaiting a
     // rejudge on another container (spec 1a section 8).
@@ -223,6 +255,8 @@ export function cellsFromRecords(
         cell.judgment_id = r.judgment?.id ?? null;
         cell.oracle_hash = r.judgment?.task_oracle_hash ?? null;
         cell.scorer_fingerprint = r.judgment?.scorer_fingerprint ?? null;
+        if (r.reason) cell.reason = r.reason;
+        else delete cell.reason;
       };
       const planned = chains.find((c) => c.root.run_kind === "planned");
       if (all.length > 0 && !planned) {

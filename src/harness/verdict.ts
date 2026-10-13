@@ -34,11 +34,13 @@ import {
   buildApps,
   CleanupFailedError,
   deployAndTest,
+  isCascadeDiagnostic,
   prepareApps,
   scorerPassed,
   type TestMessage,
   type TestRow,
   type TestSpec,
+  throwIfCrashed,
 } from "./bc-lane.ts";
 import { safeCopyTree } from "./fsutil.ts";
 import { hashFile } from "./hash.ts";
@@ -96,44 +98,8 @@ export function buildFailureCodes(codes: string[]): string[] {
   return real.length > 0 ? real : all;
 }
 
-/**
- * H-04: a dependent's "dependency X did not build" entry (bc-lane synthetic):
- * a consequence of another app's failure, never a diagnostic of its own.
- */
-export function isCascadeDiagnostic(
-  d: { code: string; message: string },
-): boolean {
-  return d.code === "CG0001" && /^dependency .+ did not build$/.test(d.message);
-}
-
-/**
- * H-04: a failed build no compiler diagnostic explains (nothing but the
- * cascade) crashed (BC session or compile service died): infrastructure,
- * thrown as such, never the model's failure. Any genuine diagnostic, the
- * other synthetic CG0001 refusals included, keeps it a build failure.
- */
-function throwIfCrashed(
-  built: {
-    folder: string;
-    ok: boolean;
-    diagnostics: { code: string; message: string }[];
-  }[],
-  container: string,
-  label: string,
-): void {
-  const failed = built.filter((b) => !b.ok);
-  if (failed.length === 0) return;
-  if (failed.some((b) => b.diagnostics.some((d) => !isCascadeDiagnostic(d)))) {
-    return;
-  }
-  throw new ContainerError(
-    `${label} build of ${
-      failed.map((b) => b.folder).join(", ")
-    } failed with no compiler diagnostic (crashed build)`,
-    container,
-    "compile",
-  );
-}
+// H-04: the crash rule lives in bc-lane (inside the compile reroute boundary, H-04b).
+export { isCascadeDiagnostic };
 
 export interface JudgeInput {
   executionId: string;
@@ -436,8 +402,8 @@ async function buildOracle(
   // Through the lane's admission for that container (round 2 item 5).
   const [b] = await ctx.lane.compileOn(
     prep.container,
-    (c) =>
-      buildApps(ctx.lane.bc, c, {
+    async (c) => {
+      const r = await buildApps(ctx.lane.bc, c, {
         srcDir: ctx.i.task.dir,
         apps: [app],
         versions: new Map([["oracle", aj.version]]),
@@ -447,7 +413,11 @@ async function buildOracle(
           prep.wanted.map((w) => [folderOf.get(w.id.toLowerCase())!, w.file]),
         ),
         graph,
-      }),
+      });
+      // H-04b: inside compileOn, so a crashed oracle build reroutes.
+      throwIfCrashed(r, c, "oracle");
+      return r;
+    },
   );
   if (!b) throw new Error("oracle build returned no result");
   ctx.log.spans.compile_ms += b.compile_ms;
@@ -459,7 +429,6 @@ async function buildOracle(
       message: d.message,
     });
   }
-  throwIfCrashed([b], prep.container, "oracle");
   if (!b.ok || b.file === null) {
     ctx.log.notes.push(
       `oracle build failed: ${
@@ -510,7 +479,6 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     lock: i.lock,
   });
   recordBuild(ctx, prep, "candidate");
-  throwIfCrashed(prep.built, prep.container, "candidate");
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
 
@@ -725,6 +693,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     apps: StagedApp[],
     changed: string[],
     name: string,
+    label: string,
   ) =>
     prepareApps(ctx.lane, {
       pristine: i.pristine,
@@ -734,10 +703,16 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       changed,
       workDir: join(i.workDir, name),
       lock: i.lock,
+      label,
     });
-  const prep = await prepare(vw.dir, vw.apps, vw.changed, "apps-reference");
+  const prep = await prepare(
+    vw.dir,
+    vw.apps,
+    vw.changed,
+    "apps-reference",
+    "reference",
+  );
   recordBuild(ctx, prep, "reference");
-  throwIfCrashed(prep.built, prep.container, "reference");
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
 
@@ -761,9 +736,14 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       productionFrom: reference,
       symbolIds: i.symbolIds,
     });
-    const sp = await prepare(sw.dir, sw.apps, sw.changed, "apps-p2p");
+    const sp = await prepare(
+      sw.dir,
+      sw.apps,
+      sw.changed,
+      "apps-p2p",
+      "pass_to_pass",
+    );
     recordBuild(ctx, sp, "pass_to_pass");
-    throwIfCrashed(sp.built, sp.container, "pass_to_pass");
     if (!sp.buildOk) {
       throw new ValidationError(
         `${t.id}: the reference with the shipped tests does not build`,
@@ -934,9 +914,14 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         symbolIds: i.symbolIds,
         dropShippedTests: true,
       });
-      const mp = await prepare(mv.dir, mv.apps, mv.changed, `apps-mutant-${m}`);
+      const mp = await prepare(
+        mv.dir,
+        mv.apps,
+        mv.changed,
+        `apps-mutant-${m}`,
+        target,
+      );
       recordBuild(ctx, mp, target);
-      throwIfCrashed(mp.built, mp.container, target);
       if (!mp.buildOk) {
         mkRows.push(...allRows("compile"));
         outcomes.push("survived"); // not a kill

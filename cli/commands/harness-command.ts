@@ -19,6 +19,7 @@ import type {
 import {
   cellsFromRecords,
   type JudgingContext,
+  rejudgeBudgetExhausted,
 } from "../../src/harness/outcome.ts";
 import type {
   ArtifactRecord,
@@ -1556,9 +1557,11 @@ export async function harnessRejudge(
         }
         return true;
       }
-      const j = latestJudgment(
-        data.judgments.filter((x) => x.execution_id === e.id),
-      );
+      const mine = data.judgments.filter((x) => x.execution_id === e.id);
+      // H-04b: past the rejudge budget the cell is terminal; only --force.
+      const oracle = byTask.get(e.task_id)!.oracle;
+      if (rejudgeBudgetExhausted(e, mine, oracle)) return false;
+      const j = latestJudgment(mine);
       return !j || j.verdict === "unscored" ||
         j.scorer_fingerprint !== current ||
         j.task_oracle_hash !== byTask.get(e.task_id)!.oracle;

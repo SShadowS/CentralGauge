@@ -20,6 +20,7 @@ import {
   holm,
   minDefinedResamples,
   mulberry32,
+  REJUDGE_BUDGET_REASON,
   testContrasts,
 } from "../../../src/harness/stats.ts";
 
@@ -79,6 +80,28 @@ Deno.test("armSummary: an unscored cell adds spend and no solve over the same ce
   // Scored-only pass rate: the unscored cell is not a model failure.
   assertEquals(s.pass_rate, 1);
   assertEquals(s.unscored_cells, 1);
+});
+
+Deno.test("armSummary (H-04b): counts unscored cells that hit the rejudge budget; their spend counts, no solve, never a model failure", () => {
+  const [solved, retryUnscored, budget] = cells("A", "t1", [
+    [true, 1],
+    ["unscored", 2],
+    ["unscored", 6],
+  ]);
+  const s = armSummary(
+    [solved!, retryUnscored!, { ...budget!, reason: REJUDGE_BUDGET_REASON }],
+    "A",
+    3,
+  );
+  assertEquals([s.unscored_cells, s.rejudge_budget_cells], [2, 1]);
+  // (1 + 2 + 6) / 3 = 3 mean spend over a 1/3 solve rate -> $9 per solved task.
+  assertAlmostEquals(s.cost_per_solved_task!, 9, 1e-12);
+  assertEquals([s.pass_rate, s.provisional], [1, false]);
+  assertEquals(
+    armSummary(cells("A", "t1", [["unscored", 1]]), "A", 1)
+      .rejudge_budget_cells,
+    0,
+  );
 });
 
 Deno.test("armSummary: a free unscored cell cannot halve the cost (dilution case)", () => {

@@ -3,6 +3,7 @@ import { ValidationError } from "../../../src/errors.ts";
 import {
   type CellRecord,
   cellsFromRecords,
+  REJUDGE_BUDGET_REASON,
 } from "../../../src/harness/outcome.ts";
 import type {
   CampaignRecord,
@@ -506,4 +507,119 @@ Deno.test("cellsFromRecords (C-03 run 002): every forced judgment of a cell is l
   ]);
   const plain = cellOf(c, [e], [oom]);
   assert(!("forced_rejudges" in plain), JSON.stringify(plain));
+});
+
+// --- H-04b: rejudge budget (decisions\2026-10-13-rejudge-budget.md) ---
+
+const forcedBy = (replaces: string) => ({
+  reason: "host OOM",
+  replaces,
+  basis: {
+    kind: "decision" as const,
+    path: "oom.md",
+    sha256: H("d"),
+    approval: "OWNER-APPROVED: go (2026-09-28T12:00:00Z)",
+  },
+});
+
+Deno.test("cellsFromRecords (H-04b): 3 non-forced unscored judgments make the cell terminally unscored with the budget reason, spend kept", async () => {
+  const c = await campaign();
+  const e = execution(c, {}, { telemetry: telemetry(3) });
+  const js = [
+    judgment(c, e, null),
+    judgment(c, e, null),
+    judgment(c, e, null),
+  ];
+  const cell = cellOf(c, [e], js);
+  assertEquals(
+    [cell.status, cell.pass, cell.spend_usd, cell.judgment_id, cell.reason],
+    ["unscored", null, 3, js[2]!.id, REJUDGE_BUDGET_REASON],
+  );
+  assertEquals(
+    REJUDGE_BUDGET_REASON,
+    "verdict infra: rejudge budget 3 exhausted",
+  );
+});
+
+Deno.test("cellsFromRecords (H-04b): 2 non-forced unscored judgments stay pending, no reason", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const cell = cellOf(c, [e], [judgment(c, e, null), judgment(c, e, null)]);
+  assertEquals(cell.status, "pending");
+  assert(!("reason" in cell), JSON.stringify(cell));
+});
+
+Deno.test("cellsFromRecords (H-04b): forced unscored judgments do not count toward the budget", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const a = judgment(c, e, null);
+  const b = judgment(c, e, null);
+  const f = judgment(c, e, null, { forced: forcedBy(b.id) });
+  assertEquals(cellOf(c, [e], [a, b, f]).status, "pending");
+});
+
+Deno.test("cellsFromRecords (H-04b): unscored judgments on another oracle do not count", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const other = { task_oracle_hash: H("e") };
+  const cell = cellOf(c, [e], [
+    judgment(c, e, null, other),
+    judgment(c, e, null, other),
+    judgment(c, e, null, other),
+    judgment(c, e, null),
+  ]);
+  assertEquals(cell.status, "pending");
+});
+
+Deno.test("cellsFromRecords (H-04b): a forced scored judgment after the budget is scored, no reason", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const js = [
+    judgment(c, e, null),
+    judgment(c, e, null),
+    judgment(c, e, null),
+  ];
+  const forced = judgment(c, e, true, {
+    ended_at: "2026-10-01T10:20:00.000Z",
+    forced: forcedBy(js[2]!.id),
+  });
+  const cell = cellOf(c, [e], [...js, forced]);
+  assertEquals([cell.status, cell.pass, cell.judgment_id], [
+    "scored",
+    true,
+    forced.id,
+  ]);
+  assert(!("reason" in cell), JSON.stringify(cell));
+});
+
+Deno.test("cellsFromRecords (H-04b): a scored manual rerun fills a budget-exhausted planned cell and drops the reason", async () => {
+  const c = await campaign();
+  const planned = execution(c);
+  const manual = execution(c, { attempt: 2, run_kind: "manual_rerun" });
+  const cell = cellOf(c, [planned, manual], [
+    judgment(c, planned, null),
+    judgment(c, planned, null),
+    judgment(c, planned, null),
+    judgment(c, manual, true),
+  ]);
+  assertEquals([cell.status, cell.used_execution], ["scored", manual.id]);
+  assert(!("reason" in cell), JSON.stringify(cell));
+});
+
+Deno.test("cellsFromRecords (H-04b): the exhausted automatic retry stays unscored without the budget reason", async () => {
+  const c = await campaign();
+  const crash = {
+    termination: "setup_failed" as const,
+    did_work: false,
+    workspace_hash: null,
+  };
+  const first = execution(c, {}, crash);
+  const retry = execution(
+    c,
+    { attempt: 2, run_kind: "auto_retry", retry_of: first.id },
+    crash,
+  );
+  const cell = cellOf(c, [first, retry], []);
+  assertEquals(cell.status, "unscored");
+  assert(!("reason" in cell), JSON.stringify(cell));
 });

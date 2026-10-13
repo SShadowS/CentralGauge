@@ -33,9 +33,17 @@ import type { PrimaryMetric } from "./config.ts";
  * unrun: no execution yet. pending: attempts exist but the cell is not
  * final (retry due, usage-limit pause, verdict missing or infra-unscored).
  * scored: final verdict pass or fail. unscored: terminally unscored
- * (automatic retry exhausted).
+ * (automatic retry exhausted, or the rejudge budget below).
  */
 export type CellStatus = "unrun" | "pending" | "scored" | "unscored";
+
+/**
+ * Non-forced infra-unscored judgments of a cell's counted execution after
+ * which the cell is terminally unscored (decisions\2026-10-13-rejudge-budget.md).
+ */
+export const REJUDGE_BUDGET = 3;
+export const REJUDGE_BUDGET_REASON =
+  `verdict infra: rejudge budget ${REJUDGE_BUDGET} exhausted`;
 
 /** One planned (task, repeat, arm) cell. */
 export interface Cell {
@@ -50,6 +58,8 @@ export interface Cell {
   /** Sum over the attempts whose cost is known (raw disclosure). */
   known_spend_usd: number;
   attempts: number;
+  /** Why an unscored cell is terminal; absent otherwise and on older reports. */
+  reason?: string;
 }
 
 export type ExclusionReason = CellStatus | "unknown_spend" | "missing";
@@ -156,6 +166,8 @@ export interface ArmSummary {
   attempted_cells: number;
   scored_cells: number;
   unscored_cells: number;
+  /** Of the unscored cells, those that hit the rejudge budget (absent before H-04b). */
+  rejudge_budget_cells?: number;
   pending_cells: number;
   unrun_cells: number;
   /** Attempted cells (any status) with at least one attempt of unknown cost. */
@@ -215,6 +227,10 @@ export function armSummary(cells: Cell[], arm: string, k: number): ArmSummary {
     attempted_cells: mine.filter((c) => c.attempts > 0).length,
     scored_cells: count("scored"),
     unscored_cells: count("unscored"),
+    rejudge_budget_cells:
+      mine.filter((c) =>
+        c.status === "unscored" && c.reason === REJUDGE_BUDGET_REASON
+      ).length,
     pending_cells: count("pending"),
     unrun_cells: count("unrun"),
     unknown_spend_cells: unknown.length,
