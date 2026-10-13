@@ -16,5 +16,8 @@ reuse:
     - { codeunit: 86260, procedures: [StopAppliesAfterSetupLoaded, StopAppliesThroughAvailability] }
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  naive/cached-answer: { partial_credit: 0.5714285714285714 }
+  naive/create-setup-row: { partial_credit: 0.8571428571428571 }
+  naive/refresh-then-read: { partial_credit: 0.8571428571428571 }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
