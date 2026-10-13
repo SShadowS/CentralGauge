@@ -24,7 +24,12 @@ and "lane-admin specifics" below; it does no coding tasks.
 
 ## Doing a task
 
-1. `git merge master` (skip if already up to date).
+1. `git merge master` (skip if already up to date). Then check line endings:
+   `git ls-files --eol | grep "w/crlf.*eol=lf"`. Each file it lists is CRLF on disk although
+   `.gitattributes` wants LF (a checkout made before the attribute existed; a merge does not
+   rewrite it). Rewrite each from the index with `git show :<path> > <path>` (same content;
+   `git checkout --` is hook-blocked), then confirm `git diff -- <path>` is empty. Image
+   builds hash these files and fail on CRLF.
 2. `coord claim <id> <lane>`; write runId and token to your handoff file immediately.
 3. `coord checkpoint <id> <runId> <token> started`.
 4. Read the task: `H:\cg-coord\tasks\<id>\task.md` and the plan section it points to.
