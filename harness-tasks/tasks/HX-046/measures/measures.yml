@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "86380/ExtensionAfterShortMonthKeepsDay": 1
+    "86380/ThirtiethAfterFebruary": 1
+    "86380/MidMonthStartUnchanged": 1
+    "86380/LeapYearFebruary": 1
+    "86380/ExtendTwiceKeepsDay": 1
+    "86380/MonthsAndLinesUpdated": 1
+    "86380/NonPositiveExtensionRefused": 1
+    "86380/ExtensionAmountsAsToday": 1
+    "86380/MissingLeaseRaises": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
