@@ -1291,8 +1291,8 @@ Deno.test({
   },
 });
 
-Deno.test("buildRunArgs (M10-01d): --memory 3g right after --isolation hyperv, for every spec shape", async () => {
-  assertEquals(SANDBOX_MEMORY, "3g");
+Deno.test("buildRunArgs (M10-01d, M10-02k): --memory 4g right after --isolation hyperv, for every spec shape", async () => {
+  assertEquals(SANDBOX_MEMORY, "4g");
   const base = await spec({});
   const shapes: SandboxSpec[] = [
     base,
@@ -1314,7 +1314,7 @@ Deno.test("buildRunArgs (M10-01d): --memory 3g right after --isolation hyperv, f
       "--isolation",
       "hyperv",
       "--memory",
-      "3g",
+      "4g",
     ]);
     assertEquals(args.filter((a) => a === "--memory" || a === "-m").length, 1);
   }
