@@ -12,6 +12,8 @@ codeunit 86420 "HX048 Release Vehicle Oracle"
         Vehicle: Record "CGR Vehicle";
         DamageEntry: Record "CGR Damage Entry";
         RentalMgt: Codeunit "CGR Rental Mgt";
+        RecRef: RecordRef;
+        FldRef: FieldRef;
     begin
         WorkDate(20270301D);
         InitSetup();
@@ -27,6 +29,38 @@ codeunit 86420 "HX048 Release Vehicle Oracle"
         Assert.AreEqual(0, Vehicle."Open Damages", 'A return without damage adds no open damage');
         Assert.AreEqual(0, Vehicle."Last Damage Entry No.", 'A return without damage leaves Last Damage Entry No. 0');
         DamageEntry.SetRange("Vehicle No.", 'HX048-A');
+        Assert.RecordIsEmpty(DamageEntry);
+        RecRef.Open(Database::"CGR Vehicle");
+        FldRef := RecRef.Field(12);
+        Assert.AreEqual('Last Damage Entry No.', FldRef.Name, 'Field 12 of CGR Vehicle is Last Damage Entry No.');
+        Assert.IsTrue(FldRef.Type = FieldType::Integer, 'Field 12 of CGR Vehicle is an Integer');
+        RecRef.Close();
+    end;
+
+    [Test]
+    procedure ReleaseVehicleDirectNoDamage()
+    var
+        Vehicle: Record "CGR Vehicle";
+        DamageEntry: Record "CGR Damage Entry";
+        FleetMgt: Codeunit "CGR Fleet Mgt";
+    begin
+        WorkDate(20270301D);
+        InitSetup();
+        InitVehicle('HX048-G');
+        Vehicle.Get('HX048-G');
+        Vehicle."Checked Out" := true;
+        Vehicle."Last Damage Entry No." := 7;
+        Vehicle.Modify();
+
+        FleetMgt.ReleaseVehicle('HX048-G', 1500, '');
+
+        Vehicle.Get('HX048-G');
+        Assert.IsFalse(Vehicle."Checked Out", 'A released vehicle is no longer checked out');
+        Assert.AreEqual(1500, Vehicle.Mileage, 'Mileage is the return km');
+        Assert.AreEqual(0, Vehicle."Last Damage Entry No.", 'A release without damage sets Last Damage Entry No. to 0');
+        Assert.IsFalse(Vehicle.Blocked, 'A release without damage does not block');
+        Assert.AreEqual(0, Vehicle."Open Damages", 'A release without damage adds no open damage');
+        DamageEntry.SetRange("Vehicle No.", 'HX048-G');
         Assert.RecordIsEmpty(DamageEntry);
     end;
 

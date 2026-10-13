@@ -8,6 +8,7 @@ partial_credit:
     "86420/ReleaseVehicleDirect": 1
     "86420/ReleaseUnknownVehicleDoesNothing": 1
     "86420/ReturnKeepsContractAsToday": 1
+    "86420/ReleaseVehicleDirectNoDamage": 1
   hidden_regressions: []
 reuse:
   targets:
