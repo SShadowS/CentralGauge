@@ -19,3 +19,6 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/field-only-on-damage: { partial_credit: 0.75 }
+  naive/no-vehicle-check: { partial_credit: 0.875 }
+  naive/stale-vehicle: { partial_credit: 0.625 }
