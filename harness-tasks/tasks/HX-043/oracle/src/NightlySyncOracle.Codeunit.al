@@ -14,14 +14,26 @@ codeunit 86320 "HX043 Nightly Sync Oracle"
         SyncRun: Record "CGR Nightly Sync Run";
         Partner: Codeunit "HX043 Sync Partner";
         Runner: Codeunit "HX043 Sync Runner";
+        Facade: Codeunit "CGR Integration Facade";
         EntryA: Integer;
         EntryB: Integer;
+        EntryD: Integer;
+        SentEntry: Integer;
+        FailedEntry: Integer;
         RunsBefore: Integer;
         Ok: Boolean;
     begin
         InitRun(3);
         EntryA := QueueEntry('HX043-1A');
         EntryB := QueueEntry('HX043-1B');
+        EntryD := InsertEntry('HX043-1D', 'hx043OtherEvent');
+        SentEntry := QueueEntry('HX043-1S');
+        Facade.MarkSent(SentEntry);
+        FailedEntry := QueueEntry('HX043-1F');
+        Entry.Get(FailedEntry);
+        Entry.Attempts := 3;
+        Entry.Failed := true;
+        Entry.Modify();
         BindSubscription(Partner);
         RunsBefore := SyncRun.Count();
 
@@ -29,17 +41,28 @@ codeunit 86320 "HX043 Nightly Sync Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'The nightly run completes: ' + GetLastErrorText());
-        Assert.AreEqual(2, Runner.LastResult(), 'Two entries delivered');
+        Assert.AreEqual(3, Runner.LastResult(), 'The three pending entries are delivered');
         Entry.Get(EntryA);
         Assert.IsTrue(Entry.Sent, 'Entry A is sent');
         Assert.AreEqual(1, Entry.Attempts, 'Entry A has one attempt');
         Entry.Get(EntryB);
         Assert.IsTrue(Entry.Sent, 'Entry B is sent');
         Assert.AreEqual(1, Entry.Attempts, 'Entry B has one attempt');
+        Entry.Get(EntryD);
+        Assert.IsTrue(Entry.Sent, 'A pending entry of another event type is sent');
+        Assert.AreEqual(1, Entry.Attempts, 'Entry D has one attempt');
+        Entry.Get(SentEntry);
+        Assert.IsTrue(Entry.Sent, 'The already sent entry stays sent');
+        Assert.AreEqual(0, Entry.Attempts, 'The already sent entry is not dispatched again');
+        Assert.IsFalse(Entry.Failed, 'The already sent entry does not fail');
+        Entry.Get(FailedEntry);
+        Assert.IsFalse(Entry.Sent, 'The failed entry is not sent');
+        Assert.IsTrue(Entry.Failed, 'The failed entry stays failed');
+        Assert.AreEqual(3, Entry.Attempts, 'The failed entry is not dispatched again');
         Assert.AreEqual(RunsBefore + 1, SyncRun.Count(), 'One run row is kept');
         SyncRun.FindLast();
         Assert.IsTrue(SyncRun.Completed, 'The run is completed');
-        Assert.AreEqual(2, SyncRun.Dispatched, 'The run records two delivered entries');
+        Assert.AreEqual(3, SyncRun.Dispatched, 'The run records three delivered entries');
         Assert.AreNotEqual(0DT, SyncRun."Started At", 'The run records when it started');
     end;
 
@@ -174,6 +197,11 @@ codeunit 86320 "HX043 Nightly Sync Oracle"
         SyncRun.FindLast();
         Assert.AreEqual(2, SyncRun.Dispatched, 'The run records two delivered entries');
         Assert.IsTrue(SyncRun.Completed, 'The run is completed');
+        Assert.AreEqual(1, Partner.PreparationCalls(), 'The run is prepared once');
+        Assert.AreEqual(SyncRun."Run No.", Partner.PreparedRunNo(), 'The preparation gets the kept run row');
+        Assert.IsTrue(Partner.PreparedRunInTable(), 'The run row is inserted, not completed and has its start time before the preparation');
+        Assert.IsFalse(Partner.PreparedRunCompleted(), 'The prepared run is not completed yet');
+        Assert.AreNotEqual(0DT, Partner.PreparedRunStartedAt(), 'The prepared run has its start time');
     end;
 
     [Test]
@@ -247,6 +275,19 @@ codeunit 86320 "HX043 Nightly Sync Oracle"
         Setup.Modify();
         SessionContext.Reset();
         Entry.DeleteAll();
+    end;
+
+    local procedure InsertEntry(VehicleNo: Code[20]; EventType: Text[50]): Integer
+    var
+        Entry: Record "CGR Outbox Entry";
+    begin
+        Entry.Init();
+        Entry."Event Type" := EventType;
+        Entry."Vehicle No." := VehicleNo;
+        Entry.Payload := '{"event":"hx043OtherEvent"}';
+        Entry."Created At" := CurrentDateTime();
+        Entry.Insert(true);
+        exit(Entry."Entry No.");
     end;
 
     local procedure QueueEntry(VehicleNo: Code[20]): Integer
