@@ -4822,3 +4822,49 @@ Deno.test("runExecution (M10-08c run 003 item 2): a lock lost during publication
     }
   }
 });
+
+// Review M10-08c P2-1: the lock dropped INSIDE the judge (the oracle run)
+// stops judgeExecution before the verdict log and the judgment are written.
+Deno.test("runExecution (M10-08c P2-1): a lock lost inside the judge writes neither the verdict log nor the judgment", async () => {
+  let lost = false;
+  const t = await makeEnv({
+    bc: new FakeBc((cu) => {
+      if (cu === 80010) lost = true;
+      return result({});
+    }),
+  });
+  t.env.namespaceLost = () => lost;
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+  assert(lost, "the judge ran");
+  const [id] = intentIds(t);
+  assert(id, "the intent survives");
+  assertEquals(await t.env.store.judgments(id), [], "no judgment written");
+  const verdicts = join(t.env.resultsRoot, "verdicts");
+  assert(
+    !await exists(verdicts) || [...Deno.readDirSync(verdicts)].length === 0,
+    "no verdict log written",
+  );
+});
+
+// Review M10-08c P3-1: finishCleanup checks the token before each removal:
+// lost right after the published mark, nothing is removed.
+Deno.test("runExecution (M10-08c P3-1): a lock lost after the published mark removes no private state", async () => {
+  const t = await makeEnv();
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  t.env.hooks = {
+    afterPublished: () => {
+      lost = true;
+      return Promise.resolve();
+    },
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+  const [id] = intentIds(t);
+  assert(id, "the intent survives");
+  const p = privatePaths(t.env, id);
+  for (const k of ["work", "quarantine", "pending", "custody"] as const) {
+    assert(await exists(p[k]), `${k} survives`);
+  }
+});

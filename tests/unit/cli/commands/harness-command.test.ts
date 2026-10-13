@@ -7020,3 +7020,40 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read con
   assertEquals(docker.removed, [], "no legacy read container removed");
   assert(await docker.state(legacyRead), "the older build's read survives");
 });
+
+// Review M10-08c P2-2: the legacy refusal also names the existing per-id
+// private paths of each legacy intent (read-only: all survive).
+Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its existing per-id private paths; all survive", async () => {
+  const t = await makeEnv();
+  const d = deps([]);
+  const root = t.env.privateRoot;
+  await Deno.mkdir(join(root, "intents"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "intents", "exec-legacy.json"),
+    JSON.stringify({ v: 2, execution_id: "exec-legacy", phase: "released" }),
+  );
+  const planted = [
+    join(root, "custody", "exec-legacy.json"),
+    join(root, "redaction", "exec-legacy.json"),
+  ];
+  const dirs = ["work", "pending", "quarantine", "taskcopy"].map((x) =>
+    join(root, x, "exec-legacy")
+  );
+  for (const f of planted) {
+    await Deno.mkdir(join(f, ".."), { recursive: true });
+    await Deno.writeTextFile(f, "{}");
+  }
+  for (const x of dirs) await Deno.mkdir(x, { recursive: true });
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    "legacy",
+  );
+  const all = [...planted, ...dirs];
+  for (const n of all) assertStringIncludes(err.message, n);
+  assert(
+    !err.message.includes(join(root, "redaction", "exec-legacy.stub.json")),
+    "only paths that exist are named",
+  );
+  for (const n of all) assert(await exists(n), `${n} survives`);
+});

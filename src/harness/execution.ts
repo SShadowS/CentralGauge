@@ -11,7 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { dirname, join, resolve, SEPARATOR } from "@std/path";
+import { basename, dirname, join, resolve, SEPARATOR } from "@std/path";
 import type { PricingBook } from "./pricing.ts";
 import type { RefappRef, SymbolPackage } from "./identity.ts";
 import type { ResolvedManifest } from "./manifest.ts";
@@ -2409,8 +2409,11 @@ export async function judgeExecution(
       );
       if (why) throw new ConfigurationError(`${why}: nothing written`);
     }
+    // M10-08c P2-1: the token again after the judge returned, before both writes.
+    holdNamespace(env, "judgment not written");
     // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
     await writeVerdictLog(env.resultsRoot, log);
+    holdNamespace(env, "judgment not written");
     await env.store.writeJudgment(judgment);
     return judgment;
   } finally {
@@ -2805,6 +2808,27 @@ export async function refuseLegacyState(
     const i = await readJson<Intent>(f).catch(() => null);
     if (i?.namespace !== own) intents.push(f);
   }
+  // P2-2: the existing per-id private state of each legacy intent, named too.
+  const perId: string[] = [];
+  for (const f of intents) {
+    const p = privatePaths(
+      { privateRoot } as HarnessEnv,
+      basename(f, ".json"),
+    );
+    for (
+      const x of [
+        p.custody,
+        p.keys,
+        p.stubMarker,
+        p.work,
+        p.pending,
+        p.quarantine,
+        p.taskCopy,
+      ]
+    ) {
+      if (await exists(x)) perId.push(x);
+    }
+  }
   const secrets = listed(
     join(privateRoot, "secrets"),
     (e) => e.isDirectory && e.name.startsWith(`${SECRETS_DIR_PREFIX}${host}.`),
@@ -2820,6 +2844,7 @@ export async function refuseLegacyState(
       }`
       : null,
     intents.length > 0 ? `intent(s): ${intents.join(", ")}` : null,
+    perId.length > 0 ? `per-id private path(s): ${perId.join(", ")}` : null,
     secrets.length > 0 ? `secret dir(s): ${secrets.join(", ")}` : null,
   ].filter((x) => x !== null);
   const steps = [
@@ -2828,7 +2853,7 @@ export async function refuseLegacyState(
       ? `DOCKER_CONTEXT=desktop-windows docker rm -f ${containers.join(" ")}`
       : null,
     intents.length > 0
-      ? "remove the listed legacy intents (their executions are not recovered)"
+      ? "remove the listed legacy intents and their per-id private paths (their executions are not recovered)"
       : null,
     secrets.length > 0 ? "remove the listed legacy secret dirs" : null,
     "then start again",
