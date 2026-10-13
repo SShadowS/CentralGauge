@@ -17,3 +17,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/shared-list: { partial_credit: 0.75 }
+  naive/plain-codeunit: { partial_credit: 0.0833333 }
+  naive/append-list: { partial_credit: 0.8333333 }
+  naive/every-return-damaged: { partial_credit: 0.9166667 }
