@@ -23,6 +23,7 @@ codeunit 86160 "HX035 Group Avail Oracle"
         InsertHX35Data(Sister, 'HX035-1');
 
         Assert.AreEqual(Before + 3, GroupAvailability.AvailableVehicles(Sister), 'The sister company counts its own free vehicles: B, C and D');
+        AssertHX35DataKept(Sister, 'HX035-1');
     end;
 
     [Test]
@@ -42,6 +43,7 @@ codeunit 86160 "HX035 Group Avail Oracle"
         InsertHX35Data(Sister, 'HX035-2');
 
         Assert.AreEqual(Before + 1, GroupAvailability.AvailableVehicles(CopyStr(CompanyName(), 1, 30)), 'Our own company counts only A: B is checked out and C is blocked here');
+        AssertHX35DataKept(Sister, 'HX035-2');
     end;
 
     [Test]
@@ -174,6 +176,42 @@ codeunit 86160 "HX035 Group Avail Oracle"
         InsertHX35Vehicle(Sister, Prefix + 'B', false, false);
         InsertHX35Vehicle(Sister, Prefix + 'C', false, false);
         InsertHX35Vehicle(Sister, Prefix + 'D', false, false);
+    end;
+
+    local procedure AssertHX35DataKept(Sister: Text[30]; Prefix: Text[10])
+    var
+        Own: Text[30];
+    begin
+        Own := CopyStr(CompanyName(), 1, 30);
+        AssertHX35CompanyRows(Own, Prefix, 3);
+        AssertHX35VehicleKept(Own, Prefix + 'A', false, false);
+        AssertHX35VehicleKept(Own, Prefix + 'B', true, false);
+        AssertHX35VehicleKept(Own, Prefix + 'C', false, true);
+        AssertHX35CompanyRows(Sister, Prefix, 4);
+        AssertHX35VehicleKept(Sister, Prefix + 'A', true, false);
+        AssertHX35VehicleKept(Sister, Prefix + 'B', false, false);
+        AssertHX35VehicleKept(Sister, Prefix + 'C', false, false);
+        AssertHX35VehicleKept(Sister, Prefix + 'D', false, false);
+    end;
+
+    local procedure AssertHX35CompanyRows(InCompany: Text[30]; Prefix: Text[10]; Expected: Integer)
+    var
+        Vehicle: Record "CGR Vehicle";
+    begin
+        Vehicle.ChangeCompany(InCompany);
+        Vehicle.SetFilter("No.", Prefix + '*');
+        Assert.AreEqual(Expected, Vehicle.Count(), StrSubstNo('Counting adds or removes no vehicle in %1', InCompany));
+    end;
+
+    local procedure AssertHX35VehicleKept(InCompany: Text[30]; VehicleNo: Code[20]; CheckedOut: Boolean; IsBlocked: Boolean)
+    var
+        Vehicle: Record "CGR Vehicle";
+    begin
+        Vehicle.ChangeCompany(InCompany);
+        Assert.IsTrue(Vehicle.Get(VehicleNo), StrSubstNo('Vehicle %1 still exists in %2', VehicleNo, InCompany));
+        Assert.AreEqual(CheckedOut, Vehicle."Checked Out", StrSubstNo('Counting leaves Checked Out of %1 in %2 unchanged', VehicleNo, InCompany));
+        Assert.AreEqual(IsBlocked, Vehicle.Blocked, StrSubstNo('Counting leaves Blocked of %1 in %2 unchanged', VehicleNo, InCompany));
+        Assert.AreEqual(1000, Vehicle.Mileage, StrSubstNo('Counting leaves Mileage of %1 in %2 unchanged', VehicleNo, InCompany));
     end;
 
     local procedure InsertHX35Vehicle(InCompany: Text[30]; VehicleNo: Code[20]; CheckedOut: Boolean; IsBlocked: Boolean)
