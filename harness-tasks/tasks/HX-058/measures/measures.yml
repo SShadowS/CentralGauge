@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "86620/LowerCasePlateApplied": 1
+    "86620/MixedCasePlateApplied": 1
+    "86620/LastReadingWinsWhenLower": 1
+  hidden_regressions:
+    - "86620/UpperCasePlateAsToday"
+    - "86620/LastReadingAnyCaseWins"
+    - "86620/LowerReadingIgnored"
+    - "86620/UnknownAndMalformedSkipped"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/lookup-lowercase: { partial_credit: 0.6666666666666666 }
+  naive/add-uppercase: { partial_credit: 0.6666666666666666 }
+  naive/key-get: { partial_credit: 0.6666666666666666 }
