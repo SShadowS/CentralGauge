@@ -34,12 +34,15 @@ export const NAIVE_RUNS = 2;
  * extensible (orchestrator ruling q-20260925T200428-3b1fda27). AL0280 (event
  * not found) added 2026-10-04 for HX-019, whose oracle subscribes to the event
  * the task introduces (orchestrator ruling
- * decisions\2026-10-04-al0280-missing-feature.md).
+ * decisions\2026-10-04-al0280-missing-feature.md). AL0247 (extension target
+ * not found) added 2026-10-13 for HX-049, whose oracle extends the enum the
+ * task introduces (decisions\2026-10-13-al0247-missing-feature.md).
  */
 export const MISSING_FEATURE_CODES = new Set([
   "AL0118",
   "AL0132",
   "AL0185",
+  "AL0247",
   "AL0280",
   "AL0504",
 ]);

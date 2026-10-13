@@ -34,9 +34,10 @@ probe would have killed.
      in Error, never a passing assert.
    - Any tables the probe needs (id 70090-70099 band, same uniqueness
      check).
-2. Run it (default container Cronus281; no bench may be live; Cronus281-283
-   are this project's allocation, any other container needs
-   `--any-container`, and Cronus28 belongs to LethAL):
+2. Run it (default container Cronus281; no bench may be live; the allowed
+   containers come from `<coord root>/allocation.json` (CG_COORD_ROOT, default
+   H:\cg-coord), the runner refuses without a readable allocation, any other
+   container needs `--any-container`, and Cronus28/284 belong to LethAL):
 
    ```bash
    deno run -A scripts/premise-probe-runner.ts \
