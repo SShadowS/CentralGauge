@@ -2232,6 +2232,17 @@ Eleven candidates by Common procedure A. Wave quota (with HX-007, 12): 4 feature
 
 **Acceptance:** the projection table and, if triggered, the owner's decision.
 
+**Amendment 2026-10-13 (owner):** stage A chose 40x8, so the projection is about 2,200 cells (pilot 792 + campaign 1,408) on unmeasured v2 cell time. The owner held the budget decision until real v2 cells are measured: M8-07b waits for Task M8-07c and re-decides with its numbers (target 10-18..10-20, before the start seal M8-15a). Authoring continues meanwhile.
+
+### Task M8-07c: v2 cell calibration
+
+**Lane:** lane-ops (the owner runs any cell the harness refuses from an agent shell). **Deps:** M10-08 (LSP stub proofs pass), M9-07 (first real v2 cells). **Target:** 10-17.
+
+- [ ] **Step 1:** About 16 real cells: the four 2x2 arms (plain, realistic, LSP, realistic + LSP) x 4 promoted candidates spanning waves 1-3, including one test-authoring and one reuse-target task. Image: the r3 campaign image if M9-17 has built it, otherwise the M10-08 dev integration image with probe configs (lane-infra adds the realistic and realistic + LSP probe configs at that dev revision). Records are developmental and never enter a screening or confirmatory result.
+- [ ] **Step 2:** Report in `H:\Temp3\harness-spike\M8\calibration.md`: wall minutes per cell (agent and judge separately), cost per cell, setup or infra failures, per arm. M8-07b then reruns `capacity.md` with these numbers.
+
+**Acceptance:** 16 cells recorded (or the reason for fewer), the per-arm table, spend added to `decisions\spend.md` if any is paid.
+
 ### Task M8-08: wave 2 candidates HX-019 to HX-030
 
 **Lane:** content. **Deps:** M8-07 started. **Target:** 10-11 to 10-15. Twelve candidates; quota 4 feature, 3 bugfix, 3 refactor, 2 test-authoring; one each new coupling style; at least 8 large; priors about 2/8/2. **Acceptance:** as M8-06 for HX-019 to HX-030 (no fixtures required).
