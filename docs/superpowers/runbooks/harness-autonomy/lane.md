@@ -96,6 +96,14 @@ nothing in flight. After a clear, run your start procedure again.
   Cronus284/285 unallocated). `coord lease` refuses any other container.
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
+- One harness process per `--private-dir` (M10-08c, owner 2026-10-13). Every `harness`
+  command that runs at the same time as another one on this host gets its own
+  `--private-dir`; the default directory is shared by every worktree. A second process on the
+  same root is refused. Accepted residual: a process suspended for more than 120 s between
+  its lock check and the next destructive step (docker call or file write/removal) can act
+  after another process reclaimed the root; this rule keeps that from happening. If the
+  harness refuses to open because of legacy state, follow the one-time migration it prints
+  (no harness process running) and tell the orchestrator.
 
 ## lane-admin specifics
 
