@@ -4,14 +4,18 @@ partial_credit:
     "86360/ImportedDamageBlocks": 1
     "86360/ImportOfTwoLinesCountsTwo": 1
     "86360/DirectInsertBlocks": 1
-    "86360/TemporaryEntryChangesNothing": 1
-    "86360/RegisterDamageCountsOnce": 1
-    "86360/RepairedEntryDoesNotBlock": 1
-    "86360/ImportedRepairedLineDoesNotBlock": 1
-    "86360/DamagedReturnBlocksOnce": 1
     "86360/ImportSkipsUnknownVehicle": 1
     "86360/RepairAfterImportUnblocks": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "86360/TemporaryEntryChangesNothing"
+    - "86360/RegisterDamageCountsOnce"
+    - "86360/RepairedEntryDoesNotBlock"
+    - "86360/ImportedRepairedLineDoesNotBlock"
+    - "86360/DamagedReturnBlocksOnce"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/both-subscriptions: { partial_credit: 1 }
+  naive/import-only: { partial_credit: 0.8 }
+  naive/no-temp-guard: { partial_credit: 0.2 }
+  naive/trigger-guard: { partial_credit: 0 }
