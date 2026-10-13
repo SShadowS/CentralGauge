@@ -1521,6 +1521,62 @@ Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only un
   }
 });
 
+Deno.test("rejudge --force (H-04b run 003): after a --rerun of a budget-terminal cell, --force admits the rerun the report counts and refuses the planned execution", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const run = (extra: Record<string, unknown> = {}) =>
+    runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+      ...extra,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  await run();
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const p = (await t.env.store.executions(c.id))[0]!;
+  await unscoredJudgments(t, p.id, 3);
+  const block = c.blocks[p.block]!;
+  await run({
+    rerun: { task: block.task_id, repeat: block.repeat, arm: p.arm },
+  });
+  const m = (await t.env.store.executions(c.id)).find((x) =>
+    x.run_kind === "manual_rerun"
+  )!;
+  // The rerun's verdict hit infra too: it is pending, so the cell counts it
+  // only when the planned one is budget-terminal (current scorer passed).
+  await unscoredJudgments(t, m.id, 1);
+  const force = (e: string, replaces: string) =>
+    approved(e, (basis) =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, {
+          campaign: c.id,
+          execution: e,
+          force: true,
+          reason: OOM_REASON,
+          replaces,
+          basis,
+        }),
+        opener(t),
+      ));
+  const latest = async (e: string) =>
+    (await t.env.store.judgments(e)).sort((a, b) =>
+      a.ended_at.localeCompare(b.ended_at)
+    ).at(-1)!.id;
+  await assertRejects(
+    async () => await force(p.id, await latest(p.id)),
+    ConfigurationError,
+    `execution ${p.id} is not the one its cell counts (${m.id})`,
+  );
+  assertEquals(
+    (await force(m.id, await latest(m.id))).rejudged,
+    1,
+  );
+});
+
 Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under the current scorer suite", async () => {
   for (const current of [true, false]) {
     const dir = await Deno.makeTempDir();

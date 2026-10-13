@@ -1605,7 +1605,11 @@ export async function harnessRejudge(
           j,
         ]);
       }
-      const used = cellsFromRecords(c, data.executions, byExecution).find((
+      // H-04b run 003: with the current scorer, as the report counts it.
+      const used = cellsFromRecords(c, data.executions, byExecution, {
+        ...campaignJudging(c),
+        scorer: current,
+      }).find((
         x,
       ) => x.task === e.task_id && x.repeat === e.repeat && x.arm === e.arm)!
         .used_execution;
