@@ -1,0 +1,18 @@
+id: HX-038
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Leasing, Core]
+coupling: [temporary-table, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 86220, procedures: [ProposalMatchesInvoicedLines, ProposalChangesNothing, ProposalRaisesNoEvents, ProposalReplacesBuffer, ProposalInvoiceDateSkipsWeekend, NothingDueClearsBuffer, InvoicingAppliesBeforeEventChanges, HandledLineNotInsertedButInvoiced, InvoiceDueLinesUnchanged] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
