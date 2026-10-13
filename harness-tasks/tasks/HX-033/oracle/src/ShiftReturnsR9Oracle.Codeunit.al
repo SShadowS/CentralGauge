@@ -15,6 +15,7 @@ codeunit 86128 "HX033 Shift Returns R9"
         FreshList: List of [Code[20]];
     begin
         Lib.Prepare();
+        Lib.AssertShiftStartsEmpty();
         Lib.InitVehicle('HX033-9A');
         Lib.RentAndReturn('HX033-C9A', 'HX033-9A', 'Dent');
 

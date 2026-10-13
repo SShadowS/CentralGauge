@@ -40,6 +40,31 @@ codeunit 86129 "HX033 Shift Library"
         Contract: Record "CGR Rental Contract";
         RentalMgt: Codeunit "CGR Rental Mgt";
     begin
+        RentOut(ContractNo, VehicleNo);
+        Contract.Get(ContractNo);
+        RentalMgt.Return(ContractNo, Contract."Start Km" + 100, DamageDescription);
+    end;
+
+    // Every row needs an empty shift; each row codeunit runs in its own SOAP session (P1).
+    procedure AssertShiftStartsEmpty()
+    var
+        Shift: Codeunit "CGR Shift Returns";
+        Assert: Codeunit "Library Assert";
+        Returned: List of [Code[20]];
+        Damaged: List of [Code[20]];
+    begin
+        Shift.ReturnedVehicles(Returned);
+        Shift.DamagedVehicles(Damaged);
+        Assert.AreEqual(0, Returned.Count(), 'Precondition: shift starts empty (one SOAP session per codeunit)');
+        Assert.AreEqual(0, Damaged.Count(), 'Precondition: shift starts empty (one SOAP session per codeunit)');
+    end;
+
+    // Inserts open contract ContractNo for VehicleNo and checks it out (start km = the vehicle's mileage).
+    procedure RentOut(ContractNo: Code[20]; VehicleNo: Code[20])
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+    begin
         if Contract.Get(ContractNo) then
             Contract.Delete();
         Contract.Init();
@@ -51,8 +76,24 @@ codeunit 86129 "HX033 Shift Library"
         Contract.Status := Contract.Status::Open;
         Contract.Insert();
         RentalMgt.CheckOut(ContractNo);
-        Contract.Get(ContractNo);
-        RentalMgt.Return(ContractNo, Contract."Start Km" + 100, DamageDescription);
+    end;
+
+    // Repairs every open damage of VehicleNo through the Fleet repair path, which unblocks the vehicle.
+    procedure RepairOpenDamages(VehicleNo: Code[20])
+    var
+        DamageEntry: Record "CGR Damage Entry";
+        DamageMgt: Codeunit "CGR Damage Mgt";
+        EntryNos: List of [Integer];
+        EntryNo: Integer;
+    begin
+        DamageEntry.SetRange("Vehicle No.", VehicleNo);
+        DamageEntry.SetRange(Repaired, false);
+        if DamageEntry.FindSet() then
+            repeat
+                EntryNos.Add(DamageEntry."Entry No.");
+            until DamageEntry.Next() = 0;
+        foreach EntryNo in EntryNos do
+            DamageMgt.RepairDamage(EntryNo);
     end;
 
     procedure ListText(VehicleNos: List of [Code[20]]): Text

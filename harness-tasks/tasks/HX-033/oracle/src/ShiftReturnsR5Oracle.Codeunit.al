@@ -14,6 +14,7 @@ codeunit 86124 "HX033 Shift Returns R5"
         EarlierList: List of [Code[20]];
     begin
         Lib.Prepare();
+        Lib.AssertShiftStartsEmpty();
         Lib.InitVehicle('HX033-5A');
         Lib.InitVehicle('HX033-5B');
         Lib.RentAndReturn('HX033-C5A', 'HX033-5A', '');

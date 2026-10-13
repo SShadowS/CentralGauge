@@ -18,6 +18,7 @@ codeunit 86127 "HX033 Shift Returns R8"
         DamagedAfter: List of [Code[20]];
     begin
         Lib.Prepare();
+        Lib.AssertShiftStartsEmpty();
         Lib.InitVehicle('HX033-8A');
         Lib.RentAndReturn('HX033-C8A', 'HX033-8A', 'Dent');
         ShiftA.ReturnedVehicles(ReturnedBefore);

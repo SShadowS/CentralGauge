@@ -14,6 +14,7 @@ codeunit 86120 "HX033 Shift Returns R1"
         VehicleNos: List of [Code[20]];
     begin
         Lib.Prepare();
+        Lib.AssertShiftStartsEmpty();
         Lib.InitVehicle('HX033-1A');
         Lib.InitVehicle('HX033-1B');
 

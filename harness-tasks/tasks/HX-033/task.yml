@@ -22,6 +22,9 @@ fail_to_pass:
     - { codeunit: 86126, procedures: [SharedAcrossInstances] }
     - { codeunit: 86127, procedures: [ClearShiftEmptiesBoth] }
     - { codeunit: 86128, procedures: [DamagedListIsACopy] }
+    - { codeunit: 86130, procedures: [DamagedListedOnceInOrder] }
+    - { codeunit: 86131, procedures: [DamagedListContentReplaced] }
+    - { codeunit: 86132, procedures: [FailedReturnNotListed] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
