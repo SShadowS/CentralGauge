@@ -160,10 +160,13 @@ import {
   variantAllowed,
 } from "../../src/harness/qualify.ts";
 import {
+  type IcaclsRunner,
   READ_PREFIX,
   realDocker,
+  shareWithLocalUsers,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
+import { resolveDockerContext } from "../../src/container/docker-context.ts";
 import {
   acquireBenchLock,
   benchLockLost,
@@ -948,7 +951,7 @@ export async function harnessImagesBuild(
     root: string;
     version?: string;
     revision?: string;
-    /** H-03: the host-wide claude-code publication lock (default under %LOCALAPPDATA%). */
+    /** H-03: the claude-code publication reservation (default {@link publicationLockDir}). */
     publishLockDir?: string;
     /** H-03: the frozen claude-code revisions (default FROZEN_CLAUDE_CODE). */
     frozen?: Readonly<Record<string, FrozenClaudeCode>>;
@@ -1055,10 +1058,19 @@ export async function harnessImagesBuild(
       }`,
     );
   }
-  // H-03: one publication at a time on this host (the Docker daemon is per
-  // host), from the freeze-record check through both tags' refusal, the build
-  // and the read-back. A held lock refuses; it never waits.
-  await using _publish = cc ? publicationLock(o.publishLockDir) : null;
+  // H-03: one publication at a time per Docker daemon, for every local user,
+  // from the freeze-record check through both tags' refusal, the build, the
+  // tags and the read-back. A held reservation refuses; it never waits. One
+  // taken over (stale while this build was suspended) publishes and removes
+  // nothing more: every tag and tag removal is fenced on it.
+  const reservation = cc
+    ? acquireBenchLock(o.publishLockDir ?? await publicationLockDir(), {
+      command: "harness images build claude-code",
+    })
+    : null;
+  await using _publish = {
+    [Symbol.asyncDispose]: () => reservation?.() ?? Promise.resolve(),
+  };
   const frozen = o.frozen ?? FROZEN_CLAUDE_CODE;
   if (cc && Object.hasOwn(frozen, o.revision!)) {
     const r = frozen[o.revision!]!;
@@ -1100,7 +1112,18 @@ export async function harnessImagesBuild(
       } LSP release ${rel.tag}: ${rel.asset} sha256:${rel.sha256} (dependency source ${rel.dependency_source})`,
     );
   }
-  const code = await docker.build([
+  // H-03: a claude-code build publishes nothing itself: it builds an untagged
+  // image whose id --iidfile captures, tagged only while the reservation holds.
+  const iidFile = ccRel ? await Deno.makeTempFile({ prefix: "cg-iid-" }) : null;
+  let iid: string | null = null;
+  const fence = (step: string) => {
+    if (reservation?.lost()) {
+      throw new ConfigurationError(
+        `${tag}: the claude-code publication reservation was taken over (stale) before ${step}: this build publishes and removes nothing more; its image ${iid} and any tag naming it are left for the operator`,
+      );
+    }
+  };
+  const buildArgs = [
     "build",
     "-f",
     join(images, harness, "Dockerfile.windows"),
@@ -1120,15 +1143,83 @@ export async function harnessImagesBuild(
     ...(lspL ? ["--label", `${lspL[0]}=${lspL[1]}`] : []),
     ...(rel ? lspReleaseArgs(rel) : []),
     ...(ccRel ? claudeCodeArgs(ccRel) : []),
-    "-t",
-    tag,
-    ...(alias ? ["-t", alias] : []),
+    ...(iidFile ? ["--iidfile", iidFile] : ["-t", tag]),
     join(images, harness),
-  ]);
+  ];
+  let code: number;
+  try {
+    code = await docker.build(buildArgs);
+  } finally {
+    if (iidFile) {
+      iid = (await Deno.readTextFile(iidFile).catch(() => "")).trim() || null;
+      await Deno.remove(iidFile).catch(() => {});
+    }
+  }
   if (code !== 0) {
     throw new ConfigurationError(`${tag} build failed (exit ${code})`);
   }
-  if (!await hasBaseLayers(docker, tag, base.Id)) {
+  if (iidFile && !/^sha256:[0-9a-f]{64}$/.test(iid ?? "")) {
+    throw new ConfigurationError(
+      `${tag}: the build wrote no image id (--iidfile): nothing published`,
+    );
+  }
+  // Any failure from here on unpublishes, before the reservation is released.
+  let accepted = false;
+  await using _unpublish = {
+    [Symbol.asyncDispose]: async () => {
+      if (!accepted && iid) await unpublish(iid);
+    },
+  };
+  if (iid) await publish(iid);
+
+  /** Both final tags on this build's id, each fenced; one published meanwhile by anyone else is never tagged over. */
+  async function publish(id: string) {
+    fence("tagging");
+    await refuseExisting(tag, "use a new --version or --revision");
+    await refuseExisting(alias!, "use a new --revision");
+    for (const t of [tag, alias!]) {
+      fence(`tagging ${t}`);
+      const c = await docker.tag(id, t);
+      if (c !== 0) {
+        throw new ConfigurationError(
+          `docker tag ${id} ${t} failed (exit ${c})`,
+        );
+      }
+    }
+  }
+
+  /**
+   * A rejected image keeps no final tag: both are attempted, each only while
+   * the reservation holds and only while it still names this build's id.
+   */
+  async function unpublish(id: string) {
+    const kept: string[] = [];
+    for (const t of [tag, alias!]) {
+      try {
+        const at = (await docker.inspectImage(t) as { Id?: string } | null)
+          ?.Id;
+        if (at !== id) continue;
+        if (reservation!.lost()) {
+          kept.push(`${t} (reservation taken over)`);
+          continue;
+        }
+        await docker.untag(t);
+      } catch (e) {
+        kept.push(`${t} (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+    if (kept.length > 0) {
+      console.warn(
+        `${colors.yellow("[WARN]")} rejected image ${id} keeps tag(s) ${
+          kept.join(", ")
+        }; once verified: DOCKER_CONTEXT=desktop-windows docker rmi ${
+          kept.map((k) => k.split(" ")[0]).join(" ")
+        }`,
+      );
+    }
+  }
+
+  if (!await hasBaseLayers(docker, iid ?? tag, base.Id)) {
     throw new ConfigurationError(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );
@@ -1168,6 +1259,12 @@ export async function harnessImagesBuild(
     await held();
   }
   await removeNamespace(join(builds, owner));
+  // H-03: every fact read back is this build's own image's.
+  if (iid && f.digest !== iid) {
+    throw new ConfigurationError(
+      `${tag}: is ${f.digest}, not this build's ${iid} (docker build --iidfile)`,
+    );
+  }
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(
       `${tag}: label ${IMAGE_LABELS.revision} is ${
@@ -1176,38 +1273,32 @@ export async function harnessImagesBuild(
     );
   }
   if (ccRel) {
-    // H-03: read back against this build's intent, not merely self-consistency
-    // (imageFacts already compared the shipped resolved file with the labels).
-    // A rejected image keeps no tag: both this build's tags are removed.
-    try {
-      const aliasId =
-        (await docker.inspectImage(alias!) as { Id?: string } | null)
-          ?.Id;
-      if (aliasId !== f.digest) {
+    // H-03: read back against this build's intent and its own image id
+    // (--iidfile), not merely self-consistency (imageFacts already compared
+    // the shipped resolved file with the labels). A rejected image keeps no
+    // tag: _unpublish removes this build's tags.
+    fence("the read-back");
+    for (const t of [tag, alias!]) {
+      const at = (await docker.inspectImage(t) as { Id?: string } | null)?.Id;
+      if (at !== iid) {
         throw new ConfigurationError(
-          `${alias}: is ${
-            aliasId ?? "absent"
-          }, not this build's ${f.digest} (${tag})`,
+          `${t}: is ${at ?? "absent"}, not this build's ${iid} (${tag})`,
         );
       }
-      const p = f.package;
-      if (
-        f.version !== ccRel.version || p?.version !== ccRel.version ||
-        p.integrity.main !== ccRel.main.integrity ||
-        p.integrity.win32_x64 !== ccRel.win32_x64.integrity
-      ) {
-        throw new ConfigurationError(
-          `${tag}: the built image's ${IMAGE_LABELS.version} ${f.version} and ${IMAGE_LABELS.package} ${
-            p
-              ? `${p.version} ${p.integrity.main} ${p.integrity.win32_x64}`
-              : "absent"
-          } differ from this build's resolution (${ccRel.version} ${ccRel.main.integrity} ${ccRel.win32_x64.integrity})`,
-        );
-      }
-    } catch (e) {
-      await docker.untag(tag);
-      await docker.untag(alias!);
-      throw e;
+    }
+    const p = f.package;
+    if (
+      f.version !== ccRel.version || p?.version !== ccRel.version ||
+      p.integrity.main !== ccRel.main.integrity ||
+      p.integrity.win32_x64 !== ccRel.win32_x64.integrity
+    ) {
+      throw new ConfigurationError(
+        `${tag}: the built image's ${IMAGE_LABELS.version} ${f.version} and ${IMAGE_LABELS.package} ${
+          p
+            ? `${p.version} ${p.integrity.main} ${p.integrity.win32_x64}`
+            : "absent"
+        } differ from this build's resolution (${ccRel.version} ${ccRel.main.integrity} ${ccRel.win32_x64.integrity})`,
+      );
     }
   }
   if (
@@ -1265,25 +1356,43 @@ export async function harnessImagesBuild(
       }`,
     );
   }
+  accepted = true;
   return f;
 }
 
-/** H-03: the host-wide publication lock for claude-code builds, released on dispose. */
-function publicationLock(dir: string | undefined): AsyncDisposable {
-  const local = Deno.env.get("LOCALAPPDATA");
-  const at = dir ??
-    (local
-      ? join(local, "centralgauge", "harness", "image-publish", "claude-code")
-      : null);
-  if (!at) {
+/**
+ * H-03: the claude-code publication reservation of the Docker daemon this
+ * process builds on, shared by every local user:
+ * %ProgramData%\centralgauge\image-locks\<docker context>\claude-code.
+ * ProgramData's inherited ACL lets Users create there, but only the creator
+ * (CREATOR OWNER) may then write, rename or delete it: user B could neither
+ * reclaim user A's stale marker nor open its guard. So the image-locks root
+ * grants BUILTIN\Users inherited Modify when it is created.
+ */
+export async function publicationLockDir(
+  programData = Deno.env.get("ProgramData"),
+  icacls?: IcaclsRunner,
+): Promise<string> {
+  if (!programData) {
     throw new ConfigurationError(
-      "LOCALAPPDATA is not set: no host-wide claude-code publication lock",
+      "ProgramData is not set: no machine-wide claude-code publication reservation",
     );
   }
-  const release = acquireBenchLock(at, {
-    command: "harness images build claude-code",
-  });
-  return { [Symbol.asyncDispose]: () => release() };
+  const root = join(programData, "centralgauge", "image-locks");
+  if (!await exists(root)) {
+    await Deno.mkdir(root, { recursive: true });
+    try {
+      await shareWithLocalUsers(root, icacls);
+    } catch (e) {
+      await Deno.remove(root).catch(() => {});
+      throw e;
+    }
+  }
+  // ponytail: keyed by the docker context name (pinned desktop-windows for
+  // every build); two context names for one daemon would not share it.
+  const key = resolveDockerContext().context ??
+    Deno.env.get("DOCKER_CONTEXT") ?? "default";
+  return join(root, key.replace(/[^A-Za-z0-9._-]/g, "_"), "claude-code");
 }
 
 export async function harnessSymbolsLock(

@@ -6,6 +6,7 @@ import {
   EXECUTION_LABEL,
   PI_STAGE_ARGV,
 } from "../../../src/harness/sandbox.ts";
+import { imageTag } from "../../../src/harness/images.ts";
 
 export interface RunCall {
   args: string[];
@@ -368,16 +369,51 @@ export class FakeDocker implements DockerCli {
       this.images.get(this.tags.get(ref) ?? ref) ?? null,
     );
   }
+  /** H-03: every docker rmi of a tag, in order. */
+  untags: string[] = [];
   untag(ref: string): Promise<void> {
+    this.untags.push(ref);
     this.tags.delete(ref);
     return Promise.resolve();
   }
-  /** What a build of a tag (`-t`) produces: added only when the build runs. */
+  /** H-03: every docker tag (image id, ref), in order. */
+  tagCalls: [string, string][] = [];
+  tag(id: string, ref: string): Promise<number> {
+    this.tagCalls.push([id, ref]);
+    if (!this.images.has(id)) return Promise.resolve(1);
+    this.tags.set(ref, id);
+    return Promise.resolve(0);
+  }
+  /**
+   * What a build of a tag (`-t`) produces: added only when the build runs.
+   * H-03: an untagged build (`--iidfile`, no `-t`) produces the result its
+   * harness, version and revision labels name, by id only, and writes the id.
+   */
   buildResults = new Map<
     string,
     { id: string; labels: Record<string, string>; layers: string[] }
   >();
-  build(args: string[]): Promise<number> {
+  async build(args: string[]): Promise<number> {
+    if (args.includes("--iidfile") && !args.includes("-t")) {
+      this.builds.push(args);
+      const label = (k: string) =>
+        args.find((a, i) => args[i - 1] === "--label" && a.startsWith(`${k}=`))
+          ?.slice(k.length + 1);
+      const r = this.buildResults.get(imageTag(
+        label("centralgauge.harness") ?? "",
+        label("centralgauge.harness.version") ?? "",
+        label("centralgauge.harness.revision"),
+      ));
+      if (r) {
+        this.images.set(r.id, {
+          Id: r.id,
+          Config: { Labels: r.labels },
+          RootFS: { Layers: r.layers },
+        });
+        await Deno.writeTextFile(args[args.indexOf("--iidfile") + 1]!, r.id);
+      }
+      return 0;
+    }
     this.builds.push(args);
     const tag = args[args.indexOf("-t") + 1];
     const r = tag === undefined ? undefined : this.buildResults.get(tag);

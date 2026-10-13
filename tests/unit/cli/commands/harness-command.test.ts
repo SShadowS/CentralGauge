@@ -23,6 +23,7 @@ import {
   harnessRun,
   harnessSymbolsLock,
   parseRerunCell,
+  publicationLockDir,
   registerHarnessCommand,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
@@ -5510,7 +5511,8 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
   );
   const args = docker.builds.at(-1)!;
   const i = args.indexOf(`${lk}=${lv}`);
-  assert(i > 0 && args[i - 1] === "--label" && i < args.indexOf("-t"));
+  // H-03 run 002: a claude-code build is untagged (--iidfile), tagged after.
+  assert(i > 0 && args[i - 1] === "--label" && i < args.indexOf("--iidfile"));
   docker.tags.delete(tag);
   docker.tags.delete(alias);
   docker.buildResults.set(tag, {
@@ -7154,7 +7156,7 @@ Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP rele
   ) {
     const i = args.indexOf(value!);
     assert(
-      i > 0 && args[i - 1] === flag && i < args.indexOf("-t"),
+      i > 0 && args[i - 1] === flag && i < args.indexOf("--iidfile"),
       `${flag} ${value}`,
     );
   }
@@ -7240,10 +7242,12 @@ Deno.test("harnessImagesBuild (H-03): claude-code resolves the newest release, b
   assertEquals(calls.map((c) => c.url), [CC_MAIN_URL, ccWinUrl()]);
   assertEquals(docker.builds.length, 1, "one build");
   const args = docker.builds[0]!;
-  const tags = args.flatMap((a, i) => a === "-t" ? [args[i + 1]] : []);
-  assertEquals(tags, [
-    "centralgauge/harness-claude-code:2.1.296-r3",
-    "centralgauge/harness-claude-code:latest-r3",
+  // H-03 run 002: the build itself publishes no tag (--iidfile); both tags
+  // land afterwards on the one id it captured.
+  assert(!args.includes("-t") && args.includes("--iidfile"), "untagged build");
+  assertEquals(docker.tagCalls, [
+    [id, "centralgauge/harness-claude-code:2.1.296-r3"],
+    [id, "centralgauge/harness-claude-code:latest-r3"],
   ]);
   for (
     const [flag, value] of [
@@ -7257,7 +7261,10 @@ Deno.test("harnessImagesBuild (H-03): claude-code resolves the newest release, b
     ]
   ) {
     const i = args.indexOf(value!);
-    assert(i > 0 && args[i - 1] === flag && i < args.indexOf("-t"), value);
+    assert(
+      i > 0 && args[i - 1] === flag && i < args.indexOf("--iidfile"),
+      value,
+    );
   }
   assertEquals(
     args.filter((a) => a.startsWith("centralgauge.harness.version=")),
@@ -7379,9 +7386,12 @@ Deno.test("harnessImagesBuild (H-03): the read-back must match this build's reso
       const realBuild = d.build.bind(d);
       d.build = async (args) => {
         const code = await realBuild(args);
-        d.tags.set(
+        // H-03 run 002: a real image (docker never holds a dangling tag).
+        d.addImage(
           "centralgauge/harness-claude-code:latest-r3",
           `sha256:${"9".repeat(64)}`,
+          {},
+          ["l1"],
         );
         return code;
       };
@@ -7461,7 +7471,8 @@ Deno.test("harnessImagesBuild (H-03): a failed read-back removes both tags this 
       const realBuild = docker.build.bind(docker);
       docker.build = async (args) => {
         const code = await realBuild(args);
-        docker.tags.set(aliasTag, `sha256:${"9".repeat(64)}`);
+        // H-03 run 002: a real image (docker never holds a dangling tag).
+        docker.addImage(aliasTag, `sha256:${"9".repeat(64)}`, {}, ["l1"]);
         return code;
       };
     } else {
@@ -7488,7 +7499,13 @@ Deno.test("harnessImagesBuild (H-03): a failed read-back removes both tags this 
       log.restore();
     }
     assertEquals(await docker.inspectImage(resolvedTag), null, name);
-    assertEquals(await docker.inspectImage(aliasTag), null, name);
+    // H-03 run 002 item 4: a tag naming another image is not this build's to
+    // remove (it is never tagged over either).
+    if (name === "alias elsewhere") {
+      assertEquals(docker.tags.get(aliasTag), `sha256:${"9".repeat(64)}`);
+    } else {
+      assertEquals(await docker.inspectImage(aliasTag), null, name);
+    }
   }
 });
 
@@ -7542,4 +7559,416 @@ Deno.test("harnessImagesBuild (H-03): a held publication lock refuses before any
   }
   assertEquals(calls, [], "no registry fetch");
   assertEquals(docker.builds, [], "no docker build");
+});
+
+// ---- H-03 run 002: fenced, daemon-wide, id-verified, transactional publication ----
+
+const CC_TAG = "centralgauge/harness-claude-code:2.1.296-r3";
+const CC_ALIAS = "centralgauge/harness-claude-code:latest-r3";
+
+/** Another build reclaimed the (stale) reservation: the marker now carries its token. */
+async function reclaimReservation(dir: string) {
+  const now = new Date().toISOString();
+  await Deno.writeTextFile(
+    benchLockPath(dir),
+    JSON.stringify({
+      pid: 1,
+      startedAt: now,
+      heartbeatAt: now,
+      command: "other build",
+      token: "other-token",
+    }),
+  );
+}
+
+/** Runs fn once, the moment both final tags first name `id` (after the build or after a docker tag). */
+function onPublished(
+  docker: FakeDocker,
+  id: string,
+  fn: () => void | Promise<void>,
+) {
+  let fired = false;
+  const check = async () => {
+    if (
+      !fired && docker.tags.get(CC_TAG) === id &&
+      docker.tags.get(CC_ALIAS) === id
+    ) {
+      fired = true;
+      await fn();
+    }
+  };
+  const build = docker.build.bind(docker);
+  docker.build = async (args) => {
+    const code = await build(args);
+    await check();
+    return code;
+  };
+  const tag = docker.tag.bind(docker);
+  docker.tag = async (src, ref) => {
+    const code = await tag(src, ref);
+    await check();
+    return code;
+  };
+}
+
+async function ccPublication(o: { lsp?: boolean } = {}) {
+  const { root, docker, baseId } = await ccRoot();
+  const id = `sha256:${"c".repeat(64)}`;
+  const labels: Record<string, string> = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+  };
+  if (o.lsp) {
+    await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+      recursive: true,
+    });
+    await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  }
+  const b = ccBuild(docker, root, id, labels, { revision: "3" });
+  return { root, docker, baseId, id, b };
+}
+
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  const log = stub(console, "log", () => {});
+  const warn = stub(console, "warn", () => {});
+  try {
+    return await fn();
+  } finally {
+    log.restore();
+    warn.restore();
+  }
+}
+
+Deno.test("harnessImagesBuild (H-03 run 002): a reservation taken over during the build publishes nothing and removes nothing", async () => {
+  const { docker, id, b } = await ccPublication();
+  const build = docker.build.bind(docker);
+  docker.build = async (args) => {
+    const code = await build(args);
+    // The build completes after another build reclaimed the reservation.
+    await reclaimReservation(b.opts.publishLockDir);
+    return code;
+  };
+  const err = await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+    )
+  );
+  assertStringIncludes(err.message, "reservation");
+  assertStringIncludes(err.message, id, "the untagged image is named");
+  assertEquals(docker.tags.has(CC_TAG), false, "no tag published");
+  assertEquals(docker.tags.has(CC_ALIAS), false, "no alias published");
+  assertEquals(docker.untags, [], "nothing removed");
+  assertEquals(
+    readBenchLock(b.opts.publishLockDir)?.token,
+    "other-token",
+    "the new holder's reservation is left alone",
+  );
+});
+
+Deno.test("harnessImagesBuild (H-03 run 002): a reservation taken over between the two tags publishes no second tag and removes nothing", async () => {
+  const { docker, id, b } = await ccPublication();
+  const tag = docker.tag.bind(docker);
+  let n = 0;
+  docker.tag = async (src, ref) => {
+    const code = await tag(src, ref);
+    if (++n === 1) await reclaimReservation(b.opts.publishLockDir);
+    return code;
+  };
+  const err = await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+    )
+  );
+  assertStringIncludes(err.message, "reservation");
+  assertEquals(docker.tagCalls, [[id, CC_TAG]], "the second tag never ran");
+  assertEquals(docker.tags.has(CC_ALIAS), false, "no alias published");
+  assertEquals(docker.untags, [], "nothing removed after the takeover");
+  assertEquals(docker.tags.get(CC_TAG), id, "left for the operator");
+  assertEquals(readBenchLock(b.opts.publishLockDir)?.token, "other-token");
+});
+
+Deno.test("harnessImagesBuild (H-03 run 002): a reservation taken over before the cleanup of a rejected image removes nothing", async () => {
+  const { docker, id, b } = await ccPublication();
+  // A read-back failure (another version than resolved) ...
+  const r = docker.buildResults.get(CC_TAG)!;
+  docker.buildResults.set(CC_TAG, {
+    ...r,
+    labels: { ...r.labels, ...ccLabels(ccRel("2.1.295")) },
+  });
+  docker.shipFile(
+    id,
+    CLAUDE_CODE_RESOLVED,
+    ccResolvedJson({}, ccRel("2.1.295")),
+  );
+  // ... with the reservation reclaimed while this build reads the image.
+  const read = docker.readImageFile.bind(docker);
+  docker.readImageFile = async (image, path, owner) => {
+    await reclaimReservation(b.opts.publishLockDir);
+    return await read(image, path, owner);
+  };
+  await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+    )
+  );
+  assertEquals(docker.untags, [], "no tag removed without the reservation");
+  assertEquals(docker.tags.get(CC_TAG), id);
+  assertEquals(docker.tags.get(CC_ALIAS), id);
+  assertEquals(readBenchLock(b.opts.publishLockDir)?.token, "other-token");
+});
+
+Deno.test("harnessImagesBuild (H-03 run 002): two users' environments against one Docker daemon share one machine-wide reservation", async () => {
+  const { root, docker, b } = await ccPublication();
+  const programData = join(root, "ProgramData");
+  // The shared root already exists (its ACL is set when it is created).
+  await Deno.mkdir(join(programData, "centralgauge", "image-locks"), {
+    recursive: true,
+  });
+  const keys = [
+    "ProgramData",
+    "LOCALAPPDATA",
+    "USERPROFILE",
+    "CENTRALGAUGE_DOCKER_CONTEXT",
+  ];
+  const saved = keys.map((k) => [k, Deno.env.get(k)] as const);
+  const asUser = (name: string) => {
+    Deno.env.set("USERPROFILE", join(root, "Users", name));
+    Deno.env.set("LOCALAPPDATA", join(root, "Users", name, "AppData", "Local"));
+  };
+  Deno.env.set("ProgramData", programData);
+  Deno.env.set("CENTRALGAUGE_DOCKER_CONTEXT", "desktop-windows");
+  __setContextListerForTests(undefined);
+  // No publishLockDir: the default reservation.
+  const opts = { root, revision: "3" };
+  let inBuild!: () => void;
+  const building = new Promise<void>((r) => (inBuild = r));
+  let finish!: () => void;
+  const gate = new Promise<void>((r) => (finish = r));
+  const build = docker.build.bind(docker);
+  docker.build = async (args) => {
+    inBuild();
+    await gate;
+    return await build(args);
+  };
+  try {
+    asUser("alice");
+    const alice = quietly(() =>
+      harnessImagesBuild("claude-code", opts, docker, b.fetch)
+    );
+    await building;
+    asUser("bob");
+    const bobDocker = new FakeDocker();
+    bobDocker.addImage(BASE_IMAGE, `sha256:${"b".repeat(64)}`, {}, ["l1"]);
+    await assertRejects(
+      () => harnessImagesBuild("claude-code", opts, bobDocker, b.fetch),
+      BenchLockHeldError,
+    );
+    assertEquals(bobDocker.builds, [], "bob builds nothing");
+    assert(
+      await exists(
+        benchLockPath(
+          join(
+            programData,
+            "centralgauge",
+            "image-locks",
+            "desktop-windows",
+            "claude-code",
+          ),
+        ),
+      ),
+      "the reservation is under ProgramData, keyed by the Docker context",
+    );
+    finish();
+    await alice;
+  } finally {
+    finish();
+    for (const [k, v] of saved) {
+      if (v === undefined) Deno.env.delete(k);
+      else Deno.env.set(k, v);
+    }
+    __setContextListerForTests(undefined);
+  }
+});
+
+Deno.test("harnessImagesBuild (H-03 run 002): both tags retargeted together to another image with matching labels are refused (read back against the build's own id)", async () => {
+  const { docker, baseId, id, b } = await ccPublication();
+  const other = `sha256:${"e".repeat(64)}`;
+  const r = docker.buildResults.get(CC_TAG)!;
+  onPublished(docker, id, () => {
+    docker.addImage(CC_TAG, other, r.labels, ["l1", "l9"]);
+    docker.tags.set(CC_ALIAS, other);
+  });
+  docker.shipFile(other, CLAUDE_CODE_RESOLVED, ccResolvedJson());
+  const err = await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+    )
+  );
+  assertStringIncludes(err.message, id, "named against this build's id");
+  assertEquals(docker.tags.get(CC_TAG), other, "another image's tag is kept");
+  assertEquals(docker.tags.get(CC_ALIAS), other);
+  assert(baseId !== other);
+});
+
+for (
+  const [name, tamper, msg] of [
+    ["base layers", (d: FakeDocker) => {
+      const r = d.buildResults.get(CC_TAG)!;
+      d.buildResults.set(CC_TAG, { ...r, layers: ["x1", "x2"] });
+    }, "was not built on base"],
+    ["shipped file", (d: FakeDocker, id: string) => {
+      d.shipFile(
+        id,
+        CLAUDE_CODE_RESOLVED,
+        ccResolvedJson({ version: "2.1.295" }),
+      );
+    }, "claude-code-resolved.json"],
+    ["revision", (d: FakeDocker) => {
+      const r = d.buildResults.get(CC_TAG)!;
+      // The build is named by its revision label; the result lands with another.
+      const fake = d.build.bind(d);
+      d.build = async (args) => {
+        const code = await fake(args);
+        const img = d.images.get(r.id) as {
+          Config: { Labels: Record<string, string> };
+        };
+        img.Config.Labels = {
+          ...img.Config.Labels,
+          "centralgauge.harness.revision": "4",
+        };
+        return code;
+      };
+    }, "centralgauge.harness.revision is 4"],
+    ["LSP", () => {}, "did not land"],
+  ] as const
+) {
+  Deno.test(`harnessImagesBuild (H-03 run 002): a ${name} failure after publication removes both final tags`, async () => {
+    const { docker, id, b } = await ccPublication({ lsp: name === "LSP" });
+    tamper(docker, id);
+    const err = await quietly(() =>
+      assertRejects(
+        () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+        ConfigurationError,
+      )
+    );
+    assertStringIncludes(err.message, msg);
+    assertEquals(docker.tags.has(CC_TAG), false, `${name}: ${CC_TAG}`);
+    assertEquals(docker.tags.has(CC_ALIAS), false, `${name}: ${CC_ALIAS}`);
+    assert(
+      !await exists(benchLockPath(b.opts.publishLockDir)),
+      "the reservation is released afterwards",
+    );
+  });
+}
+
+Deno.test("harnessImagesBuild (H-03 run 002): a read-back failure removes this build's tags under the reservation, never another image's", async () => {
+  const { docker, id, b } = await ccPublication();
+  const foreign = `sha256:${"9".repeat(64)}`;
+  docker.addImage("centralgauge/other:x", foreign, {}, ["l1"]);
+  onPublished(docker, id, () => {
+    docker.tags.set(CC_ALIAS, foreign);
+  });
+  const held: (string | undefined)[] = [];
+  const untag = docker.untag.bind(docker);
+  docker.untag = async (ref) => {
+    held.push(readBenchLock(b.opts.publishLockDir)?.token);
+    await untag(ref);
+  };
+  const err = await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+    )
+  );
+  assertStringIncludes(err.message, "latest-r3");
+  assertEquals(docker.untags, [CC_TAG], "only the tag naming this build");
+  assertEquals(
+    docker.tags.get(CC_ALIAS),
+    foreign,
+    "another image's alias kept",
+  );
+  assert(
+    held.length === 1 && held[0] !== undefined && held[0] !== "other-token",
+    `removed while this build held the reservation: ${held}`,
+  );
+});
+
+Deno.test("harnessImagesBuild (H-03 run 002): the cleanup attempts both tags when the first removal fails, and the original failure is reported", async () => {
+  const { docker, id, b } = await ccPublication();
+  const r = docker.buildResults.get(CC_TAG)!;
+  docker.buildResults.set(CC_TAG, {
+    ...r,
+    labels: { ...r.labels, ...ccLabels(ccRel("2.1.295")) },
+  });
+  docker.shipFile(
+    id,
+    CLAUDE_CODE_RESOLVED,
+    ccResolvedJson({}, ccRel("2.1.295")),
+  );
+  const untag = docker.untag.bind(docker);
+  docker.untag = async (ref) => {
+    if (ref === CC_TAG) throw new Error("rmi failed");
+    await untag(ref);
+  };
+  const err = await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+    )
+  );
+  assertStringIncludes(err.message, "2.1.295");
+  assertEquals(docker.tags.has(CC_ALIAS), false, "the alias is still removed");
+});
+
+Deno.test({
+  name:
+    "publicationLockDir (H-03 run 002): ProgramData, keyed by the Docker context; the root is shared with BUILTIN\\Users (inherited Modify) when created",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const pd = await Deno.realPath(await Deno.makeTempDir());
+    const root = join(pd, "centralgauge", "image-locks");
+    const saved = Deno.env.get("CENTRALGAUGE_DOCKER_CONTEXT");
+    Deno.env.set("CENTRALGAUGE_DOCKER_CONTEXT", "desktop-windows");
+    __setContextListerForTests(undefined);
+    try {
+      const calls: string[][] = [];
+      const ok = (args: string[]) => {
+        calls.push(args);
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      };
+      assertEquals(
+        await publicationLockDir(pd, ok),
+        join(root, "desktop-windows", "claude-code"),
+      );
+      assertEquals(calls, [[root, "/grant", "*S-1-5-32-545:(OI)(CI)M"]]);
+      await publicationLockDir(pd, ok);
+      assertEquals(calls.length, 1, "an existing root is not re-granted");
+      // A failed grant leaves no unshared root behind.
+      await Deno.remove(root);
+      await assertRejects(
+        () =>
+          publicationLockDir(
+            pd,
+            () => Promise.resolve({ code: 5, stdout: "", stderr: "denied" }),
+          ),
+        ConfigurationError,
+        "denied",
+      );
+      assertEquals(await exists(root), false);
+      await assertRejects(
+        () => publicationLockDir("", ok),
+        ConfigurationError,
+        "ProgramData is not set",
+      );
+    } finally {
+      if (saved === undefined) {
+        Deno.env.delete("CENTRALGAUGE_DOCKER_CONTEXT");
+      } else Deno.env.set("CENTRALGAUGE_DOCKER_CONTEXT", saved);
+      __setContextListerForTests(undefined);
+    }
+  },
 });
