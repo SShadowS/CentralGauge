@@ -5,7 +5,11 @@ codeunit 70201 "CGR Rental Fleet Subscribers"
     var
         Setup: Record "CGR Setup";
     begin
-        Setup.Get();
+        if not Setup.Get() then begin
+            Result := false;
+            IsHandled := true;
+            exit;
+        end;
         if not Setup."Suspend Rentals" then
             exit;
         Result := false;

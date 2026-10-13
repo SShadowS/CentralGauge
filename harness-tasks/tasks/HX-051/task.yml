@@ -12,6 +12,6 @@ pass_to_pass:
   - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
   - { codeunit: 80000, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
 fail_to_pass: null
-mutants: [handled-true-ignored, stop-only-at-checkout, stop-needs-setup-row, returned-contract-checkout, unknown-vehicle-available]
+mutants: [handled-true-ignored, stop-only-at-checkout, missing-setup-suspends, returned-contract-checkout, unknown-vehicle-available]
 contamination: null
 limits: { timeout_min: 30 }

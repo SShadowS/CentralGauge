@@ -177,25 +177,6 @@ codeunit 80102 "CGR Availability Tests"
     end;
 
     [Test]
-    procedure NoSetupMeansNoStop()
-    var
-        Setup: Record "CGR Setup";
-        Saved: Record "CGR Setup";
-        FleetMgt: Codeunit "CGR Fleet Mgt";
-        Available: Boolean;
-    begin
-        Initialize();
-        Lib.CreateVehicle('HX051-V11', 1000, Enum::"CGR Maintenance Strategy"::Default);
-        Setup.Get();
-        Saved := Setup;
-        Setup.Delete();
-
-        Available := FleetMgt.IsAvailable('HX051-V11');
-        Saved.Insert();
-        Assert.IsTrue(Available, 'Without a CGR Setup record rentals are not suspended');
-    end;
-
-    [Test]
     procedure CheckOutStartsTheRental()
     var
         Contract: Record "CGR Rental Contract";
@@ -278,6 +259,25 @@ codeunit 80102 "CGR Availability Tests"
 
         asserterror RentalMgt.CheckOut(ContractNo);
         Assert.ExpectedError('Vehicle HX051-V15 is not available.');
+    end;
+
+    [Test]
+    procedure NoSetupMeansNoStop()
+    var
+        Setup: Record "CGR Setup";
+        Saved: Record "CGR Setup";
+        FleetMgt: Codeunit "CGR Fleet Mgt";
+        Available: Boolean;
+    begin
+        Initialize();
+        Lib.CreateVehicle('HX051-V11', 1000, Enum::"CGR Maintenance Strategy"::Default);
+        Setup.Get();
+        Saved := Setup;
+        Setup.Delete();
+
+        Available := FleetMgt.IsAvailable('HX051-V11');
+        Saved.Insert();
+        Assert.IsTrue(Available, 'Without a CGR Setup record rentals are not suspended');
     end;
 
     local procedure Initialize()
