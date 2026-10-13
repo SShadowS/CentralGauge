@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "86360/ImportedDamageBlocks": 1
+    "86360/ImportOfTwoLinesCountsTwo": 1
+    "86360/DirectInsertBlocks": 1
+    "86360/TemporaryEntryChangesNothing": 1
+    "86360/RegisterDamageCountsOnce": 1
+    "86360/RepairedEntryDoesNotBlock": 1
+    "86360/ImportedRepairedLineDoesNotBlock": 1
+    "86360/DamagedReturnBlocksOnce": 1
+    "86360/ImportSkipsUnknownVehicle": 1
+    "86360/RepairAfterImportUnblocks": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
