@@ -1,0 +1,20 @@
+v: 1
+partial_credit:
+  weights:
+    "86420/ReturnReleasesVehicle": 1
+    "86420/DamagedReturnBlocksAndRemembers": 1
+    "86420/DamagedReturnOnDamagedVehicle": 1
+    "86420/UndamagedReturnClearsLastDamage": 1
+    "86420/ReleaseVehicleDirect": 1
+    "86420/ReleaseUnknownVehicleDoesNothing": 1
+    "86420/ReturnKeepsContractAsToday": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70100, procedure: ReleaseVehicle, signature: "(VehicleNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])", file: Fleet/src/FleetMgt.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 86420, procedures: [ReturnReleasesVehicle, DamagedReturnBlocksAndRemembers, DamagedReturnOnDamagedVehicle, UndamagedReturnClearsLastDamage, ReturnKeepsContractAsToday] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
