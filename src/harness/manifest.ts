@@ -31,6 +31,10 @@ const Server = z.strictObject({
   name: z.string(),
   version: z.string().min(1),
   tool_schema_hash: z.string().min(1),
+  /** M10-10: the LSP wrapper release the image was built from (absent before M10-10). */
+  release: z.string().min(1).optional(),
+  asset: z.string().min(1).optional(),
+  dependency_source: z.string().min(1).optional(),
 });
 
 export const ResolvedManifestSchema = z.strictObject({
@@ -83,7 +87,16 @@ export interface RuntimeFacts {
   native_settings: Record<string, unknown>;
   image: { digest: string; base_digest: string; revision?: string };
   backend_version: string;
-  servers: Record<string, { version: string; tool_schema_hash: string }>;
+  servers: Record<
+    string,
+    {
+      version: string;
+      tool_schema_hash: string;
+      release?: string;
+      asset?: string;
+      dependency_source?: string;
+    }
+  >;
   provider_routes: Record<string, string>;
 }
 

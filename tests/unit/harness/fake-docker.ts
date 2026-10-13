@@ -367,3 +367,70 @@ export class FakeDocker implements DockerCli {
     return Promise.resolve(0);
   }
 }
+
+/** M10-10: one resolved al-lsp-for-agents release, as the GitHub API, the labels and install-lsp.ps1 state it. */
+export const LSP_REL = {
+  tag: "v1.18.8",
+  asset: "al-lsp-wrapper-windows-x64.zip",
+  sha256: "142418c8cc5b75b703e647a6a7c4fc4b52f0969d71470fe052199c64d5079bf1",
+  url:
+    "https://github.com/SShadowS/al-lsp-for-agents/releases/download/v1.18.8/al-lsp-wrapper-windows-x64.zip",
+};
+/** The GitHub releases/latest answer for LSP_REL (one other asset beside it). */
+export const lspLatestBody = () => ({
+  tag_name: LSP_REL.tag,
+  draft: false,
+  prerelease: false,
+  assets: [
+    {
+      name: "al-lsp-wrapper-linux-x64.tar.gz",
+      browser_download_url:
+        `https://github.com/SShadowS/al-lsp-for-agents/releases/download/${LSP_REL.tag}/al-lsp-wrapper-linux-x64.tar.gz`,
+      digest: `sha256:${"0".repeat(64)}`,
+    },
+    {
+      name: LSP_REL.asset,
+      browser_download_url: LSP_REL.url,
+      digest: `sha256:${LSP_REL.sha256}`,
+    },
+  ],
+});
+/** A fetch that answers every request with `body` (JSON unless a string) and records the calls. */
+export function fakeFetch(
+  body: unknown = lspLatestBody(),
+  status = 200,
+  calls: { url: string; init?: RequestInit | undefined }[] = [],
+): typeof fetch {
+  return ((input: string | URL | Request, init?: RequestInit) => {
+    calls.push({
+      url: input instanceof Request ? input.url : String(input),
+      init,
+    });
+    return Promise.resolve(
+      new Response(typeof body === "string" ? body : JSON.stringify(body), {
+        status,
+      }),
+    );
+  }) as typeof fetch;
+}
+/** The release labels `images build` puts on an image built from LSP_REL. */
+export const lspReleaseLabels = (
+  mode = "embedded",
+): Record<string, string> => ({
+  "centralgauge.lsp.al.release": LSP_REL.tag,
+  "centralgauge.lsp.al.asset": `${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+  "centralgauge.lsp.al.dependency_source": mode,
+});
+/** C:\cg-lsp\al-lsp-resolved.json as install-lsp.ps1 writes it for LSP_REL. */
+export const lspResolvedJson = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    release: LSP_REL.tag,
+    asset: LSP_REL.asset,
+    sha256: LSP_REL.sha256,
+    dependency_source: "embedded",
+    exes: {
+      "al-call-hierarchy.exe": "c".repeat(64),
+      "al-lsp-wrapper.exe": "d".repeat(64),
+    },
+    ...over,
+  });

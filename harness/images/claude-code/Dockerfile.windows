@@ -9,13 +9,18 @@ RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
     npm install -g --prefix C:\cg-npm @anthropic-ai/claude-code@2.1.282; \
     [Environment]::SetEnvironmentVariable('PATH', 'C:\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)
 # M10: the AL language server plugin (al-lsp-for-agents wrapper, Microsoft AL extension, private
-# .NET 10), hash-pinned in lsp/al-lsp.json. Every arm's image has it; only an arm that declares
+# .NET 10), recipe in lsp/al-lsp.json. Every arm's image has it; only an arm that declares
 # components.lsp loads it. The probe is two files that must sit side by side.
 COPY lsp/al-lsp.json C:/cg-lsp/al-lsp.json
 COPY lsp/lsp-probe.mjs C:/cg-lsp/lsp-probe.mjs
 COPY lsp/lsp-probe-lib.mjs C:/cg-lsp/lsp-probe-lib.mjs
 COPY lsp/install-lsp.ps1 C:/cg-lsp/install-lsp.ps1
-RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lsp\install-lsp.ps1; \
+# M10-10: the al-lsp-for-agents release `harness images build` resolved from the GitHub API
+# (tag, asset URL, asset digest). No defaults: install-lsp.ps1 refuses absent or malformed values.
+ARG LSP_RELEASE
+ARG LSP_WRAPPER_URL
+ARG LSP_WRAPPER_SHA256
+RUN powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\cg-lsp\install-lsp.ps1 -Release $env:LSP_RELEASE -Url $env:LSP_WRAPPER_URL -Sha256 $env:LSP_WRAPPER_SHA256; \
     if ($LASTEXITCODE -ne 0) { throw ('install-lsp failed: ' + $LASTEXITCODE) }; \
     Remove-Item -Force C:\cg-lsp\install-lsp.ps1
 COPY run.ps1 C:/run.ps1

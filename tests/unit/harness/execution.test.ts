@@ -55,6 +55,7 @@ import {
 import { holdExclusive } from "./hold-file.ts";
 import {
   AL_LSP_DEF,
+  AL_LSP_RESOLVED,
   AL_LSP_SHIPPED,
   imageFacts,
   imageTag,
@@ -100,6 +101,8 @@ import { write } from "./refapp-fixture.ts";
 import { FakeBc, result } from "./fake-bc.ts";
 import {
   ADMIN_GROUPS_CSV,
+  lspReleaseLabels,
+  lspResolvedJson,
   type RunBehavior,
   USER_GROUPS_CSV,
 } from "./fake-docker.ts";
@@ -4259,12 +4262,14 @@ Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
     "centralgauge.harness.revision": "3",
     [lk]: lv,
+    ...lspReleaseLabels(), // M10-10 fixture
   });
   t.docker.shipFile(
     imageId,
     AL_LSP_SHIPPED,
     await Deno.readTextFile(AL_LSP_DEF),
   );
+  t.docker.shipFile(imageId, AL_LSP_RESOLVED, lspResolvedJson());
   const builtins = BUILTIN_INVENTORY["2.1.282"]!.plugins.map((s) => ({
     name: s.split("@")[0],
     source: s,

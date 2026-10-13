@@ -141,8 +141,10 @@ import {
   imageFacts,
   imageTag,
   lspLabel,
+  lspReleaseArgs,
   mcpFacts,
   mcpLabel,
+  resolveLspRelease,
   runtimeFacts,
   serverDefinitions,
 } from "../../src/harness/images.ts";
@@ -885,6 +887,8 @@ export async function harnessImagesBuild(
   harness: string,
   o: { root: string; version?: string; revision?: string },
   docker: DockerCli = realDocker(),
+  /** The GitHub API call that resolves the newest LSP release (tests inject it). */
+  fetchFn: typeof fetch = fetch,
 ): Promise<ImageFacts> {
   const images = join(o.root, "harness", "images");
   // A tag names one image for good (frozen records resolve through it): an
@@ -966,6 +970,16 @@ export async function harnessImagesBuild(
   const tag = imageTag(harness, o.version, o.revision);
   const lspL = harness === "claude-code" ? await lspLabel(o.root) : null;
   await refuseExisting(tag, "use a new --version or --revision");
+  // M10-10: resolved once, before the build; install-lsp.ps1 verifies the zip
+  // against this digest and the labels record it.
+  const rel = lspL ? await resolveLspRelease(o.root, fetchFn) : null;
+  if (rel) {
+    console.log(
+      `${
+        colors.green("[OK]")
+      } LSP release ${rel.tag}: ${rel.asset} sha256:${rel.sha256} (dependency source ${rel.dependency_source})`,
+    );
+  }
   const code = await docker.build([
     "build",
     "-f",
@@ -984,6 +998,7 @@ export async function harnessImagesBuild(
       ? []
       : ["--label", `${IMAGE_LABELS.revision}=${o.revision}`]),
     ...(lspL ? ["--label", `${lspL[0]}=${lspL[1]}`] : []),
+    ...(rel ? lspReleaseArgs(rel) : []),
     "-t",
     tag,
     join(images, harness),
@@ -1015,10 +1030,25 @@ export async function harnessImagesBuild(
       }")`,
     );
   }
+  const al = f.lsp?.["al"];
+  if (
+    rel &&
+    (al?.release !== rel.tag ||
+      al.asset !== `${rel.asset} sha256:${rel.sha256}` ||
+      al.dependency_source !== rel.dependency_source)
+  ) {
+    throw new ConfigurationError(
+      `${tag}: the LSP release labels did not land on the built image (want ${rel.tag}, ${rel.asset} sha256:${rel.sha256}, ${rel.dependency_source})`,
+    );
+  }
   console.log(`${colors.green("[OK]")} ${tag} = ${f.digest} (base ${base.Id})`);
   console.log(
     `  labels: ${IMAGE_LABELS.harness}=${f.harness} ${IMAGE_LABELS.version}=${f.version} ${IMAGE_LABELS.base}=${f.base_digest}${
       f.revision === null ? "" : ` ${IMAGE_LABELS.revision}=${f.revision}`
+    }${
+      al?.release === undefined
+        ? ""
+        : ` lsp.al release ${al.release} asset ${al.asset} dependency_source ${al.dependency_source}`
     }`,
   );
   return f;

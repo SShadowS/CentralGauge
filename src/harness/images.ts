@@ -59,6 +59,26 @@ const LSP_COMPONENTS: readonly string[] = ["al"];
 export const AL_LSP_DEF = "harness/images/claude-code/lsp/al-lsp.json";
 /** Where the claude-code Dockerfile puts the definition the image was built from. */
 export const AL_LSP_SHIPPED = "C:\\cg-lsp\\al-lsp.json";
+/** What install-lsp.ps1 records about the wrapper release it verified and installed (M10-10). */
+export const AL_LSP_RESOLVED = "C:\\cg-lsp\\al-lsp-resolved.json";
+/**
+ * M10-10: the al-lsp-for-agents release `images build` resolved, labelled on the
+ * claude-code image beside `centralgauge.lsp.al` (all three or none).
+ */
+export const LSP_RELEASE_LABELS = {
+  release: `${LSP_LABEL_PREFIX}al.release`,
+  asset: `${LSP_LABEL_PREFIX}al.asset`,
+  dependency_source: `${LSP_LABEL_PREFIX}al.dependency_source`,
+} as const;
+const LSP_RELEASE_KEYS: readonly string[] = Object.values(LSP_RELEASE_LABELS);
+/** The only repo the recipe may name; install-lsp.ps1 checks the same. */
+const LSP_REPO = "SShadowS/al-lsp-for-agents";
+const LSP_TAG = /^v\d+\.\d+\.\d+$/;
+const LSP_ASSET = /^[A-Za-z0-9][A-Za-z0-9._-]*\.zip$/;
+const LSP_ASSET_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]*\.zip sha256:[0-9a-f]{64}$/;
+const LSP_MODES: readonly string[] = ["embedded", "symbols"];
+const LSP_EXES = ["al-call-hierarchy.exe", "al-lsp-wrapper.exe"];
+const GITHUB_API_TIMEOUT_MS = 30_000;
 
 /** No revision: exactly the frozen tag. A revision: `<version>-r<revision>`. */
 export const imageTag = (
@@ -78,7 +98,17 @@ export interface ImageFacts {
   /** The revision label; null when the image has none (a frozen image). */
   revision: string | null;
   mcp?: Record<string, { version: string; tool_schema_hash: string }>;
-  lsp?: Record<string, { version: string; tool_schema_hash: string }>;
+  lsp?: Record<string, LspFact>;
+}
+
+/** An LSP component's facts; release, asset and dependency_source on images built since M10-10. */
+export interface LspFact {
+  version: string;
+  tool_schema_hash: string;
+  release?: string;
+  /** `<asset name> sha256:<hex>`, the digest the wrapper zip was verified against. */
+  asset?: string;
+  dependency_source?: string;
 }
 
 type Inspect = {
@@ -143,7 +173,7 @@ export async function imageFacts(
       );
     }
     if (lsp["al"]) {
-      await verifyShipped(
+      const def = await verifyShipped(
         docker,
         img.Id,
         owner,
@@ -152,6 +182,7 @@ export async function imageFacts(
         lsp["al"],
         "rebuild the claude-code image",
       );
+      await verifyResolved(docker, img.Id, owner, ref, def, lsp["al"]);
     }
   }
   return {
@@ -174,16 +205,17 @@ async function verifyShipped(
   path: string,
   label: { version: string; tool_schema_hash: string },
   fix: string,
-): Promise<void> {
+): Promise<unknown> {
   const want = label.tool_schema_hash;
   const text = await docker.readImageFile(id, path, owner);
   let hash: string;
   let version: unknown;
+  let def: unknown;
   try {
     if (text === null) throw new Error("not found");
-    const def = JSON.parse(text);
+    def = JSON.parse(text);
     hash = await hashJson(def);
-    version = def?.version;
+    version = (def as { version?: unknown } | null)?.version;
   } catch (e) {
     throw new ConfigurationError(
       `image ${ref}: cannot read the shipped ${path} (${
@@ -202,6 +234,94 @@ async function verifyShipped(
     throw new ConfigurationError(
       `image ${ref}: label version ${label.version} differs from the shipped ${path} version ${
         String(version)
+      }: ${fix}`,
+    );
+  }
+  return def;
+}
+
+/**
+ * M10-10: a shipped recipe with a `source` (latest-release wrapper) needs the
+ * release labels, and the shipped AL_LSP_RESOLVED must agree with them and with
+ * the recipe. A pre-M10-10 recipe (hand-pinned wrapper, no source) has neither.
+ */
+async function verifyResolved(
+  docker: DockerCli,
+  id: string,
+  owner: string,
+  ref: string,
+  def: unknown,
+  f: LspFact,
+): Promise<void> {
+  const fix = "rebuild the claude-code image";
+  const src = (def as {
+    source?: { asset?: unknown; dependency_source?: unknown; exes?: unknown };
+  } | null)?.source;
+  if (f.release === undefined) {
+    if (src === undefined) return;
+    throw new ConfigurationError(
+      `image ${ref}: the shipped ${AL_LSP_SHIPPED} resolves its wrapper release, but the image lacks label ${LSP_RELEASE_LABELS.release}: ${fix}`,
+    );
+  }
+  if (src === undefined) {
+    throw new ConfigurationError(
+      `image ${ref}: label ${LSP_RELEASE_LABELS.release} on an image whose shipped ${AL_LSP_SHIPPED} has no source: ${fix}`,
+    );
+  }
+  const text = await docker.readImageFile(id, AL_LSP_RESOLVED, owner);
+  let r: {
+    release?: unknown;
+    asset?: unknown;
+    sha256?: unknown;
+    dependency_source?: unknown;
+    exes?: unknown;
+  };
+  try {
+    if (text === null) throw new Error("not found");
+    r = JSON.parse(text) ?? {};
+  } catch (e) {
+    throw new ConfigurationError(
+      `image ${ref}: cannot read the shipped ${AL_LSP_RESOLVED} (${
+        e instanceof Error ? e.message : String(e)
+      })`,
+    );
+  }
+  const pairs: [string, unknown, string | undefined][] = [
+    ["release", r.release, f.release],
+    ["asset", `${r.asset} sha256:${r.sha256}`, f.asset],
+    ["dependency_source", r.dependency_source, f.dependency_source],
+  ];
+  for (const [k, got, want] of pairs) {
+    if (got !== want) {
+      throw new ConfigurationError(
+        `image ${ref}: shipped ${AL_LSP_RESOLVED} ${k} ${
+          String(got)
+        } differs from its label ${want}: ${fix}`,
+      );
+    }
+  }
+  if (
+    r.asset !== src.asset || r.dependency_source !== src.dependency_source
+  ) {
+    throw new ConfigurationError(
+      `image ${ref}: shipped ${AL_LSP_RESOLVED} (${String(r.asset)}, ${
+        String(r.dependency_source)
+      }) differs from the shipped recipe (${String(src.asset)}, ${
+        String(src.dependency_source)
+      }): ${fix}`,
+    );
+  }
+  const exes = r.exes && typeof r.exes === "object"
+    ? Object.entries(r.exes as Record<string, unknown>)
+    : [];
+  if (
+    JSON.stringify(exes.map(([n]) => n).sort()) !==
+      JSON.stringify([...LSP_EXES].sort()) ||
+    exes.some(([, h]) => typeof h !== "string" || !SHA256_HEX.test(h))
+  ) {
+    throw new ConfigurationError(
+      `image ${ref}: shipped ${AL_LSP_RESOLVED} exes must hash exactly ${
+        LSP_EXES.join(" and ")
       }: ${fix}`,
     );
   }
@@ -244,9 +364,57 @@ function componentFacts(
 /** The MCP component facts in an image's labels; malformed or unknown labels are refused. */
 export const mcpFacts = (ref: string, l: Record<string, string>) =>
   componentFacts(ref, l, MCP_LABEL_PREFIX, MCP_COMPONENTS, "MCP");
-/** The LSP component facts in an image's labels (M10); same rules. */
-export const lspFacts = (ref: string, l: Record<string, string>) =>
-  componentFacts(ref, l, LSP_LABEL_PREFIX, LSP_COMPONENTS, "LSP");
+/**
+ * The LSP component facts in an image's labels (M10); same rules. The M10-10
+ * release labels join the al facts: all three or none, each well-formed.
+ */
+export function lspFacts(
+  ref: string,
+  l: Record<string, string>,
+): Record<string, LspFact> {
+  const facts: Record<string, LspFact> = componentFacts(
+    ref,
+    Object.fromEntries(
+      Object.entries(l).filter(([k]) => !LSP_RELEASE_KEYS.includes(k)),
+    ),
+    LSP_LABEL_PREFIX,
+    LSP_COMPONENTS,
+    "LSP",
+  );
+  const present = LSP_RELEASE_KEYS.filter((k) => Object.hasOwn(l, k));
+  if (present.length === 0) return facts;
+  const al = facts["al"];
+  if (present.length !== LSP_RELEASE_KEYS.length || !al) {
+    throw new ConfigurationError(
+      `image ${ref}: labels ${
+        LSP_RELEASE_KEYS.join(", ")
+      } go together with ${LSP_LABEL_PREFIX}al (present: ${
+        [...present, ...(al ? [`${LSP_LABEL_PREFIX}al`] : [])].join(", ")
+      })`,
+    );
+  }
+  const L = LSP_RELEASE_LABELS;
+  const bad = (k: string, want: string) =>
+    new ConfigurationError(
+      `image ${ref}: label ${k} must be ${want}, got "${l[k]}"`,
+    );
+  if (!LSP_TAG.test(l[L.release]!)) {
+    throw bad(L.release, "v<major>.<minor>.<patch>");
+  }
+  if (!LSP_ASSET_LABEL.test(l[L.asset]!)) {
+    throw bad(L.asset, '"<asset>.zip sha256:<64 hex>"');
+  }
+  if (!LSP_MODES.includes(l[L.dependency_source]!)) {
+    throw bad(L.dependency_source, LSP_MODES.join(" or "));
+  }
+  facts["al"] = {
+    ...al,
+    release: l[L.release]!,
+    asset: l[L.asset]!,
+    dependency_source: l[L.dependency_source]!,
+  };
+  return facts;
+}
 
 /**
  * The base image's al-tools label: the tool definition's version and its
@@ -337,6 +505,157 @@ export async function lspLabel(
   return [`${LSP_LABEL_PREFIX}al`, `${def.version} ${await hashJson(def)}`];
 }
 
+/** The newest al-lsp-for-agents release, as `images build` passes and labels it (M10-10). */
+export interface LspRelease {
+  tag: string;
+  asset: string;
+  /** Exactly https://github.com/<repo>/releases/download/<tag>/<asset>. */
+  url: string;
+  /** The API's asset digest (sha256:<hex>), hex only. */
+  sha256: string;
+  dependency_source: string;
+}
+
+/** The recipe's wrapper source, checked as install-lsp.ps1 checks it. */
+async function lspSource(root: string) {
+  const path = join(root, AL_LSP_DEF);
+  const def = await readDef(root, AL_LSP_DEF, "AL LSP definition") as {
+    source?: {
+      repo?: unknown;
+      asset?: unknown;
+      exes?: unknown;
+      dependency_source?: unknown;
+    };
+  };
+  const s = def.source;
+  if (
+    s?.repo !== LSP_REPO || typeof s.asset !== "string" ||
+    !LSP_ASSET.test(s.asset) || !Array.isArray(s.exes) ||
+    JSON.stringify([...s.exes].sort()) !== JSON.stringify(LSP_EXES) ||
+    typeof s.dependency_source !== "string" ||
+    !LSP_MODES.includes(s.dependency_source)
+  ) {
+    throw new ConfigurationError(
+      `${path}: source must name repo ${LSP_REPO}, a .zip asset, exes ${
+        LSP_EXES.join(", ")
+      } and dependency_source ${LSP_MODES.join(" or ")}`,
+    );
+  }
+  return {
+    repo: LSP_REPO,
+    asset: s.asset,
+    dependency_source: s.dependency_source,
+  };
+}
+
+/**
+ * The newest release of the recipe's repo, from the GitHub API over HTTPS (no
+ * token): fails closed on any error, non-200, odd tag, draft or prerelease,
+ * not exactly one recipe asset, a foreign download URL, or a missing or
+ * non-sha256 digest. The digest is what install-lsp.ps1 verifies the zip against.
+ */
+export async function resolveLspRelease(
+  root: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<LspRelease> {
+  const src = await lspSource(root);
+  const api = `https://api.github.com/repos/${src.repo}/releases/latest`;
+  const fail = (why: string) =>
+    new ConfigurationError(
+      `cannot resolve the newest ${src.repo} release (${api}): ${why}`,
+    );
+  let body: {
+    tag_name?: unknown;
+    draft?: unknown;
+    prerelease?: unknown;
+    assets?: unknown;
+  } | null;
+  try {
+    const res = await fetchFn(api, {
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "centralgauge-harness",
+      },
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
+    });
+    if (res.status !== 200) {
+      await res.body?.cancel();
+      throw fail(`HTTP ${res.status}`);
+    }
+    body = await res.json();
+  } catch (e) {
+    if (e instanceof ConfigurationError) throw e;
+    throw fail(e instanceof Error ? e.message : String(e));
+  }
+  const tag = body?.tag_name;
+  if (typeof tag !== "string" || !LSP_TAG.test(tag)) {
+    throw fail(
+      `tag_name ${JSON.stringify(tag)} is not v<major>.<minor>.<patch>`,
+    );
+  }
+  if (body!.draft !== false || body!.prerelease !== false) {
+    throw fail(
+      `${tag} is not a published release (draft ${
+        String(body!.draft)
+      }, prerelease ${String(body!.prerelease)})`,
+    );
+  }
+  const assets = (Array.isArray(body!.assets) ? body!.assets : []).filter((
+    a: { name?: unknown } | null,
+  ) => a?.name === src.asset) as {
+    browser_download_url?: unknown;
+    digest?: unknown;
+  }[];
+  if (assets.length !== 1) {
+    throw fail(
+      `${tag} has ${assets.length} assets named ${src.asset}, want exactly 1`,
+    );
+  }
+  const a = assets[0]!;
+  const url =
+    `https://github.com/${src.repo}/releases/download/${tag}/${src.asset}`;
+  if (a.browser_download_url !== url) {
+    throw fail(
+      `browser_download_url ${
+        JSON.stringify(a.browser_download_url)
+      } is not ${url}`,
+    );
+  }
+  const m = typeof a.digest === "string"
+    ? /^sha256:([0-9a-f]{64})$/.exec(a.digest)
+    : null;
+  if (!m) {
+    throw fail(
+      `${src.asset} of ${tag} has no sha256 digest (got ${
+        JSON.stringify(a.digest)
+      })`,
+    );
+  }
+  return {
+    tag,
+    asset: src.asset,
+    url,
+    sha256: m[1]!,
+    dependency_source: src.dependency_source,
+  };
+}
+
+/** The resolved release as claude-code build args (install-lsp.ps1) and image labels. */
+export const lspReleaseArgs = (r: LspRelease): string[] => [
+  "--build-arg",
+  `LSP_RELEASE=${r.tag}`,
+  "--build-arg",
+  `LSP_WRAPPER_URL=${r.url}`,
+  "--build-arg",
+  `LSP_WRAPPER_SHA256=${r.sha256}`,
+  "--label",
+  `${LSP_RELEASE_LABELS.release}=${r.tag}`,
+  "--label",
+  `${LSP_RELEASE_LABELS.asset}=${r.asset} sha256:${r.sha256}`,
+  "--label",
+  `${LSP_RELEASE_LABELS.dependency_source}=${r.dependency_source}`,
+];
+
 /** The repo's LSP definition: the hash the label must carry; no MCP tool list. */
 export async function lspDefinitions(root: string): Promise<McpDefinitions> {
   const def = await readDef(root, AL_LSP_DEF, "AL LSP definition");
@@ -408,7 +727,7 @@ export function runtimeFacts(
   const fact = (
     kind: "MCP" | "LSP",
     name: string,
-    table: ImageFacts["mcp"],
+    table: ImageFacts["lsp"],
     defFile: string,
     fix: string,
   ) => {
