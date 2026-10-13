@@ -22,3 +22,7 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/append-buffer: { partial_credit: 0.8181818181818182 }
+  naive/direct-insert: { partial_credit: 0.8181818181818182 }
+  naive/buffer-by-value: { partial_credit: 0.18181818181818182 }
+  naive/proposal-raises-events: { partial_credit: 0.8181818181818182 }
