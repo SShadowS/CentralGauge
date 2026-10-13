@@ -396,6 +396,7 @@ ${devCredentialSetup}
  *   PREREQ_CLEANUP_NONE
  *   PREREQ_CLEANUP_FOUND:<n>
  *   PREREQ_CLEANUP_REMOVE:<name> v<version>
+ *   PREREQ_CLEANUP_CLEAN:<name>          (H-05: a CGR app's data cleaned)
  *   PREREQ_CLEANUP_WARN:<name> - <reason>
  *   PREREQ_CLEANUP_BLOCKED:<name> v<version>
  *   PREREQ_CLEANUP_INCOMPLETE:<remaining>
@@ -457,8 +458,15 @@ export function buildPrereqCleanupScript(
               # -Tenant reports "not published" and silently leaves it (the real
               # cause of the stuck chain). Try tenant scope first, then global as
               # a fallback for any globally-published app.
-              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -Force -ErrorAction SilentlyContinue } catch { }
-              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
+              # H-05: CGR refapp apps (harness cells install them at stamped
+              # versions 1.0.n.m) go without their data, then are cleaned: kept
+              # data would refuse the next 1.0.0.0 publish as a downgrade.
+              # CGR only; other apps keep their data as before.
+              $cgr = ($app.Name -like 'CGR *')
+              $noData = @{}
+              if ($cgr) { $noData.DoNotSaveData = $true }
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -Force -ErrorAction SilentlyContinue @noData } catch { }
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue @noData } catch { }
               $done = $false
               try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop; $done = $true } catch { }
               if (-not $done) {
@@ -467,6 +475,8 @@ export function buildPrereqCleanupScript(
               if ($done) {
                 $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
               }
+              # Clean only once no version of the name is still published (as buildHarnessCleanBlock).
+              if ($done -and $cgr -and @(Get-NAVAppInfo -ServerInstance BC -Name $app.Name -Publisher 'CentralGauge').Count -eq 0) { try { Sync-NAVApp -ServerInstance BC -Tenant default -Name $app.Name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop; $out += "PREREQ_CLEANUP_CLEAN:$($app.Name)" } catch { $out += "PREREQ_CLEANUP_WARN:$($app.Name) - clean: $($_.Exception.Message)" } }
               # else: non-leaf this pass (a dependent still published) OR not
               # found in either scope -> retried next pass; the no-progress
               # guard breaks + emits BLOCKED if nothing can be removed.

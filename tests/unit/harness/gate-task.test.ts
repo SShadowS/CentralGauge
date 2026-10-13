@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { basename, join } from "@std/path";
 import type { ALProject, TestResult } from "../../../src/container/types.ts";
 import type { GateBc } from "../../../scripts/harness/gate-task.ts";
@@ -18,10 +18,20 @@ function mockBc(o: {
   prenukeThrowsAfter?: number;
   seen?: string[];
   ran?: number[];
+  /** H-05: prenuke / clean / publish calls, in order. */
+  events?: string[];
+  cleanThrows?: boolean;
 }): GateBc {
   let prenukes = 0;
   return {
+    cleanData: (apps) => {
+      o.events?.push(`clean ${apps.map((a) => a.name).join(",")}`);
+      return o.cleanThrows
+        ? Promise.reject(new Error("SYNC_CLEAN_FAILED"))
+        : Promise.resolve();
+    },
     prenuke: () => {
+      o.events?.push("prenuke");
       prenukes++;
       if (
         o.prenukeThrowsAfter !== undefined && prenukes > o.prenukeThrowsAfter
@@ -42,10 +52,12 @@ function mockBc(o: {
       await Deno.writeTextFile(artifact, "x");
       return { ok: true, codes: [], detail: "", artifact };
     },
-    publish: (a: string) =>
-      a.includes(`${o.failPublish}`) && o.failPublish
+    publish: (a: string) => {
+      o.events?.push("publish");
+      return a.includes(`${o.failPublish}`) && o.failPublish
         ? Promise.reject(new Error(o.publishError ?? "publish failed"))
-        : Promise.resolve(),
+        : Promise.resolve();
+    },
     runTests: (codeunit: number): Promise<TestResult> => {
       o.ran?.push(codeunit);
       if (o.soapThrows) return Promise.reject(new Error("SOAP timeout"));
@@ -107,6 +119,49 @@ Deno.test("runVariant: compile failure stops the chain and is a compile step", a
   ]);
   assertEquals(r.builds[1]!.codes, ["AL0118"]);
   assertEquals(r.tests, []);
+});
+
+Deno.test("runVariant (H-05): after the prenuke and before any publish, the staged CGR apps' kept data is cleaned", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const events: string[] = [];
+  const r = await runVariant(
+    mockBc({ events }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  assertEquals(events[0], "prenuke");
+  assert(events[1]!.startsWith("clean "), events.join(" | "));
+  const names = events[1]!.slice("clean ".length).split(",");
+  for (
+    const n of ["CGR Core", "CGR Fleet", "CGR Rental", "CGR Oracle HX-001"]
+  ) {
+    assert(names.includes(n), `${n} not cleaned: ${names}`);
+  }
+  // Only CentralGauge apps of the harness bands (the trusted allowlist).
+  assert(
+    names.every((n) => n.startsWith("CGR ") || n.includes("Oracle")),
+    names.join(),
+  );
+  assertEquals(events.slice(2).every((e) => e === "publish"), true);
+});
+
+Deno.test("runVariant (H-05): a failed data clean is infra; nothing is published", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const events: string[] = [];
+  const r = await runVariant(
+    mockBc({ events, cleanThrows: true }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertStringIncludes(r.infra ?? "", "SYNC_CLEAN_FAILED");
+  assertEquals(events.includes("publish"), false);
 });
 
 Deno.test("runVariant: oracle publish failure is recorded as publish", async () => {

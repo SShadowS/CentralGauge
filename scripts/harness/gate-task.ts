@@ -17,6 +17,8 @@ import {
   resolveSoapTimeoutMs,
   runTestsViaSoap,
 } from "../../src/container/soap-test-client.ts";
+import { ContainerError } from "../../src/errors.ts";
+import { trustedHarnessAppIds } from "../../src/harness/bc-apps.ts";
 import { readAppJsonRaw } from "../../src/harness/staging.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import {
@@ -55,6 +57,17 @@ export interface CompileOut {
 }
 export interface GateBc {
   prenuke(): Promise<void>;
+  /**
+   * H-05: purge the kept tenant data of these CGR apps (unpublished, data
+   * left by harness cells at stamped versions 1.0.n.m), so the gate's
+   * 1.0.0.0 publish is not refused as a downgrade. `allow` is the trusted
+   * allowlist (trustedHarnessAppIds). Throws when any clean fails or is
+   * refused.
+   */
+  cleanData(
+    apps: { id: string; name: string }[],
+    allow: ReadonlyMap<string, string>,
+  ): Promise<void>;
   compile(project: ALProject): Promise<CompileOut>;
   publish(artifact: string): Promise<void>;
   runTests(codeunit: number, appId: string): Promise<TestResult>;
@@ -79,6 +92,24 @@ export async function containerBc(
   };
   return {
     prenuke: () => provider.prenukeCentralGaugeApps([container]),
+    cleanData: async (apps, allow) => {
+      if (apps.length === 0) return;
+      const r = await provider.syncHarnessApps(container, {
+        removeIds: [],
+        publish: [],
+        allow,
+        clean: apps,
+      });
+      if (!r.done || r.removeIncomplete.length > 0) {
+        throw new ContainerError(
+          `CGR data clean on ${container} failed: ${
+            r.removeIncomplete.join(", ") || r.output.slice(-300)
+          }`,
+          container,
+          "setup",
+        );
+      }
+    },
     compile: async (project) => {
       const r = await provider.compileProject(container, project);
       return {
@@ -193,6 +224,26 @@ export async function runVariant(
     };
     try {
       await bc.prenuke();
+      // H-05: harness cells leave CGR data at stamped versions 1.0.n.m that
+      // would refuse this 1.0.0.0 publish as a downgrade; the prenuke cannot
+      // see apps already unpublished, so clean the staged apps' data by name.
+      // Trust only the refapp and the task's oracle, never the staged
+      // workspace: a candidate's module app.json is the agent's.
+      const allow = await trustedHarnessAppIds(
+        [source.refappDir, join(source.taskDir, "oracle")],
+        {},
+      );
+      const clean: { id: string; name: string }[] = [];
+      for (const app of apps) {
+        const aj = await readAppJsonRaw(join(ws, app, "app.json")) as {
+          id: string;
+          name: string;
+        };
+        if (allow.has(aj.id.toLowerCase())) {
+          clean.push({ id: aj.id, name: aj.name });
+        }
+      }
+      await bc.cleanData(clean, allow);
       const built: string[] = [];
       const appIds: Record<string, string> = {};
       for (const app of apps) {

@@ -1,4 +1,9 @@
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertMatch,
+  assertStringIncludes,
+} from "@std/assert";
 import {
   buildCleanupStaleCandidatesScript,
   buildPrepareCandidateScript,
@@ -338,6 +343,30 @@ Deno.test("buildPrereqCleanupScript routes the unpublish through Invoke-ScriptIn
     "CG Test Harness",
   );
   assertStringIncludes(script, "Invoke-ScriptInBcContainer");
+});
+
+Deno.test("buildPrereqCleanupScript (H-05): CGR apps are removed without their data and cleaned; only CGR apps", () => {
+  // Harness cells leave CGR refapp data at stamped versions (1.0.n.m); a kept
+  // install refuses the gate's 1.0.0.0 as a downgrade.
+  const script = buildPrereqCleanupScript("Cronus281", [], "CG Test Harness");
+  assertStringIncludes(script, `$cgr = ($app.Name -like 'CGR *')`);
+  assertStringIncludes(script, "if ($cgr) { $noData.DoNotSaveData = $true }");
+  assertEquals(
+    (script.match(/Uninstall-NAVApp [^\n]*@noData/g) ?? []).length,
+    2,
+    "both uninstall attempts (tenant, global) drop CGR data",
+  );
+  assertMatch(
+    script,
+    // Only once no version of the name is still published.
+    /if \(\$done -and \$cgr -and @\(Get-NAVAppInfo -ServerInstance BC -Name \$app\.Name -Publisher 'CentralGauge'\)\.Count -eq 0\) \{[^\n]*Sync-NAVApp -ServerInstance BC -Tenant default -Name \$app\.Name -Publisher 'CentralGauge' -Mode Clean -Force/,
+  );
+  assertStringIncludes(script, "PREREQ_CLEANUP_CLEAN:");
+  // The removable set itself is unchanged: CentralGauge apps only.
+  assertStringIncludes(
+    script,
+    `if ($a.Publisher -ne "CentralGauge") { return $false }`,
+  );
 });
 
 Deno.test("buildPrereqCleanupScript uses in-container NAV cmdlets, not host-side Unpublish-BcContainerApp", () => {
