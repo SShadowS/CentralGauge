@@ -4,11 +4,12 @@ import { join } from "@std/path";
 import type { Catalog } from "../ingest/catalog/read.ts";
 import type { HarnessAdapter } from "./adapter.ts";
 import type { HarnessConfig } from "./config.ts";
-import type { RuntimeFacts } from "./manifest.ts";
+import type { InstalledLsp, RuntimeFacts } from "./manifest.ts";
 import type { DockerCli } from "./sandbox.ts";
 import { ConfigurationError } from "../errors.ts";
 import { BACKEND_VERSION } from "./backend.ts";
 import { hashJson } from "./hash.ts";
+import { LSP_ASSET_LABEL, LSP_MODES, LSP_TAG } from "./manifest.ts";
 
 /** base:1 is frozen; H-01 run 004 builds base:2 (an existing tag is never rebuilt). */
 export const BASE_VERSION = "2";
@@ -73,10 +74,7 @@ export const LSP_RELEASE_LABELS = {
 const LSP_RELEASE_KEYS: readonly string[] = Object.values(LSP_RELEASE_LABELS);
 /** The only repo the recipe may name; install-lsp.ps1 checks the same. */
 const LSP_REPO = "SShadowS/al-lsp-for-agents";
-const LSP_TAG = /^v\d+\.\d+\.\d+$/;
 const LSP_ASSET = /^[A-Za-z0-9][A-Za-z0-9._-]*\.zip$/;
-const LSP_ASSET_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]*\.zip sha256:[0-9a-f]{64}$/;
-const LSP_MODES: readonly string[] = ["embedded", "symbols"];
 const LSP_EXES = ["al-call-hierarchy.exe", "al-lsp-wrapper.exe"];
 const GITHUB_API_TIMEOUT_MS = 30_000;
 
@@ -556,7 +554,7 @@ async function lspSource(root: string) {
  */
 export async function resolveLspRelease(
   root: string,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: typeof fetch,
 ): Promise<LspRelease> {
   const src = await lspSource(root);
   const api = `https://api.github.com/repos/${src.repo}/releases/latest`;
@@ -577,6 +575,8 @@ export async function resolveLspRelease(
         "user-agent": "centralgauge-harness",
       },
       signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
+      // The digest comes from this answer: a redirect may not change who gives it.
+      redirect: "error",
     });
     if (res.status !== 200) {
       await res.body?.cancel();
@@ -693,6 +693,24 @@ export async function hasBaseLayers(
   return b.length > 0 && a.length >= b.length && b.every((x, i) => a[i] === x);
 }
 
+/**
+ * The LSP releases an image has installed (M10-10), recorded for every arm on
+ * it, enabled or not. No key when the image has no release labels: those
+ * manifests keep their hashes.
+ */
+export function installedFacts(
+  image: Pick<ImageFacts, "lsp">,
+): { installed?: { lsp: Record<string, InstalledLsp> } } {
+  const lsp: Record<string, InstalledLsp> = {};
+  for (const [name, f] of Object.entries(image.lsp ?? {})) {
+    const { release, asset, dependency_source } = f;
+    if (release && asset && dependency_source) {
+      lsp[name] = { release, asset, dependency_source };
+    }
+  }
+  return Object.keys(lsp).length > 0 ? { installed: { lsp } } : {};
+}
+
 export function runtimeFacts(
   config: HarnessConfig,
   image: ImageFacts,
@@ -791,6 +809,7 @@ export function runtimeFacts(
       digest: image.digest,
       base_digest: image.base_digest,
       ...(image.revision === null ? {} : { revision: image.revision }),
+      ...installedFacts(image),
     },
     backend_version: BACKEND_VERSION,
     servers,

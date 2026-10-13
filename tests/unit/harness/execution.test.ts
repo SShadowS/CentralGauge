@@ -4366,3 +4366,32 @@ Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven
     assertStringIncludes((await sideOf(t, e.id)).setup_error, want, name);
   }
 });
+
+Deno.test("stub provider (M10-10 r2): an --image with the LSP release labels records the installed release on a plain arm, LSP still off", async () => {
+  const t = await makeEnv();
+  const other = `sha256:${"d".repeat(64)}`;
+  const [lk, lv] = (await lspLabel("."))!;
+  t.docker.addImage("centralgauge/harness-claude-code:drill", other, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
+    [lk]: lv,
+    ...lspReleaseLabels(),
+  });
+  t.docker.shipFile(other, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  t.docker.shipFile(other, AL_LSP_RESOLVED, lspResolvedJson());
+  await stubEnv(t, other);
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const rel = lspReleaseLabels();
+  assertEquals(e.manifest.image.digest, other);
+  assertEquals(e.manifest.image.installed, {
+    lsp: {
+      al: {
+        release: rel["centralgauge.lsp.al.release"]!,
+        asset: rel["centralgauge.lsp.al.asset"]!,
+        dependency_source: "embedded",
+      },
+    },
+  });
+  assertEquals(e.manifest.lsp, []);
+});

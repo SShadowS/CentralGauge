@@ -19,8 +19,10 @@ import {
   AL_LSP_SHIPPED,
   AL_TOOLS_SHIPPED,
   hasBaseLayers,
+  type ImageFacts,
   imageFacts,
   imageTag,
+  type LspFact,
   lspLabel,
   lspReleaseArgs,
   mcpDefinitions,
@@ -1302,4 +1304,106 @@ Deno.test("runtimeFacts (M10-10): the resolved release reaches the arm manifest'
   assertEquals(f.servers, { al });
   const m = await resolveManifest("harness", cfg, f);
   assertEquals(m.lsp, [{ name: "al", ...al }]);
+});
+
+Deno.test("resolveLspRelease (M10-10 r2): the API call refuses redirects; a 3xx or a redirect error fails closed", async () => {
+  const calls: { url: string; init?: RequestInit | undefined }[] = [];
+  await resolveLspRelease(".", fakeFetch(lspLatestBody(), 200, calls));
+  assertEquals(calls[0]!.init?.redirect, "error");
+  // A fetch that follows redirects unless told not to (as global fetch does):
+  // with redirect "error" it rejects, so another authority never supplies the digest.
+  const following =
+    ((_u: string | URL | Request, init?: RequestInit) =>
+      init?.redirect === "error"
+        ? Promise.reject(new TypeError("unexpected redirect"))
+        : Promise.resolve(
+          new Response(JSON.stringify(lspLatestBody()), { status: 200 }),
+        )) as typeof fetch;
+  const err = await assertRejects(
+    () => resolveLspRelease(".", following),
+    ConfigurationError,
+  );
+  assertStringIncludes(err.message, "unexpected redirect");
+  for (const s of [301, 302, 303, 307, 308]) {
+    const e = await assertRejects(
+      () => resolveLspRelease(".", fakeFetch(lspLatestBody(), s)),
+      ConfigurationError,
+    );
+    assertStringIncludes(e.message, `HTTP ${s}`);
+  }
+});
+
+Deno.test("runtimeFacts (M10-10 r2): every cell on a release-labelled image records the installed LSP release in image.installed, plain arms without enabling LSP; an unlabelled image records nothing new", async () => {
+  const al = {
+    version: "al-lsp@2",
+    tool_schema_hash: "1".repeat(64),
+    release: LSP_REL.tag,
+    asset: `${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+    dependency_source: "embedded",
+  };
+  const installed = {
+    lsp: {
+      al: {
+        release: al.release,
+        asset: al.asset,
+        dependency_source: al.dependency_source,
+      },
+    },
+  };
+  const cfg = (id: string, components: Record<string, unknown>) =>
+    HarnessConfigSchema.parse({
+      id,
+      harness: "claude-code",
+      harness_version: "2.1.282",
+      image_revision: "3",
+      models: { main: "anthropic/claude-sonnet-5" },
+      components,
+      limits: { timeout_min: 30, max_budget_usd: 5 },
+    });
+  const img = (lsp?: Record<string, LspFact>): ImageFacts => ({
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+    revision: "3",
+    ...(lsp ? { lsp } : {}),
+  });
+  const manifest = (c: ReturnType<typeof cfg>, i: ImageFacts) =>
+    resolveManifest(
+      "harness",
+      c,
+      runtimeFacts(c, i, claudeCodeAdapter, catalog, {
+        al: { hash: "1".repeat(64), tools: [] },
+      }),
+    );
+  // Plain arm: the installed build is recorded, LSP stays off.
+  const plain = await manifest(cfg("cc-plain", {}), img({ al }));
+  assertEquals(plain.lsp, []);
+  assertEquals(plain.image, {
+    digest: ID,
+    base_digest: BASE,
+    revision: "3",
+    installed,
+  });
+  // LSP arm: the enabled entry and the installed block both carry it.
+  const on = await manifest(cfg("cc-lsp", { lsp: ["al"] }), img({ al }));
+  assertEquals(on.lsp, [{ name: "al", ...al }]);
+  assertEquals(on.image.installed, installed);
+  // A pre-M10-10 LSP image and an image without LSP: no installed key.
+  const old = { version: al.version, tool_schema_hash: al.tool_schema_hash };
+  for (const lsp of [{ al: old }, undefined]) {
+    const m = await manifest(cfg("cc-plain", {}), img(lsp));
+    assertEquals(m.image, { digest: ID, base_digest: BASE, revision: "3" });
+  }
+});
+
+Deno.test("install-lsp.ps1 (M10-10 r2): the wrapper exes join the exe manifest (Add-Member) before Assert-ExeManifest checks it", async () => {
+  const code = (await Deno.readTextFile(
+    "harness/images/claude-code/lsp/install-lsp.ps1",
+  )).split(/\r?\n/).filter((l) => !l.trimStart().startsWith("#"));
+  const at = (s: string) => code.findIndex((l) => l.includes(s));
+  const add =
+    "Add-Member -InputObject $def.exes -NotePropertyName ('al-language-server-go-windows\\bin\\' + $name) -NotePropertyValue $wrapperExes[$name]";
+  assert(at(add) >= 0, `install-lsp.ps1 lacks: ${add}`);
+  assert(at(add) < at("Assert-ExeManifest 'C:\\cg-lsp' $def.exes"));
 });

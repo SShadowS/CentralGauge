@@ -69,7 +69,7 @@ import {
   validatedDir,
 } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree } from "./hash.ts";
-import { imageFacts } from "./images.ts";
+import { imageFacts, installedFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { forTask } from "./manifest.ts";
 import {
@@ -285,6 +285,7 @@ async function overrideImage(
     digest: f.digest,
     base_digest: f.base_digest,
     ...(f.revision === null ? {} : { revision: f.revision }),
+    ...installedFacts(f),
   };
 }
 
