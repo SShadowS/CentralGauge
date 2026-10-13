@@ -287,6 +287,28 @@ Deno.test("missingFeatureOnly: AL0280 (event not found) is a missing feature; a 
   assertEquals(missingFeatureOnly(["AL0280", "AL0001"]), false);
 });
 
+Deno.test("missingFeatureOnly (M8-01f): AL0247 (extension target not found) is a missing feature; a real error next to it is not", () => {
+  // HX-049: the oracle carries an enumextension of the enum the task
+  // introduces (decisions\2026-10-13-al0247-missing-feature.md).
+  const hx049 = ["AL0247", ...Array(7).fill("AL0185"), "AL0000"];
+  assertEquals(missingFeatureOnly(hx049), true);
+  assertEquals(missingFeatureOnly(["AL0247", "AL0000"]), true);
+  assertEquals(missingFeatureOnly(["AL0247", "AL0001"]), false);
+  assertEquals(missingFeatureOnly([...hx049, "AL0596"]), false);
+  // The baseline gate promotes on it; the correct-code path is unaffected.
+  const runs = f2pRuns();
+  runs[0]!.summary = S({ oracle: "compile_fail", oracleCodes: hx049 });
+  assertEquals(decideGate(F2P, planF2P, runs).promoted, true);
+  // A correct run whose oracle fails on AL0247 is still refused.
+  const correct = f2pRuns();
+  const i = planF2P.findIndex((p) => p.variant.kind === "correct");
+  correct[i]!.summary = S({
+    oracle: "compile_fail",
+    oracleCodes: ["AL0247", "AL0000"],
+  });
+  assertEquals(decideGate(F2P, planF2P, correct).promoted, false);
+});
+
 Deno.test("decideGate: test-authoring", () => {
   assertEquals(decideGate(TA, planTA, taRuns()).promoted, true);
   const survivor = taRuns();

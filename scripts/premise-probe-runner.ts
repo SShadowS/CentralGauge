@@ -13,15 +13,17 @@
  * Usage:
  *   deno run -A scripts/premise-probe-runner.ts --solution <dir> --testFile <path> --codeunit <id>
  *     [--container Cronus281] [--any-container] [--prereq <dir>]
+ *
+ * The container must be allocated to the campaign in
+ * <coord root>/allocation.json (coord root: CG_COORD_ROOT, default H:\cg-coord);
+ * without a readable allocation the run is refused unless --any-container.
  */
 import { parseArgs } from "@std/cli/parse-args";
 import { resolve } from "@std/path";
 import type { VerifyResult } from "../mcp/al-tools-server.ts";
+import { allocatedContainer } from "../src/harness/allocation.ts";
 import { EnvLoader } from "../src/utils/env-loader.ts";
 import { resolveContainerCredentials } from "./trap-probe.ts";
-
-/** Containers allocated to this project (owner, 2026-09-25); Cronus28 belongs to LethAL. */
-export const ALLOCATED_CONTAINERS = ["Cronus281", "Cronus282", "Cronus283"];
 
 export interface RunnerArgs {
   solution: string;
@@ -31,7 +33,15 @@ export interface RunnerArgs {
   prereq?: string;
 }
 
-export function parseRunnerArgs(args: string[]): RunnerArgs {
+/**
+ * The container must be allocated to the campaign in `<coord root>/allocation.json`
+ * (M8-01f: read, not hardcoded, as gate-task and the harness do), unless
+ * --any-container.
+ */
+export async function parseRunnerArgs(
+  args: string[],
+  coordRoot?: string,
+): Promise<RunnerArgs> {
   const a = parseArgs(args, {
     string: ["solution", "testFile", "codeunit", "container", "prereq"],
     boolean: ["any-container"],
@@ -46,18 +56,23 @@ export function parseRunnerArgs(args: string[]): RunnerArgs {
   if (!Number.isInteger(codeunit) || codeunit < 0) {
     throw new Error(`--codeunit must be a codeunit id, got ${a.codeunit}`);
   }
-  if (!a["any-container"] && !ALLOCATED_CONTAINERS.includes(a.container)) {
-    throw new Error(
-      `${a.container} is not allocated to this project (${
-        ALLOCATED_CONTAINERS.join(", ")
-      }); pass --any-container to use it anyway`,
-    );
+  let container = a.container;
+  if (!a["any-container"]) {
+    try {
+      container = await allocatedContainer(a.container, coordRoot);
+    } catch (err) {
+      throw new Error(
+        `${
+          err instanceof Error ? err.message : String(err)
+        }; pass --any-container to use it anyway`,
+      );
+    }
   }
   return {
     solution: resolve(a.solution),
     testFile: resolve(a.testFile),
     codeunit,
-    container: a.container,
+    container,
     ...(a.prereq ? { prereq: resolve(a.prereq) } : {}),
   };
 }
@@ -93,7 +108,7 @@ export async function runPremiseProbe(
 async function main() {
   let args: RunnerArgs;
   try {
-    args = parseRunnerArgs(Deno.args);
+    args = await parseRunnerArgs(Deno.args);
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     Deno.exit(2);
