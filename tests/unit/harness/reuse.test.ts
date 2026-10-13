@@ -8,12 +8,15 @@
 
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
+import type { CompilationResult } from "../../../src/container/types.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import {
+  MEASURE_SUITE,
   REUSE_MARKER,
   reuseCheck,
+  ReuseSchema,
   TaskMeasuresSchema,
 } from "../../../src/harness/measures.ts";
 import type { JudgmentRecord } from "../../../src/harness/records.ts";
@@ -55,6 +58,13 @@ const ALT_TARGET = {
   file: ALT,
   perturb: "exit(-1);",
 };
+
+/** M11-14b: one marker hit, as persisted in the record. */
+const hit = (test: string, target = "70210/CalcSurcharge") => ({
+  test: `85000/${test}`,
+  target,
+  message: `Error: ${REUSE_MARKER}`,
+});
 
 /** How one oracle test reaches a target; null: duplicated logic, no call. */
 type Path = { target: number; uses: boolean; caught?: boolean } | null;
@@ -160,7 +170,12 @@ Deno.test("reuseCheck: a call whose result is used is executed and effective", a
   const run = await one();
   assertEquals(await run(bc({ FixWorks: { target: 70210, uses: true } })), {
     status: "ok",
-    value: { executed: true, effective: true, via: "70210/CalcSurcharge" },
+    value: {
+      executed: true,
+      effective: true,
+      via: "70210/CalcSurcharge",
+      marker_evidence: [hit("FixWorks")],
+    },
   });
 });
 
@@ -168,7 +183,12 @@ Deno.test("reuseCheck: a token call whose result is ignored is executed, not eff
   const run = await one();
   assertEquals(await run(bc({ FixWorks: { target: 70210, uses: false } })), {
     status: "ok",
-    value: { executed: true, effective: false, via: "70210/CalcSurcharge" },
+    value: {
+      executed: true,
+      effective: false,
+      via: "70210/CalcSurcharge",
+      marker_evidence: [hit("FixWorks")],
+    },
   });
 });
 
@@ -176,7 +196,12 @@ Deno.test("reuseCheck: duplicated logic (no call) is neither executed nor effect
   const run = await one();
   assertEquals(await run(bc({ FixWorks: null })), {
     status: "ok",
-    value: { executed: false, effective: false, via: null },
+    value: {
+      executed: false,
+      effective: false,
+      via: null,
+      marker_evidence: [],
+    },
   });
 });
 
@@ -205,7 +230,12 @@ Deno.test("reuseCheck: first target re-signed, the accepted alternative is used"
   );
   assertEquals(await run(bc({ FixWorks: { target: 70212, uses: true } })), {
     status: "ok",
-    value: { executed: true, effective: true, via: "70212/CalcSurchargeAlt" },
+    value: {
+      executed: true,
+      effective: true,
+      via: "70212/CalcSurchargeAlt",
+      marker_evidence: [hit("FixWorks", "70212/CalcSurchargeAlt")],
+    },
   });
 });
 
@@ -250,6 +280,10 @@ Deno.test("reuseCheck: two reuse tests through different accepted targets", asyn
         executed: true,
         effective: true,
         via: "70210/CalcSurcharge+70212/CalcSurchargeAlt",
+        marker_evidence: [
+          hit("FixWorks"),
+          hit("SecondWorks", "70212/CalcSurchargeAlt"),
+        ],
       },
     },
   );
@@ -261,7 +295,12 @@ Deno.test("reuseCheck: a caught call whose result is used reads as executed thro
     await run(bc({ FixWorks: { target: 70210, uses: true, caught: true } })),
     {
       status: "ok",
-      value: { executed: true, effective: true, via: "70210/CalcSurcharge" },
+      value: {
+        executed: true,
+        effective: true,
+        via: "70210/CalcSurcharge",
+        marker_evidence: [],
+      },
     },
   );
 });
@@ -270,7 +309,15 @@ Deno.test("reuseCheck: a caught call whose result is ignored is the stated lower
   const run = await one();
   assertEquals(
     await run(bc({ FixWorks: { target: 70210, uses: false, caught: true } })),
-    { status: "ok", value: { executed: false, effective: false, via: null } },
+    {
+      status: "ok",
+      value: {
+        executed: false,
+        effective: false,
+        via: null,
+        marker_evidence: [],
+      },
+    },
   );
 });
 
@@ -296,4 +343,75 @@ Deno.test("reuseCheck: an oracle that does not compile in a probe is missing, ne
     true,
     JSON.stringify(r),
   );
+});
+
+/**
+ * M11-14b: a BC session crash during a probe build (HX-023 qualification,
+ * 2026-10-13): the compile fails with no diagnostic, so the probe judgment
+ * has no test row. That is infra, kept as missing with an "infra:" reason,
+ * never "probe did not build" (a real compile error) or a reuse value.
+ */
+class CrashingBc extends FakeBc {
+  override async compileProject(
+    container: string,
+    project: Parameters<FakeBc["compileProject"]>[1],
+  ): Promise<CompilationResult> {
+    const r = await super.compileProject(container, project);
+    const src = await Deno.readTextFile(
+      join(project.path, "src", "Price.Codeunit.al"),
+    ).catch(() => "");
+    if (!src.includes("exit(-1);")) return r;
+    const { artifactPath: _, ...rest } = r;
+    return { ...rest, success: false, errors: [] };
+  }
+}
+
+Deno.test("reuseCheck: a session crash in a probe build is infra (missing, reason infra:), not a non-building probe", async () => {
+  const run = await one();
+  const paths = { FixWorks: { target: 70210, uses: true } };
+  const fake = new CrashingBc(bc(paths).script);
+  const r = await run(fake);
+  assertEquals(r.status, "missing", JSON.stringify(r));
+  const reason = r.status === "missing" ? r.reason : "";
+  assertEquals(reason.startsWith("infra: "), true, reason);
+  assertStringIncludes(reason, "effective probe of 70210/CalcSurcharge");
+  // The cause is kept: the judge's build-failed note.
+  assertStringIncludes(reason, "build failed: ");
+  assertStringIncludes(reason, "build_failed_no_diagnostics_no_tests");
+  // The dependent's cascade diagnostic was present and filtered, not absent.
+  assertStringIncludes(reason, "CG0001");
+  assertEquals(reason.includes("probe did not build"), false, reason);
+});
+
+Deno.test("reuseCheck: a container fault during a probe is infra (missing, reason infra:)", async () => {
+  const run = await one();
+  const fake = bc({ FixWorks: { target: 70210, uses: true } });
+  fake.broken.add("C1");
+  const r = await run(fake);
+  assertEquals(r.status, "missing", JSON.stringify(r));
+  const reason = r.status === "missing" ? r.reason : "";
+  assertEquals(reason.startsWith("infra: "), true, reason);
+  assertStringIncludes(reason, "executed probe of 70210/CalcSurcharge");
+  assertStringIncludes(reason, "fake infra fault on C1");
+});
+
+Deno.test("reuseCheck: a real compile error in a probe is still a non-building probe, not infra", async () => {
+  const run = await setup({ [PRICE]: priceCu() }, ["FixWorks"], [{
+    ...TARGET,
+    perturb: "COMPILE_ERROR",
+  }]);
+  const r = await run(bc({ FixWorks: { target: 70210, uses: true } }));
+  assertEquals(r.status, "missing");
+  assertEquals(
+    r.status === "missing" ? r.reason : "",
+    "probe did not build (effective probe of 70210/CalcSurcharge)",
+  );
+});
+
+Deno.test("ReuseSchema: marker_evidence is optional (records under reuse 1 without it stay valid)", () => {
+  const base = { executed: true, effective: false, via: "70210/CalcSurcharge" };
+  assertEquals(ReuseSchema.parse(base), base);
+  const withEvidence = { ...base, marker_evidence: [hit("FixWorks")] };
+  assertEquals(ReuseSchema.parse(withEvidence), withEvidence);
+  assertEquals(MEASURE_SUITE["reuse"], "1");
 });
