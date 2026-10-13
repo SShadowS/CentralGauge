@@ -7,7 +7,9 @@ codeunit 86641 "HX059 Repair Guard"
     var
         WatchedVehicleNo: Code[20];
         ControlVehicleNo: Code[20];
+        BlockedControlVehicleNo: Code[20];
         RefusedEntryNo: Integer;
+        BlockedControlAvailable: Boolean;
         Fired: Boolean;
         EntryVehicleHeld: Boolean;
         WatchedHeld: Boolean;
@@ -15,10 +17,16 @@ codeunit 86641 "HX059 Repair Guard"
         ControlAvailable: Boolean;
         RefusedErr: Label 'HX059 repair refused for %1.', Comment = '%1 = damage entry number';
 
-    procedure Watch(NewWatchedVehicleNo: Code[20]; NewControlVehicleNo: Code[20])
+    procedure Watch(NewWatchedVehicleNo: Code[20]; NewControlVehicleNo: Code[20]; NewBlockedControlVehicleNo: Code[20])
     begin
         WatchedVehicleNo := NewWatchedVehicleNo;
         ControlVehicleNo := NewControlVehicleNo;
+        BlockedControlVehicleNo := NewBlockedControlVehicleNo;
+    end;
+
+    procedure BlockedControlWasAvailable(): Boolean
+    begin
+        exit(BlockedControlAvailable);
     end;
 
     procedure Refuse(EntryNo: Integer)
@@ -72,6 +80,7 @@ codeunit 86641 "HX059 Repair Guard"
             WatchedHeld := Hold.IsHeld(WatchedVehicleNo);
             WatchedAvailable := FleetMgt.IsAvailable(WatchedVehicleNo);
             ControlAvailable := FleetMgt.IsAvailable(ControlVehicleNo);
+            BlockedControlAvailable := FleetMgt.IsAvailable(BlockedControlVehicleNo);
         end;
         if (RefusedEntryNo <> 0) and (Rec."Entry No." = RefusedEntryNo) then
             Error(RefusedErr, RefusedEntryNo);

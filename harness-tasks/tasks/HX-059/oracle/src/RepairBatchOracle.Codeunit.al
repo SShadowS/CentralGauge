@@ -1,6 +1,7 @@
 // Every row ends a hold left by an earlier row before it starts and ends its own afterwards (single-instance
-// state and a SingleInstance binding outlive a procedure; unbinding when not bound raises nothing, and unbinding
-// through another local variable ends the binding). Every batch runs through the runner after Commit().
+// state and a SingleInstance binding outlive a procedure; unbinding through another local variable ends the
+// binding). The unbind runs isolated in "HX059 Hold Cleaner" after Commit(), so a hold design whose unbind raises
+// cannot fail a row. Every batch runs through the runner after Commit().
 codeunit 86640 "HX059 Repair Batch Oracle"
 {
     Subtype = Test;
@@ -56,12 +57,14 @@ codeunit 86640 "HX059 Repair Batch Oracle"
         CreateVehicle('HX059-2A');
         CreateVehicle('HX059-2W');
         CreateVehicle('HX059-2Z');
+        CreateVehicle('HX059-2Y');
         A1 := RegisterDamage('HX059-2A');
+        RegisterDamage('HX059-2Y');
         W1 := RepairedEntry('HX059-2W');
         Assert.IsTrue(FleetMgt.IsAvailable('HX059-2W'), 'Precondition: a vehicle whose damage is repaired is available');
         Assert.IsFalse(Hold.IsHeld('HX059-2W'), 'Precondition: the vehicle is not held before the batch');
         Assert.IsTrue(FleetMgt.IsAvailable('HX059-2Z'), 'Precondition: the control vehicle is available');
-        Guard.Watch('HX059-2W', 'HX059-2Z');
+        Guard.Watch('HX059-2W', 'HX059-2Z', 'HX059-2Y');
         BindSubscription(Guard);
         EntryNos.Add(A1);
         EntryNos.Add(W1);
@@ -73,6 +76,7 @@ codeunit 86640 "HX059 Repair Batch Oracle"
         Assert.IsTrue(Guard.WatchedWasHeld(), 'Every vehicle of the batch is held while the batch runs');
         Assert.IsFalse(Guard.WatchedWasAvailable(), 'A held vehicle is not available at the desk while the batch runs');
         Assert.IsTrue(Guard.ControlWasAvailable(), 'A vehicle outside the batch stays available while the batch runs');
+        Assert.IsFalse(Guard.BlockedControlWasAvailable(), 'A blocked vehicle outside the batch stays unavailable while the batch runs');
         Assert.IsTrue(FleetMgt.IsAvailable('HX059-2W'), 'The vehicle is available again after the batch');
         EndHold();
     end;
@@ -116,7 +120,7 @@ codeunit 86640 "HX059 Repair Batch Oracle"
         CreateVehicle('HX059-4D');
         D1 := RegisterDamage('HX059-4D');
         D2 := RegisterDamage('HX059-4D');
-        Guard.Watch('HX059-4D', '');
+        Guard.Watch('HX059-4D', '', '');
         Guard.Refuse(D2);
         BindSubscription(Guard);
         EntryNos.Add(D1);
@@ -310,8 +314,10 @@ codeunit 86640 "HX059 Repair Batch Oracle"
     local procedure EndHold()
     var
         Hold: Codeunit "CGR Workshop Hold";
+        HoldCleaner: Codeunit "HX059 Hold Cleaner";
     begin
-        UnbindSubscription(Hold);
+        Commit();
+        if HoldCleaner.Run() then;
         Hold.ReleaseAll();
     end;
 
