@@ -23,3 +23,5 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/always-event: { partial_credit: 0.5 }
+  naive/send-outside-try: { partial_credit: 0.8 }
