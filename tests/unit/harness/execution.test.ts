@@ -4763,3 +4763,62 @@ Deno.test("runExecution (review 546e8337 P3-4): a lock lost while the sandbox ru
   ].filter((e) => e.name.endsWith(".json"));
   assertEquals(intents.length, 1, "the intent is the new holder's to recover");
 });
+
+// M10-08c run 003 item 2: sweepStaleSecrets checks the acquired token after
+// its enumeration and before each removal: lost while the custody dirs are
+// listed, none is removed.
+Deno.test("recoverInterrupted (M10-08c run 003 item 2): a lock lost while the custody dirs are enumerated removes none", async () => {
+  const t = await makeEnv();
+  const base = join(t.env.privateRoot, "secrets");
+  const dir = join(base, `${SECRETS_DIR_PREFIX}${t.env.owner}.planted-0001`);
+  await Deno.mkdir(dir, { recursive: true });
+  await Deno.writeTextFile(join(dir, "backend-token"), "planted-0123456789ab");
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  const real = Deno.readDir;
+  const s = stub(Deno, "readDir", (path: string | URL) => {
+    if (String(path) === base) lost = true; // reclaimed during the listing
+    return real(path);
+  });
+  try {
+    await assertRejects(
+      () => recoverInterrupted(t.env, loadTask),
+      ConfigurationError,
+      "lock",
+    );
+  } finally {
+    s.restore();
+  }
+  assert(await exists(join(dir, "backend-token")), "the custody survives");
+});
+
+// M10-08c run 003 item 2: publishDraft checks the acquired token before every
+// write and after judging, before finishCleanup (which checks before each
+// removal): lost during publication or judging, nothing more is written and
+// the private state and intent stay for the new holder's recovery.
+Deno.test("runExecution (M10-08c run 003 item 2): a lock lost during publication or judging writes and removes nothing more", async () => {
+  for (const step of ["execution", "judgment"] as const) {
+    const t = await makeEnv();
+    let lost = false;
+    t.env.namespaceLost = () => lost;
+    t.env.hooks = {
+      after: (s: PublishStep) => {
+        if (s === step) lost = true;
+        return Promise.resolve();
+      },
+    };
+    const cell = await cellFor(t);
+    await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+    const [id] = intentIds(t);
+    assert(id, `${step}: the intent survives`);
+    const p = privatePaths(t.env, id);
+    const intent = JSON.parse(await Deno.readTextFile(p.intent));
+    assert(intent.phase !== "published", `${step}: never marked published`);
+    assert(await exists(p.pending), `${step}: the draft stays`);
+    assert(await exists(p.work), `${step}: the work dir stays`);
+    if (step === "execution") {
+      assertEquals(await t.env.store.artifact(id), null, "no artifact written");
+      assertEquals(await t.env.store.judgments(id), [], "never judged");
+    }
+  }
+});

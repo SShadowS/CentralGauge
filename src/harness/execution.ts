@@ -87,18 +87,19 @@ import {
   type DockerCli,
   type IcaclsRunner,
   MIN_SECRET_LENGTH,
+  namespaceOwner,
   OP_TIMEOUT_MS,
   publishRedacted,
   READ_PREFIX,
   readSecretValues,
   READY_FILE,
   redactText,
-  removeConfirmed,
   restrictPath,
   runSandbox,
   SANDBOX_PREFIX,
   sandboxName,
   type SandboxResult,
+  SECRETS_DIR_PREFIX,
   type SecretValue,
   stagePiConfig,
   sweepOwnedSandboxes,
@@ -369,6 +370,12 @@ interface Intent {
   /** Absent before M2-08: normal. */
   mode?: AttemptMode;
   stub?: StubProvenance | null;
+  /**
+   * The private root's namespace owner that wrote it (M10-08c run 003).
+   * Absent or another value: an older harness's intent (legacy), never
+   * recovered automatically (refuseLegacyState).
+   */
+  namespace?: string;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -1234,7 +1241,11 @@ async function publishDraft(
   const p = privatePaths(env, e.id);
   const mode = draft.mode ?? "normal";
   if (mode === "stub") checkStubRoot(env.resultsRoot);
+  // M10-08c run 003 item 2: the acquired token, right before every write.
+  const hold = () =>
+    holdNamespace(env, "publication stopped; nothing more written or removed");
   const runs = join(env.resultsRoot, "runs");
+  hold();
   if (!await exists(join(runs, e.id))) {
     await Deno.mkdir(runs, { recursive: true });
     // A crash inside an earlier copy left a temp name: remove it first.
@@ -1249,10 +1260,12 @@ async function publishDraft(
   }
   await env.hooks?.after?.("run");
   if (!(await env.store.executions(e.campaign_id)).some((x) => x.id === e.id)) {
+    hold();
     await env.store.writeExecution(e);
   }
   await env.hooks?.after?.("execution");
   if (draft.artifact && !await env.store.artifact(e.id)) {
+    hold();
     await env.store.writeArtifact({
       v: 1,
       execution_id: e.id,
@@ -1271,6 +1284,7 @@ async function publishDraft(
     !judged && taskUnchanged
   ) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
+    hold();
     try {
       await judgeExecution(
         env,
@@ -1283,14 +1297,19 @@ async function publishDraft(
     }
   }
   await env.hooks?.after?.("judgment");
+  hold();
   await finishCleanup(env, e.id);
 }
 
 /** Completion protocol: mark published, delete private state, delete the intent last. */
 async function finishCleanup(env: HarnessEnv, id: string) {
   const p = privatePaths(env, id);
+  // M10-08c run 003 item 2: the acquired token, right before each write and removal.
+  const hold = () =>
+    holdNamespace(env, "cleanup stopped; nothing more removed");
   const intent = await readJson<Intent>(p.intent);
   if (intent && intent.phase !== "published") {
+    hold();
     await writeAtomic(
       p.intent,
       JSON.stringify({ ...intent, phase: "published" }, null, 2),
@@ -1298,13 +1317,17 @@ async function finishCleanup(env: HarnessEnv, id: string) {
   }
   await env.hooks?.afterPublished?.();
   for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) {
+    hold();
     await Deno.remove(d, { recursive: true }).catch((err) => {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
   }
+  hold();
   await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
+  hold();
   await removeTemps(join(env.privateRoot, "redaction"), `${id}.json`);
   for (const f of [p.custody, p.intent]) {
+    hold();
     await Deno.remove(f).catch((err) => {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
@@ -1446,6 +1469,7 @@ export async function runExecution(
     pristine_hash: pristineHash,
     mode,
     stub,
+    namespace: env.owner,
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -2743,79 +2767,77 @@ export function holdNamespace(
 }
 
 /**
- * M10-08c review 2: before namespace owners, sandboxes carried the bare
- * hostname. Under the private root's lock, remove (confirmed gone) those
- * whose execution is one of this root's intents, so recovery never removes
- * the work dir or custody of a sandbox still running; others are left alone.
- * Run 002 item 2: older runners take only the repository lock, so one may be
- * live: only a proven-dead one is removed (legacyRemovable). Item 4: then
- * this root's legacy custody dirs (cg-harness-secrets-<host>.*) go.
+ * M10-08c run 003 item 1: no automatic legacy migration. State of an older
+ * harness (before namespace owners) refuses the start, read-only and before
+ * any sweep, naming every item and the one-time manual migration:
+ * - any sandbox owner-labelled with the bare hostname (cg-harness-*, not a
+ *   build's cg-harness-read-*), running or exited: its root is unknowable;
+ * - any intent (intents/*.json, not a .tmp- temp) that does not parse as a
+ *   JSON object whose `namespace` is this root's namespace owner (older
+ *   harnesses never wrote one; unreadable counts, it cannot be proven ours);
+ * - any custody dir of this root named for the bare hostname
+ *   (secrets/cg-harness-secrets-<host>.*).
  */
-export async function sweepLegacySandboxes(
+export async function refuseLegacyState(
   docker: DockerCli,
   host: string,
   privateRoot: string,
   opMs = OP_TIMEOUT_MS,
-  hold: () => void = () => {},
-): Promise<string[]> {
-  const ours = await legacyRemovable(docker, host, privateRoot, opMs);
-  await removeConfirmed(docker, ours, opMs, hold);
-  // Every legacy sandbox of this root's intents is confirmed gone: its
-  // custody dirs (this root only, never another owner's) can go.
-  hold();
-  await sweepStaleSecrets(privateRoot, host);
-  return ours;
-}
-
-/**
- * The legacy (bare-hostname) sandboxes of this root's intents that are
- * proven dead: their intent is finalized (published). Review 546e8337 P2-b
- * (strict): any other one refuses, running or exited (an older runner may
- * still be scoring after its container exited); migration is offline, so the
- * refusal names the one-shot removal. Read-only: P2-a runs it right after
- * the private root's lock, before any sweep.
- */
-export async function legacyRemovable(
-  docker: DockerCli,
-  host: string,
-  privateRoot: string,
-  opMs = OP_TIMEOUT_MS,
-): Promise<string[]> {
-  const dir = join(privateRoot, "intents");
-  const ids = new Set<string>();
-  try {
-    for (const e of Deno.readDirSync(dir)) {
-      if (e.isFile && e.name.endsWith(".json") && !e.name.includes(".tmp-")) {
-        ids.add(e.name.slice(0, -".json".length));
-      }
+): Promise<void> {
+  const own = namespaceOwner(host, privateRoot);
+  const listed = (dir: string, keep: (e: Deno.DirEntry) => boolean) => {
+    try {
+      return [...Deno.readDirSync(dir)].filter(keep).map((e) =>
+        join(dir, e.name)
+      ).sort();
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return [];
+      throw err;
     }
-  } catch (err) {
-    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  };
+  const intents: string[] = [];
+  for (
+    const f of listed(
+      join(privateRoot, "intents"),
+      (e) => e.isFile && e.name.endsWith(".json") && !e.name.includes(".tmp-"),
+    )
+  ) {
+    const i = await readJson<Intent>(f).catch(() => null);
+    if (i?.namespace !== own) intents.push(f);
   }
-  const ours: string[] = [];
-  if (ids.size > 0) {
-    const names = await bounded(docker.listOwned(host), opMs, "docker ps");
-    const live: string[] = [];
-    for (const n of names) {
-      if (!n.startsWith(SANDBOX_PREFIX) || n.startsWith(READ_PREFIX)) continue;
-      const st = await bounded(docker.state(n), opMs, `docker inspect ${n}`);
-      if (!st?.execution || !ids.has(st.execution)) continue;
-      const finalized = await readJson<Intent>(
-        join(dir, `${st.execution}.json`),
-      ).then((i) => i?.phase === "published", () => false);
-      (finalized ? ours : live).push(n);
-    }
-    if (live.length > 0) {
-      throw new ConfigurationError(
-        `legacy sandbox(es) ${
-          live.join(", ")
-        } (owner ${host}, an older harness) hold an unpublished execution of --private-dir ${privateRoot} (running or not, it may still be in use); nothing removed. Once no older harness uses that private dir, remove them (one-shot): docker rm -f ${
-          live.join(" ")
-        } (DOCKER_CONTEXT=desktop-windows), then start again`,
-      );
-    }
-  }
-  return ours;
+  const secrets = listed(
+    join(privateRoot, "secrets"),
+    (e) => e.isDirectory && e.name.startsWith(`${SECRETS_DIR_PREFIX}${host}.`),
+  );
+  const containers = (await bounded(docker.listOwned(host), opMs, "docker ps"))
+    .filter((n) => n.startsWith(SANDBOX_PREFIX) && !n.startsWith(READ_PREFIX))
+    .sort();
+  if (intents.length + secrets.length + containers.length === 0) return;
+  const found = [
+    containers.length > 0
+      ? `sandbox container(s) owned by the bare hostname ${host}: ${
+        containers.join(", ")
+      }`
+      : null,
+    intents.length > 0 ? `intent(s): ${intents.join(", ")}` : null,
+    secrets.length > 0 ? `secret dir(s): ${secrets.join(", ")}` : null,
+  ].filter((x) => x !== null);
+  const steps = [
+    "stop every harness process on this host (older ones included)",
+    containers.length > 0
+      ? `DOCKER_CONTEXT=desktop-windows docker rm -f ${containers.join(" ")}`
+      : null,
+    intents.length > 0
+      ? "remove the listed legacy intents (their executions are not recovered)"
+      : null,
+    secrets.length > 0 ? "remove the listed legacy secret dirs" : null,
+    "then start again",
+  ].filter((x) => x !== null);
+  throw new ConfigurationError(
+    `--private-dir ${privateRoot}: state of an older harness (legacy, before namespace owners) found; nothing removed or swept, and it is never migrated automatically. Legacy ${
+      found.join("; legacy ")
+    }. One-time manual migration: ${steps.join("; ")}`,
+  );
 }
 
 /**
@@ -2837,7 +2859,7 @@ export async function recoverInterrupted(
   hold();
   await sweepOwnedSandboxes(env.docker, env.owner, opMs, undefined, hold);
   hold();
-  await sweepStaleSecrets(env.privateRoot, env.owner);
+  await sweepStaleSecrets(env.privateRoot, env.owner, hold);
   // Temp files of an interrupted writeAtomic are never needed (the final
   // name is renamed into place), and a custody temp holds plaintext secrets.
   hold();
@@ -2872,6 +2894,15 @@ export async function recoverInterrupted(
       continue;
     }
     if (!intent) continue; // removed meanwhile by a finished cleanup
+    // M10-08c run 003 item 1: an older harness's intent is never recovered
+    // (refuseLegacyState refuses it at the start; this is the backstop).
+    if (intent.namespace !== env.owner) {
+      throw new ConfigurationError(
+        `recovery: ${
+          join(dir, n)
+        } is a legacy intent (namespace ${intent.namespace} is not ${env.owner}); nothing recovered or removed`,
+      );
+    }
     const id = intent.execution_id;
     // Publish into the store of the command that started the attempt, whatever command recovers it.
     const own: HarnessEnv = {

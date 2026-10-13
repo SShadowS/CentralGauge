@@ -1051,11 +1051,24 @@ export async function harnessImagesBuild(
   }
   // M10-08c: harness envs read under their private root's owner; each build
   // reads under its own owner, so concurrent builds never remove each other's
-  // read container. Older builds read under the bare hostname: those read
-  // leftovers are swept (never started, no secret). Run 002 item 6: the
-  // owner is a namespace held by a lock while the build reads; a crashed
-  // build's (lock stale) is swept by the next build.
-  await sweepOwnedSandboxes(docker, Deno.hostname(), undefined, READ_PREFIX);
+  // read container. Run 002 item 6: the owner is a namespace held by a lock
+  // while the build reads; a crashed build's (lock stale) is swept by the
+  // next build. Run 003 item 1: older builds read under the bare hostname
+  // and one may be reading now: those are only named, never removed.
+  const legacyReads = (await docker.listOwned(Deno.hostname())).filter((n) =>
+    n.startsWith(READ_PREFIX)
+  );
+  if (legacyReads.length > 0) {
+    console.warn(
+      `${
+        colors.yellow("[WARN]")
+      } read container(s) of an older harness build (owner ${Deno.hostname()}), not removed: ${
+        legacyReads.join(", ")
+      }; once no older build runs: DOCKER_CONTEXT=desktop-windows docker rm -f ${
+        legacyReads.join(" ")
+      }`,
+    );
+  }
   const builds = join(o.root, "results", "harness", "image-builds");
   await sweepDeadBuilds(docker, builds);
   const owner = `${Deno.hostname()}-build-${crypto.randomUUID().slice(0, 8)}`;
@@ -1066,7 +1079,8 @@ export async function harnessImagesBuild(
   try {
     f = await imageFacts(docker, tag, owner);
   } finally {
-    // A failed read keeps the namespace: the next build sweeps it.
+    // A failed read keeps the namespace: the next build sweeps it. So does a
+    // read whose container removal failed (it throws; M10-08c run 003 item 3).
     await held();
   }
   await removeNamespace(join(builds, owner));

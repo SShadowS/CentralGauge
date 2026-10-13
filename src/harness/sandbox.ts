@@ -83,6 +83,7 @@ export interface DockerCli {
   /**
    * A file the image ships, read without starting it (docker create, then
    * docker cp from the stopped container); null when it cannot be read.
+   * Throws when the read container's final removal failed (M10-08c run 003).
    */
   readImageFile(
     image: string,
@@ -390,8 +391,19 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       } catch {
         return null;
       } finally {
-        await out(["rm", "-f", name]);
+        const rm = await out(["rm", "-f", name]);
         await Deno.remove(dir, { recursive: true }).catch(() => {});
+        // M10-08c run 003 item 3: a read container that may survive is
+        // reported (even after a successful capture), never dropped: the
+        // caller keeps its namespace so the next sweep finds it.
+        if (rm.code !== 0 && !/no such container/i.test(rm.stderr)) {
+          // deno-lint-ignore no-unsafe-finally
+          throw new ContainerError(
+            `docker rm -f ${name} failed: ${rm.stderr.trim()}`,
+            name,
+            "stop",
+          );
+        }
       }
     },
     build: async (args) =>
@@ -1238,10 +1250,16 @@ export async function teardownSandbox(o: {
   return { sandbox, gone, secretsLeft, problems: [...new Set(problems)] };
 }
 
-/** Startup sweep: remove this owner's custody dirs left by a crash. Run after sweepOwnedSandboxes. */
+/**
+ * Startup sweep: remove this owner's custody dirs left by a crash. Run after
+ * sweepOwnedSandboxes. `hold` runs after the enumeration and before each
+ * removal, and throws to stop (M10-08c run 003: the namespace lock is still
+ * this process's).
+ */
 export async function sweepStaleSecrets(
   privateRoot: string,
   owner: string,
+  hold: () => void = () => {},
 ): Promise<string[]> {
   const prefix = ownerPrefix(owner);
   const base = join(privateRoot, "secrets");
@@ -1254,7 +1272,10 @@ export async function sweepStaleSecrets(
     if (err instanceof Deno.errors.NotFound) return [];
     throw err;
   }
-  for (const n of names) await removeSecrets(join(base, n));
+  for (const n of names) {
+    hold();
+    await removeSecrets(join(base, n));
+  }
   return names;
 }
 

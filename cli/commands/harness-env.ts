@@ -43,9 +43,8 @@ import {
 } from "../../src/harness/egress.ts";
 import {
   holdNamespace,
-  legacyRemovable,
   recoverInterrupted,
-  sweepLegacySandboxes,
+  refuseLegacyState,
 } from "../../src/harness/execution.ts";
 import { sweepWorkspaceTemp } from "../../src/harness/fsutil.ts";
 import {
@@ -424,10 +423,10 @@ export async function openHarnessEnv(
         "nothing swept",
       );
     hold();
-    // Review 546e8337 P2-a: an older harness sharing this root refuses the
-    // start before ANY sweep (its temp records and freeze scratch included).
+    // Review 546e8337 P2-a, run 003 item 1: any older harness's state refuses
+    // the start before ANY sweep; nothing legacy is ever removed here.
     const docker = deps.docker();
-    await legacyRemovable(docker, deps.owner(), o.privateRoot);
+    await refuseLegacyState(docker, deps.owner(), o.privateRoot);
     // M1-33e: the marker's proxy_isolation, fixed here under the lock for
     // the life of the environment (a later change refuses the next cell).
     const proxyIsolation = await markerProxyIsolation(sharedResults);
@@ -469,19 +468,17 @@ export async function openHarnessEnv(
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
     hold();
     await store.sweepTemp();
+    hold(); // run 003 item 2: again between the two temp sweeps
     await sweepWorkspaceTemp(o.resultsDir, o.privateRoot);
     const owner = namespaceOwner(deps.owner(), o.privateRoot);
     hold();
-    const swept = [
-      ...await sweepOwnedSandboxes(docker, owner, undefined, undefined, hold),
-      ...await sweepLegacySandboxes(
-        docker,
-        deps.owner(),
-        o.privateRoot,
-        undefined,
-        hold,
-      ),
-    ];
+    const swept = await sweepOwnedSandboxes(
+      docker,
+      owner,
+      undefined,
+      undefined,
+      hold,
+    );
     if (swept.length > 0) {
       console.log(
         `${
