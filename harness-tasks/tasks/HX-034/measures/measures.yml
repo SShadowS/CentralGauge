@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "86140/AbsentDamageMeansNone": 1
+    "86140/NullDamageMeansNone": 1
+    "86140/EmptyDamageMeansNone": 1
+    "86140/DamageRegistered": 1
+    "86140/MixedPayload": 1
+    "86140/UnknownContractKeepsNothing": 1
+    "86140/KmBelowStartKeepsNothing": 1
+    "86140/EmptyArrayImportsNothing": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
