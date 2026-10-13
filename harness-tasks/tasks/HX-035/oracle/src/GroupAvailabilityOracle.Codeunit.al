@@ -122,6 +122,46 @@ codeunit 86160 "HX035 Group Avail Oracle"
         Assert.IsTrue(Setup.IsEmpty(), 'Counting creates no Setup record in the sister company');
     end;
 
+    [Test]
+    procedure OwnStopAppliesToOwnCompany()
+    var
+        GroupAvailability: Codeunit "CGR Group Availability";
+        Sister: Text[30];
+    begin
+        WorkDate(20270301D);
+        Sister := HX35SisterCompany();
+        ClearHX35Vehicles(Sister);
+        SetHX35OwnStop(true);
+        SetHX35SisterStop(Sister, false);
+
+        InsertHX35Data(Sister, 'HX035-7');
+
+        Assert.AreEqual(0, GroupAvailability.AvailableVehicles(CopyStr(CompanyName(), 1, 30)), 'Our own company has no available vehicles while our rentals are suspended');
+    end;
+
+    [Test]
+    procedure OwnCompanyWithoutSetupNotSuspended()
+    var
+        Setup: Record "CGR Setup";
+        SessionContext: Codeunit "CGR Session Context";
+        GroupAvailability: Codeunit "CGR Group Availability";
+        Sister: Text[30];
+        Before: Integer;
+    begin
+        WorkDate(20270301D);
+        Sister := HX35SisterCompany();
+        ClearHX35Vehicles(Sister);
+        SetHX35SisterStop(Sister, false);
+        Setup.DeleteAll();
+        SessionContext.Reset();
+        Before := GroupAvailability.AvailableVehicles(CopyStr(CompanyName(), 1, 30));
+
+        InsertHX35Data(Sister, 'HX035-8');
+
+        Assert.AreEqual(Before + 1, GroupAvailability.AvailableVehicles(CopyStr(CompanyName(), 1, 30)), 'Our own company without a Setup record has not suspended rentals');
+        Assert.IsTrue(Setup.IsEmpty(), 'Counting creates no Setup record in our own company');
+    end;
+
     local procedure InsertHX35Data(Sister: Text[30]; Prefix: Text[10])
     var
         Own: Text[30];

@@ -7,6 +7,8 @@ partial_credit:
     "86160/OwnStopDoesNotApplyToSister": 1
     "86160/SisterOnlyVehicleCounted": 1
     "86160/SisterWithoutSetupRowNotSuspended": 1
+    "86160/OwnStopAppliesToOwnCompany": 1
+    "86160/OwnCompanyWithoutSetupNotSuspended": 1
   hidden_regressions: []
 reuse: null
 expect:

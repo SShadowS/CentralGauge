@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 86160, procedures: [SisterVehiclesCountedThere, OwnCompanyCounted, SisterStopApplies, OwnStopDoesNotApplyToSister, SisterOnlyVehicleCounted, SisterWithoutSetupRowNotSuspended] }
+    - { codeunit: 86160, procedures: [SisterVehiclesCountedThere, OwnCompanyCounted, SisterStopApplies, OwnStopDoesNotApplyToSister, SisterOnlyVehicleCounted, SisterWithoutSetupRowNotSuspended, OwnStopAppliesToOwnCompany, OwnCompanyWithoutSetupNotSuspended] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
