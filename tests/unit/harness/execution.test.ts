@@ -22,6 +22,7 @@ import {
 import {
   type CellRef,
   type HarnessEnv,
+  inventoryProof,
   privatePaths,
   type PublishStep,
   recoverInterrupted,
@@ -4364,6 +4365,512 @@ Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven
     }
     assertEquals(e.termination, "setup_failed", name);
     assertStringIncludes((await sideOf(t, e.id)).setup_error, want, name);
+  }
+});
+
+// M10-08c: on real Windows the sandbox's stdout reaches raw.jsonl only when the
+// container ends. A record that appears after the deadline or after the run
+// ended was not seen live and is never proof: nothing is released.
+Deno.test("component inventory: a record delivered only at kill is not proof at the deadline (refused as not seen live)", async () => {
+  const t = await inventoriedEnv();
+  t.env.inventoryTimeoutMs = 300;
+  t.docker.waitForReady = true;
+  t.docker.preReadyAtExit = true;
+  t.docker.preReady = { lines: [INV()] };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e.id)).setup_error, "live");
+  // M10-08c review 8: the exact refusal, never another "live" message.
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "no complete cg_inventory record seen live",
+  );
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(t.docker.secretsAtKill ?? [], []);
+  assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+Deno.test("component inventory: a record delivered only after the sandbox ended itself is not proof (no release)", async () => {
+  const t = await inventoriedEnv();
+  t.docker.waitForReady = true;
+  t.docker.preReadyAtExit = true;
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.selfExit = { afterMs: 400, code: -1 };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  const err = (await sideOf(t, e.id)).setup_error as string;
+  assertStringIncludes(err, "live");
+  // M10-08c review 8: the exact refusal, never another "live" message.
+  assertStringIncludes(err, "no complete cg_inventory record seen live");
+  assert(!err.includes("requested components did not load"), err);
+  assertEquals(t.docker.readySeen, false);
+  assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// M10-08c review: the verdict is one immutable snapshot, read while the run
+// still ran and before the deadline; a record that lands after the read (the
+// run ending or the deadline passing meanwhile) is never proof.
+Deno.test("inventoryProof: read and deadline races, an unterminated success, cancellation and a late image refusal keep distinct outcomes", async () => {
+  const t = await inventoriedEnv();
+  const manifest = (await cellFor(t, "cc-v2-inv")).armManifest;
+  const dir = await Deno.makeTempDir({ dir: t.env.privateRoot });
+  const raw = join(dir, "raw.jsonl");
+  const go = new AbortController().signal;
+  const proof = (ended: () => boolean, waitMs = 2000, stop = go) =>
+    inventoryProof(raw, manifest, ended, stop, waitMs);
+  const land = (text: string) => Deno.writeTextFileSync(raw, text);
+
+  land(INV() + "\n");
+  assertEquals(await proof(() => false), { kind: "proven" }, "live control");
+
+  // Read race: the record lands right after the read and the run ends.
+  land("");
+  let r = await proof(() => (land(INV() + "\n"), true));
+  assertEquals(r.kind, "not_live", "read race");
+  assertStringIncludes((r as { problems: string[] }).problems[0]!, "live");
+
+  // Deadline race: the record lands after the read, the deadline has passed.
+  land("");
+  r = await proof(() => (land(INV() + "\n"), false), 0);
+  assertEquals(r.kind, "not_live", "deadline race");
+
+  // An unterminated success is never complete: refused at the deadline.
+  land(INV());
+  r = await proof(() => false, 200);
+  assertEquals(r.kind, "not_live", "unterminated success");
+
+  // The same record after the run ended: a diagnostic only.
+  land(INV() + "\n");
+  r = await proof(() => true);
+  assertEquals(r.kind, "not_live", "late ok record");
+  assertStringIncludes(
+    (r as { problems: string[] }).problems.join("; "),
+    "never proof",
+  );
+
+  // A strict image refusal stays a refusal, even late.
+  land(INV({ ok: false, installed: [], problems: ["x"] }) + "\n");
+  assertEquals(await proof(() => true), {
+    kind: "image_refusal",
+    problems: ["x"],
+  });
+
+  // A live record the adapter refuses is malformed, not a refusal.
+  land(INV({ extra: 1 }) + "\n");
+  assertEquals((await proof(() => false)).kind, "malformed");
+
+  const stop = new AbortController();
+  stop.abort();
+  assertEquals(await proof(() => false, 2000, stop.signal), {
+    kind: "cancelled",
+  });
+});
+
+// M10-08c review: a sandbox removed during the preflight (another process's
+// rm -f) gets no proxy credential: liveness and identity are rechecked first.
+Deno.test("enforced run: a sandbox removed before the proxy credential release gets no credential", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const register = eg.register;
+  eg.register = (o) => {
+    const r = register(o);
+    void t.docker.rm(t.docker.runs[0]!.name);
+    return r;
+  };
+  const cell = await cellFor(t);
+  // M10-08c review 3: the same pre-start refusal as a sandbox gone after the
+  // preflight (setup_failed, no campaign stop), never egress_preflight_failed.
+  const { executions } = await runCell(t.env, cell);
+  assertStringIncludes(
+    (await sideOf(t, executions[0]!.id)).setup_error,
+    "no longer live",
+  );
+  const [e] = await t.env.store.executions(cell.campaignId);
+  assertEquals(e!.termination, "setup_failed");
+  assertEquals(t.docker.secretsAtKill ?? [], [], "no proxy credential");
+  assert(!eg.events.includes("probe"), "no preflight");
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e!.id), []);
+});
+
+Deno.test("enforced run: a sandbox removed after the preflight gets no provider secret and no ready", async () => {
+  const t = await makeEnv();
+  const eg = enforce(t);
+  const verify = eg.verify;
+  let calls = 0;
+  eg.verify = () => {
+    if (++calls === 2) void t.docker.rm(t.docker.runs[0]!.name);
+    return verify();
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e.id)).setup_error, "no longer live");
+  assertEquals(t.docker.secretsAtKill, ["proxy-credential"]);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+Deno.test("a sandbox replaced under its name before the release gets nothing (identity rechecked)", async () => {
+  const t = await makeEnv();
+  const exec = t.docker.exec.bind(t.docker);
+  t.docker.exec = async (name, user, argv) => {
+    const r = await exec(name, user, argv);
+    // Ours is removed and another execution's container takes the name.
+    await t.docker.rm(name);
+    t.docker.containers.set(name, "another-execution");
+    return r;
+  };
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e.id)).setup_error, "no longer live");
+  assertEquals(t.docker.secretsAtKill, []);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assert(
+    t.docker.containers.has(t.docker.runs[0]!.name),
+    "the other execution's container is left alone",
+  );
+});
+
+// M10-08c review 3 and 8: a sandbox gone before the proxy credential and one
+// gone after the preflight are the same pre-start setup_failed (no campaign
+// stop); every secret file write is observed at the write itself (never at the
+// kill, which happens at the removal): none lands after the removal.
+Deno.test("enforced run (M10-08c review 3, 8): a sandbox gone before the proxy credential or after the preflight is the same pre-start setup_failed, no campaign stop, no secret written after the removal", async () => {
+  for (const when of ["before the credential", "after the preflight"]) {
+    const t = await makeEnv();
+    const eg = enforce(t);
+    const gone = () => {
+      const name = t.docker.runs[0]!.name;
+      void t.docker.rm(name);
+    };
+    if (when === "before the credential") {
+      const register = eg.register;
+      eg.register = (o) => {
+        const r = register(o);
+        gone();
+        return r;
+      };
+    } else {
+      const verify = eg.verify;
+      let calls = 0;
+      eg.verify = () => {
+        if (++calls === 2) gone();
+        return verify();
+      };
+    }
+    const late: string[] = [];
+    const write = Deno.writeTextFile;
+    Deno.writeTextFile = (path, data, o) => {
+      const run = t.docker.runs[0];
+      const mount = run?.mounts.get("C:\\cg-secrets")?.src;
+      if (
+        run && mount && !t.docker.containers.has(run.name) &&
+        String(path).startsWith(mount)
+      ) {
+        late.push(String(path));
+      }
+      return write(path, data, o);
+    };
+    let e: ExecutionRecord;
+    try {
+      e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+    } finally {
+      Deno.writeTextFile = write;
+    }
+    assertEquals(e.termination, "setup_failed", when);
+    const side = await sideOf(t, e.id);
+    assertStringIncludes(side.setup_error, "no longer live", when);
+    // runCell resolved: no campaign stop; one distinct label on both paths.
+    assertEquals(side.stop_reason, "sandbox_not_live", when);
+    assertEquals(e.telemetry.cost_usd, 0, when);
+    assertEquals(late, [], `${when}: no secret written after the removal`);
+    assertEquals(t.docker.readySeen, false, when);
+    assertEquals(await t.env.store.judgments(e.id), [], when);
+  }
+});
+
+// M10-08c review 4: an environment whose private-root lock another process
+// reclaimed (this one suspended past the stale window) starts no execution.
+Deno.test("runCell (M10-08c review 4): an environment that lost its private root's lock starts nothing", async () => {
+  const t = await makeEnv();
+  t.env.namespaceLost = () => true;
+  const cell = await cellFor(t);
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "lock",
+  );
+  assertEquals(t.docker.runs, []);
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+});
+
+// M10-08c run 002 item 1: the lock is checked again right before the sandbox
+// starts. Lost between runCell's check and the start: nothing starts, nothing
+// is published and the intent stays for the new holder's recovery.
+Deno.test("runExecution (M10-08c run 002 item 1): a lock lost between runCell's check and the sandbox start starts nothing and leaves the intent", async () => {
+  const t = await makeEnv();
+  let checks = 0;
+  t.env.namespaceLost = () => checks++ > 0;
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), Error, "lock");
+  assertEquals(checks > 1, true, "checked again after runCell's check");
+  assertEquals(t.docker.runs, [], "no sandbox started");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  const intents = [
+    ...Deno.readDirSync(join(t.env.privateRoot, "intents")),
+  ].filter((e) => e.name.endsWith(".json"));
+  assertEquals(intents.length, 1, "the intent is the new holder's to recover");
+});
+
+// M10-08c run 002 item 1: recovery holds the lock through every destructive
+// step: lost mid-recovery, the interrupted attempt is neither removed nor
+// published nor cleaned up.
+Deno.test("recoverInterrupted (M10-08c run 002 item 1): a lock lost during recovery stops it before anything more is removed or published", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  let sandbox = "";
+  t.docker.behavior = async (call, io) => {
+    sandbox = call.name;
+    t.docker.lingering.add(call.name);
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  const intent = join(t.env.privateRoot, "intents");
+  const before = [...Deno.readDirSync(intent)].map((e) => e.name);
+  assertEquals(before.length, 1);
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  const state = t.docker.state.bind(t.docker);
+  t.docker.state = (n) => {
+    // Another process reclaims the root while recovery inspects the sandbox.
+    if (n === sandbox) lost = true;
+    return state(n);
+  };
+  const removed = t.docker.removed.length;
+  await assertRejects(
+    () => recoverInterrupted(t.env, loadTask),
+    ConfigurationError,
+    "lock",
+  );
+  assertEquals(t.docker.removed.slice(removed), [], "nothing removed");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assertEquals([...Deno.readDirSync(intent)].map((e) => e.name), before);
+  // The sandbox is gone now; lost again at the inspect: nothing published.
+  lost = false;
+  t.docker.lingering.clear();
+  await assertRejects(
+    () => recoverInterrupted(t.env, loadTask),
+    ConfigurationError,
+    "lock",
+  );
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assertEquals([...Deno.readDirSync(intent)].map((e) => e.name), before);
+});
+
+// M10-08c run 002 item 5: a raw log that cannot be read (not merely not yet
+// written) is its own outcome, never folded into "not seen live".
+Deno.test("inventoryProof (M10-08c run 002 item 5): an absent raw log is not live; a read error is a transport failure naming it", async () => {
+  const t = await inventoriedEnv();
+  const manifest = (await cellFor(t, "cc-v2-inv")).armManifest;
+  const dir = await Deno.makeTempDir({ dir: t.env.privateRoot });
+  const raw = join(dir, "raw.jsonl");
+  const go = new AbortController().signal;
+  const absent = await inventoryProof(raw, manifest, () => true, go, 200);
+  assertEquals(absent.kind, "not_live", "not yet written");
+  Deno.writeTextFileSync(raw, INV() + "\n");
+  const read = stub(
+    Deno,
+    "readTextFile",
+    () => Promise.reject(new Deno.errors.PermissionDenied("access denied")),
+  );
+  let r;
+  try {
+    r = await inventoryProof(raw, manifest, () => false, go, 2000);
+  } finally {
+    read.restore();
+  }
+  assertEquals(r.kind, "transport_failure");
+  assertStringIncludes(
+    (r as { problems: string[] }).problems.join("; "),
+    "access denied",
+  );
+});
+
+// Review 546e8337 P3-2: a host read failure of the raw log is not the image's
+// refusal: the arm's setup_failed carries its own stop reason.
+Deno.test("runCell (review 546e8337 P3-2): an inventory transport failure is stop_reason inventory_transport_failure, never component_inventory_refused", async () => {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const real = Deno.readTextFile;
+  let failed = 0;
+  const read = stub(
+    Deno,
+    "readTextFile",
+    (path: string | URL, o?: Deno.ReadFileOptions) =>
+      String(path).endsWith("raw.jsonl") && failed++ === 0
+        ? Promise.reject(new Deno.errors.PermissionDenied("access denied"))
+        : real(path, o),
+  );
+  let e;
+  try {
+    e = (await runCell(t.env, cell)).executions[0]!;
+  } finally {
+    read.restore();
+  }
+  assertEquals(failed > 0, true, "the raw log read failed");
+  assertEquals(e.termination, "setup_failed");
+  const side = await sideOf(t, e.id);
+  assertStringIncludes(side.setup_error, "inventory transport failed");
+  assertEquals(side.stop_reason, "inventory_transport_failure");
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// Review 546e8337 P3-4: a process suspended past the stale window while its
+// sandbox ran may find the root reclaimed (and the execution recovered): it
+// publishes nothing and leaves the intent for the new holder.
+Deno.test("runExecution (review 546e8337 P3-4): a lock lost while the sandbox runs publishes nothing and leaves the intent", async () => {
+  const t = await makeEnv();
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const r = await inner(call, io);
+    lost = true; // reclaimed by another process while the run was suspended
+    return r;
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+  assertEquals(t.docker.runs.length, 1, "the sandbox ran");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assert(
+    !await exists(join(t.env.resultsRoot, "runs")) ||
+      [...Deno.readDirSync(join(t.env.resultsRoot, "runs"))].length === 0,
+    "no run directory published",
+  );
+  const intents = [
+    ...Deno.readDirSync(join(t.env.privateRoot, "intents")),
+  ].filter((e) => e.name.endsWith(".json"));
+  assertEquals(intents.length, 1, "the intent is the new holder's to recover");
+});
+
+// M10-08c run 003 item 2: sweepStaleSecrets checks the acquired token after
+// its enumeration and before each removal: lost while the custody dirs are
+// listed, none is removed.
+Deno.test("recoverInterrupted (M10-08c run 003 item 2): a lock lost while the custody dirs are enumerated removes none", async () => {
+  const t = await makeEnv();
+  const base = join(t.env.privateRoot, "secrets");
+  const dir = join(base, `${SECRETS_DIR_PREFIX}${t.env.owner}.planted-0001`);
+  await Deno.mkdir(dir, { recursive: true });
+  await Deno.writeTextFile(join(dir, "backend-token"), "planted-0123456789ab");
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  const real = Deno.readDir;
+  const s = stub(Deno, "readDir", (path: string | URL) => {
+    if (String(path) === base) lost = true; // reclaimed during the listing
+    return real(path);
+  });
+  try {
+    await assertRejects(
+      () => recoverInterrupted(t.env, loadTask),
+      ConfigurationError,
+      "lock",
+    );
+  } finally {
+    s.restore();
+  }
+  assert(await exists(join(dir, "backend-token")), "the custody survives");
+});
+
+// M10-08c run 003 item 2: publishDraft checks the acquired token before every
+// write and after judging, before finishCleanup (which checks before each
+// removal): lost during publication or judging, nothing more is written and
+// the private state and intent stay for the new holder's recovery.
+Deno.test("runExecution (M10-08c run 003 item 2): a lock lost during publication or judging writes and removes nothing more", async () => {
+  for (const step of ["execution", "judgment"] as const) {
+    const t = await makeEnv();
+    let lost = false;
+    t.env.namespaceLost = () => lost;
+    t.env.hooks = {
+      after: (s: PublishStep) => {
+        if (s === step) lost = true;
+        return Promise.resolve();
+      },
+    };
+    const cell = await cellFor(t);
+    await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+    const [id] = intentIds(t);
+    assert(id, `${step}: the intent survives`);
+    const p = privatePaths(t.env, id);
+    const intent = JSON.parse(await Deno.readTextFile(p.intent));
+    assert(intent.phase !== "published", `${step}: never marked published`);
+    assert(await exists(p.pending), `${step}: the draft stays`);
+    assert(await exists(p.work), `${step}: the work dir stays`);
+    if (step === "execution") {
+      assertEquals(await t.env.store.artifact(id), null, "no artifact written");
+      assertEquals(await t.env.store.judgments(id), [], "never judged");
+    }
+  }
+});
+
+// Review M10-08c P2-1: the lock dropped INSIDE the judge (the oracle run)
+// stops judgeExecution before the verdict log and the judgment are written.
+Deno.test("runExecution (M10-08c P2-1): a lock lost inside the judge writes neither the verdict log nor the judgment", async () => {
+  let lost = false;
+  const t = await makeEnv({
+    bc: new FakeBc((cu) => {
+      if (cu === 80010) lost = true;
+      return result({});
+    }),
+  });
+  t.env.namespaceLost = () => lost;
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+  assert(lost, "the judge ran");
+  const [id] = intentIds(t);
+  assert(id, "the intent survives");
+  assertEquals(await t.env.store.judgments(id), [], "no judgment written");
+  const verdicts = join(t.env.resultsRoot, "verdicts");
+  assert(
+    !await exists(verdicts) || [...Deno.readDirSync(verdicts)].length === 0,
+    "no verdict log written",
+  );
+});
+
+// Review M10-08c P3-1: finishCleanup checks the token before each removal:
+// lost right after the published mark, nothing is removed.
+Deno.test("runExecution (M10-08c P3-1): a lock lost after the published mark removes no private state", async () => {
+  const t = await makeEnv();
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  t.env.hooks = {
+    afterPublished: () => {
+      lost = true;
+      return Promise.resolve();
+    },
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+  const [id] = intentIds(t);
+  assert(id, "the intent survives");
+  const p = privatePaths(t.env, id);
+  for (const k of ["work", "quarantine", "pending", "custody"] as const) {
+    assert(await exists(p[k]), `${k} survives`);
   }
 });
 

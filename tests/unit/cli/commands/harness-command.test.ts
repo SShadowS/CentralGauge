@@ -82,7 +82,12 @@ import {
 } from "../../../../src/harness/verdict.ts";
 import { oracleHash } from "../../../../src/harness/identity.ts";
 import { loadTask } from "../../../../src/harness/task.ts";
-import { BenchLockHeldError } from "../../../../src/utils/bench-lock.ts";
+import {
+  acquireBenchLock,
+  BenchLockHeldError,
+  benchLockPath,
+  readBenchLock,
+} from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
 import {
   ADMIN_GROUPS_CSV,
@@ -94,7 +99,13 @@ import {
 } from "../../harness/fake-docker.ts";
 import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
 import { holdExclusive } from "../../harness/hold-file.ts";
-import { READY_FILE } from "../../../../src/harness/sandbox.ts";
+import {
+  namespaceOwner,
+  READY_FILE,
+  realDocker,
+} from "../../../../src/harness/sandbox.ts";
+import { __setContextListerForTests } from "../../../../src/container/docker-context.ts";
+import { createCommandMock } from "../../../utils/command-mock.ts";
 import {
   CATALOG,
   ccBehavior,
@@ -653,13 +664,18 @@ function deps(
   docker.owned = ["cg-harness-dead-beef"];
   const listOwned = docker.listOwned.bind(docker);
   docker.listOwned = (o) => {
+    // M10-08c run 003: the fake lists every owner alike; the bare hostname
+    // (the read-only legacy probe, not a sweep) owns nothing here.
+    if (o === "HOST1") return Promise.resolve([]);
     order.push("sweep");
     return listOwned(o);
   };
   return {
     // The campaign allocation (coord allocation.json) is its own seam; every container here is allocated.
     allocated: (c) => Promise.resolve(c),
-    acquireLock: () => {
+    acquireLock: (dir, o) => {
+      // M10-08c: the private root's lock is the real one (its exclusivity is under test).
+      if (o.command.endsWith("(private root)")) return acquireBenchLock(dir, o);
       if (lock) lock();
       order.push("lock");
       return () => {
@@ -6056,6 +6072,1029 @@ Deno.test("harnessReport (M11-12): a pre-registered campaign reads measure recor
     x.arm === "plain" && x.metric === "final_errors"
   )!;
   assertEquals([row.value, row.cells], [2, 1]);
+});
+
+// M10-08c: concurrent environments on one host (another worktree or lane, its
+// own private root) never sweep each other's sandboxes; a second environment
+// on the same private root is refused by the root's lock before any sweep; a
+// restart on the root recovers its predecessor's leftovers under the same owner.
+Deno.test("openHarnessEnv (M10-08c): one namespace owner per private root; its lock refuses a second environment before any sweep; a restart sweeps the same owner", async () => {
+  const t = await makeEnv();
+  const other = await makeEnv();
+  const owners: string[] = [];
+  const track = (order: string[]) => {
+    const d = deps(order);
+    const docker = d.docker();
+    const listOwned = docker.listOwned.bind(docker);
+    docker.listOwned = (o) => {
+      owners.push(o);
+      return listOwned(o);
+    };
+    return d;
+  };
+  const own = namespaceOwner("HOST1", t.env.privateRoot);
+  const a = await openHarnessEnv(envOpts(t), track([]));
+  assertEquals(a.env.owner, own);
+  // M10-08c run 003 item 1: first the read-only legacy probe of the bare hostname.
+  assertEquals(
+    owners,
+    ["HOST1", own, own],
+    "startup and recovery sweep a's owner",
+  );
+  const b = await openHarnessEnv(envOpts(other), track([]));
+  assert(b.env.owner !== own && b.env.owner.startsWith("HOST1-"));
+  assertEquals(
+    owners.slice(3),
+    ["HOST1", b.env.owner, b.env.owner],
+    "b sweeps only b's",
+  );
+  const order: string[] = [];
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), track(order)),
+    BenchLockHeldError,
+  );
+  assertEquals(order, ["lock", "release"], "refused before any sweep");
+  await b.close();
+  await a.close();
+  const restart: string[] = [];
+  const r = await openHarnessEnv(envOpts(t), track(restart));
+  assertEquals(r.env.owner, own, "a restart keeps the owner");
+  assertEquals(owners.slice(6), ["HOST1", own, own]);
+  await r.close();
+});
+
+// M10-08c review 1: the private root's lock is taken before both temp sweeps,
+// so a refused second environment never deletes the live one's freeze dir.
+Deno.test("openHarnessEnv (M10-08c review 1): a refused second environment on the same private root sweeps nothing of the live one's", async () => {
+  const t = await makeEnv();
+  const a = await openHarnessEnv(envOpts(t), deps([]));
+  try {
+    const frozen = join(t.env.privateRoot, "freeze", "x");
+    const temp = join(t.env.resultsRoot, "workspaces", ".tmp-live");
+    await Deno.mkdir(frozen, { recursive: true });
+    await Deno.mkdir(temp, { recursive: true });
+    await assertRejects(
+      () => openHarnessEnv(envOpts(t), deps([])),
+      BenchLockHeldError,
+    );
+    assert(await exists(frozen), "the live environment's freeze survives");
+    assert(
+      await exists(temp),
+      "the live environment's workspace temp survives",
+    );
+  } finally {
+    await a.close();
+  }
+});
+
+// M10-08c review 5: the private root's lock goes through the injected seam.
+Deno.test("openHarnessEnv (M10-08c review 5): both locks come from deps.acquireLock, the repo's first, then the private root's", async () => {
+  const t = await makeEnv();
+  const d = deps([]);
+  const dirs: string[] = [];
+  const acquire = d.acquireLock;
+  d.acquireLock = (dir, o) => {
+    dirs.push(dir);
+    return acquire(dir, o);
+  };
+  const h = await openHarnessEnv(envOpts(t), d);
+  await h.close();
+  assertEquals(dirs, [join(t.repo.root, "results"), t.env.privateRoot]);
+});
+
+// M10-08c review 6 / O3: the refusal names the --private-dir and the holder's pid.
+Deno.test("openHarnessEnv (M10-08c review 6, O3): a second environment on the same private root is refused naming --private-dir and the holder pid", async () => {
+  const t = await makeEnv();
+  const a = await openHarnessEnv(envOpts(t), deps([]));
+  try {
+    const err = await assertRejects(
+      () => openHarnessEnv(envOpts(t), deps([])),
+      BenchLockHeldError,
+    );
+    assertStringIncludes(err.message, `--private-dir ${t.env.privateRoot}`);
+    assertStringIncludes(err.message, `pid ${Deno.pid}`);
+  } finally {
+    await a.close();
+  }
+});
+
+// O2: the private root's lock is released on a normal close; a crashed
+// holder's marker (no heartbeat) is reclaimable after 120 s, never before.
+Deno.test("openHarnessEnv (M10-08c O2): the private root's lock is released on close; a crashed holder's lock is reclaimed only after 120 s", async () => {
+  const t = await makeEnv();
+  const marker = benchLockPath(t.env.privateRoot);
+  const a = await openHarnessEnv(envOpts(t), deps([]));
+  assert(await exists(marker), "held while open");
+  await a.close();
+  assert(!await exists(marker), "released on close");
+  const crashed = (ageMs: number) => {
+    Deno.writeTextFileSync(
+      marker,
+      JSON.stringify({
+        pid: 424242,
+        startedAt: "2026-10-13T00:00:00.000Z",
+        heartbeatAt: "2026-10-13T00:00:00.000Z",
+        command: "crashed",
+        token: "crashed-token",
+      }),
+    );
+    const at = new Date(Date.now() - ageMs);
+    Deno.utimeSync(marker, at, at);
+  };
+  crashed(60_000);
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), deps([])),
+    BenchLockHeldError,
+  );
+  assertStringIncludes(err.message, "pid 424242");
+  crashed(121_000);
+  const r = await openHarnessEnv(envOpts(t), deps([]));
+  assertEquals(r.env.namespaceLost?.(), false, "reclaimed: ours now");
+  await r.close();
+});
+
+// M10-08c review 4: a suspended environment whose lock another process
+// reclaimed (no heartbeat for 120 s) learns it before its next cell.
+Deno.test("openHarnessEnv (M10-08c review 4): env.namespaceLost turns true once another process holds the private root's lock; close leaves that holder's marker", async () => {
+  const t = await makeEnv();
+  const h = await openHarnessEnv(envOpts(t), deps([]));
+  assertEquals(h.env.namespaceLost?.(), false);
+  const marker = benchLockPath(t.env.privateRoot);
+  Deno.writeTextFileSync(
+    marker,
+    JSON.stringify({
+      pid: 1,
+      startedAt: "",
+      heartbeatAt: "",
+      command: "reclaimer",
+      token: "reclaimer-token",
+    }),
+  );
+  assertEquals(h.env.namespaceLost?.(), true);
+  await h.close();
+  assert(await exists(marker), "the new holder's marker stays");
+});
+
+// M10-08c review 2: an older harness labeled its sandboxes with the bare
+// hostname. Under the private root's lock, those whose execution is one of
+// this root's intents are removed and confirmed gone before any intent is
+// recovered; a failed removal stops the start with the intent untouched.
+Deno.test("openHarnessEnv (M10-08c review 2): legacy bare-hostname sandboxes of this root's intents are removed and confirmed gone before recovery; others are left alone", async () => {
+  const legacy = "cg-harness-11111111-aaaaaaaa";
+  const foreign = "cg-harness-22222222-bbbbbbbb";
+  const read = "cg-harness-read-abcdef012345";
+  const setup = async () => {
+    const t = await makeEnv();
+    const d = deps([]);
+    const docker = d.docker() as FakeDocker;
+    docker.owned = [legacy, foreign, read];
+    docker.containers.set(legacy, "exec-legacy");
+    docker.containers.set(foreign, "exec-foreign");
+    // M10-08c run 002 item 2: proven dead (exited); a running one refuses the start.
+    docker.exited.add(legacy);
+    const lists: string[] = [];
+    docker.listOwned = (o) => {
+      lists.push(o);
+      return Promise.resolve(o === "HOST1" ? [...docker.owned] : []);
+    };
+    const intent = join(t.env.privateRoot, "intents", "exec-legacy.json");
+    await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
+    // Review 546e8337 P2-b (strict): only a finalized intent's legacy
+    // sandbox is removed automatically.
+    await Deno.writeTextFile(
+      intent,
+      JSON.stringify({
+        v: 2,
+        execution_id: "exec-legacy",
+        phase: "published",
+        results_root: t.env.resultsRoot,
+      }),
+    );
+    return { t, d, docker, intent, lists };
+  };
+  // M10-08c run 003 item 1: automatic legacy removal is gone by design: the
+  // start refuses naming every bare-hostname sandbox; nothing is removed.
+  const ok = await setup();
+  const refused = await assertRejects(
+    () => openHarnessEnv(envOpts(ok.t), ok.d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(refused.message, foreign);
+  assertEquals(ok.docker.removed, []);
+  assert(ok.lists.includes("HOST1"), "the bare hostname is listed");
+  assert(await ok.docker.state(legacy), "the legacy sandbox stays");
+  assert(await ok.docker.state(foreign), "another root's legacy sandbox stays");
+  assert(await ok.docker.state(read), "read containers are the build's");
+  assert(await exists(ok.intent), "the intent is never recovered");
+
+  const stuck = await setup();
+  stuck.docker.rmFails.add(legacy);
+  await assertRejects(
+    () => openHarnessEnv(envOpts(stuck.t), stuck.d),
+    ConfigurationError,
+    legacy,
+  );
+  assert(await exists(stuck.intent), "never recovered while it may run");
+});
+
+// M10-08c review 7: concurrent `images build` runs read under their own
+// owner; a build sweeps only bare-hostname (legacy) read leftovers.
+Deno.test("harnessImagesBuild (M10-08c review 7): each build reads under its own owner; the sweep lists only the bare hostname", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+    recursive: true,
+  });
+  await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  const [lk, lv] = (await lspLabel(root))!;
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  const lists: string[] = [];
+  docker.listOwned = (o) => {
+    lists.push(o);
+    return Promise.resolve([]);
+  };
+  const owners: string[][] = [];
+  for (const version of ["2.1.290", "2.1.291"]) {
+    const id = `sha256:${version === "2.1.290" ? "c" : "d"}`.padEnd(71, "0");
+    docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
+      id,
+      labels: {
+        "centralgauge.harness": "claude-code",
+        "centralgauge.harness.version": version,
+        "centralgauge.harness.base_digest": baseId,
+        [lk]: lv,
+        ...lspReleaseLabels(), // M10-10 fixture
+      },
+      layers: ["l1", "l2"],
+    });
+    docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+    docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
+    const before = docker.reads.length;
+    await harnessImagesBuild(
+      "claude-code",
+      { root, version },
+      docker,
+      fakeFetch(),
+    );
+    owners.push([...new Set(docker.reads.slice(before).map((r) => r.owner))]);
+  }
+  const host = Deno.hostname();
+  assertEquals(owners.map((o) => o.length), [1, 1], "one owner per build");
+  for (const [o] of owners) assert(o!.startsWith(`${host}-build-`), o);
+  assert(owners[0]![0] !== owners[1]![0], "builds never share an owner");
+  assertEquals(lists, [host, host]);
+});
+
+// M10-08c run 002 item 1: ownership holds through every destructive step of
+// the start. The private root's lock is reclaimed by another process (its
+// marker carries another token) right after acquisition, during the opening,
+// or right before the first removal: nothing is swept, nothing removed.
+Deno.test("openHarnessEnv (M10-08c run 002 item 1): the token it acquired is the one checked; a lock lost right after acquisition, during opening or right before a removal sweeps nothing", async () => {
+  const reclaim = (root: string) =>
+    Deno.writeTextFileSync(
+      benchLockPath(root),
+      JSON.stringify({
+        pid: 1,
+        startedAt: "",
+        heartbeatAt: "",
+        command: "reclaimer",
+        token: "reclaimer-token",
+      }),
+    );
+  for (const when of ["acquired", "opening", "removal"] as const) {
+    const t = await makeEnv();
+    const d = deps([]);
+    const docker = d.docker() as FakeDocker;
+    const acquire = d.acquireLock;
+    d.acquireLock = (dir, o) => {
+      const held = acquire(dir, o);
+      if (when === "acquired" && dir === t.env.privateRoot) reclaim(dir);
+      return held;
+    };
+    if (when === "opening") {
+      d.docker = () => (reclaim(t.env.privateRoot), docker);
+    }
+    if (when === "removal") {
+      // Review 546e8337 P3-1: an owned sandbox, so the reclaim lands at
+      // removeConfirmed's per-removal hold (not a later step's).
+      docker.owned = ["cg-harness-dead-beef"];
+      const list = docker.listOwned.bind(docker);
+      // Run 003: not at the bare hostname's (read-only) legacy probe.
+      docker.listOwned = (
+        o,
+      ) => (o !== "HOST1" && reclaim(t.env.privateRoot), list(o));
+    }
+    const frozen = join(t.env.privateRoot, "freeze", "x");
+    await Deno.mkdir(frozen, { recursive: true });
+    await assertRejects(
+      () => openHarnessEnv(envOpts(t), d),
+      ConfigurationError,
+      "lock",
+    );
+    assertEquals(docker.removed, [], `${when}: nothing removed`);
+    if (when === "acquired") {
+      assert(await exists(frozen), "acquired: no temp sweep either");
+    }
+    assertEquals(
+      readBenchLock(t.env.privateRoot)?.token,
+      "reclaimer-token",
+      `${when}: the new holder's marker stays`,
+    );
+  }
+});
+
+// M10-08c run 002 item 2: base runners take only the repo lock, so a running
+// legacy (bare-hostname) sandbox of this root's intents may be live: the start
+// is refused naming it, the private dir and the one-shot cleanup. Proven dead
+// (exited, or its intent finalized as published) it is removed.
+Deno.test("openHarnessEnv (M10-08c run 002 item 2): a running legacy sandbox of this root refuses the start and is never removed; exited or finalized ones are removed", async () => {
+  const legacy = "cg-harness-11111111-aaaaaaaa";
+  const setup = async (o: { exited?: boolean; published?: boolean }) => {
+    const t = await makeEnv();
+    const d = deps([]);
+    const docker = d.docker() as FakeDocker;
+    docker.owned = [legacy];
+    docker.containers.set(legacy, "exec-legacy");
+    if (o.exited) docker.exited.add(legacy);
+    docker.listOwned = (owner) =>
+      Promise.resolve(owner === "HOST1" ? [...docker.owned] : []);
+    const intent = join(t.env.privateRoot, "intents", "exec-legacy.json");
+    await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
+    await Deno.writeTextFile(
+      intent,
+      o.published
+        ? JSON.stringify({
+          v: 2,
+          execution_id: "exec-legacy",
+          phase: "published",
+          results_root: t.env.resultsRoot,
+        })
+        : "not json",
+    );
+    return { t, d, docker, intent };
+  };
+  const live = await setup({});
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(live.t), live.d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(err.message, live.t.env.privateRoot);
+  assertStringIncludes(err.message, `docker rm -f ${legacy}`);
+  assertEquals(
+    live.docker.removed,
+    [],
+    "a live legacy sandbox is never removed",
+  );
+  assert(await exists(live.intent), "its intent is never recovered");
+  // M10-08c run 003 item 1: no automatic legacy removal: a finalized intent's
+  // legacy sandbox (exited or not) refuses too; nothing removed or recovered.
+  for (const o of [{ exited: true, published: true }, { published: true }]) {
+    const dead = await setup(o);
+    await assertRejects(
+      () => openHarnessEnv(envOpts(dead.t), dead.d),
+      ConfigurationError,
+      legacy,
+    );
+    assertEquals(dead.docker.removed, [], JSON.stringify(o));
+    assert(await exists(dead.intent), `${JSON.stringify(o)}: never recovered`);
+  }
+});
+
+// M10-08c run 002 item 4: legacy custody dirs (cg-harness-secrets-<host>.*)
+// of this private root go only once this root's legacy sandboxes are
+// confirmed gone; another owner's dirs are never touched.
+Deno.test("openHarnessEnv (M10-08c run 002 item 4): this root's legacy custody dirs are removed only after its legacy sandboxes are confirmed gone", async () => {
+  const legacy = "cg-harness-11111111-aaaaaaaa";
+  const setup = async (o: { running?: boolean; rmFails?: boolean }) => {
+    const t = await makeEnv();
+    const d = deps([]);
+    const docker = d.docker() as FakeDocker;
+    docker.owned = [legacy];
+    docker.containers.set(legacy, "exec-legacy");
+    if (!o.running) docker.exited.add(legacy);
+    if (o.rmFails) docker.rmFails.add(legacy);
+    docker.listOwned = (owner) =>
+      Promise.resolve(owner === "HOST1" ? [...docker.owned] : []);
+    await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
+    // Review 546e8337 P2-b (strict): a removable (not running) legacy
+    // sandbox's intent is finalized; the running one's is not.
+    await Deno.writeTextFile(
+      join(t.env.privateRoot, "intents", "exec-legacy.json"),
+      o.running ? "not json" : JSON.stringify({
+        v: 2,
+        execution_id: "exec-legacy",
+        phase: "published",
+        results_root: t.env.resultsRoot,
+      }),
+    );
+    const secrets = join(t.env.privateRoot, "secrets");
+    const mine = join(secrets, "cg-harness-secrets-HOST1.legacy-0001");
+    const other = join(secrets, "cg-harness-secrets-HOST2.other-0001");
+    for (const dir of [mine, other]) {
+      await Deno.mkdir(dir, { recursive: true });
+      await Deno.writeTextFile(
+        join(dir, "anthropic-key"),
+        "sk-ant-planted-secret-0123456789",
+      );
+    }
+    return { t, d, docker, mine, other };
+  };
+  // M10-08c run 003 item 1: legacy custody is never removed automatically:
+  // the start refuses naming it; nothing is removed.
+  const gone = await setup({});
+  const refused = await assertRejects(
+    () => openHarnessEnv(envOpts(gone.t), gone.d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(refused.message, gone.mine);
+  assertEquals(gone.docker.removed, []);
+  assert(
+    await exists(join(gone.mine, "anthropic-key")),
+    "this root's legacy custody is kept",
+  );
+  assert(
+    await exists(join(gone.other, "anthropic-key")),
+    "another owner's custody is never touched",
+  );
+  const live = await setup({ running: true });
+  await assertRejects(
+    () => openHarnessEnv(envOpts(live.t), live.d),
+    ConfigurationError,
+    legacy,
+  );
+  assert(
+    await exists(join(live.mine, "anthropic-key")),
+    "kept while its sandbox may run",
+  );
+  const stuck = await setup({ rmFails: true });
+  await assertRejects(
+    () => openHarnessEnv(envOpts(stuck.t), stuck.d),
+    ConfigurationError,
+    legacy,
+  );
+  assert(
+    await exists(join(stuck.mine, "anthropic-key")),
+    "kept while its sandbox is not confirmed gone",
+  );
+});
+
+// M10-08c run 002 item 6: each build reads under its own namespace, held by
+// a lock under <root>/results/harness/image-builds; the next build sweeps the
+// read containers of namespaces whose lock is stale (a crashed build) and
+// leaves a live build's alone.
+Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read container is swept by the next build; a live build's is kept", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+    recursive: true,
+  });
+  await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  const [lk, lv] = (await lspLabel(root))!;
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  const version = "2.1.290";
+  const id = `sha256:${"c".repeat(64)}`;
+  docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
+    id,
+    labels: {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.version": version,
+      "centralgauge.harness.base_digest": baseId,
+      [lk]: lv,
+      ...lspReleaseLabels(), // M10-10 fixture
+    },
+    layers: ["l1", "l2"],
+  });
+  docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
+  const host = Deno.hostname();
+  const builds = join(root, "results", "harness", "image-builds");
+  const dead = `${host}-build-dead0000`;
+  const live = `${host}-build-live0000`;
+  for (const [owner, ageMs] of [[dead, 121_000], [live, 0]] as const) {
+    await Deno.mkdir(join(builds, owner), { recursive: true });
+    const marker = benchLockPath(join(builds, owner));
+    Deno.writeTextFileSync(
+      marker,
+      JSON.stringify({
+        pid: 424242,
+        startedAt: "",
+        heartbeatAt: "",
+        command: "harness images build",
+        token: `${owner}-token`,
+      }),
+    );
+    const at = new Date(Date.now() - ageMs);
+    Deno.utimeSync(marker, at, at);
+  }
+  const deadRead = "cg-harness-read-dead00000000";
+  const liveRead = "cg-harness-read-live00000000";
+  docker.listOwned = (o) =>
+    Promise.resolve(o === dead ? [deadRead] : o === live ? [liveRead] : []);
+  await harnessImagesBuild(
+    "claude-code",
+    { root, version },
+    docker,
+    fakeFetch(),
+  );
+  assert(
+    docker.removed.includes(deadRead),
+    "the crashed build's read is swept",
+  );
+  assert(!docker.removed.includes(liveRead), "a live build's read is kept");
+  assertEquals(
+    [...Deno.readDirSync(builds)].map((e) => e.name),
+    [live],
+    "the dead namespace and this build's own are gone; the live one stays",
+  );
+});
+
+// M10-08c run 002 item 7: a second environment in the same checkout meets the
+// repository lock first; through the real lock its refusal names
+// --private-dir and the holder's pid.
+Deno.test("openHarnessEnv (M10-08c run 002 item 7): a second environment in the same checkout is refused by the real repository lock naming --private-dir and the holder pid", async () => {
+  const t = await makeEnv();
+  const real = () => {
+    const d = deps([]);
+    d.acquireLock = (dir, o) => acquireBenchLock(dir, o);
+    return d;
+  };
+  const a = await openHarnessEnv(envOpts(t), real());
+  try {
+    const err = await assertRejects(
+      () => openHarnessEnv(envOpts(t), real()),
+      BenchLockHeldError,
+    );
+    assertStringIncludes(err.message, join(t.repo.root, "results"));
+    assertStringIncludes(err.message, "--private-dir");
+    assertStringIncludes(err.message, `pid ${Deno.pid}`);
+  } finally {
+    await a.close();
+  }
+});
+
+// Review 546e8337 P3-3: a concurrent build may remove a namespace dir first
+// (this build's own after its release, or a dead one both builds swept):
+// NotFound on that remove is ignored; any other remove error still throws.
+Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed concurrently is not an error; other remove errors are", async () => {
+  const setup = async () => {
+    const root = await Deno.realPath(await Deno.makeTempDir());
+    const docker = new FakeDocker();
+    await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+      recursive: true,
+    });
+    await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+    const [lk, lv] = (await lspLabel(root))!;
+    const baseId = `sha256:${"b".repeat(64)}`;
+    docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+    const id = `sha256:${"c".repeat(64)}`;
+    docker.buildResults.set("centralgauge/harness-claude-code:2.1.290", {
+      id,
+      labels: {
+        "centralgauge.harness": "claude-code",
+        "centralgauge.harness.version": "2.1.290",
+        "centralgauge.harness.base_digest": baseId,
+        [lk]: lv,
+        ...lspReleaseLabels(), // M10-10 fixture
+      },
+      layers: ["l1", "l2"],
+    });
+    docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+    docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
+    const builds = join(root, "results", "harness", "image-builds");
+    const dead = join(builds, `${Deno.hostname()}-build-dead0000`);
+    await Deno.mkdir(dead, { recursive: true });
+    return { root, docker, builds, dead };
+  };
+  const real = Deno.remove;
+  // Another build wins the remove of every namespace dir: gone, then ours.
+  const raced = await setup();
+  const removed: string[] = [];
+  const race = stub(
+    Deno,
+    "remove",
+    async (path: string | URL, o?: Deno.RemoveOptions) => {
+      if (String(path).startsWith(raced.builds)) {
+        removed.push(String(path));
+        await real(path, o);
+      }
+      return real(path, o);
+    },
+  );
+  try {
+    await harnessImagesBuild(
+      "claude-code",
+      { root: raced.root, version: "2.1.290" },
+      raced.docker,
+      fakeFetch(),
+    );
+  } finally {
+    race.restore();
+  }
+  assert(removed.includes(raced.dead), "the dead namespace's remove raced");
+  assertEquals(removed.length, 2, "and this build's own namespace's");
+  assertEquals([...Deno.readDirSync(raced.builds)], []);
+  // Any other failure of that remove is not swallowed.
+  const denied = await setup();
+  const deny = stub(
+    Deno,
+    "remove",
+    (path: string | URL, o?: Deno.RemoveOptions) =>
+      String(path).startsWith(denied.builds)
+        ? Promise.reject(new Deno.errors.PermissionDenied("access denied"))
+        : real(path, o),
+  );
+  try {
+    await assertRejects(
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root: denied.root, version: "2.1.290" },
+          denied.docker,
+          fakeFetch(),
+        ),
+      Deno.errors.PermissionDenied,
+    );
+  } finally {
+    deny.restore();
+  }
+});
+
+/** A bare-hostname (legacy) sandbox of this root's intent exec-legacy. */
+async function legacyRoot(o: { exited?: boolean; published?: boolean }) {
+  const legacy = "cg-harness-11111111-aaaaaaaa";
+  const t = await makeEnv();
+  const d = deps([]);
+  const docker = d.docker() as FakeDocker;
+  docker.owned = [legacy];
+  docker.containers.set(legacy, "exec-legacy");
+  if (o.exited) docker.exited.add(legacy);
+  docker.listOwned = (owner) =>
+    Promise.resolve(owner === "HOST1" ? [...docker.owned] : []);
+  const intent = join(t.env.privateRoot, "intents", "exec-legacy.json");
+  await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
+  // Unpublished: unreadable here (any phase but published counts the same).
+  await Deno.writeTextFile(
+    intent,
+    o.published
+      ? JSON.stringify({
+        v: 2,
+        execution_id: "exec-legacy",
+        phase: "published",
+        results_root: t.env.resultsRoot,
+      })
+      : "not json",
+  );
+  return { legacy, t, d, docker, intent };
+}
+
+// Review 546e8337 P2-a: the live-legacy refusal comes before ANY sweep: a
+// legacy runner sharing the root keeps its freeze scratch and temp records.
+Deno.test("openHarnessEnv (review 546e8337 P2-a): a live legacy sandbox refuses before any sweep; freeze scratch and temp records survive", async () => {
+  const { legacy, t, d, docker, intent } = await legacyRoot({});
+  const frozen = join(t.env.privateRoot, "freeze", "x");
+  await Deno.mkdir(frozen, { recursive: true });
+  const temp = join(t.env.resultsRoot, "campaigns", "c.json.tmp-0001");
+  await Deno.mkdir(join(t.env.resultsRoot, "campaigns"), { recursive: true });
+  await Deno.writeTextFile(temp, "{}");
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(err.message, "nothing removed");
+  assert(await exists(frozen), "the legacy runner's freeze scratch survives");
+  assert(await exists(temp), "its temp record survives");
+  assertEquals(docker.removed, []);
+  assert(await exists(intent));
+});
+
+// Review 546e8337 P2-b (strict): a legacy runner may still be scoring after
+// its container exited, so an exited legacy sandbox whose intent is not
+// published refuses too; only a finalized intent's is removed automatically.
+Deno.test("openHarnessEnv (review 546e8337 P2-b): an exited legacy sandbox with an unpublished intent refuses; nothing destroyed", async () => {
+  const { legacy, t, d, docker, intent } = await legacyRoot({ exited: true });
+  const secrets = join(
+    t.env.privateRoot,
+    "secrets",
+    "cg-harness-secrets-HOST1.legacy-0001",
+  );
+  await Deno.mkdir(secrets, { recursive: true });
+  await Deno.writeTextFile(
+    join(secrets, "anthropic-key"),
+    "sk-ant-planted-secret-0123456789",
+  );
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(err.message, `docker rm -f ${legacy}`);
+  assertStringIncludes(err.message, t.env.privateRoot);
+  assertEquals(docker.removed, [], "never removed");
+  assert(await docker.state(legacy), "the legacy sandbox stays");
+  assert(await exists(intent), "its intent is never recovered");
+  assert(
+    !await exists(join(t.env.privateRoot, "broken")),
+    "recovery never touched it",
+  );
+  assert(await exists(join(secrets, "anthropic-key")), "custody kept");
+  // M10-08c run 003 item 1: a finalized one refuses too; nothing removed.
+  const done = await legacyRoot({ exited: true, published: true });
+  await assertRejects(
+    () => openHarnessEnv(envOpts(done.t), done.d),
+    ConfigurationError,
+    done.legacy,
+  );
+  assertEquals(done.docker.removed, [], "a finalized one stays too");
+});
+
+// M10-08c run 003 item 1: no automatic legacy migration. Any bare-hostname
+// sandbox (running or exited), any legacy-format intent or any legacy custody
+// dir of this root refuses the opening before any sweep, with one message
+// naming every item and the one-time manual migration; nothing is removed.
+Deno.test("openHarnessEnv (M10-08c run 003 item 1): a legacy intent, exited or running legacy container, or legacy custody dir refuses before any sweep; nothing removed", async () => {
+  const legacy = "cg-harness-11111111-aaaaaaaa";
+  for (
+    const kind of ["intent", "exited", "running", "secret", "all"] as const
+  ) {
+    const t = await makeEnv();
+    const d = deps([]);
+    const docker = d.docker() as FakeDocker;
+    docker.owned = [];
+    docker.listOwned = (owner) =>
+      Promise.resolve(owner === "HOST1" ? [...docker.owned] : []);
+    const frozen = join(t.env.privateRoot, "freeze", "x");
+    await Deno.mkdir(frozen, { recursive: true });
+    const named: string[] = [];
+    const intent = join(t.env.privateRoot, "intents", "exec-legacy.json");
+    const withIntent = kind === "intent" || kind === "all";
+    const withContainer = kind === "exited" || kind === "running" ||
+      kind === "all";
+    const withSecret = kind === "secret" || kind === "all";
+    if (withIntent) {
+      // An older harness's intent: no namespace field.
+      await Deno.mkdir(join(t.env.privateRoot, "intents"), {
+        recursive: true,
+      });
+      await Deno.writeTextFile(
+        intent,
+        JSON.stringify({
+          v: 2,
+          execution_id: "exec-legacy",
+          phase: "released",
+          results_root: t.env.resultsRoot,
+          sandbox: legacy,
+        }),
+      );
+      named.push(intent);
+    }
+    if (withContainer) {
+      docker.owned = [legacy];
+      docker.containers.set(legacy, "exec-legacy");
+      if (kind === "exited") docker.exited.add(legacy);
+      named.push(legacy);
+    }
+    const secret = join(
+      t.env.privateRoot,
+      "secrets",
+      "cg-harness-secrets-HOST1.legacy-0001",
+    );
+    if (withSecret) {
+      await Deno.mkdir(secret, { recursive: true });
+      await Deno.writeTextFile(
+        join(secret, "anthropic-key"),
+        "sk-ant-planted-secret-0123456789",
+      );
+      named.push(secret);
+    }
+    const err = await assertRejects(
+      () => openHarnessEnv(envOpts(t), d),
+      ConfigurationError,
+      "legacy",
+    );
+    for (const n of named) assertStringIncludes(err.message, n, kind);
+    assertStringIncludes(err.message, "stop every harness process", kind);
+    if (withContainer) {
+      assertStringIncludes(
+        err.message,
+        `DOCKER_CONTEXT=desktop-windows docker rm -f ${legacy}`,
+        kind,
+      );
+      assert(await docker.state(legacy), `${kind}: the container survives`);
+    }
+    assertEquals(docker.removed, [], `${kind}: nothing removed`);
+    if (withIntent) {
+      assert(await exists(intent), `${kind}: the intent survives`);
+      assert(
+        !await exists(join(t.env.privateRoot, "broken")),
+        `${kind}: never quarantined`,
+      );
+    }
+    if (withSecret) {
+      assert(
+        await exists(join(secret, "anthropic-key")),
+        `${kind}: the custody survives`,
+      );
+    }
+    assert(await exists(frozen), `${kind}: refused before any sweep`);
+  }
+});
+
+// M10-08c run 003 item 2: the acquired token is checked again between the two
+// temp sweeps: lost during the first, the second never runs.
+Deno.test("openHarnessEnv (M10-08c run 003 item 2): a lock lost between the two temp sweeps stops before the second", async () => {
+  const t = await makeEnv();
+  const d = deps([]);
+  const temp = join(t.env.resultsRoot, "workspaces", ".tmp-live");
+  await Deno.mkdir(temp, { recursive: true });
+  const real = RecordStore.prototype.sweepTemp;
+  const s = stub(
+    RecordStore.prototype,
+    "sweepTemp",
+    function (this: RecordStore) {
+      Deno.writeTextFileSync(
+        benchLockPath(t.env.privateRoot),
+        JSON.stringify({
+          pid: 1,
+          startedAt: "",
+          heartbeatAt: "",
+          command: "reclaimer",
+          token: "reclaimer-token",
+        }),
+      );
+      return real.call(this);
+    },
+  );
+  try {
+    await assertRejects(
+      () => openHarnessEnv(envOpts(t), d),
+      ConfigurationError,
+      "lock",
+    );
+  } finally {
+    s.restore();
+  }
+  assert(await exists(temp), "the second temp sweep never ran");
+  assertEquals((d.docker() as FakeDocker).removed, []);
+  assertEquals(readBenchLock(t.env.privateRoot)?.token, "reclaimer-token");
+});
+
+// M10-08c run 003 item 3: the read container's final `docker rm -f` failed
+// after a successful capture: the read reports it and the build keeps its
+// namespace (lock dir) so the next build's sweep finds the container.
+Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture whose docker rm -f failed is reported; the build namespace stays discoverable", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+    recursive: true,
+  });
+  await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  const [lk, lv] = (await lspLabel(root))!;
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  const version = "2.1.290";
+  const id = `sha256:${"c".repeat(64)}`;
+  docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
+    id,
+    labels: {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.version": version,
+      "centralgauge.harness.base_digest": baseId,
+      [lk]: lv,
+    },
+    layers: ["l1", "l2"],
+  });
+  // `docker cp` lands the file here: the capture itself succeeds.
+  const capture = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(capture, AL_LSP_SHIPPED.replace(/\\/g, "/").split("/").pop()!),
+    await Deno.readTextFile(AL_LSP_DEF),
+  );
+  const owners: string[] = [];
+  docker.readImageFile = (image, path, owner) => {
+    owners.push(owner);
+    return realDocker().readImageFile(image, path, owner);
+  };
+  const mock = createCommandMock();
+  mock.mockCommand(
+    { command: "docker", argsContain: ["rm -f cg-harness-read-"] },
+    { code: 1, stdout: "", stderr: "Error response from daemon: busy" },
+  );
+  mock.install();
+  __setContextListerForTests(() => ["desktop-windows"]);
+  const realTemp = Deno.makeTempDir;
+  const tmp = stub(
+    Deno,
+    "makeTempDir",
+    (o?: Deno.MakeTempOptions) =>
+      o?.prefix === "cg-read-" ? Promise.resolve(capture) : realTemp(o),
+  );
+  try {
+    await assertRejects(
+      () => harnessImagesBuild("claude-code", { root, version }, docker),
+      ContainerError,
+      "cg-harness-read-",
+    );
+  } finally {
+    tmp.restore();
+    mock.restore();
+    __setContextListerForTests(undefined);
+  }
+  assertEquals(owners.length, 1, "one read");
+  assert(
+    mock.getCallsFor("docker").some((c) =>
+      c.args.join(" ").startsWith("rm -f cg-harness-read-")
+    ),
+    "the read container's removal was attempted",
+  );
+  const builds = join(root, "results", "harness", "image-builds");
+  assert(
+    await exists(join(builds, owners[0]!)),
+    "the namespace stays for the next build's sweep",
+  );
+});
+
+// M10-08c run 003 item 1: an older build may be reading under the bare
+// hostname right now: its read container is never removed (a warning names it).
+Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read container survives a build", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+    recursive: true,
+  });
+  await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  const [lk, lv] = (await lspLabel(root))!;
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  const version = "2.1.290";
+  const id = `sha256:${"c".repeat(64)}`;
+  docker.buildResults.set(`centralgauge/harness-claude-code:${version}`, {
+    id,
+    labels: {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.version": version,
+      "centralgauge.harness.base_digest": baseId,
+      [lk]: lv,
+      ...lspReleaseLabels(), // M10-10 fixture
+    },
+    layers: ["l1", "l2"],
+  });
+  docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
+  const legacyRead = "cg-harness-read-legacy00000";
+  docker.owned = [legacyRead];
+  docker.listOwned = (o) =>
+    Promise.resolve(o === Deno.hostname() ? [...docker.owned] : []);
+  await harnessImagesBuild(
+    "claude-code",
+    { root, version },
+    docker,
+    fakeFetch(),
+  );
+  assertEquals(docker.removed, [], "no legacy read container removed");
+  assert(await docker.state(legacyRead), "the older build's read survives");
+});
+
+// Review M10-08c P2-2: the legacy refusal also names the existing per-id
+// private paths of each legacy intent (read-only: all survive).
+Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its existing per-id private paths; all survive", async () => {
+  const t = await makeEnv();
+  const d = deps([]);
+  const root = t.env.privateRoot;
+  await Deno.mkdir(join(root, "intents"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "intents", "exec-legacy.json"),
+    JSON.stringify({ v: 2, execution_id: "exec-legacy", phase: "released" }),
+  );
+  const planted = [
+    join(root, "custody", "exec-legacy.json"),
+    join(root, "redaction", "exec-legacy.json"),
+  ];
+  const dirs = ["work", "pending", "quarantine", "taskcopy"].map((x) =>
+    join(root, x, "exec-legacy")
+  );
+  for (const f of planted) {
+    await Deno.mkdir(join(f, ".."), { recursive: true });
+    await Deno.writeTextFile(f, "{}");
+  }
+  for (const x of dirs) await Deno.mkdir(x, { recursive: true });
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    "legacy",
+  );
+  const all = [...planted, ...dirs];
+  for (const n of all) assertStringIncludes(err.message, n);
+  assert(
+    !err.message.includes(join(root, "redaction", "exec-legacy.stub.json")),
+    "only paths that exist are named",
+  );
+  for (const n of all) assert(await exists(n), `${n} survives`);
 });
 
 Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP release once and passes tag, URL and digest as build args and labels; a failed resolution builds nothing", async () => {

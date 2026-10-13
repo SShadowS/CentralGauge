@@ -11,7 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { dirname, join, resolve, SEPARATOR } from "@std/path";
+import { basename, dirname, join, resolve, SEPARATOR } from "@std/path";
 import type { PricingBook } from "./pricing.ts";
 import type { RefappRef, SymbolPackage } from "./identity.ts";
 import type { ResolvedManifest } from "./manifest.ts";
@@ -38,6 +38,7 @@ import { adapterFor } from "./adapters/mod.ts";
 import {
   inventoried,
   INVENTORY_KEYS,
+  parseClaudeStream,
   strings,
 } from "./adapters/claude-code.ts";
 import { readRecords } from "./adapters/jsonl.ts";
@@ -86,15 +87,19 @@ import {
   type DockerCli,
   type IcaclsRunner,
   MIN_SECRET_LENGTH,
+  namespaceOwner,
   OP_TIMEOUT_MS,
   publishRedacted,
+  READ_PREFIX,
   readSecretValues,
   READY_FILE,
   redactText,
   restrictPath,
   runSandbox,
+  SANDBOX_PREFIX,
   sandboxName,
   type SandboxResult,
+  SECRETS_DIR_PREFIX,
   type SecretValue,
   stagePiConfig,
   sweepOwnedSandboxes,
@@ -197,6 +202,8 @@ export interface HarnessEnv {
   qualifyManifest?: QualifyManifest | null;
   /** Operator interrupt (Ctrl+C, M1-24). */
   stop?: AbortSignal;
+  /** M10-08c: true once another process took the private root's lock; no execution starts then. */
+  namespaceLost?: () => boolean;
   now?: () => Date;
   timeoutMsFor?: (minutes: number) => number;
   killGraceMs?: number;
@@ -364,6 +371,12 @@ interface Intent {
   /** Absent before M2-08: normal. */
   mode?: AttemptMode;
   stub?: StubProvenance | null;
+  /**
+   * The private root's namespace owner that wrote it (M10-08c run 003).
+   * Absent or another value: an older harness's intent (legacy), never
+   * recovered automatically (refuseLegacyState).
+   */
+  namespace?: string;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -1229,7 +1242,11 @@ async function publishDraft(
   const p = privatePaths(env, e.id);
   const mode = draft.mode ?? "normal";
   if (mode === "stub") checkStubRoot(env.resultsRoot);
+  // M10-08c run 003 item 2: the acquired token, right before every write.
+  const hold = () =>
+    holdNamespace(env, "publication stopped; nothing more written or removed");
   const runs = join(env.resultsRoot, "runs");
+  hold();
   if (!await exists(join(runs, e.id))) {
     await Deno.mkdir(runs, { recursive: true });
     // A crash inside an earlier copy left a temp name: remove it first.
@@ -1244,10 +1261,12 @@ async function publishDraft(
   }
   await env.hooks?.after?.("run");
   if (!(await env.store.executions(e.campaign_id)).some((x) => x.id === e.id)) {
+    hold();
     await env.store.writeExecution(e);
   }
   await env.hooks?.after?.("execution");
   if (draft.artifact && !await env.store.artifact(e.id)) {
+    hold();
     await env.store.writeArtifact({
       v: 1,
       execution_id: e.id,
@@ -1266,6 +1285,7 @@ async function publishDraft(
     !judged && taskUnchanged
   ) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
+    hold();
     try {
       await judgeExecution(
         env,
@@ -1278,14 +1298,19 @@ async function publishDraft(
     }
   }
   await env.hooks?.after?.("judgment");
+  hold();
   await finishCleanup(env, e.id);
 }
 
 /** Completion protocol: mark published, delete private state, delete the intent last. */
 async function finishCleanup(env: HarnessEnv, id: string) {
   const p = privatePaths(env, id);
+  // M10-08c run 003 item 2: the acquired token, right before each write and removal.
+  const hold = () =>
+    holdNamespace(env, "cleanup stopped; nothing more removed");
   const intent = await readJson<Intent>(p.intent);
   if (intent && intent.phase !== "published") {
+    hold();
     await writeAtomic(
       p.intent,
       JSON.stringify({ ...intent, phase: "published" }, null, 2),
@@ -1293,13 +1318,17 @@ async function finishCleanup(env: HarnessEnv, id: string) {
   }
   await env.hooks?.afterPublished?.();
   for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) {
+    hold();
     await Deno.remove(d, { recursive: true }).catch((err) => {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
   }
+  hold();
   await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
+  hold();
   await removeTemps(join(env.privateRoot, "redaction"), `${id}.json`);
   for (const f of [p.custody, p.intent]) {
+    hold();
     await Deno.remove(f).catch((err) => {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
@@ -1441,6 +1470,7 @@ export async function runExecution(
     pristine_hash: pristineHash,
     mode,
     stub,
+    namespace: env.owner,
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -1463,6 +1493,8 @@ export async function runExecution(
   let secrets: SecretValue[] = [];
   let drained = true;
   let refusal: unknown = null;
+  /** M10-08c run 002: the private root's lock was lost before the start. */
+  let lockLost: unknown = null;
   // M1-33: placed runs (qualified or authorized marker) sit on the internal
   // network behind the environment's shared proxy, registered per execution
   // (M1-33d); secrets and ready follow the authenticated preflight. A stub cell is never placed (M2-08: egress not consulted; its
@@ -1475,6 +1507,8 @@ export async function runExecution(
   let privilegeFailure: string | null = null;
   /** M9-05: the component inventory refused the arm before any release (setup_failed, cost 0, no campaign stop). */
   let inventoryRefused: string | null = null;
+  /** M10-08c: the sandbox ended or was replaced before the proxy credential or provider release (setup_failed, cost 0, stop_reason sandbox_not_live, no campaign stop). */
+  let notLive: string | null = null;
   let egressStop: string | null = null;
   const egressFail = (m: string) => {
     egressFailure = m;
@@ -1692,6 +1726,14 @@ export async function runExecution(
         );
         await Deno.writeTextFile(join(dir, READY_FILE), "");
       };
+      // M10-08c run 002 item 1: right before the start, the private root is
+      // still this process's; lost, nothing starts and nothing is published
+      // or discarded (the intent is the new holder's to recover).
+      try {
+        holdNamespace(env, `${name} not started`);
+      } catch (err) {
+        throw lockLost = err;
+      }
       // Every kind starts with an empty mount: nothing is released before
       // the harness's privilege check on the running sandbox (H-01); placed
       // runs then also wait for the preflight (M1-33 A3).
@@ -1747,6 +1789,25 @@ export async function runExecution(
         inventoried(manifest.image.revision);
       let runEnded = false;
       running.then(() => (runEnded = true), () => (runEnded = true));
+      /** M10-08c: right before each release, the sandbox still runs as this execution (not ended, removed or replaced). */
+      const stillLive = async () => {
+        const st = runEnded ? null : await bounded(
+          env.docker.state(name),
+          opMs,
+          `docker inspect ${name}`,
+        );
+        if (runEnded || !st?.running || st.execution !== id) {
+          throw new Error(
+            `${name} is no longer live as execution ${id} (${
+              runEnded
+                ? "its run ended"
+                : st === null
+                ? "gone"
+                : `running ${st.running}, execution ${st.execution ?? "(none)"}`
+            }); nothing released`,
+          );
+        }
+      };
       /**
        * A run that ended on its own before it was seen running (run.ps1's exit 5).
        * Downgraded only when a cg_inventory refusal is proven; every other
@@ -1777,25 +1838,30 @@ export async function runExecution(
         }
       }
       if (inv && privilegeError === null && !stop.aborted) {
-        // Fail closed: only a parsed ok record lets the run continue; a
-        // refusal, a missing record (run ended, timeout) or a malformed one
-        // releases nothing and is a pre-start refusal (never a campaign stop).
-        const refused = await inventoryRefusal(
-          p,
-          adapter,
+        // Fail closed: only an ok record seen live lets the run continue; a
+        // refusal, a missing or late record (run ended, timeout) or a
+        // malformed one releases nothing and is a pre-start refusal (never a
+        // campaign stop).
+        const proof = await inventoryProof(
+          p.raw,
           manifest,
-          () => runEnded || stop.aborted,
+          () => runEnded,
+          stop,
           env.inventoryTimeoutMs ?? PREFLIGHT_TIMEOUT_MS,
         );
-        if (stop.aborted) {
+        if (stop.aborted || proof.kind === "cancelled") {
           // The operator's interrupt already stops the run.
         } else if (
-          refused !== null && (endedEarly === null || refused.provenRefusal)
+          proof.kind !== "proven" &&
+          (endedEarly === null || proof.kind === "image_refusal")
         ) {
           inventoryRefused = `component inventory: ${
-            refused.problems.join("; ")
+            proof.problems.join("; ")
           }`;
-          egressStop = "component_inventory_refused";
+          // Review 546e8337 P3-2: a host read failure never blames the image.
+          egressStop = proof.kind === "transport_failure"
+            ? "inventory_transport_failure"
+            : "component_inventory_refused";
           egressAbort.abort(new Error(inventoryRefused));
         } else if (endedEarly !== null) {
           // An early end without a proven refusal (inventory ok, missing or
@@ -1824,6 +1890,13 @@ export async function runExecution(
           reg = r.reg;
           credForms = proxyCredentialForms(r.credential);
           await commitCustody(credForms);
+          try {
+            await stillLive();
+          } catch (err) {
+            // M10-08c review 3: the same pre-start refusal as after the preflight.
+            if (!stop.aborted) notLive = msg(err);
+            throw err;
+          }
           await writeSecretFiles(dir, [credForms[0]!]);
           const lines = await bounded(
             eg.probe(name, hosts),
@@ -1859,16 +1932,30 @@ export async function runExecution(
         } catch (err) {
           // An operator interrupt already stops the run; nothing was
           // released and it is not an egress failure.
-          if (!stop.aborted) preflightError = msg(err);
+          if (!stop.aborted && notLive === null) preflightError = msg(err);
         }
         const failed = reg?.failure ??
           (eg.proxyFailed ? "egress_proxy_failed" : null);
         if (failed !== null) onRegFailure(failed);
-        else if (preflightError !== null) {
+        else if (notLive !== null) {
+          egressStop = "sandbox_not_live";
+          egressAbort.abort(new Error(notLive));
+        } else if (preflightError !== null) {
           egressStop = "egress_preflight_failed";
           egressAbort.abort(
             new Error(`egress preflight failed: ${preflightError}`),
           );
+        }
+      }
+      if (!stop.aborted) {
+        try {
+          // After the inventory wait and the preflight: a sandbox that ended
+          // or was replaced meanwhile gets no provider secret and no ready.
+          await stillLive();
+        } catch (err) {
+          notLive = msg(err);
+          egressStop = "sandbox_not_live";
+          egressAbort.abort(new Error(notLive));
         }
       }
       if (!stop.aborted) {
@@ -1886,6 +1973,7 @@ export async function runExecution(
       if (inventoryRefused !== null) {
         throw new ConfigurationError(inventoryRefused);
       }
+      if (notLive !== null) throw new ConfigurationError(notLive);
       // A sandbox that never started ran nothing: the start-failure rules apply.
       if (privilegeError !== null && sandbox.started) {
         egressStop = privilegeStop;
@@ -1955,6 +2043,7 @@ export async function runExecution(
       drained = await revoking;
     }
   } catch (err) {
+    if (err === lockLost) throw err;
     if (err === refusal) {
       // Refused before any secret: no execution, no private state left.
       await discardAttempt(env, id);
@@ -1987,6 +2076,11 @@ export async function runExecution(
       "stop",
     );
   }
+  // Review 546e8337 P3-4: suspended past the stale window, the new holder
+  // may already have recovered this execution: lost, nothing is drafted or
+  // published and the intent stays the holder's.
+  const nothingPublished = "nothing published; the intent is the holder's";
+  holdNamespace(env, nothingPublished);
   const draft = await buildDraft(env, {
     id,
     cell,
@@ -2003,8 +2097,9 @@ export async function runExecution(
     mode,
     stub,
     egressStop,
-    preStart: inventoryRefused !== null,
+    preStart: inventoryRefused !== null || notLive !== null,
   });
+  holdNamespace(env, nothingPublished);
   await publishDraft(env, cell, draft, staged.pristine, true);
   if (privilegeFailure !== null) {
     // Infra, never scored; a retry would repeat it: the campaign stops here.
@@ -2078,26 +2173,42 @@ async function sandboxAddress(
 }
 
 /**
- * M9-05: wait for run.ps1's cg_inventory line in the raw log (the run ends or
- * PREFLIGHT_TIMEOUT_MS passes first: fail closed), then let the adapter's own
- * parser judge it. null: the inventory is proven (or the operator stopped the
- * run); otherwise the adapter's problems, which refuse the arm before release.
- * provenRefusal: exactly one record, a JSON cg_inventory with ok false and
- * non-empty problems (the image itself refused; not a missing or odd record).
+ * The outcome of the inventory wait (M9-05, M10-08c). proven: exactly one
+ * complete record of the strict shape, ok, seen live. cancelled: the operator
+ * stopped the run. image_refusal: exactly one strict ok-false record (the
+ * image itself refused; may be seen late: a refusal releases nothing).
+ * not_live: no complete record before the deadline while the run ran (a late
+ * record is a diagnostic only). malformed: a live record the adapter refuses.
+ * transport_failure: the raw log could not be read (other than not yet
+ * written; M10-08c run 002).
  */
-async function inventoryRefusal(
-  p: ReturnType<typeof privatePaths>,
-  adapter: ReturnType<typeof adapterFor>,
+export type InventoryProof =
+  | { kind: "proven" }
+  | { kind: "cancelled" }
+  | {
+    kind: "image_refusal" | "not_live" | "malformed" | "transport_failure";
+    problems: string[];
+  };
+
+/**
+ * M9-05: wait for run.ps1's cg_inventory line in the raw log (the run ends or
+ * waitMs passes first: fail closed), then let the adapter's own parser judge
+ * it. M10-08c: every poll reads one immutable snapshot of the raw log; only a
+ * snapshot read before the deadline and while the run had not ended (both
+ * checked after the read) can prove; the verdict is that snapshot's alone.
+ */
+export async function inventoryProof(
+  raw: string,
   manifest: ResolvedManifest,
-  over: () => boolean,
+  ended: () => boolean,
+  stop: AbortSignal,
   waitMs: number,
-): Promise<{ problems: string[]; provenRefusal: boolean } | null> {
+): Promise<InventoryProof> {
   const deadline = performance.now() + waitMs;
   /** Every complete line whose DECODED JSON type is cg_inventory (as the adapter counts; M9-05b run 002). */
   // M9-05b run 003: the adapter's own reader (BOM stripping, line splitting,
   // decoding, an unterminated final line included), so both see the same records.
-  const records = async () => {
-    const text = await Deno.readTextFile(p.raw).catch(() => "");
+  const records = (text: string) => {
     const { lines } = readRecords<{
       type?: unknown;
       v?: unknown;
@@ -2114,13 +2225,31 @@ async function inventoryRefusal(
       terminated: l.line < segments,
     }));
   };
-  while (
-    !(await records()).some((r) => r.terminated) && !over() &&
-    performance.now() < deadline
-  ) {
+  let text = "";
+  let live = true;
+  for (;;) {
+    if (stop.aborted) return { kind: "cancelled" };
+    // Run 002 item 5: an absent log is not yet written; any other read
+    // error is a transport failure of its own (never "not seen live").
+    try {
+      text = await Deno.readTextFile(raw);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        return {
+          kind: "transport_failure",
+          problems: [`inventory transport failed: ${raw}: ${msg(err)}`],
+        };
+      }
+      text = "";
+    }
+    // After the read: a run never restarts, so a snapshot taken while it
+    // still runs, before the deadline, was seen live.
+    live = !ended() && performance.now() < deadline;
+    if (!live || records(text).some((r) => r.terminated)) break;
     await new Promise((r) => setTimeout(r, 50));
   }
-  const recs = await records();
+  if (stop.aborted) return { kind: "cancelled" };
+  const recs = records(text);
   // The record, only when exactly one exists, newline-terminated, with the
   // adapter's strict shape (same keys, v 1, string lists), ok false and problems.
   let refusalRecord: string[] | null = null;
@@ -2132,30 +2261,51 @@ async function inventoryRefusal(
   ) {
     refusalRecord = r.problems;
   }
-  // A run that ended (or timed out) without a record is named by the parse below.
+  // A run that ended (or timed out) without a record is named by the parse
+  // below: the adapter's parser on the same snapshot, never a second read.
+  let problems: string[];
   try {
-    const parsed = await adapter.parse({
-      rawLog: p.raw,
-      stderrLog: p.stderr,
+    problems = parseClaudeStream(text, {
+      rawLog: raw,
       exitCode: null,
       manifest,
       pricing: { at: "", models: {} },
-      traceOut: p.trace,
-    });
-    const problems = parsed.inventoryProblems ?? [];
-    // The proof is exactly one decoded record of the strict shape (above); the
-    // adapter's problems being precisely the record's own is an extra check.
-    const provenRefusal = refusalRecord !== null &&
-      problems.length === refusalRecord.length &&
-      problems.every((x, i) => x === refusalRecord![i]);
-    return problems.length > 0 ? { problems, provenRefusal } : null;
+    }).inventoryProblems ?? [];
   } catch (err) {
     if (!(err instanceof ValidationError)) throw err;
+    problems = [`inventory not provable: ${err.message}`];
+  }
+  // The proof is exactly one decoded record of the strict shape (above); the
+  // adapter's problems being precisely the record's own is an extra check.
+  if (
+    refusalRecord !== null && problems.length === refusalRecord.length &&
+    problems.every((x, i) => x === refusalRecord![i])
+  ) {
+    return { kind: "image_refusal", problems };
+  }
+  if (!live) {
+    const late = problems.length > 0
+      ? problems
+      : recs.length > 0
+      ? ["a cg_inventory record arrived only afterwards (never proof)"]
+      : [];
     return {
-      problems: [`inventory not provable: ${err.message}`],
-      provenRefusal: false,
+      kind: "not_live",
+      problems: [
+        "no complete cg_inventory record seen live (before the deadline, while the sandbox ran)",
+        ...late,
+      ],
     };
   }
+  if (problems.length === 0 && recs.length === 1 && recs[0]!.terminated) {
+    return { kind: "proven" };
+  }
+  return {
+    kind: "malformed",
+    problems: problems.length > 0
+      ? problems
+      : ["cg_inventory record is not exactly one complete line"],
+  };
 }
 
 /** Wait (bounded) until the sandbox runs; a run that settles first fails the wait. */
@@ -2260,8 +2410,11 @@ export async function judgeExecution(
       );
       if (why) throw new ConfigurationError(`${why}: nothing written`);
     }
+    // M10-08c P2-1: the token again after the judge returned, before both writes.
+    holdNamespace(env, "judgment not written");
     // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
     await writeVerdictLog(env.resultsRoot, log);
+    holdNamespace(env, "judgment not written");
     await env.store.writeJudgment(judgment);
     return judgment;
   } finally {
@@ -2543,6 +2696,9 @@ export async function runCell(
   const executions: ExecutionRecord[] = [];
   let at = first;
   for (;;) {
+    // M10-08c review 4: this process was suspended past the stale window and
+    // another one reclaimed the root (and may sweep it): start nothing more.
+    holdNamespace(env, "no execution starts");
     const { execution: e, usageResetAt } = await runExecution(env, cell, at);
     executions.push(e);
     const policy = outcomePolicy(e.termination, e.did_work);
@@ -2598,20 +2754,141 @@ export async function runCell(
 }
 
 /**
+ * M10-08c run 002 item 1: throws once another process took the private
+ * root's lock (this one was suspended past the stale window). Called right
+ * before every start, sweep, removal and recovery step, so a lost lock stops
+ * with nothing more destroyed.
+ */
+export function holdNamespace(
+  env: Pick<HarnessEnv, "privateRoot" | "namespaceLost">,
+  what: string,
+): void {
+  if (env.namespaceLost?.()) {
+    throw new ConfigurationError(
+      `the lock on private root ${env.privateRoot} was taken over by another process: ${what}`,
+    );
+  }
+}
+
+/**
+ * M10-08c run 003 item 1: no automatic legacy migration. State of an older
+ * harness (before namespace owners) refuses the start, read-only and before
+ * any sweep, naming every item and the one-time manual migration:
+ * - any sandbox owner-labelled with the bare hostname (cg-harness-*, not a
+ *   build's cg-harness-read-*), running or exited: its root is unknowable;
+ * - any intent (intents/*.json, not a .tmp- temp) that does not parse as a
+ *   JSON object whose `namespace` is this root's namespace owner (older
+ *   harnesses never wrote one; unreadable counts, it cannot be proven ours);
+ * - any custody dir of this root named for the bare hostname
+ *   (secrets/cg-harness-secrets-<host>.*).
+ */
+export async function refuseLegacyState(
+  docker: DockerCli,
+  host: string,
+  privateRoot: string,
+  opMs = OP_TIMEOUT_MS,
+): Promise<void> {
+  const own = namespaceOwner(host, privateRoot);
+  const listed = (dir: string, keep: (e: Deno.DirEntry) => boolean) => {
+    try {
+      return [...Deno.readDirSync(dir)].filter(keep).map((e) =>
+        join(dir, e.name)
+      ).sort();
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return [];
+      throw err;
+    }
+  };
+  const intents: string[] = [];
+  for (
+    const f of listed(
+      join(privateRoot, "intents"),
+      (e) => e.isFile && e.name.endsWith(".json") && !e.name.includes(".tmp-"),
+    )
+  ) {
+    const i = await readJson<Intent>(f).catch(() => null);
+    if (i?.namespace !== own) intents.push(f);
+  }
+  // P2-2: the existing per-id private state of each legacy intent, named too.
+  const perId: string[] = [];
+  for (const f of intents) {
+    const p = privatePaths(
+      { privateRoot } as HarnessEnv,
+      basename(f, ".json"),
+    );
+    for (
+      const x of [
+        p.custody,
+        p.keys,
+        p.stubMarker,
+        p.work,
+        p.pending,
+        p.quarantine,
+        p.taskCopy,
+      ]
+    ) {
+      if (await exists(x)) perId.push(x);
+    }
+  }
+  const secrets = listed(
+    join(privateRoot, "secrets"),
+    (e) => e.isDirectory && e.name.startsWith(`${SECRETS_DIR_PREFIX}${host}.`),
+  );
+  const containers = (await bounded(docker.listOwned(host), opMs, "docker ps"))
+    .filter((n) => n.startsWith(SANDBOX_PREFIX) && !n.startsWith(READ_PREFIX))
+    .sort();
+  if (intents.length + secrets.length + containers.length === 0) return;
+  const found = [
+    containers.length > 0
+      ? `sandbox container(s) owned by the bare hostname ${host}: ${
+        containers.join(", ")
+      }`
+      : null,
+    intents.length > 0 ? `intent(s): ${intents.join(", ")}` : null,
+    perId.length > 0 ? `per-id private path(s): ${perId.join(", ")}` : null,
+    secrets.length > 0 ? `secret dir(s): ${secrets.join(", ")}` : null,
+  ].filter((x) => x !== null);
+  const steps = [
+    "stop every harness process on this host (older ones included)",
+    containers.length > 0
+      ? `DOCKER_CONTEXT=desktop-windows docker rm -f ${containers.join(" ")}`
+      : null,
+    intents.length > 0
+      ? "remove the listed legacy intents and their per-id private paths (their executions are not recovered)"
+      : null,
+    secrets.length > 0 ? "remove the listed legacy secret dirs" : null,
+    "then start again",
+  ].filter((x) => x !== null);
+  throw new ConfigurationError(
+    `--private-dir ${privateRoot}: state of an older harness (legacy, before namespace owners) found; nothing removed or swept, and it is never migrated automatically. Legacy ${
+      found.join("; legacy ")
+    }. One-time manual migration: ${steps.join("; ")}`,
+  );
+}
+
+/**
  * Startup: remove this owner's leftover sandboxes, then its stale secret
  * custody dirs (M1-20 handoff: the mounts are released first), then complete
  * every attempt a killed runner left behind (review gate 5, round 2 item 3,
- * round 3 B3).
+ * round 3 B3). M10-08c: env.owner is the private root's namespace owner,
+ * whose lock the environment holds: another environment's live sandboxes are
+ * never listed.
  */
 export async function recoverInterrupted(
   env: HarnessEnv,
   loadTaskFn: (dir: string) => Promise<LoadedTask>,
 ): Promise<ExecutionRecord[]> {
   const opMs = env.opTimeoutMs ?? OP_TIMEOUT_MS;
-  await sweepOwnedSandboxes(env.docker, env.owner, opMs);
-  await sweepStaleSecrets(env.privateRoot, env.owner);
+  // M10-08c run 002 item 1: the lock is rechecked right before each destructive step.
+  const hold = () =>
+    holdNamespace(env, "recovery stopped; nothing more removed");
+  hold();
+  await sweepOwnedSandboxes(env.docker, env.owner, opMs, undefined, hold);
+  hold();
+  await sweepStaleSecrets(env.privateRoot, env.owner, hold);
   // Temp files of an interrupted writeAtomic are never needed (the final
   // name is renamed into place), and a custody temp holds plaintext secrets.
+  hold();
   await removeTemps(join(env.privateRoot, "custody"));
   await removeTemps(join(env.privateRoot, "redaction"));
   const dir = join(env.privateRoot, "intents");
@@ -2628,6 +2905,7 @@ export async function recoverInterrupted(
     if (!(err instanceof Deno.errors.NotFound)) throw err;
   }
   for (const n of names) {
+    hold();
     let intent: Intent | null;
     try {
       intent = await readJson<Intent>(join(dir, n));
@@ -2642,6 +2920,15 @@ export async function recoverInterrupted(
       continue;
     }
     if (!intent) continue; // removed meanwhile by a finished cleanup
+    // M10-08c run 003 item 1: an older harness's intent is never recovered
+    // (refuseLegacyState refuses it at the start; this is the backstop).
+    if (intent.namespace !== env.owner) {
+      throw new ConfigurationError(
+        `recovery: ${
+          join(dir, n)
+        } is a legacy intent (namespace ${intent.namespace} is not ${env.owner}); nothing recovered or removed`,
+      );
+    }
     const id = intent.execution_id;
     // Publish into the store of the command that started the attempt, whatever command recovers it.
     const own: HarnessEnv = {
@@ -2650,6 +2937,7 @@ export async function recoverInterrupted(
       store: new RecordStore(intent.results_root),
     };
     if (intent.phase === "published") {
+      hold();
       await finishCleanup(own, id);
       continue;
     }
@@ -2692,6 +2980,7 @@ export async function recoverInterrupted(
           `docker inspect ${intent.sandbox}`,
         );
       if (await st() !== null) {
+        hold();
         await bounded(
           env.docker.rm(intent.sandbox),
           opMs,
@@ -2705,6 +2994,7 @@ export async function recoverInterrupted(
           );
         }
       }
+      hold();
       const released = intent.phase === "released";
       let secrets: SecretValue[] = [];
       // M1-33d: a placed attempt holds the proxy credential in custody
@@ -2759,6 +3049,7 @@ export async function recoverInterrupted(
         stub: intent.stub ?? null,
       });
     }
+    hold();
     await publishDraft(own, cell, draft, null, taskUnchanged);
     if (!taskUnchanged) {
       console.warn(

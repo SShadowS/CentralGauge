@@ -10,7 +10,8 @@
  *
  * The marker is an exclusive lock (spec D14): creation is atomic, the owner
  * token guards heartbeat and release, and a stale marker is reclaimed by
- * atomic rename. Liveness for READERS is still mtime-only:
+ * atomic rename; each check-then-act runs under an OS lock on
+ * `<marker>.guard` (M10-08c). Liveness for READERS is still mtime-only:
  * - A crashed or killed bench leaves the file behind, but the heartbeat stops,
  *   so the lock ages out by itself. No pid liveness probing, which is awkward
  *   and unreliable across the Git-Bash/Windows boundary.
@@ -158,14 +159,31 @@ function createExclusive(path: string, body: string): boolean {
 }
 
 /**
- * Move a stale marker out of the way. Rename is atomic, so when two processes
- * both see a stale marker only one rename succeeds; the other sees NotFound
- * and simply retries the exclusive create.
+ * M10-08c run 002: every check-then-act on an existing marker (a reclaim's
+ * stale check and rename, a heartbeat's and a release's token check and
+ * touch or remove) runs under an exclusive OS lock on `<marker>.guard`, so
+ * none of them interleave. The OS drops the lock when its holder dies (no
+ * stale guard); `fn` is synchronous, so a process never nests it.
  */
-function reclaimStale(
-  path: string,
-  staleAfterMs: number,
-): "reclaimed" | "live" | "gone" {
+function underGuard<T>(path: string, fn: () => T): T {
+  const guard = Deno.openSync(`${path}.guard`, {
+    read: true,
+    write: true,
+    create: true,
+  });
+  try {
+    guard.lockSync(true);
+    try {
+      return fn();
+    } finally {
+      guard.unlockSync();
+    }
+  } finally {
+    guard.close();
+  }
+}
+
+function markerState(path: string, staleAfterMs: number) {
   let stat: Deno.FileInfo;
   try {
     stat = Deno.statSync(path);
@@ -173,21 +191,39 @@ function reclaimStale(
     return "gone";
   }
   const mtimeMs = stat.mtime?.getTime();
-  if (mtimeMs === undefined || Date.now() - mtimeMs <= staleAfterMs) {
-    return "live";
-  }
-  const tomb = `${path}.stale-${crypto.randomUUID()}`;
-  try {
-    Deno.renameSync(path, tomb);
-  } catch (err) {
-    return err instanceof Deno.errors.NotFound ? "gone" : "live";
-  }
-  try {
-    Deno.removeSync(tomb);
-  } catch {
-    // best effort
-  }
-  return "reclaimed";
+  return mtimeMs === undefined || Date.now() - mtimeMs <= staleAfterMs
+    ? "live"
+    : "stale";
+}
+
+/**
+ * Move a stale marker out of the way. The staleness is checked again under
+ * the guard, right before the rename: a marker another reclaimer replaced, or
+ * its holder's heartbeat renewed, since the first look is live. The exclusive
+ * create then decides who holds the lock.
+ */
+function reclaimStale(
+  path: string,
+  staleAfterMs: number,
+): "reclaimed" | "live" | "gone" {
+  const seen = markerState(path, staleAfterMs);
+  if (seen !== "stale") return seen;
+  return underGuard(path, () => {
+    const now = markerState(path, staleAfterMs);
+    if (now !== "stale") return now;
+    const tomb = `${path}.stale-${crypto.randomUUID()}`;
+    try {
+      Deno.renameSync(path, tomb);
+    } catch (err) {
+      return err instanceof Deno.errors.NotFound ? "gone" : "live";
+    }
+    try {
+      Deno.removeSync(tomb);
+    } catch {
+      // best effort
+    }
+    return "reclaimed";
+  });
 }
 
 /**
@@ -226,21 +262,29 @@ export function tryAcquireBenchLock(
   if (!created) return { acquired: false, holder: readBenchLock(dir) };
 
   let lost = false;
+  // Token check and touch/remove under the guard: a reclaim never lands between them.
   const heartbeat = () => {
     if (lost) return;
-    const current = readBenchLock(dir);
-    if (current?.token !== token) {
-      lost = true;
-      return;
-    }
-    try {
-      const now = new Date();
-      Deno.utimeSync(path, now, now);
-    } catch {
-      // best effort; the next tick tries again
-    }
+    underGuard(path, () => {
+      if (readBenchLock(dir)?.token !== token) {
+        lost = true;
+        return;
+      }
+      try {
+        const now = new Date();
+        Deno.utimeSync(path, now, now);
+      } catch {
+        // best effort; the next tick tries again
+      }
+    });
   };
-  const timer = setInterval(heartbeat, heartbeatMs);
+  const timer = setInterval(() => {
+    try {
+      heartbeat();
+    } catch {
+      // the guard could not be taken: the next tick tries again
+    }
+  }, heartbeatMs);
   Deno.unrefTimer(timer);
 
   let released = false;
@@ -248,12 +292,18 @@ export function tryAcquireBenchLock(
     if (released) return Promise.resolve();
     released = true;
     clearInterval(timer);
-    if (!lost && readBenchLock(dir)?.token === token) {
-      try {
-        Deno.removeSync(path);
-      } catch {
-        // already gone
-      }
+    if (lost) return Promise.resolve();
+    try {
+      underGuard(path, () => {
+        if (readBenchLock(dir)?.token !== token) return;
+        try {
+          Deno.removeSync(path);
+        } catch {
+          // already gone
+        }
+      });
+    } catch {
+      // no guard (the directory is gone): a marker left behind ages out
     }
     return Promise.resolve();
   };
@@ -261,16 +311,35 @@ export function tryAcquireBenchLock(
 }
 
 /**
+ * A check that turns true once the marker in `dir` no longer carries `token`
+ * (another process reclaimed it while this one was suspended past the stale
+ * window; the heartbeat only stops quietly). Pass the token the acquisition
+ * took ({@link TryAcquireResult}); without one, the marker's current token is
+ * sampled now (call right after acquiring). Throws when there is none.
+ */
+export function benchLockLost(dir: string, token?: string): () => boolean {
+  const held = token ?? readBenchLock(dir)?.token;
+  if (!held) throw new Error(`no lock to hold in ${benchLockPath(dir)}`);
+  return () => readBenchLock(dir)?.token !== held;
+}
+
+/** The release of a held lock, with the check that this acquisition's token still holds it. */
+export type HeldBenchLock = (() => Promise<void>) & { lost: () => boolean };
+
+/**
  * Take the exclusive bench lock or throw {@link BenchLockHeldError}. Returns
- * the release function; call it from a `finally`.
+ * the release function (call it from a `finally`); its `lost()` checks this
+ * acquisition's own token.
  */
 export function acquireBenchLock(
   dir: string = DEFAULT_BENCH_LOCK_DIR,
   options: AcquireBenchLockOptions = {},
-): () => Promise<void> {
+): HeldBenchLock {
   const result = tryAcquireBenchLock(dir, options);
   if (!result.acquired) {
     throw new BenchLockHeldError(result.holder, benchLockPath(dir));
   }
-  return result.release;
+  return Object.assign(result.release, {
+    lost: benchLockLost(dir, result.token),
+  });
 }

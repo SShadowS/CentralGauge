@@ -104,6 +104,8 @@ export class FakeDocker implements DockerCli {
   rmFails = new Set<string>();
   /** Containers `state` still reports as present after rm. */
   lingering = new Set<string>();
+  /** Present but exited: `state` reports running false (M10-08c run 002). */
+  exited = new Set<string>();
   killFails = false;
   killHangs = false;
   rmHangs = false;
@@ -128,6 +130,10 @@ export class FakeDocker implements DockerCli {
    */
   preReady: { lines: string[]; exit?: number; unterminated?: string } | null =
     null;
+  /** Opt-in: preReady text is written to the capture only when the container exits or is killed. */
+  preReadyAtExit = false;
+  /** Opt-in: while waiting for ready, the container exits on its own with `code` after `afterMs`. */
+  selfExit: { afterMs: number; code: number } | null = null;
   /** Whether a run ever saw ready in its secrets mount. */
   readySeen = false;
   /** A run killed while waiting for ready: its secrets mount at that moment. */
@@ -187,20 +193,26 @@ export class FakeDocker implements DockerCli {
     this.containers.set(call.name, call.labels.get(EXECUTION_LABEL) ?? null);
     const killed = new Promise<void>((r) => this.stoppers.set(call.name, r));
     let written = 0;
+    let held = "";
     try {
       // Like run.ps1's inventory: printed in one write before the ready wait.
       if (this.preReady) {
         const lines = this.preReady.lines;
         const text = (lines.length > 0 ? lines.join("\n") + "\n" : "") +
           (this.preReady.unterminated ?? "");
-        if (text !== "") await out.write(new TextEncoder().encode(text));
+        if (this.preReadyAtExit) held = text;
+        else if (text !== "") await out.write(new TextEncoder().encode(text));
         if (this.preReady.exit !== undefined) return this.preReady.exit;
       }
       if (this.waitForReady) {
         const ready = `${call.mounts.get("C:\\cg-secrets")!.src}/ready`;
         let stop = false;
         killed.then(() => (stop = true));
+        const exitAt = this.selfExit
+          ? Date.now() + this.selfExit.afterMs
+          : Infinity;
         while (!stop && !await Deno.stat(ready).then(() => true, () => false)) {
+          if (Date.now() >= exitAt) return this.selfExit!.code;
           await new Promise((r) => setTimeout(r, 5));
         }
         if (stop) {
@@ -226,6 +238,8 @@ export class FakeDocker implements DockerCli {
       if (this.wedged) await never();
       return code;
     } finally {
+      // Real Windows stdio: the output only reaches the capture file at container end.
+      if (held !== "") await out.write(new TextEncoder().encode(held));
       out.close();
     }
   }
@@ -269,7 +283,7 @@ export class FakeDocker implements DockerCli {
       this.containers.has(name) ||
       (this.owned.includes(name) && !this.deleted.has(name))
     ) {
-      return Promise.resolve({ running: true, execution });
+      return Promise.resolve({ running: !this.exited.has(name), execution });
     }
     return Promise.resolve(null);
   }

@@ -41,7 +41,11 @@ import {
   SANDBOX_NETWORK,
   verifyEgressState,
 } from "../../src/harness/egress.ts";
-import { recoverInterrupted } from "../../src/harness/execution.ts";
+import {
+  holdNamespace,
+  recoverInterrupted,
+  refuseLegacyState,
+} from "../../src/harness/execution.ts";
 import { sweepWorkspaceTemp } from "../../src/harness/fsutil.ts";
 import {
   loadSymbolsLock,
@@ -51,6 +55,7 @@ import { loadPricingBook } from "../../src/harness/pricing.ts";
 import { RecordStore } from "../../src/harness/records.ts";
 import {
   bounded,
+  namespaceOwner,
   realDocker,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
@@ -58,6 +63,7 @@ import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
   acquireBenchLock,
+  BenchLockHeldError,
   DEFAULT_BENCH_LOCK_DIR,
 } from "../../src/utils/bench-lock.ts";
 import { setupContainers } from "./bench/container-setup.ts";
@@ -95,7 +101,11 @@ export interface EnvOptions {
 export interface EnvDeps {
   /** The allocated spelling of a container, or a throw (coord allocation.json, fail closed). */
   allocated(name: string): Promise<string>;
-  acquireLock: (dir: string, o: { command: string }) => () => Promise<void>;
+  /** The release; `lost` checks this acquisition's own token (M10-08c run 002, required for the private root). */
+  acquireLock: (
+    dir: string,
+    o: { command: string },
+  ) => (() => Promise<void>) & { lost?: () => boolean };
   docker: () => DockerCli;
   setup(
     names: string[],
@@ -363,16 +373,60 @@ export async function openHarnessEnv(
     );
   }
   const sharedResults = join(o.repoRoot, "results", "harness");
-  const release = deps.acquireLock(
-    join(o.repoRoot, DEFAULT_BENCH_LOCK_DIR),
-    { command: o.command },
-  );
+  let release: () => Promise<void>;
+  try {
+    release = deps.acquireLock(
+      join(o.repoRoot, DEFAULT_BENCH_LOCK_DIR),
+      { command: o.command },
+    );
+  } catch (err) {
+    // M10-08c run 002 item 7: a second environment in this checkout meets this lock first.
+    if (err instanceof BenchLockHeldError) {
+      err.message +=
+        `; a harness environment or bench already runs in this checkout: wait for it, or run another environment from its own worktree with its own --private-dir (this one: ${o.privateRoot})`;
+    }
+    throw err;
+  }
   const closers: (() => Promise<void>)[] = [release];
   const closeAll = async () => {
     for (const c of closers) await c().catch(() => {});
   };
   let closing: Promise<void> | null = null;
   try {
+    // M10-08c: the sweeps below and in recoverInterrupted are crash recovery
+    // of this private root only (its temp, intents, secrets and sandboxes):
+    // its exclusive lock first, before any of them, then its own owner label.
+    let namespaceLost: () => boolean;
+    try {
+      const held = deps.acquireLock(o.privateRoot, {
+        command: `${o.command} (private root)`,
+      });
+      closers.push(held);
+      // M10-08c run 002 item 1: the token this acquisition took, never a later holder's.
+      if (!held.lost) {
+        throw new ConfigurationError(
+          `the lock on private root ${o.privateRoot} carries no ownership check`,
+        );
+      }
+      namespaceLost = held.lost;
+    } catch (err) {
+      if (err instanceof BenchLockHeldError) {
+        err.message +=
+          `; another harness environment uses --private-dir ${o.privateRoot}: wait for it or pass another --private-dir`;
+      }
+      throw err;
+    }
+    /** Right before every sweep and removal: the lock is still ours, or stop. */
+    const hold = () =>
+      holdNamespace(
+        { privateRoot: o.privateRoot, namespaceLost },
+        "nothing swept",
+      );
+    hold();
+    // Review 546e8337 P2-a, run 003 item 1: any older harness's state refuses
+    // the start before ANY sweep; nothing legacy is ever removed here.
+    const docker = deps.docker();
+    await refuseLegacyState(docker, deps.owner(), o.privateRoot);
     // M1-33e: the marker's proxy_isolation, fixed here under the lock for
     // the life of the environment (a later change refuses the next cell).
     const proxyIsolation = await markerProxyIsolation(sharedResults);
@@ -412,11 +466,19 @@ export async function openHarnessEnv(
     }
     const store = new RecordStore(o.resultsDir);
     await Deno.mkdir(join(o.privateRoot, "work"), { recursive: true });
+    hold();
     await store.sweepTemp();
+    hold(); // run 003 item 2: again between the two temp sweeps
     await sweepWorkspaceTemp(o.resultsDir, o.privateRoot);
-    const docker = deps.docker();
-    const owner = deps.owner();
-    const swept = await sweepOwnedSandboxes(docker, owner);
+    const owner = namespaceOwner(deps.owner(), o.privateRoot);
+    hold();
+    const swept = await sweepOwnedSandboxes(
+      docker,
+      owner,
+      undefined,
+      undefined,
+      hold,
+    );
     if (swept.length > 0) {
       console.log(
         `${
@@ -487,6 +549,7 @@ export async function openHarnessEnv(
       credentialLedger: o.credentialLedger,
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
+      namespaceLost,
     };
     const recovered = await recoverInterrupted(env, loadTask);
     for (const e of recovered) {

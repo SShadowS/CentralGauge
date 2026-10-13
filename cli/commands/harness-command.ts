@@ -153,7 +153,16 @@ import {
   loadQualifyManifest,
   variantAllowed,
 } from "../../src/harness/qualify.ts";
-import { realDocker } from "../../src/harness/sandbox.ts";
+import {
+  READ_PREFIX,
+  realDocker,
+  sweepOwnedSandboxes,
+} from "../../src/harness/sandbox.ts";
+import {
+  acquireBenchLock,
+  benchLockLost,
+  tryAcquireBenchLock,
+} from "../../src/utils/bench-lock.ts";
 import { applyOverlay, TASK_SOURCES } from "../../src/harness/staging.ts";
 import {
   altoolReader,
@@ -878,6 +887,50 @@ async function servercorePin(root: string): Promise<string> {
 }
 
 /**
+ * M10-08c run 002 item 6: the read containers of every build namespace under
+ * `builds` whose lock this process can take (its build crashed: no heartbeat
+ * for 120 s, or it never held one) are removed, confirmed gone, under that
+ * lock; then the namespace goes. A live build's lock is held: skipped.
+ */
+async function sweepDeadBuilds(docker: DockerCli, builds: string) {
+  let names: string[] = [];
+  try {
+    names = [...Deno.readDirSync(builds)]
+      .filter((e) => e.isDirectory && /^[A-Za-z0-9_-]+$/.test(e.name))
+      .map((e) => e.name);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  for (const n of names) {
+    const dir = join(builds, n);
+    const got = tryAcquireBenchLock(dir, {
+      command: "harness images build (sweep)",
+    });
+    if (!got.acquired) continue;
+    const lost = benchLockLost(dir, got.token);
+    try {
+      await sweepOwnedSandboxes(docker, n, undefined, READ_PREFIX, () => {
+        if (lost()) {
+          throw new ConfigurationError(`build namespace ${dir} taken over`);
+        }
+      });
+    } finally {
+      await got.release();
+    }
+    await removeNamespace(dir);
+  }
+}
+
+/** Review 546e8337 P3-3: a concurrent build may have removed it first. */
+async function removeNamespace(dir: string) {
+  try {
+    await Deno.remove(dir, { recursive: true });
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+}
+
+/**
  * Base image from the digest pin; a harness image from the inspected base.
  * Provenance is checked, not asserted: the build gets the inspected base id
  * (never the tag), and the new image's layers must start with that id's
@@ -1011,8 +1064,41 @@ export async function harnessImagesBuild(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );
   }
-  // Same owner as a harness env (the hostname): a leftover read container is swept.
-  const f = await imageFacts(docker, tag, Deno.hostname());
+  // M10-08c: harness envs read under their private root's owner; each build
+  // reads under its own owner, so concurrent builds never remove each other's
+  // read container. Run 002 item 6: the owner is a namespace held by a lock
+  // while the build reads; a crashed build's (lock stale) is swept by the
+  // next build. Run 003 item 1: older builds read under the bare hostname
+  // and one may be reading now: those are only named, never removed.
+  const legacyReads = (await docker.listOwned(Deno.hostname())).filter((n) =>
+    n.startsWith(READ_PREFIX)
+  );
+  if (legacyReads.length > 0) {
+    console.warn(
+      `${
+        colors.yellow("[WARN]")
+      } read container(s) of an older harness build (owner ${Deno.hostname()}), not removed: ${
+        legacyReads.join(", ")
+      }; once no older build runs: DOCKER_CONTEXT=desktop-windows docker rm -f ${
+        legacyReads.join(" ")
+      }`,
+    );
+  }
+  const builds = join(o.root, "results", "harness", "image-builds");
+  await sweepDeadBuilds(docker, builds);
+  const owner = `${Deno.hostname()}-build-${crypto.randomUUID().slice(0, 8)}`;
+  const held = acquireBenchLock(join(builds, owner), {
+    command: "harness images build",
+  });
+  let f: ImageFacts;
+  try {
+    f = await imageFacts(docker, tag, owner);
+  } finally {
+    // A failed read keeps the namespace: the next build sweeps it. So does a
+    // read whose container removal failed (it throws; M10-08c run 003 item 3).
+    await held();
+  }
+  await removeNamespace(join(builds, owner));
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(
       `${tag}: label ${IMAGE_LABELS.revision} is ${

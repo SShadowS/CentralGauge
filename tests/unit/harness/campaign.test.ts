@@ -28,6 +28,10 @@ import { buildReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
+import {
+  acquireBenchLock,
+  benchLockLost,
+} from "../../../src/utils/bench-lock.ts";
 import { git, write } from "./refapp-fixture.ts";
 import {
   CATALOG,
@@ -1506,4 +1510,47 @@ Deno.test("M11-10c: a campaign start whose experiment primary_metric differs fro
   );
   assertEquals(await p.t.env.store.campaigns("prereg"), []);
   assertEquals(p.t.docker.runs.length, 0);
+});
+
+// M10-08c O1: the private root's lock is per environment, not per cell: one
+// process running a campaign at concurrency 2 inside one environment (its
+// lock held and checked before every execution) still runs both blocks at once.
+Deno.test("M10-08c (O1): concurrency 2 inside one environment holding its private root's lock runs both blocks in parallel", async () => {
+  const t = await mockEnv();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  const release = acquireBenchLock(t.env.privateRoot, {
+    command: "test (private root)",
+  });
+  t.env.namespaceLost = benchLockLost(t.env.privateRoot);
+  const spans = new Map<string, { start: number; end: number }>();
+  const behave = t.docker.behavior;
+  t.docker.behavior = async (call, run) => {
+    const id = call.labels.get(EXECUTION_LABEL)!;
+    const start = performance.now();
+    const code = await behave(call, run);
+    spans.set(id, { start, end: performance.now() });
+    return code;
+  };
+  try {
+    await runCampaign(t.env, "contract", opts({ concurrency: 2 }), io());
+  } finally {
+    await release();
+  }
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, 4);
+  const block = (i: number) =>
+    es.filter((e) => e.block === i).map((e) => spans.get(e.id)!);
+  assert(
+    Math.min(...block(1).map((x) => x.start)) <
+      Math.max(...block(0).map((x) => x.end)),
+    "the two blocks ran in parallel",
+  );
 });
