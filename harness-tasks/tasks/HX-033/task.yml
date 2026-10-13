@@ -1,0 +1,27 @@
+id: HX-033
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Rental, Fleet, Core]
+coupling: [single-instance, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [ReturnWithoutDamageReleasesVehicle, ReturnBelowStartKmFails, PostCreatesLedgerEntry] }
+  - { codeunit: 80050, procedures: [StateIsSharedAcrossInstances] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86120, procedures: [ReturnsListedInOrder] }
+    - { codeunit: 86121, procedures: [VehicleListedOnce] }
+    - { codeunit: 86122, procedures: [DamagedListOnlyDamaged] }
+    - { codeunit: 86123, procedures: [CallerEditsDoNotChangeShift] }
+    - { codeunit: 86124, procedures: [EarlierListUnchangedByLaterReturns] }
+    - { codeunit: 86125, procedures: [ListContentReplaced] }
+    - { codeunit: 86126, procedures: [SharedAcrossInstances] }
+    - { codeunit: 86127, procedures: [ClearShiftEmptiesBoth] }
+    - { codeunit: 86128, procedures: [DamagedListIsACopy] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "86120/ReturnsListedInOrder": 1
+    "86121/VehicleListedOnce": 1
+    "86122/DamagedListOnlyDamaged": 1
+    "86123/CallerEditsDoNotChangeShift": 1
+    "86124/EarlierListUnchangedByLaterReturns": 1
+    "86125/ListContentReplaced": 1
+    "86126/SharedAcrossInstances": 1
+    "86127/ClearShiftEmptiesBoth": 1
+    "86128/DamagedListIsACopy": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
