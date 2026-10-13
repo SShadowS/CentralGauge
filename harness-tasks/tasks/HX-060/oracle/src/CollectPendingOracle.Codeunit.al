@@ -91,17 +91,18 @@ codeunit 86660 "HX060 Collect Pending Oracle"
     begin
         InitRun();
         PendingNo := QueueEntry('HX060-3A');
+        QueueEntry('HX060-3B');
         Stored.Get(PendingNo);
         Runner.AddToBuffer(Stored);
-        Runner.SetVehicleFilter('HX060-3A');
+        Runner.SetVehicleFilter('HX060-3*');
 
         Commit();
         Ok := Runner.Run();
         RunError := GetLastErrorText();
 
         Assert.IsTrue(Ok, 'An entry already in Pending does not make CollectPending fail: ' + RunError);
-        Assert.AreEqual(0, Runner.Added(), 'An entry already in Pending is not counted');
-        Assert.AreEqual(1, Runner.BufferCount(), 'An entry already in Pending is not added twice');
+        Assert.AreEqual(1, Runner.Added(), 'Only the new pending entry is counted, not the one already in Pending');
+        Assert.AreEqual(2, Runner.BufferCount(), 'The entry already in Pending is not added twice; the new one is added');
     end;
 
     [Test]
