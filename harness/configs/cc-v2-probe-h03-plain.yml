@@ -2,7 +2,7 @@
 id: cc-v2-probe-h03-plain
 harness: claude-code
 harness_version: "latest"
-image_revision: "3-dev-H-03"
+image_revision: "3-dev-H-03b"
 models:
   main: anthropic/claude-sonnet-5
 settings: {}

@@ -148,11 +148,11 @@ const H03_PROBES: [string, string][] = [
   ["cc-v2-probe-h03-lsp", "cc-v2-plain-lsp"],
 ];
 
-Deno.test("H-03 probe configs: their arm (latest) with id and image revision 3-dev-H-03 only; developmental; never in an experiment", async () => {
+Deno.test("H-03 probe configs: their arm (latest) with id and image revision 3-dev-H-03b only; developmental; never in an experiment", async () => {
   for (const [id, armId] of H03_PROBES) {
     const c = await loadConfig("harness", id);
     const arm = await loadConfig("harness", armId);
-    assertEquals(c, { ...arm, id, image_revision: "3-dev-H-03" }, id);
+    assertEquals(c, { ...arm, id, image_revision: "3-dev-H-03b" }, id);
     assertEquals(c.harness_version, "latest", id);
     const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
       .split(/\r?\n/)[0];
