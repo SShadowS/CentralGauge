@@ -6,9 +6,13 @@ partial_credit:
     "86100/UndeliveredSendKeepsNoReceipt": 1
     "86100/PendingDispatchMixedTransports": 1
     "86100/WritingTransportFailsAtMaxAttempts": 1
-    "86100/TransportGetsTheDispatchedEntry": 1
-    "86100/NonWritingTransportUnchanged": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "86100/TransportGetsTheDispatchedEntry"
+    - "86100/NonWritingTransportUnchanged"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/commit-in-unit: { partial_credit: 0.8 }
+  naive/direct-call: { partial_credit: 0.2 }
+  naive/keep-tryfunction: { partial_credit: 0 }
+  naive/other-instance-flag: { partial_credit: 0.6 }
