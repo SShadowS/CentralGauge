@@ -1,7 +1,10 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
-import { reserveCredentialRun } from "../../../src/harness/credential-budget.ts";
+import {
+  CREDENTIAL_RUN_LIMIT,
+  reserveCredentialRun,
+} from "../../../src/harness/credential-budget.ts";
 
 const r = {
   lane: "lane-ops",
@@ -10,14 +13,15 @@ const r = {
   purpose: "M1-29 gate",
 };
 
-Deno.test("reserveCredentialRun: five across all lanes, then refused; concurrent callers serialize", async () => {
+Deno.test("reserveCredentialRun: twenty-five across all lanes (H-06), then refused; concurrent callers serialize", async () => {
+  assertEquals(CREDENTIAL_RUN_LIMIT, 25);
   const ledger = join(
     await Deno.realPath(await Deno.makeTempDir()),
     "credential-runs.jsonl",
   );
   const results = await Promise.allSettled(
     Array.from(
-      { length: 7 },
+      { length: 27 },
       (_, i) =>
         reserveCredentialRun(ledger, {
           ...r,
@@ -29,13 +33,16 @@ Deno.test("reserveCredentialRun: five across all lanes, then refused; concurrent
     results.filter((x) => x.status === "fulfilled").map((x) =>
       (x as PromiseFulfilledResult<number>).value
     ).sort(),
-    [1, 2, 3, 4, 5],
+    Array.from({ length: 25 }, (_, i) => i + 1).sort(),
   );
-  assertEquals((await Deno.readTextFile(ledger)).trim().split("\n").length, 5);
+  assertEquals(
+    (await Deno.readTextFile(ledger)).trim().split("\n").length,
+    25,
+  );
   await assertRejects(
     () => reserveCredentialRun(ledger, r),
     ConfigurationError,
-    "5 supervised",
+    "25 supervised",
   );
 });
 
@@ -57,11 +64,14 @@ Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines sti
     "cannot read",
   );
   const partial = join(dir, "partial.jsonl");
-  await Deno.writeTextFile(partial, '{"v":1}\n{"trunc\nx\nx\nx\n');
+  await Deno.writeTextFile(
+    partial,
+    '{"v":1}\n{"trunc\n' + "x\n".repeat(23),
+  );
   await assertRejects(
     () => reserveCredentialRun(partial, r),
     ConfigurationError,
-    "5 supervised",
+    "25 supervised",
   );
 });
 
