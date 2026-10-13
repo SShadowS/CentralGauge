@@ -1178,29 +1178,36 @@ export async function harnessImagesBuild(
   if (ccRel) {
     // H-03: read back against this build's intent, not merely self-consistency
     // (imageFacts already compared the shipped resolved file with the labels).
-    const aliasId =
-      (await docker.inspectImage(alias!) as { Id?: string } | null)
-        ?.Id;
-    if (aliasId !== f.digest) {
-      throw new ConfigurationError(
-        `${alias}: is ${
-          aliasId ?? "absent"
-        }, not this build's ${f.digest} (${tag})`,
-      );
-    }
-    const p = f.package;
-    if (
-      f.version !== ccRel.version || p?.version !== ccRel.version ||
-      p.integrity.main !== ccRel.main.integrity ||
-      p.integrity.win32_x64 !== ccRel.win32_x64.integrity
-    ) {
-      throw new ConfigurationError(
-        `${tag}: the built image's ${IMAGE_LABELS.version} ${f.version} and ${IMAGE_LABELS.package} ${
-          p
-            ? `${p.version} ${p.integrity.main} ${p.integrity.win32_x64}`
-            : "absent"
-        } differ from this build's resolution (${ccRel.version} ${ccRel.main.integrity} ${ccRel.win32_x64.integrity})`,
-      );
+    // A rejected image keeps no tag: both this build's tags are removed.
+    try {
+      const aliasId =
+        (await docker.inspectImage(alias!) as { Id?: string } | null)
+          ?.Id;
+      if (aliasId !== f.digest) {
+        throw new ConfigurationError(
+          `${alias}: is ${
+            aliasId ?? "absent"
+          }, not this build's ${f.digest} (${tag})`,
+        );
+      }
+      const p = f.package;
+      if (
+        f.version !== ccRel.version || p?.version !== ccRel.version ||
+        p.integrity.main !== ccRel.main.integrity ||
+        p.integrity.win32_x64 !== ccRel.win32_x64.integrity
+      ) {
+        throw new ConfigurationError(
+          `${tag}: the built image's ${IMAGE_LABELS.version} ${f.version} and ${IMAGE_LABELS.package} ${
+            p
+              ? `${p.version} ${p.integrity.main} ${p.integrity.win32_x64}`
+              : "absent"
+          } differ from this build's resolution (${ccRel.version} ${ccRel.main.integrity} ${ccRel.win32_x64.integrity})`,
+        );
+      }
+    } catch (e) {
+      await docker.untag(tag);
+      await docker.untag(alias!);
+      throw e;
     }
   }
   if (

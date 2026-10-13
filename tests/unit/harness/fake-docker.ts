@@ -368,6 +368,10 @@ export class FakeDocker implements DockerCli {
       this.images.get(this.tags.get(ref) ?? ref) ?? null,
     );
   }
+  untag(ref: string): Promise<void> {
+    this.tags.delete(ref);
+    return Promise.resolve();
+  }
   /** What a build of a tag (`-t`) produces: added only when the build runs. */
   buildResults = new Map<
     string,

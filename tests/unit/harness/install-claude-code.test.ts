@@ -367,6 +367,21 @@ Deno.test({
       const silent = await install("silent", { npm: await cmd("npm-ok", 0) });
       assertEquals(silent.r.code, 3, silent.r.out);
       assertStringIncludes(silent.r.out, "node_modules");
+      const npmLines = silent.r.out.split(/\r?\n/).filter((l) =>
+        l.startsWith("npm-ok ")
+      );
+      assertEquals(npmLines.length, 2, silent.r.out);
+      for (const l of npmLines) {
+        for (
+          const flag of [
+            "install -g --prefix",
+            "--offline",
+            "--ignore-scripts",
+            "--registry http://127.0.0.1:9/",
+          ]
+        ) assertStringIncludes(l, flag);
+      }
+      assertStringIncludes(npmLines[1]!, "--omit=optional");
 
       const noTar = await install("notar", {
         npm: await cmd("npm-fails2", 7),

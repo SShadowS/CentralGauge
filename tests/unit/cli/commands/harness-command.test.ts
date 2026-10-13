@@ -7446,3 +7446,100 @@ Deno.test("harnessImagesBuild (H-03): the read-back must match this build's reso
     );
   }
 });
+
+Deno.test("harnessImagesBuild (H-03): a failed read-back removes both tags this build created", async () => {
+  const resolvedTag = "centralgauge/harness-claude-code:2.1.296-r3";
+  const aliasTag = "centralgauge/harness-claude-code:latest-r3";
+  for (const name of ["alias elsewhere", "version"]) {
+    const { root, docker, baseId } = await ccRoot();
+    const id = `sha256:${"c".repeat(64)}`;
+    const b = ccBuild(docker, root, id, {
+      "centralgauge.harness": "claude-code",
+      "centralgauge.harness.base_digest": baseId,
+    }, { revision: "3" });
+    if (name === "alias elsewhere") {
+      const realBuild = docker.build.bind(docker);
+      docker.build = async (args) => {
+        const code = await realBuild(args);
+        docker.tags.set(aliasTag, `sha256:${"9".repeat(64)}`);
+        return code;
+      };
+    } else {
+      const r = docker.buildResults.get(resolvedTag)!;
+      docker.buildResults.set(resolvedTag, {
+        ...r,
+        labels: { ...r.labels, ...ccLabels(ccRel("2.1.295")) },
+      });
+      docker.shipFile(
+        id,
+        CLAUDE_CODE_RESOLVED,
+        ccResolvedJson({}, ccRel("2.1.295")),
+      );
+    }
+    const log = stub(console, "log", () => {});
+    try {
+      await assertRejects(
+        () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+        ConfigurationError,
+        undefined,
+        name,
+      );
+    } finally {
+      log.restore();
+    }
+    assertEquals(await docker.inspectImage(resolvedTag), null, name);
+    assertEquals(await docker.inspectImage(aliasTag), null, name);
+  }
+});
+
+Deno.test("harnessImagesBuild (H-03): --version with the named resolved tag already present refuses as an existing tag, before the --version refusal", async () => {
+  const { root, docker } = await ccRoot();
+  docker.addImage(
+    "centralgauge/harness-claude-code:2.1.296-r3",
+    `sha256:${"9".repeat(64)}`,
+    {},
+    ["l1"],
+  );
+  const calls: { url: string }[] = [];
+  const err = await assertRejects(
+    () =>
+      harnessImagesBuild(
+        "claude-code",
+        {
+          root,
+          version: "2.1.296",
+          revision: "3",
+          publishLockDir: join(root, "publish-lock"),
+        },
+        docker,
+        ccFetch({ calls }),
+      ),
+    ConfigurationError,
+    "centralgauge/harness-claude-code:2.1.296-r3 already exists",
+  );
+  assert(!err.message.includes("is refused"), err.message);
+  assertEquals([calls, docker.builds], [[], []], "nothing resolved or built");
+});
+
+Deno.test("harnessImagesBuild (H-03): a held publication lock refuses before any registry fetch or docker build", async () => {
+  const { root, docker, baseId } = await ccRoot();
+  const b = ccBuild(docker, root, `sha256:${"c".repeat(64)}`, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+  }, { revision: "3" });
+  const calls: { url: string }[] = [];
+  const held = acquireBenchLock(b.opts.publishLockDir, {
+    command: "other build",
+  });
+  try {
+    await assertRejects(
+      () =>
+        harnessImagesBuild("claude-code", b.opts, docker, ccFetch({ calls })),
+      BenchLockHeldError,
+    );
+  } finally {
+    await held();
+  }
+  assertEquals(calls, [], "no registry fetch");
+  assertEquals(docker.builds, [], "no docker build");
+});

@@ -80,6 +80,8 @@ export interface DockerCli {
   listOwned(owner: string): Promise<string[]>;
   inspectImage(ref: string): Promise<unknown | null>;
   build(args: string[]): Promise<number>;
+  /** docker rmi of a tag: removes the tag (the image too when it was the last one). */
+  untag(ref: string): Promise<void>;
   /**
    * A file the image ships, read without starting it (docker create, then
    * docker cp from the stopped container); null when it cannot be read.
@@ -373,6 +375,9 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
       return r.code === 0
         ? (JSON.parse(r.stdout) as unknown[])[0] ?? null
         : null;
+    },
+    untag: async (ref) => {
+      await out(["rmi", ref]);
     },
     readImageFile: async (image, path, owner) => {
       const args = imageReadCreateArgs(image, owner);
