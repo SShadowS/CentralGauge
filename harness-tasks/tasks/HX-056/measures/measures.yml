@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "86580/QueuedEntryCarriesNumber": 1
+    "86580/NumbersIncreaseInQueueOrder": 1
+    "86580/FailedQueueNumberNotReissued": 1
+    "86580/FailedQueueKeepsNothingOfCaller": 1
+    "86580/TwoFailuresThenSuccess": 1
+    "86580/CheckoutQueuesNumberedEntry": 1
+    "86580/PayloadProcedureUnchanged": 1
+    "86580/CorrelationFieldAsSpecified": 1
+    "86580/DispatchKeepsNumber": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
