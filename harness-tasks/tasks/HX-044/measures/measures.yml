@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "86340/HolidayEnteredHereApplies": 1
+    "86340/HolidayEnteredInSisterApplies": 1
+    "86340/HolidaySharedWithSister": 1
+    "86340/SisterNonWorkingDayDoesNotApply": 1
+    "86340/OwnNonWorkingDayStillApplies": 1
+    "86340/RemovedInSisterNoLongerApplies": 1
+    "86340/WorkingDaysBetweenSkipsGroupHoliday": 1
+    "86340/NextWorkingDaySkipsGroupHoliday": 1
+    "86340/LeaseInvoiceDateSkipsGroupHoliday": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
