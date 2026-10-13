@@ -1,0 +1,26 @@
+v: 1
+partial_credit:
+  weights:
+    "86460/DaysToPlannedServiceAhead": 1
+    "86460/NoPlanReturnsFalse": 1
+    "86460/OverdueServiceNegative": 1
+    "86460/DueSoonOnWindowBoundary": 1
+    "86460/NotDueSoonOutsideWindow": 1
+    "86460/DueSoonWithoutPlanFalse": 1
+    "86460/DueSoonWithoutServiceDateFalse": 1
+    "86460/OverdueIsDueSoon": 1
+    "86460/DueOnPlannedDate": 1
+    "86460/DueAfterPlannedDate": 1
+    "86460/NotDueBeforePlannedDate": 1
+    "86460/NoPlanNotDue": 1
+    "86460/DueByKmThroughStrategy": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70111, procedure: DaysToPlannedService, signature: "(VehicleNo: Code[20]; AtDate: Date; var Days: Integer): Boolean", file: Fleet/src/ServicePlanMgt.Codeunit.al, perturb: "Days := 0; exit(false);" }
+  tests:
+    - { codeunit: 86460, procedures: [DueOnPlannedDate, DueAfterPlannedDate] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
