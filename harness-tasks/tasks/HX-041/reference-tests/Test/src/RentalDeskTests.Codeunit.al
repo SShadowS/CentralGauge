@@ -69,6 +69,7 @@ codeunit 80083 "CGR Rental Desk Tests"
     [Test]
     procedure SwapOntoCheckedOutVehicleIsRefused()
     var
+        Vehicle: Record "CGR Vehicle";
         Contract: Record "CGR Rental Contract";
         Runner: Codeunit "CGR Rental Desk Runner";
         ContractNo: Code[20];
@@ -87,8 +88,11 @@ codeunit 80083 "CGR Rental Desk Tests"
         Assert.AreEqual(StrSubstNo(NotAvailableTxt, 'HX041-V06'), GetLastErrorText(), 'Refusal text');
         Contract.Get(ContractNo);
         Assert.AreEqual('HX041-V05', Contract."Vehicle No.", 'The contract keeps its vehicle');
+        Assert.AreEqual(1000, Contract."Start Km", 'The contract keeps its start km');
         Contract.Get(OtherContractNo);
         Assert.AreEqual('HX041-V06', Contract."Vehicle No.", 'The other contract keeps its vehicle');
+        Vehicle.Get('HX041-V05');
+        Assert.IsTrue(Vehicle."Checked Out", 'The old vehicle stays checked out');
     end;
 
     [Test]
@@ -171,6 +175,7 @@ codeunit 80083 "CGR Rental Desk Tests"
     [Test]
     procedure ReturnBelowSwappedStartKmIsRefused()
     var
+        Vehicle: Record "CGR Vehicle";
         Contract: Record "CGR Rental Contract";
         RentalMgt: Codeunit "CGR Rental Mgt";
         Runner: Codeunit "CGR Rental Desk Runner";
@@ -191,6 +196,9 @@ codeunit 80083 "CGR Rental Desk Tests"
         Contract.Get(ContractNo);
         Assert.AreEqual(Contract.Status::"Checked Out", Contract.Status, 'The contract stays checked out');
         Assert.AreEqual(0, Contract."Return Km", 'No return km is stored');
+        Vehicle.Get('HX041-V12');
+        Assert.IsTrue(Vehicle."Checked Out", 'The vehicle stays checked out');
+        Assert.AreEqual(2000, Vehicle.Mileage, 'The vehicle keeps its mileage');
     end;
 
     [Test]
@@ -213,6 +221,71 @@ codeunit 80083 "CGR Rental Desk Tests"
         Assert.AreEqual(StrSubstNo(WrongStatusTxt, ContractNo, Enum::"CGR Rental Status"::"Checked Out"), GetLastErrorText(), 'Refusal text');
         Contract.Get(ContractNo);
         Assert.AreEqual(Contract.Status::Open, Contract.Status, 'The contract stays open');
+    end;
+
+    [Test]
+    procedure ReturnOfReturnedContractIsRefused()
+    var
+        Vehicle: Record "CGR Vehicle";
+        Contract: Record "CGR Rental Contract";
+        DamageEntry: Record "CGR Damage Entry";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Runner: Codeunit "CGR Rental Desk Runner";
+        ContractNo: Code[20];
+        Ok: Boolean;
+    begin
+        SetUpDesk();
+        ContractNo := CheckedOutContract('HX041-V16', 1000);
+        RentalMgt.Return(ContractNo, 1200, '');
+        Commit();
+
+        Runner.SetReturn(ContractNo, 1300, 'Scratch on the door');
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'A contract that is already returned cannot be returned again');
+        Assert.AreEqual(StrSubstNo(WrongStatusTxt, ContractNo, Enum::"CGR Rental Status"::"Checked Out"), GetLastErrorText(), 'Refusal text');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'The contract stays returned');
+        Assert.AreEqual(1200, Contract."Return Km", 'The first return km is kept');
+        Assert.AreEqual('', Contract."Damage Description", 'No damage description is stored');
+        Vehicle.Get('HX041-V16');
+        Assert.AreEqual(1200, Vehicle.Mileage, 'The vehicle keeps the first return mileage');
+        Assert.IsFalse(Vehicle.Blocked, 'The vehicle is not blocked');
+        Assert.AreEqual(0, Vehicle."Open Damages", 'No open damage');
+        DamageEntry.SetRange("Vehicle No.", 'HX041-V16');
+        Assert.AreEqual(0, DamageEntry.Count(), 'No damage entry is registered');
+    end;
+
+    [Test]
+    procedure SwapOfReturnedContractIsRefused()
+    var
+        OldVehicle: Record "CGR Vehicle";
+        NewVehicle: Record "CGR Vehicle";
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Runner: Codeunit "CGR Rental Desk Runner";
+        ContractNo: Code[20];
+        Ok: Boolean;
+    begin
+        SetUpDesk();
+        ContractNo := CheckedOutContract('HX041-V17', 1000);
+        RentalMgt.Return(ContractNo, 1100, '');
+        Lib.CreateVehicle('HX041-V18', 1500, Enum::"CGR Maintenance Strategy"::Default);
+        Commit();
+
+        Runner.SetSwap(ContractNo, 'HX041-V18');
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'A returned contract cannot swap vehicles');
+        Assert.AreEqual(StrSubstNo(WrongStatusTxt, ContractNo, Enum::"CGR Rental Status"::"Checked Out"), GetLastErrorText(), 'Refusal text');
+        Contract.Get(ContractNo);
+        Assert.AreEqual('HX041-V17', Contract."Vehicle No.", 'The contract keeps its vehicle');
+        Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'The contract stays returned');
+        Assert.AreEqual(1000, Contract."Start Km", 'The contract keeps its start km');
+        OldVehicle.Get('HX041-V17');
+        Assert.IsFalse(OldVehicle."Checked Out", 'The returned vehicle stays released');
+        NewVehicle.Get('HX041-V18');
+        Assert.IsFalse(NewVehicle."Checked Out", 'The other vehicle is not checked out');
     end;
 
     [Test]
