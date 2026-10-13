@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "86100/WritingTransportDelivers": 1
+    "86100/FailedSendKeepsNoReceipt": 1
+    "86100/UndeliveredSendKeepsNoReceipt": 1
+    "86100/PendingDispatchMixedTransports": 1
+    "86100/WritingTransportFailsAtMaxAttempts": 1
+    "86100/TransportGetsTheDispatchedEntry": 1
+    "86100/NonWritingTransportUnchanged": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
