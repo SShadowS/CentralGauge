@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "86640/BatchRepairsAndReleases": 1
+    "86640/VehiclesHeldDuringBatch": 1
+    "86640/FailedBatchReleasesHold": 1
+    "86640/RefusedRepairKeepsNothingAndReleases": 1
+    "86640/NextBatchAfterFailure": 1
+    "86640/OtherVehiclesAsToday": 1
+    "86640/EmptyBatch": 1
+    "86640/AlreadyRepairedEntryInBatch": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
