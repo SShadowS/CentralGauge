@@ -14,6 +14,6 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/end-of-month: { partial_credit: 1 }
+  naive/end-of-month: { partial_credit: 0.75 }
   naive/first-line-only: { partial_credit: 0.25 }
   naive/start-day-rebuild: { partial_credit: 0 }
