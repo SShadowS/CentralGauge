@@ -196,6 +196,9 @@ export async function captureStream(
   } finally {
     signal?.removeEventListener("abort", onAbort);
     try {
+      reader.releaseLock();
+    } catch { /* a pending read after cancel; never mask the original error */ }
+    try {
       file.close();
     } catch { /* already closed by the deadline */ }
   }
