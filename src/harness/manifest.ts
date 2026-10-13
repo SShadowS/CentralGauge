@@ -32,6 +32,20 @@ const Server = z.strictObject({
   version: z.string().min(1),
   tool_schema_hash: z.string().min(1),
 });
+/** M10-10: an al-lsp-for-agents release tag; the image label and install-lsp.ps1 use the same. */
+export const LSP_TAG = /^v\d+\.\d+\.\d+$/;
+/** `<asset>.zip sha256:<64 hex>`, as labelled on the image. */
+export const LSP_ASSET_LABEL =
+  /^[A-Za-z0-9][A-Za-z0-9._-]*\.zip sha256:[0-9a-f]{64}$/;
+export const LSP_MODES: readonly string[] = ["embedded", "symbols"];
+/** The LSP wrapper release an image was built from (M10-10): all three or none. */
+const LspReleaseShape = {
+  release: z.string().regex(LSP_TAG),
+  asset: z.string().regex(LSP_ASSET_LABEL),
+  dependency_source: z.string().refine((s) => LSP_MODES.includes(s)),
+};
+/** An LSP entry: an image built since M10-10 adds the release; older ones have none. */
+const LspServer = z.union([Server.extend(LspReleaseShape), Server]);
 
 export const ResolvedManifestSchema = z.strictObject({
   v: z.literal(1),
@@ -55,7 +69,7 @@ export const ResolvedManifestSchema = z.strictObject({
   hooks: PathComponent.nullable(),
   plugins: z.array(PathComponent),
   mcp: z.array(Server),
-  lsp: z.array(Server),
+  lsp: z.array(LspServer),
   toolchain: z.array(z.string()),
   image: z.strictObject({
     digest: z.string().min(1),
@@ -65,6 +79,14 @@ export const ResolvedManifestSchema = z.strictObject({
      * (never null), so manifests resolved before it keep their hashes.
      */
     revision: ImageRevisionSchema.optional(),
+    /**
+     * What the image has installed, whether or not the arm enables it (M10-10):
+     * the LSP release on images with the release labels. Absent otherwise, so
+     * older manifests keep their hashes.
+     */
+    installed: z.strictObject({
+      lsp: z.record(z.string(), z.strictObject(LspReleaseShape)),
+    }).optional(),
   }),
   backend_version: z.string().min(1),
   /** Provider route per model slot; every slot in `models` has one. */
@@ -79,11 +101,31 @@ export const ResolvedManifestSchema = z.strictObject({
 );
 export type ResolvedManifest = z.output<typeof ResolvedManifestSchema>;
 
+export interface InstalledLsp {
+  release: string;
+  asset: string;
+  dependency_source: string;
+}
+
 export interface RuntimeFacts {
   native_settings: Record<string, unknown>;
-  image: { digest: string; base_digest: string; revision?: string };
+  image: {
+    digest: string;
+    base_digest: string;
+    revision?: string;
+    installed?: { lsp: Record<string, InstalledLsp> };
+  };
   backend_version: string;
-  servers: Record<string, { version: string; tool_schema_hash: string }>;
+  servers: Record<
+    string,
+    {
+      version: string;
+      tool_schema_hash: string;
+      release?: string;
+      asset?: string;
+      dependency_source?: string;
+    }
+  >;
   provider_routes: Record<string, string>;
 }
 

@@ -543,3 +543,66 @@ Deno.test("resolveManifest: the image revision from the runtime facts is recorde
     "image",
   );
 });
+
+Deno.test("ResolvedManifestSchema (M10-10 r2): LSP release fields are strict, all three or none, on LSP entries only; image.installed holds the same strict triple", () => {
+  const rel = {
+    release: "v1.18.8",
+    asset: `al-lsp-wrapper-windows-x64.zip sha256:${"a".repeat(64)}`,
+    dependency_source: "embedded",
+  };
+  const lsp = { name: "al", version: "al-lsp@2", tool_schema_hash: "h1" };
+  const ok = (m: unknown) => ResolvedManifestSchema.safeParse(m).success;
+  const withLsp = (e: Record<string, unknown>) => ({ ...GOLDEN, lsp: [e] });
+  const withInstalled = (al: unknown) => ({
+    ...GOLDEN,
+    image: { ...GOLDEN.image, installed: { lsp: { al } } },
+  });
+  assertEquals(ok(withLsp(lsp)), true, "pre-M10-10 LSP entry");
+  assertEquals(ok(withLsp({ ...lsp, ...rel })), true, "full triple");
+  assertEquals(
+    ok(withLsp({ ...lsp, ...rel, dependency_source: "symbols" })),
+    true,
+    "symbols",
+  );
+  assertEquals(ok(withInstalled(rel)), true, "installed triple");
+  const bad: [string, Record<string, unknown>][] = [
+    ["no v", { release: "1.18.8" }],
+    ["short tag", { release: "v1.18" }],
+    ["suffix", { release: "v1.18.8-rc1" }],
+    ["word", { release: "latest" }],
+    ["bare asset", { asset: "al-lsp-wrapper-windows-x64.zip" }],
+    ["no name", { asset: `sha256:${"a".repeat(64)}` }],
+    ["upper hex", { asset: `x.zip sha256:${"A".repeat(64)}` }],
+    ["short hex", { asset: `x.zip sha256:${"a".repeat(63)}` }],
+    ["sha512", { asset: `x.zip sha512:${"a".repeat(128)}` }],
+    ["not zip", { asset: `x.exe sha256:${"a".repeat(64)}` }],
+    ["empty mode", { dependency_source: "" }],
+    ["odd mode", { dependency_source: "other" }],
+    ["case mode", { dependency_source: "Embedded" }],
+  ];
+  for (const [name, over] of bad) {
+    assertEquals(ok(withLsp({ ...lsp, ...rel, ...over })), false, name);
+    assertEquals(ok(withInstalled({ ...rel, ...over })), false, name);
+  }
+  for (const k of Object.keys(rel)) {
+    const partial: Record<string, unknown> = { ...lsp, ...rel };
+    delete partial[k];
+    assertEquals(ok(withLsp(partial)), false, `without ${k}`);
+    const inst: Record<string, unknown> = { ...rel };
+    delete inst[k];
+    assertEquals(ok(withInstalled(inst)), false, `installed without ${k}`);
+  }
+  // LSP metadata never rides on an MCP entry.
+  const mcp = GOLDEN.mcp[0]!;
+  assertEquals(ok({ ...GOLDEN, mcp: [{ ...mcp, ...rel }] }), false, "mcp");
+  assertEquals(
+    ok({ ...GOLDEN, mcp: [{ ...mcp, release: rel.release }] }),
+    false,
+    "mcp release",
+  );
+  assertEquals(
+    ok(withInstalled({ ...rel, version: "al-lsp@2" })),
+    false,
+    "installed extra key",
+  );
+});

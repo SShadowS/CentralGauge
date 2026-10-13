@@ -15,23 +15,36 @@ import {
 import { hashJson } from "../../../src/harness/hash.ts";
 import {
   AL_LSP_DEF,
+  AL_LSP_RESOLVED,
   AL_LSP_SHIPPED,
   AL_TOOLS_SHIPPED,
   hasBaseLayers,
+  type ImageFacts,
   imageFacts,
   imageTag,
+  type LspFact,
   lspLabel,
+  lspReleaseArgs,
   mcpDefinitions,
   mcpLabel,
+  resolveLspRelease,
   runtimeFacts,
   serverDefinitions,
 } from "../../../src/harness/images.ts";
+import { resolveManifest } from "../../../src/harness/manifest.ts";
 import {
   imageReadCreateArgs,
   OWNER_LABEL,
   SANDBOX_PREFIX,
 } from "../../../src/harness/sandbox.ts";
-import { FakeDocker } from "./fake-docker.ts";
+import {
+  FakeDocker,
+  fakeFetch,
+  LSP_REL,
+  lspLatestBody,
+  lspReleaseLabels,
+  lspResolvedJson,
+} from "./fake-docker.ts";
 
 const ID = `sha256:${"a".repeat(64)}`;
 const BASE = `sha256:${"b".repeat(64)}`;
@@ -570,31 +583,13 @@ Deno.test("al-lsp.json: pins, lineage and diagnostics policy are complete; the s
   );
   const H256 = /^[0-9a-f]{64}$/;
   assertMatch(d.version, /^al-lsp@\d+$/);
+  // M10-10 (decisions/2026-10-13-lsp-track-latest.md): no wrapper pins; the release is
+  // resolved at build and verified against the API digest (see the M10-10 tests below).
+  assertEquals(d.pins.wrapper, undefined);
   assertEquals(
-    d.pins.wrapper.map((s: { release: string }) => s.release),
-    ["v1.18.3", "v1.18.2"],
+    [d.source.repo, d.source.asset],
+    ["SShadowS/al-lsp-for-agents", "al-lsp-wrapper-windows-x64.zip"],
   );
-  assertEquals(
-    d.pins.wrapper.map((s: { files: object }) => Object.keys(s.files)),
-    [["al-lsp-wrapper.exe"], ["al-call-hierarchy.exe"]],
-  );
-  for (
-    const s of d.pins.wrapper as {
-      release: string;
-      url: string;
-      algorithm: string;
-      hash: string;
-      files: Record<string, string>;
-    }[]
-  ) {
-    assertEquals(
-      s.url,
-      `https://github.com/SShadowS/al-lsp-for-agents/releases/download/${s.release}/al-lsp-wrapper-windows-x64.zip`,
-    );
-    assertEquals(s.algorithm, "SHA256");
-    assertMatch(s.hash, H256);
-    for (const h of Object.values(s.files)) assertMatch(h, H256);
-  }
   for (const k of ["al_extension", "dotnet"]) {
     const p = d.pins[k];
     assertMatch(p.url, /^https:\/\//);
@@ -654,29 +649,7 @@ Deno.test("al-lsp.json: the authorized pin values are exact (S1 pins.md, FINAL g
   const d = JSON.parse(
     await Deno.readTextFile("harness/images/claude-code/lsp/al-lsp.json"),
   );
-  const [w3, w2] = d.pins.wrapper;
-  assertEquals(
-    w3.hash,
-    "92859e899990e24b7b7ab7360280260ec3e00bde9321c46a8a7e9cf97d00df98",
-  );
-  assertEquals(
-    w3.files,
-    {
-      "al-lsp-wrapper.exe":
-        "d5c529bb116fd0ba7f72a0fa9b4f08ff575ae2a3ac6aaf2c33e290f9165fe210",
-    },
-  );
-  assertEquals(
-    w2.hash,
-    "85a1c77796ee5738fe02939398bc48473cbb411a3c2c7e76150dcc40fb6ef02e",
-  );
-  assertEquals(
-    w2.files,
-    {
-      "al-call-hierarchy.exe":
-        "e85e25bcb9633635a22d36bf28eb1a234bc2ef2f43cac8b23110933d517b4563",
-    },
-  );
+  // M10-10: the v1.18.3 / v1.18.2 wrapper pins are gone by design (latest release, API digest).
   assertEquals(
     [d.pins.al_extension.algorithm, d.pins.al_extension.hash],
     [
@@ -707,10 +680,16 @@ Deno.test("install-lsp.ps1 and Dockerfile: every build-time safety check is pres
       // download hash check
       "-Algorithm $pin.algorithm).Hash.ToLowerInvariant()",
       "if ($got -ne $pin.hash) { throw ('hash mismatch for ' + $pin.url",
-      // wrapper archive shape and per-exe hash check
+      // wrapper archive shape; M10-10: the per-exe hand pins became the release zip's
+      // API digest (strict args, then the download hash check above)
       "if ($found.Count -ne 1) { throw (",
-      'if (Test-Path -LiteralPath "$plugin\\bin\\$($p.Name)") { throw (',
-      "if ($h -ne $p.Value) { throw ('hash mismatch for ' + $p.Name + ' (' + $src.release",
+      'if (Test-Path -LiteralPath "$bin\\$name") { throw (',
+      "if ($release -cnotmatch '^v[0-9]+\\.[0-9]+\\.[0-9]+\\z') { throw (",
+      "if ($sha -cnotmatch '^[0-9a-f]{64}\\z') { throw (",
+      "if ($url -cne $want) { throw (",
+      "Get-Pinned @{ url = $Url; algorithm = 'SHA256'; hash = $Sha256 }",
+      "Move-Item -LiteralPath $part -Destination $out",
+      "if (-not $copy.Wait($left)) { throw (",
       // exact exe set
       "if ($exes -ne 'al-call-hierarchy.exe,al-lsp-wrapper.exe') { throw (",
       // probe hash check, exact names
@@ -749,13 +728,11 @@ Deno.test("al-lsp.json: an exact manifest of every installed .exe under C:\\cg-l
     await Deno.readTextFile("harness/images/claude-code/lsp/al-lsp.json"),
   );
   // Source: lane-ops' read of the gated -M10-02f image (H:\cg-coord\m10\cg-lsp-exe-manifest.txt), lowercase.
+  // M10-10: the two wrapper exes are no longer pinned here; install-lsp.ps1 adds their
+  // hashes from the digest-verified release zip before the manifest check.
   assertEquals(d.exes, {
     "al\\bin\\microsoft.dynamics.nav.editorservices.host.exe":
       "465268879ba69d0d885939d16d5a3e47ac97b2e8aa68d6b27a5c573545d59ec9",
-    "al-language-server-go-windows\\bin\\al-call-hierarchy.exe":
-      "e85e25bcb9633635a22d36bf28eb1a234bc2ef2f43cac8b23110933d517b4563",
-    "al-language-server-go-windows\\bin\\al-lsp-wrapper.exe":
-      "d5c529bb116fd0ba7f72a0fa9b4f08ff575ae2a3ac6aaf2c33e290f9165fe210",
     "dotnet\\dotnet.exe":
       "21a46f1e5235cf4e844b9de5429f0e198b9c97a41f0503a66442f1d639ca3ee6",
     "dotnet\\shared\\microsoft.netcore.app\\10.0.12\\createdump.exe":
@@ -769,7 +746,7 @@ Deno.test("al-lsp.json: an exact manifest of every installed .exe under C:\\cg-l
       "Assert-ExeManifest 'C:\\cg-lsp' $def.exes",
       'Assert-ZipSafe "$tmp\\al.zip"',
       'Assert-ZipSafe "$tmp\\dotnet.zip"',
-      'Assert-ZipSafe "$tmp\\wrapper$n.zip"',
+      "Assert-ZipSafe $zip",
     ]
   ) assert(code.some((l) => l.includes(s)), `install-lsp.ps1 lacks: ${s}`);
   const at = (s: string) => code.findIndex((l) => l.includes(s));
@@ -789,8 +766,7 @@ Deno.test("al-lsp.json: an exact manifest of every installed .exe under C:\\cg-l
       at('Expand-Archive -LiteralPath "$tmp\\al.zip"'),
   );
   assert(
-    at('Assert-ZipSafe "$tmp\\wrapper$n.zip"') <
-      at('Expand-Archive -LiteralPath "$tmp\\wrapper$n.zip"'),
+    at("Assert-ZipSafe $zip") < at("Expand-Archive -LiteralPath $zip"),
   );
   assert(
     at("Assert-ExeManifest 'C:\\cg-lsp' $def.exes") >
@@ -811,8 +787,10 @@ Deno.test("imageFacts: an LSP label needs the shipped al-lsp.json to hash to it;
   const [k, v] = (await lspLabel("."))!;
   const shipped = await Deno.readTextFile(AL_LSP_DEF);
   const d = new FakeDocker();
-  d.addImage("ok", ID, { ...LABELS, [k]: v });
+  // M10-10 fixture: the current recipe needs the release labels and resolved file.
+  d.addImage("ok", ID, { ...LABELS, [k]: v, ...lspReleaseLabels() });
   d.shipFile(ID, AL_LSP_SHIPPED, shipped);
+  d.shipFile(ID, AL_LSP_RESOLVED, lspResolvedJson());
   assertEquals(
     Object.keys((await imageFacts(d, "ok", "HOST1")).lsp ?? {}),
     ["al"],
@@ -997,4 +975,435 @@ Deno.test("imageFacts (M10-05): an older MCP label with its matching shipped def
   assertEquals((await imageFacts(d, "older", "HOST1")).mcp, {
     "al-tools": { version: older.version, tool_schema_hash: olderHash },
   });
+});
+
+// M10-10 (decisions/2026-10-13-lsp-track-latest.md): the wrapper tracks the newest release.
+Deno.test("resolveLspRelease (M10-10): one unauthenticated HTTPS call for the newest release; tag, exact asset URL and API digest come back", async () => {
+  const calls: { url: string; init?: RequestInit | undefined }[] = [];
+  const r = await resolveLspRelease(
+    ".",
+    fakeFetch(lspLatestBody(), 200, calls),
+  );
+  assertEquals(r, {
+    tag: LSP_REL.tag,
+    asset: LSP_REL.asset,
+    url: LSP_REL.url,
+    sha256: LSP_REL.sha256,
+    dependency_source: "embedded",
+  });
+  assertEquals(calls.map((c) => c.url), [
+    "https://api.github.com/repos/SShadowS/al-lsp-for-agents/releases/latest",
+  ]);
+  assertEquals(new Headers(calls[0]!.init?.headers).get("authorization"), null);
+  assert(calls[0]!.init?.signal, "the API call has a deadline");
+});
+
+Deno.test("resolveLspRelease (M10-10): fails closed on a network error, non-200, odd tag, missing or duplicate asset, missing or non-sha256 digest, foreign URL", async () => {
+  const withAsset = (over: Record<string, unknown>) => {
+    const b = lspLatestBody();
+    b.assets[1] = { ...b.assets[1]!, ...over };
+    return b;
+  };
+  const b = lspLatestBody();
+  const cases: [string, typeof fetch, string][] = [
+    [
+      "network",
+      (() => Promise.reject(new TypeError("dns failure"))) as typeof fetch,
+      "dns failure",
+    ],
+    ["404", fakeFetch({ message: "Not Found" }, 404), "HTTP 404"],
+    ["403", fakeFetch({ message: "rate limited" }, 403), "HTTP 403"],
+    ["201", fakeFetch(lspLatestBody(), 201), "HTTP 201"],
+    ["not json", fakeFetch("<html>", 200), "cannot resolve"],
+    ["no tag", fakeFetch({ ...b, tag_name: undefined }), "tag_name"],
+    ["short tag", fakeFetch({ ...b, tag_name: "v1.18" }), "tag_name"],
+    ["no v", fakeFetch({ ...b, tag_name: "1.18.8" }), "tag_name"],
+    ["suffix", fakeFetch({ ...b, tag_name: "v1.18.8-rc1" }), "tag_name"],
+    ["newline", fakeFetch({ ...b, tag_name: "v1.18.8\n" }), "tag_name"],
+    ["prerelease", fakeFetch({ ...b, prerelease: true }), "prerelease"],
+    ["draft", fakeFetch({ ...b, draft: true }), "draft"],
+    [
+      "no asset",
+      fakeFetch({ ...b, assets: b.assets.slice(0, 1) }),
+      "0 assets named al-lsp-wrapper-windows-x64.zip",
+    ],
+    [
+      "two assets",
+      fakeFetch({ ...b, assets: [...b.assets, b.assets[1]] }),
+      "2 assets named",
+    ],
+    ["no assets", fakeFetch({ ...b, assets: undefined }), "0 assets named"],
+    ["no digest", fakeFetch(withAsset({ digest: undefined })), "digest"],
+    [
+      "sha512",
+      fakeFetch(withAsset({ digest: `sha512:${"a".repeat(128)}` })),
+      "digest",
+    ],
+    [
+      "upper",
+      fakeFetch(
+        withAsset({ digest: `sha256:${LSP_REL.sha256.toUpperCase()}` }),
+      ),
+      "digest",
+    ],
+    [
+      "short",
+      fakeFetch(withAsset({ digest: `sha256:${"a".repeat(63)}` })),
+      "digest",
+    ],
+    [
+      "foreign url",
+      fakeFetch(withAsset({
+        browser_download_url: LSP_REL.url.replace("SShadowS", "evil"),
+      })),
+      "browser_download_url",
+    ],
+  ];
+  for (const [name, f, msg] of cases) {
+    const err = await assertRejects(
+      () => resolveLspRelease(".", f),
+      ConfigurationError,
+      undefined,
+      name,
+    );
+    assertStringIncludes(err.message, msg, name);
+  }
+});
+
+Deno.test("lspReleaseArgs (M10-10): the build args and labels carry the resolved tag, asset URL, digest and dependency-source mode", async () => {
+  const r = await resolveLspRelease(".", fakeFetch());
+  assertEquals(lspReleaseArgs(r), [
+    "--build-arg",
+    `LSP_RELEASE=${LSP_REL.tag}`,
+    "--build-arg",
+    `LSP_WRAPPER_URL=${LSP_REL.url}`,
+    "--build-arg",
+    `LSP_WRAPPER_SHA256=${LSP_REL.sha256}`,
+    "--label",
+    `centralgauge.lsp.al.release=${LSP_REL.tag}`,
+    "--label",
+    `centralgauge.lsp.al.asset=${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+    "--label",
+    "centralgauge.lsp.al.dependency_source=embedded",
+  ]);
+});
+
+Deno.test("al-lsp.json (M10-10): the wrapper and al-call-hierarchy come from one latest-release source, no hand pin; embedded mode leaves AL_SEM_DEPENDENCY_SOURCE unset", async () => {
+  const d = JSON.parse(await Deno.readTextFile(AL_LSP_DEF));
+  assertEquals(d.source, {
+    repo: "SShadowS/al-lsp-for-agents",
+    asset: "al-lsp-wrapper-windows-x64.zip",
+    exes: ["al-call-hierarchy.exe", "al-lsp-wrapper.exe"],
+    dependency_source: "embedded",
+  });
+  assertEquals(d.pins.wrapper, undefined);
+  assertEquals(
+    Object.keys(d.exes).filter((k) =>
+      k.startsWith("al-language-server-go-windows")
+    ),
+    [],
+  );
+  assertEquals(
+    Object.hasOwn(d.lsp_json.al.env, "AL_SEM_DEPENDENCY_SOURCE"),
+    false,
+  );
+  assert(
+    !/\d+\.\d+\.\d+/.test(d.plugin_json.description),
+    `plugin_json.description names a version: ${d.plugin_json.description}`,
+  );
+});
+
+Deno.test("claude-code image (M10-10): the Dockerfile passes the resolved release to install-lsp.ps1, which checks it before any download and records it", async () => {
+  const df = await Deno.readTextFile(
+    "harness/images/claude-code/Dockerfile.windows",
+  );
+  for (const a of ["LSP_RELEASE", "LSP_WRAPPER_URL", "LSP_WRAPPER_SHA256"]) {
+    assert(df.split(/\r?\n/).includes(`ARG ${a}`), `Dockerfile lacks ARG ${a}`);
+  }
+  const run = df.replace(/\\\r?\n\s*/g, "").split(/\r?\n/).find((l) =>
+    l.startsWith("RUN ") && l.includes("C:\\cg-lsp\\install-lsp.ps1")
+  )!;
+  assertStringIncludes(
+    run,
+    "install-lsp.ps1 -Release $env:LSP_RELEASE -Url $env:LSP_WRAPPER_URL -Sha256 $env:LSP_WRAPPER_SHA256;",
+  );
+  assert(df.indexOf("ARG LSP_RELEASE") < df.indexOf(run.slice(0, 20)));
+  const code = (await Deno.readTextFile(
+    "harness/images/claude-code/lsp/install-lsp.ps1",
+  )).split(/\r?\n/).filter((l) => !l.trimStart().startsWith("#"));
+  const at = (s: string) => code.findIndex((l) => l.includes(s));
+  for (
+    const s of [
+      "param([switch]$LibOnly, [string]$Release, [string]$Url, [string]$Sha256)",
+      "Assert-ReleaseArgs $src $Release $Url $Sha256",
+      "Get-Pinned @{ url = $Url; algorithm = 'SHA256'; hash = $Sha256 } \"$tmp\\wrapper.zip\"",
+      'Install-WrapperZip "$tmp\\wrapper.zip" $src.exes "$plugin\\bin"',
+      "'C:\\cg-lsp\\al-lsp-resolved.json'",
+      "Set-DependencySource $def",
+    ]
+  ) assert(at(s) >= 0, `install-lsp.ps1 lacks: ${s}`);
+  assert(at("Assert-ReleaseArgs $src") < at("Get-Pinned @{ url = $Url"));
+  assert(at("Get-Pinned @{ url = $Url") < at('Install-WrapperZip "$tmp'));
+  assert(
+    at("Set-DependencySource $def") < at('WriteAllText("$plugin\\.lsp.json"'),
+  );
+  assert(
+    at("Assert-ExeManifest 'C:\\cg-lsp' $def.exes") >
+      at("'C:\\cg-lsp\\al-lsp-resolved.json'"),
+  );
+});
+
+Deno.test("imageFacts (M10-10): the release labels are LSP facts; the shipped al-lsp-resolved.json must agree with them and with the recipe", async () => {
+  const [k, v] = (await lspLabel("."))!;
+  const [version, hash] = v.split(" ") as [string, string];
+  const shipped = await Deno.readTextFile(AL_LSP_DEF);
+  const d = new FakeDocker();
+  let n = 0;
+  const image = (labels: Record<string, string>, resolved: string | null) => {
+    n++;
+    const id = `sha256:${n.toString(16).padStart(64, "0")}`;
+    d.addImage(`img${n}`, id, { ...LABELS, [k]: v, ...labels });
+    d.shipFile(id, AL_LSP_SHIPPED, shipped);
+    if (resolved !== null) d.shipFile(id, AL_LSP_RESOLVED, resolved);
+    return `img${n}`;
+  };
+  const want = {
+    version,
+    tool_schema_hash: hash,
+    release: LSP_REL.tag,
+    asset: `${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+    dependency_source: "embedded",
+  };
+  const ok = image(lspReleaseLabels(), lspResolvedJson());
+  assertEquals((await imageFacts(d, ok, "HOST1")).lsp, { al: want });
+  assertEquals((await imageFacts(d, ok, null)).lsp, { al: want });
+  const rel = lspReleaseLabels();
+  const cases: [string, Record<string, string>, string | null, string][] = [
+    [
+      "release",
+      rel,
+      lspResolvedJson({ release: "v1.18.7" }),
+      "release v1.18.7 differs from its label v1.18.8",
+    ],
+    ["digest", rel, lspResolvedJson({ sha256: "e".repeat(64) }), "asset"],
+    [
+      "mode",
+      lspReleaseLabels("symbols"),
+      lspResolvedJson(),
+      "dependency_source",
+    ],
+    [
+      "recipe mode",
+      lspReleaseLabels("symbols"),
+      lspResolvedJson({ dependency_source: "symbols" }),
+      "recipe",
+    ],
+    [
+      "exes",
+      rel,
+      lspResolvedJson({ exes: { "al-lsp-wrapper.exe": "d".repeat(64) } }),
+      "exes",
+    ],
+    [
+      "exe hash",
+      rel,
+      lspResolvedJson({
+        exes: { "al-call-hierarchy.exe": "x", "al-lsp-wrapper.exe": "y" },
+      }),
+      "exes",
+    ],
+    ["no file", rel, null, "cannot read"],
+    ["not json", rel, "{", "cannot read"],
+    [
+      "no labels",
+      {},
+      lspResolvedJson(),
+      "lacks label centralgauge.lsp.al.release",
+    ],
+    [
+      "partial",
+      { "centralgauge.lsp.al.release": LSP_REL.tag },
+      lspResolvedJson(),
+      "together",
+    ],
+    [
+      "odd release label",
+      { ...rel, "centralgauge.lsp.al.release": "latest" },
+      lspResolvedJson(),
+      "centralgauge.lsp.al.release",
+    ],
+    [
+      "odd asset label",
+      { ...rel, "centralgauge.lsp.al.asset": LSP_REL.asset },
+      lspResolvedJson(),
+      "centralgauge.lsp.al.asset",
+    ],
+    [
+      "odd mode label",
+      { ...rel, "centralgauge.lsp.al.dependency_source": "fast" },
+      lspResolvedJson(),
+      "centralgauge.lsp.al.dependency_source",
+    ],
+    [
+      "unknown field",
+      { ...rel, "centralgauge.lsp.al.extra": "1" },
+      lspResolvedJson(),
+      "unknown LSP component",
+    ],
+  ];
+  for (const [name, labels, resolved, msg] of cases) {
+    const ref = image(labels, resolved);
+    const err = await assertRejects(
+      () => imageFacts(d, ref, "HOST1"),
+      ConfigurationError,
+      undefined,
+      name,
+    );
+    assertStringIncludes(err.message, msg, name);
+  }
+  // Release labels without the al label they describe.
+  d.addImage("orphan", `sha256:${"f".repeat(64)}`, { ...LABELS, ...rel });
+  await assertRejects(
+    () => imageFacts(d, "orphan", null),
+    ConfigurationError,
+    "together",
+  );
+});
+
+Deno.test("runtimeFacts (M10-10): the resolved release reaches the arm manifest's lsp server entry", async () => {
+  const cfg = HarnessConfigSchema.parse({
+    id: "cc-lsp",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "3",
+    models: { main: "anthropic/claude-sonnet-5" },
+    components: { lsp: ["al"] },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  const al = {
+    version: "al-lsp@2",
+    tool_schema_hash: "1".repeat(64),
+    release: LSP_REL.tag,
+    asset: `${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+    dependency_source: "embedded",
+  };
+  const f = runtimeFacts(
+    cfg,
+    {
+      digest: ID,
+      base_digest: BASE,
+      harness: "claude-code",
+      version: "2.1.282",
+      revision: "3",
+      lsp: { al },
+    },
+    claudeCodeAdapter,
+    catalog,
+    { al: { hash: "1".repeat(64), tools: [] } },
+  );
+  assertEquals(f.servers, { al });
+  const m = await resolveManifest("harness", cfg, f);
+  assertEquals(m.lsp, [{ name: "al", ...al }]);
+});
+
+Deno.test("resolveLspRelease (M10-10 r2): the API call refuses redirects; a 3xx or a redirect error fails closed", async () => {
+  const calls: { url: string; init?: RequestInit | undefined }[] = [];
+  await resolveLspRelease(".", fakeFetch(lspLatestBody(), 200, calls));
+  assertEquals(calls[0]!.init?.redirect, "error");
+  // A fetch that follows redirects unless told not to (as global fetch does):
+  // with redirect "error" it rejects, so another authority never supplies the digest.
+  const following =
+    ((_u: string | URL | Request, init?: RequestInit) =>
+      init?.redirect === "error"
+        ? Promise.reject(new TypeError("unexpected redirect"))
+        : Promise.resolve(
+          new Response(JSON.stringify(lspLatestBody()), { status: 200 }),
+        )) as typeof fetch;
+  const err = await assertRejects(
+    () => resolveLspRelease(".", following),
+    ConfigurationError,
+  );
+  assertStringIncludes(err.message, "unexpected redirect");
+  for (const s of [301, 302, 303, 307, 308]) {
+    const e = await assertRejects(
+      () => resolveLspRelease(".", fakeFetch(lspLatestBody(), s)),
+      ConfigurationError,
+    );
+    assertStringIncludes(e.message, `HTTP ${s}`);
+  }
+});
+
+Deno.test("runtimeFacts (M10-10 r2): every cell on a release-labelled image records the installed LSP release in image.installed, plain arms without enabling LSP; an unlabelled image records nothing new", async () => {
+  const al = {
+    version: "al-lsp@2",
+    tool_schema_hash: "1".repeat(64),
+    release: LSP_REL.tag,
+    asset: `${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+    dependency_source: "embedded",
+  };
+  const installed = {
+    lsp: {
+      al: {
+        release: al.release,
+        asset: al.asset,
+        dependency_source: al.dependency_source,
+      },
+    },
+  };
+  const cfg = (id: string, components: Record<string, unknown>) =>
+    HarnessConfigSchema.parse({
+      id,
+      harness: "claude-code",
+      harness_version: "2.1.282",
+      image_revision: "3",
+      models: { main: "anthropic/claude-sonnet-5" },
+      components,
+      limits: { timeout_min: 30, max_budget_usd: 5 },
+    });
+  const img = (lsp?: Record<string, LspFact>): ImageFacts => ({
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+    revision: "3",
+    ...(lsp ? { lsp } : {}),
+  });
+  const manifest = (c: ReturnType<typeof cfg>, i: ImageFacts) =>
+    resolveManifest(
+      "harness",
+      c,
+      runtimeFacts(c, i, claudeCodeAdapter, catalog, {
+        al: { hash: "1".repeat(64), tools: [] },
+      }),
+    );
+  // Plain arm: the installed build is recorded, LSP stays off.
+  const plain = await manifest(cfg("cc-plain", {}), img({ al }));
+  assertEquals(plain.lsp, []);
+  assertEquals(plain.image, {
+    digest: ID,
+    base_digest: BASE,
+    revision: "3",
+    installed,
+  });
+  // LSP arm: the enabled entry and the installed block both carry it.
+  const on = await manifest(cfg("cc-lsp", { lsp: ["al"] }), img({ al }));
+  assertEquals(on.lsp, [{ name: "al", ...al }]);
+  assertEquals(on.image.installed, installed);
+  // A pre-M10-10 LSP image and an image without LSP: no installed key.
+  const old = { version: al.version, tool_schema_hash: al.tool_schema_hash };
+  for (const lsp of [{ al: old }, undefined]) {
+    const m = await manifest(cfg("cc-plain", {}), img(lsp));
+    assertEquals(m.image, { digest: ID, base_digest: BASE, revision: "3" });
+  }
+});
+
+Deno.test("install-lsp.ps1 (M10-10 r2): the wrapper exes join the exe manifest (Add-Member) before Assert-ExeManifest checks it", async () => {
+  const code = (await Deno.readTextFile(
+    "harness/images/claude-code/lsp/install-lsp.ps1",
+  )).split(/\r?\n/).filter((l) => !l.trimStart().startsWith("#"));
+  const at = (s: string) => code.findIndex((l) => l.includes(s));
+  const add =
+    "Add-Member -InputObject $def.exes -NotePropertyName ('al-language-server-go-windows\\bin\\' + $name) -NotePropertyValue $wrapperExes[$name]";
+  assert(at(add) >= 0, `install-lsp.ps1 lacks: ${add}`);
+  assert(at(add) < at("Assert-ExeManifest 'C:\\cg-lsp' $def.exes"));
 });
