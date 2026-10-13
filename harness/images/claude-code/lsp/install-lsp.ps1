@@ -8,8 +8,21 @@ param([switch]$LibOnly)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# Saves the exact bytes on the wire: the pins hash the raw body, and Invoke-WebRequest
+# transport-decodes a Content-Encoding: gzip answer (the Marketplace sends one, M10-08a).
 function Get-Pinned($pin, [string]$out) {
-  Invoke-WebRequest -UseBasicParsing -Uri $pin.url -OutFile $out
+  Add-Type -AssemblyName System.Net.Http
+  $handler = New-Object System.Net.Http.HttpClientHandler
+  $handler.AutomaticDecompression = [Net.DecompressionMethods]::None
+  $client = New-Object System.Net.Http.HttpClient($handler)
+  try {
+    $r = $client.GetAsync($pin.url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    try {
+      [void]$r.EnsureSuccessStatusCode()
+      $f = [IO.File]::Create($out)
+      try { $r.Content.CopyToAsync($f).GetAwaiter().GetResult() } finally { $f.Close() }
+    } finally { $r.Dispose() }
+  } finally { $client.Dispose() }
   $got = (Get-FileHash -LiteralPath $out -Algorithm $pin.algorithm).Hash.ToLowerInvariant()
   if ($got -ne $pin.hash) { throw ('hash mismatch for ' + $pin.url + ': got ' + $got) }
 }
