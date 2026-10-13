@@ -4704,3 +4704,62 @@ Deno.test("inventoryProof (M10-08c run 002 item 5): an absent raw log is not liv
     "access denied",
   );
 });
+
+// Review 546e8337 P3-2: a host read failure of the raw log is not the image's
+// refusal: the arm's setup_failed carries its own stop reason.
+Deno.test("runCell (review 546e8337 P3-2): an inventory transport failure is stop_reason inventory_transport_failure, never component_inventory_refused", async () => {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const real = Deno.readTextFile;
+  let failed = 0;
+  const read = stub(
+    Deno,
+    "readTextFile",
+    (path: string | URL, o?: Deno.ReadFileOptions) =>
+      String(path).endsWith("raw.jsonl") && failed++ === 0
+        ? Promise.reject(new Deno.errors.PermissionDenied("access denied"))
+        : real(path, o),
+  );
+  let e;
+  try {
+    e = (await runCell(t.env, cell)).executions[0]!;
+  } finally {
+    read.restore();
+  }
+  assertEquals(failed > 0, true, "the raw log read failed");
+  assertEquals(e.termination, "setup_failed");
+  const side = await sideOf(t, e.id);
+  assertStringIncludes(side.setup_error, "inventory transport failed");
+  assertEquals(side.stop_reason, "inventory_transport_failure");
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+// Review 546e8337 P3-4: a process suspended past the stale window while its
+// sandbox ran may find the root reclaimed (and the execution recovered): it
+// publishes nothing and leaves the intent for the new holder.
+Deno.test("runExecution (review 546e8337 P3-4): a lock lost while the sandbox runs publishes nothing and leaves the intent", async () => {
+  const t = await makeEnv();
+  let lost = false;
+  t.env.namespaceLost = () => lost;
+  const inner = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    const r = await inner(call, io);
+    lost = true; // reclaimed by another process while the run was suspended
+    return r;
+  };
+  const cell = await cellFor(t);
+  await assertRejects(() => runCell(t.env, cell), ConfigurationError, "lock");
+  assertEquals(t.docker.runs.length, 1, "the sandbox ran");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assert(
+    !await exists(join(t.env.resultsRoot, "runs")) ||
+      [...Deno.readDirSync(join(t.env.resultsRoot, "runs"))].length === 0,
+    "no run directory published",
+  );
+  const intents = [
+    ...Deno.readDirSync(join(t.env.privateRoot, "intents")),
+  ].filter((e) => e.name.endsWith(".json"));
+  assertEquals(intents.length, 1, "the intent is the new holder's to recover");
+});

@@ -6227,7 +6227,17 @@ Deno.test("openHarnessEnv (M10-08c review 2): legacy bare-hostname sandboxes of 
     };
     const intent = join(t.env.privateRoot, "intents", "exec-legacy.json");
     await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
-    await Deno.writeTextFile(intent, "not json");
+    // Review 546e8337 P2-b (strict): only a finalized intent's legacy
+    // sandbox is removed automatically.
+    await Deno.writeTextFile(
+      intent,
+      JSON.stringify({
+        v: 2,
+        execution_id: "exec-legacy",
+        phase: "published",
+        results_root: t.env.resultsRoot,
+      }),
+    );
     return { t, d, docker, intent, lists };
   };
   const ok = await setup();
@@ -6321,6 +6331,9 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 1): the token it acquired is the
       d.docker = () => (reclaim(t.env.privateRoot), docker);
     }
     if (when === "removal") {
+      // Review 546e8337 P3-1: an owned sandbox, so the reclaim lands at
+      // removeConfirmed's per-removal hold (not a later step's).
+      docker.owned = ["cg-harness-dead-beef"];
       const list = docker.listOwned.bind(docker);
       docker.listOwned = (o) => (reclaim(t.env.privateRoot), list(o));
     }
@@ -6387,7 +6400,9 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 2): a running legacy sandbox of 
     "a live legacy sandbox is never removed",
   );
   assert(await exists(live.intent), "its intent is never recovered");
-  for (const o of [{ exited: true }, { published: true }]) {
+  // Review 546e8337 P2-b (strict): exited alone no longer proves death
+  // (refusal tested in the P2-b test); exited with a finalized intent does.
+  for (const o of [{ exited: true, published: true }, { published: true }]) {
     const dead = await setup(o);
     const h = await openHarnessEnv(envOpts(dead.t), dead.d);
     await h.close();
@@ -6412,9 +6427,16 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 4): this root's legacy custody d
     docker.listOwned = (owner) =>
       Promise.resolve(owner === "HOST1" ? [...docker.owned] : []);
     await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
+    // Review 546e8337 P2-b (strict): a removable (not running) legacy
+    // sandbox's intent is finalized; the running one's is not.
     await Deno.writeTextFile(
       join(t.env.privateRoot, "intents", "exec-legacy.json"),
-      "not json",
+      o.running ? "not json" : JSON.stringify({
+        v: 2,
+        execution_id: "exec-legacy",
+        phase: "published",
+        results_root: t.env.resultsRoot,
+      }),
     );
     const secrets = join(t.env.privateRoot, "secrets");
     const mine = join(secrets, "cg-harness-secrets-HOST1.legacy-0001");
@@ -6545,4 +6567,172 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 7): a second environment in the 
   } finally {
     await a.close();
   }
+});
+
+// Review 546e8337 P3-3: a concurrent build may remove a namespace dir first
+// (this build's own after its release, or a dead one both builds swept):
+// NotFound on that remove is ignored; any other remove error still throws.
+Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed concurrently is not an error; other remove errors are", async () => {
+  const setup = async () => {
+    const root = await Deno.realPath(await Deno.makeTempDir());
+    const docker = new FakeDocker();
+    await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+      recursive: true,
+    });
+    await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+    const [lk, lv] = (await lspLabel(root))!;
+    const baseId = `sha256:${"b".repeat(64)}`;
+    docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+    const id = `sha256:${"c".repeat(64)}`;
+    docker.buildResults.set("centralgauge/harness-claude-code:2.1.290", {
+      id,
+      labels: {
+        "centralgauge.harness": "claude-code",
+        "centralgauge.harness.version": "2.1.290",
+        "centralgauge.harness.base_digest": baseId,
+        [lk]: lv,
+      },
+      layers: ["l1", "l2"],
+    });
+    docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+    const builds = join(root, "results", "harness", "image-builds");
+    const dead = join(builds, `${Deno.hostname()}-build-dead0000`);
+    await Deno.mkdir(dead, { recursive: true });
+    return { root, docker, builds, dead };
+  };
+  const real = Deno.remove;
+  // Another build wins the remove of every namespace dir: gone, then ours.
+  const raced = await setup();
+  const removed: string[] = [];
+  const race = stub(
+    Deno,
+    "remove",
+    async (path: string | URL, o?: Deno.RemoveOptions) => {
+      if (String(path).startsWith(raced.builds)) {
+        removed.push(String(path));
+        await real(path, o);
+      }
+      return real(path, o);
+    },
+  );
+  try {
+    await harnessImagesBuild(
+      "claude-code",
+      { root: raced.root, version: "2.1.290" },
+      raced.docker,
+    );
+  } finally {
+    race.restore();
+  }
+  assert(removed.includes(raced.dead), "the dead namespace's remove raced");
+  assertEquals(removed.length, 2, "and this build's own namespace's");
+  assertEquals([...Deno.readDirSync(raced.builds)], []);
+  // Any other failure of that remove is not swallowed.
+  const denied = await setup();
+  const deny = stub(
+    Deno,
+    "remove",
+    (path: string | URL, o?: Deno.RemoveOptions) =>
+      String(path).startsWith(denied.builds)
+        ? Promise.reject(new Deno.errors.PermissionDenied("access denied"))
+        : real(path, o),
+  );
+  try {
+    await assertRejects(
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root: denied.root, version: "2.1.290" },
+          denied.docker,
+        ),
+      Deno.errors.PermissionDenied,
+    );
+  } finally {
+    deny.restore();
+  }
+});
+
+/** A bare-hostname (legacy) sandbox of this root's intent exec-legacy. */
+async function legacyRoot(o: { exited?: boolean; published?: boolean }) {
+  const legacy = "cg-harness-11111111-aaaaaaaa";
+  const t = await makeEnv();
+  const d = deps([]);
+  const docker = d.docker() as FakeDocker;
+  docker.owned = [legacy];
+  docker.containers.set(legacy, "exec-legacy");
+  if (o.exited) docker.exited.add(legacy);
+  docker.listOwned = (owner) =>
+    Promise.resolve(owner === "HOST1" ? [...docker.owned] : []);
+  const intent = join(t.env.privateRoot, "intents", "exec-legacy.json");
+  await Deno.mkdir(join(t.env.privateRoot, "intents"), { recursive: true });
+  // Unpublished: unreadable here (any phase but published counts the same).
+  await Deno.writeTextFile(
+    intent,
+    o.published
+      ? JSON.stringify({
+        v: 2,
+        execution_id: "exec-legacy",
+        phase: "published",
+        results_root: t.env.resultsRoot,
+      })
+      : "not json",
+  );
+  return { legacy, t, d, docker, intent };
+}
+
+// Review 546e8337 P2-a: the live-legacy refusal comes before ANY sweep: a
+// legacy runner sharing the root keeps its freeze scratch and temp records.
+Deno.test("openHarnessEnv (review 546e8337 P2-a): a live legacy sandbox refuses before any sweep; freeze scratch and temp records survive", async () => {
+  const { legacy, t, d, docker, intent } = await legacyRoot({});
+  const frozen = join(t.env.privateRoot, "freeze", "x");
+  await Deno.mkdir(frozen, { recursive: true });
+  const temp = join(t.env.resultsRoot, "campaigns", "c.json.tmp-0001");
+  await Deno.mkdir(join(t.env.resultsRoot, "campaigns"), { recursive: true });
+  await Deno.writeTextFile(temp, "{}");
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(err.message, "nothing removed");
+  assert(await exists(frozen), "the legacy runner's freeze scratch survives");
+  assert(await exists(temp), "its temp record survives");
+  assertEquals(docker.removed, []);
+  assert(await exists(intent));
+});
+
+// Review 546e8337 P2-b (strict): a legacy runner may still be scoring after
+// its container exited, so an exited legacy sandbox whose intent is not
+// published refuses too; only a finalized intent's is removed automatically.
+Deno.test("openHarnessEnv (review 546e8337 P2-b): an exited legacy sandbox with an unpublished intent refuses; nothing destroyed", async () => {
+  const { legacy, t, d, docker, intent } = await legacyRoot({ exited: true });
+  const secrets = join(
+    t.env.privateRoot,
+    "secrets",
+    "cg-harness-secrets-HOST1.legacy-0001",
+  );
+  await Deno.mkdir(secrets, { recursive: true });
+  await Deno.writeTextFile(
+    join(secrets, "anthropic-key"),
+    "sk-ant-planted-secret-0123456789",
+  );
+  const err = await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    legacy,
+  );
+  assertStringIncludes(err.message, `docker rm -f ${legacy}`);
+  assertStringIncludes(err.message, t.env.privateRoot);
+  assertEquals(docker.removed, [], "never removed");
+  assert(await docker.state(legacy), "the legacy sandbox stays");
+  assert(await exists(intent), "its intent is never recovered");
+  assert(
+    !await exists(join(t.env.privateRoot, "broken")),
+    "recovery never touched it",
+  );
+  assert(await exists(join(secrets, "anthropic-key")), "custody kept");
+  const done = await legacyRoot({ exited: true, published: true });
+  const h = await openHarnessEnv(envOpts(done.t), done.d);
+  await h.close();
+  assertEquals(done.docker.removed, [done.legacy], "a finalized one goes");
 });

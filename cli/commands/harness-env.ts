@@ -43,6 +43,7 @@ import {
 } from "../../src/harness/egress.ts";
 import {
   holdNamespace,
+  legacyRemovable,
   recoverInterrupted,
   sweepLegacySandboxes,
 } from "../../src/harness/execution.ts";
@@ -423,6 +424,10 @@ export async function openHarnessEnv(
         "nothing swept",
       );
     hold();
+    // Review 546e8337 P2-a: an older harness sharing this root refuses the
+    // start before ANY sweep (its temp records and freeze scratch included).
+    const docker = deps.docker();
+    await legacyRemovable(docker, deps.owner(), o.privateRoot);
     // M1-33e: the marker's proxy_isolation, fixed here under the lock for
     // the life of the environment (a later change refuses the next cell).
     const proxyIsolation = await markerProxyIsolation(sharedResults);
@@ -465,7 +470,6 @@ export async function openHarnessEnv(
     hold();
     await store.sweepTemp();
     await sweepWorkspaceTemp(o.resultsDir, o.privateRoot);
-    const docker = deps.docker();
     const owner = namespaceOwner(deps.owner(), o.privateRoot);
     hold();
     const swept = [

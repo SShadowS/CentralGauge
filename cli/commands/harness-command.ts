@@ -915,7 +915,16 @@ async function sweepDeadBuilds(docker: DockerCli, builds: string) {
     } finally {
       await got.release();
     }
+    await removeNamespace(dir);
+  }
+}
+
+/** Review 546e8337 P3-3: a concurrent build may have removed it first. */
+async function removeNamespace(dir: string) {
+  try {
     await Deno.remove(dir, { recursive: true });
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
   }
 }
 
@@ -1060,7 +1069,7 @@ export async function harnessImagesBuild(
     // A failed read keeps the namespace: the next build sweeps it.
     await held();
   }
-  await Deno.remove(join(builds, owner), { recursive: true });
+  await removeNamespace(join(builds, owner));
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(
       `${tag}: label ${IMAGE_LABELS.revision} is ${

@@ -1833,7 +1833,10 @@ export async function runExecution(
           inventoryRefused = `component inventory: ${
             proof.problems.join("; ")
           }`;
-          egressStop = "component_inventory_refused";
+          // Review 546e8337 P3-2: a host read failure never blames the image.
+          egressStop = proof.kind === "transport_failure"
+            ? "inventory_transport_failure"
+            : "component_inventory_refused";
           egressAbort.abort(new Error(inventoryRefused));
         } else if (endedEarly !== null) {
           // An early end without a proven refusal (inventory ok, missing or
@@ -2048,6 +2051,11 @@ export async function runExecution(
       "stop",
     );
   }
+  // Review 546e8337 P3-4: suspended past the stale window, the new holder
+  // may already have recovered this execution: lost, nothing is drafted or
+  // published and the intent stays the holder's.
+  const nothingPublished = "nothing published; the intent is the holder's";
+  holdNamespace(env, nothingPublished);
   const draft = await buildDraft(env, {
     id,
     cell,
@@ -2066,6 +2074,7 @@ export async function runExecution(
     egressStop,
     preStart: inventoryRefused !== null || notLive !== null,
   });
+  holdNamespace(env, nothingPublished);
   await publishDraft(env, cell, draft, staged.pristine, true);
   if (privilegeFailure !== null) {
     // Infra, never scored; a retry would repeat it: the campaign stops here.
@@ -2738,10 +2747,9 @@ export function holdNamespace(
  * hostname. Under the private root's lock, remove (confirmed gone) those
  * whose execution is one of this root's intents, so recovery never removes
  * the work dir or custody of a sandbox still running; others are left alone.
- * Run 002 item 2: older runners take only the repository lock, so a running
- * one may be live: only a proven-dead one (exited, or its intent finalized as
- * published) is removed; a running one refuses the start. Item 4: then this
- * root's legacy custody dirs (cg-harness-secrets-<host>.*) go.
+ * Run 002 item 2: older runners take only the repository lock, so one may be
+ * live: only a proven-dead one is removed (legacyRemovable). Item 4: then
+ * this root's legacy custody dirs (cg-harness-secrets-<host>.*) go.
  */
 export async function sweepLegacySandboxes(
   docker: DockerCli,
@@ -2749,6 +2757,29 @@ export async function sweepLegacySandboxes(
   privateRoot: string,
   opMs = OP_TIMEOUT_MS,
   hold: () => void = () => {},
+): Promise<string[]> {
+  const ours = await legacyRemovable(docker, host, privateRoot, opMs);
+  await removeConfirmed(docker, ours, opMs, hold);
+  // Every legacy sandbox of this root's intents is confirmed gone: its
+  // custody dirs (this root only, never another owner's) can go.
+  hold();
+  await sweepStaleSecrets(privateRoot, host);
+  return ours;
+}
+
+/**
+ * The legacy (bare-hostname) sandboxes of this root's intents that are
+ * proven dead: their intent is finalized (published). Review 546e8337 P2-b
+ * (strict): any other one refuses, running or exited (an older runner may
+ * still be scoring after its container exited); migration is offline, so the
+ * refusal names the one-shot removal. Read-only: P2-a runs it right after
+ * the private root's lock, before any sweep.
+ */
+export async function legacyRemovable(
+  docker: DockerCli,
+  host: string,
+  privateRoot: string,
+  opMs = OP_TIMEOUT_MS,
 ): Promise<string[]> {
   const dir = join(privateRoot, "intents");
   const ids = new Set<string>();
@@ -2772,23 +2803,18 @@ export async function sweepLegacySandboxes(
       const finalized = await readJson<Intent>(
         join(dir, `${st.execution}.json`),
       ).then((i) => i?.phase === "published", () => false);
-      (st.running && !finalized ? live : ours).push(n);
+      (finalized ? ours : live).push(n);
     }
     if (live.length > 0) {
       throw new ConfigurationError(
         `legacy sandbox(es) ${
           live.join(", ")
-        } (owner ${host}, an older harness) still run an execution of --private-dir ${privateRoot}; nothing removed. Once no older harness uses that private dir, remove them (one-shot): docker rm -f ${
+        } (owner ${host}, an older harness) hold an unpublished execution of --private-dir ${privateRoot} (running or not, it may still be in use); nothing removed. Once no older harness uses that private dir, remove them (one-shot): docker rm -f ${
           live.join(" ")
         } (DOCKER_CONTEXT=desktop-windows), then start again`,
       );
     }
-    await removeConfirmed(docker, ours, opMs, hold);
   }
-  // Every legacy sandbox of this root's intents is confirmed gone: its
-  // custody dirs (this root only, never another owner's) can go.
-  hold();
-  await sweepStaleSecrets(privateRoot, host);
   return ours;
 }
 
