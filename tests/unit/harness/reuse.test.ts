@@ -376,12 +376,12 @@ Deno.test("reuseCheck: a session crash in a probe build is infra (missing, reaso
   const fake = new CrashingBc(bc(paths).script);
   const r = await run(fake);
   // The cause is the signature (structural: no log text reaches the record).
-  // Without the cascade filter the dependent's CG0001 blocks the signature
-  // and this reads "probe did not build".
+  // Since H-04 the judge itself classifies a crashed build (the dependent's
+  // CG0001 cascade is ignored), so the probe judgment is unscored; before
+  // either fix this read "probe did not build".
   assertEquals(r, {
     status: "missing",
-    reason:
-      "infra: build_failed_no_diagnostics_no_tests (effective probe of 70210/CalcSurcharge)",
+    reason: "infra: unscored (effective probe of 70210/CalcSurcharge)",
   });
 });
 
