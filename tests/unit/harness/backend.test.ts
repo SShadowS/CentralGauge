@@ -1419,6 +1419,86 @@ Deno.test("production ops (M11): a failed compile logs code, relative file, symb
   }]);
 });
 
+/** H-04b: a production-ops backend on `containers`, with a granted workspace. */
+async function crashBackend(bc: FakeBc, containers: string[], tag: string) {
+  const s = await setup();
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(s.root, "work")],
+    workRoot: join(s.root, `backend-${tag}`),
+    ops: defaultBackendOps(new BcLane(bc, containers)),
+    allowedHosts: ["127.0.0.1"],
+  });
+  const exec = "00000000-0000-4000-8000-00000000e04b";
+  const ws = await workspace(s.root, exec);
+  const pristine = await workspace(s.root, `pristine-${tag}`);
+  const hostLog = join(s.root, `hl-${tag}.jsonl`);
+  const tok = await b.grant({
+    executionId: exec,
+    sandbox: null,
+    workspace: ws,
+    pristine,
+    trusted: await readAppGraph(pristine),
+    symbols: [ASSERT_SYMBOL],
+    lock: { store: s.root, packages: [] },
+    deploy: { ledgerRoot: s.root, trustedRoots: [pristine] },
+    hostLog,
+  }, 60_000);
+  return { b, tok, exec, hostLog };
+}
+
+Deno.test("production ops (H-04b): a compile that crashes once (no diagnostic) reroutes and succeeds", async () => {
+  const bc = new FakeBc(() => result({ A: true }));
+  const seen: string[] = [];
+  bc.crashFor = (p, c) => {
+    if (!p.endsWith("/Core")) return false;
+    seen.push(c);
+    return seen.length === 1;
+  };
+  const { b, tok, exec } = await crashBackend(bc, ["C1", "C2"], "h04b-1");
+  const res = await b.handle(
+    req("/v1/compile", tok, '{"apps":["Core"]}', exec),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.apps.map((a: { ok: boolean }) => a.ok), [true]);
+  assert(seen.length === 2 && seen[0] !== seen[1], JSON.stringify(seen));
+});
+
+Deno.test("production ops (H-04b): a compile that crashes on every container is infra (503), never a failed build", async () => {
+  const bc = new FakeBc(() => result({ A: true }));
+  bc.crashFor = (p) => p.endsWith("/Core");
+  const { b, tok, exec, hostLog } = await crashBackend(
+    bc,
+    ["C1", "C2"],
+    "h04b-2",
+  );
+  const res = await b.handle(
+    req("/v1/compile", tok, '{"apps":["Core"]}', exec),
+  );
+  assertEquals(res.status, 503);
+  assertStringIncludes(JSON.stringify(await res.json()), "infra");
+  const [line] = await readHostLog(hostLog);
+  assertEquals(line!.outcome, "infra");
+});
+
+Deno.test("production ops (H-04b): a test whose candidate build crashes on every container is infra (503)", async () => {
+  const bc = new FakeBc(() => result({ A: true }));
+  bc.crashFor = (p) => p.includes("/candidate/");
+  const { b, tok, exec, hostLog } = await crashBackend(
+    bc,
+    ["C1", "C2"],
+    "h04b-3",
+  );
+  // Test is always a candidate here (the M11 test below relies on it too).
+  const res = await b.handle(
+    req("/v1/test", tok, '{"codeunits":[80010]}', exec),
+  );
+  assertEquals(res.status, 503, await res.clone().text());
+  const [line] = await readHostLog(hostLog);
+  assertEquals(line!.outcome, "infra");
+});
+
 Deno.test("production ops (M11): a test request whose build fails logs its diagnostics", async () => {
   const s = await setup();
   const bc = new FakeBc(() => result({ A: true }));

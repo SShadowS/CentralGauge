@@ -751,6 +751,7 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
         "attempted_cells",
         "scored_cells",
         "unscored_cells",
+        "rejudge_budget_cells",
         "pending_cells",
         "unrun_cells",
         "unknown_spend_cells",
@@ -782,6 +783,8 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
             a.attempted_cells,
             a.scored_cells,
             a.unscored_cells,
+            // H-04b; n/a for a report from before the field existed.
+            a.rejudge_budget_cells ?? null,
             a.pending_cells,
             a.unrun_cells,
             a.unknown_spend_cells,

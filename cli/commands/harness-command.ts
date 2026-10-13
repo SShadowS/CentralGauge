@@ -17,8 +17,10 @@ import type {
   VaryKey,
 } from "../../src/harness/config.ts";
 import {
+  campaignJudging,
   cellsFromRecords,
   type JudgingContext,
+  rejudgeBudgetExhausted,
 } from "../../src/harness/outcome.ts";
 import type {
   ArtifactRecord,
@@ -475,9 +477,13 @@ export async function harnessReport(
       prereg?.doc.measures.fingerprint,
     ),
     traces: await loadTraces(opts.resultsDir, executions),
-    ...(opts.judging === "current"
-      ? { judging: await currentJudging(opts.root) }
-      : {}),
+    // H-04b: the rejudge budget counts only the current scorer suite.
+    judging: {
+      ...(opts.judging === "current"
+        ? await currentJudging(opts.root)
+        : campaignJudging(campaign)),
+      scorer: await currentScorerFingerprint(),
+    },
   });
 }
 
@@ -1556,9 +1562,11 @@ export async function harnessRejudge(
         }
         return true;
       }
-      const j = latestJudgment(
-        data.judgments.filter((x) => x.execution_id === e.id),
-      );
+      const mine = data.judgments.filter((x) => x.execution_id === e.id);
+      // H-04b: past the rejudge budget the cell is terminal; only --force.
+      const oracle = byTask.get(e.task_id)!.oracle;
+      if (rejudgeBudgetExhausted(e, mine, oracle, current)) return false;
+      const j = latestJudgment(mine);
       return !j || j.verdict === "unscored" ||
         j.scorer_fingerprint !== current ||
         j.task_oracle_hash !== byTask.get(e.task_id)!.oracle;
@@ -1597,7 +1605,11 @@ export async function harnessRejudge(
           j,
         ]);
       }
-      const used = cellsFromRecords(c, data.executions, byExecution).find((
+      // H-04b run 003: with the current scorer, as the report counts it.
+      const used = cellsFromRecords(c, data.executions, byExecution, {
+        ...campaignJudging(c),
+        scorer: current,
+      }).find((
         x,
       ) => x.task === e.task_id && x.repeat === e.repeat && x.arm === e.arm)!
         .used_execution;

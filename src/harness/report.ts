@@ -1098,7 +1098,11 @@ export function renderReport(r: HarnessReport): string {
   for (const a of r.arms) {
     const c = r.coverage.find((x) => x.arm === a.arm)!;
     out.push(
-      `  ${a.arm}: planned ${a.planned_cells}, attempted ${a.attempted_cells}, scored ${a.scored_cells}, unscored ${a.unscored_cells}, pending ${a.pending_cells}, unrun ${a.unrun_cells}; ${c.executions} executions (${c.manual_reruns} manual reruns), infra exposed ${c.infra_exposed}, incomplete telemetry: ${
+      `  ${a.arm}: planned ${a.planned_cells}, attempted ${a.attempted_cells}, scored ${a.scored_cells}, unscored ${a.unscored_cells}${
+        a.rejudge_budget_cells === undefined
+          ? ""
+          : ` (rejudge budget: ${a.rejudge_budget_cells})`
+      }, pending ${a.pending_cells}, unrun ${a.unrun_cells}; ${c.executions} executions (${c.manual_reruns} manual reruns), infra exposed ${c.infra_exposed}, incomplete telemetry: ${
         reasons(c.incomplete_telemetry)
       }, cost assumptions: ${reasons(c.cost_assumptions)}`,
     );
