@@ -18,7 +18,7 @@ reuse:
   tests:
     - { codeunit: 86440, procedures: [EventTransportByDefault] }
 # The reuse marker raised in Send is caught by the dispatcher's TryFunction into Last Error (caught-call
-# shape); executed is observed through the effective probe (M11-06: executed = marker observed OR effective).
+# shape); R1 asserts Last Error = '' first, so the marker appears in R1's failure text.
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
