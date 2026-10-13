@@ -1,0 +1,19 @@
+id: HX-035
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Rental, Fleet, Core]
+coupling: [core-facade, facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, SuspendRentalsBlocksCheckout] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86160, procedures: [SisterVehiclesCountedThere, OwnCompanyCounted, SisterStopApplies, OwnStopDoesNotApplyToSister, SisterOnlyVehicleCounted, SisterWithoutSetupRowNotSuspended] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
