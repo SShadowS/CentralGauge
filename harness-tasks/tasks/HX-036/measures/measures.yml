@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "86180/OpenEndedRateApplies": 1
+    "86180/LatestStartingRateWins": 1
+    "86180/ExpiredRateIgnored": 1
+    "86180/RateEndingOnStartDateApplies": 1
+    "86180/LaterRateNotUsedForContract": 1
+    "86180/NoRateUsesVehicleRate": 1
+    "86180/PackageUsesRate": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
