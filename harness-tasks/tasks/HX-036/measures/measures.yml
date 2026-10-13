@@ -3,14 +3,18 @@ partial_credit:
   weights:
     "86180/OpenEndedRateApplies": 1
     "86180/LatestStartingRateWins": 1
-    "86180/ExpiredRateIgnored": 1
-    "86180/RateEndingOnStartDateApplies": 1
-    "86180/LaterRateNotUsedForContract": 1
-    "86180/NoRateUsesVehicleRate": 1
-    "86180/PackageUsesRate": 1
     "86180/RateStartingOnStartDateApplies": 1
-    "86180/MixedValidRatesLatestWins": 1
-  hidden_regressions: []
+    "86180/PackageUsesRate": 1
+  hidden_regressions:
+    - "86180/ExpiredRateIgnored"
+    - "86180/RateEndingOnStartDateApplies"
+    - "86180/LaterRateNotUsedForContract"
+    - "86180/NoRateUsesVehicleRate"
+    - "86180/MixedValidRatesLatestWins"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/open-end-only: { partial_credit: 0.5 }
+  naive/latest-only: { partial_credit: 0 }
+  naive/no-end-filter: { partial_credit: 1 }
+  naive/exclusive-end: { partial_credit: 1 }
