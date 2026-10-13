@@ -6,6 +6,7 @@ partial_credit:
     "86240/CommittingRefusalLeavesNothing": 1
     "86240/TryPostRightAfterReturn": 1
     "86240/OpenContractReturnsFalse": 1
+    "86240/MissingContractReturnsFalse": 1
     "86240/BatchSkipsCommittingRefusal": 1
     "86240/BatchPostsEveryReturned": 1
   hidden_regressions: []
@@ -18,6 +19,6 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
-  naive/no-commit: { partial_credit: 0.857142857142857 }
-  naive/plain-run: { partial_credit: 0.714285714285714 }
-  naive/try-function: { partial_credit: 0.142857142857143 }
+  naive/no-commit: { partial_credit: 0.75 }
+  naive/plain-run: { partial_credit: 0.625 }
+  naive/try-function: { partial_credit: 0.25 }

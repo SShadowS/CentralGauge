@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 86240, procedures: [TryPostPostsReturnedContract, RefusedContractReturnsFalse, CommittingRefusalLeavesNothing, TryPostRightAfterReturn, OpenContractReturnsFalse, BatchSkipsCommittingRefusal, BatchPostsEveryReturned] }
+    - { codeunit: 86240, procedures: [TryPostPostsReturnedContract, RefusedContractReturnsFalse, CommittingRefusalLeavesNothing, TryPostRightAfterReturn, OpenContractReturnsFalse, MissingContractReturnsFalse, BatchSkipsCommittingRefusal, BatchPostsEveryReturned] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

@@ -94,9 +94,16 @@ codeunit 70200 "CGR Rental Mgt"
     var
         Contract: Record "CGR Rental Contract";
     begin
-        Contract.Get(ContractNo);
         Commit();
         ClearLastError();
+        if not TryGetContract(Contract, ContractNo) then
+            exit(false);
         exit(Codeunit.Run(Codeunit::"CGR Batch Post Contract", Contract));
+    end;
+
+    [TryFunction]
+    local procedure TryGetContract(var Contract: Record "CGR Rental Contract"; ContractNo: Code[20])
+    begin
+        Contract.Get(ContractNo);
     end;
 }

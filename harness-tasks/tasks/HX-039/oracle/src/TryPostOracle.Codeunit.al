@@ -6,6 +6,7 @@ codeunit 86240 "HX039 Try Post Oracle"
     var
         Assert: Codeunit "Library Assert";
         ReturnedFalseTxt: Label 'HX039 TryPost returned false: %1', Locked = true;
+        ReturnedFalsePrefixTxt: Label 'HX039 TryPost returned false:', Locked = true;
         RefusedTxt: Label 'HX039 refuses %1.', Locked = true;
         NotReturnedTxt: Label 'Rental contract %1 must be returned before it is posted.', Locked = true;
 
@@ -123,6 +124,32 @@ codeunit 86240 "HX039 Try Post Oracle"
         Assert.AreEqual(Contract.Status::Open, Contract.Status, 'The open contract stays open');
         LedgerEntry.SetRange("Contract No.", ContractNo);
         Assert.AreEqual(0, LedgerEntry.Count(), 'The open contract has no ledger entry');
+    end;
+
+    [Test]
+    procedure MissingContractReturnsFalse()
+    var
+        Runner: Codeunit "HX039 Try Post Runner";
+        Contract: Record "CGR Rental Contract";
+        LedgerEntry: Record "CGR Rental Ledger Entry";
+        ContractNo: Code[20];
+        Ok: Boolean;
+    begin
+        InitRun();
+        ContractNo := 'HX039-MISSING';
+        LedgerEntry.SetRange("Contract No.", ContractNo);
+        LedgerEntry.DeleteAll();
+        if Contract.Get(ContractNo) then
+            Contract.Delete();
+        Commit();
+
+        Runner.SetContract(ContractNo, false);
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'The runner fails only because TryPost returned false');
+        Assert.IsTrue(GetLastErrorText().StartsWith(ReturnedFalsePrefixTxt), 'TryPost returns false and raises nothing for a contract that does not exist, got: ' + GetLastErrorText());
+        Assert.IsFalse(Contract.Get(ContractNo), 'TryPost creates no contract');
+        Assert.AreEqual(0, LedgerEntry.Count(), 'The missing contract has no ledger entry');
     end;
 
     [Test]
