@@ -2,7 +2,7 @@ id: HX-053
 refapp_version: refapp-v2-rc1
 kind: test-authoring
 prompt: prompt.md
-touches: [Integration, Rental, Core, Test]
+touches: [Integration, Rental, Fleet, Core, Test]
 coupling: [events, facade]
 source: refapp
 attachments: []
