@@ -6,6 +6,7 @@ codeunit 86460 "HX050 Service Days Oracle"
     var
         Assert: Codeunit "Library Assert";
         PlanCodeTok: Label 'HX050-P6', Locked = true;
+        ZeroPlanCodeTok: Label 'HX050-P0', Locked = true;
 
     [Test]
     procedure DaysToPlannedServiceAhead()
@@ -189,6 +190,46 @@ codeunit 86460 "HX050 Service Days Oracle"
         Assert.IsTrue(ServicePlanMgt.IsServiceDue('HX050-13D', 20270301D), 'Heavy Duty is due at 1000 + 5000 km; the vehicle has 7000');
     end;
 
+    [Test]
+    procedure DueByKmWithPlannedDateAhead()
+    var
+        ServicePlanMgt: Codeunit "CGR Service Plan Mgt";
+        Days: Integer;
+    begin
+        InitRun();
+        NewVehicle('HX050-14E', 7000, Enum::"CGR Maintenance Strategy"::"Heavy Duty", PlanCodeTok, 20270110D);
+
+        Assert.IsTrue(ServicePlanMgt.DaysToPlannedService('HX050-14E', 20270701D, Days), 'Precondition: the vehicle has a planned service date');
+        Assert.AreEqual(9, Days, 'Precondition: the planned service date is nine days ahead, so not due by date');
+        Assert.IsTrue(ServicePlanMgt.IsServiceDue('HX050-14E', 20270701D), 'Heavy Duty is due at 1000 + 5000 km; the vehicle has 7000, whatever the plan date says');
+    end;
+
+    [Test]
+    procedure ZeroIntervalPlanHasNoPlannedDate()
+    var
+        Runner: Codeunit "HX050 Due Runner";
+        DueSoonRunner: Codeunit "HX050 Due Runner";
+        Ok: Boolean;
+    begin
+        InitRun();
+        NewVehicle('HX050-15F', 1000, Enum::"CGR Maintenance Strategy"::Default, ZeroPlanCodeTok, 20270110D);
+        Runner.SetDaysCall('HX050-15F', 20270701D);
+        DueSoonRunner.SetDueSoonCall('HX050-15F', 20270110D, 14);
+
+        Commit();
+        Ok := Runner.Run();
+
+        Assert.IsTrue(Ok, 'DaysToPlannedService must not fail for a plan without an interval: ' + GetLastErrorText());
+        Assert.IsFalse(Runner.Result(), 'A plan with 0 interval months gives no planned service date');
+        Assert.AreEqual(0, Runner.Days(), 'Days is 0 for a plan with 0 interval months');
+
+        Commit();
+        Ok := DueSoonRunner.Run();
+
+        Assert.IsTrue(Ok, 'IsServiceDueSoon must not fail for a plan without an interval: ' + GetLastErrorText());
+        Assert.IsFalse(DueSoonRunner.Result(), 'A plan with 0 interval months is never due soon, also on the last service date');
+    end;
+
     local procedure InitRun()
     var
         Setup: Record "CGR Setup";
@@ -209,6 +250,15 @@ codeunit 86460 "HX050 Service Days Oracle"
         ServicePlan.Description := 'HX050 six months';
         ServicePlan.Strategy := Enum::"CGR Maintenance Strategy"::Default;
         ServicePlan."Interval Months" := 6;
+        ServicePlan.Insert();
+
+        if ServicePlan.Get(ZeroPlanCodeTok) then
+            ServicePlan.Delete();
+        ServicePlan.Init();
+        ServicePlan.Code := ZeroPlanCodeTok;
+        ServicePlan.Description := 'HX050 no interval';
+        ServicePlan.Strategy := Enum::"CGR Maintenance Strategy"::Default;
+        ServicePlan."Interval Months" := 0;
         ServicePlan.Insert();
     end;
 
