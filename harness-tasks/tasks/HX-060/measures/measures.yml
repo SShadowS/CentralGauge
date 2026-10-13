@@ -20,3 +20,7 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/by-value-buffer: { partial_credit: 0.14285714285714285 }
+  naive/filter-caller: { partial_credit: 0.8571428571428571 }
+  naive/insert-unchecked: { partial_credit: 0.8571428571428571 }
+  naive/reset-buffer: { partial_credit: 0.5714285714285714 }

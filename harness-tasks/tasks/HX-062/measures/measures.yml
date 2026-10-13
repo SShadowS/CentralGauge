@@ -21,3 +21,6 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/commit-at-end: { partial_credit: 0.75 }
+  naive/returns-old-count: { partial_credit: 0.875 }
+  naive/stale-entry: { partial_credit: 0.375 }
