@@ -158,6 +158,7 @@ codeunit 86220 "HX038 Invoice Proposal Oracle"
         until InvoiceLine.Next() = 0;
         Assert.AreEqual(2, Spy.BeforeEvents(), 'One before event per line');
         Assert.AreEqual(2, Spy.AfterEvents(), 'One after event per created line');
+        Assert.AreEqual(2, Spy.AfterEventsWithStoredLine(), 'Each after event sees its invoice line already in the database');
     end;
 
     [Test]
@@ -183,6 +184,7 @@ codeunit 86220 "HX038 Invoice Proposal Oracle"
         ScheduleLine.Get('HX38-HANDLED', 20000);
         Assert.IsTrue(ScheduleLine.Invoiced, 'The handled April schedule line is marked invoiced');
         Assert.AreEqual(1, Spy.AfterEvents(), 'No after event for the handled line');
+        Assert.AreEqual(1, Spy.AfterEventsWithStoredLine(), 'The after event sees the March invoice line already in the database');
     end;
 
     [Test]
