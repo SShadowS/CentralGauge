@@ -1,0 +1,22 @@
+v: 1
+partial_credit:
+  weights:
+    "86660/CollectsOnlyPendingInFilter": 1
+    "86660/KeepsCallerRows": 1
+    "86660/NoDuplicate": 1
+    "86660/KeepsPendingFilters": 1
+    "86660/KeepsEntryFilter": 1
+    "86660/DispatchPendingAsToday": 1
+    "86660/DispatchPendingCountsDelivered": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70410, procedure: CollectPending, signature: "(var EntryFilter: Record \"CGR Outbox Entry\"; var Pending: Record \"CGR Outbox Entry\" temporary): Integer", file: Integration/src/OutboxDispatcher.Codeunit.al, perturb: "exit(0);" }
+  tests:
+    - { codeunit: 86660, procedures: [DispatchPendingAsToday, DispatchPendingCountsDelivered] }
+# R1-R5 call CollectPending directly and stay out of the reuse tests. The marker raised in CollectPending
+# escapes DispatchPending (no TryFunction on that path) into R6/R7's failure text; exit(0) collects nothing.
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
