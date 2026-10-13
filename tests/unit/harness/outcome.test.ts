@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import { ValidationError } from "../../../src/errors.ts";
 import {
+  campaignJudging,
   type CellRecord,
   cellsFromRecords,
   REJUDGE_BUDGET_REASON,
@@ -522,6 +523,55 @@ const forcedBy = (replaces: string) => ({
   },
 });
 
+/** The cell judged with SCORERS_V1_FP as the current scorer fingerprint. */
+function budgetCell(
+  c: CampaignRecord,
+  es: ExecutionRecord[],
+  js: JudgmentRecord[],
+): CellRecord {
+  return cellsFromRecords(c, es, index(js), {
+    ...campaignJudging(c),
+    scorer: SCORERS_V1_FP,
+  }).find((x) => x.task === "HX-001" && x.arm === "plain")!;
+}
+
+const OLD_FP = { scorer_fingerprint: H("0") };
+
+Deno.test("cellsFromRecords (H-04b b): 3 unscored judgments under an old scorer fingerprint stay pending", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const cell = budgetCell(c, [e], [
+    judgment(c, e, null, OLD_FP),
+    judgment(c, e, null, OLD_FP),
+    judgment(c, e, null, OLD_FP),
+  ]);
+  assertEquals(cell.status, "pending");
+  assert(!("reason" in cell), JSON.stringify(cell));
+});
+
+Deno.test("cellsFromRecords (H-04b b): 2 unscored under the current fingerprint and 1 under an old one stay pending", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const cell = budgetCell(c, [e], [
+    judgment(c, e, null, OLD_FP),
+    judgment(c, e, null),
+    judgment(c, e, null),
+  ]);
+  assertEquals(cell.status, "pending");
+});
+
+Deno.test("cellsFromRecords (H-04b b): without a current scorer fingerprint in the judging context no cell hits the budget", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const cell = cellOf(c, [e], [
+    judgment(c, e, null),
+    judgment(c, e, null),
+    judgment(c, e, null),
+  ]);
+  assertEquals(cell.status, "pending");
+  assert(!("reason" in cell), JSON.stringify(cell));
+});
+
 Deno.test("cellsFromRecords (H-04b): 3 non-forced unscored judgments make the cell terminally unscored with the budget reason, spend kept", async () => {
   const c = await campaign();
   const e = execution(c, {}, { telemetry: telemetry(3) });
@@ -530,7 +580,7 @@ Deno.test("cellsFromRecords (H-04b): 3 non-forced unscored judgments make the ce
     judgment(c, e, null),
     judgment(c, e, null),
   ];
-  const cell = cellOf(c, [e], js);
+  const cell = budgetCell(c, [e], js);
   assertEquals(
     [cell.status, cell.pass, cell.spend_usd, cell.judgment_id, cell.reason],
     ["unscored", null, 3, js[2]!.id, REJUDGE_BUDGET_REASON],
@@ -544,7 +594,10 @@ Deno.test("cellsFromRecords (H-04b): 3 non-forced unscored judgments make the ce
 Deno.test("cellsFromRecords (H-04b): 2 non-forced unscored judgments stay pending, no reason", async () => {
   const c = await campaign();
   const e = execution(c);
-  const cell = cellOf(c, [e], [judgment(c, e, null), judgment(c, e, null)]);
+  const cell = budgetCell(c, [e], [
+    judgment(c, e, null),
+    judgment(c, e, null),
+  ]);
   assertEquals(cell.status, "pending");
   assert(!("reason" in cell), JSON.stringify(cell));
 });
@@ -555,14 +608,14 @@ Deno.test("cellsFromRecords (H-04b): forced unscored judgments do not count towa
   const a = judgment(c, e, null);
   const b = judgment(c, e, null);
   const f = judgment(c, e, null, { forced: forcedBy(b.id) });
-  assertEquals(cellOf(c, [e], [a, b, f]).status, "pending");
+  assertEquals(budgetCell(c, [e], [a, b, f]).status, "pending");
 });
 
 Deno.test("cellsFromRecords (H-04b): unscored judgments on another oracle do not count", async () => {
   const c = await campaign();
   const e = execution(c);
   const other = { task_oracle_hash: H("e") };
-  const cell = cellOf(c, [e], [
+  const cell = budgetCell(c, [e], [
     judgment(c, e, null, other),
     judgment(c, e, null, other),
     judgment(c, e, null, other),
@@ -583,7 +636,7 @@ Deno.test("cellsFromRecords (H-04b): a forced scored judgment after the budget i
     ended_at: "2026-10-01T10:20:00.000Z",
     forced: forcedBy(js[2]!.id),
   });
-  const cell = cellOf(c, [e], [...js, forced]);
+  const cell = budgetCell(c, [e], [...js, forced]);
   assertEquals([cell.status, cell.pass, cell.judgment_id], [
     "scored",
     true,
@@ -596,7 +649,7 @@ Deno.test("cellsFromRecords (H-04b): a scored manual rerun fills a budget-exhaus
   const c = await campaign();
   const planned = execution(c);
   const manual = execution(c, { attempt: 2, run_kind: "manual_rerun" });
-  const cell = cellOf(c, [planned, manual], [
+  const cell = budgetCell(c, [planned, manual], [
     judgment(c, planned, null),
     judgment(c, planned, null),
     judgment(c, planned, null),

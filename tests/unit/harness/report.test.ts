@@ -10,6 +10,7 @@ import { ValidationError } from "../../../src/errors.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import type { CampaignRecords } from "../../../src/harness/integrity.ts";
 import { manifestHash } from "../../../src/harness/manifest.ts";
+import { campaignJudging } from "../../../src/harness/outcome.ts";
 import {
   type CampaignRecord,
   experimentHash,
@@ -124,7 +125,10 @@ Deno.test("buildReport (H-04b): a cell past the rejudge budget is terminal unsco
       ...base.judgments.filter((j) => j.execution_id !== e.id),
       ...unscored,
     ],
-  }, { resamples: 50 });
+  }, {
+    resamples: 50,
+    judging: { ...campaignJudging(base.campaign), scorer: SCORERS_V1_FP },
+  });
   const cell = r.cells.find((c) => c.used_execution === e.id)!;
   assertEquals(
     [cell.status, cell.reason],

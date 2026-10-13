@@ -1465,9 +1465,18 @@ Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is n
   assertEquals([again.rejudged, await count()], [0, [3, 1]]);
 });
 
-/** n newer, non-forced, infra-unscored copies of the execution's first judgment. */
-async function unscoredJudgments(t: TestEnv, executionId: string, n: number) {
+/**
+ * n newer, non-forced, infra-unscored copies of the execution's first
+ * judgment; the first `old` of them (the oldest) under a stale scorer suite.
+ */
+async function unscoredJudgments(
+  t: TestEnv,
+  executionId: string,
+  n: number,
+  old = 0,
+) {
   const [j] = await t.env.store.judgments(executionId);
+  const stale = { ...j!.scorer_versions, build: "0-stale" };
   for (let i = 0; i < n; i++) {
     const at = new Date(Date.now() + i).toISOString();
     await t.env.store.writeJudgment({
@@ -1475,11 +1484,73 @@ async function unscoredJudgments(t: TestEnv, executionId: string, n: number) {
       id: crypto.randomUUID(),
       scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
       verdict: "unscored",
+      ...(i < old
+        ? {
+          scorer_versions: stale,
+          scorer_fingerprint: await scorerFingerprint(stale),
+        }
+        : {}),
       started_at: at,
       ended_at: at,
     });
   }
 }
+
+Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only under the current scorer suite", async () => {
+  // [unscored judgments, of them under an old suite, executions due]
+  for (const [n, old, due] of [[3, 3, 1], [3, 1, 1]] as const) {
+    const t = await makeEnv();
+    await writeCatalog(t);
+    t.env.supervised = false;
+    t.docker.behavior = mockImageBehavior();
+    await mockExperiment(t);
+    await runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const es = await t.env.store.executions(c.id);
+    assertEquals(
+      (await t.env.store.judgments(es[0]!.id))[0]!.scorer_fingerprint,
+      await currentScorerFingerprint(),
+    );
+    await unscoredJudgments(t, es[0]!.id, n, old);
+    const r = await harnessRejudge("contract", runOpts(t), opener(t));
+    assertEquals(r.rejudged, due, `${n} unscored, ${old} old`);
+  }
+});
+
+Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under the current scorer suite", async () => {
+  for (const current of [true, false]) {
+    const dir = await Deno.makeTempDir();
+    const store = new RecordStore(dir);
+    const c = await campaign();
+    await store.writeCampaign(c);
+    const e = execution(c);
+    await store.writeExecution(e);
+    const suite = current
+      ? {
+        scorer_versions: SCORER_SUITE,
+        scorer_fingerprint: await currentScorerFingerprint(),
+      }
+      : {};
+    for (let i = 0; i < 3; i++) {
+      await store.writeJudgment(judgment(c, e, null, suite));
+    }
+    const r = await harnessReport("skills-vs-plain", {
+      resultsDir: dir,
+      ...OPTS,
+    });
+    const cell = r.cells.find((x) => x.used_execution === e.id)!;
+    assertEquals(
+      [cell.status, cell.reason],
+      current
+        ? ["unscored", "verdict infra: rejudge budget 3 exhausted"]
+        : ["pending", undefined],
+    );
+  }
+});
 
 Deno.test("rejudge (H-04b): an execution with 2 non-forced unscored judgments is due; with 3 it hit the rejudge budget and is not", async () => {
   for (const [n, due] of [[2, 1], [3, 0]] as const) {

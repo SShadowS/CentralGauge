@@ -320,16 +320,30 @@ Deno.test("charts: exact arms.csv header and the full row of each arm", async ()
   const [head, naive, positive] = csv.trim().split("\n");
   assertEquals(
     head,
-    "experiment,campaign,judging,arm,planned_cells,attempted_cells,scored_cells,unscored_cells,pending_cells,unrun_cells,unknown_spend_cells,unknown_spend_terminal_cells,total_spend_usd,pending_spend_usd,unscored_spend_usd,campaign_raw_spend_usd,excluded_cells,excluded_known_spend_usd,cost_per_solved_task,cost_null_reason,pass_rate,pass_k,pass_k_tasks,infra_exposed,manual_reruns,rejudges,provisional",
+    "experiment,campaign,judging,arm,planned_cells,attempted_cells,scored_cells,unscored_cells,rejudge_budget_cells,pending_cells,unrun_cells,unknown_spend_cells,unknown_spend_terminal_cells,total_spend_usd,pending_spend_usd,unscored_spend_usd,campaign_raw_spend_usd,excluded_cells,excluded_known_spend_usd,cost_per_solved_task,cost_null_reason,pass_rate,pass_k,pass_k_tasks,infra_exposed,manual_reruns,rejudges,provisional",
   );
   const id = `mock-contract,${r.campaign.id},campaign`;
+  // The fixture predates H-04b: rejudge_budget_cells is n/a, never a made-up 0.
   assertEquals(
     naive,
-    `${id},mock-naive-lock-table,2,2,2,0,0,0,0,0,0,0,0,0,0,0,n/a,no solves,0,0,1,0,0,n/a,false`,
+    `${id},mock-naive-lock-table,2,2,2,0,n/a,0,0,0,0,0,0,0,0,0,0,n/a,no solves,0,0,1,0,0,n/a,false`,
   );
   assertEquals(
     positive,
-    `${id},mock-positive,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,,1,1,1,0,0,n/a,false`,
+    `${id},mock-positive,2,2,2,0,n/a,0,0,0,0,0,0,0,0,0,0,0,,1,1,1,0,0,n/a,false`,
+  );
+});
+
+Deno.test("charts (H-04b): arms.csv rejudge_budget_cells is the per-arm count of unscored cells that hit the rejudge budget", async () => {
+  const r = await base();
+  const arms = [
+    { ...r.arms[0]!, unscored_cells: 1, rejudge_budget_cells: 1 },
+    { ...r.arms[1]!, rejudge_budget_cells: 0 },
+  ];
+  const rows = csvRows(get(renderCharts([{ ...r, arms }]), "arms.csv"));
+  assertEquals(
+    rows.map((x) => [x.unscored_cells, x.rejudge_budget_cells]),
+    [["1", "1"], ["0", "0"]],
   );
 });
 

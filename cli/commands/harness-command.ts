@@ -17,6 +17,7 @@ import type {
   VaryKey,
 } from "../../src/harness/config.ts";
 import {
+  campaignJudging,
   cellsFromRecords,
   type JudgingContext,
   rejudgeBudgetExhausted,
@@ -476,9 +477,13 @@ export async function harnessReport(
       prereg?.doc.measures.fingerprint,
     ),
     traces: await loadTraces(opts.resultsDir, executions),
-    ...(opts.judging === "current"
-      ? { judging: await currentJudging(opts.root) }
-      : {}),
+    // H-04b: the rejudge budget counts only the current scorer suite.
+    judging: {
+      ...(opts.judging === "current"
+        ? await currentJudging(opts.root)
+        : campaignJudging(campaign)),
+      scorer: await currentScorerFingerprint(),
+    },
   });
 }
 
@@ -1560,7 +1565,7 @@ export async function harnessRejudge(
       const mine = data.judgments.filter((x) => x.execution_id === e.id);
       // H-04b: past the rejudge budget the cell is terminal; only --force.
       const oracle = byTask.get(e.task_id)!.oracle;
-      if (rejudgeBudgetExhausted(e, mine, oracle)) return false;
+      if (rejudgeBudgetExhausted(e, mine, oracle, current)) return false;
       const j = latestJudgment(mine);
       return !j || j.verdict === "unscored" ||
         j.scorer_fingerprint !== current ||
