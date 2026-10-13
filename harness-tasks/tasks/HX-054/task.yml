@@ -1,0 +1,16 @@
+id: HX-054
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Rental, Core, Test]
+coupling: [events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle, ReturnBelowStartKmFails] }
+fail_to_pass: null
+mutants: [reported-on-today, repair-unknown-silent, repair-twice-raises, description-cut, repair-overwrites-reported-on]
+contamination: null
+limits: { timeout_min: 30 }
