@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "86600/IdleVehicleListed": 1
+    "86600/ZeroAmountRentalCounts": 1
+    "86600/RefundReducesRevenue": 1
+    "86600/BufferReplaced": 1
+    "86600/FilterExcludesOthers": 1
+    "86600/AllIdleVehicles": 1
+    "86600/MixedFleet": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
