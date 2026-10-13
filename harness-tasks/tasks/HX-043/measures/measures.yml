@@ -12,3 +12,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/dispatch-before-prepare: { partial_credit: 0.5714285714285714 }
+  naive/ignore-preparation: { partial_credit: 0.8571428571428571 }
+  naive/no-scope: { partial_credit: 0.8571428571428571 }
+  naive/whole-run-error-scope: { partial_credit: 0.42857142857142855 }
