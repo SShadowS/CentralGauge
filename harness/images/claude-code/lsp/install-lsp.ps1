@@ -1,30 +1,87 @@
-# M10: install the AL language server plugin from the pins in C:\cg-lsp\al-lsp.json.
+# M10: install the AL language server plugin from the recipe in C:\cg-lsp\al-lsp.json.
+# The wrapper and al-call-hierarchy come from the one al-lsp-for-agents release that
+# `harness images build` resolved (M10-10: -Release, -Url, -Sha256, the asset digest the
+# GitHub API publishes); the AL extension and .NET are hash-pinned in the recipe.
 # The hash of every downloaded artifact is checked; a gzip-wrapped VSIX is
 # decompressed after the check; every installed executable is checked again.
 # Any mismatch fails the image build. Build time only (ContainerAdministrator);
 # cg-lockdown makes C:\cg-lsp read-only afterwards.
 # -LibOnly defines the check functions and stops (host tests dot-source it; nothing is installed).
-param([switch]$LibOnly)
+param([switch]$LibOnly, [string]$Release, [string]$Url, [string]$Sha256)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # Saves the exact bytes on the wire: the pins hash the raw body, and Invoke-WebRequest
 # transport-decodes a Content-Encoding: gzip answer (the Marketplace sends one, M10-08a).
-function Get-Pinned($pin, [string]$out) {
+# One deadline covers headers and body (a stalled body cannot hang the build), and the
+# bytes reach $out only after the hash check: a wrong or broken download leaves no file.
+function Get-Pinned($pin, [string]$out, [int]$timeoutSec = 900) {
   Add-Type -AssemblyName System.Net.Http
+  $part = $out + '.part'
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSec)
   $handler = New-Object System.Net.Http.HttpClientHandler
   $handler.AutomaticDecompression = [Net.DecompressionMethods]::None
   $client = New-Object System.Net.Http.HttpClient($handler)
+  $client.Timeout = [TimeSpan]::FromSeconds($timeoutSec)
   try {
     $r = $client.GetAsync($pin.url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
     try {
       [void]$r.EnsureSuccessStatusCode()
-      $f = [IO.File]::Create($out)
-      try { $r.Content.CopyToAsync($f).GetAwaiter().GetResult() } finally { $f.Close() }
+      $f = [IO.File]::Create($part)
+      try {
+        $copy = $r.Content.CopyToAsync($f)
+        $left = [int][Math]::Max(0, ($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+        if (-not $copy.Wait($left)) { throw ('download of ' + $pin.url + ' timed out after ' + $timeoutSec + ' s') }
+      } finally { $r.Dispose(); $f.Close() } # dispose first: it aborts a stalled copy before the file closes
     } finally { $r.Dispose() }
-  } finally { $client.Dispose() }
-  $got = (Get-FileHash -LiteralPath $out -Algorithm $pin.algorithm).Hash.ToLowerInvariant()
-  if ($got -ne $pin.hash) { throw ('hash mismatch for ' + $pin.url + ': got ' + $got) }
+    $got = (Get-FileHash -LiteralPath $part -Algorithm $pin.algorithm).Hash.ToLowerInvariant()
+    if ($got -ne $pin.hash) { throw ('hash mismatch for ' + $pin.url + ': got ' + $got) }
+    Move-Item -LiteralPath $part -Destination $out
+  } finally {
+    $client.Dispose()
+    if (Test-Path -LiteralPath $part) { Remove-Item -LiteralPath $part -Force }
+  }
+}
+
+# M10-10: the release `images build` resolved, checked strictly before any download. The URL
+# must be exactly the recipe repo's release download URL for that tag and the recipe asset.
+function Assert-ReleaseArgs($src, [string]$release, [string]$url, [string]$sha) {
+  if ($src.repo -cne 'SShadowS/al-lsp-for-agents') { throw ('source.repo must be SShadowS/al-lsp-for-agents, got: ' + $src.repo) }
+  if ($src.asset -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]*\.zip\z') { throw ('source.asset must be a .zip file name, got: ' + $src.asset) }
+  if (((@($src.exes) | Sort-Object) -join ',') -cne 'al-call-hierarchy.exe,al-lsp-wrapper.exe') { throw ('source.exes must be exactly al-call-hierarchy.exe and al-lsp-wrapper.exe, got: ' + (@($src.exes) -join ',')) }
+  if ($src.dependency_source -cnotmatch '^(embedded|symbols)\z') { throw ('source.dependency_source must be embedded or symbols, got: ' + $src.dependency_source) }
+  if ($release -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+\z') { throw ('LSP release tag must be v<major>.<minor>.<patch>, got: ' + $release) }
+  if ($sha -cnotmatch '^[0-9a-f]{64}\z') { throw ('LSP wrapper sha256 must be 64 lowercase hex, got: ' + $sha) }
+  $want = 'https://github.com/' + $src.repo + '/releases/download/' + $release + '/' + $src.asset
+  if ($url -cne $want) { throw ('LSP wrapper URL must be ' + $want + ', got: ' + $url) }
+}
+
+# The one verified release zip: screened, extracted, and exactly the named exes taken from it
+# (each must occur once in it; no other exe). Returns name -> sha256 of the installed copies.
+function Install-WrapperZip([string]$zip, $names, [string]$bin) {
+  Assert-ZipSafe $zip
+  $dir = $zip + '.d'
+  Expand-Archive -LiteralPath $zip -DestinationPath $dir
+  $hashes = [ordered]@{}
+  foreach ($name in @($names)) {
+    if (Test-Path -LiteralPath "$bin\$name") { throw ('wrapper exe named twice: ' + $name) }
+    $found = @(Get-ChildItem -LiteralPath $dir -Recurse -File -Filter $name)
+    if ($found.Count -ne 1) { throw ('wrapper archive must hold exactly one ' + $name + ', found ' + $found.Count) }
+    Copy-Item -LiteralPath $found[0].FullName -Destination "$bin\$name"
+    $hashes[$name] = (Get-FileHash -LiteralPath "$bin\$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  $exes = (@(Get-ChildItem -LiteralPath $bin -Force) | ForEach-Object { $_.Name } | Sort-Object) -join ','
+  if ($exes -ne 'al-call-hierarchy.exe,al-lsp-wrapper.exe') { throw ('wrapper bin must hold exactly al-call-hierarchy.exe and al-lsp-wrapper.exe, got: ' + $exes) }
+  return $hashes
+}
+
+# AL_SEM_DEPENDENCY_SOURCE (al-lsp-for-agents v1.18.4+): the recipe's mode decides it. "embedded"
+# (the upstream default: calls followed into dependency source) leaves it unset; another mode sets it.
+function Set-DependencySource($def) {
+  $mode = $def.source.dependency_source
+  if ($mode -cnotmatch '^(embedded|symbols)\z') { throw ('source.dependency_source must be embedded or symbols, got: ' + $mode) }
+  if ($null -ne $def.lsp_json.al.env.PSObject.Properties['AL_SEM_DEPENDENCY_SOURCE']) { throw 'lsp_json env must not set AL_SEM_DEPENDENCY_SOURCE: source.dependency_source does' }
+  if ($mode -cne 'embedded') { Add-Member -InputObject $def.lsp_json.al.env -NotePropertyName 'AL_SEM_DEPENDENCY_SOURCE' -NotePropertyValue $mode }
 }
 
 function Test-Gzip([string]$path) {
@@ -85,25 +142,22 @@ foreach ($p in $def.probe.PSObject.Properties) {
   if ($h -ne $p.Value) { throw ('hash mismatch for ' + $p.Name + ': got ' + $h) }
 }
 
-# 1. Wrapper releases: each zip is hash-checked, only the exes its source names are
-# taken (a zip also holds the other exe at another version), each exe is hash-checked.
-$n = 0
-foreach ($src in @($def.pins.wrapper)) {
-  $n++
-  Get-Pinned $src "$tmp\wrapper$n.zip"
-  Assert-ZipSafe "$tmp\wrapper$n.zip"
-  Expand-Archive -LiteralPath "$tmp\wrapper$n.zip" -DestinationPath "$tmp\wrapper$n"
-  foreach ($p in $src.files.PSObject.Properties) {
-    if (Test-Path -LiteralPath "$plugin\bin\$($p.Name)") { throw ('wrapper exe named by two sources: ' + $p.Name) }
-    $found = @(Get-ChildItem -LiteralPath "$tmp\wrapper$n" -Recurse -File -Filter $p.Name)
-    if ($found.Count -ne 1) { throw ('wrapper archive ' + $src.release + ' must hold exactly one ' + $p.Name) }
-    Copy-Item -LiteralPath $found[0].FullName -Destination "$plugin\bin\$($p.Name)"
-    $h = (Get-FileHash -LiteralPath "$plugin\bin\$($p.Name)" -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($h -ne $p.Value) { throw ('hash mismatch for ' + $p.Name + ' (' + $src.release + '): got ' + $h) }
-  }
+# 1. The wrapper and al-call-hierarchy, both from the one resolved release: its zip must hash to
+# the API digest (no digest, no install). Their exe hashes are derived from that verified zip,
+# recorded in al-lsp-resolved.json and joined to the exe manifest (a recipe that still pins one
+# of them fails: Add-Member refuses a duplicate name).
+$src = $def.source
+Assert-ReleaseArgs $src $Release $Url $Sha256
+[Console]::Out.WriteLine('[..] install-lsp: ' + $src.repo + ' ' + $Release + ', ' + $src.asset + ' sha256:' + $Sha256)
+Get-Pinned @{ url = $Url; algorithm = 'SHA256'; hash = $Sha256 } "$tmp\wrapper.zip"
+[Console]::Out.WriteLine('[OK] verified ' + $src.asset + ' ' + $Release + ' sha256:' + $Sha256)
+$wrapperExes = Install-WrapperZip "$tmp\wrapper.zip" $src.exes "$plugin\bin"
+foreach ($name in @($wrapperExes.Keys)) {
+  Add-Member -InputObject $def.exes -NotePropertyName ('al-language-server-go-windows\bin\' + $name) -NotePropertyValue $wrapperExes[$name]
+  [Console]::Out.WriteLine('[OK] ' + $name + ' sha256:' + $wrapperExes[$name])
 }
-$exes = (@(Get-ChildItem -LiteralPath "$plugin\bin" -Force) | ForEach-Object { $_.Name } | Sort-Object) -join ','
-if ($exes -ne 'al-call-hierarchy.exe,al-lsp-wrapper.exe') { throw ('wrapper bin must hold exactly al-call-hierarchy.exe and al-lsp-wrapper.exe, got: ' + $exes) }
+$resolved = [ordered]@{ release = $Release; asset = $src.asset; sha256 = $Sha256; dependency_source = $src.dependency_source; exes = $wrapperExes }
+[IO.File]::WriteAllText('C:\cg-lsp\al-lsp-resolved.json', (ConvertTo-Json -InputObject $resolved -Depth 5), $utf8)
 
 # 2. AL extension (a VSIX is a zip, sometimes served gzip-wrapped): its extension folder only.
 Get-Pinned $def.pins.al_extension "$tmp\al.download"
@@ -138,12 +192,15 @@ Expand-Archive -LiteralPath "$tmp\dotnet.zip" -DestinationPath 'C:\cg-lsp\dotnet
 # 4. Plugin files from the hashed definition (single source of truth).
 $noDiag = @($def.lsp_json.al.args) -contains '--no-diagnostics'
 if ($noDiag -ne ($def.diagnostics -eq 'sidecar-off')) { throw ('lsp_json args disagree with diagnostics ' + $def.diagnostics) }
+Set-DependencySource $def
+Add-Member -InputObject $def.plugin_json -NotePropertyName 'version' -NotePropertyValue $Release.Substring(1)
 [IO.File]::WriteAllText("$plugin\.lsp.json", (ConvertTo-Json -InputObject $def.lsp_json -Depth 10), $utf8)
 [IO.File]::WriteAllText("$plugin\.claude-plugin\plugin.json", (ConvertTo-Json -InputObject $def.plugin_json -Depth 10), $utf8)
 
-# 5. Every executable under C:\cg-lsp is exactly the pinned set (DLLs are covered by the archive hashes).
+# 5. Every executable under C:\cg-lsp is exactly the expected set: the recipe's pins plus the two
+# wrapper exes from the verified release (DLLs are covered by the archive hashes).
 Assert-ExeManifest 'C:\cg-lsp' $def.exes
 
 Remove-Item -LiteralPath $tmp -Recurse -Force
-[Console]::Out.WriteLine('[OK] install-lsp: wrapper ' + ((@($def.pins.wrapper) | ForEach-Object { $_.release }) -join ' + ') + ', AL ' + $def.pins.al_extension.version + ', .NET ' + $def.pins.dotnet.version + ', diagnostics ' + $def.diagnostics)
+[Console]::Out.WriteLine('[OK] install-lsp: wrapper ' + $Release + ' (' + $src.asset + ' sha256:' + $Sha256 + ', dependency source ' + $src.dependency_source + '), AL ' + $def.pins.al_extension.version + ', .NET ' + $def.pins.dotnet.version + ', diagnostics ' + $def.diagnostics)
 exit 0

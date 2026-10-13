@@ -54,6 +54,7 @@ import { claudeCodeAdapter } from "../../../../src/harness/adapters/claude-code.
 import { loadSymbolsLock } from "../../../../src/harness/identity.ts";
 import {
   AL_LSP_DEF,
+  AL_LSP_RESOLVED,
   AL_LSP_SHIPPED,
   AL_TOOLS_DEF,
   BASE_IMAGE,
@@ -88,7 +89,14 @@ import {
   readBenchLock,
 } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc } from "../../harness/fake-bc.ts";
-import { ADMIN_GROUPS_CSV, FakeDocker } from "../../harness/fake-docker.ts";
+import {
+  ADMIN_GROUPS_CSV,
+  FakeDocker,
+  fakeFetch,
+  LSP_REL,
+  lspReleaseLabels,
+  lspResolvedJson,
+} from "../../harness/fake-docker.ts";
 import { runQualificationProbe } from "../../../../src/harness/egress-probe.ts";
 import { holdExclusive } from "../../harness/hold-file.ts";
 import {
@@ -5476,8 +5484,10 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
   // An existing tag is refused: each build starts with no tag and produces it.
   docker.buildResults.set(tag, { id, labels, layers: ["l1", "l2"] });
   const o = { root, version: "2.1.282", revision: "3" };
+  // M10-10 fixture: the GitHub API is injected (never called for real); the
+  // built image carries the release labels and resolved file.
   await assertRejects(
-    () => harnessImagesBuild("claude-code", o, docker),
+    () => harnessImagesBuild("claude-code", o, docker, fakeFetch()),
     ConfigurationError,
     `label ${lk} did not land`,
   );
@@ -5487,12 +5497,14 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
   docker.tags.delete(tag);
   docker.buildResults.set(tag, {
     id,
-    labels: { ...labels, [lk]: lv },
+    labels: { ...labels, [lk]: lv, ...lspReleaseLabels() },
     layers: ["l1", "l2"],
   });
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
   assertEquals(
-    (await harnessImagesBuild("claude-code", o, docker)).lsp?.["al"]
+    (await harnessImagesBuild("claude-code", o, docker, fakeFetch())).lsp
+      ?.["al"]
       ?.tool_schema_hash,
     lv.split(" ")[1],
   );
@@ -5518,8 +5530,10 @@ Deno.test("harnessCell: a stub cell's --image is the image runtimeFacts reads (d
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
     "centralgauge.harness.revision": "2",
     [lk]: lv,
+    ...lspReleaseLabels(), // M10-10 fixture
   });
   t.docker.shipFile(dev, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  t.docker.shipFile(dev, AL_LSP_RESOLVED, lspResolvedJson());
   const results = join(t.repo.root, "results", "harness");
   const base = {
     resultsDir: results,
@@ -6311,12 +6325,19 @@ Deno.test("harnessImagesBuild (M10-08c review 7): each build reads under its own
         "centralgauge.harness.version": version,
         "centralgauge.harness.base_digest": baseId,
         [lk]: lv,
+        ...lspReleaseLabels(), // M10-10 fixture
       },
       layers: ["l1", "l2"],
     });
     docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+    docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
     const before = docker.reads.length;
-    await harnessImagesBuild("claude-code", { root, version }, docker);
+    await harnessImagesBuild(
+      "claude-code",
+      { root, version },
+      docker,
+      fakeFetch(),
+    );
     owners.push([...new Set(docker.reads.slice(before).map((r) => r.owner))]);
   }
   const host = Deno.hostname();
@@ -6544,10 +6565,12 @@ Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read c
       "centralgauge.harness.version": version,
       "centralgauge.harness.base_digest": baseId,
       [lk]: lv,
+      ...lspReleaseLabels(), // M10-10 fixture
     },
     layers: ["l1", "l2"],
   });
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
   const host = Deno.hostname();
   const builds = join(root, "results", "harness", "image-builds");
   const dead = `${host}-build-dead0000`;
@@ -6572,7 +6595,12 @@ Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read c
   const liveRead = "cg-harness-read-live00000000";
   docker.listOwned = (o) =>
     Promise.resolve(o === dead ? [deadRead] : o === live ? [liveRead] : []);
-  await harnessImagesBuild("claude-code", { root, version }, docker);
+  await harnessImagesBuild(
+    "claude-code",
+    { root, version },
+    docker,
+    fakeFetch(),
+  );
   assert(
     docker.removed.includes(deadRead),
     "the crashed build's read is swept",
@@ -6631,10 +6659,12 @@ Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed co
         "centralgauge.harness.version": "2.1.290",
         "centralgauge.harness.base_digest": baseId,
         [lk]: lv,
+        ...lspReleaseLabels(), // M10-10 fixture
       },
       layers: ["l1", "l2"],
     });
     docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+    docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
     const builds = join(root, "results", "harness", "image-builds");
     const dead = join(builds, `${Deno.hostname()}-build-dead0000`);
     await Deno.mkdir(dead, { recursive: true });
@@ -6660,6 +6690,7 @@ Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed co
       "claude-code",
       { root: raced.root, version: "2.1.290" },
       raced.docker,
+      fakeFetch(),
     );
   } finally {
     race.restore();
@@ -6684,6 +6715,7 @@ Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed co
           "claude-code",
           { root: denied.root, version: "2.1.290" },
           denied.docker,
+          fakeFetch(),
         ),
       Deno.errors.PermissionDenied,
     );
@@ -6964,7 +6996,13 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
   );
   try {
     await assertRejects(
-      () => harnessImagesBuild("claude-code", { root, version }, docker),
+      () =>
+        harnessImagesBuild(
+          "claude-code",
+          { root, version },
+          docker,
+          fakeFetch(),
+        ),
       ContainerError,
       "cg-harness-read-",
     );
@@ -7008,15 +7046,22 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read con
       "centralgauge.harness.version": version,
       "centralgauge.harness.base_digest": baseId,
       [lk]: lv,
+      ...lspReleaseLabels(), // M10-10 fixture
     },
     layers: ["l1", "l2"],
   });
   docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
   const legacyRead = "cg-harness-read-legacy00000";
   docker.owned = [legacyRead];
   docker.listOwned = (o) =>
     Promise.resolve(o === Deno.hostname() ? [...docker.owned] : []);
-  await harnessImagesBuild("claude-code", { root, version }, docker);
+  await harnessImagesBuild(
+    "claude-code",
+    { root, version },
+    docker,
+    fakeFetch(),
+  );
   assertEquals(docker.removed, [], "no legacy read container removed");
   assert(await docker.state(legacyRead), "the older build's read survives");
 });
@@ -7056,4 +7101,90 @@ Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its ex
     "only paths that exist are named",
   );
   for (const n of all) assert(await exists(n), `${n} survives`);
+});
+
+Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP release once and passes tag, URL and digest as build args and labels; a failed resolution builds nothing", async () => {
+  const root = await Deno.realPath(await Deno.makeTempDir());
+  const docker = new FakeDocker();
+  await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
+    recursive: true,
+  });
+  await Deno.copyFile(AL_LSP_DEF, join(root, AL_LSP_DEF));
+  const [lk, lv] = (await lspLabel(root))!;
+  const baseId = `sha256:${"b".repeat(64)}`;
+  docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
+  const tag = "centralgauge/harness-claude-code:2.1.282-r3";
+  const labels = {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.version": "2.1.282",
+    "centralgauge.harness.base_digest": baseId,
+    "centralgauge.harness.revision": "3",
+    [lk]: lv,
+  };
+  const o = { root, version: "2.1.282", revision: "3" };
+  await assertRejects(
+    () =>
+      harnessImagesBuild(
+        "claude-code",
+        o,
+        docker,
+        fakeFetch({ message: "x" }, 500),
+      ),
+    ConfigurationError,
+    "HTTP 500",
+  );
+  assertEquals(docker.builds.length, 0, "no build without a resolved release");
+
+  const id = `sha256:${"c".repeat(64)}`;
+  docker.buildResults.set(tag, {
+    id,
+    labels: { ...labels, ...lspReleaseLabels() },
+    layers: ["l1", "l2"],
+  });
+  docker.shipFile(id, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id, AL_LSP_RESOLVED, lspResolvedJson());
+  const calls: { url: string }[] = [];
+  const f = await harnessImagesBuild(
+    "claude-code",
+    o,
+    docker,
+    fakeFetch(undefined, 200, calls),
+  );
+  assertEquals(calls.length, 1, "resolved once");
+  const args = docker.builds.at(-1)!;
+  for (
+    const [flag, value] of [
+      ["--build-arg", `LSP_RELEASE=${LSP_REL.tag}`],
+      ["--build-arg", `LSP_WRAPPER_URL=${LSP_REL.url}`],
+      ["--build-arg", `LSP_WRAPPER_SHA256=${LSP_REL.sha256}`],
+      ["--label", `centralgauge.lsp.al.release=${LSP_REL.tag}`],
+      [
+        "--label",
+        `centralgauge.lsp.al.asset=${LSP_REL.asset} sha256:${LSP_REL.sha256}`,
+      ],
+      ["--label", "centralgauge.lsp.al.dependency_source=embedded"],
+    ]
+  ) {
+    const i = args.indexOf(value!);
+    assert(
+      i > 0 && args[i - 1] === flag && i < args.indexOf("-t"),
+      `${flag} ${value}`,
+    );
+  }
+  assertEquals(
+    [f.lsp?.["al"]?.release, f.lsp?.["al"]?.asset],
+    [LSP_REL.tag, `${LSP_REL.asset} sha256:${LSP_REL.sha256}`],
+  );
+
+  // Release labels that did not land on the built image are refused.
+  docker.tags.delete(tag);
+  const id2 = `sha256:${"d".repeat(64)}`;
+  docker.buildResults.set(tag, { id: id2, labels, layers: ["l1", "l2"] });
+  docker.shipFile(id2, AL_LSP_SHIPPED, await Deno.readTextFile(AL_LSP_DEF));
+  docker.shipFile(id2, AL_LSP_RESOLVED, lspResolvedJson());
+  await assertRejects(
+    () => harnessImagesBuild("claude-code", o, docker, fakeFetch()),
+    ConfigurationError,
+    "centralgauge.lsp.al.release",
+  );
 });
