@@ -97,6 +97,7 @@ codeunit 86620 "HX058 Mileage Import Oracle"
             Vehicle.Delete();
         CreateVehicle('HX058-7', 1000);
         Readings.Add('HX058-7;1100');
+        Readings.Add('hx058-7;1200.5');
         Readings.Add('hx058-7');
         Readings.Add('hx058-7;abc');
         Readings.Add('hx058-none;100');
@@ -104,6 +105,22 @@ codeunit 86620 "HX058 Mileage Import Oracle"
         Assert.AreEqual(1, Import(Readings), 'Only the well-formed reading of a known vehicle counts');
         AssertMileage('HX058-7', 1100);
         Assert.IsFalse(Vehicle.Get('HX058-NONE'), 'No vehicle is created for an unknown plate');
+    end;
+
+    [Test]
+    procedure TwoVehiclesDifferentCase()
+    var
+        Readings: List of [Text];
+    begin
+        Prepare();
+        CreateVehicle('HX058-8A', 1000);
+        CreateVehicle('HX058-8B', 1000);
+        Readings.Add('hx058-8a;1200');
+        Readings.Add('HX058-8B;1300');
+
+        Assert.AreEqual(2, Import(Readings), 'Both vehicles are updated');
+        AssertMileage('HX058-8A', 1200);
+        AssertMileage('HX058-8B', 1300);
     end;
 
     local procedure Import(Readings: List of [Text]): Integer

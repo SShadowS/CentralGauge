@@ -4,6 +4,7 @@ partial_credit:
     "86620/LowerCasePlateApplied": 1
     "86620/MixedCasePlateApplied": 1
     "86620/LastReadingWinsWhenLower": 1
+    "86620/TwoVehiclesDifferentCase": 1
   hidden_regressions:
     - "86620/UpperCasePlateAsToday"
     - "86620/LastReadingAnyCaseWins"
@@ -12,6 +13,6 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/lookup-lowercase: { partial_credit: 0.6666666666666666 }
-  naive/add-uppercase: { partial_credit: 0.6666666666666666 }
-  naive/key-get: { partial_credit: 0.6666666666666666 }
+  naive/lookup-lowercase: { partial_credit: 0.5 }
+  naive/add-uppercase: { partial_credit: 0.75 }
+  naive/key-get: { partial_credit: 0.75 }
