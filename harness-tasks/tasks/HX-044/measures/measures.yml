@@ -15,3 +15,6 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/all-company-days: { partial_credit: 0.7 }
+  naive/copy-on-insert: { partial_credit: 0.4 }
+  naive/per-company-table: { partial_credit: 0.4 }
