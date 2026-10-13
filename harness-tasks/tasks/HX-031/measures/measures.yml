@@ -13,3 +13,8 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/batch-only-failures: { partial_credit: 0.625 }
+  naive/catch-and-reraise: { partial_credit: 0.875 }
+  naive/count-in-rental-post: { partial_credit: 0.625 }
+  naive/plain-codeunit: { partial_credit: 0 }
+  naive/stored-counters: { partial_credit: 0.625 }
