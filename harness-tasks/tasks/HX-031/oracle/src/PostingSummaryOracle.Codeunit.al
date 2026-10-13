@@ -67,7 +67,7 @@ codeunit 86080 "HX031 Posting Summary Oracle"
     begin
         Prepare();
         InitVehicle('HX031-V3B', 50);
-        InitVehicle('HX031-V3C', 50);
+        InitVehicle('HX031-V3C', 70);
         ReturnedContract('HX031-C3B', 'HX031-V3B');
         ReturnedContract('HX031-C3C', 'HX031-V3C');
         Refusal.RefuseContract('HX031-C3C');
@@ -140,6 +140,7 @@ codeunit 86080 "HX031 Posting Summary Oracle"
         Assert.AreEqual('Rental contract HX031-C5D must be returned before it is posted.', GetLastErrorText(), 'Post raises the posting''s own error');
         Assert.AreEqual(1, FailedAfter - FailedBefore, 'A contract posted with the wrong status counts as failed');
         Assert.AreEqual(0, PostedAfter - PostedBefore, 'A contract posted with the wrong status does not count as posted');
+        Assert.AreEqual(0.0, AmountAfter - AmountBefore, 'A contract posted with the wrong status adds no amount');
     end;
 
     [Test]
@@ -166,6 +167,8 @@ codeunit 86080 "HX031 Posting Summary Oracle"
         Assert.IsFalse(Ok, 'Post raises the refusal to its caller');
         Assert.AreEqual('HX031 refuses HX031-C6E.', GetLastErrorText(), 'Post right after the return raises the posting''s own error');
         Assert.AreEqual(1, FailedAfter - FailedBefore, 'A contract refused right after its return counts as failed');
+        Assert.AreEqual(0, PostedAfter - PostedBefore, 'A contract refused right after its return does not count as posted');
+        Assert.AreEqual(0.0, AmountAfter - AmountBefore, 'A contract refused right after its return adds no amount');
     end;
 
     [Test]
