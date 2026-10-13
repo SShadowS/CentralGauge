@@ -4361,3 +4361,40 @@ Deno.test("component inventory + LSP (spec v2 gates 1 and 2): a declared, proven
     assertStringIncludes((await sideOf(t, e.id)).setup_error, want, name);
   }
 });
+
+// M10-08c: on real Windows the sandbox's stdout reaches raw.jsonl only when the
+// container ends. A record that appears after the deadline or after the run
+// ended was not seen live and is never proof: nothing is released.
+Deno.test("component inventory: a record delivered only at kill is not proof at the deadline (refused as not seen live)", async () => {
+  const t = await inventoriedEnv();
+  t.env.inventoryTimeoutMs = 300;
+  t.docker.waitForReady = true;
+  t.docker.preReadyAtExit = true;
+  t.docker.preReady = { lines: [INV()] };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes((await sideOf(t, e.id)).setup_error, "live");
+  assertEquals(e.telemetry.cost_usd, 0);
+  assertEquals(t.docker.readySeen, false);
+  assertEquals(t.docker.secretsAtKill ?? [], []);
+  assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
+  assertEquals(await t.env.store.judgments(e.id), []);
+});
+
+Deno.test("component inventory: a record delivered only after the sandbox ended itself is not proof (no release)", async () => {
+  const t = await inventoriedEnv();
+  t.docker.waitForReady = true;
+  t.docker.preReadyAtExit = true;
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.selfExit = { afterMs: 400, code: -1 };
+  const cell = await cellFor(t, "cc-v2-inv");
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
+  const err = (await sideOf(t, e.id)).setup_error as string;
+  assertStringIncludes(err, "live");
+  assert(!err.includes("requested components did not load"), err);
+  assertEquals(t.docker.readySeen, false);
+  assert(!await exists(privatePaths(t.env, e.id).custody), "no custody");
+  assertEquals(await t.env.store.judgments(e.id), []);
+});

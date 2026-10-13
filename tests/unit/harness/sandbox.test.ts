@@ -1315,3 +1315,24 @@ Deno.test("buildRunArgs (M10-01d): --memory 3g right after --isolation hyperv, f
     assertEquals(args.filter((a) => a === "--memory" || a === "-m").length, 1);
   }
 });
+
+// M10-08c: a sweep removes only the sweeping process's own executions; another
+// live process on the same host (same owner label) keeps its containers.
+// API assumption: a 4th argument lists the sweeper's own execution ids. The
+// call is cast so the red test fails on its assertion, not at type-check.
+Deno.test("sweep removes only containers of its own executions, not another process's on the same host", async () => {
+  const d = new FakeDocker();
+  d.owned = ["cg-harness-aaaaaaaa-11111111", "cg-harness-bbbbbbbb-22222222"];
+  d.containers.set("cg-harness-aaaaaaaa-11111111", "exec-own");
+  d.containers.set("cg-harness-bbbbbbbb-22222222", "exec-foreign");
+  const sweep = sweepOwnedSandboxes as unknown as (
+    docker: FakeDocker,
+    owner: string,
+    opMs: number,
+    own: ReadonlySet<string>,
+  ) => Promise<string[]>;
+  const swept = await sweep(d, "HOST1", 50, new Set(["exec-own"]));
+  assertEquals(swept, ["cg-harness-aaaaaaaa-11111111"]);
+  assertEquals(d.removed, ["cg-harness-aaaaaaaa-11111111"]);
+  assert(d.containers.has("cg-harness-bbbbbbbb-22222222"), "foreign survives");
+});
