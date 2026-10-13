@@ -13,3 +13,6 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/commit-per-return: { partial_credit: 0.75 }
+  naive/get-result-ignored: { partial_credit: 0.75 }
+  naive/null-as-text: { partial_credit: 0.75 }
