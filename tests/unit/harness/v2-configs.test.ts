@@ -100,3 +100,30 @@ Deno.test("v2 probe configs: developmental, same model; never in an experiment",
     for (const p of PROBES) assert(!text.includes(p), `${e.name} names ${p}`);
   }
 });
+
+/** M10-08b: the M10 proof configs are their arm with only id and the dev revision changed. */
+const M10_PROBES: [string, string][] = [
+  ["cc-v2-probe-m10-lsp", "cc-v2-plain-lsp"],
+  ["cc-v2-probe-m10-plain", "cc-v2-plain"],
+];
+
+Deno.test("M10 probe configs: their arm with id and image revision 3-dev-M10-08 only; developmental; never in an experiment", async () => {
+  for (const [id, armId] of M10_PROBES) {
+    const c = await loadConfig("harness", id);
+    const arm = await loadConfig("harness", armId);
+    assertEquals(c, { ...arm, id, image_revision: "3-dev-M10-08" }, id);
+    const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
+      .split(/\r?\n/)[0];
+    assertEquals(
+      first,
+      "# M10 proof config (developmental). Never part of an experiment.",
+      id,
+    );
+  }
+  for await (const e of Deno.readDir("harness/experiments")) {
+    const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
+    for (const [p] of M10_PROBES) {
+      assert(!text.includes(p), `${e.name} names ${p}`);
+    }
+  }
+});
