@@ -105,6 +105,8 @@ Deno.test("v2 probe configs: developmental, same model; never in an experiment",
 const M10_PROBES: [string, string][] = [
   ["cc-v2-probe-m10-lsp", "cc-v2-plain-lsp"],
   ["cc-v2-probe-m10-plain", "cc-v2-plain"],
+  ["cc-v2-probe-m10-realistic", "cc-v2-realistic"],
+  ["cc-v2-probe-m10-realistic-lsp", "cc-v2-realistic-lsp"],
 ];
 
 Deno.test("M10 probe configs: their arm with id and image revision 3-dev-M10-08 only; developmental; never in an experiment", async () => {
