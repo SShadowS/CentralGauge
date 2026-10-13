@@ -4,11 +4,14 @@ partial_credit:
     "86400/SevenVehiclesThreeMessages": 1
     "86400/SixVehiclesTwoMessages": 1
     "86400/ThreeVehiclesOneMessage": 1
-    "86400/TwoVehiclesOneMessage": 1
-    "86400/EmptyBatchQueuesNothing": 1
-    "86400/BatchEntriesPending": 1
     "86400/TenVehiclesKeepOrder": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "86400/TwoVehiclesOneMessage"
+    - "86400/EmptyBatchQueuesNothing"
+    - "86400/BatchEntriesPending"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/add-before-fill: { partial_credit: 0 }
+  naive/assign-empty-list: { partial_credit: 0.25 }
+  naive/remove-loop: { partial_credit: 0 }
