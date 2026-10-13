@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Leasing]
   tests:
-    - { codeunit: 86340, procedures: [HolidayEnteredHereApplies, HolidayEnteredInSisterApplies, HolidaySharedWithSister, SisterNonWorkingDayDoesNotApply, OwnNonWorkingDayStillApplies, RemovedInSisterNoLongerApplies, WorkingDaysBetweenSkipsGroupHoliday, NextWorkingDaySkipsGroupHoliday, LeaseInvoiceDateSkipsGroupHoliday] }
+    - { codeunit: 86340, procedures: [HolidayEnteredHereApplies, HolidayEnteredInSisterApplies, HolidaySharedWithSister, SisterNonWorkingDayDoesNotApply, OwnNonWorkingDayStillApplies, RemovedInSisterNoLongerApplies, WorkingDaysBetweenSkipsGroupHoliday, NextWorkingDaySkipsGroupHoliday, LeaseInvoiceDateSkipsGroupHoliday, GroupHolidayTableAsSpecified] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

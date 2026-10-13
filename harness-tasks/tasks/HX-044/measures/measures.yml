@@ -10,6 +10,7 @@ partial_credit:
     "86340/WorkingDaysBetweenSkipsGroupHoliday": 1
     "86340/NextWorkingDaySkipsGroupHoliday": 1
     "86340/LeaseInvoiceDateSkipsGroupHoliday": 1
+    "86340/GroupHolidayTableAsSpecified": 1
   hidden_regressions: []
 reuse: null
 expect:

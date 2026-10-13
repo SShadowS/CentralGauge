@@ -80,6 +80,7 @@ codeunit 86340 "HX044 Group Holiday Oracle"
     begin
         InitHX44();
         AddHX44HolidayHere(20270614D);
+        Assert.IsFalse(WorkingDays.IsWorkingDay(20270614D), 'Precondition: the group holiday applies before it is deleted');
 
         SisterHoliday.ChangeCompany(HX44SisterCompany());
         if SisterHoliday.Get(20270614D) then
@@ -119,6 +120,20 @@ codeunit 86340 "HX044 Group Holiday Oracle"
         AddHX44HolidayInSister(20270614D);
 
         Assert.AreEqual(20270615D, LeaseInvoicing.InvoiceDate(20270614D), 'A lease due on a group holiday is invoiced on the next working day');
+    end;
+
+    [Test]
+    procedure GroupHolidayTableAsSpecified()
+    var
+        AllObj: Record AllObj;
+        GroupHoliday: Record "CGR Group Holiday";
+    begin
+        InitHX44();
+        AllObj.SetRange("Object Type", AllObj."Object Type"::Table);
+        AllObj.SetRange("Object Name", 'CGR Group Holiday');
+        Assert.IsTrue(AllObj.FindFirst(), 'The table CGR Group Holiday exists');
+        Assert.AreEqual(70014, AllObj."Object ID", 'CGR Group Holiday has id 70014');
+        Assert.AreEqual(100, MaxStrLen(GroupHoliday.Description), 'Description is Text[100]');
     end;
 
     local procedure InitHX44()
