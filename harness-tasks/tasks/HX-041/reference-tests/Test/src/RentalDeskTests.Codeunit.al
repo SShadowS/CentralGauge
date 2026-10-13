@@ -289,6 +289,103 @@ codeunit 80083 "CGR Rental Desk Tests"
     end;
 
     [Test]
+    procedure ReturnOfPostedContractIsRefused()
+    var
+        Vehicle: Record "CGR Vehicle";
+        Contract: Record "CGR Rental Contract";
+        DamageEntry: Record "CGR Damage Entry";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Runner: Codeunit "CGR Rental Desk Runner";
+        ContractNo: Code[20];
+        Ok: Boolean;
+    begin
+        SetUpDesk();
+        Lib.ClearLedgerEntries('HX041-V20');
+        ContractNo := CheckedOutContract('HX041-V20', 1000);
+        RentalMgt.Return(ContractNo, 1200, '');
+        RentalMgt.Post(ContractNo);
+        Commit();
+
+        Runner.SetReturn(ContractNo, 1300, 'Scratch on the door');
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'A posted contract cannot be returned');
+        Assert.AreEqual(StrSubstNo(WrongStatusTxt, ContractNo, Enum::"CGR Rental Status"::"Checked Out"), GetLastErrorText(), 'Refusal text');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Contract.Status::Posted, Contract.Status, 'The contract stays posted');
+        Assert.AreEqual(1200, Contract."Return Km", 'The return km is kept');
+        Assert.AreEqual('', Contract."Damage Description", 'No damage description is stored');
+        Vehicle.Get('HX041-V20');
+        Assert.AreEqual(1200, Vehicle.Mileage, 'The vehicle keeps its mileage');
+        Assert.IsFalse(Vehicle.Blocked, 'The vehicle is not blocked');
+        Assert.AreEqual(0, Vehicle."Open Damages", 'No open damage');
+        DamageEntry.SetRange("Vehicle No.", 'HX041-V20');
+        Assert.AreEqual(0, DamageEntry.Count(), 'No damage entry is registered');
+    end;
+
+    [Test]
+    procedure SwapOfPostedContractIsRefused()
+    var
+        OldVehicle: Record "CGR Vehicle";
+        NewVehicle: Record "CGR Vehicle";
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Runner: Codeunit "CGR Rental Desk Runner";
+        ContractNo: Code[20];
+        Ok: Boolean;
+    begin
+        SetUpDesk();
+        Lib.ClearLedgerEntries('HX041-V21');
+        ContractNo := CheckedOutContract('HX041-V21', 1000);
+        RentalMgt.Return(ContractNo, 1100, '');
+        RentalMgt.Post(ContractNo);
+        Lib.CreateVehicle('HX041-V22', 1500, Enum::"CGR Maintenance Strategy"::Default);
+        Commit();
+
+        Runner.SetSwap(ContractNo, 'HX041-V22');
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'A posted contract cannot swap vehicles');
+        Assert.AreEqual(StrSubstNo(WrongStatusTxt, ContractNo, Enum::"CGR Rental Status"::"Checked Out"), GetLastErrorText(), 'Refusal text');
+        Contract.Get(ContractNo);
+        Assert.AreEqual('HX041-V21', Contract."Vehicle No.", 'The contract keeps its vehicle');
+        Assert.AreEqual(Contract.Status::Posted, Contract.Status, 'The contract stays posted');
+        Assert.AreEqual(1000, Contract."Start Km", 'The contract keeps its start km');
+        OldVehicle.Get('HX041-V21');
+        Assert.IsFalse(OldVehicle."Checked Out", 'The returned vehicle stays released');
+        NewVehicle.Get('HX041-V22');
+        Assert.IsFalse(NewVehicle."Checked Out", 'The other vehicle is not checked out');
+    end;
+
+    [Test]
+    procedure ReturnWithDamageOnDamagedVehicleAddsOpenDamage()
+    var
+        Vehicle: Record "CGR Vehicle";
+        DamageEntry: Record "CGR Damage Entry";
+        DamageMgt: Codeunit "CGR Damage Mgt";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        SetUpDesk();
+        ContractNo := CheckedOutContract('HX041-V19', 1000);
+        DamageMgt.RegisterDamage('HX041-V19', 'Dent in the bumper');
+        Vehicle.Get('HX041-V19');
+        Assert.AreEqual(1, Vehicle."Open Damages", 'Arrange: one open damage before the return');
+
+        RentalMgt.Return(ContractNo, 1300, 'Cracked windscreen');
+
+        Vehicle.Get('HX041-V19');
+        Assert.IsTrue(Vehicle.Blocked, 'The vehicle stays blocked');
+        Assert.AreEqual(2, Vehicle."Open Damages", 'The open damage count goes up by one');
+        DamageEntry.SetRange("Vehicle No.", 'HX041-V19');
+        Assert.AreEqual(2, DamageEntry.Count(), 'A second damage entry is registered');
+        DamageEntry.SetRange(Description, 'Cracked windscreen');
+        Assert.AreEqual(1, DamageEntry.Count(), 'The returned damage is registered with its description');
+        DamageEntry.FindFirst();
+        Assert.IsFalse(DamageEntry.Repaired, 'The returned damage is open');
+    end;
+
+    [Test]
     procedure ReturnWithDamageRegistersDamageInFleet()
     var
         Vehicle: Record "CGR Vehicle";
