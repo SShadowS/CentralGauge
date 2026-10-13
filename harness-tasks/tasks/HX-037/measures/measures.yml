@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "86200/ReadyContractHasNoProblems": 1
+    "86200/TwoOwnProblemsListed": 1
+    "86200/ExtensionProblemsListed": 1
+    "86200/OwnThenExtensionProblems": 1
+    "86200/SingleProblemNotRaised": 1
+    "86200/OrdinaryExtensionErrorStopsCheck": 1
+    "86200/ListReplacedOnEachCall": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
