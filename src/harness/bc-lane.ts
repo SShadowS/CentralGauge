@@ -880,6 +880,48 @@ export interface PrepareInput {
   lock: LockedSymbols;
   signal?: AbortSignal;
   cache?: BuildCache;
+  /** What the candidate build is, for a crashed-build message (default "candidate"). */
+  label?: string;
+}
+
+/**
+ * H-04: a dependent's "dependency X did not build" entry (synthetic above):
+ * a consequence of another app's failure, never a diagnostic of its own.
+ */
+export function isCascadeDiagnostic(
+  d: { code: string; message: string },
+): boolean {
+  return d.code === "CG0001" && /^dependency .+ did not build$/.test(d.message);
+}
+
+/**
+ * H-04: a failed build no compiler diagnostic explains (nothing but the
+ * cascade) crashed (BC session or compile service died): infrastructure,
+ * thrown as such, never the model's failure. Any genuine diagnostic, the
+ * other synthetic CG0001 refusals included, keeps it a build failure.
+ * H-04b: thrown inside the lane's compile boundary, so it reroutes.
+ */
+export function throwIfCrashed(
+  built: {
+    folder: string;
+    ok: boolean;
+    diagnostics: { code: string; message: string }[];
+  }[],
+  container: string,
+  label: string,
+): void {
+  const failed = built.filter((b) => !b.ok);
+  if (failed.length === 0) return;
+  if (failed.some((b) => b.diagnostics.some((d) => !isCascadeDiagnostic(d)))) {
+    return;
+  }
+  throw new ContainerError(
+    `${label} build of ${
+      failed.map((b) => b.folder).join(", ")
+    } failed with no compiler diagnostic (crashed build)`,
+    container,
+    "compile",
+  );
 }
 
 export interface Prepared {
@@ -976,6 +1018,8 @@ async function prepareOn(
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
+  // H-04b: a crashed prerequisite is infra (reroutes), not a task bug.
+  throwIfCrashed(pre, container, "staged prerequisite");
   const failedPre = pre.find((b) => !b.ok);
   if (failedPre) {
     // The staged baseline must compile (authoring gate): a task bug, not the agent's.
@@ -999,6 +1043,7 @@ async function prepareOn(
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
+  throwIfCrashed(built, container, o.label ?? "candidate");
   const all = [...pre, ...built];
   const buildOk = built.every((b) => b.ok);
   const fileOf = new Map(

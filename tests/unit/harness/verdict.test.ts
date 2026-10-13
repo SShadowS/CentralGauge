@@ -1,6 +1,11 @@
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { join } from "@std/path";
-import { ContainerError } from "../../../src/errors.ts";
+import { ContainerError, ValidationError } from "../../../src/errors.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
@@ -699,11 +704,9 @@ Deno.test("judge (H-04): a candidate build crash in a multi-app workspace (no di
     /\/apps\/.*\/Rental$/.test(p) || p.endsWith("/apps/Rental");
   const { input } = await setup("correct");
   const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
-  // The fixture is multi-app: the dependent's cascade diagnostic is there.
-  assert(
-    log.diagnostics.some((d) => d.code === "CG0001"),
-    JSON.stringify(log.diagnostics),
-  );
+  // The fixture is multi-app: the dependent Test failed too (its cascade
+  // diagnostic was ignored). H-04b: thrown inside the build, before the log.
+  assertStringIncludes(log.error ?? "", "Rental, Test");
   assertEquals(judgment.verdict, "unscored");
   assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null]);
   assertEquals(bc.tests, []);
@@ -821,6 +824,86 @@ Deno.test("isCascadeDiagnostic (H-04): exactly the dependency-did-not-build entr
       message: "dependency x is not in the symbols lock or the workspace",
     }),
     false,
+  );
+});
+
+// ---- H-04b: a crashed build reroutes inside the judgment; a crashed prerequisite is infra ----
+
+/** Crash the first compile matching `match`, on whatever container it lands. */
+function crashOnce(bc: FakeBc, match: (p: string) => boolean) {
+  /** Containers of every matching compile, in order: the first one crashed. */
+  const seen: string[] = [];
+  bc.crashFor = (p, c) => {
+    if (!match(p)) return false;
+    seen.push(c);
+    return seen.length === 1;
+  };
+  return seen;
+}
+
+/** The first matching compile crashed and the retry ran on another container. */
+function assertRerouted(seen: string[]) {
+  assert(seen.length >= 2 && seen[1] !== seen[0], JSON.stringify(seen));
+}
+
+Deno.test("judge (H-04b): a candidate build that crashes once reroutes to another container and is scored", async () => {
+  const bc = script();
+  const crashed = crashOnce(
+    bc,
+    (p) => p.includes("/candidate/") && p.endsWith("/Rental"),
+  );
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertRerouted(crashed);
+  assertEquals(judgment.verdict, "pass", JSON.stringify(log.notes));
+  assertEquals(log.error, null);
+});
+
+Deno.test("judge (H-04b): an oracle build that crashes once reroutes to another container and is scored", async () => {
+  const bc = script();
+  const crashed = crashOnce(bc, (p) => p.endsWith("/oracle"));
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertRerouted(crashed);
+  assertEquals(judgment.verdict, "pass", JSON.stringify(log.notes));
+});
+
+Deno.test("judge (H-04b): a staged prerequisite build that crashes once reroutes and is scored", async () => {
+  const bc = script();
+  const crashed = crashOnce(bc, (p) => p.includes("/prereq/"));
+  const { input } = await setup("correct");
+  const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertRerouted(crashed);
+  assertEquals(judgment.verdict, "pass");
+});
+
+Deno.test("judge (H-04b): a staged prerequisite that crashes on every container is unscored, not a task error", async () => {
+  const bc = script();
+  bc.crashFor = (p) => p.includes("/prereq/");
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "unscored");
+  assertStringIncludes(log.error ?? "", "no compiler diagnostic");
+});
+
+Deno.test("judge (H-04b): a staged prerequisite with a genuine compile error is still a task error", async () => {
+  const bc = script();
+  bc.errorsFor = (folder) =>
+    folder === "Core"
+      ? [{
+        code: "AL0118",
+        message: "core broke",
+        file: "C.al",
+        line: 1,
+        column: 1,
+        severity: "error",
+      }]
+      : [];
+  const { input } = await setup("correct");
+  await assertRejects(
+    () => judge(new BcLane(bc, ["C1"]), input),
+    ValidationError,
+    "staged prerequisite Core does not compile",
   );
 });
 

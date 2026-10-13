@@ -724,6 +724,59 @@ Deno.test("--rerun of an exhausted mock-crash cell writes one manual_rerun root 
   );
 });
 
+/** H-04b: `n` infra-unscored judgments (current scorer suite) on `e`. */
+async function unscoredJudgments(t: TestEnv, executionId: string, n: number) {
+  const [j] = await t.env.store.judgments(executionId);
+  for (let i = 0; i < n; i++) {
+    const at = new Date(Date.now() + 1000 + i).toISOString();
+    await t.env.store.writeJudgment({
+      ...j!,
+      id: crypto.randomUUID(),
+      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      verdict: "unscored",
+      started_at: at,
+      ended_at: at,
+    });
+  }
+}
+
+Deno.test("--rerun (H-04b): a cell past the rejudge budget is terminal unscored, so it is rerun; the dry run does not count it outstanding", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const first = c.blocks[0]!;
+  const e = (await t.env.store.executions(c.id)).find((x) =>
+    x.block === first.index && x.arm === "mock-positive"
+  )!;
+  await unscoredJudgments(t, e.id, 3);
+  const dry = io();
+  await runCampaign(t.env, "contract", opts({ dryRun: true }), dry);
+  assertEquals(
+    estimateLine(dry.lines, "mock-positive")?.startsWith(
+      "[DRY] estimate mock-positive: 1 cells",
+    ) ?? false,
+    false,
+    dry.lines.join("\n"),
+  );
+  const n = (await t.env.store.executions(c.id)).length;
+  await runCampaign(
+    t.env,
+    "contract",
+    opts({
+      rerun: {
+        task: first.task_id,
+        repeat: first.repeat,
+        arm: "mock-positive",
+      },
+    }),
+    io(),
+  );
+  const after = await t.env.store.executions(c.id);
+  assertEquals(after.length, n + 1);
+  assertEquals(after.at(-1)!.run_kind, "manual_rerun");
+});
+
 Deno.test("--rerun refuses scored (pass and fail), pending, unrun and unknown cells before any container run", async () => {
   const t = await mockEnv();
   await experiment(
