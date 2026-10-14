@@ -1,0 +1,17 @@
+id: HX-066
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Core, Test]
+coupling: [interface]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension] }
+  - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval, DueByKmWithoutPlan] }
+  - { codeunit: 80000, procedures: [HeavyDutyStrategyFromFleetExtension] }
+fail_to_pass: null
+mutants: [else-heavy-duty, strategy-instance-cached, plan-strategy-over-vehicle]
+contamination: null
+limits: { timeout_min: 30 }
