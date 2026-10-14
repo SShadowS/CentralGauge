@@ -425,7 +425,7 @@ export async function mcpDerivedSettingsOnly(
  * below the adapters in the import graph.
  */
 export type HarnessNative = Readonly<
-  Record<string, () => Record<string, unknown>>
+  Record<string, (m: ResolvedManifest) => Record<string, unknown>>
 >;
 
 /**
@@ -443,11 +443,12 @@ async function harnessDerivedSettingsOnly(
   const rest = async (m: ResolvedManifest): Promise<string | null> => {
     const native = { ...m.settings.native };
     const own = Object.hasOwn(harnessNative, m.harness)
-      ? harnessNative[m.harness]!()
+      ? harnessNative[m.harness]!(m)
       : {};
-    // ponytail: checked against today's derivation, so changing DISALLOWED_TOOLS
-    // or PI_SETTINGS invalidates older campaigns' reports; upgrade: key the
-    // derivation by harness_version or record it in the manifest.
+    // ponytail: checked against today's derivation (given the manifest, so an
+    // adapter can recognise its own older shape, H-07), so changing
+    // DISALLOWED_TOOLS or PI_SETTINGS otherwise invalidates older campaigns'
+    // reports; upgrade: key the derivation by harness_version or record it.
     for (const [k, v] of Object.entries(own)) {
       if (
         !Object.hasOwn(native, k) ||

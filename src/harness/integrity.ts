@@ -8,7 +8,7 @@
 import type { z } from "zod";
 import { ConfigurationError, ValidationError } from "../errors.ts";
 import { taskSetHash } from "./identity.ts";
-import { claudeCodeHarnessNative } from "./adapters/claude-code.ts";
+import { claudeCodeDerivedNative } from "./adapters/claude-code.ts";
 import { piHarnessNative } from "./adapters/pi.ts";
 import {
   assertVaryHolds,
@@ -80,7 +80,7 @@ function timeProblem(r: { started_at: string; ended_at: string }) {
 
 /** The only native keys a harness difference may explain (M5-01a). */
 const HARNESS_NATIVE: HarnessNative = {
-  "claude-code": claudeCodeHarnessNative,
+  "claude-code": claudeCodeDerivedNative,
   pi: piHarnessNative,
 };
 

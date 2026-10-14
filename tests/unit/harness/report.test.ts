@@ -2035,39 +2035,50 @@ Deno.test("buildReport (M11-12 r2): a counted judgment's record filed under a su
   assertStringIncludes(err.message, "differs from the key");
 });
 
-Deno.test("buildReport (H-07): web_excess cells keep their cost and are listed with their unpriced web search requests", async () => {
+Deno.test("buildReport (H-07): web_excess cells keep their cost; unpriced web searches are disclosed whatever the cell's status", async () => {
   const base = await records();
-  const executions = base.executions.map((e) =>
-    e.arm === "skills"
-      ? {
-        ...e,
-        telemetry: {
-          ...e.telemetry,
-          raw_usage: {
-            usage_reconciliation: { status: "web_excess", excess: {} },
-            unpriced: e.task_id === "HX-001"
-              ? [{ model: "m", item: "web_search_requests", count: 2 }]
-              : [],
-          },
-        },
-      }
-      : e
-  );
+  const raw: Record<
+    string,
+    (typeof base.executions)[number]["telemetry"]["raw_usage"]
+  > = {
+    "skills/HX-001": {
+      usage_reconciliation: { status: "web_excess", excess: {} },
+      unpriced: [
+        { model: "m", item: "web_search_requests", count: 2 },
+        { model: "n", item: "web_search_requests", count: 1 },
+      ],
+    },
+    // The worst status is compaction_excess, yet the searches still show.
+    "skills/HX-002": {
+      usage_reconciliation: { status: "compaction_excess", excess: {} },
+      unpriced: [{ model: "m", item: "web_search_requests", count: 1 }],
+    },
+    "plain/HX-001": { usage_reconciliation: { status: "exact" } },
+    "plain/HX-002": { usage_reconciliation: { status: "exact" } },
+  };
+  const executions = base.executions.map((e) => ({
+    ...e,
+    telemetry: { ...e.telemetry, raw_usage: raw[`${e.arm}/${e.task_id}`]! },
+  }));
   const r = await buildReport({ ...base, executions }, { resamples: 50 });
-  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.web_excess, 2);
+  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.web_excess, 1);
   assertEquals(r.exploratory!.web_excess, [
-    { arm: "skills", task: "HX-001", repeat: 1, unpriced_web_searches: 2 },
-    { arm: "skills", task: "HX-002", repeat: 1, unpriced_web_searches: 0 },
+    { arm: "skills", task: "HX-001", repeat: 1 },
+  ]);
+  assertEquals(r.exploratory!.unpriced_web_searches, [
+    { arm: "skills", task: "HX-001", repeat: 1, count: 3 },
+    { arm: "skills", task: "HX-002", repeat: 1, count: 1 },
   ]);
   // Cost kept: skills still costs $1 per cell.
   assertEquals(r.arms.find((a) => a.arm === "skills")!.total_spend_usd, 2);
   const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "web_excess (cost kept): HX-001 r1 skills");
   assertStringIncludes(
     text,
-    "web_excess (cost kept; excludes 2 unpriced web search requests): HX-001 r1 skills",
+    "cost excludes 3 unpriced web search request(s): HX-001 r1 skills",
   );
   assertStringIncludes(
     text,
-    "web_excess (cost kept; excludes 0 unpriced web search requests): HX-002 r1 skills",
+    "cost excludes 1 unpriced web search request(s): HX-002 r1 skills",
   );
 });

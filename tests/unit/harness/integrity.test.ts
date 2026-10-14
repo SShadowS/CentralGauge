@@ -789,3 +789,30 @@ Deno.test("validateCampaignRecords: a campaign on a development image revision i
     ),
   );
 });
+
+Deno.test("validateCampaignRecords (H-07): a pre-H-07 cc-vs-pi campaign (six disallowed tools) stays valid; a web arm under vary [harness] is refused", async () => {
+  const six = claudeCodeHarnessNative(true).disallowed_tools;
+  const asClaude = (f: (m: ResolvedManifest) => ResolvedManifest) =>
+  (
+    m: ResolvedManifest,
+  ) => m.harness === "claude-code" ? f(m) : m;
+  const legacy = asClaude((m) =>
+    native(m, (n) => ({ ...n, disallowed_tools: six }))
+  );
+  assertEquals(await ccVsPi(legacy), []);
+  assertEquals(await ccVsPi(legacy, undefined, true), []);
+  const webArm = asClaude((m) => ({
+    ...native(m, (n) => ({ ...n, disallowed_tools: six })),
+    settings: {
+      requested: { ...m.settings.requested, web_tools: true },
+      native: { ...m.settings.native, disallowed_tools: six },
+    },
+  }));
+  // The edit applies to whichever side is the claude-code arm.
+  const p = [
+    ...await ccVsPi(webArm),
+    ...await ccVsPi(webArm, undefined, true),
+  ];
+  assertEquals(p.length, 1);
+  assertStringIncludes(p[0]!, ": settings");
+});

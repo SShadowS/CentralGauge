@@ -215,15 +215,20 @@ export interface HarnessReport {
     /** Cells in compaction_excess: their cost is kept (owner default), listed here. */
     compaction_excess: { arm: string; task: string; repeat: number }[];
     /**
-     * H-07: cells in web_excess (unstreamed web tool requests): cost kept,
-     * listed with the web search requests it excludes (no catalog rate).
+     * H-07: cells in web_excess (unstreamed web tool requests): cost kept.
      * Absent in reports written before H-07.
      */
-    web_excess?: {
+    web_excess?: { arm: string; task: string; repeat: number }[];
+    /**
+     * H-07: every terminal cell whose attempts report unpriced web search
+     * requests (no catalog rate), whatever its reconciliation status: its cost
+     * excludes them. Absent in reports written before H-07.
+     */
+    unpriced_web_searches?: {
       arm: string;
       task: string;
       repeat: number;
-      unpriced_web_searches: number;
+      count: number;
     }[];
   };
 }
@@ -895,11 +900,12 @@ export async function buildReport(
     web_excess: terminal.filter((c) =>
       statusOf.get(`${c.arm}\u0000${c.task}\u0000${c.repeat}`) ===
         "web_excess"
-    ).map((c) => ({
+    ).map((c) => ({ arm: c.arm, task: c.task, repeat: c.repeat })),
+    unpriced_web_searches: terminal.map((c) => ({
       arm: c.arm,
       task: c.task,
       repeat: c.repeat,
-      unpriced_web_searches: attemptsOf(c).reduce((n, e) => {
+      count: attemptsOf(c).reduce((n, e) => {
         const raw = e.telemetry.raw_usage as { unpriced?: unknown } | null;
         const items = Array.isArray(raw?.unpriced) ? raw.unpriced : [];
         return n + items.reduce(
@@ -911,7 +917,7 @@ export async function buildReport(
           0,
         );
       }, 0),
-    })),
+    })).filter((c) => c.count > 0),
   };
   const provisional = summaries.some((s) => s.provisional);
   const repeats = { planned: exp.repeats, reported };
@@ -1395,8 +1401,11 @@ export function renderReport(r: HarnessReport): string {
       );
     }
     for (const c of x.web_excess ?? []) {
+      out.push(`    web_excess (cost kept): ${c.task} r${c.repeat} ${c.arm}`);
+    }
+    for (const c of x.unpriced_web_searches ?? []) {
       out.push(
-        `    web_excess (cost kept; excludes ${c.unpriced_web_searches} unpriced web search requests): ${c.task} r${c.repeat} ${c.arm}`,
+        `    cost excludes ${c.count} unpriced web search request(s): ${c.task} r${c.repeat} ${c.arm}`,
       );
     }
     for (const metric of new Set(x.arms.map((a) => a.metric))) {

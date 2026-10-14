@@ -18,6 +18,7 @@ import {
   CAMPAIGN_CALIBRATED,
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
+  claudeCodeDerivedNative,
   claudeCodeHarnessNative,
   LSP_PLUGINS,
   pluginIs,
@@ -3208,10 +3209,10 @@ Deno.test("web tools (H-07): blocked by default; settings.web_tools: true allows
     native({})["disallowed_tools"],
   );
   assertEquals(native({ web_tools: true })["disallowed_tools"], SIX);
-  // One encoding: the flag itself is not copied, so false equals absent.
+  // One encoding: the flag itself is not copied, and only true is accepted
+  // (an explicit false would hash, via settings.requested, unlike absent).
   assertEquals(native({ web_tools: true })["web_tools"], undefined);
-  assertEquals(native({ web_tools: false }), native({}));
-  for (const bad of ["yes", 1, null, {}]) {
+  for (const bad of [false, "yes", 1, null, {}]) {
     assertThrows(
       () => native({ web_tools: bad }),
       ConfigurationError,
@@ -3249,10 +3250,13 @@ const webArm = (lsp: boolean, web: boolean) => ({
 });
 // Trimmed from M8-07c cells 0227ff9d (LSP arm: ToolSearch + 2 WebSearch) and
 // 105ec327 (plain arm: the 2 WebFetch exchanges only). Kept records are
-// byte-exact except thinking text, tool output and web results (trimmed); the
-// result record is rebuilt: modelUsage = the kept messages + the cell's
-// unstreamed web excess (0227ff9d: input 27,143, output 1,868, 2 searches;
-// 105ec327 fetch-only: a synthetic input 9,000 / output 500, 0 searches).
+// byte-exact except: thinking text, tool output and web results (trimmed);
+// the WebFetch tool_use prompts (shortened). The result record is rebuilt:
+// modelUsage = the kept messages + an unstreamed web excess. 0227ff9d keeps
+// the cell's recorded excess (input 27,143, output 1,868, 2 searches) and its
+// full-cell total_cost_usd (reported, not recomputed). 105ec327's excess is
+// SYNTHETIC (input 9,000 / output 500, 0 searches): that cell also searched,
+// so its recorded excess is not a fetch-only figure.
 const WEB_FIXTURE = {
   search: "tests/fixtures/harness/claude-code/web-search-2.1.296.jsonl",
   fetch: "tests/fixtures/harness/claude-code/web-fetch-2.1.296.jsonl",
@@ -3322,7 +3326,11 @@ Deno.test("web tools (H-07): web excess is refused when web tools were disallowe
   };
   // Default arm (web disallowed): the web calls are a named stream problem
   // and the init's web tools an inventory problem; never a silent cost.
-  const off = await unreconciled(search, webArm(true, false), "exceeds");
+  const off = await unreconciled(
+    search,
+    webArm(true, false),
+    "WebSearch used while disallowed",
+  );
   assert(
     off.raw.stream_problems.some((p) =>
       p.includes("WebSearch used while disallowed")
@@ -3358,6 +3366,125 @@ Deno.test("web tools (H-07): web excess is refused when web tools were disallowe
     fetch.replaceAll('"name":"WebFetch"', '"name":"Read"'),
     webArm(false, true),
     "exceeds",
+  );
+});
+
+Deno.test("web tools (H-07 review): disallowed use, unexecuted calls, missing counts and sub-agent usage are never web excess", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const fetch = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const why = async (text: string, arm: Record<string, unknown>) => {
+    const { r } = await parse(text, 0, arm);
+    const rec = webRaw(r).usage_reconciliation!;
+    return {
+      status: rec.status,
+      why: rec.why ?? "",
+      cost: r.telemetry.cost_usd,
+    };
+  };
+  const refused = async (
+    text: string,
+    arm: Record<string, unknown>,
+    want: string,
+  ) => {
+    const got = await why(text, arm);
+    assertEquals([got.status, got.cost], ["unreconciled", null], want);
+    assertStringIncludes(got.why, want);
+  };
+  // A disallowed call fails even when the totals are exact (no excess).
+  const exact = search
+    .replace('"inputTokens":27149', '"inputTokens":6')
+    .replace('"outputTokens":1884', '"outputTokens":16');
+  await refused(exact, webArm(true, false), "WebSearch used while disallowed");
+  // A denied or failed web call executed nothing: it explains no excess.
+  const denied = fetch.replace(
+    '"permission_denials":[]',
+    '"permission_denials":[{"tool_name":"WebFetch","tool_use_id":"toolu_01DQrMev6L9ECRYm7FWzwTpr","tool_input":{}},{"tool_name":"WebFetch","tool_use_id":"toolu_01FdJHumJzXf8cJpkEykkFfr","tool_input":{}}]',
+  );
+  await refused(denied, webArm(false, true), "exceeds");
+  const failed = fetch.replaceAll(
+    '"type":"tool_result","content"',
+    '"type":"tool_result","is_error":true,"content"',
+  );
+  await refused(failed, webArm(false, true), "exceeds");
+  // A model with an executed web call must report webSearchRequests.
+  await refused(
+    fetch.replace('"webSearchRequests":0,', ""),
+    webArm(false, true),
+    "webSearchRequests missing",
+  );
+  // An executed WebSearch without a searchCount fails, with or without excess.
+  const noCount = search.replace(',"searchCount":1}', "}");
+  await refused(noCount, webArm(true, true), "without a searchCount");
+  // Sub-agent usage on the model makes the excess ambiguous (a duplicated
+  // child looks like web use): unproven, never web_excess.
+  const lines = fetch.trimEnd().split("\n");
+  const child = JSON.stringify({
+    type: "user",
+    session_id: "1f8dff79-00e3-4c68-a80a-ae1911bf1cc7",
+    parent_tool_use_id: null,
+    message: {
+      role: "user",
+      content: [{
+        type: "tool_result",
+        tool_use_id: "toolu_SUB",
+        content: "ok",
+      }],
+    },
+    tool_use_result: {
+      resolvedModel: "claude-sonnet-5",
+      usage: {
+        input_tokens: 100,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 5,
+      },
+    },
+  });
+  const withChild = [
+    ...lines.slice(0, -1),
+    child,
+    lines.at(-1)!.replace('"inputTokens":9004', '"inputTokens":9104')
+      .replace('"outputTokens":509', '"outputTokens":514'),
+  ].join("\n");
+  await refused(withChild, webArm(false, true), "sub-agent usage");
+  // A malformed list allows nothing (and is named); a manifest without the
+  // list predates M1-32b, blocked nothing, and reconciles.
+  const arm = webArm(false, true);
+  const malformed = {
+    ...arm,
+    settings: {
+      ...arm.settings,
+      native: { ...arm.settings.native, disallowed_tools: "WebFetch" },
+    },
+  };
+  await refused(fetch, malformed, "exceeds");
+  const legacy = {
+    ...arm,
+    settings: {
+      requested: {},
+      native: { api_models: { main: "claude-sonnet-5" } },
+    },
+  };
+  assertEquals((await why(fetch, legacy)).status, "web_excess");
+});
+
+Deno.test("web tools (H-07 review): the stored-manifest derivation keeps pre-H-07 six-tool manifests valid, never a web arm", () => {
+  const m = (requested: object, disallowed: string[]) =>
+    manifest("cc", {
+      settings: {
+        requested: requested as Record<string, unknown>,
+        native: { disallowed_tools: disallowed },
+      },
+    });
+  const SIX = claudeCodeHarnessNative(true).disallowed_tools;
+  const EIGHT = claudeCodeHarnessNative().disallowed_tools;
+  // A pre-H-07 manifest: six tools, no web_tools request.
+  assertEquals(claudeCodeDerivedNative(m({}, SIX)).disallowed_tools, SIX);
+  assertEquals(claudeCodeDerivedNative(m({}, EIGHT)).disallowed_tools, EIGHT);
+  // A web arm is a settings difference, never harness-derived.
+  assertEquals(
+    claudeCodeDerivedNative(m({ web_tools: true }, SIX)).disallowed_tools,
+    EIGHT,
   );
 });
 
