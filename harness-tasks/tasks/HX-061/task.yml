@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental, Integration]
   tests:
-    - { codeunit: 86680, procedures: [InspectionLendsBlockedVehicle, UnlistedVehicleAsToday, EndStopsLending, EndThroughOtherVariable, RestartReplacesList, EndWithoutInspection, ListedCheckedOutNotAvailable, CheckOutForInspectionAsToday, CheckOutForInspectionEnds, RunningFlag] }
+    - { codeunit: 86680, procedures: [InspectionLendsBlockedVehicle, UnlistedVehicleAsToday, EndStopsLending, EndThroughOtherVariable, RestartReplacesList, EndWithoutInspection, ListedCheckedOutNotAvailable, CheckOutForInspectionAsToday, CheckOutForInspectionEnds, RunningFlag, StartAfterEndWorks] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

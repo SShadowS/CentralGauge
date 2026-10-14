@@ -193,6 +193,24 @@ codeunit 86680 "HX061 Inspection Oracle"
         Finish();
     end;
 
+    [Test]
+    procedure StartAfterEndWorks()
+    var
+        Insp1: Codeunit "CGR Desk Inspection";
+    begin
+        Prepare();
+        CreateVehicle('HX061-11A', true, false);
+        CreateVehicle('HX061-11B', true, false);
+        Insp1.StartInspection(ListOf('HX061-11A', ''));
+        Insp1.EndInspection();
+
+        Assert.IsTrue(RunStart(ListOf('HX061-11B', '')), StrSubstNo('A new inspection can start after the last one ended: %1', GetLastErrorText()));
+
+        Assert.IsTrue(Available('HX061-11B'), 'A vehicle on the new list is lent');
+        Assert.IsFalse(Available('HX061-11A'), 'A vehicle of the ended inspection is not lent');
+        Finish();
+    end;
+
     local procedure Available(VehicleNo: Code[20]): Boolean
     var
         FleetMgt: Codeunit "CGR Fleet Mgt";

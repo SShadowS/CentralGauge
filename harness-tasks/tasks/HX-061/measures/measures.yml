@@ -11,6 +11,7 @@ partial_credit:
     "86680/CheckOutForInspectionAsToday": 1
     "86680/CheckOutForInspectionEnds": 1
     "86680/RunningFlag": 1
+    "86680/StartAfterEndWorks": 1
   hidden_regressions: []
 reuse:
   targets:
