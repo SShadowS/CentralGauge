@@ -14,4 +14,3 @@ How it must behave (`CGR Lease Termination`, procedure `TerminateLease(ContractN
 - The lease's Months becomes the number of schedule lines left.
 - Every line left that is not invoiced gets the amount `CGR Lease Mgt`.MonthlyRate(Base Rate, new Months). Invoiced lines keep their amounts.
 - For a lease that does not exist, TerminateLease fails.
-- When TerminateLease fails, nothing is changed.
