@@ -1,15 +1,19 @@
 v: 1
 partial_credit:
   weights:
-    "86640/BatchRepairsAndReleases": 1
-    "86640/VehiclesHeldDuringBatch": 1
     "86640/FailedBatchReleasesHold": 1
     "86640/RefusedRepairKeepsNothingAndReleases": 1
     "86640/NextBatchAfterFailure": 1
-    "86640/OtherVehiclesAsToday": 1
-    "86640/EmptyBatch": 1
-    "86640/AlreadyRepairedEntryInBatch": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "86640/BatchRepairsAndReleases"
+    - "86640/VehiclesHeldDuringBatch"
+    - "86640/OtherVehiclesAsToday"
+    - "86640/EmptyBatch"
+    - "86640/AlreadyRepairedEntryInBatch"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/release-not-unbound: { partial_credit: 0.6666666666666666 }
+  naive/swallow-error: { partial_credit: 0 }
+  naive/unbind-not-released: { partial_credit: 0.3333333333333333 }
+  naive/validate-first: { partial_credit: 0.6666666666666666 }
