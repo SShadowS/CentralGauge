@@ -208,6 +208,15 @@ export function judgeQueue(
   };
 }
 
+/** H-09: an explicit --judge-concurrency is a positive integer (unset: one per judge container). */
+export function checkJudgeConcurrency(n: number | undefined): void {
+  if (n !== undefined && (!Number.isInteger(n) || n < 1)) {
+    throw new ConfigurationError(
+      `judge concurrency must be a positive integer: ${n}`,
+    );
+  }
+}
+
 /** H-09: published, judgeable and never judged (a crash before the judge queue reached it). */
 export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
   return outcomePolicy(e.termination, e.did_work).judge &&
@@ -673,14 +682,7 @@ export async function runCampaign(
       `concurrency must be a positive integer: ${o.concurrency}`,
     );
   }
-  if (
-    o.judgeConcurrency !== undefined &&
-    (!Number.isInteger(o.judgeConcurrency) || o.judgeConcurrency < 1)
-  ) {
-    throw new ConfigurationError(
-      `judge concurrency must be a positive integer: ${o.judgeConcurrency}`,
-    );
-  }
+  checkJudgeConcurrency(o.judgeConcurrency);
   // A placed environment without env.proxyIsolation is missing (fail closed).
   // The cheap conditions first, before any read; the arm images below.
   const early = placedConcurrencyProblem(
@@ -1005,6 +1007,9 @@ export async function runCampaign(
     queue.push(cellRefFor(campaign, opened, block, e.arm, e.order_in_block), e);
   }
   const ran: ExecutionRecord[] = [];
+  // H-09 run 002: the first worker's throw; no worker admits a cell after it.
+  let crashed: { err: unknown } | null = null;
+  const halted = () => crashed !== null || queue.failed();
   for (;;) {
     let paused: string | null = null;
     let next = 0;
@@ -1012,12 +1017,12 @@ export async function runCampaign(
     // in its recorded order (the matched pair), blocks run in parallel.
     const worker = async () => {
       while (
-        paused === null && !summary.stopped && !queue.failed() &&
+        paused === null && !summary.stopped && !halted() &&
         next < blocks.length
       ) {
         const block = blocks[next++]!;
         for (const [i, arm] of block.order.entries()) {
-          if (paused !== null || summary.stopped || queue.failed()) break;
+          if (paused !== null || summary.stopped || halted()) break;
           const prior = (await env.store.executions(campaign.id)).filter((
             e,
           ) => e.block === block.index && e.arm === arm);
@@ -1044,13 +1049,19 @@ export async function runCampaign(
         }
       }
     };
+    // Every worker settles (its cell in flight ends) before the queue drains
+    // and the caller tears the environment down.
     await Promise.all(
-      Array.from({ length: Math.min(o.concurrency, blocks.length) }, worker),
-    ).catch(async (err) => {
+      Array.from(
+        { length: Math.min(o.concurrency, blocks.length) },
+        () => worker().catch((err) => void (crashed ??= { err })),
+      ),
+    );
+    if (crashed !== null) {
       // The queued judgments of finished cells still land before the stop.
       await queue.drain().catch(() => {});
-      throw err;
-    });
+      throw (crashed as { err: unknown }).err;
+    }
     // Counted once judged: a judge failure stops the campaign here.
     await queue.drain();
     for (const e of ran.splice(0)) {

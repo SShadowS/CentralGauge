@@ -22,7 +22,7 @@ import type {
   RunKind,
 } from "./records.ts";
 import type { QualifyManifest } from "./qualify.ts";
-import type { LoadedTask } from "./task.ts";
+import { type LoadedTask, loadTask } from "./task.ts";
 import {
   ConfigurationError,
   ContainerError,
@@ -2527,8 +2527,7 @@ export async function judgeDeferred(
   >(
     join(env.resultsRoot, "runs", e.id, "sandbox.json"),
   ).catch(() => null);
-  // The oracle the run was to be judged on, still the task's on disk (a
-  // judgment may wait in the queue while the task is edited).
+  // The oracle the run was to be judged on.
   if (side?.oracle_hash !== cell.oracleHash) {
     refuse(
       `the run recorded oracle ${
@@ -2536,21 +2535,30 @@ export async function judgeDeferred(
       }, not ${cell.oracleHash}`,
     );
   }
-  const now = (await taskSetIdentity(env.repoRoot, [cell.task], env.symbols))
-    .tasks[0]!;
-  if (
-    now.oracle !== cell.oracleHash || now.visible !== cell.taskVisibleHash
-  ) {
-    refuse(`task ${cell.task.task.id} changed since the run (oracle or files)`);
-  }
   const out = join(
     env.privateRoot,
     "work",
     `judge-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
   );
   try {
+    holdNamespace(env, "nothing copied");
+    // Run 002: a private snapshot of the task (a judgment may wait in the
+    // queue while the task is edited); it is validated against the cell's
+    // oracle and visible hashes, and it is all the judge reads.
+    const dir = join(out, "task", cell.task.task.id);
+    await safeCopyTree(cell.task.dir, dir);
+    const snap: CellRef = { ...cell, task: await loadTask(dir) };
+    const now = (await taskSetIdentity(env.repoRoot, [snap.task], env.symbols))
+      .tasks[0]!;
+    if (
+      now.oracle !== cell.oracleHash || now.visible !== cell.taskVisibleHash
+    ) {
+      refuse(
+        `task ${cell.task.task.id} changed since the run (oracle or files)`,
+      );
+    }
     holdNamespace(env, "nothing staged");
-    const { pristine } = await stage(env, cell, out);
+    const { pristine } = await stage(env, snap, join(out, "stage"));
     const hash = await hashTree(pristine, "task");
     if (side?.pristine_hash !== hash) {
       refuse(
@@ -2561,7 +2569,7 @@ export async function judgeDeferred(
     }
     return await judgeExecution(
       { ...env, lane: env.judgeLane ?? env.lane },
-      cell,
+      snap,
       e,
       pristine,
     );

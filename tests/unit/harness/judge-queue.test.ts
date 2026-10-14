@@ -173,6 +173,93 @@ Deno.test("H-09 review: a judge refusal inside a campaign is thrown after the qu
   assertEquals(await judgmentsOf(t, es), []);
 });
 
+/** Every .al text under `dir`. */
+async function alText(dir: string): Promise<string> {
+  let out = "";
+  for await (const e of Deno.readDir(dir)) {
+    const p = join(dir, e.name);
+    if (e.isDirectory) out += await alText(p);
+    else if (e.name.endsWith(".al")) out += await Deno.readTextFile(p);
+  }
+  return out;
+}
+
+Deno.test("H-09 run 002: judgeDeferred judges the snapshot it validated; an oracle edited after the check never reaches a compile", async () => {
+  const t = await makeEnv();
+  const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
+  const r = await runCell({
+    ...t.env,
+    judgeLater: (cell, e) => void queued.push({ cell, e }),
+  }, await cellFor(t));
+  const e = r.executions[0]!;
+  const test = join(
+    t.repo.tasksDir,
+    "HX-001",
+    "oracle",
+    "src",
+    "Oracle.Test.al",
+  );
+  const original = await Deno.readTextFile(test);
+  // The checks have passed by the judge's first compile: the task is edited then.
+  const after: string[] = [];
+  t.bc.onCompile = async (dir) => {
+    if (
+      after.length === 0 && !(await Deno.readTextFile(test)).includes("TOCTOU")
+    ) {
+      await Deno.writeTextFile(test, original + "// TOCTOU\n");
+    }
+    after.push(await alText(dir));
+  };
+  try {
+    await judgeDeferred(t.env, queued[0]!.cell, e);
+  } finally {
+    t.bc.onCompile = null;
+    await Deno.writeTextFile(test, original);
+  }
+  assert(after.length > 1, "compiles ran after the edit");
+  assertEquals(after.filter((s) => s.includes("TOCTOU")).length, 0);
+});
+
+Deno.test("H-09 run 002: a worker's throw stops admissions and settles the sibling workers before the campaign rejects", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", 2);
+  const behave = t.docker.behavior;
+  let started = 0;
+  let active = 0;
+  t.docker.behavior = async (call, run) => {
+    const n = ++started;
+    active++;
+    try {
+      // The first run ends at once; its sibling is still in its sandbox.
+      if (n > 1) await new Promise((r) => setTimeout(r, 1500));
+      return await behave(call, run);
+    } finally {
+      active--;
+    }
+  };
+  let drafts = 0;
+  t.env.hooks = {
+    beforeDraft: () =>
+      ++drafts === 1
+        ? Promise.reject(new Error("runner killed"))
+        : Promise.resolve(),
+  };
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts({ concurrency: 2 }), io()),
+    Error,
+    "runner killed",
+  );
+  assertEquals(active, 0, "no sibling sandbox still running at the rejection");
+  const startedAtReject = started;
+  await new Promise((r) => setTimeout(r, 2000));
+  assertEquals(
+    started,
+    startedAtReject,
+    "no cell admitted after the rejection",
+  );
+  assert(started < 4, `admissions stopped (${started} of 4 started)`);
+});
+
 Deno.test("H-09: --judge-concurrency below 1 is refused before any record", async () => {
   const t = await mockEnv();
   await experiment(t, "contract");

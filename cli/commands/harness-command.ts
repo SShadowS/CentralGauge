@@ -102,6 +102,7 @@ import {
 } from "../../src/harness/measures.ts";
 import {
   cellRefFor,
+  checkJudgeConcurrency,
   judgeQueue,
   judgmentOwed,
   loadCampaignData,
@@ -1716,6 +1717,7 @@ export async function harnessJudgePending(
   o: CellCliOptions & { judgeConcurrency?: number },
   open: Opener = openHarnessEnv,
 ): Promise<number> {
+  checkJudgeConcurrency(o.judgeConcurrency);
   // --containers are the judges' here: this command runs no agent.
   const h = await open(
     envOptions(o, join(o.resultsDir, "cells"), "harness judge-pending"),
@@ -1723,12 +1725,13 @@ export async function harnessJudgePending(
   const taskDirs: string[] = [];
   const skip = (id: string, why: string) =>
     console.log(`${colors.yellow("[WARN]")} ${id}: ${why}; not judged`);
+  let queue: ReturnType<typeof judgeQueue> | null = null;
   try {
     const env = h.env;
     let n = 0;
     // One refused execution (another oracle or task than the cell's) is
     // skipped with a warning; it never stops the others.
-    const queue = judgeQueue(
+    queue = judgeQueue(
       env,
       o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
       (env, cell, e) =>
@@ -1777,6 +1780,8 @@ export async function harnessJudgePending(
     console.log(`${colors.green("[OK]")} judged ${n} pending execution(s)`);
     return n;
   } finally {
+    // Every exit: no judge still runs when the environment closes.
+    await queue?.drain().catch(() => {});
     await h.close();
     for (const d of taskDirs) {
       await Deno.remove(d, { recursive: true }).catch(() => {});

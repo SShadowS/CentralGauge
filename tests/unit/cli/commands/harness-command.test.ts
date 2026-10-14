@@ -74,7 +74,10 @@ import {
 import { buildReport, renderReport } from "../../../../src/harness/report.ts";
 import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { sha256Hex } from "../../../../src/harness/hash.ts";
-import { scorerFingerprint } from "../../../../src/harness/records.ts";
+import {
+  type ExecutionRecord,
+  scorerFingerprint,
+} from "../../../../src/harness/records.ts";
 import {
   measureFingerprint,
   readMeasureRecord,
@@ -8378,6 +8381,59 @@ Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; ju
     [ref.verdict, ref.task_oracle_hash],
   ]);
   assertEquals(await harnessJudgePending(o, open), 0, "judged once");
+});
+
+Deno.test("harness judge-pending (H-09 run 002): --judge-concurrency below 1 is refused before the environment opens", async () => {
+  const t = await makeEnv();
+  let opened = 0;
+  const open = () => {
+    opened++;
+    return Promise.resolve({ env: t.env, close: () => Promise.resolve() });
+  };
+  for (const judgeConcurrency of [0, -1, 1.5]) {
+    await assertRejects(
+      () => harnessJudgePending({ ...cellOpts(t), judgeConcurrency }, open),
+      ConfigurationError,
+      "judge concurrency",
+    );
+  }
+  assertEquals(opened, 0);
+});
+
+Deno.test("harness judge-pending (H-09 run 002): a later failure drains the queued judgments before the environment closes", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.docker.behavior = mockImageBehavior();
+  let judgedAtClose = -1;
+  let good: ExecutionRecord | null = null;
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, supervised: false },
+      close: async () => {
+        if (good) {
+          judgedAtClose = (await t.env.store.judgments(good.id)).length;
+        }
+      },
+    });
+  const o = { ...cellOpts(t, { supervised: false }), deferJudging: true };
+  good = (await harnessCell(
+    "mock-positive",
+    "HX-001",
+    o,
+    open,
+    () => false,
+    noInterrupt,
+  )).executions[0]!;
+  // A later owed execution whose task no longer exists: loading it throws.
+  await t.env.store.writeExecution({
+    ...good,
+    id: crypto.randomUUID(),
+    task_id: "HX-404",
+    started_at: new Date(Date.parse(good.started_at) + 1000).toISOString(),
+  });
+  judgedAtClose = -1;
+  await assertRejects(() => harnessJudgePending(o, open));
+  assertEquals(judgedAtClose, 1, "the queued judgment finished before close");
 });
 
 Deno.test("harness judge-pending (H-09 review): a refused execution is warned and skipped; the others are judged", async () => {
