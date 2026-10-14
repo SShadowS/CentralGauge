@@ -1894,8 +1894,20 @@ Deno.test("buildReport (M11-12): exploratory rollups carry null as missing, neve
   assertEquals([st.value, st.cells, st.missing], [null, 0, 2]);
   assertEquals(row("plain", "tokens_out").value, 5);
   assertEquals(r.exploratory!.usage_reconciliation, {
-    plain: { exact: 1, compaction_excess: 1, unreconciled: 0, absent: 0 },
-    skills: { exact: 0, compaction_excess: 0, unreconciled: 2, absent: 0 },
+    plain: {
+      exact: 1,
+      compaction_excess: 1,
+      web_excess: 0,
+      unreconciled: 0,
+      absent: 0,
+    },
+    skills: {
+      exact: 0,
+      compaction_excess: 0,
+      web_excess: 0,
+      unreconciled: 2,
+      absent: 0,
+    },
   });
   assertEquals(r.exploratory!.compaction_excess, [
     { arm: "plain", task: "HX-002", repeat: 1 },
@@ -2021,4 +2033,41 @@ Deno.test("buildReport (M11-12 r2): a counted judgment's record filed under a su
     ValidationError,
   );
   assertStringIncludes(err.message, "differs from the key");
+});
+
+Deno.test("buildReport (H-07): web_excess cells keep their cost and are listed with their unpriced web search requests", async () => {
+  const base = await records();
+  const executions = base.executions.map((e) =>
+    e.arm === "skills"
+      ? {
+        ...e,
+        telemetry: {
+          ...e.telemetry,
+          raw_usage: {
+            usage_reconciliation: { status: "web_excess", excess: {} },
+            unpriced: e.task_id === "HX-001"
+              ? [{ model: "m", item: "web_search_requests", count: 2 }]
+              : [],
+          },
+        },
+      }
+      : e
+  );
+  const r = await buildReport({ ...base, executions }, { resamples: 50 });
+  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.web_excess, 2);
+  assertEquals(r.exploratory!.web_excess, [
+    { arm: "skills", task: "HX-001", repeat: 1, unpriced_web_searches: 2 },
+    { arm: "skills", task: "HX-002", repeat: 1, unpriced_web_searches: 0 },
+  ]);
+  // Cost kept: skills still costs $1 per cell.
+  assertEquals(r.arms.find((a) => a.arm === "skills")!.total_spend_usd, 2);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text,
+    "web_excess (cost kept; excludes 2 unpriced web search requests): HX-001 r1 skills",
+  );
+  assertStringIncludes(
+    text,
+    "web_excess (cost kept; excludes 0 unpriced web search requests): HX-002 r1 skills",
+  );
 });

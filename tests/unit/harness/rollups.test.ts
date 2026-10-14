@@ -469,3 +469,19 @@ Deno.test("rollups: equal task weight per arm; paired deltas over pairs with bot
     missing_pairs: 1,
   });
 });
+
+Deno.test("reconciliationStatus (H-07): web_excess is reconciled (tokens kept), ranks below compaction_excess and above absent", () => {
+  const st = (s: object | undefined) =>
+    exec("a", [pm(4)], "p", 1, s ? { usage_reconciliation: s } : {});
+  const web = st({ status: "web_excess", excess: {} });
+  assertEquals(reconciliationStatus([web]), "web_excess");
+  assertEquals(
+    reconciliationStatus([web, st({ status: "compaction_excess" })]),
+    "compaction_excess",
+  );
+  assertEquals(reconciliationStatus([web, st(undefined)]), "web_excess");
+  assertEquals(
+    cellValues([web], web, undefined, new Map(), new Map(), false).tokens_out,
+    4,
+  );
+});

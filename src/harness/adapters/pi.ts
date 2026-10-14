@@ -678,6 +678,12 @@ export const piAdapter: HarnessAdapter = {
         `model ${slug} (slot main) is not in the catalog`,
       );
     }
+    // H-07: named, so a web arm on pi never reads as a typo or runs without web.
+    if (Object.hasOwn(config.settings, "web_tools")) {
+      throw new ConfigurationError(
+        `${config.id}: pi 0.87.1 has no web tools; web_tools is a claude-code setting`,
+      );
+    }
     for (const k of Object.keys(config.settings)) {
       if (k !== "thinking") {
         throw new ConfigurationError(

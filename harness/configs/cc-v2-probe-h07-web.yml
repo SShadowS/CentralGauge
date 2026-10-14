@@ -1,0 +1,12 @@
+# H-07 proof config (developmental): cc-v2-probe-h03-plain with web tools
+# allowed. Never part of an experiment.
+id: cc-v2-probe-h07-web
+harness: claude-code
+harness_version: "latest"
+image_revision: "3-dev-H-03b"
+models:
+  main: anthropic/claude-sonnet-5
+settings: { web_tools: true }
+components:
+  instructions: bundles/env/instructions
+limits: { timeout_min: 30, max_budget_usd: 5 }

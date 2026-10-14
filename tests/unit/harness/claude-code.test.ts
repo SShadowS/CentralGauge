@@ -29,6 +29,7 @@ import {
   HarnessConfigSchema,
   loadConfig,
 } from "../../../src/harness/config.ts";
+import { manifestHash } from "../../../src/harness/manifest.ts";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
 import type { Telemetry } from "../../../src/harness/records.ts";
 import { outcomePolicy } from "../../../src/harness/records.ts";
@@ -1245,7 +1246,18 @@ Deno.test("claude-code settings: session-control tools present in 2.1.282 are di
     limits: { timeout_min: 30, max_budget_usd: 5 },
   });
   const native = claudeCodeAdapter.nativeSettings(cfg, catalog);
-  assertEquals(native["disallowed_tools"], expected);
+  // H-07: the default arm also blocks the web tools; a web arm only those six.
+  assertEquals(
+    native["disallowed_tools"],
+    [...expected, "WebFetch", "WebSearch"].sort(),
+  );
+  assertEquals(
+    claudeCodeAdapter.nativeSettings({
+      ...cfg,
+      settings: { ...cfg.settings, web_tools: true },
+    }, catalog)["disallowed_tools"],
+    expected,
+  );
   assertEquals(native["thinking"], "high");
   // An arm cannot re-enable them by setting the key itself.
   assertThrows(
@@ -3107,7 +3119,8 @@ const arm296 = (lsp: boolean) => ({
     requested: {},
     native: {
       api_models: { main: "claude-sonnet-5" },
-      ...claudeCodeHarnessNative(),
+      // Captured before H-07: the six session tools only, web tools allowed.
+      ...claudeCodeHarnessNative(true),
       ...(lsp ? { lsp: ["al"] } : {}),
     },
   },
@@ -3152,4 +3165,227 @@ Deno.test("qualification (H-03): the 2.1.296 stub captures (plain + LSP) reparse
       tag,
     );
   }
+});
+
+// ---- H-07: web tools (WebSearch, WebFetch) blocked by default, settings.web_tools enables them ----
+const WEB_CATALOG = {
+  models: [{
+    slug: "anthropic/claude-sonnet-5",
+    api_model_id: "claude-sonnet-5",
+    family: "claude",
+    display_name: "S5",
+  }],
+  pricing: [],
+  families: [],
+};
+const webCfg = (settings: Record<string, unknown>) =>
+  HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.296",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings,
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+
+Deno.test("web tools (H-07): blocked by default; settings.web_tools: true allows them; the flag is part of the manifest hash", async () => {
+  const native = (s: Record<string, unknown>) =>
+    claudeCodeAdapter.nativeSettings(webCfg(s), WEB_CATALOG);
+  const SIX = [
+    "CronCreate",
+    "CronDelete",
+    "ListAgents",
+    "RemoteTrigger",
+    "ScheduleWakeup",
+    "SendMessage",
+  ];
+  assertEquals(
+    native({})["disallowed_tools"],
+    [...SIX, "WebFetch", "WebSearch"].sort(),
+  );
+  assertEquals(
+    claudeCodeHarnessNative()["disallowed_tools"],
+    native({})["disallowed_tools"],
+  );
+  assertEquals(native({ web_tools: true })["disallowed_tools"], SIX);
+  // One encoding: the flag itself is not copied, so false equals absent.
+  assertEquals(native({ web_tools: true })["web_tools"], undefined);
+  assertEquals(native({ web_tools: false }), native({}));
+  for (const bad of ["yes", 1, null, {}]) {
+    assertThrows(
+      () => native({ web_tools: bad }),
+      ConfigurationError,
+      "web_tools",
+    );
+  }
+  const hashOf = async (s: Record<string, unknown>) =>
+    await manifestHash(
+      manifest("cc", { settings: { requested: s, native: native(s) } }),
+    );
+  assert((await hashOf({})) !== (await hashOf({ web_tools: true })));
+});
+
+/** The 0227ff9d / 105ec327 arms (2.1.296 dev image), web tools allowed or not. */
+const webArm = (lsp: boolean, web: boolean) => ({
+  harness_version: "2.1.296",
+  models: { main: "anthropic/claude-sonnet-5" },
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-03b",
+  },
+  settings: {
+    requested: web ? { web_tools: true } : {},
+    native: {
+      api_models: { main: "claude-sonnet-5" },
+      ...claudeCodeHarnessNative(web),
+      ...(lsp ? { lsp: ["al"] } : {}),
+    },
+  },
+  instructions: comp("bundles/env/instructions", ["AGENTS.md", "CLAUDE.md"]),
+  lsp: lsp
+    ? [{ name: "al", version: "al-lsp@1", tool_schema_hash: "a".repeat(64) }]
+    : [],
+});
+// Trimmed from M8-07c cells 0227ff9d (LSP arm: ToolSearch + 2 WebSearch) and
+// 105ec327 (plain arm: the 2 WebFetch exchanges only). Kept records are
+// byte-exact except thinking text, tool output and web results (trimmed); the
+// result record is rebuilt: modelUsage = the kept messages + the cell's
+// unstreamed web excess (0227ff9d: input 27,143, output 1,868, 2 searches;
+// 105ec327 fetch-only: a synthetic input 9,000 / output 500, 0 searches).
+const WEB_FIXTURE = {
+  search: "tests/fixtures/harness/claude-code/web-search-2.1.296.jsonl",
+  fetch: "tests/fixtures/harness/claude-code/web-fetch-2.1.296.jsonl",
+};
+const webRaw = (r: { telemetry: Telemetry }) =>
+  r.telemetry.raw_usage as {
+    usage_reconciliation?: { status: string; why?: string };
+    unpriced?: unknown[];
+    missing: string[];
+    stream_problems: string[];
+  };
+
+Deno.test("web tools (H-07): a WebSearch run under web_tools reconciles as web_excess with a token cost and a named unpriced search item", async () => {
+  const text = await Deno.readTextFile(WEB_FIXTURE.search);
+  const { r } = await parse(text, 0, webArm(true, true));
+  assertEquals(r.inventoryProblems, []);
+  const raw = webRaw(r);
+  assertEquals(raw.stream_problems, []);
+  assertEquals(raw.usage_reconciliation?.status, "web_excess");
+  // Tokens from modelUsage, including the unstreamed search calls.
+  assertAlmostEquals(
+    r.telemetry.cost_usd!,
+    (27149 * 2 + 96714 * 0.2 + 8778 * 4 + 1884 * 10) / 1e6,
+    1e-12,
+  );
+  assertEquals(raw.unpriced, [{
+    model: "claude-sonnet-5",
+    item: "web_search_requests",
+    count: 2,
+  }]);
+  assert(
+    raw.missing.some((m) => m.includes("2 web search request")),
+    JSON.stringify(raw.missing),
+  );
+  assertEquals(r.telemetry.reported_cost_usd, 1.0025735999999998);
+});
+
+Deno.test("web tools (H-07): a WebFetch-only run under web_tools reconciles (searchCount 0 = webSearchRequests 0), no unpriced item", async () => {
+  const text = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const { r } = await parse(text, 0, webArm(false, true));
+  assertEquals(r.inventoryProblems, []);
+  const raw = webRaw(r);
+  assertEquals(raw.stream_problems, []);
+  assertEquals(raw.usage_reconciliation?.status, "web_excess");
+  assertAlmostEquals(
+    r.telemetry.cost_usd!,
+    (9004 * 2 + 110599 * 0.2 + 4677 * 4 + 509 * 10) / 1e6,
+    1e-12,
+  );
+  assertEquals(raw.unpriced ?? [], []);
+});
+
+Deno.test("web tools (H-07): web excess is refused when web tools were disallowed, searches do not match, cache differs, or no web call explains it", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const fetch = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const unreconciled = async (
+    text: string,
+    arm: Record<string, unknown>,
+    why: string,
+  ) => {
+    const { r } = await parse(text, 0, arm);
+    const raw = webRaw(r);
+    assertEquals(raw.usage_reconciliation?.status, "unreconciled", why);
+    assertStringIncludes(raw.usage_reconciliation!.why!, why);
+    assertEquals(r.telemetry.cost_usd, null, why);
+    return { r, raw };
+  };
+  // Default arm (web disallowed): the web calls are a named stream problem
+  // and the init's web tools an inventory problem; never a silent cost.
+  const off = await unreconciled(search, webArm(true, false), "exceeds");
+  assert(
+    off.raw.stream_problems.some((p) =>
+      p.includes("WebSearch used while disallowed")
+    ),
+    JSON.stringify(off.raw.stream_problems),
+  );
+  assertStringIncludes(
+    (off.r.inventoryProblems ?? []).join("\n"),
+    "unexpected tool WebSearch",
+  );
+  // Search count must match modelUsage.webSearchRequests.
+  await unreconciled(
+    search.replace('"webSearchRequests":2', '"webSearchRequests":3'),
+    webArm(true, true),
+    "webSearchRequests 3",
+  );
+  await unreconciled(
+    fetch.replace('"webSearchRequests":0', '"webSearchRequests":1'),
+    webArm(false, true),
+    "webSearchRequests 1",
+  );
+  // Cache excess is never attributable to web tools.
+  await unreconciled(
+    fetch.replace(
+      '"cacheReadInputTokens":110599',
+      '"cacheReadInputTokens":110600',
+    ),
+    webArm(false, true),
+    "cache",
+  );
+  // An allowed arm whose stream shows no web call: the excess is unexplained.
+  await unreconciled(
+    fetch.replaceAll('"name":"WebFetch"', '"name":"Read"'),
+    webArm(false, true),
+    "exceeds",
+  );
+});
+
+Deno.test("web tools (H-07): the init tool list is checked against the flag (web tools expected only when allowed)", async () => {
+  const B296 = BUILTIN_INVENTORY["2.1.296"]!;
+  const init = async (tools: string[]) =>
+    JSON.stringify({
+      ...JSON.parse(
+        (await Deno.readTextFile(WEB_FIXTURE.fetch)).split("\n")[1]!,
+      ),
+      tools,
+    });
+  const run = async (tools: string[], web: boolean) =>
+    (await parse(
+      [
+        '{"type":"cg_inventory","v":1,"ok":true,"installed":["instructions"],"problems":[]}',
+        await init(tools),
+        v2Result(),
+      ].join("\n"),
+      0,
+      webArm(false, web),
+    )).r.inventoryProblems!.join("\n");
+  const allowed = B296.tools.filter((t) =>
+    !claudeCodeHarnessNative(true).disallowed_tools.includes(t)
+  );
+  const blocked = allowed.filter((t) => t !== "WebFetch" && t !== "WebSearch");
+  assertEquals(await run(allowed, true), "");
+  assertEquals(await run(blocked, false), "");
+  assertStringIncludes(await run(allowed, false), "unexpected tool WebFetch");
+  assertStringIncludes(await run(blocked, true), "missing tool WebSearch");
 });
