@@ -11,6 +11,6 @@ pass_to_pass:
   - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
   - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
 fail_to_pass: null
-mutants: [after-before-modify, after-before-ledger, km-from-mileage, before-on-open-contract, after-raised-twice]
+mutants: [after-before-modify, after-before-ledger, km-from-mileage, before-on-open-contract, after-raised-twice, guard-open-only]
 contamination: null
 limits: { timeout_min: 30 }
