@@ -37,11 +37,14 @@ lanes from each other: the lease plus this rule does.
 `CG_COORD_ROOT=H:\cg-coord` (outside every worktree). Command:
 
 ```
-deno run --allow-all U:\Git\CentralGauge\scripts\coord\coord.ts <command> ...
+deno run --allow-all H:\cg-coord\jobs\orch-master\scripts\coord\coord.ts <command> ...
 ```
 
-Below, `coord` means that command. Always run it from the main checkout's copy, so every
-session uses the same version.
+Below, `coord` means that command. Always run it from the orchestrator's master worktree
+(`H:\cg-coord\jobs\orch-master`, always at origin/master), so every session uses the same,
+current version (owner 2026-10-14). Not from `U:\Git\CentralGauge`: that main checkout is on
+the owner's own branch and lags master. Read this runbook from your own worktree, merged with
+master, for the same reason.
 
 On startup every session runs `coord doctor` and stops with `coord ask` if it reports an
 issue or if `H:\cg-coord\coord.json` is missing. Never run `coord init` except the one time
