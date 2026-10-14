@@ -19,10 +19,11 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/delete-before-build: { partial_credit: 0.9230769230769231 }
-  naive/no-clear-handout: { partial_credit: 0.6923076923076923 }
-  naive/one-buffer: { partial_credit: 0.8461538461538461 }
-  naive/plain-copy-handout: { partial_credit: 0.15384615384615385 }
-  naive/plain-holder: { partial_credit: 0.8461538461538461 }
-  naive/reprice-on-get: { partial_credit: 0.7692307692307693 }
-  naive/share-handout: { partial_credit: 0.7692307692307693 }
+  naive/delete-before-build: { partial_credit: 0.9285714285714286 }
+  naive/no-clear-handout: { partial_credit: 0.7142857142857143 }
+  naive/one-buffer: { partial_credit: 0.7857142857142857 }
+  naive/plain-copy-handout: { partial_credit: 0.14285714285714285 }
+  naive/plain-holder: { partial_credit: 0.8571428571428571 }
+  naive/replace-clears-all: { partial_credit: 0.9285714285714286 }
+  naive/reprice-on-get: { partial_credit: 0.7857142857142857 }
+  naive/share-handout: { partial_credit: 0.7142857142857143 }
