@@ -371,10 +371,13 @@ export class FakeDocker implements DockerCli {
   }
   /** H-03: every docker rmi of a tag, in order. */
   untags: string[] = [];
-  untag(ref: string): Promise<void> {
+  /** H-03 run 003: docker rmi's exit code per ref (default 0); non-zero keeps the tag. */
+  untagCodes = new Map<string, number>();
+  untag(ref: string): Promise<number> {
     this.untags.push(ref);
-    this.tags.delete(ref);
-    return Promise.resolve();
+    const code = this.untagCodes.get(ref) ?? 0;
+    if (code === 0) this.tags.delete(ref);
+    return Promise.resolve(code);
   }
   /** H-03: every docker tag (image id, ref), in order. */
   tagCalls: [string, string][] = [];

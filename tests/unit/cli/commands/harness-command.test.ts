@@ -8039,7 +8039,7 @@ Deno.test("harnessImagesBuild (H-03 run 002): a read-back failure removes this b
   const untag = docker.untag.bind(docker);
   docker.untag = async (ref) => {
     held.push(readBenchLock(b.opts.publishLockDir)?.token);
-    await untag(ref);
+    return await untag(ref);
   };
   const err = await quietly(() =>
     assertRejects(
@@ -8075,7 +8075,7 @@ Deno.test("harnessImagesBuild (H-03 run 002): the cleanup attempts both tags whe
   const untag = docker.untag.bind(docker);
   docker.untag = async (ref) => {
     if (ref === CC_TAG) throw new Error("rmi failed");
-    await untag(ref);
+    return await untag(ref);
   };
   const err = await quietly(() =>
     assertRejects(
@@ -8134,4 +8134,128 @@ Deno.test({
       __setContextListerForTests(undefined);
     }
   },
+});
+
+import { clearPublicationReservation } from "../../../../cli/commands/harness-command.ts";
+
+/** A reservation whose holder stopped heartbeating an hour ago (crashed or suspended). */
+async function staleReservation(dir: string) {
+  await Deno.mkdir(dir, { recursive: true });
+  await reclaimReservation(dir);
+  const old = new Date(Date.now() - 3_600_000);
+  await Deno.utime(benchLockPath(dir), old, old);
+}
+
+Deno.test("harnessImagesBuild (H-03 run 003): a stale publication reservation is never taken over: a second build is refused and builds nothing", async () => {
+  const { docker, b } = await ccPublication();
+  await staleReservation(b.opts.publishLockDir);
+  const err = await quietly(() =>
+    assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      BenchLockHeldError,
+    )
+  );
+  assertStringIncludes(err.message, "pid 1");
+  assertEquals(docker.builds, [], "nothing built");
+  assertEquals(docker.tagCalls, [], "nothing tagged");
+  assertEquals(
+    readBenchLock(b.opts.publishLockDir)?.token,
+    "other-token",
+    "the stale holder's reservation is left in place",
+  );
+});
+
+Deno.test("clearPublicationReservation (H-03 run 003): the manual clear names the holder, refuses a wrong or live holder, is logged, and frees the next build", async () => {
+  const { docker, b } = await ccPublication();
+  const dir = b.opts.publishLockDir;
+  // A live (heartbeating) holder is never cleared.
+  await Deno.mkdir(dir, { recursive: true });
+  await reclaimReservation(dir);
+  await assertRejects(
+    () =>
+      quietly(() =>
+        clearPublicationReservation({ dir, holder: "other-token" })
+      ),
+    ConfigurationError,
+    "heartbeat",
+  );
+  await staleReservation(dir);
+  await assertRejects(
+    () => quietly(() => clearPublicationReservation({ dir, holder: "wrong" })),
+    ConfigurationError,
+    "other-token",
+  );
+  assertEquals(readBenchLock(dir)?.token, "other-token", "kept on refusal");
+  const logged: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => {
+    logged.push(a.join(" "));
+  });
+  try {
+    await clearPublicationReservation({ dir, holder: "other-token" });
+  } finally {
+    log.restore();
+  }
+  assertEquals(await exists(benchLockPath(dir)), false, "cleared");
+  assert(
+    logged.some((l) => l.includes("other-token") && l.includes("pid 1")),
+    `the clear is printed with its holder: ${logged}`,
+  );
+  const lines = (await Deno.readTextFile(join(dir, "clears.jsonl"))).trim()
+    .split("\n");
+  assertEquals(lines.length, 1);
+  const rec = JSON.parse(lines[0]!);
+  assertEquals(rec.holder.token, "other-token");
+  assertEquals(rec.holder.pid, 1);
+  assertEquals(typeof rec.at, "string");
+  // Nothing left to clear.
+  await assertRejects(
+    () =>
+      quietly(() =>
+        clearPublicationReservation({ dir, holder: "other-token" })
+      ),
+    ConfigurationError,
+    "no publication reservation",
+  );
+  await quietly(() =>
+    harnessImagesBuild("claude-code", b.opts, docker, b.fetch)
+  );
+  assertEquals(docker.tags.has(CC_TAG), true, "the next build publishes");
+});
+
+Deno.test("harnessImagesBuild (H-03 run 003): a non-zero docker rmi is a failed removal: both removals attempted, the failure reported in the leftover-tag warning", async () => {
+  const { docker, id, b } = await ccPublication();
+  const r = docker.buildResults.get(CC_TAG)!;
+  docker.buildResults.set(CC_TAG, {
+    ...r,
+    labels: { ...r.labels, ...ccLabels(ccRel("2.1.295")) },
+  });
+  docker.shipFile(
+    id,
+    CLAUDE_CODE_RESOLVED,
+    ccResolvedJson({}, ccRel("2.1.295")),
+  );
+  // The real wrapper's contract: docker rmi's exit code, never a throw.
+  docker.untagCodes.set(CC_TAG, 1);
+  const warned: string[] = [];
+  const log = stub(console, "log", () => {});
+  const warn = stub(console, "warn", (...a: unknown[]) => {
+    warned.push(a.join(" "));
+  });
+  try {
+    await assertRejects(
+      () => harnessImagesBuild("claude-code", b.opts, docker, b.fetch),
+      ConfigurationError,
+      "2.1.295",
+    );
+  } finally {
+    log.restore();
+    warn.restore();
+  }
+  assertEquals(docker.untags, [CC_TAG, CC_ALIAS], "both removals attempted");
+  assertEquals(docker.tags.get(CC_TAG), id, "the failed removal keeps its tag");
+  assertEquals(docker.tags.has(CC_ALIAS), false);
+  const w = warned.find((l) => l.includes("keeps tag"));
+  assert(w, `a leftover-tag warning: ${warned}`);
+  assertStringIncludes(w, `${CC_TAG} (docker rmi exit 1)`);
+  assert(!w.includes(CC_ALIAS), "the removed alias is not named");
 });

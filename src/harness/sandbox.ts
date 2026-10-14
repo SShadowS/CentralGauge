@@ -80,8 +80,8 @@ export interface DockerCli {
   listOwned(owner: string): Promise<string[]>;
   inspectImage(ref: string): Promise<unknown | null>;
   build(args: string[]): Promise<number>;
-  /** docker rmi of a tag: removes the tag (the image too when it was the last one). */
-  untag(ref: string): Promise<void>;
+  /** docker rmi of a tag: removes the tag (the image too when it was the last one); the exit code (H-03 run 003). */
+  untag(ref: string): Promise<number>;
   /** H-03: docker tag of an image id; the exit code. */
   tag(id: string, ref: string): Promise<number>;
   /**
@@ -420,9 +420,7 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         ? (JSON.parse(r.stdout) as unknown[])[0] ?? null
         : null;
     },
-    untag: async (ref) => {
-      await out(["rmi", ref]);
-    },
+    untag: async (ref) => (await out(["rmi", ref])).code,
     tag: async (id, ref) => (await out(["tag", id, ref])).code,
     readImageFile: async (image, path, owner) => {
       const args = imageReadCreateArgs(image, owner);

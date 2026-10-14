@@ -171,7 +171,10 @@ import {
 import { resolveDockerContext } from "../../src/container/docker-context.ts";
 import {
   acquireBenchLock,
+  BenchLockHeldError,
   benchLockLost,
+  clearBenchLock,
+  type HeldBenchLock,
   tryAcquireBenchLock,
 } from "../../src/utils/bench-lock.ts";
 import { applyOverlay, TASK_SOURCES } from "../../src/harness/staging.ts";
@@ -1066,14 +1069,34 @@ export async function harnessImagesBuild(
   }
   // H-03: one publication at a time per Docker daemon, for every local user,
   // from the freeze-record check through both tags' refusal, the build, the
-  // tags and the read-back. A held reservation refuses; it never waits. One
-  // taken over (stale while this build was suspended) publishes and removes
-  // nothing more: every tag and tag removal is fenced on it.
-  const reservation = cc
-    ? acquireBenchLock(o.publishLockDir ?? await publicationLockDir(), {
-      command: "harness images build claude-code",
-    })
+  // tags and the read-back. A held reservation refuses; it never waits.
+  // Run 003: it is never taken over automatically, stale or not (a suspended
+  // builder resumes still holding it); only the operator's manual clear
+  // (`harness images clear-reservation --holder <token>`) frees it. The fences
+  // stay: one cleared meanwhile publishes and removes nothing more.
+  const reservationDir = cc
+    ? o.publishLockDir ?? await publicationLockDir()
     : null;
+  let reservation: HeldBenchLock | null = null;
+  if (reservationDir) {
+    try {
+      reservation = acquireBenchLock(reservationDir, {
+        command: "harness images build claude-code",
+        staleAfterMs: Infinity,
+      });
+    } catch (e) {
+      if (e instanceof BenchLockHeldError) {
+        console.error(
+          `${
+            colors.red("[FAIL]")
+          } the claude-code publication reservation is held and is never taken over. Once its holder is verified dead: centralgauge harness images clear-reservation --holder ${
+            e.holder?.token || "<token in the marker>"
+          }`,
+        );
+      }
+      throw e;
+    }
+  }
   await using _publish = {
     [Symbol.asyncDispose]: () => reservation?.() ?? Promise.resolve(),
   };
@@ -1209,7 +1232,9 @@ export async function harnessImagesBuild(
           kept.push(`${t} (reservation taken over)`);
           continue;
         }
-        await docker.untag(t);
+        // H-03 run 003: a non-zero docker rmi is a failed removal.
+        const c = await docker.untag(t);
+        if (c !== 0) kept.push(`${t} (docker rmi exit ${c})`);
       } catch (e) {
         kept.push(`${t} (${e instanceof Error ? e.message : String(e)})`);
       }
@@ -1399,6 +1424,48 @@ export async function publicationLockDir(
   const key = resolveDockerContext().context ??
     Deno.env.get("DOCKER_CONTEXT") ?? "default";
   return join(root, key.replace(/[^A-Za-z0-9._-]/g, "_"), "claude-code");
+}
+
+/**
+ * H-03 run 003: the operator's manual clear of the claude-code publication
+ * reservation, naming its holder (the marker's token). A live (heartbeating)
+ * holder or another token is refused. Each clear is printed and appended to
+ * `<reservation>/clears.jsonl`.
+ */
+export async function clearPublicationReservation(
+  o: { dir?: string; holder: string },
+): Promise<void> {
+  const dir = o.dir ?? await publicationLockDir();
+  let holder;
+  try {
+    holder = clearBenchLock(dir, o.holder);
+  } catch (e) {
+    throw new ConfigurationError(
+      e instanceof Deno.errors.NotFound ||
+        (e instanceof Error && e.message.startsWith("no lock"))
+        ? `no publication reservation to clear in ${dir}`
+        : `publication reservation not cleared: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+    );
+  }
+  await Deno.writeTextFile(
+    join(dir, "clears.jsonl"),
+    JSON.stringify({
+      at: new Date().toISOString(),
+      by: Deno.env.get("USERNAME") ?? Deno.env.get("USER") ?? null,
+      pid: Deno.pid,
+      holder,
+    }) + "\n",
+    { append: true },
+  );
+  console.log(
+    `${
+      colors.yellow("[CLEARED]")
+    } claude-code publication reservation of pid ${holder.pid} (token ${holder.token}, ${holder.command}, since ${holder.startedAt}, last heartbeat ${holder.heartbeatAt}); logged in ${
+      join(dir, "clears.jsonl")
+    }`,
+  );
 }
 
 export async function harnessSymbolsLock(
@@ -2970,6 +3037,18 @@ export function registerHarnessCommand(
             ...(opts.revision !== undefined ? { revision: opts.revision } : {}),
           })
         )
+      )
+      .command(
+        "clear-reservation",
+        "Clear a dead build's claude-code publication reservation (never taken over automatically; H-03)",
+      )
+      .option(
+        "--holder <token:string>",
+        "The token in the reservation marker (named in the refusal); a live holder is refused",
+        { required: true },
+      )
+      .action((opts) =>
+        fail(() => clearPublicationReservation({ holder: opts.holder }))
       ),
   );
 

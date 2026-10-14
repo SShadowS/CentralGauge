@@ -1430,3 +1430,29 @@ Deno.test("captureStream: bytes reach the capture file while the child still run
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("realDocker.untag (H-03 run 003): docker rmi's exit code is returned, never thrown", async () => {
+  if (Deno.build.os === "windows") {
+    __setContextListerForTests(() => ["desktop-windows"]);
+  }
+  const mock = createCommandMock();
+  mock.mockCommandOnce({ command: "docker", argsContain: ["rmi"] }, {
+    code: 1,
+    stdout: "",
+    stderr: "Error response from daemon: conflict",
+  });
+  mock.mockCommandOnce({ command: "docker", argsContain: ["rmi"] }, {
+    code: 0,
+    stdout: "Untagged: x\n",
+    stderr: "",
+  });
+  mock.install();
+  try {
+    assertEquals(await realDocker().untag("x"), 1);
+    assertEquals(await realDocker().untag("x"), 0);
+    assertEquals(mock.getCallsFor("docker")[0]!.args, ["rmi", "x"]);
+  } finally {
+    mock.restore();
+    __setContextListerForTests(undefined);
+  }
+});
