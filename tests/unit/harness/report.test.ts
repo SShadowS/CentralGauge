@@ -10,6 +10,7 @@ import { ValidationError } from "../../../src/errors.ts";
 import { ExperimentSchema } from "../../../src/harness/config.ts";
 import type { CampaignRecords } from "../../../src/harness/integrity.ts";
 import { manifestHash } from "../../../src/harness/manifest.ts";
+import { campaignJudging } from "../../../src/harness/outcome.ts";
 import {
   type CampaignRecord,
   experimentHash,
@@ -112,6 +113,54 @@ Deno.test("buildReport: pending cells make it provisional and are reported as ex
   assertEquals(r.arms[0]!.pending_spend_usd, 2);
   assertEquals(r.comparisons[0]!.excluded.baseline, { pending: 1 });
   assertEquals(r.comparisons[0]!.pairs, 1);
+});
+
+Deno.test("buildReport (H-04b): a cell past the rejudge budget is terminal unscored, counted per arm and in the coverage line; spend kept, no solve", async () => {
+  const base = await records();
+  const e = base.executions[1]!; // plain HX-002, $2
+  const unscored = [0, 1, 2].map(() => judgment(base.campaign, e, null));
+  const r = await buildReport({
+    ...base,
+    judgments: [
+      ...base.judgments.filter((j) => j.execution_id !== e.id),
+      ...unscored,
+    ],
+  }, {
+    resamples: 50,
+    judging: { ...campaignJudging(base.campaign), scorer: SCORERS_V1_FP },
+  });
+  const cell = r.cells.find((c) => c.used_execution === e.id)!;
+  assertEquals(
+    [cell.status, cell.reason],
+    ["unscored", "verdict infra: rejudge budget 3 exhausted"],
+  );
+  assertEquals(r.provisional, false);
+  const plain = r.arms[0]!;
+  assertEquals(
+    [plain.unscored_cells, plain.rejudge_budget_cells, plain.pending_cells],
+    [1, 1, 0],
+  );
+  // (2 + 2) / (1 + 0) = 4: the unscored cell's spend counts, it solves nothing.
+  assertEquals(plain.cost_per_solved_task, 4);
+  // Scored-only pass rate: never a model failure.
+  assertEquals(plain.pass_rate, 1);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(
+    text,
+    "plain: planned 2, attempted 2, scored 1, unscored 1 (rejudge budget: 1), pending 0, unrun 0;",
+  );
+  assertStringIncludes(text, "unscored 0 (rejudge budget: 0), pending 0");
+  assertEquals(JSON.parse(JSON.stringify(r)), r);
+});
+
+Deno.test("renderReport (H-04b): a report without the rejudge budget count still renders its coverage line", async () => {
+  const old: HarnessReport = JSON.parse(
+    await Deno.readTextFile("tests/fixtures/harness/report-mock-contract.json"),
+  );
+  assert(!("rejudge_budget_cells" in old.arms[0]!));
+  const text = stripAnsiCode(renderReport(old));
+  assertStringIncludes(text, ", unscored 0, pending 0, unrun 0;");
+  assert(!text.includes("rejudge budget"));
 });
 
 Deno.test("buildReport: inconsistent records are refused before any number is computed", async () => {

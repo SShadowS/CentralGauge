@@ -75,7 +75,7 @@ export class FakeBc implements HarnessBc {
   /** Errors that fail the compile of `folder` when non-empty (M11-05). */
   errorsFor: ((folder: string) => CompilationError[]) | null = null;
   /** H-04: a crashed compile of this project path (failed, no diagnostic, no artifact). */
-  crashFor: ((projectPath: string) => boolean) | null = null;
+  crashFor: ((projectPath: string, container: string) => boolean) | null = null;
   concurrentCompiles = 0;
   maxConcurrentCompiles = 0;
   syncs: { container: string; removeIds: string[]; publish: string[] }[] = [];
@@ -146,7 +146,7 @@ export class FakeBc implements HarnessBc {
         version: string;
       };
       const source = await sources(project.path);
-      if (this.crashFor?.(project.path.replaceAll("\\", "/"))) {
+      if (this.crashFor?.(project.path.replaceAll("\\", "/"), container)) {
         return {
           success: false,
           errors: [],

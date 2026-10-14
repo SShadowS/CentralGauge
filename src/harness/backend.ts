@@ -36,6 +36,7 @@ import {
   LaneCancelledError,
   type LockedSymbols,
   prepareApps,
+  throwIfCrashed,
 } from "./bc-lane.ts";
 import {
   CopyLimitError,
@@ -1030,7 +1031,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           changed,
           lock: ctx.grant.lock,
         });
-        return await buildApps(lane.bc, c, {
+        const r = await buildApps(lane.bc, c, {
           srcDir: ctx.snapshot,
           apps: selected,
           versions,
@@ -1040,6 +1041,9 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           cache: ctx.buildCache,
           graph: ctx.apps,
         });
+        // H-04b: a crash reroutes, and is infra (503), never a failed build.
+        throwIfCrashed(r, c, "candidate");
+        return r;
       }, ctx.signal);
       const ok = built.every((b) => b.ok);
       return {

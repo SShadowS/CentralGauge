@@ -36,7 +36,8 @@ import {
 } from "./images.ts";
 import { validateCampaignRecords } from "./integrity.ts";
 import { manifestHash, resolveManifest } from "./manifest.ts";
-import { cellsFromRecords } from "./outcome.ts";
+import { campaignJudging, cellsFromRecords } from "./outcome.ts";
+import { currentScorerFingerprint } from "./verdict.ts";
 import { verifyPrereg } from "./prereg.ts";
 import {
   type ArtifactRecord,
@@ -385,6 +386,8 @@ function rerunTarget(
   c: CampaignRecord,
   data: CampaignRecords,
   r: NonNullable<RunOptions["rerun"]>,
+  /** H-04b: the current scorer fingerprint, so a rejudge-budget cell reads as the report shows it. */
+  scorer: string,
 ): { block: Block; at: AttemptRef; prior: ExecutionRecord[] } {
   const label = `${r.task}:${r.repeat}:${r.arm}`;
   const block = c.blocks.find((b) =>
@@ -393,7 +396,15 @@ function rerunTarget(
   if (!block) {
     throw new ConfigurationError(`no such cell ${label} in campaign ${c.id}`);
   }
-  const cell = cellsFromRecords(c, data.executions, judgmentsByExecution(data))
+  const cell = cellsFromRecords(
+    c,
+    data.executions,
+    judgmentsByExecution(data),
+    {
+      ...campaignJudging(c),
+      scorer,
+    },
+  )
     .find((x) =>
       x.task === r.task && x.repeat === r.repeat && x.arm === r.arm
     )!;
@@ -431,7 +442,13 @@ async function dryRunEstimate(
   const outstanding = new Map<string, number>();
   if (data) {
     const byExecution = judgmentsByExecution(data);
-    for (const cell of cellsFromRecords(c, data.executions, byExecution)) {
+    const judging = {
+      ...campaignJudging(c),
+      scorer: await currentScorerFingerprint(),
+    };
+    for (
+      const cell of cellsFromRecords(c, data.executions, byExecution, judging)
+    ) {
       if (
         selected.has(`${cell.task}#${cell.repeat}`) &&
         (cell.status === "unrun" || cell.status === "pending")
@@ -817,7 +834,9 @@ export async function runCampaign(
     await validateCampaignRecords(data);
   }
   // Refused before any container run (and in a dry run).
-  const rerun = o.rerun && data ? rerunTarget(c, data, o.rerun) : null;
+  const rerun = o.rerun && data
+    ? rerunTarget(c, data, o.rerun, await currentScorerFingerprint())
+    : null;
   const maxRepeat = o.repeats ?? experiment.repeats;
   const blocks = c.blocks.filter((b) => b.repeat <= maxRepeat)
     .slice(0, o.sample ?? Infinity);

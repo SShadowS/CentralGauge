@@ -1475,6 +1475,169 @@ Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is n
   assertEquals([again.rejudged, await count()], [0, [3, 1]]);
 });
 
+/**
+ * n newer, non-forced, infra-unscored copies of the execution's first
+ * judgment; the first `old` of them (the oldest) under a stale scorer suite.
+ */
+async function unscoredJudgments(
+  t: TestEnv,
+  executionId: string,
+  n: number,
+  old = 0,
+) {
+  const [j] = await t.env.store.judgments(executionId);
+  const stale = { ...j!.scorer_versions, build: "0-stale" };
+  for (let i = 0; i < n; i++) {
+    const at = new Date(Date.now() + i).toISOString();
+    await t.env.store.writeJudgment({
+      ...j!,
+      id: crypto.randomUUID(),
+      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      verdict: "unscored",
+      ...(i < old
+        ? {
+          scorer_versions: stale,
+          scorer_fingerprint: await scorerFingerprint(stale),
+        }
+        : {}),
+      started_at: at,
+      ended_at: at,
+    });
+  }
+}
+
+Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only under the current scorer suite", async () => {
+  // [unscored judgments, of them under an old suite, executions due]
+  for (const [n, old, due] of [[3, 3, 1], [3, 1, 1]] as const) {
+    const t = await makeEnv();
+    await writeCatalog(t);
+    t.env.supervised = false;
+    t.docker.behavior = mockImageBehavior();
+    await mockExperiment(t);
+    await runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const es = await t.env.store.executions(c.id);
+    assertEquals(
+      (await t.env.store.judgments(es[0]!.id))[0]!.scorer_fingerprint,
+      await currentScorerFingerprint(),
+    );
+    await unscoredJudgments(t, es[0]!.id, n, old);
+    const r = await harnessRejudge("contract", runOpts(t), opener(t));
+    assertEquals(r.rejudged, due, `${n} unscored, ${old} old`);
+  }
+});
+
+Deno.test("rejudge --force (H-04b run 003): after a --rerun of a budget-terminal cell, --force admits the rerun the report counts and refuses the planned execution", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const run = (extra: Record<string, unknown> = {}) =>
+    runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+      ...extra,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  await run();
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const p = (await t.env.store.executions(c.id))[0]!;
+  await unscoredJudgments(t, p.id, 3);
+  const block = c.blocks[p.block]!;
+  await run({
+    rerun: { task: block.task_id, repeat: block.repeat, arm: p.arm },
+  });
+  const m = (await t.env.store.executions(c.id)).find((x) =>
+    x.run_kind === "manual_rerun"
+  )!;
+  // The rerun's verdict hit infra too: it is pending, so the cell counts it
+  // only when the planned one is budget-terminal (current scorer passed).
+  await unscoredJudgments(t, m.id, 1);
+  const force = (e: string, replaces: string) =>
+    approved(e, (basis) =>
+      harnessRejudge(
+        "contract",
+        runOpts(t, {
+          campaign: c.id,
+          execution: e,
+          force: true,
+          reason: OOM_REASON,
+          replaces,
+          basis,
+        }),
+        opener(t),
+      ));
+  const latest = async (e: string) =>
+    (await t.env.store.judgments(e)).sort((a, b) =>
+      a.ended_at.localeCompare(b.ended_at)
+    ).at(-1)!.id;
+  await assertRejects(
+    async () => await force(p.id, await latest(p.id)),
+    ConfigurationError,
+    `execution ${p.id} is not the one its cell counts (${m.id})`,
+  );
+  assertEquals(
+    (await force(m.id, await latest(m.id))).rejudged,
+    1,
+  );
+});
+
+Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under the current scorer suite", async () => {
+  for (const current of [true, false]) {
+    const dir = await Deno.makeTempDir();
+    const store = new RecordStore(dir);
+    const c = await campaign();
+    await store.writeCampaign(c);
+    const e = execution(c);
+    await store.writeExecution(e);
+    const suite = current
+      ? {
+        scorer_versions: SCORER_SUITE,
+        scorer_fingerprint: await currentScorerFingerprint(),
+      }
+      : {};
+    for (let i = 0; i < 3; i++) {
+      await store.writeJudgment(judgment(c, e, null, suite));
+    }
+    const r = await harnessReport("skills-vs-plain", {
+      resultsDir: dir,
+      ...OPTS,
+    });
+    const cell = r.cells.find((x) => x.used_execution === e.id)!;
+    assertEquals(
+      [cell.status, cell.reason],
+      current
+        ? ["unscored", "verdict infra: rejudge budget 3 exhausted"]
+        : ["pending", undefined],
+    );
+  }
+});
+
+Deno.test("rejudge (H-04b): an execution with 2 non-forced unscored judgments is due; with 3 it hit the rejudge budget and is not", async () => {
+  for (const [n, due] of [[2, 1], [3, 0]] as const) {
+    const t = await makeEnv();
+    await writeCatalog(t);
+    t.env.supervised = false;
+    t.docker.behavior = mockImageBehavior();
+    await mockExperiment(t);
+    await runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const es = await t.env.store.executions(c.id);
+    await unscoredJudgments(t, es[0]!.id, n);
+    const r = await harnessRejudge("contract", runOpts(t), opener(t));
+    assertEquals(r.rejudged, due, `${n} unscored judgments`);
+  }
+});
+
 /** A two-cell mock campaign, judged, with the frozen analysis files in the harness root. */
 async function measurableCampaign() {
   const t = await makeEnv();
