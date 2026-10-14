@@ -2,6 +2,7 @@ v: 1
 partial_credit:
   weights:
     "86660/CollectsOnlyPendingInFilter": 1
+    "86660/CollectsAttemptedInFull": 1
     "86660/KeepsCallerRows": 1
     "86660/NoDuplicate": 1
     "86660/KeepsPendingFilters": 1
@@ -14,13 +15,14 @@ reuse:
     - { codeunit: 70410, procedure: CollectPending, signature: "(var EntryFilter: Record \"CGR Outbox Entry\"; var Pending: Record \"CGR Outbox Entry\" temporary): Integer", file: Integration/src/OutboxDispatcher.Codeunit.al, perturb: "exit(0);" }
   tests:
     - { codeunit: 86660, procedures: [DispatchPendingAsToday, DispatchPendingCountsDelivered] }
-# R1-R5 call CollectPending directly and stay out of the reuse tests. The marker raised in CollectPending
+# R1-R5 and R8 call CollectPending directly and stay out of the reuse tests. The marker raised in CollectPending
 # escapes DispatchPending (no TryFunction on that path) into R6/R7's failure text; exit(0) collects nothing.
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
-  naive/by-value-buffer: { partial_credit: 0.14285714285714285 }
-  naive/filter-caller: { partial_credit: 0.8571428571428571 }
-  naive/insert-unchecked: { partial_credit: 0.8571428571428571 }
-  naive/reset-buffer: { partial_credit: 0.5714285714285714 }
+  naive/by-value-buffer: { partial_credit: 0.125 }
+  naive/filter-caller: { partial_credit: 0.875 }
+  naive/insert-unchecked: { partial_credit: 0.875 }
+  naive/partial-copy: { partial_credit: 0.875 }
+  naive/reset-buffer: { partial_credit: 0.625 }

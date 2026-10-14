@@ -53,6 +53,42 @@ codeunit 86660 "HX060 Collect Pending Oracle"
     end;
 
     [Test]
+    procedure CollectsAttemptedInFull()
+    var
+        EntryFilter: Record "CGR Outbox Entry";
+        Pending: Record "CGR Outbox Entry" temporary;
+        Stored: Record "CGR Outbox Entry";
+        Dispatcher: Codeunit "CGR Outbox Dispatcher";
+        AttemptedNo: Integer;
+        Added: Integer;
+    begin
+        InitRun();
+        AttemptedNo := QueueEntry('HX060-8A');
+        HX60MarkAttempted(AttemptedNo);
+        Stored.Get(AttemptedNo);
+        Assert.AreEqual(2, Stored.Attempts, 'Precondition: the entry has two attempts');
+        Assert.AreNotEqual(0DT, Stored."Last Attempt At", 'Precondition: the entry has a last attempt time');
+        Assert.AreNotEqual('', Stored."Last Error", 'Precondition: the entry has a last error');
+        Assert.IsFalse(Stored.Sent or Stored.Failed, 'Precondition: the attempted entry is still pending');
+
+        EntryFilter.SetRange("Vehicle No.", 'HX060-8A');
+        Added := Dispatcher.CollectPending(EntryFilter, Pending);
+
+        Assert.AreEqual(1, Added, 'The attempted pending entry is collected');
+        Pending.Reset();
+        Assert.IsTrue(Pending.Get(AttemptedNo), 'The attempted entry is in Pending under its own Entry No.');
+        Assert.AreEqual(Stored."Event Type", Pending."Event Type", 'Event Type copied');
+        Assert.AreEqual(Stored."Vehicle No.", Pending."Vehicle No.", 'Vehicle No. copied');
+        Assert.AreEqual(Stored.Payload, Pending.Payload, 'Payload copied');
+        Assert.AreEqual(Stored."Created At", Pending."Created At", 'Created At copied');
+        Assert.AreEqual(Stored.Sent, Pending.Sent, 'Sent copied');
+        Assert.AreEqual(2, Pending.Attempts, 'Attempts copied');
+        Assert.AreEqual(Stored."Last Attempt At", Pending."Last Attempt At", 'Last Attempt At copied');
+        Assert.AreEqual('HX060 endpoint timed out', Pending."Last Error", 'Last Error copied');
+        Assert.AreEqual(Stored.Failed, Pending.Failed, 'Failed copied');
+    end;
+
+    [Test]
     procedure KeepsCallerRows()
     var
         EntryFilter: Record "CGR Outbox Entry";
@@ -255,6 +291,17 @@ codeunit 86660 "HX060 Collect Pending Oracle"
     begin
         Entry.Get(EntryNo);
         Entry.Sent := true;
+        Entry.Modify();
+    end;
+
+    local procedure HX60MarkAttempted(EntryNo: Integer)
+    var
+        Entry: Record "CGR Outbox Entry";
+    begin
+        Entry.Get(EntryNo);
+        Entry.Attempts := 2;
+        Entry."Last Attempt At" := CreateDateTime(20270228D, 103000T);
+        Entry."Last Error" := 'HX060 endpoint timed out';
         Entry.Modify();
     end;
 
