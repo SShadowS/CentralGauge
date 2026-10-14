@@ -208,6 +208,8 @@ interface GrantState {
   /** Set synchronously by revoke; checked synchronously right before admission. */
   closing: boolean;
   abort: AbortController;
+  /** H-10 r2: admitted OTel requests (outside the tool lock); revoke drains them too. */
+  otel: Set<Promise<unknown>>;
 }
 
 async function drainedWithin(
@@ -442,6 +444,18 @@ export class Backend {
     }
     const path = st.g.otelLog;
     if (!path) return this.reply(404, { error: "not found" });
+    // Admitted synchronously after the check above; revoke awaits it.
+    const work = this.otelAdmitted(req, st, path);
+    st.otel.add(work);
+    void work.finally(() => st.otel.delete(work));
+    return await work;
+  }
+
+  private async otelAdmitted(
+    req: Request,
+    st: GrantState,
+    path: string,
+  ): Promise<Response> {
     const text = await readLimited(
       req,
       OTEL_MAX_BODY_BYTES,
@@ -449,6 +463,13 @@ export class Backend {
     );
     if (text === "timeout") return this.reply(408, { error: "timed out" });
     if (text === null) return this.reply(413, { error: "body too large" });
+    // Revoked or expired while the body was read: nothing is appended.
+    if (
+      st.closing || this.grants.get(st.g.executionId) !== st ||
+      this.now() > st.expiresAt
+    ) {
+      return this.reply(401, { error: "unauthorized" });
+    }
     let rows;
     try {
       rows = apiRequests(JSON.parse(text));
@@ -555,6 +576,7 @@ export class Backend {
         canonical,
         closing: false,
         abort: new AbortController(),
+        otel: new Set(),
       });
       return token;
     } finally {
@@ -572,7 +594,9 @@ export class Backend {
     const st = this.grants.get(executionId);
     if (!st) return true;
     st.closing = true;
-    const inflight = st.inflight;
+    // H-10 r2: the tool request and every admitted OTel request, drained alike.
+    const pending = [...(st.inflight ? [st.inflight] : []), ...st.otel];
+    const inflight = pending.length > 0 ? Promise.allSettled(pending) : null;
     if (inflight) {
       this.draining.add(executionId);
       void inflight.finally(() => this.draining.delete(executionId));

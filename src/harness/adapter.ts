@@ -18,6 +18,8 @@ export interface ParseInput {
   stderrLog?: string;
   /** Quarantined OTel api_request rows (H-10, otel.jsonl); absent or missing reads as no OTel, never zero usage. */
   otelLog?: string;
+  /** The execution being parsed: every OTel row must be received for it (H-10 r2). */
+  executionId?: string;
   exitCode: number | null;
   manifest: ResolvedManifest;
   /** Fixed at run start; the snapshot goes into telemetry. */

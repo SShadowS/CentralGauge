@@ -189,7 +189,23 @@ export interface OtelCheck {
   rows: number;
   /** Distinct (session_id, sequence) requests; 0 unless the rows are valid. */
   requests: number;
+  /** r2: per model, the OTel cache writes the stream never showed (priced from OTel alone). */
+  unstreamed?: Record<
+    string,
+    { cache_write_5m: number; cache_write_1h: number }
+  >;
+  /** r2: our price of the OTel tokens against modelUsage costUSD. */
+  cost_check?: {
+    tolerance_usd_min: number;
+    tolerance_rel: number;
+    per_model: Record<
+      string,
+      { ours: number | null; reported: number | null; ok: boolean }
+    >;
+  };
 }
+const COST_TOL_MIN = 0.0005;
+const COST_TOL_REL = 0.001;
 type OtelTally = {
   requests: number;
   input: number;
@@ -215,10 +231,28 @@ const OTEL_COUNTS = [
  * cache writes; identical duplicates (a re-sent export) collapse, a key with
  * different content is invalid. Exact: per model, the sums of input, cache
  * read, cache write and output equal modelUsage, over the same models.
+ *
+ * r2 (review H-10-001): equal totals do not prove the priced TTL split, so
+ * (1) the OTel split must equal the stream's on a stream-exact run and
+ * dominate what the stream observed otherwise (the remainder is recorded as
+ * `unstreamed`), and (2) our price of the OTel tokens must match modelUsage
+ * costUSD, which claude computes from the true split, on list pricing only.
+ * Residual: a forged split of the unstreamed remainder that stays inside the
+ * cost tolerance needs the real export to be missing; the exporter is
+ * claude's own, not reachable through the agent's tools.
  */
 function otelCheck(
   text: string | null,
   last: J,
+  ctx: {
+    /** The execution being parsed; null: the rows need only agree with each other. */
+    execution: string | null;
+    /** Per model, the TTL split the stream observed (messages and sub-agent results). */
+    streamSplit: ReadonlyMap<string, { m5: number; h1: number; bad: boolean }>;
+    /** Stream-exact: the split must equal the stream's; else dominate it. */
+    streamExact: boolean;
+    pricing: ParseInput["pricing"];
+  },
 ): { check: OtelCheck; tally: Map<string, OtelTally> } {
   const tally = new Map<string, OtelTally>();
   if (text === null) {
@@ -239,7 +273,7 @@ function otelCheck(
     tally: new Map<string, OtelTally>(),
   });
   const seen = new Map<string, string>();
-  let owner: string | null = null;
+  let owner: string | null = ctx.execution;
   for (const [i, l] of lines.entries()) {
     const at = `otel line ${i + 1}`;
     let v: unknown;
@@ -309,8 +343,8 @@ function otelCheck(
     tally.set(model, t);
   }
   const requests = seen.size;
-  const mismatch = (why: string) => ({
-    check: { status: "mismatch" as const, why, rows, requests },
+  const mismatch = (why: string, extra: Partial<OtelCheck> = {}) => ({
+    check: { status: "mismatch" as const, why, rows, requests, ...extra },
     tally,
   });
   for (const m of Object.keys(last).sort()) {
@@ -340,7 +374,76 @@ function otelCheck(
       }
     }
   }
-  return { check: { status: "exact", rows, requests }, tally };
+  const sorted = [...tally].sort(([a], [b]) => a < b ? -1 : 1);
+  const unstreamed: NonNullable<OtelCheck["unstreamed"]> = {};
+  for (const [m, t] of sorted) {
+    const s = ctx.streamSplit.get(m) ?? { m5: 0, h1: 0, bad: false };
+    if (s.bad) return mismatch(`${m} stream TTL split not computable`);
+    const ok = ctx.streamExact
+      ? t.w5m === s.m5 && t.w1h === s.h1
+      : t.w5m >= s.m5 && t.w1h >= s.h1;
+    if (!ok) {
+      return mismatch(
+        `${m} TTL split: OTel 5m ${t.w5m} / 1h ${t.w1h} ${
+          ctx.streamExact ? "differs from" : "is below"
+        } the stream's 5m ${s.m5} / 1h ${s.h1}`,
+      );
+    }
+    unstreamed[m] = {
+      cache_write_5m: t.w5m - s.m5,
+      cache_write_1h: t.w1h - s.h1,
+    };
+  }
+  // ponytail: claude prices from its own rate table; a catalog rate that
+  // diverges from it fails closed here (mismatch) rather than deriving the
+  // split costUSD implies. Upgrade: solve for the implied split when the
+  // catalog is known to diverge.
+  const cost_check: NonNullable<OtelCheck["cost_check"]> = {
+    tolerance_usd_min: COST_TOL_MIN,
+    tolerance_rel: COST_TOL_REL,
+    per_model: {},
+  };
+  let costWhy: string | null = null;
+  for (const [m, t] of sorted) {
+    const x = obj(last[m]);
+    const c = x["costUSD"];
+    const reported = typeof c === "number" && Number.isFinite(c) ? c : null;
+    const ours = estimateCost([{
+      model: m,
+      requests: t.requests,
+      input: t.input,
+      cache_read: t.read,
+      cache_write_5m: t.w5m,
+      cache_write_1h: t.w1h,
+      cache_write_unknown: 0,
+      output: t.out,
+      reasoning: null,
+      problems: [],
+    }], ctx.pricing).per_model[0]?.cost_usd ?? null;
+    let why: string | null = null;
+    if (x["costBasis"] !== "list") {
+      why = `cost not verifiable: ${m} costBasis ${
+        String(x["costBasis"] ?? "absent")
+      }`;
+    } else if (reported === null) {
+      why = `cost not verifiable: ${m} costUSD missing`;
+    } else if (ours === null) {
+      why = `cost not verifiable: ${m} is not priced by the pricing book`;
+    } else {
+      const tol = Math.max(COST_TOL_MIN, COST_TOL_REL * reported);
+      if (Math.abs(ours - reported) > tol) {
+        why =
+          `${m} costUSD ${reported} != our price ${ours} of the OTel tokens (tolerance ${tol})`;
+      }
+    }
+    cost_check.per_model[m] = { ours, reported, ok: why === null };
+    costWhy ??= why;
+  }
+  if (costWhy !== null) return mismatch(costWhy, { cost_check });
+  return {
+    check: { status: "exact", rows, requests, unstreamed, cost_check },
+    tally,
+  };
 }
 
 /** H-07: executed web tool calls per model and the searches their results report. */
@@ -1374,6 +1477,8 @@ export function parseClaudeStream(
   streamProblems: string[] = [],
   /** H-10: otel.jsonl's text; null when there is none (OTel missing). */
   otelText: string | null = null,
+  /** H-10 r2: the execution every OTel row must be received for; null: rows need only agree. */
+  otelExecution: string | null = null,
 ): ParsedRun & { trace: TraceEvent[] } {
   // The file name only: messages reach published records, private paths never do.
   const file = basename(input.rawLog);
@@ -1666,7 +1771,12 @@ export function parseClaudeStream(
   // stream never shows. They never override a hard stream failure: H-07 web
   // problems, a lost line, a resume not proven cumulative, provenance.
   const otel = streamRec && result
-    ? otelCheck(otelText, obj(result.modelUsage))
+    ? otelCheck(otelText, obj(result.modelUsage), {
+      execution: otelExecution,
+      streamSplit: split,
+      streamExact: streamRec.status === "exact",
+      pricing: input.pricing,
+    })
     : null;
   const hard = unproven.costs.length > 0 || nonJson.count > 0 ||
     (result !== undefined && webProblem(obj(result.modelUsage), web) !== null);
@@ -2118,6 +2228,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
       input,
       problems,
       otel,
+      input.executionId ?? null,
     );
     await writeTrace(input.traceOut, trace);
     return parsed;

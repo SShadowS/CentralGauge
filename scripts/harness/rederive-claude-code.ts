@@ -63,6 +63,7 @@ const { trace, ...run } = parseClaudeStream(
   },
   [],
   otel,
+  exec.id,
 );
 const sha256 = async (s: string) =>
   [

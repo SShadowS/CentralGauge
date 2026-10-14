@@ -1084,6 +1084,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
         rawLog: p.raw,
         stderrLog: p.stderr,
         otelLog: p.otel,
+        executionId: f.id,
         exitCode: f.sandbox.exitCode,
         manifest: f.manifest,
         pricing: f.pricing,

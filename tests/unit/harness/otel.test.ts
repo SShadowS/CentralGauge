@@ -82,3 +82,47 @@ Deno.test("otel: an api_request missing a token count throws, never reads as zer
   assertThrows(() => apiRequests({}));
   assertEquals(apiRequests({ resourceLogs: [] }), []);
 });
+
+Deno.test("otel (H-10 r2): a malformed OTLP int is never coerced to a count (null, empty, boolean, float, object)", () => {
+  const rec = (v: unknown) => ({
+    resourceLogs: [{
+      scopeLogs: [{
+        logRecords: [{
+          attributes: [
+            { key: "event.name", value: { stringValue: "api_request" } },
+            { key: "model", value: { stringValue: "m" } },
+            { key: "input_tokens", value: { intValue: 1 } },
+            { key: "output_tokens", value: { intValue: "2" } },
+            { key: "cache_read_tokens", value: { intValue: 0 } },
+            { key: "cache_creation_tokens", value: { intValue: 0 } },
+            { key: "cache_creation_5m_tokens", value: { intValue: 0 } },
+            { key: "cache_creation_1h_tokens", value: v },
+          ],
+        }],
+      }],
+    }],
+  });
+  for (
+    const bad of [
+      { intValue: null },
+      { intValue: "" },
+      { intValue: true },
+      { intValue: false },
+      { intValue: "1.5" },
+      { intValue: 1.5 },
+      { intValue: {} },
+      { intValue: "0x1" },
+      { intValue: " 1" },
+      { doubleValue: "0" },
+    ]
+  ) {
+    assertThrows(
+      () => apiRequests(rec(bad)),
+      Error,
+      undefined,
+      JSON.stringify(bad),
+    );
+  }
+  const n = (v: unknown) => apiRequests(rec(v))[0]!.cache_creation_1h_tokens;
+  assertEquals([n({ intValue: "0" }), n({ intValue: 0 })], [0, 0]);
+});

@@ -3868,10 +3868,33 @@ const otelRaw = (r: { telemetry: Telemetry }) =>
       why?: string;
       stream?: { status: string; why?: string };
     };
-    otel?: { status: string; why?: string; rows: number; requests: number };
+    otel?: {
+      status: string;
+      why?: string;
+      rows: number;
+      requests: number;
+      unstreamed?: Record<
+        string,
+        { cache_write_5m: number; cache_write_1h: number }
+      >;
+      cost_check?: {
+        tolerance_usd_min: number;
+        tolerance_rel: number;
+        per_model: Record<
+          string,
+          { ours: number | null; reported: number | null; ok: boolean }
+        >;
+      };
+    };
     usage_problems?: string[];
     missing: string[];
   };
+/** raw_usage.otel without the r2 split and cost evidence. */
+const otelCore = (u: ReturnType<typeof otelRaw>) => ({
+  status: u.otel?.status,
+  rows: u.otel?.rows,
+  requests: u.otel?.requests,
+});
 /** One synthetic api_request row (all cache writes 5m). */
 const orow = (
   seq: number,
@@ -3907,7 +3930,7 @@ Deno.test("otel (H-10): a nested run the stream cannot reconcile is exact_otel w
   const u = otelRaw(r);
   assertEquals(u.usage_reconciliation?.status, "exact_otel");
   assertEquals(u.usage_reconciliation?.stream?.status, "unreconciled");
-  assertEquals(u.otel, { status: "exact", rows: 5, requests: 5 });
+  assertEquals(otelCore(u), { status: "exact", rows: 5, requests: 5 });
   // 65 input, 515 cache read, 5015 cache write (all 5m), 115 output.
   assertAlmostEquals(
     r.telemetry.cost_usd!,
@@ -3925,14 +3948,18 @@ Deno.test("otel (H-10): a nested run the stream cannot reconcile is exact_otel w
   const dup = otel + otel.split("\n")[2] + "\n";
   const d = otelRaw(await parseOtel(raw, dup));
   assertEquals(d.usage_reconciliation?.status, "exact_otel");
-  assertEquals(d.otel, { status: "exact", rows: 6, requests: 5 });
+  assertEquals(otelCore(d), { status: "exact", rows: 6, requests: 5 });
 });
 
 Deno.test("otel (H-10): a stream-exact run stays exact; OTel agreeing is recorded, OTel disagreeing is a named otel_mismatch problem, cost kept", async () => {
   const raw = await Deno.readTextFile(STUB_300.lsp);
   const ok = await parseOtel(raw, lspRows(), arm300(true));
   assertEquals(otelRaw(ok).usage_reconciliation, { status: "exact" });
-  assertEquals(otelRaw(ok).otel, { status: "exact", rows: 9, requests: 9 });
+  assertEquals(otelCore(otelRaw(ok)), {
+    status: "exact",
+    rows: 9,
+    requests: 9,
+  });
   assertEquals(otelRaw(ok).usage_problems, undefined);
   assertAlmostEquals(ok.telemetry.cost_usd!, (90 * 2 + 45 * 10) / 1e6, 1e-12);
   const off = await parseOtel(raw, lspRows(1), arm300(true));
@@ -4006,8 +4033,17 @@ Deno.test("otel (H-10): invalid OTel (conflicting duplicate, foreign or absent e
 });
 
 Deno.test("otel (H-10): OTel never overrides a hard stream failure (a prohibited web call stays unreconciled, cost null)", async () => {
-  const raw = await Deno.readTextFile(WEB_FIXTURE.search);
-  const otel = orow(1, { input: 27149, read: 96714, write: 8778, out: 1884 });
+  // r2: costUSD is the trimmed fixture's full-cell figure; set it to the
+  // price of these tokens (cache writes 1h, as the stream splits them) so
+  // OTel passes the cost check and only the web rule refuses.
+  const raw = (await Deno.readTextFile(WEB_FIXTURE.search)).replace(
+    '"costUSD":1.0025735999999998',
+    '"costUSD":0.1275928',
+  );
+  const otel = orow(1, { input: 27149, read: 96714, write: 8778, out: 1884 }, {
+    cache_creation_5m_tokens: 0,
+    cache_creation_1h_tokens: 8778,
+  });
   const r = await parseOtel(raw, otel + "\n", webArm(true, false));
   const u = otelRaw(r);
   assertEquals(u.otel?.status, "exact");
@@ -4017,4 +4053,193 @@ Deno.test("otel (H-10): OTel never overrides a hard stream failure (a prohibited
     "WebSearch used while disallowed",
   );
   assertEquals(r.telemetry.cost_usd, null);
+});
+
+// ---- H-10 review round 1: provenance, TTL split guard, costUSD check ----
+const NESTED_ID = "5576d242-e15e-46e1-846d-e81fd9bfb51c";
+/** parseOtel with the expected execution id and an optional pricing book. */
+async function parseOtelAs(
+  text: string,
+  otel: string,
+  executionId: string,
+  over: Record<string, unknown> = armH10(),
+  pricing: PricingBook = BOOK,
+) {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  await Deno.writeTextFile(join(dir, "raw.jsonl"), text);
+  await Deno.writeTextFile(join(dir, "otel.jsonl"), otel);
+  return await claudeCodeAdapter.parse({
+    rawLog: join(dir, "raw.jsonl"),
+    otelLog: join(dir, "otel.jsonl"),
+    executionId,
+    exitCode: 0,
+    pricing,
+    traceOut: join(dir, "trace.jsonl"),
+    manifest: manifest("cc", over),
+  });
+}
+/** The nested OTel rows with row `i`'s cache writes split as given. */
+async function nestedSplit(shifts: Record<number, [number, number]>) {
+  return (await Deno.readTextFile(NESTED.otel)).trim().split("\n").map(
+    (l, i) => {
+      const o = JSON.parse(l);
+      const s = shifts[i];
+      if (s) [o.cache_creation_5m_tokens, o.cache_creation_1h_tokens] = s;
+      return JSON.stringify(o);
+    },
+  ).join("\n") + "\n";
+}
+
+Deno.test("otel (H-10 r2): a whole otel.jsonl of another execution is invalid even when its totals match", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  const otel = await Deno.readTextFile(NESTED.otel);
+  const own = otelRaw(await parseOtelAs(raw, otel, NESTED_ID));
+  assertEquals(own.usage_reconciliation?.status, "exact_otel");
+  const r = await parseOtelAs(
+    raw,
+    otel,
+    "00000000-0000-4000-8000-0000000000aa",
+  );
+  const u = otelRaw(r);
+  assertEquals(u.otel?.status, "invalid");
+  assertStringIncludes(u.otel!.why!, "received_for");
+  assertEquals(u.usage_reconciliation?.status, "unreconciled");
+  assertEquals(r.telemetry.cost_usd, null);
+  // received_for right but execution_id foreign: invalid too.
+  const mixed = otel.replaceAll(
+    `"execution_id":"${NESTED_ID}"`,
+    '"execution_id":"other"',
+  );
+  assertEquals(
+    otelRaw(await parseOtelAs(raw, mixed, NESTED_ID)).otel?.status,
+    "invalid",
+  );
+});
+
+Deno.test("otel (H-10 r2): exact_otel needs the OTel TTL split to dominate the streamed split; the unstreamed remainder is recorded", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  const ok = otelRaw(
+    await parseOtelAs(raw, await Deno.readTextFile(NESTED.otel), NESTED_ID),
+  );
+  // Streamed: messages 1001 + 1002 + 1005 and the child's 1004 (all 5m).
+  assertEquals(ok.otel?.unstreamed, {
+    "claude-sonnet-5": { cache_write_5m: 1003, cache_write_1h: 0 },
+  });
+  // Equal 5m and 1h rates, so only the split rule can refuse: 3009 5m < 4012 streamed.
+  const flat: PricingBook = {
+    ...BOOK,
+    models: {
+      "claude-sonnet-5": {
+        ...BOOK.models["claude-sonnet-5"]!,
+        cache_write_1h: 2.5,
+      },
+    },
+  };
+  const shifted = await nestedSplit({ 0: [0, 1001], 4: [0, 1005] });
+  const r = await parseOtelAs(raw, shifted, NESTED_ID, armH10(), flat);
+  const u = otelRaw(r);
+  assertEquals(u.otel?.status, "mismatch");
+  assertStringIncludes(u.otel!.why!, "claude-sonnet-5");
+  assertStringIncludes(u.otel!.why!, "split");
+  assertEquals(u.usage_reconciliation?.status, "unreconciled");
+  assertEquals(r.telemetry.cost_usd, null);
+});
+
+Deno.test("otel (H-10 r2): on a stream-exact run an OTel TTL split unlike the stream's is an otel_mismatch, cost stream-proven", async () => {
+  // The LSP stub with 100 5m cache writes per message (900 total).
+  const raw = (await Deno.readTextFile(STUB_300.lsp)).replaceAll(
+    '"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0',
+    '"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":100',
+  ).replace(
+    '"cacheCreationInputTokens":0,"webSearchRequests":0,"costUSD":0.00063',
+    '"cacheCreationInputTokens":900,"webSearchRequests":0,"costUSD":0.00288',
+  );
+  const rows = (first: Record<string, unknown>) =>
+    Array.from(
+      { length: 9 },
+      (_, i) =>
+        orow(
+          i,
+          { input: 10, read: 0, write: 100, out: 5 },
+          i === 0 ? first : {},
+        ),
+    ).join("\n") + "\n";
+  const cost = (90 * 2 + 900 * 2.5 + 45 * 10) / 1e6;
+  const ok = await parseOtel(raw, rows({}), arm300(true));
+  assertEquals(otelRaw(ok).usage_reconciliation, { status: "exact" });
+  assertEquals(otelRaw(ok).otel?.status, "exact");
+  assertAlmostEquals(ok.telemetry.cost_usd!, cost, 1e-12);
+  // 100 tokens 5m -> 1h: within the cost tolerance, so the split rule catches it.
+  const r = await parseOtel(
+    raw,
+    rows({ cache_creation_5m_tokens: 0, cache_creation_1h_tokens: 100 }),
+    arm300(true),
+  );
+  const u = otelRaw(r);
+  assertEquals(u.usage_reconciliation, { status: "exact" });
+  assertEquals(u.otel?.status, "mismatch");
+  assertStringIncludes(u.otel!.why!, "split");
+  assert(u.usage_problems![0]!.startsWith("otel_mismatch: "));
+  assertAlmostEquals(r.telemetry.cost_usd!, cost, 1e-12);
+});
+
+Deno.test("otel (H-10 r2): modelUsage costUSD must equal our price of the OTel tokens within tolerance, on list pricing only", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  // The real nested run: 0.0139205 reported, 0.0139205 ours.
+  const ok = otelRaw(
+    await parseOtelAs(raw, await Deno.readTextFile(NESTED.otel), NESTED_ID),
+  );
+  assertEquals(ok.otel?.cost_check?.tolerance_usd_min, 0.0005);
+  assertEquals(ok.otel?.cost_check?.tolerance_rel, 0.001);
+  const pm = ok.otel!.cost_check!.per_model["claude-sonnet-5"]!;
+  assertAlmostEquals(pm.ours!, 0.0139205, 1e-12);
+  assertEquals([pm.reported, pm.ok], [0.013920500000000002, true]);
+  // The unstreamed 1003 moved 5m -> 1h: totals and dominance hold, cost is 0.0015 off.
+  const far = otelRaw(
+    await parseOtelAs(raw, await nestedSplit({ 2: [0, 1003] }), NESTED_ID),
+  );
+  assertEquals(far.otel?.status, "mismatch");
+  assertStringIncludes(far.otel!.why!, "costUSD");
+  assertEquals(far.usage_reconciliation?.status, "unreconciled");
+  // One token moved: inside the tolerance, exact_otel priced as split.
+  const near = await parseOtelAs(
+    raw,
+    await nestedSplit({ 2: [1002, 1] }),
+    NESTED_ID,
+  );
+  assertEquals(otelRaw(near).usage_reconciliation?.status, "exact_otel");
+  assertEquals(otelRaw(near).otel?.unstreamed, {
+    "claude-sonnet-5": { cache_write_5m: 1002, cache_write_1h: 1 },
+  });
+  assertAlmostEquals(near.telemetry.cost_usd!, 0.0139205 + 1.5e-6, 1e-12);
+  // Not list pricing, no costBasis, or an unpriced model: not verifiable.
+  const otel = await Deno.readTextFile(NESTED.otel);
+  for (
+    const [label, text, book] of [
+      [
+        "subscription",
+        raw.replace('"costBasis":"list"', '"costBasis":"subscription"'),
+        BOOK,
+      ],
+      ["absent", raw.replace(',"costBasis":"list"', ""), BOOK],
+      ["unpriced", raw, { ...BOOK, models: {} }],
+    ] as const
+  ) {
+    const u = otelRaw(
+      await parseOtelAs(text, otel, NESTED_ID, armH10(), book),
+    );
+    assertEquals(u.otel?.status, "mismatch", label);
+    assertStringIncludes(u.otel!.why!, "cost not verifiable", label);
+    assertEquals(u.usage_reconciliation?.status, "unreconciled", label);
+  }
+  // A stream-exact run whose costUSD disagrees: disclosed, cost kept.
+  const lsp = (await Deno.readTextFile(STUB_300.lsp)).replace(
+    '"costUSD":0.00063',
+    '"costUSD":0.0013',
+  );
+  const s = otelRaw(await parseOtel(lsp, lspRows(), arm300(true)));
+  assertEquals(s.usage_reconciliation, { status: "exact" });
+  assertEquals(s.otel?.status, "mismatch");
+  assertStringIncludes(s.otel!.why!, "costUSD");
+  assert(s.usage_problems![0]!.startsWith("otel_mismatch: "));
 });

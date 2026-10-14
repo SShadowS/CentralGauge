@@ -5034,3 +5034,37 @@ Deno.test("otel (H-10): the quarantined otel.jsonl reaches the adapter parse (ra
   }).otel;
   assertEquals([otel?.status, otel?.rows], ["mismatch", 1]);
 });
+
+Deno.test("otel (H-10 r2): the execution id reaches the adapter parse: rows of another execution are invalid", async () => {
+  const probe = await probeLines();
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (call, io) => {
+    const id = call.env.get("CG_EXECUTION_ID")!;
+    await Deno.writeTextFile(
+      privatePaths(t.env, id).otel,
+      JSON.stringify({
+        session_id: "s1",
+        sequence: 1,
+        model: "claude-sonnet-5",
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_read_tokens: 1,
+        cache_creation_tokens: 1,
+        cache_creation_5m_tokens: 1,
+        cache_creation_1h_tokens: 0,
+        execution_id: "other-execution",
+        received_for: "other-execution",
+      }) + "\n",
+    );
+    for (const l of [V2_INIT, ...probe]) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  const otel = (e.telemetry.raw_usage as {
+    otel?: { status: string; why?: string };
+  }).otel;
+  assertEquals(otel?.status, "invalid");
+  assertStringIncludes(otel!.why!, "received_for");
+});

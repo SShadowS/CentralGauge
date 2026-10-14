@@ -1755,3 +1755,49 @@ Deno.test("otel (H-10): /v1/logs needs the grant's bearer, is off without otelLo
     400,
   );
 });
+
+Deno.test("otel (H-10 r2): revoke drains an admitted /v1/logs POST; the late body is refused and appends nothing; after revoke it is 401", async () => {
+  const s = await setup({ revokeGraceMs: 60_000 });
+  const EXEC_C = "00000000-0000-4000-8000-00000000e003";
+  const otelLog = join(s.root, "otel-c.jsonl");
+  const tokenC = await grantFor(
+    s.backend,
+    s.root,
+    EXEC_C,
+    join(s.root, "host-log-c.jsonl"),
+    otelLog,
+  );
+  const text = await Deno.readTextFile(
+    "tests/fixtures/harness/otel-nested-stub.json",
+  );
+  let reading!: () => void;
+  const started = new Promise<void>((r) => (reading = r));
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctrl = c;
+    },
+    pull() {
+      reading();
+    },
+  }, { highWaterMark: 0 });
+  const post = s.backend.handle(req("/v1/logs", tokenC, body, EXEC_C));
+  await started; // admitted, now reading its body
+  let revoked = false;
+  const rv = s.backend.revoke(EXEC_C).then((v) => {
+    revoked = true;
+    return v;
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert(!revoked, "revoke waits for the admitted OTel request");
+  ctrl.enqueue(new TextEncoder().encode(text));
+  ctrl.close();
+  assertEquals((await post).status, 401, "body read after revoke: refused");
+  assertEquals(await rv, true);
+  const appended = await Deno.readTextFile(otelLog).catch(() => "");
+  assertEquals(appended, "", "nothing appended");
+  assertEquals(
+    (await s.backend.handle(req("/v1/logs", tokenC, text, EXEC_C))).status,
+    401,
+  );
+});

@@ -35,11 +35,20 @@ function value(v: unknown): unknown {
   if (v === null || typeof v !== "object") return undefined;
   const o = v as Record<string, unknown>;
   if ("stringValue" in o) return o["stringValue"];
+  // No coercion (H-10 r2): null, "", booleans and floats are malformed, never 0 or 1.
   if ("intValue" in o) {
-    const n = Number(o["intValue"]);
+    const i = o["intValue"];
+    const n = typeof i === "number"
+      ? i
+      : typeof i === "string" && /^-?\d+$/.test(i)
+      ? Number(i)
+      : NaN;
     return Number.isSafeInteger(n) ? n : undefined;
   }
-  if ("doubleValue" in o) return Number(o["doubleValue"]);
+  if ("doubleValue" in o) {
+    const d = o["doubleValue"];
+    return typeof d === "number" && Number.isFinite(d) ? d : undefined;
+  }
   if ("boolValue" in o) return o["boolValue"];
   return undefined;
 }
