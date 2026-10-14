@@ -239,12 +239,12 @@ Deno.test("credential gate: refused without supervision or enforcement; supervis
   t.env.credentialLedger = join(t.env.privateRoot, "shared.jsonl");
   await Deno.writeTextFile(
     t.env.credentialLedger,
-    '{"lane":"M4-17"}\n'.repeat(25),
+    '{"lane":"M4-17"}\n'.repeat(200),
   );
   await assertRejects(
     async () => runCell(t.env, await cellFor(t)),
     ConfigurationError,
-    "25 supervised",
+    "200 supervised",
   );
   assertEquals(t.docker.runs, [], "no docker call before the reservation");
   enforce(t);
@@ -4959,4 +4959,43 @@ Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed 
   const passed = args[args.indexOf("--memory") + 1];
   assertEquals(passed, "4g");
   assertEquals((await sideOf(t, e.id)).sandbox.memory, passed);
+});
+
+// H-08 (M8-07c cell 105ec327): claude printed its final result record but the
+// execution never settled, so the cell ran to the 30 min cap and read as a
+// timeout. A finished stream is stopped after a bounded grace instead: the run
+// is completed (its cost kept) and the late stop is recorded.
+Deno.test("runCell (H-08): a run that lingers after its final result is stopped after the grace and completed, the lingering recorded", async () => {
+  const t = await makeEnv();
+  t.env.streamEndGraceMs = 50;
+  // Without the stop, the lingering run would reach this cap as a timeout.
+  t.env.timeoutMsFor = () => 15_000;
+  t.docker.behavior = async (call, io) => {
+    await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
+    await io.killed;
+    return 137;
+  };
+  const t0 = performance.now();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assert(performance.now() - t0 < 60_000);
+  assertEquals(e.termination, "completed");
+  assertAlmostEquals(e.telemetry.cost_usd!, PROBE_COST, 1e-12);
+  // The kill's exit code is telemetry only; the work and reported cost stand.
+  assertEquals(e.telemetry.exit_code, 137);
+  assertEquals(e.did_work, true);
+  assert(e.telemetry.reported_cost_usd !== null);
+  assertEquals(t.docker.kills.length, 1);
+  const side = await sideOf(t, e.id);
+  assertEquals(side.sandbox.timedOut, false);
+  assertEquals(side.sandbox.lingered.grace_ms, 50);
+  // The fake's exec answer (shared with the privilege check) is the snapshot.
+  assertEquals(typeof side.sandbox.lingered.processes, "string");
+  assert(
+    t.docker.privilegeCalls.some((c) =>
+      c.op === "exec" &&
+      JSON.stringify(c.argv) ===
+        JSON.stringify(["C:\\Windows\\System32\\tasklist.exe"])
+    ),
+  );
+  assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "pass");
 });

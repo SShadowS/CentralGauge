@@ -29,6 +29,7 @@ import {
   ValidationError,
 } from "../errors.ts";
 import {
+  type HarnessAdapter,
   incompleteTelemetry,
   observedMismatch,
   type ParsedRun,
@@ -100,6 +101,7 @@ import {
   SANDBOX_PREFIX,
   sandboxName,
   type SandboxResult,
+  type SandboxSpec,
   SECRETS_DIR_PREFIX,
   type SecretValue,
   stagePiConfig,
@@ -208,6 +210,11 @@ export interface HarnessEnv {
   now?: () => Date;
   timeoutMsFor?: (minutes: number) => number;
   killGraceMs?: number;
+  /**
+   * H-08: how long a run whose stream has ended (the adapter's streamEnded)
+   * may keep its process before the sandbox is stopped (default 120 s).
+   */
+  streamEndGraceMs?: number;
   opTimeoutMs?: number;
   /** Test seam: the inventory wait deadline (default PREFLIGHT_TIMEOUT_MS, 180 s). */
   inventoryTimeoutMs?: number;
@@ -869,6 +876,31 @@ export async function writeConfigDir(
     join(dir, "manifest.json"),
     JSON.stringify(m, null, 2) + "\n",
   );
+}
+
+/**
+ * H-08: a finished run may linger this long before its sandbox is stopped
+ * (M8-07c cell 105ec327: after claude -p printed its final result the
+ * execution never settled; candidates are a Claude/WebFetch shutdown hang or a
+ * surviving descendant of a timed-out Bash `find /`; the tasklist snapshot may
+ * distinguish them next time).
+ */
+const STREAM_END_GRACE_MS = 120_000;
+
+/** H-08: the sandbox's end-of-stream stop, for adapters that can tell. */
+function streamEndOf(
+  adapter: HarnessAdapter,
+  graceMs: number,
+): Pick<SandboxSpec, "streamEnd"> {
+  return adapter.streamEnded
+    ? {
+      streamEnd: {
+        ended: adapter.streamEnded,
+        graceMs,
+        pollMs: Math.min(5_000, graceMs),
+      },
+    }
+    : {};
 }
 
 /** Nothing ran: exact zero cost. */
@@ -1778,6 +1810,10 @@ export async function runExecution(
           maxCaptureBytes: env.maxCaptureBytes ?? 256 * 1024 * 1024,
           rawLog: p.raw,
           stderrLog: p.stderr,
+          ...streamEndOf(
+            adapterFor(manifest.harness),
+            env.streamEndGraceMs ?? STREAM_END_GRACE_MS,
+          ),
         },
         values.map((v) => v.value),
         stop,

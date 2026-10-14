@@ -514,6 +514,16 @@ export interface SandboxSpec {
   /** Quarantine paths (private, never under results/). */
   rawLog: string;
   stderrLog: string;
+  /**
+   * H-08: the harness's end-of-run test over the raw log. Once it holds and
+   * the log has not grown for `graceMs`, a process still running is stopped
+   * (recorded as `lingered`, never a timeout). Polled every `pollMs`.
+   */
+  streamEnd?: {
+    ended: (raw: string) => boolean;
+    graceMs: number;
+    pollMs: number;
+  };
 }
 
 /**
@@ -719,7 +729,23 @@ export interface SandboxResult {
   confirmedGone: boolean;
   cleanup: "ok" | string;
   wall_ms: number;
+  /**
+   * H-08: the stream had ended but the process kept running for `grace_ms`,
+   * so the sandbox was stopped; `processes` is its process list at that
+   * moment (tasklist), or why that snapshot failed.
+   */
+  lingered?: { grace_ms: number; processes: string };
 }
+
+/**
+ * H-08: the snapshot of what kept a finished run alive. An absolute path, like
+ * PRIVILEGE_ARGV: exec starts in the agent-staged C:\workspace, and System32 is
+ * not writable by the sandbox user. ponytail: the output is buffered whole and
+ * then cut; tasklist prints ~100 bytes per process, so it is bounded by the
+ * process count of a 4g sandbox; stream-bound it if that ever stops holding.
+ */
+export const LINGER_SNAPSHOT = ["C:\\Windows\\System32\\tasklist.exe"];
+const LINGER_SNAPSHOT_MAX = 8192;
 
 async function settle<T>(p: Promise<T>, ms: number): Promise<T | "timeout"> {
   let t: ReturnType<typeof setTimeout> | undefined;
@@ -798,8 +824,73 @@ export async function runSandbox(
       );
     }
   };
+  let poller: ReturnType<typeof setInterval> | undefined;
+  let polling: Promise<void> = Promise.resolve();
+  /** Another stop already happened (or the run is over): the watcher stands down. */
+  let closed = false;
+  const stopping = () =>
+    closed || settled || r.timedOut || r.interrupted || r.overflow ||
+    r.lingered !== undefined;
+  // H-08: re-read the log only when it grew; stop once it has ended and has
+  // stayed unchanged for the grace, checked again after the snapshot (output
+  // while it ran restarts the grace). ponytail: whole-file re-read per growth
+  // (logs are ~1 MB); tail-parse if multi-MB logs make polls slow.
+  const watchStreamEnd = (se: NonNullable<SandboxSpec["streamEnd"]>) => {
+    let size = -1;
+    let changed = performance.now();
+    let ended = false;
+    let busy = false;
+    /** False when the log changed since the last look (the grace restarts). */
+    const unchanged = async (): Promise<boolean> => {
+      const n = (await Deno.stat(spec.rawLog).catch(() => null))?.size ?? 0;
+      if (n === size) return true;
+      size = n;
+      changed = performance.now();
+      ended = se.ended(await Deno.readTextFile(spec.rawLog).catch(() => ""));
+      return false;
+    };
+    const poll = async () => {
+      if (
+        !await unchanged() || !ended ||
+        performance.now() - changed < se.graceMs || stopping()
+      ) return;
+      // Only this execution's container is ever looked into or stopped.
+      const st = await bounded(
+        docker.state(spec.name),
+        spec.opTimeoutMs,
+        `docker inspect ${spec.name}`,
+      ).catch(() => null);
+      if (st?.execution !== spec.executionId || stopping()) return;
+      let processes: string;
+      try {
+        const s = await bounded(
+          docker.exec(spec.name, SANDBOX_USER, LINGER_SNAPSHOT),
+          spec.opTimeoutMs,
+          `docker exec ${spec.name} tasklist`,
+        );
+        processes = `${s.code === 0 ? "" : `tasklist exited ${s.code}: `}${
+          (s.stdout || s.stderr).trim()
+        }`.slice(0, LINGER_SNAPSHOT_MAX);
+      } catch (err) {
+        processes = `snapshot failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      }
+      if (!await unchanged() || !ended || stopping()) return;
+      r.lingered = { grace_ms: se.graceMs, processes };
+      // The linger stop is the stop reason: the cap can no longer fire.
+      clearTimeout(timer);
+      requestStop();
+    };
+    return setInterval(() => {
+      if (busy || stopping()) return;
+      busy = true;
+      polling = poll().catch(() => {}).finally(() => (busy = false));
+    }, se.pollMs);
+  };
   try {
     timer = setTimeout(() => {
+      if (r.lingered) return;
       r.timedOut = true;
       requestStop();
     }, spec.timeoutMs);
@@ -818,6 +909,7 @@ export async function runSandbox(
         },
         abort: abandon.signal,
       }).finally(() => (settled = true));
+      if (spec.streamEnd) poller = watchStreamEnd(spec.streamEnd);
       const first = await Promise.race([
         running.then((c) => ({ c })),
         stopped.then(() => null),
@@ -842,6 +934,11 @@ export async function runSandbox(
     r.startError = err instanceof Error ? err.message : String(err);
   } finally {
     clearTimeout(timer);
+    clearInterval(poller);
+    // An in-flight poll may still be awaiting a stat or read: give it one op
+    // deadline, after which `closed` keeps it from ever committing a stop.
+    closed = true;
+    await settle(polling, spec.opTimeoutMs);
     stop?.removeEventListener("abort", onAbort);
     if (running && !settled) {
       // Abandon the docker client; realDocker bounds its own settlement.

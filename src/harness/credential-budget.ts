@@ -14,8 +14,8 @@
 
 import { ConfigurationError } from "../errors.ts";
 
-/** 5 -> 25 (H-06, owner, decisions/2026-10-14-restore-egress-lockdown.md); supervision and the ledger stay required. */
-export const CREDENTIAL_RUN_LIMIT = 25;
+/** 5 -> 25 (H-06) -> 200 (H-06b), owner, decisions/2026-10-14-restore-egress-lockdown.md; supervision and the ledger stay required. */
+export const CREDENTIAL_RUN_LIMIT = 200;
 
 export interface Reservation {
   lane: string;

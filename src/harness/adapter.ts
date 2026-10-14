@@ -84,6 +84,12 @@ export interface HarnessAdapter {
    * any reservation or secret read.
    */
   unqualified?(m: ResolvedManifest, level: "dev" | "campaign"): string | null;
+  /**
+   * H-08: true when the raw log so far is a finished run (the harness wrote
+   * its final record), so a process that lingers after it can be stopped
+   * after a bounded grace. Without it a run ends only by exit or timeout.
+   */
+  streamEnded?(raw: string): boolean;
 }
 
 /** Declared fields that came back null or empty (they go to validity.incomplete_telemetry). */

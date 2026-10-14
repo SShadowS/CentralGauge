@@ -414,6 +414,44 @@ const SESSION_BOUND = new Set(["assistant", "user", "result"]);
 const SHOWN = 3;
 
 /**
+ * H-08 run 002: the only records proven inert after a final result. Of 49
+ * real streams with a result, one (M1-29, 2.1.282) has trailing records, and
+ * they are exactly these task bookkeeping subtypes; rate_limit_event is the
+ * parser's other known trailer. Anything else after the result (a `status:
+ * compacting`, an unknown subtype) may be work still going on.
+ */
+const isInertTrailer = (r: J) =>
+  r.type === "rate_limit_event" ||
+  (r.type === "system" &&
+    ["background_tasks_changed", "task_updated", "task_notification"]
+      .includes(r.subtype as string));
+
+/**
+ * H-08: the run is over when every session (init) has its result, only inert
+ * records follow the last result, and every started background task has its
+ * task_notification (M1-32b: a task can resume the session). Any line that is
+ * not JSON (a partial line still being written) means not yet.
+ */
+export function claudeStreamEnded(raw: string): boolean {
+  const { lines, nonJson } = readRecords<J>(raw);
+  if (nonJson.count > 0) return false;
+  const last = lines.findLastIndex((x) => x.rec.type === "result");
+  if (last < 0 || lines.slice(last + 1).some((x) => !isInertTrailer(x.rec))) {
+    return false;
+  }
+  const count = (f: (r: J) => boolean) => lines.filter((x) => f(x.rec)).length;
+  const inits = count((r) => r.type === "system" && r.subtype === "init");
+  if (count((r) => r.type === "result") < Math.max(inits, 1)) return false;
+  const task = (subtype: string) =>
+    new Set(
+      lines.filter((x) => x.rec.type === "system" && x.rec.subtype === subtype)
+        .map((x) => x.rec["task_id"]),
+    );
+  const done = task("task_notification");
+  return [...task("task_started")].every((id) => done.has(id));
+}
+
+/**
  * Provenance and placement (M1-32b run 002). The cost is proven only when
  * there are as many results as inits, none before the first init, nothing but
  * noise after the last result, and every assistant, user and result record
@@ -1778,6 +1816,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
   },
   extraMounts: () => Promise.resolve([]),
   unqualified: (m, level) => unqualifiedClaudeCode(m, level),
+  streamEnded: claudeStreamEnded,
   async parse(input) {
     let text = "";
     const problems: string[] = [];
