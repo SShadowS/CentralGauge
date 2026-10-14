@@ -22,3 +22,6 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/bind-every-start: { partial_credit: 0.9090909090909091 }
+  naive/local-binding: { partial_credit: 0.18181818181818182 }
+  naive/plain-global: { partial_credit: 0.6363636363636364 }

@@ -21,17 +21,17 @@ codeunit 86680 "HX061 Inspection Oracle"
         Prepare();
         CreateVehicle('HX061-1A', true, false);
         ContractNo := CreateContract('HX061-1A');
-        Assert.IsFalse(Available('HX061-1A'), 'Precondition: a blocked vehicle is not available');
+        Assert.IsFalse(HX61Available('HX061-1A'), 'Precondition: a blocked vehicle is not available');
 
         Insp1.StartInspection(ListOf('HX061-1A', ''));
 
-        Assert.IsTrue(Available('HX061-1A'), 'A listed blocked vehicle is available during the inspection');
+        Assert.IsTrue(HX61Available('HX061-1A'), 'A listed blocked vehicle is available during the inspection');
         Assert.IsTrue(RunCheckOut(ContractNo), StrSubstNo('A listed blocked vehicle can be checked out: %1', GetLastErrorText()));
         Vehicle.Get('HX061-1A');
         Assert.IsTrue(Vehicle."Checked Out", 'The listed vehicle is checked out');
         Contract.Get(ContractNo);
         Assert.AreEqual(Contract.Status::"Checked Out", Contract.Status, 'The contract is checked out');
-        Finish();
+        HX61Finish();
     end;
 
     [Test]
@@ -46,10 +46,10 @@ codeunit 86680 "HX061 Inspection Oracle"
 
         Insp1.StartInspection(ListOf('HX061-2A', ''));
 
-        Assert.IsTrue(Available('HX061-2A'), 'Precondition: the listed blocked vehicle is lent');
-        Assert.IsFalse(Available('HX061-2B'), 'An unlisted blocked vehicle stays unavailable');
-        Assert.IsTrue(Available('HX061-2F'), 'An unlisted free vehicle stays available');
-        Finish();
+        Assert.IsTrue(HX61Available('HX061-2A'), 'Precondition: the listed blocked vehicle is lent');
+        Assert.IsFalse(HX61Available('HX061-2B'), 'An unlisted blocked vehicle stays unavailable');
+        Assert.IsTrue(HX61Available('HX061-2F'), 'An unlisted free vehicle stays available');
+        HX61Finish();
     end;
 
     [Test]
@@ -60,14 +60,14 @@ codeunit 86680 "HX061 Inspection Oracle"
         Prepare();
         CreateVehicle('HX061-3A', true, false);
         Insp1.StartInspection(ListOf('HX061-3A', ''));
-        Assert.IsTrue(Available('HX061-3A'), 'Precondition: the listed blocked vehicle is lent');
+        Assert.IsTrue(HX61Available('HX061-3A'), 'Precondition: the listed blocked vehicle is lent');
 
         Insp1.EndInspection();
 
-        Assert.IsFalse(Available('HX061-3A'), 'After the inspection ends the blocked vehicle is unavailable again');
+        Assert.IsFalse(HX61Available('HX061-3A'), 'After the inspection ends the blocked vehicle is unavailable again');
         Assert.IsFalse(Insp1.IsInspectionRunning(), 'No inspection runs after EndInspection');
-        Assert.IsFalse(Running(), 'No inspection runs after EndInspection (fresh variable)');
-        Finish();
+        Assert.IsFalse(HX61Running(), 'No inspection runs after EndInspection (fresh variable)');
+        HX61Finish();
     end;
 
     [Test]
@@ -79,13 +79,13 @@ codeunit 86680 "HX061 Inspection Oracle"
         Prepare();
         CreateVehicle('HX061-4A', true, false);
         Insp1.StartInspection(ListOf('HX061-4A', ''));
-        Assert.IsTrue(Available('HX061-4A'), 'Precondition: the listed blocked vehicle is lent');
+        Assert.IsTrue(HX61Available('HX061-4A'), 'Precondition: the listed blocked vehicle is lent');
 
         Insp2.EndInspection();
 
-        Assert.IsFalse(Available('HX061-4A'), 'An inspection ended through another variable stops lending');
+        Assert.IsFalse(HX61Available('HX061-4A'), 'An inspection ended through another variable stops lending');
         Assert.IsFalse(Insp1.IsInspectionRunning(), 'The starting variable sees that the inspection ended');
-        Finish();
+        HX61Finish();
     end;
 
     [Test]
@@ -97,14 +97,14 @@ codeunit 86680 "HX061 Inspection Oracle"
         CreateVehicle('HX061-5A', true, false);
         CreateVehicle('HX061-5B', true, false);
         Insp1.StartInspection(ListOf('HX061-5A', ''));
-        Assert.IsTrue(Available('HX061-5A'), 'Precondition: the first list is lent');
-        Assert.IsFalse(Available('HX061-5B'), 'Precondition: a vehicle outside the first list is not lent');
+        Assert.IsTrue(HX61Available('HX061-5A'), 'Precondition: the first list is lent');
+        Assert.IsFalse(HX61Available('HX061-5B'), 'Precondition: a vehicle outside the first list is not lent');
 
         Assert.IsTrue(RunStart(ListOf('HX061-5B', '')), StrSubstNo('Starting again while an inspection runs succeeds: %1', GetLastErrorText()));
 
-        Assert.IsFalse(Available('HX061-5A'), 'A vehicle only on the replaced list is no longer lent');
-        Assert.IsTrue(Available('HX061-5B'), 'A vehicle on the new list is lent');
-        Finish();
+        Assert.IsFalse(HX61Available('HX061-5A'), 'A vehicle only on the replaced list is no longer lent');
+        Assert.IsTrue(HX61Available('HX061-5B'), 'A vehicle on the new list is lent');
+        HX61Finish();
     end;
 
     [Test]
@@ -114,8 +114,8 @@ codeunit 86680 "HX061 Inspection Oracle"
 
         Assert.IsTrue(RunEnd(), StrSubstNo('Ending when no inspection runs raises no error: %1', GetLastErrorText()));
 
-        Assert.IsFalse(Running(), 'No inspection runs');
-        Finish();
+        Assert.IsFalse(HX61Running(), 'No inspection runs');
+        HX61Finish();
     end;
 
     [Test]
@@ -134,10 +134,10 @@ codeunit 86680 "HX061 Inspection Oracle"
 
         Insp1.StartInspection(VehicleNos);
 
-        Assert.IsTrue(Available('HX061-7A'), 'Precondition: the listed blocked vehicle is lent');
-        Assert.IsFalse(Available('HX061-7C'), 'A listed vehicle that is checked out is not available');
-        Assert.IsFalse(Available('HX061-7X'), 'A listed number that is no vehicle is not available');
-        Finish();
+        Assert.IsTrue(HX61Available('HX061-7A'), 'Precondition: the listed blocked vehicle is lent');
+        Assert.IsFalse(HX61Available('HX061-7C'), 'A listed vehicle that is checked out is not available');
+        Assert.IsFalse(HX61Available('HX061-7X'), 'A listed number that is no vehicle is not available');
+        HX61Finish();
     end;
 
     [Test]
@@ -150,7 +150,7 @@ codeunit 86680 "HX061 Inspection Oracle"
         Prepare();
         CreateVehicle('HX061-8D', true, false);
         ContractNo := CreateContract('HX061-8D');
-        Assert.IsFalse(Available('HX061-8D'), 'Precondition: the blocked vehicle is not available');
+        Assert.IsFalse(HX61Available('HX061-8D'), 'Precondition: the blocked vehicle is not available');
 
         Assert.IsTrue(RunCheckOutForInspection(ContractNo), StrSubstNo('CheckOutForInspection checks out a blocked vehicle: %1', GetLastErrorText()));
 
@@ -158,7 +158,7 @@ codeunit 86680 "HX061 Inspection Oracle"
         Assert.AreEqual(Contract.Status::"Checked Out", Contract.Status, 'The contract is checked out');
         Vehicle.Get('HX061-8D');
         Assert.IsTrue(Vehicle."Checked Out", 'The vehicle is checked out');
-        Finish();
+        HX61Finish();
     end;
 
     [Test]
@@ -173,9 +173,9 @@ codeunit 86680 "HX061 Inspection Oracle"
 
         Assert.IsTrue(RunCheckOutForInspection(ContractNo), StrSubstNo('CheckOutForInspection succeeds: %1', GetLastErrorText()));
 
-        Assert.IsFalse(Running(), 'No inspection runs after CheckOutForInspection');
-        Assert.IsFalse(Available('HX061-9E'), 'A blocked vehicle is not available after CheckOutForInspection');
-        Finish();
+        Assert.IsFalse(HX61Running(), 'No inspection runs after CheckOutForInspection');
+        Assert.IsFalse(HX61Available('HX061-9E'), 'A blocked vehicle is not available after CheckOutForInspection');
+        HX61Finish();
     end;
 
     [Test]
@@ -188,9 +188,9 @@ codeunit 86680 "HX061 Inspection Oracle"
 
         Insp1.StartInspection(ListOf('HX061-10A', ''));
 
-        Assert.IsTrue(Running(), 'An inspection runs after StartInspection (fresh variable)');
+        Assert.IsTrue(HX61Running(), 'An inspection runs after StartInspection (fresh variable)');
         Assert.IsTrue(Insp1.IsInspectionRunning(), 'An inspection runs after StartInspection');
-        Finish();
+        HX61Finish();
     end;
 
     [Test]
@@ -206,19 +206,19 @@ codeunit 86680 "HX061 Inspection Oracle"
 
         Assert.IsTrue(RunStart(ListOf('HX061-11B', '')), StrSubstNo('A new inspection can start after the last one ended: %1', GetLastErrorText()));
 
-        Assert.IsTrue(Available('HX061-11B'), 'A vehicle on the new list is lent');
-        Assert.IsFalse(Available('HX061-11A'), 'A vehicle of the ended inspection is not lent');
-        Finish();
+        Assert.IsTrue(HX61Available('HX061-11B'), 'A vehicle on the new list is lent');
+        Assert.IsFalse(HX61Available('HX061-11A'), 'A vehicle of the ended inspection is not lent');
+        HX61Finish();
     end;
 
-    local procedure Available(VehicleNo: Code[20]): Boolean
+    local procedure HX61Available(VehicleNo: Code[20]): Boolean
     var
         FleetMgt: Codeunit "CGR Fleet Mgt";
     begin
         exit(FleetMgt.IsAvailable(VehicleNo));
     end;
 
-    local procedure Running(): Boolean
+    local procedure HX61Running(): Boolean
     var
         DeskInspection: Codeunit "CGR Desk Inspection";
     begin
@@ -311,7 +311,7 @@ codeunit 86680 "HX061 Inspection Oracle"
         Vehicle.Modify();
     end;
 
-    local procedure Finish()
+    local procedure HX61Finish()
     begin
         if RunEnd() then;
     end;
