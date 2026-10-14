@@ -141,6 +141,7 @@ codeunit 86560 "HX055 Kept Preview Oracle"
         ContractA := NewHX55Contract('HX055-R7A', 50);
         InsertHX55Foreign(PreviewLine, 50000);
         InsertHX55Foreign(PreviewLine, 60000);
+        PreviewLine.SetRange("Line No.", 60000);
 
         Preview.KeepPreview(ContractA);
         Assert.IsTrue(Preview.GetKeptPreview(ContractA, PreviewLine), 'A is kept');
@@ -157,11 +158,15 @@ codeunit 86560 "HX055 Kept Preview Oracle"
     var
         PreviewLine: Record "CGR Invoice Preview Line";
         Preview: Codeunit "CGR Rental Invoice Preview";
+        ContractA: Code[20];
         ContractC: Code[20];
     begin
         InitHX55();
+        ContractA := NewHX55Contract('HX055-R8A', 50);
         ContractC := NewHX55Contract('HX055-R8C', 50);
         InsertHX55Foreign(PreviewLine, 50000);
+
+        Preview.KeepPreview(ContractA);
 
         Assert.IsFalse(Preview.GetKeptPreview(ContractC, PreviewLine), 'Nothing is kept for C');
         PreviewLine.Reset();
@@ -267,6 +272,38 @@ codeunit 86560 "HX055 Kept Preview Oracle"
         AssertHX55Lines(PreviewLine, 50, 'BuildPreview builds as today');
         Assert.AreEqual(200.00, Preview.TotalAmount(PreviewLine), 'TotalAmount sums as today');
         Assert.IsFalse(Preview.GetKeptPreview(ContractA, KeptLine), 'BuildPreview keeps nothing');
+        EndHX55();
+    end;
+
+    [Test]
+    procedure KeptPreviewIgnoresLaterPrecision()
+    var
+        Setup: Record "CGR Setup";
+        PreviewLine: Record "CGR Invoice Preview Line";
+        BuiltLine: Record "CGR Invoice Preview Line";
+        SessionContext: Codeunit "CGR Session Context";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        ContractA: Code[20];
+    begin
+        InitHX55();
+        ContractA := NewHX55Contract('HX055-R13A', 33.33);
+
+        Preview.KeepPreview(ContractA);
+        Setup.Get();
+        Setup."Amount Rounding Precision" := 1;
+        Setup.Modify();
+        SessionContext.Reset();
+
+        Preview.BuildPreview(ContractA, BuiltLine);
+        BuiltLine.Get(10000);
+        Assert.AreEqual(100.00, BuiltLine.Amount, 'Precondition: today''s preview rounds 3 x 33.33 to whole units');
+
+        Assert.IsTrue(Preview.GetKeptPreview(ContractA, PreviewLine), 'A is kept');
+        Assert.AreEqual(2, PreviewLine.Count(), 'Rental days and weekend surcharge');
+        PreviewLine.Get(10000);
+        Assert.AreEqual(99.99, PreviewLine.Amount, 'The kept rental days amount keeps the precision at keep time');
+        PreviewLine.Get(20000);
+        Assert.AreEqual(33.33, PreviewLine.Amount, 'The kept weekend surcharge amount keeps the precision at keep time');
         EndHX55();
     end;
 

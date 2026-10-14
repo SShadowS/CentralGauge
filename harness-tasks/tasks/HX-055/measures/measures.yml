@@ -13,6 +13,7 @@ partial_credit:
     "86560/MissingContractFails": 1
     "86560/ForgetDropsAll": 1
     "86560/BuildPreviewKeepsNothing": 1
+    "86560/KeptPreviewIgnoresLaterPrecision": 1
   hidden_regressions: []
 reuse: null
 expect:
