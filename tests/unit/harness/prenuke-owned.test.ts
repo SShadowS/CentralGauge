@@ -230,8 +230,9 @@ Deno.test({
 });
 
 Deno.test("buildPwshError / wrapPwshFailure (H-05 run 003): both redactors run before the 4 KB cut, so a secret crossing the cut leaks no fragment", async () => {
-  // The cut lands inside the key: a tail-only redaction no longer sees the
-  // `sk-ant-` / `password=` prefix and keeps the Q / Z fragment.
+  // The cut lands inside the sk-ant key: a tail-only pattern redaction no
+  // longer sees the `sk-ant-` prefix and keeps a Q fragment. The `password=`
+  // half only guards that redactSensitive still runs on the whole output.
   const output = "A".repeat(5000) + "sk-ant-" + "Q".repeat(40) + " " +
     "password=" + "Z".repeat(30) + " " + "B".repeat(4070);
   const provider = new BcContainerProvider();
