@@ -3691,3 +3691,54 @@ Deno.test("web tools (H-07): v1 arms (image_revision 2) are frozen: they keep th
     claudeCodeHarnessNative().disallowed_tools,
   );
 });
+
+Deno.test("claude-code streamEnded (H-08): a final result per session, then only noise, with no background task pending", async () => {
+  const ended = claudeCodeAdapter.streamEnded!;
+  const probe = (await Deno.readTextFile(FIXTURE)).trimEnd().split("\n");
+  assertEquals(ended(probe.join("\n")), true);
+  // No result yet (the run is still going).
+  assertEquals(ended(probe.slice(0, -1).join("\n")), false);
+  assertEquals(ended(""), false);
+  // Noise may follow the result; anything else means the session went on.
+  const noise = JSON.stringify({ type: "rate_limit_event" });
+  assertEquals(ended([...probe, noise].join("\n")), true);
+  const more = JSON.stringify({ type: "assistant", message: {} });
+  assertEquals(ended([...probe, more].join("\n")), false);
+  // A partial last line (still being written) is not an end.
+  assertEquals(ended([...probe, '{"type":"assis'].join("\n")), false);
+  // M1-32b resume: two sessions need two results; a started background task
+  // without its task_notification is still pending.
+  const resume = (await Deno.readTextFile(
+    "tests/fixtures/harness/claude-code/m129-resume.jsonl",
+  )).trimEnd().split("\n");
+  assertEquals(ended(resume.join("\n")), true);
+  assertEquals(ended(resume.slice(0, 146).join("\n")), false);
+  assertEquals(ended(resume.slice(0, 144).join("\n")), false);
+});
+
+Deno.test("claude-code streamEnded (H-08 run 002): only proven inert records may follow the result; an active or unknown one means not ended", async () => {
+  const ended = claudeCodeAdapter.streamEnded!;
+  const probe = (await Deno.readTextFile(FIXTURE)).trimEnd().split("\n");
+  const after = (...recs: unknown[]) =>
+    ended([...probe, ...recs.map((r) => JSON.stringify(r))].join("\n"));
+  // Active: a compaction starting after the result (compaction.jsonl:5).
+  assertEquals(
+    after({ type: "system", subtype: "status", status: "compacting" }),
+    false,
+  );
+  // Unknown subtypes are never assumed inert.
+  assertEquals(after({ type: "system", subtype: "something_new" }), false);
+  assertEquals(after({ type: "system", subtype: "thinking_tokens" }), false);
+  assertEquals(after({ type: "unknown_record" }), false);
+  // The proven inert trailers (M1-29: background_tasks_changed, task_updated,
+  // task_notification after both results; rate_limit_event).
+  assertEquals(
+    after(
+      { type: "rate_limit_event" },
+      { type: "system", subtype: "background_tasks_changed", tasks: [] },
+      { type: "system", subtype: "task_updated", task_id: "t" },
+      { type: "system", subtype: "task_notification", task_id: "t" },
+    ),
+    true,
+  );
+});
