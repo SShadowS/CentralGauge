@@ -370,8 +370,9 @@ Deno.test("buildPrereqCleanupScript (H-05): owned apps (trusted id + exact name)
   );
   assertMatch(
     script,
-    // Only once no version of the name is still published.
-    /if \(\$done -and \$cgr -and @\(Get-NAVAppInfo -ServerInstance BC -Name \$app\.Name -Publisher 'CentralGauge'\)\.Count -eq 0\) \{[^\n]*Sync-NAVApp -ServerInstance BC -Tenant default -Name \$app\.Name -Publisher 'CentralGauge' -Mode Clean -Force/,
+    // Only once no version of the name is still published, and (run 003)
+    // after every tenant-known AppId under the name proved to be this one.
+    /if \(\$done -and \$cgr -and @\(Get-NAVAppInfo -ServerInstance BC -Name \$app\.Name -Publisher 'CentralGauge'\)\.Count -eq 0\) \{\s*\$foreign = @\(Get-NAVAppInfo -ServerInstance BC -Tenant default -TenantSpecificProperties -Name \$app\.Name -Publisher 'CentralGauge'[^\n]*\n\s*if \(\$foreign\.Count -gt 0\) \{[^\n]*PREREQ_CLEANUP_CLEAN_REFUSED[^\n]*return \$out \}\s*try \{ Sync-NAVApp -ServerInstance BC -Tenant default -Name \$app\.Name -Publisher 'CentralGauge' -Mode Clean -Force/,
   );
   assertStringIncludes(script, "PREREQ_CLEANUP_CLEAN:");
   // The removable set itself is unchanged: CentralGauge apps only.

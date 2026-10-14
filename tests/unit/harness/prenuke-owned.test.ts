@@ -30,8 +30,10 @@ const STUBS = `
 $global:log = @()
 function Invoke-ScriptInBcContainer { param($containerName, [scriptblock]$scriptblock, $argumentList)
   & $scriptblock @argumentList }
-function Get-NAVAppInfo { param($ServerInstance, $Name, $Publisher, $Tenant)
-  @($global:apps | Where-Object { -not $Name -or $_.Name -eq $Name }) }
+function Get-NAVAppInfo { param($ServerInstance, $Name, $Publisher, $Tenant, [switch]$TenantSpecificProperties)
+  $all = @($global:apps)
+  if ($TenantSpecificProperties) { $all += @($global:retained) }
+  @($all | Where-Object { -not $Name -or $_.Name -eq $Name }) }
 function Uninstall-NAVApp { param($ServerInstance, $Name, $Publisher, $Version, $Tenant, [switch]$Force, [switch]$DoNotSaveData, $ErrorAction)
   $global:log += "uninstall $Name nodata=$([bool]$DoNotSaveData)" }
 function Unpublish-NAVApp { param($ServerInstance, $Name, $Publisher, $Version, $Tenant, $ErrorAction)
@@ -45,6 +47,7 @@ async function runPrenuke(
   apps: { AppId: string; Name: string }[],
   owned: { id: string; name: string }[],
   failClean = false,
+  retained: { AppId: string; Name: string }[] = [],
 ): Promise<{ out: string; log: string[] }> {
   const script = buildPrereqCleanupScript(
     "Cronus281",
@@ -55,6 +58,10 @@ async function runPrenuke(
   const setup = `$global:apps = @(${
     apps.map((a) =>
       `[pscustomobject]@{ AppId = '${a.AppId}'; Name = '${a.Name}'; Publisher = 'CentralGauge'; Version = '1.0.25913.28211' }`
+    ).join(", ")
+  })\n$global:retained = @(${
+    retained.map((a) =>
+      `[pscustomobject]@{ AppId = '${a.AppId}'; Name = '${a.Name}'; Publisher = 'CentralGauge'; Version = '1.0.0.0' }`
     ).join(", ")
   })\n$global:failClean = $${failClean}\n`;
   const body = STUBS + setup + script +
@@ -149,6 +156,33 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name:
+    "prenuke (H-05 run 003): a retained foreign AppId under an owned name/publisher refuses before the clean",
+  ignore: !isWindows,
+  fn: async () => {
+    const { out, log } = await runPrenuke(
+      [{ AppId: OWNED_ID, Name: "CGR Core" }],
+      [{ id: OWNED_ID, name: "CGR Core" }],
+      false,
+      [{ AppId: FOREIGN_ID, Name: "CGR Core" }],
+    );
+    assert(log.every((l) => !l.startsWith("clean ")), out);
+    assertStringIncludes(out, `PREREQ_CLEANUP_CLEAN_REFUSED:CGR Core`);
+    assertStringIncludes(out, FOREIGN_ID);
+    assertEquals(out.includes("PREREQ_CLEANUP_DONE"), false, out);
+    // The owned AppId retained under its own name is no reason to refuse.
+    const own = await runPrenuke(
+      [{ AppId: OWNED_ID, Name: "CGR Core" }],
+      [{ id: OWNED_ID, name: "CGR Core" }],
+      false,
+      [{ AppId: OWNED_ID, Name: "CGR Core" }],
+    );
+    assertEquals(own.log.at(-1), "clean CGR Core", own.out);
+    assertStringIncludes(own.out, "PREREQ_CLEANUP_DONE");
+  },
+});
+
 /** A provider whose warm-slot call returns `output` (no container). */
 function stubbedProvider(output: string | Error) {
   const provider = new BcContainerProvider();
@@ -173,6 +207,9 @@ Deno.test({
       const output of [
         "PREREQ_CLEANUP_FOUND:1\nPREREQ_CLEANUP_CLEAN_FAILED:CGR Core - boom\n",
         "PREREQ_CLEANUP_WARN:invoke-script - gone\n",
+        // Run 003: INCOMPLETE is a failure even when DONE follows it.
+        "PREREQ_CLEANUP_FOUND:2\nPREREQ_CLEANUP_INCOMPLETE:1\nPREREQ_CLEANUP_DONE\n",
+        "PREREQ_CLEANUP_CLEAN_REFUSED:CGR Core - another app\n",
         new Error("session crashed"),
       ]
     ) {
@@ -190,6 +227,28 @@ Deno.test({
     );
     await ok.provider.prenukeCentralGaugeApps(["Cronus281"], owned);
   },
+});
+
+Deno.test("buildPwshError / wrapPwshFailure (H-05 run 003): both redactors run before the 4 KB cut, so a secret crossing the cut leaks no fragment", async () => {
+  // The cut lands inside the key: a tail-only redaction no longer sees the
+  // `sk-ant-` / `password=` prefix and keeps the Q / Z fragment.
+  const output = "A".repeat(5000) + "sk-ant-" + "Q".repeat(40) + " " +
+    "password=" + "Z".repeat(30) + " " + "B".repeat(4070);
+  const provider = new BcContainerProvider();
+  const opts = {
+    containerName: "Cronus281",
+    operation: "publish" as const,
+    message: "Publish failed",
+    output,
+  };
+  // deno-lint-ignore no-explicit-any
+  const p = provider as any;
+  for (const e of [p.buildPwshError(opts), await p.wrapPwshFailure(opts)]) {
+    const raw = String(e.rawOutput ?? "");
+    assert(raw.length > 0, "rawOutput kept");
+    assertEquals(raw.includes("Q"), false, raw.slice(0, 200));
+    assertEquals(raw.includes("Z"), false, raw.slice(0, 200));
+  }
 });
 
 Deno.test({

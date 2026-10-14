@@ -38,8 +38,12 @@ import {
   redactSensitive,
   writeArtifact,
 } from "../health/mod.ts";
+import { redactPatternText } from "../harness/redact-patterns.ts";
 
 const log = Logger.create("container:bc");
+
+/** Both redactors on the WHOLE output, before any cut (a cut key no longer matches). */
+const redactAll = (s: string) => redactPatternText(redactSensitive(s)).text;
 import { ContainerError } from "../errors.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import { ContainerSessionSlot } from "./session-slot.ts";
@@ -731,6 +735,9 @@ export class BcContainerProvider implements ContainerProvider {
           if (
             owned.length > 0 &&
             (result.output.includes("PREREQ_CLEANUP_CLEAN_FAILED") ||
+              result.output.includes("PREREQ_CLEANUP_CLEAN_REFUSED") ||
+              // A sweep that left apps behind is a failure even with DONE.
+              result.output.includes("PREREQ_CLEANUP_INCOMPLETE") ||
               !result.output.includes("PREREQ_CLEANUP_DONE"))
           ) {
             throw new ContainerError(
@@ -941,7 +948,7 @@ ${script}
     exitCode?: number;
     artifactKey?: string;
   }): Promise<ContainerError> {
-    const redacted = redactSensitive(opts.output);
+    const redacted = redactAll(opts.output);
     const tail = captureRawTail(redacted, 4096);
     let artifactPath: string | undefined;
     if (this.artifactDir) {
@@ -990,7 +997,7 @@ ${script}
     output: string;
     exitCode?: number;
   }): ContainerError {
-    const redacted = redactSensitive(opts.output);
+    const redacted = redactAll(opts.output);
     const tail = captureRawTail(redacted, 4096);
     return new ContainerError(
       opts.message,

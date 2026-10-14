@@ -397,6 +397,7 @@ ${devCredentialSetup}
  *   PREREQ_CLEANUP_FOUND:<n>
  *   PREREQ_CLEANUP_REMOVE:<name> v<version>
  *   PREREQ_CLEANUP_CLEAN:<name>          (H-05: a CGR app's data cleaned)
+ *   PREREQ_CLEANUP_CLEAN_REFUSED:<name>  (H-05: another AppId has that name; no clean, no DONE)
  *   PREREQ_CLEANUP_WARN:<name> - <reason>
  *   PREREQ_CLEANUP_BLOCKED:<name> v<version>
  *   PREREQ_CLEANUP_INCOMPLETE:<remaining>
@@ -489,7 +490,11 @@ export function buildPrereqCleanupScript(
                 $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
               }
               # Clean only once no version of the name is still published (as buildHarnessCleanBlock).
-              if ($done -and $cgr -and @(Get-NAVAppInfo -ServerInstance BC -Name $app.Name -Publisher 'CentralGauge').Count -eq 0) { try { Sync-NAVApp -ServerInstance BC -Tenant default -Name $app.Name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop; $out += "PREREQ_CLEANUP_CLEAN:$($app.Name)" } catch { $out += "PREREQ_CLEANUP_CLEAN_FAILED:$($app.Name) - $($_.Exception.Message)"; return $out } }
+              # Sync-NAVApp -Name cleans by name, so every AppId the tenant still knows under it must be this one.
+              if ($done -and $cgr -and @(Get-NAVAppInfo -ServerInstance BC -Name $app.Name -Publisher 'CentralGauge').Count -eq 0) {
+                $foreign = @(Get-NAVAppInfo -ServerInstance BC -Tenant default -TenantSpecificProperties -Name $app.Name -Publisher 'CentralGauge' | Where-Object { "$($_.AppId)".ToLower() -ne $appId })
+                if ($foreign.Count -gt 0) { $out += "PREREQ_CLEANUP_CLEAN_REFUSED:$($app.Name) - another app ($($foreign[0].AppId)) has the name"; return $out }
+                try { Sync-NAVApp -ServerInstance BC -Tenant default -Name $app.Name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop; $out += "PREREQ_CLEANUP_CLEAN:$($app.Name)" } catch { $out += "PREREQ_CLEANUP_CLEAN_FAILED:$($app.Name) - $($_.Exception.Message)"; return $out } }
               # else: non-leaf this pass (a dependent still published) OR not
               # found in either scope -> retried next pass; the no-progress
               # guard breaks + emits BLOCKED if nothing can be removed.

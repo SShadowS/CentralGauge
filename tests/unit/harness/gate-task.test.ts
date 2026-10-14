@@ -211,6 +211,21 @@ Deno.test("runVariant (H-05): a failed data clean is infra; nothing is published
   assertEquals(events.includes("publish"), false);
 });
 
+Deno.test("runVariant (H-05 run 003): a failed owned prenuke (e.g. INCOMPLETE) is infra; no clean, nothing published", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const events: string[] = [];
+  const r = await runVariant(
+    mockBc({ events, prenukeThrowsAfter: 0 }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertStringIncludes(r.infra ?? "", "prenuke failed");
+  assertEquals(events.filter((e) => !e.startsWith("prenuke")), []);
+});
+
 Deno.test("runVariant: oracle publish failure is recorded as publish", async () => {
   const { loaded, source, tmpRoot } = await fixture();
   const r = await runVariant(
