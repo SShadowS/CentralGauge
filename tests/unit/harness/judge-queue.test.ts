@@ -257,7 +257,8 @@ Deno.test("H-09 run 002: a worker's throw stops admissions and settles the sibli
     startedAtReject,
     "no cell admitted after the rejection",
   );
-  assert(started < 4, `admissions stopped (${started} of 4 started)`);
+  // The thrown cell and the sibling's cell in flight; the sibling's second arm never starts.
+  assertEquals(started, 2, "admissions stopped at the throw");
 });
 
 Deno.test("H-09: --judge-concurrency below 1 is refused before any record", async () => {

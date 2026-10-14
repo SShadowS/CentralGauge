@@ -1058,8 +1058,15 @@ export async function runCampaign(
       ),
     );
     if (crashed !== null) {
-      // The queued judgments of finished cells still land before the stop.
-      await queue.drain().catch(() => {});
+      // The queued judgments of finished cells still land before the stop;
+      // a judge failure as well is reported, the worker's error rethrown.
+      await queue.drain().catch((err) =>
+        io.log(
+          `[WARN] judge queue failed as well (some judgments not written): ${
+            err instanceof Error ? err.message : err
+          }`,
+        )
+      );
       throw (crashed as { err: unknown }).err;
     }
     // Counted once judged: a judge failure stops the campaign here.
