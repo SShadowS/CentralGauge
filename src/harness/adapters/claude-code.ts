@@ -1232,9 +1232,10 @@ export function parseClaudeStream(
     prohibited: [],
   };
   for (const c of webCalls.values()) {
-    if (!disallowed.includes(c.tool)) continue;
-    const p =
-      `line ${c.line}: ${c.tool} used while disallowed (settings.native.disallowed_tools)`;
+    if (listOk && !disallowed.includes(c.tool)) continue;
+    const p = listOk
+      ? `line ${c.line}: ${c.tool} used while disallowed (settings.native.disallowed_tools)`
+      : `line ${c.line}: ${c.tool} used under a malformed settings.native.disallowed_tools`;
     streamProblems.push(p);
     web.prohibited.push(p);
   }
@@ -1242,16 +1243,18 @@ export function parseClaudeStream(
     for (const c of list(obj(rec.message).content).map(obj)) {
       const id = c.tool_use_id;
       const call = typeof id === "string" ? webCalls.get(id) : undefined;
-      if (
-        !call || c.type !== "tool_result" || c.is_error === true ||
-        denied.has(id as string)
-      ) continue;
-      web.calls.set(call.model, (web.calls.get(call.model) ?? 0) + 1);
+      if (!call || c.type !== "tool_result") continue;
+      // A failed or denied call explains no excess, but a search it reports
+      // is still counted (it may be billed); webSearchRequests must match.
+      const executed = c.is_error !== true && !denied.has(id as string);
+      if (executed) {
+        web.calls.set(call.model, (web.calls.get(call.model) ?? 0) + 1);
+      }
       if (call.tool !== "WebSearch") continue;
       const n = obj(rec.tool_use_result)["searchCount"];
       if (isCount(n)) {
         web.searches.set(call.model, (web.searches.get(call.model) ?? 0) + n);
-      } else {
+      } else if (executed) {
         web.bad.set(call.model, [
           ...(web.bad.get(call.model) ?? []),
           `line ${line}: WebSearch result without a searchCount`,
@@ -1383,6 +1386,9 @@ export function parseClaudeStream(
     unproven.costs.push(
       `${file}: usage not reconciled (${reconciliation.why})`,
     );
+  } else if (!reconciliation && web.prohibited.length > 0) {
+    // H-07: a disallowed web call voids the cost on every image, inventoried or not.
+    unproven.costs.push(`${file}: ${web.prohibited.join("; ")}`);
   }
   const proven = unproven.costs.length === 0;
   const priced = result ? estimateCost(usage, input.pricing) : null;

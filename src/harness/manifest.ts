@@ -483,6 +483,16 @@ async function harnessDerivedSettingsOnly(
     });
   };
   if (vary.includes("mcp") && sharedServerToolsDiffer(a, b)) return false;
+  // One harness, one derivation: a derived key may not differ between its
+  // arms (H-07: a pre-H-07 six-tool list beside today's eight is web policy).
+  if (a.harness === b.harness && Object.hasOwn(harnessNative, a.harness)) {
+    for (const k of Object.keys(harnessNative[a.harness]!(a))) {
+      if (
+        await hashJson({ v: a.settings.native[k] }) !==
+          await hashJson({ v: b.settings.native[k] })
+      ) return false;
+    }
+  }
   const ra = await rest(a);
   return ra !== null && ra === await rest(b);
 }

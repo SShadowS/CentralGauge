@@ -3457,7 +3457,7 @@ Deno.test("web tools (H-07 review): disallowed use, unexecuted calls, missing co
       native: { ...arm.settings.native, disallowed_tools: "WebFetch" },
     },
   };
-  await refused(fetch, malformed, "exceeds");
+  await refused(fetch, malformed, "malformed settings.native.disallowed_tools");
   const legacy = {
     ...arm,
     settings: {
@@ -3515,4 +3515,75 @@ Deno.test("web tools (H-07): the init tool list is checked against the flag (web
   assertEquals(await run(blocked, false), "");
   assertStringIncludes(await run(allowed, false), "unexpected tool WebFetch");
   assertStringIncludes(await run(blocked, true), "missing tool WebSearch");
+});
+
+Deno.test("web tools (H-07 review 2): malformed lists, frozen images, failed searches and exact totals", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const fetch = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const run = async (text: string, arm: Record<string, unknown>) => {
+    const { r } = await parse(text, 0, arm);
+    return { r, raw: webRaw(r) };
+  };
+  const exactFetch = fetch
+    .replace('"inputTokens":9004', '"inputTokens":4')
+    .replace('"outputTokens":509', '"outputTokens":9');
+  const exactSearch = search
+    .replace('"inputTokens":27149', '"inputTokens":6')
+    .replace('"outputTokens":1884', '"outputTokens":16');
+  // A malformed list (a non-name entry) prohibits web calls, even when the
+  // totals are exact.
+  const arm = webArm(false, true);
+  const bad = {
+    ...arm,
+    settings: {
+      ...arm.settings,
+      native: {
+        ...arm.settings.native,
+        disallowed_tools: [
+          ...claudeCodeHarnessNative(true).disallowed_tools,
+          17,
+        ],
+      },
+    },
+  };
+  const m = await run(exactFetch, bad);
+  assertEquals(m.raw.usage_reconciliation?.status, "unreconciled");
+  assertStringIncludes(m.raw.usage_reconciliation!.why!, "malformed");
+  assertEquals(m.r.telemetry.cost_usd, null);
+  // A frozen (not inventoried) image skips reconciliation, yet a disallowed
+  // web call still voids the cost.
+  const frozen = {
+    ...webArm(false, false),
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  };
+  const f = await run(exactFetch, frozen);
+  assertEquals(f.raw.usage_reconciliation, undefined);
+  assertEquals(f.r.telemetry.cost_usd, null);
+  assert(
+    f.raw.missing.some((x) => x.includes("WebFetch used while disallowed")),
+    JSON.stringify(f.raw.missing),
+  );
+  // A failed WebSearch explains no excess, but its search is still counted.
+  const failed = search.replace(
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result"',
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result","is_error":true',
+  );
+  assert(failed !== search);
+  const s = await run(failed, webArm(true, true));
+  assertEquals(s.raw.usage_reconciliation?.status, "web_excess");
+  assertEquals(s.raw.unpriced, [{
+    model: "claude-sonnet-5",
+    item: "web_search_requests",
+    count: 2,
+  }]);
+  // An executed WebSearch without a searchCount fails with exact totals too.
+  const n = await run(
+    exactSearch.replace(',"searchCount":1}', "}"),
+    webArm(true, true),
+  );
+  assertEquals(n.raw.usage_reconciliation?.status, "unreconciled");
+  assertStringIncludes(
+    n.raw.usage_reconciliation!.why!,
+    "without a searchCount",
+  );
 });

@@ -2,7 +2,10 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import { readCatalog } from "../../../src/ingest/catalog/read.ts";
-import { claudeCodeHarnessNative } from "../../../src/harness/adapters/claude-code.ts";
+import {
+  claudeCodeDerivedNative,
+  claudeCodeHarnessNative,
+} from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { piHarnessNative } from "../../../src/harness/adapters/pi.ts";
 import { loadExperiment, type VaryKey } from "../../../src/harness/config.ts";
@@ -12,6 +15,7 @@ import {
   validateCampaignRecords,
 } from "../../../src/harness/integrity.ts";
 import {
+  assertVaryHolds,
   manifestHash,
   type ResolvedManifest,
   resolveManifest,
@@ -815,4 +819,23 @@ Deno.test("validateCampaignRecords (H-07): a pre-H-07 cc-vs-pi campaign (six dis
   ];
   assertEquals(p.length, 1);
   assertStringIncludes(p[0]!, ": settings");
+});
+
+Deno.test("assertVaryHolds (H-07 review): two claude-code arms with six vs eight disallowed tools differ in settings, even under vary [harness]", async () => {
+  const arm = (id: string, disallowed: string[]) =>
+    manifest(id, {
+      harness: "claude-code",
+      settings: { requested: {}, native: { disallowed_tools: disallowed } },
+    });
+  const six = arm("legacy", claudeCodeHarnessNative(true).disallowed_tools);
+  const eight = arm("now", claudeCodeHarnessNative().disallowed_tools);
+  const derive = { "claude-code": claudeCodeDerivedNative };
+  await assertRejects(
+    () => assertVaryHolds(six, eight, ["harness"], derive),
+    Error,
+    "settings",
+  );
+  // Each alone still matches its own derivation (pre-H-07 campaigns stay valid).
+  await assertVaryHolds(six, six, ["harness"], derive);
+  await assertVaryHolds(eight, eight, ["harness"], derive);
 });
