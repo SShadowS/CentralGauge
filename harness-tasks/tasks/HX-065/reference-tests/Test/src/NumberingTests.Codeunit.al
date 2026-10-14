@@ -84,6 +84,46 @@ codeunit 80116 "CGR Numbering Tests"
         Assert.AreEqual(1, Setup."Last Lease No.", 'Last Lease No. is 1 after the first lease');
     end;
 
+    [Test]
+    procedure LeaseFirstStartsAtOneWithoutSetup()
+    var
+        Setup: Record "CGR Setup";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        RentalNo: Code[20];
+        LeaseNo: Code[20];
+    begin
+        Initialize();
+        DeleteRental('RC0');
+        DeleteRental('RC1');
+        DeleteRental('RC2');
+        DeleteRental('RC10');
+        DeleteRental('RC00001');
+        DeleteRental('RC-1');
+        DeleteLease('LC0');
+        DeleteLease('LC1');
+        DeleteLease('LC10');
+        DeleteLease('LC00001');
+        DeleteLease('LC-1');
+        DeleteLease('RC1');
+        Setup.DeleteAll();
+        Assert.IsTrue(Setup.IsEmpty(), 'There is no CGR Setup record before the test');
+
+        LeaseNo := LeaseMgt.CreateContract('HX065-V01', 'Numbering Customer', 20270301D, 6, 100);
+
+        Assert.AreEqual('LC1', LeaseNo, 'Without a setup the lease series starts at LC1');
+        Assert.IsTrue(Setup.Get(), 'The first lease creates the CGR Setup record');
+        Assert.AreEqual(1, Setup."Last Lease No.", 'Last Lease No. is 1 after the first lease');
+        Assert.AreEqual(0, Setup."Last Contract No.", 'A lease does not move Last Contract No.');
+
+        RentalNo := RentalMgt.CreateContract('HX065-V01', 'Numbering Customer', 20270301D, 20270303D);
+
+        Assert.AreEqual('RC1', RentalNo, 'The rental series still starts at RC1 after a lease');
+        Setup.Get();
+        Assert.AreEqual(1, Setup."Last Contract No.", 'Last Contract No. is 1 after the first contract');
+        Assert.AreEqual(1, Setup."Last Lease No.", 'A rental contract does not move Last Lease No.');
+    end;
+
     local procedure Initialize()
     begin
         WorkDate(20270301D);
