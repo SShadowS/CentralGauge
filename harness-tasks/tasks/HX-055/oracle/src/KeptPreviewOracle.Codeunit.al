@@ -145,6 +145,7 @@ codeunit 86560 "HX055 Kept Preview Oracle"
 
         Preview.KeepPreview(ContractA);
         Assert.IsTrue(Preview.GetKeptPreview(ContractA, PreviewLine), 'A is kept');
+        PreviewLine.Reset();
         Assert.AreEqual(2, PreviewLine.Count(), 'Only the kept lines are handed out');
         PreviewLine.SetFilter("Line No.", '<>%1&<>%2', 10000, 20000);
         Assert.IsTrue(PreviewLine.IsEmpty(), 'The caller''s earlier lines are gone');
