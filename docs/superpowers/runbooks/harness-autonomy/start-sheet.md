@@ -74,7 +74,7 @@ Then terminal 1:
   (live, refreshes every 30 s). It shows milestones with progress and due dates, what is
   running, waiting for review, ready, blocked and why, open questions, leases, the pause
   state and anything stale. Details: `coord why <id>`, `coord status --lane <lane>`, where
-  `coord` is `deno run --allow-all U:\Git\CentralGauge\scripts\coord\coord.ts`.
+  `coord` is `deno run --allow-all H:\cg-coord\jobs\orch-master\scripts\coord\coord.ts`.
 - Pause everything (you need the machine):
   `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 pause -Reason "<why>"`.
   It sets the pause, waits until running container jobs finish and every lease is released
