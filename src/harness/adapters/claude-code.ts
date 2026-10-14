@@ -195,8 +195,17 @@ type WebUse = {
  */
 function webProblem(last: J, web: WebUse): string | null {
   if (web.prohibited.length > 0) return web.prohibited.join("; ");
-  for (const m of Object.keys(last).sort()) {
+  const models = new Set([
+    ...Object.keys(last),
+    ...web.calls.keys(),
+    ...web.searches.keys(),
+    ...web.bad.keys(),
+  ]);
+  for (const m of [...models].sort()) {
     const name = m || "(no model)";
+    if (!Object.hasOwn(last, m)) {
+      return `web tool use on ${name}, which modelUsage does not report`;
+    }
     const bad = web.bad.get(m);
     if (bad) return bad.join("; ");
     const wsr = obj(last[m])["webSearchRequests"];

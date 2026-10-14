@@ -3627,3 +3627,36 @@ Deno.test("web tools (H-07 review 3): search accounting is checked on frozen ima
     1e-12,
   );
 });
+
+Deno.test("web tools (H-07 review 4): web use on a model modelUsage does not report voids the cost, counted or not", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const frozen = {
+    ...webArm(true, true),
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  };
+  // The second WebSearch exchange runs on another model; modelUsage keeps
+  // only claude-sonnet-5 (with its one remaining search).
+  const other = search.replaceAll(
+    '"model":"claude-sonnet-5","id":"msg_011Cg2G9CY6bE2SXvv88B7Bk"',
+    '"model":"claude-haiku-9","id":"msg_011Cg2G9CY6bE2SXvv88B7Bk"',
+  ).replace('"webSearchRequests":2', '"webSearchRequests":1');
+  assert(other.includes("claude-haiku-9"));
+  for (
+    const text of [
+      other,
+      other.replace(
+        ',"durationSeconds":10.052839699999996,"searchCount":1}',
+        ',"durationSeconds":10.052839699999996}',
+      ),
+    ]
+  ) {
+    for (const arm of [frozen, webArm(true, true)]) {
+      const { r } = await parse(text, 0, arm);
+      assertEquals(r.telemetry.cost_usd, null);
+      assertStringIncludes(
+        JSON.stringify(webRaw(r).missing),
+        "web tool use on claude-haiku-9, which modelUsage does not report",
+      );
+    }
+  }
+});
