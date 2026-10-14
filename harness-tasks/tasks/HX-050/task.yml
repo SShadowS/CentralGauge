@@ -1,0 +1,18 @@
+id: HX-050
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Fleet, Core]
+coupling: [interface]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval, DueByKmWithoutPlan] }
+fail_to_pass:
+  depends_on: [Core, Fleet]
+  tests:
+    - { codeunit: 86460, procedures: [DaysToPlannedServiceAhead, NoPlanReturnsFalse, OverdueServiceNegative, DueSoonOnWindowBoundary, NotDueSoonOutsideWindow, DueSoonWithoutPlanFalse, DueSoonWithoutServiceDateFalse, OverdueIsDueSoon, DueOnPlannedDate, DueAfterPlannedDate, NotDueBeforePlannedDate, NoPlanNotDue, DueByKmThroughStrategy, DueByKmWithPlannedDateAhead, ZeroIntervalPlanHasNoPlannedDate, DueSoonZeroWindow, DueSoonSevenDayWindowBoundary] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

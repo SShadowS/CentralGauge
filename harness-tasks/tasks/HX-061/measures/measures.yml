@@ -1,0 +1,27 @@
+v: 1
+partial_credit:
+  weights:
+    "86680/InspectionLendsBlockedVehicle": 1
+    "86680/UnlistedVehicleAsToday": 1
+    "86680/EndStopsLending": 1
+    "86680/EndThroughOtherVariable": 1
+    "86680/RestartReplacesList": 1
+    "86680/EndWithoutInspection": 1
+    "86680/ListedCheckedOutNotAvailable": 1
+    "86680/CheckOutForInspectionAsToday": 1
+    "86680/CheckOutForInspectionEnds": 1
+    "86680/RunningFlag": 1
+    "86680/StartAfterEndWorks": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70226, procedure: StartInspection, signature: "(VehicleNos: List of [Code[20]])", file: Rental/src/DeskInspection.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 86680, procedures: [CheckOutForInspectionAsToday] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/bind-every-start: { partial_credit: 0.9090909090909091 }
+  naive/local-binding: { partial_credit: 0.18181818181818182 }
+  naive/plain-global: { partial_credit: 0.6363636363636364 }

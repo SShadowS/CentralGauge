@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "86600/IdleVehicleListed": 1
+    "86600/AllIdleVehicles": 1
+    "86600/MixedFleet": 1
+  hidden_regressions:
+    - "86600/ZeroAmountRentalCounts"
+    - "86600/RefundReducesRevenue"
+    - "86600/BufferReplaced"
+    - "86600/FilterExcludesOthers"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/count-correction: { partial_credit: 0.6666666666666666 }
+  naive/ledger-top: { partial_credit: 0 }
+  naive/prefill-insert: { partial_credit: 0.3333333333333333 }

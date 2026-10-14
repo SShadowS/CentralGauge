@@ -1,0 +1,29 @@
+v: 1
+partial_credit:
+  weights:
+    "86560/KeptPreviewReturned": 1
+    "86560/TwoContractsKept": 1
+    "86560/KeptAcrossInstances": 1
+    "86560/KeptPreviewIgnoresLaterPrices": 1
+    "86560/KeepAgainReplaces": 1
+    "86560/HandedOutLinesAreCopies": 1
+    "86560/CallerBufferReplaced": 1
+    "86560/NothingKeptReturnsFalse": 1
+    "86560/FailedKeepLeavesEarlierPreview": 1
+    "86560/MissingContractFails": 1
+    "86560/ForgetDropsAll": 1
+    "86560/BuildPreviewKeepsNothing": 1
+    "86560/KeptPreviewIgnoresLaterPrecision": 1
+    "86560/OtherContractSurvivesReplace": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/delete-before-build: { partial_credit: 0.9285714285714286 }
+  naive/no-clear-handout: { partial_credit: 0.7142857142857143 }
+  naive/one-buffer: { partial_credit: 0.7857142857142857 }
+  naive/plain-copy-handout: { partial_credit: 0.14285714285714285 }
+  naive/plain-holder: { partial_credit: 0.8571428571428571 }
+  naive/replace-clears-all: { partial_credit: 0.9285714285714286 }
+  naive/reprice-on-get: { partial_credit: 0.7857142857142857 }
+  naive/share-handout: { partial_credit: 0.7142857142857143 }

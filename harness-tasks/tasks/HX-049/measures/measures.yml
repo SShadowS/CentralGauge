@@ -1,0 +1,27 @@
+v: 1
+partial_credit:
+  weights:
+    "86440/EventTransportByDefault": 1
+    "86440/PartnerTransportUsed": 1
+    "86440/PartnerRefusalNotDelivered": 1
+    "86440/PartnerErrorKeptAsLastError": 1
+    "86440/BareValueUsesEventTransport": 1
+    "86440/EventRejectionKeptAsToday": 1
+    "86440/PendingThroughPartner": 1
+    "86440/EventTransportSendsThroughEvent": 1
+    "86440/EventTransportWithoutSubscriberNotDelivered": 1
+    "86440/PartnerRefusalFailsAtMaxAttempts": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70416, procedure: Send, signature: "(Entry: Record \"CGR Outbox Entry\"): Boolean", file: Integration/src/EventTransport.Codeunit.al, perturb: "exit(false);" }
+  tests:
+    - { codeunit: 86440, procedures: [EventTransportByDefault] }
+# The reuse marker raised in Send is caught by the dispatcher's TryFunction into Last Error (caught-call
+# shape); R1 asserts Last Error = '' first, so the marker appears in R1's failure text.
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/always-event: { partial_credit: 0.5 }
+  naive/send-outside-try: { partial_credit: 0.8 }

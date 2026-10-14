@@ -1,0 +1,19 @@
+id: HX-049
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Integration, Core]
+coupling: [interface, events, core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80057, procedures: [DeliveredEntryIsSent, RejectedEntryKeepsItsError, EntryFailsAtMaxAttempts, UndeliveredWithoutTransport] }
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+fail_to_pass:
+  depends_on: [Core, Integration]
+  tests:
+    - { codeunit: 86440, procedures: [EventTransportByDefault, PartnerTransportUsed, PartnerRefusalNotDelivered, PartnerErrorKeptAsLastError, BareValueUsesEventTransport, EventRejectionKeptAsToday, PendingThroughPartner, EventTransportSendsThroughEvent, EventTransportWithoutSubscriberNotDelivered, PartnerRefusalFailsAtMaxAttempts] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

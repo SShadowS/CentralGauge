@@ -1,0 +1,16 @@
+id: HX-053
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Integration, Rental, Fleet, Core, Test]
+coupling: [events, facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+  - { codeunit: 80057, procedures: [DeliveredEntryIsSent, RejectedEntryKeepsItsError, EntryFailsAtMaxAttempts, UndeliveredWithoutTransport] }
+fail_to_pass: null
+mutants: [requeue-keeps-last-error, created-at-blank, return-also-queues, checkout-queues-twice, mark-sent-unknown-silent, purge-failed-too]
+contamination: null
+limits: { timeout_min: 30 }

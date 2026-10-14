@@ -1,0 +1,15 @@
+id: HX-052
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Reporting, Rental, Fleet, Test]
+coupling: [queries]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+fail_to_pass: null
+mutants: [revenue-nonzero-only, status-unblocked-only, status-free-only, status-checked-out-from-blocked, status-mileage-from-service-km]
+contamination: null
+limits: { timeout_min: 30 }

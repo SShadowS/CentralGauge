@@ -1,0 +1,16 @@
+id: HX-065
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Core, Rental, Leasing, Test]
+coupling: [core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, PostCreatesLedgerEntry] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate] }
+fail_to_pass: null
+mutants: [number-before-increment, lease-prefix-rc, zero-padded, new-setup-from-ten, dash-separator, lease-needs-setup]
+contamination: null
+limits: { timeout_min: 30 }

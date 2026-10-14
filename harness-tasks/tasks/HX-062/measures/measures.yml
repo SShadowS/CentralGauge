@@ -1,0 +1,26 @@
+v: 1
+partial_credit:
+  weights:
+    "86700/DeliveredEntryOneAttempt": 1
+    "86700/RecordAttemptCountsAndReturns": 1
+    "86700/AttemptSurvivesLaterError": 1
+    "86700/RefusedOutcomeKeepsAttempt": 1
+    "86700/FailsAtAttemptLimit": 1
+    "86700/UnknownEntryRaises": 1
+    "86700/SecondAttemptCounted": 1
+    "86700/PendingThroughRecordAttempt": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70410, procedure: RecordAttempt, signature: "(EntryNo: Integer): Integer", file: Integration/src/OutboxDispatcher.Codeunit.al, perturb: "exit(0);" }
+  tests:
+    - { codeunit: 86700, procedures: [DeliveredEntryOneAttempt, RefusedOutcomeKeepsAttempt, FailsAtAttemptLimit, SecondAttemptCounted, PendingThroughRecordAttempt] }
+# RecordAttempt runs before TrySend, outside the TryFunction, so the reuse marker escapes DispatchEntry
+# (uncaught in R1/R5/R7/R8, GetLastErrorText in R4's text assertion). Under exit(0) no attempt is counted.
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/commit-at-end: { partial_credit: 0.75 }
+  naive/returns-old-count: { partial_credit: 0.875 }
+  naive/stale-entry: { partial_credit: 0.375 }

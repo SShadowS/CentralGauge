@@ -1,0 +1,18 @@
+id: HX-057
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Reporting, Fleet, Rental]
+coupling: [queries, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 86600, procedures: [IdleVehicleListed, ZeroAmountRentalCounts, RefundReducesRevenue, BufferReplaced, FilterExcludesOthers, AllIdleVehicles, MixedFleet] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

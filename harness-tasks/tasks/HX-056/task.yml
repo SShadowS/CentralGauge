@@ -1,0 +1,20 @@
+id: HX-056
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Integration, Rental, Fleet, Core]
+coupling: [commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+  - { codeunit: 80057, procedures: [DeliveredEntryIsSent, RejectedEntryKeepsItsError, EntryFailsAtMaxAttempts, UndeliveredWithoutTransport] }
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Integration]
+  tests:
+    - { codeunit: 86580, procedures: [QueuedEntryCarriesNumber, NumbersIncreaseInQueueOrder, FailedQueueNumberNotReissued, FailedQueueKeepsNothingOfCaller, TwoFailuresThenSuccess, CheckoutQueuesNumberedEntry, PayloadProcedureUnchanged, CorrelationFieldAsSpecified, DispatchKeepsNumber] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

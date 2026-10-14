@@ -1,0 +1,19 @@
+id: HX-044
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Core, Leasing]
+coupling: [core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80051, procedures: [WeekdaysCountedWithoutHolidays, HolidayIsNotAWorkingDay, NextWorkingDaySkipsWeekendAndHoliday, ReversedRangeHasNoWorkingDays] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 86340, procedures: [HolidayEnteredHereApplies, HolidayEnteredInSisterApplies, HolidaySharedWithSister, SisterNonWorkingDayDoesNotApply, OwnNonWorkingDayStillApplies, RemovedInSisterNoLongerApplies, WorkingDaysBetweenSkipsGroupHoliday, NextWorkingDaySkipsGroupHoliday, LeaseInvoiceDateSkipsGroupHoliday, GroupHolidayTableAsSpecified] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
