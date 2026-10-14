@@ -18,6 +18,9 @@ export interface OtelApiRequest {
   output_tokens: number;
   cache_read_tokens: number;
   cache_creation_tokens: number;
+  /** H-10: the TTL split of cache_creation_tokens (priced per TTL). */
+  cache_creation_5m_tokens: number;
+  cache_creation_1h_tokens: number;
   cost_usd: number | null;
   request_id: string | null;
   query_source: string | null;
@@ -80,6 +83,8 @@ export function apiRequests(body: unknown): OtelApiRequest[] {
           output_tokens: count(a["output_tokens"]),
           cache_read_tokens: count(a["cache_read_tokens"]),
           cache_creation_tokens: count(a["cache_creation_tokens"]),
+          cache_creation_5m_tokens: count(a["cache_creation_5m_tokens"]),
+          cache_creation_1h_tokens: count(a["cache_creation_1h_tokens"]),
         };
         if (model === null || Object.values(t).some((v) => v === null)) {
           throw new Error("api_request without model or token counts");

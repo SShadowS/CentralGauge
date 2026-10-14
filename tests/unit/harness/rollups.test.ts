@@ -485,3 +485,20 @@ Deno.test("reconciliationStatus (H-07): web_excess is reconciled (tokens kept), 
     4,
   );
 });
+
+Deno.test("reconciliationStatus (H-10): exact_otel counts as exact (gate 3 evidence), tokens kept", () => {
+  const st = (s: object | undefined) =>
+    exec("a", [pm(4)], "p", 1, s ? { usage_reconciliation: s } : {});
+  const otel = st({
+    status: "exact_otel",
+    stream: { status: "unreconciled", why: "x" },
+  });
+  assertEquals(reconciliationStatus([otel]), "exact");
+  assertEquals(reconciliationStatus([otel, st({ status: "exact" })]), "exact");
+  assertEquals(reconciliationStatus([otel, st(undefined)]), "absent");
+  assertEquals(
+    cellValues([otel], otel, undefined, new Map(), new Map(), false)
+      .tokens_out,
+    4,
+  );
+});

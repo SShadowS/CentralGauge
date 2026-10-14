@@ -4999,3 +4999,38 @@ Deno.test("runCell (H-08): a run that lingers after its final result is stopped 
   );
   assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "pass");
 });
+
+Deno.test("otel (H-10): the quarantined otel.jsonl reaches the adapter parse (raw_usage.otel)", async () => {
+  const probe = await probeLines();
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (call, io) => {
+    const id = call.env.get("CG_EXECUTION_ID")!;
+    // One valid row that cannot equal the probe's modelUsage: mismatch, not missing.
+    await Deno.writeTextFile(
+      privatePaths(t.env, id).otel,
+      JSON.stringify({
+        session_id: "s1",
+        sequence: 1,
+        model: "claude-sonnet-5",
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_read_tokens: 1,
+        cache_creation_tokens: 1,
+        cache_creation_5m_tokens: 1,
+        cache_creation_1h_tokens: 0,
+        execution_id: id,
+        received_for: id,
+      }) + "\n",
+    );
+    for (const l of [V2_INIT, ...probe]) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  assertEquals(e.termination, "completed");
+  const otel = (e.telemetry.raw_usage as {
+    otel?: { status: string; rows: number };
+  }).otel;
+  assertEquals([otel?.status, otel?.rows], ["mismatch", 1]);
+});

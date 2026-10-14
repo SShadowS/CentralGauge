@@ -1083,6 +1083,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       parsed = await adapter.parse({
         rawLog: p.raw,
         stderrLog: p.stderr,
+        otelLog: p.otel,
         exitCode: f.sandbox.exitCode,
         manifest: f.manifest,
         pricing: f.pricing,

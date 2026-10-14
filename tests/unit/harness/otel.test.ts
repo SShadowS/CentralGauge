@@ -36,6 +36,8 @@ Deno.test("otel: api_request rows of a nested run sum to the result's modelUsage
   // Allow-listed fields only: no prompt or response attribute survives.
   assertEquals(Object.keys(rows[0]!).sort(), [
     "agent_name",
+    "cache_creation_1h_tokens",
+    "cache_creation_5m_tokens",
     "cache_creation_tokens",
     "cache_read_tokens",
     "cost_usd",
@@ -64,8 +66,17 @@ Deno.test("otel: an api_request missing a token count throws, never reads as zer
     { key: "cache_read_tokens", value: { intValue: 3 } },
   ];
   assertThrows(() => apiRequests(rec(base)));
-  const ok = apiRequests(
-    rec([...base, { key: "cache_creation_tokens", value: { intValue: 4 } }]),
+  const cc = { key: "cache_creation_tokens", value: { intValue: 4 } };
+  const m5 = { key: "cache_creation_5m_tokens", value: { intValue: 3 } };
+  const h1 = { key: "cache_creation_1h_tokens", value: { intValue: 1 } };
+  // H-10: the TTL split is required like the other counts.
+  assertThrows(() => apiRequests(rec([...base, cc])));
+  assertThrows(() => apiRequests(rec([...base, cc, m5])));
+  assertThrows(() => apiRequests(rec([...base, cc, h1])));
+  const ok = apiRequests(rec([...base, cc, m5, h1]));
+  assertEquals(
+    [ok[0]!.cache_creation_5m_tokens, ok[0]!.cache_creation_1h_tokens],
+    [3, 1],
   );
   assertEquals(ok[0]!.input_tokens, 1, "int64 as a JSON string");
   assertThrows(() => apiRequests({}));

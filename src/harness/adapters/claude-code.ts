@@ -173,7 +173,175 @@ export type Reconciliation =
     excess: Record<string, Omit<Tally, "out">>;
     web_calls: Record<string, number>;
   }
-  | { status: "unreconciled"; why: string };
+  | { status: "unreconciled"; why: string }
+  /**
+   * H-10: the stream did not reconcile (nested sub-agent usage is not
+   * streamed) but the OTel api_request rows equal modelUsage exactly; the
+   * cost comes from those rows. `stream` is what the stream alone gave.
+   */
+  | { status: "exact_otel"; stream: Reconciliation };
+
+/** H-10: raw_usage.otel, the OTel check of an inventoried run. */
+export interface OtelCheck {
+  status: "exact" | "missing" | "mismatch" | "invalid";
+  why?: string;
+  /** Lines in otel.jsonl. */
+  rows: number;
+  /** Distinct (session_id, sequence) requests; 0 unless the rows are valid. */
+  requests: number;
+}
+type OtelTally = {
+  requests: number;
+  input: number;
+  read: number;
+  w5m: number;
+  w1h: number;
+  out: number;
+};
+const OTEL_COUNTS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cache_creation_tokens",
+  "cache_creation_5m_tokens",
+  "cache_creation_1h_tokens",
+] as const;
+
+/**
+ * H-10: the backend's otel.jsonl (src/harness/otel.ts rows plus
+ * `received_for`) against the final modelUsage. Every row must belong to one
+ * execution (one non-empty received_for, execution_id equal to it), carry a
+ * (session_id, sequence) key and every count with a TTL split summing to its
+ * cache writes; identical duplicates (a re-sent export) collapse, a key with
+ * different content is invalid. Exact: per model, the sums of input, cache
+ * read, cache write and output equal modelUsage, over the same models.
+ */
+function otelCheck(
+  text: string | null,
+  last: J,
+): { check: OtelCheck; tally: Map<string, OtelTally> } {
+  const tally = new Map<string, OtelTally>();
+  if (text === null) {
+    return {
+      check: {
+        status: "missing",
+        why: "otel.jsonl missing",
+        rows: 0,
+        requests: 0,
+      },
+      tally,
+    };
+  }
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  const rows = lines.length;
+  const invalid = (why: string) => ({
+    check: { status: "invalid" as const, why, rows, requests: 0 },
+    tally: new Map<string, OtelTally>(),
+  });
+  const seen = new Map<string, string>();
+  let owner: string | null = null;
+  for (const [i, l] of lines.entries()) {
+    const at = `otel line ${i + 1}`;
+    let v: unknown;
+    try {
+      v = JSON.parse(l);
+    } catch {
+      return invalid(`${at} is not JSON`);
+    }
+    if (!v || typeof v !== "object" || Array.isArray(v)) {
+      return invalid(`${at} is not an object`);
+    }
+    const x = v as Record<string, unknown>;
+    const rf = x["received_for"];
+    const exec = x["execution_id"];
+    const sid = x["session_id"];
+    const seq = x["sequence"];
+    const model = x["model"];
+    if (typeof rf !== "string" || rf === "") {
+      return invalid(`${at}: received_for missing`);
+    }
+    owner ??= rf;
+    if (rf !== owner) {
+      return invalid(`${at}: received_for ${rf} differs from ${owner}`);
+    }
+    if (exec !== rf) {
+      return invalid(
+        `${at}: execution_id ${String(exec)} differs from received_for ${rf}`,
+      );
+    }
+    if (typeof sid !== "string" || sid === "") {
+      return invalid(`${at}: session_id missing`);
+    }
+    if (!isCount(seq)) return invalid(`${at}: sequence missing or not a count`);
+    if (typeof model !== "string") return invalid(`${at}: model missing`);
+    const n = {} as Record<(typeof OTEL_COUNTS)[number], number>;
+    for (const k of OTEL_COUNTS) {
+      const c = x[k];
+      if (!isCount(c)) return invalid(`${at}: ${k} missing or not a count`);
+      n[k] = c;
+    }
+    if (
+      n.cache_creation_5m_tokens + n.cache_creation_1h_tokens !==
+        n.cache_creation_tokens
+    ) {
+      return invalid(
+        `${at}: cache_creation_5m_tokens ${n.cache_creation_5m_tokens} + cache_creation_1h_tokens ${n.cache_creation_1h_tokens} != cache_creation_tokens ${n.cache_creation_tokens}`,
+      );
+    }
+    const key = `${sid}\u0000${seq}`;
+    const canon = JSON.stringify(Object.keys(x).sort().map((k) => [k, x[k]]));
+    const prev = seen.get(key);
+    if (prev !== undefined) {
+      if (prev === canon) continue;
+      return invalid(
+        `${at}: session ${sid} sequence ${seq} recorded twice with different content`,
+      );
+    }
+    seen.set(key, canon);
+    const t = tally.get(model) ??
+      { requests: 0, input: 0, read: 0, w5m: 0, w1h: 0, out: 0 };
+    t.requests++;
+    t.input += n.input_tokens;
+    t.read += n.cache_read_tokens;
+    t.w5m += n.cache_creation_5m_tokens;
+    t.w1h += n.cache_creation_1h_tokens;
+    t.out += n.output_tokens;
+    tally.set(model, t);
+  }
+  const requests = seen.size;
+  const mismatch = (why: string) => ({
+    check: { status: "mismatch" as const, why, rows, requests },
+    tally,
+  });
+  for (const m of Object.keys(last).sort()) {
+    if (!tally.has(m)) {
+      return mismatch(`model ${m || "(no model)"} is only in modelUsage`);
+    }
+  }
+  for (const [m, t] of [...tally].sort(([a], [b]) => a < b ? -1 : 1)) {
+    if (!Object.hasOwn(last, m)) {
+      return mismatch(`model ${m || "(no model)"} is only in OTel`);
+    }
+    const x = obj(last[m]);
+    for (
+      const [f, n] of [
+        ["inputTokens", t.input],
+        ["cacheReadInputTokens", t.read],
+        ["cacheCreationInputTokens", t.w5m + t.w1h],
+        ["outputTokens", t.out],
+      ] as const
+    ) {
+      if (x[f] !== n) {
+        return mismatch(
+          `${m} ${f}: OTel ${n} != modelUsage ${
+            isCount(x[f]) ? x[f] : "missing"
+          }`,
+        );
+      }
+    }
+  }
+  return { check: { status: "exact", rows, requests }, tally };
+}
 
 /** H-07: executed web tool calls per model and the searches their results report. */
 type WebUse = {
@@ -1204,6 +1372,8 @@ export function parseClaudeStream(
   input: Omit<ParseInput, "traceOut">,
   /** Problems found before parsing (a missing log); reported first. */
   streamProblems: string[] = [],
+  /** H-10: otel.jsonl's text; null when there is none (OTel missing). */
+  otelText: string | null = null,
 ): ParsedRun & { trace: TraceEvent[] } {
   // The file name only: messages reach published records, private paths never do.
   const file = basename(input.rawLog);
@@ -1483,7 +1653,7 @@ export function parseClaudeStream(
     );
   }
   // Spec v2 gate 3: exact reconciliation on inventoried images only.
-  const reconciliation = inventoried(input.manifest.image.revision) && result
+  const streamRec = inventoried(input.manifest.image.revision) && result
     ? reconcile(
       obj(result.modelUsage),
       perMessage,
@@ -1492,6 +1662,28 @@ export function parseClaudeStream(
       web,
     )
     : null;
+  // H-10: the OTel api_request rows cover nested sub-agent requests the
+  // stream never shows. They never override a hard stream failure: H-07 web
+  // problems, a lost line, a resume not proven cumulative, provenance.
+  const otel = streamRec && result
+    ? otelCheck(otelText, obj(result.modelUsage))
+    : null;
+  const hard = unproven.costs.length > 0 || nonJson.count > 0 ||
+    (result !== undefined && webProblem(obj(result.modelUsage), web) !== null);
+  let reconciliation = streamRec;
+  /** Kept apart from stream_problems: an OTel disagreement never voids a stream-proven cost. */
+  const usageProblems: string[] = [];
+  if (streamRec && otel) {
+    const c = otel.check;
+    const otelWhy = `otel ${c.status}${c.why ? `: ${c.why}` : ""}`;
+    if (streamRec.status !== "exact" && c.status === "exact" && !hard) {
+      reconciliation = { status: "exact_otel", stream: streamRec };
+    } else if (streamRec.status === "unreconciled") {
+      reconciliation = { ...streamRec, why: `${streamRec.why}; ${otelWhy}` };
+    } else if (c.status === "mismatch" || c.status === "invalid") {
+      usageProblems.push(`otel_mismatch: ${c.why}`);
+    }
+  }
   // H-07: the catalog has no web-search rate, so searches are an explicit
   // unpriced item; cost_usd is the token cost (decision 2026-10-14-web-tools-flag).
   const unpriced = [...web.searches].filter(([, n]) => n > 0).sort(([a], [b]) =>
@@ -1511,7 +1703,27 @@ export function parseClaudeStream(
     if (why !== null) unproven.costs.push(`${file}: ${why}`);
   }
   const proven = unproven.costs.length === 0;
-  const priced = result ? estimateCost(usage, input.pricing) : null;
+  // H-10: an exact_otel run is priced from the OTel rows (per-request TTL
+  // split, request count); reasoning stays modelUsage's thinkingTokens.
+  const tally = reconciliation?.status === "exact_otel" ? otel!.tally : null;
+  const pricedUsage: ModelTokens[] = tally
+    ? usage.map((u) => {
+      const t = tally.get(u.model)!;
+      return {
+        model: u.model,
+        requests: t.requests,
+        input: t.input,
+        cache_read: t.read,
+        cache_write_5m: t.w5m,
+        cache_write_1h: t.w1h,
+        cache_write_unknown: 0,
+        output: t.out,
+        reasoning: u.reasoning,
+        problems: u.problems.filter((p) => p.startsWith("thinkingTokens")),
+      };
+    })
+    : usage;
+  const priced = result ? estimateCost(pricedUsage, input.pricing) : null;
   // A lost line may have been a second result or a usage record the TTL
   // check needed, so the cost is not provable: null, with the lines named.
   const est = !proven
@@ -1715,6 +1927,8 @@ export function parseClaudeStream(
       : {}),
     partial,
     ...(reconciliation ? { usage_reconciliation: reconciliation } : {}),
+    ...(otel ? { otel: otel.check } : {}),
+    ...(usageProblems.length > 0 ? { usage_problems: usageProblems } : {}),
     ...(unpriced.length > 0 ? { unpriced } : {}),
     missing: [
       ...(est?.missing ?? (nonJson.count > 0 ? [nonJsonReason(nonJson)] : [])),
@@ -1890,7 +2104,21 @@ export const claudeCodeAdapter: HarnessAdapter = {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
       problems.push(`${basename(input.rawLog)}: raw log missing`);
     }
-    const { trace, ...parsed } = parseClaudeStream(text, input, problems);
+    // H-10: no otel.jsonl is OTel missing, never zero usage.
+    let otel: string | null = null;
+    if (input.otelLog) {
+      try {
+        otel = await Deno.readTextFile(input.otelLog);
+      } catch (err) {
+        if (!(err instanceof Deno.errors.NotFound)) throw err;
+      }
+    }
+    const { trace, ...parsed } = parseClaudeStream(
+      text,
+      input,
+      problems,
+      otel,
+    );
     await writeTrace(input.traceOut, trace);
     return parsed;
   },

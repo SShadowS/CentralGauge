@@ -16,6 +16,8 @@ export interface ParseInput {
   rawLog: string;
   /** Quarantined sandbox stderr (H-01u); an adapter that needs it fails closed without it. */
   stderrLog?: string;
+  /** Quarantined OTel api_request rows (H-10, otel.jsonl); absent or missing reads as no OTel, never zero usage. */
+  otelLog?: string;
   exitCode: number | null;
   manifest: ResolvedManifest;
   /** Fixed at run start; the snapshot goes into telemetry. */
