@@ -3883,7 +3883,8 @@ const V2_INIT = JSON.stringify({
     path: "builtin",
     source: s,
   })),
-  // The arm disallows the session-control tools (M1-32b), so init does not list them.
+  // The arm disallows the session-control tools (M1-32b) and, by default, the
+  // web tools (H-07), so init does not list them.
   tools: B282.tools.filter((x) =>
     ![
       "CronCreate",
@@ -3892,6 +3893,8 @@ const V2_INIT = JSON.stringify({
       "RemoteTrigger",
       "ScheduleWakeup",
       "SendMessage",
+      "WebFetch",
+      "WebSearch",
     ].includes(x)
   ),
 });

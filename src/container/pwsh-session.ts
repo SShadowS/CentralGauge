@@ -361,12 +361,7 @@ export class PwshContainerSession {
         );
       }
 
-      // $LASTEXITCODE is only set by native executables, not PS cmdlets.
-      // Use a null-safe capture so pure-cmdlet scripts emit EXIT-0.
-      // Everything is on one line so the REPL executes it immediately.
-      const escapedPath = tmpScript.replace(/\\/g, "\\\\");
-      const oneLiner =
-        `& '${escapedPath}' 2>&1; $cgExitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }; Write-Output "@@CG-DONE-${token}-EXIT-$cgExitCode@@"\n`;
+      const oneLiner = markerOneLiner(tmpScript, token);
 
       // --- Execute phase ---
       try {
@@ -427,6 +422,24 @@ export class PwshContainerSession {
     if (this._state === "dead") return;
     await this.killProcess();
   }
+}
+
+/**
+ * The stdin line that runs one temp script and emits its completion marker.
+ * $LASTEXITCODE is only set by native executables, not PS cmdlets: a
+ * null-safe capture so pure-cmdlet scripts emit EXIT-0. One line, so the
+ * REPL executes it immediately.
+ * H-05: a terminating error in the script (e.g. a refused
+ * Publish-BcContainerApp -ErrorAction Stop) used to abandon the rest of the
+ * line, so the marker never came and the host waited the full timeout. The
+ * error is now caught and written, the exit code is non-zero, and the marker
+ * is in `finally`. The session is kept (a throw no longer recycles it via the
+ * timeout). $LASTEXITCODE is session-global, so it is reset first: a stale
+ * code from an earlier call never leaks into a pure-cmdlet script's EXIT.
+ */
+export function markerOneLiner(tmpScript: string, token: string): string {
+  const escapedPath = tmpScript.replace(/\\/g, "\\\\");
+  return `$global:LASTEXITCODE = $null; $cgExitCode = 1; try { & '${escapedPath}' 2>&1; $cgExitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 } } catch { Write-Output "CG_SCRIPT_THREW: $($_ | Out-String)" } finally { Write-Output "@@CG-DONE-${token}-EXIT-$cgExitCode@@" }\n`;
 }
 
 function defaultSpawnFactory(): SpawnedProcess {

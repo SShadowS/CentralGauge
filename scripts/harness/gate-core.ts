@@ -287,6 +287,12 @@ export interface BuildStep {
   ok: boolean;
   codes: string[];
   detail?: string;
+  /**
+   * H-05: the failed step's raw session output tail (secret patterns
+   * redacted, [CG-PIN] lines dropped). Evidence only: no decision reads it
+   * (PUBLISH_COLLISION matches `detail`).
+   */
+  raw?: string;
 }
 export interface RunResult {
   variant: string;
