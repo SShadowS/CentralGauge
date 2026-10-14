@@ -697,6 +697,9 @@ export async function runCampaign(
       await serverDefinitions(env.repoRoot, config.components),
     );
     const manifest = await resolveManifest(env.harnessRoot, config, facts);
+    // H-03: a tracked campaign image needs its M8-07c calibration (dry run too).
+    const why = adapterFor(config.harness).unqualified?.(manifest, "campaign");
+    if (why) throw new ConfigurationError(`${config.id}: ${why}`);
     arms.push({
       config_id: config.id,
       manifest_hash: await manifestHash(manifest),

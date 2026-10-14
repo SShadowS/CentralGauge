@@ -6,6 +6,7 @@ import {
   EXECUTION_LABEL,
   PI_STAGE_ARGV,
 } from "../../../src/harness/sandbox.ts";
+import { imageTag } from "../../../src/harness/images.ts";
 
 export interface RunCall {
   args: string[];
@@ -368,16 +369,66 @@ export class FakeDocker implements DockerCli {
       this.images.get(this.tags.get(ref) ?? ref) ?? null,
     );
   }
-  /** What a build of a tag (`-t`) produces: added only when the build runs. */
+  /** H-03: every docker rmi of a tag, in order. */
+  untags: string[] = [];
+  /** H-03 run 003: docker rmi's exit code per ref (default 0); non-zero keeps the tag. */
+  untagCodes = new Map<string, number>();
+  untag(ref: string): Promise<number> {
+    this.untags.push(ref);
+    const code = this.untagCodes.get(ref) ?? 0;
+    if (code === 0) this.tags.delete(ref);
+    return Promise.resolve(code);
+  }
+  /** H-03: every docker tag (image id, ref), in order. */
+  tagCalls: [string, string][] = [];
+  tag(id: string, ref: string): Promise<number> {
+    this.tagCalls.push([id, ref]);
+    if (!this.images.has(id)) return Promise.resolve(1);
+    this.tags.set(ref, id);
+    return Promise.resolve(0);
+  }
+  /**
+   * What a build of a tag (`-t`) produces: added only when the build runs.
+   * H-03: an untagged build (`--iidfile`, no `-t`) produces the result its
+   * harness, version and revision labels name, by id only, and writes the id.
+   */
   buildResults = new Map<
     string,
     { id: string; labels: Record<string, string>; layers: string[] }
   >();
-  build(args: string[]): Promise<number> {
+  async build(args: string[]): Promise<number> {
+    if (args.includes("--iidfile") && !args.includes("-t")) {
+      this.builds.push(args);
+      const label = (k: string) =>
+        args.find((a, i) => args[i - 1] === "--label" && a.startsWith(`${k}=`))
+          ?.slice(k.length + 1);
+      const r = this.buildResults.get(imageTag(
+        label("centralgauge.harness") ?? "",
+        label("centralgauge.harness.version") ?? "",
+        label("centralgauge.harness.revision"),
+      ));
+      if (r) {
+        this.images.set(r.id, {
+          Id: r.id,
+          Config: { Labels: r.labels },
+          RootFS: { Layers: r.layers },
+        });
+        await Deno.writeTextFile(args[args.indexOf("--iidfile") + 1]!, r.id);
+      }
+      return 0;
+    }
     this.builds.push(args);
     const tag = args[args.indexOf("-t") + 1];
     const r = tag === undefined ? undefined : this.buildResults.get(tag);
-    if (tag !== undefined && r) this.addImage(tag, r.id, r.labels, r.layers);
+    if (tag !== undefined && r) {
+      this.addImage(tag, r.id, r.labels, r.layers);
+      // H-03: every further -t of the same build names the same image.
+      for (const [i, a] of args.entries()) {
+        if (a === "-t" && i !== args.indexOf("-t") && args[i + 1]) {
+          this.tags.set(args[i + 1]!, r.id);
+        }
+      }
+    }
     return Promise.resolve(0);
   }
 }
@@ -446,5 +497,127 @@ export const lspResolvedJson = (over: Record<string, unknown> = {}) =>
       "al-call-hierarchy.exe": "c".repeat(64),
       "al-lsp-wrapper.exe": "d".repeat(64),
     },
+    ...over,
+  });
+
+/** H-03: a resolved @anthropic-ai/claude-code release, as the registry, the labels and install-claude-code.ps1 state it. */
+export const ccRel = (version: string) => ({
+  version,
+  main: {
+    url:
+      `https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz`,
+    integrity: `sha512-${"M".repeat(86)}==`,
+  },
+  win32_x64: {
+    url:
+      `https://registry.npmjs.org/@anthropic-ai/claude-code-win32-x64/-/claude-code-win32-x64-${version}.tgz`,
+    integrity: `sha512-${"W".repeat(86)}==`,
+  },
+});
+export const CC_REL = ccRel("2.1.296");
+export const CC_MAIN_URL =
+  "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
+export const ccWinUrl = (v = CC_REL.version) =>
+  `https://registry.npmjs.org/@anthropic-ai/claude-code-win32-x64/${v}`;
+/** The registry's dist-tag latest version document (the shape 2.1.296 has). */
+export const ccMainDoc = (v = CC_REL.version): Record<string, unknown> => ({
+  name: "@anthropic-ai/claude-code",
+  version: v,
+  bin: { claude: "bin/claude.exe" },
+  scripts: { postinstall: "node install.cjs" },
+  dependencies: {},
+  optionalDependencies: Object.fromEntries(
+    ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"].map((p) => [
+      `@anthropic-ai/claude-code-${p}`,
+      v,
+    ]),
+  ),
+  dist: {
+    integrity: CC_REL.main.integrity,
+    tarball:
+      `https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${v}.tgz`,
+  },
+});
+/** The platform package's version document. */
+export const ccWinDoc = (v = CC_REL.version): Record<string, unknown> => ({
+  name: "@anthropic-ai/claude-code-win32-x64",
+  version: v,
+  os: ["win32"],
+  cpu: ["x64"],
+  dist: {
+    integrity: CC_REL.win32_x64.integrity,
+    tarball:
+      `https://registry.npmjs.org/@anthropic-ai/claude-code-win32-x64/-/claude-code-win32-x64-${v}.tgz`,
+  },
+});
+/**
+ * A fetch for a claude-code build: the GitHub API (LSP release), the npm
+ * registry's latest document and the platform document; anything else 404.
+ * `docs` overrides a document (a string body is sent as is); `status` a status.
+ */
+export function ccFetch(
+  o: {
+    version?: string;
+    main?: unknown;
+    win?: unknown;
+    status?: Record<string, number>;
+    calls?: { url: string; init?: RequestInit | undefined }[];
+  } = {},
+): typeof fetch {
+  const v = o.version ?? CC_REL.version;
+  return ((input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    o.calls?.push({ url, init });
+    const body = url.startsWith("https://api.github.com/")
+      ? lspLatestBody()
+      : url === CC_MAIN_URL
+      ? o.main ?? ccMainDoc(v)
+      : url === ccWinUrl(v)
+      ? o.win ?? ccWinDoc(v)
+      : undefined;
+    return Promise.resolve(
+      new Response(
+        body === undefined
+          ? "not found"
+          : typeof body === "string"
+          ? body
+          : JSON.stringify(body),
+        { status: o.status?.[url] ?? (body === undefined ? 404 : 200) },
+      ),
+    );
+  }) as typeof fetch;
+}
+/** The labels `images build` puts on a claude-code image resolved as `rel`. */
+export const ccLabels = (
+  rel: {
+    version: string;
+    main: { integrity: string };
+    win32_x64: { integrity: string };
+  } = CC_REL,
+): Record<string, string> => ({
+  "centralgauge.harness.version": rel.version,
+  "centralgauge.harness.track": "npm-latest",
+  "centralgauge.harness.package":
+    `@anthropic-ai/claude-code@${rel.version} ${rel.main.integrity} ${rel.win32_x64.integrity}`,
+});
+/** C:\cg-npm\claude-code-resolved.json as install-claude-code.ps1 writes it for CC_REL. */
+export const ccResolvedJson = (
+  over: Record<string, unknown> = {},
+  rel = CC_REL,
+) =>
+  JSON.stringify({
+    version: rel.version,
+    packages: {
+      "@anthropic-ai/claude-code": {
+        tarball: rel.main.url,
+        integrity: rel.main.integrity,
+      },
+      "@anthropic-ai/claude-code-win32-x64": {
+        tarball: rel.win32_x64.url,
+        integrity: rel.win32_x64.integrity,
+      },
+    },
+    claude_exe_sha256: "e".repeat(64),
+    install_method: "npm",
     ...over,
   });

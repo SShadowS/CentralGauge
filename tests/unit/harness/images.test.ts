@@ -18,6 +18,9 @@ import {
   AL_LSP_RESOLVED,
   AL_LSP_SHIPPED,
   AL_TOOLS_SHIPPED,
+  CLAUDE_CODE_RESOLVED,
+  claudeCodeArgs,
+  FROZEN_CLAUDE_CODE,
   hasBaseLayers,
   type ImageFacts,
   imageFacts,
@@ -27,17 +30,30 @@ import {
   lspReleaseArgs,
   mcpDefinitions,
   mcpLabel,
+  resolveClaudeCode,
   resolveLspRelease,
   runtimeFacts,
   serverDefinitions,
 } from "../../../src/harness/images.ts";
-import { resolveManifest } from "../../../src/harness/manifest.ts";
+import { readCatalog } from "../../../src/ingest/catalog/read.ts";
+import {
+  manifestHash,
+  resolveManifest,
+} from "../../../src/harness/manifest.ts";
 import {
   imageReadCreateArgs,
   OWNER_LABEL,
   SANDBOX_PREFIX,
 } from "../../../src/harness/sandbox.ts";
 import {
+  CC_MAIN_URL,
+  CC_REL,
+  ccFetch,
+  ccLabels,
+  ccMainDoc,
+  ccResolvedJson,
+  ccWinDoc,
+  ccWinUrl,
   FakeDocker,
   fakeFetch,
   LSP_REL,
@@ -1406,4 +1422,398 @@ Deno.test("install-lsp.ps1 (M10-10 r2): the wrapper exes join the exe manifest (
     "Add-Member -InputObject $def.exes -NotePropertyName ('al-language-server-go-windows\\bin\\' + $name) -NotePropertyValue $wrapperExes[$name]";
   assert(at(add) >= 0, `install-lsp.ps1 lacks: ${add}`);
   assert(at(add) < at("Assert-ExeManifest 'C:\\cg-lsp' $def.exes"));
+});
+
+// ---- H-03: Claude Code tracks the newest release ----
+
+/** An untracked v1 image (r2, 2.1.282) carrying the MCP labels a config needs. */
+async function v1Manifest(id: string) {
+  const cfg = await loadConfig("harness", id);
+  const defs = await serverDefinitions(".", cfg.components);
+  const image: ImageFacts = {
+    digest: ID,
+    base_digest: BASE,
+    harness: "claude-code",
+    version: "2.1.282",
+    revision: "2",
+    mcp: Object.fromEntries(
+      Object.entries(defs).map((
+        [n, d],
+      ) => [n, { version: d.version!, tool_schema_hash: d.hash }]),
+    ),
+  };
+  return await resolveManifest(
+    "harness",
+    cfg,
+    runtimeFacts(
+      cfg,
+      image,
+      claudeCodeAdapter,
+      await readCatalog("site/catalog"),
+      defs,
+    ),
+  );
+}
+
+Deno.test("H-03 golden: the v1 cc-sonnet configs resolve to the manifest hashes of master 03261fdc", async () => {
+  const got: Record<string, string> = {};
+  for (const id of ["cc-sonnet-plain", "cc-sonnet-mcp", "cc-sonnet-skills"]) {
+    const m = await v1Manifest(id);
+    assertEquals(m.harness_version, "2.1.282", id);
+    assertEquals(Object.hasOwn(m.image, "package"), false, id);
+    got[id] = await manifestHash(m);
+  }
+  assertEquals(got, {
+    "cc-sonnet-plain":
+      "f49c1b2f72ea42f2d650603fe0e3ca779f11f186e0c5252382ef1cff42aef971",
+    "cc-sonnet-mcp":
+      "dc1eb8d7612903a7669b9cb2723fcab462ae4a8f0df9c79afb7a0cbff04f957d",
+    "cc-sonnet-skills":
+      "bde2be08e57ce178c978bee62b59a77b10f7679be79152c16260a85bf8752d43",
+  });
+});
+
+Deno.test("resolveClaudeCode (H-03): the registry's latest document and the platform document, verified; build args and labels", async () => {
+  const calls: { url: string; init?: RequestInit | undefined }[] = [];
+  const r = await resolveClaudeCode(ccFetch({ calls }));
+  assertEquals(r, CC_REL);
+  assertEquals(calls.map((c) => c.url), [CC_MAIN_URL, ccWinUrl()]);
+  for (const c of calls) assertEquals(c.init?.redirect, "error");
+  const args = claudeCodeArgs(r);
+  for (
+    const a of [
+      `CLAUDE_CODE_VERSION=${r.version}`,
+      `CLAUDE_CODE_URL=${r.main.url}`,
+      `CLAUDE_CODE_INTEGRITY=${r.main.integrity}`,
+      `CLAUDE_CODE_WIN_URL=${r.win32_x64.url}`,
+      `CLAUDE_CODE_WIN_INTEGRITY=${r.win32_x64.integrity}`,
+    ]
+  ) {
+    assertEquals(args[args.indexOf(a) - 1], "--build-arg", a);
+  }
+  for (const [k, v] of Object.entries(ccLabels())) {
+    assertEquals(args[args.indexOf(`${k}=${v}`) - 1], "--label", k);
+  }
+});
+
+Deno.test("resolveClaudeCode (H-03): fails closed on transport, status and every document check", async () => {
+  const main = ccMainDoc();
+  const win = ccWinDoc();
+  const dist = main["dist"] as Record<string, unknown>;
+  const wdist = win["dist"] as Record<string, unknown>;
+  const cases: [string, Parameters<typeof ccFetch>[0], string][] = [
+    ["main 404", { status: { [CC_MAIN_URL]: 404 } }, "HTTP 404"],
+    ["win 500", { status: { [ccWinUrl()]: 500 } }, "HTTP 500"],
+    ["not json", { main: "<html>" }, "registry.npmjs.org"],
+    ["prerelease", { main: { ...main, version: "2.1.297-beta.1" } }, "version"],
+    ["name", { main: { ...main, name: "@evil/claude-code" } }, "name"],
+    ["deps", { main: { ...main, dependencies: { x: "^1" } } }, "dependencies"],
+    ["bin", { main: { ...main, bin: { claude: "cli.js" } } }, "bin"],
+    [
+      "platform pin",
+      {
+        main: {
+          ...main,
+          optionalDependencies: {
+            "@anthropic-ai/claude-code-win32-x64": "2.1.295",
+          },
+        },
+      },
+      "optionalDependencies",
+    ],
+    [
+      "sri",
+      { main: { ...main, dist: { ...dist, integrity: "sha1-abc" } } },
+      "integrity",
+    ],
+    [
+      "tarball",
+      {
+        main: {
+          ...main,
+          dist: { ...dist, tarball: "https://evil.example/c.tgz" },
+        },
+      },
+      "tarball",
+    ],
+    ["win os", { win: { ...win, os: ["linux"] } }, "os"],
+    ["win cpu", { win: { ...win, cpu: ["arm64"] } }, "cpu"],
+    [
+      "win scripts",
+      { win: { ...win, scripts: { postinstall: "x" } } },
+      "scripts",
+    ],
+    ["win deps", { win: { ...win, dependencies: { y: "1" } } }, "dependencies"],
+    ["win version", { win: { ...win, version: "2.1.295" } }, "version"],
+    [
+      "win sri",
+      { win: { ...win, dist: { ...wdist, integrity: "sha512-x" } } },
+      "integrity",
+    ],
+    [
+      "win tarball",
+      {
+        win: {
+          ...win,
+          dist: { ...wdist, tarball: CC_REL.main.url },
+        },
+      },
+      "tarball",
+    ],
+  ];
+  for (const [name, o, msg] of cases) {
+    const err = await assertRejects(
+      () => resolveClaudeCode(ccFetch(o)),
+      ConfigurationError,
+      undefined,
+      name,
+    );
+    assertStringIncludes(err.message, msg, name);
+  }
+  await assertRejects(
+    () => resolveClaudeCode(() => Promise.reject(new TypeError("offline"))),
+    ConfigurationError,
+    "offline",
+  );
+});
+
+const CC_ID = `sha256:${"c".repeat(64)}`;
+const ccImageLabels = (over: Record<string, string> = {}) => ({
+  ...LABELS,
+  "centralgauge.harness.revision": "3",
+  ...ccLabels(),
+  ...over,
+});
+
+Deno.test("imageFacts (H-03): track and package labels go together, are strictly parsed and agree with the version label and the shipped resolved file", async () => {
+  const d = new FakeDocker();
+  d.addImage("ok", CC_ID, ccImageLabels());
+  d.shipFile(CC_ID, CLAUDE_CODE_RESOLVED, ccResolvedJson());
+  const f = await imageFacts(d, "ok", "HOST1");
+  assertEquals(f.version, CC_REL.version);
+  assertEquals(f.package, {
+    name: "@anthropic-ai/claude-code",
+    version: CC_REL.version,
+    track: "npm-latest",
+    integrity: {
+      main: CC_REL.main.integrity,
+      win32_x64: CC_REL.win32_x64.integrity,
+    },
+  });
+  // A dry run (no owner) reads nothing.
+  const before = d.reads.length;
+  assertEquals((await imageFacts(d, "ok", null)).package, f.package);
+  assertEquals(d.reads.length, before);
+  // An untracked image has no package key at all.
+  d.addImage("v1", ID, LABELS);
+  assertEquals(
+    Object.hasOwn(await imageFacts(d, "v1", "HOST1"), "package"),
+    false,
+  );
+
+  const P = "centralgauge.harness.package";
+  const T = "centralgauge.harness.track";
+  const bad: [string, Record<string, string>, string][] = [
+    ["track only", { [P]: "" }, "go together"],
+    ["package only", { [T]: "" }, "go together"],
+    ["track word", { [T]: "npm-stable" }, T],
+    ["package name", {
+      [P]:
+        `@evil/claude-code@${CC_REL.version} ${CC_REL.main.integrity} ${CC_REL.win32_x64.integrity}`,
+    }, P],
+    ["package sri", {
+      [P]:
+        `@anthropic-ai/claude-code@${CC_REL.version} sha512-x ${CC_REL.win32_x64.integrity}`,
+    }, P],
+    ["package extra", {
+      [P]: `${ccLabels()[P]} more`,
+    }, P],
+    ["version mismatch", {
+      "centralgauge.harness.version": "2.1.295",
+    }, "2.1.295"],
+  ];
+  for (const [name, over, msg] of bad) {
+    const labels: Record<string, string> = ccImageLabels(over);
+    for (const [k, v] of Object.entries(over)) if (v === "") delete labels[k];
+    const id = `sha256:${
+      String(bad.findIndex((b) => b[0] === name)).padStart(64, "0")
+    }`;
+    d.addImage(name, id, labels);
+    d.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson());
+    const err = await assertRejects(
+      () => imageFacts(d, name, null),
+      ConfigurationError,
+      undefined,
+      name,
+    );
+    assertStringIncludes(err.message, msg, name);
+  }
+  // The shipped resolved file must agree with the labels (owner read only).
+  const shipped: [string, string | null, string][] = [
+    ["missing", null, "cannot read"],
+    ["version", ccResolvedJson({ version: "2.1.295" }), "version"],
+    [
+      "integrity",
+      ccResolvedJson({
+        packages: {
+          "@anthropic-ai/claude-code": {
+            tarball: CC_REL.main.url,
+            integrity: CC_REL.win32_x64.integrity,
+          },
+          "@anthropic-ai/claude-code-win32-x64": CC_REL.win32_x64,
+        },
+      }),
+      "@anthropic-ai/claude-code",
+    ],
+    [
+      "exe hash",
+      ccResolvedJson({ claude_exe_sha256: "x" }),
+      "claude_exe_sha256",
+    ],
+    ["method", ccResolvedJson({ install_method: "online" }), "install_method"],
+  ];
+  for (const [i, [name, text, msg]] of shipped.entries()) {
+    const id = `sha256:${String(90 + i).padStart(64, "0")}`;
+    d.addImage(`r-${name}`, id, ccImageLabels());
+    if (text !== null) d.shipFile(id, CLAUDE_CODE_RESOLVED, text);
+    const err = await assertRejects(
+      () => imageFacts(d, `r-${name}`, "HOST1"),
+      ConfigurationError,
+      undefined,
+      name,
+    );
+    assertStringIncludes(err.message, msg, name);
+  }
+});
+
+const ccConfig = (over: Record<string, unknown> = {}) =>
+  HarnessConfigSchema.parse({
+    id: "cc-latest",
+    harness: "claude-code",
+    harness_version: "latest",
+    image_revision: "3",
+    models: { main: "anthropic/claude-sonnet-5" },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+    ...over,
+  });
+const ccImage = (over: Partial<ImageFacts> = {}): ImageFacts => ({
+  digest: CC_ID,
+  base_digest: BASE,
+  harness: "claude-code",
+  version: CC_REL.version,
+  revision: "3",
+  package: {
+    name: "@anthropic-ai/claude-code",
+    version: CC_REL.version,
+    track: "npm-latest",
+    integrity: {
+      main: CC_REL.main.integrity,
+      win32_x64: CC_REL.win32_x64.integrity,
+    },
+  },
+  ...over,
+});
+
+Deno.test("runtimeFacts (H-03): a latest config needs a tracked image, a concrete one an untracked image; the resolved version and package flow on", () => {
+  const f = runtimeFacts(ccConfig(), ccImage(), claudeCodeAdapter, catalog);
+  assertEquals(f.harness_version, CC_REL.version);
+  assertEquals(f.image.package, ccImage().package);
+  const { package: _p, ...untracked } = ccImage();
+  assertThrows(
+    () => runtimeFacts(ccConfig(), untracked, claudeCodeAdapter, catalog),
+    ConfigurationError,
+    "has no resolved Claude Code version",
+  );
+  // A concrete config never runs on a tracked image, even at the same version.
+  assertThrows(
+    () =>
+      runtimeFacts(
+        ccConfig({ harness_version: CC_REL.version }),
+        ccImage(),
+        claudeCodeAdapter,
+        catalog,
+      ),
+    ConfigurationError,
+    "tracks npm-latest",
+  );
+  // The concrete path is unchanged: equal versions, untracked image.
+  const v1 = runtimeFacts(
+    ccConfig({ harness_version: "2.1.282", image_revision: "2" }),
+    { ...untracked, version: "2.1.282", revision: "2" },
+    claudeCodeAdapter,
+    catalog,
+  );
+  assertEquals(v1.harness_version, "2.1.282");
+  assertEquals(Object.hasOwn(v1.image, "package"), false);
+});
+
+Deno.test("runtimeFacts (H-03): a recorded (frozen) revision accepts exactly its digest, version and integrities", () => {
+  const rec = {
+    "3": {
+      version: CC_REL.version,
+      digest: CC_ID,
+      integrity: {
+        main: CC_REL.main.integrity,
+        win32_x64: CC_REL.win32_x64.integrity,
+      },
+    },
+  };
+  const run = (image: ImageFacts, frozen = rec) =>
+    runtimeFacts(ccConfig(), image, claudeCodeAdapter, catalog, {}, frozen);
+  assertEquals(run(ccImage()).image.digest, CC_ID);
+  assertThrows(
+    () => run(ccImage({ digest: `sha256:${"9".repeat(64)}` })),
+    ConfigurationError,
+    "freeze record",
+  );
+  assertThrows(
+    () =>
+      run(ccImage(), {
+        "3": {
+          ...rec["3"],
+          integrity: {
+            ...rec["3"].integrity,
+            main: CC_REL.win32_x64.integrity,
+          },
+        },
+      }),
+    ConfigurationError,
+    "freeze record",
+  );
+  // A dev revision is never in the record.
+  assertEquals(
+    runtimeFacts(
+      ccConfig({ image_revision: "3-dev-H-03" }),
+      ccImage({ revision: "3-dev-H-03" }),
+      claudeCodeAdapter,
+      catalog,
+      {},
+      rec,
+    ).image.revision,
+    "3-dev-H-03",
+  );
+  assertEquals(
+    FROZEN_CLAUDE_CODE,
+    {},
+    "nothing is frozen until r3 is accepted",
+  );
+});
+
+Deno.test("resolveManifest (H-03): a latest arm records the resolved version and the package; latest is never stored", async () => {
+  const cfg = ccConfig();
+  const facts = runtimeFacts(cfg, ccImage(), claudeCodeAdapter, catalog);
+  const m = await resolveManifest("harness", cfg, facts);
+  assertEquals(m.harness_version, CC_REL.version);
+  assertEquals(m.image, {
+    digest: CC_ID,
+    base_digest: BASE,
+    revision: "3",
+    package: ccImage().package,
+  });
+  const { harness_version: _h, ...noVersion } = facts;
+  await assertRejects(
+    () => resolveManifest("harness", cfg, noVersion),
+    ConfigurationError,
+    "latest",
+  );
 });

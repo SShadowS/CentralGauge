@@ -86,7 +86,6 @@ Deno.test("H-01 entrypoints: the guard runs first, before config, secrets, ready
 
 Deno.test("H-01 images: npm into a machine-wide prefix; the agent images end as ContainerUser", async () => {
   const pkgs = {
-    "claude-code": "@anthropic-ai/claude-code@2.1.282",
     pi: "@earendil-works/pi-coding-agent@0.87.1",
   };
   for (const [h, pkg] of Object.entries(pkgs)) {
@@ -99,6 +98,29 @@ Deno.test("H-01 images: npm into a machine-wide prefix; the agent images end as 
       "[Environment]::SetEnvironmentVariable('PATH', 'C:\\cg-npm;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)",
     );
     assert(!df.includes("npm config get prefix"), h);
+  }
+  // H-03: claude-code has no hand pin; install-claude-code.ps1 installs the
+  // resolved release into the same machine-wide prefix C:\cg-npm (npm offline
+  // with --prefix, or tar.exe into C:\cg-npm\node_modules), and claude.exe's
+  // directory goes on the Machine PATH (npm's shims are removed).
+  const ccDf = await Deno.readTextFile(
+    "harness/images/claude-code/Dockerfile.windows",
+  );
+  const ccInstall = await Deno.readTextFile(
+    "harness/images/claude-code/install-claude-code.ps1",
+  );
+  assertStringIncludes(ccInstall, "$prefix = 'C:\\cg-npm'");
+  assertStringIncludes(
+    ccInstall,
+    "$common = @('install', '-g', '--prefix', $prefix, '--offline',",
+  );
+  assertStringIncludes(ccInstall, "$nm = Join-Path $prefix 'node_modules'");
+  assertStringIncludes(
+    ccDf,
+    "[Environment]::SetEnvironmentVariable('PATH', 'C:\\cg-npm\\node_modules\\@anthropic-ai\\claude-code\\bin;' + [Environment]::GetEnvironmentVariable('PATH', 'Machine'), [EnvironmentVariableTarget]::Machine)",
+  );
+  for (const t of [ccDf, ccInstall]) {
+    assert(!t.includes("npm config get prefix"), "claude-code");
   }
   for (const h of ["claude-code", "pi", "mock"]) {
     const lines = code(

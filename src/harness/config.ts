@@ -56,10 +56,17 @@ export const ImageRevisionSchema = z.string().regex(
   "positive integer, no leading zero, optionally -dev-<task id>",
 );
 
+/**
+ * H-03: a claude-code config on image revision 3 or later may say "latest":
+ * the newest Claude Code at the image build, which the image records
+ * (runtimeFacts puts the resolved version into the manifest).
+ */
+export const LATEST = "latest";
+
 export const HarnessConfigSchema = z.strictObject({
   id: slug,
   harness: slug,
-  /** The harness's own version; compared with what the harness reports. */
+  /** The harness's own version, or LATEST; compared with what the harness reports. */
   harness_version: z.string().min(1),
   image_revision: ImageRevisionSchema.optional(),
   models: z.record(
@@ -73,6 +80,16 @@ export const HarnessConfigSchema = z.strictObject({
   // Only the mock harness runs without a model (open question 8).
   (c) => c.harness === "mock" || Object.keys(c.models).length > 0,
   { message: "at least one model", path: ["models"] },
+).refine(
+  (c) =>
+    c.harness_version !== LATEST ||
+    (c.harness === "claude-code" &&
+      Number.parseInt(c.image_revision ?? "0", 10) >= 3),
+  {
+    message:
+      `harness_version ${LATEST} is for claude-code on image_revision 3 or later`,
+    path: ["harness_version"],
+  },
 );
 export type HarnessConfig = z.output<typeof HarnessConfigSchema>;
 export type Limits = z.output<typeof LimitsSchema>;

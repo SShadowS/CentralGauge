@@ -15,10 +15,13 @@ import {
 } from "../../../src/harness/adapter.ts";
 import {
   BUILTIN_INVENTORY,
+  CAMPAIGN_CALIBRATED,
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
+  claudeCodeHarnessNative,
   LSP_PLUGINS,
   pluginIs,
+  unqualifiedClaudeCode,
 } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
@@ -304,7 +307,12 @@ Deno.test("run.ps1: the token travels by file and env only; the image pins the h
   const cc = await Deno.readTextFile(
     "harness/images/claude-code/Dockerfile.windows",
   );
-  assertStringIncludes(cc, "@anthropic-ai/claude-code@2.1.282");
+  // H-03: no hand pin; the build's resolution is installed from the verified archives only.
+  assertStringIncludes(
+    cc,
+    "install-claude-code.ps1 -Version $env:CLAUDE_CODE_VERSION -MainUrl $env:CLAUDE_CODE_URL -MainIntegrity $env:CLAUDE_CODE_INTEGRITY -WinUrl $env:CLAUDE_CODE_WIN_URL -WinIntegrity $env:CLAUDE_CODE_WIN_INTEGRITY",
+  );
+  assert(!/@anthropic-ai\/claude-code@\d/.test(cc), "no hand-pinned version");
   assert(
     /^ARG BASE\s*$/m.test(cc) && cc.includes("FROM ${BASE}"),
     "no default base: the builder passes the inspected immutable base",
@@ -2053,9 +2061,10 @@ Deno.test("claude-code Dockerfile (M9): ships cg-inventory.ps1 read-only for the
   assert(/^COPY cg-inventory\.ps1 C:\/cg-inventory\.ps1\s*$/m.test(df), df);
   const lock = df.split(/\r?\n/).find((l) => l.includes("cg-lockdown.ps1"))!;
   assertStringIncludes(lock, "C:\\cg-inventory.ps1");
+  // H-03: the build resolves the version; only the revision is named.
   assertStringIncludes(
     df,
-    "--version 2.1.282 --revision 3 (proofs: --revision 3-dev-<task id>)",
+    "`harness images build claude-code --revision 3` (proofs: --revision 3-dev-<task id>)",
   );
 });
 
@@ -2956,4 +2965,191 @@ Deno.test("run.ps1 LSP (M10): the declared LSP adds --plugin-dir and the tool; o
   const inv = at("& 'C:\\cg-inventory.ps1'");
   assert(set < inv && clear < inv, "the inventory sees the final LSP env");
   assert(at("$claudeArgs += $pluginArgs") > inv);
+});
+
+// ---- H-03: every init names the resolved version; two qualification levels ----
+
+Deno.test("inventory (H-03): on r3+ every same-session init must name the manifest's resolved version; frozen v1 keeps first-init-only", async () => {
+  const resume = (second: Record<string, unknown>) => [
+    invLine(),
+    v2Init(),
+    v2Result(),
+    v2Init(second),
+    v2Result(),
+  ];
+  assertEquals((await v2(resume({}))).inventoryProblems, []);
+  // Another version that IS qualified must not escape on a later segment.
+  // 2.1.296 has its own entry since H-03's qualification: restore it, never delete it.
+  const inv = BUILTIN_INVENTORY as Record<string, typeof B>;
+  const real296 = inv["2.1.296"];
+  inv["2.1.296"] = B;
+  try {
+    assertStringIncludes(
+      await problemsOf(resume({ claude_code_version: "2.1.296" })),
+      "init 2: system/init claude_code_version 2.1.296 differs from the manifest's resolved 2.1.282",
+    );
+  } finally {
+    if (real296) inv["2.1.296"] = real296;
+    else delete inv["2.1.296"];
+  }
+  const noVersion = JSON.parse(v2Init());
+  delete noVersion.claude_code_version;
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      v2Result(),
+      JSON.stringify(noVersion),
+      v2Result(),
+    ]),
+    "init 2: system/init claude_code_version (missing) differs from the manifest's resolved 2.1.282",
+  );
+  // A single init on another version than the manifest's.
+  assertStringIncludes(
+    await problemsOf([invLine(), v2Init(), v2Result()], {
+      harness_version: "2.1.281",
+    }),
+    "system/init claude_code_version 2.1.282 differs from the manifest's resolved 2.1.281",
+  );
+  // Frozen v1: no inventory, so no per-init version problem (unchanged).
+  const frozen = await v2(resume({ claude_code_version: "2.1.296" }), {
+    image: { digest: "sha256:img", base_digest: "sha256:base" },
+  });
+  assertEquals(frozen.inventoryProblems, []);
+  assertEquals(frozen.observed.harness_version, "2.1.282");
+});
+
+Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a tracked campaign image needs M8-07c calibration on its digest and version", () => {
+  const u = claudeCodeAdapter.unqualified!;
+  assertEquals(u(manifest("cc", V2()), "dev"), null);
+  assertEquals(u(manifest("cc", V2()), "campaign"), null, "untracked r3");
+  // 2.1.296 was the refused version here until its H-03 qualification entry.
+  assertStringIncludes(
+    u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296)",
+  );
+  // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
+  for (const revision of [undefined, "2"]) {
+    const image = {
+      digest: "sha256:img",
+      base_digest: "sha256:base",
+      ...(revision ? { revision } : {}),
+    };
+    assertEquals(
+      u(manifest("cc", { harness_version: "2.1.999", image }), "campaign"),
+      null,
+    );
+  }
+  const D = `sha256:${"c".repeat(64)}`;
+  const tracked = manifest(
+    "cc",
+    V2({
+      image: {
+        digest: D,
+        base_digest: "sha256:base",
+        revision: "3",
+        package: {
+          name: "@anthropic-ai/claude-code",
+          version: "2.1.282",
+          track: "npm-latest",
+          integrity: {
+            main: `sha512-${"M".repeat(86)}==`,
+            win32_x64: `sha512-${"W".repeat(86)}==`,
+          },
+        },
+      },
+    }),
+  );
+  assertEquals(u(tracked, "dev"), null);
+  assertStringIncludes(
+    u(tracked, "campaign")!,
+    `image ${D} (Claude Code 2.1.282) has no M8-07c real calibration`,
+  );
+  assertEquals(
+    unqualifiedClaudeCode(tracked, "campaign", {
+      [D]: { version: "2.1.282", calibration: "M8-07c run 001" },
+    }),
+    null,
+  );
+  for (
+    const cal of [
+      { [D]: { version: "2.1.281", calibration: "x" } },
+      {
+        [`sha256:${"d".repeat(64)}`]: { version: "2.1.282", calibration: "x" },
+      },
+    ]
+  ) {
+    assertStringIncludes(
+      unqualifiedClaudeCode(tracked, "campaign", cal)!,
+      "M8-07c",
+    );
+  }
+  assertEquals(CAMPAIGN_CALIBRATED, {}, "nothing is calibrated yet");
+});
+
+// ---- H-03: Claude Code 2.1.296 dev qualification (level 1) ----
+// The raw.jsonl of stub cells cc475242 (plain) and 14715acf (LSP) on dev image
+// sha256:51c3095a, byte-exact except the cg_inventory line's CRLF (written by
+// PowerShell) is stored as LF. The stub provider holds no secret.
+const STUB_296 = {
+  plain: "tests/fixtures/harness/claude-code/stub-2.1.296-plain.jsonl",
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.296-lsp.jsonl",
+};
+const arm296 = (lsp: boolean) => ({
+  harness_version: "2.1.296",
+  models: { main: "anthropic/claude-sonnet-5" },
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-03",
+  },
+  settings: {
+    requested: {},
+    native: {
+      api_models: { main: "claude-sonnet-5" },
+      ...claudeCodeHarnessNative(),
+      ...(lsp ? { lsp: ["al"] } : {}),
+    },
+  },
+  instructions: comp("bundles/env/instructions", ["CLAUDE.md"]),
+  lsp: lsp
+    ? [{ name: "al", version: "al-lsp@1", tool_schema_hash: "a".repeat(64) }]
+    : [],
+});
+
+Deno.test("qualification (H-03): the 2.1.296 stub captures (plain + LSP) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_296.lsp : STUB_296.plain);
+    const { r, dir } = await parse(text, 0, arm296(lsp));
+    const tag = lsp ? "lsp" : "plain";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.296");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    assertEquals(r.observed.models, ["anthropic/claude-sonnet-5"]);
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
+    assertAlmostEquals(r.telemetry.cost_usd!, (90 * 2 + 45 * 10) / 1e6, 1e-12);
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12);
+    assertEquals([r.telemetry.turns, r.telemetry.stop_reason], [9, "end_turn"]);
+    assertEquals(r.termination, "completed");
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    assertEquals(
+      unqualifiedClaudeCode(manifest("cc", arm296(lsp)), "dev"),
+      null,
+      tag,
+    );
+  }
 });

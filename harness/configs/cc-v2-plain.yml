@@ -1,7 +1,7 @@
 # Harness v2 2x2 (spec v2 section 7): realistic off, LSP off. Baseline of cc-v2-factorial.
 id: cc-v2-plain
 harness: claude-code
-harness_version: "2.1.282"
+harness_version: "latest"
 image_revision: "3"
 models:
   main: anthropic/claude-sonnet-5

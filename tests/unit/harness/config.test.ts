@@ -378,3 +378,44 @@ Deno.test("ExperimentSchema (M11-08): interaction status must be present and val
     );
   }
 });
+
+Deno.test("harness_version latest (H-03): only claude-code on image revision 3 or later; concrete versions unchanged", () => {
+  const base = {
+    id: "cc",
+    harness: "claude-code",
+    models: { main: "anthropic/model-a" },
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  };
+  const parse = (o: Record<string, unknown>) =>
+    HarnessConfigSchema.safeParse({ ...base, ...o });
+  for (const rev of ["3", "4", "12", "3-dev-H-03"]) {
+    assertEquals(
+      parse({ harness_version: "latest", image_revision: rev }).success,
+      true,
+      rev,
+    );
+  }
+  for (
+    const [name, o] of [
+      ["no revision", { harness_version: "latest" }],
+      ["r2", { harness_version: "latest", image_revision: "2" }],
+      ["r1 dev", { harness_version: "latest", image_revision: "1-dev-x" }],
+      ["pi", { harness: "pi", harness_version: "latest", image_revision: "3" }],
+    ] as [string, Record<string, unknown>][]
+  ) {
+    const r = parse(o);
+    assertEquals(r.success, false, name);
+    assertStringIncludes(r.error!.message, "latest", name);
+  }
+  // Concrete versions keep their meaning on every revision (runtimeFacts pairs them).
+  for (const rev of [undefined, "2", "3", "3-dev-M10-08"]) {
+    assertEquals(
+      parse({
+        harness_version: "2.1.282",
+        ...(rev ? { image_revision: rev } : {}),
+      }).success,
+      true,
+      String(rev),
+    );
+  }
+});

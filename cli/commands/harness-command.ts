@@ -39,7 +39,7 @@ import type {
 } from "../../src/harness/campaign.ts";
 import type { CellResult, HarnessEnv } from "../../src/harness/execution.ts";
 import type { QualifyManifest } from "../../src/harness/qualify.ts";
-import type { ImageFacts } from "../../src/harness/images.ts";
+import type { FrozenClaudeCode, ImageFacts } from "../../src/harness/images.ts";
 import type { ManifestReader } from "../../src/harness/symbols.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
 import type { EnvOptions, OpenEnv } from "./harness-env.ts";
@@ -54,6 +54,7 @@ import {
   checkModelsInCatalog,
   HarnessConfigSchema,
   IMAGE_REVISION,
+  LATEST,
   loadConfig,
   loadExperiment,
   VARY_KEYS,
@@ -80,6 +81,7 @@ import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
+import { BUILTIN_INVENTORY } from "../../src/harness/adapters/claude-code.ts";
 import {
   forcedRefusal,
   measureExecution,
@@ -137,6 +139,9 @@ import { PROXY_ISOLATION } from "../../src/harness/egress-proxy.ts";
 import {
   BASE_IMAGE,
   BASE_VERSION,
+  CLAUDE_CODE_PACKAGE,
+  claudeCodeArgs,
+  FROZEN_CLAUDE_CODE,
   FROZEN_IMAGE_TAGS,
   hasBaseLayers,
   IMAGE_LABELS,
@@ -146,6 +151,7 @@ import {
   lspReleaseArgs,
   mcpFacts,
   mcpLabel,
+  resolveClaudeCode,
   resolveLspRelease,
   runtimeFacts,
   serverDefinitions,
@@ -156,13 +162,19 @@ import {
   variantAllowed,
 } from "../../src/harness/qualify.ts";
 import {
+  type IcaclsRunner,
   READ_PREFIX,
   realDocker,
+  shareWithLocalUsers,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
+import { resolveDockerContext } from "../../src/container/docker-context.ts";
 import {
   acquireBenchLock,
+  BenchLockHeldError,
   benchLockLost,
+  clearBenchLock,
+  type HeldBenchLock,
   tryAcquireBenchLock,
 } from "../../src/utils/bench-lock.ts";
 import { applyOverlay, TASK_SOURCES } from "../../src/harness/staging.ts";
@@ -944,9 +956,17 @@ async function removeNamespace(dir: string) {
  */
 export async function harnessImagesBuild(
   harness: string,
-  o: { root: string; version?: string; revision?: string },
+  o: {
+    root: string;
+    version?: string;
+    revision?: string;
+    /** H-03: the claude-code publication reservation (default {@link publicationLockDir}). */
+    publishLockDir?: string;
+    /** H-03: the frozen claude-code revisions (default FROZEN_CLAUDE_CODE). */
+    frozen?: Readonly<Record<string, FrozenClaudeCode>>;
+  },
   docker: DockerCli = realDocker(),
-  /** The GitHub API call that resolves the newest LSP release (tests inject it). */
+  /** The GitHub API and npm registry calls that resolve the newest releases (tests inject them). */
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageFacts> {
   const images = join(o.root, "harness", "images");
@@ -1014,7 +1034,11 @@ export async function harnessImagesBuild(
       mcp,
     };
   }
-  if (!o.version) throw new ConfigurationError(`pass --version for ${harness}`);
+  // H-03: claude-code resolves the newest Claude Code; every other harness names its version.
+  const cc = harness === "claude-code";
+  if (!cc && !o.version) {
+    throw new ConfigurationError(`pass --version for ${harness}`);
+  }
   if (o.revision !== undefined && !IMAGE_REVISION.test(o.revision)) {
     throw new ConfigurationError(
       `--revision must be a positive integer without leading zero, got "${o.revision}"`,
@@ -1026,9 +1050,87 @@ export async function harnessImagesBuild(
       "build the base image first: centralgauge harness images build base",
     );
   }
-  const tag = imageTag(harness, o.version, o.revision);
-  const lspL = harness === "claude-code" ? await lspLabel(o.root) : null;
+  if (cc && o.version !== undefined) {
+    // The tag it names may be frozen or present: that refusal is the more specific one.
+    await refuseExisting(
+      imageTag(harness, o.version, o.revision),
+      "use a new --version or --revision",
+    );
+    throw new ConfigurationError(
+      `claude-code resolves the newest ${CLAUDE_CODE_PACKAGE} from the npm registry at build time: --version ${o.version} is refused (H-03)`,
+    );
+  }
+  if (cc && !(Number.parseInt(o.revision ?? "0", 10) >= 3)) {
+    throw new ConfigurationError(
+      `claude-code builds need --revision 3 or later (3-dev-<task id> for a proof), got ${
+        o.revision ?? "none"
+      }`,
+    );
+  }
+  // H-03: one publication at a time per Docker daemon, for every local user,
+  // from the freeze-record check through both tags' refusal, the build, the
+  // tags and the read-back. A held reservation refuses; it never waits.
+  // Run 003: it is never taken over automatically, stale or not (a suspended
+  // builder resumes still holding it); only the operator's manual clear
+  // (`harness images clear-reservation --holder <token>`) frees it. The fences
+  // stay: one cleared meanwhile publishes and removes nothing more.
+  const reservationDir = cc
+    ? o.publishLockDir ?? await publicationLockDir()
+    : null;
+  let reservation: HeldBenchLock | null = null;
+  if (reservationDir) {
+    try {
+      reservation = acquireBenchLock(reservationDir, {
+        command: "harness images build claude-code",
+        staleAfterMs: Infinity,
+      });
+    } catch (e) {
+      if (e instanceof BenchLockHeldError) {
+        console.error(
+          `${
+            colors.red("[FAIL]")
+          } the claude-code publication reservation is held and is never taken over. Once its holder is verified dead: centralgauge harness images clear-reservation --holder ${
+            e.holder?.token || "<token in the marker>"
+          }`,
+        );
+      }
+      throw e;
+    }
+  }
+  await using _publish = {
+    [Symbol.asyncDispose]: () => reservation?.() ?? Promise.resolve(),
+  };
+  const frozen = o.frozen ?? FROZEN_CLAUDE_CODE;
+  if (cc && Object.hasOwn(frozen, o.revision!)) {
+    const r = frozen[o.revision!]!;
+    throw new ConfigurationError(
+      `claude-code revision ${o.revision} is frozen (Claude Code ${r.version}, ${r.digest}) and is never built again, present locally or not: use the next --revision and new configs`,
+    );
+  }
+  // H-03: resolved once, before the build; install-claude-code.ps1 verifies
+  // both archives against these integrities and the labels record them.
+  const ccRel = cc ? await resolveClaudeCode(fetchFn) : null;
+  if (ccRel) {
+    console.log(
+      `${
+        colors.green("[OK]")
+      } Claude Code ${ccRel.version} (npm latest): ${CLAUDE_CODE_PACKAGE} ${ccRel.main.integrity} + ${CLAUDE_CODE_PACKAGE}-win32-x64 ${ccRel.win32_x64.integrity}`,
+    );
+    if (!Object.hasOwn(BUILTIN_INVENTORY, ccRel.version)) {
+      console.warn(
+        `${
+          colors.yellow("[WARN]")
+        } Claude Code ${ccRel.version} is not qualified yet: only stub cells run on this image until its BUILTIN_INVENTORY entry lands`,
+      );
+    }
+  }
+  const version = ccRel?.version ?? o.version!;
+  const tag = imageTag(harness, version, o.revision);
+  // The config alias (harness_version latest) on the same image.
+  const alias = ccRel ? imageTag(harness, LATEST, o.revision) : null;
+  const lspL = cc ? await lspLabel(o.root) : null;
   await refuseExisting(tag, "use a new --version or --revision");
+  if (alias) await refuseExisting(alias, "use a new --revision");
   // M10-10: resolved once, before the build; install-lsp.ps1 verifies the zip
   // against this digest and the labels record it.
   const rel = lspL ? await resolveLspRelease(o.root, fetchFn) : null;
@@ -1039,7 +1141,18 @@ export async function harnessImagesBuild(
       } LSP release ${rel.tag}: ${rel.asset} sha256:${rel.sha256} (dependency source ${rel.dependency_source})`,
     );
   }
-  const code = await docker.build([
+  // H-03: a claude-code build publishes nothing itself: it builds an untagged
+  // image whose id --iidfile captures, tagged only while the reservation holds.
+  const iidFile = ccRel ? await Deno.makeTempFile({ prefix: "cg-iid-" }) : null;
+  let iid: string | null = null;
+  const fence = (step: string) => {
+    if (reservation?.lost()) {
+      throw new ConfigurationError(
+        `${tag}: the claude-code publication reservation was taken over (stale) before ${step}: this build publishes and removes nothing more; its image ${iid} and any tag naming it are left for the operator`,
+      );
+    }
+  };
+  const buildArgs = [
     "build",
     "-f",
     join(images, harness, "Dockerfile.windows"),
@@ -1049,8 +1162,8 @@ export async function harnessImagesBuild(
     `BASE=${base.Id}`,
     "--label",
     `${IMAGE_LABELS.harness}=${harness}`,
-    "--label",
-    `${IMAGE_LABELS.version}=${o.version}`,
+    // claudeCodeArgs carries the resolved version label with the package labels.
+    ...(ccRel ? [] : ["--label", `${IMAGE_LABELS.version}=${version}`]),
     "--label",
     `${IMAGE_LABELS.base}=${base.Id}`,
     ...(o.revision === undefined
@@ -1058,14 +1171,86 @@ export async function harnessImagesBuild(
       : ["--label", `${IMAGE_LABELS.revision}=${o.revision}`]),
     ...(lspL ? ["--label", `${lspL[0]}=${lspL[1]}`] : []),
     ...(rel ? lspReleaseArgs(rel) : []),
-    "-t",
-    tag,
+    ...(ccRel ? claudeCodeArgs(ccRel) : []),
+    ...(iidFile ? ["--iidfile", iidFile] : ["-t", tag]),
     join(images, harness),
-  ]);
+  ];
+  let code: number;
+  try {
+    code = await docker.build(buildArgs);
+  } finally {
+    if (iidFile) {
+      iid = (await Deno.readTextFile(iidFile).catch(() => "")).trim() || null;
+      await Deno.remove(iidFile).catch(() => {});
+    }
+  }
   if (code !== 0) {
     throw new ConfigurationError(`${tag} build failed (exit ${code})`);
   }
-  if (!await hasBaseLayers(docker, tag, base.Id)) {
+  if (iidFile && !/^sha256:[0-9a-f]{64}$/.test(iid ?? "")) {
+    throw new ConfigurationError(
+      `${tag}: the build wrote no image id (--iidfile): nothing published`,
+    );
+  }
+  // Any failure from here on unpublishes, before the reservation is released.
+  let accepted = false;
+  await using _unpublish = {
+    [Symbol.asyncDispose]: async () => {
+      if (!accepted && iid) await unpublish(iid);
+    },
+  };
+  if (iid) await publish(iid);
+
+  /** Both final tags on this build's id, each fenced; one published meanwhile by anyone else is never tagged over. */
+  async function publish(id: string) {
+    fence("tagging");
+    await refuseExisting(tag, "use a new --version or --revision");
+    await refuseExisting(alias!, "use a new --revision");
+    for (const t of [tag, alias!]) {
+      fence(`tagging ${t}`);
+      const c = await docker.tag(id, t);
+      if (c !== 0) {
+        throw new ConfigurationError(
+          `docker tag ${id} ${t} failed (exit ${c})`,
+        );
+      }
+    }
+  }
+
+  /**
+   * A rejected image keeps no final tag: both are attempted, each only while
+   * the reservation holds and only while it still names this build's id.
+   */
+  async function unpublish(id: string) {
+    const kept: string[] = [];
+    for (const t of [tag, alias!]) {
+      try {
+        const at = (await docker.inspectImage(t) as { Id?: string } | null)
+          ?.Id;
+        if (at !== id) continue;
+        if (reservation!.lost()) {
+          kept.push(`${t} (reservation taken over)`);
+          continue;
+        }
+        // H-03 run 003: a non-zero docker rmi is a failed removal.
+        const c = await docker.untag(t);
+        if (c !== 0) kept.push(`${t} (docker rmi exit ${c})`);
+      } catch (e) {
+        kept.push(`${t} (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+    if (kept.length > 0) {
+      console.warn(
+        `${colors.yellow("[WARN]")} rejected image ${id} keeps tag(s) ${
+          kept.join(", ")
+        }; once verified: DOCKER_CONTEXT=desktop-windows docker rmi ${
+          kept.map((k) => k.split(" ")[0]).join(" ")
+        }`,
+      );
+    }
+  }
+
+  if (!await hasBaseLayers(docker, iid ?? tag, base.Id)) {
     throw new ConfigurationError(
       `${tag} was not built on base ${base.Id}: the layers do not start with the base's layers`,
     );
@@ -1105,12 +1290,47 @@ export async function harnessImagesBuild(
     await held();
   }
   await removeNamespace(join(builds, owner));
+  // H-03: every fact read back is this build's own image's.
+  if (iid && f.digest !== iid) {
+    throw new ConfigurationError(
+      `${tag}: is ${f.digest}, not this build's ${iid} (docker build --iidfile)`,
+    );
+  }
   if (f.revision !== (o.revision ?? null)) {
     throw new ConfigurationError(
       `${tag}: label ${IMAGE_LABELS.revision} is ${
         f.revision ?? "absent"
       }, the build asked for ${o.revision ?? "none"}`,
     );
+  }
+  if (ccRel) {
+    // H-03: read back against this build's intent and its own image id
+    // (--iidfile), not merely self-consistency (imageFacts already compared
+    // the shipped resolved file with the labels). A rejected image keeps no
+    // tag: _unpublish removes this build's tags.
+    fence("the read-back");
+    for (const t of [tag, alias!]) {
+      const at = (await docker.inspectImage(t) as { Id?: string } | null)?.Id;
+      if (at !== iid) {
+        throw new ConfigurationError(
+          `${t}: is ${at ?? "absent"}, not this build's ${iid} (${tag})`,
+        );
+      }
+    }
+    const p = f.package;
+    if (
+      f.version !== ccRel.version || p?.version !== ccRel.version ||
+      p.integrity.main !== ccRel.main.integrity ||
+      p.integrity.win32_x64 !== ccRel.win32_x64.integrity
+    ) {
+      throw new ConfigurationError(
+        `${tag}: the built image's ${IMAGE_LABELS.version} ${f.version} and ${IMAGE_LABELS.package} ${
+          p
+            ? `${p.version} ${p.integrity.main} ${p.integrity.win32_x64}`
+            : "absent"
+        } differ from this build's resolution (${ccRel.version} ${ccRel.main.integrity} ${ccRel.win32_x64.integrity})`,
+      );
+    }
   }
   if (
     lspL &&
@@ -1141,9 +1361,111 @@ export async function harnessImagesBuild(
       al?.release === undefined
         ? ""
         : ` lsp.al release ${al.release} asset ${al.asset} dependency_source ${al.dependency_source}`
+    }${
+      f.package
+        ? ` ${IMAGE_LABELS.track}=${f.package.track} ${IMAGE_LABELS.package}=${f.package.name}@${f.package.version} ${f.package.integrity.main} ${f.package.integrity.win32_x64}`
+        : ""
     }`,
   );
+  if (ccRel && alias) {
+    console.log(`  alias: ${alias} = ${f.digest}`);
+  }
+  if (ccRel && /^\d+$/.test(o.revision!)) {
+    const record: FrozenClaudeCode = {
+      version: ccRel.version,
+      digest: f.digest,
+      integrity: {
+        main: ccRel.main.integrity,
+        win32_x64: ccRel.win32_x64.integrity,
+      },
+    };
+    console.log(
+      `${
+        colors.green("[OK]")
+      } freeze record (paste into FROZEN_CLAUDE_CODE after acceptance): ${
+        JSON.stringify({ [o.revision!]: record })
+      }`,
+    );
+  }
+  accepted = true;
   return f;
+}
+
+/**
+ * H-03: the claude-code publication reservation of the Docker daemon this
+ * process builds on, shared by every local user:
+ * %ProgramData%\centralgauge\image-locks\<docker context>\claude-code.
+ * ProgramData's inherited ACL lets Users create there, but only the creator
+ * (CREATOR OWNER) may then write, rename or delete it: user B could neither
+ * reclaim user A's stale marker nor open its guard. So the image-locks root
+ * grants BUILTIN\Users inherited Modify when it is created.
+ */
+export async function publicationLockDir(
+  programData = Deno.env.get("ProgramData"),
+  icacls?: IcaclsRunner,
+): Promise<string> {
+  if (!programData) {
+    throw new ConfigurationError(
+      "ProgramData is not set: no machine-wide claude-code publication reservation",
+    );
+  }
+  const root = join(programData, "centralgauge", "image-locks");
+  if (!await exists(root)) {
+    await Deno.mkdir(root, { recursive: true });
+    try {
+      await shareWithLocalUsers(root, icacls);
+    } catch (e) {
+      await Deno.remove(root).catch(() => {});
+      throw e;
+    }
+  }
+  // ponytail: keyed by the docker context name (pinned desktop-windows for
+  // every build); two context names for one daemon would not share it.
+  const key = resolveDockerContext().context ??
+    Deno.env.get("DOCKER_CONTEXT") ?? "default";
+  return join(root, key.replace(/[^A-Za-z0-9._-]/g, "_"), "claude-code");
+}
+
+/**
+ * H-03 run 003: the operator's manual clear of the claude-code publication
+ * reservation, naming its holder (the marker's token). A live (heartbeating)
+ * holder or another token is refused. Each clear is printed and appended to
+ * `<reservation>/clears.jsonl`.
+ */
+export async function clearPublicationReservation(
+  o: { dir?: string; holder: string },
+): Promise<void> {
+  const dir = o.dir ?? await publicationLockDir();
+  let holder;
+  try {
+    holder = clearBenchLock(dir, o.holder);
+  } catch (e) {
+    throw new ConfigurationError(
+      e instanceof Deno.errors.NotFound ||
+        (e instanceof Error && e.message.startsWith("no lock"))
+        ? `no publication reservation to clear in ${dir}`
+        : `publication reservation not cleared: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+    );
+  }
+  await Deno.writeTextFile(
+    join(dir, "clears.jsonl"),
+    JSON.stringify({
+      at: new Date().toISOString(),
+      by: Deno.env.get("USERNAME") ?? Deno.env.get("USER") ?? null,
+      pid: Deno.pid,
+      holder,
+    }) + "\n",
+    { append: true },
+  );
+  console.log(
+    `${
+      colors.yellow("[CLEARED]")
+    } claude-code publication reservation of pid ${holder.pid} (token ${holder.token}, ${holder.command}, since ${holder.startedAt}, last heartbeat ${holder.heartbeatAt}); logged in ${
+      join(dir, "clears.jsonl")
+    }`,
+  );
 }
 
 export async function harnessSymbolsLock(
@@ -2699,7 +3021,10 @@ export function registerHarnessCommand(
         "build <harness:string>",
         "Build the base image or a harness image",
       )
-      .option("--version <v:string>", "Harness version (image tag and label)")
+      .option(
+        "--version <v:string>",
+        "Harness version (image tag and label); claude-code resolves the newest release instead (H-03)",
+      )
       .option(
         "--revision <n:string>",
         "Image revision: tag <version>-r<n> and label centralgauge.harness.revision (configs name it as image_revision)",
@@ -2712,6 +3037,18 @@ export function registerHarnessCommand(
             ...(opts.revision !== undefined ? { revision: opts.revision } : {}),
           })
         )
+      )
+      .command(
+        "clear-reservation",
+        "Clear a dead build's claude-code publication reservation (never taken over automatically; H-03)",
+      )
+      .option(
+        "--holder <token:string>",
+        "The token in the reservation marker (named in the refusal); a live holder is refused",
+        { required: true },
+      )
+      .action((opts) =>
+        fail(() => clearPublicationReservation({ holder: opts.holder }))
       ),
   );
 

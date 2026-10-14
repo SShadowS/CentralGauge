@@ -4902,3 +4902,58 @@ Deno.test("stub provider (M10-10 r2): an --image with the LSP release labels rec
   });
   assertEquals(e.manifest.lsp, []);
 });
+
+// H-03: the core execution path refuses an unqualified Claude Code version on
+// r3+ before the intent, any reservation and any secret read; a stub cell (the
+// qualification capture) still runs.
+async function unqualifiedCell(t: TestEnv) {
+  const cell = await cellFor(t);
+  const armManifest = {
+    ...cell.armManifest,
+    // Not 2.1.296: that version is dev-qualified since H-03's BUILTIN_INVENTORY entry.
+    harness_version: "2.1.999",
+    image: { ...cell.armManifest.image, revision: "3-dev-H-03" },
+  };
+  return {
+    ...cell,
+    armManifest,
+    armManifestHash: await manifestHash(armManifest),
+  };
+}
+
+Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is refused before the intent, the ledger and any secret read", async () => {
+  const t = await makeEnv();
+  // A secret read would fail on this missing source instead of the refusal.
+  await Deno.remove(t.env.secretsSource, { recursive: true });
+  await assertRejects(
+    async () => runCell(t.env, await unqualifiedCell(t)),
+    ConfigurationError,
+    "Claude Code 2.1.999 is not qualified for development use",
+  );
+  assert(
+    !await exists(join(t.env.privateRoot, "intents")) ||
+      intentIds(t).length === 0,
+    "no intent written",
+  );
+  assert(!await exists(t.env.credentialLedger!), "no slot reserved");
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it captures the qualification evidence)", async () => {
+  const t = await makeEnv();
+  await stubEnv(t);
+  const e = (await runCell(t.env, await unqualifiedCell(t))).executions[0]!;
+  assertEquals(t.docker.runs.length, 1);
+  assertEquals(e.manifest.harness_version, "2.1.999");
+});
+
+// H-03: the cell record says which memory limit its sandbox ran with: the
+// --memory value docker run received, in the unhashed side file.
+Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed as --memory", async () => {
+  const t = await makeEnv();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const args = t.docker.runs[0]!.args;
+  const passed = args[args.indexOf("--memory") + 1];
+  assertEquals(passed, "4g");
+  assertEquals((await sideOf(t, e.id)).sandbox.memory, passed);
+});

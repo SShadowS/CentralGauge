@@ -1387,10 +1387,15 @@ Deno.test("captureStream: bytes reach the capture file while the child still run
   const dir = await Deno.makeTempDir();
   const path = join(dir, "out.txt");
   const file = await Deno.open(path, { write: true, createNew: true });
+  // The child cannot print END until the test creates the release file.
+  const release = join(dir, "release");
   const child = new Deno.Command(Deno.execPath(), {
     args: [
       "eval",
-      'console.log("FIRST"); await new Promise((r) => setTimeout(r, 3000)); console.log("END");',
+      "--allow-read",
+      `console.log("FIRST"); const rel = ${JSON.stringify(release)};
+       for (;;) { try { Deno.statSync(rel); break; } catch { await new Promise((r) => setTimeout(r, 50)); } }
+       console.log("END");`,
     ],
     stdin: "null",
     stdout: "piped",
@@ -1405,11 +1410,13 @@ Deno.test("captureStream: bytes reach the capture file while the child still run
   const done = captureStream(child.stdout, file, budget);
   try {
     let seen = "";
-    for (let i = 0; i < 20 && !seen.includes("FIRST"); i++) {
+    for (let i = 0; i < 200 && !seen.includes("FIRST"); i++) {
       await new Promise((r) => setTimeout(r, 100));
       seen = await Deno.readTextFile(path);
     }
     assertStringIncludes(seen, "FIRST", "line not in file while child runs");
+    assert(!seen.includes("END"), "child must still be waiting for release");
+    await Deno.writeTextFile(release, "go");
     await done;
     await child.status;
     const final = await Deno.readTextFile(path);
@@ -1421,5 +1428,31 @@ Deno.test("captureStream: bytes reach the capture file while the child still run
     } catch { /* exited */ }
     await done.catch(() => {});
     await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("realDocker.untag (H-03 run 003): docker rmi's exit code is returned, never thrown", async () => {
+  if (Deno.build.os === "windows") {
+    __setContextListerForTests(() => ["desktop-windows"]);
+  }
+  const mock = createCommandMock();
+  mock.mockCommandOnce({ command: "docker", argsContain: ["rmi"] }, {
+    code: 1,
+    stdout: "",
+    stderr: "Error response from daemon: conflict",
+  });
+  mock.mockCommandOnce({ command: "docker", argsContain: ["rmi"] }, {
+    code: 0,
+    stdout: "Untagged: x\n",
+    stderr: "",
+  });
+  mock.install();
+  try {
+    assertEquals(await realDocker().untag("x"), 1);
+    assertEquals(await realDocker().untag("x"), 0);
+    assertEquals(mock.getCallsFor("docker")[0]!.args, ["rmi", "x"]);
+  } finally {
+    mock.restore();
+    __setContextListerForTests(undefined);
   }
 });

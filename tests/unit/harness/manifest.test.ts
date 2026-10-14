@@ -606,3 +606,37 @@ Deno.test("ResolvedManifestSchema (M10-10 r2): LSP release fields are strict, al
     "installed extra key",
   );
 });
+
+Deno.test("ResolvedManifestSchema (H-03): image.package is strict and names exactly the manifest's harness_version", () => {
+  const pkg = {
+    name: "@anthropic-ai/claude-code",
+    version: "2.1.296",
+    track: "npm-latest",
+    integrity: {
+      main: `sha512-${"M".repeat(86)}==`,
+      win32_x64: `sha512-${"W".repeat(86)}==`,
+    },
+  };
+  const ok = (version: string, p: Record<string, unknown>) =>
+    ResolvedManifestSchema.safeParse({
+      ...GOLDEN,
+      harness_version: version,
+      image: { ...GOLDEN.image, package: p },
+    }).success;
+  assertEquals(ok("2.1.296", pkg), true);
+  for (
+    const [name, version, p] of [
+      ["other version", "2.1.295", pkg],
+      ["latest", "latest", { ...pkg, version: "latest" }],
+      ["name", "2.1.296", { ...pkg, name: "@evil/claude-code" }],
+      ["track", "2.1.296", { ...pkg, track: "stable" }],
+      ["sri", "2.1.296", {
+        ...pkg,
+        integrity: { ...pkg.integrity, main: "sha512-x" },
+      }],
+      ["extra", "2.1.296", { ...pkg, extra: 1 }],
+    ] as [string, string, Record<string, unknown>][]
+  ) {
+    assertEquals(ok(version, p), false, name);
+  }
+});
