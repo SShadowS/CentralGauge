@@ -6,6 +6,7 @@ import {
   assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
+import { stub } from "@std/testing/mock";
 import { __setContextListerForTests } from "../../../src/container/docker-context.ts";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { exists, validatedDir } from "../../../src/harness/fsutil.ts";
@@ -14,6 +15,7 @@ import {
   captureStream,
   EXECUTION_LABEL,
   imageReadCreateArgs,
+  LINGER_SNAPSHOT,
   namespaceOwner,
   OWNER_LABEL,
   prepareSecrets,
@@ -33,7 +35,7 @@ import {
   teardownSandbox,
 } from "../../../src/harness/sandbox.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
-import { FakeDocker, parseRunArgs } from "./fake-docker.ts";
+import { FakeDocker, parseRunArgs, type RunIO } from "./fake-docker.ts";
 import { tempDir } from "./temp-dirs.ts";
 
 const TOKEN = "tok-0123456789abcdef";
@@ -1455,4 +1457,267 @@ Deno.test("realDocker.untag (H-03 run 003): docker rmi's exit code is returned, 
     mock.restore();
     __setContextListerForTests(undefined);
   }
+});
+
+// ---- H-08: a run whose stream has ended is stopped after a bounded grace ----
+const ended = (graceMs: number) => ({
+  ended: (raw: string) => raw.includes('"type":"result"'),
+  graceMs,
+  pollMs: 5,
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08): a stream that ended but whose process lingers is stopped after the grace, recorded with a process snapshot, never a timeout",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.execAnswer = { code: 0, stdout: "claude.exe  4242 Console\n", stderr: "" };
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"assistant"}');
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    return 137;
+  };
+  const s = await spec({ timeoutMs: 60_000, streamEnd: ended(40) });
+  const t0 = performance.now();
+  const r = await runSandbox(d, s, []);
+  assert(performance.now() - t0 < 5_000);
+  assertEquals([r.timedOut, r.interrupted, r.exitCode, r.confirmedGone], [
+    false,
+    false,
+    137,
+    true,
+  ]);
+  assertEquals(r.lingered, {
+    grace_ms: 40,
+    processes: "claude.exe  4242 Console",
+  });
+  assertEquals(d.kills, [s.name]);
+  // The snapshot ran in the sandbox as the sandbox user, before the kill.
+  const snap = d.privilegeCalls.find((c) => c.op === "exec")!;
+  // Absolute System32 path: never a tasklist planted in the workspace.
+  assertEquals([snap.name, snap.user, snap.argv], [
+    s.name,
+    SANDBOX_USER,
+    ["C:\\Windows\\System32\\tasklist.exe"],
+  ]);
+  assertEquals(LINGER_SNAPSHOT, ["C:\\Windows\\System32\\tasklist.exe"]);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08): no early stop while the stream has not ended, nor for a process that exits on its own; a failed snapshot is named",
+  ...quick,
+}, async () => {
+  // Not ended: the genuine timeout still applies.
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"assistant"}');
+    await io.killed;
+    return 137;
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 80, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([r.timedOut, r.lingered], [true, undefined]);
+  // Ended and exited within the grace: nothing is killed.
+  const e = new FakeDocker();
+  e.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    return 0;
+  };
+  const re = await runSandbox(
+    e,
+    await spec({ timeoutMs: 60_000, streamEnd: ended(5_000) }),
+    [],
+  );
+  assertEquals([re.exitCode, re.timedOut, re.lingered, e.kills], [
+    0,
+    false,
+    undefined,
+    [],
+  ]);
+  // A snapshot that fails still stops the run; the failure is the record.
+  const f = new FakeDocker();
+  f.execAnswer = new Error("exec refused");
+  f.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    return 137;
+  };
+  const rf = await runSandbox(
+    f,
+    await spec({ timeoutMs: 60_000, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals(rf.timedOut, false);
+  assertStringIncludes(rf.lingered!.processes, "exec refused");
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08): output after the end resets the grace (a growing log is never stopped early)",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    // Keeps writing for longer than the grace, then exits by itself.
+    for (let i = 0; i < 8; i++) {
+      await new Promise((res) => setTimeout(res, 20));
+      await io.stdout(`{"type":"system","n":${i}}`);
+    }
+    return 0;
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 60_000, streamEnd: ended(60) }),
+    [],
+  );
+  assertEquals([r.exitCode, r.lingered, d.kills], [0, undefined, []]);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review): output during the snapshot means the session went on: no linger stop",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  let io: RunIO | undefined;
+  d.behavior = async (_c, x) => {
+    io = x;
+    await x.stdout('{"type":"result"}');
+    await x.killed;
+    return 137;
+  };
+  let snapshots = 0;
+  d.exec = async (_n: string, _u: string, _a: string[]) => {
+    snapshots++;
+    // The session resumes while tasklist runs.
+    if (snapshots === 1) await io!.stdout('{"type":"assistant"}');
+    return { code: 0, stdout: "claude.exe", stderr: "" };
+  };
+  // Ended only while the last record is the result (as the adapters decide).
+  const lastIsResult = (raw: string) =>
+    raw.trimEnd().split("\n").at(-1) === '{"type":"result"}';
+  const r = await runSandbox(
+    d,
+    await spec({
+      timeoutMs: 300,
+      streamEnd: { ended: lastIsResult, graceMs: 10, pollMs: 5 },
+    }),
+    [],
+  );
+  assertEquals(snapshots, 1);
+  assertEquals([r.timedOut, r.lingered], [true, undefined]);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review): a linger stop whose kill settles after the cap stays a linger, never a timeout",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    await new Promise((res) => setTimeout(res, 250));
+    return 137;
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 120, killGraceMs: 2_000, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([r.timedOut, r.exitCode], [false, 137]);
+  assert(r.lingered !== undefined);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review): an overflow stop is never recorded as a linger; a nonzero snapshot exit is named",
+  ...quick,
+}, async () => {
+  const o = new FakeDocker();
+  o.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.stdout("x".repeat(4096));
+    await io.killed;
+    return 137;
+  };
+  const ro = await runSandbox(
+    o,
+    await spec({ maxCaptureBytes: 1024, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([ro.overflow, ro.lingered], [true, undefined]);
+  const n = new FakeDocker();
+  n.execAnswer = { code: 5, stdout: "", stderr: "access denied" };
+  n.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    return 137;
+  };
+  const rn = await runSandbox(n, await spec({ streamEnd: ended(10) }), []);
+  assertEquals(rn.lingered?.processes, "tasklist exited 5: access denied");
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review 2): a poll stuck in a hanging stat never blocks teardown nor stops the run later",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await new Promise((res) => setTimeout(res, 50));
+    return 0;
+  };
+  const hang = stub(Deno, "stat", () => new Promise<Deno.FileInfo>(() => {}));
+  try {
+    const t0 = performance.now();
+    const r = await runSandbox(
+      d,
+      await spec({ opTimeoutMs: 50, streamEnd: ended(10) }),
+      [],
+    );
+    assert(performance.now() - t0 < 2_000);
+    assertEquals([r.exitCode, r.lingered, d.kills], [0, undefined, []]);
+  } finally {
+    hang.restore();
+  }
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review 2): a process that exits while the snapshot runs is never recorded as lingering or killed",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  let exitNow!: () => void;
+  const exited = new Promise<void>((res) => (exitNow = res));
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await exited;
+    return 0;
+  };
+  d.exec = async (_n: string, _u: string, _a: string[]) => {
+    exitNow();
+    await new Promise((res) => setTimeout(res, 30));
+    return { code: 0, stdout: "claude.exe", stderr: "" };
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ opTimeoutMs: 500, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([r.exitCode, r.lingered, r.timedOut, d.kills], [
+    0,
+    undefined,
+    false,
+    [],
+  ]);
 });
