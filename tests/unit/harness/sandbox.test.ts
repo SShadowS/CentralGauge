@@ -14,6 +14,7 @@ import {
   captureStream,
   EXECUTION_LABEL,
   imageReadCreateArgs,
+  LINGER_SNAPSHOT,
   namespaceOwner,
   OWNER_LABEL,
   prepareSecrets,
@@ -33,7 +34,7 @@ import {
   teardownSandbox,
 } from "../../../src/harness/sandbox.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
-import { FakeDocker, parseRunArgs } from "./fake-docker.ts";
+import { FakeDocker, parseRunArgs, type RunIO } from "./fake-docker.ts";
 import { tempDir } from "./temp-dirs.ts";
 
 const TOKEN = "tok-0123456789abcdef";
@@ -1494,11 +1495,13 @@ Deno.test({
   assertEquals(d.kills, [s.name]);
   // The snapshot ran in the sandbox as the sandbox user, before the kill.
   const snap = d.privilegeCalls.find((c) => c.op === "exec")!;
+  // Absolute System32 path: never a tasklist planted in the workspace.
   assertEquals([snap.name, snap.user, snap.argv], [
     s.name,
     SANDBOX_USER,
-    ["cmd", "/c", "tasklist"],
+    ["C:\\Windows\\System32\\tasklist.exe"],
   ]);
+  assertEquals(LINGER_SNAPSHOT, ["C:\\Windows\\System32\\tasklist.exe"]);
 });
 
 Deno.test({
@@ -1574,4 +1577,89 @@ Deno.test({
     [],
   );
   assertEquals([r.exitCode, r.lingered, d.kills], [0, undefined, []]);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review): output during the snapshot means the session went on: no linger stop",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  let io: RunIO | undefined;
+  d.behavior = async (_c, x) => {
+    io = x;
+    await x.stdout('{"type":"result"}');
+    await x.killed;
+    return 137;
+  };
+  let snapshots = 0;
+  d.exec = async (_n: string, _u: string, _a: string[]) => {
+    snapshots++;
+    // The session resumes while tasklist runs.
+    if (snapshots === 1) await io!.stdout('{"type":"assistant"}');
+    return { code: 0, stdout: "claude.exe", stderr: "" };
+  };
+  // Ended only while the last record is the result (as the adapters decide).
+  const lastIsResult = (raw: string) =>
+    raw.trimEnd().split("\n").at(-1) === '{"type":"result"}';
+  const r = await runSandbox(
+    d,
+    await spec({
+      timeoutMs: 300,
+      streamEnd: { ended: lastIsResult, graceMs: 10, pollMs: 5 },
+    }),
+    [],
+  );
+  assertEquals(snapshots, 1);
+  assertEquals([r.timedOut, r.lingered], [true, undefined]);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review): a linger stop whose kill settles after the cap stays a linger, never a timeout",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    await new Promise((res) => setTimeout(res, 250));
+    return 137;
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 120, killGraceMs: 2_000, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([r.timedOut, r.exitCode], [false, 137]);
+  assert(r.lingered !== undefined);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review): an overflow stop is never recorded as a linger; a nonzero snapshot exit is named",
+  ...quick,
+}, async () => {
+  const o = new FakeDocker();
+  o.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.stdout("x".repeat(4096));
+    await io.killed;
+    return 137;
+  };
+  const ro = await runSandbox(
+    o,
+    await spec({ maxCaptureBytes: 1024, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([ro.overflow, ro.lingered], [true, undefined]);
+  const n = new FakeDocker();
+  n.execAnswer = { code: 5, stdout: "", stderr: "access denied" };
+  n.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    return 137;
+  };
+  const rn = await runSandbox(n, await spec({ streamEnd: ended(10) }), []);
+  assertEquals(rn.lingered?.processes, "tasklist exited 5: access denied");
 });

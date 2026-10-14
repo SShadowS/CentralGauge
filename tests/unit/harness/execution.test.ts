@@ -4965,6 +4965,8 @@ Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed 
 Deno.test("runCell (H-08): a run that lingers after its final result is stopped after the grace and completed, the lingering recorded", async () => {
   const t = await makeEnv();
   t.env.streamEndGraceMs = 50;
+  // Without the stop, the lingering run would reach this cap as a timeout.
+  t.env.timeoutMsFor = () => 15_000;
   t.docker.behavior = async (call, io) => {
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
     await io.killed;
@@ -4975,6 +4977,10 @@ Deno.test("runCell (H-08): a run that lingers after its final result is stopped 
   assert(performance.now() - t0 < 60_000);
   assertEquals(e.termination, "completed");
   assertAlmostEquals(e.telemetry.cost_usd!, PROBE_COST, 1e-12);
+  // The kill's exit code is telemetry only; the work and reported cost stand.
+  assertEquals(e.telemetry.exit_code, 137);
+  assertEquals(e.did_work, true);
+  assert(e.telemetry.reported_cost_usd !== null);
   assertEquals(t.docker.kills.length, 1);
   const side = await sideOf(t, e.id);
   assertEquals(side.sandbox.timedOut, false);
@@ -4983,7 +4989,9 @@ Deno.test("runCell (H-08): a run that lingers after its final result is stopped 
   assertEquals(typeof side.sandbox.lingered.processes, "string");
   assert(
     t.docker.privilegeCalls.some((c) =>
-      c.op === "exec" && JSON.stringify(c.argv) === '["cmd","/c","tasklist"]'
+      c.op === "exec" &&
+      JSON.stringify(c.argv) ===
+        JSON.stringify(["C:\\Windows\\System32\\tasklist.exe"])
     ),
   );
   assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "pass");
