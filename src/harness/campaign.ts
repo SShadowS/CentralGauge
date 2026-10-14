@@ -673,11 +673,12 @@ export async function runCampaign(
       `concurrency must be a positive integer: ${o.concurrency}`,
     );
   }
-  const judgeWidth = o.judgeConcurrency ??
-    (env.judgeLane ?? env.lane).containers.length;
-  if (!Number.isInteger(judgeWidth) || judgeWidth < 1) {
+  if (
+    o.judgeConcurrency !== undefined &&
+    (!Number.isInteger(o.judgeConcurrency) || o.judgeConcurrency < 1)
+  ) {
     throw new ConfigurationError(
-      `judge concurrency must be a positive integer: ${judgeWidth}`,
+      `judge concurrency must be a positive integer: ${o.judgeConcurrency}`,
     );
   }
   // A placed environment without env.proxyIsolation is missing (fail closed).
@@ -992,7 +993,11 @@ export async function runCampaign(
   // H-09: an agent slot frees once its execution is published; the judge
   // queue judges on the judge lane. Owed judgments (a crash after
   // publication) go first; they are judged, never executed again.
-  const queue = judgeQueue(runEnv, judgeWidth);
+  // A dry run (the plan environment) has no lane: the default is read here.
+  const queue = judgeQueue(
+    runEnv,
+    o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
+  );
   const agentEnv: HarnessEnv = { ...runEnv, judgeLater: queue.push };
   for (const e of await env.store.executions(campaign.id)) {
     if (!await judgmentOwed(env, e)) continue;
