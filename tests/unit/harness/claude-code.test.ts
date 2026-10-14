@@ -3153,3 +3153,27 @@ Deno.test("qualification (H-03): the 2.1.296 stub captures (plain + LSP) reparse
     );
   }
 });
+
+Deno.test("claude-code streamEnded (H-08): a final result per session, then only noise, with no background task pending", async () => {
+  const ended = claudeCodeAdapter.streamEnded!;
+  const probe = (await Deno.readTextFile(FIXTURE)).trimEnd().split("\n");
+  assertEquals(ended(probe.join("\n")), true);
+  // No result yet (the run is still going).
+  assertEquals(ended(probe.slice(0, -1).join("\n")), false);
+  assertEquals(ended(""), false);
+  // Noise may follow the result; anything else means the session went on.
+  const noise = JSON.stringify({ type: "rate_limit_event" });
+  assertEquals(ended([...probe, noise].join("\n")), true);
+  const more = JSON.stringify({ type: "assistant", message: {} });
+  assertEquals(ended([...probe, more].join("\n")), false);
+  // A partial last line (still being written) is not an end.
+  assertEquals(ended([...probe, '{"type":"assis'].join("\n")), false);
+  // M1-32b resume: two sessions need two results; a started background task
+  // without its task_notification is still pending.
+  const resume = (await Deno.readTextFile(
+    "tests/fixtures/harness/claude-code/m129-resume.jsonl",
+  )).trimEnd().split("\n");
+  assertEquals(ended(resume.join("\n")), true);
+  assertEquals(ended(resume.slice(0, 146).join("\n")), false);
+  assertEquals(ended(resume.slice(0, 144).join("\n")), false);
+});

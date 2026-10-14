@@ -514,6 +514,16 @@ export interface SandboxSpec {
   /** Quarantine paths (private, never under results/). */
   rawLog: string;
   stderrLog: string;
+  /**
+   * H-08: the harness's end-of-run test over the raw log. Once it holds and
+   * the log has not grown for `graceMs`, a process still running is stopped
+   * (recorded as `lingered`, never a timeout). Polled every `pollMs`.
+   */
+  streamEnd?: {
+    ended: (raw: string) => boolean;
+    graceMs: number;
+    pollMs: number;
+  };
 }
 
 /**
@@ -719,7 +729,17 @@ export interface SandboxResult {
   confirmedGone: boolean;
   cleanup: "ok" | string;
   wall_ms: number;
+  /**
+   * H-08: the stream had ended but the process kept running for `grace_ms`,
+   * so the sandbox was stopped; `processes` is its process list at that
+   * moment (tasklist), or why that snapshot failed.
+   */
+  lingered?: { grace_ms: number; processes: string };
 }
+
+/** H-08: the snapshot of what kept a finished run alive (stdout bounded). */
+const LINGER_SNAPSHOT = ["cmd", "/c", "tasklist"];
+const LINGER_SNAPSHOT_MAX = 8192;
 
 async function settle<T>(p: Promise<T>, ms: number): Promise<T | "timeout"> {
   let t: ReturnType<typeof setTimeout> | undefined;
@@ -798,6 +818,53 @@ export async function runSandbox(
       );
     }
   };
+  let poller: ReturnType<typeof setInterval> | undefined;
+  // H-08: re-read the log only when it grew; stop once it has ended and has
+  // stayed unchanged for the grace. ponytail: whole-file re-read per growth
+  // (logs are ~1 MB); tail-parse if multi-MB logs make polls slow.
+  const watchStreamEnd = (se: NonNullable<SandboxSpec["streamEnd"]>) => {
+    let size = -1;
+    let changed = performance.now();
+    let ended = false;
+    let busy = false;
+    return setInterval(async () => {
+      if (busy || settled || r.timedOut || r.interrupted || r.lingered) return;
+      busy = true;
+      try {
+        const n = (await Deno.stat(spec.rawLog).catch(() => null))?.size ?? 0;
+        if (n !== size) {
+          size = n;
+          changed = performance.now();
+          ended = se.ended(
+            await Deno.readTextFile(spec.rawLog).catch(() => ""),
+          );
+        } else if (ended && performance.now() - changed >= se.graceMs) {
+          let processes: string;
+          try {
+            const s = await bounded(
+              docker.exec(spec.name, SANDBOX_USER, LINGER_SNAPSHOT),
+              spec.opTimeoutMs,
+              `docker exec ${spec.name} tasklist`,
+            );
+            processes = (s.stdout || s.stderr).trim().slice(
+              0,
+              LINGER_SNAPSHOT_MAX,
+            );
+          } catch (err) {
+            processes = `snapshot failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`;
+          }
+          if (!settled && !r.timedOut && !r.interrupted) {
+            r.lingered = { grace_ms: se.graceMs, processes };
+            requestStop();
+          }
+        }
+      } finally {
+        busy = false;
+      }
+    }, se.pollMs);
+  };
   try {
     timer = setTimeout(() => {
       r.timedOut = true;
@@ -818,6 +885,7 @@ export async function runSandbox(
         },
         abort: abandon.signal,
       }).finally(() => (settled = true));
+      if (spec.streamEnd) poller = watchStreamEnd(spec.streamEnd);
       const first = await Promise.race([
         running.then((c) => ({ c })),
         stopped.then(() => null),
@@ -842,6 +910,7 @@ export async function runSandbox(
     r.startError = err instanceof Error ? err.message : String(err);
   } finally {
     clearTimeout(timer);
+    clearInterval(poller);
     stop?.removeEventListener("abort", onAbort);
     if (running && !settled) {
       // Abandon the docker client; realDocker bounds its own settlement.

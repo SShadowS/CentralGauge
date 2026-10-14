@@ -1456,3 +1456,122 @@ Deno.test("realDocker.untag (H-03 run 003): docker rmi's exit code is returned, 
     __setContextListerForTests(undefined);
   }
 });
+
+// ---- H-08: a run whose stream has ended is stopped after a bounded grace ----
+const ended = (graceMs: number) => ({
+  ended: (raw: string) => raw.includes('"type":"result"'),
+  graceMs,
+  pollMs: 5,
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08): a stream that ended but whose process lingers is stopped after the grace, recorded with a process snapshot, never a timeout",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.execAnswer = { code: 0, stdout: "claude.exe  4242 Console\n", stderr: "" };
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"assistant"}');
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    return 137;
+  };
+  const s = await spec({ timeoutMs: 60_000, streamEnd: ended(40) });
+  const t0 = performance.now();
+  const r = await runSandbox(d, s, []);
+  assert(performance.now() - t0 < 5_000);
+  assertEquals([r.timedOut, r.interrupted, r.exitCode, r.confirmedGone], [
+    false,
+    false,
+    137,
+    true,
+  ]);
+  assertEquals(r.lingered, {
+    grace_ms: 40,
+    processes: "claude.exe  4242 Console",
+  });
+  assertEquals(d.kills, [s.name]);
+  // The snapshot ran in the sandbox as the sandbox user, before the kill.
+  const snap = d.privilegeCalls.find((c) => c.op === "exec")!;
+  assertEquals([snap.name, snap.user, snap.argv], [
+    s.name,
+    SANDBOX_USER,
+    ["cmd", "/c", "tasklist"],
+  ]);
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08): no early stop while the stream has not ended, nor for a process that exits on its own; a failed snapshot is named",
+  ...quick,
+}, async () => {
+  // Not ended: the genuine timeout still applies.
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"assistant"}');
+    await io.killed;
+    return 137;
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 80, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([r.timedOut, r.lingered], [true, undefined]);
+  // Ended and exited within the grace: nothing is killed.
+  const e = new FakeDocker();
+  e.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    return 0;
+  };
+  const re = await runSandbox(
+    e,
+    await spec({ timeoutMs: 60_000, streamEnd: ended(5_000) }),
+    [],
+  );
+  assertEquals([re.exitCode, re.timedOut, re.lingered, e.kills], [
+    0,
+    false,
+    undefined,
+    [],
+  ]);
+  // A snapshot that fails still stops the run; the failure is the record.
+  const f = new FakeDocker();
+  f.execAnswer = new Error("exec refused");
+  f.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await io.killed;
+    return 137;
+  };
+  const rf = await runSandbox(
+    f,
+    await spec({ timeoutMs: 60_000, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals(rf.timedOut, false);
+  assertStringIncludes(rf.lingered!.processes, "exec refused");
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08): output after the end resets the grace (a growing log is never stopped early)",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    // Keeps writing for longer than the grace, then exits by itself.
+    for (let i = 0; i < 8; i++) {
+      await new Promise((res) => setTimeout(res, 20));
+      await io.stdout(`{"type":"system","n":${i}}`);
+    }
+    return 0;
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ timeoutMs: 60_000, streamEnd: ended(60) }),
+    [],
+  );
+  assertEquals([r.exitCode, r.lingered, d.kills], [0, undefined, []]);
+});

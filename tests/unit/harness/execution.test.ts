@@ -4957,3 +4957,34 @@ Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed 
   assertEquals(passed, "4g");
   assertEquals((await sideOf(t, e.id)).sandbox.memory, passed);
 });
+
+// H-08 (M8-07c cell 105ec327): claude printed its final result record but the
+// process never exited, so the cell ran to the 30 min cap and read as a
+// timeout. A finished stream is stopped after a bounded grace instead: the run
+// is completed (its cost kept) and the late stop is recorded.
+Deno.test("runCell (H-08): a run that lingers after its final result is stopped after the grace and completed, the lingering recorded", async () => {
+  const t = await makeEnv();
+  t.env.streamEndGraceMs = 50;
+  t.docker.behavior = async (call, io) => {
+    await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
+    await io.killed;
+    return 137;
+  };
+  const t0 = performance.now();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  assert(performance.now() - t0 < 60_000);
+  assertEquals(e.termination, "completed");
+  assertAlmostEquals(e.telemetry.cost_usd!, PROBE_COST, 1e-12);
+  assertEquals(t.docker.kills.length, 1);
+  const side = await sideOf(t, e.id);
+  assertEquals(side.sandbox.timedOut, false);
+  assertEquals(side.sandbox.lingered.grace_ms, 50);
+  // The fake's exec answer (shared with the privilege check) is the snapshot.
+  assertEquals(typeof side.sandbox.lingered.processes, "string");
+  assert(
+    t.docker.privilegeCalls.some((c) =>
+      c.op === "exec" && JSON.stringify(c.argv) === '["cmd","/c","tasklist"]'
+    ),
+  );
+  assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "pass");
+});
