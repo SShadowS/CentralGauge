@@ -16,6 +16,7 @@ import {
   harnessEgressVerify,
   harnessImagesBuild,
   harnessJudgeFixture,
+  harnessJudgePending,
   harnessMeasure,
   harnessQualify,
   harnessRejudge,
@@ -32,6 +33,7 @@ import {
   EGRESS_MARKER,
   egressMode,
   type EnvDeps,
+  type EnvOptions,
   openHarnessEnv,
   openPlanEnv,
   resolveEgress,
@@ -8258,4 +8260,122 @@ Deno.test("harnessImagesBuild (H-03 run 003): a non-zero docker rmi is a failed 
   assert(w, `a leftover-tag warning: ${warned}`);
   assertStringIncludes(w, `${CC_TAG} (docker rmi exit 1)`);
   assert(!w.includes(CC_ALIAS), "the removed alias is not named");
+});
+
+// ---- H-09: judging decoupled from agent slots ----
+
+Deno.test("registerHarnessCommand (H-09): run takes --judge-containers and --judge-concurrency, cell --defer-judging; judge-pending exists", () => {
+  const cli = new Command();
+  registerHarnessCommand(cli);
+  const harness = cli.getCommand("harness")!;
+  const has = (cmd: string, opt: string) =>
+    harness.getCommand(cmd)?.getOption(opt) !== undefined;
+  assert(has("run", "judge-containers"));
+  assert(has("run", "judge-concurrency"));
+  assert(has("cell", "defer-judging"));
+  assert(has("judge-pending", "judge-concurrency"));
+  assert(has("judge-pending", "containers"));
+});
+
+Deno.test("openHarnessEnv (H-09): judge containers get their own lane; overlapping, refused or unallocated ones are refused before the lock", async () => {
+  const t = await makeEnv();
+  const order: string[] = [];
+  const judged = (agents: string[], judges: string[]) => ({
+    ...envOpts(t, agents),
+    judgeContainers: judges,
+  });
+  await assertRejects(
+    () => openHarnessEnv(judged(["Cronus281"], ["cronus281"]), deps(order)),
+    ConfigurationError,
+    "judge",
+  );
+  await assertRejects(
+    () => openHarnessEnv(judged(["Cronus281"], ["Cronus28"]), deps(order)),
+    ConfigurationError,
+    "Cronus28",
+  );
+  const d = deps(order);
+  d.allocated = (c) =>
+    c === "Cronus281"
+      ? Promise.resolve(c)
+      : Promise.reject(new ValidationError(`${c} is not allocated`, [c]));
+  await assertRejects(
+    () => openHarnessEnv(judged(["Cronus281"], ["Cronus283"]), d),
+    ValidationError,
+    "Cronus283",
+  );
+  assertEquals(order, []);
+  const h = await openHarnessEnv(
+    judged(["Cronus281", "Cronus282"], ["Cronus283"]),
+    deps(order),
+  );
+  try {
+    assertEquals(h.env.lane.containers, ["Cronus281", "Cronus282"]);
+    assertEquals(h.env.judgeLane?.containers, ["Cronus283"]);
+  } finally {
+    await h.close();
+  }
+  assertEquals(order.filter((x) => x === "setup").length, 1);
+  assert(order.includes("health:Cronus281,Cronus282,Cronus283"), `${order}`);
+});
+
+Deno.test("harnessRun (H-09): --judge-containers reaches the environment and --judge-concurrency the campaign", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  const seen: EnvOptions[] = [];
+  const open = (eo: EnvOptions) => {
+    seen.push(eo);
+    return Promise.resolve({ env: t.env, close: () => Promise.resolve() });
+  };
+  await assertRejects(
+    () =>
+      harnessRun(
+        "contract",
+        runOpts(t, { judgeContainers: ["Cronus283"], judgeConcurrency: 0 }),
+        open,
+      ),
+    ConfigurationError,
+    "judge concurrency",
+  );
+  assertEquals(seen.map((eo) => eo.judgeContainers), [["Cronus283"]]);
+});
+
+Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; judge-pending judges it once, as the inline cell would", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.docker.behavior = mockImageBehavior();
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, supervised: false },
+      close: () => Promise.resolve(),
+    });
+  const o = cellOpts(t, { supervised: false });
+  const inline = await harnessCell(
+    "mock-positive",
+    "HX-001",
+    o,
+    open,
+    () => false,
+    noInterrupt,
+  );
+  const ref = (await t.env.store.judgments(inline.executions[0]!.id))[0]!;
+  const r = await harnessCell(
+    "mock-positive",
+    "HX-001",
+    { ...o, deferJudging: true },
+    open,
+    () => false,
+    noInterrupt,
+  );
+  const e = r.executions[0]!;
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assertEquals(await harnessJudgePending(o, open), 1);
+  const js = await t.env.store.judgments(e.id);
+  assertEquals(js.map((j) => [j.verdict, j.task_oracle_hash]), [
+    [ref.verdict, ref.task_oracle_hash],
+  ]);
+  assertEquals(await harnessJudgePending(o, open), 0, "judged once");
 });

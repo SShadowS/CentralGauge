@@ -26,7 +26,12 @@ import { proxyIsolationProblem } from "./egress.ts";
 import { PROXY_ISOLATION } from "./egress-proxy.ts";
 import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
-import { recoverInterrupted, runCell } from "./execution.ts";
+import {
+  judgeDeferred,
+  privatePaths,
+  recoverInterrupted,
+  runCell,
+} from "./execution.ts";
 import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
 import {
   imageFacts,
@@ -64,6 +69,8 @@ export interface RunOptions {
   dryRun: boolean;
   /** Cells run at once (answer 17: default 1). */
   concurrency: number;
+  /** H-09: judgments run at once (default: one per judge container). */
+  judgeConcurrency?: number;
   /** Seed of a new campaign (default random); a resumed campaign keeps its own. */
   seed?: number;
   /** Longest usage-limit pause to wait out; 0 stops with a resume line. */
@@ -159,6 +166,50 @@ export async function loadCampaignData(
  * otherwise an automatic retry of the newest chain's last execution when
  * its outcome allows one (retryProblem), else nothing (the cell is done).
  */
+/**
+ * H-09: the campaign's judge queue, `width` judgments at once on the judge
+ * lane. The first failure is kept: no new judgment starts, the agents start
+ * no new cell, and drain() throws it once the running judgments ended.
+ */
+export function judgeQueue(env: HarnessEnv, width: number) {
+  const jobs: [CellRef, ExecutionRecord][] = [];
+  const idle: (() => void)[] = [];
+  let active = 0;
+  let failure: { err: unknown } | null = null;
+  const pump = () => {
+    while (failure === null && active < width && jobs.length > 0) {
+      const [cell, e] = jobs.shift()!;
+      active++;
+      judgeDeferred(env, cell, e)
+        .catch((err) => void (failure ??= { err }))
+        .finally(() => {
+          active--;
+          pump();
+          if (active === 0) { for (const f of idle.splice(0)) f(); }
+        });
+    }
+  };
+  return {
+    push(cell: CellRef, e: ExecutionRecord) {
+      jobs.push([cell, e]);
+      pump();
+    },
+    failed: () => failure !== null,
+    async drain() {
+      if (active > 0) await new Promise<void>((r) => idle.push(r));
+      if (failure !== null) throw failure.err;
+    },
+  };
+}
+
+/** H-09: published, judgeable and never judged (a crash before the judge queue reached it). */
+export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
+  return outcomePolicy(e.termination, e.did_work).judge &&
+    e.workspace_hash !== null &&
+    (await env.store.judgments(e.id)).length === 0 &&
+    !await exists(privatePaths(env, e.id).stubMarker);
+}
+
 export function nextAttempt(prior: ExecutionRecord[]): AttemptRef | null {
   if (prior.length === 0) {
     return { attempt: 1, runKind: "planned", retryOf: null };
@@ -616,6 +667,13 @@ export async function runCampaign(
       `concurrency must be a positive integer: ${o.concurrency}`,
     );
   }
+  const judgeWidth = o.judgeConcurrency ??
+    (env.judgeLane ?? env.lane).containers.length;
+  if (!Number.isInteger(judgeWidth) || judgeWidth < 1) {
+    throw new ConfigurationError(
+      `judge concurrency must be a positive integer: ${judgeWidth}`,
+    );
+  }
   // A placed environment without env.proxyIsolation is missing (fail closed).
   // The cheap conditions first, before any read; the arm images below.
   const early = placedConcurrencyProblem(
@@ -925,16 +983,30 @@ export async function runCampaign(
     }
     return summary;
   }
+  // H-09: an agent slot frees once its execution is published; the judge
+  // queue judges on the judge lane. Owed judgments (a crash after
+  // publication) go first; they are judged, never executed again.
+  const queue = judgeQueue(runEnv, judgeWidth);
+  const agentEnv: HarnessEnv = { ...runEnv, judgeLater: queue.push };
+  for (const e of await env.store.executions(campaign.id)) {
+    if (!await judgmentOwed(env, e)) continue;
+    const block = campaign.blocks.find((b) => b.index === e.block)!;
+    queue.push(cellRefFor(campaign, opened, block, e.arm, e.order_in_block), e);
+  }
+  const ran: ExecutionRecord[] = [];
   for (;;) {
     let paused: string | null = null;
     let next = 0;
     // Workers take whole blocks: the arms of one block run one after another
     // in its recorded order (the matched pair), blocks run in parallel.
     const worker = async () => {
-      while (paused === null && !summary.stopped && next < blocks.length) {
+      while (
+        paused === null && !summary.stopped && !queue.failed() &&
+        next < blocks.length
+      ) {
         const block = blocks[next++]!;
         for (const [i, arm] of block.order.entries()) {
-          if (paused !== null || summary.stopped) break;
+          if (paused !== null || summary.stopped || queue.failed()) break;
           const prior = (await env.store.executions(campaign.id)).filter((
             e,
           ) => e.block === block.index && e.arm === arm);
@@ -950,24 +1022,31 @@ export async function runCampaign(
           }
           if (await stopRequested()) break;
           const r = await runCell(
-            runEnv,
+            agentEnv,
             cellRefFor(campaign, opened, block, arm, i),
             at,
             prior,
           );
-          for (const e of r.executions) {
-            summary.ran++;
-            const j = (await env.store.judgments(e.id))[0];
-            if (j && j.verdict !== "unscored") summary.judged++;
-            else summary.unscored++;
-          }
+          summary.ran += r.executions.length;
+          ran.push(...r.executions);
           if (r.pause) paused = laterReset(paused, r.pause);
         }
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(o.concurrency, blocks.length) }, worker),
-    );
+    ).catch(async (err) => {
+      // The queued judgments of finished cells still land before the stop.
+      await queue.drain().catch(() => {});
+      throw err;
+    });
+    // Counted once judged: a judge failure stops the campaign here.
+    await queue.drain();
+    for (const e of ran.splice(0)) {
+      const j = (await env.store.judgments(e.id))[0];
+      if (j && j.verdict !== "unscored") summary.judged++;
+      else summary.unscored++;
+    }
     if (paused === null || summary.stopped) return summary;
     const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now();
     if (wait > o.maxPauseMs) {

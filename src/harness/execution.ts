@@ -154,6 +154,14 @@ export interface HarnessEnv {
   privateRoot: string;
   store: RecordStore;
   lane: BcLane;
+  /** H-09: the judges' lane (--judge-containers, disjoint from the agents'); unset: judges use `lane`. */
+  judgeLane?: BcLane;
+  /**
+   * H-09: where a published execution that would be judged inline goes
+   * instead (the campaign's judge queue, `harness cell --defer-judging`);
+   * unset: judged inline, as before.
+   */
+  judgeLater?: (cell: CellRef, e: ExecutionRecord) => void;
   backend: Backend;
   backendUrl: string;
   docker: DockerCli;
@@ -1282,10 +1290,12 @@ async function publishDraft(
   const judged = (await env.store.judgments(e.id)).some((j) =>
     j.scorer_fingerprint === fp
   );
-  if (
-    policy.judge && mode === "normal" && e.workspace_hash !== null &&
-    !judged && taskUnchanged
-  ) {
+  const due = policy.judge && mode === "normal" && e.workspace_hash !== null &&
+    !judged && taskUnchanged;
+  if (due && env.judgeLater) {
+    // H-09: the slot frees now; the judge restages (judgeDeferred).
+    env.judgeLater(cell, e);
+  } else if (due) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
     hold();
     try {
@@ -2453,6 +2463,45 @@ export async function rejudgeExecution(
       (await stage(env, cell, out)).pristine,
       oracleHash,
       forced,
+    );
+  } finally {
+    await Deno.remove(out, { recursive: true }).catch(() => {});
+  }
+}
+
+/**
+ * H-09: judge a published execution whose judging was deferred, on the judge
+ * lane. The task is restaged and must hash to the pristine tree the agent ran
+ * on (its published sandbox.json), so the judgment equals the inline one.
+ */
+export async function judgeDeferred(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+): Promise<JudgmentRecord> {
+  const side = await readJson<{ pristine_hash?: unknown }>(
+    join(env.resultsRoot, "runs", e.id, "sandbox.json"),
+  ).catch(() => null);
+  const out = join(
+    env.privateRoot,
+    "work",
+    `judge-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    const { pristine } = await stage(env, cell, out);
+    const hash = await hashTree(pristine, "task");
+    if (side?.pristine_hash !== hash) {
+      throw new ConfigurationError(
+        `execution ${e.id}: the restaged task (pristine ${hash}) is not the one the agent ran on (${
+          String(side?.pristine_hash ?? "no pristine_hash")
+        }); refusing to judge`,
+      );
+    }
+    return await judgeExecution(
+      { ...env, lane: env.judgeLane ?? env.lane },
+      cell,
+      e,
+      pristine,
     );
   } finally {
     await Deno.remove(out, { recursive: true }).catch(() => {});
