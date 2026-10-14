@@ -103,6 +103,51 @@ codeunit 80113 "CGR Posting Event Tests"
         Assert.AreEqual(0, Spy.AfterCount(), 'A refused posting raises no OnAfterPostRentalContract');
     end;
 
+    [Test]
+    procedure CheckedOutPostingIsRefused()
+    var
+        Contract: Record "CGR Rental Contract";
+        Spy: Codeunit "CGR Posting Event Spy";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        Initialize('HX064-V05');
+        ContractNo := Lib.CreateContract('HX064-V05');
+        RentalMgt.CheckOut(ContractNo);
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Contract.Status::"Checked Out", Contract.Status, 'The contract is checked out before posting');
+        BindSubscription(Spy);
+
+        asserterror RentalMgt.Post(ContractNo);
+        UnbindSubscription(Spy);
+
+        Assert.ExpectedError(StrSubstNo('Rental contract %1 must be returned before it is posted.', ContractNo));
+        Assert.AreEqual(0, Spy.BeforeCount(), 'A refused posting raises no OnBeforePostRentalContract');
+        Assert.AreEqual(0, Spy.AfterCount(), 'A refused posting raises no OnAfterPostRentalContract');
+    end;
+
+    [Test]
+    procedure PostedContractIsNotPostedAgain()
+    var
+        Contract: Record "CGR Rental Contract";
+        Spy: Codeunit "CGR Posting Event Spy";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        ContractNo := CreateReturnedContract('HX064-V06');
+        RentalMgt.Post(ContractNo);
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Contract.Status::Posted, Contract.Status, 'The contract is posted before the second posting');
+        BindSubscription(Spy);
+
+        asserterror RentalMgt.Post(ContractNo);
+        UnbindSubscription(Spy);
+
+        Assert.ExpectedError(StrSubstNo('Rental contract %1 must be returned before it is posted.', ContractNo));
+        Assert.AreEqual(0, Spy.BeforeCount(), 'A refused posting raises no OnBeforePostRentalContract');
+        Assert.AreEqual(0, Spy.AfterCount(), 'A refused posting raises no OnAfterPostRentalContract');
+    end;
+
     local procedure Initialize(VehicleNo: Code[20])
     begin
         WorkDate(20270301D);
