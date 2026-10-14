@@ -3660,3 +3660,34 @@ Deno.test("web tools (H-07 review 4): web use on a model modelUsage does not rep
     }
   }
 });
+
+Deno.test("web tools (H-07): v1 arms (image_revision 2) are frozen: they keep the six-tool list and refuse web_tools", () => {
+  const v1 = (settings: Record<string, unknown>) =>
+    HarnessConfigSchema.parse({
+      id: "cc-v1",
+      harness: "claude-code",
+      harness_version: "2.1.282",
+      image_revision: "2",
+      models: { main: "anthropic/claude-sonnet-5" },
+      settings,
+      limits: { timeout_min: 30, max_budget_usd: 5 },
+    });
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(v1({}), WEB_CATALOG)["disallowed_tools"],
+    claudeCodeHarnessNative(true).disallowed_tools,
+  );
+  for (const web_tools of [true, false]) {
+    assertThrows(
+      () => claudeCodeAdapter.nativeSettings(v1({ web_tools }), WEB_CATALOG),
+      ConfigurationError,
+      "v1 arms are frozen",
+    );
+  }
+  // Revision 3 and later get the blocked default.
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(webCfg({}), WEB_CATALOG)[
+      "disallowed_tools"
+    ],
+    claudeCodeHarnessNative().disallowed_tools,
+  );
+});

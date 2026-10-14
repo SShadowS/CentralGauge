@@ -1743,6 +1743,14 @@ export const claudeCodeAdapter: HarnessAdapter = {
     // H-07: web_tools becomes disallowed_tools. Only `true` is accepted: an
     // explicit false would hash (settings.requested) unlike the equal default.
     const { web_tools, ...settings } = config.settings;
+    // v1 is frozen (data freeze 2026-09-29): its image_revision "2" arms keep
+    // the six-tool list they ran with, so their identity never changes.
+    const v1 = config.image_revision === "2";
+    if (v1 && web_tools !== undefined) {
+      throw new ConfigurationError(
+        `${config.id}: settings.web_tools: v1 arms are frozen (image_revision "2" keeps the list it ran with)`,
+      );
+    }
     if (web_tools !== undefined && web_tools !== true) {
       throw new ConfigurationError(
         `${config.id}: settings.web_tools accepts only true; omit it for the default (web tools blocked)`,
@@ -1752,7 +1760,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
     return {
       ...settings,
       api_models,
-      ...claudeCodeHarnessNative(web_tools === true),
+      ...claudeCodeHarnessNative(web_tools === true || v1),
       ...(config.components.mcp.length > 0
         ? { mcp: [...config.components.mcp].sort() }
         : {}),
