@@ -1165,6 +1165,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     workspace_redactions: frozen?.redactions ?? 0,
     pricing_book_at: f.pricing.at,
     pristine_hash: f.pristineHash,
+    // H-09: the oracle this run is judged on; a deferred judgment must match it.
+    oracle_hash: f.cell.oracleHash,
     freeze_violations: frozen?.violations ?? [],
     ...(f.stub
       ? { stub_provider: { scenario_sha256: f.stub.scenario_sha256 } }
@@ -2479,22 +2481,46 @@ export async function judgeDeferred(
   cell: CellRef,
   e: ExecutionRecord,
 ): Promise<JudgmentRecord> {
-  const side = await readJson<{ pristine_hash?: unknown }>(
+  const refuse = (why: string): never => {
+    throw new ConfigurationError(
+      `execution ${e.id}: ${why}; refusing to judge`,
+    );
+  };
+  const side = await readJson<
+    { pristine_hash?: unknown; oracle_hash?: unknown }
+  >(
     join(env.resultsRoot, "runs", e.id, "sandbox.json"),
   ).catch(() => null);
+  // The oracle the run was to be judged on, still the task's on disk (a
+  // judgment may wait in the queue while the task is edited).
+  if (side?.oracle_hash !== cell.oracleHash) {
+    refuse(
+      `the run recorded oracle ${
+        String(side?.oracle_hash ?? "none")
+      }, not ${cell.oracleHash}`,
+    );
+  }
+  const now = (await taskSetIdentity(env.repoRoot, [cell.task], env.symbols))
+    .tasks[0]!;
+  if (
+    now.oracle !== cell.oracleHash || now.visible !== cell.taskVisibleHash
+  ) {
+    refuse(`task ${cell.task.task.id} changed since the run (oracle or files)`);
+  }
   const out = join(
     env.privateRoot,
     "work",
     `judge-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
   );
   try {
+    holdNamespace(env, "nothing staged");
     const { pristine } = await stage(env, cell, out);
     const hash = await hashTree(pristine, "task");
     if (side?.pristine_hash !== hash) {
-      throw new ConfigurationError(
-        `execution ${e.id}: the restaged task (pristine ${hash}) is not the one the agent ran on (${
+      refuse(
+        `the restaged task (pristine ${hash}) is not the one the agent ran on (${
           String(side?.pristine_hash ?? "no pristine_hash")
-        }); refusing to judge`,
+        })`,
       );
     }
     return await judgeExecution(

@@ -8379,3 +8379,49 @@ Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; ju
   ]);
   assertEquals(await harnessJudgePending(o, open), 0, "judged once");
 });
+
+Deno.test("harness judge-pending (H-09 review): a refused execution is warned and skipped; the others are judged", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.docker.behavior = mockImageBehavior();
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, supervised: false },
+      close: () => Promise.resolve(),
+    });
+  const o = { ...cellOpts(t, { supervised: false }), deferJudging: true };
+  const cell = async () =>
+    (await harnessCell(
+      "mock-positive",
+      "HX-001",
+      o,
+      open,
+      () => false,
+      noInterrupt,
+    )).executions[0]!;
+  const bad = await cell();
+  const good = await cell();
+  const side = join(t.env.resultsRoot, "runs", bad.id, "sandbox.json");
+  const json = JSON.parse(await Deno.readTextFile(side));
+  await Deno.writeTextFile(
+    side,
+    JSON.stringify({ ...json, pristine_hash: "0".repeat(64) }),
+  );
+  const lines: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => {
+    lines.push(a.join(" "));
+  });
+  let n: number;
+  try {
+    n = await harnessJudgePending(o, open);
+  } finally {
+    log.restore();
+  }
+  assertEquals(n, 1);
+  assertEquals(await t.env.store.judgments(bad.id), []);
+  assertEquals((await t.env.store.judgments(good.id)).length, 1);
+  assert(
+    lines.some((l) => l.includes(bad.id) && l.includes("not judged")),
+    lines.join("\n"),
+  );
+});

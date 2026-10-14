@@ -171,7 +171,13 @@ export async function loadCampaignData(
  * lane. The first failure is kept: no new judgment starts, the agents start
  * no new cell, and drain() throws it once the running judgments ended.
  */
-export function judgeQueue(env: HarnessEnv, width: number) {
+export function judgeQueue(
+  env: HarnessEnv,
+  width: number,
+  judge: (env: HarnessEnv, cell: CellRef, e: ExecutionRecord) => Promise<
+    unknown
+  > = judgeDeferred,
+) {
   const jobs: [CellRef, ExecutionRecord][] = [];
   const idle: (() => void)[] = [];
   let active = 0;
@@ -180,7 +186,7 @@ export function judgeQueue(env: HarnessEnv, width: number) {
     while (failure === null && active < width && jobs.length > 0) {
       const [cell, e] = jobs.shift()!;
       active++;
-      judgeDeferred(env, cell, e)
+      judge(env, cell, e)
         .catch((err) => void (failure ??= { err }))
         .finally(() => {
           active--;

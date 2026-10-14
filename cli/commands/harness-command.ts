@@ -84,6 +84,7 @@ import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { BUILTIN_INVENTORY } from "../../src/harness/adapters/claude-code.ts";
 import {
   forcedRefusal,
+  judgeDeferred,
   measureExecution,
   type MeasureRun,
   measureWorkspace,
@@ -1719,36 +1720,39 @@ export async function harnessJudgePending(
   const h = await open(
     envOptions(o, join(o.resultsDir, "cells"), "harness judge-pending"),
   );
+  const taskDirs: string[] = [];
+  const skip = (id: string, why: string) =>
+    console.log(`${colors.yellow("[WARN]")} ${id}: ${why}; not judged`);
   try {
     const env = h.env;
+    let n = 0;
+    // One refused execution (another oracle or task than the cell's) is
+    // skipped with a warning; it never stops the others.
     const queue = judgeQueue(
       env,
       o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
+      (env, cell, e) =>
+        judgeDeferred(env, cell, e).then(() => void n++, (err: unknown) => {
+          if (!(err instanceof ConfigurationError)) throw err;
+          skip(e.id, err.message);
+        }),
     );
-    let n = 0;
     for (const e of await env.store.allExecutions()) {
       if (!await judgmentOwed(env, e)) continue;
       // Judging reads the task, its oracle and the refapp: the task as the
-      // cell loaded it (--rev), its visible files unchanged (and judgeDeferred
-      // checks the restaged pristine tree against the run's own).
-      const at = await loadTaskAt(
-        o.root,
-        e.task_id,
-        o.rev,
-        join(
-          env.privateRoot,
-          "work",
-          `task-${crypto.randomUUID().slice(0, 8)}`,
-        ),
+      // cell loaded it (--rev), unchanged; judgeDeferred checks the oracle
+      // the run recorded and the restaged pristine tree against the run's.
+      const dir = join(
+        env.privateRoot,
+        "work",
+        `task-${crypto.randomUUID().slice(0, 8)}`,
       );
+      taskDirs.push(dir);
+      const at = await loadTaskAt(o.root, e.task_id, o.rev, dir);
       const id = (await taskSetIdentity(o.root, [at.task], env.symbols))
         .tasks[0]!;
       if (id.visible !== e.task_visible_hash) {
-        console.log(
-          `${
-            colors.yellow("[WARN]")
-          } ${e.id}: task ${e.task_id} changed since the cell; not judged`,
-        );
+        skip(e.id, `task ${e.task_id} changed since the cell`);
         continue;
       }
       queue.push({
@@ -1768,13 +1772,15 @@ export async function harnessJudgePending(
         oracleHash: id.oracle,
         refapp: await resolveRefapp(o.root, at.task.task.refapp_version),
       }, e);
-      n++;
     }
     await queue.drain();
     console.log(`${colors.green("[OK]")} judged ${n} pending execution(s)`);
     return n;
   } finally {
     await h.close();
+    for (const d of taskDirs) {
+      await Deno.remove(d, { recursive: true }).catch(() => {});
+    }
   }
 }
 

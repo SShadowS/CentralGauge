@@ -145,6 +145,34 @@ Deno.test("H-09: an executed-but-unjudged execution is judged on resume and neve
   assertEquals(after[0]!.verdict, before.verdict);
 });
 
+Deno.test("H-09 review: a judge refusal inside a campaign is thrown after the queue drained; nothing is judged on another oracle", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract");
+  const behave = t.docker.behavior;
+  const test = join(
+    t.repo.tasksDir,
+    "HX-001",
+    "oracle",
+    "src",
+    "Oracle.Test.al",
+  );
+  // The task's tests are edited while the campaign runs.
+  t.docker.behavior = async (call, run) => {
+    await Deno.writeTextFile(test, "// edited mid-campaign\n", {
+      append: true,
+    });
+    return await behave(call, run);
+  };
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts(), io()),
+    ConfigurationError,
+    "changed since the run",
+  );
+  const es = await campaignExecutions(t, "contract");
+  assert(es.length >= 1);
+  assertEquals(await judgmentsOf(t, es), []);
+});
+
 Deno.test("H-09: --judge-concurrency below 1 is refused before any record", async () => {
   const t = await mockEnv();
   await experiment(t, "contract");
@@ -210,4 +238,51 @@ Deno.test("H-09: judgeDeferred refuses when the restaged task differs from the o
   await Deno.writeTextFile(side, text);
   const j = await judgeDeferred(t.env, queued[0]!.cell, e);
   assert(j.verdict === "pass" || j.verdict === "fail", j.verdict);
+});
+
+Deno.test("H-09 review: judgeDeferred refuses when the oracle changed since the run (on disk, or another oracle recorded by the run); nothing written", async () => {
+  const t = await makeEnv();
+  const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
+  const r = await runCell({
+    ...t.env,
+    judgeLater: (cell, e) => void queued.push({ cell, e }),
+  }, await cellFor(t));
+  const e = r.executions[0]!;
+  const { cell } = queued[0]!;
+  // The task's tests edited while the judgment waited in the queue.
+  const test = join(
+    t.repo.tasksDir,
+    "HX-001",
+    "oracle",
+    "src",
+    "Oracle.Test.al",
+  );
+  const original = await Deno.readTextFile(test);
+  await Deno.writeTextFile(test, original + "// edited\n");
+  await assertRejects(
+    () => judgeDeferred(t.env, cell, e),
+    ConfigurationError,
+    "oracle",
+  );
+  await Deno.writeTextFile(test, original);
+  // The run recorded another oracle than the cell's (or none).
+  const side = join(t.env.resultsRoot, "runs", e.id, "sandbox.json");
+  const text = await Deno.readTextFile(side);
+  const json = JSON.parse(text);
+  assertEquals(json.oracle_hash, cell.oracleHash, "the run records its oracle");
+  for (const oracle of ["0".repeat(64), undefined]) {
+    await Deno.writeTextFile(
+      side,
+      JSON.stringify({ ...json, oracle_hash: oracle }),
+    );
+    await assertRejects(
+      () => judgeDeferred(t.env, cell, e),
+      ConfigurationError,
+      "oracle",
+    );
+  }
+  assertEquals(await t.env.store.judgments(e.id), []);
+  await Deno.writeTextFile(side, text);
+  await judgeDeferred(t.env, cell, e);
+  assertEquals((await t.env.store.judgments(e.id)).length, 1);
 });
