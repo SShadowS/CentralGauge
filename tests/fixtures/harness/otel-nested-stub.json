@@ -65,7 +65,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -77,7 +77,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -149,7 +149,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -161,7 +161,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -273,7 +273,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -285,7 +285,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -397,7 +397,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -409,7 +409,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -479,7 +479,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -491,7 +491,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -567,7 +567,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -579,7 +579,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -709,7 +709,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -721,7 +721,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -797,7 +797,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -809,7 +809,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -945,7 +945,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -957,7 +957,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1093,7 +1093,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1105,7 +1105,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1181,7 +1181,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1193,7 +1193,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1299,7 +1299,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1311,7 +1311,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1393,7 +1393,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1405,7 +1405,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1541,7 +1541,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1553,7 +1553,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1629,7 +1629,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1641,7 +1641,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1747,7 +1747,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1759,7 +1759,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1841,7 +1841,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1853,7 +1853,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
@@ -1983,7 +1983,7 @@
                 {
                   "key": "user.id",
                   "value": {
-                    "stringValue": "d04f370b026987a9392e9a00a6b62352725d162c5ae0ce164a3e502b995915b9"
+                    "stringValue": "scrubbed-user-id"
                   }
                 },
                 {
@@ -1995,7 +1995,7 @@
                 {
                   "key": "terminal.type",
                   "value": {
-                    "stringValue": "herdr"
+                    "stringValue": "scrubbed-terminal"
                   }
                 },
                 {
