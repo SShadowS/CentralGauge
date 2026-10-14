@@ -425,7 +425,7 @@ export async function mcpDerivedSettingsOnly(
  * below the adapters in the import graph.
  */
 export type HarnessNative = Readonly<
-  Record<string, () => Record<string, unknown>>
+  Record<string, (m: ResolvedManifest) => Record<string, unknown>>
 >;
 
 /**
@@ -443,11 +443,12 @@ async function harnessDerivedSettingsOnly(
   const rest = async (m: ResolvedManifest): Promise<string | null> => {
     const native = { ...m.settings.native };
     const own = Object.hasOwn(harnessNative, m.harness)
-      ? harnessNative[m.harness]!()
+      ? harnessNative[m.harness]!(m)
       : {};
-    // ponytail: checked against today's derivation, so changing DISALLOWED_TOOLS
-    // or PI_SETTINGS invalidates older campaigns' reports; upgrade: key the
-    // derivation by harness_version or record it in the manifest.
+    // ponytail: checked against today's derivation (given the manifest, so an
+    // adapter can recognise its own older shape, H-07), so changing
+    // DISALLOWED_TOOLS or PI_SETTINGS otherwise invalidates older campaigns'
+    // reports; upgrade: key the derivation by harness_version or record it.
     for (const [k, v] of Object.entries(own)) {
       if (
         !Object.hasOwn(native, k) ||
@@ -482,6 +483,19 @@ async function harnessDerivedSettingsOnly(
     });
   };
   if (vary.includes("mcp") && sharedServerToolsDiffer(a, b)) return false;
+  // One harness, one derivation: a derived key may not differ between its
+  // arms (H-07: a pre-H-07 six-tool list beside today's eight is web policy).
+  if (a.harness === b.harness && Object.hasOwn(harnessNative, a.harness)) {
+    for (const k of Object.keys(harnessNative[a.harness]!(a))) {
+      const has = Object.hasOwn(a.settings.native, k);
+      if (has !== Object.hasOwn(b.settings.native, k)) return false;
+      // Both absent: rest() refuses the missing derived key.
+      if (
+        has && await hashJson({ v: a.settings.native[k] }) !==
+          await hashJson({ v: b.settings.native[k] })
+      ) return false;
+    }
+  }
   const ra = await rest(a);
   return ra !== null && ra === await rest(b);
 }

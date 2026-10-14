@@ -168,7 +168,58 @@ type Tally = { input: number; read: number; write: number; out: number };
 export type Reconciliation =
   | { status: "exact" }
   | { status: "compaction_excess"; excess: Record<string, Omit<Tally, "out">> }
+  | {
+    status: "web_excess";
+    excess: Record<string, Omit<Tally, "out">>;
+    web_calls: Record<string, number>;
+  }
   | { status: "unreconciled"; why: string };
+
+/** H-07: executed web tool calls per model and the searches their results report. */
+type WebUse = {
+  /** The arm's disallowed_tools did not block web tools. */
+  allowed: boolean;
+  calls: Map<string, number>;
+  searches: Map<string, number>;
+  /** Per model: executed WebSearch results without a searchCount. */
+  bad: Map<string, string[]>;
+  /** Web calls the arm disallowed: never reconciled. */
+  prohibited: string[];
+};
+
+/**
+ * H-07, on every image: a disallowed web call, or search accounting the
+ * stream does not support. Searches are counted (and listed unpriced), never
+ * assumed: a model with an executed web call must report webSearchRequests,
+ * equal to the searches its WebSearch results report.
+ */
+function webProblem(last: J, web: WebUse): string | null {
+  if (web.prohibited.length > 0) return web.prohibited.join("; ");
+  const models = new Set([
+    ...Object.keys(last),
+    ...web.calls.keys(),
+    ...web.searches.keys(),
+    ...web.bad.keys(),
+  ]);
+  for (const m of [...models].sort()) {
+    const name = m || "(no model)";
+    if (!Object.hasOwn(last, m)) {
+      return `web tool use on ${name}, which modelUsage does not report`;
+    }
+    const bad = web.bad.get(m);
+    if (bad) return bad.join("; ");
+    const wsr = obj(last[m])["webSearchRequests"];
+    const searches = web.searches.get(m) ?? 0;
+    if (wsr === undefined && searches === 0 && !web.calls.has(m)) continue;
+    if (!isCount(wsr)) {
+      return `modelUsage ${name} webSearchRequests missing or not a count`;
+    }
+    if (wsr !== searches) {
+      return `modelUsage ${name} webSearchRequests ${wsr} != the ${searches} search(es) its WebSearch results report`;
+    }
+  }
+  return null;
+}
 
 /**
  * Spec v2 gate 3, inventoried images (appendix section 6). The last
@@ -181,15 +232,25 @@ export type Reconciliation =
  * twice. Output is a floor: stream chunks carry a partial count. A run with a
  * compaction may exceed only on main-session input that no sub-agent's input
  * explains (compaction.jsonl: the summary request is billed, never
- * streamed); the excess is recorded, never hidden.
+ * streamed); the excess is recorded, never hidden. H-07: so may input on a
+ * model that executed an allowed web tool (WebSearch and WebFetch run
+ * unstreamed internal requests on it), with cache exact, no sub-agent usage on
+ * that model, and webSearchRequests equal to the searches its WebSearch
+ * results report. ponytail: attribution, not proof - the stream has no
+ * per-request usage for those calls, so an unrelated input excess on such a
+ * model is accepted too; upgrade if Claude Code ever streams them.
  */
 function reconcile(
   last: J,
   perMessage: PerMessage,
   children: { line: number; model: string | null; usage: J }[],
   compactions: number,
+  web: WebUse,
 ): Reconciliation {
   const no = (why: string): Reconciliation => ({ status: "unreconciled", why });
+  // H-07: disallowed web calls and wrong search counts are never reconciled.
+  const webWhy = webProblem(last, web);
+  if (webWhy !== null) return no(webWhy);
   const FIELDS = [
     ["input", "input_tokens"],
     ["read", "cache_read_input_tokens"],
@@ -254,6 +315,7 @@ function reconcile(
     ...streamedByParent.values(),
   ]);
   const excess: Record<string, Omit<Tally, "out">> = {};
+  const webModels = new Set<string>();
   for (const m of Object.keys(last).sort()) {
     const name = m || "(no model)";
     const x = obj(last[m]);
@@ -292,19 +354,29 @@ function reconcile(
       );
     }
     if (d.input > 0 || d.read > 0 || d.write > 0) {
-      if (compactions === 0) {
+      const byWeb = web.allowed && (web.calls.get(m) ?? 0) > 0;
+      if (compactions === 0 && !byWeb) {
         return no(
           `modelUsage ${name} exceeds the streamed messages and sub-agent results (${shown})`,
         );
       }
-      if (!mainModels.has(m)) {
+      if (!byWeb && !mainModels.has(m)) {
         return no(
           `modelUsage ${name} exceeds after a compaction but is not the main-session model (${shown})`,
         );
       }
       if (d.read > 0 || d.write > 0) {
         return no(
-          `modelUsage ${name}: cache excess after compaction is not attributable (${shown})`,
+          `modelUsage ${name}: cache excess after ${
+            byWeb ? "web tool use" : "compaction"
+          } is not attributable (${shown})`,
+        );
+      }
+      // Sub-agent usage on the same model makes the excess ambiguous (a
+      // double-counted child, or a sum of children, looks like web use): unproven.
+      if (byWeb && children.some((c) => c.model === m)) {
+        return no(
+          `modelUsage ${name}: web excess on a model with sub-agent usage is not attributable (${shown})`,
         );
       }
       if (childInputs.has(d.input)) {
@@ -313,7 +385,17 @@ function reconcile(
         );
       }
       excess[m] = d;
+      if (byWeb) webModels.add(m);
     }
+  }
+  if (webModels.size > 0) {
+    return {
+      status: "web_excess",
+      excess,
+      web_calls: Object.fromEntries(
+        [...webModels].sort().map((m) => [m, web.calls.get(m)!]),
+      ),
+    };
   }
   return Object.keys(excess).length > 0
     ? { status: "compaction_excess", excess }
@@ -1125,6 +1207,78 @@ export function parseClaudeStream(
     list(result?.permission_denials).map(obj).map((d) => d.tool_use_id)
       .filter((x): x is string => typeof x === "string"),
   );
+
+  // H-07: web tool calls, one per tool_use id. Only an executed call (a
+  // non-error tool_result, no permission denial) can explain web excess; a
+  // call the arm disallowed fails reconciliation. A manifest without the list
+  // predates M1-32b and blocked nothing; a malformed list allows nothing.
+  const listed = obj(input.manifest.settings.native)["disallowed_tools"];
+  const listOk = listed === undefined ||
+    (Array.isArray(listed) && listed.every((t) => typeof t === "string"));
+  if (!listOk) {
+    streamProblems.push(
+      "settings.native.disallowed_tools is not a list of tool names",
+    );
+  }
+  const disallowed = list(listed).filter((t): t is string =>
+    typeof t === "string"
+  );
+  const webCalls = new Map<
+    string,
+    { model: string; tool: string; line: number }
+  >();
+  for (const { rec, line } of of("assistant")) {
+    const msg = obj(rec.message);
+    for (const c of list(msg.content).map(obj)) {
+      if (
+        c.type !== "tool_use" || typeof c.id !== "string" ||
+        !WEB_TOOLS.some((t) => t === c.name) || webCalls.has(c.id)
+      ) continue;
+      webCalls.set(c.id, {
+        model: typeof msg.model === "string" ? msg.model : "",
+        tool: c.name as string,
+        line,
+      });
+    }
+  }
+  const web: WebUse = {
+    allowed: listOk && !WEB_TOOLS.some((t) => disallowed.includes(t)),
+    calls: new Map(),
+    searches: new Map(),
+    bad: new Map(),
+    prohibited: [],
+  };
+  for (const c of webCalls.values()) {
+    if (listOk && !disallowed.includes(c.tool)) continue;
+    const p = listOk
+      ? `line ${c.line}: ${c.tool} used while disallowed (settings.native.disallowed_tools)`
+      : `line ${c.line}: ${c.tool} used under a malformed settings.native.disallowed_tools`;
+    streamProblems.push(p);
+    web.prohibited.push(p);
+  }
+  for (const { rec, line } of of("user")) {
+    for (const c of list(obj(rec.message).content).map(obj)) {
+      const id = c.tool_use_id;
+      const call = typeof id === "string" ? webCalls.get(id) : undefined;
+      if (!call || c.type !== "tool_result") continue;
+      // A failed or denied call explains no excess, but a search it reports
+      // is still counted (it may be billed); webSearchRequests must match.
+      const executed = c.is_error !== true && !denied.has(id as string);
+      if (executed) {
+        web.calls.set(call.model, (web.calls.get(call.model) ?? 0) + 1);
+      }
+      if (call.tool !== "WebSearch") continue;
+      const n = obj(rec.tool_use_result)["searchCount"];
+      if (isCount(n)) {
+        web.searches.set(call.model, (web.searches.get(call.model) ?? 0) + n);
+      } else if (executed) {
+        web.bad.set(call.model, [
+          ...(web.bad.get(call.model) ?? []),
+          `line ${line}: WebSearch result without a searchCount`,
+        ]);
+      }
+    }
+  }
   const built = claudeTrace(lines, file, denied, obj(result?.modelUsage));
   streamProblems.push(...built.problems, ...built.structural);
   const trace = built.events;
@@ -1233,12 +1387,26 @@ export function parseClaudeStream(
       perMessage,
       children,
       trace.filter((e) => e.type === "compaction").length,
+      web,
     )
     : null;
+  // H-07: the catalog has no web-search rate, so searches are an explicit
+  // unpriced item; cost_usd is the token cost (decision 2026-10-14-web-tools-flag).
+  const unpriced = [...web.searches].filter(([, n]) => n > 0).sort(([a], [b]) =>
+    a < b ? -1 : 1
+  ).map(([model, count]) => ({
+    model,
+    item: "web_search_requests",
+    count,
+  }));
   if (reconciliation?.status === "unreconciled") {
     unproven.costs.push(
       `${file}: usage not reconciled (${reconciliation.why})`,
     );
+  } else if (!reconciliation && result) {
+    // H-07: web checks void the cost on every image, inventoried or not.
+    const why = webProblem(obj(result.modelUsage), web);
+    if (why !== null) unproven.costs.push(`${file}: ${why}`);
   }
   const proven = unproven.costs.length === 0;
   const priced = result ? estimateCost(usage, input.pricing) : null;
@@ -1445,8 +1613,13 @@ export function parseClaudeStream(
       : {}),
     partial,
     ...(reconciliation ? { usage_reconciliation: reconciliation } : {}),
-    missing: est?.missing ??
-      (nonJson.count > 0 ? [nonJsonReason(nonJson)] : []),
+    ...(unpriced.length > 0 ? { unpriced } : {}),
+    missing: [
+      ...(est?.missing ?? (nonJson.count > 0 ? [nonJsonReason(nonJson)] : [])),
+      ...unpriced.map((u) =>
+        `${u.count} web search request(s) on ${u.model} unpriced (no catalog rate); cost_usd excludes them`
+      ),
+    ],
     stream_problems: streamProblems,
     ...(unproven.trace.length > 0 ? { trace_incomplete: unproven.trace } : {}),
     // Kept apart from stream_problems: an MCP inventory mismatch is a setup
@@ -1495,11 +1668,36 @@ const DISALLOWED_TOOLS = [
   "ScheduleWakeup",
   "SendMessage",
 ] as const;
+/**
+ * H-07 (decisions 2026-10-14-web-tools-flag): disallowed too unless the arm
+ * sets settings.web_tools: true, so with/without-web arms are distinct.
+ */
+const WEB_TOOLS = ["WebFetch", "WebSearch"] as const;
 
-/** Native settings this adapter derives from its harness alone (M5-01a). */
-export const claudeCodeHarnessNative = () => ({
-  disallowed_tools: [...DISALLOWED_TOOLS],
+/**
+ * Native settings this adapter derives from its harness alone (M5-01a): the
+ * default arm, web tools blocked; `webTools` is a web arm's list.
+ */
+export const claudeCodeHarnessNative = (
+  webTools = false,
+): { disallowed_tools: string[] } => ({
+  disallowed_tools: webTools
+    ? [...DISALLOWED_TOOLS]
+    : [...DISALLOWED_TOOLS, ...WEB_TOOLS].sort(),
 });
+
+/**
+ * The M5-01a derivation for a stored manifest (integrity, vary [harness]): the
+ * default list, except a pre-H-07 manifest, which recorded the six session
+ * tools and no web_tools request (code since H-07 never writes that pair; a
+ * web arm requests web_tools and so stays a settings difference).
+ */
+export const claudeCodeDerivedNative = (m: ResolvedManifest) => {
+  const listed = m.settings.native["disallowed_tools"];
+  const legacy = !Object.hasOwn(m.settings.requested, "web_tools") &&
+    JSON.stringify(listed) === JSON.stringify(DISALLOWED_TOOLS);
+  return claudeCodeHarnessNative(legacy);
+};
 
 export const claudeCodeAdapter: HarnessAdapter = {
   harness: "claude-code",
@@ -1542,11 +1740,27 @@ export const claudeCodeAdapter: HarnessAdapter = {
         `${config.id}: settings.lsp is reserved; name LSP components under components.lsp`,
       );
     }
+    // H-07: web_tools becomes disallowed_tools. Only `true` is accepted: an
+    // explicit false would hash (settings.requested) unlike the equal default.
+    const { web_tools, ...settings } = config.settings;
+    // v1 is frozen (data freeze 2026-09-29): its image_revision "2" arms keep
+    // the six-tool list they ran with, so their identity never changes.
+    const v1 = config.image_revision === "2";
+    if (v1 && web_tools !== undefined) {
+      throw new ConfigurationError(
+        `${config.id}: settings.web_tools: v1 arms are frozen (image_revision "2" keeps the list it ran with)`,
+      );
+    }
+    if (web_tools !== undefined && web_tools !== true) {
+      throw new ConfigurationError(
+        `${config.id}: settings.web_tools accepts only true; omit it for the default (web tools blocked)`,
+      );
+    }
     // Plain arms keep their manifest hash: mcp only when non-empty.
     return {
-      ...config.settings,
+      ...settings,
       api_models,
-      ...claudeCodeHarnessNative(),
+      ...claudeCodeHarnessNative(web_tools === true || v1),
       ...(config.components.mcp.length > 0
         ? { mcp: [...config.components.mcp].sort() }
         : {}),
