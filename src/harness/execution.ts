@@ -422,6 +422,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     trace: join(p, "quarantine", id, "trace.jsonl"),
     /** Every proxy decision of this execution (M1-33). */
     egress: join(p, "quarantine", id, "egress.jsonl"),
+    /** H-10: claude's OTel api_request usage rows, received by the backend. */
+    otel: join(p, "quarantine", id, "otel.jsonl"),
     /** The parsed in-sandbox preflight probe lines, pass or fail (M3-09a). */
     preflight: join(p, "quarantine", id, "preflight.jsonl"),
   };
@@ -1173,6 +1175,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     { src: p.trace, dest: join(runDir, "trace.jsonl") },
     { src: p.egress, dest: join(runDir, "egress.jsonl") },
     { src: p.preflight, dest: join(runDir, "preflight.jsonl") },
+    { src: p.otel, dest: join(runDir, "otel.jsonl") },
   ], scrub);
   const side = redactDeep({
     v: 1,
@@ -1686,6 +1689,7 @@ export async function runExecution(
         trustedRoots: [staged.pristine],
       },
       hostLog: p.host,
+      otelLog: p.otel,
     }, timeoutMs + 5 * 60_000);
     let secretsDir: string | null = null;
     /** The started run until it is awaited (M5-08a: teardown stops it first). */

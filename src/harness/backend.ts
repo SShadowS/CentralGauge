@@ -48,6 +48,7 @@ import {
 } from "./fsutil.ts";
 import { createHash } from "node:crypto";
 import { isTaskBuildArtifact } from "./hash.ts";
+import { apiRequests, OTEL_MAX_BODY_BYTES } from "./otel.ts";
 import { readAppGraph, readAppJson, type StagedApp } from "./staging.ts";
 import { TEST_APP, testCodeunits, validateApps } from "./verdict-workspace.ts";
 
@@ -66,6 +67,8 @@ export interface BackendGrant {
   lock: LockedSymbols;
   deploy: DeployContext;
   hostLog: string;
+  /** H-10: where /v1/logs appends api_request usage rows; unset = route off. */
+  otelLog?: string;
 }
 
 export interface HostLogLine {
@@ -416,6 +419,67 @@ export class Backend {
   private readonly logTails = new Map<string, Promise<void>>();
   private readonly now: () => number;
 
+  /**
+   * H-10: OTLP/HTTP logs (http/json) from the sandboxed claude. Same bearer
+   * and execution header as the tool routes, but outside the one-request
+   * lock: the exporter posts while a tool call runs. Only api_request usage
+   * fields reach the grant's otelLog; a failed write answers 500 so the
+   * exporter retries and a gap stays visible, never a silent zero.
+   */
+  private async otel(req: Request): Promise<Response> {
+    const st = this.grants.get(req.headers.get("x-cg-execution") ?? "");
+    const auth = req.headers.get("authorization") ?? "";
+    const presented = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    const same = timingSafeEqual(
+      await sha256(presented),
+      st?.digest ?? NO_DIGEST,
+    );
+    if (
+      !st || presented === "" || !same || this.now() > st.expiresAt ||
+      st.closing || this.grants.get(st.g.executionId) !== st
+    ) {
+      return this.reply(401, { error: "unauthorized" });
+    }
+    const path = st.g.otelLog;
+    if (!path) return this.reply(404, { error: "not found" });
+    const text = await readLimited(
+      req,
+      OTEL_MAX_BODY_BYTES,
+      this.o.bodyTimeoutMs ?? 30_000,
+    );
+    if (text === "timeout") return this.reply(408, { error: "timed out" });
+    if (text === null) return this.reply(413, { error: "body too large" });
+    let rows;
+    try {
+      rows = apiRequests(JSON.parse(text));
+    } catch (err) {
+      return this.reply(400, {
+        error: `bad OTLP logs body: ${
+          err instanceof Error ? err.message : err
+        }`,
+      });
+    }
+    if (rows.length === 0) return json(200, {});
+    const id = st.g.executionId;
+    const lines = rows.map((r) =>
+      JSON.stringify({ ...r, received_for: id }) + "\n"
+    ).join("");
+    const next = (this.otelTails.get(path) ?? Promise.resolve()).then(
+      async () => {
+        await Deno.mkdir(join(path, ".."), { recursive: true });
+        await Deno.writeTextFile(path, lines, { append: true, create: true });
+      },
+    );
+    this.otelTails.set(path, next.catch(() => {}));
+    try {
+      await next;
+    } catch {
+      return this.reply(500, { error: "not recorded" });
+    }
+    return json(200, {});
+  }
+  private readonly otelTails = new Map<string, Promise<void>>();
+
   /** Every response body is scrubbed of host paths (agent-facing, spec 1a section 7). */
   private reply(status: number, body: unknown): Response {
     return json(
@@ -629,8 +693,11 @@ export class Backend {
 
   async handle(req: Request): Promise<Response> {
     const t0 = performance.now();
-    const op = /^\/v1\/(compile|test|symbols)$/.exec(new URL(req.url).pathname)
-      ?.[1];
+    const path = new URL(req.url).pathname;
+    if (req.method === "POST" && path === "/v1/logs") {
+      return await this.otel(req);
+    }
+    const op = /^\/v1\/(compile|test|symbols)$/.exec(path)?.[1];
     if (req.method !== "POST" || !op) {
       return this.reply(404, { error: "not found" });
     }
