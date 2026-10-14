@@ -308,6 +308,31 @@ codeunit 86560 "HX055 Kept Preview Oracle"
         EndHX55();
     end;
 
+    [Test]
+    procedure OtherContractSurvivesReplace()
+    var
+        LineA: Record "CGR Invoice Preview Line";
+        LineB: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
+        ContractA: Code[20];
+        ContractB: Code[20];
+    begin
+        InitHX55();
+        ContractA := NewHX55Contract('HX055-R14A', 50);
+        ContractB := NewHX55Contract('HX055-R14B', 60);
+
+        Preview.KeepPreview(ContractA);
+        Preview.KeepPreview(ContractB);
+        SetHX55Rate('HX055-R14A', 80);
+        Preview.KeepPreview(ContractA);
+
+        Assert.IsTrue(Preview.GetKeptPreview(ContractB, LineB), 'B is still kept after A was kept again');
+        AssertHX55Lines(LineB, 60, 'Replacing A leaves B as first kept');
+        Assert.IsTrue(Preview.GetKeptPreview(ContractA, LineA), 'A is kept');
+        AssertHX55Lines(LineA, 80, 'A is replaced');
+        EndHX55();
+    end;
+
     local procedure InitHX55()
     var
         Setup: Record "CGR Setup";

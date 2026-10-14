@@ -12,7 +12,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 86560, procedures: [KeptPreviewReturned, TwoContractsKept, KeptAcrossInstances, KeptPreviewIgnoresLaterPrices, KeepAgainReplaces, HandedOutLinesAreCopies, CallerBufferReplaced, NothingKeptReturnsFalse, FailedKeepLeavesEarlierPreview, MissingContractFails, ForgetDropsAll, BuildPreviewKeepsNothing, KeptPreviewIgnoresLaterPrecision] }
+    - { codeunit: 86560, procedures: [KeptPreviewReturned, TwoContractsKept, KeptAcrossInstances, KeptPreviewIgnoresLaterPrices, KeepAgainReplaces, HandedOutLinesAreCopies, CallerBufferReplaced, NothingKeptReturnsFalse, FailedKeepLeavesEarlierPreview, MissingContractFails, ForgetDropsAll, BuildPreviewKeepsNothing, KeptPreviewIgnoresLaterPrecision, OtherContractSurvivesReplace] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
