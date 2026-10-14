@@ -12,7 +12,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-1', 20270131D, 3);
 
-        Extend('HX46-1', 3);
+        HX46Extend('HX46-1', 3);
         Assert.AreEqual(6, LineCount('HX46-1'), 'A 3-month lease extended by 3 months has 6 schedule lines');
         AssertDue('HX46-1', 40000, 20270430D);
         AssertDue('HX46-1', 50000, 20270531D);
@@ -25,7 +25,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-2', 20261130D, 3);
 
-        Extend('HX46-2', 3);
+        HX46Extend('HX46-2', 3);
         Assert.AreEqual(6, LineCount('HX46-2'), 'A 3-month lease extended by 3 months has 6 schedule lines');
         AssertDue('HX46-2', 40000, 20270228D);
         AssertDue('HX46-2', 50000, 20270330D);
@@ -38,7 +38,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-3', 20270115D, 2);
 
-        Extend('HX46-3', 2);
+        HX46Extend('HX46-3', 2);
         Assert.AreEqual(4, LineCount('HX46-3'), 'A 2-month lease extended by 2 months has 4 schedule lines');
         AssertDue('HX46-3', 30000, 20270315D);
         AssertDue('HX46-3', 40000, 20270415D);
@@ -50,7 +50,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-4', 20271231D, 2);
 
-        Extend('HX46-4', 2);
+        HX46Extend('HX46-4', 2);
         Assert.AreEqual(4, LineCount('HX46-4'), 'A 2-month lease extended by 2 months has 4 schedule lines');
         AssertDue('HX46-4', 30000, 20280229D);
         AssertDue('HX46-4', 40000, 20280331D);
@@ -62,8 +62,8 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-5', 20270131D, 3);
 
-        Extend('HX46-5', 1);
-        Extend('HX46-5', 1);
+        HX46Extend('HX46-5', 1);
+        HX46Extend('HX46-5', 1);
         Assert.AreEqual(5, LineCount('HX46-5'), 'A 3-month lease extended twice by 1 month has 5 schedule lines');
         AssertDue('HX46-5', 40000, 20270430D);
         AssertDue('HX46-5', 50000, 20270531D);
@@ -79,7 +79,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-6', 20270115D, 2);
 
-        Extend('HX46-6', 2);
+        HX46Extend('HX46-6', 2);
         Contract.Get('HX46-6');
         Assert.AreEqual(4, Contract.Months, 'Months of a 2-month lease extended by 2 months');
         Assert.AreEqual(4, LineCount('HX46-6'), 'A 2-month lease extended by 2 months has 4 schedule lines');
@@ -121,7 +121,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Prepare();
         InitLease('HX46-8', 20270115D, 2);
 
-        Extend('HX46-8', 1);
+        HX46Extend('HX46-8', 1);
         ScheduleLine.Get('HX46-8', 30000);
         Assert.AreEqual(103.00, ScheduleLine.Amount, 'The added line is priced with the rate of the extended lease: 100 x 1.03');
     end;
@@ -143,7 +143,7 @@ codeunit 86380 "HX046 Lease Extension Oracle"
         Assert.AreEqual(0, LineCount('HX46-NONE'), 'A failed extension adds no schedule line');
     end;
 
-    local procedure Extend(LeaseNo: Code[20]; ExtraMonths: Integer)
+    local procedure HX46Extend(LeaseNo: Code[20]; ExtraMonths: Integer)
     var
         Runner: Codeunit "HX046 Extend Runner";
         Ok: Boolean;
