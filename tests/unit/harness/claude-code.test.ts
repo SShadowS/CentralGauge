@@ -3039,7 +3039,7 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
   // 2.1.296 was the refused version here until its H-03 qualification entry.
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296)",
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300)",
   );
   // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
   for (const revision of [undefined, "2"]) {
@@ -3741,4 +3741,79 @@ Deno.test("claude-code streamEnded (H-08 run 002): only proven inert records may
     ),
     true,
   );
+});
+
+// ---- H-11: Claude Code 2.1.300 dev qualification (level 1, track-latest) ----
+Deno.test("qualification (H-11): 2.1.300 is qualified for dev use; an unknown version is still refused", () => {
+  const u = claudeCodeAdapter.unqualified!;
+  assertEquals(
+    u(manifest("cc", V2({ harness_version: "2.1.300" })), "dev"),
+    null,
+  );
+  assertStringIncludes(
+    u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
+    "(qualified: 2.1.282, 2.1.296, 2.1.300)",
+  );
+});
+
+// The raw.jsonl of H-11 stub cells on dev image sha256:c3c05bb4 (Claude Code
+// 2.1.300, al-lsp v1.18.11): 63e81cf4 (LSP arm) and fd301426 (web-on arm),
+// byte-exact except the cg_inventory line's CRLF stored as LF.
+const STUB_300 = {
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.300-lsp.jsonl",
+  web: "tests/fixtures/harness/claude-code/stub-2.1.300-web.jsonl",
+};
+const arm300 = (lsp: boolean) => ({
+  ...webArm(lsp, !lsp),
+  harness_version: "2.1.300",
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-10",
+  },
+});
+
+Deno.test("qualification (H-11): the 2.1.300 stub captures (LSP, web-on) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_300.lsp : STUB_300.web);
+    const { r, dir } = await parse(text, 0, arm300(lsp));
+    const tag = lsp ? "lsp" : "web";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.300");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
+    assertAlmostEquals(r.telemetry.cost_usd!, (90 * 2 + 45 * 10) / 1e6, 1e-12);
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12);
+    assertEquals([r.telemetry.turns, r.telemetry.stop_reason], [9, "end_turn"]);
+    assertEquals(r.termination, "completed");
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    assertEquals(
+      unqualifiedClaudeCode(manifest("cc", arm300(lsp)), "dev"),
+      null,
+      tag,
+    );
+  }
+  // A 2.1.300 init that drops a builtin agent is still caught.
+  const init = (await Deno.readTextFile(STUB_300.lsp)).split("\n")[1]!;
+  const dropped = init.replace('"statusline-setup"', '"other-agent"');
+  const { r } = await parse(
+    (await Deno.readTextFile(STUB_300.lsp)).replace(init, dropped),
+    0,
+    arm300(true),
+  );
+  assert(r.inventoryProblems!.length > 0, "a changed builtin list is refused");
 });

@@ -786,6 +786,70 @@ export const BUILTIN_INVENTORY: Readonly<
     qualified:
       "H-03 stub cells on image sha256:51c3095af96c3310f5f6674f494d7c349e7e9a4655a9f2aaf546c8820dd6290d (plain cc475242-f676-443b-a5e1-680bcbb65253, a428cda9-dfbf-40e6-8abf-8fe13cc1c0f3; LSP 14715acf-615c-45a0-90ae-23fa33c05b50, 0e26f343-de26-4b06-a853-8b8ae6cf2935; review H:\\cg-coord\\tasks\\H-03\\infra-qualify-2.1.296.md)",
   },
+  // H-11 dev qualification (track-latest). Against 2.1.296: no list change.
+  // Init keys, capabilities and slash commands identical; WebFetch/WebSearch
+  // observed with web_tools on, LSP with the LSP arm (al-lsp v1.18.11); the
+  // six disallowed tools stay hidden, carried over unobserved.
+  "2.1.300": {
+    agents: [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup",
+    ],
+    skills: [
+      "deep-research",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "schedule",
+      "claude-api",
+      "workflow-authoring",
+      "run",
+      "run-skill-generator",
+      "plugin-authoring",
+    ],
+    plugins: [
+      "cc-plugin-agents-md@builtin",
+      "cc-plugin-plugin-authoring@builtin",
+    ],
+    tools: [
+      "Task",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListAgents",
+      "NotebookEdit",
+      "Read",
+      "RemoteTrigger",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Skill",
+      "TaskStop",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Workflow",
+      "Write",
+    ],
+    qualified:
+      "H-11 stub cells on image sha256:c3c05bb4f3b48a7cced954180655db43bd092f66e2ebb869b2f1d6385d4574a1 (plain 5576d242-e15e-46e1-846d-e81fd9bfb51c, 23d95b20-039b-4019-b571-c7410e8d4580; LSP 63e81cf4-02b9-4241-8204-8de3b0ddc098, e319b786-2056-428c-8e44-dcfbdba68b25; web fd301426-9e42-4b2a-830d-729f6886dd37, 1dbe0ab6-5498-4026-bf35-ccdd925907b5; review H:\\cg-coord\\tasks\\H-11\\infra-qualify-2.1.300.md)",
+  },
 };
 
 /**
