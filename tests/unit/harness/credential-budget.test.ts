@@ -13,15 +13,15 @@ const r = {
   purpose: "M1-29 gate",
 };
 
-Deno.test("reserveCredentialRun: twenty-five across all lanes (H-06), then refused; concurrent callers serialize", async () => {
-  assertEquals(CREDENTIAL_RUN_LIMIT, 25);
+Deno.test("reserveCredentialRun: two hundred across all lanes (H-06b), then refused; concurrent callers serialize", async () => {
+  assertEquals(CREDENTIAL_RUN_LIMIT, 200);
   const ledger = join(
     await Deno.realPath(await Deno.makeTempDir()),
     "credential-runs.jsonl",
   );
   const results = await Promise.allSettled(
     Array.from(
-      { length: 27 },
+      { length: 202 },
       (_, i) =>
         reserveCredentialRun(ledger, {
           ...r,
@@ -33,16 +33,16 @@ Deno.test("reserveCredentialRun: twenty-five across all lanes (H-06), then refus
     results.filter((x) => x.status === "fulfilled").map((x) =>
       (x as PromiseFulfilledResult<number>).value
     ).sort(),
-    Array.from({ length: 25 }, (_, i) => i + 1).sort(),
+    Array.from({ length: 200 }, (_, i) => i + 1).sort(),
   );
   assertEquals(
     (await Deno.readTextFile(ledger)).trim().split("\n").length,
-    25,
+    200,
   );
   await assertRejects(
     () => reserveCredentialRun(ledger, r),
     ConfigurationError,
-    "25 supervised",
+    "200 supervised",
   );
 });
 
@@ -71,7 +71,7 @@ Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines sti
   await assertRejects(
     () => reserveCredentialRun(partial, r),
     ConfigurationError,
-    "25 supervised",
+    "200 supervised",
   );
 });
 
