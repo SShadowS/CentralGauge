@@ -220,6 +220,50 @@ Deno.test("H-09 run 002: judgeDeferred judges the snapshot it validated; an orac
   assertEquals(after.filter((s) => s.includes("TOCTOU")).length, 0);
 });
 
+Deno.test("H-09 run 003: a sibling suspended between admission and its cell (in its prior-executions read) never starts the cell once another worker threw", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", 2);
+  const behave = t.docker.behavior;
+  let started = 0;
+  t.docker.behavior = (call, run) => {
+    started++;
+    return behave(call, run);
+  };
+  // Call 1 is the resume sweep, 2 and 3 the two workers' admission reads:
+  // the later worker is held in its read until the other one has thrown.
+  const store = t.env.store;
+  const read = store.executions.bind(store);
+  let reads = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => release = r);
+  const safety = setTimeout(() => release(), 10_000);
+  store.executions = async (id: string) => {
+    const n = ++reads;
+    const out = await read(id);
+    if (n >= 3) await gate;
+    return out;
+  };
+  let drafts = 0;
+  t.env.hooks = {
+    beforeDraft: () => {
+      if (++drafts !== 1) return Promise.resolve();
+      // The throw reaches the campaign well before the held read returns.
+      setTimeout(() => release(), 1000);
+      return Promise.reject(new Error("runner killed"));
+    },
+  };
+  try {
+    await assertRejects(
+      () => runCampaign(t.env, "contract", opts({ concurrency: 2 }), io()),
+      Error,
+      "runner killed",
+    );
+  } finally {
+    clearTimeout(safety);
+  }
+  assertEquals(started, 1, "the held sibling started no cell");
+});
+
 Deno.test("H-09 run 002: a worker's throw stops admissions and settles the sibling workers before the campaign rejects", async () => {
   const t = await mockEnv();
   await experiment(t, "contract", 2);

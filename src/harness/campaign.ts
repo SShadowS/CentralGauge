@@ -1037,6 +1037,8 @@ export async function runCampaign(
             break;
           }
           if (await stopRequested()) break;
+          // Run 003: again after every await since admission, right before the start.
+          if (halted()) break;
           const r = await runCell(
             agentEnv,
             cellRefFor(campaign, opened, block, arm, i),
