@@ -17,6 +17,9 @@ import {
   resolveSoapTimeoutMs,
   runTestsViaSoap,
 } from "../../src/container/soap-test-client.ts";
+import { ContainerError } from "../../src/errors.ts";
+import { trustedHarnessAppIds } from "../../src/harness/bc-apps.ts";
+import { redactPatternText } from "../../src/harness/redact-patterns.ts";
 import { readAppJsonRaw } from "../../src/harness/staging.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import {
@@ -54,7 +57,22 @@ export interface CompileOut {
   artifact?: string;
 }
 export interface GateBc {
-  prenuke(): Promise<void>;
+  /**
+   * H-05 run 002: `owned` (trusted id + exact name) are removed without their
+   * data and cleaned; with any, a failed clean throws (infra).
+   */
+  prenuke(owned?: { id: string; name: string }[]): Promise<void>;
+  /**
+   * H-05: purge the kept tenant data of these CGR apps (unpublished, data
+   * left by harness cells at stamped versions 1.0.n.m), so the gate's
+   * 1.0.0.0 publish is not refused as a downgrade. `allow` is the trusted
+   * allowlist (trustedHarnessAppIds). Throws when any clean fails or is
+   * refused.
+   */
+  cleanData(
+    apps: { id: string; name: string }[],
+    allow: ReadonlyMap<string, string>,
+  ): Promise<void>;
   compile(project: ALProject): Promise<CompileOut>;
   publish(artifact: string): Promise<void>;
   runTests(codeunit: number, appId: string): Promise<TestResult>;
@@ -78,7 +96,25 @@ export async function containerBc(
     timeoutMs: resolveSoapTimeoutMs(undefined),
   };
   return {
-    prenuke: () => provider.prenukeCentralGaugeApps([container]),
+    prenuke: (owned) => provider.prenukeCentralGaugeApps([container], owned),
+    cleanData: async (apps, allow) => {
+      if (apps.length === 0) return;
+      const r = await provider.syncHarnessApps(container, {
+        removeIds: [],
+        publish: [],
+        allow,
+        clean: apps,
+      });
+      if (!r.done || r.removeIncomplete.length > 0) {
+        throw new ContainerError(
+          `CGR data clean on ${container} failed: ${
+            r.removeIncomplete.join(", ") || r.output.slice(-300)
+          }`,
+          container,
+          "setup",
+        );
+      }
+    },
     compile: async (project) => {
       const r = await provider.compileProject(container, project);
       return {
@@ -93,6 +129,22 @@ export async function containerBc(
     runTests: (codeunit, appId) => runTestsViaSoap(soap, codeunit, appId),
     dispose: () => provider.dispose(),
   };
+}
+
+/**
+ * H-05 run 002: a failed publish's report evidence. publishApp throws a
+ * generic "Publish failed" with the session output (CG_SCRIPT_THREW + the BC
+ * refusal) in rawOutput. `detail` stays the message (the collision decision
+ * reads it); `raw` is the output tail: [CG-PIN] lines (host, user, paths)
+ * dropped, secret patterns redacted before the cut.
+ */
+function publishFailure(err: unknown): { detail: string; raw?: string } {
+  const detail = err instanceof Error ? err.message : String(err);
+  const out = err instanceof ContainerError ? err.rawOutput : undefined;
+  if (!out?.trim()) return { detail };
+  const kept = out.split(/\r?\n/).filter((l) => !l.startsWith("[CG-PIN]"))
+    .join("\n").trim();
+  return { detail, raw: redactPatternText(kept).text.slice(-2000) };
 }
 
 async function loadProject(dir: string): Promise<ALProject> {
@@ -192,7 +244,34 @@ export async function runVariant(
       ms: 0,
     };
     try {
-      await bc.prenuke();
+      // H-05: harness cells leave CGR data at stamped versions 1.0.n.m that
+      // would refuse this 1.0.0.0 publish as a downgrade. The owned apps
+      // (trusted id + exact name) come only from the refapp and, when the
+      // task has one, its oracle, never the staged workspace (a candidate's
+      // module app.json is the agent's). The prenuke drops their data; the
+      // clean then covers those already unpublished (it cannot see them).
+      const oracleDir = join(source.taskDir, "oracle");
+      const allow = await trustedHarnessAppIds(
+        [source.refappDir, ...(task.fail_to_pass ? [oracleDir] : [])],
+        {},
+      );
+      const owned: { id: string; name: string }[] = [];
+      for (const app of apps) {
+        const from = app === "Oracle" ? oracleDir : join(source.refappDir, app);
+        const aj = await readAppJsonRaw(join(from, "app.json")) as {
+          id: string;
+          name: string;
+        };
+        // One entry per id (a duplicate key breaks the prenuke's hashtable).
+        if (
+          allow.has(aj.id.toLowerCase()) &&
+          !owned.some((o) => o.id.toLowerCase() === aj.id.toLowerCase())
+        ) {
+          owned.push({ id: aj.id, name: aj.name });
+        }
+      }
+      await bc.prenuke(owned);
+      await bc.cleanData(owned, allow);
       const built: string[] = [];
       const appIds: Record<string, string> = {};
       for (const app of apps) {
@@ -229,7 +308,7 @@ export async function runVariant(
             stage: "publish",
             ok: false,
             codes: [],
-            detail: err instanceof Error ? err.message : String(err),
+            ...publishFailure(err),
           });
           break;
         }
