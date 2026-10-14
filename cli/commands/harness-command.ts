@@ -84,6 +84,7 @@ import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { BUILTIN_INVENTORY } from "../../src/harness/adapters/claude-code.ts";
 import {
   forcedRefusal,
+  judgeDeferred,
   measureExecution,
   type MeasureRun,
   measureWorkspace,
@@ -101,6 +102,9 @@ import {
 } from "../../src/harness/measures.ts";
 import {
   cellRefFor,
+  checkJudgeConcurrency,
+  judgeQueue,
+  judgmentOwed,
   loadCampaignData,
   placedConcurrencyProblem,
   placedConcurrencyRefusal,
@@ -520,6 +524,8 @@ export interface CellCliOptions {
   image?: string | null;
   /** M1-34 Step 11: record the OAuth hosts (qualified marker, supervised Claude arm, ledger). */
   recordOAuthHosts?: boolean;
+  /** H-09: record the cell unjudged; `harness judge-pending` judges it. */
+  deferJudging?: boolean;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -610,6 +616,7 @@ export async function harnessCell(
     stop.abort();
   });
   let stubDir: string | null = null;
+  const pending = new Set<string>();
   try {
     if (scenario !== null) {
       stubDir = join(
@@ -638,6 +645,10 @@ export async function harnessCell(
             ...(o.image ? { imageOverride: o.image } : {}),
           },
         }
+        : {}),
+      // H-09: published unjudged; `harness judge-pending` judges it.
+      ...(o.deferJudging
+        ? { judgeLater: (_: unknown, e: ExecutionRecord) => pending.add(e.id) }
         : {}),
     };
     // A stub cell releases no credential: the supervision gate does not apply.
@@ -690,7 +701,11 @@ export async function harnessCell(
       const j = (await env.store.judgments(e.id))[0];
       console.log(
         `${colors.green("[OK]")} ${e.id} ${e.termination}${
-          j ? `, verdict ${j.verdict}` : ""
+          j
+            ? `, verdict ${j.verdict}`
+            : pending.has(e.id)
+            ? ", judgment pending (harness judge-pending)"
+            : ""
         }, cost ${e.telemetry.cost_usd ?? "unknown"} USD`,
       );
     }
@@ -1493,6 +1508,8 @@ interface CellCliFlags {
   stubProvider?: string;
   image?: string;
   recordOauthHosts?: boolean;
+  deferJudging?: boolean;
+  judgeConcurrency?: number;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -1525,6 +1542,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     stubProvider: f.stubProvider ? abs(f.stubProvider) : null,
     image: f.image ?? null,
     recordOAuthHosts: f.recordOauthHosts === true,
+    ...(f.deferJudging ? { deferJudging: true } : {}),
   };
 }
 
@@ -1558,6 +1576,10 @@ export interface RunCliOptions extends CellCliOptions {
   preregDecision?: string;
   /** run (M11-10): the stage-B pre-registration decision file. */
   preregBDecision?: string;
+  /** run (H-09): the judges' containers, disjoint from --containers. */
+  judgeContainers?: string[];
+  /** run, judge-pending (H-09): judgments at once (default: one per judge container). */
+  judgeConcurrency?: number;
 }
 
 type RerunCell = NonNullable<RunOptions["rerun"]>;
@@ -1599,6 +1621,9 @@ export async function harnessRun(
   };
   const ro = {
     concurrency: o.concurrency,
+    ...(o.judgeConcurrency !== undefined
+      ? { judgeConcurrency: o.judgeConcurrency }
+      : {}),
     maxPauseMs: o.maxPauseMin * 60_000,
     ...(o.sample !== undefined ? { sample: o.sample } : {}),
     ...(o.repeats !== undefined ? { repeats: o.repeats } : {}),
@@ -1657,6 +1682,7 @@ export async function harnessRun(
   }
   const h = await open({
     ...envOptions(o, o.resultsDir, command),
+    ...(o.judgeContainers ? { judgeContainers: o.judgeContainers } : {}),
     concurrency: o.concurrency,
     configs,
   });
@@ -1683,6 +1709,83 @@ export async function harnessRun(
     return s;
   } finally {
     await h.close();
+  }
+}
+
+/** H-09: judge every `harness cell --defer-judging` execution not judged yet; returns how many. */
+export async function harnessJudgePending(
+  o: CellCliOptions & { judgeConcurrency?: number },
+  open: Opener = openHarnessEnv,
+): Promise<number> {
+  checkJudgeConcurrency(o.judgeConcurrency);
+  // --containers are the judges' here: this command runs no agent.
+  const h = await open(
+    envOptions(o, join(o.resultsDir, "cells"), "harness judge-pending"),
+  );
+  const taskDirs: string[] = [];
+  const skip = (id: string, why: string) =>
+    console.log(`${colors.yellow("[WARN]")} ${id}: ${why}; not judged`);
+  let queue: ReturnType<typeof judgeQueue> | null = null;
+  try {
+    const env = h.env;
+    let n = 0;
+    // One refused execution (another oracle or task than the cell's) is
+    // skipped with a warning; it never stops the others.
+    queue = judgeQueue(
+      env,
+      o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
+      (env, cell, e) =>
+        judgeDeferred(env, cell, e).then(() => void n++, (err: unknown) => {
+          if (!(err instanceof ConfigurationError)) throw err;
+          skip(e.id, err.message);
+        }),
+    );
+    for (const e of await env.store.allExecutions()) {
+      if (!await judgmentOwed(env, e)) continue;
+      // Judging reads the task, its oracle and the refapp: the task as the
+      // cell loaded it (--rev), unchanged; judgeDeferred checks the oracle
+      // the run recorded and the restaged pristine tree against the run's.
+      const dir = join(
+        env.privateRoot,
+        "work",
+        `task-${crypto.randomUUID().slice(0, 8)}`,
+      );
+      taskDirs.push(dir);
+      const at = await loadTaskAt(o.root, e.task_id, o.rev, dir);
+      const id = (await taskSetIdentity(o.root, [at.task], env.symbols))
+        .tasks[0]!;
+      if (id.visible !== e.task_visible_hash) {
+        skip(e.id, `task ${e.task_id} changed since the cell`);
+        continue;
+      }
+      queue.push({
+        campaignId: e.campaign_id,
+        block: {
+          index: e.block,
+          task_id: e.task_id,
+          repeat: e.repeat,
+          order: [e.arm],
+        },
+        orderInBlock: e.order_in_block,
+        arm: e.arm,
+        armManifest: e.manifest,
+        armManifestHash: e.arm_manifest_hash,
+        task: at.task,
+        taskVisibleHash: id.visible,
+        oracleHash: id.oracle,
+        refapp: await resolveRefapp(o.root, at.task.task.refapp_version),
+      }, e);
+    }
+    await queue.drain();
+    console.log(`${colors.green("[OK]")} judged ${n} pending execution(s)`);
+    return n;
+  } finally {
+    // Every exit: no judge still runs when the environment closes.
+    await queue?.drain().catch(() => {});
+    await h.close();
+    for (const d of taskDirs) {
+      await Deno.remove(d, { recursive: true }).catch(() => {});
+    }
   }
 }
 
@@ -2815,8 +2918,33 @@ export function registerHarnessCommand(
       "--record-oauth-hosts",
       "M1-34 Step 11: record the OAuth hosts into harness/egress/recorded-hosts.json (qualified marker, supervised Claude arm)",
     )
+    .option(
+      "--defer-judging",
+      "H-09: record the cell unjudged and free the slot; `harness judge-pending` judges it",
+    )
     .action((opts: CellCliFlags, config: string, task: string) =>
       fail(async () => void await harnessCell(config, task, cliOpts(opts)))
+    );
+
+  shared(
+    parent.command(
+      "judge-pending",
+      "H-09: judge every `cell --defer-judging` execution not judged yet (--containers are the judges')",
+    ),
+  )
+    .option(
+      "--judge-concurrency <n:integer>",
+      "Judgments at once (default: one per container)",
+    )
+    .action((opts: CellCliFlags) =>
+      fail(async () =>
+        void await harnessJudgePending({
+          ...cliOpts(opts),
+          ...(opts.judgeConcurrency !== undefined
+            ? { judgeConcurrency: opts.judgeConcurrency }
+            : {}),
+        })
+      )
     );
 
   shared(
@@ -2865,6 +2993,7 @@ export function registerHarnessCommand(
     rerun?: RerunCell;
     preregDecision?: string;
     preregBDecision?: string;
+    judgeContainers?: string;
   };
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
@@ -2887,6 +3016,15 @@ export function registerHarnessCommand(
     ...(f.preregBDecision
       ? { preregBDecision: resolve(f.preregBDecision) }
       : {}),
+    ...(f.judgeContainers
+      ? {
+        judgeContainers: f.judgeContainers.split(",").map((c) => c.trim())
+          .filter(Boolean),
+      }
+      : {}),
+    ...(f.judgeConcurrency !== undefined
+      ? { judgeConcurrency: f.judgeConcurrency }
+      : {}),
   });
 
   shared(
@@ -2902,6 +3040,14 @@ export function registerHarnessCommand(
     .option("--sample <n:integer>", "Run only the first N blocks")
     .option("--repeats <n:integer>", "Run only repeats 1..N")
     .option("--concurrency <n:integer>", "Blocks run at once", { default: 1 })
+    .option(
+      "--judge-containers <names:string>",
+      "H-09: BC containers for judging (comma-separated, allocated, disjoint from --containers; default: the agents')",
+    )
+    .option(
+      "--judge-concurrency <n:integer>",
+      "H-09: judgments at once (default: one per judge container)",
+    )
     .option("--seed <n:integer>", "Seed of a new campaign's block order")
     .option(
       "--max-pause-min <n:number>",

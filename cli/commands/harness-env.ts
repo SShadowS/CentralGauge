@@ -82,6 +82,8 @@ export interface EnvOptions {
   /** Records root of this command (results/harness, or .../cells, .../fixtures). */
   resultsDir: string;
   containers: string[];
+  /** H-09: the judges' containers (their own lane), disjoint from `containers`. */
+  judgeContainers?: string[];
   backendHost?: string | undefined;
   backendPort: number;
   secretsSource: string;
@@ -348,7 +350,8 @@ export async function openHarnessEnv(
   o: EnvOptions,
   deps: EnvDeps = REAL_DEPS,
 ): Promise<OpenEnv> {
-  const refused = o.containers.filter((c) =>
+  const judges = o.judgeContainers ?? [];
+  const refused = [...o.containers, ...judges].filter((c) =>
     REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
   );
   if (refused.length > 0) {
@@ -363,8 +366,21 @@ export async function openHarnessEnv(
       "pass --containers (BC containers the harness may use)",
     );
   }
+  // H-09: a judge never takes an agent's container (its own lane, own reroutes).
+  const shared = judges.filter((j) =>
+    o.containers.some((c) => c.toLowerCase() === j.toLowerCase())
+  );
+  if (shared.length > 0) {
+    throw new ConfigurationError(
+      `--judge-containers must be disjoint from --containers: ${
+        shared.join(", ")
+      } in both`,
+    );
+  }
   const containers: string[] = [];
   for (const c of o.containers) containers.push(await deps.allocated(c));
+  const judgeNames: string[] = [];
+  for (const c of judges) judgeNames.push(await deps.allocated(c));
   const symbols = await loadSymbolsLock(o.repoRoot);
   if (!symbols) {
     throw new ValidationError(
@@ -486,11 +502,16 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
-    const ready = await deps.setup(containers);
+    const ready = await deps.setup([...containers, ...judgeNames]);
     closers.unshift(ready.dispose);
-    const lane = new BcLane(ready.bc, ready.names, {
-      health: deps.health(ready.names),
+    const health = deps.health(ready.names);
+    // setup keeps the order: the agents' names first, then the judges'.
+    const lane = new BcLane(ready.bc, ready.names.slice(0, containers.length), {
+      health,
     });
+    const judgeLane = judgeNames.length > 0
+      ? new BcLane(ready.bc, ready.names.slice(containers.length), { health })
+      : undefined;
     const { host, port } = await backendAddress(mode, o, deps.resolveHost);
     const egress = mode === "off"
       ? undefined
@@ -533,6 +554,7 @@ export async function openHarnessEnv(
       privateRoot: o.privateRoot,
       store,
       lane,
+      ...(judgeLane ? { judgeLane } : {}),
       backend,
       backendUrl: server.url,
       docker,
