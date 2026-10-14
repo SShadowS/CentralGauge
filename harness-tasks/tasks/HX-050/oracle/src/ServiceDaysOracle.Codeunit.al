@@ -230,6 +230,30 @@ codeunit 86460 "HX050 Service Days Oracle"
         Assert.IsFalse(DueSoonRunner.Result(), 'A plan with 0 interval months is never due soon, also on the last service date');
     end;
 
+    [Test]
+    procedure DueSoonZeroWindow()
+    var
+        ServicePlanMgt: Codeunit "CGR Service Plan Mgt";
+    begin
+        InitRun();
+        VehicleWithPlannedDate('HX050-16A');
+
+        Assert.IsTrue(ServicePlanMgt.IsServiceDueSoon('HX050-16A', 20270710D, 0), 'With a 0-day window the service is due soon on the planned date');
+        Assert.IsFalse(ServicePlanMgt.IsServiceDueSoon('HX050-16A', 20270709D, 0), 'With a 0-day window a service one day ahead is not due soon');
+    end;
+
+    [Test]
+    procedure DueSoonSevenDayWindowBoundary()
+    var
+        ServicePlanMgt: Codeunit "CGR Service Plan Mgt";
+    begin
+        InitRun();
+        VehicleWithPlannedDate('HX050-17A');
+
+        Assert.IsTrue(ServicePlanMgt.IsServiceDueSoon('HX050-17A', 20270703D, 7), 'A service exactly 7 days ahead is due soon in a 7-day window');
+        Assert.IsFalse(ServicePlanMgt.IsServiceDueSoon('HX050-17A', 20270702D, 7), 'A service 8 days ahead is not due soon in a 7-day window');
+    end;
+
     local procedure InitRun()
     var
         Setup: Record "CGR Setup";

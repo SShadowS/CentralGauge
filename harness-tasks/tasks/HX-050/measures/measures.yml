@@ -16,6 +16,8 @@ partial_credit:
     "86460/DueByKmThroughStrategy": 1
     "86460/DueByKmWithPlannedDateAhead": 1
     "86460/ZeroIntervalPlanHasNoPlannedDate": 1
+    "86460/DueSoonZeroWindow": 1
+    "86460/DueSoonSevenDayWindowBoundary": 1
   hidden_regressions: []
 reuse:
   targets:
