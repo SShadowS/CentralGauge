@@ -120,6 +120,7 @@ codeunit 80107 "CGR Outbox Queue Tests"
         SentNo: Integer;
         AttemptedNo: Integer;
         NewNo: Integer;
+        FailedNo: Integer;
     begin
         WorkDate(20270301D);
         Lib.SetV2Setup(0.01, '', 3);
@@ -129,6 +130,12 @@ codeunit 80107 "CGR Outbox Queue Tests"
         AttemptedNo := Lib.QueueOutboxEntry('T-OQ-006');
         Assert.IsFalse(Dispatcher.DispatchEntry(AttemptedNo), 'Nothing delivers the entry');
         NewNo := Lib.QueueOutboxEntry('T-OQ-006');
+        FailedNo := Lib.QueueOutboxEntry('T-OQ-006');
+        Dispatcher.DispatchEntry(FailedNo);
+        Dispatcher.DispatchEntry(FailedNo);
+        Dispatcher.DispatchEntry(FailedNo);
+        Entry.Get(FailedNo);
+        Assert.IsTrue(Entry.Failed, 'Failed at the limit of three');
 
         Facade.PurgeSent();
 
@@ -137,6 +144,8 @@ codeunit 80107 "CGR Outbox Queue Tests"
         Assert.AreEqual(1, Entry.Attempts, 'The kept entry keeps its attempt');
         Assert.IsFalse(Entry.Sent, 'The kept entry is not sent');
         Assert.IsTrue(Entry.Get(NewNo), 'The never attempted entry is kept');
+        Assert.IsTrue(Entry.Get(FailedNo), 'The failed unsent entry is kept');
+        Assert.IsTrue(Entry.Failed, 'The kept failed entry stays failed');
     end;
 
     [Test]
