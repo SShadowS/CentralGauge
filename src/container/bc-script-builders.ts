@@ -406,19 +406,30 @@ export function buildPrereqCleanupScript(
   containerName: string,
   expectedPrereqNames: string[],
   harnessAppName: string,
+  /**
+   * H-05: apps whose data the sweep may drop (uninstall -DoNotSaveData, then
+   * Sync-NAVApp -Mode Clean): trusted AppId with its exact name, from the
+   * caller's trusted allowlist. Empty (the bench prenuke): nothing destructive.
+   */
+  owned: { id: string; name: string }[] = [],
 ): string {
   const expectedNamesLit = expectedPrereqNames.length === 0
     ? "@()"
     : "@(" + expectedPrereqNames.map((n) => `'${escapeForPS(n)}'`).join(",") +
       ")";
+  const ownedLit = "@{" +
+    owned.map((o) =>
+      `'${escapeForPS(o.id.toLowerCase())}' = '${escapeForPS(o.name)}'`
+    ).join("; ") + "}";
   return `
       ${bcchImport()}
       ${bcchConfigInit()}
 
       $expectedNames = ${expectedNamesLit}
+      $ownedApps = ${ownedLit}
       try {
         $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
-          param($expected, $harnessName)
+          param($expected, $harnessName, [hashtable]$owned)
           $out = @()
 
           # Removable = CentralGauge apps we are allowed to drop: every
@@ -458,11 +469,13 @@ export function buildPrereqCleanupScript(
               # -Tenant reports "not published" and silently leaves it (the real
               # cause of the stuck chain). Try tenant scope first, then global as
               # a fallback for any globally-published app.
-              # H-05: CGR refapp apps (harness cells install them at stamped
-              # versions 1.0.n.m) go without their data, then are cleaned: kept
+              # H-05: an OWNED app (trusted AppId with its exact name, the
+              # caller's allowlist; harness cells install them at stamped
+              # versions 1.0.n.m) goes without its data, then is cleaned: kept
               # data would refuse the next 1.0.0.0 publish as a downgrade.
-              # CGR only; other apps keep their data as before.
-              $cgr = ($app.Name -like 'CGR *')
+              # Any other app keeps its data as before (never by name prefix).
+              $appId = "$($app.AppId)".ToLower()
+              $cgr = ($owned.ContainsKey($appId) -and $owned[$appId] -ceq $app.Name)
               $noData = @{}
               if ($cgr) { $noData.DoNotSaveData = $true }
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -Force -ErrorAction SilentlyContinue @noData } catch { }
@@ -476,7 +489,7 @@ export function buildPrereqCleanupScript(
                 $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
               }
               # Clean only once no version of the name is still published (as buildHarnessCleanBlock).
-              if ($done -and $cgr -and @(Get-NAVAppInfo -ServerInstance BC -Name $app.Name -Publisher 'CentralGauge').Count -eq 0) { try { Sync-NAVApp -ServerInstance BC -Tenant default -Name $app.Name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop; $out += "PREREQ_CLEANUP_CLEAN:$($app.Name)" } catch { $out += "PREREQ_CLEANUP_WARN:$($app.Name) - clean: $($_.Exception.Message)" } }
+              if ($done -and $cgr -and @(Get-NAVAppInfo -ServerInstance BC -Name $app.Name -Publisher 'CentralGauge').Count -eq 0) { try { Sync-NAVApp -ServerInstance BC -Tenant default -Name $app.Name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop; $out += "PREREQ_CLEANUP_CLEAN:$($app.Name)" } catch { $out += "PREREQ_CLEANUP_CLEAN_FAILED:$($app.Name) - $($_.Exception.Message)"; return $out } }
               # else: non-leaf this pass (a dependent still published) OR not
               # found in either scope -> retried next pass; the no-progress
               # guard breaks + emits BLOCKED if nothing can be removed.
@@ -497,7 +510,9 @@ export function buildPrereqCleanupScript(
           if ($remaining -gt 0) { $out += "PREREQ_CLEANUP_INCOMPLETE:$remaining" }
           $out += "PREREQ_CLEANUP_DONE"
           $out
-        } -argumentList (,$expectedNames), "${escapeForPS(harnessAppName)}"
+        } -argumentList (,$expectedNames), "${
+    escapeForPS(harnessAppName)
+  }", $ownedApps
         $report | ForEach-Object { Write-Output $_ }
       } catch {
         Write-Output "PREREQ_CLEANUP_WARN:invoke-script - $($_.Exception.Message)"

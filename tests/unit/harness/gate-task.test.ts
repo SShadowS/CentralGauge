@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { basename, join } from "@std/path";
 import type { ALProject, TestResult } from "../../../src/container/types.ts";
+import { ContainerError } from "../../../src/errors.ts";
 import type { GateBc } from "../../../scripts/harness/gate-task.ts";
 import { runGate, runVariant } from "../../../scripts/harness/gate-task.ts";
 import { summarize } from "../../../scripts/harness/gate-core.ts";
@@ -21,6 +22,8 @@ function mockBc(o: {
   /** H-05: prenuke / clean / publish calls, in order. */
   events?: string[];
   cleanThrows?: boolean;
+  /** H-05 run 002: publish rejects like publishApp: generic message, raw output. */
+  publishRaw?: string;
 }): GateBc {
   let prenukes = 0;
   return {
@@ -30,8 +33,12 @@ function mockBc(o: {
         ? Promise.reject(new Error("SYNC_CLEAN_FAILED"))
         : Promise.resolve();
     },
-    prenuke: () => {
-      o.events?.push("prenuke");
+    prenuke: (owned = []) => {
+      o.events?.push(
+        owned.length > 0
+          ? `prenuke ${owned.map((a) => a.name).join(",")}`
+          : "prenuke",
+      );
       prenukes++;
       if (
         o.prenukeThrowsAfter !== undefined && prenukes > o.prenukeThrowsAfter
@@ -54,6 +61,13 @@ function mockBc(o: {
     },
     publish: (a: string) => {
       o.events?.push("publish");
+      if (o.publishRaw !== undefined) {
+        return Promise.reject(
+          new ContainerError("Publish failed", "C1", "publish", {
+            rawOutput: o.publishRaw,
+          }),
+        );
+      }
       return a.includes(`${o.failPublish}`) && o.failPublish
         ? Promise.reject(new Error(o.publishError ?? "publish failed"))
         : Promise.resolve();
@@ -133,7 +147,9 @@ Deno.test("runVariant (H-05): after the prenuke and before any publish, the stag
     tmpRoot,
   );
   assertEquals(r.infra, undefined);
-  assertEquals(events[0], "prenuke");
+  // Run 002: the prenuke gets the same owned list (trusted id + exact name).
+  const owned = events[1]!.slice("clean ".length);
+  assertEquals(events[0], `prenuke ${owned}`);
   assert(events[1]!.startsWith("clean "), events.join(" | "));
   const names = events[1]!.slice("clean ".length).split(",");
   for (
@@ -147,6 +163,37 @@ Deno.test("runVariant (H-05): after the prenuke and before any publish, the stag
     names.join(),
   );
   assertEquals(events.slice(2).every((e) => e === "publish"), true);
+});
+
+Deno.test("runVariant (H-05 run 002): a refused publish keeps the redacted raw output (CG_SCRIPT_THREW + the BC refusal) in the report", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const secret = "sk-ant-api03-" + "x".repeat(30);
+  const r = await runVariant(
+    mockBc({
+      // Session noise that would match PUBLISH_COLLISION ("already exists")
+      // plus a [CG-PIN] line carrying host details, around the BC refusal.
+      publishRaw:
+        `[CG-PIN] host=H user=me PSModulePath=C:\\Users\\me\\x\nWARN: folder already exists\nCG_SCRIPT_THREW: Cannot install the extension CGR Core by CentralGauge 1.0.0.0 because a newer version 1.0.25913.28211 was already installed. ${secret}`,
+    }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  const failed = r.builds.find((b) => b.stage === "publish" && !b.ok)!;
+  // The decision text stays the error message; the raw output is evidence.
+  assertEquals(failed.detail, "Publish failed");
+  const raw = failed.raw ?? "";
+  assertStringIncludes(raw, "CG_SCRIPT_THREW");
+  assertStringIncludes(
+    raw,
+    "a newer version 1.0.25913.28211 was already installed",
+  );
+  assertEquals(raw.includes(secret), false, raw);
+  assertEquals(raw.includes("[CG-PIN]"), false, raw);
+  // Noise in the raw output never turns an infra publish into a collision.
+  assertEquals(summarize(loaded.task, r).infra, true);
 });
 
 Deno.test("runVariant (H-05): a failed data clean is infra; nothing is published", async () => {
@@ -231,6 +278,8 @@ Deno.test("runVariant: candidate test-authoring counts only added codeunits", as
       .replace("fail_to_pass]", "mutant_kill]")
       .replace(/fail_to_pass:\n[\s\S]*$/, ""),
   );
+  // H-05 run 002: a task without fail_to_pass has no oracle folder.
+  await Deno.remove(join(source.taskDir, "oracle"), { recursive: true });
   const ta = (await loadTask(source.taskDir)).task;
   const ws = await tmp();
   await writeTask(ws, "HX-009", "x"); // any refapp copy; only Test/ below matters
@@ -247,6 +296,7 @@ Deno.test("runVariant: candidate test-authoring counts only added codeunits", as
     1,
     tmpRoot,
   );
+  assertEquals(r.infra, undefined);
   assertEquals(r.own, [{ codeunit: 80200, procedures: ["Mine"] }]);
   assertEquals(loaded.task.id, "HX-001");
 });

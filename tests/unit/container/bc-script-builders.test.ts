@@ -345,11 +345,23 @@ Deno.test("buildPrereqCleanupScript routes the unpublish through Invoke-ScriptIn
   assertStringIncludes(script, "Invoke-ScriptInBcContainer");
 });
 
-Deno.test("buildPrereqCleanupScript (H-05): CGR apps are removed without their data and cleaned; only CGR apps", () => {
+Deno.test("buildPrereqCleanupScript (H-05): owned apps (trusted id + exact name) are removed without their data and cleaned; never by name prefix", () => {
   // Harness cells leave CGR refapp data at stamped versions (1.0.n.m); a kept
-  // install refuses the gate's 1.0.0.0 as a downgrade.
-  const script = buildPrereqCleanupScript("Cronus281", [], "CG Test Harness");
-  assertStringIncludes(script, `$cgr = ($app.Name -like 'CGR *')`);
+  // install refuses the gate's 1.0.0.0 as a downgrade. Behaviour:
+  // tests/unit/harness/prenuke-owned.test.ts (local pwsh, stubbed cmdlets).
+  const script = buildPrereqCleanupScript("Cronus281", [], "CG Test Harness", [
+    { id: "C6A1E000-0000-4000-8000-000000000001", name: "CGR Core" },
+  ]);
+  assertStringIncludes(
+    script,
+    `$ownedApps = @{'c6a1e000-0000-4000-8000-000000000001' = 'CGR Core'}`,
+  );
+  assertStringIncludes(
+    script,
+    "$cgr = ($owned.ContainsKey($appId) -and $owned[$appId] -ceq $app.Name)",
+  );
+  assert(!script.includes("-like 'CGR *'"), "never by name prefix");
+  assertStringIncludes(script, "PREREQ_CLEANUP_CLEAN_FAILED:");
   assertStringIncludes(script, "if ($cgr) { $noData.DoNotSaveData = $true }");
   assertEquals(
     (script.match(/Uninstall-NAVApp [^\n]*@noData/g) ?? []).length,
