@@ -1,0 +1,12 @@
+# H-11 qualification config (developmental). Never part of an experiment.
+id: cc-v2-probe-h11-lsp
+harness: claude-code
+harness_version: "latest"
+image_revision: "3-dev-H-10"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/env/instructions
+  lsp: [al]
+limits: { timeout_min: 30, max_budget_usd: 5 }
