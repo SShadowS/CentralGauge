@@ -6,6 +6,7 @@ import {
   assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
+import { stub } from "@std/testing/mock";
 import { __setContextListerForTests } from "../../../src/container/docker-context.ts";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { exists, validatedDir } from "../../../src/harness/fsutil.ts";
@@ -1662,4 +1663,61 @@ Deno.test({
   };
   const rn = await runSandbox(n, await spec({ streamEnd: ended(10) }), []);
   assertEquals(rn.lingered?.processes, "tasklist exited 5: access denied");
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review 2): a poll stuck in a hanging stat never blocks teardown nor stops the run later",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await new Promise((res) => setTimeout(res, 50));
+    return 0;
+  };
+  const hang = stub(Deno, "stat", () => new Promise<Deno.FileInfo>(() => {}));
+  try {
+    const t0 = performance.now();
+    const r = await runSandbox(
+      d,
+      await spec({ opTimeoutMs: 50, streamEnd: ended(10) }),
+      [],
+    );
+    assert(performance.now() - t0 < 2_000);
+    assertEquals([r.exitCode, r.lingered, d.kills], [0, undefined, []]);
+  } finally {
+    hang.restore();
+  }
+});
+
+Deno.test({
+  name:
+    "runSandbox (H-08 review 2): a process that exits while the snapshot runs is never recorded as lingering or killed",
+  ...quick,
+}, async () => {
+  const d = new FakeDocker();
+  let exitNow!: () => void;
+  const exited = new Promise<void>((res) => (exitNow = res));
+  d.behavior = async (_c, io) => {
+    await io.stdout('{"type":"result"}');
+    await exited;
+    return 0;
+  };
+  d.exec = async (_n: string, _u: string, _a: string[]) => {
+    exitNow();
+    await new Promise((res) => setTimeout(res, 30));
+    return { code: 0, stdout: "claude.exe", stderr: "" };
+  };
+  const r = await runSandbox(
+    d,
+    await spec({ opTimeoutMs: 500, streamEnd: ended(10) }),
+    [],
+  );
+  assertEquals([r.exitCode, r.lingered, r.timedOut, d.kills], [
+    0,
+    undefined,
+    false,
+    [],
+  ]);
 });

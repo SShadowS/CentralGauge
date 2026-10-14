@@ -827,8 +827,9 @@ export async function runSandbox(
   let poller: ReturnType<typeof setInterval> | undefined;
   let polling: Promise<void> = Promise.resolve();
   /** Another stop already happened (or the run is over): the watcher stands down. */
+  let closed = false;
   const stopping = () =>
-    settled || r.timedOut || r.interrupted || r.overflow ||
+    closed || settled || r.timedOut || r.interrupted || r.overflow ||
     r.lingered !== undefined;
   // H-08: re-read the log only when it grew; stop once it has ended and has
   // stayed unchanged for the grace, checked again after the snapshot (output
@@ -934,8 +935,10 @@ export async function runSandbox(
   } finally {
     clearTimeout(timer);
     clearInterval(poller);
-    // An in-flight poll is bounded (stat, read, inspect, exec): drain it.
-    await polling;
+    // An in-flight poll may still be awaiting a stat or read: give it one op
+    // deadline, after which `closed` keeps it from ever committing a stop.
+    closed = true;
+    await settle(polling, spec.opTimeoutMs);
     stop?.removeEventListener("abort", onAbort);
     if (running && !settled) {
       // Abandon the docker client; realDocker bounds its own settlement.

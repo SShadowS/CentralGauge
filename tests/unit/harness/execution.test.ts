@@ -4959,7 +4959,7 @@ Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed 
 });
 
 // H-08 (M8-07c cell 105ec327): claude printed its final result record but the
-// process never exited, so the cell ran to the 30 min cap and read as a
+// execution never settled, so the cell ran to the 30 min cap and read as a
 // timeout. A finished stream is stopped after a bounded grace instead: the run
 // is completed (its cost kept) and the late stop is recorded.
 Deno.test("runCell (H-08): a run that lingers after its final result is stopped after the grace and completed, the lingering recorded", async () => {

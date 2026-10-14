@@ -880,7 +880,10 @@ export async function writeConfigDir(
 
 /**
  * H-08: a finished run may linger this long before its sandbox is stopped
- * (M8-07c cell 105ec327: claude -p printed its result, then never exited).
+ * (M8-07c cell 105ec327: after claude -p printed its final result the
+ * execution never settled; candidates are a Claude/WebFetch shutdown hang or a
+ * surviving descendant of a timed-out Bash `find /`; the tasklist snapshot may
+ * distinguish them next time).
  */
 const STREAM_END_GRACE_MS = 120_000;
 
