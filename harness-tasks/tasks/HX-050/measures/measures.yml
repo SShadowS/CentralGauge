@@ -28,8 +28,8 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
-  naive/absolute-days: { partial_credit: 0.8 }
-  naive/arithmetic-before-guard: { partial_credit: 0.6666666666666666 }
-  naive/date-first: { partial_credit: 0.9333333333333333 }
-  naive/inline-date-math: { partial_credit: 0.8 }
-  naive/window-exclusive: { partial_credit: 0.9333333333333333 }
+  naive/absolute-days: { partial_credit: 0.8235294117647058 }
+  naive/arithmetic-before-guard: { partial_credit: 0.7058823529411765 }
+  naive/date-first: { partial_credit: 0.9411764705882353 }
+  naive/inline-date-math: { partial_credit: 0.8235294117647058 }
+  naive/window-exclusive: { partial_credit: 0.8235294117647058 }

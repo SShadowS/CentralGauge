@@ -35,7 +35,7 @@ codeunit 86460 "HX050 Service Days Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'DaysToPlannedService must not fail for a vehicle without a plan: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.Result(), 'A vehicle without a plan has no planned service date');
+        Assert.IsFalse(Runner.RunOutcome(), 'A vehicle without a plan has no planned service date');
         Assert.AreEqual(0, Runner.Days(), 'Days is 0 without a planned service date');
 
         VehicleWithoutServiceDate('HX050-02C');
@@ -45,7 +45,7 @@ codeunit 86460 "HX050 Service Days Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'DaysToPlannedService must not fail for a vehicle without a last service date: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.Result(), 'A vehicle without a last service date has no planned service date');
+        Assert.IsFalse(Runner.RunOutcome(), 'A vehicle without a last service date has no planned service date');
         Assert.AreEqual(0, Runner.Days(), 'Days is 0 without a last service date');
     end;
 
@@ -98,7 +98,7 @@ codeunit 86460 "HX050 Service Days Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'IsServiceDueSoon must not fail for a vehicle without a plan: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.Result(), 'A vehicle without a plan is never due soon');
+        Assert.IsFalse(Runner.RunOutcome(), 'A vehicle without a plan is never due soon');
     end;
 
     [Test]
@@ -115,7 +115,7 @@ codeunit 86460 "HX050 Service Days Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'IsServiceDueSoon must not fail for a vehicle without a last service date: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.Result(), 'A vehicle without a last service date has no planned service date');
+        Assert.IsFalse(Runner.RunOutcome(), 'A vehicle without a last service date has no planned service date');
     end;
 
     [Test]
@@ -176,7 +176,7 @@ codeunit 86460 "HX050 Service Days Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'IsServiceDue must not fail for a vehicle without a plan: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.Result(), 'A vehicle without a plan below its service km is not due');
+        Assert.IsFalse(Runner.RunOutcome(), 'A vehicle without a plan below its service km is not due');
     end;
 
     [Test]
@@ -220,14 +220,14 @@ codeunit 86460 "HX050 Service Days Oracle"
         Ok := Runner.Run();
 
         Assert.IsTrue(Ok, 'DaysToPlannedService must not fail for a plan without an interval: ' + GetLastErrorText());
-        Assert.IsFalse(Runner.Result(), 'A plan with 0 interval months gives no planned service date');
+        Assert.IsFalse(Runner.RunOutcome(), 'A plan with 0 interval months gives no planned service date');
         Assert.AreEqual(0, Runner.Days(), 'Days is 0 for a plan with 0 interval months');
 
         Commit();
         Ok := DueSoonRunner.Run();
 
         Assert.IsTrue(Ok, 'IsServiceDueSoon must not fail for a plan without an interval: ' + GetLastErrorText());
-        Assert.IsFalse(DueSoonRunner.Result(), 'A plan with 0 interval months is never due soon, also on the last service date');
+        Assert.IsFalse(DueSoonRunner.RunOutcome(), 'A plan with 0 interval months is never due soon, also on the last service date');
     end;
 
     [Test]

@@ -40,7 +40,7 @@ codeunit 86461 "HX050 Due Runner"
         Configure(VehicleNo, AtDate, 0);
     end;
 
-    procedure Result(): Boolean
+    procedure RunOutcome(): Boolean
     begin
         exit(RunResult);
     end;
