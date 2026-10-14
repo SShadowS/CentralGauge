@@ -12,6 +12,6 @@ pass_to_pass:
   - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval, DueByKmWithoutPlan] }
   - { codeunit: 80000, procedures: [HeavyDutyStrategyFromFleetExtension] }
 fail_to_pass: null
-mutants: [else-heavy-duty, strategy-instance-cached, plan-strategy-over-vehicle, mileage-not-last-service-km, vehicle-record-cached]
+mutants: [else-heavy-duty, strategy-instance-cached, plan-strategy-over-vehicle, partner-on-plan-uses-plan, vehicle-record-cached]
 contamination: null
 limits: { timeout_min: 30 }

@@ -17,11 +17,16 @@ codeunit 70100 "CGR Fleet Mgt"
     procedure NextServiceKm(VehicleNo: Code[20]): Integer
     var
         Vehicle: Record "CGR Vehicle";
+        ServicePlan: Record "CGR Service Plan";
         Strategy: Interface "CGR Maintenance Strategy";
     begin
         Vehicle.Get(VehicleNo);
         Strategy := Vehicle.Strategy;
-        exit(Strategy.NextServiceKm(Vehicle.Mileage));
+        if not (Vehicle.Strategy in [Vehicle.Strategy::Default, Vehicle.Strategy::"Heavy Duty"]) then
+            if Vehicle."Service Plan Code" <> '' then
+                if ServicePlan.Get(Vehicle."Service Plan Code") then
+                    Strategy := ServicePlan.Strategy;
+        exit(Strategy.NextServiceKm(Vehicle."Last Service Km"));
     end;
 
     [IntegrationEvent(false, false)]
