@@ -1492,3 +1492,14 @@ Deno.test("pi adapter (H-01u): stderr with Invalid settings file, an unreadable 
     );
   }
 });
+
+Deno.test("pi adapter (H-07): settings.web_tools is refused by name, never ignored", () => {
+  for (const web_tools of [true, false]) {
+    assertThrows(
+      () =>
+        piAdapter.nativeSettings({ ...CFG, settings: { web_tools } }, CATALOG),
+      ConfigurationError,
+      "pi 0.87.1 has no web tools; web_tools is a claude-code setting",
+    );
+  }
+});

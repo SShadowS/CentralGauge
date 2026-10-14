@@ -1894,8 +1894,20 @@ Deno.test("buildReport (M11-12): exploratory rollups carry null as missing, neve
   assertEquals([st.value, st.cells, st.missing], [null, 0, 2]);
   assertEquals(row("plain", "tokens_out").value, 5);
   assertEquals(r.exploratory!.usage_reconciliation, {
-    plain: { exact: 1, compaction_excess: 1, unreconciled: 0, absent: 0 },
-    skills: { exact: 0, compaction_excess: 0, unreconciled: 2, absent: 0 },
+    plain: {
+      exact: 1,
+      compaction_excess: 1,
+      web_excess: 0,
+      unreconciled: 0,
+      absent: 0,
+    },
+    skills: {
+      exact: 0,
+      compaction_excess: 0,
+      web_excess: 0,
+      unreconciled: 2,
+      absent: 0,
+    },
   });
   assertEquals(r.exploratory!.compaction_excess, [
     { arm: "plain", task: "HX-002", repeat: 1 },
@@ -2021,4 +2033,52 @@ Deno.test("buildReport (M11-12 r2): a counted judgment's record filed under a su
     ValidationError,
   );
   assertStringIncludes(err.message, "differs from the key");
+});
+
+Deno.test("buildReport (H-07): web_excess cells keep their cost; unpriced web searches are disclosed whatever the cell's status", async () => {
+  const base = await records();
+  const raw: Record<
+    string,
+    (typeof base.executions)[number]["telemetry"]["raw_usage"]
+  > = {
+    "skills/HX-001": {
+      usage_reconciliation: { status: "web_excess", excess: {} },
+      unpriced: [
+        { model: "m", item: "web_search_requests", count: 2 },
+        { model: "n", item: "web_search_requests", count: 1 },
+      ],
+    },
+    // The worst status is compaction_excess, yet the searches still show.
+    "skills/HX-002": {
+      usage_reconciliation: { status: "compaction_excess", excess: {} },
+      unpriced: [{ model: "m", item: "web_search_requests", count: 1 }],
+    },
+    "plain/HX-001": { usage_reconciliation: { status: "exact" } },
+    "plain/HX-002": { usage_reconciliation: { status: "exact" } },
+  };
+  const executions = base.executions.map((e) => ({
+    ...e,
+    telemetry: { ...e.telemetry, raw_usage: raw[`${e.arm}/${e.task_id}`]! },
+  }));
+  const r = await buildReport({ ...base, executions }, { resamples: 50 });
+  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.web_excess, 1);
+  assertEquals(r.exploratory!.web_excess, [
+    { arm: "skills", task: "HX-001", repeat: 1 },
+  ]);
+  assertEquals(r.exploratory!.unpriced_web_searches, [
+    { arm: "skills", task: "HX-001", repeat: 1, count: 3 },
+    { arm: "skills", task: "HX-002", repeat: 1, count: 1 },
+  ]);
+  // Cost kept: skills still costs $1 per cell.
+  assertEquals(r.arms.find((a) => a.arm === "skills")!.total_spend_usd, 2);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "web_excess (cost kept): HX-001 r1 skills");
+  assertStringIncludes(
+    text,
+    "cost excludes 3 unpriced web search request(s): HX-001 r1 skills",
+  );
+  assertStringIncludes(
+    text,
+    "cost excludes 1 unpriced web search request(s): HX-002 r1 skills",
+  );
 });

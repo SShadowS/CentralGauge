@@ -4,12 +4,19 @@ import { join } from "@std/path";
 import type { Catalog } from "../ingest/catalog/read.ts";
 import type { HarnessAdapter } from "./adapter.ts";
 import type { HarnessConfig } from "./config.ts";
-import type { InstalledLsp, RuntimeFacts } from "./manifest.ts";
+import type { ClaudePackage, InstalledLsp, RuntimeFacts } from "./manifest.ts";
 import type { DockerCli } from "./sandbox.ts";
 import { ConfigurationError } from "../errors.ts";
 import { BACKEND_VERSION } from "./backend.ts";
+import { LATEST } from "./config.ts";
 import { hashJson } from "./hash.ts";
-import { LSP_ASSET_LABEL, LSP_MODES, LSP_TAG } from "./manifest.ts";
+import {
+  LSP_ASSET_LABEL,
+  LSP_MODES,
+  LSP_TAG,
+  SEMVER,
+  SRI_SHA512,
+} from "./manifest.ts";
 
 /** base:1 is frozen; H-01 run 004 builds base:2 (an existing tag is never rebuilt). */
 export const BASE_VERSION = "2";
@@ -32,7 +39,37 @@ export const IMAGE_LABELS = {
   base: "centralgauge.harness.base_digest",
   /** Optional (H-01 run 004): only images built with --revision carry it. */
   revision: "centralgauge.harness.revision",
+  /** Optional (H-03): `npm-latest` on a claude-code image whose version was resolved at build; with `package`. */
+  track: "centralgauge.harness.track",
+  /** Optional (H-03): `@anthropic-ai/claude-code@<version> <main sri> <win32-x64 sri>`; with `track`. */
+  package: "centralgauge.harness.package",
 } as const;
+
+/** H-03: what a tracked claude-code image tracks (npm dist-tag latest). */
+export const CLAUDE_CODE_TRACK = "npm-latest";
+export const CLAUDE_CODE_PACKAGE = "@anthropic-ai/claude-code";
+const CC_MAIN = CLAUDE_CODE_PACKAGE;
+const CC_WIN = "@anthropic-ai/claude-code-win32-x64";
+const NPM_REGISTRY = "https://registry.npmjs.org";
+/** What install-claude-code.ps1 records about the two archives it verified and installed. */
+export const CLAUDE_CODE_RESOLVED = "C:\\cg-npm\\claude-code-resolved.json";
+const CC_INSTALL_METHODS = ["npm", "tar"];
+const NPM_TIMEOUT_MS = 30_000;
+
+/** One frozen claude-code revision: the image a campaign's identity is. */
+export interface FrozenClaudeCode {
+  version: string;
+  digest: string;
+  integrity: { main: string; win32_x64: string };
+}
+/**
+ * H-03: frozen claude-code revisions, reserved in code like FROZEN_IMAGE_TAGS
+ * (independent of local tags). The orchestrator pastes the record line
+ * `images build` prints once it accepts a build; a recorded revision is never
+ * built again and runtimeFacts accepts exactly that image under it.
+ */
+export const FROZEN_CLAUDE_CODE: Readonly<Record<string, FrozenClaudeCode>> =
+  {};
 const REQUIRED_LABELS = [
   IMAGE_LABELS.harness,
   IMAGE_LABELS.version,
@@ -97,6 +134,8 @@ export interface ImageFacts {
   revision: string | null;
   mcp?: Record<string, { version: string; tool_schema_hash: string }>;
   lsp?: Record<string, LspFact>;
+  /** H-03: the resolved Claude Code package; only on tracked images. */
+  package?: ClaudePackage;
 }
 
 /** An LSP component's facts; release, asset and dependency_source on images built since M10-10. */
@@ -156,6 +195,7 @@ export async function imageFacts(
   }
   const mcp = mcpFacts(ref, l);
   const lsp = lspFacts(ref, l);
+  const pkg = packageFacts(ref, l);
   // The label is trusted at build time only: the bytes the image ships must
   // hash to it (same names with another schema would pass a name check).
   if (owner !== null) {
@@ -182,6 +222,7 @@ export async function imageFacts(
       );
       await verifyResolved(docker, img.Id, owner, ref, def, lsp["al"]);
     }
+    if (pkg) await verifyClaudeResolved(docker, img.Id, owner, ref, pkg);
   }
   return {
     digest: img.Id,
@@ -192,7 +233,115 @@ export async function imageFacts(
     mcp,
     // No key on images without LSP: existing deep-equal expectations hold.
     ...(Object.keys(lsp).length > 0 ? { lsp } : {}),
+    ...(pkg ? { package: pkg } : {}),
   };
+}
+
+/**
+ * H-03: the track and package labels, both or none, strictly parsed; the
+ * package version must be the version label.
+ */
+function packageFacts(
+  ref: string,
+  l: Record<string, string>,
+): ClaudePackage | null {
+  const T = IMAGE_LABELS.track;
+  const P = IMAGE_LABELS.package;
+  const has = [T, P].filter((k) => Object.hasOwn(l, k));
+  if (has.length === 0) return null;
+  if (has.length !== 2) {
+    throw new ConfigurationError(
+      `image ${ref}: labels ${T} and ${P} go together (present: ${
+        has.join(", ")
+      })`,
+    );
+  }
+  if (l[T] !== CLAUDE_CODE_TRACK) {
+    throw new ConfigurationError(
+      `image ${ref}: label ${T} must be ${CLAUDE_CODE_TRACK}, got "${l[T]}"`,
+    );
+  }
+  const m = /^@anthropic-ai\/claude-code@(\S+) (\S+) (\S+)$/.exec(l[P]!);
+  if (
+    !m || !SEMVER.test(m[1]!) || !SRI_SHA512.test(m[2]!) ||
+    !SRI_SHA512.test(m[3]!)
+  ) {
+    throw new ConfigurationError(
+      `image ${ref}: label ${P} must be "${CC_MAIN}@<version> <sha512 sri> <sha512 sri>", got "${
+        l[P]
+      }"`,
+    );
+  }
+  if (m[1] !== l[IMAGE_LABELS.version]) {
+    throw new ConfigurationError(
+      `image ${ref}: label ${P} names ${
+        m[1]
+      }, label ${IMAGE_LABELS.version} says ${l[IMAGE_LABELS.version]}`,
+    );
+  }
+  return {
+    name: CC_MAIN,
+    version: m[1]!,
+    track: CLAUDE_CODE_TRACK,
+    integrity: { main: m[2]!, win32_x64: m[3]! },
+  };
+}
+
+/** H-03: the shipped CLAUDE_CODE_RESOLVED must agree with the package labels. */
+async function verifyClaudeResolved(
+  docker: DockerCli,
+  id: string,
+  owner: string,
+  ref: string,
+  pkg: ClaudePackage,
+): Promise<void> {
+  const fix = "rebuild the claude-code image";
+  const text = await docker.readImageFile(id, CLAUDE_CODE_RESOLVED, owner);
+  let r: {
+    version?: unknown;
+    packages?: Record<string, { integrity?: unknown } | undefined>;
+    claude_exe_sha256?: unknown;
+    install_method?: unknown;
+  };
+  try {
+    if (text === null) throw new Error("not found");
+    r = JSON.parse(text) ?? {};
+  } catch (e) {
+    throw new ConfigurationError(
+      `image ${ref}: cannot read the shipped ${CLAUDE_CODE_RESOLVED} (${
+        e instanceof Error ? e.message : String(e)
+      }): ${fix}`,
+    );
+  }
+  const bad = (what: string, got: unknown, want: string) =>
+    new ConfigurationError(
+      `image ${ref}: shipped ${CLAUDE_CODE_RESOLVED} ${what} ${
+        String(got)
+      } differs from its label (${want}): ${fix}`,
+    );
+  if (r.version !== pkg.version) throw bad("version", r.version, pkg.version);
+  for (
+    const [name, want] of [
+      [CC_MAIN, pkg.integrity.main],
+      [CC_WIN, pkg.integrity.win32_x64],
+    ] as const
+  ) {
+    const got = r.packages?.[name]?.integrity;
+    if (got !== want) throw bad(`${name} integrity`, got, want);
+  }
+  if (
+    typeof r.claude_exe_sha256 !== "string" ||
+    !SHA256_HEX.test(r.claude_exe_sha256)
+  ) {
+    throw bad("claude_exe_sha256", r.claude_exe_sha256, "64 hex");
+  }
+  if (!CC_INSTALL_METHODS.includes(r.install_method as string)) {
+    throw bad(
+      "install_method",
+      r.install_method,
+      CC_INSTALL_METHODS.join(" or "),
+    );
+  }
 }
 
 async function verifyShipped(
@@ -656,6 +805,165 @@ export const lspReleaseArgs = (r: LspRelease): string[] => [
   `${LSP_RELEASE_LABELS.dependency_source}=${r.dependency_source}`,
 ];
 
+/** The newest @anthropic-ai/claude-code, as `images build` passes and labels it (H-03). */
+export interface ClaudeCodeRelease {
+  version: string;
+  /** Exactly the registry tarball URL of that version, and its dist.integrity. */
+  main: { url: string; integrity: string };
+  win32_x64: { url: string; integrity: string };
+}
+
+const isEmpty = (v: unknown) =>
+  v === undefined ||
+  (v !== null && typeof v === "object" && !Array.isArray(v) &&
+    Object.keys(v).length === 0);
+
+/** One registry document over HTTPS (no token, no redirect); fails closed. */
+async function npmDoc(
+  url: string,
+  fetchFn: typeof fetch,
+): Promise<Record<string, unknown>> {
+  const fail = (why: string) =>
+    new ConfigurationError(
+      `cannot resolve the newest ${CC_MAIN} (${url}): ${why}`,
+    );
+  try {
+    const res = await fetchFn(url, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "centralgauge-harness",
+      },
+      signal: AbortSignal.timeout(NPM_TIMEOUT_MS),
+      // The integrity comes from this answer: a redirect may not change who gives it.
+      redirect: "error",
+    });
+    if (res.status !== 200) {
+      await res.body?.cancel();
+      throw fail(`HTTP ${res.status}`);
+    }
+    const body = await res.json();
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      throw fail("not a JSON object");
+    }
+    return body as Record<string, unknown>;
+  } catch (e) {
+    if (e instanceof ConfigurationError) throw e;
+    throw fail(e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * The npm dist-tag `latest` of @anthropic-ai/claude-code and its win32-x64
+ * platform package (H-03), each document checked strictly: name, strict
+ * semver, no runtime dependencies, the platform pin, the bin the install
+ * places the binary at, sha512 integrities, exact registry tarball URLs, and
+ * for the platform package os/cpu and no scripts. The integrities are what
+ * install-claude-code.ps1 verifies both archives against.
+ */
+export async function resolveClaudeCode(
+  fetchFn: typeof fetch,
+): Promise<ClaudeCodeRelease> {
+  const mainUrl = `${NPM_REGISTRY}/${CC_MAIN}/latest`;
+  const main = await npmDoc(mainUrl, fetchFn);
+  const fail = (url: string, why: string) =>
+    new ConfigurationError(
+      `cannot resolve the newest ${CC_MAIN} (${url}): ${why}`,
+    );
+  const v = main["version"];
+  if (typeof v !== "string" || !SEMVER.test(v)) {
+    throw fail(
+      mainUrl,
+      `version ${JSON.stringify(v)} is not <major>.<minor>.<patch>`,
+    );
+  }
+  const dist = (doc: Record<string, unknown>, url: string, name: string) => {
+    const d = (doc["dist"] ?? {}) as { integrity?: unknown; tarball?: unknown };
+    if (typeof d.integrity !== "string" || !SRI_SHA512.test(d.integrity)) {
+      throw fail(
+        url,
+        `dist.integrity ${JSON.stringify(d.integrity)} is not sha512-<base64>`,
+      );
+    }
+    const want = `${NPM_REGISTRY}/${name}/-/${name.split("/")[1]}-${v}.tgz`;
+    if (d.tarball !== want) {
+      throw fail(
+        url,
+        `dist.tarball ${JSON.stringify(d.tarball)} is not ${want}`,
+      );
+    }
+    return { url: want, integrity: d.integrity };
+  };
+  const check = (
+    doc: Record<string, unknown>,
+    url: string,
+    name: string,
+  ) => {
+    if (doc["name"] !== name) {
+      throw fail(url, `name ${JSON.stringify(doc["name"])} is not ${name}`);
+    }
+    if (doc["version"] !== v) {
+      throw fail(url, `version ${JSON.stringify(doc["version"])} is not ${v}`);
+    }
+    if (!isEmpty(doc["dependencies"])) {
+      throw fail(
+        url,
+        "dependencies must be empty (an unpinned runtime dependency)",
+      );
+    }
+  };
+  check(main, mainUrl, CC_MAIN);
+  if (
+    JSON.stringify(main["bin"]) !== JSON.stringify({ claude: "bin/claude.exe" })
+  ) {
+    throw fail(
+      mainUrl,
+      `bin ${JSON.stringify(main["bin"])} is not {"claude":"bin/claude.exe"}`,
+    );
+  }
+  const pin =
+    (main["optionalDependencies"] as Record<string, unknown> | undefined)
+      ?.[CC_WIN];
+  if (pin !== v) {
+    throw fail(
+      mainUrl,
+      `optionalDependencies["${CC_WIN}"] ${JSON.stringify(pin)} is not ${v}`,
+    );
+  }
+  const mainDist = dist(main, mainUrl, CC_MAIN);
+  const winUrl = `${NPM_REGISTRY}/${CC_WIN}/${v}`;
+  const win = await npmDoc(winUrl, fetchFn);
+  check(win, winUrl, CC_WIN);
+  for (const [k, want] of [["os", "win32"], ["cpu", "x64"]] as const) {
+    if (JSON.stringify(win[k]) !== JSON.stringify([want])) {
+      throw fail(winUrl, `${k} ${JSON.stringify(win[k])} is not ["${want}"]`);
+    }
+  }
+  if (!isEmpty(win["scripts"])) {
+    throw fail(winUrl, "scripts must be absent (no lifecycle script)");
+  }
+  return { version: v, main: mainDist, win32_x64: dist(win, winUrl, CC_WIN) };
+}
+
+/** The resolved release as claude-code build args (install-claude-code.ps1) and image labels. */
+export const claudeCodeArgs = (r: ClaudeCodeRelease): string[] => [
+  "--build-arg",
+  `CLAUDE_CODE_VERSION=${r.version}`,
+  "--build-arg",
+  `CLAUDE_CODE_URL=${r.main.url}`,
+  "--build-arg",
+  `CLAUDE_CODE_INTEGRITY=${r.main.integrity}`,
+  "--build-arg",
+  `CLAUDE_CODE_WIN_URL=${r.win32_x64.url}`,
+  "--build-arg",
+  `CLAUDE_CODE_WIN_INTEGRITY=${r.win32_x64.integrity}`,
+  "--label",
+  `${IMAGE_LABELS.version}=${r.version}`,
+  "--label",
+  `${IMAGE_LABELS.track}=${CLAUDE_CODE_TRACK}`,
+  "--label",
+  `${IMAGE_LABELS.package}=${CC_MAIN}@${r.version} ${r.main.integrity} ${r.win32_x64.integrity}`,
+];
+
 /** The repo's LSP definition: the hash the label must carry; no MCP tool list. */
 export async function lspDefinitions(root: string): Promise<McpDefinitions> {
   const def = await readDef(root, AL_LSP_DEF, "AL LSP definition");
@@ -718,10 +1026,25 @@ export function runtimeFacts(
   catalog: Catalog,
   /** Required when the config names MCP components (mcpDefinitions). */
   defs: McpDefinitions = {},
+  /** H-03: the frozen claude-code revisions (tests pass their own). */
+  frozen: Readonly<Record<string, FrozenClaudeCode>> = FROZEN_CLAUDE_CODE,
 ): RuntimeFacts {
+  // H-03: a config tracking latest runs only on a tracked image (its resolved
+  // version recorded); a concrete config only on an untracked one.
+  const latest = config.harness_version === LATEST;
+  if (latest && !image.package) {
+    throw new ConfigurationError(
+      `${config.id}: config tracks ${LATEST}, image ${image.digest} has no resolved Claude Code version (labels ${IMAGE_LABELS.track}, ${IMAGE_LABELS.package}): build it with harness images build claude-code`,
+    );
+  }
+  if (!latest && image.package) {
+    throw new ConfigurationError(
+      `${config.id}: image ${image.digest} tracks ${CLAUDE_CODE_TRACK} (Claude Code ${image.version}); a config names it with harness_version ${LATEST}, not ${config.harness_version}`,
+    );
+  }
   if (
     image.harness !== config.harness ||
-    image.version !== config.harness_version
+    (!latest && image.version !== config.harness_version)
   ) {
     throw new ConfigurationError(
       `${config.id}: image is ${image.harness} ${image.version}, config wants ${config.harness} ${config.harness_version}`,
@@ -739,6 +1062,22 @@ export function runtimeFacts(
       } (label ${IMAGE_LABELS.revision}), config wants ${
         say(want)
       } (image_revision)`,
+    );
+  }
+  // H-03: a recorded revision is exactly the image its freeze record names,
+  // whatever a local tag points at.
+  const rec = image.package && image.revision !== null &&
+      Object.hasOwn(frozen, image.revision)
+    ? frozen[image.revision]!
+    : null;
+  if (
+    rec &&
+    (rec.digest !== image.digest || rec.version !== image.version ||
+      rec.integrity.main !== image.package!.integrity.main ||
+      rec.integrity.win32_x64 !== image.package!.integrity.win32_x64)
+  ) {
+    throw new ConfigurationError(
+      `${config.id}: image ${image.digest} (Claude Code ${image.version}) is not the image the freeze record of claude-code revision ${image.revision} names (${rec.digest}, Claude Code ${rec.version}): a frozen revision is never rebuilt`,
     );
   }
   const servers: RuntimeFacts["servers"] = {};
@@ -796,6 +1135,7 @@ export function runtimeFacts(
   // The expected MCP tool inventory (M2-09): MCP servers only, sorted.
   const names = [...config.components.mcp].sort();
   return {
+    harness_version: image.version,
     native_settings: names.length > 0
       ? {
         ...native,
@@ -810,6 +1150,7 @@ export function runtimeFacts(
       base_digest: image.base_digest,
       ...(image.revision === null ? {} : { revision: image.revision }),
       ...installedFacts(image),
+      ...(image.package ? { package: image.package } : {}),
     },
     backend_version: BACKEND_VERSION,
     servers,

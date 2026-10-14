@@ -1,8 +1,11 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
-import { ValidationError } from "../../../src/errors.ts";
+import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { readCatalog } from "../../../src/ingest/catalog/read.ts";
-import { claudeCodeHarnessNative } from "../../../src/harness/adapters/claude-code.ts";
+import {
+  claudeCodeDerivedNative,
+  claudeCodeHarnessNative,
+} from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { piHarnessNative } from "../../../src/harness/adapters/pi.ts";
 import { loadExperiment, type VaryKey } from "../../../src/harness/config.ts";
@@ -12,6 +15,7 @@ import {
   validateCampaignRecords,
 } from "../../../src/harness/integrity.ts";
 import {
+  assertVaryHolds,
   manifestHash,
   type ResolvedManifest,
   resolveManifest,
@@ -788,4 +792,62 @@ Deno.test("validateCampaignRecords: a campaign on a development image revision i
       `arm ${a.config_id}: development image revision 3-dev-M9-16 is not allowed in a campaign`
     ),
   );
+});
+
+Deno.test("validateCampaignRecords (H-07): a pre-H-07 cc-vs-pi campaign (six disallowed tools) stays valid; a web arm under vary [harness] is refused", async () => {
+  const six = claudeCodeHarnessNative(true).disallowed_tools;
+  const asClaude = (f: (m: ResolvedManifest) => ResolvedManifest) =>
+  (
+    m: ResolvedManifest,
+  ) => m.harness === "claude-code" ? f(m) : m;
+  const legacy = asClaude((m) =>
+    native(m, (n) => ({ ...n, disallowed_tools: six }))
+  );
+  assertEquals(await ccVsPi(legacy), []);
+  assertEquals(await ccVsPi(legacy, undefined, true), []);
+  const webArm = asClaude((m) => ({
+    ...native(m, (n) => ({ ...n, disallowed_tools: six })),
+    settings: {
+      requested: { ...m.settings.requested, web_tools: true },
+      native: { ...m.settings.native, disallowed_tools: six },
+    },
+  }));
+  // The edit applies to whichever side is the claude-code arm.
+  const p = [
+    ...await ccVsPi(webArm),
+    ...await ccVsPi(webArm, undefined, true),
+  ];
+  assertEquals(p.length, 1);
+  assertStringIncludes(p[0]!, ": settings");
+});
+
+Deno.test("assertVaryHolds (H-07 review): two claude-code arms with six vs eight disallowed tools differ in settings, even under vary [harness]", async () => {
+  const arm = (id: string, disallowed: string[]) =>
+    manifest(id, {
+      harness: "claude-code",
+      settings: { requested: {}, native: { disallowed_tools: disallowed } },
+    });
+  const six = arm("legacy", claudeCodeHarnessNative(true).disallowed_tools);
+  const eight = arm("now", claudeCodeHarnessNative().disallowed_tools);
+  const derive = { "claude-code": claudeCodeDerivedNative };
+  await assertRejects(
+    () => assertVaryHolds(six, eight, ["harness"], derive),
+    ConfigurationError,
+    "settings",
+  );
+  // Each alone still matches its own derivation (pre-H-07 campaigns stay valid).
+  await assertVaryHolds(six, six, ["harness"], derive);
+  await assertVaryHolds(eight, eight, ["harness"], derive);
+  // A missing derived key is a settings refusal, never a serialization error.
+  const none = manifest("none", {
+    harness: "claude-code",
+    settings: { requested: {}, native: {} },
+  });
+  for (const [a, b] of [[none, eight], [eight, none], [none, none]]) {
+    await assertRejects(
+      () => assertVaryHolds(a!, b!, ["harness"], derive),
+      ConfigurationError,
+      "settings",
+    );
+  }
 });

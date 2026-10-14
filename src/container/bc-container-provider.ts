@@ -38,8 +38,12 @@ import {
   redactSensitive,
   writeArtifact,
 } from "../health/mod.ts";
+import { redactPatternText } from "../harness/redact-patterns.ts";
 
 const log = Logger.create("container:bc");
+
+/** Both redactors on the WHOLE output, before any cut (a cut key no longer matches). */
+const redactAll = (s: string) => redactPatternText(redactSensitive(s)).text;
 import { ContainerError } from "../errors.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import { ContainerSessionSlot } from "./session-slot.ts";
@@ -680,7 +684,16 @@ export class BcContainerProvider implements ContainerProvider {
    * Errors per-app are swallowed (best-effort cleanup) — the next layer
    * (publishApp's verify-unpublish guard) catches anything left behind.
    */
-  async prenukeCentralGaugeApps(containerNames: string[]): Promise<void> {
+  async prenukeCentralGaugeApps(
+    containerNames: string[],
+    /**
+     * H-05: apps whose data the sweep drops (trusted id + exact name, the
+     * gate's allowlist). With any, the sweep is NOT best-effort: a failed
+     * clean, a missing PREREQ_CLEANUP_DONE or a failed call throws
+     * ContainerError (infra), so nothing is published onto kept data.
+     */
+    owned: { id: string; name: string }[] = [],
+  ): Promise<void> {
     if (!this.isWindows()) return;
     await Promise.all(
       containerNames.map(async (name) => {
@@ -703,6 +716,7 @@ export class BcContainerProvider implements ContainerProvider {
           name,
           [],
           BcContainerProvider.HARNESS_APP_NAME,
+          owned,
         );
         try {
           const result = await this.runScriptThroughSession(
@@ -710,14 +724,32 @@ export class BcContainerProvider implements ContainerProvider {
             script,
             "prenuke",
           );
+          const lines = result.output.split("\n")
+            .filter((l) => l.startsWith("PREREQ_CLEANUP_"))
+            .join(" | ");
           if (result.output.includes("PREREQ_CLEANUP_FOUND")) {
             log.info(`Pre-nuked stale CentralGauge apps in ${name}`, {
-              output: result.output.split("\n")
-                .filter((l) => l.startsWith("PREREQ_CLEANUP_"))
-                .join(" | "),
+              output: lines,
             });
           }
+          if (
+            owned.length > 0 &&
+            (result.output.includes("PREREQ_CLEANUP_CLEAN_FAILED") ||
+              result.output.includes("PREREQ_CLEANUP_CLEAN_REFUSED") ||
+              // A sweep that left apps behind is a failure even with DONE.
+              result.output.includes("PREREQ_CLEANUP_INCOMPLETE") ||
+              !result.output.includes("PREREQ_CLEANUP_DONE"))
+          ) {
+            throw new ContainerError(
+              `prenuke on ${name} did not clean the owned apps' data: ${
+                lines || result.output.slice(-300)
+              }`,
+              name,
+              "setup",
+            );
+          }
         } catch (e) {
+          if (owned.length > 0) throw e;
           log.warn(`prenukeCentralGaugeApps failed for ${name}`, {
             error: e instanceof Error ? e.message : String(e),
           });
@@ -916,7 +948,7 @@ ${script}
     exitCode?: number;
     artifactKey?: string;
   }): Promise<ContainerError> {
-    const redacted = redactSensitive(opts.output);
+    const redacted = redactAll(opts.output);
     const tail = captureRawTail(redacted, 4096);
     let artifactPath: string | undefined;
     if (this.artifactDir) {
@@ -965,7 +997,7 @@ ${script}
     output: string;
     exitCode?: number;
   }): ContainerError {
-    const redacted = redactSensitive(opts.output);
+    const redacted = redactAll(opts.output);
     const tail = captureRawTail(redacted, 4096);
     return new ContainerError(
       opts.message,

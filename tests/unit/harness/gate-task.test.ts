@@ -1,6 +1,7 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { basename, join } from "@std/path";
 import type { ALProject, TestResult } from "../../../src/container/types.ts";
+import { ContainerError } from "../../../src/errors.ts";
 import type { GateBc } from "../../../scripts/harness/gate-task.ts";
 import { runGate, runVariant } from "../../../scripts/harness/gate-task.ts";
 import { summarize } from "../../../scripts/harness/gate-core.ts";
@@ -18,10 +19,26 @@ function mockBc(o: {
   prenukeThrowsAfter?: number;
   seen?: string[];
   ran?: number[];
+  /** H-05: prenuke / clean / publish calls, in order. */
+  events?: string[];
+  cleanThrows?: boolean;
+  /** H-05 run 002: publish rejects like publishApp: generic message, raw output. */
+  publishRaw?: string;
 }): GateBc {
   let prenukes = 0;
   return {
-    prenuke: () => {
+    cleanData: (apps) => {
+      o.events?.push(`clean ${apps.map((a) => a.name).join(",")}`);
+      return o.cleanThrows
+        ? Promise.reject(new Error("SYNC_CLEAN_FAILED"))
+        : Promise.resolve();
+    },
+    prenuke: (owned = []) => {
+      o.events?.push(
+        owned.length > 0
+          ? `prenuke ${owned.map((a) => a.name).join(",")}`
+          : "prenuke",
+      );
       prenukes++;
       if (
         o.prenukeThrowsAfter !== undefined && prenukes > o.prenukeThrowsAfter
@@ -42,10 +59,19 @@ function mockBc(o: {
       await Deno.writeTextFile(artifact, "x");
       return { ok: true, codes: [], detail: "", artifact };
     },
-    publish: (a: string) =>
-      a.includes(`${o.failPublish}`) && o.failPublish
+    publish: (a: string) => {
+      o.events?.push("publish");
+      if (o.publishRaw !== undefined) {
+        return Promise.reject(
+          new ContainerError("Publish failed", "C1", "publish", {
+            rawOutput: o.publishRaw,
+          }),
+        );
+      }
+      return a.includes(`${o.failPublish}`) && o.failPublish
         ? Promise.reject(new Error(o.publishError ?? "publish failed"))
-        : Promise.resolve(),
+        : Promise.resolve();
+    },
     runTests: (codeunit: number): Promise<TestResult> => {
       o.ran?.push(codeunit);
       if (o.soapThrows) return Promise.reject(new Error("SOAP timeout"));
@@ -107,6 +133,97 @@ Deno.test("runVariant: compile failure stops the chain and is a compile step", a
   ]);
   assertEquals(r.builds[1]!.codes, ["AL0118"]);
   assertEquals(r.tests, []);
+});
+
+Deno.test("runVariant (H-05): after the prenuke and before any publish, the staged CGR apps' kept data is cleaned", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const events: string[] = [];
+  const r = await runVariant(
+    mockBc({ events }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertEquals(r.infra, undefined);
+  // Run 002: the prenuke gets the same owned list (trusted id + exact name).
+  const owned = events[1]!.slice("clean ".length);
+  assertEquals(events[0], `prenuke ${owned}`);
+  assert(events[1]!.startsWith("clean "), events.join(" | "));
+  const names = events[1]!.slice("clean ".length).split(",");
+  for (
+    const n of ["CGR Core", "CGR Fleet", "CGR Rental", "CGR Oracle HX-001"]
+  ) {
+    assert(names.includes(n), `${n} not cleaned: ${names}`);
+  }
+  // Only CentralGauge apps of the harness bands (the trusted allowlist).
+  assert(
+    names.every((n) => n.startsWith("CGR ") || n.includes("Oracle")),
+    names.join(),
+  );
+  assertEquals(events.slice(2).every((e) => e === "publish"), true);
+});
+
+Deno.test("runVariant (H-05 run 002): a refused publish keeps the redacted raw output (CG_SCRIPT_THREW + the BC refusal) in the report", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const secret = "sk-ant-api03-" + "x".repeat(30);
+  const r = await runVariant(
+    mockBc({
+      // Session noise that would match PUBLISH_COLLISION ("already exists")
+      // plus a [CG-PIN] line carrying host details, around the BC refusal.
+      publishRaw:
+        `[CG-PIN] host=H user=me PSModulePath=C:\\Users\\me\\x\nWARN: folder already exists\nCG_SCRIPT_THREW: Cannot install the extension CGR Core by CentralGauge 1.0.0.0 because a newer version 1.0.25913.28211 was already installed. ${secret}`,
+    }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  const failed = r.builds.find((b) => b.stage === "publish" && !b.ok)!;
+  // The decision text stays the error message; the raw output is evidence.
+  assertEquals(failed.detail, "Publish failed");
+  const raw = failed.raw ?? "";
+  assertStringIncludes(raw, "CG_SCRIPT_THREW");
+  assertStringIncludes(
+    raw,
+    "a newer version 1.0.25913.28211 was already installed",
+  );
+  assertEquals(raw.includes(secret), false, raw);
+  assertEquals(raw.includes("[CG-PIN]"), false, raw);
+  // Noise in the raw output never turns an infra publish into a collision.
+  assertEquals(summarize(loaded.task, r).infra, true);
+});
+
+Deno.test("runVariant (H-05): a failed data clean is infra; nothing is published", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const events: string[] = [];
+  const r = await runVariant(
+    mockBc({ events, cleanThrows: true }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertStringIncludes(r.infra ?? "", "SYNC_CLEAN_FAILED");
+  assertEquals(events.includes("publish"), false);
+});
+
+Deno.test("runVariant (H-05 run 003): a failed owned prenuke (e.g. INCOMPLETE) is infra; no clean, nothing published", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const events: string[] = [];
+  const r = await runVariant(
+    mockBc({ events, prenukeThrowsAfter: 0 }),
+    loaded.task,
+    source,
+    { kind: "correct" },
+    1,
+    tmpRoot,
+  );
+  assertStringIncludes(r.infra ?? "", "prenuke failed");
+  assertEquals(events.filter((e) => !e.startsWith("prenuke")), []);
 });
 
 Deno.test("runVariant: oracle publish failure is recorded as publish", async () => {
@@ -176,6 +293,8 @@ Deno.test("runVariant: candidate test-authoring counts only added codeunits", as
       .replace("fail_to_pass]", "mutant_kill]")
       .replace(/fail_to_pass:\n[\s\S]*$/, ""),
   );
+  // H-05 run 002: a task without fail_to_pass has no oracle folder.
+  await Deno.remove(join(source.taskDir, "oracle"), { recursive: true });
   const ta = (await loadTask(source.taskDir)).task;
   const ws = await tmp();
   await writeTask(ws, "HX-009", "x"); // any refapp copy; only Test/ below matters
@@ -192,6 +311,7 @@ Deno.test("runVariant: candidate test-authoring counts only added codeunits", as
     1,
     tmpRoot,
   );
+  assertEquals(r.infra, undefined);
   assertEquals(r.own, [{ codeunit: 80200, procedures: ["Mine"] }]);
   assertEquals(loaded.task.id, "HX-001");
 });

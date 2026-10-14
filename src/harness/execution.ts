@@ -96,6 +96,7 @@ import {
   redactText,
   restrictPath,
   runSandbox,
+  SANDBOX_MEMORY,
   SANDBOX_PREFIX,
   sandboxName,
   type SandboxResult,
@@ -1143,7 +1144,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   ], scrub);
   const side = redactDeep({
     v: 1,
-    sandbox: f.sandbox,
+    // H-03: the --memory every sandbox runs with (buildRunArgs); unhashed side file.
+    sandbox: { ...f.sandbox, memory: SANDBOX_MEMORY },
     setup_error: f.setupError ?? mismatch,
     unverified: check.unverified,
     stop_reason: stopReason,
@@ -1376,6 +1378,14 @@ export async function runExecution(
     throw new ConfigurationError(
       `${cell.arm}: egress enforcement is set but no egress runtime is configured; refusing (fail closed)`,
     );
+  }
+  // H-03: an unqualified harness version never runs a real cell, whatever the
+  // caller; a stub cell is how it gets qualified (no credential either way).
+  const unqualified = mode === "normal"
+    ? adapter.unqualified?.(cell.armManifest, "dev") ?? null
+    : null;
+  if (unqualified) {
+    throw new ConfigurationError(`${cell.arm}: ${unqualified}`);
   }
   const record = env.recordOAuthHosts === true;
   const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));

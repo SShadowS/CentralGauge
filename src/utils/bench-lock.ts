@@ -323,6 +323,36 @@ export function benchLockLost(dir: string, token?: string): () => boolean {
   return () => readBenchLock(dir)?.token !== held;
 }
 
+/**
+ * H-03 run 003: the operator's manual clear of a lock no process may take over
+ * (acquired with `staleAfterMs: Infinity`). Under the guard, it removes the
+ * marker only when it still names `holder` (its token) and its heartbeat has
+ * stopped for `staleAfterMs`; returns the cleared holder. Throws otherwise.
+ */
+export function clearBenchLock(
+  dir: string,
+  holder: string,
+  staleAfterMs: number = DEFAULT_STALE_AFTER_MS,
+): BenchLockInfo {
+  const path = benchLockPath(dir);
+  return underGuard(path, () => {
+    const info = readBenchLock(dir);
+    if (!info) throw new Error(`no lock to clear in ${path}`);
+    if (info.token !== holder) {
+      throw new Error(
+        `${path} is held by token ${info.token} (pid ${info.pid}), not ${holder}`,
+      );
+    }
+    if (markerState(path, staleAfterMs) !== "stale") {
+      throw new Error(
+        `${path}: pid ${info.pid}'s heartbeat is fresh (${info.heartbeatAt}); a live holder is never cleared`,
+      );
+    }
+    Deno.removeSync(path);
+    return info;
+  });
+}
+
 /** The release of a held lock, with the check that this acquisition's token still holds it. */
 export type HeldBenchLock = (() => Promise<void>) & { lost: () => boolean };
 

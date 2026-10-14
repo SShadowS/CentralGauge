@@ -15,10 +15,14 @@ import {
 } from "../../../src/harness/adapter.ts";
 import {
   BUILTIN_INVENTORY,
+  CAMPAIGN_CALIBRATED,
   CLAUDE_CAPABILITIES,
   claudeCodeAdapter,
+  claudeCodeDerivedNative,
+  claudeCodeHarnessNative,
   LSP_PLUGINS,
   pluginIs,
+  unqualifiedClaudeCode,
 } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
@@ -26,6 +30,7 @@ import {
   HarnessConfigSchema,
   loadConfig,
 } from "../../../src/harness/config.ts";
+import { manifestHash } from "../../../src/harness/manifest.ts";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
 import type { Telemetry } from "../../../src/harness/records.ts";
 import { outcomePolicy } from "../../../src/harness/records.ts";
@@ -304,7 +309,12 @@ Deno.test("run.ps1: the token travels by file and env only; the image pins the h
   const cc = await Deno.readTextFile(
     "harness/images/claude-code/Dockerfile.windows",
   );
-  assertStringIncludes(cc, "@anthropic-ai/claude-code@2.1.282");
+  // H-03: no hand pin; the build's resolution is installed from the verified archives only.
+  assertStringIncludes(
+    cc,
+    "install-claude-code.ps1 -Version $env:CLAUDE_CODE_VERSION -MainUrl $env:CLAUDE_CODE_URL -MainIntegrity $env:CLAUDE_CODE_INTEGRITY -WinUrl $env:CLAUDE_CODE_WIN_URL -WinIntegrity $env:CLAUDE_CODE_WIN_INTEGRITY",
+  );
+  assert(!/@anthropic-ai\/claude-code@\d/.test(cc), "no hand-pinned version");
   assert(
     /^ARG BASE\s*$/m.test(cc) && cc.includes("FROM ${BASE}"),
     "no default base: the builder passes the inspected immutable base",
@@ -1237,7 +1247,18 @@ Deno.test("claude-code settings: session-control tools present in 2.1.282 are di
     limits: { timeout_min: 30, max_budget_usd: 5 },
   });
   const native = claudeCodeAdapter.nativeSettings(cfg, catalog);
-  assertEquals(native["disallowed_tools"], expected);
+  // H-07: the default arm also blocks the web tools; a web arm only those six.
+  assertEquals(
+    native["disallowed_tools"],
+    [...expected, "WebFetch", "WebSearch"].sort(),
+  );
+  assertEquals(
+    claudeCodeAdapter.nativeSettings({
+      ...cfg,
+      settings: { ...cfg.settings, web_tools: true },
+    }, catalog)["disallowed_tools"],
+    expected,
+  );
   assertEquals(native["thinking"], "high");
   // An arm cannot re-enable them by setting the key itself.
   assertThrows(
@@ -2053,9 +2074,10 @@ Deno.test("claude-code Dockerfile (M9): ships cg-inventory.ps1 read-only for the
   assert(/^COPY cg-inventory\.ps1 C:\/cg-inventory\.ps1\s*$/m.test(df), df);
   const lock = df.split(/\r?\n/).find((l) => l.includes("cg-lockdown.ps1"))!;
   assertStringIncludes(lock, "C:\\cg-inventory.ps1");
+  // H-03: the build resolves the version; only the revision is named.
   assertStringIncludes(
     df,
-    "--version 2.1.282 --revision 3 (proofs: --revision 3-dev-<task id>)",
+    "`harness images build claude-code --revision 3` (proofs: --revision 3-dev-<task id>)",
   );
 });
 
@@ -2956,4 +2978,716 @@ Deno.test("run.ps1 LSP (M10): the declared LSP adds --plugin-dir and the tool; o
   const inv = at("& 'C:\\cg-inventory.ps1'");
   assert(set < inv && clear < inv, "the inventory sees the final LSP env");
   assert(at("$claudeArgs += $pluginArgs") > inv);
+});
+
+// ---- H-03: every init names the resolved version; two qualification levels ----
+
+Deno.test("inventory (H-03): on r3+ every same-session init must name the manifest's resolved version; frozen v1 keeps first-init-only", async () => {
+  const resume = (second: Record<string, unknown>) => [
+    invLine(),
+    v2Init(),
+    v2Result(),
+    v2Init(second),
+    v2Result(),
+  ];
+  assertEquals((await v2(resume({}))).inventoryProblems, []);
+  // Another version that IS qualified must not escape on a later segment.
+  // 2.1.296 has its own entry since H-03's qualification: restore it, never delete it.
+  const inv = BUILTIN_INVENTORY as Record<string, typeof B>;
+  const real296 = inv["2.1.296"];
+  inv["2.1.296"] = B;
+  try {
+    assertStringIncludes(
+      await problemsOf(resume({ claude_code_version: "2.1.296" })),
+      "init 2: system/init claude_code_version 2.1.296 differs from the manifest's resolved 2.1.282",
+    );
+  } finally {
+    if (real296) inv["2.1.296"] = real296;
+    else delete inv["2.1.296"];
+  }
+  const noVersion = JSON.parse(v2Init());
+  delete noVersion.claude_code_version;
+  assertStringIncludes(
+    await problemsOf([
+      invLine(),
+      v2Init(),
+      v2Result(),
+      JSON.stringify(noVersion),
+      v2Result(),
+    ]),
+    "init 2: system/init claude_code_version (missing) differs from the manifest's resolved 2.1.282",
+  );
+  // A single init on another version than the manifest's.
+  assertStringIncludes(
+    await problemsOf([invLine(), v2Init(), v2Result()], {
+      harness_version: "2.1.281",
+    }),
+    "system/init claude_code_version 2.1.282 differs from the manifest's resolved 2.1.281",
+  );
+  // Frozen v1: no inventory, so no per-init version problem (unchanged).
+  const frozen = await v2(resume({ claude_code_version: "2.1.296" }), {
+    image: { digest: "sha256:img", base_digest: "sha256:base" },
+  });
+  assertEquals(frozen.inventoryProblems, []);
+  assertEquals(frozen.observed.harness_version, "2.1.282");
+});
+
+Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a tracked campaign image needs M8-07c calibration on its digest and version", () => {
+  const u = claudeCodeAdapter.unqualified!;
+  assertEquals(u(manifest("cc", V2()), "dev"), null);
+  assertEquals(u(manifest("cc", V2()), "campaign"), null, "untracked r3");
+  // 2.1.296 was the refused version here until its H-03 qualification entry.
+  assertStringIncludes(
+    u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296)",
+  );
+  // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
+  for (const revision of [undefined, "2"]) {
+    const image = {
+      digest: "sha256:img",
+      base_digest: "sha256:base",
+      ...(revision ? { revision } : {}),
+    };
+    assertEquals(
+      u(manifest("cc", { harness_version: "2.1.999", image }), "campaign"),
+      null,
+    );
+  }
+  const D = `sha256:${"c".repeat(64)}`;
+  const tracked = manifest(
+    "cc",
+    V2({
+      image: {
+        digest: D,
+        base_digest: "sha256:base",
+        revision: "3",
+        package: {
+          name: "@anthropic-ai/claude-code",
+          version: "2.1.282",
+          track: "npm-latest",
+          integrity: {
+            main: `sha512-${"M".repeat(86)}==`,
+            win32_x64: `sha512-${"W".repeat(86)}==`,
+          },
+        },
+      },
+    }),
+  );
+  assertEquals(u(tracked, "dev"), null);
+  assertStringIncludes(
+    u(tracked, "campaign")!,
+    `image ${D} (Claude Code 2.1.282) has no M8-07c real calibration`,
+  );
+  assertEquals(
+    unqualifiedClaudeCode(tracked, "campaign", {
+      [D]: { version: "2.1.282", calibration: "M8-07c run 001" },
+    }),
+    null,
+  );
+  for (
+    const cal of [
+      { [D]: { version: "2.1.281", calibration: "x" } },
+      {
+        [`sha256:${"d".repeat(64)}`]: { version: "2.1.282", calibration: "x" },
+      },
+    ]
+  ) {
+    assertStringIncludes(
+      unqualifiedClaudeCode(tracked, "campaign", cal)!,
+      "M8-07c",
+    );
+  }
+  assertEquals(CAMPAIGN_CALIBRATED, {}, "nothing is calibrated yet");
+});
+
+// ---- H-03: Claude Code 2.1.296 dev qualification (level 1) ----
+// The raw.jsonl of stub cells cc475242 (plain) and 14715acf (LSP) on dev image
+// sha256:51c3095a, byte-exact except the cg_inventory line's CRLF (written by
+// PowerShell) is stored as LF. The stub provider holds no secret.
+const STUB_296 = {
+  plain: "tests/fixtures/harness/claude-code/stub-2.1.296-plain.jsonl",
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.296-lsp.jsonl",
+};
+const arm296 = (lsp: boolean) => ({
+  harness_version: "2.1.296",
+  models: { main: "anthropic/claude-sonnet-5" },
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-03",
+  },
+  settings: {
+    requested: {},
+    native: {
+      api_models: { main: "claude-sonnet-5" },
+      // Captured before H-07: the six session tools only, web tools allowed.
+      ...claudeCodeHarnessNative(true),
+      ...(lsp ? { lsp: ["al"] } : {}),
+    },
+  },
+  instructions: comp("bundles/env/instructions", ["CLAUDE.md"]),
+  lsp: lsp
+    ? [{ name: "al", version: "al-lsp@1", tool_schema_hash: "a".repeat(64) }]
+    : [],
+});
+
+Deno.test("qualification (H-03): the 2.1.296 stub captures (plain + LSP) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_296.lsp : STUB_296.plain);
+    const { r, dir } = await parse(text, 0, arm296(lsp));
+    const tag = lsp ? "lsp" : "plain";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.296");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    assertEquals(r.observed.models, ["anthropic/claude-sonnet-5"]);
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
+    assertAlmostEquals(r.telemetry.cost_usd!, (90 * 2 + 45 * 10) / 1e6, 1e-12);
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12);
+    assertEquals([r.telemetry.turns, r.telemetry.stop_reason], [9, "end_turn"]);
+    assertEquals(r.termination, "completed");
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    assertEquals(
+      unqualifiedClaudeCode(manifest("cc", arm296(lsp)), "dev"),
+      null,
+      tag,
+    );
+  }
+});
+
+// ---- H-07: web tools (WebSearch, WebFetch) blocked by default, settings.web_tools enables them ----
+const WEB_CATALOG = {
+  models: [{
+    slug: "anthropic/claude-sonnet-5",
+    api_model_id: "claude-sonnet-5",
+    family: "claude",
+    display_name: "S5",
+  }],
+  pricing: [],
+  families: [],
+};
+const webCfg = (settings: Record<string, unknown>) =>
+  HarnessConfigSchema.parse({
+    id: "cc",
+    harness: "claude-code",
+    harness_version: "2.1.296",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings,
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+
+Deno.test("web tools (H-07): blocked by default; settings.web_tools: true allows them; the flag is part of the manifest hash", async () => {
+  const native = (s: Record<string, unknown>) =>
+    claudeCodeAdapter.nativeSettings(webCfg(s), WEB_CATALOG);
+  const SIX = [
+    "CronCreate",
+    "CronDelete",
+    "ListAgents",
+    "RemoteTrigger",
+    "ScheduleWakeup",
+    "SendMessage",
+  ];
+  assertEquals(
+    native({})["disallowed_tools"],
+    [...SIX, "WebFetch", "WebSearch"].sort(),
+  );
+  assertEquals(
+    claudeCodeHarnessNative()["disallowed_tools"],
+    native({})["disallowed_tools"],
+  );
+  assertEquals(native({ web_tools: true })["disallowed_tools"], SIX);
+  // One encoding: the flag itself is not copied, and only true is accepted
+  // (an explicit false would hash, via settings.requested, unlike absent).
+  assertEquals(native({ web_tools: true })["web_tools"], undefined);
+  for (const bad of [false, "yes", 1, null, {}]) {
+    assertThrows(
+      () => native({ web_tools: bad }),
+      ConfigurationError,
+      "web_tools",
+    );
+  }
+  const hashOf = async (s: Record<string, unknown>) =>
+    await manifestHash(
+      manifest("cc", { settings: { requested: s, native: native(s) } }),
+    );
+  assert((await hashOf({})) !== (await hashOf({ web_tools: true })));
+});
+
+/** The 0227ff9d / 105ec327 arms (2.1.296 dev image), web tools allowed or not. */
+const webArm = (lsp: boolean, web: boolean) => ({
+  harness_version: "2.1.296",
+  models: { main: "anthropic/claude-sonnet-5" },
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-03b",
+  },
+  settings: {
+    requested: web ? { web_tools: true } : {},
+    native: {
+      api_models: { main: "claude-sonnet-5" },
+      ...claudeCodeHarnessNative(web),
+      ...(lsp ? { lsp: ["al"] } : {}),
+    },
+  },
+  instructions: comp("bundles/env/instructions", ["AGENTS.md", "CLAUDE.md"]),
+  lsp: lsp
+    ? [{ name: "al", version: "al-lsp@1", tool_schema_hash: "a".repeat(64) }]
+    : [],
+});
+// Trimmed from M8-07c cells 0227ff9d (LSP arm: ToolSearch + 2 WebSearch) and
+// 105ec327 (plain arm: the 2 WebFetch exchanges only). Kept records are
+// byte-exact except: thinking text, tool output and web results (trimmed);
+// the WebFetch tool_use prompts (shortened). The result record is rebuilt:
+// modelUsage = the kept messages + an unstreamed web excess. 0227ff9d keeps
+// the cell's recorded excess (input 27,143, output 1,868, 2 searches) and its
+// full-cell total_cost_usd (reported, not recomputed). 105ec327's excess is
+// SYNTHETIC (input 9,000 / output 500, 0 searches): that cell also searched,
+// so its recorded excess is not a fetch-only figure.
+const WEB_FIXTURE = {
+  search: "tests/fixtures/harness/claude-code/web-search-2.1.296.jsonl",
+  fetch: "tests/fixtures/harness/claude-code/web-fetch-2.1.296.jsonl",
+};
+const webRaw = (r: { telemetry: Telemetry }) =>
+  r.telemetry.raw_usage as {
+    usage_reconciliation?: { status: string; why?: string };
+    unpriced?: unknown[];
+    missing: string[];
+    stream_problems: string[];
+  };
+
+Deno.test("web tools (H-07): a WebSearch run under web_tools reconciles as web_excess with a token cost and a named unpriced search item", async () => {
+  const text = await Deno.readTextFile(WEB_FIXTURE.search);
+  const { r } = await parse(text, 0, webArm(true, true));
+  assertEquals(r.inventoryProblems, []);
+  const raw = webRaw(r);
+  assertEquals(raw.stream_problems, []);
+  assertEquals(raw.usage_reconciliation?.status, "web_excess");
+  // Tokens from modelUsage, including the unstreamed search calls.
+  assertAlmostEquals(
+    r.telemetry.cost_usd!,
+    (27149 * 2 + 96714 * 0.2 + 8778 * 4 + 1884 * 10) / 1e6,
+    1e-12,
+  );
+  assertEquals(raw.unpriced, [{
+    model: "claude-sonnet-5",
+    item: "web_search_requests",
+    count: 2,
+  }]);
+  assert(
+    raw.missing.some((m) => m.includes("2 web search request")),
+    JSON.stringify(raw.missing),
+  );
+  assertEquals(r.telemetry.reported_cost_usd, 1.0025735999999998);
+});
+
+Deno.test("web tools (H-07): a WebFetch-only run under web_tools reconciles (searchCount 0 = webSearchRequests 0), no unpriced item", async () => {
+  const text = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const { r } = await parse(text, 0, webArm(false, true));
+  assertEquals(r.inventoryProblems, []);
+  const raw = webRaw(r);
+  assertEquals(raw.stream_problems, []);
+  assertEquals(raw.usage_reconciliation?.status, "web_excess");
+  assertAlmostEquals(
+    r.telemetry.cost_usd!,
+    (9004 * 2 + 110599 * 0.2 + 4677 * 4 + 509 * 10) / 1e6,
+    1e-12,
+  );
+  assertEquals(raw.unpriced ?? [], []);
+});
+
+Deno.test("web tools (H-07): web excess is refused when web tools were disallowed, searches do not match, cache differs, or no web call explains it", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const fetch = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const unreconciled = async (
+    text: string,
+    arm: Record<string, unknown>,
+    why: string,
+  ) => {
+    const { r } = await parse(text, 0, arm);
+    const raw = webRaw(r);
+    assertEquals(raw.usage_reconciliation?.status, "unreconciled", why);
+    assertStringIncludes(raw.usage_reconciliation!.why!, why);
+    assertEquals(r.telemetry.cost_usd, null, why);
+    return { r, raw };
+  };
+  // Default arm (web disallowed): the web calls are a named stream problem
+  // and the init's web tools an inventory problem; never a silent cost.
+  const off = await unreconciled(
+    search,
+    webArm(true, false),
+    "WebSearch used while disallowed",
+  );
+  assert(
+    off.raw.stream_problems.some((p) =>
+      p.includes("WebSearch used while disallowed")
+    ),
+    JSON.stringify(off.raw.stream_problems),
+  );
+  assertStringIncludes(
+    (off.r.inventoryProblems ?? []).join("\n"),
+    "unexpected tool WebSearch",
+  );
+  // Search count must match modelUsage.webSearchRequests.
+  await unreconciled(
+    search.replace('"webSearchRequests":2', '"webSearchRequests":3'),
+    webArm(true, true),
+    "webSearchRequests 3",
+  );
+  await unreconciled(
+    fetch.replace('"webSearchRequests":0', '"webSearchRequests":1'),
+    webArm(false, true),
+    "webSearchRequests 1",
+  );
+  // Cache excess is never attributable to web tools.
+  await unreconciled(
+    fetch.replace(
+      '"cacheReadInputTokens":110599',
+      '"cacheReadInputTokens":110600',
+    ),
+    webArm(false, true),
+    "cache",
+  );
+  // An allowed arm whose stream shows no web call: the excess is unexplained.
+  await unreconciled(
+    fetch.replaceAll('"name":"WebFetch"', '"name":"Read"'),
+    webArm(false, true),
+    "exceeds",
+  );
+});
+
+Deno.test("web tools (H-07 review): disallowed use, unexecuted calls, missing counts and sub-agent usage are never web excess", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const fetch = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const why = async (text: string, arm: Record<string, unknown>) => {
+    const { r } = await parse(text, 0, arm);
+    const rec = webRaw(r).usage_reconciliation!;
+    return {
+      status: rec.status,
+      why: rec.why ?? "",
+      cost: r.telemetry.cost_usd,
+    };
+  };
+  const refused = async (
+    text: string,
+    arm: Record<string, unknown>,
+    want: string,
+  ) => {
+    const got = await why(text, arm);
+    assertEquals([got.status, got.cost], ["unreconciled", null], want);
+    assertStringIncludes(got.why, want);
+  };
+  // A disallowed call fails even when the totals are exact (no excess).
+  const exact = search
+    .replace('"inputTokens":27149', '"inputTokens":6')
+    .replace('"outputTokens":1884', '"outputTokens":16');
+  await refused(exact, webArm(true, false), "WebSearch used while disallowed");
+  // A denied or failed web call executed nothing: it explains no excess.
+  const denied = fetch.replace(
+    '"permission_denials":[]',
+    '"permission_denials":[{"tool_name":"WebFetch","tool_use_id":"toolu_01DQrMev6L9ECRYm7FWzwTpr","tool_input":{}},{"tool_name":"WebFetch","tool_use_id":"toolu_01FdJHumJzXf8cJpkEykkFfr","tool_input":{}}]',
+  );
+  await refused(denied, webArm(false, true), "exceeds");
+  const failed = fetch.replaceAll(
+    '"type":"tool_result","content"',
+    '"type":"tool_result","is_error":true,"content"',
+  );
+  await refused(failed, webArm(false, true), "exceeds");
+  // A model with an executed web call must report webSearchRequests.
+  await refused(
+    fetch.replace('"webSearchRequests":0,', ""),
+    webArm(false, true),
+    "webSearchRequests missing",
+  );
+  // An executed WebSearch without a searchCount fails, with or without excess.
+  const noCount = search.replace(',"searchCount":1}', "}");
+  await refused(noCount, webArm(true, true), "without a searchCount");
+  // Sub-agent usage on the model makes the excess ambiguous (a duplicated
+  // child looks like web use): unproven, never web_excess.
+  const lines = fetch.trimEnd().split("\n");
+  const child = JSON.stringify({
+    type: "user",
+    session_id: "1f8dff79-00e3-4c68-a80a-ae1911bf1cc7",
+    parent_tool_use_id: null,
+    message: {
+      role: "user",
+      content: [{
+        type: "tool_result",
+        tool_use_id: "toolu_SUB",
+        content: "ok",
+      }],
+    },
+    tool_use_result: {
+      resolvedModel: "claude-sonnet-5",
+      usage: {
+        input_tokens: 100,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 5,
+      },
+    },
+  });
+  const withChild = [
+    ...lines.slice(0, -1),
+    child,
+    lines.at(-1)!.replace('"inputTokens":9004', '"inputTokens":9104')
+      .replace('"outputTokens":509', '"outputTokens":514'),
+  ].join("\n");
+  await refused(withChild, webArm(false, true), "sub-agent usage");
+  // A malformed list allows nothing (and is named); a manifest without the
+  // list predates M1-32b, blocked nothing, and reconciles.
+  const arm = webArm(false, true);
+  const malformed = {
+    ...arm,
+    settings: {
+      ...arm.settings,
+      native: { ...arm.settings.native, disallowed_tools: "WebFetch" },
+    },
+  };
+  await refused(fetch, malformed, "malformed settings.native.disallowed_tools");
+  const legacy = {
+    ...arm,
+    settings: {
+      requested: {},
+      native: { api_models: { main: "claude-sonnet-5" } },
+    },
+  };
+  assertEquals((await why(fetch, legacy)).status, "web_excess");
+});
+
+Deno.test("web tools (H-07 review): the stored-manifest derivation keeps pre-H-07 six-tool manifests valid, never a web arm", () => {
+  const m = (requested: object, disallowed: string[]) =>
+    manifest("cc", {
+      settings: {
+        requested: requested as Record<string, unknown>,
+        native: { disallowed_tools: disallowed },
+      },
+    });
+  const SIX = claudeCodeHarnessNative(true).disallowed_tools;
+  const EIGHT = claudeCodeHarnessNative().disallowed_tools;
+  // A pre-H-07 manifest: six tools, no web_tools request.
+  assertEquals(claudeCodeDerivedNative(m({}, SIX)).disallowed_tools, SIX);
+  assertEquals(claudeCodeDerivedNative(m({}, EIGHT)).disallowed_tools, EIGHT);
+  // A web arm is a settings difference, never harness-derived.
+  assertEquals(
+    claudeCodeDerivedNative(m({ web_tools: true }, SIX)).disallowed_tools,
+    EIGHT,
+  );
+});
+
+Deno.test("web tools (H-07): the init tool list is checked against the flag (web tools expected only when allowed)", async () => {
+  const B296 = BUILTIN_INVENTORY["2.1.296"]!;
+  const init = async (tools: string[]) =>
+    JSON.stringify({
+      ...JSON.parse(
+        (await Deno.readTextFile(WEB_FIXTURE.fetch)).split("\n")[1]!,
+      ),
+      tools,
+    });
+  const run = async (tools: string[], web: boolean) =>
+    (await parse(
+      [
+        '{"type":"cg_inventory","v":1,"ok":true,"installed":["instructions"],"problems":[]}',
+        await init(tools),
+        v2Result(),
+      ].join("\n"),
+      0,
+      webArm(false, web),
+    )).r.inventoryProblems!.join("\n");
+  const allowed = B296.tools.filter((t) =>
+    !claudeCodeHarnessNative(true).disallowed_tools.includes(t)
+  );
+  const blocked = allowed.filter((t) => t !== "WebFetch" && t !== "WebSearch");
+  assertEquals(await run(allowed, true), "");
+  assertEquals(await run(blocked, false), "");
+  assertStringIncludes(await run(allowed, false), "unexpected tool WebFetch");
+  assertStringIncludes(await run(blocked, true), "missing tool WebSearch");
+});
+
+Deno.test("web tools (H-07 review 2): malformed lists, frozen images, failed searches and exact totals", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const fetch = await Deno.readTextFile(WEB_FIXTURE.fetch);
+  const run = async (text: string, arm: Record<string, unknown>) => {
+    const { r } = await parse(text, 0, arm);
+    return { r, raw: webRaw(r) };
+  };
+  const exactFetch = fetch
+    .replace('"inputTokens":9004', '"inputTokens":4')
+    .replace('"outputTokens":509', '"outputTokens":9');
+  const exactSearch = search
+    .replace('"inputTokens":27149', '"inputTokens":6')
+    .replace('"outputTokens":1884', '"outputTokens":16');
+  // A malformed list (a non-name entry) prohibits web calls, even when the
+  // totals are exact.
+  const arm = webArm(false, true);
+  const bad = {
+    ...arm,
+    settings: {
+      ...arm.settings,
+      native: {
+        ...arm.settings.native,
+        disallowed_tools: [
+          ...claudeCodeHarnessNative(true).disallowed_tools,
+          17,
+        ],
+      },
+    },
+  };
+  const m = await run(exactFetch, bad);
+  assertEquals(m.raw.usage_reconciliation?.status, "unreconciled");
+  assertStringIncludes(m.raw.usage_reconciliation!.why!, "malformed");
+  assertEquals(m.r.telemetry.cost_usd, null);
+  // A frozen (not inventoried) image skips reconciliation, yet a disallowed
+  // web call still voids the cost.
+  const frozen = {
+    ...webArm(false, false),
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  };
+  const f = await run(exactFetch, frozen);
+  assertEquals(f.raw.usage_reconciliation, undefined);
+  assertEquals(f.r.telemetry.cost_usd, null);
+  assert(
+    f.raw.missing.some((x) => x.includes("WebFetch used while disallowed")),
+    JSON.stringify(f.raw.missing),
+  );
+  // A failed WebSearch explains no excess, but its search is still counted.
+  const failed = search.replace(
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result"',
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result","is_error":true',
+  );
+  assert(failed !== search);
+  const s = await run(failed, webArm(true, true));
+  assertEquals(s.raw.usage_reconciliation?.status, "web_excess");
+  assertEquals(s.raw.unpriced, [{
+    model: "claude-sonnet-5",
+    item: "web_search_requests",
+    count: 2,
+  }]);
+  // An executed WebSearch without a searchCount fails with exact totals too.
+  const n = await run(
+    exactSearch.replace(',"searchCount":1}', "}"),
+    webArm(true, true),
+  );
+  assertEquals(n.raw.usage_reconciliation?.status, "unreconciled");
+  assertStringIncludes(
+    n.raw.usage_reconciliation!.why!,
+    "without a searchCount",
+  );
+});
+
+Deno.test("web tools (H-07 review 3): search accounting is checked on frozen images too; a counted failed search keeps the token cost", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const frozen = {
+    ...webArm(true, true),
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  };
+  const run = async (text: string, arm: Record<string, unknown>) => {
+    const { r } = await parse(text, 0, arm);
+    return { r, raw: webRaw(r) };
+  };
+  // Clean on a frozen image: no reconciliation, a token cost, searches unpriced.
+  const ok = await run(search, frozen);
+  assertEquals(ok.raw.usage_reconciliation, undefined);
+  assert(ok.r.telemetry.cost_usd !== null);
+  for (
+    const [text, want] of [
+      [
+        search.replace('"webSearchRequests":2', '"webSearchRequests":3'),
+        "webSearchRequests 3",
+      ],
+      [search.replace(',"searchCount":1}', "}"), "without a searchCount"],
+    ] as const
+  ) {
+    const f = await run(text, frozen);
+    assertEquals(f.r.telemetry.cost_usd, null, want);
+    assert(f.raw.missing.some((x) => x.includes(want)), want);
+  }
+  // A failed WebSearch still counted: reconciled, token cost kept.
+  const failed = search.replace(
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result"',
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result","is_error":true',
+  );
+  const s = await run(failed, webArm(true, true));
+  assertAlmostEquals(
+    s.r.telemetry.cost_usd!,
+    (27149 * 2 + 96714 * 0.2 + 8778 * 4 + 1884 * 10) / 1e6,
+    1e-12,
+  );
+});
+
+Deno.test("web tools (H-07 review 4): web use on a model modelUsage does not report voids the cost, counted or not", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const frozen = {
+    ...webArm(true, true),
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  };
+  // The second WebSearch exchange runs on another model; modelUsage keeps
+  // only claude-sonnet-5 (with its one remaining search).
+  const other = search.replaceAll(
+    '"model":"claude-sonnet-5","id":"msg_011Cg2G9CY6bE2SXvv88B7Bk"',
+    '"model":"claude-haiku-9","id":"msg_011Cg2G9CY6bE2SXvv88B7Bk"',
+  ).replace('"webSearchRequests":2', '"webSearchRequests":1');
+  assert(other.includes("claude-haiku-9"));
+  for (
+    const text of [
+      other,
+      other.replace(
+        ',"durationSeconds":10.052839699999996,"searchCount":1}',
+        ',"durationSeconds":10.052839699999996}',
+      ),
+    ]
+  ) {
+    for (const arm of [frozen, webArm(true, true)]) {
+      const { r } = await parse(text, 0, arm);
+      assertEquals(r.telemetry.cost_usd, null);
+      assertStringIncludes(
+        JSON.stringify(webRaw(r).missing),
+        "web tool use on claude-haiku-9, which modelUsage does not report",
+      );
+    }
+  }
+});
+
+Deno.test("web tools (H-07): v1 arms (image_revision 2) are frozen: they keep the six-tool list and refuse web_tools", () => {
+  const v1 = (settings: Record<string, unknown>) =>
+    HarnessConfigSchema.parse({
+      id: "cc-v1",
+      harness: "claude-code",
+      harness_version: "2.1.282",
+      image_revision: "2",
+      models: { main: "anthropic/claude-sonnet-5" },
+      settings,
+      limits: { timeout_min: 30, max_budget_usd: 5 },
+    });
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(v1({}), WEB_CATALOG)["disallowed_tools"],
+    claudeCodeHarnessNative(true).disallowed_tools,
+  );
+  for (const web_tools of [true, false]) {
+    assertThrows(
+      () => claudeCodeAdapter.nativeSettings(v1({ web_tools }), WEB_CATALOG),
+      ConfigurationError,
+      "v1 arms are frozen",
+    );
+  }
+  // Revision 3 and later get the blocked default.
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(webCfg({}), WEB_CATALOG)[
+      "disallowed_tools"
+    ],
+    claudeCodeHarnessNative().disallowed_tools,
+  );
 });

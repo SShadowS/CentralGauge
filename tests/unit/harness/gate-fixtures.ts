@@ -30,10 +30,18 @@ export async function writeRefapp(refapp: string): Promise<void> {
   let n = 0;
   for (const m of BUILD_ORDER) {
     n++;
+    // As the real refapp (H-05: the gate reads them for its CGR data clean).
+    const from = m === "Test" ? 80000 : 70000 + 100 * (n - 1);
     await write(
       refapp,
       `${m}/app.json`,
-      JSON.stringify({ id: `c6a1e000-0000-4000-8000-00000000000${n}` }),
+      JSON.stringify({
+        id: `c6a1e000-0000-4000-8000-00000000000${n}`,
+        name: `CGR ${m}`,
+        publisher: "CentralGauge",
+        version: "1.0.0.0",
+        idRanges: [{ from, to: m === "Test" ? 84999 : from + 99 }],
+      }),
     );
   }
   await write(refapp, "Core/src/A.al", 'codeunit 70000 "A"\n{\n}\n');
@@ -75,8 +83,12 @@ fail_to_pass:
       id: `c6a1e000-0000-4000-8001-000000000${id.slice(3)}`,
       name: `CGR Oracle ${id}`,
       publisher: "CentralGauge",
+      version: "1.0.0.0",
       idRanges: [{ from: band, to: bandTo }],
-      dependencies: [{ name: "CGR Core" }, { name: "Library Assert" }],
+      dependencies: [
+        { id: "c6a1e000-0000-4000-8000-000000000001", name: "CGR Core" },
+        { id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14", name: "Library Assert" },
+      ],
     }),
   );
   await write(dir, "oracle/src/O.al", TEST_CU(band, "Hidden"));

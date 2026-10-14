@@ -75,20 +75,22 @@ export function lspShell(e: ExecutionRecord, m: TraceMetrics): number | null {
 export type ReconciliationStatus =
   | "exact"
   | "compaction_excess"
+  | "web_excess"
   | "unreconciled"
   | "absent";
 export const RECONCILIATION_STATUSES: readonly ReconciliationStatus[] = [
   "exact",
   "compaction_excess",
+  "web_excess",
   "unreconciled",
   "absent",
 ];
 
 /**
  * A cell's `raw_usage.usage_reconciliation.status` (appendix section 6): the
- * worst over its attempts (unreconciled, compaction_excess, absent, exact),
- * since tokens sum over every attempt. An unknown status counts as
- * unreconciled; no record of one is absent.
+ * worst over its attempts (unreconciled, compaction_excess, web_excess,
+ * absent, exact), since tokens sum over every attempt. An unknown status
+ * counts as unreconciled; no record of one is absent.
  */
 export function reconciliationStatus(
   attempts: readonly ExecutionRecord[],
@@ -99,14 +101,19 @@ export function reconciliationStatus(
       | null;
     const s = raw?.usage_reconciliation;
     if (s === undefined || s === null) return "absent";
-    return s.status === "exact" || s.status === "compaction_excess"
+    return s.status === "exact" || s.status === "compaction_excess" ||
+        s.status === "web_excess"
       ? s.status
       : "unreconciled";
   };
   const all = attempts.map(of);
-  return (["unreconciled", "compaction_excess", "absent"] as const).find((s) =>
-    all.includes(s)
-  ) ?? (all.length === 0 ? "absent" : "exact");
+  return ([
+    "unreconciled",
+    "compaction_excess",
+    "web_excess",
+    "absent",
+  ] as const)
+    .find((s) => all.includes(s)) ?? (all.length === 0 ? "absent" : "exact");
 }
 
 export function cellValues(

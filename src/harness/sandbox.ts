@@ -80,6 +80,10 @@ export interface DockerCli {
   listOwned(owner: string): Promise<string[]>;
   inspectImage(ref: string): Promise<unknown | null>;
   build(args: string[]): Promise<number>;
+  /** docker rmi of a tag: removes the tag (the image too when it was the last one); the exit code (H-03 run 003). */
+  untag(ref: string): Promise<number>;
+  /** H-03: docker tag of an image id; the exit code. */
+  tag(id: string, ref: string): Promise<number>;
   /**
    * A file the image ships, read without starting it (docker create, then
    * docker cp from the stopped container); null when it cannot be read.
@@ -193,6 +197,9 @@ export async function captureStream(
     throw err;
   } finally {
     signal?.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch { /* a pending read after cancel; never mask the original error */ }
     try {
       file.close();
     } catch { /* already closed by the deadline */ }
@@ -413,6 +420,8 @@ export function realDocker(opTimeoutMs = OP_TIMEOUT_MS): DockerCli {
         ? (JSON.parse(r.stdout) as unknown[])[0] ?? null
         : null;
     },
+    untag: async (ref) => (await out(["rmi", ref])).code,
+    tag: async (id, ref) => (await out(["tag", id, ref])).code,
     readImageFile: async (image, path, owner) => {
       const args = imageReadCreateArgs(image, owner);
       const name = args[args.indexOf("--name") + 1]!;
@@ -1056,6 +1065,26 @@ export async function restrictPath(
   ) {
     throw new ConfigurationError(
       `refusing ${what} ${path}: its ACL is not exactly ${user} and SYSTEM: ${listing.stdout.trim()}`,
+    );
+  }
+}
+
+/**
+ * H-03: let every local user (BUILTIN\Users, by SID) create, replace and
+ * delete anything under a new shared dir (inherited Modify).
+ */
+export async function shareWithLocalUsers(
+  dir: string,
+  icacls: IcaclsRunner = (args) => runTool("icacls.exe", args),
+): Promise<void> {
+  if (Deno.build.os !== "windows") {
+    await Deno.chmod(dir, 0o777);
+    return;
+  }
+  const r = await icacls([dir, "/grant", "*S-1-5-32-545:(OI)(CI)M"]);
+  if (r.code !== 0) {
+    throw new ConfigurationError(
+      `could not share ${dir} with local users: icacls exited ${r.code}: ${r.stderr.trim()}`,
     );
   }
 }
