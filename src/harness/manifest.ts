@@ -487,8 +487,11 @@ async function harnessDerivedSettingsOnly(
   // arms (H-07: a pre-H-07 six-tool list beside today's eight is web policy).
   if (a.harness === b.harness && Object.hasOwn(harnessNative, a.harness)) {
     for (const k of Object.keys(harnessNative[a.harness]!(a))) {
+      const has = Object.hasOwn(a.settings.native, k);
+      if (has !== Object.hasOwn(b.settings.native, k)) return false;
+      // Both absent: rest() refuses the missing derived key.
       if (
-        await hashJson({ v: a.settings.native[k] }) !==
+        has && await hashJson({ v: a.settings.native[k] }) !==
           await hashJson({ v: b.settings.native[k] })
       ) return false;
     }

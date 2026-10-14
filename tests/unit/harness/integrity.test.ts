@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
-import { ValidationError } from "../../../src/errors.ts";
+import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { readCatalog } from "../../../src/ingest/catalog/read.ts";
 import {
   claudeCodeDerivedNative,
@@ -832,10 +832,22 @@ Deno.test("assertVaryHolds (H-07 review): two claude-code arms with six vs eight
   const derive = { "claude-code": claudeCodeDerivedNative };
   await assertRejects(
     () => assertVaryHolds(six, eight, ["harness"], derive),
-    Error,
+    ConfigurationError,
     "settings",
   );
   // Each alone still matches its own derivation (pre-H-07 campaigns stay valid).
   await assertVaryHolds(six, six, ["harness"], derive);
   await assertVaryHolds(eight, eight, ["harness"], derive);
+  // A missing derived key is a settings refusal, never a serialization error.
+  const none = manifest("none", {
+    harness: "claude-code",
+    settings: { requested: {}, native: {} },
+  });
+  for (const [a, b] of [[none, eight], [eight, none], [none, none]]) {
+    await assertRejects(
+      () => assertVaryHolds(a!, b!, ["harness"], derive),
+      ConfigurationError,
+      "settings",
+    );
+  }
 });

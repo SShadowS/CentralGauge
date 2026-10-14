@@ -3587,3 +3587,43 @@ Deno.test("web tools (H-07 review 2): malformed lists, frozen images, failed sea
     "without a searchCount",
   );
 });
+
+Deno.test("web tools (H-07 review 3): search accounting is checked on frozen images too; a counted failed search keeps the token cost", async () => {
+  const search = await Deno.readTextFile(WEB_FIXTURE.search);
+  const frozen = {
+    ...webArm(true, true),
+    image: { digest: "sha256:img", base_digest: "sha256:base", revision: "2" },
+  };
+  const run = async (text: string, arm: Record<string, unknown>) => {
+    const { r } = await parse(text, 0, arm);
+    return { r, raw: webRaw(r) };
+  };
+  // Clean on a frozen image: no reconciliation, a token cost, searches unpriced.
+  const ok = await run(search, frozen);
+  assertEquals(ok.raw.usage_reconciliation, undefined);
+  assert(ok.r.telemetry.cost_usd !== null);
+  for (
+    const [text, want] of [
+      [
+        search.replace('"webSearchRequests":2', '"webSearchRequests":3'),
+        "webSearchRequests 3",
+      ],
+      [search.replace(',"searchCount":1}', "}"), "without a searchCount"],
+    ] as const
+  ) {
+    const f = await run(text, frozen);
+    assertEquals(f.r.telemetry.cost_usd, null, want);
+    assert(f.raw.missing.some((x) => x.includes(want)), want);
+  }
+  // A failed WebSearch still counted: reconciled, token cost kept.
+  const failed = search.replace(
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result"',
+    '"tool_use_id":"toolu_01QsuK2Srk3C5WNNLi2jUC1C","type":"tool_result","is_error":true',
+  );
+  const s = await run(failed, webArm(true, true));
+  assertAlmostEquals(
+    s.r.telemetry.cost_usd!,
+    (27149 * 2 + 96714 * 0.2 + 8778 * 4 + 1884 * 10) / 1e6,
+    1e-12,
+  );
+});

@@ -188,6 +188,31 @@ type WebUse = {
 };
 
 /**
+ * H-07, on every image: a disallowed web call, or search accounting the
+ * stream does not support. Searches are counted (and listed unpriced), never
+ * assumed: a model with an executed web call must report webSearchRequests,
+ * equal to the searches its WebSearch results report.
+ */
+function webProblem(last: J, web: WebUse): string | null {
+  if (web.prohibited.length > 0) return web.prohibited.join("; ");
+  for (const m of Object.keys(last).sort()) {
+    const name = m || "(no model)";
+    const bad = web.bad.get(m);
+    if (bad) return bad.join("; ");
+    const wsr = obj(last[m])["webSearchRequests"];
+    const searches = web.searches.get(m) ?? 0;
+    if (wsr === undefined && searches === 0 && !web.calls.has(m)) continue;
+    if (!isCount(wsr)) {
+      return `modelUsage ${name} webSearchRequests missing or not a count`;
+    }
+    if (wsr !== searches) {
+      return `modelUsage ${name} webSearchRequests ${wsr} != the ${searches} search(es) its WebSearch results report`;
+    }
+  }
+  return null;
+}
+
+/**
  * Spec v2 gate 3, inventoried images (appendix section 6). The last
  * modelUsage must equal, per model, the streamed assistant messages (main and
  * sub-agents, one per message id) plus each sub-agent's
@@ -214,8 +239,9 @@ function reconcile(
   web: WebUse,
 ): Reconciliation {
   const no = (why: string): Reconciliation => ({ status: "unreconciled", why });
-  // H-07: a disallowed web call is never reconciled, whatever the totals.
-  if (web.prohibited.length > 0) return no(web.prohibited.join("; "));
+  // H-07: disallowed web calls and wrong search counts are never reconciled.
+  const webWhy = webProblem(last, web);
+  if (webWhy !== null) return no(webWhy);
   const FIELDS = [
     ["input", "input_tokens"],
     ["read", "cache_read_input_tokens"],
@@ -305,24 +331,6 @@ function reconcile(
       return no(
         `modelUsage ${name} output ${g.out} is below the ${t.out} the messages report`,
       );
-    }
-    // Searches are counted (and later listed unpriced), never assumed: a
-    // model with an executed web call must report webSearchRequests.
-    const bad = web.bad.get(m);
-    if (bad) return no(bad.join("; "));
-    const wsr = x["webSearchRequests"];
-    const searches = web.searches.get(m) ?? 0;
-    if (wsr !== undefined || searches > 0 || (web.calls.get(m) ?? 0) > 0) {
-      if (!isCount(wsr)) {
-        return no(
-          `modelUsage ${name} webSearchRequests missing or not a count`,
-        );
-      }
-      if (wsr !== searches) {
-        return no(
-          `modelUsage ${name} webSearchRequests ${wsr} != the ${searches} search(es) its WebSearch results report`,
-        );
-      }
     }
     const d = {
       input: g.input - t.input,
@@ -1386,9 +1394,10 @@ export function parseClaudeStream(
     unproven.costs.push(
       `${file}: usage not reconciled (${reconciliation.why})`,
     );
-  } else if (!reconciliation && web.prohibited.length > 0) {
-    // H-07: a disallowed web call voids the cost on every image, inventoried or not.
-    unproven.costs.push(`${file}: ${web.prohibited.join("; ")}`);
+  } else if (!reconciliation && result) {
+    // H-07: web checks void the cost on every image, inventoried or not.
+    const why = webProblem(obj(result.modelUsage), web);
+    if (why !== null) unproven.costs.push(`${file}: ${why}`);
   }
   const proven = unproven.costs.length === 0;
   const priced = result ? estimateCost(usage, input.pricing) : null;
