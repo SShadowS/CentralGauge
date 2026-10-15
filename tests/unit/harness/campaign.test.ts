@@ -2188,7 +2188,19 @@ Deno.test("H-15 (Sol r2): an overridden retry interrupted, recovered and retried
     io(),
   );
   tick(48 * 3600_000);
-  await runCampaign(u.env, "limits", opts(), io());
+  // Past the mock's reset every new limit is due at once: stop at the first
+  // wait, else the pause loop retries forever.
+  let stopped = false;
+  await runCampaign(u.env, "limits", opts(), {
+    ...io(),
+    sleep: () => {
+      stopped = true;
+      return Promise.reject(new Error("stop waiting"));
+    },
+  }).catch((e) => {
+    if (!stopped) throw e;
+  });
+  assert(stopped);
   const us = await usage2();
   assertEquals(us.map((e) => e.termination), [
     "usage_limited",
