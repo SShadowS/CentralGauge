@@ -488,8 +488,11 @@ Deno.test("schemas: hashes are lower-case hex, ids are lower-case uuids", async 
       ExecutionRecordSchema.parse({ ...e, workspace_hash: bad })
     );
   }
+  // The fixture id is a hex counter (digits only for some values): pin a letter.
+  const lower = "00000000-0000-4000-9000-00000000000a";
+  ExecutionRecordSchema.parse({ ...e, id: lower });
   assertThrows(() =>
-    ExecutionRecordSchema.parse({ ...e, id: e.id.toUpperCase() })
+    ExecutionRecordSchema.parse({ ...e, id: lower.toUpperCase() })
   );
   const upper = CAMPAIGN_ID.replace("0001", "000A");
   assertThrows(() => CampaignRecordSchema.parse({ ...c, id: upper }));
