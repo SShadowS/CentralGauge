@@ -640,3 +640,137 @@ Deno.test("ResolvedManifestSchema (H-03): image.package is strict and names exac
     assertEquals(ok(version, p), false, name);
   }
 });
+
+// ---- H-14: under vary [lsp], native.lsp follows the lsp component ----
+const LSP_FACTS: RuntimeFacts = {
+  ...FACTS,
+  servers: {
+    ...FACTS.servers,
+    al: { version: "1.18.11", tool_schema_hash: "l1" },
+  },
+};
+const lspFacts = (extra: Record<string, unknown>): RuntimeFacts => ({
+  ...LSP_FACTS,
+  native_settings: { ...LSP_FACTS.native_settings, ...extra },
+});
+const refused = (p: () => Promise<void>) =>
+  assertRejects(p, ConfigurationError, "settings");
+
+Deno.test("vary [lsp] (H-14): plain vs an lsp arm differing only by native.lsp passes, both ways", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), LSP_FACTS);
+  const v = await resolveManifest(
+    r,
+    config("lsp", { lsp: ["al"] }),
+    lspFacts({ lsp: ["al"] }),
+  );
+  await assertVaryHolds(base, v, ["lsp"]);
+  await assertVaryHolds(v, base, ["lsp"]);
+  // The P-01 shape: vary [instructions, skills, agents, mcp, lsp], equal MCP.
+  const vary = ["instructions", "skills", "agents", "mcp", "lsp"] as const;
+  const mBase = await resolveManifest(
+    r,
+    config("plain", { mcp: ["al-tools"] }),
+    lspFacts(MCP_NATIVE),
+  );
+  const mLsp = await resolveManifest(
+    r,
+    config("lsp", { mcp: ["al-tools"], lsp: ["al"] }),
+    lspFacts({ ...MCP_NATIVE, lsp: ["al"] }),
+  );
+  await assertVaryHolds(mBase, mLsp, [...vary]);
+  // Both components differ: each one's derived keys follow it.
+  await assertVaryHolds(base, mLsp, ["mcp", "lsp"]);
+});
+
+Deno.test("vary without lsp (H-14): the same lsp pair is still refused", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), LSP_FACTS);
+  const v = await resolveManifest(
+    r,
+    config("lsp", { lsp: ["al"] }),
+    lspFacts({ lsp: ["al"] }),
+  );
+  for (const vary of [["skills"], ["mcp"], ["settings"]] as const) {
+    await assertRejects(
+      () => assertVaryHolds(base, v, [...vary]),
+      ConfigurationError,
+      "lsp",
+    );
+  }
+  // vary [mcp] exempts only MCP keys: an lsp settings difference stays refused.
+  const mBase = await resolveManifest(
+    r,
+    config("plain", { mcp: ["al-tools"], lsp: ["al"] }),
+    lspFacts(MCP_NATIVE),
+  );
+  const mLsp = await resolveManifest(
+    r,
+    config("lsp", { mcp: ["al-tools"], lsp: ["al"] }),
+    lspFacts({ ...MCP_NATIVE, lsp: ["al"] }),
+  );
+  await refused(() => assertVaryHolds(mBase, mLsp, ["mcp"]));
+});
+
+Deno.test("vary [lsp] (H-14): a non-derived setting or a misshapen native.lsp is still refused", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), LSP_FACTS);
+  for (
+    const extra of [
+      { lsp: ["al"], thinking: "high" },
+      { lsp: ["other"] },
+      { lsp: ["al", "al"] },
+      { lsp: "al" },
+      {},
+    ]
+  ) {
+    const v = await resolveManifest(
+      r,
+      config("lsp", { lsp: ["al"] }),
+      lspFacts(extra),
+    );
+    await refused(() => assertVaryHolds(base, v, ["lsp"]));
+  }
+  // A requested settings difference rides along with nothing.
+  const cfg = HarnessConfigSchema.parse({
+    ...config("lsp", { lsp: ["al"] }),
+    settings: { effort: "low" },
+  });
+  const v = await resolveManifest(r, cfg, lspFacts({ lsp: ["al"] }));
+  await refused(() => assertVaryHolds(base, v, ["lsp"]));
+  // A plain side may not carry native.lsp.
+  const fake = await resolveManifest(r, config("plain"), lspFacts({ lsp: [] }));
+  await refused(() => assertVaryHolds(fake, base, ["lsp"]));
+});
+
+Deno.test("vary [lsp] (H-14): the native.lsp shape is checked even when settings are equal", async () => {
+  const r = await root();
+  const base = await resolveManifest(r, config("plain"), LSP_FACTS);
+  const v = await resolveManifest(r, config("lsp", { lsp: ["al"] }), LSP_FACTS);
+  await refused(() => assertVaryHolds(base, v, ["lsp"]));
+  await refused(() => assertVaryHolds(v, base, ["lsp"]));
+});
+
+Deno.test("vary [harness, lsp] (H-14): native.lsp follows the lsp component beside the adapter's own keys", async () => {
+  const r = await root();
+  const derive = { "claude-code": () => ({ effort: "high" }) };
+  const base = await resolveManifest(r, config("plain"), LSP_FACTS);
+  const v = await resolveManifest(
+    r,
+    config("lsp", { lsp: ["al"] }),
+    lspFacts({ lsp: ["al"] }),
+  );
+  await assertVaryHolds(base, v, ["harness", "lsp"], derive);
+  const bad = await resolveManifest(
+    r,
+    config("lsp", { lsp: ["al"] }),
+    lspFacts({ lsp: ["other"] }),
+  );
+  await refused(() => assertVaryHolds(base, bad, ["harness", "lsp"], derive));
+  // vary [harness] alone still refuses the lsp settings difference.
+  await assertRejects(
+    () => assertVaryHolds(base, v, ["harness"], derive),
+    ConfigurationError,
+    "lsp",
+  );
+});
