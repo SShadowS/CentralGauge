@@ -1,5 +1,5 @@
 id: HX-013
-refapp_version: refapp-v2-rc1
+refapp_version: refapp-v2
 kind: bugfix
 prompt: prompt.md
 touches: [Fleet, Core, Rental]

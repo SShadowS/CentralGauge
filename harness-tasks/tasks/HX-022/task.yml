@@ -1,5 +1,5 @@
 id: HX-022
-refapp_version: refapp-v2-rc1
+refapp_version: refapp-v2
 kind: feature
 prompt: prompt.md
 touches: [Fleet, Core, Rental, Leasing, Integration]

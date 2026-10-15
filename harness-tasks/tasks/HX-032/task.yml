@@ -1,5 +1,5 @@
 id: HX-032
-refapp_version: refapp-v2-rc1
+refapp_version: refapp-v2
 kind: feature
 prompt: prompt.md
 touches: [Integration, Core]

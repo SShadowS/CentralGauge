@@ -1,5 +1,5 @@
 id: HX-038
-refapp_version: refapp-v2-rc1
+refapp_version: refapp-v2
 kind: refactor
 prompt: prompt.md
 touches: [Leasing, Core]
