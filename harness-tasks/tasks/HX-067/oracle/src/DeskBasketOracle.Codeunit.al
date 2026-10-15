@@ -37,7 +37,7 @@ codeunit 86800 "HX067 Desk Basket Oracle"
         DeskBasket.AddToBasket('HX067-2A');
         DeskBasket.AddToBasket('HX067-2B');
 
-        HX67AssertBasket(2, 'HX067-2A', 'HX067-2B', 'A vehicle added twice is in the basket once');
+        HX67AssertBasketVia(DeskBasket, 2, 'HX067-2A', 'HX067-2B', 'A vehicle added twice is in the basket once');
         HX67Finish();
     end;
 
@@ -50,13 +50,15 @@ codeunit 86800 "HX067 Desk Basket Oracle"
         HX67Vehicle('HX067-3A');
         HX67Vehicle('HX067-3B');
         HX67Vehicle('HX067-3C');
+        HX67Delete('HX067-NONE');
 
         DeskBasket.AddToBasket('HX067-3A');
         DeskBasket.AddToBasket('HX067-3B');
         DeskBasket.RemoveFromBasket('HX067-3A');
         DeskBasket.RemoveFromBasket('HX067-3C');
+        DeskBasket.RemoveFromBasket('HX067-NONE');
 
-        HX67AssertBasket(1, 'HX067-3B', '', 'Only the vehicle not removed stays');
+        HX67AssertBasketVia(DeskBasket, 1, 'HX067-3B', '', 'Only the vehicle not removed stays');
         HX67Finish();
     end;
 
@@ -71,7 +73,7 @@ codeunit 86800 "HX067 Desk Basket Oracle"
         BasketVehicle.Init();
         BasketVehicle."No." := 'HX067-4X';
         BasketVehicle.Insert();
-        BasketVehicle.SetRange("No.", 'HX067-4X');
+        BasketVehicle.SetFilter("No.", '<>%1', 'HX067-4X');
 
         DeskBasket.AddToBasket('HX067-4A');
         DeskBasket.GetBasket(BasketVehicle);
@@ -264,7 +266,7 @@ codeunit 86800 "HX067 Desk Basket Oracle"
 
         Assert.IsFalse(Ok, 'Adding an unknown vehicle fails');
         Assert.AreEqual('The CGR Vehicle does not exist. Identification fields and values: No.=''HX067-NONE''', GetLastErrorText(), 'The not-found error reaches the caller');
-        HX67AssertBasket(1, 'HX067-11A', '', 'The basket is as it was');
+        HX67AssertBasketVia(DeskBasket, 1, 'HX067-11A', '', 'The basket is as it was');
         HX67Finish();
     end;
 
@@ -299,10 +301,10 @@ codeunit 86800 "HX067 Desk Basket Oracle"
 
         DeskBasket.AddToBasket('HX067-13A');
         DeskBasket.AddToBasket('HX067-13B');
-        HX67AssertBasket(2, 'HX067-13A', 'HX067-13B', 'Precondition: both vehicles are in the basket');
+        HX67AssertBasketVia(DeskBasket, 2, 'HX067-13A', 'HX067-13B', 'Precondition: both vehicles are in the basket');
         DeskBasket.EmptyBasket();
 
-        HX67AssertBasket(0, '', '', 'EmptyBasket drops every vehicle');
+        HX67AssertBasketVia(DeskBasket, 0, '', '', 'EmptyBasket drops every vehicle');
         HX67Finish();
     end;
 
@@ -322,8 +324,14 @@ codeunit 86800 "HX067 Desk Basket Oracle"
 
     local procedure HX67AssertBasket(ExpectedCount: Integer; VehicleNo1: Code[20]; VehicleNo2: Code[20]; Msg: Text)
     var
-        BasketVehicle: Record "CGR Vehicle" temporary;
         DeskBasket: Codeunit "CGR Desk Basket";
+    begin
+        HX67AssertBasketVia(DeskBasket, ExpectedCount, VehicleNo1, VehicleNo2, Msg);
+    end;
+
+    local procedure HX67AssertBasketVia(var DeskBasket: Codeunit "CGR Desk Basket"; ExpectedCount: Integer; VehicleNo1: Code[20]; VehicleNo2: Code[20]; Msg: Text)
+    var
+        BasketVehicle: Record "CGR Vehicle" temporary;
     begin
         DeskBasket.GetBasket(BasketVehicle);
         BasketVehicle.Reset();
@@ -424,8 +432,19 @@ codeunit 86800 "HX067 Desk Basket Oracle"
 
     local procedure HX67EmptyAll()
     var
+        BasketVehicle: Record "CGR Vehicle" temporary;
         DeskBasket: Codeunit "CGR Desk Basket";
+        VehicleNos: List of [Code[20]];
+        VehicleNo: Code[20];
     begin
+        DeskBasket.GetBasket(BasketVehicle);
+        BasketVehicle.Reset();
+        if BasketVehicle.FindSet() then
+            repeat
+                VehicleNos.Add(BasketVehicle."No.");
+            until BasketVehicle.Next() = 0;
+        foreach VehicleNo in VehicleNos do
+            DeskBasket.RemoveFromBasket(VehicleNo);
         DeskBasket.EmptyBasket();
     end;
 
