@@ -75,6 +75,7 @@ import { imageFacts, installedFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { forTask } from "./manifest.ts";
 import {
+  type EgressOverride,
   ExecutionRecordSchema,
   JudgmentRecordSchema,
   outcomePolicy,
@@ -184,6 +185,13 @@ export interface HarnessEnv {
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
   egressEnforced: boolean;
+  /**
+   * H-13 owner override (decisions/2026-10-15-p-01-egress-override.md): set
+   * only by `harness run --unverified-egress-ok <reason>`, never when
+   * egressEnforced. Credential-bearing cells run unattended without verified
+   * egress (the ledger slot stays); every record carries egress_override.
+   */
+  unverifiedEgressReason?: string;
   /**
    * OAuth host record mode (M1-34 Step 11): the supervised Claude Code cell
    * in the qualified state whose proxy allows any DNS name on 443 and whose
@@ -393,6 +401,8 @@ interface Intent {
    * recovered automatically (refuseLegacyState).
    */
   namespace?: string;
+  /** H-13: the run's egress override; recovery records it whatever command recovers. */
+  egress_override?: EgressOverride;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -1258,6 +1268,14 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       ),
     ],
     workspace_hash: frozen?.workspace_hash ?? null,
+    ...(env.unverifiedEgressReason
+      ? {
+        egress_override: {
+          egress_enforced: false,
+          reason: env.unverifiedEgressReason,
+        },
+      }
+      : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -1459,7 +1477,7 @@ export async function runExecution(
     }
   }
   if (mode === "normal" && adapter.credentialBearing && !env.egressEnforced) {
-    if (!env.supervised) {
+    if (!env.supervised && !env.unverifiedEgressReason) {
       throw new ConfigurationError(
         `${cell.arm}: credential-bearing arms run only supervised (harness cell --supervised) until egress enforcement is verified (M1-33/M1-34)`,
       );
@@ -1530,6 +1548,14 @@ export async function runExecution(
     mode,
     stub,
     namespace: env.owner,
+    ...(env.unverifiedEgressReason
+      ? {
+        egress_override: {
+          egress_enforced: false,
+          reason: env.unverifiedEgressReason,
+        },
+      }
+      : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -1740,7 +1766,9 @@ export async function runExecution(
               lane: env.lane_id,
               task: cell.task.task.id,
               config: cell.arm,
-              purpose: "supervised dev run",
+              purpose: env.unverifiedEgressReason
+                ? `unattended run under --unverified-egress-ok: ${env.unverifiedEgressReason}`
+                : "supervised dev run",
             },
             undefined,
             env.stop ? { signal: env.stop } : {},
@@ -3066,10 +3094,14 @@ export async function recoverInterrupted(
     }
     const id = intent.execution_id;
     // Publish into the store of the command that started the attempt, whatever command recovers it.
+    const { unverifiedEgressReason: _override, ...baseEnv } = env;
     const own: HarnessEnv = {
-      ...env,
+      ...baseEnv,
       resultsRoot: intent.results_root,
       store: new RecordStore(intent.results_root),
+      ...(intent.egress_override
+        ? { unverifiedEgressReason: intent.egress_override.reason }
+        : {}),
     };
     if (intent.phase === "published") {
       hold();

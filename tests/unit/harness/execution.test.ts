@@ -255,6 +255,32 @@ Deno.test("credential gate: refused without supervision or enforcement; supervis
   );
 });
 
+Deno.test("H-13: the owner override lifts the supervision refusal only; the ledger stays required and the record carries egress_override", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  t.env.unverifiedEgressReason = "P-01 pilot";
+  t.env.credentialLedger = null;
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t)),
+    ConfigurationError,
+    "ledger",
+  );
+  assertEquals(t.docker.runs, [], "no docker call without the ledger");
+  t.env.credentialLedger = join(t.env.privateRoot, "shared.jsonl");
+  const r = await runCell(t.env, await cellFor(t));
+  assertEquals(r.executions.length, 1);
+  for (const e of r.executions) {
+    assertEquals(e.egress_override, {
+      egress_enforced: false,
+      reason: "P-01 pilot",
+    });
+  }
+  const slots = (await Deno.readTextFile(t.env.credentialLedger)).trim()
+    .split("\n").map((l) => JSON.parse(l));
+  assertEquals(slots.length, 1, "the override still reserves a slot");
+  assertStringIncludes(slots[0].purpose, "unverified-egress-ok");
+});
+
 Deno.test("an adapter that cannot enforce the budget is refused", async () => {
   const t = await makeEnv();
   const a = adapterFor("claude-code");

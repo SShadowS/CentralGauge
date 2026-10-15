@@ -83,6 +83,36 @@ Deno.test("execution schema: loud on bad records", async () => {
   }
 });
 
+Deno.test("H-13: egress_override is optional on execution and campaign records; when present it needs a reason and egress_enforced false", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const ok = { egress_enforced: false, reason: "P-01 pilot" };
+  for (const schema of [ExecutionRecordSchema, CampaignRecordSchema] as const) {
+    const r = schema === ExecutionRecordSchema ? e : c;
+    assertEquals(
+      (schema.parse(r) as { egress_override?: unknown }).egress_override,
+      undefined,
+      "old records still load",
+    );
+    assertEquals(
+      (schema.parse({ ...r, egress_override: ok }) as {
+        egress_override?: unknown;
+      }).egress_override,
+      ok,
+    );
+    for (
+      const bad of [
+        { egress_enforced: false, reason: "" },
+        { egress_enforced: true, reason: "x" },
+        { egress_enforced: false },
+        { ...ok, extra: 1 },
+      ]
+    ) {
+      assertThrows(() => schema.parse({ ...r, egress_override: bad }));
+    }
+  }
+});
+
 Deno.test("judgment schema: verdict must agree, failures must be classified", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), false);

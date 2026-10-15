@@ -1371,6 +1371,111 @@ repeats: 1
   assertEquals(s.planned, 2);
 });
 
+Deno.test("H-13: run --unverified-egress-ok passes the egress refusal (dry run too); a blank reason or an enforced marker is refused", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  await write(
+    t.harnessRoot,
+    "configs/cc-sonnet-effort.yml",
+    `id: cc-sonnet-effort
+harness: claude-code
+harness_version: "2.1.282"
+models: { main: anthropic/claude-sonnet-5 }
+settings: { effort: high }
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  await write(
+    t.harnessRoot,
+    "experiments/cc.yml",
+    `id: cc
+hypothesis: Effort.
+primary_metric: pass_rate
+baseline: cc-sonnet-plain
+variants: [cc-sonnet-effort]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+`,
+  );
+  const noEnv = () => Promise.reject(new Error("no environment"));
+  const planner = (eo: Parameters<typeof openPlanEnv>[0]) =>
+    openPlanEnv(eo, planDeps(t, [], () => Promise.resolve([])));
+  for (const reason of ["", "  "]) {
+    await assertRejects(
+      () =>
+        harnessRun(
+          "cc",
+          runOpts(t, { dryRun: true, unverifiedEgressReason: reason }),
+          noEnv,
+          () => Promise.reject(new Error("refused before planning")),
+        ),
+      ConfigurationError,
+      "--unverified-egress-ok needs a non-empty reason",
+    );
+  }
+  const s = await harnessRun(
+    "cc",
+    runOpts(t, { dryRun: true, unverifiedEgressReason: "P-01 pilot" }),
+    noEnv,
+    planner,
+  );
+  assertEquals(s.planned, 2);
+  await authorizedRoot(t.repo.root);
+  await assertRejects(
+    () =>
+      harnessRun(
+        "cc",
+        runOpts(t, { dryRun: true, unverifiedEgressReason: "P-01 pilot" }),
+        noEnv,
+        planner,
+      ),
+    ConfigurationError,
+    "enforced",
+  );
+});
+
+Deno.test("H-13: `harness run --unverified-egress-ok <reason>` records the override on the campaign and its executions; absent, nothing is recorded", async () => {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, opener(t));
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const cwd = Deno.cwd();
+  const c = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    await cli.parse([
+      "harness",
+      "run",
+      "contract",
+      "--unverified-egress-ok",
+      "P-01 pilot",
+      ...flags,
+    ]);
+    assertEquals(Deno.exitCode ?? 0, 0, c.out.join("\n"));
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  const want = { egress_enforced: false, reason: "P-01 pilot" };
+  const [campaign] = await t.env.store.campaigns("contract");
+  assertEquals(campaign!.egress_override, want);
+  const es = await t.env.store.executions(campaign!.id);
+  assertEquals(es.length, 2);
+  for (const e of es) assertEquals(e.egress_override, want);
+});
+
 Deno.test("qualify judges every manifest variant at its rev and indexes judgment, provenance, expected and actual verdicts", async () => {
   const t = await makeEnv();
   await writeCatalog(t);

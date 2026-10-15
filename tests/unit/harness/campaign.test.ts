@@ -28,7 +28,7 @@ import {
   mcpLabel,
 } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
-import { buildReport } from "../../../src/harness/report.ts";
+import { buildReport, renderReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
@@ -267,6 +267,122 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
   enforce(t); // M1-33: verified enforcement comes with its egress runtime
   const s = await runCampaign(t.env, "cc", opts(), io());
   assertEquals([s.ran, s.judged], [2, 2]);
+});
+
+Deno.test("H-13: --unverified-egress-ok runs a credential-bearing campaign unattended; campaign, every execution and the report carry egress_override", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  await write(
+    t.harnessRoot,
+    "configs/cc-sonnet-effort.yml",
+    `id: cc-sonnet-effort
+harness: claude-code
+harness_version: "2.1.282"
+models: { main: anthropic/claude-sonnet-5 }
+settings: { effort: high }
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  await experiment(t, "cc", "cc-sonnet-plain", ["cc-sonnet-effort"]);
+  // An empty or blank reason is no override.
+  for (const reason of ["", "   "]) {
+    await assertRejects(
+      () =>
+        runCampaign(
+          { ...t.env, unverifiedEgressReason: reason },
+          "cc",
+          opts(),
+          io(),
+        ),
+      ConfigurationError,
+      "reason",
+    );
+  }
+  // The override is refused while the marker IS enforced.
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, egressEnforced: true, unverifiedEgressReason: "x" },
+        "cc",
+        opts(),
+        io(),
+      ),
+    ConfigurationError,
+    "enforced",
+  );
+  assertEquals(await t.env.store.campaigns("cc"), []);
+  const lines: string[] = [];
+  const s = await runCampaign(
+    { ...t.env, unverifiedEgressReason: "  P-01 pilot  " },
+    "cc",
+    opts(),
+    { ...io(), log: (l: string) => lines.push(l) },
+  );
+  assertEquals([s.ran, s.judged], [2, 2]);
+  assert(
+    lines.some((l) =>
+      l.includes("[WARN]") && l.includes("egress NOT enforced") &&
+      l.includes("P-01 pilot")
+    ),
+    lines.join("\n"),
+  );
+  const want = { egress_enforced: false, reason: "P-01 pilot" };
+  const c = (await t.env.store.campaigns("cc"))[0]!;
+  assertEquals(c.egress_override, want);
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, 2);
+  for (const e of es) assertEquals(e.egress_override, want);
+  const r = await buildReport(await loadCampaignData(t.env.store, c));
+  assertEquals(r.egress_override, {
+    egress_enforced: false,
+    reasons: ["P-01 pilot"],
+  });
+  assertStringIncludes(
+    renderReport(r),
+    "egress NOT enforced (owner override): P-01 pilot",
+  );
+  // Resuming without the override is refused (the unchanged refusal).
+  await assertRejects(
+    () => runCampaign(t.env, "cc", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "carry provider credentials",
+  );
+});
+
+Deno.test("H-13: resume refuses an override state other than the campaign's, either way", async () => {
+  const t = await mockEnv();
+  await experiment(t, "plain", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "plain", opts({ sample: 1 }), io());
+  const plain = (await t.env.store.campaigns("plain"))[0]!;
+  assertEquals(plain.egress_override, undefined);
+  for (const e of await t.env.store.executions(plain.id)) {
+    assertEquals(e.egress_override, undefined);
+  }
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, unverifiedEgressReason: "P-01 pilot" },
+        "plain",
+        opts(),
+        io(),
+      ),
+    ConfigurationError,
+    "unverified-egress-ok",
+  );
+  await experiment(t, "over", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(
+    { ...t.env, unverifiedEgressReason: "P-01 pilot" },
+    "over",
+    opts({ sample: 1 }),
+    io(),
+  );
+  const over = (await t.env.store.campaigns("over"))[0]!;
+  await assertRejects(
+    () => runCampaign(t.env, "over", opts({ campaign: over.id }), io()),
+    ConfigurationError,
+    "unverified-egress-ok",
+  );
 });
 
 Deno.test("tasks_meta.limits stores the task's own overrides; two arms with different limits against one task override get their own effective execution limits; reuse stays empty", async () => {
