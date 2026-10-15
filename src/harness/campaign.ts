@@ -85,6 +85,11 @@ export interface RunOptions {
   preregDecision?: string;
   /** M11-10: the stage-B decision file; required with a preregistration. */
   preregBDecision?: string;
+  /**
+   * H-15 owner override: the reason. Retries owed to usage resets recorded
+   * before this invocation run now; a limit hit during it still pauses.
+   */
+  ignoreUsageReset?: string;
 }
 
 export interface CampaignSummary {
@@ -686,6 +691,18 @@ export async function runCampaign(
     );
   }
   checkJudgeConcurrency(o.judgeConcurrency);
+  // H-15 owner override (decisions/2026-10-15-p-01-egress-override.md).
+  const ignoreReset = o.ignoreUsageReset?.trim();
+  if (ignoreReset === "") {
+    throw new ConfigurationError(
+      "--ignore-usage-reset needs a non-empty reason",
+    );
+  }
+  if (ignoreReset !== undefined) {
+    io.log(
+      `[WARN] usage resets recorded before this run are ignored (owner override --ignore-usage-reset): ${ignoreReset}`,
+    );
+  }
   // A placed environment without env.proxyIsolation is missing (fail closed).
   // The cheap conditions first, before any read; the arm images below.
   const early = placedConcurrencyProblem(
@@ -1008,6 +1025,13 @@ export async function runCampaign(
   }
   const campaign = c;
   const now = () => (env.now ?? (() => new Date()))().getTime();
+  // H-15: the executions recorded before this invocation; only their resets
+  // are ignored, so a limit hit during this run still pauses.
+  const recordedBefore = new Set(
+    ignoreReset === undefined
+      ? []
+      : (await env.store.executions(campaign.id)).map((e) => e.id),
+  );
   // A stop file is checked before the first block and before each cell.
   const stopRequested = async () => {
     for (const path of o.stopFiles ?? []) {
@@ -1086,15 +1110,25 @@ export async function runCampaign(
           const prior = (await env.store.executions(campaign.id)).filter((
             e,
           ) => e.block === block.index && e.arm === arm);
-          const at = nextAttempt(prior);
+          let at = nextAttempt(prior);
           if (!at) continue;
           // A usage limit survives a restart: no retry before its reset.
+          const parent = at.retryOf;
           const waitFor = at.runKind === "auto_retry"
-            ? await pendingReset(env, prior.find((e) => e.id === at.retryOf)!)
+            ? await pendingReset(env, prior.find((e) => e.id === parent)!)
             : null;
           if (waitFor !== null && Date.parse(waitFor) > now()) {
-            paused = laterReset(paused, waitFor);
-            break;
+            if (
+              ignoreReset === undefined || parent === null ||
+              !recordedBefore.has(parent)
+            ) {
+              paused = laterReset(paused, waitFor);
+              break;
+            }
+            at = {
+              ...at,
+              usageResetIgnored: { reason: ignoreReset, reset_at: waitFor },
+            };
           }
           if (await stopRequested()) break;
           // Run 003: again after every await since admission, right before the start.

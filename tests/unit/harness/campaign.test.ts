@@ -1889,3 +1889,147 @@ Deno.test("H-13b: --unverified-egress-ok never waives level 1: a version without
   assertEquals(await t.env.store.campaigns("cc-latest"), []);
   assertEquals(t.docker.runs, []);
 });
+
+// ---- H-15: --ignore-usage-reset <reason> (owner) ----
+/** A campaign whose mock-usage cell is usage-limited, its reset in the future. */
+async function limited() {
+  const t = await mockEnv();
+  let clock = Date.now();
+  t.env.now = () => new Date(clock);
+  await experiment(t, "limits", "mock-positive", ["mock-usage"]);
+  const s = await runCampaign(t.env, "limits", opts(), io());
+  assert(s.paused !== null && s.paused !== "unknown", String(s.paused));
+  const c = (await t.env.store.campaigns("limits"))[0]!;
+  const usage = async () =>
+    (await t.env.store.executions(c.id)).filter((e) => e.arm === "mock-usage")
+      .sort((a, b) => a.attempt - b.attempt);
+  // After an account swap the cell is no longer limited.
+  const ok = () => {
+    t.docker.behavior = async (_call, run) => {
+      await run.stdout('{"type":"mock_init","version":"2","mode":"apply"}');
+      await run.stdout('{"type":"mock_done","status":"ok"}');
+      return 0;
+    };
+  };
+  const tick = (ms: number) => void (clock += ms);
+  return { t, c, reset: s.paused, usage, ok, tick };
+}
+
+Deno.test("H-15: without --ignore-usage-reset a recorded future reset still pauses the resume (unchanged)", async () => {
+  const { t, reset, usage, ok } = await limited();
+  ok();
+  const runs = t.docker.runs.length;
+  const out = io();
+  const s = await runCampaign(t.env, "limits", opts(), out);
+  assertEquals([s.ran, s.paused, t.docker.runs.length], [0, reset, runs]);
+  assertEquals((await usage()).map((e) => e.run_kind), ["planned"]);
+  assert(
+    !out.lines.some((l) => l.includes("--ignore-usage-reset")),
+    out.lines.join("\n"),
+  );
+});
+
+Deno.test("H-15: --ignore-usage-reset runs the owed retry now; it records the ignored reset and reason; start and report [WARN]", async () => {
+  const { t, c, reset, usage, ok } = await limited();
+  ok();
+  const out = io();
+  const s = await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: " fresh account " }),
+    out,
+  );
+  // The limited first run also left the block's other arm owed.
+  assertEquals(s.paused, null);
+  assertEquals(s.ran, (await t.env.store.executions(c.id)).length - 1);
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), ["planned", "auto_retry"]);
+  assertEquals(es[0]!.usage_reset_ignored, undefined);
+  assertEquals(es[1]!.usage_reset_ignored, {
+    reason: "fresh account",
+    reset_at: reset!,
+  });
+  // Only the retried execution carries it.
+  for (
+    const e of (await t.env.store.executions(c.id)).filter((e) =>
+      e.arm !== "mock-usage"
+    )
+  ) assertEquals(e.usage_reset_ignored, undefined);
+  assert(
+    out.lines.some((l) =>
+      l.includes("[WARN]") && l.includes("--ignore-usage-reset") &&
+      l.includes("fresh account")
+    ),
+    out.lines.join("\n"),
+  );
+  const data = await loadCampaignData(t.env.store, c);
+  await validateCampaignRecords(data);
+  const r = await buildReport(data);
+  assertEquals(r.usage_reset_ignored, { reasons: ["fresh account"] });
+  assertStringIncludes(
+    renderReport(r),
+    "[WARN] recorded usage resets ignored (owner override --ignore-usage-reset): fresh account",
+  );
+});
+
+Deno.test("H-15: --ignore-usage-reset ignores only resets recorded before this invocation: a new limit during the run still pauses", async () => {
+  const { t, usage } = await limited();
+  // The mock stays limited: the retry hits a new limit during this run.
+  const s = await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  assertEquals(s.ran, 1);
+  assert(s.paused !== null && s.paused !== "unknown", String(s.paused));
+  assertEquals((await usage()).map((e) => e.termination), [
+    "usage_limited",
+    "usage_limited",
+  ]);
+  // Waited out in-process: that new reset is waited for, not ignored.
+  const { t: u, tick } = await limited();
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      waits.push(ms);
+      tick(ms);
+      return Promise.reject(new Error("stop waiting"));
+    },
+  };
+  await assertRejects(
+    () =>
+      runCampaign(
+        u.env,
+        "limits",
+        opts({ ignoreUsageReset: "fresh account", maxPauseMs: 2 * 3600_000 }),
+        out,
+      ),
+    Error,
+    "stop waiting",
+  );
+  assertEquals(waits.length, 1);
+  assert(waits[0]! > 0, String(waits[0]));
+});
+
+Deno.test("H-15: --ignore-usage-reset needs a non-empty reason, refused before any cell (dry run too)", async () => {
+  const { t } = await limited();
+  const runs = t.docker.runs.length;
+  for (const dryRun of [false, true]) {
+    for (const reason of ["", "  "]) {
+      await assertRejects(
+        () =>
+          runCampaign(
+            t.env,
+            "limits",
+            opts({ dryRun, ignoreUsageReset: reason }),
+            io(),
+          ),
+        ConfigurationError,
+        "--ignore-usage-reset needs a non-empty reason",
+      );
+    }
+  }
+  assertEquals(t.docker.runs.length, runs);
+});
