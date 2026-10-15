@@ -437,6 +437,7 @@ codeunit 86800 "HX067 Desk Basket Oracle"
         VehicleNos: List of [Code[20]];
         VehicleNo: Code[20];
     begin
+        DeskBasket.EmptyBasket();
         DeskBasket.GetBasket(BasketVehicle);
         BasketVehicle.Reset();
         if BasketVehicle.FindSet() then
