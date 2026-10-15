@@ -12,13 +12,15 @@ partial_credit:
     "86900/RegisterDamageIsMajor": 1
     "86900/DamagedReturnBlocks": 1
     "86900/RepairMinorKeepsCosmeticFree": 1
+    "86900/RepairDecidesThroughRule": 1
   hidden_regressions: []
 reuse:
   targets:
     - { codeunit: 70102, procedure: IsBlockingSeverity, signature: "(Severity: Enum \"CGR Damage Severity\"): Boolean", file: Fleet/src/DamageMgt.Codeunit.al, perturb: "exit(false);" }
   tests:
-    - { codeunit: 86900, procedures: [MajorBlocks, PartnerBlocking, RepairKeepsPartnerBlocking, RegisterDamageIsMajor, DamagedReturnBlocks] }
+    - { codeunit: 86900, procedures: [MajorBlocks, PartnerBlocking, RepairKeepsPartnerBlocking, RegisterDamageIsMajor, DamagedReturnBlocks, RepairDecidesThroughRule] }
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  fixture/reuse-subscriber-only: { reuse_executed: false, reuse: false }

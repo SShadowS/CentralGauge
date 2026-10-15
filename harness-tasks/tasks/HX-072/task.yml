@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 86900, procedures: [MajorBlocks, MinorDoesNotBlock, PartnerNonBlocking, PartnerBlocking, RepairLeavesNonBlocking, RepairKeepsPartnerBlocking, RepairLastUnblocks, IsBlockingSeverityDirect, RegisterDamageIsMajor, DamagedReturnBlocks, RepairMinorKeepsCosmeticFree] }
+    - { codeunit: 86900, procedures: [MajorBlocks, MinorDoesNotBlock, PartnerNonBlocking, PartnerBlocking, RepairLeavesNonBlocking, RepairKeepsPartnerBlocking, RepairLastUnblocks, IsBlockingSeverityDirect, RegisterDamageIsMajor, DamagedReturnBlocks, RepairMinorKeepsCosmeticFree, RepairDecidesThroughRule] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

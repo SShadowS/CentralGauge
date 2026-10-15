@@ -178,6 +178,35 @@ codeunit 86900 "HX072 Severity Oracle"
         AssertHX072Vehicle('HX072-R11', false, 1, 'After repairing the Minor damage, only a non-blocking partner damage is open');
     end;
 
+    [Test]
+    procedure RepairDecidesThroughRule()
+    var
+        DamageMgt: Codeunit "CGR Damage Mgt";
+        MinorEntryNo: Integer;
+    begin
+        InitHX072('HX072-R12');
+        InsertHX072Damage('HX072-R12', 'Cracked frame', Enum::"CGR Damage Severity"::"HX072 Structural");
+        MinorEntryNo := InsertHX072Damage('HX072-R12', 'Chipped paint', Enum::"CGR Damage Severity"::Minor);
+        AssertHX072Vehicle('HX072-R12', false, 0, 'Before the repair (entries stored without registration)');
+
+        DamageMgt.RepairDamage(MinorEntryNo);
+
+        AssertHX072Vehicle('HX072-R12', true, 1, 'After repairing the Minor damage, the open Structural damage blocks');
+    end;
+
+    local procedure InsertHX072Damage(VehicleNo: Code[20]; Description: Text[100]; Severity: Enum "CGR Damage Severity"): Integer
+    var
+        DamageEntry: Record "CGR Damage Entry";
+    begin
+        DamageEntry.Init();
+        DamageEntry."Vehicle No." := VehicleNo;
+        DamageEntry.Description := Description;
+        DamageEntry."Reported On" := WorkDate();
+        DamageEntry.Severity := Severity;
+        DamageEntry.Insert();
+        exit(DamageEntry."Entry No.");
+    end;
+
     local procedure InitHX072(VehicleNo: Code[20])
     var
         Vehicle: Record "CGR Vehicle";
