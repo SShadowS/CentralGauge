@@ -24,3 +24,6 @@ expect:
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
   fixture/reuse-subscriber-only: { reuse_executed: false, reuse: false }
+  naive/else-blocks: { partial_credit: 0.6666666666666666 }
+  naive/recount-major-only: { partial_credit: 0.8333333333333334 }
+  naive/recount-open: { partial_credit: 0.8333333333333334 }
