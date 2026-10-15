@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "86880/AcceptedDamageRegistered": 1
+    "86880/RefusedDamageStoredPending": 1
+    "86880/RefusedCheckWritesNothing": 1
+    "86880/CheckSeesDamageBeforeStoring": 1
+    "86880/LaterFailureKeepsNothing": 1
+    "86880/NoInsurerAppAccepts": 1
+    "86880/TwoDamagesOneVehicle": 1
+    "86880/LongRefusalCut": 1
+    "86880/RegisterDamageAsToday": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
