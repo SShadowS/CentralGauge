@@ -12,6 +12,7 @@ partial_credit:
     "86940/SwapBlockedVehicleRefused": 1
     "86940/CheckOutBlockedRefused": 1
     "86940/CheckOutLentBlockedVehicle": 1
+    "86940/CheckOutStatusBeforeAvailability": 1
   hidden_regressions: []
 reuse:
   targets:

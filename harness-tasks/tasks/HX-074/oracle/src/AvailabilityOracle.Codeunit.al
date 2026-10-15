@@ -263,6 +263,30 @@ codeunit 86940 "HX074 Availability Oracle"
         HX74AssertCheckedOut('HX074-11C', true);
     end;
 
+    [Test]
+    procedure CheckOutStatusBeforeAvailability()
+    var
+        Contract: Record "CGR Rental Contract";
+        Vehicle: Record "CGR Vehicle";
+        Runner: Codeunit "HX074 Desk Runner";
+        ContractNo: Code[20];
+        Ok: Boolean;
+    begin
+        HX74Prepare();
+        HX74Vehicle('HX074-12C', 1000, false);
+        ContractNo := HX74CheckedOutContract('HX074-12C');
+        Vehicle.Get('HX074-12C');
+        Vehicle.Blocked := true;
+        Vehicle.Modify();
+        Runner.HX74SetCheckOut(ContractNo);
+
+        Commit();
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'A contract that is not open cannot be checked out');
+        Assert.AreEqual(StrSubstNo('Rental contract %1 must have status %2.', ContractNo, Contract.Status::Open), GetLastErrorText(), 'The status error comes before availability');
+    end;
+
     local procedure HX74CheckedOutContract(VehicleNo: Code[20]) ContractNo: Code[20]
     var
         Contract: Record "CGR Rental Contract";

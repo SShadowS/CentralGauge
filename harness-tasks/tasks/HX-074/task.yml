@@ -14,7 +14,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental]
   tests:
-    - { codeunit: 86940, procedures: [FreeVehicleAvailable, BlockedVehicleNotAvailable, UnknownVehicleNotAvailable, SwapRefusedWhenRentalsStopped, SwapAcceptsLentBlockedVehicle, SwapRefusedByPartner, SwapUnknownVehicleNotFound, SwapOpenContractStatusFirst, SwapBlockedVehicleRefused, CheckOutBlockedRefused, CheckOutLentBlockedVehicle] }
+    - { codeunit: 86940, procedures: [FreeVehicleAvailable, BlockedVehicleNotAvailable, UnknownVehicleNotAvailable, SwapRefusedWhenRentalsStopped, SwapAcceptsLentBlockedVehicle, SwapRefusedByPartner, SwapUnknownVehicleNotFound, SwapOpenContractStatusFirst, SwapBlockedVehicleRefused, CheckOutBlockedRefused, CheckOutLentBlockedVehicle, CheckOutStatusBeforeAvailability] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
