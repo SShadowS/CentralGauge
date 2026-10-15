@@ -9,6 +9,10 @@
 // <records-dir>/derived-<label>.json and derived-<label>.trace.jsonl.
 import { fromFileUrl, join } from "@std/path";
 import { parseClaudeStream } from "../../src/harness/adapters/claude-code.ts";
+import {
+  budgetCutOrphansExempt,
+  streamProblems,
+} from "../../src/harness/execution.ts";
 import { loadPricingBook } from "../../src/harness/pricing.ts";
 import { ExecutionRecordSchema } from "../../src/harness/records.ts";
 import { writeTrace } from "../../src/harness/trace.ts";
@@ -65,6 +69,18 @@ const { trace, ...run } = parseClaudeStream(
   [],
   otel,
 );
+// Same accounting rule as execution.ts buildDraft (M1-32 ruling, H-12 exemption).
+const problems = streamProblems(run.telemetry.raw_usage);
+const orphansExempt = problems.length > 0 &&
+  budgetCutOrphansExempt(raw, problems, run);
+if (problems.length > 0 && run.termination !== null && !orphansExempt) {
+  run.telemetry = {
+    ...run.telemetry,
+    cost_usd: null,
+    cost_source: null,
+    pricing_snapshot: null,
+  };
+}
 const sha256 = async (s: string) =>
   [
     ...new Uint8Array(
@@ -92,6 +108,8 @@ const out = {
   },
   termination: run.termination,
   did_work: run.didWork,
+  stream_problems: problems,
+  budget_cut_orphans_exempt: orphansExempt,
   telemetry: run.telemetry,
   observed: run.observed,
   unobservable: run.unobservable,
@@ -114,4 +132,6 @@ console.log(JSON.stringify({
   wall_ms: run.telemetry.wall_ms,
   trace_events: run.traceEvents,
   pricing_snapshot: run.telemetry.pricing_snapshot,
+  stream_problems: problems,
+  budget_cut_orphans_exempt: orphansExempt,
 }));

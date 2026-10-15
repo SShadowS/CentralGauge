@@ -957,11 +957,79 @@ function unparsed(exitCode: number | null, m: ResolvedManifest): ParsedRun {
 }
 
 /** raw_usage.stream_problems of an adapter parse (M1-32), [] when absent. */
-function streamProblems(raw: unknown): string[] {
+export function streamProblems(raw: unknown): string[] {
   const p = raw !== null && typeof raw === "object" && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)["stream_problems"]
     : undefined;
   return Array.isArray(p) ? p.map(String) : [];
+}
+
+/**
+ * H-12 (gate-3 ruling 2026-10-15, M9-13b): a Claude Code budget stop
+ * (`error_max_budget_usd`, stop_reason tool_use) leaves in-flight tool calls
+ * without a result. Those `tool_use <id> has no result` problems alone, every
+ * orphan in the last assistant message of its agent (parent_tool_use_id; null
+ * = main), with an exact usage reconciliation, do not make the cost unprovable.
+ * Anything else (other problem, odd stream, other reconciliation) fails closed.
+ */
+export function budgetCutOrphansExempt(
+  raw: string,
+  problems: string[],
+  run: Pick<ParsedRun, "termination" | "telemetry">,
+): boolean {
+  const rawUsage = run.telemetry.raw_usage as
+    | { usage_reconciliation?: { status?: unknown } }
+    | null;
+  const status = rawUsage?.usage_reconciliation?.status;
+  if (
+    run.termination !== "budget_exhausted" ||
+    run.telemetry.stop_reason !== "tool_use" ||
+    (status !== "exact" && status !== "exact_otel") || problems.length === 0
+  ) return false;
+  const orphans: string[] = [];
+  for (const p of problems) {
+    const m = /^tool_use (\S+) has no result$/.exec(p);
+    if (!m) return false;
+    orphans.push(m[1]!);
+  }
+  type Rec = {
+    type?: unknown;
+    subtype?: unknown;
+    parent_tool_use_id?: unknown;
+    message?: { id?: unknown; content?: unknown };
+  };
+  const recs: Rec[] = [];
+  for (const l of raw.split(/\r?\n/)) {
+    if (l.trim() === "") continue;
+    try {
+      const r = JSON.parse(l) as Rec;
+      if (r === null || typeof r !== "object") return false;
+      recs.push(r);
+    } catch {
+      return false;
+    }
+  }
+  const results = recs.flatMap((r, i) => r.type === "result" ? [i] : []);
+  if (results.length !== 1) return false;
+  const end = results[0]!;
+  if ((recs[end] as Rec).subtype !== "error_max_budget_usd") return false;
+  const agent = (r: Rec) => String(r.parent_tool_use_id ?? "");
+  const holds = (r: Rec, id: string) =>
+    Array.isArray(r.message?.content) &&
+    (r.message.content as { type?: unknown; id?: unknown }[]).some((c) =>
+      c?.type === "tool_use" && c.id === id
+    );
+  return orphans.every((id) => {
+    const at = recs.flatMap((r, i) =>
+      r.type === "assistant" && holds(r, id) ? [i] : []
+    );
+    if (at.length !== 1 || at[0]! > end) return false;
+    const rec = recs[at[0]!]!;
+    return recs.slice(at[0]! + 1, end).every((r) =>
+      r.type !== "assistant" || agent(r) !== agent(rec) ||
+      r.message?.id === rec.message?.id
+    );
+  });
 }
 
 /** Backend host log, tolerant of a line cut by a crash: bad lines are counted, never fatal. */
@@ -1110,7 +1178,19 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   let telemetry = f.preStart
     ? notStarted(f.sandbox.exitCode).telemetry
     : parsed.telemetry;
-  if (!f.preStart && parsed.termination !== null && problems.length > 0) {
+  // H-12: a budget cut's orphan tool calls alone leave an exact cost provable.
+  const orphansExempt = problems.length > 0 &&
+    parsed.termination === "budget_exhausted" &&
+    f.manifest.harness === "claude-code" &&
+    budgetCutOrphansExempt(
+      await Deno.readTextFile(p.raw).catch(() => "\0"),
+      problems,
+      parsed,
+    );
+  if (
+    !f.preStart && parsed.termination !== null && problems.length > 0 &&
+    !orphansExempt
+  ) {
     telemetry = {
       ...telemetry,
       cost_usd: null,

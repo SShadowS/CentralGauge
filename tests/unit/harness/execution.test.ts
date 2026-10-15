@@ -5068,3 +5068,293 @@ Deno.test("otel (H-10 r2): the execution id reaches the adapter parse: rows of a
   assertEquals(otel?.status, "invalid");
   assertStringIncludes(otel!.why!, "received_for");
 });
+
+// ---- H-12 (gate-3 ruling 2026-10-15, M9-13b): budget-cut orphan tool calls ----
+
+const { budgetCutOrphansExempt } = await import(
+  "../../../src/harness/execution.ts"
+);
+
+const h12Tu = (id: string, name: string) => ({
+  type: "tool_use",
+  id,
+  name,
+  input: {},
+});
+const h12Asst = (
+  mid: string,
+  content: unknown[],
+  parent: string | null = null,
+) =>
+  JSON.stringify({
+    type: "assistant",
+    parent_tool_use_id: parent,
+    message: { id: mid, content },
+  });
+const h12Text = { type: "text", text: "x" };
+const h12Result = (subtype = "error_max_budget_usd", stop = "tool_use") =>
+  JSON.stringify({ type: "result", subtype, stop_reason: stop });
+
+/** main: Agent orphan in main's last message; sub-agent: Write orphan in its last message. */
+function h12Stream(over: { before?: string[]; result?: string } = {}): string {
+  return [
+    JSON.stringify({ type: "system", subtype: "init" }),
+    h12Asst("m1", [h12Text]),
+    h12Asst("m1", [h12Tu("toolu_main", "Agent")]),
+    ...(over.before ?? []),
+    h12Asst("s1", [h12Text], "toolu_main"),
+    h12Asst("s1", [h12Tu("toolu_sub", "Write")], "toolu_main"),
+    over.result ?? h12Result(),
+  ].join("\n") + "\n";
+}
+
+const H12_PROBLEMS = [
+  "tool_use toolu_main has no result",
+  "tool_use toolu_sub has no result",
+];
+
+function h12Run(
+  over: {
+    termination?: string | null;
+    stop?: string | null;
+    status?: string | null;
+  } = {},
+) {
+  const status = over.status === undefined ? "exact" : over.status;
+  return {
+    termination: over.termination === undefined
+      ? "budget_exhausted"
+      : over.termination,
+    telemetry: {
+      stop_reason: over.stop === undefined ? "tool_use" : over.stop,
+      raw_usage: status === null ? {} : { usage_reconciliation: { status } },
+    },
+    // deno-lint-ignore no-explicit-any
+  } as any;
+}
+
+Deno.test("H-12: orphan tool calls in each agent's last message are exempt", () => {
+  assertEquals(
+    budgetCutOrphansExempt(h12Stream(), H12_PROBLEMS, h12Run()),
+    true,
+  );
+});
+
+Deno.test("H-12: exact_otel reconciliation is exempt too", () => {
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream(),
+      H12_PROBLEMS,
+      h12Run({ status: "exact_otel" }),
+    ),
+    true,
+  );
+});
+
+Deno.test("H-12: condition 1 broken alone (termination, stop_reason, subtype)", () => {
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ result: h12Result("success", "tool_use") }),
+      H12_PROBLEMS,
+      h12Run({ termination: "completed" }),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ result: h12Result("error_max_budget_usd", "end_turn") }),
+      H12_PROBLEMS,
+      h12Run({ stop: "end_turn" }),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ result: h12Result("success", "tool_use") }),
+      H12_PROBLEMS,
+      h12Run(),
+    ),
+    false,
+  );
+});
+
+Deno.test("H-12: not exactly one result record is no exemption", () => {
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream() + h12Result() + "\n",
+      H12_PROBLEMS,
+      h12Run(),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream().split("\n").filter((l) => !l.includes('"result"')).join(
+        "\n",
+      ),
+      H12_PROBLEMS,
+      h12Run(),
+    ),
+    false,
+  );
+});
+
+Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last message, unknown id, non-JSON line)", () => {
+  // a later main-agent message follows the Agent tool_use
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ before: [h12Asst("m2", [h12Text])] }),
+      H12_PROBLEMS,
+      h12Run(),
+    ),
+    false,
+  );
+  // the orphan is not in the stream at all
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream(),
+      [...H12_PROBLEMS, "tool_use toolu_ghost has no result"],
+      h12Run(),
+    ),
+    false,
+  );
+  // the same tool_use appears twice
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ before: [h12Asst("m1", [h12Tu("toolu_main", "Agent")])] }),
+      H12_PROBLEMS,
+      h12Run(),
+    ),
+    false,
+  );
+  // the orphan is only after the result line
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream().replace(
+        JSON.stringify({
+          type: "result",
+          subtype: "error_max_budget_usd",
+          stop_reason: "tool_use",
+        }),
+        "",
+      ) + h12Result() + "\n" + h12Asst("m9", [h12Tu("toolu_late", "Bash")]) +
+        "\n",
+      ["tool_use toolu_late has no result"],
+      h12Run(),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ before: ["not json"] }),
+      H12_PROBLEMS,
+      h12Run(),
+    ),
+    false,
+  );
+});
+
+Deno.test("H-12: condition 3 broken alone (unreconciled, absent, compaction_excess)", () => {
+  for (const status of ["unreconciled", null, "compaction_excess"]) {
+    assertEquals(
+      budgetCutOrphansExempt(h12Stream(), H12_PROBLEMS, h12Run({ status })),
+      false,
+      String(status),
+    );
+  }
+});
+
+Deno.test("H-12: a non-orphan problem is no exemption, alone or beside orphans", () => {
+  const other = "tool_result for unknown toolu_X";
+  assertEquals(budgetCutOrphansExempt(h12Stream(), [other], h12Run()), false);
+  assertEquals(
+    budgetCutOrphansExempt(h12Stream(), [...H12_PROBLEMS, other], h12Run()),
+    false,
+  );
+});
+
+/** A stream-exact two-message session cut by the budget mid tool call; `where` places the orphan tool_use (message 2 = last, message 1 = earlier). */
+function h12Cut(where: "last" | "earlier"): string[] {
+  const usage = {
+    input_tokens: 10,
+    output_tokens: 1,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_creation: {
+      ephemeral_5m_input_tokens: 0,
+      ephemeral_1h_input_tokens: 0,
+    },
+  };
+  const msg = (id: string, content: unknown[]) =>
+    JSON.stringify({
+      type: "assistant",
+      parent_tool_use_id: null,
+      session_id: "1ae7bb8f-04b6-4431-b315-c3a36ef73f35",
+      message: { id, model: "claude-sonnet-5", content, usage },
+    });
+  const orphan = [h12Tu("toolu_orphan", "Bash")];
+  return [
+    msg("msg_h12_1", [h12Text]),
+    ...(where === "earlier" ? [msg("msg_h12_1", orphan)] : []),
+    msg("msg_h12_2", [h12Text]),
+    ...(where === "last" ? [msg("msg_h12_2", orphan)] : []),
+    JSON.stringify({
+      type: "result",
+      subtype: "error_max_budget_usd",
+      is_error: true,
+      stop_reason: "tool_use",
+      session_id: "1ae7bb8f-04b6-4431-b315-c3a36ef73f35",
+      total_cost_usd: 0.00006,
+      num_turns: 2,
+      duration_ms: 1000,
+      usage: { ...usage, input_tokens: 20, output_tokens: 2 },
+      modelUsage: {
+        "claude-sonnet-5": {
+          inputTokens: 20,
+          outputTokens: 2,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          webSearchRequests: 0,
+          costUSD: 0.00006,
+        },
+      },
+    }),
+  ];
+}
+
+/** Runs the cut stream through a real cell on the inventoried arm; the orphan problem must stay recorded. */
+async function h12Cell(where: "last" | "earlier") {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (_call, io) => {
+    for (const l of [V2_INIT, ...h12Cut(where)]) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  assertStringIncludes(
+    (await sideOf(t, e.id)).stream_problems.join("\n"),
+    "tool_use toolu_orphan has no result",
+  );
+  return e;
+}
+
+Deno.test("H-12: end to end, a budget cut with the orphan in the last message keeps the priced cost", async () => {
+  const e = await h12Cell("last");
+  assertEquals(e.termination, "budget_exhausted");
+  assertEquals(e.telemetry.cost_usd, 6e-5);
+  assertEquals(e.telemetry.cost_source, "estimated");
+});
+
+Deno.test("H-12: end to end, the same cut with the orphan in an earlier message nulls the cost", async () => {
+  const e = await h12Cell("earlier");
+  assertEquals(e.termination, "budget_exhausted");
+  assertEquals(
+    [
+      e.telemetry.cost_usd,
+      e.telemetry.cost_source,
+      e.telemetry.pricing_snapshot,
+    ],
+    [null, null, null],
+  );
+});
