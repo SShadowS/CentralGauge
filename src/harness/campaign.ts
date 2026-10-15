@@ -913,11 +913,11 @@ export async function runCampaign(
       created = true;
     }
   } else {
-    // H-13: a resume keeps the campaign's egress override state, either way.
-    if (!!c.egress_override !== !!override) {
+    // H-13: a resume keeps the campaign's egress override state and reason, either way.
+    if (c.egress_override?.reason !== override?.trim()) {
       throw new ConfigurationError(
         c.egress_override
-          ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag`
+          ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag and that reason`
           : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
       );
     }

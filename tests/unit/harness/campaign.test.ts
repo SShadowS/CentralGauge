@@ -383,6 +383,31 @@ Deno.test("H-13: resume refuses an override state other than the campaign's, eit
     ConfigurationError,
     "unverified-egress-ok",
   );
+  // H-13 run 002: the reason must match too (trimmed); A then B is refused.
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, unverifiedEgressReason: "another reason" },
+        "over",
+        opts({ campaign: over.id }),
+        io(),
+      ),
+    ConfigurationError,
+    "P-01 pilot",
+  );
+  // A then A (whitespace around it is trimmed) resumes.
+  await runCampaign(
+    { ...t.env, unverifiedEgressReason: "  P-01 pilot " },
+    "over",
+    opts({ campaign: over.id }),
+    io(),
+  );
+  for (const e of await t.env.store.executions(over.id)) {
+    assertEquals(e.egress_override, {
+      egress_enforced: false,
+      reason: "P-01 pilot",
+    });
+  }
 });
 
 Deno.test("tasks_meta.limits stores the task's own overrides; two arms with different limits against one task override get their own effective execution limits; reuse stays empty", async () => {
