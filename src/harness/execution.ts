@@ -973,7 +973,9 @@ export function streamProblems(raw: unknown): string[] {
  * usage reconciliation, do not make the cost unprovable. If any orphan is an
  * Agent/Task spawn (its tool_use name), a child's usage may be missing, so the
  * reconciliation must be `exact_otel`, or `exact` beside raw_usage.otel
- * `exact` (the label stays `exact` when stream and OTel agree).
+ * `exact` (the label stays `exact` when stream and OTel agree). Each orphan
+ * must be exactly one tool_use block (matched by type and id) before the
+ * result; its name is read from that block, a repeated id fails closed.
  * Anything else (other problem, odd stream, other reconciliation) fails closed.
  */
 export function budgetCutOrphansExempt(
@@ -1021,18 +1023,19 @@ export function budgetCutOrphansExempt(
   type Block = { type?: unknown; id?: unknown; name?: unknown };
   const blocks = (r: Rec) =>
     Array.isArray(r.message?.content) ? r.message.content as Block[] : [];
-  const holds = (r: Rec, id: string) =>
-    blocks(r).some((c) => c?.type === "tool_use" && c.id === id);
+  const uses = (r: Rec, id: string) =>
+    blocks(r).filter((c) => c?.type === "tool_use" && c.id === id);
   const mid = (r: Rec) => r.message?.id;
   const hasId = (r: Rec) => typeof mid(r) === "string" && mid(r) !== "";
   let spawn = false;
   const kept = orphans.every((id) => {
     const at = recs.flatMap((r, i) =>
-      r.type === "assistant" && holds(r, id) ? [i] : []
+      r.type === "assistant" ? uses(r, id).map(() => i) : []
     );
+    // Exactly one tool_use block with this id in the whole stream.
     if (at.length !== 1 || at[0]! > end) return false;
     const rec = recs[at[0]!]!;
-    const name = blocks(rec).find((c) => c?.id === id)?.name;
+    const name = uses(rec, id)[0]!.name;
     if (name === "Agent" || name === "Task") spawn = true;
     // Message identity fails closed: an id-less record cannot be compared.
     return hasId(rec) &&

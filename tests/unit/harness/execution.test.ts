@@ -5160,7 +5160,7 @@ Deno.test("H-12: condition 1 broken alone (termination, stop_reason, subtype)", 
     budgetCutOrphansExempt(
       h12Stream({ result: h12Result("success", "tool_use") }),
       H12_PROBLEMS,
-      h12Run({ termination: "completed" }),
+      h12O(h12Run({ termination: "completed" })),
     ),
     false,
   );
@@ -5168,7 +5168,7 @@ Deno.test("H-12: condition 1 broken alone (termination, stop_reason, subtype)", 
     budgetCutOrphansExempt(
       h12Stream({ result: h12Result("error_max_budget_usd", "end_turn") }),
       H12_PROBLEMS,
-      h12Run({ stop: "end_turn" }),
+      h12O(h12Run({ stop: "end_turn" })),
     ),
     false,
   );
@@ -5176,7 +5176,7 @@ Deno.test("H-12: condition 1 broken alone (termination, stop_reason, subtype)", 
     budgetCutOrphansExempt(
       h12Stream({ result: h12Result("success", "tool_use") }),
       H12_PROBLEMS,
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5187,7 +5187,7 @@ Deno.test("H-12: not exactly one result record is no exemption", () => {
     budgetCutOrphansExempt(
       h12Stream() + h12Result() + "\n",
       H12_PROBLEMS,
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5197,7 +5197,7 @@ Deno.test("H-12: not exactly one result record is no exemption", () => {
         "\n",
       ),
       H12_PROBLEMS,
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5209,7 +5209,7 @@ Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last messag
     budgetCutOrphansExempt(
       h12Stream({ before: [h12Asst("m2", [h12Text])] }),
       H12_PROBLEMS,
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5218,7 +5218,7 @@ Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last messag
     budgetCutOrphansExempt(
       h12Stream(),
       [...H12_PROBLEMS, "tool_use toolu_ghost has no result"],
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5227,7 +5227,7 @@ Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last messag
     budgetCutOrphansExempt(
       h12Stream({ before: [h12Asst("m1", [h12Tu("toolu_main", "Agent")])] }),
       H12_PROBLEMS,
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5244,7 +5244,7 @@ Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last messag
       ) + h12Result() + "\n" + h12Asst("m9", [h12Tu("toolu_late", "Bash")]) +
         "\n",
       ["tool_use toolu_late has no result"],
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5252,7 +5252,7 @@ Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last messag
     budgetCutOrphansExempt(
       h12Stream({ before: ["not json"] }),
       H12_PROBLEMS,
-      h12Run(),
+      h12O(h12Run()),
     ),
     false,
   );
@@ -5261,7 +5261,11 @@ Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last messag
 Deno.test("H-12: condition 3 broken alone (unreconciled, absent, compaction_excess)", () => {
   for (const status of ["unreconciled", null, "compaction_excess"]) {
     assertEquals(
-      budgetCutOrphansExempt(h12Stream(), H12_PROBLEMS, h12Run({ status })),
+      budgetCutOrphansExempt(
+        h12Stream(),
+        H12_PROBLEMS,
+        h12O(h12Run({ status })),
+      ),
       false,
       String(status),
     );
@@ -5771,6 +5775,98 @@ Deno.test("H-12 r2: a pi budget stop with stream problems nulls the cost end to 
   assertStringIncludes(
     (await sideOf(t, e.id)).stream_problems.join("\n"),
     "has no tool_execution_end",
+  );
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+// ---- H-12 r3: spawn-name lookup, unmasked older negatives ----
+
+/** An otherwise qualifying run: raw_usage.otel exact, so only the case's own defect can fail it. */
+function h12O<T>(run: T): T {
+  // deno-lint-ignore no-explicit-any
+  (run as any).telemetry.raw_usage.otel = { status: "exact" };
+  return run;
+}
+
+Deno.test("H-12 r3: helper, a non-tool_use block with the orphan id before an Agent tool_use does not hide the spawn", () => {
+  const raw = r2Raw([
+    h12Asst("m1", [
+      { type: "text", id: "toolu_a", text: "x" },
+      h12Tu("toolu_a", "Agent"),
+    ]),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(raw, r2Problems("toolu_a"), r2Run("exact")),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(raw, r2Problems("toolu_a"), r2Run("exact", "exact")),
+    true,
+    "control: with OTel exact the spawn is proven complete",
+  );
+});
+
+Deno.test("H-12 r3: helper, two tool_use blocks with the orphan id are no exemption", () => {
+  const one = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_a", "Write"), h12Tu("toolu_a", "Write")]),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(one, r2Problems("toolu_a"), r2Run("exact", "exact")),
+    false,
+    "same record",
+  );
+  const across = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_a", "Write")]),
+    h12Asst("m1", [h12Tu("toolu_a", "Write")]),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(
+      across,
+      r2Problems("toolu_a"),
+      r2Run("exact", "exact"),
+    ),
+    false,
+    "across records",
+  );
+});
+
+Deno.test("H-12 r3: a text block sharing the Agent orphan's id, no OTel: the cost is null (end to end)", async () => {
+  const { e, state } = await r2Cell([
+    r2Msg({ id: "msg_r2_1", content: [h12Text] }),
+    r2Msg({
+      id: "msg_r2_1",
+      content: [
+        { type: "text", id: "toolu_orphan", text: "x" },
+        h12Tu("toolu_orphan", "Agent"),
+      ],
+    }),
+    r2Result(2),
+  ], null);
+  // The adapter already refuses the reconciliation for this stream, so the
+  // null is not reached through the exemption; the helper tests above pin it.
+  assertEquals(state[1], "missing");
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r3: two result records: the adapter voids the run (harness_crash) before the exemption, the cost is null", async () => {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (_call, io) => {
+    for (
+      const l of [V2_INIT, ...r2Main("Write"), r2Result(2), r2Result(2)]
+    ) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  assertEquals(e.termination, "harness_crash");
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r3: a non-JSON line nulls the cost end to end (Write orphan, no OTel needed)", async () => {
+  const { e } = await r2Cell(
+    [...r2Main("Write"), "not json", r2Result(2)],
+    null,
   );
   assertEquals(e.telemetry.cost_usd, null);
 });
