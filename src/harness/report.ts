@@ -109,6 +109,8 @@ export interface HarnessReport {
   v: 1;
   /** H-13: present when the campaign or any execution ran under --unverified-egress-ok. */
   egress_override?: { egress_enforced: false; reasons: string[] };
+  /** H-13b: present when the campaign or any execution waived the M8-07c calibration gate. */
+  calibration_waived?: true;
   experiment: {
     id: string;
     hypothesis: string;
@@ -1080,6 +1082,9 @@ export async function buildReport(
         },
       }
       : {}),
+    ...([campaign, ...records.executions].some((x) => x.calibration_waived)
+      ? { calibration_waived: true as const }
+      : {}),
   };
 }
 
@@ -1125,6 +1130,11 @@ export function renderReport(r: HarnessReport): string {
       `[WARN] egress NOT enforced (owner override): ${
         r.egress_override.reasons.join("; ")
       }`,
+    ));
+  }
+  if (r.calibration_waived) {
+    out.push(colors.red(
+      "[WARN] M8-07c campaign calibration waived (owner override): an image ran without its real calibration",
     ));
   }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)

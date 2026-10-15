@@ -113,6 +113,29 @@ Deno.test("H-13: egress_override is optional on execution and campaign records; 
   }
 });
 
+Deno.test("H-13b: calibration_waived is optional, only true, and only next to egress_override", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const over = { egress_enforced: false, reason: "P-01 pilot" };
+  for (const schema of [ExecutionRecordSchema, CampaignRecordSchema] as const) {
+    const r = schema === ExecutionRecordSchema ? e : c;
+    assertEquals(
+      (schema.parse({
+        ...r,
+        egress_override: over,
+        calibration_waived: true,
+      }) as {
+        calibration_waived?: unknown;
+      }).calibration_waived,
+      true,
+    );
+    assertThrows(() => schema.parse({ ...r, calibration_waived: true }));
+    assertThrows(() =>
+      schema.parse({ ...r, egress_override: over, calibration_waived: false })
+    );
+  }
+});
+
 Deno.test("judgment schema: verdict must agree, failures must be classified", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), false);

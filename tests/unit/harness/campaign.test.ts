@@ -1754,7 +1754,8 @@ Deno.test("M10-08c (O1): concurrency 2 inside one environment holding its privat
   );
 });
 
-Deno.test("runCampaign (H-03): a tracked Claude Code arm without M8-07c calibration on its digest is refused before any record or cell, dry run too", async () => {
+/** Two tracked rev-3 Claude Code arms resolving to `version` on one uncalibrated digest. */
+async function ccLatest(version: string) {
   const t = await makeEnv();
   t.env.supervised = false;
   for (
@@ -1777,8 +1778,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
 `,
     );
   }
-  // A dev-qualified version (2.1.282 has its BUILTIN_INVENTORY entry), resolved and tracked.
-  const rel = ccRel("2.1.282");
+  const rel = ccRel(version);
   const id = `sha256:${"e".repeat(64)}`;
   t.docker.addImage(imageTag("claude-code", "latest", "3"), id, {
     "centralgauge.harness": "claude-code",
@@ -1788,12 +1788,102 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
   });
   t.docker.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson({}, rel));
   await experiment(t, "cc-latest", "cc-latest-a", ["cc-latest-b"]);
+  return { t, id };
+}
+
+Deno.test("runCampaign (H-03): a tracked Claude Code arm without M8-07c calibration on its digest is refused before any record or cell, dry run too", async () => {
+  // A dev-qualified version (2.1.282 has its BUILTIN_INVENTORY entry), resolved and tracked.
+  const { t, id } = await ccLatest("2.1.282");
   enforce(t);
   for (const dryRun of [true, false]) {
     await assertRejects(
       () => runCampaign(t.env, "cc-latest", opts({ dryRun }), io()),
       ConfigurationError,
       `image ${id} (Claude Code 2.1.282) has no M8-07c real calibration`,
+    );
+  }
+  assertEquals(await t.env.store.campaigns("cc-latest"), []);
+  assertEquals(t.docker.runs, []);
+});
+
+Deno.test("H-13b: --unverified-egress-ok waives the M8-07c calibration gate (dry run too); campaign, executions and report record calibration_waived; resume must match", async () => {
+  const { t, id } = await ccLatest("2.1.282");
+  const env = { ...t.env, unverifiedEgressReason: "P-01 pilot" };
+  const lines: string[] = [];
+  const log = { ...io(), log: (l: string) => lines.push(l) };
+  // run.ps1's component inventory (rev 3) refuses: each cell ends setup_failed
+  // before start. The cells only need to publish their records here.
+  t.docker.preReady = {
+    lines: [JSON.stringify({
+      type: "cg_inventory",
+      v: 1,
+      ok: false,
+      installed: [],
+      problems: ["instructions: not installed"],
+    })],
+  };
+  await runCampaign(env, "cc-latest", opts({ dryRun: true }), log);
+  assertEquals(await t.env.store.campaigns("cc-latest"), []);
+  const warned = () =>
+    lines.some((l) =>
+      l.includes("[WARN]") && l.includes(id) &&
+      l.includes("calibration") && l.includes("waived")
+    );
+  assert(warned(), lines.join("\n"));
+  lines.length = 0;
+  const s = await runCampaign(env, "cc-latest", opts(), log);
+  assert(s.ran >= 2, `ran ${s.ran}`);
+  assert(warned(), lines.join("\n"));
+  const c = (await t.env.store.campaigns("cc-latest"))[0]!;
+  assertEquals(c.egress_override, {
+    egress_enforced: false,
+    reason: "P-01 pilot",
+  });
+  assertEquals(c.calibration_waived, true);
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, s.ran);
+  for (const e of es) assertEquals(e.calibration_waived, true);
+  const r = await buildReport(await loadCampaignData(t.env.store, c));
+  assertEquals(r.calibration_waived, true);
+  assertStringIncludes(
+    renderReport(r),
+    "[WARN] M8-07c campaign calibration waived (owner override)",
+  );
+  // Resume with the flag and reason: the waiver matches and the campaign resumes.
+  await runCampaign(env, "cc-latest", opts({ campaign: c.id }), io());
+  // Without the flag (egress enforced), the calibration refusal is unchanged.
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, egressEnforced: true },
+        "cc-latest",
+        opts({ campaign: c.id }),
+        io(),
+      ),
+    ConfigurationError,
+    "has no M8-07c real calibration",
+  );
+  // A campaign recorded without the waiver never resumes under one.
+  const { calibration_waived: _w, ...unwaived } = c;
+  await Deno.writeTextFile(
+    join(t.env.store.root, "campaigns", `${c.id}.json`),
+    JSON.stringify(unwaived),
+  );
+  await assertRejects(
+    () => runCampaign(env, "cc-latest", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "calibration_waived",
+  );
+});
+
+Deno.test("H-13b: --unverified-egress-ok never waives level 1: a version without its BUILTIN_INVENTORY entry is still refused, dry run too", async () => {
+  const { t } = await ccLatest("2.1.999");
+  const env = { ...t.env, unverifiedEgressReason: "P-01 pilot" };
+  for (const dryRun of [true, false]) {
+    await assertRejects(
+      () => runCampaign(env, "cc-latest", opts({ dryRun }), io()),
+      ConfigurationError,
+      "Claude Code 2.1.999 is not qualified for development use",
     );
   }
   assertEquals(await t.env.store.campaigns("cc-latest"), []);

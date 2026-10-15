@@ -746,7 +746,7 @@ export async function runCampaign(
       } carry provider credentials: a campaign runs unattended and needs verified egress enforcement (authorized marker); use harness cell --supervised for a watched run`,
     );
   }
-  const runEnv: HarnessEnv = { ...env, supervised: false };
+  let runEnv: HarnessEnv = { ...env, supervised: false };
   if (!o.dryRun) {
     // Before planning: an interrupted attempt is completed (or stops the run).
     for (const e of await recoverInterrupted(runEnv, loadTask)) {
@@ -759,6 +759,7 @@ export async function runCampaign(
   const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
   const arms: CampaignRecord["arms"] = [];
+  let calibrationWaived = false;
   for (const config of configs) {
     const tag = imageTag(
       config.harness,
@@ -786,8 +787,19 @@ export async function runCampaign(
     );
     const manifest = await resolveManifest(env.harnessRoot, config, facts);
     // H-03: a tracked campaign image needs its M8-07c calibration (dry run too).
-    const why = adapterFor(config.harness).unqualified?.(manifest, "campaign");
-    if (why) throw new ConfigurationError(`${config.id}: ${why}`);
+    // H-13b: the owner's egress override waives that level only; level 1
+    // (dev qualification) is never waived.
+    const adapter = adapterFor(config.harness);
+    const why = adapter.unqualified?.(manifest, "campaign");
+    if (why) {
+      if (!override || adapter.unqualified?.(manifest, "dev")) {
+        throw new ConfigurationError(`${config.id}: ${why}`);
+      }
+      calibrationWaived = true;
+      io.log(
+        `[WARN] ${config.id}: M8-07c campaign calibration waived (owner override --unverified-egress-ok): ${why}`,
+      );
+    }
     arms.push({
       config_id: config.id,
       manifest_hash: await manifestHash(manifest),
@@ -900,6 +912,7 @@ export async function runCampaign(
           },
         }
         : {}),
+      ...(calibrationWaived ? { calibration_waived: true } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -921,6 +934,14 @@ export async function runCampaign(
           : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
       );
     }
+    // H-13b: and its calibration waiver state.
+    if ((c.calibration_waived ?? false) !== calibrationWaived) {
+      throw new ConfigurationError(
+        c.calibration_waived
+          ? `campaign ${c.id} was created with calibration_waived but its arms no longer need the waiver: start a new campaign`
+          : `campaign ${c.id} was created without calibration_waived: it never resumes with the M8-07c calibration gate waived`,
+      );
+    }
     if (c.preregistration) {
       const v = await verify();
       const p = c.preregistration;
@@ -937,6 +958,8 @@ export async function runCampaign(
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
   }
+  // H-13b: every execution of a waived campaign records it.
+  if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };
   // Refused before any container run (and in a dry run).
   const rerun = o.rerun && data
     ? rerunTarget(c, data, o.rerun, await currentScorerFingerprint())
