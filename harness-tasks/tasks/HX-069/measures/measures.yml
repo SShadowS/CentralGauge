@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "86840/TwoVehiclesQueued": 1
+    "86840/ListOrderKept": 1
+    "86840/DuplicateQueuedOnce": 1
+    "86840/BlankNumberSkipped": 1
+    "86840/SingleVehicleAsToday": 1
+    "86840/EmptyListQueuesNothing": 1
+    "86840/OlderMessageNoObstacle": 1
+    "86840/FourVehicles": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
