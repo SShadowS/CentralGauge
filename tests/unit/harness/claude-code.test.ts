@@ -21,6 +21,7 @@ import {
   claudeCodeDerivedNative,
   claudeCodeHarnessNative,
   LSP_PLUGINS,
+  parseClaudeStream,
   pluginIs,
   unqualifiedClaudeCode,
 } from "../../../src/harness/adapters/claude-code.ts";
@@ -3852,9 +3853,17 @@ async function parseOtel(
   if (typeof otel === "string") {
     await Deno.writeTextFile(join(dir, "otel.jsonl"), otel);
   }
+  // The expected execution is the first row's (the parser no longer guesses).
+  let expected: string | undefined;
+  if (typeof otel === "string") {
+    try {
+      expected = JSON.parse(otel.split("\n")[0]!).received_for;
+    } catch { /* no row to name an execution */ }
+  }
   return await claudeCodeAdapter.parse({
     rawLog: join(dir, "raw.jsonl"),
     ...(otel === null ? {} : { otelLog: join(dir, "otel.jsonl") }),
+    ...(expected ? { executionId: expected } : {}),
     exitCode: 0,
     pricing: BOOK,
     traceOut: join(dir, "trace.jsonl"),
@@ -4242,4 +4251,27 @@ Deno.test("otel (H-10 r2): modelUsage costUSD must equal our price of the OTel t
   assertEquals(s.otel?.status, "mismatch");
   assertStringIncludes(s.otel!.why!, "costUSD");
   assert(s.usage_problems![0]!.startsWith("otel_mismatch: "));
+});
+
+Deno.test("otel (H-10 r3): parseClaudeStream takes the expected execution from input.executionId; foreign or unset ids never yield exact_otel", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  const otel = await Deno.readTextFile(NESTED.otel);
+  const input = {
+    rawLog: "raw.jsonl",
+    exitCode: 0,
+    pricing: BOOK,
+    manifest: manifest("cc", armH10()),
+  };
+  const status = (id?: string) =>
+    (parseClaudeStream(
+      raw,
+      { ...input, ...(id ? { executionId: id } : {}) },
+      [],
+      otel,
+    ).telemetry.raw_usage as {
+      usage_reconciliation?: { status: string };
+    }).usage_reconciliation?.status;
+  assertEquals(status(NESTED_ID), "exact_otel");
+  assert(status("00000000-0000-4000-8000-00000000000a") !== "exact_otel");
+  assert(status() !== "exact_otel", "no expected id: fail closed");
 });

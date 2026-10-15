@@ -60,10 +60,10 @@ const { trace, ...run } = parseClaudeStream(
     exitCode: exec.telemetry.exit_code,
     pricing: book,
     manifest: exec.manifest,
+    executionId: exec.id,
   },
   [],
   otel,
-  exec.id,
 );
 const sha256 = async (s: string) =>
   [

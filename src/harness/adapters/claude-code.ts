@@ -274,6 +274,10 @@ function otelCheck(
   });
   const seen = new Map<string, string>();
   let owner: string | null = ctx.execution;
+  // Fail closed: rows with no expected execution cannot be attributed.
+  if (owner === null && rows > 0) {
+    return invalid("no expected execution id to attribute the OTel rows to");
+  }
   for (const [i, l] of lines.entries()) {
     const at = `otel line ${i + 1}`;
     let v: unknown;
@@ -1477,8 +1481,6 @@ export function parseClaudeStream(
   streamProblems: string[] = [],
   /** H-10: otel.jsonl's text; null when there is none (OTel missing). */
   otelText: string | null = null,
-  /** H-10 r2: the execution every OTel row must be received for; null: rows need only agree. */
-  otelExecution: string | null = null,
 ): ParsedRun & { trace: TraceEvent[] } {
   // The file name only: messages reach published records, private paths never do.
   const file = basename(input.rawLog);
@@ -1772,7 +1774,7 @@ export function parseClaudeStream(
   // problems, a lost line, a resume not proven cumulative, provenance.
   const otel = streamRec && result
     ? otelCheck(otelText, obj(result.modelUsage), {
-      execution: otelExecution,
+      execution: input.executionId ?? null,
       streamSplit: split,
       streamExact: streamRec.status === "exact",
       pricing: input.pricing,
@@ -2228,7 +2230,6 @@ export const claudeCodeAdapter: HarnessAdapter = {
       input,
       problems,
       otel,
-      input.executionId ?? null,
     );
     await writeTrace(input.traceOut, trace);
     return parsed;

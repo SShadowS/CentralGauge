@@ -1801,3 +1801,41 @@ Deno.test("otel (H-10 r2): revoke drains an admitted /v1/logs POST; the late bod
     401,
   );
 });
+
+Deno.test("otel (H-10 r3): a request body that errors mid-read leaves no unhandled rejection and a later revoke still drains", async () => {
+  const s = await setup({ revokeGraceMs: 60_000 });
+  const EXEC_C = "00000000-0000-4000-8000-00000000e003";
+  const tokenC = await grantFor(
+    s.backend,
+    s.root,
+    EXEC_C,
+    join(s.root, "host-log-c.jsonl"),
+    join(s.root, "otel-c.jsonl"),
+  );
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: PromiseRejectionEvent) => {
+    e.preventDefault();
+    unhandled.push(e.reason);
+  };
+  globalThis.addEventListener("unhandledrejection", onUnhandled);
+  try {
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        c.error(new Error("exporter disconnected"));
+      },
+    }, { highWaterMark: 0 });
+    let outcome = "";
+    try {
+      const r = await s.backend.handle(req("/v1/logs", tokenC, body, EXEC_C));
+      outcome = String(r.status);
+    } catch {
+      outcome = "threw";
+    }
+    assert(outcome !== "", "the request settled");
+    await new Promise((r) => setTimeout(r, 50));
+    assertEquals(unhandled, [], "no unhandled rejection");
+    assertEquals(await s.backend.revoke(EXEC_C), true);
+  } finally {
+    globalThis.removeEventListener("unhandledrejection", onUnhandled);
+  }
+});

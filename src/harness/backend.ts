@@ -447,7 +447,9 @@ export class Backend {
     // Admitted synchronously after the check above; revoke awaits it.
     const work = this.otelAdmitted(req, st, path);
     st.otel.add(work);
-    void work.finally(() => st.otel.delete(work));
+    // Both handlers: a rejecting body must not leave a derived rejection.
+    const done = () => void st.otel.delete(work);
+    work.then(done, done);
     return await work;
   }
 
