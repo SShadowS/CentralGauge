@@ -128,6 +128,9 @@ codeunit 87180 "HX086 Fleet Board Oracle"
         HX86Vehicle('HX086-5A', 8, false, false, 0);
         HX86Vehicle('HX086-5B', 9, false, true, 0);
         HX86Vehicle('HX086-0X', 10, false, false, 0);
+        // A stale, unblocked board row of 5B: it matches VehicleFilter's filters on Board, while the real 5B is blocked.
+        HX86BoardRow(Board, 'HX086-5B', 3, 'stale');
+        Assert.IsFalse(Board.Blocked, 'Precondition: the stale board row of 5B is not blocked');
 
         VehicleFilter.SetRange(Blocked, false);
         VehicleFilter.SetFilter("No.", 'HX086-5*');
@@ -136,8 +139,12 @@ codeunit 87180 "HX086 Fleet Board Oracle"
 
         Assert.AreEqual(FiltersBefore, VehicleFilter.GetFilters(), 'The filters on VehicleFilter are unchanged');
         Board.Reset();
-        Assert.AreEqual(1, Board.Count(), 'Board holds only the vehicle within both filters');
+        Assert.AreEqual(2, Board.Count(), 'Board holds the vehicle within both filters and the caller''s 5B row');
         HX86AssertOnBoard(Board, 'HX086-5A');
+        Assert.IsTrue(Board.Get('HX086-5B'), 'The caller''s board row of a vehicle outside the selection stays');
+        Assert.AreEqual(3, Board.Mileage, 'The caller''s 5B row keeps its values (Mileage)');
+        Assert.AreEqual('stale', Board.Description, 'The caller''s 5B row keeps its values (Description)');
+        Assert.IsFalse(Board.Blocked, 'The caller''s 5B row keeps its values (Blocked)');
     end;
 
     [Test]
