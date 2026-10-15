@@ -396,28 +396,55 @@ function sharedServerToolsDiffer(a: ResolvedManifest, b: ResolvedManifest) {
 }
 
 /**
- * True when two manifests' settings differ only by MCP-derived native keys
- * (M2-14): removing exactly native.mcp and native.mcp_tools makes the settings
- * hash-equal, and on each side those keys follow its own mcp component.
- * Exported for the test only.
+ * A side with LSP servers carries native.lsp, exactly its sorted server names
+ * (the claude-code adapter derives it from components.lsp); a side without
+ * servers does not carry it (H-14).
  */
-export async function mcpDerivedSettingsOnly(
+function lspKeyDerived(m: ResolvedManifest): boolean {
+  const names = m.lsp.map((s) => s.name).sort();
+  if (names.length === 0) return !Object.hasOwn(m.settings.native, "lsp");
+  return JSON.stringify(m.settings.native["lsp"]) === JSON.stringify(names);
+}
+
+/** Each varied component's derived native keys follow it on this side. */
+const componentKeysDerived = (m: ResolvedManifest, vary: readonly VaryKey[]) =>
+  (!vary.includes("mcp") || mcpKeysDerived(m)) &&
+  (!vary.includes("lsp") || lspKeyDerived(m));
+
+/**
+ * True when two manifests' settings differ only by native keys derived from the
+ * varied mcp and lsp components (M2-14, H-14): removing exactly native.mcp and
+ * native.mcp_tools (vary [mcp]) and native.lsp (vary [lsp]) makes the settings
+ * hash-equal, and on each side those keys follow its own component.
+ */
+async function componentDerivedSettingsOnly(
   a: ResolvedManifest,
   b: ResolvedManifest,
+  vary: readonly VaryKey[],
 ): Promise<boolean> {
-  if (!mcpKeysDerived(a) || !mcpKeysDerived(b)) return false;
-  if (sharedServerToolsDiffer(a, b)) return false;
+  if (!componentKeysDerived(a, vary) || !componentKeysDerived(b, vary)) {
+    return false;
+  }
+  if (vary.includes("mcp") && sharedServerToolsDiffer(a, b)) return false;
+  const keys: string[] = [
+    ...(vary.includes("mcp") ? MCP_NATIVE_KEYS : []),
+    ...(vary.includes("lsp") ? ["lsp"] : []),
+  ];
   const strip = (m: ResolvedManifest) => ({
     requested: m.settings.requested,
     native: Object.fromEntries(
-      Object.entries(m.settings.native).filter(([k]) =>
-        !(MCP_NATIVE_KEYS as readonly string[]).includes(k)
-      ),
+      Object.entries(m.settings.native).filter(([k]) => !keys.includes(k)),
     ),
   });
   return await hashJson({ settings: strip(a) }) ===
     await hashJson({ settings: strip(b) });
 }
+
+/** The M2-14 rule alone (vary [mcp]). Exported for the test only. */
+export const mcpDerivedSettingsOnly = (
+  a: ResolvedManifest,
+  b: ResolvedManifest,
+) => componentDerivedSettingsOnly(a, b, ["mcp"]);
 
 /**
  * Per harness, the native settings its adapter derives from the harness alone
@@ -478,6 +505,11 @@ async function harnessDerivedSettingsOnly(
       if (!mcpKeysDerived(m)) return null;
       for (const k of MCP_NATIVE_KEYS) delete native[k];
     }
+    if (vary.includes("lsp")) {
+      // H-14: native.lsp follows the lsp component.
+      if (!lspKeyDerived(m)) return null;
+      delete native["lsp"];
+    }
     return await hashJson({
       settings: { requested: m.settings.requested, native },
     });
@@ -511,15 +543,19 @@ export async function assertVaryHolds(
   let bad = (await diffManifests(baseline, variant)).filter((k) =>
     !allowed.has(k)
   );
-  // Under vary [mcp], native.mcp and native.mcp_tools follow the mcp component.
-  if (vary.includes("mcp")) {
+  // Under vary [mcp], native.mcp and native.mcp_tools follow the mcp
+  // component; under vary [lsp], native.lsp follows the lsp component (H-14).
+  if (vary.includes("mcp") || vary.includes("lsp")) {
     if (bad.includes("settings")) {
-      if (await mcpDerivedSettingsOnly(baseline, variant)) {
+      if (await componentDerivedSettingsOnly(baseline, variant, vary)) {
         bad = bad.filter((k) => k !== "settings");
       }
-    } else if (!mcpKeysDerived(baseline) || !mcpKeysDerived(variant)) {
-      // Equal settings still must have the MCP key shape on each side
-      // (a variant with servers and neither key equals a no-server baseline).
+    } else if (
+      !componentKeysDerived(baseline, vary) ||
+      !componentKeysDerived(variant, vary)
+    ) {
+      // Equal settings still must have the derived key shape on each side
+      // (a variant with servers and no derived key equals a no-server baseline).
       bad = [...bad, "settings"];
     }
   }
