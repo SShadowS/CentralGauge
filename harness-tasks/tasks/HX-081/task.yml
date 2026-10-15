@@ -1,0 +1,18 @@
+id: HX-081
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Rental, Fleet]
+coupling: [single-instance, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, ReturnWithoutDamageReleasesVehicle, SwapMovesContractToFreeVehicle] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 87080, procedures: [SwapThenUndo, SwapRaisesEvent, UndoRaisesEvent, FailedSwapKeepsEarlierSwap, RefusedSwapRecordsNothing, RefusedSwapKeepsOtherContractsSwap, FailedUndoKeepsSwap, UndoWithoutSwap, SecondSwapReplaces, UndoOnlyOnce, PlainSwapNotRemembered, ForgetDropsSwap, RefusedUndoKeepsSwap, MissingContractFails] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
