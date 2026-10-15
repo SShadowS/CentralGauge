@@ -1,0 +1,19 @@
+id: HX-080
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Reporting, Fleet]
+coupling: [queries]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+  - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 87060, procedures: [WindowBoundsInclusive, OpenStartSkipsNeverServiced, ListReplaced, SingleDayWindow, EmptyWindowClearsList, QueryFilterElement] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
