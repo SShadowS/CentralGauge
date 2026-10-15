@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "86860/MidMonthStart": 1
+    "86860/FirstOfMonthFullRate": 1
+    "86860/LastDayOfMonth": 1
+    "86860/ShortFebruary": 1
+    "86860/LeapFebruary": 1
+    "86860/ThirtyDayMonth": 1
+    "86860/OtherDurationAndBase": 1
+    "86860/MissingLeaseRaises": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
