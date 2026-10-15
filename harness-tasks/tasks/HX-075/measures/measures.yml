@@ -22,3 +22,8 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/commit-number: { partial_credit: 0.7272727272727273 }
+  naive/eager-number: { partial_credit: 0.9090909090909091 }
+  naive/error-scope: { partial_credit: 0.8181818181818182 }
+  naive/no-ignore: { partial_credit: 0.9090909090909091 }
+  naive/number-sequence: { partial_credit: 0.2727272727272727 }
