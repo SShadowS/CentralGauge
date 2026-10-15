@@ -1,7 +1,7 @@
 // Every procedure deletes every CGR Vehicle first (the codeunit's isolation restores them), so a vehicle outside a
 // procedure's own rows cannot reach a board. Vehicles carry non-default values in every field; board rows are
-// compared with the stored vehicle field by field. The one call that may raise on a duplicate board row runs
-// through the runner after Commit().
+// compared with the stored vehicle field by field. R1 and R2 call TakeVehicleSnapshot through the runner after
+// Commit(), so a solution that raises there loses by assertion (Ok false).
 codeunit 87180 "HX086 Fleet Board Oracle"
 {
     Subtype = Test;
@@ -13,23 +13,32 @@ codeunit 87180 "HX086 Fleet Board Oracle"
     [Test]
     procedure SnapshotCopiesFilteredVehicles()
     var
-        VehicleFilter: Record "CGR Vehicle";
-        Board: Record "CGR Vehicle" temporary;
-        FleetBoard: Codeunit "CGR Fleet Board";
+        Vehicle: Record "CGR Vehicle";
+        Row: Record "CGR Vehicle";
+        Runner: Codeunit "HX086 Snapshot Runner";
+        Ok: Boolean;
+        RunError: Text;
     begin
         HX86Prepare();
         HX86Vehicle('HX086-1A', 1, false, false, 0);
         HX86Vehicle('HX086-1B', 2, true, false, 1);
         HX86Vehicle('HX086-1C', 3, false, false, 0);
+        Runner.HX86SetVehicleFilter('HX086-1A|HX086-1B');
 
-        VehicleFilter.SetFilter("No.", 'HX086-1A|HX086-1B');
-        Assert.AreEqual(2, FleetBoard.TakeVehicleSnapshot(VehicleFilter, Board), 'TakeVehicleSnapshot returns the number of vehicles it copied');
+        Commit();
+        Ok := Runner.Run();
+        RunError := GetLastErrorText();
 
-        Board.Reset();
-        Assert.AreEqual(2, Board.Count(), 'Board holds exactly the vehicles in the filter');
-        HX86AssertOnBoard(Board, 'HX086-1A');
-        HX86AssertOnBoard(Board, 'HX086-1B');
-        Assert.IsFalse(Board.Get('HX086-1C'), 'A vehicle outside the filter is not copied');
+        Assert.IsTrue(Ok, 'TakeVehicleSnapshot copies the filtered vehicles without an error: ' + RunError);
+        Assert.AreEqual(2, Runner.HX86Taken(), 'TakeVehicleSnapshot returns the number of vehicles it copied');
+        Assert.AreEqual(2, Runner.HX86BoardCount(), 'Board holds exactly the vehicles in the filter');
+        Assert.IsTrue(Runner.HX86GetBoardRow('HX086-1A', Row), 'Vehicle HX086-1A is on Board');
+        Vehicle.Get('HX086-1A');
+        HX86AssertSame(Vehicle, Row, 'Board row of HX086-1A');
+        Assert.IsTrue(Runner.HX86GetBoardRow('HX086-1B', Row), 'Vehicle HX086-1B is on Board');
+        Vehicle.Get('HX086-1B');
+        HX86AssertSame(Vehicle, Row, 'Board row of HX086-1B');
+        Assert.IsFalse(Runner.HX86GetBoardRow('HX086-1C', Row), 'A vehicle outside the filter is not copied');
     end;
 
     [Test]
