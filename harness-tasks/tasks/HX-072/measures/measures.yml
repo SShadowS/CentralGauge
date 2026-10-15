@@ -1,0 +1,24 @@
+v: 1
+partial_credit:
+  weights:
+    "86900/MajorBlocks": 1
+    "86900/MinorDoesNotBlock": 1
+    "86900/PartnerNonBlocking": 1
+    "86900/PartnerBlocking": 1
+    "86900/RepairLeavesNonBlocking": 1
+    "86900/RepairKeepsPartnerBlocking": 1
+    "86900/RepairLastUnblocks": 1
+    "86900/IsBlockingSeverityDirect": 1
+    "86900/RegisterDamageIsMajor": 1
+    "86900/DamagedReturnBlocks": 1
+    "86900/RepairMinorKeepsCosmeticFree": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70102, procedure: IsBlockingSeverity, signature: "(Severity: Enum \"CGR Damage Severity\"): Boolean", file: Fleet/src/DamageMgt.Codeunit.al, perturb: "exit(false);" }
+  tests:
+    - { codeunit: 86900, procedures: [MajorBlocks, PartnerBlocking, RepairKeepsPartnerBlocking, RegisterDamageIsMajor, DamagedReturnBlocks] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
