@@ -14,9 +14,9 @@ codeunit 80154 "CGR Lease Night Run Naive A"
         NightRun: Codeunit "CGR Lease Night Run";
         FailedLeases: List of [Code[20]];
     begin
-        WorkDate(20300415D);
+        WorkDate(20250415D);
         Lib.SetV2Setup(0.01, '', 3);
-        Lib.ClearNonWorkingDays(20300301D, 20300531D);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
         HX90NaiveLease('HX090-N1');
         HX90NaiveLease('HX090-N2');
 
@@ -41,7 +41,7 @@ codeunit 80154 "CGR Lease Night Run Naive A"
         Lease."No." := LeaseNo;
         Lease."Vehicle No." := 'HX090-V';
         Lease."Customer Name" := 'HX090 Customer';
-        Lease."Start Date" := 20300301D;
+        Lease."Start Date" := 20250301D;
         Lease.Months := 3;
         Lease."Base Rate" := 100;
         Lease.Insert();

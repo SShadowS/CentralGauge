@@ -16,9 +16,9 @@ codeunit 80155 "CGR Lease Night Run Naive B"
         NightRun: Codeunit "CGR Lease Night Run";
         FailedLeases: List of [Code[20]];
     begin
-        WorkDate(20300415D);
+        WorkDate(20250415D);
         Lib.SetV2Setup(0.01, '', 3);
-        Lib.ClearNonWorkingDays(20300301D, 20300531D);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
         HX90NaiveLease('HX090-M1');
         HX90NaiveLease('HX090-M2');
         HX90NaiveLease('HX090-M3');
@@ -33,8 +33,8 @@ codeunit 80155 "CGR Lease Night Run Naive B"
         Assert.AreEqual('HX090-M2', FailedLeases.Get(1), 'The refused lease failed');
         InvoiceLine.SetRange("Contract No.", 'HX090-M2');
         Assert.AreEqual(0, InvoiceLine.Count(), 'The refused lease has no invoice line');
-        Assert.IsTrue(InvoiceLine.Get('HX090-M1', 10000), 'March of the first lease is invoiced');
-        Assert.IsTrue(InvoiceLine.Get('HX090-M1', 20000), 'April of the first lease is invoiced');
+        InvoiceLine.SetRange("Contract No.", 'HX090-M1');
+        Assert.AreEqual(2, InvoiceLine.Count(), 'March and April of the first lease are invoiced');
     end;
 
     local procedure HX90NaiveLease(LeaseNo: Code[20])
@@ -54,7 +54,7 @@ codeunit 80155 "CGR Lease Night Run Naive B"
         Lease."No." := LeaseNo;
         Lease."Vehicle No." := 'HX090-V';
         Lease."Customer Name" := 'HX090 Customer';
-        Lease."Start Date" := 20300301D;
+        Lease."Start Date" := 20250301D;
         Lease.Months := 3;
         Lease."Base Rate" := 100;
         Lease.Insert();

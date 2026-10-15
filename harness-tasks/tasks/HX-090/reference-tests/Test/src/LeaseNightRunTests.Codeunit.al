@@ -15,10 +15,10 @@ codeunit 80151 "CGR Lease Night Run Tests"
         Runner: Codeunit "CGR Lease Night Run Runner";
         Ok: Boolean;
     begin
-        WorkDate(20300415D);
+        WorkDate(20250415D);
         Lib.SetV2Setup(0.01, '', 3);
-        Lib.ClearNonWorkingDays(20300301D, 20300531D);
-        HX90NewLease('HX090-P1', 20300301D);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
+        HX90NewLease('HX090-P1', 20250301D);
         Runner.SetNightRun('HX090-P1', 'HX090-P1', 'HX090 Renamed Customer');
 
         Commit();
@@ -45,11 +45,11 @@ codeunit 80151 "CGR Lease Night Run Tests"
         FailedLeases: List of [Code[20]];
         Invoiced: Integer;
     begin
-        WorkDate(20300415D);
+        WorkDate(20250415D);
         Lib.SetV2Setup(0.01, '', 3);
-        Lib.ClearNonWorkingDays(20300301D, 20300531D);
-        HX90NewLease('HX090-C1', 20300301D);
-        HX90NewLease('HX090-C2', 20300301D);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
+        HX90NewLease('HX090-C1', 20250301D);
+        HX90NewLease('HX090-C2', 20250301D);
         Spy.RefuseLine('HX090-C2', 20000, true);
         BindSubscription(Spy);
 
@@ -80,17 +80,17 @@ codeunit 80151 "CGR Lease Night Run Tests"
         FailedLeases: List of [Code[20]];
         Invoiced: Integer;
     begin
-        WorkDate(20300415D);
+        WorkDate(20250415D);
         Lib.SetV2Setup(0.01, '', 3);
-        Lib.ClearNonWorkingDays(20300301D, 20300531D);
-        HX90NewLease('HX090-F1', 20300301D);
-        HX90NewLease('HX090-F2', 20300301D);
-        HX90NewLease('HX090-F3', 20300301D);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
+        HX90NewLease('HX090-F1', 20250301D);
+        HX90NewLease('HX090-F2', 20250301D);
+        HX90NewLease('HX090-F3', 20250301D);
         Spy.RefuseLine('HX090-F2', 10000, false);
         BindSubscription(Spy);
         FailedLeases.Add('HX090-OLD');
 
-        Lease.SetFilter("No.", 'HX090-F1..HX090-F3');
+        Lease.SetFilter("No.", '%1|%2|%3', 'HX090-F1', 'HX090-F2', 'HX090-F3');
         Commit();
         Invoiced := NightRun.InvoiceNightRun(Lease, FailedLeases);
         UnbindSubscription(Spy);
@@ -116,17 +116,18 @@ codeunit 80151 "CGR Lease Night Run Tests"
         FailedLeases: List of [Code[20]];
         Invoiced: Integer;
     begin
-        WorkDate(20300415D);
+        WorkDate(20250415D);
         Lib.SetV2Setup(0.01, '', 3);
-        Lib.ClearNonWorkingDays(20300301D, 20300531D);
-        HX90NewLease('HX090-D1', 20300301D);
-        HX90NewLease('HX090-D9', 20300301D);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
+        HX90NewLease('HX090-D1', 20250301D);
+        HX90NewLease('HX090-D2', 20250415D);
+        HX90NewLease('HX090-D9', 20250301D);
 
-        Lease.SetRange("No.", 'HX090-D1');
+        Lease.SetFilter("No.", '%1|%2', 'HX090-D1', 'HX090-D2');
         Commit();
         Invoiced := NightRun.InvoiceNightRun(Lease, FailedLeases);
 
-        Assert.AreEqual(1, Invoiced, 'One lease in the filter');
+        Assert.AreEqual(2, Invoiced, 'Two leases in the filter');
         Assert.AreEqual(0, FailedLeases.Count(), 'No lease failed');
         Assert.IsTrue(InvoiceLine.Get('HX090-D1', 10000), 'March is due by the work date');
         Assert.AreEqual(103.00, InvoiceLine.Amount, 'March installment');
@@ -137,6 +138,8 @@ codeunit 80151 "CGR Lease Night Run Tests"
         Assert.IsTrue(ScheduleLine.Invoiced, 'April schedule line invoiced');
         ScheduleLine.Get('HX090-D1', 30000);
         Assert.IsFalse(ScheduleLine.Invoiced, 'May schedule line not invoiced');
+        Assert.IsTrue(InvoiceLine.Get('HX090-D2', 10000), 'A line due on the work date is invoiced');
+        Assert.IsFalse(InvoiceLine.Get('HX090-D2', 20000), 'The next month of that lease is not due');
         InvoiceLine.SetRange("Contract No.", 'HX090-D9');
         Assert.AreEqual(0, InvoiceLine.Count(), 'A lease outside the filter is not invoiced');
     end;
