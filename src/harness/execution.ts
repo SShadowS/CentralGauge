@@ -3004,6 +3004,10 @@ export async function runCell(
       attempt: e.attempt + 1,
       runKind: "auto_retry",
       retryOf: e.id,
+      // H-15: a retry chained here still runs under the ignored reset.
+      ...(at.usageResetIgnored
+        ? { usageResetIgnored: at.usageResetIgnored }
+        : {}),
     };
     const candidate = {
       ...e,

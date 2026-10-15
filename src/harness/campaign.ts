@@ -764,6 +764,14 @@ export async function runCampaign(
     );
   }
   let runEnv: HarnessEnv = { ...env, supervised: false };
+  // H-15: the executions recorded before this invocation, taken before
+  // recovery publishes any; only their resets are ignored, so a limit
+  // recorded during this run (recovered or new) still pauses.
+  const recordedBefore = new Set(
+    ignoreReset === undefined || o.dryRun
+      ? []
+      : (await env.store.allExecutions()).map((e) => e.id),
+  );
   if (!o.dryRun) {
     // Before planning: an interrupted attempt is completed (or stops the run).
     for (const e of await recoverInterrupted(runEnv, loadTask)) {
@@ -1025,13 +1033,6 @@ export async function runCampaign(
   }
   const campaign = c;
   const now = () => (env.now ?? (() => new Date()))().getTime();
-  // H-15: the executions recorded before this invocation; only their resets
-  // are ignored, so a limit hit during this run still pauses.
-  const recordedBefore = new Set(
-    ignoreReset === undefined
-      ? []
-      : (await env.store.executions(campaign.id)).map((e) => e.id),
-  );
   // A stop file is checked before the first block and before each cell.
   const stopRequested = async () => {
     for (const path of o.stopFiles ?? []) {

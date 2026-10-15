@@ -2033,3 +2033,111 @@ Deno.test("H-15: --ignore-usage-reset needs a non-empty reason, refused before a
   }
   assertEquals(t.docker.runs.length, runs);
 });
+
+Deno.test("H-15 (Sol r1): a retry chained after an overridden retry keeps the provenance", async () => {
+  const { t, reset, usage } = await limited();
+  let calls = 0;
+  // The overridden retry crashes before work (one automatic retry), then succeeds.
+  t.docker.behavior = async (_call, run) => {
+    if (calls++ === 0) return 1;
+    await run.stdout('{"type":"mock_init","version":"2","mode":"apply"}');
+    await run.stdout('{"type":"mock_done","status":"ok"}');
+    return 0;
+  };
+  await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), [
+    "planned",
+    "auto_retry",
+    "auto_retry",
+  ]);
+  for (const e of es.slice(1)) {
+    assertEquals(e.usage_reset_ignored, {
+      reason: "fresh account",
+      reset_at: reset!,
+    });
+  }
+});
+
+Deno.test("H-15 (Sol r1): after an in-process wait, the retry of a limit hit during this run carries no override", async () => {
+  const { t, usage, tick } = await limited();
+  let waits = 0;
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      tick(ms);
+      // The mock stays limited: stop at the second wait.
+      return ++waits > 1
+        ? Promise.reject(new Error("stop waiting"))
+        : Promise.resolve();
+    },
+  };
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "limits",
+        opts({ ignoreUsageReset: "fresh account", maxPauseMs: 2 * 3600_000 }),
+        out,
+      ),
+    Error,
+    "stop waiting",
+  );
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), [
+    "planned",
+    "auto_retry",
+    "auto_retry",
+  ]);
+  assertEquals(es[1]!.usage_reset_ignored?.reason, "fresh account");
+  assertEquals(es[2]!.usage_reset_ignored, undefined);
+});
+
+Deno.test("H-15 (Sol r1): the before-this-run boundary is taken before startup recovery publishes anything", async () => {
+  const t = await mockEnv();
+  await experiment(t, "limits", "mock-positive", ["mock-usage"]);
+  const behave = t.docker.behavior;
+  t.docker.behavior = (call, run) => {
+    t.docker.lingering.add(call.name);
+    return behave(call, run);
+  };
+  // The first attempt's termination is not confirmed: its intent is kept.
+  await assertRejects(
+    () => runCampaign(t.env, "limits", opts(), io()),
+    ContainerError,
+    "termination not confirmed",
+  );
+  const c = (await t.env.store.campaigns("limits"))[0]!;
+  assertEquals(await t.env.store.executions(c.id), []);
+  t.docker.lingering.clear();
+  t.docker.behavior = behave;
+  const intents = join(t.env.privateRoot, "intents");
+  const snapshots: { ids: string[]; intentsLeft: number }[] = [];
+  const all = t.env.store.allExecutions.bind(t.env.store);
+  t.env.store.allExecutions = async () => {
+    const es = await all();
+    snapshots.push({
+      ids: es.map((e) => e.id),
+      intentsLeft: [...Deno.readDirSync(intents)].length,
+    });
+    return es;
+  };
+  await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  // Taken once, while the interrupted attempt was still an unpublished intent.
+  assertEquals(snapshots.length, 1);
+  assertEquals(snapshots[0], { ids: [], intentsLeft: 1 });
+  const es = await t.env.store.executions(c.id);
+  assert(es.length > 0, "recovery published the interrupted attempt");
+  // Nothing here ran past a reset recorded before this run.
+  for (const e of es) assertEquals(e.usage_reset_ignored, undefined);
+});
