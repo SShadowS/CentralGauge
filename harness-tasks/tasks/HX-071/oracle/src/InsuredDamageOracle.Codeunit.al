@@ -14,12 +14,14 @@ codeunit 86880 "HX071 Insured Damage Oracle"
         DamageEntry: Record "CGR Damage Entry";
         Partner: Codeunit "HX071 Insurer Partner";
         Runner: Codeunit "HX071 Register Runner";
+        Spy: Codeunit "HX071 Registered Spy";
         Ok: Boolean;
     begin
         InitHX071('HX071-1A', 20270301D);
         ClearHX071Marker('HX071-MARK-1');
         Partner.SetHX071Mode('HX071-1A', 1, 'HX071-MARK-1');
         BindSubscription(Partner);
+        BindSubscription(Spy);
         Commit();
 
         Runner.SetHX071Damage('HX071-1A', 'Dent', false);
@@ -29,6 +31,8 @@ codeunit 86880 "HX071 Insured Damage Oracle"
         Assert.AreEqual(1, Partner.HX071Calls(), 'The insurer app checks the damage once');
         FindHX071Entry(DamageEntry, 'HX071-1A', 1);
         Assert.AreEqual(DamageEntry."Entry No.", Runner.HX071EntryNo(), 'RegisterInsuredDamage returns the Entry No. of the stored entry');
+        Assert.AreEqual(1, Spy.HX071Raised(), 'OnAfterDamageRegistered is raised once per registration');
+        Assert.AreEqual(DamageEntry."Entry No.", Spy.HX071RaisedEntryNo(), 'OnAfterDamageRegistered carries the stored entry');
         Assert.AreEqual('Dent', DamageEntry.Description, 'Description');
         Assert.AreEqual(20270301D, DamageEntry."Reported On", 'Reported On is the work date');
         Assert.IsFalse(DamageEntry.Repaired, 'Repaired');
@@ -44,11 +48,13 @@ codeunit 86880 "HX071 Insured Damage Oracle"
         DamageEntry: Record "CGR Damage Entry";
         Partner: Codeunit "HX071 Insurer Partner";
         Runner: Codeunit "HX071 Register Runner";
+        Spy: Codeunit "HX071 Registered Spy";
         Ok: Boolean;
     begin
         InitHX071('HX071-2B', 20270412D);
         Partner.SetHX071Mode('HX071-2B', 2, '');
         BindSubscription(Partner);
+        BindSubscription(Spy);
         Commit();
 
         Runner.SetHX071Damage('HX071-2B', 'Cracked mirror', false);
@@ -57,6 +63,8 @@ codeunit 86880 "HX071 Insured Damage Oracle"
         Assert.IsTrue(Ok, 'Registering a damage the insurer refuses succeeds: ' + GetLastErrorText());
         FindHX071Entry(DamageEntry, 'HX071-2B', 1);
         Assert.AreEqual(DamageEntry."Entry No.", Runner.HX071EntryNo(), 'RegisterInsuredDamage returns the Entry No. of the stored entry');
+        Assert.AreEqual(1, Spy.HX071Raised(), 'OnAfterDamageRegistered is raised once per registration');
+        Assert.AreEqual(DamageEntry."Entry No.", Spy.HX071RaisedEntryNo(), 'OnAfterDamageRegistered carries the stored entry');
         Assert.AreEqual('Cracked mirror', DamageEntry.Description, 'Description');
         Assert.AreEqual(20270412D, DamageEntry."Reported On", 'Reported On is the work date');
         Assert.IsFalse(DamageEntry.Repaired, 'Repaired');
@@ -146,9 +154,11 @@ codeunit 86880 "HX071 Insured Damage Oracle"
     var
         DamageEntry: Record "CGR Damage Entry";
         Runner: Codeunit "HX071 Register Runner";
+        Spy: Codeunit "HX071 Registered Spy";
         Ok: Boolean;
     begin
         InitHX071('HX071-6F', 20270301D);
+        BindSubscription(Spy);
         Commit();
 
         Runner.SetHX071Damage('HX071-6F', 'Worn tyre', false);
@@ -157,6 +167,8 @@ codeunit 86880 "HX071 Insured Damage Oracle"
         Assert.IsTrue(Ok, 'Registering an insured damage with no insurer app succeeds: ' + GetLastErrorText());
         FindHX071Entry(DamageEntry, 'HX071-6F', 1);
         Assert.AreEqual(DamageEntry."Entry No.", Runner.HX071EntryNo(), 'RegisterInsuredDamage returns the Entry No. of the stored entry');
+        Assert.AreEqual(1, Spy.HX071Raised(), 'OnAfterDamageRegistered is raised once per registration');
+        Assert.AreEqual(DamageEntry."Entry No.", Spy.HX071RaisedEntryNo(), 'OnAfterDamageRegistered carries the stored entry');
         Assert.IsFalse(DamageEntry."Insurer Pending", 'With no insurer app the damage is not insurer pending');
         Assert.AreEqual('', DamageEntry."Insurer Message", 'With no insurer app there is no insurer message');
         AssertHX071Vehicle('HX071-6F', true, 1, 'An insured damage with no insurer app');
