@@ -957,11 +957,98 @@ function unparsed(exitCode: number | null, m: ResolvedManifest): ParsedRun {
 }
 
 /** raw_usage.stream_problems of an adapter parse (M1-32), [] when absent. */
-function streamProblems(raw: unknown): string[] {
+export function streamProblems(raw: unknown): string[] {
   const p = raw !== null && typeof raw === "object" && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)["stream_problems"]
     : undefined;
   return Array.isArray(p) ? p.map(String) : [];
+}
+
+/**
+ * H-12 (gate-3 ruling 2026-10-15, M9-13b): a Claude Code budget stop
+ * (`error_max_budget_usd`, stop_reason tool_use) leaves in-flight tool calls
+ * without a result. Those `tool_use <id> has no result` problems alone, every
+ * orphan in the last assistant message of its agent (parent_tool_use_id; null
+ * = main, compared by a non-empty message.id on both records), with an exact
+ * usage reconciliation, do not make the cost unprovable. If any orphan is an
+ * Agent/Task spawn (its tool_use name), a child's usage may be missing, so the
+ * reconciliation must be `exact_otel`, or `exact` beside raw_usage.otel
+ * `exact` (the label stays `exact` when stream and OTel agree). Each orphan
+ * must be exactly one tool_use block (matched by type and id) before the
+ * result; its name is read from that block, a repeated id fails closed.
+ * Anything else (other problem, odd stream, other reconciliation) fails closed.
+ */
+export function budgetCutOrphansExempt(
+  raw: string,
+  problems: string[],
+  run: Pick<ParsedRun, "termination" | "telemetry">,
+): boolean {
+  const rawUsage = run.telemetry.raw_usage as
+    | { usage_reconciliation?: { status?: unknown } }
+    | null;
+  const status = rawUsage?.usage_reconciliation?.status;
+  if (
+    run.termination !== "budget_exhausted" ||
+    run.telemetry.stop_reason !== "tool_use" ||
+    (status !== "exact" && status !== "exact_otel") || problems.length === 0
+  ) return false;
+  const orphans: string[] = [];
+  for (const p of problems) {
+    const m = /^tool_use (\S+) has no result$/.exec(p);
+    if (!m) return false;
+    orphans.push(m[1]!);
+  }
+  type Rec = {
+    type?: unknown;
+    subtype?: unknown;
+    parent_tool_use_id?: unknown;
+    message?: { id?: unknown; content?: unknown };
+  };
+  const recs: Rec[] = [];
+  for (const l of raw.split(/\r?\n/)) {
+    if (l.trim() === "") continue;
+    try {
+      const r = JSON.parse(l) as Rec;
+      if (r === null || typeof r !== "object") return false;
+      recs.push(r);
+    } catch {
+      return false;
+    }
+  }
+  const results = recs.flatMap((r, i) => r.type === "result" ? [i] : []);
+  if (results.length !== 1) return false;
+  const end = results[0]!;
+  if ((recs[end] as Rec).subtype !== "error_max_budget_usd") return false;
+  const agent = (r: Rec) => String(r.parent_tool_use_id ?? "");
+  type Block = { type?: unknown; id?: unknown; name?: unknown };
+  const blocks = (r: Rec) =>
+    Array.isArray(r.message?.content) ? r.message.content as Block[] : [];
+  const uses = (r: Rec, id: string) =>
+    blocks(r).filter((c) => c?.type === "tool_use" && c.id === id);
+  const mid = (r: Rec) => r.message?.id;
+  const hasId = (r: Rec) => typeof mid(r) === "string" && mid(r) !== "";
+  let spawn = false;
+  const kept = orphans.every((id) => {
+    const at = recs.flatMap((r, i) =>
+      r.type === "assistant" ? uses(r, id).map(() => i) : []
+    );
+    // Exactly one tool_use block with this id in the whole stream.
+    if (at.length !== 1 || at[0]! > end) return false;
+    const rec = recs[at[0]!]!;
+    const name = uses(rec, id)[0]!.name;
+    if (name === "Agent" || name === "Task") spawn = true;
+    // Message identity fails closed: an id-less record cannot be compared.
+    return hasId(rec) &&
+      recs.slice(at[0]! + 1, end).every((r) =>
+        r.type !== "assistant" || agent(r) !== agent(rec) ||
+        (hasId(r) && mid(r) === mid(rec))
+      );
+  });
+  // A spawn orphan may stand for a child whose usage never arrived: only the
+  // independent OTel request count proves it complete.
+  const otel = (rawUsage as { otel?: { status?: unknown } } | null)?.otel
+    ?.status;
+  return kept && (!spawn || status === "exact_otel" || otel === "exact");
 }
 
 /** Backend host log, tolerant of a line cut by a crash: bad lines are counted, never fatal. */
@@ -1110,7 +1197,19 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   let telemetry = f.preStart
     ? notStarted(f.sandbox.exitCode).telemetry
     : parsed.telemetry;
-  if (!f.preStart && parsed.termination !== null && problems.length > 0) {
+  // H-12: a budget cut's orphan tool calls alone leave an exact cost provable.
+  const orphansExempt = problems.length > 0 &&
+    parsed.termination === "budget_exhausted" &&
+    f.manifest.harness === "claude-code" &&
+    budgetCutOrphansExempt(
+      await Deno.readTextFile(p.raw).catch(() => "\0"),
+      problems,
+      parsed,
+    );
+  if (
+    !f.preStart && parsed.termination !== null && problems.length > 0 &&
+    !orphansExempt
+  ) {
     telemetry = {
       ...telemetry,
       cost_usd: null,

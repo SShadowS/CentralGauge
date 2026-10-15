@@ -5068,3 +5068,805 @@ Deno.test("otel (H-10 r2): the execution id reaches the adapter parse: rows of a
   assertEquals(otel?.status, "invalid");
   assertStringIncludes(otel!.why!, "received_for");
 });
+
+// ---- H-12 (gate-3 ruling 2026-10-15, M9-13b): budget-cut orphan tool calls ----
+
+const { budgetCutOrphansExempt } = await import(
+  "../../../src/harness/execution.ts"
+);
+
+const h12Tu = (id: string, name: string) => ({
+  type: "tool_use",
+  id,
+  name,
+  input: {},
+});
+const h12Asst = (
+  mid: string,
+  content: unknown[],
+  parent: string | null = null,
+) =>
+  JSON.stringify({
+    type: "assistant",
+    parent_tool_use_id: parent,
+    message: { id: mid, content },
+  });
+const h12Text = { type: "text", text: "x" };
+const h12Result = (subtype = "error_max_budget_usd", stop = "tool_use") =>
+  JSON.stringify({ type: "result", subtype, stop_reason: stop });
+
+/** main: Agent orphan in main's last message; sub-agent: Write orphan in its last message. */
+function h12Stream(over: { before?: string[]; result?: string } = {}): string {
+  return [
+    JSON.stringify({ type: "system", subtype: "init" }),
+    h12Asst("m1", [h12Text]),
+    h12Asst("m1", [h12Tu("toolu_main", "Agent")]),
+    ...(over.before ?? []),
+    h12Asst("s1", [h12Text], "toolu_main"),
+    h12Asst("s1", [h12Tu("toolu_sub", "Write")], "toolu_main"),
+    over.result ?? h12Result(),
+  ].join("\n") + "\n";
+}
+
+const H12_PROBLEMS = [
+  "tool_use toolu_main has no result",
+  "tool_use toolu_sub has no result",
+];
+
+function h12Run(
+  over: {
+    termination?: string | null;
+    stop?: string | null;
+    status?: string | null;
+  } = {},
+) {
+  const status = over.status === undefined ? "exact" : over.status;
+  return {
+    termination: over.termination === undefined
+      ? "budget_exhausted"
+      : over.termination,
+    telemetry: {
+      stop_reason: over.stop === undefined ? "tool_use" : over.stop,
+      raw_usage: status === null ? {} : { usage_reconciliation: { status } },
+    },
+    // deno-lint-ignore no-explicit-any
+  } as any;
+}
+
+Deno.test("H-12: orphan tool calls in each agent's last message are exempt", () => {
+  // H-12 r2 ruling (reviews/H-12-001/reject.md): main's orphan is an Agent
+  // spawn, so plain exact also needs raw_usage.otel.status exact.
+  const run = h12Run();
+  run.telemetry.raw_usage.otel = { status: "exact" };
+  assertEquals(
+    budgetCutOrphansExempt(h12Stream(), H12_PROBLEMS, run),
+    true,
+  );
+});
+
+Deno.test("H-12: exact_otel reconciliation is exempt too", () => {
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream(),
+      H12_PROBLEMS,
+      h12Run({ status: "exact_otel" }),
+    ),
+    true,
+  );
+});
+
+Deno.test("H-12: condition 1 broken alone (termination, stop_reason, subtype)", () => {
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ result: h12Result("success", "tool_use") }),
+      H12_PROBLEMS,
+      h12O(h12Run({ termination: "completed" })),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ result: h12Result("error_max_budget_usd", "end_turn") }),
+      H12_PROBLEMS,
+      h12O(h12Run({ stop: "end_turn" })),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ result: h12Result("success", "tool_use") }),
+      H12_PROBLEMS,
+      h12O(h12Run()),
+    ),
+    false,
+  );
+});
+
+Deno.test("H-12: not exactly one result record is no exemption", () => {
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream() + h12Result() + "\n",
+      H12_PROBLEMS,
+      h12O(h12Run()),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream().split("\n").filter((l) => !l.includes('"result"')).join(
+        "\n",
+      ),
+      H12_PROBLEMS,
+      h12O(h12Run()),
+    ),
+    false,
+  );
+});
+
+Deno.test("H-12: condition 2 broken alone (orphan not in its agent's last message, unknown id, non-JSON line)", () => {
+  // a later main-agent message follows the Agent tool_use
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ before: [h12Asst("m2", [h12Text])] }),
+      H12_PROBLEMS,
+      h12O(h12Run()),
+    ),
+    false,
+  );
+  // the orphan is not in the stream at all
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream(),
+      [...H12_PROBLEMS, "tool_use toolu_ghost has no result"],
+      h12O(h12Run()),
+    ),
+    false,
+  );
+  // the same tool_use appears twice
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ before: [h12Asst("m1", [h12Tu("toolu_main", "Agent")])] }),
+      H12_PROBLEMS,
+      h12O(h12Run()),
+    ),
+    false,
+  );
+  // the orphan is only after the result line
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream().replace(
+        JSON.stringify({
+          type: "result",
+          subtype: "error_max_budget_usd",
+          stop_reason: "tool_use",
+        }),
+        "",
+      ) + h12Result() + "\n" + h12Asst("m9", [h12Tu("toolu_late", "Bash")]) +
+        "\n",
+      ["tool_use toolu_late has no result"],
+      h12O(h12Run()),
+    ),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(
+      h12Stream({ before: ["not json"] }),
+      H12_PROBLEMS,
+      h12O(h12Run()),
+    ),
+    false,
+  );
+});
+
+Deno.test("H-12: condition 3 broken alone (unreconciled, absent, compaction_excess)", () => {
+  for (const status of ["unreconciled", null, "compaction_excess"]) {
+    assertEquals(
+      budgetCutOrphansExempt(
+        h12Stream(),
+        H12_PROBLEMS,
+        h12O(h12Run({ status })),
+      ),
+      false,
+      String(status),
+    );
+  }
+});
+
+Deno.test("H-12: a non-orphan problem is no exemption, alone or beside orphans", () => {
+  const other = "tool_result for unknown toolu_X";
+  assertEquals(budgetCutOrphansExempt(h12Stream(), [other], h12Run()), false);
+  assertEquals(
+    budgetCutOrphansExempt(h12Stream(), [...H12_PROBLEMS, other], h12Run()),
+    false,
+  );
+});
+
+/** A stream-exact two-message session cut by the budget mid tool call; `where` places the orphan tool_use (message 2 = last, message 1 = earlier). */
+function h12Cut(where: "last" | "earlier"): string[] {
+  const usage = {
+    input_tokens: 10,
+    output_tokens: 1,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_creation: {
+      ephemeral_5m_input_tokens: 0,
+      ephemeral_1h_input_tokens: 0,
+    },
+  };
+  const msg = (id: string, content: unknown[]) =>
+    JSON.stringify({
+      type: "assistant",
+      parent_tool_use_id: null,
+      session_id: "1ae7bb8f-04b6-4431-b315-c3a36ef73f35",
+      message: { id, model: "claude-sonnet-5", content, usage },
+    });
+  const orphan = [h12Tu("toolu_orphan", "Bash")];
+  return [
+    msg("msg_h12_1", [h12Text]),
+    ...(where === "earlier" ? [msg("msg_h12_1", orphan)] : []),
+    msg("msg_h12_2", [h12Text]),
+    ...(where === "last" ? [msg("msg_h12_2", orphan)] : []),
+    JSON.stringify({
+      type: "result",
+      subtype: "error_max_budget_usd",
+      is_error: true,
+      stop_reason: "tool_use",
+      session_id: "1ae7bb8f-04b6-4431-b315-c3a36ef73f35",
+      total_cost_usd: 0.00006,
+      num_turns: 2,
+      duration_ms: 1000,
+      usage: { ...usage, input_tokens: 20, output_tokens: 2 },
+      modelUsage: {
+        "claude-sonnet-5": {
+          inputTokens: 20,
+          outputTokens: 2,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          webSearchRequests: 0,
+          costUSD: 0.00006,
+        },
+      },
+    }),
+  ];
+}
+
+/** Runs the cut stream through a real cell on the inventoried arm; the orphan problem must stay recorded. */
+async function h12Cell(where: "last" | "earlier") {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (_call, io) => {
+    for (const l of [V2_INIT, ...h12Cut(where)]) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  assertStringIncludes(
+    (await sideOf(t, e.id)).stream_problems.join("\n"),
+    "tool_use toolu_orphan has no result",
+  );
+  return e;
+}
+
+Deno.test("H-12: end to end, a budget cut with the orphan in the last message keeps the priced cost", async () => {
+  const e = await h12Cell("last");
+  assertEquals(e.termination, "budget_exhausted");
+  assertEquals(e.telemetry.cost_usd, 6e-5);
+  assertEquals(e.telemetry.cost_source, "estimated");
+});
+
+Deno.test("H-12: end to end, the same cut with the orphan in an earlier message nulls the cost", async () => {
+  const e = await h12Cell("earlier");
+  assertEquals(e.termination, "budget_exhausted");
+  assertEquals(
+    [
+      e.telemetry.cost_usd,
+      e.telemetry.cost_source,
+      e.telemetry.pricing_snapshot,
+    ],
+    [null, null, null],
+  );
+});
+
+// ---- H-12 r2 (review H-12-001): spawn orphans need OTel, message identity ----
+
+const R2_SID = "1ae7bb8f-04b6-4431-b315-c3a36ef73f35";
+const R2_USAGE = {
+  input_tokens: 10,
+  output_tokens: 1,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+  cache_creation: {
+    ephemeral_5m_input_tokens: 0,
+    ephemeral_1h_input_tokens: 0,
+  },
+};
+
+/** One assistant record; `id` absent from `m` means no message.id at all. */
+const r2Msg = (
+  m: { id?: unknown; content: unknown[]; parent?: string | null },
+) => {
+  const message: Record<string, unknown> = {
+    model: "claude-sonnet-5",
+    content: m.content,
+    usage: R2_USAGE,
+  };
+  if ("id" in m) message["id"] = m.id;
+  return JSON.stringify({
+    type: "assistant",
+    parent_tool_use_id: m.parent ?? null,
+    session_id: R2_SID,
+    message,
+  });
+};
+
+/** A budget-cut result whose modelUsage totals `n` requests of 10 in / 1 out. */
+const r2Result = (n: number) =>
+  JSON.stringify({
+    type: "result",
+    subtype: "error_max_budget_usd",
+    is_error: true,
+    stop_reason: "tool_use",
+    session_id: R2_SID,
+    total_cost_usd: 0.00003 * n,
+    num_turns: n,
+    duration_ms: 1000,
+    usage: { ...R2_USAGE, input_tokens: 10 * n, output_tokens: n },
+    modelUsage: {
+      "claude-sonnet-5": {
+        inputTokens: 10 * n,
+        outputTokens: n,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        webSearchRequests: 0,
+        costUSD: 0.00003 * n,
+        costBasis: "list",
+      },
+    },
+  });
+
+/** `n` OTel api_request rows (10 in / 1 out each) of this execution. */
+const r2Otel =
+  (n: number, over: Record<string, unknown> = {}) => (id: string) =>
+    Array.from({ length: n }, (_, i) =>
+      JSON.stringify({
+        session_id: "s1",
+        sequence: i + 1,
+        model: "claude-sonnet-5",
+        input_tokens: 10,
+        output_tokens: 1,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_creation_5m_tokens: 0,
+        cache_creation_1h_tokens: 0,
+        execution_id: id,
+        received_for: id,
+        ...over,
+      })).join("\n") + "\n";
+
+/** A main-agent cut: two messages, the second ends with the orphan tool call `name`. */
+const r2Main = (name: string) => [
+  r2Msg({ id: "msg_r2_1", content: [h12Text] }),
+  r2Msg({ id: "msg_r2_2", content: [h12Text] }),
+  r2Msg({ id: "msg_r2_2", content: [h12Tu("toolu_orphan", name)] }),
+];
+
+type R2State = {
+  usage_reconciliation?: { status?: string };
+  otel?: { status?: string };
+};
+
+/** Runs the lines through a real cell; the orphan problems must stay recorded. */
+async function r2Cell(
+  lines: string[],
+  otel: ((id: string) => string) | null,
+) {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (call, io) => {
+    const id = call.env.get("CG_EXECUTION_ID")!;
+    if (otel) {
+      await Deno.writeTextFile(privatePaths(t.env, id).otel, otel(id));
+    }
+    for (const l of [V2_INIT, ...lines]) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  assertEquals(e.termination, "budget_exhausted");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).stream_problems.join("\n"),
+    "has no result",
+  );
+  const ru = e.telemetry.raw_usage as R2State;
+  return {
+    e,
+    state: [ru.usage_reconciliation?.status, ru.otel?.status ?? "absent"],
+  };
+}
+
+Deno.test("H-12 r2: Agent orphan, exact stream, no OTel at all: the cost is null", async () => {
+  const { e, state } = await r2Cell([...r2Main("Agent"), r2Result(2)], null);
+  assertEquals(state, ["exact", "missing"]);
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r2: Agent orphan, exact stream, OTel mismatch: the cost is null", async () => {
+  const { e, state } = await r2Cell(
+    [...r2Main("Agent"), r2Result(2)],
+    r2Otel(1, { input_tokens: 1, output_tokens: 1 }),
+  );
+  assertEquals(state, ["exact", "mismatch"]);
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r2: Agent orphan, exact stream, OTel exact: the priced cost is kept", async () => {
+  const { e, state } = await r2Cell(
+    [...r2Main("Agent"), r2Result(2)],
+    r2Otel(2),
+  );
+  assertEquals(state, ["exact", "exact"]);
+  assertEquals(e.telemetry.cost_usd, 6e-5);
+});
+
+Deno.test("H-12 r2: Agent orphan, exact_otel (a child's usage only in OTel): the OTel-priced cost is kept", async () => {
+  // modelUsage totals 3 requests, the stream shows 2: the third is a nested one.
+  const { e, state } = await r2Cell(
+    [...r2Main("Agent"), r2Result(3)],
+    r2Otel(3),
+  );
+  assertEquals(state, ["exact_otel", "exact"]);
+  assertAlmostEquals(e.telemetry.cost_usd!, 9e-5, 1e-12);
+});
+
+Deno.test("H-12 r2: Write orphan, exact stream, no OTel: the priced cost is kept", async () => {
+  const { e, state } = await r2Cell([...r2Main("Write"), r2Result(2)], null);
+  assertEquals(state, ["exact", "missing"]);
+  assertEquals(e.telemetry.cost_usd, 6e-5);
+});
+
+Deno.test("H-12 r2: message ids missing on two main records, orphan in the first: the cost is null (end to end)", async () => {
+  const { e, state } = await r2Cell([
+    r2Msg({ content: [h12Tu("toolu_orphan", "Write")] }),
+    r2Msg({ content: [h12Text] }),
+    r2Result(2),
+  ], null);
+  // Whatever the adapter makes of id-less records, the published cost is null.
+  assert(state[0] !== undefined);
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r2: only the sub-agent stream advances after its orphan: the cost is null (end to end, OTel exact)", async () => {
+  const { e, state } = await r2Cell([
+    r2Msg({ id: "msg_r2_1", content: [h12Text] }),
+    r2Msg({ id: "msg_r2_1", content: [h12Tu("toolu_main", "Agent")] }),
+    r2Msg({ id: "msg_r2_s1", content: [h12Text], parent: "toolu_main" }),
+    r2Msg({
+      id: "msg_r2_s1",
+      content: [h12Tu("toolu_orphan", "Write")],
+      parent: "toolu_main",
+    }),
+    r2Msg({ id: "msg_r2_s2", content: [h12Text], parent: "toolu_main" }),
+    r2Result(3),
+  ], r2Otel(3));
+  // OTel agrees, so only the sub-agent's later message can be what nulls it.
+  assertEquals(state[1], "exact");
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+/** The helper's inputs for a raw stream: problems for the given orphan ids. */
+const r2Problems = (...ids: string[]) =>
+  ids.map((id) => `tool_use ${id} has no result`);
+const r2Raw = (recs: string[], result = h12Result()) =>
+  [JSON.stringify({ type: "system", subtype: "init" }), ...recs, result]
+    .join("\n") + "\n";
+const r2Run = (status: string | null, otel?: string) =>
+  ({
+    termination: "budget_exhausted",
+    telemetry: {
+      stop_reason: "tool_use",
+      raw_usage: {
+        ...(status === null ? {} : { usage_reconciliation: { status } }),
+        ...(otel === undefined ? {} : { otel: { status: otel } }),
+      },
+    },
+    // deno-lint-ignore no-explicit-any
+  }) as any;
+
+Deno.test("H-12 r2: helper, a main Agent or Task orphan needs exact_otel, or exact beside exact OTel", () => {
+  for (const name of ["Agent", "Task"]) {
+    const raw = r2Raw([
+      h12Asst("m1", [h12Text]),
+      h12Asst("m1", [h12Tu("toolu_a", name)]),
+    ]);
+    const ok = (status: string | null, otel?: string) =>
+      budgetCutOrphansExempt(raw, r2Problems("toolu_a"), r2Run(status, otel));
+    assertEquals(ok("exact"), false, name);
+    for (const o of ["missing", "mismatch", "invalid"]) {
+      assertEquals(ok("exact", o), false, `${name} ${o}`);
+    }
+    assertEquals(ok("exact", "exact"), true, name);
+    assertEquals(ok("exact_otel"), true, name);
+    assertEquals(ok("unreconciled", "exact"), false, name);
+  }
+});
+
+Deno.test("H-12 r2: helper, a sub-agent stream's Agent orphan needs OTel too", () => {
+  const raw = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_main", "Bash")]),
+    h12Asst("s1", [h12Tu("toolu_a", "Agent")], "toolu_x"),
+  ]);
+  const problems = r2Problems("toolu_main", "toolu_a");
+  assertEquals(
+    budgetCutOrphansExempt(raw, problems, r2Run("exact", "missing")),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(raw, problems, r2Run("exact", "exact")),
+    true,
+  );
+});
+
+Deno.test("H-12 r2: helper, non-spawn orphans (Write, Edit, Bash) need only exact or exact_otel", () => {
+  const raw = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_w", "Write"), h12Tu("toolu_e", "Edit")]),
+    h12Asst("s1", [h12Tu("toolu_b", "Bash")], "toolu_x"),
+  ]);
+  const problems = r2Problems("toolu_w", "toolu_e", "toolu_b");
+  for (
+    const [status, otel, want] of [
+      ["exact", undefined, true],
+      ["exact", "mismatch", true],
+      ["exact_otel", undefined, true],
+      ["unreconciled", "exact", false],
+    ] as const
+  ) {
+    assertEquals(
+      budgetCutOrphansExempt(raw, problems, r2Run(status, otel)),
+      want,
+      `${status} ${otel}`,
+    );
+  }
+});
+
+Deno.test("H-12 r2: helper, a spawn beside non-spawn orphans still needs OTel", () => {
+  const raw = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_w", "Write"), h12Tu("toolu_a", "Agent")]),
+  ]);
+  const problems = r2Problems("toolu_w", "toolu_a");
+  assertEquals(
+    budgetCutOrphansExempt(raw, problems, r2Run("exact")),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(raw, problems, r2Run("exact", "exact")),
+    true,
+  );
+});
+
+Deno.test("H-12 r2: helper, a missing, null, empty or non-string message id on the orphan's record is no exemption", () => {
+  const rec = (id: unknown, content: unknown[]) =>
+    JSON.stringify({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: id === undefined ? { content } : { id, content },
+    });
+  const orphan = [h12Tu("toolu_o", "Write")];
+  const run = r2Run("exact");
+  // Control: with ids the same shape is exempt.
+  assertEquals(
+    budgetCutOrphansExempt(
+      r2Raw([rec("m1", [h12Text]), rec("m1", orphan)]),
+      r2Problems("toolu_o"),
+      run,
+    ),
+    true,
+  );
+  for (const id of [undefined, null, "", 5]) {
+    // the orphan record itself has no usable id (single record)
+    assertEquals(
+      budgetCutOrphansExempt(
+        r2Raw([rec(id, orphan)]),
+        r2Problems("toolu_o"),
+        run,
+      ),
+      false,
+      `orphan id ${String(id)}`,
+    );
+    // two id-less records, orphan in the first
+    assertEquals(
+      budgetCutOrphansExempt(
+        r2Raw([rec(id, orphan), rec(id, [h12Text])]),
+        r2Problems("toolu_o"),
+        run,
+      ),
+      false,
+      `both ids ${String(id)}`,
+    );
+    // the orphan has an id, the later same-agent record does not
+    assertEquals(
+      budgetCutOrphansExempt(
+        r2Raw([rec("m1", orphan), rec(id, [h12Text])]),
+        r2Problems("toolu_o"),
+        run,
+      ),
+      false,
+      `later id ${String(id)}`,
+    );
+  }
+});
+
+Deno.test("H-12 r2: helper, a later record of ANOTHER agent without an id does not matter", () => {
+  const raw = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_o", "Write")]),
+    JSON.stringify({
+      type: "assistant",
+      parent_tool_use_id: "toolu_x",
+      message: { content: [h12Text] },
+    }),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(raw, r2Problems("toolu_o"), r2Run("exact")),
+    true,
+  );
+});
+
+Deno.test("H-12 r2: helper, termination alone broken (result subtype error_max_budget_usd and stop_reason tool_use kept) is no exemption", () => {
+  const raw = h12Stream();
+  assertEquals(
+    budgetCutOrphansExempt(raw, H12_PROBLEMS, h12Run({ status: "exact_otel" })),
+    true,
+    "control",
+  );
+  for (const termination of ["completed", "timeout", null]) {
+    assertEquals(
+      budgetCutOrphansExempt(
+        raw,
+        H12_PROBLEMS,
+        h12Run({ termination, status: "exact_otel" }),
+      ),
+      false,
+      String(termination),
+    );
+  }
+});
+
+Deno.test("H-12 r2: a pi budget stop with stream problems nulls the cost end to end (non-claude-code harness)", async () => {
+  // ponytail: pi cannot emit a "tool_use X has no result" problem, so the
+  // exempt shape is not producible on pi; this pins the published outcome of
+  // a non-claude-code budget stop with stream problems.
+  const t = await piEnv("unplaced");
+  const probe =
+    (await Deno.readTextFile("tests/fixtures/harness/pi/probe.jsonl"))
+      .split("\n").filter((l) => l.trim() !== "");
+  const cut = probe.findIndex((l) => l.includes('"tool_execution_end"'));
+  const entry = (data: Record<string, unknown>) =>
+    JSON.stringify({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        id: "e1",
+        parentId: null,
+        customType: "cg-budget",
+        data,
+      },
+    });
+  t.docker.behavior = async (_call, io) => {
+    const lines = [
+      JSON.stringify({
+        type: "cg_entry",
+        pi_version: "0.87.1",
+        max_budget_usd: 5,
+        ready: true,
+      }),
+      entry({ event: "armed", limit_usd: 5 }),
+      ...probe.filter((_, i) => i !== cut),
+      entry({
+        event: "exhausted",
+        spent_usd: 5.01,
+        limit_usd: 5,
+        reason: "limit",
+      }),
+    ];
+    for (const l of lines) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await piCell(t))).executions[0]!;
+  assertEquals(e.termination, "budget_exhausted");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).stream_problems.join("\n"),
+    "has no tool_execution_end",
+  );
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+// ---- H-12 r3: spawn-name lookup, unmasked older negatives ----
+
+/** An otherwise qualifying run: raw_usage.otel exact, so only the case's own defect can fail it. */
+function h12O<T>(run: T): T {
+  // deno-lint-ignore no-explicit-any
+  (run as any).telemetry.raw_usage.otel = { status: "exact" };
+  return run;
+}
+
+Deno.test("H-12 r3: helper, a non-tool_use block with the orphan id before an Agent tool_use does not hide the spawn", () => {
+  const raw = r2Raw([
+    h12Asst("m1", [
+      { type: "text", id: "toolu_a", text: "x" },
+      h12Tu("toolu_a", "Agent"),
+    ]),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(raw, r2Problems("toolu_a"), r2Run("exact")),
+    false,
+  );
+  assertEquals(
+    budgetCutOrphansExempt(raw, r2Problems("toolu_a"), r2Run("exact", "exact")),
+    true,
+    "control: with OTel exact the spawn is proven complete",
+  );
+});
+
+Deno.test("H-12 r3: helper, two tool_use blocks with the orphan id are no exemption", () => {
+  const one = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_a", "Write"), h12Tu("toolu_a", "Write")]),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(one, r2Problems("toolu_a"), r2Run("exact", "exact")),
+    false,
+    "same record",
+  );
+  const across = r2Raw([
+    h12Asst("m1", [h12Tu("toolu_a", "Write")]),
+    h12Asst("m1", [h12Tu("toolu_a", "Write")]),
+  ]);
+  assertEquals(
+    budgetCutOrphansExempt(
+      across,
+      r2Problems("toolu_a"),
+      r2Run("exact", "exact"),
+    ),
+    false,
+    "across records",
+  );
+});
+
+Deno.test("H-12 r3: a text block sharing the Agent orphan's id, no OTel: the cost is null (end to end)", async () => {
+  const { e, state } = await r2Cell([
+    r2Msg({ id: "msg_r2_1", content: [h12Text] }),
+    r2Msg({
+      id: "msg_r2_1",
+      content: [
+        { type: "text", id: "toolu_orphan", text: "x" },
+        h12Tu("toolu_orphan", "Agent"),
+      ],
+    }),
+    r2Result(2),
+  ], null);
+  // The adapter already refuses the reconciliation for this stream, so the
+  // null is not reached through the exemption; the helper tests above pin it.
+  assertEquals(state[1], "missing");
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r3: two result records: the adapter voids the run (harness_crash) before the exemption, the cost is null", async () => {
+  const t = await inventoriedEnv();
+  t.docker.preReady = { lines: [INV()] };
+  t.docker.behavior = async (_call, io) => {
+    for (
+      const l of [V2_INIT, ...r2Main("Write"), r2Result(2), r2Result(2)]
+    ) await io.stdout(l);
+    return 0;
+  };
+  const e = (await runCell(t.env, await cellFor(t, "cc-v2-inv")))
+    .executions[0]!;
+  assertEquals(e.termination, "harness_crash");
+  assertEquals(e.telemetry.cost_usd, null);
+});
+
+Deno.test("H-12 r3: a non-JSON line nulls the cost end to end (Write orphan, no OTel needed)", async () => {
+  const { e } = await r2Cell(
+    [...r2Main("Write"), "not json", r2Result(2)],
+    null,
+  );
+  assertEquals(e.telemetry.cost_usd, null);
+});
