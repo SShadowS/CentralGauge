@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "87100/NonAdjacentRepeatRefused": 1
+    "87100/AdjacentRepeatRefused": 1
+    "87100/FirstRepeatNamed": 1
+    "87100/ValidImportReplacesSchedule": 1
+    "87100/CallerLinesKept": 1
+    "87100/BlankDueDateRefused": 1
+    "87100/DueBeforeStartRefused": 1
+    "87100/InvoicedLeaseRefused": 1
+    "87100/MissingLeaseRaises": 1
+    "87100/EmptyImportRefused": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
