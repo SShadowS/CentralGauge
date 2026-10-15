@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "86820/ReturnedContractsPosted": 1
+    "86820/ExportFailureKeepsPostings": 1
+    "86820/ExportFailureKeepsErrorLog": 1
+    "86820/CommittingPreparationThenErrorKeepsNothing": 1
+    "86820/CommittingPreparationDoesNotFail": 1
+    "86820/PreparationWritesKept": 1
+    "86820/PreparationErrorPostsNothing": 1
+    "86820/FailingContractLoggedOthersPosted": 1
+    "86820/EmptyDayClose": 1
+    "86820/OnlyReturnedInFilter": 1
+    "86820/PartnerNarrowsFilter": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
