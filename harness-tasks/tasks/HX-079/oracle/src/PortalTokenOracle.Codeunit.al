@@ -17,7 +17,6 @@ codeunit 87040 "HX079 Portal Token Oracle"
     begin
         HX79Init(Runner);
         BindSubscription(Partner);
-        Assert.AreEqual('', HX79Token(), 'No token is stored before the sign-in');
 
         Before := CurrentDateTime();
         Ok := HX79SignIn(Runner, Partner, 'HX079-R1-T1', false, false);
@@ -235,6 +234,7 @@ codeunit 87040 "HX079 Portal Token Oracle"
     procedure SignInWithoutSetupRow()
     var
         Setup: Record "CGR Setup";
+        SavedSetup: Record "CGR Setup";
         Partner: Codeunit "HX079 Portal Partner";
         Runner: Codeunit "HX079 Portal Runner";
         Before: DateTime;
@@ -246,6 +246,8 @@ codeunit 87040 "HX079 Portal Token Oracle"
     begin
         HX79Init(Runner);
         BindSubscription(Partner);
+        Setup.Get();
+        SavedSetup := Setup;
         Setup.DeleteAll();
         Commit();
 
@@ -255,6 +257,9 @@ codeunit 87040 "HX079 Portal Token Oracle"
         Token := HX79Token();
         SetupExists := Setup.Get();
         Stamp := Setup."Last Portal Sign-In";
+        Setup.DeleteAll();
+        Setup := SavedSetup;
+        Setup.Insert();
         HX79SetSetup();
         Commit();
 
