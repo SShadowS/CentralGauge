@@ -1,0 +1,24 @@
+v: 1
+partial_credit:
+  weights:
+    "86960/OneNumberPerCall": 1
+    "86960/NextNumberDirect": 1
+    "86960/FailedLeaseNumberReused": 1
+    "86960/CommittingPartnerFailureKeepsNothing": 1
+    "86960/CommittingPartnerInvoicesNormally": 1
+    "86960/NothingDueTakesNoNumber": 1
+    "86960/HandledLinesTakeNoNumber": 1
+    "86960/FailedCallerHandsNumberAgain": 1
+    "86960/NoSetupStartsAtOne": 1
+    "86960/NoSetupDirectStartsAtOne": 1
+    "86960/NumberWithoutSeparators": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70311, procedure: NextLeaseInvoiceNo, signature: '(): Code[20]', file: Leasing/src/LeaseInvoicing.Codeunit.al, perturb: "exit('');" }
+  tests:
+    - { codeunit: 86960, procedures: [OneNumberPerCall, FailedLeaseNumberReused, CommittingPartnerInvoicesNormally, NoSetupStartsAtOne] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
