@@ -1,0 +1,22 @@
+v: 1
+partial_credit:
+  weights:
+    "86920/DueLinesHandedOut": 1
+    "86920/InvoicedAndOtherLeasesExcluded": 1
+    "86920/CallerBufferReplaced": 1
+    "86920/UpToDateBoundaries": 1
+    "86920/GetDueLinesChangesNothing": 1
+    "86920/InvoiceDueLinesAsToday": 1
+    "86920/SecondRunInvoicesNothing": 1
+    "86920/MissingLeaseRaises": 1
+    "86920/HandledLinesStillMarked": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70311, procedure: GetDueLines, signature: '(ContractNo: Code[20]; UpToDate: Date; var DueLine: Record "CGR Lease Schedule Line" temporary): Integer', file: Leasing/src/LeaseInvoicing.Codeunit.al, perturb: "exit(0);" }
+  tests:
+    - { codeunit: 86920, procedures: [InvoiceDueLinesAsToday, SecondRunInvoicesNothing, HandledLinesStillMarked] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
