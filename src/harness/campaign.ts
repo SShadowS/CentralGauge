@@ -245,6 +245,11 @@ export function nextAttempt(prior: ExecutionRecord[]): AttemptRef | null {
     attempt: tail.attempt + 1,
     runKind: "auto_retry",
     retryOf: tail.id,
+    // H-15: a chain run past an ignored reset keeps its provenance, never
+    // across a newly hit limit (as in runCell).
+    ...(tail.usage_reset_ignored && tail.termination !== "usage_limited"
+      ? { usageResetIgnored: tail.usage_reset_ignored }
+      : {}),
   };
   const candidate: ExecutionRecord = {
     ...tail,

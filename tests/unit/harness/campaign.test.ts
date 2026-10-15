@@ -2141,3 +2141,60 @@ Deno.test("H-15 (Sol r1): the before-this-run boundary is taken before startup r
   // Nothing here ran past a reset recorded before this run.
   for (const e of es) assertEquals(e.usage_reset_ignored, undefined);
 });
+
+Deno.test("H-15 (Sol r2): an overridden retry interrupted, recovered and retried on resume keeps the provenance; a new limit does not pass it on", async () => {
+  const { t, reset, usage, ok } = await limited();
+  ok();
+  const behave = t.docker.behavior;
+  t.docker.behavior = (call, run) => {
+    t.docker.lingering.add(call.name);
+    return behave(call, run);
+  };
+  // The overridden retry's termination is not confirmed: its intent is kept.
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "limits",
+        opts({ ignoreUsageReset: "fresh account" }),
+        io(),
+      ),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  t.docker.behavior = behave;
+  // Resumed without the flag: recovery publishes it, its retry runs now.
+  await runCampaign(t.env, "limits", opts(), io());
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), [
+    "planned",
+    "auto_retry",
+    "auto_retry",
+  ]);
+  assert(es[1]!.termination !== "usage_limited", es[1]!.termination);
+  for (const e of es.slice(1)) {
+    assertEquals(e.usage_reset_ignored, {
+      reason: "fresh account",
+      reset_at: reset!,
+    });
+  }
+  // A chain whose overridden retry hit a new limit: its successor inherits nothing.
+  const { t: u, usage: usage2, tick } = await limited();
+  await runCampaign(
+    u.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  tick(48 * 3600_000);
+  await runCampaign(u.env, "limits", opts(), io());
+  const us = await usage2();
+  assertEquals(us.map((e) => e.termination), [
+    "usage_limited",
+    "usage_limited",
+    "usage_limited",
+  ]);
+  assertEquals(us[1]!.usage_reset_ignored?.reason, "fresh account");
+  assertEquals(us[2]!.usage_reset_ignored, undefined);
+});
