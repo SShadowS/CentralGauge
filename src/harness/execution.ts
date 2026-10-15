@@ -22,7 +22,7 @@ import type {
   RunKind,
 } from "./records.ts";
 import type { QualifyManifest } from "./qualify.ts";
-import type { LoadedTask } from "./task.ts";
+import { type LoadedTask, loadTask } from "./task.ts";
 import {
   ConfigurationError,
   ContainerError,
@@ -156,6 +156,14 @@ export interface HarnessEnv {
   privateRoot: string;
   store: RecordStore;
   lane: BcLane;
+  /** H-09: the judges' lane (--judge-containers, disjoint from the agents'); unset: judges use `lane`. */
+  judgeLane?: BcLane;
+  /**
+   * H-09: where a published execution that would be judged inline goes
+   * instead (the campaign's judge queue, `harness cell --defer-judging`);
+   * unset: judged inline, as before.
+   */
+  judgeLater?: (cell: CellRef, e: ExecutionRecord) => void;
   backend: Backend;
   backendUrl: string;
   docker: DockerCli;
@@ -1194,6 +1202,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     workspace_redactions: frozen?.redactions ?? 0,
     pricing_book_at: f.pricing.at,
     pristine_hash: f.pristineHash,
+    // H-09: the oracle this run is judged on; a deferred judgment must match it.
+    oracle_hash: f.cell.oracleHash,
     freeze_violations: frozen?.violations ?? [],
     ...(f.stub
       ? { stub_provider: { scenario_sha256: f.stub.scenario_sha256 } }
@@ -1319,10 +1329,12 @@ async function publishDraft(
   const judged = (await env.store.judgments(e.id)).some((j) =>
     j.scorer_fingerprint === fp
   );
-  if (
-    policy.judge && mode === "normal" && e.workspace_hash !== null &&
-    !judged && taskUnchanged
-  ) {
+  const due = policy.judge && mode === "normal" && e.workspace_hash !== null &&
+    !judged && taskUnchanged;
+  if (due && env.judgeLater) {
+    // H-09: the slot frees now; the judge restages (judgeDeferred).
+    env.judgeLater(cell, e);
+  } else if (due) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
     hold();
     try {
@@ -2495,6 +2507,77 @@ export async function rejudgeExecution(
       (await stage(env, cell, out)).pristine,
       oracleHash,
       forced,
+    );
+  } finally {
+    await Deno.remove(out, { recursive: true }).catch(() => {});
+  }
+}
+
+/**
+ * H-09: judge a published execution whose judging was deferred, on the judge
+ * lane. The task is restaged and must hash to the pristine tree the agent ran
+ * on (its published sandbox.json), so the judgment equals the inline one.
+ */
+export async function judgeDeferred(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+): Promise<JudgmentRecord> {
+  const refuse = (why: string): never => {
+    throw new ConfigurationError(
+      `execution ${e.id}: ${why}; refusing to judge`,
+    );
+  };
+  const side = await readJson<
+    { pristine_hash?: unknown; oracle_hash?: unknown }
+  >(
+    join(env.resultsRoot, "runs", e.id, "sandbox.json"),
+  ).catch(() => null);
+  // The oracle the run was to be judged on.
+  if (side?.oracle_hash !== cell.oracleHash) {
+    refuse(
+      `the run recorded oracle ${
+        String(side?.oracle_hash ?? "none")
+      }, not ${cell.oracleHash}`,
+    );
+  }
+  const out = join(
+    env.privateRoot,
+    "work",
+    `judge-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    holdNamespace(env, "nothing copied");
+    // Run 002: a private snapshot of the task (a judgment may wait in the
+    // queue while the task is edited); it is validated against the cell's
+    // oracle and visible hashes, and it is all the judge reads.
+    const dir = join(out, "task", cell.task.task.id);
+    await safeCopyTree(cell.task.dir, dir);
+    const snap: CellRef = { ...cell, task: await loadTask(dir) };
+    const now = (await taskSetIdentity(env.repoRoot, [snap.task], env.symbols))
+      .tasks[0]!;
+    if (
+      now.oracle !== cell.oracleHash || now.visible !== cell.taskVisibleHash
+    ) {
+      refuse(
+        `task ${cell.task.task.id} changed since the run (oracle or files)`,
+      );
+    }
+    holdNamespace(env, "nothing staged");
+    const { pristine } = await stage(env, snap, join(out, "stage"));
+    const hash = await hashTree(pristine, "task");
+    if (side?.pristine_hash !== hash) {
+      refuse(
+        `the restaged task (pristine ${hash}) is not the one the agent ran on (${
+          String(side?.pristine_hash ?? "no pristine_hash")
+        })`,
+      );
+    }
+    return await judgeExecution(
+      { ...env, lane: env.judgeLane ?? env.lane },
+      snap,
+      e,
+      pristine,
     );
   } finally {
     await Deno.remove(out, { recursive: true }).catch(() => {});
