@@ -1,0 +1,18 @@
+id: HX-089
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Reporting, Leasing, Test]
+coupling: [queries, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, InvoiceAmountUsesSetupPrecision] }
+  - { codeunit: 80000, procedures: [LeaseRateUsesCoreInternal] }
+fail_to_pass: null
+mutants: [month-only, contract-not-grouped, window-end-exclusive, from-date-ignored, rows-appended, amount-rounded, contract-filter-ignored]
+contamination: null
+limits: { timeout_min: 30 }
