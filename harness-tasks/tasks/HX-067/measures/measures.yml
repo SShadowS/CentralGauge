@@ -18,3 +18,8 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/commit-per-vehicle: { partial_credit: 0.7692307692307693 }
+  naive/empty-first: { partial_credit: 0.7692307692307693 }
+  naive/plain-holder: { partial_credit: 0.6153846153846154 }
+  naive/share-handout: { partial_credit: 0.9230769230769231 }
+  naive/snapshot-basket: { partial_credit: 0.9230769230769231 }
