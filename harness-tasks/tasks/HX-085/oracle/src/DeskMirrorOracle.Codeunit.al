@@ -1,4 +1,4 @@
-// Every procedure switches both mirrors off through the old Stop procedures, each in its own runner call whose
+// Every procedure switches both mirrors off through the old Stop procedures and then CGR Desk Mirror, each in its own runner call whose
 // outcome is not asserted, at start and end (a SingleInstance binding and its flags outlive a procedure). Every
 // runner call commits first. The Is* answers are read through fresh local variables.
 codeunit 87160 "HX085 Desk Mirror Oracle"
@@ -19,12 +19,14 @@ codeunit 87160 "HX085 Desk Mirror Oracle"
         HX85Vehicle('HX085-1A');
 
         CheckoutMirror.StartCheckoutMirror();
+        CheckoutMirror.StartCheckoutMirror();
         HX85Rent('HX085-1A', true);
 
-        Assert.AreEqual(1, HX85Count('HX085-1A', 'mirrorCheckOut'), 'A checkout queues one mirrorCheckOut entry');
+        Assert.AreEqual(1, HX85Count('HX085-1A', 'mirrorCheckOut'), 'A checkout queues one mirrorCheckOut entry, also after starting twice');
         HX85AssertEntry('HX085-1A', 'mirrorCheckOut');
         Assert.AreEqual(0, HX85Count('HX085-1A', 'mirrorReturn'), 'The return mirror is off: no mirrorReturn entry');
         Assert.IsTrue(HX85CheckoutOn(), 'The checkout mirror is on');
+        Assert.IsTrue(HX85DeskCheckoutOn(), 'CGR Desk Mirror reports the checkout mirror on');
         Assert.IsFalse(HX85ReturnOn(), 'The return mirror is off');
         HX85MirrorsOff();
     end;
@@ -139,6 +141,7 @@ codeunit 87160 "HX085 Desk Mirror Oracle"
         Assert.IsTrue(Runner.Run(), StrSubstNo('Switching on twice and off when off raises no error: %1', GetLastErrorText()));
 
         Assert.IsTrue(HX85DeskCheckoutOn(), 'SetCheckoutMirror(true) switches the checkout mirror on');
+        Assert.IsTrue(HX85CheckoutOn(), 'CGR Checkout Mirror reports the mirror switched on through CGR Desk Mirror');
         Assert.IsFalse(HX85DeskReturnOn(), 'The return mirror stays off');
         HX85Rent('HX085-7G', true);
         Assert.AreEqual(1, HX85Count('HX085-7G', 'mirrorCheckOut'), 'One mirrorCheckOut entry after switching on twice');
@@ -224,6 +227,10 @@ codeunit 87160 "HX085 Desk Mirror Oracle"
         if HX85RunStep(Step::StopCheckout) then;
         Commit();
         if HX85RunStep(Step::StopReturn) then;
+        Commit();
+        if HX85RunStep(Step::CheckoutOff) then;
+        Commit();
+        if HX85RunStep(Step::ReturnOff) then;
         Commit();
     end;
 
