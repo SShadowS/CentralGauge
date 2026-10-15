@@ -157,6 +157,26 @@ export const EgressOverrideSchema = z.strictObject({
   reason: z.string().min(1),
 });
 export type EgressOverride = z.output<typeof EgressOverrideSchema>;
+/**
+ * H-13b (same decision, "Second gate"): the M8-07c campaign calibration gate
+ * was waived under that override. Only true, and only next to egress_override.
+ */
+const CalibrationWaived = z.literal(true).optional();
+const waiverNeedsOverride = (
+  r: {
+    calibration_waived?: true | undefined;
+    egress_override?: EgressOverride | undefined;
+  },
+  ctx: z.RefinementCtx,
+) => {
+  if (r.calibration_waived && !r.egress_override) {
+    ctx.addIssue({
+      code: "custom",
+      message: "calibration_waived needs egress_override",
+      path: ["calibration_waived"],
+    });
+  }
+};
 
 export const ExecutionRecordSchema = z.strictObject({
   /** 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed. */
@@ -204,7 +224,10 @@ export const ExecutionRecordSchema = z.strictObject({
   workspace_hash: Sha256Hex.nullable(),
   /** H-13: present only when the run used the owner's egress override. */
   egress_override: EgressOverrideSchema.optional(),
+  /** H-13b: its campaign ran with the calibration gate waived. */
+  calibration_waived: CalibrationWaived,
 }).superRefine((e, ctx) => {
+  waiverNeedsOverride(e, ctx);
   if (e.v === 2 && e.validity.incomplete_observed === undefined) {
     ctx.addIssue({
       code: "custom",
@@ -406,7 +429,10 @@ export const CampaignRecordSchema = z.strictObject({
   }).optional(),
   /** H-13: created under the owner's egress override; a resume must match it. */
   egress_override: EgressOverrideSchema.optional(),
+  /** H-13b: created with the calibration gate waived; a resume must match it. */
+  calibration_waived: CalibrationWaived,
 }).superRefine((c, ctx) => {
+  waiverNeedsOverride(c, ctx);
   const issue = (message: string, path: (string | number)[]) =>
     ctx.addIssue({ code: "custom", message, path });
   if (c.experiment.contrasts && !c.preregistration) {

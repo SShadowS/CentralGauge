@@ -482,6 +482,35 @@ Deno.test("unconfirmed termination: nothing is frozen or published; recovery fin
   assertEquals((await t.env.store.judgments(e!.id))[0]!.verdict, "pass");
 });
 
+Deno.test("H-13b: recovery records the interrupted run's egress override and calibration waiver, whatever command recovers", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.behavior = async (call, io) => {
+    t.docker.lingering.add(call.name);
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  const waived = {
+    ...t.env,
+    unverifiedEgressReason: "P-01 pilot",
+    calibrationWaived: true,
+  };
+  await assertRejects(
+    () => runCell(waived, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  const [e] = await recoverInterrupted(t.env, loadTask);
+  assertEquals(e!.egress_override, {
+    egress_enforced: false,
+    reason: "P-01 pilot",
+  });
+  assertEquals(e!.calibration_waived, true);
+});
+
 // M5-08a: a sandbox that is not confirmed gone still holds its secrets mount
 // (EBUSY on the real host). The secrets dir must not be pulled from under it,
 // and that failure must never mask the fail-closed "termination not confirmed".

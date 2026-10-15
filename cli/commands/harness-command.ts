@@ -3105,7 +3105,7 @@ export function registerHarnessCommand(
     )
     .option(
       "--unverified-egress-ok <reason:string>",
-      "H-13, OWNER ONLY: run credential-bearing arms without verified egress enforcement; every record and the report carry egress_enforced: false and the reason",
+      "H-13, OWNER ONLY: run credential-bearing arms without verified egress enforcement; every record and the report carry egress_enforced: false and the reason. H-13b: also waives the M8-07c campaign calibration gate (recorded as calibration_waived), never the BUILTIN_INVENTORY qualification",
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => void await harnessRun(experiment, runOpts(opts), open))

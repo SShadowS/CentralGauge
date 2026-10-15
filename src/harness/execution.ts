@@ -193,6 +193,11 @@ export interface HarnessEnv {
    */
   unverifiedEgressReason?: string;
   /**
+   * H-13b: set by runCampaign when that override waived the M8-07c campaign
+   * calibration gate; every record carries calibration_waived.
+   */
+  calibrationWaived?: boolean;
+  /**
    * OAuth host record mode (M1-34 Step 11): the supervised Claude Code cell
    * in the qualified state whose proxy allows any DNS name on 443 and whose
    * allowed CONNECT hosts become harness/egress/recorded-hosts.json.
@@ -403,6 +408,8 @@ interface Intent {
   namespace?: string;
   /** H-13: the run's egress override; recovery records it whatever command recovers. */
   egress_override?: EgressOverride;
+  /** H-13b: likewise its calibration waiver. */
+  calibration_waived?: true;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -1375,6 +1382,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
         },
       }
       : {}),
+    ...(env.calibrationWaived ? { calibration_waived: true } : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -1655,6 +1663,7 @@ export async function runExecution(
         },
       }
       : {}),
+    ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -3193,7 +3202,11 @@ export async function recoverInterrupted(
     }
     const id = intent.execution_id;
     // Publish into the store of the command that started the attempt, whatever command recovers it.
-    const { unverifiedEgressReason: _override, ...baseEnv } = env;
+    const {
+      unverifiedEgressReason: _override,
+      calibrationWaived: _waived,
+      ...baseEnv
+    } = env;
     const own: HarnessEnv = {
       ...baseEnv,
       resultsRoot: intent.results_root,
@@ -3201,6 +3214,7 @@ export async function recoverInterrupted(
       ...(intent.egress_override
         ? { unverifiedEgressReason: intent.egress_override.reason }
         : {}),
+      ...(intent.calibration_waived ? { calibrationWaived: true } : {}),
     };
     if (intent.phase === "published") {
       hold();
