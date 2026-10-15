@@ -969,7 +969,11 @@ export function streamProblems(raw: unknown): string[] {
  * (`error_max_budget_usd`, stop_reason tool_use) leaves in-flight tool calls
  * without a result. Those `tool_use <id> has no result` problems alone, every
  * orphan in the last assistant message of its agent (parent_tool_use_id; null
- * = main), with an exact usage reconciliation, do not make the cost unprovable.
+ * = main, compared by a non-empty message.id on both records), with an exact
+ * usage reconciliation, do not make the cost unprovable. If any orphan is an
+ * Agent/Task spawn (its tool_use name), a child's usage may be missing, so the
+ * reconciliation must be `exact_otel`, or `exact` beside raw_usage.otel
+ * `exact` (the label stays `exact` when stream and OTel agree).
  * Anything else (other problem, odd stream, other reconciliation) fails closed.
  */
 export function budgetCutOrphansExempt(
@@ -1014,22 +1018,34 @@ export function budgetCutOrphansExempt(
   const end = results[0]!;
   if ((recs[end] as Rec).subtype !== "error_max_budget_usd") return false;
   const agent = (r: Rec) => String(r.parent_tool_use_id ?? "");
+  type Block = { type?: unknown; id?: unknown; name?: unknown };
+  const blocks = (r: Rec) =>
+    Array.isArray(r.message?.content) ? r.message.content as Block[] : [];
   const holds = (r: Rec, id: string) =>
-    Array.isArray(r.message?.content) &&
-    (r.message.content as { type?: unknown; id?: unknown }[]).some((c) =>
-      c?.type === "tool_use" && c.id === id
-    );
-  return orphans.every((id) => {
+    blocks(r).some((c) => c?.type === "tool_use" && c.id === id);
+  const mid = (r: Rec) => r.message?.id;
+  const hasId = (r: Rec) => typeof mid(r) === "string" && mid(r) !== "";
+  let spawn = false;
+  const kept = orphans.every((id) => {
     const at = recs.flatMap((r, i) =>
       r.type === "assistant" && holds(r, id) ? [i] : []
     );
     if (at.length !== 1 || at[0]! > end) return false;
     const rec = recs[at[0]!]!;
-    return recs.slice(at[0]! + 1, end).every((r) =>
-      r.type !== "assistant" || agent(r) !== agent(rec) ||
-      r.message?.id === rec.message?.id
-    );
+    const name = blocks(rec).find((c) => c?.id === id)?.name;
+    if (name === "Agent" || name === "Task") spawn = true;
+    // Message identity fails closed: an id-less record cannot be compared.
+    return hasId(rec) &&
+      recs.slice(at[0]! + 1, end).every((r) =>
+        r.type !== "assistant" || agent(r) !== agent(rec) ||
+        (hasId(r) && mid(r) === mid(rec))
+      );
   });
+  // A spawn orphan may stand for a child whose usage never arrived: only the
+  // independent OTel request count proves it complete.
+  const otel = (rawUsage as { otel?: { status?: unknown } } | null)?.otel
+    ?.status;
+  return kept && (!spawn || status === "exact_otel" || otel === "exact");
 }
 
 /** Backend host log, tolerant of a line cut by a crash: bad lines are counted, never fatal. */
