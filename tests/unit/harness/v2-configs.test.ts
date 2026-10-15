@@ -219,3 +219,33 @@ Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest 
     }
   }
 });
+
+/**
+ * H-10 (gate-3 ruling 2026-10-15): the real nested proof runs on the realistic
+ * arm with no probe-m9 instructions, on the H-10 dev image. It is
+ * cc-v2-probe-realistic with only id, harness_version "latest" and
+ * image_revision 3-dev-H-10 changed; max_budget_usd stays 5.
+ */
+Deno.test("H-10 realistic probe: cc-v2-probe-realistic with id, latest and 3-dev-H-10 only; budget 5; never in an experiment", async () => {
+  const id = "cc-v2-probe-h10-realistic";
+  const c = await loadConfig("harness", id);
+  const src = await loadConfig("harness", "cc-v2-probe-realistic");
+  assertEquals(c, {
+    ...src,
+    id,
+    harness_version: "latest",
+    image_revision: "3-dev-H-10",
+  });
+  assertEquals(c.limits.max_budget_usd, 5);
+  assertEquals(c.components.instructions, "bundles/realistic/instructions");
+  const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
+    .split(/\r?\n/)[0];
+  assertEquals(
+    first,
+    "# H-10 OTel spike config (developmental). Never part of an experiment.",
+  );
+  for await (const e of Deno.readDir("harness/experiments")) {
+    const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
+    assert(!text.includes(id), `${e.name} names ${id}`);
+  }
+});

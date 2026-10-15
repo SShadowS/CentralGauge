@@ -1,0 +1,7 @@
+{"steps":[
+ {"content":[{"type":"tool_use","id":"toolu_a1","name":"Agent","input":{"description":"child","subagent_type":"general-purpose","prompt":"spawn a grandchild"}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"output_tokens":21,"cache_read_input_tokens":101,"cache_creation_input_tokens":1001}},
+ {"content":[{"type":"tool_use","id":"toolu_b1","name":"Agent","input":{"description":"grandchild","subagent_type":"general-purpose","prompt":"say hi"}}],"stop_reason":"tool_use","usage":{"input_tokens":12,"output_tokens":22,"cache_read_input_tokens":102,"cache_creation_input_tokens":1002}},
+ {"content":[{"type":"text","text":"hi from grandchild"}],"stop_reason":"end_turn","usage":{"input_tokens":13,"output_tokens":23,"cache_read_input_tokens":103,"cache_creation_input_tokens":1003}},
+ {"content":[{"type":"text","text":"child done"}],"stop_reason":"end_turn","usage":{"input_tokens":14,"output_tokens":24,"cache_read_input_tokens":104,"cache_creation_input_tokens":1004}},
+ {"content":[{"type":"text","text":"main done"}],"stop_reason":"end_turn","usage":{"input_tokens":15,"output_tokens":25,"cache_read_input_tokens":105,"cache_creation_input_tokens":1005}}
+],"after":"end_turn"}
