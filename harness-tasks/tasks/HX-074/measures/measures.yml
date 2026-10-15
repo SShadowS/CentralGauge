@@ -23,3 +23,7 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/check-before-get: { partial_credit: 0.9166666666666666 }
+  naive/check-before-status: { partial_credit: 0.8333333333333334 }
+  naive/fields-check: { partial_credit: 0.5833333333333334 }
+  naive/swap-keeps-fields: { partial_credit: 0.9166666666666666 }
