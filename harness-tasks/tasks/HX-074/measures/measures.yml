@@ -1,0 +1,24 @@
+v: 1
+partial_credit:
+  weights:
+    "86940/FreeVehicleAvailable": 1
+    "86940/BlockedVehicleNotAvailable": 1
+    "86940/UnknownVehicleNotAvailable": 1
+    "86940/SwapRefusedWhenRentalsStopped": 1
+    "86940/SwapAcceptsLentBlockedVehicle": 1
+    "86940/SwapRefusedByPartner": 1
+    "86940/SwapUnknownVehicleNotFound": 1
+    "86940/SwapOpenContractStatusFirst": 1
+    "86940/SwapBlockedVehicleRefused": 1
+    "86940/CheckOutBlockedRefused": 1
+    "86940/CheckOutLentBlockedVehicle": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70200, procedure: CheckVehicleAvailable, signature: '(VehicleNo: Code[20])', file: Rental/src/RentalMgt.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 86940, procedures: [SwapRefusedWhenRentalsStopped, SwapRefusedByPartner, SwapBlockedVehicleRefused, CheckOutBlockedRefused] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
