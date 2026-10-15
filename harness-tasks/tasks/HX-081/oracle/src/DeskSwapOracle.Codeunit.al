@@ -1,6 +1,6 @@
 // Every procedure drops a last swap left by an earlier procedure before it starts and drops its own afterwards
-// (single-instance state outlives a procedure); ForgetLastSwap runs through the runner there and its outcome is not
-// asserted. Every runner call commits first. LastSwapContract is read through a fresh variable.
+// (single-instance state outlives a procedure); at the end it first undoes any last swap, then forgets it, both
+// through the runner with their outcome not asserted. Every runner call commits first. LastSwapContract is read through a fresh variable.
 codeunit 87080 "HX081 Desk Swap Oracle"
 {
     Subtype = Test;
@@ -254,19 +254,26 @@ codeunit 87080 "HX081 Desk Swap Oracle"
     procedure PlainSwapNotRemembered()
     var
         Partner: Codeunit "HX081 Swap Partner";
+        Swap1: Codeunit "CGR Desk Swap";
         RentalMgt: Codeunit "CGR Rental Mgt";
         ContractNo: Code[20];
+        ContractD: Code[20];
     begin
         HX81Prepare();
         HX81Vehicle('HX081-11A', 1000);
         HX81Vehicle('HX081-11B', 2500);
+        HX81Vehicle('HX081-11E', 3000);
+        HX81Vehicle('HX081-11F', 3500);
         ContractNo := HX81RentedContract('HX081-11A');
+        ContractD := HX81RentedContract('HX081-11E');
+        Swap1.SwapAtDesk(ContractD, 'HX081-11F');
+        Assert.AreEqual(ContractD, HX81LastContract(), 'Precondition: the desk swap of D is the last swap');
         BindSubscription(Partner);
 
         RentalMgt.SwapVehicle(ContractNo, 'HX081-11B');
 
         Assert.AreEqual('HX081-11B', HX81VehicleOf(ContractNo), 'Precondition: SwapVehicle moved the contract');
-        Assert.AreEqual('', HX81LastContract(), 'A swap made with SwapVehicle is not a desk swap');
+        Assert.AreEqual(ContractD, HX81LastContract(), 'A swap made with SwapVehicle does not change the last swap');
         Assert.AreEqual(0, Partner.HX81Calls(), 'A swap made with SwapVehicle raises no OnAfterDeskSwap');
         UnbindSubscription(Partner);
         HX81Finish();
@@ -362,6 +369,7 @@ codeunit 87080 "HX081 Desk Swap Oracle"
 
     local procedure HX81Finish()
     begin
+        if HX81Undo() then;
         HX81Forget();
     end;
 
