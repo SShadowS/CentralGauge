@@ -2,14 +2,17 @@ v: 1
 partial_credit:
   weights:
     "86860/MidMonthStart": 1
-    "86860/FirstOfMonthFullRate": 1
     "86860/LastDayOfMonth": 1
     "86860/ShortFebruary": 1
     "86860/LeapFebruary": 1
     "86860/ThirtyDayMonth": 1
     "86860/OtherDurationAndBase": 1
-    "86860/MissingLeaseRaises": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "86860/FirstOfMonthFullRate"
+    - "86860/MissingLeaseRaises"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/daily-rate-rounded: { partial_credit: 0.16666666666666666 }
+  naive/excludes-start-day: { partial_credit: 0 }
+  naive/thirty-day-month: { partial_credit: 0.16666666666666666 }
