@@ -11,6 +11,7 @@ codeunit 87100 "HX082 Schedule Import Oracle"
     procedure NonAdjacentRepeatRefused()
     var
         Runner: Codeunit "HX082 Import Runner";
+        FiltersBefore: Text;
         Ok: Boolean;
     begin
         HX82Prepare();
@@ -19,6 +20,9 @@ codeunit 87100 "HX082 Schedule Import Oracle"
         Runner.HX82AddLine(10000, 20270301D, 110);
         Runner.HX82AddLine(20000, 20270401D, 120);
         Runner.HX82AddLine(30000, 20270301D, 130);
+        Runner.HX82SetAmountFilter(0, 200);
+        FiltersBefore := Runner.HX82HeldFilters();
+        Assert.AreNotEqual('', FiltersBefore, 'Precondition: the caller''s import lines carry an Amount filter');
 
         Commit();
         Ok := Runner.Run();
@@ -26,6 +30,10 @@ codeunit 87100 "HX082 Schedule Import Oracle"
         Assert.AreEqual(StrSubstNo(RepeatTxt, 30000, Format(20270301D, 0, 9), 10000), GetLastErrorText(), 'The refusal names the repeating line, the date and the earlier line');
         HX82AssertScheduleUnchanged('HX82-1');
         Assert.AreEqual(3, Runner.HX82HeldCount(), 'A refused import leaves the caller''s 3 import lines');
+        Assert.AreEqual(FiltersBefore, Runner.HX82HeldFilters(), 'A refused import leaves the caller''s filters on the import lines');
+        HX82AssertHeldLine(Runner, 10000, 20270301D, 110);
+        HX82AssertHeldLine(Runner, 20000, 20270401D, 120);
+        HX82AssertHeldLine(Runner, 30000, 20270301D, 130);
     end;
 
     [Test]
@@ -64,6 +72,28 @@ codeunit 87100 "HX082 Schedule Import Oracle"
         Ok := Runner.Run();
         Assert.IsFalse(Ok, 'An import with three lines on one due date is refused');
         Assert.AreEqual(StrSubstNo(RepeatTxt, 20000, Format(20270501D, 0, 9), 10000), GetLastErrorText(), 'The refusal names the first repeating line and the earliest line with that date');
+        HX82AssertScheduleUnchanged('HX82-3');
+    end;
+
+    [Test]
+    procedure InterleavedRepeatsFirstNamed()
+    var
+        Runner: Codeunit "HX082 Import Runner";
+        Ok: Boolean;
+    begin
+        HX82Prepare();
+        HX82InitLease('HX82-11');
+        Runner.HX82SetLease('HX82-11');
+        Runner.HX82AddLine(10000, 20270301D, 110);
+        Runner.HX82AddLine(20000, 20270401D, 120);
+        Runner.HX82AddLine(30000, 20270401D, 130);
+        Runner.HX82AddLine(40000, 20270301D, 140);
+
+        Commit();
+        Ok := Runner.Run();
+        Assert.IsFalse(Ok, 'An import with two repeated due dates is refused');
+        Assert.AreEqual(StrSubstNo(RepeatTxt, 30000, Format(20270401D, 0, 9), 20000), GetLastErrorText(), 'The refusal names the first repeating line in Line No. order (30000) and its earlier line (20000)');
+        HX82AssertScheduleUnchanged('HX82-11');
     end;
 
     [Test]
@@ -239,6 +269,16 @@ codeunit 87100 "HX082 Schedule Import Oracle"
         Assert.AreEqual(DueDate, ScheduleLine."Due Date", StrSubstNo('Due date of schedule line %1 of %2', LineNo, LeaseNo));
         Assert.AreEqual(LineAmount, ScheduleLine.Amount, StrSubstNo('Amount of schedule line %1 of %2', LineNo, LeaseNo));
         Assert.IsFalse(ScheduleLine.Invoiced, StrSubstNo('Schedule line %1 of %2 is not invoiced', LineNo, LeaseNo));
+    end;
+
+    local procedure HX82AssertHeldLine(var Runner: Codeunit "HX082 Import Runner"; LineNo: Integer; DueDate: Date; LineAmount: Decimal)
+    var
+        HeldDueDate: Date;
+        HeldAmount: Decimal;
+    begin
+        Assert.IsTrue(Runner.HX82HeldLine(LineNo, HeldDueDate, HeldAmount), StrSubstNo('The caller keeps import line %1', LineNo));
+        Assert.AreEqual(DueDate, HeldDueDate, StrSubstNo('The caller''s import line %1 keeps its due date', LineNo));
+        Assert.AreEqual(LineAmount, HeldAmount, StrSubstNo('The caller''s import line %1 keeps its amount', LineNo));
     end;
 
     local procedure HX82LineCount(LeaseNo: Code[20]): Integer

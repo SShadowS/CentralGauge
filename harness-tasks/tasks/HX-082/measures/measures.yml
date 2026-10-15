@@ -11,6 +11,7 @@ partial_credit:
     "87100/InvoicedLeaseRefused": 1
     "87100/MissingLeaseRaises": 1
     "87100/EmptyImportRefused": 1
+    "87100/InterleavedRepeatsFirstNamed": 1
   hidden_regressions: []
 reuse: null
 expect:

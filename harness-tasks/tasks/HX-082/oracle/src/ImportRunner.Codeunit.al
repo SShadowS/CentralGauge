@@ -38,6 +38,19 @@ codeunit 87101 "HX082 Import Runner"
         exit(AllLines.Count());
     end;
 
+    procedure HX82HeldLine(LineNo: Integer; var DueDate: Date; var LineAmount: Decimal): Boolean
+    var
+        AllLines: Record "CGR Schedule Import Line";
+    begin
+        AllLines.Copy(HeldLine, true);
+        AllLines.Reset();
+        if not AllLines.Get(LineNo) then
+            exit(false);
+        DueDate := AllLines."Due Date";
+        LineAmount := AllLines.Amount;
+        exit(true);
+    end;
+
     procedure HX82HeldFilters(): Text
     begin
         exit(HeldLine.GetFilters());
