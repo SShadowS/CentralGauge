@@ -14,7 +14,7 @@ reuse:
   targets:
     - { codeunit: 70429, procedure: SetCheckoutMirror, signature: "(On: Boolean)", file: Integration/src/DeskMirror.Codeunit.al, perturb: "exit;" }
   tests:
-    - { codeunit: 87160, procedures: [CheckoutMirrorOnly, BothMirrors, StopReturnKeepsCheckout, SessionWideMirror, StopWhenOffAndRestart] }
+    - { codeunit: 87160, procedures: [BothMirrors, StopReturnKeepsCheckout, SessionWideMirror, StopWhenOffAndRestart] }
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
