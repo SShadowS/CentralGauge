@@ -10,7 +10,7 @@ How the dispatch statistics must behave (`CGR Dispatch Statistics` in Core, proc
 
 - Every dispatch of an outbox entry is one attempt, whether the entry is dispatched by `DispatchEntry` directly or through `DispatchPending`. DispatchAttempts returns the number of attempts.
 - DispatchDelivered returns the number of attempts that were delivered.
-- DispatchFailures returns the number of attempts at which the entry became failed, that is, the attempt that reached the maximum number of attempts. An attempt that is not delivered while the entry stays pending is not a failure. Entries that are already failed are never dispatched again.
+- DispatchFailures returns the number of attempts at which the entry became failed, that is, the attempt that reached the maximum number of attempts. An attempt that is not delivered while the entry stays pending is not a failure. These rules do not cover dispatching an entry that is already failed.
 - The statistics belong to the session: every `CGR Dispatch Statistics` variable in the session returns the same numbers.
 - The statistics count what was attempted, also when the transaction that made the attempt fails after the dispatch.
 - ResetDispatchStatistics sets all three numbers to 0.
