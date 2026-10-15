@@ -110,6 +110,22 @@ $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Git\bin\bash.exe'
 $env:DISABLE_TELEMETRY = '1'
 $env:DISABLE_ERROR_REPORTING = '1'
 $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+# H-10: per-request usage (nested subagents included) as OTel api_request logs to
+# the backend only; content switches (OTEL_LOG_*) stay unset, metrics and traces off.
+if (-not [string]::IsNullOrEmpty($env:CG_BACKEND_URL)) {
+  $backendToken = (Get-Content 'C:\cg-secrets\backend-token' -Raw -Encoding UTF8).Trim()
+  $env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+  $env:OTEL_LOGS_EXPORTER = 'otlp'
+  $env:OTEL_METRICS_EXPORTER = 'none'
+  $env:OTEL_TRACES_EXPORTER = 'none'
+  $env:OTEL_EXPORTER_OTLP_LOGS_PROTOCOL = 'http/json'
+  $env:OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = "$($env:CG_BACKEND_URL.TrimEnd('/'))/v1/logs"
+  $env:OTEL_EXPORTER_OTLP_LOGS_HEADERS = "Authorization=Bearer $backendToken,x-cg-execution=$($env:CG_EXECUTION_ID)"
+  $env:OTEL_RESOURCE_ATTRIBUTES = "cg.execution_id=$($env:CG_EXECUTION_ID)"
+  $env:CLAUDE_CODE_OTEL_SHUTDOWN_TIMEOUT_MS = '10000'
+  $env:CLAUDE_CODE_OTEL_DIAG_STDERR = '1'
+  Remove-Variable backendToken
+}
 # Spec v2 gate 3: every subagent, built-in or bundled, runs on the arm's main model, the same id
 # as --model (M9-01 ruling 1: 2.1.282 ignores a pin to another model).
 $env:CLAUDE_CODE_SUBAGENT_MODEL = $cfg.settings.api_models.main

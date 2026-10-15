@@ -2082,3 +2082,47 @@ Deno.test("buildReport (H-07): web_excess cells keep their cost; unpriced web se
     "cost excludes 1 unpriced web search request(s): HX-002 r1 skills",
   );
 });
+
+Deno.test("buildReport (H-10): exact_otel cells count as exact and are listed; an otel_mismatch is disclosed, never silent", async () => {
+  const base = await records();
+  const raw: Record<
+    string,
+    (typeof base.executions)[number]["telemetry"]["raw_usage"]
+  > = {
+    "skills/HX-001": {
+      usage_reconciliation: {
+        status: "exact_otel",
+        stream: { status: "unreconciled", why: "x" },
+      },
+    },
+    "skills/HX-002": {
+      usage_reconciliation: { status: "exact" },
+      usage_problems: ["otel_mismatch: claude-sonnet-5 input otel 91 != 90"],
+    },
+    "plain/HX-001": { usage_reconciliation: { status: "exact" } },
+    "plain/HX-002": { usage_reconciliation: { status: "exact" } },
+  };
+  const executions = base.executions.map((e) => ({
+    ...e,
+    telemetry: { ...e.telemetry, raw_usage: raw[`${e.arm}/${e.task_id}`]! },
+  }));
+  const r = await buildReport({ ...base, executions }, { resamples: 50 });
+  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.exact, 2);
+  assertEquals(r.exploratory!.usage_reconciliation["skills"]!.unreconciled, 0);
+  assertEquals(r.exploratory!.exact_otel, [
+    { arm: "skills", task: "HX-001", repeat: 1 },
+  ]);
+  assertEquals(r.exploratory!.otel_mismatch, [{
+    arm: "skills",
+    task: "HX-002",
+    repeat: 1,
+    why: "otel_mismatch: claude-sonnet-5 input otel 91 != 90",
+  }]);
+  assertEquals(r.arms.find((a) => a.arm === "skills")!.total_spend_usd, 2);
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "exact_otel (cost from OTel): HX-001 r1 skills");
+  assertStringIncludes(
+    text,
+    "otel_mismatch: claude-sonnet-5 input otel 91 != 90: HX-002 r1 skills",
+  );
+});

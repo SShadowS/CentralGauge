@@ -48,12 +48,23 @@ const book = await loadPricingBook(
   new Date(at),
 );
 const raw = await read("raw.jsonl");
-const { trace, ...run } = parseClaudeStream(raw, {
-  rawLog: join(dir, "raw.jsonl"),
-  exitCode: exec.telemetry.exit_code,
-  pricing: book,
-  manifest: exec.manifest,
+// H-10: the published otel.jsonl; absent = OTel missing, never zero usage.
+const otel = await Deno.readTextFile(join(dir, "otel.jsonl")).catch((err) => {
+  if (err instanceof Deno.errors.NotFound) return null;
+  throw err;
 });
+const { trace, ...run } = parseClaudeStream(
+  raw,
+  {
+    rawLog: join(dir, "raw.jsonl"),
+    exitCode: exec.telemetry.exit_code,
+    pricing: book,
+    manifest: exec.manifest,
+    executionId: exec.id,
+  },
+  [],
+  otel,
+);
 const sha256 = async (s: string) =>
   [
     ...new Uint8Array(

@@ -101,6 +101,8 @@ export function reconciliationStatus(
       | null;
     const s = raw?.usage_reconciliation;
     if (s === undefined || s === null) return "absent";
+    // H-10: OTel-proven usage is gate 3 evidence like a stream-exact run.
+    if (s.status === "exact_otel") return "exact";
     return s.status === "exact" || s.status === "compaction_excess" ||
         s.status === "web_excess"
       ? s.status

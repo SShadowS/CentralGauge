@@ -220,6 +220,18 @@ export interface HarnessReport {
      */
     web_excess?: { arm: string; task: string; repeat: number }[];
     /**
+     * H-10: cells with an exact_otel attempt (counted as exact; the cost of
+     * that attempt comes from its OTel rows). Absent in reports before H-10.
+     */
+    exact_otel?: { arm: string; task: string; repeat: number }[];
+    /** H-10: every `otel_mismatch` usage problem of a cell's attempts (cost kept, stream-proven). */
+    otel_mismatch?: {
+      arm: string;
+      task: string;
+      repeat: number;
+      why: string;
+    }[];
+    /**
      * H-07: every terminal cell whose attempts report unpriced web search
      * requests (no catalog rate), whatever its reconciliation status: its cost
      * excludes them. Absent in reports written before H-07.
@@ -901,6 +913,27 @@ export async function buildReport(
       statusOf.get(`${c.arm}\u0000${c.task}\u0000${c.repeat}`) ===
         "web_excess"
     ).map((c) => ({ arm: c.arm, task: c.task, repeat: c.repeat })),
+    exact_otel: terminal.filter((c) =>
+      attemptsOf(c).some((e) =>
+        (e.telemetry.raw_usage as {
+          usage_reconciliation?: { status?: unknown };
+        } | null)?.usage_reconciliation?.status === "exact_otel"
+      )
+    ).map((c) => ({ arm: c.arm, task: c.task, repeat: c.repeat })),
+    otel_mismatch: terminal.flatMap((c) =>
+      attemptsOf(c).flatMap((e) => {
+        const p = (e.telemetry.raw_usage as { usage_problems?: unknown } | null)
+          ?.usage_problems;
+        return (Array.isArray(p) ? p : []).filter((x): x is string =>
+          typeof x === "string" && x.startsWith("otel_mismatch:")
+        ).map((why) => ({
+          arm: c.arm,
+          task: c.task,
+          repeat: c.repeat,
+          why,
+        }));
+      })
+    ),
     unpriced_web_searches: terminal.map((c) => ({
       arm: c.arm,
       task: c.task,
@@ -1402,6 +1435,14 @@ export function renderReport(r: HarnessReport): string {
     }
     for (const c of x.web_excess ?? []) {
       out.push(`    web_excess (cost kept): ${c.task} r${c.repeat} ${c.arm}`);
+    }
+    for (const c of x.exact_otel ?? []) {
+      out.push(
+        `    exact_otel (cost from OTel): ${c.task} r${c.repeat} ${c.arm}`,
+      );
+    }
+    for (const c of x.otel_mismatch ?? []) {
+      out.push(`    ${c.why}: ${c.task} r${c.repeat} ${c.arm}`);
     }
     for (const c of x.unpriced_web_searches ?? []) {
       out.push(

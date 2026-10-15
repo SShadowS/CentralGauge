@@ -85,6 +85,7 @@ async function grantFor(
   root: string,
   exec: string,
   hostLog: string,
+  otelLog?: string,
 ): Promise<string> {
   const ws = await workspace(root, exec);
   const g: BackendGrant = {
@@ -104,6 +105,7 @@ async function grantFor(
     lock: { store: root, packages: [] },
     deploy: { ledgerRoot: root, trustedRoots: [ws] },
     hostLog,
+    ...(otelLog ? { otelLog } : {}),
   };
   return await b.grant(g, 60_000);
 }
@@ -1710,5 +1712,130 @@ Deno.test("backend (M11-02): a logger that throws inside the operation-error han
         "internal backend error; details are in the host log",
       );
     } else assertStringIncludes(body.infra, "SOAP timeout");
+  }
+});
+
+Deno.test("otel (H-10): /v1/logs needs the grant's bearer, is off without otelLog, and runs beside a busy compile", async () => {
+  const s = await setup();
+  const EXEC_C = "00000000-0000-4000-8000-00000000e003";
+  const otelLog = join(s.root, "otel-c.jsonl");
+  const tokenC = await grantFor(
+    s.backend,
+    s.root,
+    EXEC_C,
+    join(s.root, "host-log-c.jsonl"),
+    otelLog,
+  );
+  const body = await Deno.readTextFile(
+    "tests/fixtures/harness/otel-nested-stub.json",
+  );
+  const logs = (token: string | null, exec = EXEC_C) =>
+    s.backend.handle(req("/v1/logs", token, body, exec));
+  assertEquals((await logs(null)).status, 401);
+  assertEquals((await logs(s.tokenA)).status, 401, "another execution's token");
+  assertEquals((await logs(s.tokenA, EXEC_A)).status, 404, "no otelLog: off");
+  let open!: () => void;
+  s.gate.wait = new Promise<void>((r) => (open = r));
+  const busy = s.backend.handle(
+    req("/v1/compile", tokenC, '{"apps":["Core"]}', EXEC_C),
+  );
+  await s.entered;
+  const r = await logs(tokenC);
+  assertEquals(r.status, 200, "no one-request lock on the exporter");
+  assertEquals(await r.json(), {});
+  open();
+  assertEquals((await busy).status, 200);
+  const rows = (await Deno.readTextFile(otelLog)).trim().split("\n").map((l) =>
+    JSON.parse(l)
+  );
+  assertEquals(rows.length, 5);
+  assertEquals(rows[0].received_for, EXEC_C);
+  assertEquals(
+    (await s.backend.handle(req("/v1/logs", tokenC, "{", EXEC_C))).status,
+    400,
+  );
+});
+
+Deno.test("otel (H-10 r2): revoke drains an admitted /v1/logs POST; the late body is refused and appends nothing; after revoke it is 401", async () => {
+  const s = await setup({ revokeGraceMs: 60_000 });
+  const EXEC_C = "00000000-0000-4000-8000-00000000e003";
+  const otelLog = join(s.root, "otel-c.jsonl");
+  const tokenC = await grantFor(
+    s.backend,
+    s.root,
+    EXEC_C,
+    join(s.root, "host-log-c.jsonl"),
+    otelLog,
+  );
+  const text = await Deno.readTextFile(
+    "tests/fixtures/harness/otel-nested-stub.json",
+  );
+  let reading!: () => void;
+  const started = new Promise<void>((r) => (reading = r));
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctrl = c;
+    },
+    pull() {
+      reading();
+    },
+  }, { highWaterMark: 0 });
+  const post = s.backend.handle(req("/v1/logs", tokenC, body, EXEC_C));
+  await started; // admitted, now reading its body
+  let revoked = false;
+  const rv = s.backend.revoke(EXEC_C).then((v) => {
+    revoked = true;
+    return v;
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert(!revoked, "revoke waits for the admitted OTel request");
+  ctrl.enqueue(new TextEncoder().encode(text));
+  ctrl.close();
+  assertEquals((await post).status, 401, "body read after revoke: refused");
+  assertEquals(await rv, true);
+  const appended = await Deno.readTextFile(otelLog).catch(() => "");
+  assertEquals(appended, "", "nothing appended");
+  assertEquals(
+    (await s.backend.handle(req("/v1/logs", tokenC, text, EXEC_C))).status,
+    401,
+  );
+});
+
+Deno.test("otel (H-10 r3): a request body that errors mid-read leaves no unhandled rejection and a later revoke still drains", async () => {
+  const s = await setup({ revokeGraceMs: 60_000 });
+  const EXEC_C = "00000000-0000-4000-8000-00000000e003";
+  const tokenC = await grantFor(
+    s.backend,
+    s.root,
+    EXEC_C,
+    join(s.root, "host-log-c.jsonl"),
+    join(s.root, "otel-c.jsonl"),
+  );
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: PromiseRejectionEvent) => {
+    e.preventDefault();
+    unhandled.push(e.reason);
+  };
+  globalThis.addEventListener("unhandledrejection", onUnhandled);
+  try {
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        c.error(new Error("exporter disconnected"));
+      },
+    }, { highWaterMark: 0 });
+    let outcome = "";
+    try {
+      const r = await s.backend.handle(req("/v1/logs", tokenC, body, EXEC_C));
+      outcome = String(r.status);
+    } catch {
+      outcome = "threw";
+    }
+    assert(outcome !== "", "the request settled");
+    await new Promise((r) => setTimeout(r, 50));
+    assertEquals(unhandled, [], "no unhandled rejection");
+    assertEquals(await s.backend.revoke(EXEC_C), true);
+  } finally {
+    globalThis.removeEventListener("unhandledrejection", onUnhandled);
   }
 });
