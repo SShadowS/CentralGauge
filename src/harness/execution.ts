@@ -376,6 +376,8 @@ export interface AttemptRef {
   attempt: number;
   runKind: RunKind;
   retryOf: string | null;
+  /** H-15: the parent's recorded reset this auto retry ran before (owner override). */
+  usageResetIgnored?: { reason: string; reset_at: string };
 }
 
 interface Intent {
@@ -1383,6 +1385,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       }
       : {}),
     ...(env.calibrationWaived ? { calibration_waived: true } : {}),
+    ...(f.at.usageResetIgnored
+      ? { usage_reset_ignored: f.at.usageResetIgnored }
+      : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -2999,6 +3004,10 @@ export async function runCell(
       attempt: e.attempt + 1,
       runKind: "auto_retry",
       retryOf: e.id,
+      // H-15: a retry chained here still runs under the ignored reset.
+      ...(at.usageResetIgnored
+        ? { usageResetIgnored: at.usageResetIgnored }
+        : {}),
     };
     const candidate = {
       ...e,
