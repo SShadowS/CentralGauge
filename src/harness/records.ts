@@ -147,6 +147,17 @@ export const ValiditySchema = z.strictObject({
   path: ["incomplete_observed"],
 });
 
+/**
+ * H-13 (decisions/2026-10-15-p-01-egress-override.md): the record was written
+ * by a run under the owner's `harness run --unverified-egress-ok <reason>`:
+ * sandbox egress was NOT enforced. Absent: a normal run.
+ */
+export const EgressOverrideSchema = z.strictObject({
+  egress_enforced: z.literal(false),
+  reason: z.string().min(1),
+});
+export type EgressOverride = z.output<typeof EgressOverrideSchema>;
+
 export const ExecutionRecordSchema = z.strictObject({
   /** 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed. */
   v: z.union([z.literal(1), z.literal(2)]),
@@ -191,6 +202,8 @@ export const ExecutionRecordSchema = z.strictObject({
   container_assignments: z.array(z.string()),
   /** Hash of the frozen workspace; null when nothing was frozen. */
   workspace_hash: Sha256Hex.nullable(),
+  /** H-13: present only when the run used the owner's egress override. */
+  egress_override: EgressOverrideSchema.optional(),
 }).superRefine((e, ctx) => {
   if (e.v === 2 && e.validity.incomplete_observed === undefined) {
     ctx.addIssue({
@@ -391,6 +404,8 @@ export const CampaignRecordSchema = z.strictObject({
     decision_sha256: Sha256Hex,
     stage_b_decision_sha256: Sha256Hex,
   }).optional(),
+  /** H-13: created under the owner's egress override; a resume must match it. */
+  egress_override: EgressOverrideSchema.optional(),
 }).superRefine((c, ctx) => {
   const issue = (message: string, path: (string | number)[]) =>
     ctx.addIssue({ code: "custom", message, path });

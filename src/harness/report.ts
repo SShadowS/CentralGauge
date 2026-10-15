@@ -107,6 +107,8 @@ export type ReportedMetric = PrimaryMetric | "pass_k";
 
 export interface HarnessReport {
   v: 1;
+  /** H-13: present when the campaign or any execution ran under --unverified-egress-ok. */
+  egress_override?: { egress_enforced: false; reasons: string[] };
   experiment: {
     id: string;
     hypothesis: string;
@@ -631,6 +633,14 @@ export async function buildReport(
       .map((e) => [e.id, e.arm]),
   );
   const invalidTraces = opts.traces?.invalid ?? [];
+  // H-13: every egress override reason of the campaign and its executions.
+  const overrideReasons = [
+    ...new Set(
+      [campaign, ...records.executions].flatMap((x) =>
+        x.egress_override ? [x.egress_override.reason] : []
+      ),
+    ),
+  ];
   const knownSpend = (cs: CellRecord[]) =>
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
@@ -1062,6 +1072,14 @@ export async function buildReport(
       : {}),
     cells,
     exploratory,
+    ...(overrideReasons.length > 0
+      ? {
+        egress_override: {
+          egress_enforced: false as const,
+          reasons: overrideReasons,
+        },
+      }
+      : {}),
   };
 }
 
@@ -1102,6 +1120,13 @@ export function renderReport(r: HarnessReport): string {
     r.metric_labels[m] === "primary" ? "" : colors.dim(" [exploratory]");
   const h = (s: string) => out.push("", colors.bold(s));
   out.push(colors.bold(`Harness report: ${r.experiment.id}`));
+  if (r.egress_override) {
+    out.push(colors.red(
+      `[WARN] egress NOT enforced (owner override): ${
+        r.egress_override.reasons.join("; ")
+      }`,
+    ));
+  }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
     ? r.confirmatory
     : undefined;

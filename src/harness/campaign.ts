@@ -288,7 +288,10 @@ export type PlanEnv =
     | "symbols"
     | "egressEnforced"
   >
-  & Pick<Partial<HarnessEnv>, "now" | "proxyIsolation">
+  & Pick<
+    Partial<HarnessEnv>,
+    "now" | "proxyIsolation" | "unverifiedEgressReason"
+  >
   & {
     /**
      * The verified marker places sandboxes (a plan env has no egress runtime
@@ -718,7 +721,25 @@ export async function runCampaign(
   // not exist; a credential-bearing arm needs verified enforcement.
   const bearing = configs.filter((c) => adapterFor(c.harness).credentialBearing)
     .map((c) => c.id);
-  if (bearing.length > 0 && !env.egressEnforced) {
+  // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
+  const override = env.unverifiedEgressReason;
+  if (override !== undefined) {
+    if (override.trim() === "") {
+      throw new ConfigurationError(
+        "--unverified-egress-ok needs a non-empty reason",
+      );
+    }
+    if (env.egressEnforced) {
+      throw new ConfigurationError(
+        "--unverified-egress-ok is refused: egress IS enforced (authorized marker); run without it",
+      );
+    }
+    env = { ...env, unverifiedEgressReason: override.trim() };
+    io.log(
+      `[WARN] egress NOT enforced (owner override --unverified-egress-ok): ${override.trim()}`,
+    );
+  }
+  if (bearing.length > 0 && !env.egressEnforced && !override) {
     throw new ConfigurationError(
       `${
         bearing.join(", ")
@@ -871,6 +892,14 @@ export async function runCampaign(
         seed,
       ),
       ...(preregistration ? { preregistration } : {}),
+      ...(override
+        ? {
+          egress_override: {
+            egress_enforced: false,
+            reason: override.trim(),
+          },
+        }
+        : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -884,6 +913,14 @@ export async function runCampaign(
       created = true;
     }
   } else {
+    // H-13: a resume keeps the campaign's egress override state and reason, either way.
+    if (c.egress_override?.reason !== override?.trim()) {
+      throw new ConfigurationError(
+        c.egress_override
+          ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag and that reason`
+          : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
+      );
+    }
     if (c.preregistration) {
       const v = await verify();
       const p = c.preregistration;
