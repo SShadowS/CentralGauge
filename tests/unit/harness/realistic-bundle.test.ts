@@ -3,6 +3,8 @@ import { walk } from "@std/fs";
 import { dirname, join, relative } from "@std/path";
 import { parse } from "@std/yaml";
 import { claudeCodeHarnessNative } from "../../../src/harness/adapters/claude-code.ts";
+import { loadConfig } from "../../../src/harness/config.ts";
+import { resolveManifest } from "../../../src/harness/manifest.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 
 /** Spec v2 section 4: the realistic bundle, linted for shape and for leakage. */
@@ -247,5 +249,34 @@ Deno.test("al-compile skill states cg-al's usage line exactly", async () => {
   assert(
     (await Deno.readTextFile(join(BUNDLE, "skills", "al-compile", "SKILL.md")))
       .includes(usage),
+  );
+});
+
+/** M9-12 lock (spec v2 section 3 item 5): the audited bundle, fixed before any pilot outcome. */
+const LOCK = {
+  instructions:
+    "c6f96c3a722105dc229d39adf32ecb00641e8cb9198272c1106a05aa7b524117",
+  skills: "d88835f4aaf520ea53b31b51e2beca0bc7168298ddf01ebb3acc0802bb4ac6c1",
+  agents: "2c1c2159206aac39261539ae10e650917742312518e60f6de57f5fd91aebac4c",
+};
+
+Deno.test("realistic bundle: hashes equal the pre-screening lock", async () => {
+  const config = await loadConfig("harness", "cc-v2-realistic");
+  const m = await resolveManifest("harness", config, {
+    native_settings: {},
+    image: { digest: "sha256:img", base_digest: "sha256:base" },
+    backend_version: "b",
+    servers: { "al-tools": { version: "1", tool_schema_hash: "h" } },
+    provider_routes: { main: "anthropic" },
+    // H-03: the config pins "latest", so the resolver needs the version that runs; it does not enter the bundle hashes.
+    harness_version: "2.1.282",
+  });
+  assertEquals(
+    {
+      instructions: m.instructions!.hash,
+      skills: m.skills!.hash,
+      agents: m.agents!.hash,
+    },
+    LOCK,
   );
 });
