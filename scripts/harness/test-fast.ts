@@ -50,7 +50,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}egress-proxy.test.ts`]: c(true, 2),
   [`${H}egress.test.ts`]: c(true, 1),
   [`${H}estimate.test.ts`]: c(true, 0),
-  [`${H}execution.test.ts`]: c(true, 413),
+  [`${H}execution.test.ts`]: c(true, 233),
   [`${H}extracted-tests.test.ts`]: c(true, 2),
   [`${H}final-code.test.ts`]: c(true, 0),
   [`${H}freeze-archive.test.ts`]: c(true, 2),
@@ -201,7 +201,7 @@ async function main() {
     string: ["jobs", "log-dir"],
     boolean: ["dry-run"],
   });
-  const jobs = Number(args.jobs ?? 4);
+  const jobs = Number(args.jobs ?? 5);
   if (!Number.isInteger(jobs) || jobs < 1) {
     throw new Error(`--jobs must be a positive integer, got ${args.jobs}`);
   }

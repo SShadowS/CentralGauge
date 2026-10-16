@@ -5000,6 +5000,9 @@ Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is ref
 Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it captures the qualification evidence)", async () => {
   const t = await makeEnv();
   await stubEnv(t);
+  // T-03: the r3 image's run.ps1 prints its inventory before the ready wait;
+  // without it the cell sat out the 180 s inventory deadline and was refused.
+  t.docker.preReady = { lines: [INV()] };
   const e = (await runCell(t.env, await unqualifiedCell(t))).executions[0]!;
   assertEquals(t.docker.runs.length, 1);
   assertEquals(e.manifest.harness_version, "2.1.999");
