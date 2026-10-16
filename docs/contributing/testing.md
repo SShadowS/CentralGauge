@@ -28,7 +28,7 @@ deno task coverage:html
 
 `deno task test:harness:fast [--jobs N] [--log-dir DIR] [--dry-run]` runs the same
 files as `deno test --allow-all tests/unit/harness tests/unit/cli/commands/harness-command.test.ts`,
-split over N (default 4) concurrent `deno test` processes, balanced by measured
+split over N (default 5) concurrent `deno test` processes, balanced by measured
 per-file duration. It prints each process's counts and log path and exits non-zero
 if any process fails. `--parallel` stays off: every process runs its files one after
 another, so the in-process shared state some files touch (env vars, `Deno.chdir`,
