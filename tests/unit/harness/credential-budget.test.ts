@@ -13,18 +13,18 @@ const r = {
   purpose: "M1-29 gate",
 };
 
-Deno.test("reserveCredentialRun: two hundred across all lanes (H-06b), then refused; concurrent callers serialize", async () => {
-  assertEquals(CREDENTIAL_RUN_LIMIT, 200);
+Deno.test("reserveCredentialRun: five hundred across all lanes (H-17), then refused; concurrent callers serialize", async () => {
+  assertEquals(CREDENTIAL_RUN_LIMIT, 500);
   const ledger = join(
     await Deno.realPath(await Deno.makeTempDir()),
     "credential-runs.jsonl",
   );
-  // 195 earlier reservations, then 7 racing callers: exactly 5 fit (196-200).
-  // (202 live racers would outlast the 60 s lock wait, not test the limit.)
+  // 495 earlier reservations, then 7 racing callers: exactly 5 fit (496-500).
+  // (502 live racers would outlast the 60 s lock wait, not test the limit.)
   await Deno.writeTextFile(
     ledger,
     Array.from(
-      { length: 195 },
+      { length: 495 },
       (_, i) => JSON.stringify({ v: 1, ordinal: i + 1, lane: "M4-17" }),
     ).join("\n") + "\n",
   );
@@ -42,16 +42,16 @@ Deno.test("reserveCredentialRun: two hundred across all lanes (H-06b), then refu
     results.filter((x) => x.status === "fulfilled").map((x) =>
       (x as PromiseFulfilledResult<number>).value
     ).sort(),
-    [196, 197, 198, 199, 200],
+    [496, 497, 498, 499, 500],
   );
   assertEquals(
     (await Deno.readTextFile(ledger)).trim().split("\n").length,
-    200,
+    500,
   );
   await assertRejects(
     () => reserveCredentialRun(ledger, r),
     ConfigurationError,
-    "200 supervised",
+    "500 supervised",
   );
 });
 
@@ -75,12 +75,12 @@ Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines sti
   const partial = join(dir, "partial.jsonl");
   await Deno.writeTextFile(
     partial,
-    '{"v":1}\n{"trunc\n' + "x\n".repeat(198),
+    '{"v":1}\n{"trunc\n' + "x\n".repeat(498),
   );
   await assertRejects(
     () => reserveCredentialRun(partial, r),
     ConfigurationError,
-    "200 supervised",
+    "500 supervised",
   );
 });
 
