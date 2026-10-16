@@ -5003,9 +5003,40 @@ Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it c
   // T-03: the r3 image's run.ps1 prints its inventory before the ready wait;
   // without it the cell sat out the 180 s inventory deadline and was refused.
   t.docker.preReady = { lines: [INV()] };
+  // The image under qualification reports its own version in system/init.
+  const inner = t.docker.behavior;
+  t.docker.behavior = (call, io) =>
+    inner(call, {
+      ...io,
+      stdout: (l) =>
+        io.stdout(l.replace(
+          '"claude_code_version":"2.1.282"',
+          '"claude_code_version":"2.1.999"',
+        )),
+    });
   const e = (await runCell(t.env, await unqualifiedCell(t))).executions[0]!;
   assertEquals(t.docker.runs.length, 1);
   assertEquals(e.manifest.harness_version, "2.1.999");
+  // The capture ran: released past the inventory gate, its stream recorded.
+  assertEquals(e.did_work, true);
+  assertEquals(e.telemetry.harness_version, "2.1.999");
+  const raw = await Deno.readTextFile(
+    join(t.env.resultsRoot, "runs", e.id, "raw.jsonl"),
+  );
+  assert(
+    raw.split("\n").some((l) =>
+      l.includes('"subtype":"init"') &&
+      l.includes('"claude_code_version":"2.1.999"')
+    ),
+    "the system/init of the unqualified version is captured",
+  );
+  // H-03 design: a capture is recorded setup_failed by the parse refusal for
+  // the unqualified version (evidence, not a pass), never a pre-start refusal.
+  assertEquals(e.termination, "setup_failed");
+  assertStringIncludes(
+    (await sideOf(t, e.id)).setup_error,
+    "no qualified built-in inventory for Claude Code 2.1.999",
+  );
 });
 
 // H-03: the cell record says which memory limit its sandbox ran with: the
