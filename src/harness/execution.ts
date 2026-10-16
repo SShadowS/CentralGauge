@@ -1167,6 +1167,8 @@ interface DraftInput {
   egressStop?: string | null;
   /** The component inventory refused the arm before any credential was released: nothing paid, cost exactly 0. */
   preStart?: boolean;
+  /** H-16: the sandbox is confirmed gone but a backend request did not drain: harness_crash with this infra reason. */
+  undrained?: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -1249,6 +1251,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ...(host.bad.length > 0
       ? [`host log lines unreadable: ${host.bad.join(", ")}`]
       : []),
+    ...(f.undrained ? [f.undrained] : []),
   ];
   const check = started
     ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
@@ -1266,6 +1269,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ? "operator_interrupt"
     : f.sandbox.overflow
     ? "capture_overflow"
+    : f.undrained
+    ? "backend_undrained"
     : f.interrupted
     ? "runner_interrupted"
     : null;
@@ -1415,6 +1420,8 @@ async function publishDraft(
   draft: Draft,
   pristine: string | null,
   taskUnchanged: boolean,
+  /** H-16: remove the private state only once this settles (an undrained backend request). */
+  cleanupAfter?: Promise<void>,
 ) {
   const now = env.now ?? (() => new Date());
   const e = draft.execution;
@@ -1480,7 +1487,33 @@ async function publishDraft(
   }
   await env.hooks?.after?.("judgment");
   hold();
+  if (cleanupAfter) {
+    // H-16: a backend request still runs on this execution's private state
+    // (staging roots, host log): published now, private state removed once it
+    // has drained. A failure or exit before then: the next start finishes it.
+    await markPublished(env, e.id);
+    void cleanupAfter.then(() => finishCleanup(env, e.id)).catch((err) =>
+      console.warn(
+        `[WARN] ${e.id}: deferred cleanup not finished (${
+          msg(err)
+        }); the next start finishes it`,
+      )
+    );
+    return;
+  }
   await finishCleanup(env, e.id);
+}
+
+async function markPublished(env: HarnessEnv, id: string) {
+  const p = privatePaths(env, id);
+  const intent = await readJson<Intent>(p.intent);
+  if (intent && intent.phase !== "published") {
+    holdNamespace(env, "cleanup stopped; nothing more removed");
+    await writeAtomic(
+      p.intent,
+      JSON.stringify({ ...intent, phase: "published" }, null, 2),
+    );
+  }
 }
 
 /** Completion protocol: mark published, delete private state, delete the intent last. */
@@ -1489,14 +1522,7 @@ async function finishCleanup(env: HarnessEnv, id: string) {
   // M10-08c run 003 item 2: the acquired token, right before each write and removal.
   const hold = () =>
     holdNamespace(env, "cleanup stopped; nothing more removed");
-  const intent = await readJson<Intent>(p.intent);
-  if (intent && intent.phase !== "published") {
-    hold();
-    await writeAtomic(
-      p.intent,
-      JSON.stringify({ ...intent, phase: "published" }, null, 2),
-    );
-  }
+  await markPublished(env, id);
   await env.hooks?.afterPublished?.();
   for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) {
     hold();
@@ -2270,7 +2296,10 @@ export async function runExecution(
     }
     setupError = err.message;
   }
-  if (!sandbox.confirmedGone || !drained || teardownProblems.length > 0) {
+  // H-16: with the sandbox confirmed gone, an undrained backend request only
+  // costs this cell (harness_crash, infra reason): its container stays held
+  // by the lane until the request settles, and the other workers go on.
+  if (!sandbox.confirmedGone || teardownProblems.length > 0) {
     throw new ContainerError(
       `termination not confirmed for ${name} (${
         [sandbox.cleanup, ...teardownProblems].join("; ")
@@ -2281,6 +2310,10 @@ export async function runExecution(
       "stop",
     );
   }
+  const undrained = drained
+    ? null
+    : "backend request did not drain after revoke (abort plus the longest BC step's timeout); its container stays held until it settles";
+  if (undrained) console.warn(`[WARN] ${name}: ${undrained}`);
   // Review 546e8337 P3-4: suspended past the stale window, the new holder
   // may already have recovered this execution: lost, nothing is drafted or
   // published and the intent stays the holder's.
@@ -2303,9 +2336,17 @@ export async function runExecution(
     stub,
     egressStop,
     preStart: inventoryRefused !== null || notLive !== null,
+    undrained,
   });
   holdNamespace(env, nothingPublished);
-  await publishDraft(env, cell, draft, staged.pristine, true);
+  await publishDraft(
+    env,
+    cell,
+    draft,
+    staged.pristine,
+    true,
+    (undrained ? env.backend.drained(id) : null) ?? undefined,
+  );
   if (privilegeFailure !== null) {
     // Infra, never scored; a retry would repeat it: the campaign stops here.
     throw new ContainerError(

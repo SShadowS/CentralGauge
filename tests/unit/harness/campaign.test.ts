@@ -7,6 +7,7 @@ import {
 import { walk } from "@std/fs";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
+import { stub } from "@std/testing/mock";
 import {
   ConfigurationError,
   ContainerError,
@@ -2209,4 +2210,43 @@ Deno.test("H-15 (Sol r2): an overridden retry interrupted, recovered and retried
   ]);
   assertEquals(us[1]!.usage_reset_ignored?.reason, "fresh account");
   assertEquals(us[2]!.usage_reset_ignored, undefined);
+});
+
+Deno.test("H-16: one cell's undrained backend request (sandbox gone) does not halt the campaign: that cell is harness_crash with the infra reason, the other cells run", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  const real = t.env.backend.revoke.bind(t.env.backend);
+  let calls = 0;
+  const revoke = stub(
+    t.env.backend,
+    "revoke",
+    (id: string) => ++calls === 1 ? Promise.resolve(false) : real(id),
+  );
+  try {
+    const s = await runCampaign(
+      t.env,
+      "contract",
+      opts({ concurrency: 2 }),
+      io(),
+    );
+    assertEquals(s.paused, null);
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const es = await t.env.store.executions(c.id);
+    assertEquals(new Set(es.map((e) => e.arm)).size, 2, "both cells ran");
+    const sides = await Promise.all(es.map(async (e) =>
+      JSON.parse(
+        await Deno.readTextFile(
+          join(t.env.resultsRoot, "runs", e.id, "sandbox.json"),
+        ),
+      )
+    ));
+    const undrained = es.filter((_, i) =>
+      sides[i].stop_reason === "backend_undrained"
+    );
+    assertEquals(undrained.length, 1);
+    assertEquals(undrained[0]!.termination, "harness_crash");
+    assertEquals(undrained[0]!.validity.infra_exposed, true);
+  } finally {
+    revoke.restore();
+  }
 });

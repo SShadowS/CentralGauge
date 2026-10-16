@@ -17,6 +17,7 @@ import {
   HARNESS_TEST_APP_RANGE,
 } from "../constants.ts";
 import { dockerContextEnv } from "../container/docker-context.ts";
+import { resolveSoapTimeoutMs } from "../container/soap-test-client.ts";
 import {
   ConfigurationError,
   ContainerError,
@@ -415,6 +416,8 @@ export class Backend {
   private readonly grants = new Map<string, GrantState>();
   /** Revoked executions whose request did not drain: their id cannot be granted again yet. */
   private readonly draining = new Set<string>();
+  /** H-16: a late drain's settle (warned, build cache dropped), by execution id. */
+  private readonly late = new Map<string, Promise<void>>();
   /** Ids between grant's duplicate check and its insert. */
   private readonly reserved = new Set<string>();
   /** Host log path -> its last pending append (the per-log write chain). */
@@ -520,6 +523,8 @@ export class Backend {
       allowedHosts: string[];
       bodyTimeoutMs?: number;
       revokeGraceMs?: number;
+      /** H-16: the longest BC step's own timeout, waited after a revoke's abort (default: the SOAP test timeout). */
+      stepTimeoutMs?: number;
       /** End-to-end deadline of one request (compile admission, compiles, publish and tests). */
       requestDeadlineMs?: number;
       /** Limits of the snapshot copy (agent-controlled size): exceeding them is a 422. */
@@ -612,11 +617,45 @@ export class Backend {
     const elapsed = this.o.graceElapsed;
     if (!await drainedWithin(inflight, grace, elapsed)) {
       st.abort.abort(new Error("grant revoked"));
-      if (!await drainedWithin(inflight, grace, elapsed)) return false;
+      // H-16: a BC step sees the abort only when it ends, so the wait after
+      // it is the longest step's own timeout (the SOAP test run) plus the grace.
+      const afterAbort = (this.o.stepTimeoutMs ??
+        resolveSoapTimeoutMs(Deno.env.get("CENTRALGAUGE_SOAP_TIMEOUT_MS"))) +
+        grace;
+      if (!await drainedWithin(inflight, afterAbort, elapsed)) {
+        // Its container stays held by the lane until it settles.
+        const t0 = performance.now();
+        const late = inflight.then(async () => {
+          console.warn(
+            `[WARN] backend request of execution ${executionId} drained late (${
+              Math.round(performance.now() - t0)
+            } ms after revoke gave up)`,
+          );
+          await this.dropBuildCache(executionId);
+        }).finally(() => this.late.delete(executionId));
+        this.late.set(executionId, late);
+        return false;
+      }
     }
     this.draining.delete(executionId);
     await this.dropBuildCache(executionId);
     return true;
+  }
+
+  /** H-16: settles once a request that revoke gave up on has drained; null when none is still running. */
+  drained(executionId: string): Promise<void> | null {
+    return this.late.get(executionId) ?? null;
+  }
+
+  /** H-16: settles once every request revoke gave up on has drained (the private root stays held until then). */
+  async idle(): Promise<void> {
+    if (this.late.size === 0) return;
+    console.log(
+      `[WAIT] backend request(s) of ${
+        [...this.late.keys()].join(", ")
+      } still draining; holding the private root until they end`,
+    );
+    await Promise.allSettled([...this.late.values()]);
   }
 
   /**

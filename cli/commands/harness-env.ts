@@ -531,6 +531,9 @@ export async function openHarnessEnv(
       ops: defaultBackendOps(lane),
       allowedHosts: [host],
     });
+    // H-16: a request revoke gave up on still uses this private root: the
+    // locks are released only after it has drained (closers run front first).
+    closers.unshift(() => backend.idle());
     const server = (deps.serveBackend ?? ((b, h, p) => b.serve(h, p)))(
       backend,
       host,
