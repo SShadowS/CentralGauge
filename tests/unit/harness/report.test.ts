@@ -1210,7 +1210,7 @@ const STAGE_A_F = {
   alpha: 0.05,
   test: {
     sides: "two",
-    p_value: "percentile_bootstrap_plus_one",
+    p_value: "bootstrap-t",
     adjustment: "holm",
     direction: "sign_of_delta",
   },
@@ -2124,5 +2124,29 @@ Deno.test("buildReport (H-10): exact_otel cells count as exact and are listed; a
   assertStringIncludes(
     text,
     "otel_mismatch: claude-sonnet-5 input otel 91 != 90: HX-002 r1 skills",
+  );
+});
+
+Deno.test("buildReport (H-18): the declared p_value test is the one testContrasts runs; a declared/executed mismatch refuses", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", true);
+  const doc = await stageBFor(recs.campaign, {
+    zero_solve: { rule: "min_defined_share", share: 0.99 },
+  });
+  const k = confirmed(
+    await buildReport(recs, {
+      prereg: preregOf(recs, doc),
+      resamples: 50,
+      seed: 99,
+    }),
+  );
+  assert(k.results.every((x) => x.method === doc.test.p_value));
+  const stale = {
+    ...doc,
+    test: { ...doc.test, p_value: "percentile_bootstrap_plus_one" },
+  } as unknown as Prereg;
+  await assertRejects(
+    () => buildReport(recs, { prereg: preregOf(recs, stale) }),
+    ValidationError,
+    "declared test",
   );
 });
