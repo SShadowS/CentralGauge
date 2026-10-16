@@ -19,3 +19,7 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/forget-before-undo: { partial_credit: 0.8571428571428571 }
+  naive/plain-memory: { partial_credit: 0.2857142857142857 }
+  naive/remember-before-event: { partial_credit: 0.8571428571428571 }
+  naive/remember-before-swap: { partial_credit: 0.7142857142857143 }
