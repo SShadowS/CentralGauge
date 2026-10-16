@@ -24,6 +24,28 @@ deno task coverage:html
 
 **Important:** Always use `deno task test`, not `deno test` directly. The tasks include `--allow-all` for required permissions.
 
+### Faster harness run
+
+`deno task test:harness:fast [--jobs N] [--log-dir DIR] [--dry-run]` runs the same
+files as `deno test --allow-all tests/unit/harness tests/unit/cli/commands/harness-command.test.ts`,
+split over N (default 5) concurrent `deno test` processes, balanced by measured
+per-file duration. It prints each process's counts and log path and exits non-zero
+if any process fails. `--parallel` stays off: every process runs its files one after
+another, so the in-process shared state some files touch (env vars, `Deno.chdir`,
+`Deno.Command` mocks, module statics such as the `fixtures.ts` id counter) never
+meets a concurrent test. Only state shared across processes would make a file unsafe.
+
+The classification and durations live in `CLASSES` in `scripts/harness/test-fast.ts`.
+An audit (T-01, 2026-10-16) found every file cross-process safe: all writes go
+under `Deno.makeTempDir` results (gate tests use unique children of the fixed
+parent `H:\Temp3\harness-spike\M4\tmp\unit`), all listeners bind port 0, docker
+and BC are fakes, and the fixed proxy/backend ports, the `%ProgramData%`
+publication lock and `H:\cg-coord` are only reached with temp or injected
+replacements. A file missing from `CLASSES` runs in chunk 0 with a warning, and so
+does any file marked `safe: false`. Run it from the repo root (many files read
+cwd-relative paths). `lsp-probe`, `judge-queue` and `execution.test.ts` have
+wall-clock asserts that are sensitive to heavy machine load.
+
 ## Test Organization
 
 Tests mirror the source structure:

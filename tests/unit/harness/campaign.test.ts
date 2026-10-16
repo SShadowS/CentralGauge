@@ -7,6 +7,7 @@ import {
 import { walk } from "@std/fs";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
+import { stub } from "@std/testing/mock";
 import {
   ConfigurationError,
   ContainerError,
@@ -28,7 +29,7 @@ import {
   mcpLabel,
 } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
-import { buildReport } from "../../../src/harness/report.ts";
+import { buildReport, renderReport } from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
@@ -267,6 +268,147 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
   enforce(t); // M1-33: verified enforcement comes with its egress runtime
   const s = await runCampaign(t.env, "cc", opts(), io());
   assertEquals([s.ran, s.judged], [2, 2]);
+});
+
+Deno.test("H-13: --unverified-egress-ok runs a credential-bearing campaign unattended; campaign, every execution and the report carry egress_override", async () => {
+  const t = await makeEnv();
+  t.env.supervised = false;
+  await write(
+    t.harnessRoot,
+    "configs/cc-sonnet-effort.yml",
+    `id: cc-sonnet-effort
+harness: claude-code
+harness_version: "2.1.282"
+models: { main: anthropic/claude-sonnet-5 }
+settings: { effort: high }
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  await experiment(t, "cc", "cc-sonnet-plain", ["cc-sonnet-effort"]);
+  // An empty or blank reason is no override.
+  for (const reason of ["", "   "]) {
+    await assertRejects(
+      () =>
+        runCampaign(
+          { ...t.env, unverifiedEgressReason: reason },
+          "cc",
+          opts(),
+          io(),
+        ),
+      ConfigurationError,
+      "reason",
+    );
+  }
+  // The override is refused while the marker IS enforced.
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, egressEnforced: true, unverifiedEgressReason: "x" },
+        "cc",
+        opts(),
+        io(),
+      ),
+    ConfigurationError,
+    "enforced",
+  );
+  assertEquals(await t.env.store.campaigns("cc"), []);
+  const lines: string[] = [];
+  const s = await runCampaign(
+    { ...t.env, unverifiedEgressReason: "  P-01 pilot  " },
+    "cc",
+    opts(),
+    { ...io(), log: (l: string) => lines.push(l) },
+  );
+  assertEquals([s.ran, s.judged], [2, 2]);
+  assert(
+    lines.some((l) =>
+      l.includes("[WARN]") && l.includes("egress NOT enforced") &&
+      l.includes("P-01 pilot")
+    ),
+    lines.join("\n"),
+  );
+  const want = { egress_enforced: false, reason: "P-01 pilot" };
+  const c = (await t.env.store.campaigns("cc"))[0]!;
+  assertEquals(c.egress_override, want);
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, 2);
+  for (const e of es) assertEquals(e.egress_override, want);
+  const r = await buildReport(await loadCampaignData(t.env.store, c));
+  assertEquals(r.egress_override, {
+    egress_enforced: false,
+    reasons: ["P-01 pilot"],
+  });
+  assertStringIncludes(
+    renderReport(r),
+    "egress NOT enforced (owner override): P-01 pilot",
+  );
+  // Resuming without the override is refused (the unchanged refusal).
+  await assertRejects(
+    () => runCampaign(t.env, "cc", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "carry provider credentials",
+  );
+});
+
+Deno.test("H-13: resume refuses an override state other than the campaign's, either way", async () => {
+  const t = await mockEnv();
+  await experiment(t, "plain", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "plain", opts({ sample: 1 }), io());
+  const plain = (await t.env.store.campaigns("plain"))[0]!;
+  assertEquals(plain.egress_override, undefined);
+  for (const e of await t.env.store.executions(plain.id)) {
+    assertEquals(e.egress_override, undefined);
+  }
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, unverifiedEgressReason: "P-01 pilot" },
+        "plain",
+        opts(),
+        io(),
+      ),
+    ConfigurationError,
+    "unverified-egress-ok",
+  );
+  await experiment(t, "over", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(
+    { ...t.env, unverifiedEgressReason: "P-01 pilot" },
+    "over",
+    opts({ sample: 1 }),
+    io(),
+  );
+  const over = (await t.env.store.campaigns("over"))[0]!;
+  await assertRejects(
+    () => runCampaign(t.env, "over", opts({ campaign: over.id }), io()),
+    ConfigurationError,
+    "unverified-egress-ok",
+  );
+  // H-13 run 002: the reason must match too (trimmed); A then B is refused.
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, unverifiedEgressReason: "another reason" },
+        "over",
+        opts({ campaign: over.id }),
+        io(),
+      ),
+    ConfigurationError,
+    "P-01 pilot",
+  );
+  // A then A (whitespace around it is trimmed) resumes.
+  await runCampaign(
+    { ...t.env, unverifiedEgressReason: "  P-01 pilot " },
+    "over",
+    opts({ campaign: over.id }),
+    io(),
+  );
+  for (const e of await t.env.store.executions(over.id)) {
+    assertEquals(e.egress_override, {
+      egress_enforced: false,
+      reason: "P-01 pilot",
+    });
+  }
 });
 
 Deno.test("tasks_meta.limits stores the task's own overrides; two arms with different limits against one task override get their own effective execution limits; reuse stays empty", async () => {
@@ -1613,7 +1755,8 @@ Deno.test("M10-08c (O1): concurrency 2 inside one environment holding its privat
   );
 });
 
-Deno.test("runCampaign (H-03): a tracked Claude Code arm without M8-07c calibration on its digest is refused before any record or cell, dry run too", async () => {
+/** Two tracked rev-3 Claude Code arms resolving to `version` on one uncalibrated digest. */
+async function ccLatest(version: string) {
   const t = await makeEnv();
   t.env.supervised = false;
   for (
@@ -1636,8 +1779,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
 `,
     );
   }
-  // A dev-qualified version (2.1.282 has its BUILTIN_INVENTORY entry), resolved and tracked.
-  const rel = ccRel("2.1.282");
+  const rel = ccRel(version);
   const id = `sha256:${"e".repeat(64)}`;
   t.docker.addImage(imageTag("claude-code", "latest", "3"), id, {
     "centralgauge.harness": "claude-code",
@@ -1647,6 +1789,12 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
   });
   t.docker.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson({}, rel));
   await experiment(t, "cc-latest", "cc-latest-a", ["cc-latest-b"]);
+  return { t, id };
+}
+
+Deno.test("runCampaign (H-03): a tracked Claude Code arm without M8-07c calibration on its digest is refused before any record or cell, dry run too", async () => {
+  // A dev-qualified version (2.1.282 has its BUILTIN_INVENTORY entry), resolved and tracked.
+  const { t, id } = await ccLatest("2.1.282");
   enforce(t);
   for (const dryRun of [true, false]) {
     await assertRejects(
@@ -1657,4 +1805,448 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
   }
   assertEquals(await t.env.store.campaigns("cc-latest"), []);
   assertEquals(t.docker.runs, []);
+});
+
+Deno.test("H-13b: --unverified-egress-ok waives the M8-07c calibration gate (dry run too); campaign, executions and report record calibration_waived; resume must match", async () => {
+  const { t, id } = await ccLatest("2.1.282");
+  const env = { ...t.env, unverifiedEgressReason: "P-01 pilot" };
+  const lines: string[] = [];
+  const log = { ...io(), log: (l: string) => lines.push(l) };
+  // run.ps1's component inventory (rev 3) refuses: each cell ends setup_failed
+  // before start. The cells only need to publish their records here.
+  t.docker.preReady = {
+    lines: [JSON.stringify({
+      type: "cg_inventory",
+      v: 1,
+      ok: false,
+      installed: [],
+      problems: ["instructions: not installed"],
+    })],
+  };
+  await runCampaign(env, "cc-latest", opts({ dryRun: true }), log);
+  assertEquals(await t.env.store.campaigns("cc-latest"), []);
+  const warned = () =>
+    lines.some((l) =>
+      l.includes("[WARN]") && l.includes(id) &&
+      l.includes("calibration") && l.includes("waived")
+    );
+  assert(warned(), lines.join("\n"));
+  lines.length = 0;
+  const s = await runCampaign(env, "cc-latest", opts(), log);
+  assert(s.ran >= 2, `ran ${s.ran}`);
+  assert(warned(), lines.join("\n"));
+  const c = (await t.env.store.campaigns("cc-latest"))[0]!;
+  assertEquals(c.egress_override, {
+    egress_enforced: false,
+    reason: "P-01 pilot",
+  });
+  assertEquals(c.calibration_waived, true);
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, s.ran);
+  for (const e of es) assertEquals(e.calibration_waived, true);
+  const r = await buildReport(await loadCampaignData(t.env.store, c));
+  assertEquals(r.calibration_waived, true);
+  assertStringIncludes(
+    renderReport(r),
+    "[WARN] M8-07c campaign calibration waived (owner override)",
+  );
+  // Resume with the flag and reason: the waiver matches and the campaign resumes.
+  await runCampaign(env, "cc-latest", opts({ campaign: c.id }), io());
+  // Without the flag (egress enforced), the calibration refusal is unchanged.
+  await assertRejects(
+    () =>
+      runCampaign(
+        { ...t.env, egressEnforced: true },
+        "cc-latest",
+        opts({ campaign: c.id }),
+        io(),
+      ),
+    ConfigurationError,
+    "has no M8-07c real calibration",
+  );
+  // A campaign recorded without the waiver never resumes under one.
+  const { calibration_waived: _w, ...unwaived } = c;
+  await Deno.writeTextFile(
+    join(t.env.store.root, "campaigns", `${c.id}.json`),
+    JSON.stringify(unwaived),
+  );
+  await assertRejects(
+    () => runCampaign(env, "cc-latest", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "calibration_waived",
+  );
+});
+
+Deno.test("H-13b: --unverified-egress-ok never waives level 1: a version without its BUILTIN_INVENTORY entry is still refused, dry run too", async () => {
+  const { t } = await ccLatest("2.1.999");
+  const env = { ...t.env, unverifiedEgressReason: "P-01 pilot" };
+  for (const dryRun of [true, false]) {
+    await assertRejects(
+      () => runCampaign(env, "cc-latest", opts({ dryRun }), io()),
+      ConfigurationError,
+      "Claude Code 2.1.999 is not qualified for development use",
+    );
+  }
+  assertEquals(await t.env.store.campaigns("cc-latest"), []);
+  assertEquals(t.docker.runs, []);
+});
+
+// ---- H-15: --ignore-usage-reset <reason> (owner) ----
+/** A campaign whose mock-usage cell is usage-limited, its reset in the future. */
+async function limited() {
+  const t = await mockEnv();
+  let clock = Date.now();
+  t.env.now = () => new Date(clock);
+  await experiment(t, "limits", "mock-positive", ["mock-usage"]);
+  const s = await runCampaign(t.env, "limits", opts(), io());
+  assert(s.paused !== null && s.paused !== "unknown", String(s.paused));
+  const c = (await t.env.store.campaigns("limits"))[0]!;
+  const usage = async () =>
+    (await t.env.store.executions(c.id)).filter((e) => e.arm === "mock-usage")
+      .sort((a, b) => a.attempt - b.attempt);
+  // After an account swap the cell is no longer limited.
+  const ok = () => {
+    t.docker.behavior = async (_call, run) => {
+      await run.stdout('{"type":"mock_init","version":"2","mode":"apply"}');
+      await run.stdout('{"type":"mock_done","status":"ok"}');
+      return 0;
+    };
+  };
+  const tick = (ms: number) => void (clock += ms);
+  return { t, c, reset: s.paused, usage, ok, tick };
+}
+
+Deno.test("H-15: without --ignore-usage-reset a recorded future reset still pauses the resume (unchanged)", async () => {
+  const { t, reset, usage, ok } = await limited();
+  ok();
+  const runs = t.docker.runs.length;
+  const out = io();
+  const s = await runCampaign(t.env, "limits", opts(), out);
+  assertEquals([s.ran, s.paused, t.docker.runs.length], [0, reset, runs]);
+  assertEquals((await usage()).map((e) => e.run_kind), ["planned"]);
+  assert(
+    !out.lines.some((l) => l.includes("--ignore-usage-reset")),
+    out.lines.join("\n"),
+  );
+});
+
+Deno.test("H-15: --ignore-usage-reset runs the owed retry now; it records the ignored reset and reason; start and report [WARN]", async () => {
+  const { t, c, reset, usage, ok } = await limited();
+  ok();
+  const out = io();
+  const s = await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: " fresh account " }),
+    out,
+  );
+  // The limited first run also left the block's other arm owed.
+  assertEquals(s.paused, null);
+  assertEquals(s.ran, (await t.env.store.executions(c.id)).length - 1);
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), ["planned", "auto_retry"]);
+  assertEquals(es[0]!.usage_reset_ignored, undefined);
+  assertEquals(es[1]!.usage_reset_ignored, {
+    reason: "fresh account",
+    reset_at: reset!,
+  });
+  // Only the retried execution carries it.
+  for (
+    const e of (await t.env.store.executions(c.id)).filter((e) =>
+      e.arm !== "mock-usage"
+    )
+  ) assertEquals(e.usage_reset_ignored, undefined);
+  assert(
+    out.lines.some((l) =>
+      l.includes("[WARN]") && l.includes("--ignore-usage-reset") &&
+      l.includes("fresh account")
+    ),
+    out.lines.join("\n"),
+  );
+  const data = await loadCampaignData(t.env.store, c);
+  await validateCampaignRecords(data);
+  const r = await buildReport(data);
+  assertEquals(r.usage_reset_ignored, { reasons: ["fresh account"] });
+  assertStringIncludes(
+    renderReport(r),
+    "[WARN] recorded usage resets ignored (owner override --ignore-usage-reset): fresh account",
+  );
+});
+
+Deno.test("H-15: --ignore-usage-reset ignores only resets recorded before this invocation: a new limit during the run still pauses", async () => {
+  const { t, usage } = await limited();
+  // The mock stays limited: the retry hits a new limit during this run.
+  const s = await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  assertEquals(s.ran, 1);
+  assert(s.paused !== null && s.paused !== "unknown", String(s.paused));
+  assertEquals((await usage()).map((e) => e.termination), [
+    "usage_limited",
+    "usage_limited",
+  ]);
+  // Waited out in-process: that new reset is waited for, not ignored.
+  const { t: u, tick } = await limited();
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      waits.push(ms);
+      tick(ms);
+      return Promise.reject(new Error("stop waiting"));
+    },
+  };
+  await assertRejects(
+    () =>
+      runCampaign(
+        u.env,
+        "limits",
+        opts({ ignoreUsageReset: "fresh account", maxPauseMs: 2 * 3600_000 }),
+        out,
+      ),
+    Error,
+    "stop waiting",
+  );
+  assertEquals(waits.length, 1);
+  assert(waits[0]! > 0, String(waits[0]));
+});
+
+Deno.test("H-15: --ignore-usage-reset needs a non-empty reason, refused before any cell (dry run too)", async () => {
+  const { t } = await limited();
+  const runs = t.docker.runs.length;
+  for (const dryRun of [false, true]) {
+    for (const reason of ["", "  "]) {
+      await assertRejects(
+        () =>
+          runCampaign(
+            t.env,
+            "limits",
+            opts({ dryRun, ignoreUsageReset: reason }),
+            io(),
+          ),
+        ConfigurationError,
+        "--ignore-usage-reset needs a non-empty reason",
+      );
+    }
+  }
+  assertEquals(t.docker.runs.length, runs);
+});
+
+Deno.test("H-15 (Sol r1): a retry chained after an overridden retry keeps the provenance", async () => {
+  const { t, reset, usage } = await limited();
+  let calls = 0;
+  // The overridden retry crashes before work (one automatic retry), then succeeds.
+  t.docker.behavior = async (_call, run) => {
+    if (calls++ === 0) return 1;
+    await run.stdout('{"type":"mock_init","version":"2","mode":"apply"}');
+    await run.stdout('{"type":"mock_done","status":"ok"}');
+    return 0;
+  };
+  await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), [
+    "planned",
+    "auto_retry",
+    "auto_retry",
+  ]);
+  for (const e of es.slice(1)) {
+    assertEquals(e.usage_reset_ignored, {
+      reason: "fresh account",
+      reset_at: reset!,
+    });
+  }
+});
+
+Deno.test("H-15 (Sol r1): after an in-process wait, the retry of a limit hit during this run carries no override", async () => {
+  const { t, usage, tick } = await limited();
+  let waits = 0;
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      tick(ms);
+      // The mock stays limited: stop at the second wait.
+      return ++waits > 1
+        ? Promise.reject(new Error("stop waiting"))
+        : Promise.resolve();
+    },
+  };
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "limits",
+        opts({ ignoreUsageReset: "fresh account", maxPauseMs: 2 * 3600_000 }),
+        out,
+      ),
+    Error,
+    "stop waiting",
+  );
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), [
+    "planned",
+    "auto_retry",
+    "auto_retry",
+  ]);
+  assertEquals(es[1]!.usage_reset_ignored?.reason, "fresh account");
+  assertEquals(es[2]!.usage_reset_ignored, undefined);
+});
+
+Deno.test("H-15 (Sol r1): the before-this-run boundary is taken before startup recovery publishes anything", async () => {
+  const t = await mockEnv();
+  await experiment(t, "limits", "mock-positive", ["mock-usage"]);
+  const behave = t.docker.behavior;
+  t.docker.behavior = (call, run) => {
+    t.docker.lingering.add(call.name);
+    return behave(call, run);
+  };
+  // The first attempt's termination is not confirmed: its intent is kept.
+  await assertRejects(
+    () => runCampaign(t.env, "limits", opts(), io()),
+    ContainerError,
+    "termination not confirmed",
+  );
+  const c = (await t.env.store.campaigns("limits"))[0]!;
+  assertEquals(await t.env.store.executions(c.id), []);
+  t.docker.lingering.clear();
+  t.docker.behavior = behave;
+  const intents = join(t.env.privateRoot, "intents");
+  const snapshots: { ids: string[]; intentsLeft: number }[] = [];
+  const all = t.env.store.allExecutions.bind(t.env.store);
+  t.env.store.allExecutions = async () => {
+    const es = await all();
+    snapshots.push({
+      ids: es.map((e) => e.id),
+      intentsLeft: [...Deno.readDirSync(intents)].length,
+    });
+    return es;
+  };
+  await runCampaign(
+    t.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  // Taken once, while the interrupted attempt was still an unpublished intent.
+  assertEquals(snapshots.length, 1);
+  assertEquals(snapshots[0], { ids: [], intentsLeft: 1 });
+  const es = await t.env.store.executions(c.id);
+  assert(es.length > 0, "recovery published the interrupted attempt");
+  // Nothing here ran past a reset recorded before this run.
+  for (const e of es) assertEquals(e.usage_reset_ignored, undefined);
+});
+
+Deno.test("H-15 (Sol r2): an overridden retry interrupted, recovered and retried on resume keeps the provenance; a new limit does not pass it on", async () => {
+  const { t, reset, usage, ok } = await limited();
+  ok();
+  const behave = t.docker.behavior;
+  t.docker.behavior = (call, run) => {
+    t.docker.lingering.add(call.name);
+    return behave(call, run);
+  };
+  // The overridden retry's termination is not confirmed: its intent is kept.
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "limits",
+        opts({ ignoreUsageReset: "fresh account" }),
+        io(),
+      ),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  t.docker.behavior = behave;
+  // Resumed without the flag: recovery publishes it, its retry runs now.
+  await runCampaign(t.env, "limits", opts(), io());
+  const es = await usage();
+  assertEquals(es.map((e) => e.run_kind), [
+    "planned",
+    "auto_retry",
+    "auto_retry",
+  ]);
+  assert(es[1]!.termination !== "usage_limited", es[1]!.termination);
+  for (const e of es.slice(1)) {
+    assertEquals(e.usage_reset_ignored, {
+      reason: "fresh account",
+      reset_at: reset!,
+    });
+  }
+  // A chain whose overridden retry hit a new limit: its successor inherits nothing.
+  const { t: u, usage: usage2, tick } = await limited();
+  await runCampaign(
+    u.env,
+    "limits",
+    opts({ ignoreUsageReset: "fresh account" }),
+    io(),
+  );
+  tick(48 * 3600_000);
+  // Past the mock's reset every new limit is due at once: stop at the first
+  // wait, else the pause loop retries forever.
+  let stopped = false;
+  await runCampaign(u.env, "limits", opts(), {
+    ...io(),
+    sleep: () => {
+      stopped = true;
+      return Promise.reject(new Error("stop waiting"));
+    },
+  }).catch((e) => {
+    if (!stopped) throw e;
+  });
+  assert(stopped);
+  const us = await usage2();
+  assertEquals(us.map((e) => e.termination), [
+    "usage_limited",
+    "usage_limited",
+    "usage_limited",
+  ]);
+  assertEquals(us[1]!.usage_reset_ignored?.reason, "fresh account");
+  assertEquals(us[2]!.usage_reset_ignored, undefined);
+});
+
+Deno.test("H-16: one cell's undrained backend request (sandbox gone) does not halt the campaign: that cell is harness_crash with the infra reason, the other cells run", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  const real = t.env.backend.revoke.bind(t.env.backend);
+  let calls = 0;
+  const revoke = stub(
+    t.env.backend,
+    "revoke",
+    (id: string) => ++calls === 1 ? Promise.resolve(false) : real(id),
+  );
+  try {
+    const s = await runCampaign(
+      t.env,
+      "contract",
+      opts({ concurrency: 2 }),
+      io(),
+    );
+    assertEquals(s.paused, null);
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const es = await t.env.store.executions(c.id);
+    assertEquals(new Set(es.map((e) => e.arm)).size, 2, "both cells ran");
+    const sides = await Promise.all(es.map(async (e) =>
+      JSON.parse(
+        await Deno.readTextFile(
+          join(t.env.resultsRoot, "runs", e.id, "sandbox.json"),
+        ),
+      )
+    ));
+    const undrained = es.filter((_, i) =>
+      sides[i].stop_reason === "backend_undrained"
+    );
+    assertEquals(undrained.length, 1);
+    assertEquals(undrained[0]!.termination, "harness_crash");
+    assertEquals(undrained[0]!.validity.infra_exposed, true);
+  } finally {
+    revoke.restore();
+  }
 });

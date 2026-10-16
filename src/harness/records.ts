@@ -147,6 +147,37 @@ export const ValiditySchema = z.strictObject({
   path: ["incomplete_observed"],
 });
 
+/**
+ * H-13 (decisions/2026-10-15-p-01-egress-override.md): the record was written
+ * by a run under the owner's `harness run --unverified-egress-ok <reason>`:
+ * sandbox egress was NOT enforced. Absent: a normal run.
+ */
+export const EgressOverrideSchema = z.strictObject({
+  egress_enforced: z.literal(false),
+  reason: z.string().min(1),
+});
+export type EgressOverride = z.output<typeof EgressOverrideSchema>;
+/**
+ * H-13b (same decision, "Second gate"): the M8-07c campaign calibration gate
+ * was waived under that override. Only true, and only next to egress_override.
+ */
+const CalibrationWaived = z.literal(true).optional();
+const waiverNeedsOverride = (
+  r: {
+    calibration_waived?: true | undefined;
+    egress_override?: EgressOverride | undefined;
+  },
+  ctx: z.RefinementCtx,
+) => {
+  if (r.calibration_waived && !r.egress_override) {
+    ctx.addIssue({
+      code: "custom",
+      message: "calibration_waived needs egress_override",
+      path: ["calibration_waived"],
+    });
+  }
+};
+
 export const ExecutionRecordSchema = z.strictObject({
   /** 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed. */
   v: z.union([z.literal(1), z.literal(2)]),
@@ -191,7 +222,27 @@ export const ExecutionRecordSchema = z.strictObject({
   container_assignments: z.array(z.string()),
   /** Hash of the frozen workspace; null when nothing was frozen. */
   workspace_hash: Sha256Hex.nullable(),
+  /** H-13: present only when the run used the owner's egress override. */
+  egress_override: EgressOverrideSchema.optional(),
+  /** H-13b: its campaign ran with the calibration gate waived. */
+  calibration_waived: CalibrationWaived,
+  /**
+   * H-15: this auto retry ran under the owner's `harness run
+   * --ignore-usage-reset <reason>` before its parent's recorded reset.
+   */
+  usage_reset_ignored: z.strictObject({
+    reason: z.string().min(1),
+    reset_at: Iso,
+  }).optional(),
 }).superRefine((e, ctx) => {
+  waiverNeedsOverride(e, ctx);
+  if (e.usage_reset_ignored && e.run_kind !== "auto_retry") {
+    ctx.addIssue({
+      code: "custom",
+      message: "usage_reset_ignored is only on an auto_retry",
+      path: ["usage_reset_ignored"],
+    });
+  }
   if (e.v === 2 && e.validity.incomplete_observed === undefined) {
     ctx.addIssue({
       code: "custom",
@@ -391,7 +442,12 @@ export const CampaignRecordSchema = z.strictObject({
     decision_sha256: Sha256Hex,
     stage_b_decision_sha256: Sha256Hex,
   }).optional(),
+  /** H-13: created under the owner's egress override; a resume must match it. */
+  egress_override: EgressOverrideSchema.optional(),
+  /** H-13b: created with the calibration gate waived; a resume must match it. */
+  calibration_waived: CalibrationWaived,
 }).superRefine((c, ctx) => {
+  waiverNeedsOverride(c, ctx);
   const issue = (message: string, path: (string | number)[]) =>
     ctx.addIssue({ code: "custom", message, path });
   if (c.experiment.contrasts && !c.preregistration) {

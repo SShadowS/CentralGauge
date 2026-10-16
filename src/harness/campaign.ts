@@ -85,6 +85,11 @@ export interface RunOptions {
   preregDecision?: string;
   /** M11-10: the stage-B decision file; required with a preregistration. */
   preregBDecision?: string;
+  /**
+   * H-15 owner override: the reason. Retries owed to usage resets recorded
+   * before this invocation run now; a limit hit during it still pauses.
+   */
+  ignoreUsageReset?: string;
 }
 
 export interface CampaignSummary {
@@ -240,6 +245,11 @@ export function nextAttempt(prior: ExecutionRecord[]): AttemptRef | null {
     attempt: tail.attempt + 1,
     runKind: "auto_retry",
     retryOf: tail.id,
+    // H-15: a chain run past an ignored reset keeps its provenance, never
+    // across a newly hit limit (as in runCell).
+    ...(tail.usage_reset_ignored && tail.termination !== "usage_limited"
+      ? { usageResetIgnored: tail.usage_reset_ignored }
+      : {}),
   };
   const candidate: ExecutionRecord = {
     ...tail,
@@ -288,7 +298,10 @@ export type PlanEnv =
     | "symbols"
     | "egressEnforced"
   >
-  & Pick<Partial<HarnessEnv>, "now" | "proxyIsolation">
+  & Pick<
+    Partial<HarnessEnv>,
+    "now" | "proxyIsolation" | "unverifiedEgressReason"
+  >
   & {
     /**
      * The verified marker places sandboxes (a plan env has no egress runtime
@@ -683,6 +696,18 @@ export async function runCampaign(
     );
   }
   checkJudgeConcurrency(o.judgeConcurrency);
+  // H-15 owner override (decisions/2026-10-15-p-01-egress-override.md).
+  const ignoreReset = o.ignoreUsageReset?.trim();
+  if (ignoreReset === "") {
+    throw new ConfigurationError(
+      "--ignore-usage-reset needs a non-empty reason",
+    );
+  }
+  if (ignoreReset !== undefined) {
+    io.log(
+      `[WARN] usage resets recorded before this run are ignored (owner override --ignore-usage-reset): ${ignoreReset}`,
+    );
+  }
   // A placed environment without env.proxyIsolation is missing (fail closed).
   // The cheap conditions first, before any read; the arm images below.
   const early = placedConcurrencyProblem(
@@ -718,14 +743,40 @@ export async function runCampaign(
   // not exist; a credential-bearing arm needs verified enforcement.
   const bearing = configs.filter((c) => adapterFor(c.harness).credentialBearing)
     .map((c) => c.id);
-  if (bearing.length > 0 && !env.egressEnforced) {
+  // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
+  const override = env.unverifiedEgressReason;
+  if (override !== undefined) {
+    if (override.trim() === "") {
+      throw new ConfigurationError(
+        "--unverified-egress-ok needs a non-empty reason",
+      );
+    }
+    if (env.egressEnforced) {
+      throw new ConfigurationError(
+        "--unverified-egress-ok is refused: egress IS enforced (authorized marker); run without it",
+      );
+    }
+    env = { ...env, unverifiedEgressReason: override.trim() };
+    io.log(
+      `[WARN] egress NOT enforced (owner override --unverified-egress-ok): ${override.trim()}`,
+    );
+  }
+  if (bearing.length > 0 && !env.egressEnforced && !override) {
     throw new ConfigurationError(
       `${
         bearing.join(", ")
       } carry provider credentials: a campaign runs unattended and needs verified egress enforcement (authorized marker); use harness cell --supervised for a watched run`,
     );
   }
-  const runEnv: HarnessEnv = { ...env, supervised: false };
+  let runEnv: HarnessEnv = { ...env, supervised: false };
+  // H-15: the executions recorded before this invocation, taken before
+  // recovery publishes any; only their resets are ignored, so a limit
+  // recorded during this run (recovered or new) still pauses.
+  const recordedBefore = new Set(
+    ignoreReset === undefined || o.dryRun
+      ? []
+      : (await env.store.allExecutions()).map((e) => e.id),
+  );
   if (!o.dryRun) {
     // Before planning: an interrupted attempt is completed (or stops the run).
     for (const e of await recoverInterrupted(runEnv, loadTask)) {
@@ -738,6 +789,7 @@ export async function runCampaign(
   const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
   const arms: CampaignRecord["arms"] = [];
+  let calibrationWaived = false;
   for (const config of configs) {
     const tag = imageTag(
       config.harness,
@@ -765,8 +817,19 @@ export async function runCampaign(
     );
     const manifest = await resolveManifest(env.harnessRoot, config, facts);
     // H-03: a tracked campaign image needs its M8-07c calibration (dry run too).
-    const why = adapterFor(config.harness).unqualified?.(manifest, "campaign");
-    if (why) throw new ConfigurationError(`${config.id}: ${why}`);
+    // H-13b: the owner's egress override waives that level only; level 1
+    // (dev qualification) is never waived.
+    const adapter = adapterFor(config.harness);
+    const why = adapter.unqualified?.(manifest, "campaign");
+    if (why) {
+      if (!override || adapter.unqualified?.(manifest, "dev")) {
+        throw new ConfigurationError(`${config.id}: ${why}`);
+      }
+      calibrationWaived = true;
+      io.log(
+        `[WARN] ${config.id}: M8-07c campaign calibration waived (owner override --unverified-egress-ok): ${why}`,
+      );
+    }
     arms.push({
       config_id: config.id,
       manifest_hash: await manifestHash(manifest),
@@ -871,6 +934,15 @@ export async function runCampaign(
         seed,
       ),
       ...(preregistration ? { preregistration } : {}),
+      ...(override
+        ? {
+          egress_override: {
+            egress_enforced: false,
+            reason: override.trim(),
+          },
+        }
+        : {}),
+      ...(calibrationWaived ? { calibration_waived: true } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -884,6 +956,22 @@ export async function runCampaign(
       created = true;
     }
   } else {
+    // H-13: a resume keeps the campaign's egress override state and reason, either way.
+    if (c.egress_override?.reason !== override?.trim()) {
+      throw new ConfigurationError(
+        c.egress_override
+          ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag and that reason`
+          : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
+      );
+    }
+    // H-13b: and its calibration waiver state.
+    if ((c.calibration_waived ?? false) !== calibrationWaived) {
+      throw new ConfigurationError(
+        c.calibration_waived
+          ? `campaign ${c.id} was created with calibration_waived but its arms no longer need the waiver: start a new campaign`
+          : `campaign ${c.id} was created without calibration_waived: it never resumes with the M8-07c calibration gate waived`,
+      );
+    }
     if (c.preregistration) {
       const v = await verify();
       const p = c.preregistration;
@@ -900,6 +988,8 @@ export async function runCampaign(
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data);
   }
+  // H-13b: every execution of a waived campaign records it.
+  if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };
   // Refused before any container run (and in a dry run).
   const rerun = o.rerun && data
     ? rerunTarget(c, data, o.rerun, await currentScorerFingerprint())
@@ -1026,15 +1116,25 @@ export async function runCampaign(
           const prior = (await env.store.executions(campaign.id)).filter((
             e,
           ) => e.block === block.index && e.arm === arm);
-          const at = nextAttempt(prior);
+          let at = nextAttempt(prior);
           if (!at) continue;
           // A usage limit survives a restart: no retry before its reset.
+          const parent = at.retryOf;
           const waitFor = at.runKind === "auto_retry"
-            ? await pendingReset(env, prior.find((e) => e.id === at.retryOf)!)
+            ? await pendingReset(env, prior.find((e) => e.id === parent)!)
             : null;
           if (waitFor !== null && Date.parse(waitFor) > now()) {
-            paused = laterReset(paused, waitFor);
-            break;
+            if (
+              ignoreReset === undefined || parent === null ||
+              !recordedBefore.has(parent)
+            ) {
+              paused = laterReset(paused, waitFor);
+              break;
+            }
+            at = {
+              ...at,
+              usageResetIgnored: { reason: ignoreReset, reset_at: waitFor },
+            };
           }
           if (await stopRequested()) break;
           // Run 003: again after every await since admission, right before the start.

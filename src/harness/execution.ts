@@ -75,6 +75,7 @@ import { imageFacts, installedFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { forTask } from "./manifest.ts";
 import {
+  type EgressOverride,
   ExecutionRecordSchema,
   JudgmentRecordSchema,
   outcomePolicy,
@@ -184,6 +185,18 @@ export interface HarnessEnv {
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
   egressEnforced: boolean;
+  /**
+   * H-13 owner override (decisions/2026-10-15-p-01-egress-override.md): set
+   * only by `harness run --unverified-egress-ok <reason>`, never when
+   * egressEnforced. Credential-bearing cells run unattended without verified
+   * egress (the ledger slot stays); every record carries egress_override.
+   */
+  unverifiedEgressReason?: string;
+  /**
+   * H-13b: set by runCampaign when that override waived the M8-07c campaign
+   * calibration gate; every record carries calibration_waived.
+   */
+  calibrationWaived?: boolean;
   /**
    * OAuth host record mode (M1-34 Step 11): the supervised Claude Code cell
    * in the qualified state whose proxy allows any DNS name on 443 and whose
@@ -363,6 +376,8 @@ export interface AttemptRef {
   attempt: number;
   runKind: RunKind;
   retryOf: string | null;
+  /** H-15: the parent's recorded reset this auto retry ran before (owner override). */
+  usageResetIgnored?: { reason: string; reset_at: string };
 }
 
 interface Intent {
@@ -393,6 +408,10 @@ interface Intent {
    * recovered automatically (refuseLegacyState).
    */
   namespace?: string;
+  /** H-13: the run's egress override; recovery records it whatever command recovers. */
+  egress_override?: EgressOverride;
+  /** H-13b: likewise its calibration waiver. */
+  calibration_waived?: true;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -957,11 +976,98 @@ function unparsed(exitCode: number | null, m: ResolvedManifest): ParsedRun {
 }
 
 /** raw_usage.stream_problems of an adapter parse (M1-32), [] when absent. */
-function streamProblems(raw: unknown): string[] {
+export function streamProblems(raw: unknown): string[] {
   const p = raw !== null && typeof raw === "object" && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)["stream_problems"]
     : undefined;
   return Array.isArray(p) ? p.map(String) : [];
+}
+
+/**
+ * H-12 (gate-3 ruling 2026-10-15, M9-13b): a Claude Code budget stop
+ * (`error_max_budget_usd`, stop_reason tool_use) leaves in-flight tool calls
+ * without a result. Those `tool_use <id> has no result` problems alone, every
+ * orphan in the last assistant message of its agent (parent_tool_use_id; null
+ * = main, compared by a non-empty message.id on both records), with an exact
+ * usage reconciliation, do not make the cost unprovable. If any orphan is an
+ * Agent/Task spawn (its tool_use name), a child's usage may be missing, so the
+ * reconciliation must be `exact_otel`, or `exact` beside raw_usage.otel
+ * `exact` (the label stays `exact` when stream and OTel agree). Each orphan
+ * must be exactly one tool_use block (matched by type and id) before the
+ * result; its name is read from that block, a repeated id fails closed.
+ * Anything else (other problem, odd stream, other reconciliation) fails closed.
+ */
+export function budgetCutOrphansExempt(
+  raw: string,
+  problems: string[],
+  run: Pick<ParsedRun, "termination" | "telemetry">,
+): boolean {
+  const rawUsage = run.telemetry.raw_usage as
+    | { usage_reconciliation?: { status?: unknown } }
+    | null;
+  const status = rawUsage?.usage_reconciliation?.status;
+  if (
+    run.termination !== "budget_exhausted" ||
+    run.telemetry.stop_reason !== "tool_use" ||
+    (status !== "exact" && status !== "exact_otel") || problems.length === 0
+  ) return false;
+  const orphans: string[] = [];
+  for (const p of problems) {
+    const m = /^tool_use (\S+) has no result$/.exec(p);
+    if (!m) return false;
+    orphans.push(m[1]!);
+  }
+  type Rec = {
+    type?: unknown;
+    subtype?: unknown;
+    parent_tool_use_id?: unknown;
+    message?: { id?: unknown; content?: unknown };
+  };
+  const recs: Rec[] = [];
+  for (const l of raw.split(/\r?\n/)) {
+    if (l.trim() === "") continue;
+    try {
+      const r = JSON.parse(l) as Rec;
+      if (r === null || typeof r !== "object") return false;
+      recs.push(r);
+    } catch {
+      return false;
+    }
+  }
+  const results = recs.flatMap((r, i) => r.type === "result" ? [i] : []);
+  if (results.length !== 1) return false;
+  const end = results[0]!;
+  if ((recs[end] as Rec).subtype !== "error_max_budget_usd") return false;
+  const agent = (r: Rec) => String(r.parent_tool_use_id ?? "");
+  type Block = { type?: unknown; id?: unknown; name?: unknown };
+  const blocks = (r: Rec) =>
+    Array.isArray(r.message?.content) ? r.message.content as Block[] : [];
+  const uses = (r: Rec, id: string) =>
+    blocks(r).filter((c) => c?.type === "tool_use" && c.id === id);
+  const mid = (r: Rec) => r.message?.id;
+  const hasId = (r: Rec) => typeof mid(r) === "string" && mid(r) !== "";
+  let spawn = false;
+  const kept = orphans.every((id) => {
+    const at = recs.flatMap((r, i) =>
+      r.type === "assistant" ? uses(r, id).map(() => i) : []
+    );
+    // Exactly one tool_use block with this id in the whole stream.
+    if (at.length !== 1 || at[0]! > end) return false;
+    const rec = recs[at[0]!]!;
+    const name = uses(rec, id)[0]!.name;
+    if (name === "Agent" || name === "Task") spawn = true;
+    // Message identity fails closed: an id-less record cannot be compared.
+    return hasId(rec) &&
+      recs.slice(at[0]! + 1, end).every((r) =>
+        r.type !== "assistant" || agent(r) !== agent(rec) ||
+        (hasId(r) && mid(r) === mid(rec))
+      );
+  });
+  // A spawn orphan may stand for a child whose usage never arrived: only the
+  // independent OTel request count proves it complete.
+  const otel = (rawUsage as { otel?: { status?: unknown } } | null)?.otel
+    ?.status;
+  return kept && (!spawn || status === "exact_otel" || otel === "exact");
 }
 
 /** Backend host log, tolerant of a line cut by a crash: bad lines are counted, never fatal. */
@@ -1061,6 +1167,8 @@ interface DraftInput {
   egressStop?: string | null;
   /** The component inventory refused the arm before any credential was released: nothing paid, cost exactly 0. */
   preStart?: boolean;
+  /** H-16: the sandbox is confirmed gone but a backend request did not drain: harness_crash with this infra reason. */
+  undrained?: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -1110,7 +1218,19 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   let telemetry = f.preStart
     ? notStarted(f.sandbox.exitCode).telemetry
     : parsed.telemetry;
-  if (!f.preStart && parsed.termination !== null && problems.length > 0) {
+  // H-12: a budget cut's orphan tool calls alone leave an exact cost provable.
+  const orphansExempt = problems.length > 0 &&
+    parsed.termination === "budget_exhausted" &&
+    f.manifest.harness === "claude-code" &&
+    budgetCutOrphansExempt(
+      await Deno.readTextFile(p.raw).catch(() => "\0"),
+      problems,
+      parsed,
+    );
+  if (
+    !f.preStart && parsed.termination !== null && problems.length > 0 &&
+    !orphansExempt
+  ) {
     telemetry = {
       ...telemetry,
       cost_usd: null,
@@ -1131,6 +1251,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ...(host.bad.length > 0
       ? [`host log lines unreadable: ${host.bad.join(", ")}`]
       : []),
+    ...(f.undrained ? [f.undrained] : []),
   ];
   const check = started
     ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
@@ -1148,6 +1269,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ? "operator_interrupt"
     : f.sandbox.overflow
     ? "capture_overflow"
+    : f.undrained
+    ? "backend_undrained"
     : f.interrupted
     ? "runner_interrupted"
     : null;
@@ -1258,6 +1381,18 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       ),
     ],
     workspace_hash: frozen?.workspace_hash ?? null,
+    ...(env.unverifiedEgressReason
+      ? {
+        egress_override: {
+          egress_enforced: false,
+          reason: env.unverifiedEgressReason,
+        },
+      }
+      : {}),
+    ...(env.calibrationWaived ? { calibration_waived: true } : {}),
+    ...(f.at.usageResetIgnored
+      ? { usage_reset_ignored: f.at.usageResetIgnored }
+      : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -1285,6 +1420,8 @@ async function publishDraft(
   draft: Draft,
   pristine: string | null,
   taskUnchanged: boolean,
+  /** H-16: remove the private state only once this settles (an undrained backend request). */
+  cleanupAfter?: Promise<void>,
 ) {
   const now = env.now ?? (() => new Date());
   const e = draft.execution;
@@ -1350,7 +1487,33 @@ async function publishDraft(
   }
   await env.hooks?.after?.("judgment");
   hold();
+  if (cleanupAfter) {
+    // H-16: a backend request still runs on this execution's private state
+    // (staging roots, host log): published now, private state removed once it
+    // has drained. A failure or exit before then: the next start finishes it.
+    await markPublished(env, e.id);
+    void cleanupAfter.then(() => finishCleanup(env, e.id)).catch((err) =>
+      console.warn(
+        `[WARN] ${e.id}: deferred cleanup not finished (${
+          msg(err)
+        }); the next start finishes it`,
+      )
+    );
+    return;
+  }
   await finishCleanup(env, e.id);
+}
+
+async function markPublished(env: HarnessEnv, id: string) {
+  const p = privatePaths(env, id);
+  const intent = await readJson<Intent>(p.intent);
+  if (intent && intent.phase !== "published") {
+    holdNamespace(env, "cleanup stopped; nothing more removed");
+    await writeAtomic(
+      p.intent,
+      JSON.stringify({ ...intent, phase: "published" }, null, 2),
+    );
+  }
 }
 
 /** Completion protocol: mark published, delete private state, delete the intent last. */
@@ -1359,14 +1522,7 @@ async function finishCleanup(env: HarnessEnv, id: string) {
   // M10-08c run 003 item 2: the acquired token, right before each write and removal.
   const hold = () =>
     holdNamespace(env, "cleanup stopped; nothing more removed");
-  const intent = await readJson<Intent>(p.intent);
-  if (intent && intent.phase !== "published") {
-    hold();
-    await writeAtomic(
-      p.intent,
-      JSON.stringify({ ...intent, phase: "published" }, null, 2),
-    );
-  }
+  await markPublished(env, id);
   await env.hooks?.afterPublished?.();
   for (const d of [p.work, p.quarantine, p.pending, p.taskCopy]) {
     hold();
@@ -1459,7 +1615,7 @@ export async function runExecution(
     }
   }
   if (mode === "normal" && adapter.credentialBearing && !env.egressEnforced) {
-    if (!env.supervised) {
+    if (!env.supervised && !env.unverifiedEgressReason) {
       throw new ConfigurationError(
         `${cell.arm}: credential-bearing arms run only supervised (harness cell --supervised) until egress enforcement is verified (M1-33/M1-34)`,
       );
@@ -1530,6 +1686,15 @@ export async function runExecution(
     mode,
     stub,
     namespace: env.owner,
+    ...(env.unverifiedEgressReason
+      ? {
+        egress_override: {
+          egress_enforced: false,
+          reason: env.unverifiedEgressReason,
+        },
+      }
+      : {}),
+    ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -1740,7 +1905,9 @@ export async function runExecution(
               lane: env.lane_id,
               task: cell.task.task.id,
               config: cell.arm,
-              purpose: "supervised dev run",
+              purpose: env.unverifiedEgressReason
+                ? `unattended run under --unverified-egress-ok: ${env.unverifiedEgressReason}`
+                : "supervised dev run",
             },
             undefined,
             env.stop ? { signal: env.stop } : {},
@@ -2129,7 +2296,10 @@ export async function runExecution(
     }
     setupError = err.message;
   }
-  if (!sandbox.confirmedGone || !drained || teardownProblems.length > 0) {
+  // H-16: with the sandbox confirmed gone, an undrained backend request only
+  // costs this cell (harness_crash, infra reason): its container stays held
+  // by the lane until the request settles, and the other workers go on.
+  if (!sandbox.confirmedGone || teardownProblems.length > 0) {
     throw new ContainerError(
       `termination not confirmed for ${name} (${
         [sandbox.cleanup, ...teardownProblems].join("; ")
@@ -2140,6 +2310,10 @@ export async function runExecution(
       "stop",
     );
   }
+  const undrained = drained
+    ? null
+    : "backend request did not drain after revoke (abort plus the longest BC step's timeout); its container stays held until it settles";
+  if (undrained) console.warn(`[WARN] ${name}: ${undrained}`);
   // Review 546e8337 P3-4: suspended past the stale window, the new holder
   // may already have recovered this execution: lost, nothing is drafted or
   // published and the intent stays the holder's.
@@ -2162,9 +2336,17 @@ export async function runExecution(
     stub,
     egressStop,
     preStart: inventoryRefused !== null || notLive !== null,
+    undrained,
   });
   holdNamespace(env, nothingPublished);
-  await publishDraft(env, cell, draft, staged.pristine, true);
+  await publishDraft(
+    env,
+    cell,
+    draft,
+    staged.pristine,
+    true,
+    (undrained ? env.backend.drained(id) : null) ?? undefined,
+  );
   if (privilegeFailure !== null) {
     // Infra, never scored; a retry would repeat it: the campaign stops here.
     throw new ContainerError(
@@ -2863,6 +3045,10 @@ export async function runCell(
       attempt: e.attempt + 1,
       runKind: "auto_retry",
       retryOf: e.id,
+      // H-15: a retry chained here still runs under the ignored reset.
+      ...(at.usageResetIgnored
+        ? { usageResetIgnored: at.usageResetIgnored }
+        : {}),
     };
     const candidate = {
       ...e,
@@ -3066,10 +3252,19 @@ export async function recoverInterrupted(
     }
     const id = intent.execution_id;
     // Publish into the store of the command that started the attempt, whatever command recovers it.
+    const {
+      unverifiedEgressReason: _override,
+      calibrationWaived: _waived,
+      ...baseEnv
+    } = env;
     const own: HarnessEnv = {
-      ...env,
+      ...baseEnv,
       resultsRoot: intent.results_root,
       store: new RecordStore(intent.results_root),
+      ...(intent.egress_override
+        ? { unverifiedEgressReason: intent.egress_override.reason }
+        : {}),
+      ...(intent.calibration_waived ? { calibrationWaived: true } : {}),
     };
     if (intent.phase === "published") {
       hold();

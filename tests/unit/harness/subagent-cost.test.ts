@@ -563,3 +563,54 @@ Deno.test("gate 3: a compaction excuses only main-model input that no sub-agent 
     "is not the main-session model",
   );
 });
+
+// deno-lint-ignore no-explicit-any -- recorded stream-json, shape asserted below
+type Rec = any; // not Record<string, any>: noPropertyAccessFromIndexSignature
+const recsOf = async (f: string): Promise<Rec[]> =>
+  (await Deno.readTextFile(`tests/fixtures/harness/claude-code/${f}`))
+    .split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+
+Deno.test("gate 3 live (M9-13): sub-agents ran on the pinned model and the run reconciles", async () => {
+  const recs = await recsOf("m9-subagents.jsonl");
+  assert(
+    recs.some((r) =>
+      r.type === "assistant" && typeof r.parent_tool_use_id === "string"
+    ),
+    "a sub-agent ran",
+  );
+  const result = recs.findLast((r) => r.type === "result")!;
+  assertEquals(Object.keys(result.modelUsage), ["claude-sonnet-5"]);
+  const r = await parse(recs.map((x) => JSON.stringify(x)));
+  assertEquals(recon(r), { status: "exact" });
+  assert(r.telemetry.cost_usd !== null, missing(r));
+});
+
+// M9-13 took the Step 3 fallback (no isAsync), so this pins the stop, the
+// bound (1.2 x max_budget_usd 1.00) and reconciliation, not interleaving.
+Deno.test("gate 3 live (M9-13): the budget stop ends a sync sub-agent run within the bound, and nothing runs after it", async () => {
+  const recs = await recsOf("m9-budget.jsonl");
+  const at = recs.findLastIndex((r) => r.type === "result");
+  assertEquals(recs[at]!.subtype, "error_max_budget_usd");
+  const agentResults = recs.filter((r) =>
+    r.type === "user" && typeof r.tool_use_result?.agentId === "string"
+  );
+  assert(agentResults.length > 0, "a sub-agent returned before the stop");
+  assert(
+    !agentResults.some((r) => r.tool_use_result.isAsync === true),
+    "an agent result carries isAsync: true",
+  );
+  assert(
+    !recs.slice(at + 1).some((r) =>
+      typeof r.parent_tool_use_id === "string" ||
+      (r.type === "system" && r.subtype === "init")
+    ),
+    "no child work and no resumed session after the stop",
+  );
+  assert(
+    recs[at]!.total_cost_usd <= 1.2 * 1.0,
+    `overshoot: ${recs[at]!.total_cost_usd}`,
+  );
+  const r = await parse(recs.map((x) => JSON.stringify(x)));
+  assertEquals(r.termination, "budget_exhausted");
+  assertEquals(recon(r), { status: "exact" });
+});

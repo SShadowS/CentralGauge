@@ -107,6 +107,12 @@ export type ReportedMetric = PrimaryMetric | "pass_k";
 
 export interface HarnessReport {
   v: 1;
+  /** H-13: present when the campaign or any execution ran under --unverified-egress-ok. */
+  egress_override?: { egress_enforced: false; reasons: string[] };
+  /** H-13b: present when the campaign or any execution waived the M8-07c calibration gate. */
+  calibration_waived?: true;
+  /** H-15: present when any execution ran before its parent's recorded usage reset. */
+  usage_reset_ignored?: { reasons: string[] };
   experiment: {
     id: string;
     hypothesis: string;
@@ -631,6 +637,22 @@ export async function buildReport(
       .map((e) => [e.id, e.arm]),
   );
   const invalidTraces = opts.traces?.invalid ?? [];
+  // H-13: every egress override reason of the campaign and its executions.
+  const overrideReasons = [
+    ...new Set(
+      [campaign, ...records.executions].flatMap((x) =>
+        x.egress_override ? [x.egress_override.reason] : []
+      ),
+    ),
+  ];
+  // H-15: every --ignore-usage-reset reason of its executions.
+  const resetReasons = [
+    ...new Set(
+      records.executions.flatMap((e) =>
+        e.usage_reset_ignored ? [e.usage_reset_ignored.reason] : []
+      ),
+    ),
+  ];
   const knownSpend = (cs: CellRecord[]) =>
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
@@ -1062,6 +1084,20 @@ export async function buildReport(
       : {}),
     cells,
     exploratory,
+    ...(overrideReasons.length > 0
+      ? {
+        egress_override: {
+          egress_enforced: false as const,
+          reasons: overrideReasons,
+        },
+      }
+      : {}),
+    ...([campaign, ...records.executions].some((x) => x.calibration_waived)
+      ? { calibration_waived: true as const }
+      : {}),
+    ...(resetReasons.length > 0
+      ? { usage_reset_ignored: { reasons: resetReasons } }
+      : {}),
   };
 }
 
@@ -1102,6 +1138,25 @@ export function renderReport(r: HarnessReport): string {
     r.metric_labels[m] === "primary" ? "" : colors.dim(" [exploratory]");
   const h = (s: string) => out.push("", colors.bold(s));
   out.push(colors.bold(`Harness report: ${r.experiment.id}`));
+  if (r.egress_override) {
+    out.push(colors.red(
+      `[WARN] egress NOT enforced (owner override): ${
+        r.egress_override.reasons.join("; ")
+      }`,
+    ));
+  }
+  if (r.calibration_waived) {
+    out.push(colors.red(
+      "[WARN] M8-07c campaign calibration waived (owner override): an image ran without its real calibration",
+    ));
+  }
+  if (r.usage_reset_ignored) {
+    out.push(colors.red(
+      `[WARN] recorded usage resets ignored (owner override --ignore-usage-reset): ${
+        r.usage_reset_ignored.reasons.join("; ")
+      }`,
+    ));
+  }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
     ? r.confirmatory
     : undefined;

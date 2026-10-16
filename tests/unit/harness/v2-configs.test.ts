@@ -221,6 +221,32 @@ Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest 
 });
 
 /**
+ * M9-13 re-ruling (z), decisions/2026-10-15-m9-13-gate3-rulings.md: the budget cell runs the
+ * plain realistic arm (no wasteful instructions). max_budget_usd is 1.00 so one request's
+ * overshoot stays inside the 1.2 x margin; the H-10 image so its usage reconciles via OTel.
+ */
+Deno.test("M9-13 realistic budget probe: the H-10 realistic probe with id and max_budget_usd 1.00 only; never in an experiment", async () => {
+  const id = "cc-v2-probe-h03-m9-budget-realistic";
+  const c = await loadConfig("harness", id);
+  const src = await loadConfig("harness", "cc-v2-probe-h10-realistic");
+  assertEquals(c, {
+    ...src,
+    id,
+    limits: { ...src.limits, max_budget_usd: 1 },
+  });
+  const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
+    .split(/\r?\n/)[0];
+  assertEquals(
+    first,
+    "# M9-13 budget probe config (developmental). Never part of an experiment.",
+  );
+  for await (const e of Deno.readDir("harness/experiments")) {
+    const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
+    assert(!text.includes(id), `${e.name} names ${id}`);
+  }
+});
+
+/**
  * H-10 (gate-3 ruling 2026-10-15): the real nested proof runs on the realistic
  * arm with no probe-m9 instructions, on the H-10 dev image. It is
  * cc-v2-probe-realistic with only id, harness_version "latest" and

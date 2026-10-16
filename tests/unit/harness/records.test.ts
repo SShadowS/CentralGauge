@@ -83,6 +83,59 @@ Deno.test("execution schema: loud on bad records", async () => {
   }
 });
 
+Deno.test("H-13: egress_override is optional on execution and campaign records; when present it needs a reason and egress_enforced false", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const ok = { egress_enforced: false, reason: "P-01 pilot" };
+  for (const schema of [ExecutionRecordSchema, CampaignRecordSchema] as const) {
+    const r = schema === ExecutionRecordSchema ? e : c;
+    assertEquals(
+      (schema.parse(r) as { egress_override?: unknown }).egress_override,
+      undefined,
+      "old records still load",
+    );
+    assertEquals(
+      (schema.parse({ ...r, egress_override: ok }) as {
+        egress_override?: unknown;
+      }).egress_override,
+      ok,
+    );
+    for (
+      const bad of [
+        { egress_enforced: false, reason: "" },
+        { egress_enforced: true, reason: "x" },
+        { egress_enforced: false },
+        { ...ok, extra: 1 },
+      ]
+    ) {
+      assertThrows(() => schema.parse({ ...r, egress_override: bad }));
+    }
+  }
+});
+
+Deno.test("H-13b: calibration_waived is optional, only true, and only next to egress_override", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const over = { egress_enforced: false, reason: "P-01 pilot" };
+  for (const schema of [ExecutionRecordSchema, CampaignRecordSchema] as const) {
+    const r = schema === ExecutionRecordSchema ? e : c;
+    assertEquals(
+      (schema.parse({
+        ...r,
+        egress_override: over,
+        calibration_waived: true,
+      }) as {
+        calibration_waived?: unknown;
+      }).calibration_waived,
+      true,
+    );
+    assertThrows(() => schema.parse({ ...r, calibration_waived: true }));
+    assertThrows(() =>
+      schema.parse({ ...r, egress_override: over, calibration_waived: false })
+    );
+  }
+});
+
 Deno.test("judgment schema: verdict must agree, failures must be classified", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), false);
@@ -435,8 +488,11 @@ Deno.test("schemas: hashes are lower-case hex, ids are lower-case uuids", async 
       ExecutionRecordSchema.parse({ ...e, workspace_hash: bad })
     );
   }
+  // The fixture id is a hex counter (digits only for some values): pin a letter.
+  const lower = "00000000-0000-4000-9000-00000000000a";
+  ExecutionRecordSchema.parse({ ...e, id: lower });
   assertThrows(() =>
-    ExecutionRecordSchema.parse({ ...e, id: e.id.toUpperCase() })
+    ExecutionRecordSchema.parse({ ...e, id: lower.toUpperCase() })
   );
   const upper = CAMPAIGN_ID.replace("0001", "000A");
   assertThrows(() => CampaignRecordSchema.parse({ ...c, id: upper }));
@@ -935,5 +991,39 @@ Deno.test("judgment schema (C-03 run 003): the basis is an owner decision with i
     ]
   ) {
     assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
+  }
+});
+
+Deno.test("H-15: usage_reset_ignored is optional, strict, and only on an auto_retry", async () => {
+  const c = await campaign();
+  const parent = execution(c, {}, { termination: "usage_limited" });
+  const retry = execution(c, {
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: parent.id,
+  });
+  const ok = { reason: "fresh account", reset_at: "2026-10-16T11:00:00Z" };
+  assertEquals(
+    ExecutionRecordSchema.parse({ ...retry, usage_reset_ignored: ok })
+      .usage_reset_ignored,
+    ok,
+  );
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({ ...parent, usage_reset_ignored: ok })
+  );
+  for (
+    const bad of [
+      { ...ok, reason: "" },
+      { ...ok, reset_at: "unknown" },
+      { reason: "x" },
+      { ...ok, extra: 1 },
+    ]
+  ) {
+    assertThrows(
+      () => ExecutionRecordSchema.parse({ ...retry, usage_reset_ignored: bad }),
+      Error,
+      undefined,
+      JSON.stringify(bad),
+    );
   }
 });

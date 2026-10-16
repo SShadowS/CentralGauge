@@ -1,0 +1,14 @@
+# Seal ledger of the v2 screening registry (scripts/harness/screening.ts).
+# Append only: each entry's prev hashes the entry before it; each entry is
+# anchored by its seal tag and by <seal tag>-ledger on the commit that appends it.
+v: 2
+seals:
+  - tag: harness-v2-screen-start
+    tag_object: "a92c469415dc39b08839163d72a00e2143af0c78"
+    commit: "487178a433cc86633366893ee21af7242b8d4c8f"
+    pushed_at: "2026-10-16T11:15:00Z"
+    drand_chain: "8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce"
+    drand_round: 6557296
+    round_time: "2026-10-16T11:25:00Z"
+    randomness: "329bd529d7d9356e5e42fddbc8a910b8437817a6b32ae6cf3f7013f0f381e1a1"
+    prev: genesis

@@ -1580,6 +1580,10 @@ export interface RunCliOptions extends CellCliOptions {
   judgeContainers?: string[];
   /** run, judge-pending (H-09): judgments at once (default: one per judge container). */
   judgeConcurrency?: number;
+  /** run (H-13): owner override of the egress-marker refusal; the reason is recorded. */
+  unverifiedEgressReason?: string;
+  /** run (H-15): owner override; owed retries ignore usage resets recorded before this run. */
+  ignoreUsageReset?: string;
 }
 
 type RerunCell = NonNullable<RunOptions["rerun"]>;
@@ -1608,6 +1612,22 @@ export async function harnessRun(
   plan: Planner = (eo) => openPlanEnv(eo),
   sleep: (ms: number) => Promise<void> = sleepMs,
 ): Promise<CampaignSummary> {
+  if (
+    o.unverifiedEgressReason !== undefined &&
+    o.unverifiedEgressReason.trim() === ""
+  ) {
+    throw new ConfigurationError(
+      "--unverified-egress-ok needs a non-empty reason",
+    );
+  }
+  if (o.ignoreUsageReset !== undefined && o.ignoreUsageReset.trim() === "") {
+    throw new ConfigurationError(
+      "--ignore-usage-reset needs a non-empty reason",
+    );
+  }
+  const override = o.unverifiedEgressReason !== undefined
+    ? { unverifiedEgressReason: o.unverifiedEgressReason }
+    : {};
   const catalogDir = join(o.root, "site", "catalog");
   const { configs } = await loadExperiment(
     join(o.root, "harness"),
@@ -1631,6 +1651,9 @@ export async function harnessRun(
     ...(o.stopFiles !== undefined ? { stopFiles: o.stopFiles } : {}),
     ...(o.campaign !== undefined ? { campaign: o.campaign } : {}),
     ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
+    ...(o.ignoreUsageReset !== undefined
+      ? { ignoreUsageReset: o.ignoreUsageReset }
+      : {}),
     ...(o.preregDecision !== undefined
       ? { preregDecision: o.preregDecision }
       : {}),
@@ -1668,7 +1691,10 @@ export async function harnessRun(
   }
   if (o.dryRun) {
     const s = await planCampaign(
-      await plan(envOptions(o, o.resultsDir, `${command} --dry-run`)),
+      {
+        ...await plan(envOptions(o, o.resultsDir, `${command} --dry-run`)),
+        ...override,
+      },
       experimentId,
       ro,
       io,
@@ -1687,12 +1713,15 @@ export async function harnessRun(
     configs,
   });
   try {
-    const env = o.qualifyManifest
-      ? {
-        ...h.env,
-        qualifyManifest: await loadQualifyManifest(o.qualifyManifest),
-      }
-      : h.env;
+    const env = {
+      ...(o.qualifyManifest
+        ? {
+          ...h.env,
+          qualifyManifest: await loadQualifyManifest(o.qualifyManifest),
+        }
+        : h.env),
+      ...override,
+    };
     const s = await runCampaign(
       env,
       experimentId,
@@ -2994,6 +3023,8 @@ export function registerHarnessCommand(
     preregDecision?: string;
     preregBDecision?: string;
     judgeContainers?: string;
+    unverifiedEgressOk?: string;
+    ignoreUsageReset?: string;
   };
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
@@ -3024,6 +3055,12 @@ export function registerHarnessCommand(
       : {}),
     ...(f.judgeConcurrency !== undefined
       ? { judgeConcurrency: f.judgeConcurrency }
+      : {}),
+    ...(f.ignoreUsageReset !== undefined
+      ? { ignoreUsageReset: f.ignoreUsageReset }
+      : {}),
+    ...(f.unverifiedEgressOk !== undefined
+      ? { unverifiedEgressReason: f.unverifiedEgressOk }
       : {}),
   });
 
@@ -3079,6 +3116,14 @@ export function registerHarnessCommand(
     .option(
       "--prereg-b-decision <path:string>",
       "Stage-B pre-registration decision file (required with a preregistration)",
+    )
+    .option(
+      "--unverified-egress-ok <reason:string>",
+      "H-13, OWNER ONLY: run credential-bearing arms without verified egress enforcement; every record and the report carry egress_enforced: false and the reason. H-13b: also waives the M8-07c campaign calibration gate (recorded as calibration_waived), never the BUILTIN_INVENTORY qualification",
+    )
+    .option(
+      "--ignore-usage-reset <reason:string>",
+      "H-15, OWNER ONLY: retries owed to usage resets recorded before this run start now (e.g. after an account swap); a limit hit during this run still pauses. Each such retry and the report carry the reason",
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => void await harnessRun(experiment, runOpts(opts), open))
