@@ -226,8 +226,23 @@ export const ExecutionRecordSchema = z.strictObject({
   egress_override: EgressOverrideSchema.optional(),
   /** H-13b: its campaign ran with the calibration gate waived. */
   calibration_waived: CalibrationWaived,
+  /**
+   * H-15: this auto retry ran under the owner's `harness run
+   * --ignore-usage-reset <reason>` before its parent's recorded reset.
+   */
+  usage_reset_ignored: z.strictObject({
+    reason: z.string().min(1),
+    reset_at: Iso,
+  }).optional(),
 }).superRefine((e, ctx) => {
   waiverNeedsOverride(e, ctx);
+  if (e.usage_reset_ignored && e.run_kind !== "auto_retry") {
+    ctx.addIssue({
+      code: "custom",
+      message: "usage_reset_ignored is only on an auto_retry",
+      path: ["usage_reset_ignored"],
+    });
+  }
   if (e.v === 2 && e.validity.incomplete_observed === undefined) {
     ctx.addIssue({
       code: "custom",

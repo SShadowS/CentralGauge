@@ -993,3 +993,37 @@ Deno.test("judgment schema (C-03 run 003): the basis is an owner decision with i
     assertThrows(() => parse(bad), Error, undefined, JSON.stringify(bad));
   }
 });
+
+Deno.test("H-15: usage_reset_ignored is optional, strict, and only on an auto_retry", async () => {
+  const c = await campaign();
+  const parent = execution(c, {}, { termination: "usage_limited" });
+  const retry = execution(c, {
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: parent.id,
+  });
+  const ok = { reason: "fresh account", reset_at: "2026-10-16T11:00:00Z" };
+  assertEquals(
+    ExecutionRecordSchema.parse({ ...retry, usage_reset_ignored: ok })
+      .usage_reset_ignored,
+    ok,
+  );
+  assertThrows(() =>
+    ExecutionRecordSchema.parse({ ...parent, usage_reset_ignored: ok })
+  );
+  for (
+    const bad of [
+      { ...ok, reason: "" },
+      { ...ok, reset_at: "unknown" },
+      { reason: "x" },
+      { ...ok, extra: 1 },
+    ]
+  ) {
+    assertThrows(
+      () => ExecutionRecordSchema.parse({ ...retry, usage_reset_ignored: bad }),
+      Error,
+      undefined,
+      JSON.stringify(bad),
+    );
+  }
+});

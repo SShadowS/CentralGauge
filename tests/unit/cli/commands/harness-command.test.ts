@@ -8586,3 +8586,22 @@ Deno.test("harness judge-pending (H-09 review): a refused execution is warned an
     lines.join("\n"),
   );
 });
+
+Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before planning or any environment", async () => {
+  const t = await makeEnv();
+  for (const reason of ["", "  "]) {
+    for (const dryRun of [true, false]) {
+      await assertRejects(
+        () =>
+          harnessRun(
+            "cc",
+            runOpts(t, { dryRun, ignoreUsageReset: reason }),
+            () => Promise.reject(new Error("refused before the environment")),
+            () => Promise.reject(new Error("refused before planning")),
+          ),
+        ConfigurationError,
+        "--ignore-usage-reset needs a non-empty reason",
+      );
+    }
+  }
+});

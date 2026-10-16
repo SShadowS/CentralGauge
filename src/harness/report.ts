@@ -111,6 +111,8 @@ export interface HarnessReport {
   egress_override?: { egress_enforced: false; reasons: string[] };
   /** H-13b: present when the campaign or any execution waived the M8-07c calibration gate. */
   calibration_waived?: true;
+  /** H-15: present when any execution ran before its parent's recorded usage reset. */
+  usage_reset_ignored?: { reasons: string[] };
   experiment: {
     id: string;
     hypothesis: string;
@@ -643,6 +645,14 @@ export async function buildReport(
       ),
     ),
   ];
+  // H-15: every --ignore-usage-reset reason of its executions.
+  const resetReasons = [
+    ...new Set(
+      records.executions.flatMap((e) =>
+        e.usage_reset_ignored ? [e.usage_reset_ignored.reason] : []
+      ),
+    ),
+  ];
   const knownSpend = (cs: CellRecord[]) =>
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
@@ -1085,6 +1095,9 @@ export async function buildReport(
     ...([campaign, ...records.executions].some((x) => x.calibration_waived)
       ? { calibration_waived: true as const }
       : {}),
+    ...(resetReasons.length > 0
+      ? { usage_reset_ignored: { reasons: resetReasons } }
+      : {}),
   };
 }
 
@@ -1135,6 +1148,13 @@ export function renderReport(r: HarnessReport): string {
   if (r.calibration_waived) {
     out.push(colors.red(
       "[WARN] M8-07c campaign calibration waived (owner override): an image ran without its real calibration",
+    ));
+  }
+  if (r.usage_reset_ignored) {
+    out.push(colors.red(
+      `[WARN] recorded usage resets ignored (owner override --ignore-usage-reset): ${
+        r.usage_reset_ignored.reasons.join("; ")
+      }`,
     ));
   }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
