@@ -14,3 +14,9 @@ variants: [cc-v2-plain-lsp, cc-v2-realistic, cc-v2-realistic-lsp]
 vary: [instructions, skills, agents, mcp, lsp]
 tasks: "harness-tasks/tasks/*"
 repeats: 5
+contrasts:
+  - { id: C1, name: "LSP effect without the realistic setup", baseline: cc-v2-plain, variant: cc-v2-plain-lsp }
+  - { id: C2, name: "LSP effect with the realistic setup", baseline: cc-v2-realistic, variant: cc-v2-realistic-lsp }
+  - { id: C3, name: "realistic effect without LSP", baseline: cc-v2-plain, variant: cc-v2-realistic }
+interaction: { name: "LSP effect differs by realistic level", status: exploratory, plain: cc-v2-plain, lsp: cc-v2-plain-lsp, realistic: cc-v2-realistic, realistic_lsp: cc-v2-realistic-lsp }
+preregistration: preregistration/cc-v2-factorial.yml
