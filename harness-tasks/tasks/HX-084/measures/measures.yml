@@ -3,14 +3,16 @@ partial_credit:
   weights:
     "87140/SixthAndSeventhAreWorkingDays": 1
     "87140/WeekendSkipped": 1
-    "87140/HolidaySkipped": 1
-    "87140/ZeroDaysReturnsFromDate": 1
     "87140/FiveDaysAcrossWeekend": 1
-    "87140/FromSunday": 1
     "87140/AcrossMonthEnd": 1
-    "87140/NegativeDaysRefused": 1
-    "87140/IsWorkingDayAsToday": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "87140/HolidaySkipped"
+    - "87140/ZeroDaysReturnsFromDate"
+    - "87140/FromSunday"
+    - "87140/NegativeDaysRefused"
+    - "87140/IsWorkingDayAsToday"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/sunday-first: { partial_credit: 0.5 }
+  naive/sunday-zero: { partial_credit: 0.25 }
