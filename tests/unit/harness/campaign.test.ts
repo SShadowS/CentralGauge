@@ -1151,7 +1151,7 @@ const PR_STAGE_A = {
   alpha: 0.05,
   test: {
     sides: "two",
-    p_value: "percentile_bootstrap_plus_one",
+    p_value: "bootstrap-t",
     adjustment: "holm",
     direction: "sign_of_delta",
   },

@@ -33,6 +33,15 @@ const Rule = z.discriminatedUnion("rule", [
 ]);
 const FileRef = z.strictObject({ path: z.string().min(1), sha256: Sha256Hex });
 
+/**
+ * The confirmatory p-value test, named as testContrasts names the method it
+ * runs (H-18): the symmetric bootstrap-t of the 2026-10-03 owner amendment
+ * (decisions/2026-10-03-m11-inference-amendment.md). The pre-amendment
+ * "percentile_bootstrap_plus_one" is refused: no frozen file declares it and
+ * the code no longer runs it for cost_per_solved_task.
+ */
+export const PREREG_P_VALUE = "bootstrap-t";
+
 export const PreregSchema = z.strictObject({
   v: z.literal(1),
   experiment: z.string().min(1),
@@ -49,7 +58,7 @@ export const PreregSchema = z.strictObject({
   alpha: z.number().gt(0).lt(1),
   test: z.strictObject({
     sides: z.literal("two"),
-    p_value: z.literal("percentile_bootstrap_plus_one"),
+    p_value: z.literal(PREREG_P_VALUE),
     adjustment: z.literal("holm"),
     direction: z.literal("sign_of_delta"),
   }),
@@ -214,6 +223,11 @@ export function familyProblems(doc: Prereg, e: Experiment): string[] {
       (pre === "confirmatory" && doc.confirmatory)
   ) {
     out.push("interaction is in the family exactly when it is confirmatory");
+  }
+  if (doc.test.p_value !== PREREG_P_VALUE) {
+    out.push(
+      `declared test ${doc.test.p_value} is not the executed test ${PREREG_P_VALUE}`,
+    );
   }
   return out;
 }

@@ -2159,7 +2159,7 @@ export const STAGE_A = {
   confirmatory: true,
   family: ["C1", "C2", "C3"],
   alpha: 0.05,
-  test: { sides: "two", p_value: "percentile_bootstrap_plus_one", adjustment: "holm", direction: "sign_of_delta" },
+  test: { sides: "two", p_value: "bootstrap-t", adjustment: "holm", direction: "sign_of_delta" },
   intervals: { reported: "per_contrast_unadjusted", beside: "bonferroni_same_draws" },
   bootstrap: { unit: "task", resamples: 10000, seed: 20261021, level: 0.95 },
   zero_solve: { rule: "suppress_any_undefined" },
@@ -2407,7 +2407,7 @@ export const PreregSchema = z.strictObject({
   alpha: z.number().gt(0).lt(1),
   test: z.strictObject({
     sides: z.literal("two"),
-    p_value: z.literal("percentile_bootstrap_plus_one"),
+    p_value: z.literal("bootstrap-t"),
     adjustment: z.literal("holm"),
     direction: z.literal("sign_of_delta"),
   }),
