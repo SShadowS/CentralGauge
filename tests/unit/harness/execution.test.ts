@@ -6002,3 +6002,30 @@ Deno.test("H-16: an undrained backend with an unconfirmed sandbox still fails cl
     revoke.restore();
   }
 });
+
+Deno.test("H-16 (Sol r1): an undrained cell is published at once, but its private state (staging roots, host log) is removed only after the backend request has drained", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.behavior = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct");
+  let drain!: () => void;
+  const late = new Promise<void>((r) => (drain = r));
+  const revoke = stub(t.env.backend, "revoke", () => Promise.resolve(false));
+  const drained = stub(t.env.backend, "drained", () => late);
+  try {
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    assertEquals((await t.env.store.executions(cell.campaignId)).length, 1);
+    const p = privatePaths(t.env, e.id);
+    const intent = JSON.parse(await Deno.readTextFile(p.intent));
+    assertEquals(intent.phase, "published");
+    assert(await exists(p.work), "staging kept while the request runs");
+    drain();
+    for (let i = 0; i < 100 && await exists(p.intent); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert(!await exists(p.intent), "intent removed after the drain");
+    assert(!await exists(p.work), "private state removed after the drain");
+  } finally {
+    revoke.restore();
+    drained.restore();
+  }
+});

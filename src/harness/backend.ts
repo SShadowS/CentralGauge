@@ -416,6 +416,8 @@ export class Backend {
   private readonly grants = new Map<string, GrantState>();
   /** Revoked executions whose request did not drain: their id cannot be granted again yet. */
   private readonly draining = new Set<string>();
+  /** H-16: a late drain's settle (warned, build cache dropped), by execution id. */
+  private readonly late = new Map<string, Promise<void>>();
   /** Ids between grant's duplicate check and its insert. */
   private readonly reserved = new Set<string>();
   /** Host log path -> its last pending append (the per-log write chain). */
@@ -623,20 +625,26 @@ export class Backend {
       if (!await drainedWithin(inflight, afterAbort, elapsed)) {
         // Its container stays held by the lane until it settles.
         const t0 = performance.now();
-        void inflight.then(async () => {
+        const late = inflight.then(async () => {
           console.warn(
             `[WARN] backend request of execution ${executionId} drained late (${
               Math.round(performance.now() - t0)
             } ms after revoke gave up)`,
           );
           await this.dropBuildCache(executionId);
-        });
+        }).finally(() => this.late.delete(executionId));
+        this.late.set(executionId, late);
         return false;
       }
     }
     this.draining.delete(executionId);
     await this.dropBuildCache(executionId);
     return true;
+  }
+
+  /** H-16: settles once a request that revoke gave up on has drained; null when none is still running. */
+  drained(executionId: string): Promise<void> | null {
+    return this.late.get(executionId) ?? null;
   }
 
   /**
