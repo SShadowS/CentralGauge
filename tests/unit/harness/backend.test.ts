@@ -789,6 +789,7 @@ Deno.test("backend: a live or still-draining execution id cannot be granted agai
     },
     allowedHosts: ["127.0.0.1"],
     revokeGraceMs: 10,
+    stepTimeoutMs: 10, // H-16: else the after-abort wait is the 120 s SOAP timeout
   });
   const exec = "00000000-0000-4000-8000-00000000e008";
   const tok = await grantFor(b, s.root, exec, join(s.root, "hl8.jsonl"));
@@ -1837,5 +1838,101 @@ Deno.test("otel (H-10 r3): a request body that errors mid-read leaves no unhandl
     assertEquals(await s.backend.revoke(EXEC_C), true);
   } finally {
     globalThis.removeEventListener("unhandledrejection", onUnhandled);
+  }
+});
+
+Deno.test("H-16: after the abort, revoke waits the longest BC step's own timeout (the SOAP test timeout) plus the grace, not one more grace", async () => {
+  // P-01 br_19: the BC test step took 129.9 s to cancel (its 120 s SOAP
+  // timeout); the old second wait was one 30 s grace. Scaled down here.
+  const prev = Deno.env.get("CENTRALGAUGE_SOAP_TIMEOUT_MS");
+  Deno.env.set("CENTRALGAUGE_SOAP_TIMEOUT_MS", "1500");
+  try {
+    const root = await tmp();
+    let entered!: () => void;
+    const running = new Promise<void>((r) => (entered = r));
+    const b = new Backend({
+      scanReparsePoints: NO_SCAN,
+      approvedRoots: [join(root, "work")],
+      workRoot: join(root, "backend"),
+      ops: {
+        // The step sees the abort only when it ends, 300 ms later.
+        compile: (ctx) => {
+          entered();
+          return new Promise((_, rej) =>
+            ctx.signal.addEventListener(
+              "abort",
+              () => setTimeout(() => rej(ctx.signal.reason), 300),
+            )
+          );
+        },
+        test: () => new Promise(() => {}),
+      },
+      allowedHosts: ["127.0.0.1"],
+      revokeGraceMs: 20,
+    });
+    await Deno.mkdir(join(root, "work"), { recursive: true });
+    const tok = await grantFor(b, root, EXEC_A, join(root, "hl.jsonl"));
+    const pending = b.handle(req("/v1/compile", tok, '{"apps":["Core"]}'));
+    await running;
+    assertEquals(await b.revoke(EXEC_A), true, "drained after the abort");
+    assert([500, 503].includes((await pending).status));
+  } finally {
+    if (prev === undefined) Deno.env.delete("CENTRALGAUGE_SOAP_TIMEOUT_MS");
+    else Deno.env.set("CENTRALGAUGE_SOAP_TIMEOUT_MS", prev);
+  }
+});
+
+Deno.test("H-16: an undrained BC test step keeps its container: no other execution's BC step starts there before it settles; the late drain is reported", async () => {
+  const root = await tmp();
+  const bc = new FakeBc(() => result({ A: true }));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let testing!: () => void;
+  const inTest = new Promise<void>((r) => (testing = r));
+  const run = bc.runHarnessTests.bind(bc);
+  let calls = 0;
+  bc.runHarnessTests = async (c, cu) => {
+    if (++calls === 1) {
+      testing();
+      await gate; // the slow cancel: ignores the abort until it ends
+    }
+    return await run(c, cu);
+  };
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(root, "work")],
+    workRoot: join(root, "backend"),
+    ops: defaultBackendOps(new BcLane(bc, ["C1"])),
+    allowedHosts: ["127.0.0.1"],
+    revokeGraceMs: 10,
+    graceElapsed: () => Promise.resolve(), // both waits run out at once
+  });
+  await Deno.mkdir(join(root, "work"), { recursive: true });
+  const warns: string[] = [];
+  const warn = stub(console, "warn", (...a: unknown[]) => {
+    warns.push(a.join(" "));
+  });
+  try {
+    const tokA = await grantFor(b, root, EXEC_A, join(root, "hla.jsonl"));
+    const first = b.handle(req("/v1/test", tokA, "{}", EXEC_A));
+    await inTest;
+    assertEquals(await b.revoke(EXEC_A), false, "not drained");
+    const syncs = bc.syncs.length;
+    const tokB = await grantFor(b, root, EXEC_B, join(root, "hlb.jsonl"));
+    const second = b.handle(req("/v1/test", tokB, "{}", EXEC_B));
+    await new Promise((r) => setTimeout(r, 300));
+    assertEquals(bc.syncs.length, syncs, "no publish on C1 before the drain");
+    assertEquals(calls, 1, "no test on C1 before the drain");
+    release();
+    await first;
+    assertEquals((await second).status, 200);
+    assert(bc.syncs.length > syncs, "C1 is used again after the drain");
+    await new Promise((r) => setTimeout(r, 50));
+    assert(
+      warns.some((w) => w.includes(EXEC_A) && w.includes("drained late")),
+      warns.join("\n"),
+    );
+  } finally {
+    warn.restore();
   }
 });

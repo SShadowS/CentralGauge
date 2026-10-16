@@ -5959,3 +5959,46 @@ Deno.test("H-12 r3: a non-JSON line nulls the cost end to end (Write orphan, no 
   );
   assertEquals(e.telemetry.cost_usd, null);
 });
+
+Deno.test("H-16: sandbox confirmed gone, backend request undrained: the cell is published harness_crash with the infra reason (judged), no throw, nothing left in flight", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.behavior = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct");
+  const revoke = stub(t.env.backend, "revoke", () => Promise.resolve(false));
+  try {
+    const r = await runCell(t.env, cell);
+    const e = r.executions[0]!;
+    assertEquals([e.termination, e.did_work], ["harness_crash", true]);
+    assertEquals(e.validity.infra_exposed, true);
+    const side = await sideOf(t, e.id);
+    assertEquals(side.stop_reason, "backend_undrained");
+    assertStringIncludes(side.infra_reason, "backend request did not drain");
+    assertEquals((await t.env.store.judgments(e.id))[0]!.verdict, "pass");
+    assertEquals(await recoverInterrupted(t.env, loadTask), []);
+  } finally {
+    revoke.restore();
+  }
+});
+
+Deno.test("H-16: an undrained backend with an unconfirmed sandbox still fails closed (termination not confirmed, nothing published)", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.behavior = async (call, io) => {
+    t.docker.lingering.add(call.name);
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  const revoke = stub(t.env.backend, "revoke", () => Promise.resolve(false));
+  try {
+    await assertRejects(
+      () => runCell(t.env, cell),
+      ContainerError,
+      "backend request did not drain",
+    );
+    assertEquals(await t.env.store.executions(cell.campaignId), []);
+  } finally {
+    revoke.restore();
+  }
+});

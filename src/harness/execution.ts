@@ -1167,6 +1167,8 @@ interface DraftInput {
   egressStop?: string | null;
   /** The component inventory refused the arm before any credential was released: nothing paid, cost exactly 0. */
   preStart?: boolean;
+  /** H-16: the sandbox is confirmed gone but a backend request did not drain: harness_crash with this infra reason. */
+  undrained?: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -1249,6 +1251,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ...(host.bad.length > 0
       ? [`host log lines unreadable: ${host.bad.join(", ")}`]
       : []),
+    ...(f.undrained ? [f.undrained] : []),
   ];
   const check = started
     ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
@@ -1266,6 +1269,8 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ? "operator_interrupt"
     : f.sandbox.overflow
     ? "capture_overflow"
+    : f.undrained
+    ? "backend_undrained"
     : f.interrupted
     ? "runner_interrupted"
     : null;
@@ -2270,7 +2275,10 @@ export async function runExecution(
     }
     setupError = err.message;
   }
-  if (!sandbox.confirmedGone || !drained || teardownProblems.length > 0) {
+  // H-16: with the sandbox confirmed gone, an undrained backend request only
+  // costs this cell (harness_crash, infra reason): its container stays held
+  // by the lane until the request settles, and the other workers go on.
+  if (!sandbox.confirmedGone || teardownProblems.length > 0) {
     throw new ContainerError(
       `termination not confirmed for ${name} (${
         [sandbox.cleanup, ...teardownProblems].join("; ")
@@ -2281,6 +2289,10 @@ export async function runExecution(
       "stop",
     );
   }
+  const undrained = drained
+    ? null
+    : "backend request did not drain after revoke (abort plus the longest BC step's timeout); its container stays held until it settles";
+  if (undrained) console.warn(`[WARN] ${name}: ${undrained}`);
   // Review 546e8337 P3-4: suspended past the stale window, the new holder
   // may already have recovered this execution: lost, nothing is drafted or
   // published and the intent stays the holder's.
@@ -2303,6 +2315,7 @@ export async function runExecution(
     stub,
     egressStop,
     preStart: inventoryRefused !== null || notLive !== null,
+    undrained,
   });
   holdNamespace(env, nothingPublished);
   await publishDraft(env, cell, draft, staged.pristine, true);

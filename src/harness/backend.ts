@@ -17,6 +17,7 @@ import {
   HARNESS_TEST_APP_RANGE,
 } from "../constants.ts";
 import { dockerContextEnv } from "../container/docker-context.ts";
+import { resolveSoapTimeoutMs } from "../container/soap-test-client.ts";
 import {
   ConfigurationError,
   ContainerError,
@@ -520,6 +521,8 @@ export class Backend {
       allowedHosts: string[];
       bodyTimeoutMs?: number;
       revokeGraceMs?: number;
+      /** H-16: the longest BC step's own timeout, waited after a revoke's abort (default: the SOAP test timeout). */
+      stepTimeoutMs?: number;
       /** End-to-end deadline of one request (compile admission, compiles, publish and tests). */
       requestDeadlineMs?: number;
       /** Limits of the snapshot copy (agent-controlled size): exceeding them is a 422. */
@@ -612,7 +615,24 @@ export class Backend {
     const elapsed = this.o.graceElapsed;
     if (!await drainedWithin(inflight, grace, elapsed)) {
       st.abort.abort(new Error("grant revoked"));
-      if (!await drainedWithin(inflight, grace, elapsed)) return false;
+      // H-16: a BC step sees the abort only when it ends, so the wait after
+      // it is the longest step's own timeout (the SOAP test run) plus the grace.
+      const afterAbort = (this.o.stepTimeoutMs ??
+        resolveSoapTimeoutMs(Deno.env.get("CENTRALGAUGE_SOAP_TIMEOUT_MS"))) +
+        grace;
+      if (!await drainedWithin(inflight, afterAbort, elapsed)) {
+        // Its container stays held by the lane until it settles.
+        const t0 = performance.now();
+        void inflight.then(async () => {
+          console.warn(
+            `[WARN] backend request of execution ${executionId} drained late (${
+              Math.round(performance.now() - t0)
+            } ms after revoke gave up)`,
+          );
+          await this.dropBuildCache(executionId);
+        });
+        return false;
+      }
     }
     this.draining.delete(executionId);
     await this.dropBuildCache(executionId);
