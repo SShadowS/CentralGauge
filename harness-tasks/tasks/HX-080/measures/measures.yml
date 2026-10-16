@@ -11,3 +11,5 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/appended-list: { partial_credit: 0.6666666666666666 }
+  naive/exclusive-bounds: { partial_credit: 0.3333333333333333 }
