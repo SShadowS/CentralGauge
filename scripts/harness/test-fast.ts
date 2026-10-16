@@ -21,7 +21,7 @@ import { join } from "@std/path";
 
 export interface FileClass {
   safe: boolean;
-  /** Measured serial duration (H-14 acceptance run, 2026-10-16). */
+  /** Summed test time in a serial run (2026-10-16 09:02, master 4bd7b577). */
   seconds: number;
 }
 
@@ -29,81 +29,81 @@ const H = "tests/unit/harness/";
 const c = (safe: boolean, seconds: number): FileClass => ({ safe, seconds });
 
 export const CLASSES: Record<string, FileClass> = {
-  "tests/unit/cli/commands/harness-command.test.ts": c(true, 324),
+  "tests/unit/cli/commands/harness-command.test.ts": c(true, 166),
   [`${H}adapter.test.ts`]: c(true, 0),
-  [`${H}al-tools-mcp.test.ts`]: c(true, 7),
+  [`${H}al-tools-mcp.test.ts`]: c(true, 6),
   [`${H}allocation.test.ts`]: c(true, 0),
   [`${H}app-sync-probe.test.ts`]: c(true, 0),
-  [`${H}backend-probe.test.ts`]: c(true, 1),
-  [`${H}backend.test.ts`]: c(true, 15),
+  [`${H}backend-probe.test.ts`]: c(true, 0),
+  [`${H}backend.test.ts`]: c(true, 12),
   [`${H}bc-apps.test.ts`]: c(true, 0),
   [`${H}bc-lane.test.ts`]: c(true, 4),
-  [`${H}bc-sync-provider.test.ts`]: c(true, 6),
+  [`${H}bc-sync-provider.test.ts`]: c(true, 4),
   [`${H}build-log.test.ts`]: c(true, 0),
-  [`${H}campaign.test.ts`]: c(true, 153),
+  [`${H}campaign.test.ts`]: c(true, 138),
   [`${H}classify.test.ts`]: c(true, 0),
-  [`${H}claude-code.test.ts`]: c(true, 7),
+  [`${H}claude-code.test.ts`]: c(true, 4),
   [`${H}claude-trace.test.ts`]: c(true, 0),
-  [`${H}config.test.ts`]: c(true, 1),
+  [`${H}config.test.ts`]: c(true, 0),
   [`${H}credential-budget.test.ts`]: c(true, 1),
   [`${H}egress-probe-scrub.test.ts`]: c(true, 0),
   [`${H}egress-proxy.test.ts`]: c(true, 2),
   [`${H}egress.test.ts`]: c(true, 1),
   [`${H}estimate.test.ts`]: c(true, 0),
-  [`${H}execution.test.ts`]: c(true, 388),
-  [`${H}extracted-tests.test.ts`]: c(true, 6),
+  [`${H}execution.test.ts`]: c(true, 413),
+  [`${H}extracted-tests.test.ts`]: c(true, 2),
   [`${H}final-code.test.ts`]: c(true, 0),
-  [`${H}freeze-archive.test.ts`]: c(true, 6),
-  [`${H}frozen-tasks-drop.test.ts`]: c(true, 18),
-  [`${H}fsutil.test.ts`]: c(true, 7),
+  [`${H}freeze-archive.test.ts`]: c(true, 2),
+  [`${H}frozen-tasks-drop.test.ts`]: c(true, 6),
+  [`${H}fsutil.test.ts`]: c(true, 3),
   [`${H}gate-core.test.ts`]: c(true, 0),
-  [`${H}gate-stage.test.ts`]: c(true, 23),
-  [`${H}gate-task.test.ts`]: c(true, 4),
+  [`${H}gate-stage.test.ts`]: c(true, 8),
+  [`${H}gate-task.test.ts`]: c(true, 3),
   [`${H}hash.test.ts`]: c(true, 0),
-  [`${H}identity.test.ts`]: c(true, 70),
+  [`${H}identity.test.ts`]: c(true, 21),
   [`${H}images.test.ts`]: c(true, 0),
-  [`${H}install-claude-code.test.ts`]: c(true, 43),
-  [`${H}install-lsp.test.ts`]: c(true, 40),
-  [`${H}integrity.test.ts`]: c(true, 1),
-  [`${H}inventory-lsp.test.ts`]: c(true, 6),
-  [`${H}inventory.test.ts`]: c(true, 38),
-  [`${H}judge-queue.test.ts`]: c(true, 51),
-  [`${H}lsp-probe.test.ts`]: c(true, 496),
+  [`${H}install-claude-code.test.ts`]: c(true, 11),
+  [`${H}install-lsp.test.ts`]: c(true, 21),
+  [`${H}integrity.test.ts`]: c(true, 0),
+  [`${H}inventory-lsp.test.ts`]: c(true, 3),
+  [`${H}inventory.test.ts`]: c(true, 17),
+  [`${H}judge-queue.test.ts`]: c(true, 26),
+  [`${H}lsp-probe.test.ts`]: c(true, 223),
   [`${H}manifest.test.ts`]: c(true, 0),
   [`${H}measures.test.ts`]: c(true, 0),
-  [`${H}mock.test.ts`]: c(true, 23),
-  [`${H}nonadmin.test.ts`]: c(true, 53),
+  [`${H}mock.test.ts`]: c(true, 13),
+  [`${H}nonadmin.test.ts`]: c(true, 27),
   [`${H}otel.test.ts`]: c(true, 0),
   [`${H}outcome.test.ts`]: c(true, 0),
   [`${H}pi.test.ts`]: c(true, 0),
-  [`${H}prenuke-owned.test.ts`]: c(true, 4),
-  [`${H}prereg.test.ts`]: c(true, 39),
+  [`${H}prenuke-owned.test.ts`]: c(true, 3),
+  [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),
-  [`${H}pwsh-marker.test.ts`]: c(true, 5),
+  [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}qualify.test.ts`]: c(true, 0),
   [`${H}realistic-bundle.test.ts`]: c(true, 1),
   [`${H}records.test.ts`]: c(true, 0),
   [`${H}redact-patterns.test.ts`]: c(true, 0),
   [`${H}report-charts.test.ts`]: c(true, 0),
   [`${H}report-extras.test.ts`]: c(true, 0),
-  [`${H}report.test.ts`]: c(true, 4),
-  [`${H}reuse.test.ts`]: c(true, 53),
+  [`${H}report.test.ts`]: c(true, 3),
+  [`${H}reuse.test.ts`]: c(true, 16),
   [`${H}rollups.test.ts`]: c(true, 0),
-  [`${H}sandbox.test.ts`]: c(true, 5),
-  [`${H}screening.test.ts`]: c(true, 23),
+  [`${H}sandbox.test.ts`]: c(true, 4),
+  [`${H}screening.test.ts`]: c(true, 5),
   [`${H}skills-bundle.test.ts`]: c(true, 0),
-  [`${H}staging.test.ts`]: c(true, 29),
+  [`${H}staging.test.ts`]: c(true, 8),
   [`${H}stats.test.ts`]: c(true, 1),
   [`${H}stub-anthropic.test.ts`]: c(true, 0),
-  [`${H}subagent-cost.test.ts`]: c(true, 1),
-  [`${H}task-rev.test.ts`]: c(true, 13),
+  [`${H}subagent-cost.test.ts`]: c(true, 0),
+  [`${H}task-rev.test.ts`]: c(true, 1),
   [`${H}task-set-v1.test.ts`]: c(true, 0),
   [`${H}task.test.ts`]: c(true, 0),
   [`${H}trace-metrics.test.ts`]: c(true, 0),
   [`${H}v2-configs.test.ts`]: c(true, 0),
-  [`${H}verdict-mutant.test.ts`]: c(true, 101),
-  [`${H}verdict-workspace.test.ts`]: c(true, 2),
-  [`${H}verdict.test.ts`]: c(true, 67),
+  [`${H}verdict-mutant.test.ts`]: c(true, 32),
+  [`${H}verdict-workspace.test.ts`]: c(true, 1),
+  [`${H}verdict.test.ts`]: c(true, 33),
 };
 
 export interface Plan {
@@ -201,7 +201,7 @@ async function main() {
     string: ["jobs", "log-dir"],
     boolean: ["dry-run"],
   });
-  const jobs = Number(args.jobs ?? 5);
+  const jobs = Number(args.jobs ?? 4);
   if (!Number.isInteger(jobs) || jobs < 1) {
     throw new Error(`--jobs must be a positive integer, got ${args.jobs}`);
   }
@@ -209,15 +209,15 @@ async function main() {
   for (const f of p.unclassified) {
     console.log(
       colors.yellow(
-        `[WARN] ${f} is not classified in CLASSES; running it in the serial chunk`,
+        `[WARN] ${f} is not classified in CLASSES; running it in chunk 0 with the unsafe files`,
       ),
     );
   }
   p.chunks.forEach((files, i) => {
     console.log(
-      `[Plan] chunk ${i}${
-        i === 0 ? " (serial chunk)" : ""
-      }: ${files.length} files, ~${Math.round(p.seconds[i] ?? 0)}s`,
+      `[Plan] chunk ${i}: ${files.length} files, ~${
+        Math.round(p.seconds[i] ?? 0)
+      }s`,
     );
   });
   if (args["dry-run"]) {
