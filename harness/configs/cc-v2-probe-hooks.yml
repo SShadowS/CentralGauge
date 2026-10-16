@@ -2,8 +2,8 @@
 # Expects setup_failed: a hooks component must be refused.
 id: cc-v2-probe-hooks
 harness: claude-code
-harness_version: "2.1.282"
-image_revision: "3-dev-M9-07"
+harness_version: "latest"
+image_revision: "3"
 models:
   main: anthropic/claude-sonnet-5
 settings: {}

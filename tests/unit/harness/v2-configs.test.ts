@@ -68,15 +68,11 @@ Deno.test("v2 probe configs: developmental, same model; never in an experiment",
   const revs = new Set<string | undefined>();
   for (const id of PROBES) {
     const c = await loadConfig("harness", id);
-    // H-03: the historical probes stay on their 2.1.282 proof images (frozen evidence).
+    // M9-17: the probes run the campaign image r3 and track latest, like the arms.
     assertEquals(
-      [c.harness_version, c.models],
-      ["2.1.282", plain.models],
+      [c.harness_version, c.image_revision, c.models],
+      ["latest", "3", plain.models],
       id,
-    );
-    assert(
-      /^3(-dev-M9-(07|13))?$/.test(c.image_revision ?? ""),
-      `${id}: ${c.image_revision}`,
     );
     revs.add(c.image_revision);
   }
@@ -94,8 +90,9 @@ Deno.test("v2 probe configs: developmental, same model; never in an experiment",
     "bundles/probe-m9/hooks",
   );
   assertEquals(
+    // M9-13 ruling: 1.00 keeps one request's overshoot inside the 1.2 x margin.
     (await loadConfig("harness", "cc-v2-probe-budget")).limits.max_budget_usd,
-    0.5,
+    1,
   );
   for await (const e of Deno.readDir("harness/experiments")) {
     const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
@@ -185,7 +182,7 @@ const H03_COPIES: [string, string][] = [
   ["cc-v2-probe-h03-m9-subagent", "cc-v2-probe-subagent"],
 ];
 
-Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest and 3-dev-H-03b only; sources unchanged; never in an experiment", async () => {
+Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest and 3-dev-H-03b only (the budget copy keeps 0.5); never in an experiment", async () => {
   for (const [id, srcId] of H03_COPIES) {
     const c = await loadConfig("harness", id);
     const src = await loadConfig("harness", srcId);
@@ -196,6 +193,10 @@ Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest 
         id,
         harness_version: "latest",
         image_revision: "3-dev-H-03b",
+        // M9-17 raised the source's budget to 1.00; the H-03 copy keeps its 0.5.
+        ...(srcId === "cc-v2-probe-budget"
+          ? { limits: { ...src.limits, max_budget_usd: 0.5 } }
+          : {}),
       },
       id,
     );
@@ -206,11 +207,6 @@ Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest 
       "# H-03 qualification config (developmental). Never part of an experiment.",
       id,
     );
-  }
-  // The frozen M9 probes keep their own version and image.
-  for (const id of PROBES) {
-    const c = await loadConfig("harness", id);
-    assertEquals(c.harness_version, "2.1.282", id);
   }
   for await (const e of Deno.readDir("harness/experiments")) {
     const text = await Deno.readTextFile(`harness/experiments/${e.name}`);
