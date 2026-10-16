@@ -8605,3 +8605,32 @@ Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before 
     }
   }
 });
+
+Deno.test("H-16 (Sol r2): close holds the locks until a backend request revoke gave up on has drained, so no successor recovers state it still uses", async () => {
+  const t = await makeEnv();
+  const order: string[] = [];
+  const h = await openHarnessEnv(
+    { ...envOpts(t), backendPort: BACKEND_PORT },
+    {
+      ...deps(order),
+      serveBackend: () => ({
+        url: `http://${SANDBOX_NETWORK.gateway}:${BACKEND_PORT}`,
+        shutdown: () => Promise.resolve(),
+      }),
+    },
+  );
+  let drain!: () => void;
+  const late = new Promise<void>((r) => (drain = r));
+  const idle = stub(h.env.backend, "idle", () => late);
+  try {
+    const closing = h.close();
+    await new Promise((r) => setTimeout(r, 200));
+    assertEquals(order.includes("release"), false, order.join(","));
+    drain();
+    await closing;
+    assertEquals(order.filter((x) => x === "release").length, 1);
+  } finally {
+    idle.restore();
+    await h.close();
+  }
+});

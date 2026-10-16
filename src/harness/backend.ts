@@ -647,6 +647,17 @@ export class Backend {
     return this.late.get(executionId) ?? null;
   }
 
+  /** H-16: settles once every request revoke gave up on has drained (the private root stays held until then). */
+  async idle(): Promise<void> {
+    if (this.late.size === 0) return;
+    console.log(
+      `[WAIT] backend request(s) of ${
+        [...this.late.keys()].join(", ")
+      } still draining; holding the private root until they end`,
+    );
+    await Promise.allSettled([...this.late.values()]);
+  }
+
   /**
    * The execution's build cache ends with its grant (nothing in flight), and
    * so does its folder once empty. Non-recursive: anything left in it is kept.

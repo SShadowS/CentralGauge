@@ -1936,3 +1936,50 @@ Deno.test("H-16: an undrained BC test step keeps its container: no other executi
     warn.restore();
   }
 });
+
+Deno.test("H-16 (Sol r2): drained() and idle() settle only after a request revoke gave up on has drained", async () => {
+  const root = await tmp();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let entered!: () => void;
+  const running = new Promise<void>((r) => (entered = r));
+  const b = new Backend({
+    scanReparsePoints: NO_SCAN,
+    approvedRoots: [join(root, "work")],
+    workRoot: join(root, "backend"),
+    ops: {
+      compile: async () => {
+        entered();
+        await gate;
+        throw new Error("cancelled late");
+      },
+      test: () => new Promise(() => {}),
+    },
+    allowedHosts: ["127.0.0.1"],
+    revokeGraceMs: 10,
+    graceElapsed: () => Promise.resolve(),
+  });
+  await Deno.mkdir(join(root, "work"), { recursive: true });
+  const warn = stub(console, "warn", () => {});
+  const log = stub(console, "log", () => {});
+  try {
+    await b.idle(); // nothing late: at once
+    const tok = await grantFor(b, root, EXEC_A, join(root, "hl.jsonl"));
+    const pending = b.handle(req("/v1/compile", tok, '{"apps":["Core"]}'));
+    await running;
+    assertEquals(b.drained(EXEC_A), null, "nothing late before the revoke");
+    assertEquals(await b.revoke(EXEC_A), false);
+    let settled = false;
+    const idle = b.idle().then(() => (settled = true));
+    assert(b.drained(EXEC_A) !== null);
+    await new Promise((r) => setTimeout(r, 100));
+    assertEquals(settled, false, "idle waits for the late drain");
+    release();
+    await pending;
+    await idle;
+    assertEquals(b.drained(EXEC_A), null);
+  } finally {
+    warn.restore();
+    log.restore();
+  }
+});
