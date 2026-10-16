@@ -55,8 +55,9 @@ codeunit 70400 "CGR Integration Facade"
             until Entry.Next() = 0;
 
         foreach EntryNo in EntryNos do begin
-            if (ChunkSize > 0) and (Purged > 0) and (Purged mod ChunkSize = 0) then
-                Commit();
+            if (ChunkSize > 0) and (Purged > 0) then
+                if Purged mod ChunkSize = 0 then
+                    Commit();
             Entry.Get(EntryNo);
             OnBeforePurgeEntry(Entry);
             Entry.Delete(true);
