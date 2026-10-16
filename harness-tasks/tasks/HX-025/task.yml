@@ -1,5 +1,5 @@
 id: HX-025
-refapp_version: refapp-v2-rc1
+refapp_version: refapp-v2
 kind: bugfix
 prompt: prompt.md
 touches: [Fleet, Core]

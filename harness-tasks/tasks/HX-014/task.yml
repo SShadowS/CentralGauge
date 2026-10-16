@@ -1,5 +1,5 @@
 id: HX-014
-refapp_version: refapp-v2-rc1
+refapp_version: refapp-v2
 kind: refactor
 prompt: prompt.md
 touches: [Core, Fleet]
