@@ -1,15 +1,19 @@
 v: 1
 partial_credit:
   weights:
-    "87120/TwoLeasesSummarised": 1
     "87120/FailedLeaseNotSummarised": 1
     "87120/RefusalAfterInvoicingNotSummarised": 1
     "87120/EarlierRowsKept": 1
-    "87120/EarlierInvoicedLinesNotListed": 1
     "87120/CommittingArchiveKeepsNothing": 1
-    "87120/FilterAndDatesRespected": 1
-    "87120/NothingDue": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "87120/TwoLeasesSummarised"
+    - "87120/EarlierInvoicedLinesNotListed"
+    - "87120/FilterAndDatesRespected"
+    - "87120/NothingDue"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/append-inside-unit: { partial_credit: 0.75 }
+  naive/clear-after-failure: { partial_credit: 0.75 }
+  naive/reused-local-buffer: { partial_credit: 0.5 }
+  naive/summary-from-table: { partial_credit: 1 }
