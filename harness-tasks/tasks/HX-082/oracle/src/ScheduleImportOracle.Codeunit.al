@@ -158,6 +158,10 @@ codeunit 87100 "HX082 Schedule Import Oracle"
         HX82AssertLine('HX82-5', 40000, 20270401D, 140);
         Assert.AreEqual(4, Runner.HX82HeldCount(), 'The caller keeps its 4 import lines');
         Assert.AreEqual(FiltersBefore, Runner.HX82HeldFilters(), 'The caller keeps its filters on the import lines');
+        HX82AssertHeldLine(Runner, 5, 20270501D, 150);
+        HX82AssertHeldLine(Runner, 7, 20270301D, 130);
+        HX82AssertHeldLine(Runner, 11, 20270601D, 160);
+        HX82AssertHeldLine(Runner, 13, 20270401D, 140);
     end;
 
     [Test]
