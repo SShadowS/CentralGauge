@@ -451,7 +451,7 @@ Deno.test("runCell: an observed version mismatch is setup_failed", async () => {
 });
 
 Deno.test("unconfirmed termination: nothing is frozen or published; recovery finalizes once the container is gone", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.behavior = async (call, io) => {
     t.docker.lingering.add(call.name);
@@ -484,7 +484,7 @@ Deno.test("unconfirmed termination: nothing is frozen or published; recovery fin
 });
 
 Deno.test("H-13b: recovery records the interrupted run's egress override and calibration waiver, whatever command recovers", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.behavior = async (call, io) => {
     t.docker.lingering.add(call.name);
@@ -516,7 +516,7 @@ Deno.test("H-13b: recovery records the interrupted run's egress override and cal
 // (EBUSY on the real host). The secrets dir must not be pulled from under it,
 // and that failure must never mask the fail-closed "termination not confirmed".
 Deno.test("M5-08a: a lingering sandbox keeps its secrets mount: termination not confirmed, secrets left for recovery", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   let secretsDir = "";
   t.docker.behavior = async (call, io) => {
@@ -546,7 +546,7 @@ Deno.test("M5-08a: a lingering sandbox keeps its secrets mount: termination not 
 });
 
 Deno.test("M5-08a: a failed rm -f is retried until the sandbox is confirmed gone, then secrets go, then the record", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   const events: string[] = [];
   let secretsDir = "";
@@ -722,7 +722,7 @@ Deno.test("every published surface is redacted (UTF-8 and UTF-16): logs, stderr,
 });
 
 Deno.test("recovery: an interrupted attempt keeps its spend at the original prices and is redacted with the custody secrets", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   t.docker.behavior = async (call, io) => {
     const token = await tokenOf(call);
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
@@ -1007,7 +1007,7 @@ Deno.test("stream problems (M1-32 ruling): a usable result with stream problems 
 });
 
 Deno.test("stream problems (M5-07a): a tool_progress heartbeat mid-run leaves the cost estimated", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   t.docker.behavior = async (call, io) => {
     let n = 0;
     const out = async (line: string) => {
@@ -4692,7 +4692,7 @@ Deno.test("runExecution (M10-08c run 002 item 1): a lock lost between runCell's 
 // step: lost mid-recovery, the interrupted attempt is neither removed nor
 // published nor cleaned up.
 Deno.test("recoverInterrupted (M10-08c run 002 item 1): a lock lost during recovery stops it before anything more is removed or published", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   let sandbox = "";
   t.docker.behavior = async (call, io) => {
@@ -5962,7 +5962,7 @@ Deno.test("H-12 r3: a non-JSON line nulls the cost end to end (Write orphan, no 
 });
 
 Deno.test("H-16: sandbox confirmed gone, backend request undrained: the cell is published harness_crash with the infra reason (judged), no throw, nothing left in flight", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.behavior = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct");
   const revoke = stub(t.env.backend, "revoke", () => Promise.resolve(false));
@@ -5982,7 +5982,7 @@ Deno.test("H-16: sandbox confirmed gone, backend request undrained: the cell is 
 });
 
 Deno.test("H-16: an undrained backend with an unconfirmed sandbox still fails closed (termination not confirmed, nothing published)", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.behavior = async (call, io) => {
     t.docker.lingering.add(call.name);
@@ -6005,7 +6005,7 @@ Deno.test("H-16: an undrained backend with an unconfirmed sandbox still fails cl
 });
 
 Deno.test("H-16 (Sol r1): an undrained cell is published at once, but its private state (staging roots, host log) is removed only after the backend request has drained", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.behavior = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct");
   let drain!: () => void;

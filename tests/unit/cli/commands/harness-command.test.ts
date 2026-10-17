@@ -2889,7 +2889,7 @@ Deno.test("qualification probe: released secret values printed by the sandbox ar
 });
 
 Deno.test("qualification probe: an injected scrub failure fails the probe closed (M9-01a run 003)", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const root = t.env.privateRoot;
   const markerPath = join(root, "results", "harness", EGRESS_MARKER);
   const collect = markerAwareCollector();
@@ -2956,7 +2956,7 @@ Deno.test("qualification probe: an injected scrub failure fails the probe closed
 // M3-08: the route-aware probe proxies and probes exactly the hosts it is given.
 
 Deno.test("qualification probe: hosts override the default route host (M3-08 --route)", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   const root = t.env.privateRoot;
   const markerPath = join(root, "results", "harness", EGRESS_MARKER);
   const eg = fakeEgress();
@@ -3017,7 +3017,7 @@ Deno.test("qualification probe: hosts override the default route host (M3-08 --r
 
 Deno.test("qualification probe (H-01): the privilege check runs before the preflight; a failure releases nothing and is a problem", async () => {
   for (const healthy of [true, false]) {
-    await using t = await makeEnv();
+    const t = await makeEnv();
     const root = t.env.privateRoot;
     const markerPath = join(root, "results", "harness", EGRESS_MARKER);
     const eg = fakeEgress();
@@ -3237,7 +3237,7 @@ Deno.test("authorized marker (review item 3): carries the evidence; a minimal or
 });
 
 Deno.test("run --concurrency > 1 is refused before any environment opens while the egress marker places sandboxes (M1-33c)", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -6696,7 +6696,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 1): the token it acquired is the
 Deno.test("openHarnessEnv (M10-08c run 002 item 2): a running legacy sandbox of this root refuses the start and is never removed; exited or finalized ones are removed", async () => {
   const legacy = "cg-harness-11111111-aaaaaaaa";
   const setup = async (o: { exited?: boolean; published?: boolean }) => {
-    await using t = await makeEnv();
+    const t = await makeEnv();
     const d = deps([]);
     const docker = d.docker() as FakeDocker;
     docker.owned = [legacy];
@@ -6753,7 +6753,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 2): a running legacy sandbox of 
 Deno.test("openHarnessEnv (M10-08c run 002 item 4): this root's legacy custody dirs are removed only after its legacy sandboxes are confirmed gone", async () => {
   const legacy = "cg-harness-11111111-aaaaaaaa";
   const setup = async (o: { running?: boolean; rmFails?: boolean }) => {
-    await using t = await makeEnv();
+    const t = await makeEnv();
     const d = deps([]);
     const docker = d.docker() as FakeDocker;
     docker.owned = [legacy];
@@ -8429,7 +8429,7 @@ Deno.test("openHarnessEnv (H-09): judge containers get their own lane; overlappi
 });
 
 Deno.test("harnessRun (H-09): --judge-containers reaches the environment and --judge-concurrency the campaign", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   t.env.supervised = false;
@@ -8490,7 +8490,7 @@ Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; ju
 });
 
 Deno.test("harness judge-pending (H-09 run 002): --judge-concurrency below 1 is refused before the environment opens", async () => {
-  await using t = await makeEnv();
+  const t = await makeEnv();
   let opened = 0;
   const open = () => {
     opened++;
