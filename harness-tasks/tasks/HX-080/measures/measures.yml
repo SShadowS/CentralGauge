@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "87060/WindowBoundsInclusive": 1
+    "87060/OpenStartSkipsNeverServiced": 1
+    "87060/ListReplaced": 1
+    "87060/SingleDayWindow": 1
+    "87060/EmptyWindowClearsList": 1
+    "87060/QueryFilterElement": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/appended-list: { partial_credit: 0.6666666666666666 }
+  naive/exclusive-bounds: { partial_credit: 0.3333333333333333 }

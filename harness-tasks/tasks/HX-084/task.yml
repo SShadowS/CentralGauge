@@ -1,0 +1,18 @@
+id: HX-084
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Core]
+coupling: [core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80051, procedures: [WeekdaysCountedWithoutHolidays, HolidayIsNotAWorkingDay, NextWorkingDaySkipsWeekendAndHoliday, ReversedRangeHasNoWorkingDays] }
+fail_to_pass:
+  depends_on: [Core]
+  tests:
+    - { codeunit: 87140, procedures: [SixthAndSeventhAreWorkingDays, WeekendSkipped, HolidaySkipped, ZeroDaysReturnsFromDate, FiveDaysAcrossWeekend, FromSunday, AcrossMonthEnd, NegativeDaysRefused, IsWorkingDayAsToday] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

@@ -1,0 +1,19 @@
+id: HX-067
+refapp_version: refapp-v2-rc1
+kind: feature
+prompt: prompt.md
+touches: [Rental, Fleet, Core, Integration]
+coupling: [single-instance, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SuspendRentalsBlocksCheckout] }
+  - { codeunit: 80040, procedures: [OutboxQueuesCheckout] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Integration]
+  tests:
+    - { codeunit: 86800, procedures: [BasketSharedAcrossVariables, AddTwiceKeepsOne, RemovedVehicleLeaves, CallerBufferReplaced, HandedOutRowsAreCopies, HandedOutShowsCurrentData, CheckOutBasketChecksOutAll, UnavailableVehicleFailsAll, RefusedCheckoutFailsAll, RetryAfterFailure, UnknownVehicleNotAdded, EmptyBasketCheckout, EmptyBasketDropsAll] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

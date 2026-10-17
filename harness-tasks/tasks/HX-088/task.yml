@@ -1,0 +1,15 @@
+id: HX-088
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Integration, Core, Test]
+coupling: [single-instance, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80057, procedures: [DeliveredEntryIsSent, RejectedEntryKeepsItsError, EntryFailsAtMaxAttempts, UndeliveredWithoutTransport] }
+fail_to_pass: null
+mutants: [stored-counter, plain-codeunit, delivered-before-send, reset-keeps-failures, direct-entry-not-counted]
+contamination: null
+limits: { timeout_min: 30 }

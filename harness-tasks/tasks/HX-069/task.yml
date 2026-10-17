@@ -1,0 +1,18 @@
+id: HX-069
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Integration]
+coupling: [facade, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+fail_to_pass:
+  depends_on: [Core, Integration]
+  tests:
+    - { codeunit: 86840, procedures: [TwoVehiclesQueued, ListOrderKept, DuplicateQueuedOnce, BlankNumberSkipped, SingleVehicleAsToday, EmptyListQueuesNothing, OlderMessageNoObstacle, FourVehicles] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

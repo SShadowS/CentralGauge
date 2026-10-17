@@ -1,0 +1,18 @@
+id: HX-086
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Fleet]
+coupling: [temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
+fail_to_pass:
+  depends_on: [Core, Fleet]
+  tests:
+    - { codeunit: 87180, procedures: [SnapshotCopiesFilteredVehicles, ExistingRowRefreshed, OtherRowsKept, BoardFiltersKept, VehicleFilterUnchanged, SnapshotKeepsTakenValues, NothingInFilter, FreeVehiclesAsToday, DamagedVehiclesAsToday] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

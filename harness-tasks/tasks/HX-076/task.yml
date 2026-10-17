@@ -1,0 +1,18 @@
+id: HX-076
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Reporting, Fleet, Test]
+coupling: [temporary-table, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80052, procedures: [ZeroPrecisionFallsBackToCents, SetupPrecisionApplied, WholeUnitPrecision] }
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+  - { codeunit: 80000, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, HeavyDutyStrategyFromFleetExtension, LeaseRateUsesCoreInternal, PayloadCarriesVehicleNo] }
+fail_to_pass: null
+mutants: [repaired-counted, vehicle-field-count, newest-date, appends, clean-always, event-before-fields, skip-ignored, result-counts-skipped, marks-repaired]
+contamination: null
+limits: { timeout_min: 30 }

@@ -1,0 +1,20 @@
+id: HX-074
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Rental, Fleet, Core, Integration]
+coupling: [core-facade, ishandled]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, SwapMovesContractToFreeVehicle, SuspendRentalsBlocksCheckout, PostCreatesLedgerEntry] }
+  - { codeunit: 80000, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
+  - { codeunit: 80040, procedures: [OutboxQueuesCheckout] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86940, procedures: [FreeVehicleAvailable, BlockedVehicleNotAvailable, UnknownVehicleNotAvailable, SwapRefusedWhenRentalsStopped, SwapAcceptsLentBlockedVehicle, SwapRefusedByPartner, SwapUnknownVehicleNotFound, SwapOpenContractStatusFirst, SwapBlockedVehicleRefused, CheckOutBlockedRefused, CheckOutLentBlockedVehicle, CheckOutStatusBeforeAvailability] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
