@@ -129,3 +129,147 @@ candidates:
   - id: HX-042
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-043
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Nightly Sync.OnBeforeNightlySync" }
+  - id: HX-044
+    prior: easy
+    size: { objects: 2, files: 2, reuse: null, traces: null }
+  - id: HX-045
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Damage Mgt.OnAfterDamageRegistered" }
+  - id: HX-046
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-047
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-048
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: "CGR Fleet Mgt.ReleaseVehicle", traces: null }
+  - id: HX-049
+    prior: intermediate
+    size: { objects: 5, files: 5, reuse: "CGR Event Transport.Send", traces: null }
+  - id: HX-050
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Service Plan Mgt.DaysToPlannedService", traces: null }
+  - id: HX-051
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Fleet Mgt.OnBeforeIsAvailable" }
+  - id: HX-052
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-053
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Core Events.OnAfterVehicleCheckedOut" }
+  - id: HX-054
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Damage Mgt.OnAfterDamageRegistered" }
+  - id: HX-055
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: null, traces: null }
+  - id: HX-056
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Integration Facade.OnAfterQueueEntry" }
+  - id: HX-057
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-058
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-059
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Fleet Mgt.OnBeforeIsAvailable" }
+  - id: HX-060
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Outbox Dispatcher.CollectPending", traces: null }
+  - id: HX-061
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: "CGR Desk Inspection.StartInspection", traces: null }
+  - id: HX-062
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Outbox Dispatcher.RecordAttempt", traces: null }
+  - id: HX-063
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-064
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnBeforePostRentalContract" }
+  - id: HX-065
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-066
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Maintenance Strategy" }
+  - id: HX-067
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Core Events.OnAfterVehicleCheckedOut" }
+  - id: HX-068
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Desk Day Close.OnAfterCloseDeskDay" }
+  - id: HX-069
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-070
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-071
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Insurer Check.OnCheckInsuredDamage" }
+  - id: HX-072
+    prior: intermediate
+    size: { objects: 6, files: 6, reuse: "CGR Damage Mgt.IsBlockingSeverity", traces: null }
+  - id: HX-073
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Lease Invoicing.GetDueLines", traces: null }
+  - id: HX-074
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Rental Mgt.CheckVehicleAvailable", traces: null }
+  - id: HX-075
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Lease Invoicing.NextLeaseInvoiceNo", traces: null }
+  - id: HX-076
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Damage Overview.OnAfterFillOverviewLine" }
+  - id: HX-077
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Rate Change.OnBeforeChangeBaseRate" }
+  - id: HX-078
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-079
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Portal Session.OnAfterPortalSignIn" }
+  - id: HX-080
+    prior: easy
+    size: { objects: 2, files: 2, reuse: null, traces: null }
+  - id: HX-081
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Desk Swap.OnAfterDeskSwap" }
+  - id: HX-082
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-083
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+  - id: HX-084
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-085
+    prior: intermediate
+    size: { objects: 3, files: 3, reuse: "CGR Desk Mirror.SetCheckoutMirror", traces: null }
+  - id: HX-086
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Fleet Board.TakeVehicleSnapshot", traces: null }
+  - id: HX-087
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: "CGR Integration Facade.PurgeSentEntries", traces: null }
+  - id: HX-088
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Dispatcher.OnSendEntry" }
+  - id: HX-089
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-090
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
