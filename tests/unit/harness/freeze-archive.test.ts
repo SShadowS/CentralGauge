@@ -8,7 +8,7 @@ import {
   TEMP_PREFIX,
   verify,
 } from "../../../scripts/harness/freeze-archive.ts";
-import { testTempDir } from "../../utils/temp-dir.ts";
+import { testTempDir, testTempFile } from "../../utils/temp-dir.ts";
 
 async function tree() {
   const root = await testTempDir();
@@ -60,7 +60,7 @@ Deno.test("a secret hit fails without printing the value; missing or empty secre
     async () =>
       pack(root, await out(), {
         meta: {},
-        secretFiles: [await Deno.makeTempFile()],
+        secretFiles: [await testTempFile()],
       }),
     Error,
     "empty secret file",

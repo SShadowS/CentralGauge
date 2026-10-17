@@ -12,6 +12,7 @@ import {
   type SuggestedFix,
   validateFix,
 } from "../../../src/verify/mod.ts";
+import { testTempFile } from "../../utils/temp-dir.ts";
 
 Deno.test("fix-applicator: generateDiffPreview shows changes", () => {
   const fix: SuggestedFix = {
@@ -45,7 +46,7 @@ Deno.test("fix-applicator: generateDiffPreview handles empty fix", () => {
 
 Deno.test("fix-applicator: applyFix replaces code correctly", async () => {
   // Create temp file
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     // Write initial content
     const initialContent = `procedure Test()
@@ -93,7 +94,7 @@ Deno.test("fix-applicator: applyFix returns false for missing file", async () =>
 
 Deno.test("fix-applicator: applyFix returns false when code not found", async () => {
   // Create temp file
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     await Deno.writeTextFile(tempFile, "some content that doesn't match");
 
@@ -129,7 +130,7 @@ Deno.test("fix-applicator: validateFix reports errors for missing file", async (
 
 Deno.test("fix-applicator: validateFix reports errors for missing codeBefore", async () => {
   // Create temp file
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     await Deno.writeTextFile(tempFile, "content");
 
@@ -151,7 +152,7 @@ Deno.test("fix-applicator: validateFix reports errors for missing codeBefore", a
 
 Deno.test("fix-applicator: validateFix passes for valid fix", async () => {
   // Create temp file
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     const content = "line1\nline2\nline3";
     await Deno.writeTextFile(tempFile, content);
@@ -174,7 +175,7 @@ Deno.test("fix-applicator: validateFix passes for valid fix", async () => {
 
 Deno.test("fix-applicator: applyFix handles fuzzy whitespace matching", async () => {
   // Create temp file with different indentation
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     const initialContent = `procedure Test()
 begin
@@ -207,7 +208,7 @@ end;`;
 
 Deno.test("fix-applicator: applyFix handles multi-change format with // ...", async () => {
   // Create temp file with multiple lines to replace
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     const initialContent = `codeunit 80017 "Test Codeunit"
 {
@@ -259,7 +260,7 @@ Password := SecretText.SecretStrSubstNo('secret2');`,
 });
 
 Deno.test("fix-applicator: applyFix multi-change preserves indentation", async () => {
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     const initialContent = `procedure Test()
 begin
@@ -287,7 +288,7 @@ end;`;
 });
 
 Deno.test("fix-applicator: applyFix multi-change returns false for mismatched counts", async () => {
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     await Deno.writeTextFile(tempFile, "a := 1;\nb := 2;");
 
@@ -311,7 +312,7 @@ b := 2;`,
 });
 
 Deno.test("fix-applicator: applyFix applies partial changes when some not found", async () => {
-  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  const tempFile = await testTempFile({ suffix: ".al" });
   try {
     const initialContent = "found := 'yes';\n// some other code";
     await Deno.writeTextFile(tempFile, initialContent);

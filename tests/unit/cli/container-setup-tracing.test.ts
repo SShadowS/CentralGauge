@@ -10,6 +10,7 @@ import {
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
 import { ContainerProviderRegistry } from "../../../src/container/registry.ts";
 import { closeTracer, initTracer } from "../../../src/tracing/tracer.ts";
+import { testTempFile } from "../../utils/temp-dir.ts";
 
 /**
  * Both tracing tests below exercise the REAL setupContainer(s) with
@@ -63,7 +64,7 @@ Deno.test("setupContainers emits a span for each startup phase", async () => {
   } as unknown as ContainerProvider;
   ContainerProviderRegistry.register("fake-trace", () => provider);
 
-  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const traceFile = await testTempFile({ suffix: ".json" });
   const stub = stubCacheStatics();
   try {
     initTracer(traceFile);
@@ -120,7 +121,7 @@ Deno.test("setupContainer (singular) emits a span for each startup phase on the 
   } as unknown as ContainerProvider;
   ContainerProviderRegistry.register("fake-trace-single", () => provider);
 
-  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const traceFile = await testTempFile({ suffix: ".json" });
   const stub = stubCacheStatics();
   try {
     initTracer(traceFile);
@@ -170,7 +171,7 @@ Deno.test("setupContainer (singular) emits setup.harness on the freshly-created-
   } as unknown as ContainerProvider;
   ContainerProviderRegistry.register("fake-trace-fresh", () => provider);
 
-  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const traceFile = await testTempFile({ suffix: ".json" });
   const stub = stubCacheStatics();
   try {
     initTracer(traceFile);
@@ -210,7 +211,7 @@ Deno.test("setupContainers attaches adopted/rebuilt to the setup.warmup-compiler
   } as unknown as ContainerProvider;
   ContainerProviderRegistry.register("fake-trace-stats", () => provider);
 
-  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const traceFile = await testTempFile({ suffix: ".json" });
   const stub = stubCacheStatics();
   try {
     initTracer(traceFile);
@@ -252,7 +253,7 @@ Deno.test("setupContainer (singular) attaches adopted/rebuilt to the setup.warmu
     () => provider,
   );
 
-  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const traceFile = await testTempFile({ suffix: ".json" });
   const stub = stubCacheStatics();
   try {
     initTracer(traceFile);

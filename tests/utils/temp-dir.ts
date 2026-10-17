@@ -45,6 +45,13 @@ export async function testTempDir(
   return trackTempDir(await Deno.makeTempDir(opts));
 }
 
+/** `Deno.makeTempFile`, removed at process exit at the latest. */
+export async function testTempFile(
+  opts?: Deno.MakeTempOptions,
+): Promise<string> {
+  return trackTempDir(await Deno.makeTempFile(opts));
+}
+
 /** Remove a dir now; best effort, logs instead of throwing. */
 export async function removeTempDir(path: string): Promise<void> {
   try {
