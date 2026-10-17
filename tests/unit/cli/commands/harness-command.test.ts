@@ -8730,3 +8730,44 @@ Deno.test("rejudge (H-24): a failing execution stops the rejudge without losing 
   assertEquals(r.rejudged, after.filter((n) => n === 2).length);
   assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
 });
+
+Deno.test("rejudge (H-24 review): after a failure the env closes only once every running judging has ended, and no queued judging starts after it", async () => {
+  const { t, es, seen } = await h24Campaign();
+  // The first execution's artifact read fails, but only once two other
+  // judgings hold their container: the failure lands while they run.
+  // (The first read is the campaign load before any judging starts.)
+  const store = t.env.store;
+  const read = store.artifact.bind(store);
+  let reads = 0;
+  store.artifact = async (id: string) => {
+    if (id !== es[0]!.id || ++reads === 1) return await read(id);
+    const until = Date.now() + 5_000;
+    while (seen.active < 2 && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    throw new Error(`injected artifact read failure (active ${seen.active})`);
+  };
+  let closed = false;
+  let activeAtClose = -1;
+  let startedAfterClose = 0;
+  const lane = t.env.lane;
+  const counted = lane.exclusive.bind(lane);
+  lane.exclusive = ((ctx, fn, signal, opts) => {
+    if (closed) startedAfterClose++;
+    return counted(ctx, fn, signal, opts);
+  }) as typeof lane.exclusive;
+  const open = () =>
+    Promise.resolve({
+      env: t.env,
+      close: () => {
+        closed = true;
+        activeAtClose = seen.active;
+        return Promise.resolve();
+      },
+    });
+  await assertRejects(() => harnessRejudge("contract", runOpts(t), open));
+  assert(closed, "the env was closed");
+  assertEquals(activeAtClose, 0, "a judging was still running at close");
+  await new Promise((r) => setTimeout(r, 100));
+  assertEquals(startedAfterClose, 0, "a queued judging started after close");
+});
