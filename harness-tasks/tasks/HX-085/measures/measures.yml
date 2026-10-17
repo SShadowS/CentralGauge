@@ -21,7 +21,8 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
-  naive/one-flag: { partial_credit: 0.5 }
-  naive/unbind-on-any-off: { partial_credit: 0.75 }
-  naive/old-subscribers-kept: { partial_credit: 0.125 }
-  naive/plain-merged: { partial_credit: 0.125 }
+  naive/one-flag: { partial_credit: 0.4 }
+  naive/unbind-on-any-off: { partial_credit: 0.8 }
+  naive/old-subscribers-kept: { partial_credit: 0.1 }
+  naive/plain-merged: { partial_credit: 0.1 }
+  naive/legacy-return-kept: { partial_credit: 0.8 }
