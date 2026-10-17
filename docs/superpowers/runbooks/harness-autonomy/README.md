@@ -160,6 +160,24 @@ Bash `/` spans every drive).
 4. Separate questions for design, implementation correctness, and oracle quality.
 5. At most 2 rounds. Record the verdict and the decision in `decisions/`.
 
+## Post-campaign analysis
+
+Every campaign (pilot, screening, confirmatory) gets an analysis before the orchestrator
+accepts it. It reads the stored results only: no containers, no paid cells.
+
+1. The lane that ran the campaign (normally lane-ops) runs, from a checkout of master:
+   `deno run --allow-all scripts/harness/analyze-campaign.ts <campaign-id> --results <job>\results\harness --rev <task rev of the run> --out H:\cg-coord\analysis\<campaign name>`
+   (optional `--pair base:variant`; by default every variant is paired with the baseline).
+   Or the `/analyze-campaign <campaign-id>` skill, which also runs the blind comparison and writes `findings.md`.
+2. The output folder holds `findings.md` (summary first), per-pair dossiers, the failure
+   classes (`losses.csv`, `pairs.csv`) and the extracted data. The submit summary links it.
+3. The orchestrator reads `findings.md` and spot-checks at least 5 classified losses against
+   their dossiers before accepting. A finding that points at the harness (judging, scoring,
+   environment) rather than the agent goes to the owner as a question, as A-01's did
+   (decisions\2026-10-17-a-01-accepted-and-judging-ruling.md).
+4. Structural comparisons (blind, another model family, fixed rubric) are exploratory only and
+   never a headline metric.
+
 ## Restarting after a usage limit or crash
 
 - Resume with `claude --resume <session-name>`, then send: `Resume. Re-read
