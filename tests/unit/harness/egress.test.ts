@@ -49,6 +49,7 @@ import {
   startSharedEgressProxy,
 } from "../../../src/harness/egress-proxy.ts";
 import { blobB64, hns, networkBlob, REAL_HNS } from "../../utils/hns-blob.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const IDX = 42;
 const HNS_ID = "5F2A9C31-0B7E-4D12-9A3B-6C4D5E6F7A8B";
@@ -335,7 +336,7 @@ Deno.test("revertScript (C-04 item 2): profile restore only on opt-in, and only 
 });
 
 Deno.test("egress-scripts.ts revert (C-04): rules-only unless --restore-profiles is given", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const gen = async (out: string, extra: string[]) => {
       const { code } = await new Deno.Command(Deno.execPath(), {
@@ -623,7 +624,7 @@ Deno.test("hostsForRoutes (A1): one route-to-host policy, fails closed on an unk
 });
 
 Deno.test("loadRecordedHosts: missing file is no recording; a malformed file or an unrecordable route is refused", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   assertEquals(await loadRecordedHosts(root), {});
   const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
   await Deno.mkdir(join(path, ".."), { recursive: true });
@@ -1151,7 +1152,7 @@ Deno.test("record mode: the route policy, the preflight expectation and the reco
       "record mode execution x",
     ),
   );
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const path = join(root, ...RECORDED_HOSTS_PATH.split("/"));
   await Deno.mkdir(join(path, ".."), { recursive: true });
   await Deno.writeTextFile(path, a);
@@ -1509,7 +1510,7 @@ Deno.test("egress-check.ps1: reads the proxy credential file itself, sends it as
 });
 
 Deno.test("realEgressRuntime (M1-33d): one shared proxy on the gateway, started with the runtime; register goes to it; no per-execution proxy; its failure and shutdown are the runtime's", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const started: SharedProxyOptions[] = [];
   const regs: RegisterOptions[] = [];
   let failed = false;
@@ -1603,7 +1604,7 @@ const inertShared = (o: SharedProxyOptions): SharedEgressProxy => ({
 });
 
 Deno.test("realEgressRuntime verify (M1-33d review): above concurrency 1 the marker's proxy_isolation must equal PROXY_ISOLATION; the value read is recorded; concurrency 1 ignores it", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const markerPath = join(root, "egress-verified.json");
   const runtime = async (concurrency: number, value: unknown) => {
     const raw = rawObservation();
@@ -1672,7 +1673,7 @@ Deno.test("proxyIsolationProblem (M1-33e): above concurrency 1 only exactly PROX
 });
 
 Deno.test("realEgressRuntime verify (M1-33e): above concurrency 1 each cell's re-read must equal the value fixed when the environment opened; a marker change between cells refuses the next cell", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const markerPath = join(root, "egress-verified.json");
   let value: unknown = PROXY_ISOLATION;
   const collect = () => {
@@ -1736,7 +1737,7 @@ Deno.test("realEgressRuntime verify (M1-33e): above concurrency 1 each cell's re
 });
 
 Deno.test("realEgressRuntime (M1-33d review): a shared proxy that cannot bind fails the runtime start, naming the gateway and port", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   let listened = 0;
   await assertRejects(
     () =>
@@ -1759,7 +1760,7 @@ Deno.test("realEgressRuntime (M1-33d review): a shared proxy that cannot bind fa
 });
 
 Deno.test("realEgressRuntime (M1-33d review): shutdown closes the shared proxy's listener", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const events: string[] = [];
   let stop = (_e: Error) => {};
   const rt = await realEgressRuntime({

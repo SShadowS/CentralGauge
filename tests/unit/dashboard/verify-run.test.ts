@@ -2,9 +2,10 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { ContainerError } from "../../../src/errors.ts";
 import { verifyResponse } from "../../../src/dashboard/verify-run.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function draftWithOracle(taskId: string): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-vr-" });
+  const dir = await testTempDir({ prefix: "cg-vr-" });
   await Deno.mkdir(join(dir, "correct"), { recursive: true });
   await Deno.writeTextFile(join(dir, "correct", `${taskId}.Test.al`), "x");
   return dir;

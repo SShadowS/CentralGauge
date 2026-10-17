@@ -4,9 +4,10 @@ import {
   appendModel,
   appendPricing,
 } from "../../../src/ingest/catalog/write.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("appendModel adds an entry, preserving leading comments", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     const path = `${tmp}/models.yml`;
     await Deno.writeTextFile(
@@ -29,7 +30,7 @@ Deno.test("appendModel adds an entry, preserving leading comments", async () => 
 });
 
 Deno.test("appendPricing writes source field", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     const path = `${tmp}/pricing.yml`;
     await Deno.writeTextFile(path, "[]\n");
@@ -52,7 +53,7 @@ Deno.test("appendPricing writes source field", async () => {
 });
 
 Deno.test("appendModel creates file when missing", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     const path = `${tmp}/models.yml`;
     await appendModel(path, {
@@ -69,7 +70,7 @@ Deno.test("appendModel creates file when missing", async () => {
 });
 
 Deno.test("appendPricing carries batch rates forward from the latest prior row", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     const path = `${tmp}/pricing.yml`;
     await Deno.writeTextFile(
@@ -122,7 +123,7 @@ Deno.test("appendPricing carries batch rates forward from the latest prior row",
 });
 
 Deno.test("appendPricing leaves a row that states its own batch rates alone", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     const path = `${tmp}/pricing.yml`;
     await Deno.writeTextFile(

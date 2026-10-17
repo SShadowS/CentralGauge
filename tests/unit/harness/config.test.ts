@@ -18,6 +18,7 @@ import {
 import { imageTag } from "../../../src/harness/images.ts";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { readYaml } from "../../../src/harness/yaml.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const CONFIG = (id: string, extra = "") =>
   `id: ${id}
@@ -41,7 +42,7 @@ tasks: "harness-tasks/tasks/*"
 `;
 
 async function harnessRoot(files: Record<string, string>): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await Deno.mkdir(join(root, "bundles", "al-skills", "skills"), {
     recursive: true,
   });
@@ -261,7 +262,7 @@ Deno.test("image_revision: proof builds are 3-dev-<task id>; malformed ones are 
 });
 
 Deno.test("loadExperiment: an arm on a development image revision is refused (cross-plan ruling 1)", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   try {
     await Deno.mkdir(join(root, "configs"));
     await Deno.mkdir(join(root, "experiments"));

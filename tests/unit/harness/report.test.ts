@@ -656,7 +656,7 @@ const CAPS = {
  * `invalidRepeat` 2 swaps the repeats of skills' invalid and no-trace rows.
  */
 async function tracedRecords(invalidRepeat = 1) {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = await campaign({ repeats: 2 });
   type Kind = "complete" | "partial" | "invalid" | "none";
   const rows: Array<[string, string, number, Kind, TraceEvent[]]> = [
@@ -1942,6 +1942,7 @@ import {
   writeMeasureRecord,
 } from "../../../src/harness/measures.ts";
 import { loadReportLogs } from "../../../src/harness/report.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 function measureFor(
   recs: CampaignRecords,
@@ -1996,7 +1997,7 @@ Deno.test("buildReport (M11-12 review): a measure record of a superseded judgmen
 
 Deno.test("loadReportLogs (M11-12): reads measure records of the given fingerprint, else the current one", async () => {
   const recs = await records();
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const j = recs.judgments[0]!;
   const pinned = H("f");
   await writeMeasureRecord(root, await measureFor(recs, j, pinned));

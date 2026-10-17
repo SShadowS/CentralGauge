@@ -2,12 +2,13 @@ import { describe, it } from "@std/testing/bdd";
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { loadTaskManifest } from "../../../src/tasks/loader.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function withTempManifest<T>(
   content: string,
   fn: (path: string) => Promise<T>,
 ): Promise<T> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-manifest-" });
+  const dir = await testTempDir({ prefix: "cg-manifest-" });
   const path = join(dir, "task.yml");
   await Deno.writeTextFile(path, content);
   try {

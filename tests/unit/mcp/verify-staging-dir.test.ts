@@ -2,6 +2,7 @@ import { afterEach, describe, it } from "@std/testing/bdd";
 import { assert, assertStringIncludes } from "@std/assert";
 import { basename, join } from "@std/path";
 import { createVerifyStagingDir } from "../../../mcp/al-tools-server.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /**
  * TOCTOU containment (M1/M4 follow-up): the al_verify staging directory must
@@ -31,7 +32,7 @@ describe("createVerifyStagingDir", () => {
   it("creates the staging dir outside the workspace mount and project dir", async () => {
     // Simulate a sandbox workspace mount (host side of C:\workspace) and the
     // project directory the agent writes into.
-    const workspaceHostPath = await Deno.makeTempDir({ prefix: "cg-ws-" });
+    const workspaceHostPath = await testTempDir({ prefix: "cg-ws-" });
     created.push(workspaceHostPath);
     const projectDir = join(workspaceHostPath, "project");
 

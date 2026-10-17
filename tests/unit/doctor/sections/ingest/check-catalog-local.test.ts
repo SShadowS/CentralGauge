@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkCatalogLocal } from "../../../../../src/doctor/sections/ingest/check-catalog-local.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 function ctx(cwd: string): DoctorContext {
   return { cwd, fetchFn: globalThis.fetch, previousResults: new Map() };
@@ -9,7 +10,7 @@ function ctx(cwd: string): DoctorContext {
 
 describe("checkCatalogLocal", () => {
   it("passes when all catalog YAMLs parse cleanly", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.mkdir(`${tmp}/site/catalog`, { recursive: true });
     await Deno.writeTextFile(
       `${tmp}/site/catalog/models.yml`,
@@ -32,7 +33,7 @@ describe("checkCatalogLocal", () => {
   });
 
   it("fails on YAML parse error", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.mkdir(`${tmp}/site/catalog`, { recursive: true });
     await Deno.writeTextFile(
       `${tmp}/site/catalog/models.yml`,
@@ -47,7 +48,7 @@ describe("checkCatalogLocal", () => {
   });
 
   it("fails when site/catalog directory is missing entirely", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     try {
       const result = await checkCatalogLocal.run(ctx(tmp));
       assertEquals(result.status, "failed");

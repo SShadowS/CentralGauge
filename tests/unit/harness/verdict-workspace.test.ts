@@ -13,10 +13,11 @@ import {
   testCodeunits,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const SHIPPED =
   `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n        Assert.AreEqual(10, Rental.Price(), 'price');\n    end;\n}\n`;
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 
 async function pristineDir(): Promise<string> {
   const d = await tmp();

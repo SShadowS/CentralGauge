@@ -22,6 +22,7 @@ import {
   writeRefapp,
   writeTask,
 } from "./gate-fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const git = (cwd: string, ...args: string[]) =>
   new Deno.Command("git", { args, cwd, stdout: "null", stderr: "null" })
@@ -537,7 +538,7 @@ Deno.test("exportSource refuses links, submodules and case-colliding paths", asy
 });
 
 Deno.test("exportSource and stageWorkspace refuse output outside the gate tmp root", async () => {
-  const outside = await Deno.makeTempDir();
+  const outside = await testTempDir();
   try {
     await assertRejects(
       () => exportSource(".", "HEAD", "HX-001", outside),
@@ -863,7 +864,7 @@ Deno.test("exportSource ignores git replace objects", async () => {
 
 Deno.test("output dir through a junction out of GATE_TMP is refused", async () => {
   if (Deno.build.os !== "windows") return;
-  const outside = await Deno.makeTempDir();
+  const outside = await testTempDir();
   const link = join(await tmp(), "j");
   try {
     await Deno.symlink(outside, link, { type: "junction" });

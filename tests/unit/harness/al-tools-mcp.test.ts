@@ -5,6 +5,7 @@ import {
   HARNESS_FORBIDDEN_IDS,
   HARNESS_TEST_APP_RANGE,
 } from "../../../src/constants.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const DEF = "harness/images/base/al-tools-tools.json";
 const SERVER = "harness/images/base/al-tools-mcp.mjs";
@@ -40,7 +41,7 @@ async function converse(
   );
   const port = backend.addr.port;
   if (opts.stopBackendFirst) await backend.shutdown();
-  const secrets = await Deno.realPath(await Deno.makeTempDir());
+  const secrets = await Deno.realPath(await testTempDir());
   if (!opts.noToken) {
     await Deno.writeTextFile(join(secrets, "backend-token"), TOKEN + "\n");
   }

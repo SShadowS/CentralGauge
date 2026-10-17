@@ -7,6 +7,7 @@ import {
   resolveManifest,
   type RuntimeFacts,
 } from "../../../src/harness/manifest.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const ROOT = "harness";
 const SKILLS = "bundles/al-skills/skills";
@@ -96,7 +97,7 @@ Deno.test("skills bundle: loads through resolveManifest as a skills component, h
   assertEquals([...names].sort(), (await skillFiles()).map((s) => s.name));
 
   // The hash follows content: one changed byte in a copy changes it.
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     await copy(join(ROOT, "bundles"), join(tmp, "bundles"), {
       overwrite: true,

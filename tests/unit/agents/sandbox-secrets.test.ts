@@ -10,12 +10,13 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { writeSandboxSecrets } from "../../../src/agents/sandbox-executor.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("writeSandboxSecrets", async (t) => {
   await t.step(
     "writes both the api key and the mcp auth token onto the mount",
     async () => {
-      const dir = await Deno.makeTempDir({ prefix: "cg-secrets-test-" });
+      const dir = await testTempDir({ prefix: "cg-secrets-test-" });
       try {
         await writeSandboxSecrets(dir, {
           apiKey: "sk-test-key-123",

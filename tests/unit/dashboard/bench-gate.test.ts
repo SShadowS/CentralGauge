@@ -1,10 +1,11 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { checkBenchGate } from "../../../src/dashboard/bench-gate.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("bench-gate", async (t) => {
   await t.step("allows when no marker exists", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-gate-" });
+    const dir = await testTempDir({ prefix: "cg-gate-" });
     try {
       assertEquals(checkBenchGate(dir), { allowed: true });
     } finally {
@@ -13,7 +14,7 @@ Deno.test("bench-gate", async (t) => {
   });
 
   await t.step("refuses a fresh marker, naming the command", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-gate-" });
+    const dir = await testTempDir({ prefix: "cg-gate-" });
     try {
       await Deno.writeTextFile(
         join(dir, ".bench-running.json"),
@@ -34,7 +35,7 @@ Deno.test("bench-gate", async (t) => {
   });
 
   await t.step("allows again once the marker is stale", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-gate-" });
+    const dir = await testTempDir({ prefix: "cg-gate-" });
     try {
       const p = join(dir, ".bench-running.json");
       await Deno.writeTextFile(p, JSON.stringify({ command: "x" }));
@@ -47,7 +48,7 @@ Deno.test("bench-gate", async (t) => {
   });
 
   await t.step("refuses a present but unreadable marker", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-gate-" });
+    const dir = await testTempDir({ prefix: "cg-gate-" });
     try {
       await Deno.writeTextFile(join(dir, ".bench-running.json"), "{not json");
       const decision = checkBenchGate(dir);

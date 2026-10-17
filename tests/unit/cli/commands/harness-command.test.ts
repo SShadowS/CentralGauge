@@ -159,7 +159,7 @@ async function git(root: string, ...args: string[]) {
 }
 
 async function repo(ids = ["HX-001"]): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
   await git(root, "config", "user.name", "t");
@@ -246,7 +246,7 @@ Deno.test("validateHarness: broken experiment or unknown model fails loudly", as
 });
 
 async function storeWithOneCell(): Promise<string> {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const store = new RecordStore(dir);
   const c = await campaign();
   await store.writeCampaign(c);
@@ -264,7 +264,7 @@ const OPTS = {
 };
 
 Deno.test("harnessReport: newest campaign from the store, loud when none, bad options refused", async () => {
-  const empty = await Deno.makeTempDir();
+  const empty = await testTempDir();
   await assertRejects(
     () => harnessReport("skills-vs-plain", { resultsDir: empty, ...OPTS }),
     CentralGaugeError,
@@ -432,7 +432,7 @@ Deno.test("validateHarness: lists every problem, not only the first", async () =
 });
 
 Deno.test("validateHarness: a missing task dir is a problem that names it, experiments still checked", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await write(root, "harness/experiments/x.yml", "id: x\n");
   const err = await assertRejects(
     () => validateHarness(root),
@@ -766,7 +766,7 @@ async function writeCatalog(t: TestEnv) {
 }
 
 Deno.test("openHarnessEnv: refused containers first, then lock, sweep, containers, health monitor, backend, recovery; release last", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   await assertRejects(
     () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus28"]), deps(order)),
@@ -799,7 +799,7 @@ Deno.test("openHarnessEnv: refused containers first, then lock, sweep, container
 });
 
 Deno.test("openHarnessEnv: a container outside the campaign allocation is refused before the lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const d = deps(order);
   d.allocated = (c) =>
@@ -815,7 +815,7 @@ Deno.test("openHarnessEnv: a container outside the campaign allocation is refuse
 });
 
 Deno.test("openHarnessEnv: a task without an oracle app does not stop the start; the removal allowlist is never env-wide", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await write(
     t.repo.tasksDir,
     "HX-002/task.yml",
@@ -830,7 +830,7 @@ Deno.test("openHarnessEnv: a task without an oracle app does not stop the start;
 });
 
 Deno.test("openHarnessEnv: a held bench lock stops before any docker call", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const held = () => {
     throw new BenchLockHeldError(null, "results/.bench-running.json");
@@ -902,7 +902,7 @@ Deno.test("cellGate: credential-bearing arms need enforcement, or --supervised a
 });
 
 Deno.test("harnessCell: a mock arm runs unattended with the variant from --qualify-manifest", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   const manifest = join(t.env.privateRoot, "qualify-manifest.json");
@@ -944,7 +944,7 @@ Deno.test("harnessCell: a mock arm runs unattended with the variant from --quali
 });
 
 Deno.test("harnessCell: one supervised cell; the reservation lands in the shared ledger", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const r = await harnessCell(
     "cc-sonnet-plain",
@@ -966,7 +966,7 @@ Deno.test("harnessCell: one supervised cell; the reservation lands in the shared
 });
 
 Deno.test("harnessCell: Ctrl+C stops the sandbox at once and the attempt is recorded", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   let fire: () => void = () => {};
   t.docker.behavior = async (call, io) => {
@@ -995,7 +995,7 @@ Deno.test("harnessCell: Ctrl+C stops the sandbox at once and the attempt is reco
 });
 
 Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; variants and revisions follow the manifest", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await git(t.repo.root, "add", ".");
   await git(t.repo.root, "commit", "-q", "-m", "tasks");
   await git(t.repo.root, "tag", "refapp-v1-rc1");
@@ -1067,7 +1067,7 @@ Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; vari
 });
 
 Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets the base and is verified by layers", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await assertRejects(
     () => harnessImagesBuild("base", { root }, docker),
@@ -1198,8 +1198,8 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
 });
 
 Deno.test("harnessSymbolsLock: writes a strict lock the identity accepts", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
-  const from = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
+  const from = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(from, "Microsoft_System_28.0.0.0.app"),
     "sys",
@@ -1218,7 +1218,7 @@ Deno.test("harnessSymbolsLock: writes a strict lock the identity accepts", async
 });
 
 Deno.test("harnessImagesBuild: a base tag that moves between inspect and build cannot change the base", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
@@ -1284,7 +1284,7 @@ function planDeps(
 }
 
 Deno.test("run --dry-run prints the plan without a lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const order: string[] = [];
@@ -1309,7 +1309,7 @@ Deno.test("run --dry-run prints the plan without a lock", async () => {
 });
 
 Deno.test("run refuses a credential-bearing arm unless the verified state is authorized; a marker failing verification stops", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await write(
     t.harnessRoot,
@@ -1372,7 +1372,7 @@ repeats: 1
 });
 
 Deno.test("H-13: run --unverified-egress-ok passes the egress refusal (dry run too); a blank reason or an enforced marker is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await write(
     t.harnessRoot,
@@ -1437,7 +1437,7 @@ repeats: 1
 });
 
 Deno.test("H-13: `harness run --unverified-egress-ok <reason>` records the override on the campaign and its executions; absent, nothing is recorded", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1477,7 +1477,7 @@ Deno.test("H-13: `harness run --unverified-egress-ok <reason>` records the overr
 });
 
 Deno.test("qualify judges every manifest variant at its rev and indexes judgment, provenance, expected and actual verdicts", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1570,7 +1570,7 @@ async function campaignWithStaleJudgment(t: TestEnv) {
 }
 
 Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is not current, and none on a second call", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { es } = await campaignWithStaleJudgment(t);
   const count = async () =>
@@ -1619,7 +1619,7 @@ async function unscoredJudgments(
 Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only under the current scorer suite", async () => {
   // [unscored judgments, of them under an old suite, executions due]
   for (const [n, old, due] of [[3, 3, 1], [3, 1, 1]] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     await writeCatalog(t);
     t.env.supervised = false;
     t.docker.behavior = mockImageBehavior();
@@ -1642,7 +1642,7 @@ Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only un
 });
 
 Deno.test("rejudge --force (H-04b run 003): after a --rerun of a budget-terminal cell, --force admits the rerun the report counts and refuses the planned execution", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1699,7 +1699,7 @@ Deno.test("rejudge --force (H-04b run 003): after a --rerun of a budget-terminal
 
 Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under the current scorer suite", async () => {
   for (const current of [true, false]) {
-    const dir = await Deno.makeTempDir();
+    const dir = await testTempDir();
     const store = new RecordStore(dir);
     const c = await campaign();
     await store.writeCampaign(c);
@@ -1730,7 +1730,7 @@ Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under 
 
 Deno.test("rejudge (H-04b): an execution with 2 non-forced unscored judgments is due; with 3 it hit the rejudge budget and is not", async () => {
   for (const [n, due] of [[2, 1], [3, 0]] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     await writeCatalog(t);
     t.env.supervised = false;
     t.docker.behavior = mockImageBehavior();
@@ -1907,7 +1907,7 @@ Deno.test("measure (M11-07): two scored cells, one already measured under the cu
 });
 
 Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is rejudged with the current suite on the original artifact, task and oracle", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1961,7 +1961,7 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
 });
 
 Deno.test("rejudge refuses when the restaged visible inputs differ", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { es } = await campaignWithStaleJudgment(t);
   await Deno.writeTextFile(
@@ -1977,7 +1977,7 @@ Deno.test("rejudge refuses when the restaged visible inputs differ", async () =>
 });
 
 Deno.test("rejudge asks for confirmation unless --yes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { es } = await campaignWithStaleJudgment(t);
   const asked: string[] = [];
@@ -2006,7 +2006,7 @@ Deno.test("rejudge asks for confirmation unless --yes", async () => {
 });
 
 Deno.test("images build lists the resulting digest and labels", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
@@ -2037,7 +2037,7 @@ Deno.test("images build lists the resulting digest and labels", async () => {
 });
 
 Deno.test("rejudge: an oracle-only change makes every judged execution due, judged against the new oracle", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -2126,7 +2126,7 @@ Deno.test("harnessReport: efficiency and slices read the store's published host 
 });
 
 Deno.test("openHarnessEnv: the lane comes from CG_LANE, never a placeholder", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const prev = Deno.env.get("CG_LANE");
   try {
     Deno.env.set("CG_LANE", "lane-ops");
@@ -2163,7 +2163,7 @@ async function scenarioFile(t: TestEnv): Promise<string> {
 }
 
 Deno.test("harnessCell: --image is refused without --stub-provider", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await assertRejects(
     () =>
@@ -2182,7 +2182,7 @@ Deno.test("harnessCell: --image is refused without --stub-provider", async () =>
 });
 
 Deno.test("harnessCell: a stub cell needs no supervision, records under <results>/stub-cells, is never judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const results = join(t.repo.root, "results", "harness");
   const mounted: string[] = [];
@@ -2223,7 +2223,7 @@ Deno.test("harnessCell: a stub cell needs no supervision, records under <results
 });
 
 Deno.test("harnessCell: a malformed stub scenario is refused before anything runs", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const bad = join(t.env.privateRoot, "bad.json");
   await Deno.writeTextFile(bad, JSON.stringify({ steps: "no" }));
@@ -2249,7 +2249,7 @@ Deno.test("harnessCell: a malformed stub scenario is refused before anything run
 // M1-33: egress mode, backend placement and `harness egress verify`.
 
 Deno.test("egressMode: qualified places, authorized enforces; an unknown or unreadable marker stops", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const ok = () => Promise.resolve([]);
   const mark = (v: unknown) =>
     Deno.writeTextFile(join(root, EGRESS_MARKER), JSON.stringify(v));
@@ -2361,7 +2361,7 @@ function markerAwareCollector(mutate: (s: EgressState) => void = () => {}) {
 }
 
 Deno.test("harness egress verify: problems fail; without --mark the marker is part of the verification", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const marker = join(root, "results", "harness", EGRESS_MARKER);
   const p = await harnessEgressVerify(
     { root, mark: "candidate" },
@@ -2386,7 +2386,7 @@ Deno.test("harness egress verify: problems fail; without --mark the marker is pa
 });
 
 Deno.test("harness egress verify --mark: ordered states, no skip, no downgrade, no overwrite", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   const refused = async (
     o: Parameters<typeof harnessEgressVerify>[0],
@@ -2400,7 +2400,7 @@ Deno.test("harness egress verify --mark: ordered states, no skip, no downgrade, 
 });
 
 Deno.test("harness egress verify --mark (M1-33d review): the marker carries proxy_isolation = PROXY_ISOLATION", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   assertEquals(
     await harnessEgressVerify(
       { root, mark: "candidate" },
@@ -2438,7 +2438,7 @@ async function probeEvidence(
 }
 
 Deno.test("harness egress verify --mark qualified: needs passing in-sandbox probe evidence for the current network", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
   const q = (probe?: string) =>
@@ -2484,7 +2484,7 @@ Deno.test("harness egress verify --mark qualified: needs passing in-sandbox prob
 });
 
 Deno.test("harness egress verify --mark authorized: needs recorded rotation, recorded OAuth hosts and a later enforced supervised Claude cell", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
   assertEquals(
@@ -2647,7 +2647,7 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
 
 Deno.test("qualification bootstrap: a candidate marker places the probe only; the probe's evidence allows marking qualified; nothing is released before it passes", async () => {
   for (const passing of [true, false]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const root = t.env.privateRoot; // any fresh dir works as the repo root here
     const shared = join(root, "results", "harness");
     const markerPath = join(shared, EGRESS_MARKER);
@@ -2740,7 +2740,7 @@ Deno.test("qualification bootstrap: a candidate marker places the probe only; th
 
 Deno.test("qualification probe: extra secrets are released only after a passed preflight; a readWrite mount is not readonly (M9-01a)", async () => {
   for (const passing of [true, false]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const root = t.env.privateRoot;
     const markerPath = join(root, "results", "harness", EGRESS_MARKER);
     const collect = markerAwareCollector();
@@ -2831,7 +2831,7 @@ Deno.test("qualification probe: extra secrets are released only after a passed p
 });
 
 Deno.test("qualification probe: released secret values printed by the sandbox are scrubbed from the retained captures (M9-01a run 002)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const root = t.env.privateRoot;
   const markerPath = join(root, "results", "harness", EGRESS_MARKER);
   const collect = markerAwareCollector();
@@ -2889,7 +2889,7 @@ Deno.test("qualification probe: released secret values printed by the sandbox ar
 });
 
 Deno.test("qualification probe: an injected scrub failure fails the probe closed (M9-01a run 003)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const root = t.env.privateRoot;
   const markerPath = join(root, "results", "harness", EGRESS_MARKER);
   const collect = markerAwareCollector();
@@ -2956,7 +2956,7 @@ Deno.test("qualification probe: an injected scrub failure fails the probe closed
 // M3-08: the route-aware probe proxies and probes exactly the hosts it is given.
 
 Deno.test("qualification probe: hosts override the default route host (M3-08 --route)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const root = t.env.privateRoot;
   const markerPath = join(root, "results", "harness", EGRESS_MARKER);
   const eg = fakeEgress();
@@ -3017,7 +3017,7 @@ Deno.test("qualification probe: hosts override the default route host (M3-08 --r
 
 Deno.test("qualification probe (H-01): the privilege check runs before the preflight; a failure releases nothing and is a problem", async () => {
   for (const healthy of [true, false]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const root = t.env.privateRoot;
     const markerPath = join(root, "results", "harness", EGRESS_MARKER);
     const eg = fakeEgress();
@@ -3088,7 +3088,7 @@ Deno.test("qualification probe (H-01): the privilege check runs before the prefl
 
 /** A repo root taken through candidate, qualified and authorized with complete evidence. */
 async function authorizedRoot(at?: string): Promise<string> {
-  const root = at ?? await Deno.realPath(await Deno.makeTempDir());
+  const root = at ?? await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
   assertEquals(
@@ -3237,7 +3237,7 @@ Deno.test("authorized marker (review item 3): carries the evidence; a minimal or
 });
 
 Deno.test("run --concurrency > 1 is refused before any environment opens while the egress marker places sandboxes (M1-33c)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -3288,7 +3288,7 @@ Deno.test("run --concurrency > 1 is refused before any environment opens while t
 });
 
 Deno.test("run --concurrency > 1: an unknown, malformed or unreadable marker is refused as placing (fail closed; M1-33c review)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -3318,7 +3318,7 @@ Deno.test("run --concurrency > 1: an unknown, malformed or unreadable marker is 
 });
 
 Deno.test("openHarnessEnv: with concurrency > 1 the marker is rechecked under the lock, before any sweep (M1-33c review: TOCTOU)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   // The marker became placing after harness run's up-front check.
@@ -3336,7 +3336,7 @@ Deno.test("openHarnessEnv: with concurrency > 1 the marker is rechecked under th
 });
 
 Deno.test("openHarnessEnv: the effective egress mode is computed under the lock, before any sweep (M1-33c review round 2)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -3357,7 +3357,7 @@ Deno.test("openHarnessEnv: the effective egress mode is computed under the lock,
 });
 
 Deno.test("openHarnessEnv (M1-33d review): a shared proxy that cannot bind stops the start naming the gateway and port, before the backend and any cell; the runtime gets the concurrency", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -3407,7 +3407,7 @@ const markerWith = (state: string, v: unknown) =>
   });
 
 Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker proxy_isolation other than exactly PROXY_ISOLATION, before any environment opens; it is refused unless every placed-concurrency condition holds (M7-01)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -3438,7 +3438,7 @@ Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker pro
 });
 
 Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate runs under the lock, before any sweep, at both refusal points; it is refused unless every placed-concurrency condition holds (M7-01)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   const refused = async (marker: string, probe = false) => {
@@ -3472,7 +3472,7 @@ Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate run
 });
 
 Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, the existing registration revoked, in-flight tunnels ended, no registration after close, a second close is a no-op; env.proxyIsolation is fixed under the lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -3616,7 +3616,7 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, the existing re
 const UNKNOWN_CAMPAIGN = "00000000-0000-0000-0000-000000000000";
 
 Deno.test("harnessRun forwards two --stop-file values and --campaign into runCampaign", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -3681,7 +3681,7 @@ async function twoCampaigns(t: TestEnv) {
 }
 
 Deno.test("rejudge --campaign: the named campaign although a newer one exists; an execution outside it or an unknown id is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { older, olderExec, newerExec } = await twoCampaigns(t);
   // Without --campaign the newest campaign is used.
@@ -3727,7 +3727,7 @@ Deno.test("rejudge --campaign: the named campaign although a newer one exists; a
 });
 
 Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `harness rejudge` parses and forwards --campaign", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { older, olderExec, newer } = await twoCampaigns(t);
   const absent = join(t.repo.root, "pause.json");
@@ -3791,7 +3791,7 @@ Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `har
 });
 
 Deno.test("--campaign refusals come before the environment opens: no lock, sweep, recovery or docker call (M5-03 review)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { older, olderExec, newerExec } = await twoCampaigns(t);
   const order: string[] = [];
@@ -3892,7 +3892,7 @@ Deno.test("parseRerunCell refuses a repeat that is not a safe positive integer",
 });
 
 Deno.test("CLI: `harness run --rerun HX-001:1:mock-crash` reruns that cell; HX-001:x:arm and HX-001:1 are refused by the parser", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -4183,7 +4183,7 @@ async function probeWith(
 }
 
 Deno.test("qualification probe (M5-08a): a stuck rm -f runs only after the token is revoked and the proxy is down; secrets kept; fail closed", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = fakeEgress();
   t.docker.waitForReady = true;
   let secrets = "";
@@ -4225,7 +4225,7 @@ Deno.test({
     "qualification probe (M5-08a): a held secrets dir (os error 32) after the sandbox is gone fails closed with the reason",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = fakeEgress();
     t.docker.waitForReady = true;
     let release: (() => Promise<void>) | null = null;
@@ -4251,7 +4251,7 @@ Deno.test({
 });
 
 Deno.test("qualification probe (M5-08a): a failed token write while the sandbox runs keeps the secrets until the sandbox is gone; the write error is not masked", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = fakeEgress();
   // The planted file must exist before the token write: this image code does
   // not wait for ready (the H-01 fixture default waits, like the entrypoints).
@@ -4288,7 +4288,7 @@ for (
   ] as [string, () => Promise<unknown>][]
 ) {
   Deno.test(`qualification probe (M5-08b): a revoke that ${how} is reported, still shuts the proxy and tears the sandbox down, and fails closed`, async () => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = fakeEgress();
     t.docker.waitForReady = true;
     let secrets = "";
@@ -4311,7 +4311,7 @@ for (
 // ---- H-01 run 004: image_revision ----
 
 Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag; without it the frozen tag and no revision label", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
@@ -4487,7 +4487,7 @@ async function writeOomLog(
 }
 
 Deno.test("rejudge --force (C-03): refused without --execution, without a non-blank --reason, and --reason without --force; before the environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e } = await campaignWithOomJudgment(t);
   const never = () => {
@@ -4532,7 +4532,7 @@ Deno.test("rejudge --force (C-03): refused without --execution, without a non-bl
 });
 
 Deno.test("rejudge --force (C-03): a non-judgeable execution is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -4580,7 +4580,7 @@ repeats: 1
 });
 
 Deno.test("rejudge --force (C-03): a current judgment gets a second judgment that is latest, carries the reason; the old one stays; the report counts the new verdict", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, original, oom } = await campaignWithOomJudgment(t);
   const load = async () =>
@@ -4654,7 +4654,7 @@ Deno.test("rejudge --force (C-03): a current judgment gets a second judgment tha
 });
 
 Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards both", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const cli = new Command().name("centralgauge").noExit();
@@ -4703,7 +4703,7 @@ Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards bo
 });
 
 Deno.test("rejudge --force (C-03 run 002): a forced judgment the report would not select (clock skew) is refused before anything is written", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A judgment stamped by a clock ahead of this one stays newest by ended_at.
@@ -4756,7 +4756,7 @@ Deno.test("rejudge --force (C-03 run 002): a forced judgment the report would no
 });
 
 Deno.test("rejudge --force (C-03 review): refused before writing when the task's current oracle differs from the campaign's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const oracle = join(
@@ -4795,7 +4795,7 @@ Deno.test("rejudge --force (C-03 review): refused before writing when the task's
 });
 
 Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused before the environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e } = await campaignWithOomJudgment(t);
   for (const reason of ["one\ntwo", "one\rtwo", "one\r\n"]) {
@@ -4822,7 +4822,7 @@ Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused befor
 });
 
 Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scrubbed reason", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const asked: string[] = [];
@@ -4850,7 +4850,7 @@ Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scr
 });
 
 Deno.test("CLI (C-03 review): `harness rejudge --force` with --execution twice is rejected by parsing", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e } = await campaignWithOomJudgment(t);
   const cli = new Command().name("centralgauge").noExit();
@@ -4913,7 +4913,7 @@ const forceOpts = (
   });
 
 Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same execution is refused, whichever judgment it names", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   await approved(e.id, (basis) =>
@@ -4944,7 +4944,7 @@ Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same e
 });
 
 Deno.test("rejudge --force (C-03 run 002): --replaces must name the judgment the report uses for the execution", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, original } = await campaignWithOomJudgment(t);
   for (const replaces of [original.id, crypto.randomUUID()]) {
@@ -4966,7 +4966,7 @@ Deno.test("rejudge --force (C-03 run 002): --replaces must name the judgment the
 });
 
 Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra signature needs --basis, a file under $CG_COORD_ROOT/decisions", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A plain FAIL with a test result and no verdict side file: no signature.
@@ -5006,7 +5006,7 @@ Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra 
     ConfigurationError,
     "--force needs --basis",
   );
-  const root = await Deno.makeTempDir({ prefix: "coord-" });
+  const root = await testTempDir({ prefix: "coord-" });
   await Deno.mkdir(join(root, "decisions"));
   const decision = join(root, "decisions", "2026-09-28-c03-forced.md");
   await Deno.writeTextFile(decision, approvalText(e.id));
@@ -5071,7 +5071,7 @@ async function withCoordRoot(
   decisions: Record<string, string>,
   f: (root: string) => Promise<void>,
 ) {
-  const root = await Deno.makeTempDir({ prefix: "coord-" });
+  const root = await testTempDir({ prefix: "coord-" });
   await Deno.mkdir(join(root, "decisions"));
   for (const [name, text] of Object.entries(decisions)) {
     await Deno.writeTextFile(join(root, "decisions", name), text);
@@ -5088,7 +5088,7 @@ async function withCoordRoot(
 }
 
 Deno.test("rejudge --force (C-03 run 003): a relative --basis is under the decisions dir, must name the execution, and is recorded with its sha256", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const good = approvalText(e.id);
@@ -5126,7 +5126,7 @@ Deno.test("rejudge --force (C-03 run 003): a relative --basis is under the decis
 });
 
 Deno.test("rejudge --force (C-03 run 003): an execution its cell does not count is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A manual rerun beside the scored planned result: judged, never counted.
@@ -5204,7 +5204,7 @@ const approvedRejudge = (
   );
 
 Deno.test("rejudge --force (C-03 run 003): --basis is required even when the replaced judgment matches the infra signature", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   await assertRejects(
@@ -5223,7 +5223,7 @@ Deno.test("rejudge --force (C-03 run 003): --basis is required even when the rep
 });
 
 Deno.test("rejudge --force (C-03 run 003): the basis needs an OWNER-APPROVED line with words and an ISO time", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const named = `Execution ${e.id}.\n`;
@@ -5285,7 +5285,7 @@ Deno.test("rejudge --force (C-03 run 003): the basis needs an OWNER-APPROVED lin
 });
 
 Deno.test("rejudge --force (C-03 run 003): a replaced judgment without an infra signature prints so and is still accepted on an owner approval", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A plain FAIL with no verdict side file: no signature.
@@ -5317,7 +5317,7 @@ Deno.test("rejudge --force (C-03 run 003): a replaced judgment without an infra 
 // ---- H-01 run 004 review: an existing tag is never rebuilt ----
 
 Deno.test("harnessImagesBuild: an existing tag (frozen, revised or base) is refused before any build", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   await Deno.mkdir(join(root, "harness", "images", "base"), {
     recursive: true,
   });
@@ -5379,7 +5379,7 @@ Deno.test("BASE_IMAGE is base:2; base:1 is frozen", () => {
 // ---- H-01 run 005 (review H-01-004 P1): frozen tags are reserved in code ----
 
 Deno.test("harnessImagesBuild: a frozen tag is refused on a clean host (not present locally), before any build", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker(); // clean host: no image at all
   docker.addImage(BASE_IMAGE, `sha256:${"b".repeat(64)}`, {}, ["l1"]);
   for (
@@ -5510,7 +5510,7 @@ async function gitOut(root: string, ...args: string[]): Promise<string> {
 async function preregReportEnv(
   metric: "cost_per_solved_task" | "pass_rate" = "cost_per_solved_task",
 ) {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
   await git(root, "config", "user.name", "t");
@@ -5595,7 +5595,7 @@ async function preregReportEnv(
     "-m",
     `stage_b_sha256: ${bSha}`,
   );
-  const decisions = await Deno.makeTempDir();
+  const decisions = await testTempDir();
   const decisionA = join(decisions, "decision-a.md");
   await Deno.writeTextFile(
     decisionA,
@@ -5643,7 +5643,7 @@ async function preregReportEnv(
       stage_b_decision_sha256: v.stage_b_decision_sha256,
     },
   };
-  const results = await Deno.makeTempDir();
+  const results = await testTempDir();
   const store = new RecordStore(results);
   await store.writeCampaign(c);
   for (const arm of ["plain", "skills"]) {
@@ -5748,7 +5748,7 @@ Deno.test("CLI: `harness report` takes --prereg-decision and --prereg-b-decision
 });
 
 Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.json; the built image must show it", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -5804,7 +5804,7 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
 });
 
 Deno.test("harnessCell: a stub cell's --image is the image runtimeFacts reads (dev-tag LSP proofs)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await Deno.mkdir(
     join(t.repo.root, "harness", "images", "claude-code", "lsp"),
@@ -5858,7 +5858,7 @@ Deno.test("harnessCell: a stub cell's --image is the image runtimeFacts reads (d
 });
 
 Deno.test("runCampaign: an LSP arm resolves when the image label matches the repo definition and is refused when it does not", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await Deno.mkdir(
     join(t.repo.root, "harness", "images", "claude-code", "lsp"),
@@ -5907,7 +5907,7 @@ Deno.test("runCampaign: an LSP arm resolves when the image label matches the rep
 });
 
 Deno.test("harnessCell: a stub cell's --image whose LSP label has the right hash but a wrong version is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await Deno.mkdir(
     join(t.repo.root, "harness", "images", "claude-code", "lsp"),
@@ -5950,7 +5950,7 @@ Deno.test("harnessCell: a stub cell's --image whose LSP label has the right hash
 
 // M7-01: the CLI runs the same placedConcurrencyProblem gate as runCampaign.
 Deno.test("run --concurrency 2 (M7-01): the up-front gate allows an authorized marker with exact proxy_isolation, and names every other failing condition before any environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -6003,7 +6003,7 @@ Deno.test("run --concurrency 2 (M7-01): the up-front gate allows an authorized m
 });
 
 Deno.test("openHarnessEnv concurrency 2 (M7-01): the same gate runs under the lock, before any sweep", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   const refused = async (marker: string, concurrency: number) => {
@@ -6043,7 +6043,7 @@ const armOf = (harness: string, version: string, revision?: string) =>
   });
 
 Deno.test("openHarnessEnv concurrency 2 (M7-01 review): the full gate, arms included, runs under the lock before any sweep; absent configs fail closed; an authorized marker that fails host verification still stops the start", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -6083,7 +6083,7 @@ Deno.test("openHarnessEnv concurrency 2 (M7-01 review): the full gate, arms incl
 });
 
 Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment carries the verified gate inputs, so a valid dry run and a resume plan, and unmet conditions still refuse", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   await writeCatalog(t);
@@ -6179,7 +6179,7 @@ Deno.test("CLI: `harness report` refuses an experiment whose primary_metric diff
 });
 
 Deno.test("CLI: `harness run` refuses a campaign start whose experiment primary_metric differs from the preregistration's (M11-10c)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   await writeCatalog(t);
@@ -6278,7 +6278,7 @@ preregistration: ${rel}
     "harness-v2-prereg-b",
     `stage_b_sha256: ${bSha}`,
   );
-  const decisions = await Deno.makeTempDir();
+  const decisions = await testTempDir();
   const decisionA = join(decisions, "decision-a.md");
   await Deno.writeTextFile(
     decisionA,
@@ -6372,8 +6372,8 @@ Deno.test("harnessReport (M11-12): a pre-registered campaign reads measure recor
 // on the same private root is refused by the root's lock before any sweep; a
 // restart on the root recovers its predecessor's leftovers under the same owner.
 Deno.test("openHarnessEnv (M10-08c): one namespace owner per private root; its lock refuses a second environment before any sweep; a restart sweeps the same owner", async () => {
-  const t = await makeEnv();
-  const other = await makeEnv();
+  await using t = await makeEnv();
+  await using other = await makeEnv();
   const owners: string[] = [];
   const track = (order: string[]) => {
     const d = deps(order);
@@ -6419,7 +6419,7 @@ Deno.test("openHarnessEnv (M10-08c): one namespace owner per private root; its l
 // M10-08c review 1: the private root's lock is taken before both temp sweeps,
 // so a refused second environment never deletes the live one's freeze dir.
 Deno.test("openHarnessEnv (M10-08c review 1): a refused second environment on the same private root sweeps nothing of the live one's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const a = await openHarnessEnv(envOpts(t), deps([]));
   try {
     const frozen = join(t.env.privateRoot, "freeze", "x");
@@ -6442,7 +6442,7 @@ Deno.test("openHarnessEnv (M10-08c review 1): a refused second environment on th
 
 // M10-08c review 5: the private root's lock goes through the injected seam.
 Deno.test("openHarnessEnv (M10-08c review 5): both locks come from deps.acquireLock, the repo's first, then the private root's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const d = deps([]);
   const dirs: string[] = [];
   const acquire = d.acquireLock;
@@ -6457,7 +6457,7 @@ Deno.test("openHarnessEnv (M10-08c review 5): both locks come from deps.acquireL
 
 // M10-08c review 6 / O3: the refusal names the --private-dir and the holder's pid.
 Deno.test("openHarnessEnv (M10-08c review 6, O3): a second environment on the same private root is refused naming --private-dir and the holder pid", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const a = await openHarnessEnv(envOpts(t), deps([]));
   try {
     const err = await assertRejects(
@@ -6474,7 +6474,7 @@ Deno.test("openHarnessEnv (M10-08c review 6, O3): a second environment on the sa
 // O2: the private root's lock is released on a normal close; a crashed
 // holder's marker (no heartbeat) is reclaimable after 120 s, never before.
 Deno.test("openHarnessEnv (M10-08c O2): the private root's lock is released on close; a crashed holder's lock is reclaimed only after 120 s", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const marker = benchLockPath(t.env.privateRoot);
   const a = await openHarnessEnv(envOpts(t), deps([]));
   assert(await exists(marker), "held while open");
@@ -6509,7 +6509,7 @@ Deno.test("openHarnessEnv (M10-08c O2): the private root's lock is released on c
 // M10-08c review 4: a suspended environment whose lock another process
 // reclaimed (no heartbeat for 120 s) learns it before its next cell.
 Deno.test("openHarnessEnv (M10-08c review 4): env.namespaceLost turns true once another process holds the private root's lock; close leaves that holder's marker", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const h = await openHarnessEnv(envOpts(t), deps([]));
   assertEquals(h.env.namespaceLost?.(), false);
   const marker = benchLockPath(t.env.privateRoot);
@@ -6594,7 +6594,7 @@ Deno.test("openHarnessEnv (M10-08c review 2): legacy bare-hostname sandboxes of 
 // M10-08c review 7: concurrent `images build` runs read under their own
 // owner; a build sweeps only bare-hostname (legacy) read leftovers.
 Deno.test("harnessImagesBuild (M10-08c review 7): each build reads under its own owner; the sweep lists only the bare hostname", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -6648,7 +6648,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 1): the token it acquired is the
       }),
     );
   for (const when of ["acquired", "opening", "removal"] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const d = deps([]);
     const docker = d.docker() as FakeDocker;
     const acquire = d.acquireLock;
@@ -6696,7 +6696,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 1): the token it acquired is the
 Deno.test("openHarnessEnv (M10-08c run 002 item 2): a running legacy sandbox of this root refuses the start and is never removed; exited or finalized ones are removed", async () => {
   const legacy = "cg-harness-11111111-aaaaaaaa";
   const setup = async (o: { exited?: boolean; published?: boolean }) => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const d = deps([]);
     const docker = d.docker() as FakeDocker;
     docker.owned = [legacy];
@@ -6753,7 +6753,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 2): a running legacy sandbox of 
 Deno.test("openHarnessEnv (M10-08c run 002 item 4): this root's legacy custody dirs are removed only after its legacy sandboxes are confirmed gone", async () => {
   const legacy = "cg-harness-11111111-aaaaaaaa";
   const setup = async (o: { running?: boolean; rmFails?: boolean }) => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const d = deps([]);
     const docker = d.docker() as FakeDocker;
     docker.owned = [legacy];
@@ -6831,7 +6831,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 4): this root's legacy custody d
 // read containers of namespaces whose lock is stale (a crashed build) and
 // leaves a live build's alone.
 Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read container is swept by the next build; a live build's is kept", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -6891,7 +6891,7 @@ Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read c
 // repository lock first; through the real lock its refusal names
 // --private-dir and the holder's pid.
 Deno.test("openHarnessEnv (M10-08c run 002 item 7): a second environment in the same checkout is refused by the real repository lock naming --private-dir and the holder pid", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const real = () => {
     const d = deps([]);
     d.acquireLock = (dir, o) => acquireBenchLock(dir, o);
@@ -6916,7 +6916,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 7): a second environment in the 
 // NotFound on that remove is ignored; any other remove error still throws.
 Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed concurrently is not an error; other remove errors are", async () => {
   const setup = async () => {
-    const root = await Deno.realPath(await Deno.makeTempDir());
+    const root = await Deno.realPath(await testTempDir());
     const docker = new FakeDocker();
     await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
       recursive: true,
@@ -7178,7 +7178,7 @@ Deno.test("openHarnessEnv (M10-08c run 003 item 1): a legacy intent, exited or r
 // M10-08c run 003 item 2: the acquired token is checked again between the two
 // temp sweeps: lost during the first, the second never runs.
 Deno.test("openHarnessEnv (M10-08c run 003 item 2): a lock lost between the two temp sweeps stops before the second", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const d = deps([]);
   const temp = join(t.env.resultsRoot, "workspaces", ".tmp-live");
   await Deno.mkdir(temp, { recursive: true });
@@ -7218,7 +7218,7 @@ Deno.test("openHarnessEnv (M10-08c run 003 item 2): a lock lost between the two 
 // after a successful capture: the read reports it and the build keeps its
 // namespace (lock dir) so the next build's sweep finds the container.
 Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture whose docker rm -f failed is reported; the build namespace stays discoverable", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -7235,7 +7235,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
     [lk]: lv,
   });
   // `docker cp` lands the file here: the capture itself succeeds.
-  const capture = await Deno.makeTempDir();
+  const capture = await testTempDir();
   await Deno.writeTextFile(
     join(capture, AL_LSP_SHIPPED.replace(/\\/g, "/").split("/").pop()!),
     await Deno.readTextFile(AL_LSP_DEF),
@@ -7287,7 +7287,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
 // M10-08c run 003 item 1: an older build may be reading under the bare
 // hostname right now: its read container is never removed (a warning names it).
 Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read container survives a build", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -7318,7 +7318,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read con
 // Review M10-08c P2-2: the legacy refusal also names the existing per-id
 // private paths of each legacy intent (read-only: all survive).
 Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its existing per-id private paths; all survive", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const d = deps([]);
   const root = t.env.privateRoot;
   await Deno.mkdir(join(root, "intents"), { recursive: true });
@@ -7353,7 +7353,7 @@ Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its ex
 });
 
 Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP release once and passes tag, URL and digest as build args and labels; a failed resolution builds nothing", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -7482,7 +7482,7 @@ function ccBuild(
 }
 
 async function ccRoot() {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
@@ -8202,7 +8202,7 @@ Deno.test({
     "publicationLockDir (H-03 run 002): ProgramData, keyed by the Docker context; the root is shared with BUILTIN\\Users (inherited Modify) when created",
   ignore: Deno.build.os !== "windows",
   fn: async () => {
-    const pd = await Deno.realPath(await Deno.makeTempDir());
+    const pd = await Deno.realPath(await testTempDir());
     const root = join(pd, "centralgauge", "image-locks");
     const saved = Deno.env.get("CENTRALGAUGE_DOCKER_CONTEXT");
     Deno.env.set("CENTRALGAUGE_DOCKER_CONTEXT", "desktop-windows");
@@ -8247,6 +8247,7 @@ Deno.test({
 });
 
 import { clearPublicationReservation } from "../../../../cli/commands/harness-command.ts";
+import { testTempDir } from "../../../utils/temp-dir.ts";
 
 /** A reservation whose holder stopped heartbeating an hour ago (crashed or suspended). */
 async function staleReservation(dir: string) {
@@ -8386,7 +8387,7 @@ Deno.test("registerHarnessCommand (H-09): run takes --judge-containers and --jud
 });
 
 Deno.test("openHarnessEnv (H-09): judge containers get their own lane; overlapping, refused or unallocated ones are refused before the lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const judged = (agents: string[], judges: string[]) => ({
     ...envOpts(t, agents),
@@ -8428,7 +8429,7 @@ Deno.test("openHarnessEnv (H-09): judge containers get their own lane; overlappi
 });
 
 Deno.test("harnessRun (H-09): --judge-containers reaches the environment and --judge-concurrency the campaign", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   t.env.supervised = false;
@@ -8452,7 +8453,7 @@ Deno.test("harnessRun (H-09): --judge-containers reaches the environment and --j
 });
 
 Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; judge-pending judges it once, as the inline cell would", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   const open = () =>
@@ -8489,7 +8490,7 @@ Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; ju
 });
 
 Deno.test("harness judge-pending (H-09 run 002): --judge-concurrency below 1 is refused before the environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   let opened = 0;
   const open = () => {
     opened++;
@@ -8506,7 +8507,7 @@ Deno.test("harness judge-pending (H-09 run 002): --judge-concurrency below 1 is 
 });
 
 Deno.test("harness judge-pending (H-09 run 002): a later failure drains the queued judgments before the environment closes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   let judgedAtClose = -1;
@@ -8542,7 +8543,7 @@ Deno.test("harness judge-pending (H-09 run 002): a later failure drains the queu
 });
 
 Deno.test("harness judge-pending (H-09 review): a refused execution is warned and skipped; the others are judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   const open = () =>
@@ -8588,7 +8589,7 @@ Deno.test("harness judge-pending (H-09 review): a refused execution is warned an
 });
 
 Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before planning or any environment", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   for (const reason of ["", "  "]) {
     for (const dryRun of [true, false]) {
       await assertRejects(
@@ -8607,7 +8608,7 @@ Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before 
 });
 
 Deno.test("H-16 (Sol r2): close holds the locks until a backend request revoke gave up on has drained, so no successor recovers state it still uses", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const h = await openHarnessEnv(
     { ...envOpts(t), backendPort: BACKEND_PORT },

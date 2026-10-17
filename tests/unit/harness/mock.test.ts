@@ -17,6 +17,7 @@ import {
   validateApps,
 } from "../../../src/harness/verdict-workspace.ts";
 import { cellFor, makeEnv, mockImageBehavior } from "./runtime-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const manifest = {
   v: 1 as const,
@@ -87,7 +88,7 @@ Deno.test("mock configs may have empty models; real configs may not", () => {
 });
 
 Deno.test("mock arms: positive passes, a named naive fails, unattended without egress enforcement", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   const pos = await runCell(t.env, await cellFor(t, "mock-positive"));
@@ -104,7 +105,7 @@ Deno.test("mock arms: positive passes, a named naive fails, unattended without e
 });
 
 Deno.test("mock arms: crash before work is retried once when unattended; usage limit pauses", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   const crash = await runCell(t.env, await cellFor(t, "mock-crash"));
@@ -117,7 +118,7 @@ Deno.test("mock arms: crash before work is retried once when unattended; usage l
 });
 
 Deno.test("the variant is copied into the config dir, never into C:\\task", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   await runCell(t.env, await cellFor(t, "mock-positive"));
@@ -128,7 +129,7 @@ Deno.test("the variant is copied into the config dir, never into C:\\task", asyn
 });
 
 Deno.test("mock arms: crash after work is judged, not retried", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   const r = await runCell(t.env, await cellFor(t, "mock-crash-after-work"));
@@ -143,7 +144,7 @@ Deno.test("mock arms: crash after work is judged, not retried", async () => {
 });
 
 Deno.test("mock arms: no qualification manifest, or an unlisted variant, is refused before anything runs", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   const cell = await cellFor(t, "mock-positive");
@@ -171,7 +172,7 @@ async function runMockPs1(
   settings: Record<string, unknown>,
   extraEnv: Record<string, string> = {},
 ) {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const config = join(root, "config");
   const ws = join(root, "ws");
   await Deno.mkdir(join(config, "variant", "Rental", "src"), {
@@ -256,7 +257,7 @@ Deno.test("hostile fixtures: agent-range ids that pass the verdict-workspace id 
     for (const o of await alObjects(fixture)) {
       assertEquals(taken.has(o.id), false, `${name}: ${o.id} is already used`);
     }
-    const ws = await Deno.realPath(await Deno.makeTempDir());
+    const ws = await Deno.realPath(await testTempDir());
     await safeCopyTree(join(root, "harness-tasks", "refapp"), join(ws, "w"));
     await safeCopyTree(fixture, join(ws, "f"));
     for (const o of await alObjects(join(ws, "f"))) {
@@ -278,7 +279,7 @@ Deno.test({
     "mock.ps1 hostile-case-alias: two distinct case-alias files; a failed fsutil, or no distinct case-alias files, is mock_error and a non-zero exit",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const bin = await Deno.realPath(await Deno.makeTempDir());
+    const bin = await Deno.realPath(await testTempDir());
     const failing = join(bin, "fsutil-fails.cmd");
     await Deno.writeTextFile(failing, "@exit /b 1\r\n");
     const noop = join(bin, "fsutil-noop.cmd");

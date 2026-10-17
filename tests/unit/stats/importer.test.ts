@@ -9,9 +9,10 @@ import { join } from "@std/path";
 import { JsonImporter } from "../../../src/stats/importer.ts";
 import { InMemoryStorage } from "../../../src/stats/factory.ts";
 import { resolveCurrentTaskSetHash } from "../../../src/ingest/catalog/task-set-hash.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function makeProjectRoot(): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await Deno.mkdir(`${root}/tasks/easy`, { recursive: true });
   await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: CG-AL-E001");
   return root;
@@ -50,7 +51,7 @@ function minimalResultFile(overrides?: {
 describe("JsonImporter (V5/V10)", () => {
   it("V5: taskSetHash matches the canonical on-disk hash, not a bare task-id hash", async () => {
     const projectRoot = await makeProjectRoot();
-    const resultsDir = await Deno.makeTempDir();
+    const resultsDir = await testTempDir();
     try {
       const filePath = join(resultsDir, "benchmark-results-1700000000000.json");
       await Deno.writeTextFile(filePath, minimalResultFile());
@@ -77,7 +78,7 @@ describe("JsonImporter (V5/V10)", () => {
 
   it("V5: two runs against the same task content get the same taskSetHash", async () => {
     const projectRoot = await makeProjectRoot();
-    const resultsDir = await Deno.makeTempDir();
+    const resultsDir = await testTempDir();
     try {
       const file1 = join(resultsDir, "benchmark-results-1700000000001.json");
       const file2 = join(resultsDir, "benchmark-results-1700000000002.json");
@@ -101,7 +102,7 @@ describe("JsonImporter (V5/V10)", () => {
 
   it("V5: changing on-disk task content changes the imported taskSetHash", async () => {
     const projectRoot = await makeProjectRoot();
-    const resultsDir = await Deno.makeTempDir();
+    const resultsDir = await testTempDir();
     try {
       const file1 = join(resultsDir, "benchmark-results-1700000000003.json");
       await Deno.writeTextFile(file1, minimalResultFile());
@@ -131,7 +132,7 @@ describe("JsonImporter (V5/V10)", () => {
 
   it("V10: trusts an explicit passRate1=0/passRate2=0 instead of recomputing from results", async () => {
     const projectRoot = await makeProjectRoot();
-    const resultsDir = await Deno.makeTempDir();
+    const resultsDir = await testTempDir();
     try {
       const filePath = join(resultsDir, "benchmark-results-1700000000005.json");
       // Results that WOULD recompute to a non-zero passRate1 if the (buggy)
@@ -199,7 +200,7 @@ describe("JsonImporter (V5/V10)", () => {
 
   it("V10: still recomputes pass rates when stats omits both fields entirely", async () => {
     const projectRoot = await makeProjectRoot();
-    const resultsDir = await Deno.makeTempDir();
+    const resultsDir = await testTempDir();
     try {
       const filePath = join(resultsDir, "benchmark-results-1700000000006.json");
       await Deno.writeTextFile(
@@ -251,7 +252,7 @@ describe("JsonImporter (V5/V10)", () => {
   // exactly the numbers the exclusion removed from the scoreboard.
   it("skips a results file stamped with a top-level excluded object", async () => {
     const projectRoot = await makeProjectRoot();
-    const resultsDir = await Deno.makeTempDir();
+    const resultsDir = await testTempDir();
     try {
       const excludedPath = join(
         resultsDir,

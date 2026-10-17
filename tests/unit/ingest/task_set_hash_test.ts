@@ -11,9 +11,10 @@ import {
   cleanupTempDir,
   createTempDir,
 } from "../../../tests/utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function makeProjectRoot(): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await Deno.mkdir(`${root}/tasks/easy`, { recursive: true });
   await Deno.mkdir(`${root}/tests/al/easy`, { recursive: true });
   await Deno.mkdir(`${root}/tests/al/dependencies/CG-AL-E001`, {
@@ -263,7 +264,7 @@ Deno.test("hash treats binary content with NUL bytes unambiguously", async () =>
 Deno.test("hash is stable when tests/al subdir is missing", async () => {
   // Older repo state or an integration tmpdir may have tasks/ but no tests/al/.
   // Hashing must not throw.
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   try {
     await Deno.mkdir(`${root}/tasks/easy`, { recursive: true });
     await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
@@ -275,7 +276,7 @@ Deno.test("hash is stable when tests/al subdir is missing", async () => {
 });
 
 Deno.test("resolveCurrentTaskSetHash returns 'current' sentinel when project missing", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   await Deno.remove(tmp, { recursive: true });
   // tmp now points to a non-existent path
   const out = await resolveCurrentTaskSetHash(tmp);
@@ -399,7 +400,7 @@ Deno.test("hash treats binary (non-text-extension) content raw, never CRLF-norma
 // --- T12: absolute-path skip false positive -----------------------------
 
 Deno.test("hash does not skip files when the checkout path itself contains an 'output' segment", async () => {
-  const parent = await Deno.makeTempDir();
+  const parent = await testTempDir();
   const nestedRoot = join(parent, "output", "repo");
   const plainRoot = await makeProjectRoot();
   try {

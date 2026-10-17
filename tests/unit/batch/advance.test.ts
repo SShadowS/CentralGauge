@@ -52,6 +52,7 @@ import type {
   TaskExecutionContext,
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const MODEL_SLUG = "claude-haiku-4-5";
 const REPO_ROOT = Deno.cwd();
@@ -189,7 +190,7 @@ Deno.test("advanceRun drives a two-task run from attempt-1-submitted to finalize
   seedPricing();
   const { manifests, contexts } = taskFixtures();
 
-  const output = await Deno.makeTempDir({ prefix: "cg-batch-advance-" });
+  const output = await testTempDir({ prefix: "cg-batch-advance-" });
   const runId = "run-advance-1";
   const dir = runDir(output, runId);
   await ensureDir(dir);
@@ -383,7 +384,7 @@ Deno.test("advanceRun drives a two-task run from attempt-1-submitted to finalize
 
 Deno.test("advanceRun refuses on D13 drift without mutating state", async () => {
   const { manifests, contexts } = taskFixtures();
-  const output = await Deno.makeTempDir({ prefix: "cg-batch-advance-drift-" });
+  const output = await testTempDir({ prefix: "cg-batch-advance-drift-" });
   const runId = "run-advance-drift";
   const dir = runDir(output, runId);
   await ensureDir(dir);
@@ -444,7 +445,7 @@ Deno.test("advanceRun refuses on D13 drift without mutating state", async () => 
 
 Deno.test("advanceRun's evaluate step exits 4 naming the bench-lock holder", async () => {
   const { manifests, contexts } = taskFixtures();
-  const output = await Deno.makeTempDir({ prefix: "cg-batch-advance-lock-" });
+  const output = await testTempDir({ prefix: "cg-batch-advance-lock-" });
   const runId = "run-advance-lock";
   const dir = runDir(output, runId);
   await ensureDir(dir);
@@ -539,7 +540,7 @@ Deno.test("advanceRun's evaluate step exits 4 naming the bench-lock holder", asy
 
 Deno.test("advanceRun re-chunks an async size rejection before evaluating, without a premature phase flip", async () => {
   const { manifests, contexts } = taskFixtures();
-  const output = await Deno.makeTempDir({
+  const output = await testTempDir({
     prefix: "cg-batch-advance-rechunk-",
   });
   const runId = "run-advance-rechunk";
@@ -712,7 +713,7 @@ Deno.test("advanceRun's evaluate step exits 4 instead of looping silently when n
   // nor "errored"/"expired"), and `advance` flipped the phase and returned
   // exit 0 anyway: silent, permanent no-progress.
   const { manifests, contexts } = taskFixtures();
-  const output = await Deno.makeTempDir({ prefix: "cg-batch-advance-stuck-" });
+  const output = await testTempDir({ prefix: "cg-batch-advance-stuck-" });
   const runId = "run-advance-stuck";
   const dir = runDir(output, runId);
   await ensureDir(dir);
@@ -806,7 +807,7 @@ Deno.test("advanceRun's evaluate step still evaluates a responded item and exits
   // Control case for the guard above: a wave that DOES make progress must
   // not be caught by the "nothing evaluable" refusal.
   const { manifests, contexts } = taskFixtures();
-  const output = await Deno.makeTempDir({
+  const output = await testTempDir({
     prefix: "cg-batch-advance-progress-",
   });
   const runId = "run-advance-progress";
@@ -955,7 +956,7 @@ async function seedCollectedWaveOne(
   contexts: Map<string, TaskExecutionContext>,
 ): Promise<SeededRun> {
   seedPricing();
-  const output = await Deno.makeTempDir({ prefix });
+  const output = await testTempDir({ prefix });
   const runId = `${prefix}run`;
   const dir = runDir(output, runId);
   await ensureDir(dir);
@@ -1554,7 +1555,7 @@ Deno.test("advanceRun exits 4 naming the candidates when nothing matches the int
 });
 Deno.test("a rejected re-chunk resubmission leaves the halves resubmittable", async () => {
   const { manifests, contexts } = taskFixtures();
-  const output = await Deno.makeTempDir({
+  const output = await testTempDir({
     prefix: "cg-batch-rechunk-rejected-",
   });
   const runId = "run-rechunk-rejected";

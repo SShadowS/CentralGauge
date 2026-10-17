@@ -7,9 +7,10 @@ import {
   type ModelShortcomingResult,
   ShortcomingsTracker,
 } from "../../../src/verify/mod.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("shortcomings-tracker: loads empty for new model", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
     const shortcomings = await tracker.getByModel("test-model");
@@ -20,7 +21,7 @@ Deno.test("shortcomings-tracker: loads empty for new model", async () => {
 });
 
 Deno.test("shortcomings-tracker: adds shortcoming correctly", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
 
@@ -56,7 +57,7 @@ Deno.test("shortcomings-tracker: adds shortcoming correctly", async () => {
 });
 
 Deno.test("shortcomings-tracker: deduplicates by alConcept", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
 
@@ -116,7 +117,7 @@ Deno.test("shortcomings-tracker: deduplicates by alConcept", async () => {
 });
 
 Deno.test("shortcomings-tracker: saves and loads from disk", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     // Create tracker and add shortcoming
     const tracker1 = new ShortcomingsTracker(tempDir);
@@ -152,7 +153,7 @@ Deno.test("shortcomings-tracker: saves and loads from disk", async () => {
 });
 
 Deno.test("shortcomings-tracker: tracks different models separately", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
 
@@ -205,7 +206,7 @@ Deno.test("shortcomings-tracker: tracks different models separately", async () =
 });
 
 Deno.test("shortcomings-tracker: maps confidence enum to numeric score (V2)", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
     const base: Omit<ModelShortcomingResult, "confidence" | "alConcept"> = {
@@ -247,7 +248,7 @@ Deno.test("shortcomings-tracker: maps confidence enum to numeric score (V2)", as
 });
 
 Deno.test("shortcomings-tracker: merge keeps MIN of confidences (V2)", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
     const mk = (
@@ -287,7 +288,7 @@ Deno.test("shortcomings-tracker: merge keeps MIN of confidences (V2)", async () 
 });
 
 Deno.test("shortcomings-tracker: incrementParseFailures counts without adding entries (V9)", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
     await tracker.incrementParseFailures("test-model");
@@ -304,7 +305,7 @@ Deno.test("shortcomings-tracker: incrementParseFailures counts without adding en
 });
 
 Deno.test("shortcomings-tracker: getCount returns correct count", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const tracker = new ShortcomingsTracker(tempDir);
 

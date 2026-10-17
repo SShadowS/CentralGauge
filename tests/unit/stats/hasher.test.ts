@@ -13,6 +13,7 @@ import {
   hashFile,
   hashTaskContent,
 } from "../../../src/stats/hasher.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 describe("hasher", () => {
   describe("extractTaskId", () => {
@@ -125,7 +126,7 @@ describe("hasher", () => {
     it("should THROW (not silently return null) for a real read error (V6)", async () => {
       // Reading a directory as a file is a genuine read error, distinct
       // from "file doesn't exist" — must propagate, not be swallowed.
-      const dir = await Deno.makeTempDir();
+      const dir = await testTempDir();
       try {
         await assertRejects(() => hashFile(dir));
       } finally {
@@ -249,7 +250,7 @@ describe("hasher", () => {
 
     it("should collect warnings for missing test files", async () => {
       // Create a temp manifest that won't have matching test files
-      const tempDir = await Deno.makeTempDir();
+      const tempDir = await testTempDir();
       const tempManifest = `${tempDir}/CG-AL-X999-nonexistent.yml`;
       await Deno.writeTextFile(tempManifest, "id: CG-AL-X999\n");
 

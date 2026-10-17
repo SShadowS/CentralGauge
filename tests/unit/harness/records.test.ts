@@ -22,6 +22,7 @@ import {
   judgment,
   telemetry,
 } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("planBlocks: repeat-major, every block a permutation, seeded", () => {
   const arms = ["a", "b", "c"];
@@ -205,7 +206,7 @@ Deno.test("campaign schema: coverage, uniqueness and arm set are enforced", asyn
 });
 
 Deno.test("RecordStore: round trip, write-once, newest campaign first", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const c = await campaign();
   await store.writeCampaign(c);
   await store.writeCampaign(
@@ -233,7 +234,7 @@ Deno.test("RecordStore: round trip, write-once, newest campaign first", async ()
 });
 
 Deno.test("RecordStore: two executions with identical workspaces keep separate artifacts and judgments", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const c = await campaign();
   const same = "f".repeat(64);
   const e1 = execution(c, { arm: "plain" }, { workspace_hash: same });
@@ -259,7 +260,7 @@ Deno.test("RecordStore: two executions with identical workspaces keep separate a
 });
 
 Deno.test("RecordStore: hand-edited or truncated records fail with the file name", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -281,7 +282,7 @@ Deno.test("RecordStore: hand-edited or truncated records fail with the file name
 });
 
 Deno.test("RecordStore: an interrupted publish leaves only a temp file, which reads ignore and sweep removes", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -406,7 +407,7 @@ Deno.test("schemas: cost declared incomplete cannot carry a value; reuse is refu
 });
 
 Deno.test("RecordStore: concurrent writers of one record, exactly one succeeds", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const e = execution(await campaign());
   const results = await Promise.allSettled(
     Array.from({ length: 8 }, () => store.writeExecution(e)),
@@ -417,7 +418,7 @@ Deno.test("RecordStore: concurrent writers of one record, exactly one succeeds",
 });
 
 Deno.test("RecordStore: ids used as paths must be uuids, so reads cannot leave the store", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(join(root, "store"));
   for (const bad of ["..", "../campaigns", "a/b", "C:\\x"]) {
     await assertRejects(() => store.executions(bad), ValidationError, "id");
@@ -427,7 +428,7 @@ Deno.test("RecordStore: ids used as paths must be uuids, so reads cannot leave t
 });
 
 Deno.test("RecordStore: a record filed under the wrong id fails with the file name", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e1 = execution(c);
@@ -496,7 +497,7 @@ Deno.test("schemas: hashes are lower-case hex, ids are lower-case uuids", async 
   );
   const upper = CAMPAIGN_ID.replace("0001", "000A");
   assertThrows(() => CampaignRecordSchema.parse({ ...c, id: upper }));
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   await assertRejects(() => store.executions(upper), ValidationError, "id");
 });
 
@@ -515,7 +516,7 @@ Deno.test("schemas: raw_usage must be present; tasks_meta equals the task set as
 });
 
 Deno.test("RecordStore: a record vanishing mid-listing is an error naming it", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -536,7 +537,7 @@ Deno.test("RecordStore: a record vanishing mid-listing is an error naming it", a
 });
 
 Deno.test("RecordStore: unexpected entries and invalid UTF-8 fail loudly", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -570,11 +571,11 @@ Deno.test("RecordStore: unexpected entries and invalid UTF-8 fail loudly", async
 });
 
 Deno.test("RecordStore: linked records are refused", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
-  const outside = join(await Deno.makeTempDir(), "a.json");
+  const outside = join(await testTempDir(), "a.json");
   await Deno.writeTextFile(
     outside,
     JSON.stringify({
@@ -596,7 +597,7 @@ Deno.test("RecordStore: linked records are refused", async () => {
 });
 
 Deno.test("RecordStore: campaigns newest first by instant, lists sorted", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   // Same instant order differs from string order with mixed precision.
   const older = "00000000-0000-4000-8000-000000000003";
   const newer = "00000000-0000-4000-8000-000000000004";
@@ -636,7 +637,7 @@ Deno.test("RecordStore: campaigns newest first by instant, lists sorted", async 
 });
 
 Deno.test("RecordStore: temp cleanup never fails a published write and never leaks on a failed one", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -668,11 +669,11 @@ Deno.test("RecordStore: temp cleanup never fails a published write and never lea
 });
 
 Deno.test("RecordStore: a junctioned record folder is refused", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
-  const elsewhere = new RecordStore(await Deno.makeTempDir());
+  const elsewhere = new RecordStore(await testTempDir());
   await elsewhere.writeExecution(e);
   await elsewhere.writeJudgment(judgment(c, e, true));
   await Deno.mkdir(join(root, "executions"));
@@ -751,7 +752,7 @@ Deno.test("schemas: incomplete_telemetry names known fields; null cost must be d
 });
 
 Deno.test("RecordStore: lists order exactly below a millisecond", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const c = await campaign();
   // The later execution gets the smaller id, so an id tie-break would flip them.
   const b = execution(c, { arm: "skills" }, {
@@ -835,7 +836,7 @@ Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; bo
       validity: { ...e2.validity, incomplete_observed: ["cost_usd"] },
     })
   );
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   await store.writeExecution(e2);
   assertEquals(
     (await store.executions(c.id))[0],

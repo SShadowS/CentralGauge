@@ -19,6 +19,7 @@ import {
 } from "../../../src/container/bc-output-parsers.ts";
 import { ContainerError } from "../../../src/errors.ts";
 import { IDS } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const isWindows = Deno.build.os === "windows";
 
@@ -33,7 +34,7 @@ async function stubbed(output: string): Promise<Stub> {
   const provider = new BcContainerProvider();
   // deno-lint-ignore no-explicit-any
   const calls: any[] = [];
-  const shared = await Deno.makeTempDir();
+  const shared = await testTempDir();
   // deno-lint-ignore no-explicit-any
   const p = provider as any;
   p.harnessSharedFolder = () => shared;
@@ -55,7 +56,7 @@ SYNC_DONE
 `;
     const { provider, calls, shared } = await stubbed(out);
     const app = join(
-      await Deno.makeTempDir(),
+      await testTempDir(),
       "CentralGauge_CGR Rental_1.0.0.0.app",
     );
     await Deno.writeTextFile(app, "x");
@@ -307,7 +308,7 @@ async function runRemoval(
   fail = "",
   deps: Record<string, string> = {},
 ): Promise<string> {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const ps = (s: string) => `'${s.replaceAll("'", "''")}'`;
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -467,7 +468,7 @@ async function runClean(
   allow: Record<string, string>,
   cleanThrows = false,
 ): Promise<string> {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const ps = (s: string) => `'${s.replaceAll("'", "''")}'`;
   const apps = (xs: CleanApp[]) =>
     `@(${

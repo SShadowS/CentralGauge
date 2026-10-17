@@ -23,13 +23,14 @@ import {
   validatedDir,
 } from "../../../src/harness/fsutil.ts";
 import { hashTree, isTaskBuildArtifact } from "../../../src/harness/hash.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const windows = Deno.build.os === "windows";
 const TOKEN = "a".repeat(8) + "0123456789abcdef0123456789abcdef";
 const SECRETS = [{ name: "backend-token", value: TOKEN }];
 
 async function tmp(): Promise<string> {
-  return await validatedDir(await Deno.realPath(await Deno.makeTempDir()));
+  return await validatedDir(await Deno.realPath(await testTempDir()));
 }
 
 async function writeTree(root: string, files: Record<string, string>) {
@@ -782,7 +783,7 @@ Deno.test({
 
 Deno.test("validatedDest: concurrent callers creating the same missing ancestor both succeed", async () => {
   for (let i = 0; i < 5; i++) {
-    const root = await Deno.realPath(await Deno.makeTempDir());
+    const root = await Deno.realPath(await testTempDir());
     const dirs = await Promise.all(
       ["x", "y", "z"].map((leaf) =>
         validatedDest(join(root, "shared", "deep", leaf))

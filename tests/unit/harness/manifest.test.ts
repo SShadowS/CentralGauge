@@ -16,6 +16,7 @@ import {
   resolveManifest,
   type RuntimeFacts,
 } from "../../../src/harness/manifest.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const FACTS: RuntimeFacts = {
   native_settings: { model: "model-a", effort: "high" },
@@ -26,7 +27,7 @@ const FACTS: RuntimeFacts = {
 };
 
 async function root(): Promise<string> {
-  const r = await Deno.makeTempDir();
+  const r = await testTempDir();
   for (
     const [rel, text] of Object.entries({
       "bundles/al/skills/objid/SKILL.md": "Allocate object ids.",
@@ -264,7 +265,7 @@ Deno.test("ResolvedManifestSchema: nonpositive limits are refused", () => {
 
 Deno.test("resolveManifest: a link between the harness root and a component is refused", async () => {
   const r = await root();
-  const outside = await Deno.makeTempDir();
+  const outside = await testTempDir();
   await Deno.mkdir(join(outside, "skills"));
   await Deno.writeTextFile(join(outside, "skills", "SKILL.md"), "x");
   await Deno.symlink(outside, join(r, "bundles", "linked"), {
@@ -281,7 +282,7 @@ Deno.test("resolveManifest: a link between the harness root and a component is r
 
 Deno.test("resolveManifest: a component path outside the harness root is refused", async () => {
   const r = await root();
-  const outside = await Deno.makeTempDir();
+  const outside = await testTempDir();
   await Deno.writeTextFile(join(outside, "SKILL.md"), "x");
   const rel = `../${basename(outside)}`;
   const base = config("cc-a");

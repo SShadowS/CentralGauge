@@ -2,9 +2,10 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkAuthProbe } from "../../../../../src/doctor/sections/ingest/check-auth-probe.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 async function setupConfigAndKey(): Promise<{ tmp: string; keyPath: string }> {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   const keyPath = `${tmp}/k.ed25519`;
   // 32 non-zero bytes — valid format and accepted by ed25519 sign.
   const seed = new Uint8Array(32);

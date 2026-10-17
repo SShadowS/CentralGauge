@@ -39,7 +39,9 @@ export function trackTempDir(path: string): string {
 }
 
 /** `Deno.makeTempDir`, removed at process exit at the latest. */
-export async function testTempDir(opts?: Deno.MakeTempOptions): Promise<string> {
+export async function testTempDir(
+  opts?: Deno.MakeTempOptions,
+): Promise<string> {
   return trackTempDir(await Deno.makeTempDir(opts));
 }
 

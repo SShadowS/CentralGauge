@@ -1,6 +1,7 @@
 import { dirname, join } from "@std/path";
 import { BUILD_ORDER } from "../../../scripts/harness/gate-core.ts";
 import { oracleBandOf } from "../../../scripts/harness/gate-stage.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /** Unit-test temp root under the launch contract's authorized output root. */
 export const TEST_TMP = join(
@@ -9,7 +10,7 @@ export const TEST_TMP = join(
 );
 export async function tmp(): Promise<string> {
   await Deno.mkdir(TEST_TMP, { recursive: true });
-  return await Deno.makeTempDir({ dir: TEST_TMP });
+  return await testTempDir({ dir: TEST_TMP });
 }
 
 export async function write(

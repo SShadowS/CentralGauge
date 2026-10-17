@@ -3,6 +3,7 @@ import {
   captureRawTail,
   writeArtifact,
 } from "../../../src/health/raw-output.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("captureRawTail returns last N bytes", () => {
   const big = "A".repeat(10_000) + "TAIL";
@@ -20,7 +21,7 @@ Deno.test("captureRawTail handles empty input", () => {
 });
 
 Deno.test("writeArtifact writes file and returns path", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "cg-test-artifact-" });
+  const tempDir = await testTempDir({ prefix: "cg-test-artifact-" });
   try {
     const p = await writeArtifact(
       tempDir,
@@ -36,7 +37,7 @@ Deno.test("writeArtifact writes file and returns path", async () => {
 });
 
 Deno.test("writeArtifact key normalizes unsafe chars", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "cg-test-artifact-" });
+  const tempDir = await testTempDir({ prefix: "cg-test-artifact-" });
   try {
     const p = await writeArtifact(tempDir, "task/with:bad*chars", "x");
     // Path is safe (no slashes/colons/asterisks in basename)

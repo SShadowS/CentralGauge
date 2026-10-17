@@ -19,6 +19,7 @@ import {
   protocolSha,
   stageAOf,
 } from "../../../src/harness/prereg.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const H = (c: string) => c.repeat(64);
 const PROTOCOL = {
@@ -333,7 +334,7 @@ Deno.test("parseStageADecision: the decision file's anchor lines", () => {
 
 Deno.test("verifyPrereg I/O: the anchor comes from the tag and the decision file, not the working file", async () => {
   // Temp git repo: commit stage A, tag it, write the decision; then edit the working file and its stage_a.
-  const repo = await Deno.makeTempDir();
+  const repo = await testTempDir();
   const git = (...args: string[]) =>
     new Deno.Command("git", {
       args,
@@ -549,7 +550,7 @@ Deno.test("preregProblems: selection.n must equal the pre-registered selected co
  * harness-v2-prereg-a and harness-v2-prereg-b, with both decision files.
  */
 async function anchorRepo() {
-  const repo = await Deno.makeTempDir();
+  const repo = await testTempDir();
   const git = async (...args: string[]) => {
     const out = await new Deno.Command("git", {
       args,
@@ -997,7 +998,7 @@ Deno.test("decision parsers: keys cannot span lines or repeat", () => {
 // M11-10b: global git config and lazy fetch, stage-specific approvals, annotation uniqueness.
 Deno.test("git isolation: a promisor ext:: helper from the user's global config never runs", async () => {
   const r = await anchorRepo();
-  const home = await Deno.makeTempDir();
+  const home = await testTempDir();
   const fwd = (p: string) => p.replaceAll("\\", "/");
   const marker = join(home, "marker");
   const helper = join(home, "helper.sh");

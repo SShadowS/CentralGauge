@@ -10,6 +10,7 @@ import { MockContainerProvider } from "../../src/container/mock-provider.ts";
 import { ConfigManager } from "../../src/config/config.ts";
 import type { TaskManifest } from "../../types/index.ts";
 import type { TaskExecutionRequest } from "../../src/tasks/interfaces.ts";
+import { testTempDir } from "../utils/temp-dir.ts";
 
 describe("TaskExecutorV2 Integration Tests", () => {
   let executor: TaskExecutorV2;
@@ -20,7 +21,7 @@ describe("TaskExecutorV2 Integration Tests", () => {
     ConfigManager.reset();
 
     // Setup temporary directories
-    tempDir = await Deno.makeTempDir({ prefix: "executor-v2-test-" });
+    tempDir = await testTempDir({ prefix: "executor-v2-test-" });
 
     // Create template directory with required templates
     const templateDir = join(tempDir, "templates");

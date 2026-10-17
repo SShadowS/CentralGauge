@@ -13,6 +13,7 @@ import {
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { type TraceEvent, writeTrace } from "../../../src/harness/trace.ts";
 import { manifest, telemetry } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("observedMismatch: version, missing component, unobservable component", () => {
   const m = manifest("x", {
@@ -75,7 +76,7 @@ Deno.test("incompleteTelemetry flags per_model only when the run declares nested
 });
 
 Deno.test("writeTrace: one versioned JSON line per event", async () => {
-  const p = join(await Deno.realPath(await Deno.makeTempDir()), "trace.jsonl");
+  const p = join(await Deno.realPath(await testTempDir()), "trace.jsonl");
   const n = await writeTrace(p, [{
     v: 2,
     seq: 1,
@@ -136,7 +137,7 @@ const EV = (seq: number, over: Record<string, unknown> = {}) =>
   }) as TraceEvent;
 
 Deno.test("writeTrace: strict events, monotonic seq, error names the file, nothing written on refusal", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const bad: TraceEvent[][] = [
     [EV(1), EV(1)],
     [EV(2), EV(1)],
@@ -158,7 +159,7 @@ Deno.test("writeTrace: strict events, monotonic seq, error names the file, nothi
 });
 
 Deno.test("writeTrace: deterministic bytes regardless of key order; empty trace is an empty file", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const a = join(dir, "a.jsonl");
   const b = join(dir, "b.jsonl");
   const e = EV(1);

@@ -8,6 +8,7 @@ import {
   initTracer,
   type TraceEvent,
 } from "../../../src/tracing/tracer.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // Pure parser tests — no tracer state.
 
@@ -105,7 +106,7 @@ Deno.test("parseTraceLines handles empty input", () => {
 async function withTracer(
   fn: (filePath: string) => Promise<void> | void,
 ): Promise<TraceEvent[]> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-parse-trace-test-" });
+  const dir = await testTempDir({ prefix: "cg-parse-trace-test-" });
   const file = `${dir}/trace.json`;
   try {
     initTracer(file);

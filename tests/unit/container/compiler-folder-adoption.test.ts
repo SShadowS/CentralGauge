@@ -4,7 +4,7 @@
  * SAFETY: nothing here may touch C:\ProgramData\BcContainerHelper — the real
  * compiler folders and artifact caches live there, and preserving them is the
  * entire point of adoption. Every test that needs a folder on disk stubs
- * `adoptableFolderPath` onto a `Deno.makeTempDir()` path; every test that
+ * `adoptableFolderPath` onto a `testTempDir()` path; every test that
  * would otherwise shell out stubs `dockerInspectSeam`.
  */
 
@@ -23,6 +23,7 @@ import {
   MARKER_FILENAME,
   writeMarker,
 } from "../../../src/container/compiler-folder-marker.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const ARTIFACT_URL =
   "https://bcartifacts.blob.core.windows.net/sandbox/28.0.1.2/w";
@@ -61,7 +62,7 @@ function stub(
 
 /** Build a folder that `validateFolder` accepts, in a temp dir. */
 async function seedValidFolder(artifactUrl = ARTIFACT_URL): Promise<string> {
-  const folder = await Deno.makeTempDir({ prefix: "cg-adopt-" });
+  const folder = await testTempDir({ prefix: "cg-adopt-" });
   await Deno.mkdir(`${folder}/compiler/extension/bin`, { recursive: true });
   await Deno.writeTextFile(`${folder}/compiler/extension/bin/alc.exe`, "x");
   await Deno.mkdir(`${folder}/symbols`, { recursive: true });
@@ -232,7 +233,7 @@ Deno.test("adoption bails, without throwing, when the folder does not validate",
   );
 
   await t.step("folder does not exist at all", async () => {
-    const parent = await Deno.makeTempDir({ prefix: "cg-adopt-" });
+    const parent = await testTempDir({ prefix: "cg-adopt-" });
     const restorePath = stub(p, "adoptableFolderPath", () => `${parent}/nope`);
     try {
       assertEquals(
@@ -316,7 +317,7 @@ async function captureRebuild(
   p: BcContainerProvider,
   inspection: ContainerInspection | undefined,
 ): Promise<{ script: string; folder: string }> {
-  const folder = await Deno.makeTempDir({ prefix: "cg-rebuild-" });
+  const folder = await testTempDir({ prefix: "cg-rebuild-" });
   let script = "";
   const restoreInspect = stub(
     p,
@@ -426,7 +427,7 @@ Deno.test("pruneCompilerOutput", async (t) => {
   const p = new BcContainerProvider();
 
   await t.step("keeps the newest `keep` entries", async () => {
-    const folder = await Deno.makeTempDir({ prefix: "cg-prune-" });
+    const folder = await testTempDir({ prefix: "cg-prune-" });
     try {
       await seedOutput(folder, 5);
       await internals(p).pruneCompilerOutput(folder, 2);
@@ -437,7 +438,7 @@ Deno.test("pruneCompilerOutput", async (t) => {
   });
 
   await t.step("leaves loose files alone", async () => {
-    const folder = await Deno.makeTempDir({ prefix: "cg-prune-" });
+    const folder = await testTempDir({ prefix: "cg-prune-" });
     try {
       await seedOutput(folder, 3);
       await Deno.writeTextFile(`${folder}/output/stray.log`, "x");
@@ -449,7 +450,7 @@ Deno.test("pruneCompilerOutput", async (t) => {
   });
 
   await t.step("is a no-op when output/ does not exist", async () => {
-    const folder = await Deno.makeTempDir({ prefix: "cg-prune-" });
+    const folder = await testTempDir({ prefix: "cg-prune-" });
     try {
       // Must not throw — pruning is best-effort and never fails a run.
       await internals(p).pruneCompilerOutput(folder, 1);

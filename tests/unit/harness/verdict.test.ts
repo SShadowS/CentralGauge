@@ -28,6 +28,7 @@ import {
 import { deployedSource, FakeBc, result } from "./fake-bc.ts";
 import { appJson, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
 import { hashFile, hashJson } from "../../../src/harness/hash.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /** Shipped test passes unless Rental carries BREAK_P2P; the oracle passes iff Rental returns 10. */
 function script() {
@@ -65,16 +66,16 @@ async function setup(
     refapp: await resolveRefapp(repo.root, "refapp-v1"),
     symbols: repo.symbols,
     symbolStore: repo.symbolStore,
-    out: join(await Deno.realPath(await Deno.makeTempDir()), "stage"),
+    out: join(await Deno.realPath(await testTempDir()), "stage"),
   });
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   await safeCopyTree(staged.pristine, ws);
   if (solution) await applyOverlay(join(task.dir, solution), ws);
   for (const [rel, text] of Object.entries(edits)) await write(ws, rel, text);
-  const results = await Deno.realPath(await Deno.makeTempDir());
+  const results = await Deno.realPath(await testTempDir());
   const frozen = await freezeWorkspace({
     resultsRoot: results,
-    privateRoot: await Deno.realPath(await Deno.makeTempDir()),
+    privateRoot: await Deno.realPath(await testTempDir()),
     workspace: ws,
     secrets: [],
   });
@@ -88,7 +89,7 @@ async function setup(
       pristine: staged.pristine,
       artifact: join(results, frozen.stored_path),
       symbolIds: new Set([IDS.assert]),
-      workDir: await Deno.realPath(await Deno.makeTempDir()),
+      workDir: await Deno.realPath(await testTempDir()),
       lock: { store: repo.symbolStore, packages: repo.symbols },
       deploy: { ledgerRoot: join(results, "bc-ledger") },
     },
@@ -470,7 +471,7 @@ Deno.test("judge: an agent-added failing test written as [ Test ] is discovered 
  * declared dependency closure.
  */
 async function harvestedLock() {
-  const store = await Deno.realPath(await Deno.makeTempDir());
+  const store = await Deno.realPath(await testTempDir());
   const SYSTEM = "8874ed3a-0643-4247-9ced-7a7002f7135d";
   const APPLICATION = "c1335042-3002-4257-bf8a-75c898ccb1b8";
   const BASE = "437dbf0e-84ff-417a-965d-ed2bb9650972";

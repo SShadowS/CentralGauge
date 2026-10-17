@@ -2,12 +2,13 @@ import { assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
 import { allocatedContainer } from "../../../src/harness/allocation.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function coordRoot(
   allocation: unknown,
   coord: unknown = { campaign: "harness-bench-2026-10" },
 ): Promise<string> {
-  const d = await Deno.makeTempDir();
+  const d = await testTempDir();
   if (coord !== null) {
     await Deno.writeTextFile(join(d, "coord.json"), JSON.stringify(coord));
   }
@@ -44,7 +45,7 @@ Deno.test("allocatedContainer: a missing or unreadable allocation fails closed",
     await coordRoot(ALLOC, { campaign: "other-campaign" }),
     await coordRoot({ "harness-bench-2026-10": "Cronus281" }),
   ];
-  const broken = await Deno.makeTempDir();
+  const broken = await testTempDir();
   await Deno.writeTextFile(
     join(broken, "coord.json"),
     JSON.stringify({ campaign: "harness-bench-2026-10" }),

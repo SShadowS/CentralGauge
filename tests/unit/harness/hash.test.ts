@@ -17,6 +17,7 @@ import {
   posixRel,
   TEXT_FILE_NAMES,
 } from "../../../src/harness/hash.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function writeTree(root: string, files: Record<string, string>) {
   for (const [rel, text] of Object.entries(files)) {
@@ -51,8 +52,8 @@ Deno.test("hashJson: key order does not matter, values and types do", async () =
 });
 
 Deno.test("hashTree task domain: golden, CRLF-invariant, drops only build artifacts", async () => {
-  const crlf = await Deno.makeTempDir();
-  const lf = await Deno.makeTempDir();
+  const crlf = await testTempDir();
+  const lf = await testTempDir();
   await writeTree(crlf, {
     "Core/src/A.Codeunit.al": "line1\r\nline2\r\n",
     ".vscode/settings.json": "{}",
@@ -76,7 +77,7 @@ Deno.test("hashTree task domain: golden, CRLF-invariant, drops only build artifa
 });
 
 Deno.test("hashTree bundle domain: every file counts, dotfiles included", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await writeTree(root, { "SKILL.md": "x", ".plugin/manifest.json": "{}" });
   const before = await hashTree(root, "bundle");
   assertEquals((await listTree(root, "bundle")).length, 2);
@@ -87,7 +88,7 @@ Deno.test("hashTree bundle domain: every file counts, dotfiles included", async 
 });
 
 Deno.test("hashFile: binary bytes are preserved, text CRLF is normalized", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await Deno.writeFile(join(root, "a.bin"), new Uint8Array([13, 10, 65]));
   await Deno.writeFile(join(root, "b.bin"), new Uint8Array([10, 65]));
   await Deno.writeTextFile(join(root, "a.al"), "x\r\n");
@@ -104,8 +105,8 @@ Deno.test("hashFile: binary bytes are preserved, text CRLF is normalized", async
 
 Deno.test("hashFile: the overlay .delete list hashes as text (LF and CRLF agree)", async () => {
   assertEquals(TEXT_FILE_NAMES.includes(DELETE_LIST), true);
-  const lf = await Deno.makeTempDir();
-  const crlf = await Deno.makeTempDir();
+  const lf = await testTempDir();
+  const crlf = await testTempDir();
   await Deno.writeTextFile(
     join(lf, DELETE_LIST),
     "# gone\nRental/src/Old.al\n",
@@ -132,7 +133,7 @@ Deno.test("isTaskBuildArtifact: .alpackages and output directories in any case (
 });
 
 Deno.test("hashTree: missing dir throws unless optional", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await assertRejects(
     () => hashTree(join(root, "nope"), "task"),
     Deno.errors.NotFound,
@@ -144,20 +145,20 @@ Deno.test("hashTree: missing dir throws unless optional", async () => {
 });
 
 Deno.test("links: refused as root, as entry, inside a skipped folder, and by hashFile", async () => {
-  const target = await Deno.makeTempDir();
+  const target = await testTempDir();
   await writeTree(target, { "t.al": "x" });
 
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await writeTree(root, { "a.al": "x" });
   await linkDir(target, join(root, "link"));
   await assertRejects(() => hashTree(root, "task"), ValidationError, "link");
 
-  const skipped = await Deno.makeTempDir();
+  const skipped = await testTempDir();
   await Deno.mkdir(join(skipped, "output"));
   await linkDir(target, join(skipped, "output", "inner"));
   await assertRejects(() => hashTree(skipped, "task"), ValidationError, "link");
 
-  const parent = await Deno.makeTempDir();
+  const parent = await testTempDir();
   await linkDir(target, join(parent, "rootlink"));
   await assertRejects(
     () => hashTree(join(parent, "rootlink"), "bundle"),
@@ -175,7 +176,7 @@ Deno.test("links: refused as root, as entry, inside a skipped folder, and by has
 });
 
 Deno.test("hashFile: text normalization is byte-level (BOM and malformed UTF-8 kept)", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const body = [120, 13, 10, 121];
   await Deno.writeFile(
     join(root, "bom.al"),
@@ -206,7 +207,7 @@ Deno.test("posixRel: backslash is a separator only on Windows", () => {
 });
 
 Deno.test("hashTree task domain: only DIRECTORIES named output/.alpackages are artifacts", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await writeTree(root, {
     "output": "o",
     "Core/.alpackages": "p",
@@ -219,9 +220,9 @@ Deno.test("hashTree task domain: only DIRECTORIES named output/.alpackages are a
 });
 
 Deno.test("links: a junction ABOVE the root is accepted, one BELOW it refused", async () => {
-  const target = await Deno.makeTempDir();
+  const target = await testTempDir();
   await writeTree(target, { "sub/t.al": "x" });
-  const parent = await Deno.makeTempDir();
+  const parent = await testTempDir();
   await linkDir(target, join(parent, "anc"));
   const above = join(parent, "anc", "sub");
   const file = join(above, "t.al");
@@ -243,8 +244,8 @@ Deno.test("links: a junction ABOVE the root is accepted, one BELOW it refused", 
 });
 
 Deno.test("hashFile: a file outside its root is refused", async () => {
-  const root = await Deno.makeTempDir();
-  const other = await Deno.makeTempDir();
+  const root = await testTempDir();
+  const other = await testTempDir();
   await Deno.writeTextFile(join(other, "x.al"), "x");
   await assertRejects(
     () => hashFile(root, join(other, "x.al")),

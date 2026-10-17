@@ -24,6 +24,7 @@ import {
   createMockLLMResponse,
   createMockTaskExecutionContext,
 } from "../../utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const VARIANT: ModelVariant = {
   originalSpec: "mock/mock-gpt-4",
@@ -60,7 +61,7 @@ async function writeResultsFile(
 }
 
 Deno.test("T3: persisted runId + pricingVersion are reused verbatim across assembles", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t3a-" });
+  const dir = await testTempDir({ prefix: "cg-t3a-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
@@ -85,7 +86,7 @@ Deno.test("T3: persisted runId + pricingVersion are reused verbatim across assem
 });
 
 Deno.test("T3: absent runId mints a fresh UUID per assemble (legacy files) with a loud WARN", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t3b-" });
+  const dir = await testTempDir({ prefix: "cg-t3b-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
@@ -121,7 +122,7 @@ Deno.test("T3: absent runId mints a fresh UUID per assemble (legacy files) with 
 });
 
 Deno.test("T5: a surviving attempt with attemptNumber > 2 throws ValidationError", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t5-" });
+  const dir = await testTempDir({ prefix: "cg-t5-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [
@@ -144,7 +145,7 @@ Deno.test("T5: a surviving attempt with attemptNumber > 2 throws ValidationError
 });
 
 Deno.test("T5: attemptNumber <= 2 still assembles (attempt 0/1 map to 1)", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t5b-" });
+  const dir = await testTempDir({ prefix: "cg-t5b-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [
@@ -165,7 +166,7 @@ Deno.test("T5: attemptNumber <= 2 still assembles (attempt 0/1 map to 1)", async
 });
 
 Deno.test("T5 ingest: served_model + refusal_category carry through from llmResponse", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t5-refusal-" });
+  const dir = await testTempDir({ prefix: "cg-t5-refusal-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-X063", [
@@ -210,7 +211,7 @@ Deno.test("T5 ingest: served_model + refusal_category carry through from llmResp
 });
 
 Deno.test("Task 11: assembled item carries termination_kind, test_vector and prompt_sha256", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t11-capture-" });
+  const dir = await testTempDir({ prefix: "cg-t11-capture-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [
@@ -249,7 +250,7 @@ Deno.test("Task 11: assembled item carries termination_kind, test_vector and pro
 });
 
 Deno.test("Task 12: environment + invocation thread through AssembleOptions onto BenchResults", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t12-capture-" });
+  const dir = await testTempDir({ prefix: "cg-t12-capture-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
@@ -297,7 +298,7 @@ Deno.test("Task 12: environment + invocation thread through AssembleOptions onto
 });
 
 Deno.test("Task 12: environment/invocation are absent from BenchResults when not supplied", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t12-capture-absent-" });
+  const dir = await testTempDir({ prefix: "cg-t12-capture-absent-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
@@ -319,7 +320,7 @@ Deno.test("Task 12: environment/invocation are absent from BenchResults when not
 });
 
 Deno.test("Task 11: assembly builds canonical settings from a typed invocation and legacy settings otherwise", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t11-canonical-settings-" });
+  const dir = await testTempDir({ prefix: "cg-t11-canonical-settings-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
@@ -380,7 +381,7 @@ Deno.test("Task 11: assembly builds canonical settings from a typed invocation a
 });
 
 Deno.test("Task 10: assembly rebuilds a schema-1 invocation on the legacy extras and a schema-2 one on the pinned extras", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-t10-legacy-settings-" });
+  const dir = await testTempDir({ prefix: "cg-t10-legacy-settings-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),

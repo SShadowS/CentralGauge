@@ -1,8 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { readCatalog } from "../../../src/ingest/catalog/read.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("readCatalog parses models, pricing, families", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     await Deno.writeTextFile(
       `${tmp}/models.yml`,
@@ -46,7 +47,7 @@ Deno.test("readCatalog parses models, pricing, families", async () => {
 });
 
 Deno.test("readCatalog keeps batch_* pricing fields when present, absent when omitted", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     await Deno.writeTextFile(
       `${tmp}/models.yml`,
@@ -105,7 +106,7 @@ Deno.test("readCatalog keeps batch_* pricing fields when present, absent when om
 });
 
 Deno.test("readCatalog returns empty arrays when files absent", async () => {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   try {
     const cat = await readCatalog(tmp);
     assertEquals(cat.models, []);
