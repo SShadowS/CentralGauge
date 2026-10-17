@@ -178,6 +178,48 @@ codeunit 87160 "HX085 Desk Mirror Oracle"
         HX85MirrorsOff();
     end;
 
+    [Test]
+    procedure LegacyReturnDeskStops()
+    var
+        ReturnMirror: Codeunit "CGR Return Mirror";
+    begin
+        HX85Prepare();
+        HX85Vehicle('HX085-9J');
+        HX85Vehicle('HX085-9M');
+
+        ReturnMirror.StartReturnMirror();
+        Assert.IsTrue(HX85DeskReturnOn(), 'CGR Desk Mirror reports the return mirror started through CGR Return Mirror');
+        HX85Rent('HX085-9J', true);
+        Assert.AreEqual(1, HX85Count('HX085-9J', 'mirrorReturn'), 'One mirrorReturn entry after StartReturnMirror');
+        Assert.AreEqual(0, HX85Count('HX085-9J', 'mirrorCheckOut'), 'No mirrorCheckOut entry while the checkout mirror is off');
+
+        Assert.IsTrue(HX85RunStep(Step::ReturnOff), StrSubstNo('SetReturnMirror(false) stops the mirror: %1', GetLastErrorText()));
+        Assert.IsFalse(HX85ReturnOn(), 'CGR Return Mirror reports the mirror stopped through CGR Desk Mirror');
+        HX85Rent('HX085-9M', true);
+        Assert.AreEqual(0, HX85Count('HX085-9M', 'mirrorReturn'), 'No mirrorReturn entry after SetReturnMirror(false)');
+        HX85MirrorsOff();
+    end;
+
+    [Test]
+    procedure DeskReturnLegacyStops()
+    begin
+        HX85Prepare();
+        HX85Vehicle('HX085-10N');
+        HX85Vehicle('HX085-10P');
+
+        Assert.IsTrue(HX85RunStep(Step::ReturnOn), StrSubstNo('SetReturnMirror(true): %1', GetLastErrorText()));
+        Assert.IsTrue(HX85ReturnOn(), 'CGR Return Mirror reports the mirror started through CGR Desk Mirror');
+        HX85Rent('HX085-10N', true);
+        Assert.AreEqual(1, HX85Count('HX085-10N', 'mirrorReturn'), 'One mirrorReturn entry after SetReturnMirror(true)');
+        Assert.AreEqual(0, HX85Count('HX085-10N', 'mirrorCheckOut'), 'No mirrorCheckOut entry while the checkout mirror is off');
+
+        Assert.IsTrue(HX85RunStep(Step::StopReturn), StrSubstNo('StopReturnMirror stops the mirror: %1', GetLastErrorText()));
+        Assert.IsFalse(HX85DeskReturnOn(), 'CGR Desk Mirror reports the mirror stopped through CGR Return Mirror');
+        HX85Rent('HX085-10P', true);
+        Assert.AreEqual(0, HX85Count('HX085-10P', 'mirrorReturn'), 'No mirrorReturn entry after StopReturnMirror');
+        HX85MirrorsOff();
+    end;
+
     local procedure HX85StartInHelper()
     var
         CheckoutMirror: Codeunit "CGR Checkout Mirror";

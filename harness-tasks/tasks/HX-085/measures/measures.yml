@@ -9,6 +9,8 @@ partial_credit:
     "87160/SessionWideMirror": 1
     "87160/NewProceduresDirect": 1
     "87160/StopWhenOffAndRestart": 1
+    "87160/LegacyReturnDeskStops": 1
+    "87160/DeskReturnLegacyStops": 1
   hidden_regressions: []
 reuse:
   targets:
