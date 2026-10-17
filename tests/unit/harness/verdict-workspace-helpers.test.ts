@@ -381,3 +381,64 @@ Deno.test("H-21: every scorer version is bumped (added helper procedures change 
     mutant_kill: "4",
   });
 });
+
+Deno.test("H-21 (Sol r1 P1): an added procedure whose name the shipped file uses (a built-in such as Error, a global, any identifier) restores the file", async () => {
+  const assertLib = LIB.replace(
+    "        exit(7);",
+    "        if Counter < 0 then\n            Error('negative');\n        exit(7);",
+  );
+  await assertRestored(
+    libWith(
+      `
+    local procedure Error(Message: Text)
+    begin
+    end;
+`,
+      assertLib,
+    ),
+    "Error",
+    assertLib,
+  );
+  await assertRestored(
+    libWith(`
+    procedure Exit7(): Integer
+    begin
+        exit(7);
+    end;
+
+    procedure Integer(): Integer
+    begin
+        exit(1);
+    end;
+`),
+    "Integer",
+  );
+});
+
+Deno.test("H-21 (Sol r1 P1): a compiler directive inside an added procedure restores the file", async () => {
+  for (
+    const d of [
+      "#pragma implicitwith disable",
+      "#pragma warning disable AL0432",
+      "#region x",
+    ]
+  ) {
+    await assertRestored(
+      libWith(`
+    procedure MakeTwo(): Integer
+    begin
+${d}
+        exit(Seed() - 5);
+    end;
+`),
+      "directive",
+    );
+  }
+});
+
+Deno.test("H-21 (Sol r1 P3): a changed var section keyword (protected var) restores the file", async () => {
+  await assertRestored(
+    libWith(MAKE_TWO).replace("    var\n", "    protected var\n"),
+    "shipped member",
+  );
+});

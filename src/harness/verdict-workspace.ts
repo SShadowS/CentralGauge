@@ -1232,6 +1232,11 @@ function prepareHelper(
   const aText = stripAlNoise(aSrc);
   const eol = (s: string) => s.replace(/\r\n/g, "\n");
   const nl = pSrc.includes("\r\n") ? "\r\n" : "\n";
+  // A local method wins over a built-in (Error, Message) or anything else
+  // shipped code calls by that name: every name the shipped file uses is refused.
+  const used = new Set(
+    tokenize(pText, 0, pText.length).filter((t) => t.id).map((t) => t.v),
+  );
   const code: Member[] = [];
   const vars: Member[] = [];
   const inserts: { at: number; procs: Member[] }[] = [];
@@ -1263,6 +1268,16 @@ function prepareHelper(
           `codeunit ${p.id}: procedure ${name} changes, moves or overloads a shipped member`,
         );
       }
+      if (m.names.some((n) => used.has(n))) {
+        return refuse(
+          `codeunit ${p.id}: added procedure ${name} has a name the shipped file uses (it could rebind shipped code)`,
+        );
+      }
+      if (/^[ \t]*#/m.test(aSrc.slice(m.start, m.end))) {
+        return refuse(
+          `codeunit ${p.id}: added procedure ${name} contains a compiler directive`,
+        );
+      }
       if (m.attrs.length > 0) {
         return refuse(
           `codeunit ${p.id}: added procedure ${name} carries an attribute`,
@@ -1277,7 +1292,13 @@ function prepareHelper(
       }
       adds.push(m);
     }
-    if (k !== pm.length) {
+    // Every token outside the added procedures (section keywords such as
+    // `protected var` included) must be the shipped body's, in order.
+    const body = (txt: string, d: AlDecl, cut: Member[]) =>
+      tokenize(txt, d.start, d.end).filter((t) =>
+        !cut.some((m) => t.start >= m.start && t.start < m.end)
+      ).map((t) => t.raw).join(" ");
+    if (k !== pm.length || body(aText, a, adds) !== body(pText, p, [])) {
       return refuse(
         `codeunit ${p.id}: a shipped member is changed, moved or removed`,
       );
