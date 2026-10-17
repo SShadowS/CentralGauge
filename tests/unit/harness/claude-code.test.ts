@@ -3098,7 +3098,51 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
       "M8-07c",
     );
   }
-  assertEquals(CAMPAIGN_CALIBRATED, {}, "nothing is calibrated yet");
+});
+
+Deno.test("calibrated (H-22): r3 sha256:0a874646 (2.1.302) runs at campaign level on its M8-07c gate-1 cells; another digest with the same version is still refused", () => {
+  const u = claudeCodeAdapter.unqualified!;
+  const R3 =
+    "sha256:0a8746462fc8d62f2ea104d844b5fb43b2c9e12080608b81ab5e94ddfaf46f36";
+  const at = (digest: string) =>
+    manifest(
+      "cc",
+      V2({
+        harness_version: "2.1.302",
+        image: {
+          digest,
+          base_digest:
+            "sha256:13def9e09a858085999838738c89ec4bb8f78244670ad8a4462f3c4877799595",
+          revision: "3",
+          package: {
+            name: "@anthropic-ai/claude-code",
+            version: "2.1.302",
+            track: "npm-latest",
+            integrity: {
+              main: `sha512-${"M".repeat(86)}==`,
+              win32_x64: `sha512-${"W".repeat(86)}==`,
+            },
+          },
+        },
+      }),
+    );
+  assertEquals(u(at(R3), "campaign"), null);
+  assertEquals(u(at(R3), "dev"), null);
+  assertStringIncludes(
+    u(at(`sha256:${"e".repeat(64)}`), "campaign")!,
+    "has no M8-07c real calibration",
+  );
+  assertEquals(Object.keys(CAMPAIGN_CALIBRATED), [R3]);
+  assertEquals(CAMPAIGN_CALIBRATED[R3]!.version, "2.1.302");
+  for (
+    const cell of [
+      "f5233317-687f-41f4-8803-aab71aa9aea0",
+      "10d0adc5-ab2e-4887-a61e-938c3790f65f",
+      "80891c85-65cb-41a8-bdad-7d171f0197c2",
+      "6d617739-ce9e-4185-b502-0e00c49f027a",
+      "evidence-r3.md",
+    ]
+  ) assertStringIncludes(CAMPAIGN_CALIBRATED[R3]!.calibration, cell);
 });
 
 // ---- H-03: Claude Code 2.1.296 dev qualification (level 1) ----
