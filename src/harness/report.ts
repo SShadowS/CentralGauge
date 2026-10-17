@@ -763,6 +763,30 @@ export async function buildReport(
     const held = new Set(selection!.held_out);
     const family = d!.confirmatory ? d!.family : [];
     const { resamples, seed, level } = d!.bootstrap;
+    // H-18: run the declared test, and refuse any row that ran another one.
+    const declared = d!.test.p_value;
+    const results = testContrasts(
+      cells.filter((c) => selected.has(c.task)),
+      exp.contrasts!,
+      exp.interaction ? { ...exp.interaction } : null,
+      metric,
+      {
+        resamples,
+        seed,
+        level,
+        alpha: d!.alpha,
+        zeroSolve: d!.zero_solve,
+        family,
+        method: declared,
+      },
+    );
+    const off = results.filter((x) => (x.method ?? "percentile") !== declared);
+    if (off.length > 0) {
+      const msg = `declared test ${declared} is not the executed test of ${
+        off.map((x) => `${x.id} (${x.method ?? "percentile"})`).join(", ")
+      }`;
+      throw new ValidationError(msg, [msg]);
+    }
     return {
       preregistration: {
         path: pre!.path,
@@ -776,20 +800,7 @@ export async function buildReport(
       bootstrap: { resamples, seed, level },
       tasks: selection!.selected,
       // The interval-derived flag is dropped: Holm alone decides.
-      results: testContrasts(
-        cells.filter((c) => selected.has(c.task)),
-        exp.contrasts!,
-        exp.interaction ? { ...exp.interaction } : null,
-        metric,
-        {
-          resamples,
-          seed,
-          level,
-          alpha: d!.alpha,
-          zeroSolve: d!.zero_solve,
-          family,
-        },
-      ).map((x) => ({ ...x, distinguishable: null })),
+      results: results.map((x) => ({ ...x, distinguishable: null })),
       held_out: {
         tasks: selection!.held_out,
         arms: arms.map((a) =>

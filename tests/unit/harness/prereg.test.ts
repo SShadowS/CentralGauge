@@ -70,7 +70,7 @@ export const STAGE_A = {
   alpha: 0.05,
   test: {
     sides: "two",
-    p_value: "percentile_bootstrap_plus_one",
+    p_value: "bootstrap-t",
     adjustment: "holm",
     direction: "sign_of_delta",
   },
@@ -1168,5 +1168,33 @@ Deno.test("decision parsers (M11-10b): hyphenated stage-A / stage-B wording name
     parseStageADecision(
       a("OWNER-APPROVED: stagecraft B (2026-10-24T12:00:00Z)"),
     ) !== null,
+  );
+});
+
+Deno.test("PreregSchema (H-18): test.p_value names the executed bootstrap-t; the pre-amendment percentile id and unknown ids refuse", async () => {
+  const withP = (p: string) => ({
+    ...STAGE_A,
+    test: { ...STAGE_A.test, p_value: p },
+  });
+  assertEquals(
+    PreregSchema.parse(withP("bootstrap-t")).test.p_value,
+    "bootstrap-t",
+  );
+  for (
+    const p of ["percentile_bootstrap_plus_one", "bootstrap_t", "t_test", ""]
+  ) {
+    assertEquals(PreregSchema.safeParse(withP(p)).success, false, p);
+  }
+  // A spread copy that was never parsed still cannot declare another test.
+  const b = await stageB();
+  assertEquals(familyProblems(b, EXP), []);
+  assert(
+    familyProblems(
+      {
+        ...b,
+        test: { ...b.test, p_value: "percentile_bootstrap_plus_one" },
+      } as unknown as typeof b,
+      EXP,
+    ).some((p) => p.includes("declared test")),
   );
 });
