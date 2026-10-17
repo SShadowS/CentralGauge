@@ -13,6 +13,6 @@ pass_to_pass:
   - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
   - { codeunit: 80000, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails, HeavyDutyStrategyFromFleetExtension, LeaseRateUsesCoreInternal, PayloadCarriesVehicleNo] }
 fail_to_pass: null
-mutants: [repaired-counted, vehicle-field-count, newest-date, appends, clean-always, event-before-fields, skip-ignored, result-counts-skipped]
+mutants: [repaired-counted, vehicle-field-count, newest-date, appends, clean-always, event-before-fields, skip-ignored, result-counts-skipped, marks-repaired]
 contamination: null
 limits: { timeout_min: 30 }
