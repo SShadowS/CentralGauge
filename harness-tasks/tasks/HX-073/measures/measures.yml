@@ -4,6 +4,7 @@ partial_credit:
     "86920/DueLinesHandedOut": 1
     "86920/InvoicedAndOtherLeasesExcluded": 1
     "86920/CallerBufferReplaced": 1
+    "86920/FilteredBufferReplaced": 1
     "86920/UpToDateBoundaries": 1
     "86920/GetDueLinesChangesNothing": 1
     "86920/InvoiceDueLinesAsToday": 1

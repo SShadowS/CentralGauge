@@ -85,6 +85,32 @@ codeunit 86920 "HX073 Due Lines Oracle"
     end;
 
     [Test]
+    procedure FilteredBufferReplaced()
+    var
+        TempDueLine: Record "CGR Lease Schedule Line" temporary;
+        LeaseInvoicing: Codeunit "CGR Lease Invoicing";
+    begin
+        HX73Prepare();
+        HX73Lease('HX073-10A');
+        TempDueLine.Init();
+        TempDueLine."Contract No." := 'HX073-10X';
+        TempDueLine."Line No." := 10000;
+        TempDueLine."Due Date" := 20270201D;
+        TempDueLine.Amount := 55.55;
+        TempDueLine.Insert();
+        TempDueLine.SetRange("Contract No.", 'HX073-10A');
+        Assert.AreEqual(0, TempDueLine.Count(), 'Precondition: the caller''s filter hides the foreign row');
+
+        Assert.AreEqual(2, LeaseInvoicing.GetDueLines('HX073-10A', 20270401D, TempDueLine), 'March and April are due up to 1 April');
+
+        TempDueLine.Reset();
+        Assert.AreEqual(2, TempDueLine.Count(), 'The buffer holds only the lease''s two due lines');
+        Assert.IsTrue(TempDueLine.Get('HX073-10A', 10000), 'Line 10000 of HX073-10A is handed out');
+        Assert.IsTrue(TempDueLine.Get('HX073-10A', 20000), 'Line 20000 of HX073-10A is handed out');
+        Assert.IsFalse(TempDueLine.Get('HX073-10X', 10000), 'The row the filter hid is gone');
+    end;
+
+    [Test]
     procedure UpToDateBoundaries()
     var
         TempDueLine: Record "CGR Lease Schedule Line" temporary;
