@@ -1,0 +1,69 @@
+{
+  "CG-AL-M008": {
+    "killTests": [
+      {
+        "name": "TestApproverVariesWithDocumentAmount",
+        "closes": ["M0003", "M0048", "M0049"],
+        "setup": "Create an item; create two purchase orders via Library - Purchase, one line each, Direct Unit Cost 100 and 500000. Use a LOCAL Codeunit \"Purchase Approval Workflow\" instance (FreshWorkflow) on purpose: the shared instance may already have been used by an earlier test in this codeunit. Do NOT CalcFields Amount on either header before passing it in. Call FreshWorkflow.DetermineApprover on each. Delete both headers at the end.",
+        "assertion": "Assert.AreNotEqual(SmallOrderApprover, LargeOrderApprover, 'A 100 LCY order and a 500,000 LCY order should not resolve to the same approver');",
+        "referenceValue": "SmallOrderApprover = 'SUPERVISOR' (100 <= 1000), LargeOrderApprover = 'CEO' (500000 > 100000). AreNotEqual passes.",
+        "mutantValue": "M0003 (InitializeThresholds body emptied) and M0048 (InitializeThresholds call dropped from DetermineApprover): on a fresh instance all three thresholds stay 0, so both 100 > 0 and 500000 > 0 take the top band and both return 'CEO'. M0049 (CalcFields(Amount) removed): the by-value header copy carries Amount 0 for both, so both return 'SUPERVISOR'. Either way AreNotEqual fails.",
+        "whyRobust": "Asserts only that the approver DEPENDS on the amount, never which approver or which threshold. Any implementation with any threshold between 100 and 500000, any approver naming, and thresholds initialised anywhere passes. That is exactly the YAML's 'Dynamic approver determination based on amount thresholds' and nothing more. The 5000x span makes a false failure implausible and survives VAT-inclusive pricing."
+      },
+      {
+        "name": "TestInvalidApprovalInputIsNotReportedAsSuccess",
+        "closes": ["M0007", "M0016", "M0017", "M0032", "M0041", "M0062"],
+        "setup": "Add ONCE to the codeunit: a global `LastCallReportedSuccess: Boolean` plus two [TryFunction] wrappers, TryInitiateApprovalProcess(PurchaseHeader) and TryProcessApprovalRequest(DocumentNo, Action, Comment), each assigning the call's result into that global. The wrappers exist so an implementation that RAISES on invalid input passes identically to one that returns false - only a reported SUCCESS fails. Try methods cannot return a value through a var parameter, hence the global. The test then: Clear(BlankPurchaseHeader); three try-wrapped calls (blank header, blank document no, document 'CG-M008-ABSENT' that never entered the workflow); then three plain calls to EscalateApproval / CompleteApprovalProcess / CheckTimeout on 'CG-M008-ABSENT', which each declare a Boolean return purely to report the outcome so a boolean protocol IS the stated contract. No record is inserted, so a caught error has nothing to roll back.",
+        "assertion": "Assert.IsFalse(NoError and LastCallReportedSuccess, 'Approval should not start for a purchase document that has no number'); Assert.IsFalse(NoError and LastCallReportedSuccess, 'An approval action should not be handled when no document number is supplied'); Assert.IsFalse(NoError and LastCallReportedSuccess, 'An approval action should not be handled for a document that has no approval request'); Assert.IsFalse(PurchaseApprovalWorkflow.EscalateApproval('CG-M008-ABSENT'), 'Escalation should not be reported for a document that has no approval request'); Assert.IsFalse(PurchaseApprovalWorkflow.CompleteApprovalProcess('CG-M008-ABSENT'), 'Completion should not be reported for a document that has no approval request'); Assert.IsFalse(PurchaseApprovalWorkflow.CheckTimeout('CG-M008-ABSENT'), 'A timeout should not be reported for a document that has no approval request');",
+        "referenceValue": "All six calls return false: InitiateApprovalProcess:32 (blank No.), ProcessApprovalRequest:64 (blank DocumentNo) and :67 (no approval status), EscalateApproval:110, CompleteApprovalProcess:129, CheckTimeout:176. All six asserts pass.",
+        "mutantValue": "Each mutant flips exactly one of those to exit(true) and fails exactly one assert: M0007 -> 1, M0016 -> 2, M0017 -> 3, M0032 -> 4, M0041 -> 5, M0062 -> 6. 'CG-M008-ABSENT' is never initiated by any test, and each mutant exits before touching state, so no test contaminates another.",
+        "whyRobust": "Only claims that an operation which did not happen must not be reported as having happened - grounded in the YAML's 'return true if escalated', 'return true if completed successfully', 'return true if timed out' plus 'proper error handling'. The try wrappers mean a TestField/Error guard passes identically to a false return, so neither error style is enshrined. Nothing is asserted about state, storage shape, or which approver applies."
+      },
+      {
+        "name": "TestUnrecognizedApprovalActionIsNotHandled",
+        "closes": ["M0018"],
+        "setup": "Reuses LastCallReportedSuccess and TryProcessApprovalRequest from the previous test. Create a purchase order, InitiateApprovalProcess on it, then TryProcessApprovalRequest(PurchaseHeader.\"No.\", 'HOLD', 'Neither approve nor reject'). Delete the header at the end.",
+        "assertion": "Assert.IsFalse(NoError and LastCallReportedSuccess, 'An action that is neither approve nor reject should not be handled');",
+        "referenceValue": "The case else at line 76 returns false, LastCallReportedSuccess = false, assert passes.",
+        "mutantValue": "M0018 turns that else into exit(true): both NoError and LastCallReportedSuccess are true, so the assert fails. The mutant returns before any state change, so the return value is the only discriminator - which is exactly what this asserts.",
+        "whyRobust": "The YAML scopes the action vocabulary explicitly: 'handle approval actions (APPROVE/REJECT) with comments'. 'HOLD' is outside it, so no spec-satisfying implementation may report it handled. The try wrapper also permits an implementation that errors on an unknown action."
+      },
+      {
+        "name": "TestApprovalDecisionsAreRecordedInApprovalHistory",
+        "closes": ["M0019", "M0020", "M0036", "M0037", "M0043", "M0044"],
+        "setup": "Create three purchase orders and InitiateApprovalProcess on each. For each in turn, read GetApprovalHistoryCount before, act, and read it after: order 1 is REJECTed (REJECT not APPROVE on purpose - an approval that finalises the workflow would let the completion step supply the growth this step is meant to show), order 2 is EscalateApproval'd, order 3 is CompleteApprovalProcess'd. Delete all three at the end.",
+        "assertion": "Assert.IsTrue(CountAfter > CountBefore, 'Rejecting a request should add to the approval history of that document'); Assert.IsTrue(CountAfter > CountBefore, 'Escalating a request should add to the approval history of that document'); Assert.IsTrue(CountAfter > CountBefore, 'Completing an approval should add to the approval history of that document');",
+        "referenceValue": "Each order stands at 1 after initiation. Reject 1 -> 2, escalate 1 -> 2, complete 1 -> 2. All three asserts pass.",
+        "mutantValue": "M0019/M0020 (ProcessApprovalRequest history block emptied / its Set dropped): reject leaves the count at 1, assert 1 fails. M0036/M0037 (EscalateApproval): assert 1 passes, escalate leaves 1, assert 2 fails. M0043/M0044 (CompleteApprovalProcess): 1 and 2 pass, complete leaves 1, assert 3 fails. Each pair is discriminated by its own assert.",
+        "whyRobust": "Strictly monotonic, never an absolute count, so an implementation that also records notifications or document events passes just as one recording only decisions. Observed through GetApprovalHistoryCount, which the YAML mandates as 'return count of approval history entries for audit trail', so no storage shape is pinned. TRIAGER'S OWN CAVEAT: the completion assertion is the weakest of the three - an implementation could conceivably count only approve/reject decisions and leave finalisation out of the trail. Given the reference logs COMPLETED and the YAML pairs history with 'audit trail', requiring the terminal event is the natural reading, but it is the one assertion here not literally spelled out."
+      },
+      {
+        "name": "TestRepeatInitiationIsRefusedOrRecorded",
+        "closes": ["M0010", "M0011"],
+        "setup": "Create a purchase order, InitiateApprovalProcess on it, capture GetApprovalHistoryCount as CountAfterFirst. Call InitiateApprovalProcess again on the same header, capturing both its Boolean return and the new count. Delete the header at the end.",
+        "assertion": "Assert.IsFalse(SecondInitiationReported and (CountAfterSecond = CountAfterFirst), 'Starting approval a second time should either be refused or added to the approval history of that document');",
+        "referenceValue": "CountAfterFirst = 1. The second call reports true and the count moves to 2, so 'reported and unchanged' is false and the assert passes.",
+        "mutantValue": "M0010 (the ContainsKey history branch in InitiateApprovalProcess emptied) and M0011 (its Set dropped): the second call still reports true because it reaches NotifyApprovers, but the count stays at 1, so 'reported and unchanged' is true and the assert fails.",
+        "whyRobust": "Deliberately disjunctive so it does not pick a side on whether a second initiation is allowed. An implementation that refuses a document already under approval passes on the refusal; one that restarts it passes on the audit entry. The only behaviour ruled out is claiming a second start happened while leaving no trace of it, which contradicts 'Approval history tracking and audit trail' under either design."
+      }
+    ],
+    "specGaps": [
+      {
+        "code": "M0034",
+        "why": "EscalateApproval:113, exit(false) when the stored status is not 'PENDING'. Closing it means pinning which approval states may be escalated from. The YAML says only 'EscalateApproval(DocumentNo: Code[20]): Boolean - escalate to higher authority, return true if escalated' and 'Include approval status management and state transitions.' It names no states and never says escalation must be refused once a document has left pending. A submission letting an already-escalated or approved document be escalated again satisfies every stated requirement, so a test here would make the reference's PENDING-only rule the benchmark answer. M0032 (escalating a document with no approval request at all) IS closed above, since that needs no state machine, only the stated 'return true if escalated'."
+      },
+      {
+        "code": "M0076",
+        "why": "OnAfterDeletePurchaseHeader:222, whole subscriber body emptied. Closing it means pinning that deleting a purchase document discards its approval state. The YAML asks only for 'Use event subscribers for Purchase Header events, proper error handling, and comprehensive logging' and states no delete-time cleanup contract. The reference is itself half-hearted: it drops the status entry but leaves the history count intact, so GetApprovalHistoryCount still answers for a deleted document. Any assertion would enshrine that arbitrary half-cleanup. The part that IS spec-required, the 'DOCUMENT_DELETED' log line, goes to Session.LogMessage and has no assertable surface from AL."
+      },
+      {
+        "code": "M0077",
+        "why": "OnAfterDeletePurchaseHeader:225, the inner block removing the status entry and logging the deletion. Identical spec gap to M0076: the only observable difference is that approval state survives the document, and the YAML never asks for it to be discarded."
+      },
+      {
+        "code": "M0078",
+        "why": "OnAfterDeletePurchaseHeader:226, the ApprovalStatus.Remove call. Same gap as M0076/M0077 and observationally indistinguishable from them: the only symptom is that an approval action on an already-deleted document still succeeds, which the YAML never forbids. All three fall to a single test the moment the task spec states what deleting a purchase document does to its in-flight approval."
+      }
+    ]
+  }
+}
