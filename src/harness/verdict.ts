@@ -64,15 +64,20 @@ import {
  * change; judgments with another fingerprint are superseded (rejudge).
  */
 export const SCORER_SUITE: Record<string, string> = {
-  build: "1",
+  // 2: plain procedures added to a shipped helper codeunit are kept in the
+  // verdict Test app, which every scorer builds (H-21; all four bumped).
+  build: "2",
   // 2: a change task's agent-added tests include those extracted from
   // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
-  pass_to_pass: "2",
-  fail_to_pass: "1",
+  // 3: added helper procedures kept (H-21).
+  pass_to_pass: "3",
+  // 2: added helper procedures kept (H-21).
+  fail_to_pass: "2",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
   // 3: [Test] procedures added to shipped test codeunits are extracted into
   // a generated codeunit, with the credit rules (M4-17a).
-  mutant_kill: "3",
+  // 4: added helper procedures kept (H-21).
+  mutant_kill: "4",
 };
 type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
 
