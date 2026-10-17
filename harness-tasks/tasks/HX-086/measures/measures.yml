@@ -23,3 +23,8 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/assign-and-scan: { partial_credit: 0 }
+  naive/copy-filtered-record: { partial_credit: 0.1111111111111111 }
+  naive/reset-board: { partial_credit: 0.5555555555555556 }
+  naive/share-filtered-record: { partial_credit: 0 }
+  naive/skip-existing: { partial_credit: 0.8888888888888888 }
