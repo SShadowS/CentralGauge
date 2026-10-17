@@ -351,6 +351,36 @@ codeunit 87200 "HX087 Purge Oracle"
         Assert.IsTrue(HX087Stored(Nos.Get(51)), 'The refused 51st entry stays');
     end;
 
+    [Test]
+    procedure CallerSentFilterKept()
+    var
+        Entry: Record "CGR Outbox Entry";
+        Spy: Codeunit "HX087 Archive Spy";
+        Runner: Codeunit "HX087 Purge Runner";
+        S1: Integer;
+        P: Integer;
+        Ok: Boolean;
+    begin
+        HX087InitRun();
+        S1 := HX087Queue('HX087-13', true, false, 0, 20270102D);
+        P := HX087Queue('HX087-13', false, false, 0, 20270103D);
+        BindSubscription(Spy);
+
+        Runner.HX087SetEntries('HX087-13', 10, false);
+        Runner.HX087SetUnsentOnly();
+        Commit();
+        Ok := Runner.Run();
+
+        Assert.IsTrue(Ok, 'The purge runs: ' + GetLastErrorText());
+        Assert.AreEqual(0, Runner.HX087Purged(), 'No sent entry is within the caller''s filters (Sent = false)');
+        Assert.IsTrue(HX087Stored(S1), 'The sent entry outside the caller''s Sent filter stays');
+        Assert.IsTrue(HX087Stored(P), 'The unsent entry stays');
+        Assert.AreEqual(0, Spy.HX087SeenCount(), 'OnBeforePurgeEntry is raised for no entry');
+        Entry.SetFilter("Vehicle No.", 'HX087-13');
+        Entry.SetRange(Sent, false);
+        Assert.AreEqual(Entry.GetFilters(), Runner.HX087FiltersAfter(), 'The filters of EntryFilter are not changed');
+    end;
+
     local procedure HX087InitRun()
     var
         Setup: Record "CGR Setup";

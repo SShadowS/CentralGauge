@@ -48,7 +48,9 @@ codeunit 70400 "CGR Integration Facade"
         Purged: Integer;
     begin
         Entry.CopyFilters(EntryFilter);
+        Entry.FilterGroup(2);
         Entry.SetRange(Sent, true);
+        Entry.FilterGroup(0);
         if Entry.FindSet() then
             repeat
                 EntryNos.Add(Entry."Entry No.");

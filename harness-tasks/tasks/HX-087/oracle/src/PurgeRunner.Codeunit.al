@@ -4,6 +4,7 @@ codeunit 87202 "HX087 Purge Runner"
         RunMode: Option Entries,EntriesThenFail,Vehicle,CreatedBefore,PurgeSent;
         RunFilter: Text;
         RunChunk: Integer;
+        RunUnsentOnly: Boolean;
         RunVehicle: Code[20];
         RunBefore: DateTime;
         RunPurged: Integer;
@@ -20,6 +21,8 @@ codeunit 87202 "HX087 Purge Runner"
             RunMode::Entries, RunMode::EntriesThenFail:
                 begin
                     Entry.SetFilter("Vehicle No.", RunFilter);
+                    if RunUnsentOnly then
+                        Entry.SetRange(Sent, false);
                     RunPurged := Facade.PurgeSentEntries(Entry, RunChunk);
                     RunFiltersAfter := Entry.GetFilters();
                     if RunMode = RunMode::EntriesThenFail then
@@ -42,6 +45,11 @@ codeunit 87202 "HX087 Purge Runner"
             RunMode := RunMode::EntriesThenFail
         else
             RunMode := RunMode::Entries;
+    end;
+
+    procedure HX087SetUnsentOnly()
+    begin
+        RunUnsentOnly := true;
     end;
 
     procedure HX087SetVehicle(VehicleNo: Code[20])
