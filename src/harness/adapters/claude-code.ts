@@ -1200,7 +1200,13 @@ export const BUILTIN_INVENTORY: Readonly<
  */
 export const CAMPAIGN_CALIBRATED: Readonly<
   Record<string, { version: string; calibration: string }>
-> = {};
+> = {
+  "sha256:0a8746462fc8d62f2ea104d844b5fb43b2c9e12080608b81ab5e94ddfaf46f36": {
+    version: "2.1.302",
+    calibration:
+      "M9-17 integrated gate-1 cells on image r3 (HX-003, Cronus282): cc-v2-plain f5233317-687f-41f4-8803-aab71aa9aea0, cc-v2-plain-lsp 10d0adc5-ab2e-4887-a61e-938c3790f65f, cc-v2-realistic 80891c85-65cb-41a8-bdad-7d171f0197c2, cc-v2-realistic-lsp 6d617739-ce9e-4185-b502-0e00c49f027a (evidence H:\\cg-coord\\m9\\gate1\\evidence-r3.md)",
+  },
+};
 
 /**
  * Why a manifest's Claude Code may not run at a level, or null (H-03). Frozen

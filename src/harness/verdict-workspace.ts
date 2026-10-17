@@ -1166,6 +1166,171 @@ function extractFrom(
   };
 }
 
+// ---- H-21: plain procedures an agent added to a SHIPPED helper codeunit ----
+
+/** A shipped non-test helper file whose added procedures may be kept. */
+interface Helper {
+  rel: string;
+  /** The added procedures (all codeunits of the file); judged by the credit rules. */
+  judged: Judged;
+  /** The shipped text with the added procedures appended. */
+  text: string;
+}
+
+/** A codeunit that is neither a test codeunit nor any other Subtype than Normal. */
+const isHelperCodeunit = (d: AlDecl) =>
+  d.kind === "codeunit" && d.end !== 0 &&
+  (!/\bSubtype\s*=/i.test(d.body) ||
+    /\bSubtype\s*=\s*Normal\s*;/i.test(d.body));
+
+/** Text outside the object bodies: headers, text between objects, the tail. */
+const outsideBodies = (src: string, ds: AlDecl[]) =>
+  [
+    ...ds.map((d, i) => src.slice(i === 0 ? 0 : ds[i - 1]!.end, d.start)),
+    src.slice(ds.at(-1)!.end),
+  ].map((s) => s.replace(/\r\n/g, "\n"));
+
+/**
+ * H-21 (owner ruling 2026-10-17, "keep added helpers"). An edited shipped
+ * Test file whose objects are all plain (non-test, Subtype Normal) codeunits:
+ * the shipped text stays the base and only the procedures new by name are
+ * appended (before each codeunit's closing brace, shipped line ends). Fails
+ * closed, null and a note, the shipped file restored, when: the agent's
+ * objects or any text outside their bodies differ from the shipped file
+ * (line ends aside); a codeunit cannot be parsed; a shipped member
+ * (property, global, trigger, procedure, attributes included) is not kept
+ * byte for byte and in order; or an added member is not a procedure, carries
+ * an attribute, has a modifier other than local or internal, or has the
+ * name of a shipped member (case-insensitive, quoted or not: an overload).
+ * The credit rules judge the added procedures afterwards (applyCreditRules).
+ */
+function prepareHelper(
+  rel: string,
+  pSrc: string,
+  pDecls: AlDecl[],
+  aSrc: string,
+  notes: string[],
+): Helper | null {
+  const where = `${TEST_APP}/${rel}`;
+  const refuse = (why: string) => {
+    notes.push(
+      `${where}: ${why}; the shipped file is restored (added procedures not kept)`,
+    );
+    return null;
+  };
+  const key = (ds: AlDecl[]) => ds.map((d) => `${d.kind} ${d.id}`).join(",");
+  const aDecls = declarations(aSrc);
+  if (key(aDecls) !== key(pDecls) || aDecls.some((d) => d.end === 0)) {
+    return refuse("its objects differ from the shipped file");
+  }
+  const pOut = outsideBodies(pSrc, pDecls);
+  const aOut = outsideBodies(aSrc, aDecls);
+  if (pOut.some((s, i) => s !== aOut[i])) {
+    return refuse("text outside the codeunit bodies (a header) is changed");
+  }
+  const pText = stripAlNoise(pSrc);
+  const aText = stripAlNoise(aSrc);
+  const eol = (s: string) => s.replace(/\r\n/g, "\n");
+  const nl = pSrc.includes("\r\n") ? "\r\n" : "\n";
+  // A local method wins over a built-in (Error, Message) or anything else
+  // shipped code calls by that name: every name the shipped file uses is refused.
+  const used = new Set(
+    tokenize(pText, 0, pText.length).filter((t) => t.id).map((t) => t.v),
+  );
+  const code: Member[] = [];
+  const vars: Member[] = [];
+  const inserts: { at: number; procs: Member[] }[] = [];
+  for (const [i, p] of pDecls.entries()) {
+    const a = aDecls[i]!;
+    const pm = codeunitMembers(pText, p);
+    const am = codeunitMembers(aText, a);
+    if (pm === null || am === null) {
+      return refuse(`codeunit ${p.id} could not be parsed`);
+    }
+    const shippedNames = new Set(pm.flatMap((m) => m.names));
+    const adds: Member[] = [];
+    let k = 0;
+    for (const m of am) {
+      const s = pm[k];
+      if (
+        s !== undefined && s.kind === m.kind &&
+        eol(aSrc.slice(m.start, m.end)) === eol(pSrc.slice(s.start, s.end))
+      ) {
+        k++;
+        continue;
+      }
+      const name = m.displays.join(", ");
+      if (m.kind !== "procedure") {
+        return refuse(`codeunit ${p.id}: added or changed ${m.kind} ${name}`);
+      }
+      if (m.names.some((n) => shippedNames.has(n))) {
+        return refuse(
+          `codeunit ${p.id}: procedure ${name} changes, moves or overloads a shipped member`,
+        );
+      }
+      if (m.names.some((n) => used.has(n))) {
+        return refuse(
+          `codeunit ${p.id}: added procedure ${name} has a name the shipped file uses (it could rebind shipped code)`,
+        );
+      }
+      if (/^[ \t]*#/m.test(aSrc.slice(m.start, m.end))) {
+        return refuse(
+          `codeunit ${p.id}: added procedure ${name} contains a compiler directive`,
+        );
+      }
+      if (m.attrs.length > 0) {
+        return refuse(
+          `codeunit ${p.id}: added procedure ${name} carries an attribute`,
+        );
+      }
+      if (
+        !/^(?:(?:local|internal)\s+)?procedure\s/i.test(aText.slice(m.start))
+      ) {
+        return refuse(
+          `codeunit ${p.id}: added procedure ${name} has a modifier other than local or internal`,
+        );
+      }
+      adds.push(m);
+    }
+    // Every token outside the added procedures (section keywords such as
+    // `protected var` included) must be the shipped body's, in order.
+    const body = (txt: string, d: AlDecl, cut: Member[]) =>
+      tokenize(txt, d.start, d.end).filter((t) =>
+        !cut.some((m) => t.start >= m.start && t.start < m.end)
+      ).map((t) => t.raw).join(" ");
+    if (k !== pm.length || body(aText, a, adds) !== body(pText, p, [])) {
+      return refuse(
+        `codeunit ${p.id}: a shipped member is changed, moved or removed`,
+      );
+    }
+    code.push(...adds);
+    vars.push(...am.filter((m) => m.kind === "var"));
+    if (adds.length > 0) inserts.push({ at: p.end, procs: adds });
+  }
+  if (code.length === 0) {
+    return refuse("no added procedure (only comments or layout changed)");
+  }
+  let text = pSrc;
+  for (const { at, procs } of inserts.reverse()) {
+    const block = procs.map((m) =>
+      `${nl}    ${eol(aSrc.slice(m.start, m.end)).replace(/\n/g, nl)}${nl}`
+    ).join("");
+    text = text.slice(0, at) + block + text.slice(at);
+  }
+  // The result must parse as the shipped members plus exactly the added ones.
+  const out = declarations(text);
+  const oText = stripAlNoise(text);
+  const counts = out.map((d) => codeunitMembers(oText, d)?.length ?? -1);
+  const want = pDecls.map((p) =>
+    codeunitMembers(pText, p)!.length +
+    (inserts.find((x) => x.at === p.end)?.procs.length ?? 0)
+  );
+  if (key(out) !== key(pDecls) || counts.join() !== want.join()) {
+    return refuse("the shipped file with the added procedures does not parse");
+  }
+  return { rel, judged: { src: aSrc, text: aText, code, vars }, text };
+}
+
 /** One member standing for a whole object the parser does not read (names taint its users). */
 const pseudoMember = (text: string, d: AlDecl): Member => {
   const n = objectName(text, d);
@@ -1266,6 +1431,7 @@ async function applyCreditRules(
   }
 
   const shippedEdits: Edited[] = [];
+  const helpers: Helper[] = [];
   for (const [rel, aSrc] of [...edited].sort(([a], [b]) => a < b ? -1 : 1)) {
     const where = `${TEST_APP}/${rel}`;
     if (CONDITIONAL_DIRECTIVE.test(aSrc)) {
@@ -1278,6 +1444,19 @@ async function applyCreditRules(
       join(pristine, TEST_APP, ...rel.split("/")),
     );
     const pDecls = declarations(pSrc);
+    if (!pDecls.some(isTestCodeunit)) {
+      if (pDecls.length > 0 && pDecls.every(isHelperCodeunit)) {
+        const h = prepareHelper(rel, pSrc, pDecls, aSrc, notes);
+        if (h) helpers.push(h);
+      } else {
+        notes.push(
+          `${where}: ${
+            pDecls.map((d) => `${d.kind} ${d.id}`).join(", ")
+          } is not a plain helper codeunit (not a codeunit, or a Subtype other than Normal); the shipped file is restored (added procedures not kept)`,
+        );
+      }
+      continue;
+    }
     const aDecls = declarations(aSrc);
     for (const a of aDecls) {
       if (!pDecls.some((p) => p.kind === a.kind && p.id === a.id)) {
@@ -1303,9 +1482,34 @@ async function applyCreditRules(
   }
 
   const why = creditViolations(
-    [...fresh.map((f) => f.judged), ...shippedEdits.map((e) => e.judged)],
+    [
+      ...fresh.map((f) => f.judged),
+      ...shippedEdits.map((e) => e.judged),
+      ...helpers.map((h) => h.judged),
+    ],
     shipped,
   );
+  // H-21: a helper file is kept only when none of its added procedures is a
+  // violator (agent code calling a rejected one is a violator by name).
+  for (const h of helpers) {
+    const where = `${TEST_APP}/${h.rel}`;
+    const bad = h.judged.code.filter((m) => why.has(m));
+    if (bad.length > 0) {
+      notes.push(
+        `${where}: ${
+          bad.map((m) => `added procedure ${m.displays[0]}: ${why.get(m)}`)
+            .join("; ")
+        }; the shipped file is restored (added procedures not kept)`,
+      );
+      continue;
+    }
+    await Deno.writeTextFile(join(testOut, ...h.rel.split("/")), h.text);
+    notes.push(
+      `${where}: added procedures kept: ${
+        h.judged.code.map((m) => m.displays[0]).join(", ")
+      }`,
+    );
+  }
   // A rejected member that cannot be removed (a table or extension trigger,
   // an unparsed codeunit) can fire from any test (an Insert(true), a
   // RecordRef): fail closed, no agent test runs or counts.
