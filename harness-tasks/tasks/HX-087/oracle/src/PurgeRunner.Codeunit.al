@@ -5,6 +5,9 @@ codeunit 87202 "HX087 Purge Runner"
         RunFilter: Text;
         RunChunk: Integer;
         RunUnsentOnly: Boolean;
+        RunUnsentInGroup2: Boolean;
+        RunGroupAfter: Integer;
+        RunGroup2FiltersAfter: Text;
         RunVehicle: Code[20];
         RunBefore: DateTime;
         RunPurged: Integer;
@@ -23,8 +26,18 @@ codeunit 87202 "HX087 Purge Runner"
                     Entry.SetFilter("Vehicle No.", RunFilter);
                     if RunUnsentOnly then
                         Entry.SetRange(Sent, false);
+                    if RunUnsentInGroup2 then begin
+                        Entry.FilterGroup(2);
+                        Entry.SetRange(Sent, false);
+                        Entry.FilterGroup(0);
+                    end;
                     RunPurged := Facade.PurgeSentEntries(Entry, RunChunk);
+                    RunGroupAfter := Entry.FilterGroup();
+                    Entry.FilterGroup(0);
                     RunFiltersAfter := Entry.GetFilters();
+                    Entry.FilterGroup(2);
+                    RunGroup2FiltersAfter := Entry.GetFilters();
+                    Entry.FilterGroup(0);
                     if RunMode = RunMode::EntriesThenFail then
                         Error(LaterStepErr);
                 end;
@@ -77,5 +90,20 @@ codeunit 87202 "HX087 Purge Runner"
     procedure HX087FiltersAfter(): Text
     begin
         exit(RunFiltersAfter);
+    end;
+
+    procedure HX087SetUnsentInGroup2()
+    begin
+        RunUnsentInGroup2 := true;
+    end;
+
+    procedure HX087GroupAfter(): Integer
+    begin
+        exit(RunGroupAfter);
+    end;
+
+    procedure HX087Group2FiltersAfter(): Text
+    begin
+        exit(RunGroup2FiltersAfter);
     end;
 }

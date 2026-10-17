@@ -14,6 +14,7 @@ partial_credit:
     "87200/VehicleChunksOfFifty": 1
     "87200/CreatedBeforeChunksOfFifty": 1
     "87200/CallerSentFilterKept": 1
+    "87200/CallerGroupTwoSentFilterKept": 1
   hidden_regressions: []
 reuse:
   targets:
