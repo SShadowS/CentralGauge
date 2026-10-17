@@ -1,4 +1,9 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { readCatalog } from "../../../src/ingest/catalog/read.ts";
@@ -193,10 +198,14 @@ Deno.test("validateCampaignRecords: throws one ValidationError", async () => {
   );
 });
 
-Deno.test("validateCampaignRecords: task-effective limits are the only allowed tightening", async () => {
+// H-23 owner ruling 2026-10-17: a task tightens only the budget; the time limit stays the arm's,
+// so an execution that kept a task's lower timeout_min is a mismatch.
+Deno.test("validateCampaignRecords: task-effective limits are the only allowed tightening (budget only; the time limit is the arm's)", async () => {
   const r = await scenario();
   const tasks_meta = r.campaign.tasks_meta.map((t) =>
-    t.id === "HX-002" ? { ...t, limits: { timeout_min: 20 } } : t
+    t.id === "HX-002"
+      ? { ...t, limits: { timeout_min: 20, max_budget_usd: 2 } }
+      : t
   );
   const campaign = { ...r.campaign, tasks_meta };
   const other = r.executions[2]!;
@@ -204,9 +213,26 @@ Deno.test("validateCampaignRecords: task-effective limits are the only allowed t
     ...other,
     manifest: {
       ...other.manifest,
-      limits: { timeout_min: 20, max_budget_usd: 5 },
+      limits: { ...other.manifest.limits, max_budget_usd: 2 },
     },
   };
+  const taskTimeout = {
+    ...exact,
+    manifest: {
+      ...exact.manifest,
+      limits: { timeout_min: 20, max_budget_usd: 2 },
+    },
+  };
+  assert(other.manifest.limits.timeout_min !== 20);
+  assertStringIncludes(
+    (await problems({
+      ...r,
+      campaign,
+      executions: [r.executions[0]!, r.executions[1]!, taskTimeout],
+      judgments: [],
+    })).join("\n"),
+    "component limits differs",
+  );
   assertEquals(
     await problems({
       ...r,

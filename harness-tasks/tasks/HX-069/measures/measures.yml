@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "86840/TwoVehiclesQueued": 1
+    "86840/ListOrderKept": 1
+    "86840/DuplicateQueuedOnce": 1
+    "86840/BlankNumberSkipped": 1
+    "86840/OlderMessageNoObstacle": 1
+    "86840/FourVehicles": 1
+  hidden_regressions:
+    - "86840/SingleVehicleAsToday"
+    - "86840/EmptyListQueuesNothing"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/number-keep-filter: { partial_credit: 0 }
+  naive/outbox-dedupe: { partial_credit: 0.8333333333333334 }
+  naive/skip-failed-insert: { partial_credit: 0 }

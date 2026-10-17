@@ -1,0 +1,30 @@
+v: 1
+partial_credit:
+  weights:
+    "87180/SnapshotCopiesFilteredVehicles": 1
+    "87180/ExistingRowRefreshed": 1
+    "87180/OtherRowsKept": 1
+    "87180/BoardFiltersKept": 1
+    "87180/VehicleFilterUnchanged": 1
+    "87180/SnapshotKeepsTakenValues": 1
+    "87180/NothingInFilter": 1
+    "87180/FreeVehiclesAsToday": 1
+    "87180/DamagedVehiclesAsToday": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70123, procedure: TakeVehicleSnapshot, signature: "(var VehicleFilter: Record \"CGR Vehicle\"; var Board: Record \"CGR Vehicle\" temporary): Integer", file: Fleet/src/FleetBoard.Codeunit.al, perturb: "exit(0);" }
+  tests:
+    - { codeunit: 87180, procedures: [FreeVehiclesAsToday, DamagedVehiclesAsToday] }
+# R1-R7 call TakeVehicleSnapshot directly and stay out of the reuse tests. Under exit(0) the board procedures leave
+# Board empty and return 0, so R8/R9 fail by count; the executed marker raised in the target escapes
+# SnapshotFreeVehicles / SnapshotDamagedVehicles (direct calls, no runner) into R8/R9's failure text.
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/assign-and-scan: { partial_credit: 0 }
+  naive/copy-filtered-record: { partial_credit: 0.1111111111111111 }
+  naive/reset-board: { partial_credit: 0.5555555555555556 }
+  naive/share-filtered-record: { partial_credit: 0 }
+  naive/skip-existing: { partial_credit: 0.8888888888888888 }

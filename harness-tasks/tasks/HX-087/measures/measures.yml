@@ -1,0 +1,36 @@
+v: 1
+partial_credit:
+  weights:
+    "87200/PurgesOnlySentInFilter": 1
+    "87200/CompletedChunksStay": 1
+    "87200/ChunkSizeOne": 1
+    "87200/ChunkSizeZeroIsOneChunk": 1
+    "87200/LastChunkFinal": 1
+    "87200/ChunkBoundaryExact": 1
+    "87200/VehiclePurgeAsToday": 1
+    "87200/CreatedBeforePurgeAsToday": 1
+    "87200/ChunkSizeNegativeIsOneChunk": 1
+    "87200/PurgeSentAsToday": 1
+    "87200/VehicleChunksOfFifty": 1
+    "87200/CreatedBeforeChunksOfFifty": 1
+    "87200/CallerSentFilterKept": 1
+    "87200/CallerGroupTwoSentFilterKept": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70400, procedure: PurgeSentEntries, signature: "(var EntryFilter: Record \"CGR Outbox Entry\"; ChunkSize: Integer): Integer", file: Integration/src/IntegrationFacade.Codeunit.al, perturb: "exit(0);" }
+  tests:
+    - { codeunit: 87200, procedures: [VehiclePurgeAsToday, CreatedBeforePurgeAsToday, VehicleChunksOfFifty, CreatedBeforeChunksOfFifty] }
+# Under exit(0) the support procedures purge nothing: R7/R8 counts and gone-assertions fail, R11/R12 see Ok true.
+# The executed marker escapes the support procedures into the runner (R7/R8 Ok message carries GetLastErrorText,
+# R11/R12 compare the text by AreEqual).
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/commit-at-end: { partial_credit: 0.6428571428571429 }
+  naive/commit-before-chunk: { partial_credit: 0.9285714285714286 }
+  naive/commit-per-entry: { partial_credit: 0.7857142857142857 }
+  naive/overwrite-sent-filter: { partial_credit: 0.9285714285714286 }
+  naive/overwrite-sent-group2: { partial_credit: 0.9285714285714286 }
+  naive/unfiltered-sent: { partial_credit: 0.6428571428571429 }

@@ -32,7 +32,8 @@ Deno.test("v2 arms: one harness, campaign image revision, model, settings and li
       c.id,
     );
     assertEquals(c.models, plain!.models, c.id);
-    assertEquals(c.limits, plain!.limits, c.id);
+    // H-23 owner ruling 2026-10-17: 60 min for every arm, budget 5.
+    assertEquals(c.limits, { timeout_min: 60, max_budget_usd: 5 }, c.id);
   }
   assertEquals(plain!.components.instructions, "bundles/env/instructions");
   assertEquals(real!.components, {
@@ -44,6 +45,18 @@ Deno.test("v2 arms: one harness, campaign image revision, model, settings and li
   });
   assertEquals(plainLsp!.components, { ...plain!.components, lsp: ["al"] });
   assertEquals(realLsp!.components, { ...real!.components, lsp: ["al"] });
+});
+
+Deno.test("H-23: the screening arms are campaign arms, so screening and the campaign share the 60-min limit", async () => {
+  const text = await Deno.readTextFile("harness-tasks/v2/screening.yml");
+  const arms = text.match(/^\s+arms: \[(.*)\]$/m)![1]!.split(",").map((s) =>
+    s.trim()
+  );
+  assertEquals(arms, ["cc-v2-plain", "cc-v2-realistic-lsp"]);
+  for (const a of arms) {
+    assert(ARMS.includes(a), a);
+    assertEquals((await loadConfig("harness", a)).limits.timeout_min, 60, a);
+  }
 });
 
 Deno.test("cc-v2-factorial: plain baseline, three variants, vary is exactly the bundle and the LSP", async () => {
@@ -120,6 +133,8 @@ Deno.test("M10 probe configs: their arm with id and image revision 3-dev-M10-08 
         id,
         harness_version: "2.1.282",
         image_revision: "3-dev-M10-08",
+        // H-23 raised the arms to 60 min; the proof probes keep 30.
+        limits: { ...arm.limits, timeout_min: 30 },
       },
       id,
     );
@@ -149,7 +164,17 @@ Deno.test("H-03 probe configs: their arm (latest) with id and image revision 3-d
   for (const [id, armId] of H03_PROBES) {
     const c = await loadConfig("harness", id);
     const arm = await loadConfig("harness", armId);
-    assertEquals(c, { ...arm, id, image_revision: "3-dev-H-03b" }, id);
+    assertEquals(
+      c,
+      {
+        ...arm,
+        id,
+        image_revision: "3-dev-H-03b",
+        // H-23 raised the arms to 60 min; the H-03 probes keep 30.
+        limits: { ...arm.limits, timeout_min: 30 },
+      },
+      id,
+    );
     assertEquals(c.harness_version, "latest", id);
     const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
       .split(/\r?\n/)[0];
@@ -197,6 +222,10 @@ Deno.test("H-03 copies of the M8-07c arms and M9 probes: source with id, latest 
         ...(srcId === "cc-v2-probe-budget"
           ? { limits: { ...src.limits, max_budget_usd: 0.5 } }
           : {}),
+        // H-23 raised the campaign arms to 60 min; the H-03 copies keep 30.
+        ...(ARMS.includes(srcId)
+          ? { limits: { ...src.limits, timeout_min: 30 } }
+          : {}),
       },
       id,
     );
@@ -227,7 +256,8 @@ Deno.test("M9-17 realistic budget probe: cc-v2-realistic with id and max_budget_
   assertEquals(c, {
     ...src,
     id,
-    limits: { ...src.limits, max_budget_usd: 1 },
+    // H-23 raised cc-v2-realistic to 60 min; this probe keeps 30.
+    limits: { timeout_min: 30, max_budget_usd: 1 },
   });
   const first = (await Deno.readTextFile(`harness/configs/${id}.yml`))
     .split(/\r?\n/)[0];

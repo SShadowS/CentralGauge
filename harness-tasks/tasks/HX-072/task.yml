@@ -1,0 +1,19 @@
+id: HX-072
+refapp_version: refapp-v2-rc1
+kind: refactor
+prompt: prompt.md
+touches: [Fleet, Rental, Core]
+coupling: [interface, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, ReturnWithoutDamageReleasesVehicle] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 86900, procedures: [MajorBlocks, MinorDoesNotBlock, PartnerNonBlocking, PartnerBlocking, RepairLeavesNonBlocking, RepairKeepsPartnerBlocking, RepairLastUnblocks, IsBlockingSeverityDirect, RegisterDamageIsMajor, DamagedReturnBlocks, RepairMinorKeepsCosmeticFree, RepairDecidesThroughRule] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
