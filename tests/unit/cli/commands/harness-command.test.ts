@@ -8634,3 +8634,99 @@ Deno.test("H-16 (Sol r2): close holds the locks until a backend request revoke g
     await h.close();
   }
 });
+
+// ---- H-24: campaign rejudge spreads its judging over every lane container ----
+
+/** A 3-container lane, a 6-execution campaign (2 arms x 3 repeats) and every judgment stale. */
+async function h24Campaign() {
+  const { BcLane } = await import("../../../../src/harness/bc-lane.ts");
+  const t = await makeEnv();
+  t.env.lane = new BcLane(t.bc, ["C1", "C2", "C3"]);
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await write(
+    t.harnessRoot,
+    "experiments/contract.yml",
+    (await Deno.readTextFile(join(t.harnessRoot, "experiments/contract.yml")))
+      .replace("repeats: 1", "repeats: 3"),
+  );
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  for (const e of es) await staleJudgment(t, e.id);
+  // Exclusive judging jobs in flight, the most seen at once, and per container.
+  const lane = t.env.lane;
+  const original = lane.exclusive.bind(lane);
+  const seen = { active: 0, max: 0, containers: new Set<string>() };
+  lane.exclusive = ((ctx, fn, signal, opts) =>
+    original(
+      ctx,
+      async (container: string) => {
+        seen.active++;
+        seen.max = Math.max(seen.max, seen.active);
+        seen.containers.add(container);
+        try {
+          await new Promise((r) => setTimeout(r, 30));
+          return await fn(container);
+        } finally {
+          seen.active--;
+        }
+      },
+      signal,
+      opts,
+    )) as typeof lane.exclusive;
+  const counts = async () =>
+    (await Promise.all(es.map((e) => t.env.store.judgments(e.id)))).map((js) =>
+      js.length
+    );
+  return { t, es, seen, counts };
+}
+
+Deno.test("rejudge (H-24): N executions over 3 containers are all judged exactly once, in parallel", async () => {
+  const { t, es, seen, counts } = await h24Campaign();
+  assertEquals(es.length, 6);
+  assertEquals(await counts(), [2, 2, 2, 2, 2, 2]);
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 6);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+  assert(seen.max > 1, `judging ran one at a time (max ${seen.max})`);
+  assert(seen.max <= 3, `more judgings than containers at once: ${seen.max}`);
+  assertEquals([...seen.containers].sort(), ["C1", "C2", "C3"]);
+  const again = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals([again.rejudged, await counts()], [0, [3, 3, 3, 3, 3, 3]]);
+});
+
+Deno.test("rejudge (H-24): an infra fault on one container is rerouted; no judgment is lost or duplicated", async () => {
+  const { t, seen, counts } = await h24Campaign();
+  t.bc.broken.add("C2");
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 6);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+  assert(seen.max > 1, `judging ran one at a time (max ${seen.max})`);
+});
+
+Deno.test("rejudge (H-24): a failing execution stops the rejudge without losing or duplicating the others; a resume judges only what is not current", async () => {
+  const { t, es, counts } = await h24Campaign();
+  // One execution's artifact record is unreadable: its judging throws.
+  const bad = es[3]!;
+  const art = join(t.env.resultsRoot, "artifacts", `${bad.id}.json`);
+  const kept = await Deno.readTextFile(art);
+  await Deno.remove(art);
+  await assertRejects(() => harnessRejudge("contract", runOpts(t), opener(t)));
+  const after = await counts();
+  assert(
+    after.every((n) => n === 2 || n === 3),
+    `a judgment was duplicated: ${after}`,
+  );
+  assertEquals(after[3], 2, "the failing execution has no new judgment");
+  await Deno.writeTextFile(art, kept);
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, after.filter((n) => n === 2).length);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
