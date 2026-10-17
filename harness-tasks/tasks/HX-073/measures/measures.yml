@@ -21,6 +21,7 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
-  naive/append-buffer: { partial_credit: 0.7777777777777778 }
-  naive/plain-copy-handout: { partial_credit: 0.1111111111111111 }
-  naive/temp-mark: { partial_credit: 0.6666666666666666 }
+  naive/append-buffer: { partial_credit: 0.7 }
+  naive/delete-under-filter: { partial_credit: 0.9 }
+  naive/plain-copy-handout: { partial_credit: 0.1 }
+  naive/temp-mark: { partial_credit: 0.7 }
