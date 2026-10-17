@@ -45,7 +45,7 @@ import { loadTask } from "../../../src/harness/task.ts";
 import { deployedSource, FakeBc, result } from "./fake-bc.ts";
 import { FakeDocker, type RunBehavior } from "./fake-docker.ts";
 import { makeRefappRepo, type RefappRepo, write } from "./refapp-fixture.ts";
-import { tempDir } from "./temp-dirs.ts";
+import { removeTempDir, testTempDir as tempDir } from "../../utils/temp-dir.ts";
 
 export const SECRET_OAUTH = "sk-ant-oat01-fixture-0123456789abcdefXYZ";
 const PROBE = "tests/fixtures/harness/claude-code/probe.jsonl";
@@ -206,7 +206,8 @@ export function mockImageBehavior(): RunBehavior {
   };
 }
 
-export interface TestEnv {
+/** `await using t = await makeEnv()` removes the repo, privateRoot and secretsSource (GH #28). */
+export interface TestEnv extends AsyncDisposable {
   env: HarnessEnv;
   repo: RefappRepo;
   docker: FakeDocker;
@@ -309,7 +310,18 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     killGraceMs: 50,
     opTimeoutMs: 100,
   };
-  return { env, repo, docker, bc, harnessRoot };
+  return {
+    env,
+    repo,
+    docker,
+    bc,
+    harnessRoot,
+    async [Symbol.asyncDispose]() {
+      await repo[Symbol.asyncDispose]();
+      await removeTempDir(privateRoot);
+      await removeTempDir(secretsSource);
+    },
+  };
 }
 
 export async function cellFor(
