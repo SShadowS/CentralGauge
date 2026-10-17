@@ -104,6 +104,63 @@ codeunit 80122 "CGR Damage Overview Tests"
         Assert.IsFalse(TwoVehicles.Get('HX076-V'), 'V does not match the filter');
     end;
 
+    [Test]
+    procedure FillLeavesFleetUnchanged()
+    var
+        PartnerLines: Record "CGR Damage Overview Line";
+        CleanLines: Record "CGR Damage Overview Line";
+        Partner: Codeunit "CGR Overview Partner";
+        DamageOverview: Codeunit "CGR Damage Overview";
+        Before: Text;
+    begin
+        WorkDate(20270310D);
+        HX76SeedFleet();
+        Before := HX76FleetSnapshot();
+        Assert.AreNotEqual('', Before, 'The seeded vehicles and damage entries are captured');
+        Partner.SetPartnerVehicles('HX076-V', 'HX076-Y');
+        BindSubscription(Partner);
+        DamageOverview.FillDamageOverview('HX076-*', false, PartnerLines);
+        UnbindSubscription(Partner);
+        Assert.AreEqual(Before, HX76FleetSnapshot(), 'A fill with a partner that skips a line changes no vehicle and no damage entry');
+        DamageOverview.FillDamageOverview('HX076-*', true, CleanLines);
+        Assert.AreEqual(Before, HX76FleetSnapshot(), 'A fill with clean vehicles changes no vehicle and no damage entry');
+    end;
+
+    local procedure HX76FleetSnapshot(): Text
+    var
+        Vehicle: Record "CGR Vehicle";
+        DamageEntry: Record "CGR Damage Entry";
+        RecRef: RecordRef;
+        Snapshot: Text;
+    begin
+        Vehicle.SetFilter("No.", 'HX076-*');
+        if Vehicle.FindSet() then
+            repeat
+                RecRef.GetTable(Vehicle);
+                Snapshot += HX76RecordText(RecRef);
+            until Vehicle.Next() = 0;
+        DamageEntry.SetFilter("Vehicle No.", 'HX076-*');
+        if DamageEntry.FindSet() then
+            repeat
+                RecRef.GetTable(DamageEntry);
+                Snapshot += HX76RecordText(RecRef);
+            until DamageEntry.Next() = 0;
+        exit(Snapshot);
+    end;
+
+    local procedure HX76RecordText(RecRef: RecordRef): Text
+    var
+        FldRef: FieldRef;
+        RecordText: Text;
+        i: Integer;
+    begin
+        for i := 1 to RecRef.FieldCount() do begin
+            FldRef := RecRef.FieldIndex(i);
+            RecordText += Format(FldRef.Value(), 0, 9) + '|';
+        end;
+        exit(RecordText + '/');
+    end;
+
     local procedure HX76SeedFleet()
     var
         Vehicle: Record "CGR Vehicle";
