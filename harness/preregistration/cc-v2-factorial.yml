@@ -9,7 +9,7 @@ protocol:
     - { id: C2, name: "LSP effect with the realistic setup", baseline: cc-v2-realistic, variant: cc-v2-realistic-lsp }
     - { id: C3, name: "realistic effect without LSP", baseline: cc-v2-plain, variant: cc-v2-realistic }
   interaction: { name: "LSP effect differs by realistic level", status: exploratory, plain: cc-v2-plain, lsp: cc-v2-plain-lsp, realistic: cc-v2-realistic, realistic_lsp: cc-v2-realistic-lsp }
-approval: "PENDING-OWNER: replace with the owner's OWNER-APPROVED: <words> (<ISO-8601 time>) line"
+approval: "OWNER-APPROVED: Approve as drafted (2026-10-17T15:38:42Z)"
 population: "Frozen v2 task set: BC/AL tasks of the stated kinds and coupling styles on refapp-v2, selected by the screening pilot."
 primary_metric: cost_per_solved_task
 confirmatory: true
@@ -22,7 +22,7 @@ zero_solve: { rule: suppress_any_undefined }
 missing_pairs: per_contrast_matched
 held_out:
   count: 4
-  rule: "M8 pickHeldOut at harness-v2-screen-start: first-ranked set per kind with 2 large tasks and every required coupling style"
+  rule: "M8 pickHeldOut at harness-v2-screen-start: first-ranked set per kind with 2 large tasks and every required coupling style. The P-01 and M8-07c pilot cells on HX-010, HX-037 and HX-039 are quarantined from screening and selection (owner decision 2026-10-16)."
   seal: harness-v2-screen-start
   tasks: [HX-010, HX-030, HX-037, HX-039]
   in_family: false
