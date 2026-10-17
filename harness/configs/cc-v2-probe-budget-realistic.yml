@@ -1,0 +1,17 @@
+# M9-17 budget probe config (developmental). Never part of an experiment.
+# M9-17 Step 4 budget probe on honest realistic work (ruling (z) pattern, as dev cell 82a2ddc2):
+# cc-v2-realistic with max_budget_usd 1.00. The probe-m9 busywork prompt is refused by the
+# model on r3 (7c13d3e1).
+id: cc-v2-probe-budget-realistic
+harness: claude-code
+harness_version: "latest"
+image_revision: "3"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/realistic/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+limits: { timeout_min: 30, max_budget_usd: 1.00 }
