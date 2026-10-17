@@ -11,4 +11,4 @@ components:
   skills: bundles/realistic/skills
   agents: bundles/realistic/agents
   mcp: [al-tools]
-limits: { timeout_min: 30, max_budget_usd: 5 }
+limits: { timeout_min: 60, max_budget_usd: 5 }
