@@ -440,7 +440,9 @@ limits: { timeout_min: 60, max_budget_usd: 1 }
       e,
     ) => [e.arm, e.manifest.limits.timeout_min]),
   );
-  assertEquals(byArm, { "mock-positive": 5, "mock-positive-long": 20 });
+  // H-23 owner ruling 2026-10-17: each arm keeps its own time limit; the task's 20 no longer
+  // tightens the 60-min arm.
+  assertEquals(byArm, { "mock-positive": 5, "mock-positive-long": 60 });
   assertEquals(
     c.arms.map((a) => [a.config_id, a.manifest.limits.timeout_min]).sort(),
     [["mock-positive", 5], ["mock-positive-long", 60]],
