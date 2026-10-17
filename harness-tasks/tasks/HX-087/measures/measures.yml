@@ -28,8 +28,9 @@ expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
   fixture/duplicated-logic: { reuse_executed: false, reuse: false }
   fixture/dead-call: { reuse_executed: false, reuse: false }
-  naive/commit-at-end: { partial_credit: 0.6153846153846154 }
-  naive/commit-before-chunk: { partial_credit: 0.9230769230769231 }
-  naive/commit-per-entry: { partial_credit: 0.7692307692307693 }
-  naive/overwrite-sent-filter: { partial_credit: 0.9230769230769231 }
-  naive/unfiltered-sent: { partial_credit: 0.6923076923076923 }
+  naive/commit-at-end: { partial_credit: 0.6428571428571429 }
+  naive/commit-before-chunk: { partial_credit: 0.9285714285714286 }
+  naive/commit-per-entry: { partial_credit: 0.7857142857142857 }
+  naive/overwrite-sent-filter: { partial_credit: 0.9285714285714286 }
+  naive/overwrite-sent-group2: { partial_credit: 0.9285714285714286 }
+  naive/unfiltered-sent: { partial_credit: 0.6428571428571429 }
