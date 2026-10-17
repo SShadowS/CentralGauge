@@ -3040,7 +3040,7 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
   // 2.1.296 was the refused version here until its H-03 qualification entry.
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300)",
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302)",
   );
   // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
   for (const revision of [undefined, "2"]) {
@@ -3753,7 +3753,7 @@ Deno.test("qualification (H-11): 2.1.300 is qualified for dev use; an unknown ve
   );
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "(qualified: 2.1.282, 2.1.296, 2.1.300)",
+    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302)",
   );
 });
 
@@ -4274,4 +4274,128 @@ Deno.test("otel (H-10 r3): parseClaudeStream takes the expected execution from i
   assertEquals(status(NESTED_ID), "exact_otel");
   assert(status("00000000-0000-4000-8000-00000000000a") !== "exact_otel");
   assert(status() !== "exact_otel", "no expected id: fail closed");
+});
+
+// ---- H-20: system/init additional_directories (first seen in 2.1.302) ----
+Deno.test("additional directories (H-20): a non-empty or malformed system/init additional_directories is refused; [] and absent are unchanged", async () => {
+  const text = await Deno.readTextFile(STUB_300.lsp);
+  const init = text.split("\n")[1]!;
+  const withDirs = (v: unknown) =>
+    text.replace(
+      init,
+      JSON.stringify({ ...JSON.parse(init), additional_directories: v }),
+    );
+  const problems = async (t: string) =>
+    (await parse(t, 0, arm300(true))).r.inventoryProblems!;
+  // Absent (2.1.300 and older) and [] (2.1.302) reparse clean.
+  assertEquals(await problems(text), []);
+  assertEquals(await problems(withDirs([])), []);
+  // A directory beyond the workspace widens what the agent reads: refused.
+  const got = await problems(withDirs(["C:\other"]));
+  assertEquals(got.length, 1);
+  assertStringIncludes(got[0]!, "additional_directories");
+  assertStringIncludes(got[0]!, "C:\other");
+  // Not a string list: emptiness cannot be proven, so it is refused too.
+  for (const bad of ["C:\other", null, [1]]) {
+    assertStringIncludes(
+      (await problems(withDirs(bad))).join("\n"),
+      "additional_directories",
+      JSON.stringify(bad),
+    );
+  }
+});
+
+// ---- H-20: Claude Code 2.1.302 dev qualification (level 1, track-latest) ----
+// The raw.jsonl of H-20 stub cells on dev image sha256:f1b97481 (Claude Code
+// 2.1.302, al-lsp v1.18.11): 5b981278 (LSP arm) and 3d29ebaf (web-on arm),
+// byte-exact except the cg_inventory line's CRLF stored as LF.
+const STUB_302 = {
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.302-lsp.jsonl",
+  web: "tests/fixtures/harness/claude-code/stub-2.1.302-web.jsonl",
+};
+const arm302 = (lsp: boolean) => ({
+  ...webArm(lsp, !lsp),
+  harness_version: "2.1.302",
+  image: {
+    digest: "sha256:img",
+    base_digest: "sha256:base",
+    revision: "3-dev-H-20",
+  },
+});
+
+Deno.test("qualification (H-20): the 2.1.302 stub captures (LSP, web-on) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  assertEquals(
+    claudeCodeAdapter.unqualified!(
+      manifest("cc", V2({ harness_version: "2.1.302" })),
+      "dev",
+    ),
+    null,
+  );
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_302.lsp : STUB_302.web);
+    const { r, dir } = await parse(text, 0, arm302(lsp));
+    const tag = lsp ? "lsp" : "web";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.302");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
+    assertAlmostEquals(r.telemetry.cost_usd!, (90 * 2 + 45 * 10) / 1e6, 1e-12);
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12);
+    assertEquals([r.telemetry.turns, r.telemetry.stop_reason], [9, "end_turn"]);
+    assertEquals(r.termination, "completed");
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    // The captured init carries the 2.1.302 additions with an empty list.
+    const init = JSON.parse(text.split("\n")[1]!);
+    assertEquals(init.additional_directories, [], tag);
+    assert(
+      init.capabilities.includes("mcp_call_result_not_for_model_v1"),
+      tag,
+    );
+  }
+  // A 2.1.302 init that drops a builtin agent is still caught.
+  const text = await Deno.readTextFile(STUB_302.lsp);
+  const init = text.split("\n")[1]!;
+  const { r } = await parse(
+    text.replace(init, init.replace('"statusline-setup"', '"other-agent"')),
+    0,
+    arm302(true),
+  );
+  assert(r.inventoryProblems!.length > 0, "a changed builtin list is refused");
+});
+
+Deno.test("additional directories (H-20): the refusal covers every same-session init and an unqualified version", async () => {
+  const text = await Deno.readTextFile(STUB_302.lsp);
+  const init = text.split("\n")[1]!;
+  const rec = JSON.parse(init);
+  const dirs = JSON.stringify({ ...rec, additional_directories: ["D:/x"] });
+  const problems = async (t: string) =>
+    (await parse(t, 0, arm302(true))).r.inventoryProblems!.join("\n");
+  // A second (resumed) init with directories is refused although the first is clean.
+  assertStringIncludes(
+    await problems(text.replace(init, `${init}\n${dirs}`)),
+    "init 2: system/init additional_directories",
+  );
+  // An unqualified version returns early, but the directories are still refused.
+  const unknown = JSON.stringify({
+    ...rec,
+    claude_code_version: "2.1.999",
+    additional_directories: ["D:/x"],
+  });
+  const got = await problems(text.replace(init, unknown));
+  assertStringIncludes(got, "no qualified built-in inventory");
+  assertStringIncludes(got, "additional_directories");
 });

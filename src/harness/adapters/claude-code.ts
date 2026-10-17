@@ -1125,6 +1125,72 @@ export const BUILTIN_INVENTORY: Readonly<
     qualified:
       "H-11 stub cells on image sha256:c3c05bb4f3b48a7cced954180655db43bd092f66e2ebb869b2f1d6385d4574a1 (plain 5576d242-e15e-46e1-846d-e81fd9bfb51c, 23d95b20-039b-4019-b571-c7410e8d4580; LSP 63e81cf4-02b9-4241-8204-8de3b0ddc098, e319b786-2056-428c-8e44-dcfbdba68b25; web fd301426-9e42-4b2a-830d-729f6886dd37, 1dbe0ab6-5498-4026-bf35-ccdd925907b5; review H:\\cg-coord\\tasks\\H-11\\infra-qualify-2.1.300.md)",
   },
+  // H-20 dev qualification (track-latest; r3 freezes on it). Against 2.1.300:
+  // agents, skills, plugins, tools and slash commands unchanged. Observed
+  // differences: init keys additional_directories ([]) and original_cwd
+  // (equal to cwd) added; capability mcp_call_result_not_for_model_v1 added
+  // (11). A non-empty additional_directories is refused (initInventory).
+  // al-lsp v1.18.11 unchanged; the six disallowed tools stay hidden.
+  "2.1.302": {
+    agents: [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup",
+    ],
+    skills: [
+      "deep-research",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "schedule",
+      "claude-api",
+      "workflow-authoring",
+      "run",
+      "run-skill-generator",
+      "plugin-authoring",
+    ],
+    plugins: [
+      "cc-plugin-agents-md@builtin",
+      "cc-plugin-plugin-authoring@builtin",
+    ],
+    tools: [
+      "Task",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListAgents",
+      "NotebookEdit",
+      "Read",
+      "RemoteTrigger",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Skill",
+      "TaskStop",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Workflow",
+      "Write",
+    ],
+    qualified:
+      "H-20 stub cells on image sha256:f1b97481fbdf6f0450f2865036f5e369738465f2097b29dd951bc2d46063f742 (plain 8d9f653f-194c-41e6-8d3f-916fbf544369, adcdcfde-08eb-45a4-80c0-e68ee832d534; LSP 5b981278-b4d1-4fd3-9311-5aaa7c2904df, d831e03e-cf65-4a32-8981-2b7986a5e39d; web 3d29ebaf-ed2c-46ee-b87a-7fe67a17a800, 6812da89-d390-4095-9396-f0d5691d85b8; review H:\\cg-coord\\tasks\\H-20\\infra-qualify-2.1.302.md)",
+  },
 };
 
 /**
@@ -1320,6 +1386,17 @@ function initInventory(
   const problems: string[] = [];
   const evidence: Record<string, string> = {};
   const i = init.rec;
+  // H-20: 2.1.302 reports additional_directories. A directory beyond the
+  // workspace widens what the agent reads, so only [] (or absent, before
+  // 2.1.302) passes; a non-list cannot prove it empty.
+  const dirs = i["additional_directories"];
+  if (dirs !== undefined && (!strings(dirs) || dirs.length > 0)) {
+    problems.push(
+      `system/init additional_directories ${
+        JSON.stringify(dirs)
+      }: only the workspace may be readable`,
+    );
+  }
   const version = typeof i.claude_code_version === "string"
     ? i.claude_code_version
     : "";
