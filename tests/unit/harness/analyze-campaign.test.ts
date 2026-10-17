@@ -1,9 +1,17 @@
 import { assertEquals } from "@std/assert";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
 import {
+  alsemFindings,
+  alsemSummary,
+  blastRadius,
   classifyLoss,
+  digestTouches,
+  introducedFindings,
   type LossInput,
+  mergedAppJson,
   missingFromShipped,
+  objectApps,
+  routineDeltas,
   traceProfile,
 } from "../../../scripts/harness/analyze-campaign.ts";
 
@@ -279,5 +287,407 @@ Deno.test("classifyLoss: precedence and tags", () => {
   assertEquals(
     classifyLoss({ ...base, termination: "setup_failed" }).cls,
     "other_termination",
+  );
+});
+
+// ---- A-03: al-sem static analysis ----
+
+const finding = (
+  detector: string,
+  severity: string,
+  object: string,
+  routine: string,
+  file: string,
+  line = 1,
+) => ({
+  detector,
+  severity,
+  primaryLocation: {
+    file: `ws:${file}`,
+    line,
+    objectName: object,
+    routineName: routine,
+  },
+});
+
+Deno.test("alsemFindings + introducedFindings: final minus start keyed by detector + object + routine (not line), as a multiset, with the app", () => {
+  const start = alsemFindings({
+    payload: {
+      findings: [
+        finding(
+          "d1-db-op-in-loop",
+          "high",
+          "CGR A",
+          "Run",
+          "Core/src/A.al",
+          10,
+        ),
+        finding(
+          "d3-missing-setloadfields",
+          "medium",
+          "CGR A",
+          "Run",
+          "Core/src/A.al",
+          12,
+        ),
+      ],
+    },
+  });
+  const final = alsemFindings({
+    payload: {
+      findings: [
+        // moved down 5 lines: the same finding, not a new one
+        finding(
+          "d1-db-op-in-loop",
+          "high",
+          "CGR A",
+          "Run",
+          "Core/src/A.al",
+          15,
+        ),
+        finding(
+          "d3-missing-setloadfields",
+          "medium",
+          "CGR A",
+          "Run",
+          "Core/src/A.al",
+          17,
+        ),
+        finding(
+          "d3-missing-setloadfields",
+          "medium",
+          "CGR A",
+          "Run",
+          "Core/src/A.al",
+          30,
+        ),
+        finding(
+          "d11-modify-without-get",
+          "medium",
+          "CGR B",
+          "Post",
+          "Rental/src/B.al",
+          4,
+        ),
+        finding(
+          "d34-commit-in-loop",
+          "high",
+          "CGR Tests",
+          "T1",
+          "Test/src/T.al",
+          9,
+        ),
+      ],
+    },
+  });
+  assertEquals(final[4], {
+    detector: "d34-commit-in-loop",
+    severity: "high",
+    object: "CGR Tests",
+    routine: "T1",
+    file: "Test/src/T.al",
+    line: 9,
+    app: "Test",
+  });
+  assertEquals(introducedFindings(start, final), [
+    { ...final[2]!, count: 1 },
+    { ...final[3]!, count: 1 },
+    { ...final[4]!, count: 1 },
+  ]);
+  // A finding the agent fixed is not "introduced".
+  assertEquals(introducedFindings(final, start), []);
+});
+
+Deno.test("objectApps + routineDeltas: per changed routine, complexity / length / parameter deltas; added and removed routines", () => {
+  const apps = objectApps([
+    { path: "Core/src/A.Codeunit.al", text: 'codeunit 70001 "CGR A"\n{\n}' },
+    {
+      path: "Test/src/T.Codeunit.al",
+      text: '﻿codeunit 80001 "CGR Tests"\n{\n}',
+    },
+    { path: "Core/src/S.Table.al", text: "table 70002 Setup\n{\n}" },
+  ]);
+  assertEquals(apps, { "CGR A": "Core", "CGR Tests": "Test", Setup: "Core" });
+  const m = (
+    object: string,
+    procedure: string,
+    complexity: number,
+    lines: number,
+    params: number,
+  ) => ({
+    object_type: "Codeunit",
+    object_name: object,
+    procedure_name: procedure,
+    complexity,
+    line_count: lines,
+    parameter_count: params,
+  });
+  const start = [
+    m("CGR A", "Run", 2, 10, 1),
+    m("CGR A", "Old", 1, 3, 0),
+    m("CGR A", "Same", 1, 4, 0),
+  ];
+  const final = [
+    m("CGR A", "Run", 5, 22, 2),
+    m("CGR A", "Same", 1, 4, 0),
+    m("CGR A", "New", 3, 12, 4),
+    m("CGR Tests", "T1", 1, 30, 0),
+  ];
+  const row = (
+    app: string,
+    object: string,
+    routine: string,
+    status: string,
+    complexity: number,
+    d_complexity: number,
+    d_lines: number,
+    d_params: number,
+  ) => ({
+    app,
+    object,
+    routine,
+    status,
+    complexity,
+    d_complexity,
+    d_lines,
+    d_params,
+  });
+  assertEquals(routineDeltas(start, final, apps), [
+    row("Core", "CGR A", "New", "added", 3, 3, 12, 4),
+    row("Core", "CGR A", "Old", "removed", 0, -1, -3, 0),
+    row("Core", "CGR A", "Run", "changed", 5, 3, 12, 1),
+    row("Test", "CGR Tests", "T1", "added", 1, 1, 30, 0),
+  ]);
+});
+
+Deno.test("blastRadius: diff findings counted by category / kind / severity, production vs Test app by object id range", () => {
+  const f = (category: string, kind: string, severity: string, id: string) => ({
+    category,
+    kind,
+    severity,
+    subject: {
+      normalizedStableId: `c6a1e000-0000-4000-8000-0000000000ff:${id}#x`,
+      displayName: kind,
+    },
+  });
+  const r = blastRadius(
+    {
+      payload: {
+        findings: [
+          f("abi", "procedure-removed", "critical", "Codeunit:70203"),
+          f("abi", "procedure-added", "info", "Codeunit:70203"),
+          f("abi", "procedure-added", "info", "Codeunit:80090"),
+          f("schema", "table-field-added", "info", "Table:70210"),
+          f("events", "event-removed", "high", "Codeunit:70000"),
+          f("permissions", "permission-target-added", "high", "Codeunit:80053"),
+          f(
+            "capabilities",
+            "capability-gained-commit",
+            "high",
+            "Codeunit:70001",
+          ),
+        ],
+      },
+    },
+    [[80000, 84999]],
+  );
+  assertEquals(r, {
+    production: {
+      abi: 2,
+      schema: 1,
+      events: 1,
+      permissions: 0,
+      capabilities: 1,
+      by_kind: {
+        "procedure-removed": 1,
+        "procedure-added": 1,
+        "table-field-added": 1,
+        "event-removed": 1,
+        "capability-gained-commit": 1,
+      },
+      critical_or_high: 3,
+    },
+    test: {
+      abi: 1,
+      schema: 0,
+      events: 0,
+      permissions: 1,
+      capabilities: 0,
+      by_kind: { "procedure-added": 1, "permission-target-added": 1 },
+      critical_or_high: 1,
+    },
+  });
+});
+
+Deno.test("digestTouches: production roots, tables written / read, events published, commits; unmapped hunks counted", () => {
+  const eff = (
+    type: string,
+    display: string,
+    extra: Record<string, unknown> = {},
+  ) => ({ type, detail: { resourceDisplay: display, ...extra } });
+  const r = digestTouches({
+    payload: {
+      changedRootsDiagnostics: [
+        { kind: "hunk-outside-routines", file: "Rental/src/P.al" },
+        { kind: "diff-file-unmatched", file: "Rental/src/L.Table.al" },
+      ],
+      entries: [
+        {
+          routine: {
+            display: "CalcLines",
+            anchor: { file: "ws:Rental/src/P.al" },
+          },
+          effects: [
+            eff("DB_INSERT", "CGR Line"),
+            eff("DB_DELETE", "CGR Line"),
+            eff("DB_READ", "CGR Setup"),
+            eff("EVENT_PUBLISH", "onafterpost", { eventClass: "Integration" }),
+            eff("COMMIT", ""),
+          ],
+          unresolved: [{}],
+        },
+        {
+          routine: { display: "T1", anchor: { file: "ws:Test/src/T.al" } },
+          effects: [eff("DB_MODIFY", "CGR Contract")],
+          unresolved: [],
+        },
+      ],
+    },
+  });
+  assertEquals(r, {
+    roots: 2,
+    production_roots: 1,
+    tables_written: ["CGR Line"],
+    tables_read: ["CGR Setup"],
+    events_published: ["onafterpost"],
+    commits: 1,
+    unresolved: 1,
+    unmapped_hunks: 1,
+    unmatched_files: 1,
+  });
+});
+
+Deno.test("mergedAppJson: the refapp's apps as one synthetic app (union of id ranges, only external dependencies)", () => {
+  const app = (
+    name: string,
+    id: string,
+    from: number,
+    deps: { id: string; name: string }[] = [],
+  ) => ({
+    id,
+    name,
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+    platform: "28.0.0.0",
+    application: "28.0.0.0",
+    runtime: "17.0",
+    target: "OnPrem",
+    features: ["NoImplicitWith"],
+    idRanges: [{ from, to: from + 99 }],
+    dependencies: deps,
+  });
+  const core = app("CGR Core", "c1", 70000);
+  const test = app("CGR Test", "c7", 80000, [
+    { id: "c1", name: "CGR Core" },
+    { id: "dd0be2ea", name: "Library Assert" },
+  ]);
+  assertEquals(mergedAppJson([core, test]), {
+    id: "c6a1e000-0000-4000-8000-0000000000ff",
+    name: "CGR Merged",
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+    platform: "28.0.0.0",
+    application: "28.0.0.0",
+    runtime: "17.0",
+    target: "OnPrem",
+    features: ["NoImplicitWith"],
+    idRanges: [{ from: 70000, to: 70099 }, { from: 80000, to: 80099 }],
+    dependencies: [{ id: "dd0be2ea", name: "Library Assert" }],
+  });
+});
+
+Deno.test("alsemSummary: one execution's metrics (production only, high = critical or high)", () => {
+  const f = (
+    detector: string,
+    severity: string,
+    app: string,
+    count: number,
+  ) => ({
+    detector,
+    severity,
+    object: "A",
+    routine: "R",
+    file: `${app}/src/A.al`,
+    line: 1,
+    app,
+    count,
+  });
+  const d = (
+    app: string,
+    status: "added" | "changed" | "removed",
+    complexity: number,
+    d_complexity: number,
+    d_lines: number,
+  ) => ({
+    app,
+    object: "A",
+    routine: `R${complexity}`,
+    status,
+    complexity,
+    d_complexity,
+    d_lines,
+    d_params: 0,
+  });
+  const zero = {
+    abi: 0,
+    schema: 0,
+    events: 0,
+    permissions: 0,
+    capabilities: 0,
+    by_kind: {},
+    critical_or_high: 0,
+  };
+  assertEquals(
+    alsemSummary({
+      introduced: [
+        f("d1", "high", "Core", 2),
+        f("d3", "medium", "Core", 1),
+        f("d34", "critical", "Test", 1),
+      ],
+      deltas: [
+        d("Core", "changed", 6, 3, 10),
+        d("Core", "added", 2, 2, 8),
+        d("Test", "added", 9, 9, 40),
+      ],
+      blast: { production: { ...zero, abi: 3, schema: 1 }, test: zero },
+      touches: {
+        roots: 4,
+        production_roots: 2,
+        tables_written: ["X", "Y"],
+        tables_read: [],
+        events_published: ["e"],
+        commits: 0,
+        unresolved: 0,
+        unmapped_hunks: 1,
+        unmatched_files: 0,
+      },
+    }),
+    {
+      alsem_new_findings: 3,
+      alsem_new_high_findings: 2,
+      alsem_new_test_findings: 1,
+      complexity_delta: 5,
+      lines_delta: 18,
+      max_routine_complexity: 6,
+      routines_added: 1,
+      routines_changed: 1,
+      abi_changes: 3,
+      schema_changes: 1,
+      event_changes: 0,
+      permission_changes: 0,
+      tables_written: 2,
+      events_published: 1,
+      unmapped_hunks: 1,
+    },
   );
 });
