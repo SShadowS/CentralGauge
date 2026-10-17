@@ -4376,3 +4376,26 @@ Deno.test("qualification (H-20): the 2.1.302 stub captures (LSP, web-on) reparse
   );
   assert(r.inventoryProblems!.length > 0, "a changed builtin list is refused");
 });
+
+Deno.test("additional directories (H-20): the refusal covers every same-session init and an unqualified version", async () => {
+  const text = await Deno.readTextFile(STUB_302.lsp);
+  const init = text.split("\n")[1]!;
+  const rec = JSON.parse(init);
+  const dirs = JSON.stringify({ ...rec, additional_directories: ["D:/x"] });
+  const problems = async (t: string) =>
+    (await parse(t, 0, arm302(true))).r.inventoryProblems!.join("\n");
+  // A second (resumed) init with directories is refused although the first is clean.
+  assertStringIncludes(
+    await problems(text.replace(init, `${init}\n${dirs}`)),
+    "init 2: system/init additional_directories",
+  );
+  // An unqualified version returns early, but the directories are still refused.
+  const unknown = JSON.stringify({
+    ...rec,
+    claude_code_version: "2.1.999",
+    additional_directories: ["D:/x"],
+  });
+  const got = await problems(text.replace(init, unknown));
+  assertStringIncludes(got, "no qualified built-in inventory");
+  assertStringIncludes(got, "additional_directories");
+});
