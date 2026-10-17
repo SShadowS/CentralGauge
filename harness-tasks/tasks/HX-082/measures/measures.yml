@@ -20,3 +20,4 @@ expect:
   naive/check-schedule: { partial_credit: 0 }
   naive/filter-caller: { partial_credit: 0.75 }
   naive/share-and-remove: { partial_credit: 0.5 }
+  naive/zero-amounts-on-success: { partial_credit: 1 }
