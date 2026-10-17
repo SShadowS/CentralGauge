@@ -1015,3 +1015,27 @@ Deno.test("loadLedgerAnchors (M8-02b run 002): a missing intermediate tree on th
     "a missing intermediate tree passed as an absent ledger",
   );
 });
+
+Deno.test("loadScreenCampaigns (M8-15c): a results dir without campaigns (none run yet) is no campaigns, not an error", async () => {
+  const { loadScreenCampaigns } = await import(
+    "../../../scripts/harness/screening.ts"
+  );
+  const root = await Deno.makeTempDir();
+  try {
+    for (const dir of [root, `${root}/never-created`]) {
+      const r = await loadScreenCampaigns(dir, RULES);
+      assertEquals([r.campaigns, [...r.ran]], [[], []]);
+    }
+    // A campaigns path that is a file is still an error.
+    await Deno.writeTextFile(`${root}/campaigns`, "x");
+    let threw = false;
+    try {
+      await loadScreenCampaigns(root, RULES);
+    } catch {
+      threw = true;
+    }
+    assert(threw, "a campaigns path that is not a directory is refused");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});

@@ -973,6 +973,12 @@ export async function loadScreenCampaigns(
   const campaigns: ScreenCampaign[] = [];
   const ran = new Map<string, TaskIdentity[]>();
   const dir = join(resultsDir, "campaigns");
+  // M8-15c: no campaigns directory yet (nothing screened) is no campaigns.
+  const st = await Deno.lstat(dir).catch((err) => {
+    if (err instanceof Deno.errors.NotFound) return null;
+    throw err;
+  });
+  if (st === null) return { campaigns, ran };
   for await (const e of Deno.readDir(dir)) {
     if (!e.isFile || !e.name.endsWith(".json")) continue;
     const c = CampaignRecordSchema.parse(
