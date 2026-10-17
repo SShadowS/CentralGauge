@@ -126,17 +126,20 @@ Deno.test("loadExperiment: rejects missing hypothesis, unknown vary key, baselin
   }
 });
 
-Deno.test("effectiveLimits: task can only tighten", () => {
-  const config = { timeout_min: 30, max_budget_usd: 5 };
+// H-23, owner ruling 2026-10-17 (decisions\2026-10-17-owner-timeout-and-quality.md): the arm
+// config's timeout_min is the cell's time limit, so every arm runs under the same limit on every
+// task. A task's timeout_min no longer tightens it. Before H-23 a task's timeout_min of 20 gave 20.
+// Budget keeps the old rule: a task can only tighten it.
+Deno.test("effectiveLimits: the config's timeout_min is the time limit; a task can only tighten the budget", () => {
+  const config = { timeout_min: 60, max_budget_usd: 5 };
   assertEquals(effectiveLimits(config, {}), config);
-  assertEquals(effectiveLimits(config, { timeout_min: 20 }), {
-    timeout_min: 20,
-    max_budget_usd: 5,
-  });
+  assertEquals(effectiveLimits(config, { timeout_min: 30 }), config);
+  assertEquals(effectiveLimits(config, { timeout_min: 90 }), config);
   assertEquals(
-    effectiveLimits(config, { timeout_min: 60, max_budget_usd: 2 }),
-    { timeout_min: 30, max_budget_usd: 2 },
+    effectiveLimits(config, { timeout_min: 20, max_budget_usd: 2 }),
+    { timeout_min: 60, max_budget_usd: 2 },
   );
+  assertEquals(effectiveLimits(config, { max_budget_usd: 9 }), config);
 });
 
 Deno.test("checkModelsInCatalog: known slugs pass, unknown or missing catalog fail", async () => {

@@ -9,4 +9,4 @@ settings: {}
 components:
   instructions: bundles/env/instructions
   lsp: [al]
-limits: { timeout_min: 30, max_budget_usd: 5 }
+limits: { timeout_min: 60, max_budget_usd: 5 }

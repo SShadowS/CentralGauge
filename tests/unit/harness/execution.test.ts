@@ -787,7 +787,12 @@ Deno.test("recovery: publishes into the original results root, from the stored m
     t.repo.tasksDir,
     "HX-001/task.yml",
     (await Deno.readTextFile(join(t.repo.tasksDir, "HX-001", "task.yml")))
-      .replace("timeout_min: 20", "timeout_min: 5"),
+      // H-23: a task no longer sets the time limit, so the edit tightens the budget, which a
+      // re-derivation from the edited task would pick up.
+      .replace(
+        "limits: { timeout_min: 20 }",
+        "limits: { timeout_min: 5, max_budget_usd: 0.01 }",
+      ),
   );
   await Deno.rename(
     join(t.repo.tasksDir, "HX-001"),
@@ -802,10 +807,11 @@ Deno.test("recovery: publishes into the original results root, from the stored m
   const stored = await cellsEnv.store.executions(cell.campaignId);
   assertEquals(stored.map((x) => x.id), [e!.id]);
   assertEquals(
-    stored[0]!.manifest.limits.timeout_min,
-    20,
+    stored[0]!.manifest.limits,
+    cell.armManifest.limits,
     "the original effective limits, not the edited ones",
   );
+  assert(stored[0]!.manifest.limits.max_budget_usd !== 0.01);
   assertEquals(
     await cellsEnv.store.judgments(e!.id),
     [],
