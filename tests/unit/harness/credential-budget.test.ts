@@ -13,18 +13,18 @@ const r = {
   purpose: "M1-29 gate",
 };
 
-Deno.test("reserveCredentialRun: five hundred across all lanes (H-17), then refused; concurrent callers serialize", async () => {
-  assertEquals(CREDENTIAL_RUN_LIMIT, 500);
+Deno.test("reserveCredentialRun: fifteen hundred across all lanes (H-25), then refused; concurrent callers serialize", async () => {
+  assertEquals(CREDENTIAL_RUN_LIMIT, 1500);
   const ledger = join(
     await Deno.realPath(await Deno.makeTempDir()),
     "credential-runs.jsonl",
   );
-  // 495 earlier reservations, then 7 racing callers: exactly 5 fit (496-500).
-  // (502 live racers would outlast the 60 s lock wait, not test the limit.)
+  // 1495 earlier reservations, then 7 racing callers: exactly 5 fit (1496-1500).
+  // (1502 live racers would outlast the 60 s lock wait, not test the limit.)
   await Deno.writeTextFile(
     ledger,
     Array.from(
-      { length: 495 },
+      { length: 1495 },
       (_, i) => JSON.stringify({ v: 1, ordinal: i + 1, lane: "M4-17" }),
     ).join("\n") + "\n",
   );
@@ -42,16 +42,16 @@ Deno.test("reserveCredentialRun: five hundred across all lanes (H-17), then refu
     results.filter((x) => x.status === "fulfilled").map((x) =>
       (x as PromiseFulfilledResult<number>).value
     ).sort(),
-    [496, 497, 498, 499, 500],
+    [1496, 1497, 1498, 1499, 1500],
   );
   assertEquals(
     (await Deno.readTextFile(ledger)).trim().split("\n").length,
-    500,
+    1500,
   );
   await assertRejects(
     () => reserveCredentialRun(ledger, r),
     ConfigurationError,
-    "500 supervised",
+    "1500 supervised",
   );
 });
 
@@ -75,12 +75,12 @@ Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines sti
   const partial = join(dir, "partial.jsonl");
   await Deno.writeTextFile(
     partial,
-    '{"v":1}\n{"trunc\n' + "x\n".repeat(498),
+    '{"v":1}\n{"trunc\n' + "x\n".repeat(1498),
   );
   await assertRejects(
     () => reserveCredentialRun(partial, r),
     ConfigurationError,
-    "500 supervised",
+    "1500 supervised",
   );
 });
 
