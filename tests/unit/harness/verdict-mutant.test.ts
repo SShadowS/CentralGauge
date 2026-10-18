@@ -677,10 +677,11 @@ Deno.test("mutant_kill (M4-17a): only edits to shipped procedures, or only uncou
 });
 
 Deno.test("scorer suite (M4-17a): mutant_kill and pass_to_pass are bumped for tests extracted from shipped codeunits", () => {
-  // Bumped again by H-21 (added helper procedures kept): 4 and 3.
+  // Bumped again by H-21 (added helper procedures kept): 4 and 3; pass_to_pass
+  // again by H-26 (agent-added test reruns): 4.
   assertEquals([SCORER_SUITE["mutant_kill"], SCORER_SUITE["pass_to_pass"]], [
     "4",
-    "3",
+    "4",
   ]);
 });
 

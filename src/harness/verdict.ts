@@ -70,7 +70,9 @@ export const SCORER_SUITE: Record<string, string> = {
   // 2: a change task's agent-added tests include those extracted from
   // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
   // 3: added helper procedures kept (H-21).
-  pass_to_pass: "3",
+  // 4: a thrown or timed-out agent-added test is rerun behind a trusted control
+  // (H-26, decision 2026-09-25-agent-suite-infra item 3).
+  pass_to_pass: "4",
   // 2: added helper procedures kept (H-21).
   fail_to_pass: "2",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
@@ -222,16 +224,19 @@ function recordBuild(ctx: JudgeContext, prep: Prepared, label: string): void {
 }
 
 /**
- * The lane's BC with agent-added test runs made agent-owned: a throw, a
- * hang (timeout), zero results or a missing discovered procedure becomes a
- * failed, not-run procedure (runtime_error), never infra. The agent
- * controls that code, so it must not reroute or unscore the verdict.
- * Every such event is noted.
+ * The lane's BC with agent-added test runs made agent-owned: zero results or
+ * a missing discovered procedure becomes a failed, not-run procedure
+ * (runtime_error), never infra. A throw or a hang (timeout) is noted; with
+ * `onThrow` it is ambiguous (H-26, decision 2026-09-25-agent-suite-infra
+ * item 3): `onThrow` is told the container and a ContainerError is thrown,
+ * so the caller decides by a rerun behind a trusted control. Without it the
+ * throw is the agent's failure like a missing procedure.
  */
 export function agentTestsBc(
   bc: HarnessBc,
   discovered: ReadonlyMap<number, readonly string[]>,
   notes: string[],
+  onThrow?: (container: string, codeunit: number) => void,
 ): HarnessBc {
   return {
     compileProject: (c, p) => bc.compileProject(c, p),
@@ -245,11 +250,15 @@ export function agentTestsBc(
       try {
         r = await bc.runHarnessTests(c, codeunit);
       } catch (err) {
-        notes.push(
+        const why =
           `agent-added test codeunit ${codeunit} did not complete on ${c}: ${
             err instanceof Error ? err.message : String(err)
-          }`,
-        );
+          }`;
+        notes.push(why);
+        if (onThrow) {
+          onThrow(c, codeunit);
+          throw new ContainerError(why, c, "test");
+        }
       }
       const byName = new Map(
         (r?.results ?? []).map((x) => [x.name.toLowerCase(), x]),
@@ -355,6 +364,118 @@ export async function runHeld(
       }),
   );
   return { rows: accountHeld(ctx, held) };
+}
+
+/**
+ * pass_to_pass's agent-added test codeunits on the candidate build (H-26).
+ * `rerun` null: a thrown run is the agent's failure (agentTestsBc). Else a
+ * thrown or timed-out run is ambiguous (decision 2026-09-25-agent-suite-infra
+ * item 3): with a trusted control (the shipped pass_to_pass specs, which
+ * passed on this build), it is rerun once on another container after the
+ * control passes there; a second throw is the agent's failure, noted with
+ * both containers. A failing control, no other container or no control at
+ * all leaves infra rows: pass_to_pass is unscored, never a fail.
+ */
+async function runAgentTests(
+  ctx: JudgeContext,
+  prep: Prepared,
+  agent: TestSpec[],
+  rerun: { control: TestSpec[] | null } | null,
+): Promise<TestRow[]> {
+  const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures!]));
+  const notes = ctx.log.notes;
+  const cleanupIds = [...prep.candidateIds].reverse();
+  if (!rerun) {
+    return (await runHeld(
+      ctx,
+      prep.wanted,
+      agent,
+      cleanupIds,
+      agentTestsBc(ctx.lane.bc, discovered, notes),
+    )).rows;
+  }
+  const control = rerun.control;
+  const threw: { container: string; codeunit: number }[] = [];
+  let controlPassedOn: string | null = null;
+  const bc = agentTestsBc(
+    ctx.lane.bc,
+    discovered,
+    notes,
+    (container, codeunit) => threw.push({ container, codeunit }),
+  );
+  const rowsFor = (failure: TestRow["failure"]): TestRow[] =>
+    agent.flatMap((a) =>
+      a.procedures!.map((p) => ({
+        codeunit: a.codeunit,
+        procedure: p,
+        target: a.target,
+        outcome: "not_run" as const,
+        failure,
+      }))
+    );
+  try {
+    const held = await ctx.lane.exclusive(
+      {
+        taskId: ctx.i.task.task.id,
+        variantId: ctx.i.executionId,
+        attemptNumber: 1,
+      },
+      async (c) => {
+        if (threw.length > 0 && control) {
+          const ctl = await deployAndTest(ctx.lane.bc, c, {
+            wanted: prep.wanted,
+            tests: control,
+            cleanupIds,
+            ctx: ctx.deploy,
+          });
+          if (ctl.cleanupError) {
+            throw new CleanupFailedError(
+              new Error("trusted control"),
+              ctl.cleanupError,
+              c,
+            );
+          }
+          if (scorerPassed(ctl.rows) !== true) {
+            throw new ContainerError(
+              `trusted control did not pass on ${c} before the agent rerun`,
+              c,
+              "test",
+            );
+          }
+          controlPassedOn = c;
+          notes.push(
+            `pass_to_pass: agent-added tests rerun on ${c} after a passing trusted control`,
+          );
+        }
+        return await deployAndTest(bc, c, {
+          wanted: prep.wanted,
+          tests: agent,
+          cleanupIds,
+          ctx: ctx.deploy,
+        });
+      },
+      undefined,
+      { maxInfraRetries: control ? 1 : 0 },
+    );
+    return accountHeld(ctx, held);
+  } catch (err) {
+    if (!infraThrown(err)) throw err;
+    const last = threw.at(-1);
+    if (threw.length >= 2 && last && controlPassedOn === last.container) {
+      notes.push(
+        `pass_to_pass: agent-added test codeunit ${last.codeunit} did not complete on ${
+          threw.map((t) => t.container).join(" and on ")
+        } (the trusted control passed on ${last.container}): the agent's failure`,
+      );
+      return rowsFor("runtime_error");
+    }
+    notes.push(
+      `pass_to_pass: agent-added tests infra after reroutes: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return rowsFor("infra");
+  }
 }
 
 /** A held run's spans, containers, retries and messages go to the verdict log. */
@@ -549,6 +670,22 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   if (t.fail_to_pass) {
     const oracle = await buildOracle(ctx, prep, vw.apps);
     if (oracle === null) {
+      // H-26: the reason, next to the tests it stops (reports read test_messages).
+      const diags = log.diagnostics.filter((d) => d.app === "oracle");
+      const codes = buildFailureCodes(diags.map((d) => d.code));
+      const first = diags.find((d) => codes.includes(d.code));
+      for (
+        const codeunit of new Set(t.fail_to_pass.tests.map((x) => x.codeunit))
+      ) {
+        log.test_messages.push({
+          codeunit,
+          procedure: "(oracle build)",
+          target: "candidate",
+          message: `oracle does not compile against the candidate: ${
+            codes.join(",") || "(no diagnostics)"
+          }${first ? ` ${first.message}` : ""}`.slice(0, 2000),
+        });
+      }
       scores.set(
         "fail_to_pass",
         false,
@@ -588,22 +725,22 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     scores.set("fail_to_pass", scorerPassed(r), r);
   }
   if (scores.has("pass_to_pass")) {
+    const trusted = rows.filter((x) => !oracleUnits.has(x.codeunit));
     let agentRows: TestRow[] = [];
     if (agent.length > 0) {
-      const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures!]));
-      agentRows = (await runHeld(
+      // A thrown agent run is ambiguous only while pass_to_pass is still
+      // undecided: with a shipped or TestPage row already failing, it fails
+      // whatever the agent tests do, and a hang must not unscore that.
+      const undecided = testPageRows.length === 0 &&
+        (p2p.length === 0 || scorerPassed(trusted) === true);
+      agentRows = await runAgentTests(
         ctx,
-        prep.wanted,
+        prep,
         agent,
-        [...prep.candidateIds].reverse(),
-        agentTestsBc(ctx.lane.bc, discovered, log.notes),
-      )).rows;
+        undecided ? { control: p2p.length > 0 ? p2p : null } : null,
+      );
     }
-    const r = [
-      ...rows.filter((x) => !oracleUnits.has(x.codeunit)),
-      ...agentRows,
-      ...testPageRows,
-    ];
+    const r = [...trusted, ...agentRows, ...testPageRows];
     // Never a pass on zero rows (scorerPassed); only TestPage rows fail.
     scores.set("pass_to_pass", scorerPassed(r), r);
   }
