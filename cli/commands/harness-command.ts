@@ -2123,28 +2123,31 @@ export async function harnessRejudge(
         opened.refapps.set(v, await resolveRefapp(o.root, v));
       }
     }
+    // H-24: one judging per lane container at a time (the lane leases each
+    // container and reroutes infra faults, as in harness run). Each judgment
+    // is written once, by judgeExecution, in this one process. The first
+    // failure starts no further judging; running ones finish, then it is
+    // thrown. What was not judged stays due for the next rejudge.
+    const queue = judgeQueue(
+      env,
+      env.lane.containers.length,
+      async (env, cell, e) => {
+        const oracle = byTask.get(e.task_id)!.oracle;
+        const j = await rejudgeExecution(env, cell, e, oracle, forced);
+        console.log(
+          `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
+            oracle.slice(0, 12)
+          })${j.forced ? `, forced: ${j.forced.reason}` : ""}`,
+        );
+      },
+    );
     for (const e of due) {
-      const oracle = byTask.get(e.task_id)!.oracle;
-      const cell = cellRefFor(
-        c,
-        opened,
-        c.blocks[e.block]!,
-        e.arm,
-        e.order_in_block,
-      );
-      const j = await rejudgeExecution(
-        env,
-        cell,
+      queue.push(
+        cellRefFor(c, opened, c.blocks[e.block]!, e.arm, e.order_in_block),
         e,
-        oracle,
-        forced,
-      );
-      console.log(
-        `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
-          oracle.slice(0, 12)
-        })${j.forced ? `, forced: ${j.forced.reason}` : ""}`,
       );
     }
+    await queue.drain();
     return { campaignId: c.id, rejudged: due.length };
   } finally {
     await h.close();
