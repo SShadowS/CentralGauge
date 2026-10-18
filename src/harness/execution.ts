@@ -253,6 +253,8 @@ export interface HarnessEnv {
     after?(step: PublishStep): Promise<void>;
     beforeDraft?(): Promise<void>;
     afterPublished?(): Promise<void>;
+    /** T-06: a campaign worker's throw is recorded (no new cell starts after this). */
+    workerThrew?(): void;
   };
 }
 

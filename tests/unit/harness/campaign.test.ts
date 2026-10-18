@@ -2252,3 +2252,34 @@ Deno.test("H-16: one cell's undrained backend request (sandbox gone) does not ha
     revoke.restore();
   }
 });
+
+Deno.test("M7-01 (T-06): at concurrency 2 a cell whose probe runs after the other cell unregistered still runs the authenticated preflight", async () => {
+  const t = await gated();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  const eg = t.env.egress as ReturnType<typeof enforce>;
+  // The first probe goes through; every later one waits until some cell has
+  // unregistered, the interleaving a loaded host produced at random.
+  let probes = 0;
+  eg.onProbe = async () => {
+    if (++probes === 1) return;
+    const until = Date.now() + 60_000;
+    while (!eg.events.includes("unregister") && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  const ran = await runCampaign(
+    t.env,
+    "contract",
+    opts({ concurrency: 2 }),
+    io(),
+  );
+  assertEquals(ran.ran, 4);
+  assert(eg.events.includes("unregister"), "a cell unregistered first");
+});
