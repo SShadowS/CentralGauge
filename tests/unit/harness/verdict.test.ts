@@ -436,6 +436,11 @@ Deno.test("judge (H-26): an agent-added test that times out with no other contai
     ),
   );
   assertStringIncludes(log.notes.join("\n"), "agent-added test rerun infra");
+  // No rerun was dispatched, so none is recorded as a retry.
+  assertEquals(
+    log.infra_retries.filter((r) => r.fingerprint === "h26-agent-test-rerun"),
+    [],
+  );
 });
 
 Deno.test("judge (H-26): a trusted control that fails on the rerun container leaves pass_to_pass unscored, never a fail", async () => {
@@ -556,6 +561,86 @@ Deno.test("judge (H-26 review): the rerun repeats the agent suite in order; a co
       .map((r) => [r.originalContainerName, r.retryContainerName, r.outcome]),
     [[runsB[0], runsB[1], "succeeded"]],
   );
+});
+
+Deno.test("judge (H-26 review): two codeunits hang on the first run; on the rerun one recovers and one hangs again: only that one is the agent's failure", async () => {
+  const bc = script();
+  const inner = bc.script;
+  const seen = new Map<number, number>();
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81000 || cu === 81001) {
+      const n = (seen.get(cu) ?? 0) + 1;
+      seen.set(cu, n);
+      // 81000 hangs only on its first run; 81001 hangs on every run.
+      if (cu === 81001 || n === 1) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
+      return result({ AgentTest: true });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(
+    judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+      t.codeunit,
+      t.outcome,
+      t.failure,
+    ]),
+    [[81000, "pass", null], [81001, "not_run", "runtime_error"]],
+  );
+  const notes = log.notes.join("\n");
+  assertStringIncludes(
+    notes,
+    "agent-added test codeunit 81001 did not complete on",
+  );
+  assert(
+    !notes.includes(
+      "agent-added test codeunit 81000 did not complete on C1 and",
+    ),
+  );
+  assert(
+    !notes.includes(
+      "agent-added test codeunit 81000 did not complete on C2 and",
+    ),
+  );
+});
+
+Deno.test("judge (H-26 review): a codeunit that passed on the first run and throws only on the rerun keeps its first result", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const inner = bc.script;
+  const runsB: string[] = [];
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81001) {
+      runsB.push(container);
+      if (runsB.length === 2) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
+      return result({ AgentTest: true });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "pass");
+  assertEquals([agentRuns.length, runsB.length], [2, 2]);
+  assert(!log.notes.join("\n").includes("81001 did not complete on C1 and"));
+  assert(!log.notes.join("\n").includes("81001 did not complete on C2 and"));
 });
 
 Deno.test("judge (H-26 review): only the codeunit that hung takes the rerun's results; one that completed keeps its first rows", async () => {

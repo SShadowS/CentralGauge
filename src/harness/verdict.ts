@@ -535,7 +535,8 @@ async function runAgentTests(
     return inOrder([...kept, ...rerunRows]);
   } catch (err) {
     if (!infraThrown(err)) throw err;
-    record("infra_again");
+    // Only a rerun that was dispatched is a retry (none with no eligible container).
+    if (rerunOn) record("infra_again");
     infraNote("agent-added test rerun", err);
     return inOrder([...kept, ...infraRowsFor(ambiguous)]);
   }
