@@ -476,51 +476,57 @@ const AGENT_81001 = AGENT_81000.replace("81000", "81001").replace(
   '"Agent B"',
 );
 
-Deno.test("judge (H-26 review): a completed agent-added failure stays a fail when another agent codeunit hangs once and then passes", async () => {
-  const { bc, agentRuns } = hangs("first");
-  const inner = bc.script;
-  const runsB: string[] = [];
-  bc.script = (cu, deployed, container) => {
-    if (cu === 81001) {
-      runsB.push(container);
-      return result({ AgentTest: "Assert.AreEqual failed. agent bug" });
-    }
-    return inner(cu, deployed, container);
-  };
-  const { input } = await setup("correct", {
-    "Test/src/Agent.Test.al": AGENT_81000,
-    "Test/src/AgentB.Test.al": AGENT_81001,
-  });
-  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
-  assertEquals(judgment.scorers[1]!.passed, false);
-  assertEquals(judgment.verdict, "fail");
-  // 81001 completed on the first run: kept, never rerun.
-  assertEquals(runsB.length, 1);
-  assert(
-    judgment.scorers[1]!.tests.some((t) =>
-      t.codeunit === 81001 && t.outcome === "fail" && t.failure === "assertion"
-    ),
-  );
-  // 81000 alone was rerun, and passed there.
-  assertEquals(agentRuns.length, 2);
-  assert(
-    judgment.scorers[1]!.tests.some((t) =>
-      t.codeunit === 81000 && t.outcome === "pass"
-    ),
-  );
-  assertStringIncludes(
-    log.notes.join("\n"),
-    `agent-added codeunits 81000 rerun on ${agentRuns[1]}`,
-  );
+Deno.test("judge (H-26 review): a completed agent-added failure decides pass_to_pass: another codeunit's hang is not rerun and cannot unscore it, even with no other container", async () => {
+  for (const containers of [["C1"], ["C1", "C2"]]) {
+    const { bc, agentRuns } = hangs("first");
+    const inner = bc.script;
+    const runsB: string[] = [];
+    bc.script = (cu, deployed, container) => {
+      if (cu === 81001) {
+        runsB.push(container);
+        return result({ AgentTest: "Assert.AreEqual failed. agent bug" });
+      }
+      return inner(cu, deployed, container);
+    };
+    const { input } = await setup("correct", {
+      "Test/src/Agent.Test.al": AGENT_81000,
+      "Test/src/AgentB.Test.al": AGENT_81001,
+    });
+    const { judgment, log } = await judge(new BcLane(bc, containers), input);
+    const tag = containers.join(",");
+    assertEquals(judgment.scorers[1]!.passed, false, tag);
+    assertEquals(judgment.verdict, "fail", tag);
+    assertEquals([runsB.length, agentRuns.length], [1, 1], tag);
+    assertEquals(
+      judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+        t.codeunit,
+        t.outcome,
+        t.failure,
+      ]),
+      [[81000, "not_run", "runtime_error"], [81001, "fail", "assertion"]],
+      tag,
+    );
+    assert(!log.notes.join("\n").includes("rerun on"), tag);
+  }
 });
 
-Deno.test("judge (H-26 review): only the codeunit that hung is rerun; one that completed keeps its first rows", async () => {
-  const { bc, agentRuns } = hangs("first");
+Deno.test("judge (H-26 review): the rerun repeats the agent suite in order; a codeunit that hangs again in the same context is the agent's failure", async () => {
+  // 81001 hangs whenever 81000 ran before it on the same container.
+  const bc = script();
   const inner = bc.script;
+  const ranA = new Set<string>();
   const runsB: string[] = [];
   bc.script = (cu, deployed, container) => {
+    if (cu === 81000) ranA.add(container);
     if (cu === 81001) {
       runsB.push(container);
+      if (ranA.has(container)) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
       return result({ AgentTest: true });
     }
     return inner(cu, deployed, container);
@@ -529,10 +535,56 @@ Deno.test("judge (H-26 review): only the codeunit that hung is rerun; one that c
     "Test/src/Agent.Test.al": AGENT_81000,
     "Test/src/AgentB.Test.al": AGENT_81001,
   });
-  const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(runsB.length, 2);
+  assert(runsB[0] !== runsB[1]);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81001 && t.outcome === "not_run" &&
+      t.failure === "runtime_error"
+    ),
+  );
+  assertStringIncludes(
+    log.notes.join("\n"),
+    `agent-added test codeunit 81001 did not complete on ${runsB[0]} and on ${
+      runsB[1]
+    }`,
+  );
+  assertEquals(
+    log.infra_retries.filter((r) => r.fingerprint === "h26-agent-test-rerun")
+      .map((r) => [r.originalContainerName, r.retryContainerName, r.outcome]),
+    [[runsB[0], runsB[1], "succeeded"]],
+  );
+});
+
+Deno.test("judge (H-26 review): only the codeunit that hung takes the rerun's results; one that completed keeps its first rows", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const inner = bc.script;
+  const runsB: string[] = [];
+  // 81001 passes the first time and fails on the rerun: the first result stands.
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81001) {
+      runsB.push(container);
+      return result({
+        AgentTest: runsB.length === 1 ? true : "Assert.IsTrue failed. rerun",
+      });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
   assertEquals(judgment.verdict, "pass");
-  assertEquals(runsB.length, 1);
+  assertEquals(runsB.length, 2);
   assertEquals(agentRuns.length, 2);
+  assertEquals(
+    log.infra_retries.filter((r) => r.fingerprint === "h26-agent-test-rerun")
+      .map((r) => [r.originalContainerName, r.retryContainerName, r.outcome]),
+    [[agentRuns[0], agentRuns[1], "succeeded"]],
+  );
   assertEquals(
     judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
       t.codeunit,

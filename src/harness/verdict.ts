@@ -363,17 +363,19 @@ export async function runHeld(
 
 /**
  * pass_to_pass's agent-added test codeunits on the candidate build (H-26),
- * per codeunit. A codeunit that completes keeps its rows, whatever happens
- * to the others. `rerun` null (pass_to_pass already fails): a thrown
- * codeunit is the agent's failure (agentTestsBc), and an infra fault of the
- * whole run adds no rows, so it cannot unscore that fail. Else a codeunit
- * that throws or times out is ambiguous (decision 2026-09-25-agent-suite-infra
- * item 3): only those codeunits are rerun once, on another container, right
- * after the trusted control (the shipped pass_to_pass specs, which passed on
- * this build) passes there. One that throws again is the agent's failure,
- * noted with both containers; one that completes keeps the rerun's rows. A
- * failing control, no other container or no control leaves infra rows for
- * the ambiguous codeunits: pass_to_pass is unscored, never a fail.
+ * per codeunit. A codeunit that completes on the first run keeps those rows.
+ * `rerun` null (pass_to_pass already fails): a thrown codeunit is the
+ * agent's failure (agentTestsBc), and an infra fault of the whole run adds
+ * no rows, so it cannot unscore that fail. The same holds when a completed
+ * agent codeunit failed. Else a codeunit that throws or times out is
+ * ambiguous (decision 2026-09-25-agent-suite-infra item 3): the whole agent
+ * suite is rerun once, in order, on another container, right after the
+ * trusted control (the shipped pass_to_pass specs, which passed on this
+ * build) passes there, and only the ambiguous codeunits take the rerun's
+ * results. One that throws again is the agent's failure, noted with both
+ * containers. A failing control, no other container or no control leaves
+ * infra rows for the ambiguous codeunits: pass_to_pass is unscored, never a
+ * fail. The rerun is recorded in infra_retries.
  */
 async function runAgentTests(
   ctx: JudgeContext,
@@ -435,8 +437,14 @@ async function runAgentTests(
   const ambiguous = new Set(
     threw.filter((t) => t.container === first.container).map((t) => t.codeunit),
   );
-  if (!rerun || ambiguous.size === 0) return rows;
   const kept = rows.filter((r) => !ambiguous.has(r.codeunit));
+  // A completed agent failure decides pass_to_pass already (Sol r2b P1): a
+  // hang elsewhere is the agent's too, with no rerun that could unscore it.
+  if (
+    !rerun || ambiguous.size === 0 || kept.some((r) => r.outcome !== "pass")
+  ) {
+    return rows;
+  }
   const control = rerun.control;
   if (!control) {
     notes.push(
@@ -446,11 +454,30 @@ async function runAgentTests(
     );
     return inOrder([...kept, ...infraRowsFor(ambiguous)]);
   }
+  // The rerun repeats the whole agent suite in its order (Sol r2b P1: the
+  // same execution context as the first run), but only the ambiguous
+  // codeunits take its results: completed first-run results stand.
   const again: number[] = [];
+  let rerunOn = "";
+  const t0 = performance.now();
+  const record = (outcome: "succeeded" | "infra_again") =>
+    ctx.log.infra_retries.push({
+      retryNumber: 1,
+      originalContainerName: first.container,
+      retryContainerName: rerunOn,
+      fingerprint: "h26-agent-test-rerun",
+      signatureLabel: `agent-added codeunits ${
+        [...ambiguous].join(", ")
+      } did not complete`,
+      durationMs: Math.round(performance.now() - t0),
+      outcome,
+      cause: "failure",
+    });
   try {
     const second = await ctx.lane.exclusive(
       ids,
       async (c) => {
+        rerunOn = c;
         const ctl = await deployAndTest(ctx.lane.bc, c, {
           wanted: prep.wanted,
           tests: control,
@@ -489,20 +516,18 @@ async function runAgentTests(
             again.push(cu);
           }),
           c,
-          {
-            wanted: prep.wanted,
-            tests: agent.filter((a) => ambiguous.has(a.codeunit)),
-            cleanupIds,
-            ctx: ctx.deploy,
-          },
+          { wanted: prep.wanted, tests: agent, cleanupIds, ctx: ctx.deploy },
         );
       },
       undefined,
       { maxInfraRetries: 0, exclude: [first.container] },
     );
-    const rerunRows = accountHeld(ctx, second);
+    record("succeeded");
+    const rerunRows = accountHeld(ctx, second).filter((r) =>
+      ambiguous.has(r.codeunit)
+    );
     // Rows of a codeunit that threw again are already not_run, runtime_error.
-    for (const cu of new Set(again)) {
+    for (const cu of new Set(again.filter((cu) => ambiguous.has(cu)))) {
       notes.push(
         `pass_to_pass: agent-added test codeunit ${cu} did not complete on ${first.container} and on ${second.container} (the trusted control passed on ${second.container}): the agent's failure`,
       );
@@ -510,6 +535,7 @@ async function runAgentTests(
     return inOrder([...kept, ...rerunRows]);
   } catch (err) {
     if (!infraThrown(err)) throw err;
+    record("infra_again");
     infraNote("agent-added test rerun", err);
     return inOrder([...kept, ...infraRowsFor(ambiguous)]);
   }
