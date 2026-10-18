@@ -1656,6 +1656,50 @@ Deno.test("buildApps (H-27 r2 #3): the cache is best-effort: a failing read is a
   }
 });
 
+Deno.test("buildApps (H-27 r3): an unreadable cache hit (copy fails) is compiled normally; the build and its dependents succeed", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const bc = new FakeBc();
+  // get names a file that cannot be read (gone, locked, no permission).
+  const missing = join(await tmp(), "CentralGauge_CGR Core_1.0.0.0.app");
+  const cache = {
+    get: () => Promise.resolve(missing),
+    put: () => Promise.resolve(),
+  };
+  const built = await cached(bc, "C1", ws, lk, cache);
+  assert(built.every((b) => b.ok));
+  assertEquals(bc.compiles, ["Core", "Rental", "Test"]);
+  for (const b of built) {
+    assert(
+      (await readApp(b.file!)).folder === b.folder,
+      "a complete own build",
+    );
+  }
+});
+
+Deno.test("buildApps (H-27 r3): a failed winner adoption keeps the untouched fresh build, unkeyed; dependents compile against it", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const bc = new FakeBc();
+  // The write succeeds but the read-back names an unreadable winner.
+  const missing = join(await tmp(), "CentralGauge_CGR Core_1.0.0.0.app");
+  let puts = 0;
+  const cache = {
+    get: () => Promise.resolve(puts > 0 ? missing : null),
+    put: () => (puts++, Promise.resolve()),
+  };
+  const built = await cached(bc, "C1", ws, lk, cache);
+  assert(built.every((b) => b.ok));
+  assertEquals(bc.compiles, ["Core", "Rental", "Test"]);
+  assert(built.every((b) => b.key === undefined), "nothing adopted is keyed");
+  for (const b of built) {
+    assert(
+      (await readApp(b.file!)).folder === b.folder,
+      "the fresh build is intact",
+    );
+  }
+});
+
 Deno.test("dirBuildCache (H-27 r2 #3): a put onto an existing complete entry keeps the winner; onto an incomplete one it fails", async () => {
   const dir = await tmp();
   const cache = dirBuildCache(dir);

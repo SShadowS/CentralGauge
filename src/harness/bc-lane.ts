@@ -826,9 +826,28 @@ export async function buildApps(
       );
       continue;
     }
+    // H-27 r3: a hit that cannot be materialized (unreadable, locked) is a
+    // miss: it is copied aside and renamed into place only once complete, so
+    // a failure leaves no partial file (and touches no other file), and the
+    // app is compiled normally.
+    const reused = hit ? join(o.outDir, ".apps", basename(hit)) : null;
+    if (hit && reused) {
+      const tmp = `${reused}.tmp-${crypto.randomUUID()}`;
+      try {
+        await Deno.copyFile(hit, tmp);
+        await Deno.rename(tmp, reused);
+      } catch (err) {
+        await Deno.remove(tmp).catch(() => {});
+        console.warn(
+          `[WARN] build cache entry for ${app.folder} unreadable (built instead): ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+        hit = null;
+      }
+    }
     if (hit) {
-      const file = join(o.outDir, ".apps", basename(hit));
-      await Deno.copyFile(hit, file);
+      const file = reused!;
       files.set(app.folder, file);
       keys.set(app.folder, key!);
       out.push({
@@ -948,7 +967,16 @@ export async function buildApps(
           await o.cache!.put(key, file);
           const won = await o.cache!.get(key);
           if (won === null) throw new Error("no entry after the write");
-          await Deno.copyFile(won, file);
+          // H-27 r3: the winner is copied aside and replaces the fresh build
+          // only once complete; on any failure the fresh build stays, unkeyed.
+          const tmp = `${file}.tmp-${crypto.randomUUID()}`;
+          try {
+            await Deno.copyFile(won, tmp);
+            await Deno.rename(tmp, file);
+          } catch (err) {
+            await Deno.remove(tmp).catch(() => {});
+            throw err;
+          }
           keys.set(app.folder, key);
         } catch (err) {
           console.warn(
