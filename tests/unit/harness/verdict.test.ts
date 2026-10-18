@@ -224,12 +224,12 @@ Deno.test("scorer suite: every scorer, one fingerprint for every task kind", () 
   ]);
 });
 
-Deno.test("scorer suite (H-26): pass_to_pass is 4 (agent-added test reruns); the others are unchanged", () => {
+Deno.test("scorer suite (H-26, H-30): pass_to_pass 4 by H-26 (agent-added test reruns); all four bumped by H-30 (merged helper)", () => {
   assertEquals(SCORER_SUITE, {
-    build: "2",
-    pass_to_pass: "4",
-    fail_to_pass: "2",
-    mutant_kill: "4",
+    build: "3",
+    pass_to_pass: "5",
+    fail_to_pass: "3",
+    mutant_kill: "5",
   });
 });
 

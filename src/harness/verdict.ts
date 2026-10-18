@@ -66,20 +66,24 @@ import {
 export const SCORER_SUITE: Record<string, string> = {
   // 2: plain procedures added to a shipped helper codeunit are kept in the
   // verdict Test app, which every scorer builds (H-21; all four bumped).
-  build: "2",
+  // 3: the shipped helper is merged with the agent's additions, shipped
+  // members always as shipped, and internalsVisibleTo naming the Test app is
+  // kept (H-30, owner 2026-10-18 "merge, shipped wins"; all four bumped).
+  build: "3",
   // 2: a change task's agent-added tests include those extracted from
   // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
   // 3: added helper procedures kept (H-21).
   // 4: a thrown or timed-out agent-added test is rerun behind a trusted control
   // (H-26, decision 2026-09-25-agent-suite-infra item 3).
-  pass_to_pass: "4",
-  // 2: added helper procedures kept (H-21).
-  fail_to_pass: "2",
+  // 5: helper merge, shipped wins (H-30).
+  pass_to_pass: "5",
+  // 2: added helper procedures kept (H-21). 3: helper merge (H-30).
+  fail_to_pass: "3",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
   // 3: [Test] procedures added to shipped test codeunits are extracted into
   // a generated codeunit, with the credit rules (M4-17a).
-  // 4: added helper procedures kept (H-21).
-  mutant_kill: "4",
+  // 4: added helper procedures kept (H-21). 5: helper merge (H-30).
+  mutant_kill: "5",
 };
 type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
 
