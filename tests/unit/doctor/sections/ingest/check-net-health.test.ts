@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkNetHealth } from "../../../../../src/doctor/sections/ingest/check-net-health.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 function makeFetch(impl: typeof fetch): typeof fetch {
   return impl;
@@ -11,7 +12,7 @@ async function withTmpConfig<T>(
   url: string,
   body: (cwd: string) => Promise<T>,
 ): Promise<T> {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   await Deno.writeTextFile(
     `${tmp}/.centralgauge.yml`,
     `ingest:\n  url: ${url}\n  key_id: 1\n  key_path: /k\n  machine_id: m\n`,

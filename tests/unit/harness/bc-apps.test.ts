@@ -14,6 +14,7 @@ import {
 } from "../../../src/harness/bc-apps.ts";
 import type { StagedApp } from "../../../src/harness/staging.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const id = (n: number) => `c6a1e000-0000-4000-8000-00000000000${n}`;
 const app = (folder: string, n: number, depends: string[] = []): StagedApp => ({
@@ -257,7 +258,7 @@ Deno.test("applySync: removed ids leave the ledger, published ids enter it", () 
 });
 
 Deno.test("appStamps: a dependency change moves dependents, not the other way", async () => {
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   await write(
     ws,
     "Core/app.json",
@@ -286,7 +287,7 @@ Deno.test("appStamps: a dependency change moves dependents, not the other way", 
 });
 
 Deno.test("appStamps: a changed symbols lock or compiler identity moves every stamp", async () => {
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   await write(
     ws,
     "Core/app.json",
@@ -315,7 +316,7 @@ Deno.test("invalidate: every id the sync touches leaves the ledger before the mu
 });
 
 Deno.test("trustedHarnessAppIds: staged harness manifests and named ledger entries only", async () => {
-  const staged = await Deno.realPath(await Deno.makeTempDir());
+  const staged = await Deno.realPath(await testTempDir());
   await write(
     staged,
     "Core/app.json",
@@ -340,7 +341,7 @@ Deno.test("trustedHarnessAppIds: staged harness manifests and named ledger entri
   );
   foreign.publisher = "Continia";
   await write(staged, "Foreign/app.json", JSON.stringify(foreign));
-  const oracle = await Deno.realPath(await Deno.makeTempDir());
+  const oracle = await Deno.realPath(await testTempDir());
   await write(
     oracle,
     "app.json",

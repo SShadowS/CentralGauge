@@ -48,6 +48,7 @@ import {
   mockImageBehavior,
   type TestEnv,
 } from "./runtime-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function experiment(
   t: TestEnv,
@@ -244,7 +245,7 @@ Deno.test("an unconfirmed sandbox termination stops the campaign with the intent
 });
 
 Deno.test("a credential-bearing arm is refused without egress enforcement; with it, the campaign runs unattended", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await write(
     t.harnessRoot,
@@ -271,7 +272,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
 });
 
 Deno.test("H-13: --unverified-egress-ok runs a credential-bearing campaign unattended; campaign, every execution and the report carry egress_override", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await write(
     t.harnessRoot,
@@ -1243,7 +1244,7 @@ preregistration: ${PR_REL}
     "harness-v2-prereg-a",
     `protocol_sha256: ${approved}`,
   );
-  const decisions = await Deno.makeTempDir();
+  const decisions = await testTempDir();
   const decisionA = join(decisions, "2026-10-24-harness-v2-prereg-a.md");
   await Deno.writeTextFile(
     decisionA,

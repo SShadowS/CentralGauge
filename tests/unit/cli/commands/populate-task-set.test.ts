@@ -2,6 +2,7 @@ import { describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { readTasksFromDir } from "../../../../cli/commands/populate-task-set-command.ts";
+import { testTempDir } from "../../../utils/temp-dir.ts";
 
 async function writeTask(
   tasksDir: string,
@@ -16,7 +17,7 @@ async function writeTask(
 
 describe("readTasksFromDir", () => {
   it("extracts the domains array onto the task row", async () => {
-    const tasksDir = await Deno.makeTempDir({ prefix: "cg-pts-" });
+    const tasksDir = await testTempDir({ prefix: "cg-pts-" });
     try {
       await writeTask(
         tasksDir,
@@ -44,7 +45,7 @@ metrics:
   });
 
   it("defaults domains to an empty array when the key is absent", async () => {
-    const tasksDir = await Deno.makeTempDir({ prefix: "cg-pts-" });
+    const tasksDir = await testTempDir({ prefix: "cg-pts-" });
     try {
       await writeTask(
         tasksDir,
@@ -70,7 +71,7 @@ metrics:
   });
 
   it("drops non-string elements from a mixed domains array", async () => {
-    const tasksDir = await Deno.makeTempDir({ prefix: "cg-pts-" });
+    const tasksDir = await testTempDir({ prefix: "cg-pts-" });
     try {
       await writeTask(
         tasksDir,

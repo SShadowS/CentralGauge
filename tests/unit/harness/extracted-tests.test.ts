@@ -22,8 +22,9 @@ import {
   normalizeAlBody,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 const GEN = `Test/${EXTRACTED_TEST_DIR}/Extracted84990.Codeunit.al`;
 
 const SHIPPED_OTHER =

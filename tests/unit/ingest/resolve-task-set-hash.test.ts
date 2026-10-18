@@ -14,9 +14,10 @@ import {
   computeTaskSetHash,
   resolveIngestTaskSetHash,
 } from "../../../src/ingest/mod.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function makeTaskTree(body: string): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-tsh-" });
+  const dir = await testTempDir({ prefix: "cg-tsh-" });
   await Deno.mkdir(join(dir, "tasks"), { recursive: true });
   await Deno.writeTextFile(join(dir, "tasks", "t.yml"), body);
   return dir;

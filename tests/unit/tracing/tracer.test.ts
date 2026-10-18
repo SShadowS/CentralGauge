@@ -15,13 +15,14 @@ import {
   initTracer,
   resolveTracePath,
 } from "../../../src/tracing/tracer.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // Tests must close the tracer between cases so the singleton doesn't leak.
 
 async function withTracer(
   fn: (filePath: string) => Promise<void> | void,
 ): Promise<TraceEvent[]> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-tracer-test-" });
+  const dir = await testTempDir({ prefix: "cg-tracer-test-" });
   const file = `${dir}/trace.json`;
   try {
     initTracer(file);
@@ -213,7 +214,7 @@ Deno.test("active tracer redacts string args and caps length", async () => {
 });
 
 Deno.test("active tracer writes valid Chrome Trace JSON on close", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-tracer-test-" });
+  const dir = await testTempDir({ prefix: "cg-tracer-test-" });
   const file = `${dir}/trace.json`;
   try {
     initTracer(file);
@@ -248,7 +249,7 @@ Deno.test("active tracer ts is bench-relative and monotonic", async () => {
 });
 
 Deno.test("getUnixOriginMicros() returns a positive number when active", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-tracer-test-" });
+  const dir = await testTempDir({ prefix: "cg-tracer-test-" });
   try {
     initTracer(`${dir}/trace.json`);
     const origin = getUnixOriginMicros();
@@ -303,7 +304,7 @@ Deno.test("resolveTracePath: nothing set -> null", () => {
 });
 
 Deno.test("initTracer is idempotent on subsequent calls", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-tracer-test-" });
+  const dir = await testTempDir({ prefix: "cg-tracer-test-" });
   try {
     const a = initTracer(`${dir}/a.json`);
     const b = initTracer(`${dir}/b.json`);
@@ -315,7 +316,7 @@ Deno.test("initTracer is idempotent on subsequent calls", async () => {
 });
 
 Deno.test("trace file is valid JSON after close, no .tmp leftover", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-tracer-test-" });
+  const dir = await testTempDir({ prefix: "cg-tracer-test-" });
   const file = `${dir}/trace.json`;
   try {
     initTracer(file);

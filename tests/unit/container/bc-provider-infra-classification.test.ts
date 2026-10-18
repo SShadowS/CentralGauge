@@ -17,6 +17,7 @@ import {
 } from "../../../src/container/bc-container-provider.ts";
 import { ContainerError } from "../../../src/errors.ts";
 import { classifyInfraError } from "../../../src/health/classify.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // ---------------------------------------------------------------------------
 // C1 — SOAP zero-tests guard
@@ -50,7 +51,7 @@ function zeroTestsSoapResponse(): string {
 }
 
 Deno.test("C1: SOAP zero-tests after successful publish throws ContainerError(test) matching the zero_tests signature", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "cg-zero-tests-" });
+  const tempDir = await testTempDir({ prefix: "cg-zero-tests-" });
   const originalFetch = globalThis.fetch;
   const originalSoapKnob = Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER");
   try {

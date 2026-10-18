@@ -30,6 +30,7 @@ import {
 import { loadTask } from "../../../src/harness/task.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { appJson, git, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function stage(repo: Awaited<ReturnType<typeof makeRefappRepo>>) {
   const task = await loadTask(join(repo.tasksDir, "HX-001"));
@@ -42,13 +43,13 @@ async function stage(repo: Awaited<ReturnType<typeof makeRefappRepo>>) {
       refapp,
       symbols: repo.symbols,
       symbolStore: repo.symbolStore,
-      out: join(await Deno.realPath(await Deno.makeTempDir()), "stage"),
+      out: join(await Deno.realPath(await testTempDir()), "stage"),
     }),
   };
 }
 
 Deno.test("stageRefappTask: refapp at the commit, overlay, deletions, symbols, C:\\task", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   const { task, staged: s } = await stage(repo);
   assertEquals(TASK_SOURCES.refapp, stageRefappTask);
   assertEquals(s.apps.map((a) => a.folder), ["Core", "Rental", "Test"]);
@@ -84,7 +85,7 @@ Deno.test("stageRefappTask: refapp at the commit, overlay, deletions, symbols, C
 });
 
 Deno.test("applyOverlay: merges into a populated workspace; a linked destination or a case alias is refused", async () => {
-  const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+  const tmp = async () => await Deno.realPath(await testTempDir());
   const ws = await tmp();
   await write(ws, "Rental/src/Rental.al", "old");
   await write(ws, "Core/src/Core.al", "core");
@@ -119,7 +120,7 @@ Deno.test("applyOverlay: merges into a populated workspace; a linked destination
 });
 
 Deno.test("stageRefappTask: a symbol store entry that does not match the lock is refused", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   await Deno.writeTextFile(
     join(repo.symbolStore, `${repo.symbols[0]!.sha256}.app`),
     "tampered",
@@ -129,14 +130,14 @@ Deno.test("stageRefappTask: a symbol store entry that does not match the lock is
 
 Deno.test("stageRefappTask: a .delete entry that escapes or is missing is refused", async () => {
   for (const line of ["../outside.al", "Rental/src/Nope.al"]) {
-    const repo = await makeRefappRepo();
+    await using repo = await makeRefappRepo();
     await write(repo.tasksDir, "HX-001/overlay/.delete", `${line}\n`);
     await assertRejects(() => stage(repo), ValidationError, ".delete");
   }
 });
 
 Deno.test("readAppGraph: topological with name tie-break; a cycle is loud", async () => {
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   const a = "c6a1e000-0000-4000-8000-0000000000a1";
   const b = "c6a1e000-0000-4000-8000-0000000000b1";
   const c = "c6a1e000-0000-4000-8000-0000000000c1";
@@ -162,8 +163,8 @@ Deno.test("readAppGraph: topological with name tie-break; a cycle is loud", asyn
 });
 
 Deno.test("buildSymbolsLock: digest store, lower-case ids, sorted by app id", async () => {
-  const from = await Deno.realPath(await Deno.makeTempDir());
-  const store = await Deno.realPath(await Deno.makeTempDir());
+  const from = await Deno.realPath(await testTempDir());
+  const store = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(from, "Microsoft_System_28.0.0.0.app"), "sys");
   await Deno.writeTextFile(
     join(from, "Microsoft_Base Application_28.0.0.0.app"),
@@ -231,7 +232,7 @@ Deno.test("altoolReader: parses GetPackageManifest JSON; a failing altool is lou
 });
 
 Deno.test("applyOverlay: .delete never reaches through a link, the root or an excluded path", async () => {
-  const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+  const tmp = async () => await Deno.realPath(await testTempDir());
   const ws = await tmp();
   await write(ws, "Rental/src/Rental.al", "r");
   await write(ws, "Test/a.al", "t");
@@ -273,7 +274,7 @@ Deno.test("applyOverlay: .delete never reaches through a link, the root or an ex
 });
 
 Deno.test("stageRefappTask: text files are staged byte-exact under core.autocrlf=true", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   await git(repo.root, "config", "core.autocrlf", "true");
   await write(
     repo.root,
@@ -294,11 +295,11 @@ Deno.test("stageRefappTask: text files are staged byte-exact under core.autocrlf
 });
 
 Deno.test("stageRefappTask: a failed staging leaves nothing behind; a retry into the same out works", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   const store = join(repo.symbolStore, `${repo.symbols[0]!.sha256}.app`);
   const good = await Deno.readFile(store);
   await Deno.writeTextFile(store, "tampered");
-  const out = join(await Deno.realPath(await Deno.makeTempDir()), "stage");
+  const out = join(await Deno.realPath(await testTempDir()), "stage");
   const o = {
     repoRoot: repo.root,
     task: await loadTask(join(repo.tasksDir, "HX-001")),
@@ -318,7 +319,7 @@ Deno.test("stageRefappTask: a failed staging leaves nothing behind; a retry into
 });
 
 Deno.test("readAppGraph: two apps with the same id are refused", async () => {
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   await write(
     ws,
     "Rental/app.json",
@@ -354,7 +355,7 @@ Deno.test("stageRefappTask: an overlay may not write or delete anything under Te
     ["HX-001/overlay/test/src/New.Test.al", "codeunit 80011 Y {}"],
   ];
   for (const [rel, text] of edits) {
-    const repo = await makeRefappRepo();
+    await using repo = await makeRefappRepo();
     await write(repo.tasksDir, rel, text);
     await assertRejects(
       () => stage(repo),
@@ -363,7 +364,7 @@ Deno.test("stageRefappTask: an overlay may not write or delete anything under Te
       rel,
     );
   }
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   const { staged } = await stage(repo);
   assertStringIncludes(
     await Deno.readTextFile(
@@ -374,7 +375,7 @@ Deno.test("stageRefappTask: an overlay may not write or delete anything under Te
 });
 
 Deno.test("stageRefappTask: symbols are verified on the copy, every staging", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   await stage(repo);
   await Deno.writeTextFile(
     join(repo.symbolStore, `${repo.symbols[0]!.sha256}.app`),
@@ -384,8 +385,8 @@ Deno.test("stageRefappTask: symbols are verified on the copy, every staging", as
 });
 
 Deno.test("stageRefappTask: pre-existing content in out is never deleted", async () => {
-  const repo = await makeRefappRepo();
-  const out = join(await Deno.realPath(await Deno.makeTempDir()), "stage");
+  await using repo = await makeRefappRepo();
+  const out = join(await Deno.realPath(await testTempDir()), "stage");
   await write(out, "workspace/keep.al", "mine");
   await assertRejects(
     async () =>
@@ -414,8 +415,8 @@ Deno.test("TAR_BINARY is an absolute, pinned path", () => {
 });
 
 Deno.test("stageRefappTask: a permitted empty out/workspace is emptied back on failure; the retry works", async () => {
-  const repo = await makeRefappRepo();
-  const out = join(await Deno.realPath(await Deno.makeTempDir()), "stage");
+  await using repo = await makeRefappRepo();
+  const out = join(await Deno.realPath(await testTempDir()), "stage");
   await Deno.mkdir(join(out, "workspace"), { recursive: true });
   const store = join(repo.symbolStore, `${repo.symbols[0]!.sha256}.app`);
   const good = await Deno.readFile(store);
@@ -439,7 +440,7 @@ Deno.test("stageRefappTask: a permitted empty out/workspace is emptied back on f
 });
 
 Deno.test("stageRefappTask: shipped tests are compared by raw bytes (CRLF vs LF is a difference)", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   // An eol attribute makes git archive write CRLF; listTree normalizes that away.
   await write(repo.root, ".gitattributes", "*.al text eol=crlf\n");
   await git(repo.root, "add", ".");
@@ -453,8 +454,8 @@ Deno.test("stageRefappTask: shipped tests are compared by raw bytes (CRLF vs LF 
 });
 
 Deno.test("lockMicrosoftSymbols: locks Microsoft apps only, reports the rest, refuses none", async () => {
-  const from = await Deno.realPath(await Deno.makeTempDir());
-  const store = await Deno.realPath(await Deno.makeTempDir());
+  const from = await Deno.realPath(await testTempDir());
+  const store = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(from, "Microsoft_System_28.0.0.0.app"), "sys");
   await Deno.writeTextFile(
     join(from, "CentralGauge_CG-AL-H028 Prereq_1.0.0.0.app"),
@@ -492,7 +493,7 @@ Deno.test("lockMicrosoftSymbols: locks Microsoft apps only, reports the rest, re
     async () =>
       lockMicrosoftSymbols(
         from,
-        await Deno.realPath(await Deno.makeTempDir()),
+        await Deno.realPath(await testTempDir()),
         read,
       ),
     ValidationError,
@@ -501,7 +502,7 @@ Deno.test("lockMicrosoftSymbols: locks Microsoft apps only, reports the rest, re
 });
 
 Deno.test("readAppJson and readAppGraph accept a UTF-8 BOM app.json (PowerShell 5 Set-Content -Encoding UTF8)", async () => {
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   await write(
     ws,
     "Core/app.json",

@@ -33,6 +33,7 @@ import {
 import { isBenchRunning } from "../../../src/utils/bench-lock.ts";
 import { ConfigManager } from "../../../src/config/config.ts";
 import { resolveContainerCredentials } from "../../../cli/commands/workbench-command.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const CONTAINER = Deno.env.get("CENTRALGAUGE_SMOKE_CONTAINER");
 const TASK_ID = "CG-SMOKE-001";
@@ -78,7 +79,7 @@ const ORACLE = `codeunit ${TEST_CODEUNIT_ID} "CG Smoke Probe Test"
 
 /** Builds a throwaway draft laid out the way `stageResponse` expects. */
 async function makeDraft(): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-smoke-draft-" });
+  const dir = await testTempDir({ prefix: "cg-smoke-draft-" });
   await Deno.mkdir(join(dir, "correct"), { recursive: true });
   await Deno.writeTextFile(
     join(dir, "task.yml"),

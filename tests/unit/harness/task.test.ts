@@ -2,6 +2,7 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { loadTask, loadTaskSet } from "../../../src/harness/task.ts";
 import { ValidationError } from "../../../src/errors.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const VALID = `id: HX-001
 refapp_version: refapp-v1
@@ -37,7 +38,7 @@ async function makeTask(
 }
 
 Deno.test("loadTask: valid task gets defaults", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const { task } = await loadTask(await makeTask(root, "HX-001", VALID));
   assertEquals(task.attachments, []);
   assertEquals(task.mutants, []);
@@ -106,7 +107,7 @@ const BAD: Array<[string, string, string]> = [
 
 for (const [name, yml, needle] of BAD) {
   Deno.test(`loadTask: rejects ${name}`, async () => {
-    const root = await Deno.makeTempDir();
+    const root = await testTempDir();
     const err = await assertRejects(
       async () => await loadTask(await makeTask(root, "HX-001", yml)),
       ValidationError,
@@ -116,7 +117,7 @@ for (const [name, yml, needle] of BAD) {
 }
 
 Deno.test("loadTask: coupling tags are normalized", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const yml = VALID.replace(
     "coupling: [events]",
     "coupling: [' Events', events, Interface]",
@@ -126,8 +127,8 @@ Deno.test("loadTask: coupling tags are normalized", async () => {
 });
 
 Deno.test("loadTask: a linked oracle folder or attachment is refused", async () => {
-  const root = await Deno.makeTempDir();
-  const outside = await Deno.makeTempDir();
+  const root = await testTempDir();
+  const outside = await testTempDir();
   const yml = VALID.replace(
     "source: refapp",
     "source: refapp\nattachments: [shots]",
@@ -142,7 +143,7 @@ Deno.test("loadTask: a linked oracle folder or attachment is refused", async () 
 });
 
 Deno.test("loadTask: id must match folder, files must exist", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const dir = await makeTask(root, "HX-002", VALID, []);
   const err = await assertRejects(() => loadTask(dir), ValidationError);
   assertStringIncludes(err.message, "does not match folder HX-002");
@@ -151,7 +152,7 @@ Deno.test("loadTask: id must match folder, files must exist", async () => {
 });
 
 Deno.test("loadTask: test-authoring needs correct/ and its mutant folders", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const yml = `id: HX-003
 refapp_version: refapp-v1
 kind: test-authoring
@@ -167,7 +168,7 @@ mutants: [off-by-one]
 });
 
 Deno.test("loadTaskSet: sorted, and reports every broken task at once", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await makeTask(root, "HX-002", VALID.replace("HX-001", "HX-002"));
   await makeTask(root, "HX-001", VALID);
   assertEquals(
@@ -182,15 +183,15 @@ Deno.test("loadTaskSet: sorted, and reports every broken task at once", async ()
 
 Deno.test("loadTaskSet: empty folder is an error", async () => {
   await assertRejects(
-    async () => await loadTaskSet(await Deno.makeTempDir()),
+    async () => await loadTaskSet(await testTempDir()),
     ValidationError,
     "No tasks found",
   );
 });
 
 Deno.test("loadTask: a path under a linked ancestor folder is refused", async () => {
-  const root = await Deno.makeTempDir();
-  const outside = await Deno.makeTempDir();
+  const root = await testTempDir();
+  const outside = await testTempDir();
   await Deno.writeTextFile(join(outside, "a.png"), "x");
   const yml = VALID.replace(
     "source: refapp",

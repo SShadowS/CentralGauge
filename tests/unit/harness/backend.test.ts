@@ -32,10 +32,11 @@ import { readAppGraph } from "../../../src/harness/staging.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { FakeBc, result } from "./fake-bc.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const EXEC_A = "00000000-0000-4000-8000-00000000e001";
 const EXEC_B = "00000000-0000-4000-8000-00000000e002";
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 /** The real reparse scan (pwsh, about a second) is covered in fsutil.test.ts; here it is a no-op seam. */
 const NO_SCAN = () =>
   Promise.resolve({ ancestors: [], entries: [], seen: 0, capped: false });

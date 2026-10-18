@@ -12,6 +12,7 @@ import {
 } from "../../../src/harness/identity.ts";
 import { hashJson, hashTree, listTree } from "../../../src/harness/hash.ts";
 import { loadTaskSet } from "../../../src/harness/task.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const TASK = (id: string) =>
   `id: ${id}
@@ -44,7 +45,7 @@ async function git(root: string, ...args: string[]) {
 
 /** Temp repo with a tagged refapp and two tasks. */
 async function fixtureRepo(): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
   await git(root, "config", "user.name", "t");
@@ -197,7 +198,7 @@ const A = "00000000-0000-4000-8000-00000000000a";
 const B = "00000000-0000-4000-8000-00000000000b";
 
 Deno.test("loadSymbolsLock: absent is null, packages sorted by app_id", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   assertEquals(await loadSymbolsLock(root), null);
   await write(
     root,
@@ -218,7 +219,7 @@ Deno.test("loadSymbolsLock: duplicates, bad digests, unknown version and bad JSO
     "{ not json",
   ];
   for (const text of cases) {
-    const root = await Deno.makeTempDir();
+    const root = await testTempDir();
     await write(root, "harness-tasks/symbols.lock.json", text);
     await assertRejects(
       () => loadSymbolsLock(root),
@@ -229,7 +230,7 @@ Deno.test("loadSymbolsLock: duplicates, bad digests, unknown version and bad JSO
 });
 
 Deno.test("loadSymbolsLock: app_ids differing only in case are duplicates", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await write(
     root,
     "harness-tasks/symbols.lock.json",

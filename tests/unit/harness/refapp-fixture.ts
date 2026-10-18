@@ -8,6 +8,7 @@ import { join } from "@std/path";
 import { hashFile } from "../../../src/harness/hash.ts";
 import type { SymbolPackage } from "../../../src/harness/identity.ts";
 import { writeSymbolsLock } from "../../../src/harness/symbols.ts";
+import { removeTempDir, testTempDir } from "../../utils/temp-dir.ts";
 
 export const IDS = {
   core: "c6a1e000-0000-4000-8000-000000000001",
@@ -80,7 +81,8 @@ fail_to_pass:
 limits: { timeout_min: 20 }
 `;
 
-export interface RefappRepo {
+/** `await using repo = await makeRefappRepo()` removes root and symbolStore (GH #28). */
+export interface RefappRepo extends AsyncDisposable {
   root: string;
   tasksDir: string;
   symbolStore: string;
@@ -89,7 +91,7 @@ export interface RefappRepo {
 
 export async function makeRefappRepo(): Promise<RefappRepo> {
   const root = await Deno.realPath(
-    await Deno.makeTempDir({ prefix: "cg-refapp-" }),
+    await testTempDir({ prefix: "cg-refapp-" }),
   );
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
@@ -180,7 +182,7 @@ export async function makeRefappRepo(): Promise<RefappRepo> {
   );
 
   const symbolStore = await Deno.realPath(
-    await Deno.makeTempDir({ prefix: "cg-symstore-" }),
+    await testTempDir({ prefix: "cg-symstore-" }),
   );
   const file = "Microsoft_Library Assert_28.0.0.0.app";
   const tmp = join(symbolStore, file);
@@ -201,6 +203,10 @@ export async function makeRefappRepo(): Promise<RefappRepo> {
     tasksDir: join(root, "harness-tasks", "tasks"),
     symbolStore,
     symbols,
+    async [Symbol.asyncDispose]() {
+      await removeTempDir(root);
+      await removeTempDir(symbolStore);
+    },
   };
 }
 

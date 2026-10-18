@@ -21,6 +21,7 @@ import {
 import { createMockTaskManifest } from "../../utils/test-helpers.ts";
 import { frozenInputs } from "../../utils/batch-fixtures.ts";
 import type { TaskManifest } from "../../../src/tasks/interfaces.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const TASK_ID = "CG-AL-E001";
 const TASK_YAML_REL = "tasks/easy/CG-AL-E001-basic-table.yml";
@@ -81,7 +82,7 @@ async function setupCheckout(): Promise<
   { root: string; manifests: Map<string, TaskManifest> }
 > {
   const repoRoot = Deno.cwd();
-  const root = await Deno.makeTempDir({ prefix: "cg-batch-drift-" });
+  const root = await testTempDir({ prefix: "cg-batch-drift-" });
 
   await copyFile(join(repoRoot, TASK_YAML_REL), join(root, TASK_YAML_REL));
 

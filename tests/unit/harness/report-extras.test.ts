@@ -9,6 +9,7 @@ import {
 } from "../../../src/harness/report.ts";
 import type { VerdictLog } from "../../../src/harness/verdict.ts";
 import { campaign, execution, judgment, telemetry } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /** plain: HX-001 pass, HX-002 fail; skills: both pass. */
 async function records(): Promise<CampaignRecords> {
@@ -218,7 +219,7 @@ Deno.test("both-pass table is descriptive and matched on scored cells only", asy
 
 Deno.test("loadReportLogs reads the published host logs and verdict logs; missing files are absent", async () => {
   const r = await records();
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const [p1] = r.executions;
   await Deno.mkdir(join(root, "runs", p1!.id), { recursive: true });
   await Deno.writeTextFile(

@@ -26,8 +26,9 @@ import { hashFile } from "../../../src/harness/hash.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
 import { type FakeApp, FakeBc, result } from "./fake-bc.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir, trackTempDir } from "../../utils/temp-dir.ts";
 
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 
 async function workspace(): Promise<string> {
   const ws = await tmp();
@@ -409,7 +410,7 @@ Deno.test("deployAndTest: tests throwing together with a cleanup failure quarant
           }],
           cleanupIds: [IDS.test],
           ctx: {
-            ledgerRoot: Deno.makeTempDirSync(),
+            ledgerRoot: trackTempDir(Deno.makeTempDirSync()),
             trustedRoots: [p.pristine],
           },
         }),

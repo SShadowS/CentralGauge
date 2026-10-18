@@ -36,6 +36,7 @@ import type { PricingBook } from "../../../src/harness/pricing.ts";
 import type { Telemetry } from "../../../src/harness/records.ts";
 import { outcomePolicy } from "../../../src/harness/records.ts";
 import { manifest } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const FIXTURE = "tests/fixtures/harness/claude-code/probe.jsonl";
 const BOOK: PricingBook = {
@@ -60,7 +61,7 @@ async function parse(
   exitCode: number | null = 0,
   over: Record<string, unknown> = mcpManifest(PROBE_TOOLS),
 ) {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(dir, "raw.jsonl"), text);
   return {
     dir,
@@ -584,7 +585,7 @@ Deno.test("claude-code hardening: requested skills with no skill folders are not
 });
 
 Deno.test("claude-code hardening: a missing raw log is reported", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const r = await claudeCodeAdapter.parse({
     rawLog: join(dir, "absent.jsonl"),
     exitCode: null,
@@ -678,7 +679,7 @@ Deno.test("claude-code review: a sub-agent on another model is priced from resol
     agentResult,
     result,
   ].join("\n");
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(dir, "raw.jsonl"), text);
   const r = await claudeCodeAdapter.parse({
     rawLog: join(dir, "raw.jsonl"),
@@ -794,7 +795,7 @@ Deno.test({
     "cg-al bash shim: passes every argument and the exit code through to cg-al.ps1",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.realPath(await Deno.makeTempDir());
+    const dir = await Deno.realPath(await testTempDir());
     const stub = join(dir, "stub.ps1");
     await Deno.writeTextFile(
       stub,
@@ -3892,7 +3893,7 @@ async function parseOtel(
   otel: string | null | undefined,
   over: Record<string, unknown> = armH10(),
 ) {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(dir, "raw.jsonl"), text);
   if (typeof otel === "string") {
     await Deno.writeTextFile(join(dir, "otel.jsonl"), otel);
@@ -4118,7 +4119,7 @@ async function parseOtelAs(
   over: Record<string, unknown> = armH10(),
   pricing: PricingBook = BOOK,
 ) {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(dir, "raw.jsonl"), text);
   await Deno.writeTextFile(join(dir, "otel.jsonl"), otel);
   return await claudeCodeAdapter.parse({

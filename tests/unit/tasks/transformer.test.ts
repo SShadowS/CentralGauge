@@ -7,6 +7,7 @@ import { ConfigManager } from "../../../src/config/config.ts";
 import type { TaskManifest } from "../../../types/index.ts";
 import type { TaskExecutionRequest } from "../../../src/tasks/interfaces.ts";
 import { MockEnv } from "../../utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 describe("TaskTransformer", () => {
   let tempDir: string;
@@ -23,7 +24,7 @@ describe("TaskTransformer", () => {
     mockEnv.delete("CENTRALGAUGE_TIMEOUT");
 
     // Create temp directory for templates
-    tempDir = await Deno.makeTempDir({ prefix: "transformer-test-" });
+    tempDir = await testTempDir({ prefix: "transformer-test-" });
     const templateDir = join(tempDir, "templates");
     await ensureDir(templateDir);
 

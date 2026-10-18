@@ -13,9 +13,10 @@ import {
   type CatalogV2,
   normalizeCatalog,
 } from "../../../../site/src/lib/shared/taxonomy-schema.ts";
+import { testTempDir } from "../../../utils/temp-dir.ts";
 
 Deno.test("readCatalogFile reports schema_version and refuses unknown versions", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   await Deno.writeTextFile(`${dir}/v3.yml`, "schema_version: 3\n");
   await assertRejects(
     () => readCatalogFile(`${dir}/v3.yml`),

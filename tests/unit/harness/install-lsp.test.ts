@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // Windows PowerShell 5.1 behaviour of install-lsp.ps1's check functions on temp fixtures.
 // The script is dot-sourced with -LibOnly, so the install itself never runs.
@@ -84,7 +85,7 @@ async function withTemp(
   ) => Promise<void>,
 ) {
   const base = Deno.env.get("TEMP") ?? Deno.makeTempDirSync();
-  const t = await Deno.makeTempDir({ dir: base, prefix: "installlsp-" });
+  const t = await testTempDir({ dir: base, prefix: "installlsp-" });
   try {
     const runner = join(t, "runner.ps1");
     await Deno.writeTextFile(runner, RUNNER);

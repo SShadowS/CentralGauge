@@ -8,6 +8,7 @@ import {
   parseRunnerArgs,
   runPremiseProbe,
 } from "../../../scripts/premise-probe-runner.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const base = [
   "--solution",
@@ -20,7 +21,7 @@ const base = [
 
 /** M8-01f: a coord root whose allocation gives the campaign `containers`. */
 async function coordRoot(containers: string[]): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await Deno.writeTextFile(
     join(root, "coord.json"),
     JSON.stringify({ campaign: "harness-bench-2026-10" }),

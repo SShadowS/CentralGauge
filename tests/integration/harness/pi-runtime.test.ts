@@ -14,6 +14,7 @@ import {
 import { loadPricingBook } from "../../../src/harness/pricing.ts";
 import { manifest } from "../../unit/harness/fixtures.ts";
 import { type FakeTurn, startFakeOpenRouter } from "./fake-openrouter.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const CLI = Deno.env.get("CG_PI_CLI");
 const KEY = "sk-or-v1-cgfake" + "0".repeat(48);
@@ -67,7 +68,7 @@ async function runPi(
   const fake = startFakeOpenRouter(script);
   const sink = startSink();
   assert(LOOPBACK.has(new URL(fake.baseUrl).hostname), "provider on loopback");
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const agent = join(dir, "agent");
   const ws = join(dir, "ws");
   const home = join(dir, "home");

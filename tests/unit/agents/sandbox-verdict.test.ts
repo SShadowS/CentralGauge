@@ -25,6 +25,7 @@ import {
   VERDICT_FILE,
   type VerifyVerdict,
 } from "../../../src/agents/verdict.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const NONCE = "run-nonce-1234";
 const TASK = "CG-AL-E007";
@@ -131,7 +132,7 @@ Deno.test("evaluateVerdicts (M1)", async (t) => {
 
 Deno.test("readVerdicts / appendVerdict (M1)", async (t) => {
   await t.step("round-trips verdicts through verdicts.jsonl", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-verdict-test-" });
+    const dir = await testTempDir({ prefix: "cg-verdict-test-" });
     try {
       await appendVerdict(dir, verdict());
       await appendVerdict(dir, verdict({ success: false }));
@@ -145,7 +146,7 @@ Deno.test("readVerdicts / appendVerdict (M1)", async (t) => {
   });
 
   await t.step("missing file → empty list (scores as failure)", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-verdict-test-" });
+    const dir = await testTempDir({ prefix: "cg-verdict-test-" });
     try {
       assertEquals(await readVerdicts(dir), []);
     } finally {
@@ -154,7 +155,7 @@ Deno.test("readVerdicts / appendVerdict (M1)", async (t) => {
   });
 
   await t.step("skips malformed lines instead of throwing", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-verdict-test-" });
+    const dir = await testTempDir({ prefix: "cg-verdict-test-" });
     try {
       await Deno.writeTextFile(
         join(dir, VERDICT_FILE),

@@ -10,6 +10,7 @@ import {
   loadTraces,
   traceMetrics,
 } from "../../../src/harness/trace-metrics.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const FIXTURE = "tests/fixtures/harness/claude-code/probe.jsonl";
 const lines = (text: string): Line<J>[] =>
@@ -149,7 +150,7 @@ Deno.test("traceMetrics: a v1 shell call (no command recorded) is unreplayable, 
 });
 
 Deno.test("loadTraces: a missing file behind trace_path and a path outside the root are invalid; errors carry no local root", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const exec = (id: string, trace_path: string | null, raw: unknown = null) =>
     ({
       id,
@@ -177,8 +178,8 @@ Deno.test("loadTraces: a missing file behind trace_path and a path outside the r
 });
 
 Deno.test("loadTraces: a trace reached through a junction or symlink outside the results root is invalid, never read", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
-  const outside = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
+  const outside = await Deno.realPath(await testTempDir());
   const ev = call({});
   await Deno.writeTextFile(
     join(outside, "trace.jsonl"),
@@ -236,7 +237,7 @@ const PI_HEAD = [
 ].join("\n");
 
 Deno.test("pi trace: parse, write and load round trip", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const run = join(root, "runs", "pi1");
   await Deno.mkdir(run, { recursive: true });
   const fixture = await Deno.readTextFile(

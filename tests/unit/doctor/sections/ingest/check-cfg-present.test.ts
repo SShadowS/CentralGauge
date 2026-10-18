@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkCfgPresent } from "../../../../../src/doctor/sections/ingest/check-cfg-present.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 function ctx(cwd: string): DoctorContext {
   return {
@@ -13,7 +14,7 @@ function ctx(cwd: string): DoctorContext {
 
 describe("checkCfgPresent", () => {
   it("passes when both home and project configs exist with full ingest section", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `ingest:\n  url: https://x.example.com\n  key_id: 1\n  key_path: /tmp/k\n  machine_id: m\n`,
@@ -31,7 +32,7 @@ describe("checkCfgPresent", () => {
   });
 
   it("fails when no ingest section is reachable and includes remediation", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `# no ingest section\n`,
@@ -51,7 +52,7 @@ describe("checkCfgPresent", () => {
   });
 
   it("fails when required field key_path is missing", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `ingest:\n  url: https://x.example.com\n  key_id: 1\n  machine_id: m\n`,

@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // H-03: Windows PowerShell 5.1 behaviour of install-claude-code.ps1's functions on temp
 // fixtures. The script is dot-sourced with -LibOnly, so the image install itself never runs;
@@ -83,7 +84,7 @@ async function withTemp(
   ) => Promise<void>,
 ) {
   const base = Deno.env.get("TEMP") ?? Deno.makeTempDirSync();
-  const t = await Deno.makeTempDir({ dir: base, prefix: "installcc-" });
+  const t = await testTempDir({ dir: base, prefix: "installcc-" });
   try {
     const runner = join(t, "runner.ps1");
     await Deno.writeTextFile(runner, RUNNER);

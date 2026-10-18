@@ -29,6 +29,7 @@ import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { createMockPwshProcess } from "../../utils/mock-pwsh-process.ts";
 import { MockEnv } from "../../utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("isInfraTestFailure", async (t) => {
   await t.step("unconditional infra markers => infra", () => {
@@ -977,7 +978,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1027,7 +1028,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1079,7 +1080,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1130,7 +1131,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1198,7 +1199,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1246,7 +1247,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1301,7 +1302,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1357,7 +1358,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1416,7 +1417,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1464,7 +1465,7 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = await testTempDir();
 
     try {
       mock.install();
@@ -1836,7 +1837,7 @@ Deno.test({
       return Promise.resolve({ output: stubCompileOutput, exitCode: 0 });
     };
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     // deno-lint-ignore no-explicit-any
     (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
 
@@ -1896,7 +1897,7 @@ Deno.test({
       return Promise.resolve({ output: stubCompileOutput, exitCode: 0 });
     };
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     // deno-lint-ignore no-explicit-any
     (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
 
@@ -1974,7 +1975,7 @@ Deno.test({
       sessionFactory: () => session,
     });
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     const fakeApp = `${tmpDir}\\TestPublisher_TestApp_1.0.0.0.app`;
     await Deno.writeTextFile(fakeApp, "fake-app-bytes");
 
@@ -2064,7 +2065,7 @@ Deno.test({
       },
     });
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     // deno-lint-ignore no-explicit-any
     (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
 
@@ -2128,7 +2129,7 @@ Deno.test({
       });
     };
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     const fakeApp = `${tmpDir}\\CentralGauge_CG-AL-H022 Prereq_1.0.0.0.app`;
     await Deno.writeTextFile(fakeApp, "fake-bytes");
 
@@ -2173,7 +2174,7 @@ Deno.test({
       });
     };
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     const fakeApp = `${tmpDir}\\CentralGauge_CG-AL-H022 Prereq_1.0.0.0.app`;
     await Deno.writeTextFile(fakeApp, "fake-bytes");
 
@@ -2304,7 +2305,7 @@ Deno.test({
         exitCode: 1,
       });
 
-    const tmpDir = await Deno.makeTempDir();
+    const tmpDir = await testTempDir();
     const fakeApp = `${tmpDir}\\CentralGauge_CG-AL-H022 Prereq_1.0.0.0.app`;
     await Deno.writeTextFile(fakeApp, "fake-bytes");
 
@@ -2355,7 +2356,7 @@ Deno.test("makePublishFailureTestResult: shapes a failed Publish/Install TestRes
 // =============================================================================
 
 Deno.test("clearCompilerFolders removes only CentralGauge-* directories", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const dir = await testTempDir({ prefix: "cg-compiler-" });
   try {
     await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
     await Deno.mkdir(`${dir}/CentralGauge-Cronus282`);
@@ -2376,7 +2377,7 @@ Deno.test("clearCompilerFolders also removes BCH's GUID-named folders", async ()
   // --no-compiler-cache run. Nothing swept those, so they accumulated forever
   // (37 were on the dev machine) — they are unreachable by name once the run
   // that created them exits.
-  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const dir = await testTempDir({ prefix: "cg-compiler-" });
   try {
     await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
     const guidA = `${dir}/0114ff34-7b1d-4d51-9a78-5d6d20a2d154`;
@@ -2420,7 +2421,7 @@ Deno.test("clearCompilerFolders skips a GUID folder younger than the age guard",
   // processes and can both be compiling into a fresh --no-compiler-cache
   // GUID folder at once. A folder that hasn't reached the age guard must be
   // left alone, even though its name matches GUID_FOLDER_RE exactly.
-  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const dir = await testTempDir({ prefix: "cg-compiler-" });
   try {
     const guidName = "0114ff34-7b1d-4d51-9a78-5d6d20a2d154";
     await Deno.mkdir(`${dir}/${guidName}`);
@@ -2437,7 +2438,7 @@ Deno.test("clearCompilerFolders skips a GUID folder younger than the age guard",
 });
 
 Deno.test("clearCompilerFolders removes a GUID folder once past the age guard", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const dir = await testTempDir({ prefix: "cg-compiler-" });
   try {
     const guidName = "0114ff34-7b1d-4d51-9a78-5d6d20a2d154";
     const folderPath = `${dir}/${guidName}`;
@@ -2459,7 +2460,7 @@ Deno.test("clearCompilerFolders removes CentralGauge-* folders regardless of age
   // CentralGauge-* names are deterministic per container and already
   // covered by the per-container lock, so they stay unconditional — even
   // under a generous age guard that would spare a same-age GUID folder.
-  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const dir = await testTempDir({ prefix: "cg-compiler-" });
   try {
     await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
 
@@ -2483,7 +2484,7 @@ Deno.test("clearCompilerFolders skips a GUID folder whose mtime cannot be determ
   // isolates the null-mtime branch: with a real mtime, age >= 0 always
   // clears a zero threshold, so only the explicit null check can save this
   // folder.
-  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const dir = await testTempDir({ prefix: "cg-compiler-" });
   const originalStat = Deno.stat;
   try {
     const guidName = "0114ff34-7b1d-4d51-9a78-5d6d20a2d154";
@@ -2517,7 +2518,7 @@ Deno.test("clearCompilerFolders is a no-op when the directory is absent", async 
 });
 
 Deno.test("clearCompilerFolders does NOT touch the artifact cache", async () => {
-  const root = await Deno.makeTempDir({ prefix: "cg-split-" });
+  const root = await testTempDir({ prefix: "cg-split-" });
   try {
     const compilerDir = `${root}/compiler`;
     const cacheDir = `${root}/compiler-cache`;
@@ -2537,7 +2538,7 @@ Deno.test("clearCompilerFolders does NOT touch the artifact cache", async () => 
 });
 
 Deno.test("purgeArtifactCache removes every compiler-cache-prefixed directory, including the legacy unkeyed one", async () => {
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-" });
+  const root = await testTempDir({ prefix: "cg-purge-" });
   try {
     // The legacy unkeyed dir a pre-Task-6b machine still has on disk...
     await Deno.mkdir(`${root}/compiler-cache`, { recursive: true });
@@ -2561,7 +2562,7 @@ Deno.test("purgeArtifactCache removes every compiler-cache-prefixed directory, i
 });
 
 Deno.test("purgeArtifactCache leaves unrelated siblings untouched", async () => {
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-" });
+  const root = await testTempDir({ prefix: "cg-purge-" });
   try {
     await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
       recursive: true,
@@ -2591,7 +2592,7 @@ Deno.test("purgeArtifactCache is a no-op when the root is absent", async () => {
 });
 
 Deno.test("purgeArtifactCache propagates non-NotFound errors", async () => {
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-fail-" });
+  const root = await testTempDir({ prefix: "cg-purge-fail-" });
   const original = Deno.remove;
   const testError = new Error("Permission denied");
   try {
@@ -2621,7 +2622,7 @@ Deno.test("purgeArtifactCache treats a NotFound raised while removing an already
   // found vanishing before/during its own removal (concurrent purge, broken
   // junction) — the latter must surface as a failure so an operator running
   // `doctor purge-compiler-cache` sees [FAIL], not a false [OK].
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-race-" });
+  const root = await testTempDir({ prefix: "cg-purge-race-" });
   const original = Deno.remove;
   try {
     await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
@@ -2654,7 +2655,7 @@ Deno.test("purgeArtifactCache treats a NotFound raised while removing an already
 // shape the CLI now depends on to report honestly.
 
 Deno.test("purgeArtifactCache returns zero removed and empty skipped when nothing matches", async () => {
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-empty-" });
+  const root = await testTempDir({ prefix: "cg-purge-empty-" });
   try {
     await Deno.mkdir(`${root}/someone-elses-folder`, { recursive: true });
 
@@ -2667,7 +2668,7 @@ Deno.test("purgeArtifactCache returns zero removed and empty skipped when nothin
 });
 
 Deno.test("purgeArtifactCache returns the real removed count on a normal purge", async () => {
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-count-" });
+  const root = await testTempDir({ prefix: "cg-purge-count-" });
   try {
     await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
       recursive: true,
@@ -2690,7 +2691,7 @@ Deno.test("purgeArtifactCache skips (but does not delete) a cache-prefixed entry
   // cache dir must never be silently folded into "nothing to purge"; it
   // must come back in `skipped` so the caller can report an incomplete
   // purge instead of a false [OK].
-  const root = await Deno.makeTempDir({ prefix: "cg-purge-junction-" });
+  const root = await testTempDir({ prefix: "cg-purge-junction-" });
   const originalReadDir = Deno.readDir;
   try {
     await Deno.mkdir(`${root}/compiler-cache-realdir`, { recursive: true });

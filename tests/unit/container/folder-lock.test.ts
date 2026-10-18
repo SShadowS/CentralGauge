@@ -1,8 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { acquireLock } from "../../../src/container/folder-lock.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("acquireLock takes a free lock and releases it", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lock-" });
+  const dir = await testTempDir({ prefix: "cg-lock-" });
   try {
     const lock = await acquireLock(`${dir}/a.lock`);
     assertEquals(lock.acquired, true);
@@ -17,7 +18,7 @@ Deno.test("acquireLock takes a free lock and releases it", async () => {
 });
 
 Deno.test("acquireLock times out when the lock is held by a live process", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lock-busy-" });
+  const dir = await testTempDir({ prefix: "cg-lock-busy-" });
   try {
     const held = await acquireLock(`${dir}/b.lock`);
     assertEquals(held.acquired, true);
@@ -35,7 +36,7 @@ Deno.test("acquireLock times out when the lock is held by a live process", async
 });
 
 Deno.test("acquireLock breaks a stale lock", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lock-stale-" });
+  const dir = await testTempDir({ prefix: "cg-lock-stale-" });
   try {
     // A lock file from a process that died without releasing.
     await Deno.writeTextFile(
@@ -54,7 +55,7 @@ Deno.test("acquireLock breaks a stale lock", async () => {
 });
 
 Deno.test("release is safe to call twice", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lock-rel-" });
+  const dir = await testTempDir({ prefix: "cg-lock-rel-" });
   try {
     const lock = await acquireLock(`${dir}/d.lock`);
     await lock.release();
@@ -65,7 +66,7 @@ Deno.test("release is safe to call twice", async () => {
 });
 
 Deno.test("release does not delete a lock another process re-acquired after breaking it as stale", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lock-ownership-" });
+  const dir = await testTempDir({ prefix: "cg-lock-ownership-" });
   try {
     const lockPath = `${dir}/e.lock`;
     const a = await acquireLock(lockPath);
@@ -96,7 +97,7 @@ Deno.test("release does not delete a lock another process re-acquired after brea
 });
 
 Deno.test("acquireLock's default timeout keeps enough margin over staleMs to recover a dead lock", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lock-default-margin-" });
+  const dir = await testTempDir({ prefix: "cg-lock-default-margin-" });
   try {
     // A process that died without releasing.
     await Deno.writeTextFile(

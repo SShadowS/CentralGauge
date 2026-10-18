@@ -4,9 +4,10 @@ import { hashTree } from "../../../src/harness/hash.ts";
 import { taskSetIdentity } from "../../../src/harness/identity.ts";
 import { loadTaskAt } from "../../../src/harness/task-rev.ts";
 import { git, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("loadTaskAt: a tag yields the task as committed, with commit and tree; no rev is the working tree", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   await git(repo.root, "add", ".");
   await git(repo.root, "commit", "-q", "-m", "tasks");
   await git(repo.root, "tag", "refapp-v1-rc1");
@@ -19,7 +20,7 @@ Deno.test("loadTaskAt: a tag yields the task as committed, with commit and tree;
     repo.root,
     "HX-001",
     "refapp-v1-rc1",
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
   );
   assertEquals(at.commit!.length, 40);
   assertEquals(at.tree!.length, 40);
@@ -33,12 +34,12 @@ Deno.test("loadTaskAt: a tag yields the task as committed, with commit and tree;
     repo.root,
     "HX-001",
     null,
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
   );
   assertEquals([wt.commit, wt.tree], [null, null]);
   // Production passes a directory that does not exist yet (harness cell --rev).
   const fresh = join(
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
     "work",
     "task-new",
   );
@@ -55,7 +56,7 @@ Deno.test("loadTaskAt: a tag yields the task as committed, with commit and tree;
 });
 
 Deno.test("loadTaskAt: the committed tree and a CRLF working tree give the same visible and overlay hashes", async () => {
-  const repo = await makeRefappRepo();
+  await using repo = await makeRefappRepo();
   await git(repo.root, "add", ".");
   await git(repo.root, "commit", "-q", "-m", "tasks");
   await git(repo.root, "tag", "refapp-v1-rc1");
@@ -67,13 +68,13 @@ Deno.test("loadTaskAt: the committed tree and a CRLF working tree give the same 
     repo.root,
     "HX-001",
     "refapp-v1-rc1",
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
   );
   const wt = await loadTaskAt(
     repo.root,
     "HX-001",
     null,
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
   );
   const visible = async (t: typeof at) =>
     (await taskSetIdentity(repo.root, [t.task], repo.symbols)).tasks[0]!

@@ -12,6 +12,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { DockerContainerProvider } from "../../../src/container/docker-container-provider.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // =============================================================================
 // Provider Properties Tests
@@ -457,7 +458,7 @@ Deno.test("DockerContainerProvider - isHealthy returns false on error", async ()
 
 Deno.test("DockerContainerProvider - compileProject copies project and compiles", async () => {
   const mock = createCommandMock();
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
 
   try {
     mock.install();
@@ -499,7 +500,7 @@ Deno.test("DockerContainerProvider - compileProject copies project and compiles"
 
 Deno.test("DockerContainerProvider - compileProject handles compilation errors", async () => {
   const mock = createCommandMock();
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
 
   try {
     mock.install();
@@ -535,7 +536,7 @@ Deno.test("DockerContainerProvider - compileProject handles compilation errors",
 
 Deno.test("DockerContainerProvider - compileProject throws when copy fails", async () => {
   const mock = createCommandMock();
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
 
   try {
     mock.install();
@@ -573,7 +574,7 @@ Deno.test("DockerContainerProvider - compileProject throws when copy fails", asy
 
 Deno.test("DockerContainerProvider - runTests copies project and runs tests", async () => {
   const mock = createCommandMock();
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
 
   try {
     mock.install();
@@ -609,7 +610,7 @@ Deno.test("DockerContainerProvider - runTests copies project and runs tests", as
 
 Deno.test("DockerContainerProvider - runTests handles test failures", async () => {
   const mock = createCommandMock();
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
 
   try {
     mock.install();

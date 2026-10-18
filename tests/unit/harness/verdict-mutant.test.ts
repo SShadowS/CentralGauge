@@ -15,6 +15,7 @@ import {
   rental,
   write,
 } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const suite = (cu: number, procs: string[] = ["PriceIsTen"], extra = "") =>
   `codeunit ${cu} "Suite ${cu}"\n{\n    Subtype = Test;\n${extra}\n${
@@ -84,7 +85,7 @@ async function setup(
       "naive/crashy": suite(80103),
     }, opts),
   );
-  const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+  const tmp = async () => await Deno.realPath(await testTempDir());
   const staged = await stageRefappTask({
     repoRoot: repo.root,
     task,

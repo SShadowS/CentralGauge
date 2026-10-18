@@ -2,12 +2,13 @@ import { assert, assertEquals } from "@std/assert";
 import { exists as pathExists } from "@std/fs";
 import { join } from "@std/path";
 import { stageResponse } from "../../../src/dashboard/verify-staging.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("verify-staging", async (t) => {
   await t.step(
     "writes the candidate as one file named for the task",
     async () => {
-      const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+      const draftDir = await testTempDir({ prefix: "cg-stage-" });
       try {
         await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
         await Deno.writeTextFile(
@@ -43,7 +44,7 @@ Deno.test("verify-staging", async (t) => {
   await t.step(
     "points prereqDir at the draft's prereq when present",
     async () => {
-      const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+      const draftDir = await testTempDir({ prefix: "cg-stage-" });
       try {
         await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
         await Deno.writeTextFile(
@@ -75,7 +76,7 @@ Deno.test("verify-staging", async (t) => {
   );
 
   await t.step("cleanup removes the staged directory", async () => {
-    const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+    const draftDir = await testTempDir({ prefix: "cg-stage-" });
     try {
       await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
       await Deno.writeTextFile(
@@ -111,7 +112,7 @@ Deno.test("verify-staging", async (t) => {
   });
 
   await t.step("cleanup is idempotent", async () => {
-    const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+    const draftDir = await testTempDir({ prefix: "cg-stage-" });
     try {
       await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
       await Deno.writeTextFile(
@@ -131,7 +132,7 @@ Deno.test("verify-staging", async (t) => {
   });
 
   await t.step("refuses when the oracle is missing", async () => {
-    const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+    const draftDir = await testTempDir({ prefix: "cg-stage-" });
     try {
       let threw = false;
       let message = "";
@@ -163,7 +164,7 @@ Deno.test("verify-staging", async (t) => {
   await t.step(
     "refuses a draft whose correct/ holds a bare <id>.al",
     async () => {
-      const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+      const draftDir = await testTempDir({ prefix: "cg-stage-" });
       try {
         await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
         await Deno.writeTextFile(
@@ -213,7 +214,7 @@ Deno.test("verify-staging", async (t) => {
   await t.step(
     "stages a draft with a legitimate <id>.Mock.al companion",
     async () => {
-      const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+      const draftDir = await testTempDir({ prefix: "cg-stage-" });
       try {
         await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
         await Deno.writeTextFile(

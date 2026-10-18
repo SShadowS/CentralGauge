@@ -9,6 +9,7 @@ import {
   runQualificationProbe,
   scrubFiles,
 } from "../../../src/harness/egress-probe.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const utf16le = (s: string) => {
   const b = new Uint8Array(s.length * 2);
@@ -38,7 +39,7 @@ const has = (hay: Uint8Array, needle: Uint8Array) => {
 };
 
 Deno.test("scrubFiles: UTF-8 and UTF-16LE occurrences are both redacted; other bytes are kept", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const secret = "sk-ant-oat01-secretvalue0123456789";
     const enc = new TextEncoder();
@@ -74,7 +75,7 @@ Deno.test("scrubFiles: UTF-8 and UTF-16LE occurrences are both redacted; other b
 });
 
 Deno.test("scrubFiles: an unreadable path is reported, never skipped as clean", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     // A directory where a capture file should be: reading it fails (not NotFound).
     await Deno.mkdir(join(dir, "probe.jsonl"));
@@ -127,7 +128,7 @@ function probeWith(
 }
 
 Deno.test("qualification probe: body error and teardown error precedence (M11-91)", async () => {
-  const out = await Deno.makeTempDir();
+  const out = await testTempDir();
   const boom = () => Promise.reject(new Error("body boom"));
   try {
     // Body fails, teardown clean: the body's error.

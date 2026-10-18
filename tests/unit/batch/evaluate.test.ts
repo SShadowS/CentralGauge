@@ -44,6 +44,7 @@ import type {
   TaskExecutionContext,
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const MODEL_SLUG = "claude-haiku-4-5";
 
@@ -65,7 +66,7 @@ function seedBatchPricing(): void {
 }
 
 async function tempRunDir(name: string): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: `cg-batch-eval-${name}-` });
+  const dir = await testTempDir({ prefix: `cg-batch-eval-${name}-` });
   await ensureDir(join(dir, "responses"));
   await ensureDir(join(dir, "requests"));
   return dir;

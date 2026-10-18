@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { exists } from "@std/fs";
 import { basename, join } from "@std/path";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /**
  * Helper to create a temp project with the same logic as executor-v2.ts
@@ -75,7 +76,7 @@ describe("Temporary Project Creation", () => {
 
   beforeEach(async () => {
     // Create a temp directory for tests
-    tempDir = await Deno.makeTempDir({ prefix: "cg_test_project_" });
+    tempDir = await testTempDir({ prefix: "cg_test_project_" });
 
     // Create a mock test file to copy
     testFilePath = join(tempDir, "MockTest.al");

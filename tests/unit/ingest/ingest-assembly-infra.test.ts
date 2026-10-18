@@ -21,6 +21,7 @@ import {
   createMockExecutionAttempt,
   createMockTaskExecutionContext,
 } from "../../utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const VARIANT: ModelVariant = {
   originalSpec: "mock/mock-gpt-4",
@@ -70,7 +71,7 @@ function infraAttempt(overrides?: Partial<ExecutionAttempt>): ExecutionAttempt {
 }
 
 Deno.test("TEST6a: synthesized infra attempt produces no BenchResultItem and is counted in meta", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-test6a-" });
+  const dir = await testTempDir({ prefix: "cg-test6a-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E001", [createMockExecutionAttempt({ success: true })]),
@@ -97,7 +98,7 @@ Deno.test("TEST6a: synthesized infra attempt produces no BenchResultItem and is 
 });
 
 Deno.test("TEST6b: mixed task keeps the real attempt and drops the infra attempt", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-test6b-" });
+  const dir = await testTempDir({ prefix: "cg-test6b-" });
   try {
     const realAttempt = createMockExecutionAttempt({
       attemptNumber: 1,
@@ -135,7 +136,7 @@ Deno.test("TEST6b: mixed task keeps the real attempt and drops the infra attempt
 });
 
 Deno.test("TEST6c: a normal (model-attributable) failure is still ingested as passed=false", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-test6c-" });
+  const dir = await testTempDir({ prefix: "cg-test6c-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E003", [
@@ -163,7 +164,7 @@ Deno.test("TEST6c: a normal (model-attributable) failure is still ingested as pa
 });
 
 Deno.test("TEST6d: ALL attempts infra-invalidated → all_infra sentinel, no payload built", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-test6d-" });
+  const dir = await testTempDir({ prefix: "cg-test6d-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E004", [infraAttempt({ attemptNumber: 1 })]),
@@ -197,7 +198,7 @@ Deno.test("TEST6d: ALL attempts infra-invalidated → all_infra sentinel, no pay
 });
 
 Deno.test("T2 follow-up: variant whose results all have EMPTY attempts arrays → no_items sentinel, no empty payload", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-test6f-" });
+  const dir = await testTempDir({ prefix: "cg-test6f-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E007", []),
@@ -284,7 +285,7 @@ Deno.test("T2 follow-up: decideIngestRunFailure marks the run non-success", asyn
 });
 
 Deno.test("TEST6: variant with no matching results → no_results sentinel", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-test6e-" });
+  const dir = await testTempDir({ prefix: "cg-test6e-" });
   try {
     const path = await writeResultsFile(dir, [
       makeResult("CG-AL-E006", [createMockExecutionAttempt({ success: true })]),

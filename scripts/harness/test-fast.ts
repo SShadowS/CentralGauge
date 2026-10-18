@@ -100,9 +100,12 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}task-rev.test.ts`]: c(true, 1),
   [`${H}task-set-v1.test.ts`]: c(true, 0),
   [`${H}task.test.ts`]: c(true, 0),
+  // Runs staging + mock tests in a child deno test with its own TEMP (GH #28).
+  [`${H}temp-leak-guard.test.ts`]: c(true, 41),
   [`${H}trace-metrics.test.ts`]: c(true, 0),
   [`${H}v2-configs.test.ts`]: c(true, 0),
   [`${H}verdict-mutant.test.ts`]: c(true, 32),
+  [`${H}verdict-workspace-helpers.test.ts`]: c(true, 2),
   [`${H}verdict-workspace.test.ts`]: c(true, 1),
   [`${H}verdict.test.ts`]: c(true, 33),
 };

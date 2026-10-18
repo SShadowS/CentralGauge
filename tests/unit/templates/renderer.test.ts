@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { TemplateRenderer } from "../../../src/templates/renderer.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 describe("TemplateRenderer", () => {
   let renderer: TemplateRenderer;
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await Deno.makeTempDir({ prefix: "template-test-" });
+    tempDir = await testTempDir({ prefix: "template-test-" });
     renderer = new TemplateRenderer(tempDir);
   });
 

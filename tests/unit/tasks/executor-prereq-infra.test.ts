@@ -14,9 +14,10 @@ import {
   createMockTaskManifest,
 } from "../../utils/test-helpers.ts";
 import { MockContainerProvider } from "../../utils/mock-container-provider.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("T11: prereq compile failure throws ContainerError(setup) instead of continuing without the prereq", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "cg-t11-" });
+  const tempDir = await testTempDir({ prefix: "cg-t11-" });
   const providerName = "t11-prereq-fail-mock";
 
   const mockProvider = new MockContainerProvider();

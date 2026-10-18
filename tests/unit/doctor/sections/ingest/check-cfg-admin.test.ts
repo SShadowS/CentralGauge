@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkCfgAdmin } from "../../../../../src/doctor/sections/ingest/check-cfg-admin.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 function ctx(cwd: string): DoctorContext {
   return { cwd, fetchFn: globalThis.fetch, previousResults: new Map() };
@@ -9,7 +10,7 @@ function ctx(cwd: string): DoctorContext {
 
 describe("checkCfgAdmin", () => {
   it("passes when admin_key_id and admin_key_path are both set", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `ingest:\n  url: https://x\n  key_id: 1\n  key_path: /tmp/k\n  machine_id: m\n  admin_key_id: 2\n  admin_key_path: /tmp/a\n`,
@@ -25,7 +26,7 @@ describe("checkCfgAdmin", () => {
   });
 
   it("warns (not fails) when admin keys are absent — admin actions just won't be available", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `ingest:\n  url: https://x\n  key_id: 1\n  key_path: /tmp/k\n  machine_id: m\n`,
@@ -41,7 +42,7 @@ describe("checkCfgAdmin", () => {
   });
 
   it("fails when only one of the two admin fields is set (incomplete pair)", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `ingest:\n  url: https://x\n  key_id: 1\n  key_path: /tmp/k\n  machine_id: m\n  admin_key_id: 2\n`, // path missing

@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { validateRepo } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/validate-taxonomy.ts";
 import { buildDraft } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/build-taxonomy.ts";
 import { emitCatalogYaml } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/catalog-yaml.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const opts = {
   tasksDir: "tests/fixtures/taxonomy/manifests",
@@ -10,7 +11,7 @@ const opts = {
 
 async function tmpCatalog(mutate?: (text: string) => string): Promise<string> {
   const { catalog } = await buildDraft(opts);
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const text = emitCatalogYaml(catalog);
   await Deno.writeTextFile(`${dir}/cat.yml`, mutate ? mutate(text) : text);
   await Deno.writeTextFile(

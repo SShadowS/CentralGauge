@@ -9,6 +9,7 @@ import {
   createEnvTemplate,
   initializeConfigFile,
 } from "../../../../cli/services/config-actions.ts";
+import { testTempDir } from "../../../utils/temp-dir.ts";
 
 // ============================================================================
 // initializeConfigFile tests
@@ -16,7 +17,7 @@ import {
 
 Deno.test("initializeConfigFile", async (t) => {
   await t.step("creates config file in specified directory", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "config-test-" });
+    const tempDir = await testTempDir({ prefix: "config-test-" });
     try {
       const targetPath = join(tempDir, ".centralgauge.yml");
 
@@ -38,7 +39,7 @@ Deno.test("initializeConfigFile", async (t) => {
   });
 
   await t.step("returns error if file already exists", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "config-test-" });
+    const tempDir = await testTempDir({ prefix: "config-test-" });
     try {
       const targetPath = join(tempDir, ".centralgauge.yml");
 
@@ -62,7 +63,7 @@ Deno.test("initializeConfigFile", async (t) => {
   await t.step("uses default path when none specified", async () => {
     // Save current directory
     const originalCwd = Deno.cwd();
-    const tempDir = await Deno.makeTempDir({ prefix: "config-test-" });
+    const tempDir = await testTempDir({ prefix: "config-test-" });
 
     try {
       Deno.chdir(tempDir);
@@ -79,7 +80,7 @@ Deno.test("initializeConfigFile", async (t) => {
   });
 
   await t.step("handles global option by using home directory", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "config-test-" });
+    const tempDir = await testTempDir({ prefix: "config-test-" });
     try {
       // Override HOME for test
       const originalHome = Deno.env.get("HOME");
@@ -113,7 +114,7 @@ Deno.test("initializeConfigFile", async (t) => {
 
 Deno.test("createEnvTemplate", async (t) => {
   await t.step("creates .env file in specified directory", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "env-test-" });
+    const tempDir = await testTempDir({ prefix: "env-test-" });
     try {
       const targetPath = join(tempDir, ".env");
 
@@ -135,7 +136,7 @@ Deno.test("createEnvTemplate", async (t) => {
   });
 
   await t.step("returns error if file exists and overwrite=false", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "env-test-" });
+    const tempDir = await testTempDir({ prefix: "env-test-" });
     try {
       const targetPath = join(tempDir, ".env");
 
@@ -156,7 +157,7 @@ Deno.test("createEnvTemplate", async (t) => {
   });
 
   await t.step("overwrites file when overwrite=true", async () => {
-    const tempDir = await Deno.makeTempDir({ prefix: "env-test-" });
+    const tempDir = await testTempDir({ prefix: "env-test-" });
     try {
       const targetPath = join(tempDir, ".env");
 
@@ -178,7 +179,7 @@ Deno.test("createEnvTemplate", async (t) => {
 
   await t.step("uses default path when none specified", async () => {
     const originalCwd = Deno.cwd();
-    const tempDir = await Deno.makeTempDir({ prefix: "env-test-" });
+    const tempDir = await testTempDir({ prefix: "env-test-" });
 
     try {
       Deno.chdir(tempDir);

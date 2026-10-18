@@ -7,12 +7,13 @@ import {
   assertExists,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { findLatestSession, parseDebugDir } from "../../../src/verify/mod.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // Note: These tests use mock data in temp directories, not the actual debug dir
 
 Deno.test("debug-parser: findLatestSession returns null for empty directory", async () => {
   // Create a temp directory
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const session = await findLatestSession(tempDir);
     assertEquals(session, null);
@@ -23,7 +24,7 @@ Deno.test("debug-parser: findLatestSession returns null for empty directory", as
 
 Deno.test("debug-parser: findLatestSession finds session from JSONL files", async () => {
   // Create a temp directory with mock session files
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
 
   try {
@@ -48,7 +49,7 @@ Deno.test("debug-parser: findLatestSession finds session from JSONL files", asyn
 
 Deno.test("debug-parser: parseDebugDir returns empty for no failures", async () => {
   // Create a temp directory with mock session files (all successful)
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
 
   try {
@@ -108,7 +109,7 @@ Deno.test("debug-parser: parseDebugDir returns empty for no failures", async () 
 
 Deno.test("debug-parser: parseDebugDir finds compilation failures", async () => {
   // Create a temp directory with mock session files
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
 
   try {
@@ -158,7 +159,7 @@ Deno.test("debug-parser: parseDebugDir finds compilation failures", async () => 
 
 Deno.test("debug-parser: parseDebugDir skips tasks that eventually succeeded", async () => {
   // Create a temp directory with mock session files
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
 
   try {
@@ -253,7 +254,7 @@ function isRelativePath(path: string): boolean {
 
 Deno.test("debug-parser: FailingTask paths are relative, not absolute", async () => {
   // Create a temp directory structure that mimics the project
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
 
   // Save current directory to restore later
@@ -353,7 +354,7 @@ Deno.test("debug-parser: FailingTask paths are relative, not absolute", async ()
 Deno.test("debug-parser: taskYamlPath uses glob result filename, not absolute path", async () => {
   // This test verifies that when a task file exists, the glob finds it
   // and returns a relative path using the filename, not the absolute entry.path
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
   const originalCwd = Deno.cwd();
 
@@ -429,7 +430,7 @@ Deno.test("debug-parser: taskYamlPath uses glob result filename, not absolute pa
 });
 
 Deno.test("debug-parser: all path fields use consistent forward slashes", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
   const originalCwd = Deno.cwd();
 
@@ -497,7 +498,7 @@ Deno.test("debug-parser: all path fields use consistent forward slashes", async 
 Deno.test("debug-parser: generatedCodePath is relative when debugDir is relative", async () => {
   // This test verifies that when debugDir is relative ("debug"),
   // the generatedCodePath is also relative
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   const sessionId = "1234567890";
   const originalCwd = Deno.cwd();
 

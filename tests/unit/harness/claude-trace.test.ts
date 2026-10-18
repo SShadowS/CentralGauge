@@ -11,6 +11,7 @@ import {
   MAX_COMMAND_CHARS,
 } from "../../../src/harness/call-fields.ts";
 import { readTrace, writeTrace } from "../../../src/harness/trace.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const FIXTURE = "tests/fixtures/harness/claude-code/probe.jsonl";
 const lines = (text: string): Line<J>[] =>
@@ -339,7 +340,7 @@ Deno.test("claudeTrace: a repeated tool_use id is refused with the line", () => 
 });
 
 Deno.test("readTrace: v2 round trip; v1 upgraded; mixed versions refused", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const t = claudeTrace(await probe(), FIXTURE, new Set());
   await writeTrace(join(dir, "v2.jsonl"), t.events);
   assertEquals(await readTrace(join(dir, "v2.jsonl")), t.events);

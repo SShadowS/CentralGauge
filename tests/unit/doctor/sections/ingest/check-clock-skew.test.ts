@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkClockSkew } from "../../../../../src/doctor/sections/ingest/check-clock-skew.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 function makeFetch(serverDate: string): typeof fetch {
   return async () =>
@@ -16,7 +17,7 @@ function makeFetch(serverDate: string): typeof fetch {
 async function makeCtxWithUrl(
   fetchFn: typeof fetch,
 ): Promise<{ ctx: DoctorContext; cleanup: () => Promise<void> }> {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   await Deno.writeTextFile(
     `${tmp}/.centralgauge.yml`,
     `ingest:\n  url: https://x.example.com\n  key_id: 1\n  key_path: /tmp/k\n  machine_id: m\n`,
@@ -57,7 +58,7 @@ describe("checkClockSkew", () => {
   });
 
   it("warns when probe URL is not configured (skew unknowable)", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     Deno.env.set("CENTRALGAUGE_TEST_HOME", tmp);
     const ctx: DoctorContext = {
       cwd: tmp,

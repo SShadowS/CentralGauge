@@ -35,9 +35,10 @@ import {
   taskState,
   why,
 } from "../../../scripts/coord/coord.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function freshRoot(): Promise<string> {
-  const base = await Deno.makeTempDir({ prefix: "coord-test-" });
+  const base = await testTempDir({ prefix: "coord-test-" });
   const root = join(base, "coord");
   await initRoot(root, "test-campaign");
   return root;
@@ -443,7 +444,7 @@ Deno.test("coord: overview names the agent waiting for the owner", async () => {
 });
 
 Deno.test("coord: two roots sharing a machine root share leases and pause", async () => {
-  const base = await Deno.makeTempDir({ prefix: "coord-machine-" });
+  const base = await testTempDir({ prefix: "coord-machine-" });
   const a = join(base, "a");
   const b = join(base, "b");
   await initRoot(a, "project-a");
@@ -472,7 +473,7 @@ Deno.test("coord: two roots sharing a machine root share leases and pause", asyn
 });
 
 Deno.test("coord: init refuses a machine root that does not exist", async () => {
-  const base = await Deno.makeTempDir({ prefix: "coord-machine-" });
+  const base = await testTempDir({ prefix: "coord-machine-" });
   await assertRejects(
     () =>
       initRoot(join(base, "b"), "b", { machineRoot: join(base, "missing") }),
@@ -503,7 +504,7 @@ Deno.test("coord: lease race across separate processes has one holder", async ()
 });
 
 Deno.test("coord: allocation.json in the machine root limits leases per project, live", async () => {
-  const base = await Deno.makeTempDir({ prefix: "coord-alloc-" });
+  const base = await testTempDir({ prefix: "coord-alloc-" });
   const a = join(base, "a");
   const b = join(base, "b");
   await initRoot(a, "project-a");
@@ -815,7 +816,7 @@ Deno.test("coord sweep (C-05 run 003): other commands still read a missing dir a
 });
 
 Deno.test("coord sweep (C-05 run 002): a missing leases dir under the machine root is a read error, never 'drained'", async () => {
-  const base = await Deno.makeTempDir({ prefix: "coord-test-" });
+  const base = await testTempDir({ prefix: "coord-test-" });
   const machine = join(base, "machine");
   await Deno.mkdir(join(machine, "leases"), { recursive: true });
   const root = join(base, "coord");

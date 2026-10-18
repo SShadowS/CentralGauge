@@ -185,7 +185,7 @@ async function alText(dir: string): Promise<string> {
 }
 
 Deno.test("H-09 run 002: judgeDeferred judges the snapshot it validated; an oracle edited after the check never reaches a compile", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
   const r = await runCell({
     ...t.env,
@@ -325,7 +325,7 @@ const comparable = (j: JudgmentRecord) => {
 };
 
 Deno.test("H-09: a cell with judgeLater queues instead of judging; judgeDeferred then writes the judgment the inline path writes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const inline = await runCell(t.env, await cellFor(t));
   const ref = (await t.env.store.judgments(inline.executions[0]!.id))[0]!;
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
@@ -347,7 +347,7 @@ Deno.test("H-09: a cell with judgeLater queues instead of judging; judgeDeferred
 });
 
 Deno.test("H-09: judgeDeferred refuses when the restaged task differs from the one the agent ran on; nothing written", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
   const r = await runCell({
     ...t.env,
@@ -375,7 +375,7 @@ Deno.test("H-09: judgeDeferred refuses when the restaged task differs from the o
 });
 
 Deno.test("H-09 review: judgeDeferred refuses when the oracle changed since the run (on disk, or another oracle recorded by the run); nothing written", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
   const r = await runCell({
     ...t.env,

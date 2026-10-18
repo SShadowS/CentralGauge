@@ -107,6 +107,7 @@ import {
   type RunBehavior,
   USER_GROUPS_CSV,
 } from "./fake-docker.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const U16 = (s: string) =>
   String.fromCharCode(
@@ -142,7 +143,7 @@ const sideOf = async (t: TestEnv, id: string) =>
   );
 
 Deno.test("runCell: Claude Code solves HX-001; TTL-priced cost; no secret in argv; private state cleaned up", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   let token = "";
   let workspaceMount = "";
   let secretsMount = "";
@@ -212,7 +213,7 @@ Deno.test("runCell: Claude Code solves HX-001; TTL-priced cost; no secret in arg
 });
 
 Deno.test("runCell: a naive solution is judged a fail", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.behavior = ccBehavior(join(t.repo.tasksDir, "HX-001"), "naive/a");
   const r = await runCell(t.env, await cellFor(t));
   assertEquals(
@@ -222,7 +223,7 @@ Deno.test("runCell: a naive solution is judged a fail", async () => {
 });
 
 Deno.test("credential gate: refused without supervision or enforcement; supervised runs reserve in the shared ledger first", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await assertRejects(
     async () => runCell(t.env, await cellFor(t)),
@@ -256,7 +257,7 @@ Deno.test("credential gate: refused without supervision or enforcement; supervis
 });
 
 Deno.test("H-13: the owner override lifts the supervision refusal only; the ledger stays required and the record carries egress_override", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.env.unverifiedEgressReason = "P-01 pilot";
   t.env.credentialLedger = null;
@@ -282,7 +283,7 @@ Deno.test("H-13: the owner override lifts the supervision refusal only; the ledg
 });
 
 Deno.test("an adapter that cannot enforce the budget is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const a = adapterFor("claude-code");
   a.enforcesBudget = false;
   try {
@@ -304,7 +305,7 @@ Deno.test("retries follow ancestry: supervised withholds; usage-limit then setup
     is_error: true,
     modelUsage: {},
   })];
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.behavior = async (_c, io) => {
     for (const l of [INIT, ...crash]) await io.stdout(l);
@@ -346,7 +347,7 @@ Deno.test("retries follow ancestry: supervised withholds; usage-limit then setup
 });
 
 Deno.test("runCell: timeout kills the sandbox; the workspace is judged; cost is unknown, never a lower bound", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   // Past the pre-release privilege check (H-01); the run still times out.
   t.env.timeoutMsFor = () => 2_000;
   const lines = (await probeLines()).slice(0, 12);
@@ -365,7 +366,7 @@ Deno.test("runCell: timeout kills the sandbox; the workspace is judged; cost is 
 });
 
 Deno.test("a failure after the spawn is unknown cost, not zero; a failure before it is exact zero", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.failAfterStart = new Error("capture pipe broke");
   const after = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals([after.termination, after.telemetry.cost_usd], [
@@ -373,7 +374,7 @@ Deno.test("a failure after the spawn is unknown cost, not zero; a failure before
     null,
   ]);
   assert(after.validity.incomplete_telemetry.includes("cost_usd"));
-  const t2 = await makeEnv();
+  await using t2 = await makeEnv();
   t2.docker.runError = new Error("open raw.jsonl: access denied");
   const before = (await runCell(t2.env, await cellFor(t2))).executions[0]!;
   assertEquals([before.termination, before.telemetry.cost_usd], [
@@ -383,7 +384,7 @@ Deno.test("a failure after the spawn is unknown cost, not zero; a failure before
 });
 
 Deno.test("images: retagging never invalidates a pinned image; a removed pinned image is setup_failed and never runs", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.addImage(
     "centralgauge/harness-claude-code:2.1.282",
@@ -405,7 +406,7 @@ Deno.test("images: retagging never invalidates a pinned image; a removed pinned 
 });
 
 Deno.test("runCell: a usage limit pauses, is not judged, and persists the reset time", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.behavior = async (_c, io) => {
     for (
       const l of [
@@ -436,7 +437,7 @@ Deno.test("runCell: a usage limit pauses, is not judged, and persists the reset 
 });
 
 Deno.test("runCell: an observed version mismatch is setup_failed", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.behavior = async (_c, io) => {
     await io.stdout(INIT.replace("2.1.282", "2.1.300"));
     return 0;
@@ -597,7 +598,7 @@ async function tokenValid(t: TestEnv, id: string, token: string) {
 }
 
 Deno.test("M5-08a: a stuck rm -f runs only after the backend token is revoked and the proxy credential unregistered; the next start refuses while the container exists", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   const cell = await cellFor(t);
   let token = "";
@@ -654,7 +655,7 @@ Deno.test({
     "M5-08a: a held secrets dir (os error 32) through runExecution: termination not confirmed with the reason, never the raw removal error",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const cell = await cellFor(t);
     let release: (() => Promise<void>) | null = null;
     let secretsDir = "";
@@ -684,7 +685,7 @@ Deno.test({
 });
 
 Deno.test("every published surface is redacted (UTF-8 and UTF-16): logs, stderr, trace, side file, record, workspace", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   let token = "";
   t.docker.behavior = async (call, io) => {
     token = await tokenOf(call);
@@ -771,7 +772,7 @@ Deno.test("recovery: an interrupted attempt keeps its spend at the original pric
 });
 
 Deno.test("recovery: publishes into the original results root, from the stored manifest and task snapshot, even after the task was deleted or its limits changed", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const cellsRoot = join(t.env.resultsRoot, "cells");
   const cellsEnv = {
     ...t.env,
@@ -820,7 +821,7 @@ Deno.test("recovery: publishes into the original results root, from the stored m
 });
 
 Deno.test("recovery: custody missing after release stops (fail closed) and keeps the intent", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     beforeDraft: () => Promise.reject(new Error("runner killed")),
   };
@@ -841,7 +842,7 @@ Deno.test("recovery: custody missing after release stops (fail closed) and keeps
 });
 
 Deno.test("a setup failure with no captures still writes its draft and publishes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.images.delete(IMAGE_ID);
   const e = (await runCell(t.env, cell)).executions[0]!;
@@ -850,7 +851,7 @@ Deno.test("a setup failure with no captures still writes its draft and publishes
 });
 
 Deno.test("recovery: an interruption inside cleanup only repeats the cleanup", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     afterPublished: () => Promise.reject(new Error("runner killed")),
   };
@@ -873,7 +874,7 @@ for (
   ] as PublishStep[]
 ) {
   Deno.test(`recovery: a crash after the ${step} step completes exactly once`, async () => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     t.env.hooks = {
       after: (s) =>
         s === step
@@ -904,7 +905,7 @@ for (
 }
 
 Deno.test("recovery: a task changed since the attempt is recorded but not judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     after: (s) =>
       s === "draft"
@@ -925,7 +926,7 @@ Deno.test("recovery: a task changed since the attempt is recorded but not judged
 });
 
 Deno.test("operator interrupt stops the sandbox; the attempt is recorded and judged as work done", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const stop = new AbortController();
   t.env.stop = stop.signal;
   t.docker.behavior = async (call, io) => {
@@ -945,7 +946,7 @@ Deno.test("operator interrupt stops the sandbox; the attempt is recorded and jud
 });
 
 Deno.test("operator interrupt: no automatic retry starts after it", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   enforce(t);
   const stop = new AbortController();
@@ -966,7 +967,7 @@ Deno.test("operator interrupt: no automatic retry starts after it", async () => 
 });
 
 Deno.test("stream problems (M1-32 ruling): no usable result is infra exposed with the non-JSON line numbers", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const lines = (await probeLines()).slice(0, 12);
   t.docker.behavior = async (call, io) => {
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", [])(call, io);
@@ -986,7 +987,7 @@ Deno.test("stream problems (M1-32 ruling): no usable result is infra exposed wit
 });
 
 Deno.test("stream problems (M1-32 ruling): a usable result with stream problems has incomplete cost", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.behavior = async (call, io) => {
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
     await io.stdout(JSON.stringify({ type: "mystery" }));
@@ -1044,7 +1045,7 @@ Deno.test("stream problems (M5-07a): a tool_progress heartbeat mid-run leaves th
 });
 
 Deno.test("recovery start (M1-20 handoff): leftover sandboxes are removed first, then this owner's stale secrets", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const base = join(t.env.privateRoot, "secrets");
   const mine = join(base, `${SECRETS_DIR_PREFIX}HOST1.${crypto.randomUUID()}`);
   const other = join(base, `${SECRETS_DIR_PREFIX}HOST2.${crypto.randomUUID()}`);
@@ -1072,7 +1073,7 @@ Deno.test("recovery start (M1-20 handoff): leftover sandboxes are removed first,
 });
 
 Deno.test("records of a campaign pass ExecutionRecordSchema and validateCampaignRecords (ancestry, limits, artifacts, judgments)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await write(
     t.harnessRoot,
     "bundles/alt/instructions/CLAUDE.md",
@@ -1184,7 +1185,7 @@ Deno.test("records of a campaign pass ExecutionRecordSchema and validateCampaign
 });
 
 Deno.test("a refused harness log (two result records) is still recorded: harness_crash, infra exposed, cost unknown", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const result = (await probeLines()).at(-1)!;
   t.docker.behavior = async (call, io) => {
     await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(call, io);
@@ -1221,7 +1222,7 @@ const intentIds = (t: TestEnv) =>
   );
 
 Deno.test("custody temp files (plaintext secrets) are removed by cleanup and by recovery", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const custodyDir = join(t.env.privateRoot, "custody");
   let planted = "";
   t.env.hooks = {
@@ -1248,7 +1249,7 @@ Deno.test("custody temp files (plaintext secrets) are removed by cleanup and by 
 });
 
 Deno.test("recovery: a zero-length intent is quarantined and reported; the other attempts still recover", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     beforeDraft: () => Promise.reject(new Error("runner killed")),
   };
@@ -1267,7 +1268,7 @@ Deno.test("recovery: a zero-length intent is quarantined and reported; the other
 });
 
 Deno.test("recovery: a zero-length draft is rebuilt, published once", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     after: (s) =>
       s === "draft"
@@ -1289,7 +1290,7 @@ Deno.test("recovery: a zero-length draft is rebuilt, published once", async () =
 });
 
 Deno.test("recovery: an unreadable custody is quarantined (nothing published), never a permanent block", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     beforeDraft: () => Promise.reject(new Error("runner killed")),
   };
@@ -1310,7 +1311,7 @@ Deno.test("recovery: an unreadable custody is quarantined (nothing published), n
 });
 
 Deno.test("no absolute private path reaches a published file (missing raw log in recovery)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     beforeDraft: () => Promise.reject(new Error("runner killed")),
   };
@@ -1330,7 +1331,7 @@ Deno.test("no absolute private path reaches a published file (missing raw log in
 });
 
 Deno.test("an operator stop before the start reserves no credential run and starts nothing", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const stop = new AbortController();
   stop.abort();
   t.env.stop = stop.signal;
@@ -1344,7 +1345,7 @@ Deno.test("an operator stop before the start reserves no credential run and star
 });
 
 Deno.test("runCell: an automatic retry needs its parent in prior, at attempt parent + 1", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   enforce(t);
   const cell = await cellFor(t);
@@ -1463,7 +1464,7 @@ Deno.test("privateRoot is validated before any secret: under results/, under the
     }],
   ];
   for (const [want, setup] of cases) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const ledger = t.env.credentialLedger!;
     await setup(t);
     await assertRejects(
@@ -1481,7 +1482,7 @@ Deno.test({
     "custody: the temp file gets the verified owner-only ACL before any content is written",
   ignore: Deno.build.os !== "windows",
 }, async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const acl = t.env.secretAcl!;
   const seen: { args: string[]; size: number | null }[] = [];
   t.env.secretAcl = {
@@ -1516,7 +1517,7 @@ Deno.test({
 });
 
 Deno.test("preflight failures (missing image, missing operator secret) reserve no credential run", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const cell = await cellFor(t);
   t.docker.images.delete(IMAGE_ID);
   assertEquals(
@@ -1524,7 +1525,7 @@ Deno.test("preflight failures (missing image, missing operator secret) reserve n
     "setup_failed",
   );
   assert(!await exists(t.env.credentialLedger!), "image: no slot reserved");
-  const t2 = await makeEnv();
+  await using t2 = await makeEnv();
   await Deno.remove(join(t2.env.secretsSource, "claude-oauth-token"));
   const e = (await runCell(t2.env, await cellFor(t2))).executions[0]!;
   assertEquals(e.termination, "setup_failed");
@@ -1576,7 +1577,7 @@ Deno.test({
     "custody and key files: their directories are restricted and verified before any temp file goes in; each temp file before its first write",
   ignore: Deno.build.os !== "windows",
 }, async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const seen = aclSpy(t);
   t.env.hooks = {
     beforeDraft: () => Promise.reject(new Error("runner killed")),
@@ -1617,7 +1618,7 @@ Deno.test({
     "a key file whose ACL does not verify is never written (and nothing is reserved or run)",
   ignore: Deno.build.os !== "windows",
 }, async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   aclSpy(t, (p) => p.includes(".json.tmp-") && p.includes("\\redaction\\"));
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals(e.termination, "setup_failed");
@@ -1630,7 +1631,7 @@ Deno.test({
   name: "an unverified custody directory refuses before any secret is written",
   ignore: Deno.build.os !== "windows",
 }, async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const custodyDir = join(t.env.privateRoot, "custody");
   aclSpy(t, (p) => p === custodyDir);
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
@@ -1650,7 +1651,7 @@ Deno.test({
 });
 
 Deno.test("non-enforced run: the secrets mount holds ready when the container starts; ready is not a secret", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   assert(!t.env.egressEnforced);
   const seen: boolean[] = [];
   const inner = t.docker.behavior;
@@ -1674,7 +1675,7 @@ Deno.test("non-enforced run: the secrets mount holds ready when the container st
 const STUB_SCENARIO = JSON.stringify({ steps: [], after: "end_turn" });
 
 async function stubDir(): Promise<{ dir: string; sha: string }> {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.copyFile(
     "scripts/harness/stub-anthropic.mjs",
     join(dir, "stub-anthropic.mjs"),
@@ -1711,7 +1712,7 @@ const ledgerBytes = (t: TestEnv) =>
   );
 
 Deno.test("stub provider: no ledger reservation, dummy credential, stub mount and env, command override, no judgment", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const s = await stubEnv(t);
   const before = await ledgerBytes(t);
   let oauth = "";
@@ -1756,7 +1757,7 @@ Deno.test("stub provider: no ledger reservation, dummy credential, stub mount an
 });
 
 Deno.test("stub provider: refused outside results/harness/stub-cells", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const s = await stubDir();
   t.env.stubProvider = { dir: s.dir };
   const cell = await cellFor(t);
@@ -1769,7 +1770,7 @@ Deno.test("stub provider: refused outside results/harness/stub-cells", async () 
 });
 
 Deno.test("stub provider: --image runs that id and the manifest records it", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const other = `sha256:${"d".repeat(64)}`;
   t.docker.addImage("centralgauge/harness-claude-code:drill", other, {
     "centralgauge.harness": "claude-code",
@@ -1783,7 +1784,7 @@ Deno.test("stub provider: --image runs that id and the manifest records it", asy
 });
 
 Deno.test("stub provider: an --image of another harness is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const other = `sha256:${"e".repeat(64)}`;
   t.docker.addImage("x:1", other, {
     "centralgauge.harness": "pi",
@@ -1802,7 +1803,7 @@ Deno.test("stub provider: an --image of another harness is refused", async () =>
 });
 
 Deno.test("stub provider: --image records the override's base digest, not the tagged image's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const other = `sha256:${"d".repeat(64)}`;
   const otherBase = `sha256:${"f".repeat(64)}`;
   t.docker.addImage("drill:1", other, {
@@ -1816,7 +1817,7 @@ Deno.test("stub provider: --image records the override's base digest, not the ta
 });
 
 Deno.test("stub provider: a stub execution is never judged, not even by a rejudge", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await stubEnv(t);
   const cell = await cellFor(t);
   const e = (await runCell(t.env, cell)).executions[0]!;
@@ -1844,7 +1845,7 @@ for (
   ] as const
 ) {
   Deno.test(`stub provider: rejudge fails closed when the stub's side file is ${what}`, async () => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     await stubEnv(t);
     const cell = await cellFor(t);
     const e = (await runCell(t.env, cell)).executions[0]!;
@@ -1858,7 +1859,7 @@ for (
 }
 
 Deno.test("rejudge: a normal execution whose side file is missing is refused (fail closed)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const cell = await cellFor(t);
   const e = (await runCell(t.env, cell)).executions[0]!;
   await Deno.remove(join(t.env.resultsRoot, "runs", e.id, "sandbox.json"));
@@ -1870,7 +1871,7 @@ Deno.test("rejudge: a normal execution whose side file is missing is refused (fa
 });
 
 Deno.test("stub provider: the dummy credential and then ready are written before the sandbox starts", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.egressEnforced = true; // not consulted in stub mode: ready is still written
   await stubEnv(t);
   // The write order into the secrets dir, observed at the write itself (no timestamps).
@@ -1911,11 +1912,11 @@ Deno.test("stub provider: mode and stub provenance are in the intent before rele
     const i = JSON.parse(await Deno.readTextFile(privatePaths(env, id).intent));
     seen.push([i.phase, i.mode, i.stub]);
   };
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const s = await stubEnv(t);
   t.env.hooks = { prepared: record(t.env) };
   await runCell(t.env, await cellFor(t));
-  const n = await makeEnv();
+  await using n = await makeEnv();
   n.env.hooks = { prepared: record(n.env) };
   await runCell(n.env, await cellFor(n));
   assertEquals(seen, [
@@ -1925,7 +1926,7 @@ Deno.test("stub provider: mode and stub provenance are in the intent before rele
 });
 
 Deno.test("recovery: an intent written before M2-08 (no mode) recovers as normal and is judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.hooks = {
     prepared: async (id) => {
       const p = privatePaths(t.env, id).intent;
@@ -1955,7 +1956,7 @@ for (const point of ["beforeDraft", "draft"] as const) {
       };
 
   Deno.test(`recovery (${point}): a stub attempt recovered by a normal command is published under the stub results root, never judged, no ledger change`, async () => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const normal = { resultsRoot: t.env.resultsRoot, store: t.env.store };
     await stubEnv(t);
     t.env.hooks = crash();
@@ -1976,7 +1977,7 @@ for (const point of ["beforeDraft", "draft"] as const) {
   });
 
   Deno.test(`recovery (${point}): a normal attempt recovered by a stub-mode command is judged as normal`, async () => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     t.env.hooks = crash();
     const cell = await cellFor(t);
     await assertRejects(() => runCell(t.env, cell), Error, "runner killed");
@@ -1994,7 +1995,7 @@ for (const point of ["beforeDraft", "draft"] as const) {
 }
 
 Deno.test("mcp inventory: a plain arm that connects an unrequested MCP server is setup_failed, even after a timeout", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   // Past the pre-release privilege check (H-01); the run still times out.
   t.env.timeoutMsFor = () => 2_000;
   t.docker.behavior = async (_call, io) => {
@@ -2090,7 +2091,7 @@ async function assertPublishedRedacted(t: TestEnv, id: string) {
 }
 
 Deno.test("publication redacts a non-custody pattern secret in raw log, stderr, trace command and side file", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.behavior = leakingBehavior(t);
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals(e.termination, "completed");
@@ -2098,7 +2099,7 @@ Deno.test("publication redacts a non-custody pattern secret in raw log, stderr, 
 });
 
 Deno.test("recovery publishes a crashed attempt with a non-custody pattern secret redacted", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.behavior = leakingBehavior(t);
   t.env.hooks = {
     after: (s) =>
@@ -2120,7 +2121,7 @@ Deno.test("recovery publishes a crashed attempt with a non-custody pattern secre
 Deno.test("record and error strings are pattern-redacted", async () => {
   // Master dropped the backend-fault string (M1-19b run 002); an observed
   // version is still echoed into setup_error, so it carries the secret.
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const bearer = `Bearer ${"z".repeat(30)}`;
   t.docker.behavior = async (_c, io) => {
     await io.stdout(
@@ -2154,7 +2155,7 @@ function secretDirs(t: TestEnv): string[] {
 }
 
 Deno.test("enforced run: listeners checked, preflight run, then secrets and ready; nothing earlier", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   eg.onProbe = (sandbox) => {
     const call = t.docker.runs.find((r) => r.name === sandbox)!;
@@ -2205,7 +2206,7 @@ Deno.test("enforced run: listeners checked, preflight run, then secrets and read
 });
 
 Deno.test("enforced run (M1-34e): every egress line carries its phase, preflight before the release and agent after", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   const inner = t.docker.behavior;
   t.docker.behavior = async (call, io) => {
@@ -2265,7 +2266,7 @@ Deno.test("enforced run: a proxy not listening, a failed host verification or a 
     [RECORDED_HOSTS_PATH, (eg) => (eg.recordedHosts = {}), false],
   ];
   for (const [word, breakIt, sandboxStarted] of cases) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     breakIt(eg);
     let probeListing: string[] | null = null;
@@ -2310,7 +2311,7 @@ const preflightOf = async (t: TestEnv, id: string) =>
   )).trim().split("\n").map((l) => JSON.parse(l) as ProbeLine);
 
 Deno.test("enforced run (M3-09a): a passing preflight publishes its exact probe lines", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   let seen: ProbeLine[] = [];
   eg.lines = (ls) => (seen = ls);
@@ -2321,7 +2322,7 @@ Deno.test("enforced run (M3-09a): a passing preflight publishes its exact probe 
 });
 
 Deno.test("enforced run (M3-09a): a failing preflight publishes its lines through the redaction path", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   let cred = "";
   eg.onProbe = async (sandbox) => {
@@ -2363,7 +2364,7 @@ Deno.test("enforced run (M3-09a): a failing preflight publishes its lines throug
 });
 
 Deno.test("placed (qualified) run: a failed host verification reserves no ledger slot", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   t.env.egressEnforced = false; // qualified: placed, still supervised and budgeted
   eg.verifyProblems = ["foreign block rule is effective: x"];
@@ -2378,7 +2379,7 @@ Deno.test("placed (qualified) run: a failed host verification reserves no ledger
 
 Deno.test("enforced run: a deny line during the run kills the sandbox (egress_violation); infra, never judged, no retry, the campaign stops", async () => {
   for (const brokenLog of [false, true]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     t.env.supervised = false; // automatic retries would be allowed
     const work = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", []);
@@ -2424,7 +2425,7 @@ Deno.test("enforced run: a deny line during the run kills the sandbox (egress_vi
 });
 
 Deno.test("enforced run: a failed shared proxy is setup_failed naming the proxy address (egress_proxy_failed)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   eg.proxyFailed = true;
   const cell = await cellFor(t);
@@ -2472,7 +2473,7 @@ Deno.test("enforced run: a recreated network (new id or interface index) fails u
     (s: EgressState) => (s.gatewayAdapter!.index = 43),
   ];
   for (const recreate of recreations) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     const s = state();
     recreate(s);
@@ -2499,7 +2500,7 @@ Deno.test("enforced run: a recreated network (new id or interface index) fails u
 });
 
 Deno.test("enforced run without an egress runtime is refused before anything (fail closed)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.egressEnforced = true;
   await assertRejects(
     async () => runCell(t.env, await cellFor(t)),
@@ -2510,7 +2511,7 @@ Deno.test("enforced run without an egress runtime is refused before anything (fa
 });
 
 Deno.test("stub cell with a placed marker: egress not consulted (M2-08); internal network (backend on the gateway), no proxy or preflight, dummy and ready before the start", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await stubEnv(t);
   const eg = enforce(t);
   let readyAtStart = false;
@@ -2536,7 +2537,7 @@ Deno.test("stub cell with a placed marker: egress not consulted (M2-08); interna
 });
 
 Deno.test("stub cell with a qualified marker (M1-33s): runs on the internal network, no proxy env, no egress events or record, ready before the start, not judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await stubEnv(t);
   const eg = enforce(t);
   t.env.egressEnforced = false; // qualified: placed, not authorized
@@ -2595,7 +2596,7 @@ Deno.test("record mode is refused outside qualified + supervised + a credential-
     }],
   ];
   for (const [what, setup] of cases) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     t.env.egressEnforced = false; // qualified
     eg.recordedHosts = {};
@@ -2613,7 +2614,7 @@ Deno.test("record mode is refused outside qualified + supervised + a credential-
 });
 
 Deno.test("record mode: the supervised qualified Claude cell records every CONNECT host into recorded-hosts.json", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   t.env.egressEnforced = false; // qualified: supervised, budgeted
   eg.recordedHosts = {};
@@ -2678,7 +2679,7 @@ Deno.test("record mode: the supervised qualified Claude cell records every CONNE
 });
 
 Deno.test("record mode: a run that records nothing writes no file and stops", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   t.env.egressEnforced = false;
   eg.recordedHosts = {};
@@ -2694,7 +2695,7 @@ Deno.test("record mode: a run that records nothing writes no file and stops", as
 });
 
 Deno.test("record mode is refused for a stub cell (never placed, no credential)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await stubEnv(t);
   const eg = enforce(t);
   t.env.egressEnforced = false; // qualified
@@ -2710,7 +2711,7 @@ Deno.test("record mode is refused for a stub cell (never placed, no credential)"
 });
 
 Deno.test("stub cell without an egress runtime (mode off) stays on the default network", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await stubEnv(t);
   await runCell(t.env, await cellFor(t));
   assertEquals(t.docker.runs[0]!.network, null);
@@ -2891,7 +2892,7 @@ async function releaseWith(t: TestEnv, markerPath: string) {
 }
 
 Deno.test("fix A: authorized evidence is valid content, rechecked at every release", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const { markerPath } = await authorizedLayout(t);
   await releaseWith(t, markerPath);
   const r = await runCell(t.env, await cellFor(t));
@@ -2922,7 +2923,7 @@ Deno.test("fix A: a self-consistent marker pointing at a failing probe, or at an
 });
 
 Deno.test("fix A: a marker edited after startup is refused at the next release", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const { markerPath, marker } = await authorizedLayout(t);
   await releaseWith(t, markerPath);
   assertEquals(
@@ -2964,7 +2965,7 @@ Deno.test({
     "STUB_COMMAND on the host: the entry returns at once with run.ps1's exit code and the stub is gone (M3-07b)",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.realPath(await Deno.makeTempDir());
+    const dir = await Deno.realPath(await testTempDir());
     const l = Deno.listen({ hostname: "127.0.0.1", port: 0 });
     const port = (l.addr as Deno.NetAddr).port;
     l.close();
@@ -3045,7 +3046,7 @@ async function egressSetupFailed(
 }
 
 Deno.test("placed run (M1-33d): empty mount at the address check, the verified address registered, only the proxy credential before the authenticated preflight, rechecked, unregistered", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   const nets = t.docker.networks.bind(t.docker);
   const mount = (name: string) =>
@@ -3152,7 +3153,7 @@ Deno.test("placed run (M1-33d): a missing, foreign or out-of-subnet address is s
     }],
   ];
   for (const [word, breakIt] of cases) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     breakIt(t);
     const killed = mountAtKill(t);
@@ -3166,7 +3167,7 @@ Deno.test("placed run (M1-33d): a missing, foreign or out-of-subnet address is s
 
 Deno.test("placed run (M1-33d): a duplicate source or an address changed after the preflight is setup_failed (egress_preflight_failed); no provider secret, no ready", async () => {
   {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     eg.registerError = new ConfigurationError(
       "egress proxy source 172.30.60.10 is already registered",
@@ -3176,7 +3177,7 @@ Deno.test("placed run (M1-33d): a duplicate source or an address changed after t
     assertEquals(killed, [[]], "no credential without a registration");
   }
   {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     let n = 0;
     t.docker.networks = () =>
@@ -3193,7 +3194,7 @@ Deno.test("placed run (M1-33d): a duplicate source or an address changed after t
 });
 
 Deno.test("placed run (M1-33d review): the host is verified again right before the release; a change after the preflight is setup_failed (egress_preflight_failed), no provider secret, no ready", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   let calls = 0;
   eg.verify = () => {
@@ -3240,7 +3241,7 @@ Deno.test("placed run (M1-33d): the authenticated preflight fails on a 407 with 
     ],
   ];
   for (const [word, mut] of cases) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     eg.lines = (ls) => ls.map(mut);
     const killed = mountAtKill(t);
@@ -3257,7 +3258,7 @@ Deno.test("placed run (M1-33d): the authenticated preflight fails on a 407 with 
 Deno.test("placed run (M1-33d): a registration log failure is setup_failed (egress_log_failed), during the preflight or the run", async () => {
   // During the preflight: nothing is released.
   {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     eg.onProbe = () => {
       eg.failReg("egress_log_failed");
@@ -3268,7 +3269,7 @@ Deno.test("placed run (M1-33d): a registration log failure is setup_failed (egre
   }
   // During the run: the log write throws, the proxy fails the registration, the sandbox stops.
   {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     t.docker.behavior = async (call, io) => {
       const id = call.labels.get("centralgauge.harness.execution")!;
@@ -3292,7 +3293,7 @@ Deno.test("placed run (M1-33d): a registration log failure is setup_failed (egre
 
 Deno.test("placed run (M1-33d): a failed shared proxy ends a running cell setup_failed (egress_proxy_failed); a late proxy or registration failure is never recorded as a result", async () => {
   {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     t.docker.behavior = async (_call, io) => {
       eg.proxyFailed = true;
@@ -3327,7 +3328,7 @@ Deno.test("placed run (M1-33d): a failed shared proxy ends a running cell setup_
 
 Deno.test("placed run (M1-33d): every form of the proxy credential is redacted from every published surface (logs, stderr, trace, side file, egress log, workspace, judge output)", async () => {
   let forms: string[] = [];
-  const t = await makeEnv({ bc: leakingBc(() => forms) });
+  await using t = await makeEnv({ bc: leakingBc(() => forms) });
   const eg = enforce(t);
   const work = ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct", []);
   t.docker.behavior = async (call, io) => {
@@ -3378,7 +3379,7 @@ Deno.test("placed run (M1-33d): every form of the proxy credential is redacted f
 
 Deno.test("recovery (M1-33d): an attempt interrupted after the proxy credential is published clean from its custody", async () => {
   for (const phase of ["credential", "released"] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     let forms: string[] = [];
     const leak = async (id: string) => {
@@ -3435,11 +3436,11 @@ Deno.test("recovery (M1-33d): an attempt interrupted after the proxy credential 
 // H-01: the agent never runs as an administrator.
 
 Deno.test("H-01: every docker run of a cell (placed agent run, stub cell) runs as ContainerUser", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   enforce(t);
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   assertEquals(e.termination, "completed");
-  const t2 = await makeEnv();
+  await using t2 = await makeEnv();
   await stubEnv(t2);
   await runCell(t2.env, await cellFor(t2));
   const runs = [...t.docker.runs, ...t2.docker.runs];
@@ -3630,7 +3631,7 @@ Deno.test("stub provider: an --image whose revision differs from the arm's is re
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   };
   // Arm on the frozen image (no revision), override carries one.
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const revised = `sha256:${"9".repeat(64)}`;
   t.docker.addImage("drill:r2", revised, {
     ...labels,
@@ -3645,7 +3646,7 @@ Deno.test("stub provider: an --image whose revision differs from the arm's is re
   );
   assertEquals(t.docker.runs, []);
   // Arm on revision 2, override without one, then with revision 3.
-  const u = await makeEnv();
+  await using u = await makeEnv();
   const frozen = `sha256:${"8".repeat(64)}`;
   u.docker.addImage("drill:frozen", frozen, labels);
   await stubEnv(u, frozen);
@@ -4296,7 +4297,7 @@ Deno.test("component inventory: a pre-start refusal is finalized; recovery re-ex
 
 // Only inventoried images wait for an inventory: others release without any cg_inventory line.
 Deno.test("component inventory: a non-inventoried image releases without waiting for an inventory", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.docker.waitForReady = true;
   t.docker.behavior = ccBehavior(
     join(t.repo.tasksDir, "HX-001"),
@@ -4482,7 +4483,7 @@ Deno.test("component inventory: a record delivered only after the sandbox ended 
 Deno.test("inventoryProof: read and deadline races, an unterminated success, cancellation and a late image refusal keep distinct outcomes", async () => {
   const t = await inventoriedEnv();
   const manifest = (await cellFor(t, "cc-v2-inv")).armManifest;
-  const dir = await Deno.makeTempDir({ dir: t.env.privateRoot });
+  const dir = await testTempDir({ dir: t.env.privateRoot });
   const raw = join(dir, "raw.jsonl");
   const go = new AbortController().signal;
   const proof = (ended: () => boolean, waitMs = 2000, stop = go) =>
@@ -4538,7 +4539,7 @@ Deno.test("inventoryProof: read and deadline races, an unterminated success, can
 // M10-08c review: a sandbox removed during the preflight (another process's
 // rm -f) gets no proxy credential: liveness and identity are rechecked first.
 Deno.test("enforced run: a sandbox removed before the proxy credential release gets no credential", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   const register = eg.register;
   eg.register = (o) => {
@@ -4563,7 +4564,7 @@ Deno.test("enforced run: a sandbox removed before the proxy credential release g
 });
 
 Deno.test("enforced run: a sandbox removed after the preflight gets no provider secret and no ready", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = enforce(t);
   const verify = eg.verify;
   let calls = 0;
@@ -4581,7 +4582,7 @@ Deno.test("enforced run: a sandbox removed after the preflight gets no provider 
 });
 
 Deno.test("a sandbox replaced under its name before the release gets nothing (identity rechecked)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const exec = t.docker.exec.bind(t.docker);
   t.docker.exec = async (name, user, argv) => {
     const r = await exec(name, user, argv);
@@ -4608,7 +4609,7 @@ Deno.test("a sandbox replaced under its name before the release gets nothing (id
 // kill, which happens at the removal): none lands after the removal.
 Deno.test("enforced run (M10-08c review 3, 8): a sandbox gone before the proxy credential or after the preflight is the same pre-start setup_failed, no campaign stop, no secret written after the removal", async () => {
   for (const when of ["before the credential", "after the preflight"]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = enforce(t);
     const gone = () => {
       const name = t.docker.runs[0]!.name;
@@ -4663,7 +4664,7 @@ Deno.test("enforced run (M10-08c review 3, 8): a sandbox gone before the proxy c
 // M10-08c review 4: an environment whose private-root lock another process
 // reclaimed (this one suspended past the stale window) starts no execution.
 Deno.test("runCell (M10-08c review 4): an environment that lost its private root's lock starts nothing", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.namespaceLost = () => true;
   const cell = await cellFor(t);
   await assertRejects(
@@ -4679,7 +4680,7 @@ Deno.test("runCell (M10-08c review 4): an environment that lost its private root
 // starts. Lost between runCell's check and the start: nothing starts, nothing
 // is published and the intent stays for the new holder's recovery.
 Deno.test("runExecution (M10-08c run 002 item 1): a lock lost between runCell's check and the sandbox start starts nothing and leaves the intent", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   let checks = 0;
   t.env.namespaceLost = () => checks++ > 0;
   const cell = await cellFor(t);
@@ -4750,7 +4751,7 @@ Deno.test("recoverInterrupted (M10-08c run 002 item 1): a lock lost during recov
 Deno.test("inventoryProof (M10-08c run 002 item 5): an absent raw log is not live; a read error is a transport failure naming it", async () => {
   const t = await inventoriedEnv();
   const manifest = (await cellFor(t, "cc-v2-inv")).armManifest;
-  const dir = await Deno.makeTempDir({ dir: t.env.privateRoot });
+  const dir = await testTempDir({ dir: t.env.privateRoot });
   const raw = join(dir, "raw.jsonl");
   const go = new AbortController().signal;
   const absent = await inventoryProof(raw, manifest, () => true, go, 200);
@@ -4809,7 +4810,7 @@ Deno.test("runCell (review 546e8337 P3-2): an inventory transport failure is sto
 // sandbox ran may find the root reclaimed (and the execution recovered): it
 // publishes nothing and leaves the intent for the new holder.
 Deno.test("runExecution (review 546e8337 P3-4): a lock lost while the sandbox runs publishes nothing and leaves the intent", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   let lost = false;
   t.env.namespaceLost = () => lost;
   const inner = t.docker.behavior;
@@ -4837,7 +4838,7 @@ Deno.test("runExecution (review 546e8337 P3-4): a lock lost while the sandbox ru
 // its enumeration and before each removal: lost while the custody dirs are
 // listed, none is removed.
 Deno.test("recoverInterrupted (M10-08c run 003 item 2): a lock lost while the custody dirs are enumerated removes none", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const base = join(t.env.privateRoot, "secrets");
   const dir = join(base, `${SECRETS_DIR_PREFIX}${t.env.owner}.planted-0001`);
   await Deno.mkdir(dir, { recursive: true });
@@ -4867,7 +4868,7 @@ Deno.test("recoverInterrupted (M10-08c run 003 item 2): a lock lost while the cu
 // the private state and intent stay for the new holder's recovery.
 Deno.test("runExecution (M10-08c run 003 item 2): a lock lost during publication or judging writes and removes nothing more", async () => {
   for (const step of ["execution", "judgment"] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     let lost = false;
     t.env.namespaceLost = () => lost;
     t.env.hooks = {
@@ -4896,7 +4897,7 @@ Deno.test("runExecution (M10-08c run 003 item 2): a lock lost during publication
 // stops judgeExecution before the verdict log and the judgment are written.
 Deno.test("runExecution (M10-08c P2-1): a lock lost inside the judge writes neither the verdict log nor the judgment", async () => {
   let lost = false;
-  const t = await makeEnv({
+  await using t = await makeEnv({
     bc: new FakeBc((cu) => {
       if (cu === 80010) lost = true;
       return result({});
@@ -4919,7 +4920,7 @@ Deno.test("runExecution (M10-08c P2-1): a lock lost inside the judge writes neit
 // Review M10-08c P3-1: finishCleanup checks the token before each removal:
 // lost right after the published mark, nothing is removed.
 Deno.test("runExecution (M10-08c P3-1): a lock lost after the published mark removes no private state", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   let lost = false;
   t.env.namespaceLost = () => lost;
   t.env.hooks = {
@@ -4939,7 +4940,7 @@ Deno.test("runExecution (M10-08c P3-1): a lock lost after the published mark rem
 });
 
 Deno.test("stub provider (M10-10 r2): an --image with the LSP release labels records the installed release on a plain arm, LSP still off", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const other = `sha256:${"d".repeat(64)}`;
   const [lk, lv] = (await lspLabel("."))!;
   t.docker.addImage("centralgauge/harness-claude-code:drill", other, {
@@ -4986,7 +4987,7 @@ async function unqualifiedCell(t: TestEnv) {
 }
 
 Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is refused before the intent, the ledger and any secret read", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   // A secret read would fail on this missing source instead of the refusal.
   await Deno.remove(t.env.secretsSource, { recursive: true });
   await assertRejects(
@@ -5004,7 +5005,7 @@ Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is ref
 });
 
 Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it captures the qualification evidence)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await stubEnv(t);
   // T-03: the r3 image's run.ps1 prints its inventory before the ready wait;
   // without it the cell sat out the 180 s inventory deadline and was refused.
@@ -5048,7 +5049,7 @@ Deno.test("runExecution (H-03): a stub cell on an unqualified version runs (it c
 // H-03: the cell record says which memory limit its sandbox ran with: the
 // --memory value docker run received, in the unhashed side file.
 Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed as --memory", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
   const args = t.docker.runs[0]!.args;
   const passed = args[args.indexOf("--memory") + 1];
@@ -5061,7 +5062,7 @@ Deno.test("runCell (H-03): sandbox.json records the sandbox memory limit passed 
 // timeout. A finished stream is stopped after a bounded grace instead: the run
 // is completed (its cost kept) and the late stop is recorded.
 Deno.test("runCell (H-08): a run that lingers after its final result is stopped after the grace and completed, the lingering recorded", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.streamEndGraceMs = 50;
   // Without the stop, the lingering run would reach this cap as a timeout.
   t.env.timeoutMsFor = () => 15_000;

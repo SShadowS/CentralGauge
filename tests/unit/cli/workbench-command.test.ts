@@ -7,6 +7,7 @@ import {
   createEscalationVerify,
   resolveServeOptions,
 } from "../../../cli/commands/workbench-command.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 describe("cli/workbench-command", () => {
   it("defaults to the repo's scratch directory", () => {
@@ -76,7 +77,7 @@ describe("cli/workbench-command", () => {
   // therefore happen BEFORE the delegation, which is also what makes it
   // observable here.
   it("clears the prereq caches once per job", async () => {
-    const scratchDir = await Deno.makeTempDir({ prefix: "cg-wb-" });
+    const scratchDir = await testTempDir({ prefix: "cg-wb-" });
     try {
       let cleared = 0;
       const verify = createEscalationVerify({
@@ -115,7 +116,7 @@ describe("cli/workbench-command", () => {
   // same wiring with a fake, so a refactor that drops the preflight fails
   // in the default suite instead of in production.
   it("prepares the container before verifying, once per container", async () => {
-    const scratchDir = await Deno.makeTempDir({ prefix: "cg-wb-" });
+    const scratchDir = await testTempDir({ prefix: "cg-wb-" });
     try {
       const prepared: Array<
         { container: string; username: string | undefined }
@@ -167,7 +168,7 @@ describe("cli/workbench-command", () => {
   });
 
   it("retries the preflight after it fails", async () => {
-    const scratchDir = await Deno.makeTempDir({ prefix: "cg-wb-" });
+    const scratchDir = await testTempDir({ prefix: "cg-wb-" });
     try {
       let attempts = 0;
       const verify = createEscalationVerify({

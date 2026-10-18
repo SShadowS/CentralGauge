@@ -10,6 +10,7 @@ import {
   resolveTestFileFromTaskId,
   verifyResultFromTestResult,
 } from "../../../mcp/al-tools-server.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // Real project root, for tests that exercise the X-prefixed (trap-task)
 // resolution path against the actual committed CG-AL-X002 task files
@@ -20,7 +21,7 @@ describe("al-tools-server", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await Deno.makeTempDir({ prefix: "al-tools-test-" });
+    tempDir = await testTempDir({ prefix: "al-tools-test-" });
   });
 
   afterEach(async () => {

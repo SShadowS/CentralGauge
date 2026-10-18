@@ -14,8 +14,9 @@ import {
   buildVerdictWorkspace,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 
 const LIB_REL = "Test/src/TestLibrary.Codeunit.al";
 const LIB = `codeunit 80090 "CGR Test Library"

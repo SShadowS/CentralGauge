@@ -8,9 +8,10 @@ import {
   TEMP_PREFIX,
   verify,
 } from "../../../scripts/harness/freeze-archive.ts";
+import { testTempDir, testTempFile } from "../../utils/temp-dir.ts";
 
 async function tree() {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await Deno.mkdir(join(root, "executions", "c1"), { recursive: true });
   await Deno.writeTextFile(
     join(root, "executions", "c1", "e1.json"),
@@ -20,11 +21,11 @@ async function tree() {
   return root;
 }
 async function secret(value: string) {
-  const f = join(await Deno.makeTempDir(), "claude-oauth-token");
+  const f = join(await testTempDir(), "claude-oauth-token");
   await Deno.writeTextFile(f, value);
   return f;
 }
-const out = async () => join(await Deno.makeTempDir(), "a");
+const out = async () => join(await testTempDir(), "a");
 
 Deno.test("pack then verify is clean; freeze.json holds meta, sums hash and scan count", async () => {
   const o = await out();
@@ -59,7 +60,7 @@ Deno.test("a secret hit fails without printing the value; missing or empty secre
     async () =>
       pack(root, await out(), {
         meta: {},
-        secretFiles: [await Deno.makeTempFile()],
+        secretFiles: [await testTempFile()],
       }),
     Error,
     "empty secret file",
@@ -68,7 +69,7 @@ Deno.test("a secret hit fails without printing the value; missing or empty secre
     async () =>
       pack(root, await out(), {
         meta: {},
-        secretFiles: [join(await Deno.makeTempDir(), "gone")],
+        secretFiles: [join(await testTempDir(), "gone")],
       }),
     Error,
     "cannot read secret file",
@@ -81,7 +82,7 @@ Deno.test("verify names changed, missing, extra files, an edited SHA256SUMS and 
     meta: {},
     secretFiles: [await secret("tok-12345")],
   });
-  const report = join(await Deno.makeTempDir(), "r.json");
+  const report = join(await testTempDir(), "r.json");
   await Deno.writeTextFile(report, "{}");
   await bind(o, [report]);
   await Deno.writeTextFile(
@@ -114,7 +115,7 @@ Deno.test("bind is cumulative: reports, then documents; a later call keeps earli
     meta: {},
     secretFiles: [await secret("tok-12345")],
   });
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const report = join(dir, "r.json"), doc = join(dir, "handoff.md");
   await Deno.writeTextFile(report, "{}");
   await Deno.writeTextFile(doc, "# h");
@@ -145,7 +146,7 @@ Deno.test({
   ignore: Deno.build.os !== "windows",
   fn: async () => {
     const root = await tree();
-    const target = await Deno.makeTempDir();
+    const target = await testTempDir();
     const r = await new Deno.Command("cmd", {
       args: ["/c", "mklink", "/J", join(root, "j"), target],
     }).output();
@@ -419,7 +420,7 @@ Deno.test("CLI: a secret hit exits 1 without the value; I/O errors in bind and v
     meta: {},
     secretFiles: [await secret("tok-12345")],
   });
-  const b = await cli("bind", o, join(await Deno.makeTempDir(), "gone.json"));
+  const b = await cli("bind", o, join(await testTempDir(), "gone.json"));
   assertEquals(b.code, 2, b.text);
   const o2 = await out();
   await Deno.mkdir(join(o2, "freeze.json"), { recursive: true });
@@ -475,7 +476,7 @@ Deno.test("verify: a dir where SHA256SUMS, the results tree or a bound file shou
   await Deno.writeTextFile(join(o2, "results"), "not a dir");
   await assertRejects(() => verify(o2), OperationalError);
   const o3 = await packed();
-  const report = join(await Deno.makeTempDir(), "r.json");
+  const report = join(await testTempDir(), "r.json");
   await Deno.writeTextFile(report, "{}");
   await bind(o3, [report]);
   await Deno.remove(report);
@@ -486,7 +487,7 @@ Deno.test("verify: a dir where SHA256SUMS, the results tree or a bound file shou
 
 Deno.test("secret-file messages name the file by position, never by basename or path", async () => {
   const good = await secret("good-secret-1");
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const named = async (content: string) => {
     const p = join(dir, `named-${crypto.randomUUID()}`);
     await Deno.writeTextFile(p, content);
