@@ -10,6 +10,8 @@ import {
   contaminationProblems,
   type Eligible,
   entryHash,
+  excludeCrashCells,
+  excludedLines,
   identityProblems,
   isLarge,
   type Kind,
@@ -17,6 +19,7 @@ import {
   pickHeldOut,
   ranks,
   REGISTRY_PATH,
+  rescreenTasks,
   type Rules,
   RulesSchema,
   type Screening,
@@ -1038,4 +1041,160 @@ Deno.test("loadScreenCampaigns (M8-15c): a results dir without campaigns (none r
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+// H-29 (owner ruling 2026-10-18-screening-crash-cells): a cell whose counted
+// execution ended in harness_crash never counts, whatever its verdict.
+const used = (c: Cell, id: string) => ({ ...c, used_execution: id });
+const crashed = (cells: Cell[], crash: Record<number, string>) => {
+  const recs = cells.map((c, i) => used(c, crash[i] ?? `ok-${c.task}-${i}`));
+  const ex = recs.map((c) => ({
+    id: c.used_execution,
+    termination: Object.values(crash).includes(c.used_execution)
+      ? "harness_crash" as const
+      : "completed" as const,
+  }));
+  return excludeCrashCells(recs, ex);
+};
+
+Deno.test("excludeCrashCells (H-29): a crash-ended passing cell does not count and its task is incomplete", () => {
+  const r = crashed(six("HX-033", 6), { 4: "18de2b0f" });
+  assertEquals(r.excluded, [
+    { execution: "18de2b0f", task: "HX-033", reason: "harness_crash" },
+  ]);
+  assertEquals(tally(r.cells, RULES).get("HX-033"), {
+    solved: 5,
+    scored: 5,
+    complete: false,
+  });
+});
+
+Deno.test("excludeCrashCells (H-29): a crash-ended failing cell does not count and its task is incomplete", () => {
+  const r = crashed(six("HX-032", 2), { 5: "ff14f5e5" });
+  assertEquals(r.excluded, [
+    { execution: "ff14f5e5", task: "HX-032", reason: "harness_crash" },
+  ]);
+  assertEquals(tally(r.cells, RULES).get("HX-032"), {
+    solved: 2,
+    scored: 5,
+    complete: false,
+  });
+});
+
+Deno.test("excludeCrashCells (H-29): completed cells still count", () => {
+  const r = crashed(six("HX-007", 4), {});
+  assertEquals(r.excluded, []);
+  assertEquals(tally(r.cells, RULES).get("HX-007"), {
+    solved: 4,
+    scored: 6,
+    complete: true,
+  });
+});
+
+Deno.test("excludeCrashCells (H-29): a task with an excluded cell is listed for the next screen", () => {
+  const r = crashed([...six("HX-031", 3), ...six("HX-007", 3)], {
+    1: "e5404209",
+  });
+  const h = screeningHistory([{
+    id: "c1",
+    experiment: "v2-screen-1",
+    created_at: "2026-10-18T00:00:00Z",
+    cells: r.cells,
+    excluded: r.excluded,
+  }], RULES);
+  assertEquals(h.excluded, r.excluded);
+  const st = classify(
+    S([C("HX-031"), C("HX-007")]),
+    new Set(["HX-031", "HX-007"]),
+    [],
+    tally(h.cells, RULES),
+    h.screens,
+  );
+  assertEquals(rescreenTasks(st), ["HX-031"]);
+  assertEquals(excludedLines(r.excluded), [
+    "excluded e5404209 HX-031 harness_crash",
+  ]);
+});
+
+Deno.test("excludeCrashCells (H-29): one rescreen is allowed, a second rescreen of the now complete task is refused", () => {
+  const at = (d: number) => `2026-10-${d}T00:00:00Z`;
+  const first = crashed(six("HX-033", 6), { 0: "18de2b0f" });
+  const h = screeningHistory([
+    {
+      id: "c1",
+      experiment: "v2-screen-1",
+      created_at: at(18),
+      cells: first.cells,
+    },
+    {
+      id: "c2",
+      experiment: "v2-screen-2",
+      created_at: at(20),
+      cells: six("HX-033", 5),
+    },
+    {
+      id: "c3",
+      experiment: "v2-screen-3",
+      created_at: at(22),
+      cells: six("HX-033", 4),
+    },
+  ], RULES);
+  assertEquals(h.problems, [
+    "HX-033 rescreened in v2-screen-3 after a complete screen",
+    "HX-033 screened 3 times (at most one rescreen)",
+  ]);
+  const ok = screeningHistory([
+    {
+      id: "c1",
+      experiment: "v2-screen-1",
+      created_at: at(18),
+      cells: first.cells,
+      excluded: first.excluded,
+    },
+    {
+      id: "c2",
+      experiment: "v2-screen-2",
+      created_at: at(20),
+      cells: six("HX-033", 5),
+    },
+  ], RULES);
+  assertEquals(ok.problems, []);
+  // The rescreen replaces the crash screen, so nothing is excluded any more.
+  assertEquals(ok.excluded, []);
+  assertEquals(tally(ok.cells, RULES).get("HX-033")!.solved, 5);
+});
+
+Deno.test("excludeCrashCells (H-29): on records, a judged crash-ended cell is excluded; a crash retried to completion counts", async () => {
+  const { cellsFromRecords } = await import("../../../src/harness/outcome.ts");
+  const c = await campaign();
+  const crash = execution(c, { arm: "plain" }, {
+    termination: "harness_crash",
+    did_work: true,
+  });
+  const lost = execution(c, { arm: "skills" }, {
+    termination: "harness_crash",
+    did_work: false,
+  });
+  const retry = execution(c, {
+    arm: "skills",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: lost.id,
+  });
+  const ex = [crash, lost, retry];
+  const js = [judgment(c, crash, true), judgment(c, retry, true)];
+  const byExecution = new Map(js.map((j) => [j.execution_id, [j]]));
+  const r = excludeCrashCells(cellsFromRecords(c, ex, byExecution), ex);
+  assertEquals(r.excluded, [
+    { execution: crash.id, task: "HX-001", reason: "harness_crash" },
+  ]);
+  const by = new Map(r.cells.map((x) => [`${x.task}/${x.arm}`, x]));
+  assertEquals(
+    [by.get("HX-001/plain")!.status, by.get("HX-001/plain")!.pass],
+    ["unscored", null],
+  );
+  assertEquals(
+    [by.get("HX-001/skills")!.status, by.get("HX-001/skills")!.pass],
+    ["scored", true],
+  );
 });
