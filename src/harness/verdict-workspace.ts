@@ -1836,10 +1836,24 @@ async function applyCreditRules(
     ) {
       excluded.push(t.codeunit);
     }
+    // H-30 run 003 (owner): an unreadable file also leaves the build, so the
+    // cuts the credit rules would make cannot be skipped; a Test app that no
+    // longer builds fails the cell (intended, fail closed).
     for (const [rel, why] of odd) {
       notes.push(
         `${TEST_APP}/${rel}: ${why}; no agent test is run or counted`,
       );
+      const dest = join(testOut, ...rel.split("/"));
+      if (edited.has(rel)) {
+        await Deno.writeFile(
+          dest,
+          await Deno.readFile(join(pristine, TEST_APP, ...rel.split("/"))),
+        );
+        notes.push(`${TEST_APP}/${rel}: the shipped file stays in the build`);
+      } else {
+        await Deno.remove(dest);
+        notes.push(`${TEST_APP}/${rel}: removed from the build`);
+      }
     }
     return { notes, excluded };
   }

@@ -1153,3 +1153,58 @@ Deno.test("H-30 r002 (Sol): a multiline string (@'...') in agent Test text fails
     "Test/src/Agent.Test.al: a multiline string (@'...'); no agent test is run or counted",
   );
 });
+
+// ---- H-30 run 003 (owner: unreadable files leave the build) ----
+
+Deno.test("H-30 r003: an unreadable new Test file (bare CR) with an automatic subscriber the credit rules would cut is removed from the build; the other agent files stay but no agent test counts", async () => {
+  const subscriber = `codeunit 80031 "CGR Agent Hooks"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Rental-Post", 'OnAfterPostRentalContract', '', false, false)]
+    local procedure Hook(var Amount: Decimal)
+    begin
+        // run a shipped test\r        Codeunit.Run(80010);
+    end;
+}
+`;
+  const r = await rebuild({
+    "Test/src/Hooks.Codeunit.al": subscriber,
+    "Test/src/Agent.Test.al": NEW_TESTS.replace("Lib.MakeTwo()", "2"),
+  });
+  assertEquals(r.v.violations, []);
+  assertEquals(
+    await Deno.stat(join(r.v.dir, "Test/src/Hooks.Codeunit.al")).catch(() =>
+      null
+    ),
+    null,
+    "the unreadable file is not in the build",
+  );
+  assert(
+    await Deno.stat(join(r.v.dir, "Test/src/Agent.Test.al")).then(() => true),
+  );
+  assertEquals(r.added, []);
+  assertStringIncludes(
+    r.notes,
+    "Test/src/Hooks.Codeunit.al: a line terminator other than LF or CRLF; no agent test is run or counted",
+  );
+  assertStringIncludes(
+    r.notes,
+    "Test/src/Hooks.Codeunit.al: removed from the build",
+  );
+});
+
+Deno.test("H-30 r003: an unreadable edited shipped test file stays exactly as shipped in the build", async () => {
+  const r = await rebuild({
+    "Test/src/Shipped.Test.al": SHIPPED_TESTS.replace(
+      /}\n$/,
+      "\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::\"CGR Rental-Post\", 'OnAfterPostRentalContract', '', false, false)]\n    local procedure Hook(var Amount: Decimal)\n    begin\n        //x\r        Amount := 0;\n    end;\n}\n",
+    ),
+  });
+  assertEquals(
+    await Deno.readTextFile(join(r.v.dir, "Test/src/Shipped.Test.al")),
+    SHIPPED_TESTS,
+  );
+  assertStringIncludes(
+    r.notes,
+    "Test/src/Shipped.Test.al: the shipped file stays in the build",
+  );
+});
