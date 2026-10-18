@@ -94,6 +94,8 @@ export class FakeBc implements HarnessBc {
   cleaned: string[][] = [];
 
   compilerId = "fake-artifact|bccontainerhelper 6.1.14";
+  /** H-27: like alc.exe, every compile writes a new package id (non-deterministic bytes). */
+  nondeterministic = false;
   /** Containers whose cleanup (a sync with no publish) fails. */
   cleanupFails = new Set<string>();
 
@@ -201,7 +203,14 @@ export class FakeBc implements HarnessBc {
         folder,
         source,
       };
-      await Deno.writeTextFile(artifactPath, JSON.stringify(app));
+      await Deno.writeTextFile(
+        artifactPath,
+        JSON.stringify(
+          this.nondeterministic
+            ? { ...app, packageId: crypto.randomUUID() }
+            : app,
+        ),
+      );
       return {
         success: true,
         errors: [],

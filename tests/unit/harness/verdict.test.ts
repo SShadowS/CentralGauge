@@ -6,7 +6,7 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { ContainerError, ValidationError } from "../../../src/errors.ts";
-import { BcLane } from "../../../src/harness/bc-lane.ts";
+import { BcLane, dirBuildCache } from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import {
@@ -144,6 +144,28 @@ Deno.test("judge: the correct solution passes every scorer; the record validates
     await Deno.readTextFile(join(results, "verdicts", `${judgment.id}.json`)),
   );
   assertEquals(stored.execution_id, input.executionId);
+});
+
+Deno.test("judge (H-27): with the shared build cache a second judgment reuses the task's builds and scores the same", async () => {
+  const bc = script();
+  bc.nondeterministic = true;
+  const cache = dirBuildCache(await Deno.makeTempDir());
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const strip = (j: { scorers: unknown }) => j.scorers;
+  const a = await setup("correct");
+  const r1 = await judge(lane, { ...a.input, buildCache: cache });
+  const first = r1.log.per_app_compiles;
+  const b = await setup("correct");
+  const r2 = await judge(lane, { ...b.input, buildCache: cache });
+  assertEquals(r2.log.per_app_compiles, 0, "every build is reused");
+  assert(first > 0);
+  assertEquals(r2.judgment.verdict, r1.judgment.verdict);
+  assertEquals(strip(r2.judgment), strip(r1.judgment));
+  // And without the cache the same judgment compiles everything and scores the same.
+  const c = await setup("correct");
+  const r3 = await judge(lane, c.input);
+  assertEquals(r3.log.per_app_compiles, first);
+  assertEquals(strip(r3.judgment), strip(r1.judgment));
 });
 
 Deno.test("judge: a naive solution fails fail_to_pass by an assertion", async () => {

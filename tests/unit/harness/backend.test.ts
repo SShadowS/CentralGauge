@@ -20,7 +20,11 @@ import {
   resolveBackendHost,
   timingSafeEqual,
 } from "../../../src/harness/backend.ts";
-import { BcLane } from "../../../src/harness/bc-lane.ts";
+import {
+  BcLane,
+  type BuildCache,
+  dirBuildCache,
+} from "../../../src/harness/bc-lane.ts";
 import {
   type CopyLimits,
   DEFAULT_COPY_LIMITS,
@@ -55,6 +59,8 @@ interface Setup {
   docker: FakeDocker;
   /** Resolves when the fake compile op starts (pins "revoke during the op"). */
   entered: Promise<void>;
+  /** The build cache each op got (H-27). */
+  caches: BuildCache[];
 }
 
 async function workspace(root: string, exec: string): Promise<string> {
@@ -112,10 +118,15 @@ async function grantFor(
 }
 
 async function setup(
-  opts: { revokeGraceMs?: number; graceElapsed?: () => Promise<void> } = {},
+  opts: {
+    revokeGraceMs?: number;
+    graceElapsed?: () => Promise<void>;
+    buildCache?: BuildCache;
+  } = {},
 ): Promise<Setup> {
   const root = await tmp();
   const seen: string[] = [];
+  const caches: BuildCache[] = [];
   const gate: Setup["gate"] = { wait: null };
   const failWith: Setup["failWith"] = { err: null };
   let enter!: () => void;
@@ -123,6 +134,7 @@ async function setup(
   const ops: BackendOps = {
     async compile(ctx, apps) {
       seen.push(ctx.snapshot);
+      caches.push(ctx.buildCache);
       enter();
       if (gate.wait) {
         await Promise.race([
@@ -161,6 +173,7 @@ async function setup(
     bodyTimeoutMs: 100,
     revokeGraceMs: opts.revokeGraceMs ?? 50,
     ...(opts.graceElapsed ? { graceElapsed: opts.graceElapsed } : {}),
+    ...(opts.buildCache ? { buildCache: opts.buildCache } : {}),
   });
   await Deno.mkdir(join(root, "work"), { recursive: true });
   const tokenA = await grantFor(backend, root, EXEC_A, hostLog);
@@ -183,6 +196,7 @@ async function setup(
     failWith,
     docker,
     entered,
+    caches,
   };
 }
 
@@ -237,6 +251,29 @@ Deno.test("backend: missing, wrong, crossed, expired and revoked tokens are 401"
     (await s.backend.handle(req("/v1/compile", s.tokenA, "{}"))).status,
     401,
   );
+});
+
+Deno.test("backend (H-27): a shared build cache is handed to every execution's ops and survives the grant", async () => {
+  const dir = await tmp();
+  const shared = dirBuildCache(dir);
+  await Deno.mkdir(join(dir, "k1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(dir, "k1", "CentralGauge_CGR Core_1.0.0.0.app"),
+    "x",
+  );
+  const s = await setup({ buildCache: shared });
+  assertEquals(
+    (await s.backend.handle(req("/v1/compile", s.tokenA, "{}"))).status,
+    200,
+  );
+  assertEquals(
+    (await s.backend.handle(req("/v1/compile", s.tokenB, "{}", EXEC_B))).status,
+    200,
+  );
+  assertEquals(s.caches, [shared, shared]);
+  await s.backend.revoke(EXEC_A);
+  await s.backend.revoke(EXEC_B);
+  assert(await shared.get("k1"), "revoke never drops the shared cache");
 });
 
 Deno.test("backend: only compile, test and symbols exist", async () => {

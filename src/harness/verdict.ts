@@ -12,6 +12,7 @@ import type { TestResult } from "../container/types.ts";
 import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { WantedApp } from "./bc-apps.ts";
 import type {
+  BuildCache,
   DeployContext,
   DeployTestResult,
   HarnessBc,
@@ -123,6 +124,8 @@ export interface JudgeInput {
   lock: LockedSymbols;
   /** The removal allowlist's trusted roots (pristine, oracle) are set by judge, never by the caller. */
   deploy: Pick<DeployContext, "ledgerRoot">;
+  /** H-27: the run's shared build cache (task-fixed builds are reused across cells); none = no reuse. */
+  buildCache?: BuildCache;
 }
 
 export interface VerdictSpans {
@@ -603,6 +606,9 @@ async function buildOracle(
           prep.wanted.map((w) => [folderOf.get(w.id.toLowerCase())!, w.file]),
         ),
         graph,
+        ...(ctx.i.buildCache
+          ? { cache: ctx.i.buildCache, prebuiltKeys: prep.keys }
+          : {}),
       });
       // H-04b: inside compileOn, so a crashed oracle build reroutes.
       throwIfCrashed(r, c, "oracle");
@@ -667,6 +673,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     changed: vw.changed,
     workDir: join(i.workDir, "apps"),
     lock: i.lock,
+    ...(i.buildCache ? { cache: i.buildCache } : {}),
   });
   recordBuild(ctx, prep, "candidate");
   if (!prep.buildOk) return scores.failRest();
@@ -910,6 +917,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,
+      ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
   const prep = await prepare(
     vw.dir,

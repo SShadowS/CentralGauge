@@ -363,6 +363,8 @@ export interface BuiltApp {
   compile_ms: number;
   /** Analyzer warnings; set only by an analysis compile (M11-05). */
   warnings?: CompilationError[];
+  /** Its build cache key (H-27): set for a built or reused app when a cache is used. */
+  key?: string;
 }
 
 const synthetic = (message: string): CompilationError => ({
@@ -380,16 +382,48 @@ const synthetic = (message: string): CompilationError => ({
  * compile nothing else may be there (BCH filled a gap from its cache).
  */
 /**
- * Built .app files of one execution, keyed by the exact build inputs
- * (buildKey): an unchanged app is never compiled twice (M1-40). Failures are
- * never cached.
+ * Built .app files keyed by the exact build inputs (buildKey): an unchanged
+ * app is never compiled twice (M1-40). Since H-27 one cache is shared by the
+ * agent backend and the judge of a run (under its private root). Failures
+ * are never cached.
  */
 export interface BuildCache {
   get(key: string): Promise<string | null>;
   put(key: string, file: string): Promise<void>;
 }
 
-/** A BuildCache in a private directory: <dir>/<key>/<the .app file name>. */
+/** The run's shared build cache folder (H-27). */
+export const buildCacheDir = (privateRoot: string) =>
+  join(privateRoot, "build-cache");
+
+/**
+ * Entries and bytes of a build cache folder (H-27). No eviction yet.
+ * ponytail: unbounded; add LRU eviction when disk use shows it is needed.
+ */
+export async function buildCacheReport(
+  dir: string,
+): Promise<{ entries: number; bytes: number }> {
+  let entries = 0;
+  let bytes = 0;
+  try {
+    for await (const e of Deno.readDir(dir)) {
+      if (!e.isDirectory || e.name.startsWith(".tmp-")) continue;
+      entries++;
+      for await (const f of Deno.readDir(join(dir, e.name))) {
+        bytes += (await Deno.stat(join(dir, e.name, f.name))).size;
+      }
+    }
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  return { entries, bytes };
+}
+
+/**
+ * A BuildCache in a private directory: <dir>/<key>/<the .app file name>.
+ * A put is atomic (a whole entry is renamed into place) and safe under
+ * concurrent builders: the first entry of a key wins and is never replaced.
+ */
 export function dirBuildCache(dir: string): BuildCache {
   return {
     async get(key) {
@@ -418,27 +452,39 @@ export function dirBuildCache(dir: string): BuildCache {
   };
 }
 
-/** What makes a build reusable: the app's source, its version, its dependencies' files, the compiler and the lock. */
+/**
+ * What makes a build reusable: the app's source, its version, its
+ * dependencies, the compiler (artifact and BCH version) and the lock. A
+ * dependency is its own cache key, not its file (H-27: alc.exe output is not
+ * byte-deterministic: a new package id, build timestamp and zip times each
+ * build), and the cache hands out the cached dependency files, so a chain
+ * stays consistent. A dependency with no key (built without the cache) is
+ * keyed by its file. No container name: the compiler identity pins the
+ * artifact, so a recreated container on the same artifact may hit.
+ */
 async function buildKey(
-  container: string,
   compiler: string,
   app: StagedApp,
   srcDir: string,
   version: string,
   files: ReadonlyMap<string, string>,
+  keys: ReadonlyMap<string, string>,
   lockDigest: string,
 ): Promise<string> {
   const deps: [string, string][] = [];
   for (const d of app.depends) {
-    const f = files.get(d)!;
-    deps.push([d, await hashFile(dirname(f), f)]);
+    const k = keys.get(d);
+    if (k) deps.push([d, `key:${k}`]);
+    else {
+      const f = files.get(d)!;
+      deps.push([d, `file:${await hashFile(dirname(f), f)}`]);
+    }
   }
   return await hashJson({
     folder: app.folder,
     version,
     source: await hashTree(join(srcDir, app.folder), "task"),
     deps,
-    container,
     compiler,
     lock: lockDigest,
   });
@@ -613,8 +659,10 @@ export async function buildApps(
     prebuilt?: Map<string, string>;
     /** Cancellation: checked before every compile, so no further app is built after an abort. */
     signal?: AbortSignal;
-    /** Reuse of unchanged builds (per execution, M1-40). */
+    /** Reuse of unchanged builds (M1-40; the run's shared cache since H-27). */
     cache?: BuildCache;
+    /** Cache keys of the `prebuilt` files (H-27); a prebuilt app without one is keyed by its file. */
+    prebuiltKeys?: ReadonlyMap<string, string>;
     /** The whole workspace graph (workspace dependencies' declared symbols); default `apps`. */
     graph?: StagedApp[];
     /** CodeCop/UICop compile for the final-code check (M11-05); never with `cache`. */
@@ -622,6 +670,7 @@ export async function buildApps(
   },
 ): Promise<BuiltApp[]> {
   const files = new Map(o.prebuilt ?? []);
+  const keys = new Map(o.prebuiltKeys ?? []);
   const out: BuiltApp[] = [];
   await Deno.mkdir(join(o.outDir, ".apps"), { recursive: true });
   const lockedIds = new Set(o.lock.packages.map((p) => p.app_id.toLowerCase()));
@@ -631,7 +680,7 @@ export async function buildApps(
     o.lock.packages.map((p) => [p.file.toLowerCase(), p]),
   );
   const lockedNames = new Set(o.lock.packages.map((p) => p.file));
-  // A recreated or upgraded container is a different compiler: a cache miss.
+  // An upgraded container (another artifact or BCH version) is a different compiler: a cache miss.
   const compiler = o.cache ? await bc.harnessCompilerIdentity(container) : null;
   const collision = (file: string) =>
     lockedByName.get(basename(file).toLowerCase());
@@ -712,12 +761,12 @@ export async function buildApps(
     }
     const key = o.cache
       ? await buildKey(
-        container,
         compiler!,
         app,
         o.srcDir,
         version,
         files,
+        keys,
         lockDigest,
       )
       : null;
@@ -740,6 +789,7 @@ export async function buildApps(
       const file = join(o.outDir, ".apps", basename(hit));
       await Deno.copyFile(hit, file);
       files.set(app.folder, file);
+      keys.set(app.folder, key!);
       out.push({
         folder: app.folder,
         id: app.id,
@@ -749,6 +799,7 @@ export async function buildApps(
         file,
         diagnostics: [],
         compile_ms: 0,
+        key: key!,
       });
       continue;
     }
@@ -857,7 +908,10 @@ export async function buildApps(
       file = join(o.outDir, ".apps", basename(r.artifactPath));
       await Deno.copyFile(r.artifactPath, file);
       files.set(app.folder, file);
-      if (key) await o.cache!.put(key, file);
+      if (key) {
+        await o.cache!.put(key, file);
+        keys.set(app.folder, key);
+      }
     }
     out.push({
       folder: app.folder,
@@ -869,6 +923,7 @@ export async function buildApps(
       diagnostics: r.errors,
       compile_ms,
       ...warned,
+      ...(key && file ? { key } : {}),
     });
   }
   return out;
@@ -936,6 +991,8 @@ export interface Prepared {
   buildOk: boolean;
   compile_ms: number;
   per_app_compiles: number;
+  /** Folder -> build cache key of every app built or reused with a cache (H-27). */
+  keys: Map<string, string>;
 }
 
 export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
@@ -1035,6 +1092,9 @@ async function prepareOn(
     );
   }
   const prebuilt = new Map(pre.map((b) => [b.folder, b.file!] as const));
+  const preKeys = new Map(
+    pre.filter((b) => b.key).map((b) => [b.folder, b.key!] as const),
+  );
   const candApps = graph.filter((a) => cands.has(a.folder));
   const built = await buildApps(lane.bc, container, {
     srcDir: o.candidateDir,
@@ -1044,6 +1104,7 @@ async function prepareOn(
     lock: o.lock,
     graph,
     prebuilt,
+    prebuiltKeys: preKeys,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
@@ -1076,6 +1137,9 @@ async function prepareOn(
     buildOk,
     compile_ms: all.reduce((s, b) => s + b.compile_ms, 0),
     per_app_compiles: all.filter((b) => b.attempted).length,
+    keys: new Map(
+      all.filter((b) => b.ok && b.key).map((b) => [b.folder, b.key!] as const),
+    ),
   };
 }
 
