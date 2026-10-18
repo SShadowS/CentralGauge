@@ -1339,6 +1339,17 @@ const outsideBodies = (src: string, ds: AlDecl[]) =>
  */
 const ODD_EOL = /\r(?!\n)|[\u2028\u2029\u0085]/;
 
+/**
+ * Why this lexer could read agent AL text differently from the compiler, or
+ * null: an ODD_EOL line end, or a multiline string literal `@'...'` (BC 26+),
+ * which stripAlNoise ends at the first LF (Sol, H-30 run 002).
+ */
+function unreadable(src: string): string | null {
+  if (ODD_EOL.test(src)) return "a line terminator other than LF or CRLF";
+  if (/@\s*'/.test(src)) return "a multiline string (@'...')";
+  return null;
+}
+
 /** A plain `using` statement on one line (dotted, quoted parts allowed). */
 const USING_RE =
   /^using\s+((?:[A-Za-z_][A-Za-z0-9_]*|"[^"\n]+")(?:\s*\.\s*(?:[A-Za-z_][A-Za-z0-9_]*|"[^"\n]+"))*)\s*;$/i;
@@ -1409,9 +1420,8 @@ function prepareHelper(
   };
   const note = (s: string) => notes.push(`${where}: ${s}`);
   const objKey = (d: AlDecl) => `${d.kind} ${d.id}`;
-  if (ODD_EOL.test(aSrc)) {
-    return restore("a line terminator other than LF or CRLF");
-  }
+  const unread = unreadable(aSrc);
+  if (unread) return restore(unread);
   const aDecls = declarations(aSrc);
   if (aDecls.length === 0) {
     return restore("the agent's file declares no object");
@@ -1806,19 +1816,19 @@ async function applyCreditRules(
   }
 
   // H-30 run 002: a new or edited test file the parser cannot read as the
-  // compiler does (ODD_EOL) could hide a violator from the credit rules.
-  const odd: string[] = [];
+  // compiler does (unreadable) could hide a violator from the credit rules.
+  const odd: [string, string][] = [];
   for (const rel of [...newFiles].sort()) {
     const src = await Deno.readTextFile(join(testOut, ...rel.split("/")));
-    if (ODD_EOL.test(src)) odd.push(rel);
+    const why = unreadable(src);
+    if (why) odd.push([rel, why]);
   }
   for (const [rel, aSrc] of [...edited].sort(([a], [b]) => a < b ? -1 : 1)) {
     const pSrc = await Deno.readTextFile(
       join(pristine, TEST_APP, ...rel.split("/")),
     );
-    if (declarations(pSrc).some(isTestCodeunit) && ODD_EOL.test(aSrc)) {
-      odd.push(rel);
-    }
+    const why = unreadable(aSrc);
+    if (why && declarations(pSrc).some(isTestCodeunit)) odd.push([rel, why]);
   }
   if (odd.length > 0) {
     for (
@@ -1826,9 +1836,9 @@ async function applyCreditRules(
     ) {
       excluded.push(t.codeunit);
     }
-    for (const rel of odd) {
+    for (const [rel, why] of odd) {
       notes.push(
-        `${TEST_APP}/${rel}: a line terminator other than LF or CRLF; no agent test is run or counted`,
+        `${TEST_APP}/${rel}: ${why}; no agent test is run or counted`,
       );
     }
     return { notes, excluded };

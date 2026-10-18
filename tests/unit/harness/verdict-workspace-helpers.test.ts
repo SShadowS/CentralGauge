@@ -1123,3 +1123,33 @@ Deno.test("H-30 r002: a line terminator other than LF or CRLF in a new or edited
     );
   }
 });
+
+Deno.test("H-30 r002 (Sol): a multiline string (@'...') in agent Test text fails closed: the helper is restored whole, and in a test file no agent test runs or counts", async () => {
+  const hidden = libWith(`
+    procedure Added()
+    var
+        T: Text;
+    begin
+        T := @'
+//'; end; [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Rental-Post", 'OnAfterPostRentalContract', '', false, false)] local procedure Hook(var Amount: Decimal) begin
+        Amount := 0;
+    end;
+`);
+  const r = await rebuild({ [LIB_REL]: hidden });
+  assertEquals(r.lib, LIB);
+  assertStringIncludes(
+    r.notes,
+    "a multiline string (@'...'); the shipped file is restored",
+  );
+  const t = await rebuild({
+    "Test/src/Agent.Test.al": NEW_TESTS.replace("Lib.MakeTwo()", "2").replace(
+      "    [Test]",
+      "    procedure Wrap()\n    var\n        T: Text;\n    begin\n        T := @'\n//'; ShippedPasses();\n    end;\n\n    [Test]",
+    ),
+  });
+  assertEquals(t.added, []);
+  assertStringIncludes(
+    t.notes,
+    "Test/src/Agent.Test.al: a multiline string (@'...'); no agent test is run or counted",
+  );
+});
