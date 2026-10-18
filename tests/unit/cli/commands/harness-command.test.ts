@@ -1941,7 +1941,8 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const js = await t.env.store.judgments(e.id);
   const latest = js.reduce((a, b) => a.started_at >= b.started_at ? a : b);
   assertEquals(latest.scorer_versions, SCORER_SUITE);
-  assertEquals(latest.scorer_versions["mutant_kill"], "4");
+  // 5 since H-30 (helper merge, shipped wins).
+  assertEquals(latest.scorer_versions["mutant_kill"], "5");
   assertEquals(latest.scorer_fingerprint, await currentScorerFingerprint());
   assertEquals(
     [

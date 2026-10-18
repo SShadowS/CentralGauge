@@ -534,8 +534,8 @@ Deno.test("mutant_kill: no pass_to_pass means no trusted control: a thrown agent
 
 Deno.test("mutant_kill: the scorer version is bumped for the agent-suite rules", () => {
   // 2: agent-suite rules; 3: tests extracted from shipped codeunits (M4-17a);
-  // 4: added helper procedures kept (H-21).
-  assertEquals(SCORER_SUITE["mutant_kill"], "4");
+  // 4: added helper procedures kept (H-21). 5: helper merge, shipped wins (H-30).
+  assertEquals(SCORER_SUITE["mutant_kill"], "5");
 });
 
 // ---- M4-17a: tests added to a SHIPPED test codeunit (the HX-002 pilot shape) ----
@@ -679,10 +679,10 @@ Deno.test("mutant_kill (M4-17a): only edits to shipped procedures, or only uncou
 
 Deno.test("scorer suite (M4-17a): mutant_kill and pass_to_pass are bumped for tests extracted from shipped codeunits", () => {
   // Bumped again by H-21 (added helper procedures kept): 4 and 3; pass_to_pass
-  // again by H-26 (agent-added test reruns): 4.
+  // again by H-26 (agent-added test reruns): 4; both by H-30 (helper merge): 5, 5.
   assertEquals([SCORER_SUITE["mutant_kill"], SCORER_SUITE["pass_to_pass"]], [
-    "4",
-    "4",
+    "5",
+    "5",
   ]);
 });
 

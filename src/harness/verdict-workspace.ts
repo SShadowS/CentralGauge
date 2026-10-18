@@ -85,12 +85,100 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** Trusted app.json with only `dependencies` from the candidate; identity changes are violations. */
+/** An app's identity (an internalsVisibleTo entry names one). */
+interface AppIdentity {
+  id: string;
+  name: string;
+  publisher: string;
+}
+
+/** The id, name and publisher of an app.json or entry, when all are strings. */
+function identityOf(r: Record<string, unknown>): AppIdentity | null {
+  const [id, name, publisher] = [r["id"], r["name"], r["publisher"]];
+  return typeof id === "string" && typeof name === "string" &&
+      typeof publisher === "string"
+    ? { id, name, publisher }
+    : null;
+}
+
+/**
+ * H-30: the merged internalsVisibleTo. The shipped entries stay; an entry the
+ * agent adds is kept only in a production app and only when it is exactly the
+ * pristine Test app's identity (id case aside, no other key), written as that
+ * identity. Every other entry is dropped with a note.
+ */
+function mergeInternalsVisibleTo(
+  folder: string,
+  trusted: unknown,
+  cand: unknown,
+  test: AppIdentity | null,
+  notes: string[],
+): unknown[] {
+  const list = (v: unknown) =>
+    Array.isArray(v) ? v : v === undefined ? [] : [v];
+  const shipped = list(trusted);
+  const out = [...shipped];
+  const same = (a: unknown, b: unknown) =>
+    JSON.stringify(a) === JSON.stringify(b);
+  const isTest = (e: unknown) => {
+    if (test === null || folder === TEST_APP) return false;
+    if (typeof e !== "object" || e === null || Array.isArray(e)) return false;
+    const r = e as Record<string, unknown>;
+    const i = identityOf(r);
+    return Object.keys(r).every((k) =>
+      (IDENTITY as readonly string[]).includes(k)
+    ) && i !== null && i.id.toLowerCase() === test.id.toLowerCase() &&
+      i.name === test.name && i.publisher === test.publisher;
+  };
+  for (const e of list(cand)) {
+    if (shipped.some((s) => same(s, e))) continue;
+    if (isTest(e)) {
+      if (!out.some(isTest)) {
+        out.push({
+          id: test!.id,
+          name: test!.name,
+          publisher: test!.publisher,
+        });
+        notes.push(
+          `${folder}: app.json internalsVisibleTo entry kept: ${test!.name}`,
+        );
+      }
+      continue;
+    }
+    const r = (typeof e === "object" && e !== null ? e : {}) as Record<
+      string,
+      unknown
+    >;
+    notes.push(
+      `${folder}: app.json internalsVisibleTo entry dropped: ${
+        String(r["id"] ?? JSON.stringify(e))
+      } ${String(r["name"] ?? "")} (${
+        folder === TEST_APP
+          ? "the Test app grants nothing"
+          : "not the shipped Test app"
+      })`,
+    );
+  }
+  if (shipped.some((s) => !list(cand).some((e) => same(s, e)))) {
+    notes.push(
+      `${folder}: app.json internalsVisibleTo: a shipped entry is removed by the agent; it stays`,
+    );
+  }
+  return out;
+}
+
+/**
+ * Trusted app.json with only `dependencies` from the candidate (and, H-30,
+ * internalsVisibleTo naming the Test app); identity changes are violations,
+ * every other key the agent changed is dropped with a note.
+ */
 async function mergeAppJson(
   folder: string,
   trustedPath: string,
   candidatePath: string,
   violations: string[],
+  notes: string[],
+  test: AppIdentity | null,
 ) {
   const trusted = (await readJson(trustedPath))!;
   const cand = await readJson(candidatePath);
@@ -112,12 +200,34 @@ async function mergeAppJson(
   ) {
     violations.push(`${folder}: idRanges changed`);
   }
-  const merged = {
+  const merged: Record<string, unknown> = {
     ...trusted,
     dependencies: Array.isArray(cand["dependencies"])
       ? cand["dependencies"]
       : trusted["dependencies"] ?? [],
   };
+  const reported = new Set<string>([
+    ...IDENTITY,
+    "idRanges",
+    "dependencies",
+    "internalsVisibleTo",
+  ]);
+  for (const k of new Set([...Object.keys(trusted), ...Object.keys(cand)])) {
+    if (reported.has(k)) continue;
+    if (JSON.stringify(trusted[k]) !== JSON.stringify(cand[k])) {
+      notes.push(
+        `${folder}: app.json ${k} differs from the shipped value; the shipped value is kept`,
+      );
+    }
+  }
+  const ivt = mergeInternalsVisibleTo(
+    folder,
+    trusted["internalsVisibleTo"],
+    cand["internalsVisibleTo"],
+    test,
+    notes,
+  );
+  if (ivt.length > 0) merged["internalsVisibleTo"] = ivt;
   await Deno.writeTextFile(candidatePath, JSON.stringify(merged, null, 2));
 }
 
@@ -131,7 +241,10 @@ export async function buildVerdictWorkspace(
   o: ReconstructOptions,
 ): Promise<VerdictWorkspace> {
   const violations: string[] = [];
+  const appNotes: string[] = [];
   const pristineApps = await readAppGraph(o.pristine);
+  const tj = await readJson(join(o.pristine, TEST_APP, "app.json"));
+  const testIdentity = tj ? identityOf(tj) : null;
   const copy = await safeCopyTree(o.pristine, o.out);
   const out = copy.dst;
 
@@ -165,6 +278,8 @@ export async function buildVerdictWorkspace(
       join(o.pristine, app.folder, "app.json"),
       join(out, app.folder, "app.json"),
       violations,
+      appNotes,
+      testIdentity,
     );
   }
 
@@ -231,6 +346,8 @@ export async function buildVerdictWorkspace(
       join(o.pristine, TEST_APP, "app.json"),
       join(out, TEST_APP, "app.json"),
       violations,
+      appNotes,
+      testIdentity,
     );
   }
 
@@ -269,7 +386,14 @@ export async function buildVerdictWorkspace(
       changed.push(app.folder);
     }
   }
-  return { dir: out, apps, changed, violations, notes, excluded };
+  return {
+    dir: out,
+    apps,
+    changed,
+    violations,
+    notes: [...appNotes, ...notes],
+    excluded,
+  };
 }
 
 /**
@@ -1166,15 +1290,26 @@ function extractFrom(
   };
 }
 
-// ---- H-21: plain procedures an agent added to a SHIPPED helper codeunit ----
+// ---- H-21/H-30: what an agent added to a SHIPPED helper codeunit ----
 
-/** A shipped non-test helper file whose added procedures may be kept. */
+/** A shipped non-test helper file whose agent additions may be kept (H-30 merge). */
 interface Helper {
   rel: string;
-  /** The added procedures (all codeunits of the file); judged by the credit rules. */
+  /**
+   * The added procedures that are candidates (all codeunits of the file),
+   * judged by the credit rules; `vars` holds every agent global (taint).
+   */
   judged: Judged;
-  /** The shipped text with the added procedures appended. */
-  text: string;
+  /** Candidate globals, each kept in a shipped var section of its kind. */
+  globals: Member[];
+  /** Added `using` lines (their names), kept before the first object. */
+  usings: string[];
+  /**
+   * The shipped text with the given procedures and globals (and every using)
+   * merged in, or null when the result does not parse as exactly the shipped
+   * members plus those (fail closed).
+   */
+  build: (procs: Member[], globals: Member[]) => string | null;
 }
 
 /** A codeunit that is neither a test codeunit nor any other Subtype than Normal. */
@@ -1190,19 +1325,59 @@ const outsideBodies = (src: string, ds: AlDecl[]) =>
     src.slice(ds.at(-1)!.end),
   ].map((s) => s.replace(/\r\n/g, "\n"));
 
+/** A plain `using` statement on one line (dotted, quoted parts allowed). */
+const USING_RE =
+  /^using\s+((?:[A-Za-z_][A-Za-z0-9_]*|"[^"\n]+")(?:\s*\.\s*(?:[A-Za-z_][A-Za-z0-9_]*|"[^"\n]+"))*)\s*;$/i;
+
+/** A procedure's parameters: count and a normalized type list (`var` kept). */
+function signature(text: string, m: Member): { arity: number; key: string } {
+  // After the attributes (Sol r1: an attribute's arguments are not parameters).
+  const t = tokenize(text, m.attrs.at(-1)?.[1] ?? m.start, m.bodyStart);
+  let i = t.findIndex((x) => x.v === "(");
+  const params: Tok[][] = [[]];
+  for (let depth = 0; ++i < t.length;) {
+    const v = t[i]!.id ? "" : t[i]!.v;
+    if (v === "(") depth++;
+    else if (v === ")" && depth-- === 0) break;
+    if (v === ";" && depth === 0) params.push([]);
+    else params.at(-1)!.push(t[i]!);
+  }
+  const ps = params.filter((p) => p.length > 0);
+  return {
+    arity: ps.length,
+    key: ps.map((p) => {
+      const isVar = p[0]!.bare && p[0]!.v === "var";
+      const colon = p.findIndex((x) => x.v === ":");
+      return `${isVar ? "var " : ""}${
+        p.slice(colon + 1).map((x) => x.v).join(" ")
+      }`;
+    }).join(";"),
+  };
+}
+
 /**
- * H-21 (owner ruling 2026-10-17, "keep added helpers"). An edited shipped
- * Test file whose objects are all plain (non-test, Subtype Normal) codeunits:
- * the shipped text stays the base and only the procedures new by name are
- * appended (before each codeunit's closing brace, shipped line ends). Fails
- * closed, null and a note, the shipped file restored, when: the agent's
- * objects or any text outside their bodies differ from the shipped file
- * (line ends aside); a codeunit cannot be parsed; a shipped member
- * (property, global, trigger, procedure, attributes included) is not kept
- * byte for byte and in order; or an added member is not a procedure, carries
- * an attribute, has a modifier other than local or internal, or has the
- * name of a shipped member (case-insensitive, quoted or not: an overload).
- * The credit rules judge the added procedures afterwards (applyCreditRules).
+ * H-30 (owner ruling 2026-10-18, "merge, shipped wins"; replaces H-21's
+ * whole-file restore). An edited shipped Test file whose objects are all plain
+ * (non-test, Subtype Normal) codeunits: the shipped text is the result, every
+ * shipped member exactly as shipped, and each agent addition that cannot
+ * touch shipped code is merged in: a new procedure (appended before its
+ * codeunit's closing brace), a new global (after the last shipped global of
+ * a var section of its kind, or in a new var section before the first
+ * procedure when the codeunit has no plain one) and a new `using` line
+ * (before the first object; comments are never read as one). Dropped with a note, the rest still merged: a changed or removed
+ * shipped member (the shipped one stays), a reordering, a trigger, a
+ * property, an attributed member (shipped and oracle tests bind this
+ * codeunit, so a subscriber would fire in them), a compiler directive, a
+ * modifier other than local or internal, a name of a shipped member of
+ * another kind, a new name the shipped file uses (it could rebind shipped
+ * code), a duplicate of a shipped signature, an overload with a shipped
+ * overload's parameter count (it could take a shipped call), a protected
+ * global without a shipped protected section, an object the shipped file lacks
+ * and any other change outside the codeunit bodies. Fails closed, null and
+ * a note, the shipped file restored whole, when the agent's file cannot be
+ * split cleanly: no object, an object without a body, a duplicate object or
+ * a codeunit that cannot be parsed. The credit rules judge the candidates afterwards
+ * (applyCreditRules), which builds the merged text.
  */
 function prepareHelper(
   rel: string,
@@ -1212,123 +1387,331 @@ function prepareHelper(
   notes: string[],
 ): Helper | null {
   const where = `${TEST_APP}/${rel}`;
-  const refuse = (why: string) => {
+  const restore = (why: string) => {
     notes.push(
-      `${where}: ${why}; the shipped file is restored (added procedures not kept)`,
+      `${where}: ${why}; the shipped file is restored (nothing the agent changed is kept)`,
     );
     return null;
   };
-  const key = (ds: AlDecl[]) => ds.map((d) => `${d.kind} ${d.id}`).join(",");
+  const note = (s: string) => notes.push(`${where}: ${s}`);
+  const objKey = (d: AlDecl) => `${d.kind} ${d.id}`;
   const aDecls = declarations(aSrc);
-  if (key(aDecls) !== key(pDecls) || aDecls.some((d) => d.end === 0)) {
-    return refuse("its objects differ from the shipped file");
+  if (aDecls.length === 0) {
+    return restore("the agent's file declares no object");
   }
-  const pOut = outsideBodies(pSrc, pDecls);
-  const aOut = outsideBodies(aSrc, aDecls);
-  if (pOut.some((s, i) => s !== aOut[i])) {
-    return refuse("text outside the codeunit bodies (a header) is changed");
+  if (aDecls.some((d) => d.end === 0)) {
+    return restore("an object has no body");
+  }
+  if (new Set(aDecls.map(objKey)).size !== aDecls.length) {
+    return restore("an object is declared twice");
+  }
+  for (const a of aDecls) {
+    if (!pDecls.some((p) => objKey(p) === objKey(a))) {
+      note(`${a.kind} ${a.id} is not in the shipped file; not kept`);
+    }
   }
   const pText = stripAlNoise(pSrc);
   const aText = stripAlNoise(aSrc);
   const eol = (s: string) => s.replace(/\r\n/g, "\n");
   const nl = pSrc.includes("\r\n") ? "\r\n" : "\n";
-  // A local method wins over a built-in (Error, Message) or anything else
-  // shipped code calls by that name: every name the shipped file uses is refused.
+
+  // Text outside the bodies: the shipped text stays; only new using lines
+  // before the first object are kept, read without comments (Sol r1: a
+  // commented-out using is never carried).
+  const pOut = outsideBodies(pText, pDecls);
+  const aOut = outsideBodies(aText, aDecls);
+  const lines = (s: string) =>
+    s.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  const pHead = lines(pOut[0]!);
+  const usings: string[] = [];
+  const rest: string[] = [];
+  for (const l of lines(aOut[0]!)) {
+    const u = USING_RE.exec(l);
+    if (u && !pHead.includes(l) && !usings.includes(u[1]!)) usings.push(u[1]!);
+    else rest.push(l);
+  }
+  const sameObjects = aDecls.map(objKey).join() === pDecls.map(objKey).join();
+  if (
+    rest.join("\n") !== pHead.join("\n") ||
+    (sameObjects && pOut.some((s, i) => i > 0 && s !== aOut[i]))
+  ) {
+    note(
+      "the header is changed (text outside the codeunit bodies); the shipped text stays",
+    );
+  }
+
+  // A local method or global wins over a built-in (Error, Message) or
+  // anything else shipped code calls by that name: a new name the shipped
+  // file uses is never kept.
   const used = new Set(
     tokenize(pText, 0, pText.length).filter((t) => t.id).map((t) => t.v),
   );
+  const isProtected = (txt: string, m: Member) =>
+    /^protected\b/i.test(txt.slice(m.section!));
   const code: Member[] = [];
   const vars: Member[] = [];
-  const inserts: { at: number; procs: Member[] }[] = [];
-  for (const [i, p] of pDecls.entries()) {
-    const a = aDecls[i]!;
+  const globals: Member[] = [];
+  /** Per codeunit: shipped members, where kept globals go, where procedures go. */
+  const plan: {
+    pm: Member[];
+    end: number;
+    anchors: Map<Member, Member>;
+    /** Globals for a new var section (no shipped plain one). */
+    fresh: Member[];
+    procs: Set<Member>;
+  }[] = [];
+  for (const p of pDecls) {
     const pm = codeunitMembers(pText, p);
-    const am = codeunitMembers(aText, a);
-    if (pm === null || am === null) {
-      return refuse(`codeunit ${p.id} could not be parsed`);
+    if (pm === null) return restore(`codeunit ${p.id} could not be parsed`);
+    const a = aDecls.find((x) => objKey(x) === objKey(p));
+    const entry = {
+      pm,
+      end: p.end,
+      anchors: new Map<Member, Member>(),
+      fresh: [] as Member[],
+      procs: new Set<Member>(),
+    };
+    plan.push(entry);
+    if (!a) {
+      note(
+        `codeunit ${p.id} is removed by the agent; the shipped object stays`,
+      );
+      continue;
     }
-    const shippedNames = new Set(pm.flatMap((m) => m.names));
-    const adds: Member[] = [];
-    let k = 0;
+    const am = codeunitMembers(aText, a);
+    if (am === null) return restore(`codeunit ${p.id} could not be parsed`);
+    vars.push(...am.filter((m) => m.kind === "var"));
+    const at = `codeunit ${p.id}`;
+    const label = (m: Member) =>
+      `${m.kind === "var" ? "global" : m.kind} ${m.displays.join(", ")}`;
+    const taken = new Set<Member>();
+    const order: number[] = [];
+    const shippedOf = (kind: string) => pm.filter((s) => s.kind === kind);
+    const sameText = (m: Member, s: Member) =>
+      s.kind === m.kind &&
+      eol(aSrc.slice(m.start, m.end)) === eol(pSrc.slice(s.start, s.end)) &&
+      (m.kind !== "var" || isProtected(aText, m) === isProtected(pText, s));
     for (const m of am) {
-      const s = pm[k];
-      if (
-        s !== undefined && s.kind === m.kind &&
-        eol(aSrc.slice(m.start, m.end)) === eol(pSrc.slice(s.start, s.end))
-      ) {
-        k++;
+      const same = pm.find((s) => !taken.has(s) && sameText(m, s));
+      if (same) {
+        taken.add(same);
+        order.push(pm.indexOf(same));
         continue;
       }
-      const name = m.displays.join(", ");
-      if (m.kind !== "procedure") {
-        return refuse(`codeunit ${p.id}: added or changed ${m.kind} ${name}`);
-      }
-      if (m.names.some((n) => shippedNames.has(n))) {
-        return refuse(
-          `codeunit ${p.id}: procedure ${name} changes, moves or overloads a shipped member`,
-        );
-      }
-      if (m.names.some((n) => used.has(n))) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} has a name the shipped file uses (it could rebind shipped code)`,
-        );
-      }
+      const drop = (why: string) => note(`${at}: ${label(m)} ${why}`);
+      const other = pm.filter((s) =>
+        s.kind !== m.kind && s.names.some((n) => m.names.includes(n))
+      );
+      // Any carried span, a global's included (Sol r1).
       if (/^[ \t]*#/m.test(aSrc.slice(m.start, m.end))) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} contains a compiler directive`,
-        );
+        drop("contains a compiler directive; not kept");
+        continue;
       }
-      if (m.attrs.length > 0) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} carries an attribute`,
+      if (m.kind === "property") {
+        drop("is added or changed; not kept, the shipped properties stay");
+        continue;
+      }
+      if (m.kind === "trigger") {
+        const s = shippedOf("trigger").find((x) => x.names[0] === m.names[0]);
+        if (s) taken.add(s);
+        drop(
+          s
+            ? "changes a shipped member; not kept, the shipped member stays"
+            : "is added; not kept",
         );
+        continue;
+      }
+      if (m.kind === "var") {
+        const s = shippedOf("var").find((x) =>
+          x.names.some((n) => m.names.includes(n))
+        );
+        if (s) {
+          taken.add(s);
+          drop("changes a shipped member; not kept, the shipped member stays");
+        } else if (other.length > 0) {
+          drop("has the name of a shipped member; not kept");
+        } else if (m.names.some((n) => used.has(n))) {
+          drop("has a name the shipped file uses; not kept");
+        } else {
+          const anchor = pm.filter((x) =>
+            x.kind === "var" &&
+            isProtected(pText, x) === isProtected(aText, m)
+          ).at(-1);
+          if (!anchor && isProtected(aText, m)) {
+            drop("has no shipped protected var section; not kept");
+          } else if (!anchor) {
+            // Sol r1: the first global of a helper without one gets a section.
+            entry.fresh.push(m);
+            globals.push(m);
+          } else {
+            entry.anchors.set(m, anchor);
+            globals.push(m);
+          }
+        }
+        continue;
+      }
+      // A procedure.
+      if (m.attrs.length > 0) {
+        drop("carries an attribute; not kept");
+        continue;
       }
       if (
         !/^(?:(?:local|internal)\s+)?procedure\s/i.test(aText.slice(m.start))
       ) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} has a modifier other than local or internal`,
-        );
+        drop("has a modifier other than local or internal; not kept");
+        continue;
       }
-      adds.push(m);
+      if (other.length > 0) {
+        drop("has the name of a shipped member; not kept");
+        continue;
+      }
+      const sig = signature(aText, m);
+      const namesakes = shippedOf("procedure").filter((s) =>
+        s.names[0] === m.names[0]
+      );
+      if (namesakes.length > 0) {
+        const dup = namesakes.find((s) => signature(pText, s).key === sig.key);
+        if (dup && !taken.has(dup)) {
+          taken.add(dup);
+          drop("changes a shipped member; not kept, the shipped member stays");
+        } else if (dup) {
+          drop("duplicates a shipped signature; not kept");
+        } else if (
+          namesakes.some((s) => signature(pText, s).arity === sig.arity)
+        ) {
+          drop(
+            "has the parameter count of a shipped overload; not kept (it could take a shipped call)",
+          );
+        } else {
+          code.push(m);
+          entry.procs.add(m);
+        }
+        continue;
+      }
+      if (m.names.some((n) => used.has(n))) {
+        drop(
+          "has a name the shipped file uses; not kept (it could rebind shipped code)",
+        );
+        continue;
+      }
+      code.push(m);
+      entry.procs.add(m);
     }
-    // Every token outside the added procedures (section keywords such as
-    // `protected var` included) must be the shipped body's, in order.
-    const body = (txt: string, d: AlDecl, cut: Member[]) =>
-      tokenize(txt, d.start, d.end).filter((t) =>
-        !cut.some((m) => t.start >= m.start && t.start < m.end)
-      ).map((t) => t.raw).join(" ");
-    if (k !== pm.length || body(aText, a, adds) !== body(pText, p, [])) {
-      return refuse(
-        `codeunit ${p.id}: a shipped member is changed, moved or removed`,
+    for (const s of pm.filter((x) => !taken.has(x))) {
+      note(
+        `${at}: ${label(s)} is removed by the agent; the shipped member stays`,
       );
     }
-    code.push(...adds);
-    vars.push(...am.filter((m) => m.kind === "var"));
-    if (adds.length > 0) inserts.push({ at: p.end, procs: adds });
+    if (order.some((x, i) => i > 0 && x < order[i - 1]!)) {
+      note(`${at}: shipped members are reordered; the shipped order stays`);
+    }
   }
-  if (code.length === 0) {
-    return refuse("no added procedure (only comments or layout changed)");
+  if (code.length + globals.length + usings.length === 0) {
+    note("no agent addition is kept; the shipped file stays");
+    return null;
   }
-  let text = pSrc;
-  for (const { at, procs } of inserts.reverse()) {
-    const block = procs.map((m) =>
-      `${nl}    ${eol(aSrc.slice(m.start, m.end)).replace(/\n/g, nl)}${nl}`
-    ).join("");
-    text = text.slice(0, at) + block + text.slice(at);
-  }
-  // The result must parse as the shipped members plus exactly the added ones.
-  const out = declarations(text);
-  const oText = stripAlNoise(text);
-  const counts = out.map((d) => codeunitMembers(oText, d)?.length ?? -1);
-  const want = pDecls.map((p) =>
-    codeunitMembers(pText, p)!.length +
-    (inserts.find((x) => x.at === p.end)?.procs.length ?? 0)
-  );
-  if (key(out) !== key(pDecls) || counts.join() !== want.join()) {
-    return refuse("the shipped file with the added procedures does not parse");
-  }
-  return { rel, judged: { src: aSrc, text: aText, code, vars }, text };
+
+  // Usings go on their own lines before the line of the first object keyword.
+  const head = stripAlNoise(pSrc.slice(0, pDecls[0]!.start));
+  const kw = [...head.matchAll(DECL_RE)].at(-1);
+  const usingAt = kw === undefined ? 0 : head.lastIndexOf(
+    "\n",
+    kw.index! + kw[0].search(/[A-Za-z]/),
+  ) + 1;
+  const carry = (m: Member) =>
+    eol(aSrc.slice(m.start, m.end)).replace(/\n/g, nl);
+
+  const build = (procs: Member[], keep: Member[]): string | null => {
+    const inserts: { at: number; text: string }[] = [];
+    if (usings.length > 0) {
+      inserts.push({
+        at: usingAt,
+        text: usings.map((u) => `using ${u};${nl}`).join("") + nl,
+      });
+    }
+    const want: string[][] = [];
+    for (const e of plan) {
+      const kept = e.pm.flatMap((s) => [
+        eol(pSrc.slice(s.start, s.end)),
+        ...keep.filter((g) => e.anchors.get(g) === s).map((g) =>
+          eol(aSrc.slice(g.start, g.end))
+        ),
+      ]);
+      const ps = procs.filter((m) => e.procs.has(m));
+      // A new var section goes on its own lines before the first shipped
+      // procedure or trigger, else before the closing brace.
+      const fresh = keep.filter((g) => e.fresh.includes(g));
+      const first = e.pm.find(isCode);
+      if (fresh.length > 0) {
+        const texts = fresh.map((g) => eol(aSrc.slice(g.start, g.end)));
+        kept.splice(
+          first
+            ? kept.indexOf(eol(pSrc.slice(first.start, first.end)))
+            : kept.length,
+          0,
+          ...texts,
+        );
+        const section = `    var${nl}${
+          fresh.map((g) => `        ${carry(g)}${nl}`).join("")
+        }`;
+        if (first) {
+          inserts.push({
+            at: pSrc.lastIndexOf("\n", first.start) + 1,
+            text: section + nl,
+          });
+        } else {
+          inserts.push({ at: e.end, text: section });
+        }
+      }
+      want.push([...kept, ...ps.map((m) => eol(aSrc.slice(m.start, m.end)))]);
+      for (const s of e.pm) {
+        const gs = keep.filter((g) => e.anchors.get(g) === s);
+        if (gs.length > 0) {
+          inserts.push({
+            at: s.end,
+            text: gs.map((g) => `${nl}        ${carry(g)}`).join(""),
+          });
+        }
+      }
+      if (ps.length > 0) {
+        inserts.push({
+          at: e.end,
+          text: ps.map((m) => `${nl}    ${carry(m)}${nl}`).join(""),
+        });
+      }
+    }
+    let text = pSrc;
+    // Same position: the earlier pushed insert ends up first (a new var
+    // section before procedures appended at the closing brace).
+    for (
+      const x of inserts.map((x, i) => ({ ...x, i })).sort((a, b) =>
+        b.at - a.at || b.i - a.i
+      )
+    ) {
+      text = text.slice(0, x.at) + x.text + text.slice(x.at);
+    }
+    // The result must parse as exactly the shipped members, in order, plus
+    // the merged ones where they were put.
+    const out = declarations(text);
+    const oText = stripAlNoise(text);
+    if (out.map(objKey).join() !== pDecls.map(objKey).join()) return null;
+    for (const [i, d] of out.entries()) {
+      const ms = codeunitMembers(oText, d);
+      if (
+        ms === null ||
+        ms.map((m) => eol(text.slice(m.start, m.end))).join("\u0000") !==
+          want[i]!.join("\u0000")
+      ) return null;
+    }
+    return text;
+  };
+  return {
+    rel,
+    judged: { src: aSrc, text: aText, code, vars },
+    globals,
+    usings,
+    build,
+  };
 }
 
 /** One member standing for a whole object the parser does not read (names taint its users). */
@@ -1489,24 +1872,47 @@ async function applyCreditRules(
     ],
     shipped,
   );
-  // H-21: a helper file is kept only when none of its added procedures is a
-  // violator (agent code calling a rejected one is a violator by name).
+  // H-30: a violator (agent code calling a rejected one is a violator by
+  // name) is dropped on its own, and so is a global typed as a shipped test
+  // codeunit (it would dangle in a mutant_kill build); the rest is merged.
   for (const h of helpers) {
     const where = `${TEST_APP}/${h.rel}`;
-    const bad = h.judged.code.filter((m) => why.has(m));
-    if (bad.length > 0) {
+    for (const m of h.judged.code.filter((x) => why.has(x))) {
       notes.push(
-        `${where}: ${
-          bad.map((m) => `added procedure ${m.displays[0]}: ${why.get(m)}`)
-            .join("; ")
-        }; the shipped file is restored (added procedures not kept)`,
+        `${where}: added procedure ${m.displays[0]}: ${why.get(m)}; not kept`,
+      );
+    }
+    const tainted = h.globals.filter((g) =>
+      shippedUnitRef(h.judged.text, g.start, g.end, shipped) !== null
+    );
+    for (const g of tainted) {
+      notes.push(
+        `${where}: global ${
+          g.displays.join(", ")
+        }: typed as a shipped test codeunit; not kept`,
+      );
+    }
+    const procs = h.judged.code.filter((m) => !why.has(m));
+    const globals = h.globals.filter((g) => !tainted.includes(g));
+    if (procs.length + globals.length + h.usings.length === 0) {
+      notes.push(`${where}: no agent addition is kept; the shipped file stays`);
+      continue;
+    }
+    const text = h.build(procs, globals);
+    if (text === null) {
+      notes.push(
+        `${where}: the shipped file with the agent additions does not parse; the shipped file is restored (nothing the agent changed is kept)`,
       );
       continue;
     }
-    await Deno.writeTextFile(join(testOut, ...h.rel.split("/")), h.text);
+    await Deno.writeTextFile(join(testOut, ...h.rel.split("/")), text);
     notes.push(
-      `${where}: added procedures kept: ${
-        h.judged.code.map((m) => m.displays[0]).join(", ")
+      `${where}: agent additions kept: ${
+        [
+          ...procs.map((m) => `procedure ${m.displays[0]}`),
+          ...globals.map((g) => `global ${g.displays.join(", ")}`),
+          ...h.usings.map((u) => `using ${u}`),
+        ].join(", ")
       }`,
     );
   }
