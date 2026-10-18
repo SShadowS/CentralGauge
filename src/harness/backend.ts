@@ -519,6 +519,8 @@ export class Backend {
       approvedRoots: string[];
       workRoot: string;
       ops: BackendOps;
+      /** H-27: the run's shared build cache (agent and judge); default a per-execution one, dropped with the grant. */
+      buildCache?: BuildCache;
       /** Container-facing addresses the server may bind (the nat gateway; loopback in tests). */
       allowedHosts: string[];
       bodyTimeoutMs?: number;
@@ -942,9 +944,10 @@ export class Backend {
         requestId,
         workDir,
         signal,
-        buildCache: dirBuildCache(
-          join(this.o.workRoot, st.g.executionId, "build-cache"),
-        ),
+        buildCache: this.o.buildCache ??
+          dirBuildCache(
+            join(this.o.workRoot, st.g.executionId, "build-cache"),
+          ),
       };
       const r = op === "compile"
         ? await this.o.ops.compile(ctx, apps)

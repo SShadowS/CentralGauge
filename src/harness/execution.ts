@@ -45,7 +45,7 @@ import {
 import { readRecords } from "./adapters/jsonl.ts";
 import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
-import type { BcLane, DeployContext } from "./bc-lane.ts";
+import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -167,6 +167,8 @@ export interface HarnessEnv {
   judgeLater?: (cell: CellRef, e: ExecutionRecord) => void;
   backend: Backend;
   backendUrl: string;
+  /** H-27: the run's shared build cache, also the backend's; unset: judges build without reuse. */
+  buildCache?: BuildCache;
   docker: DockerCli;
   owner: string;
   symbols: SymbolPackage[];
@@ -2634,6 +2636,7 @@ export async function judgeExecution(
       workDir,
       lock: { store: env.symbolStore, packages: env.symbols },
       deploy: env.deploy,
+      ...(env.buildCache ? { buildCache: env.buildCache } : {}),
     }, env.now);
     // Every judge output is published through the custody redaction (the
     // agent's code can assemble a secret at runtime in a test message).
