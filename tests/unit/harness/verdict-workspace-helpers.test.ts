@@ -1066,3 +1066,60 @@ Deno.test("H-30 (Sol r4 P2): a kept using gets its own line after a compact name
     quoted,
   );
 });
+
+// ---- H-30 run 002 (orchestrator review r1 BLOCKER) ----
+
+/** AL ends a line at these too; the noise stripper only at LF. */
+const ODD_EOLS = ["\r", "\u2028", "\u2029", "\u0085"];
+
+Deno.test("H-30 r002: a line terminator other than LF or CRLF in an edited helper (a // comment hiding a subscriber) restores the shipped file whole", async () => {
+  for (const eolChar of ODD_EOLS) {
+    const hidden = libWith(`
+    procedure Added()
+    begin
+//x${eolChar}end;${eolChar}[EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Rental-Post", 'OnAfterPostRentalContract', '', false, false)]${eolChar}local procedure Hook(var Amount: Decimal)${eolChar}begin
+        Amount := 0;
+    end;
+`);
+    const r = await rebuild({ [LIB_REL]: hidden });
+    assertEquals(r.v.violations, []);
+    assertEquals(r.lib, LIB, `restored whole (${JSON.stringify(eolChar)})`);
+    assertStringIncludes(
+      r.notes,
+      "a line terminator other than LF or CRLF; the shipped file is restored",
+    );
+  }
+});
+
+Deno.test("H-30 r002: a line terminator other than LF or CRLF in a new or edited Test file runs and counts no agent test (the credit rules cannot read it)", async () => {
+  for (const eolChar of ODD_EOLS) {
+    // The comment hides a procedure that runs a shipped [Test].
+    const sneaky = NEW_TESTS.replace(
+      "    [Test]\n    procedure UsesAddedHelper()",
+      `    procedure Wrap()\n    begin\n//x${eolChar}end;${eolChar}procedure Steal()${eolChar}begin${eolChar}ShippedPasses();\n    end;\n\n    [Test]\n    procedure UsesAddedHelper()`,
+    ).replace("Lib.MakeTwo()", "2");
+    const r = await rebuild({ "Test/src/Agent.Test.al": sneaky });
+    assertEquals(r.v.violations, []);
+    assertEquals(
+      r.added,
+      [],
+      `no agent test counts (${JSON.stringify(eolChar)})`,
+    );
+    assertStringIncludes(
+      r.notes,
+      "Test/src/Agent.Test.al: a line terminator other than LF or CRLF; no agent test is run or counted",
+    );
+    const edited = await rebuild({
+      "Test/src/Shipped.Test.al": SHIPPED_TESTS.replace(
+        /}\n$/,
+        `\n    [Test]\n    procedure Extra()\n    begin\n//x${eolChar}ShippedPasses();\n    end;\n}\n`,
+      ),
+      "Test/src/Agent.Test.al": NEW_TESTS.replace("Lib.MakeTwo()", "2"),
+    });
+    assertEquals(edited.added, []);
+    assertStringIncludes(
+      edited.notes,
+      "Test/src/Shipped.Test.al: a line terminator other than LF or CRLF; no agent test is run or counted",
+    );
+  }
+});

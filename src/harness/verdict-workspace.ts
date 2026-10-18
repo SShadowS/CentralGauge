@@ -1332,6 +1332,13 @@ const outsideBodies = (src: string, ds: AlDecl[]) =>
     src.slice(ds.at(-1)!.end),
   ].map((s) => s.replace(/\r\n/g, "\n"));
 
+/**
+ * H-30 run 002: AL also ends a line at a bare CR and the Unicode line
+ * separators, where stripAlNoise does not end a `//` comment, so the parser
+ * would not see code the compiler does. Agent Test text with one fails closed.
+ */
+const ODD_EOL = /\r(?!\n)|[\u2028\u2029\u0085]/;
+
 /** A plain `using` statement on one line (dotted, quoted parts allowed). */
 const USING_RE =
   /^using\s+((?:[A-Za-z_][A-Za-z0-9_]*|"[^"\n]+")(?:\s*\.\s*(?:[A-Za-z_][A-Za-z0-9_]*|"[^"\n]+"))*)\s*;$/i;
@@ -1402,6 +1409,9 @@ function prepareHelper(
   };
   const note = (s: string) => notes.push(`${where}: ${s}`);
   const objKey = (d: AlDecl) => `${d.kind} ${d.id}`;
+  if (ODD_EOL.test(aSrc)) {
+    return restore("a line terminator other than LF or CRLF");
+  }
   const aDecls = declarations(aSrc);
   if (aDecls.length === 0) {
     return restore("the agent's file declares no object");
@@ -1792,6 +1802,35 @@ async function applyCreditRules(
     notes.push(
       "credit rules: a shipped test codeunit could not be parsed; no agent test is run or counted",
     );
+    return { notes, excluded };
+  }
+
+  // H-30 run 002: a new or edited test file the parser cannot read as the
+  // compiler does (ODD_EOL) could hide a violator from the credit rules.
+  const odd: string[] = [];
+  for (const rel of [...newFiles].sort()) {
+    const src = await Deno.readTextFile(join(testOut, ...rel.split("/")));
+    if (ODD_EOL.test(src)) odd.push(rel);
+  }
+  for (const [rel, aSrc] of [...edited].sort(([a], [b]) => a < b ? -1 : 1)) {
+    const pSrc = await Deno.readTextFile(
+      join(pristine, TEST_APP, ...rel.split("/")),
+    );
+    if (declarations(pSrc).some(isTestCodeunit) && ODD_EOL.test(aSrc)) {
+      odd.push(rel);
+    }
+  }
+  if (odd.length > 0) {
+    for (
+      const t of await addedTestCodeunits(join(pristine, TEST_APP), testOut)
+    ) {
+      excluded.push(t.codeunit);
+    }
+    for (const rel of odd) {
+      notes.push(
+        `${TEST_APP}/${rel}: a line terminator other than LF or CRLF; no agent test is run or counted`,
+      );
+    }
     return { notes, excluded };
   }
 
