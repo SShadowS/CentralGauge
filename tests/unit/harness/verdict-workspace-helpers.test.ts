@@ -951,3 +951,75 @@ Deno.test("H-30 (Sol r1 P2): a helper without globals gets a var section for the
     empty,
   );
 });
+
+// ---- H-30 Sol review r2 ----
+
+Deno.test("H-30 (Sol r2 P1): app.json values that are not strings (an id or name object with a broken toString) are dropped or refused with a note, never a crash", async () => {
+  const p = await pristineDir();
+  const a = await tmp();
+  await safeCopyTree(p, a);
+  const core = JSON.parse(await Deno.readTextFile(join(a, "Core/app.json")));
+  core.internalsVisibleTo = [{
+    id: { toString: null },
+    name: { toString: null },
+    publisher: "Rejected",
+  }];
+  await write(a, "Core/app.json", JSON.stringify(core, null, 2));
+  const test = JSON.parse(await Deno.readTextFile(join(a, "Test/app.json")));
+  test.name = { toString: null };
+  await write(a, "Test/app.json", JSON.stringify(test, null, 2));
+  const v = await buildVerdictWorkspace({
+    pristine: p,
+    artifact: a,
+    out: join(await tmp(), "verdict"),
+    symbolIds: new Set([IDS.assert]),
+  });
+  assertStringIncludes(
+    v.violations.join("\n"),
+    'Test: name changed from CGR Test to {"toString":null}',
+  );
+  const c = JSON.parse(await Deno.readTextFile(join(v.dir, "Core/app.json")));
+  assertEquals(c.internalsVisibleTo, undefined);
+  assertStringIncludes(
+    v.notes.join("\n"),
+    'Core: app.json internalsVisibleTo entry dropped: {"toString":null} {"toString":null} (not the shipped Test app)',
+  );
+});
+
+Deno.test("H-30 (Sol r2 P2): the first global's var section goes at the procedure itself, inside the object, in compact source and after a comment on the procedure's line", async () => {
+  const compact =
+    `codeunit 80090 "CGR Test Library" { procedure Seed(): Integer begin exit(7); end; }\n`;
+  const agent =
+    `codeunit 80090 "CGR Test Library" { var Extra: Integer; procedure Seed(): Integer begin exit(7); end; }\n`;
+  await assertMerged(
+    agent,
+    `codeunit 80090 "CGR Test Library" { var\n        Extra: Integer;\n\n    procedure Seed(): Integer begin exit(7); end; }\n`,
+    ["agent additions kept: global Extra"],
+    compact,
+  );
+  const commented = `codeunit 80090 "CGR Test Library"
+{
+    /* helpers
+    */ procedure Seed(): Integer
+    begin
+        exit(7);
+    end;
+}
+`;
+  await assertMerged(
+    commented.replace("*/ procedure", "*/ var Extra: Integer;\n    procedure"),
+    commented.replace(
+      "*/ procedure",
+      "*/ var\n        Extra: Integer;\n\n    procedure",
+    ),
+    ["agent additions kept: global Extra"],
+    commented,
+  );
+  // No procedure and the closing brace on the object's line.
+  await assertMerged(
+    `codeunit 80090 "CGR Test Library" { var Extra: Integer; }\n`,
+    `codeunit 80090 "CGR Test Library" { \n    var\n        Extra: Integer;\n}\n`,
+    ["global Extra"],
+    `codeunit 80090 "CGR Test Library" { }\n`,
+  );
+});

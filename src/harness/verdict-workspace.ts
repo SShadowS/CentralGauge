@@ -92,6 +92,13 @@ interface AppIdentity {
   publisher: string;
 }
 
+/**
+ * An untrusted JSON value as text: a string as is, anything else as JSON
+ * (Sol r2: never String(), an object's toString may throw).
+ */
+const show = (v: unknown): string =>
+  typeof v === "string" ? v : JSON.stringify(v) ?? typeof v;
+
 /** The id, name and publisher of an app.json or entry, when all are strings. */
 function identityOf(r: Record<string, unknown>): AppIdentity | null {
   const [id, name, publisher] = [r["id"], r["name"], r["publisher"]];
@@ -151,8 +158,8 @@ function mergeInternalsVisibleTo(
     >;
     notes.push(
       `${folder}: app.json internalsVisibleTo entry dropped: ${
-        String(r["id"] ?? JSON.stringify(e))
-      } ${String(r["name"] ?? "")} (${
+        show(r["id"] ?? e)
+      } ${show(r["name"] ?? "")} (${
         folder === TEST_APP
           ? "the Test app grants nothing"
           : "not the shipped Test app"
@@ -188,8 +195,8 @@ async function mergeAppJson(
     return;
   }
   for (const k of IDENTITY) {
-    const a = String(trusted[k] ?? "");
-    const b = String(cand[k] ?? "");
+    const a = show(trusted[k] ?? "");
+    const b = show(cand[k] ?? "");
     if (k === "id" ? a.toLowerCase() !== b.toLowerCase() : a !== b) {
       violations.push(`${folder}: ${k} changed from ${a} to ${b}`);
     }
@@ -1638,8 +1645,9 @@ function prepareHelper(
         ),
       ]);
       const ps = procs.filter((m) => e.procs.has(m));
-      // A new var section goes on its own lines before the first shipped
-      // procedure or trigger, else before the closing brace.
+      // A new var section goes right at the first shipped procedure or
+      // trigger token (Sol r2: never a line boundary, which can lie outside
+      // the object or inside a comment), else before the closing brace.
       const fresh = keep.filter((g) => e.fresh.includes(g));
       const first = e.pm.find(isCode);
       if (fresh.length > 0) {
@@ -1651,16 +1659,17 @@ function prepareHelper(
           0,
           ...texts,
         );
-        const section = `    var${nl}${
+        const section = `var${nl}${
           fresh.map((g) => `        ${carry(g)}${nl}`).join("")
         }`;
         if (first) {
-          inserts.push({
-            at: pSrc.lastIndexOf("\n", first.start) + 1,
-            text: section + nl,
-          });
+          inserts.push({ at: first.start, text: `${section}${nl}    ` });
         } else {
-          inserts.push({ at: e.end, text: section });
+          const lineStart = pSrc[e.end - 1] === "\n";
+          inserts.push({
+            at: e.end,
+            text: `${lineStart ? "" : nl}    ${section}`,
+          });
         }
       }
       want.push([...kept, ...ps.map((m) => eol(aSrc.slice(m.start, m.end)))]);
