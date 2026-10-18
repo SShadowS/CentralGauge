@@ -376,7 +376,8 @@ Deno.test("H-21: every scorer version is bumped (added helper procedures change 
   const { SCORER_SUITE } = await import("../../../src/harness/verdict.ts");
   assertEquals(SCORER_SUITE, {
     build: "2",
-    pass_to_pass: "3",
+    // 4 since H-26 (agent-added test reruns); H-21 made it 3.
+    pass_to_pass: "4",
     fail_to_pass: "2",
     mutant_kill: "4",
   });

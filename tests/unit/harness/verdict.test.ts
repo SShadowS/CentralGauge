@@ -223,6 +223,15 @@ Deno.test("scorer suite: every scorer, one fingerprint for every task kind", () 
   ]);
 });
 
+Deno.test("scorer suite (H-26): pass_to_pass is 4 (agent-added test reruns); the others are unchanged", () => {
+  assertEquals(SCORER_SUITE, {
+    build: "2",
+    pass_to_pass: "4",
+    fail_to_pass: "2",
+    mutant_kill: "4",
+  });
+});
+
 Deno.test("scorer suite: the fingerprint does not depend on key order", async () => {
   const reversed = Object.fromEntries(Object.entries(SCORER_SUITE).reverse());
   assertEquals(
@@ -306,9 +315,11 @@ Deno.test("judge: a failed build notes its codes", async () => {
 });
 
 // Review M1-17 (coordinator): agent-added tests cannot push the verdict to infra; the oracle is trusted.
+// H-26 (decision 2026-09-25-agent-suite-infra item 3, now also for pass_to_pass): a thrown or
+// timed-out agent-added run is ambiguous. It is rerun once on another container behind the trusted
+// pass_to_pass control; only a second throw with the control passing is the agent's failure.
 
-Deno.test("judge: an agent-added test that hangs on every container fails pass_to_pass; the oracle still decides", async () => {
-  const added = `codeunit 81000 "Agent"
+const AGENT_81000 = `codeunit 81000 "Agent"
 {
     Subtype = Test;
 
@@ -318,19 +329,37 @@ Deno.test("judge: an agent-added test that hangs on every container fails pass_t
     end;
 }
 `;
+
+/**
+ * The script, with codeunit 81000 timing out: on every container ("always")
+ * or only on the first one it runs on ("first"). The lane picks containers,
+ * so tests read the agent runs' containers from `agentRuns`.
+ */
+function hangs(mode: "first" | "always") {
   const bc = script();
   const inner = bc.script;
+  const agentRuns: string[] = [];
   bc.script = (cu, deployed, container) => {
     if (cu === 81000) {
-      throw new ContainerError(
-        `SOAP run of 81000 timed out on ${container}`,
-        container,
-        "test",
-      );
+      agentRuns.push(container);
+      if (mode === "always" || agentRuns.length === 1) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
     }
     return inner(cu, deployed, container);
   };
-  const { input } = await setup("correct", { "Test/src/Agent.Test.al": added });
+  return { bc, agentRuns };
+}
+
+Deno.test("judge (H-26): an agent-added test that hangs on two containers, the trusted control passing on the second, fails pass_to_pass with a clear note; the oracle still decides", async () => {
+  const { bc, agentRuns } = hangs("always");
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
   const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
   assertEquals(log.error, null);
   assertEquals(judgment.verdict, "fail");
@@ -339,7 +368,7 @@ Deno.test("judge: an agent-added test that hangs on every container fails pass_t
   assert(
     judgment.scorers[1]!.tests.some((t) =>
       t.codeunit === 81000 && t.procedure === "AgentTest" &&
-      t.failure === "runtime_error"
+      t.outcome === "not_run" && t.failure === "runtime_error"
     ),
   );
   assert(
@@ -351,7 +380,324 @@ Deno.test("judge: an agent-added test that hangs on every container fails pass_t
   const order = bc.tests.map((t) => t.codeunit);
   assert(order.indexOf(85000) < order.indexOf(81000));
   assert(order.indexOf(80010) < order.indexOf(81000));
-  assertStringIncludes(log.notes.join("\n"), "81000");
+  // Two agent runs on two containers; the control ran right before the rerun.
+  assertEquals(agentRuns.length, 2);
+  const [first, second] = agentRuns as [string, string];
+  assert(first !== second);
+  const onSecond = bc.tests.filter((t) => t.container === second).map((t) =>
+    t.codeunit
+  );
+  assertEquals(onSecond.slice(-2), [80010, 81000]);
+  const notes = log.notes.join("\n");
+  assertStringIncludes(
+    notes,
+    `rerun on ${second} after a passing trusted control`,
+  );
+  assertStringIncludes(
+    notes,
+    `agent-added test codeunit 81000 did not complete on ${first} and on ${second} (the trusted control passed on ${second}): the agent's failure`,
+  );
+});
+
+Deno.test("judge (H-26): an agent-added test that times out on one container and passes on another passes pass_to_pass", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "pass");
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, true, true]);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81000 && t.outcome === "pass"
+    ),
+  );
+  assertEquals(agentRuns.length, 2);
+  assertStringIncludes(
+    log.notes.join("\n"),
+    `rerun on ${agentRuns[1]} after a passing trusted control`,
+  );
+  assert(agentRuns[0] !== agentRuns[1]);
+});
+
+Deno.test("judge (H-26): an agent-added test that times out with no other container is unscored, never a fail", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
+  const { judgment, log } = await judge(
+    new BcLane(hangs("first").bc, ["C1"]),
+    input,
+  );
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, true]);
+  assertEquals(judgment.verdict, "unscored");
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81000 && t.failure === "infra"
+    ),
+  );
+  assertStringIncludes(log.notes.join("\n"), "agent-added test rerun infra");
+  // No rerun was dispatched, so none is recorded as a retry.
+  assertEquals(
+    log.infra_retries.filter((r) => r.fingerprint === "h26-agent-test-rerun"),
+    [],
+  );
+});
+
+Deno.test("judge (H-26): a trusted control that fails on the rerun container leaves pass_to_pass unscored, never a fail", async () => {
+  const { bc } = hangs("always");
+  const inner = bc.script;
+  // The shipped test passes in the trusted run, then fails: the rerun
+  // container cannot vouch for the agent rerun.
+  let shipped = 0;
+  bc.script = (cu, deployed, container) =>
+    cu === 80010 && ++shipped > 1
+      ? result({ ShippedPasses: "Assert.IsTrue failed. degraded" })
+      : inner(cu, deployed, container);
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, true]);
+  assertEquals(judgment.verdict, "unscored");
+});
+
+Deno.test("judge (H-26): with the trusted pass_to_pass already failing, a hanging agent-added test cannot unscore the fail", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Rental/src/Break.al": `codeunit 70210 "Break"\n{\n    // BREAK_P2P\n}\n`,
+  });
+  const { judgment } = await judge(
+    new BcLane(hangs("always").bc, ["C1", "C2"]),
+    input,
+  );
+  assertEquals(judgment.scorers[1]!.passed, false);
+  assertEquals(judgment.verdict, "fail");
+});
+
+// H-26 Sol review r2: per codeunit, a completed result stays decided.
+
+const AGENT_81001 = AGENT_81000.replace("81000", "81001").replace(
+  '"Agent"',
+  '"Agent B"',
+);
+
+Deno.test("judge (H-26 review): a completed agent-added failure decides pass_to_pass: another codeunit's hang is not rerun and cannot unscore it, even with no other container", async () => {
+  for (const containers of [["C1"], ["C1", "C2"]]) {
+    const { bc, agentRuns } = hangs("first");
+    const inner = bc.script;
+    const runsB: string[] = [];
+    bc.script = (cu, deployed, container) => {
+      if (cu === 81001) {
+        runsB.push(container);
+        return result({ AgentTest: "Assert.AreEqual failed. agent bug" });
+      }
+      return inner(cu, deployed, container);
+    };
+    const { input } = await setup("correct", {
+      "Test/src/Agent.Test.al": AGENT_81000,
+      "Test/src/AgentB.Test.al": AGENT_81001,
+    });
+    const { judgment, log } = await judge(new BcLane(bc, containers), input);
+    const tag = containers.join(",");
+    assertEquals(judgment.scorers[1]!.passed, false, tag);
+    assertEquals(judgment.verdict, "fail", tag);
+    assertEquals([runsB.length, agentRuns.length], [1, 1], tag);
+    assertEquals(
+      judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+        t.codeunit,
+        t.outcome,
+        t.failure,
+      ]),
+      [[81000, "not_run", "runtime_error"], [81001, "fail", "assertion"]],
+      tag,
+    );
+    assert(!log.notes.join("\n").includes("rerun on"), tag);
+  }
+});
+
+Deno.test("judge (H-26 review): the rerun repeats the agent suite in order; a codeunit that hangs again in the same context is the agent's failure", async () => {
+  // 81001 hangs whenever 81000 ran before it on the same container.
+  const bc = script();
+  const inner = bc.script;
+  const ranA = new Set<string>();
+  const runsB: string[] = [];
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81000) ranA.add(container);
+    if (cu === 81001) {
+      runsB.push(container);
+      if (ranA.has(container)) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
+      return result({ AgentTest: true });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(runsB.length, 2);
+  assert(runsB[0] !== runsB[1]);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81001 && t.outcome === "not_run" &&
+      t.failure === "runtime_error"
+    ),
+  );
+  assertStringIncludes(
+    log.notes.join("\n"),
+    `agent-added test codeunit 81001 did not complete on ${runsB[0]} and on ${
+      runsB[1]
+    }`,
+  );
+  assertEquals(
+    log.infra_retries.filter((r) => r.fingerprint === "h26-agent-test-rerun")
+      .map((r) => [r.originalContainerName, r.retryContainerName, r.outcome]),
+    [[runsB[0], runsB[1], "succeeded"]],
+  );
+});
+
+Deno.test("judge (H-26 review): two codeunits hang on the first run; on the rerun one recovers and one hangs again: only that one is the agent's failure", async () => {
+  const bc = script();
+  const inner = bc.script;
+  const seen = new Map<number, number>();
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81000 || cu === 81001) {
+      const n = (seen.get(cu) ?? 0) + 1;
+      seen.set(cu, n);
+      // 81000 hangs only on its first run; 81001 hangs on every run.
+      if (cu === 81001 || n === 1) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
+      return result({ AgentTest: true });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(
+    judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+      t.codeunit,
+      t.outcome,
+      t.failure,
+    ]),
+    [[81000, "pass", null], [81001, "not_run", "runtime_error"]],
+  );
+  const notes = log.notes.join("\n");
+  assertStringIncludes(
+    notes,
+    "agent-added test codeunit 81001 did not complete on",
+  );
+  assert(
+    !notes.includes(
+      "agent-added test codeunit 81000 did not complete on C1 and",
+    ),
+  );
+  assert(
+    !notes.includes(
+      "agent-added test codeunit 81000 did not complete on C2 and",
+    ),
+  );
+});
+
+Deno.test("judge (H-26 review): a codeunit that passed on the first run and throws only on the rerun keeps its first result", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const inner = bc.script;
+  const runsB: string[] = [];
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81001) {
+      runsB.push(container);
+      if (runsB.length === 2) {
+        throw new ContainerError(
+          `harness SOAP call timed out after 120000ms`,
+          container,
+          "test",
+        );
+      }
+      return result({ AgentTest: true });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "pass");
+  assertEquals([agentRuns.length, runsB.length], [2, 2]);
+  assert(!log.notes.join("\n").includes("81001 did not complete on C1 and"));
+  assert(!log.notes.join("\n").includes("81001 did not complete on C2 and"));
+});
+
+Deno.test("judge (H-26 review): only the codeunit that hung takes the rerun's results; one that completed keeps its first rows", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const inner = bc.script;
+  const runsB: string[] = [];
+  // 81001 passes the first time and fails on the rerun: the first result stands.
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81001) {
+      runsB.push(container);
+      return result({
+        AgentTest: runsB.length === 1 ? true : "Assert.IsTrue failed. rerun",
+      });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "pass");
+  assertEquals(runsB.length, 2);
+  assertEquals(agentRuns.length, 2);
+  assertEquals(
+    log.infra_retries.filter((r) => r.fingerprint === "h26-agent-test-rerun")
+      .map((r) => [r.originalContainerName, r.retryContainerName, r.outcome]),
+    [[agentRuns[0], agentRuns[1], "succeeded"]],
+  );
+  assertEquals(
+    judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+      t.codeunit,
+      t.outcome,
+    ]),
+    [[81000, "pass"], [81001, "pass"]],
+  );
+});
+
+Deno.test("judge (H-26 review): with pass_to_pass already failing, an infra fault of the agent-added run cannot unscore the fail", async () => {
+  const bc = script();
+  const lane = new BcLane(bc, ["C1"]);
+  const inner = bc.script;
+  // The trusted run's last codeunit takes the only container out of routing:
+  // the agent-added run then has no eligible container.
+  bc.script = (cu, deployed, container) => {
+    if (cu === 85000) lane.quarantine("C1", "degraded after the trusted run");
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Rental/src/Break.al": `codeunit 70210 "Break"\n{\n    // BREAK_P2P\n}\n`,
+  });
+  const { judgment, log } = await judge(lane, input);
+  assertEquals(judgment.scorers[1]!.passed, false);
+  assertEquals(judgment.verdict, "fail");
+  assert(!bc.tests.some((t) => t.codeunit === 81000));
+  assertStringIncludes(log.notes.join("\n"), "agent-added tests infra");
 });
 
 Deno.test("judge: an agent-added test reporting no result for a discovered procedure is runtime_error, not infra", async () => {
@@ -426,6 +772,28 @@ Deno.test("judge: an oracle compile failure with pass_to_pass infra is a fail", 
   assertEquals(judgment.scorers.map((s) => s.passed), [true, null, false]);
   assertEquals(judgment.scorers[2]!.tests[0]!.failure, "compile");
   assertEquals(judgment.verdict, "fail");
+});
+
+Deno.test("judge (H-26): an oracle that does not compile against the candidate names why in test_messages", async () => {
+  const bc = script();
+  bc.onCompile = async (dir) => {
+    if (dir.replaceAll("\\", "/").endsWith("/oracle")) {
+      await Deno.writeTextFile(join(dir, "Broken.al"), "COMPILE_ERROR");
+    }
+  };
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.scorers[2]!.passed, false);
+  const m = log.test_messages.filter((x) => x.codeunit === 85000);
+  assertEquals(m.length, 1);
+  assertEquals([m[0]!.procedure, m[0]!.target], [
+    "(oracle build)",
+    "candidate",
+  ]);
+  assertStringIncludes(
+    m[0]!.message,
+    "oracle does not compile against the candidate: AL0001",
+  );
 });
 
 Deno.test("judge: a fail_to_pass assertion with a missing pass_to_pass procedure is a fail", async () => {
