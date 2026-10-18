@@ -1156,7 +1156,11 @@ export async function runCampaign(
     await Promise.all(
       Array.from(
         { length: Math.min(o.concurrency, blocks.length) },
-        () => worker().catch((err) => void (crashed ??= { err })),
+        () =>
+          worker().catch((err) => {
+            crashed ??= { err };
+            env.hooks?.workerThrew?.();
+          }),
       ),
     );
     if (crashed !== null) {

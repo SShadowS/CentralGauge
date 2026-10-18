@@ -363,6 +363,12 @@ export interface FakeEgress extends EgressRuntime {
   onProbe: (sandbox: string) => Promise<void>;
   /** The live registration (M1-33d shared proxy); null before and after. */
   registered: RegisterOptions | null;
+  /**
+   * T-06: registrations live now. With concurrency 2 one cell's unregister
+   * clears `registered` while the other cell is still before its probe; the
+   * probe's auth reads this count instead.
+   */
+  live: number;
   /** The last registration's credential. */
   credential: ProxyCredential | null;
   /** Every source ever registered. */
@@ -407,6 +413,7 @@ export function fakeEgress(): FakeEgress {
     lines: (ok) => ok,
     onProbe: () => Promise.resolve(),
     registered: null,
+    live: 0,
     credential: null,
     sources: [],
     regFailure: null,
@@ -442,6 +449,8 @@ export function fakeEgress(): FakeEgress {
         )).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""),
       };
       eg.credential = credential;
+      eg.live++;
+      let open = true;
       return {
         credential,
         reg: {
@@ -455,6 +464,8 @@ export function fakeEgress(): FakeEgress {
           unregister: () => {
             eg.events.push("unregister");
             eg.registered = null;
+            if (open) eg.live--;
+            open = false;
             return Promise.resolve();
           },
         },
@@ -498,7 +509,7 @@ export function fakeEgress(): FakeEgress {
       return eg.lines(
         passingLines(hosts, {
           record: eg.proxyRecord,
-          auth: eg.registered !== null,
+          auth: eg.live > 0,
         }),
       );
     },

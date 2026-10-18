@@ -236,7 +236,8 @@ Deno.test("H-09 run 003: a sibling suspended between admission and its cell (in 
   let reads = 0;
   let release!: () => void;
   const gate = new Promise<void>((r) => release = r);
-  const safety = setTimeout(() => release(), 10_000);
+  // Only against a hang (the hook never firing); the release is workerThrew.
+  const safety = setTimeout(() => release(), 120_000);
   store.executions = async (id: string) => {
     const n = ++reads;
     const out = await read(id);
@@ -245,12 +246,13 @@ Deno.test("H-09 run 003: a sibling suspended between admission and its cell (in 
   };
   let drafts = 0;
   t.env.hooks = {
-    beforeDraft: () => {
-      if (++drafts !== 1) return Promise.resolve();
-      // The throw reaches the campaign well before the held read returns.
-      setTimeout(() => release(), 1000);
-      return Promise.reject(new Error("runner killed"));
-    },
+    beforeDraft: () =>
+      ++drafts === 1
+        ? Promise.reject(new Error("runner killed"))
+        : Promise.resolve(),
+    // T-06: the held read returns only once the campaign has recorded the
+    // throw (a fixed delay lost the race on a loaded host).
+    workerThrew: () => release(),
   };
   try {
     await assertRejects(
