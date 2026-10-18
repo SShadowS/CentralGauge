@@ -6,7 +6,14 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { ContainerError, ValidationError } from "../../../src/errors.ts";
-import { BcLane, dirBuildCache } from "../../../src/harness/bc-lane.ts";
+import {
+  appVersions,
+  BcLane,
+  buildApps,
+  changedApps,
+  dirBuildCache,
+} from "../../../src/harness/bc-lane.ts";
+import { readAppGraph } from "../../../src/harness/staging.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import {
@@ -166,6 +173,48 @@ Deno.test("judge (H-27): with the shared build cache a second judgment reuses th
   const r3 = await judge(lane, c.input);
   assertEquals(r3.log.per_app_compiles, first);
   assertEquals(strip(r3.judgment), strip(r1.judgment));
+});
+
+Deno.test("judge (H-27 r2 #4): builds the agent's compile path wrote to the shared cache are reused by the judge, and it scores as without them", async () => {
+  const bc = script();
+  bc.nondeterministic = true;
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const cache = dirBuildCache(await Deno.makeTempDir());
+  const { input } = await setup("correct");
+  // The backend's compile op: the snapshot's apps with the test path's versions.
+  const pristineApps = await readAppGraph(input.pristine);
+  const apps = await readAppGraph(input.artifact);
+  const changed = await changedApps(
+    input.pristine,
+    pristineApps,
+    input.artifact,
+  );
+  const { versions } = await appVersions(bc, "C1", {
+    pristine: input.pristine,
+    pristineApps,
+    candidateDir: input.artifact,
+    candidateApps: apps,
+    changed,
+    lock: input.lock,
+  });
+  const agent = await buildApps(bc, "C1", {
+    srcDir: input.artifact,
+    apps,
+    versions,
+    outDir: await Deno.makeTempDir(),
+    lock: input.lock,
+    cache,
+    graph: apps,
+  });
+  assert(agent.every((b) => b.ok && b.key));
+  const cold = await judge(lane, (await setup("correct")).input);
+  const warm = await judge(lane, { ...input, buildCache: cache });
+  assert(
+    warm.log.per_app_compiles < cold.log.per_app_compiles,
+    `${warm.log.per_app_compiles} < ${cold.log.per_app_compiles}`,
+  );
+  assertEquals(warm.judgment.verdict, cold.judgment.verdict);
+  assertEquals(warm.judgment.scorers, cold.judgment.scorers);
 });
 
 Deno.test("judge: a naive solution fails fail_to_pass by an assertion", async () => {

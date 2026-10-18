@@ -440,13 +440,14 @@ export function dirBuildCache(dir: string): BuildCache {
     },
     async put(key, file) {
       const tmp = join(dir, `.tmp-${crypto.randomUUID()}`);
-      await Deno.mkdir(tmp, { recursive: true });
-      await Deno.copyFile(file, join(tmp, basename(file)));
       try {
+        await Deno.mkdir(tmp, { recursive: true });
+        await Deno.copyFile(file, join(tmp, basename(file)));
         await Deno.rename(tmp, join(dir, key));
-      } catch {
-        // A concurrent put of the same key won; its file is the same build.
+      } catch (err) {
         await Deno.remove(tmp, { recursive: true }).catch(() => {});
+        // A concurrent put of the same key won only if its entry is complete.
+        if (await this.get(key) === null) throw err;
       }
     },
   };
@@ -460,7 +461,10 @@ export function dirBuildCache(dir: string): BuildCache {
  * build), and the cache hands out the cached dependency files, so a chain
  * stays consistent. A dependency with no key (built without the cache) is
  * keyed by its file. No container name: the compiler identity pins the
- * artifact, so a recreated container on the same artifact may hit.
+ * artifact, so a recreated container on the same artifact may hit. The
+ * symbol packages restored for the compile are in the key too (H-27 r2): the
+ * whole lock before the app info is harvested, the declared closure after,
+ * so a cold success never stands in for a closure compile.
  */
 async function buildKey(
   compiler: string,
@@ -470,6 +474,7 @@ async function buildKey(
   files: ReadonlyMap<string, string>,
   keys: ReadonlyMap<string, string>,
   lockDigest: string,
+  restored: readonly SymbolPackage[],
 ): Promise<string> {
   const deps: [string, string][] = [];
   for (const d of app.depends) {
@@ -487,6 +492,7 @@ async function buildKey(
     deps,
     compiler,
     lock: lockDigest,
+    symbols: restored.map((p) => p.sha256).sort(),
   });
 }
 
@@ -669,6 +675,12 @@ export async function buildApps(
     analysis?: AnalysisSettings;
   },
 ): Promise<BuiltApp[]> {
+  if (o.analysis && o.cache) {
+    // Analyzer warnings are not in a cached entry: an analysis compile is never reused.
+    throw new Error(
+      "buildApps: an analysis compile is never with a build cache",
+    );
+  }
   const files = new Map(o.prebuilt ?? []);
   const keys = new Map(o.prebuiltKeys ?? []);
   const out: BuiltApp[] = [];
@@ -759,6 +771,22 @@ export async function buildApps(
       );
       continue;
     }
+    // The symbol packages this compile restores (M1-40b), fixed before the
+    // cache lookup so they are in the key (H-27 r2): the declared closure once
+    // the app info is harvested, the whole lock before.
+    const srcJson = await readAppJsonRaw(
+      join(o.srcDir, app.folder, "app.json"),
+    ) as { application?: unknown; platform?: unknown };
+    const roots = symbolRoots(app, srcJson, o.graph ?? o.apps);
+    const closure = roots
+      ? await dependencyClosure(
+        o.lock.store,
+        lockDigest,
+        o.lock.packages,
+        roots,
+      )
+      : null;
+    const restored = closure ?? o.lock.packages;
     const key = o.cache
       ? await buildKey(
         compiler!,
@@ -768,9 +796,22 @@ export async function buildApps(
         files,
         keys,
         lockDigest,
+        restored,
       )
       : null;
-    const hit = key ? await o.cache!.get(key) : null;
+    // H-27 r2: the cache is best-effort; a failed read is a miss.
+    let hit: string | null = null;
+    if (key) {
+      try {
+        hit = await o.cache!.get(key);
+      } catch (err) {
+        console.warn(
+          `[WARN] build cache read for ${app.folder} failed (built instead): ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+    }
     const hitTaken = hit ? collision(hit) : undefined;
     if (hit && hitTaken) {
       out.push(
@@ -822,16 +863,7 @@ export async function buildApps(
     const pk = join(dir, ".alpackages");
     // Only what the harness restores and seeds (the copy skips any case of it too).
     await Deno.remove(pk, { recursive: true }).catch(() => {});
-    const roots = symbolRoots(app, appJson, o.graph ?? o.apps);
-    const closure = roots
-      ? await dependencyClosure(
-        o.lock.store,
-        lockDigest,
-        o.lock.packages,
-        roots,
-      )
-      : null;
-    await restoreSymbols(o.lock.store, closure ?? o.lock.packages, pk);
+    await restoreSymbols(o.lock.store, restored, pk);
     const workspaceFiles = new Set([...files.values()].map((f) => basename(f)));
     const workspaceLower = new Set(
       [...workspaceFiles].map((f) => f.toLowerCase()),
@@ -909,8 +941,22 @@ export async function buildApps(
       await Deno.copyFile(r.artifactPath, file);
       files.set(app.folder, file);
       if (key) {
-        await o.cache!.put(key, file);
-        keys.set(app.folder, key);
+        // H-27 r2: the cache's winning file is this app's file from here on
+        // (a concurrent builder may have won the key), so every dependent is
+        // built against the cached file. A failed write leaves the app unkeyed.
+        try {
+          await o.cache!.put(key, file);
+          const won = await o.cache!.get(key);
+          if (won === null) throw new Error("no entry after the write");
+          await Deno.copyFile(won, file);
+          keys.set(app.folder, key);
+        } catch (err) {
+          console.warn(
+            `[WARN] build cache write for ${app.folder} failed (not reused): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
       }
     }
     out.push({
@@ -923,7 +969,7 @@ export async function buildApps(
       diagnostics: r.errors,
       compile_ms,
       ...warned,
-      ...(key && file ? { key } : {}),
+      ...(file && keys.get(app.folder) === key && key ? { key } : {}),
     });
   }
   return out;

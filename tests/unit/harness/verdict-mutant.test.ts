@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
-import { BcLane } from "../../../src/harness/bc-lane.ts";
+import { BcLane, dirBuildCache } from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import { JudgmentRecordSchema } from "../../../src/harness/records.ts";
@@ -162,6 +162,36 @@ Deno.test("mutant_kill: reference-tests is the positive artifact; the real HX-00
       ["mutant:off-by-one", "PriceIsTen", "fail", "assertion"],
     ],
   );
+});
+
+Deno.test("mutant_kill (H-27 r2 #4): test-authoring judgments of different submissions score the same with the shared build cache on and off; later ones reuse the task-fixed builds", async () => {
+  const subs = [
+    { suite: "reference-tests" },
+    { suite: "naive/weak" },
+    { tests: [80104] },
+    { suite: "naive/crashy" },
+  ];
+  const mutants = { "off-by-one": "exit(9);", "zero": "exit(0);" };
+  const fake = bc();
+  fake.nondeterministic = true;
+  const lane = new BcLane(fake, ["C1", "C2"]);
+  const cache = dirBuildCache(await testTempDir());
+  const strip = (j: { verdict: string; scorers: unknown }) => [
+    j.verdict,
+    j.scorers,
+  ];
+  const on: number[] = [];
+  for (const s of subs) {
+    const off = await judge(lane, await setup(mutants, s));
+    const hit = await judge(lane, {
+      ...(await setup(mutants, s)),
+      buildCache: cache,
+    });
+    assertEquals(strip(hit.judgment), strip(off.judgment), JSON.stringify(s));
+    on.push(hit.log.per_app_compiles);
+    assert(hit.log.per_app_compiles <= off.log.per_app_compiles);
+  }
+  assert(on.slice(1).every((n) => n < on[0]!), `later reuse: ${on}`);
 });
 
 Deno.test("mutant_kill: each named naive suite fails (weak survives, runtime errors are not kills)", async () => {

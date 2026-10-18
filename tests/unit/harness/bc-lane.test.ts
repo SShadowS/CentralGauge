@@ -1551,6 +1551,177 @@ Deno.test("buildApps: a package the app uses but does not declare fails its comp
   assertEquals(core!.ok, false, "Core does not declare Library Assert");
 });
 
+// ---- H-27 run 002 (Sol r1) ----
+
+Deno.test("buildApps (H-27 r2 #1): the restored symbol set is in the key: a cold full-lock success is never reused once the closure is harvested", async () => {
+  const ws = await workspace();
+  await write(
+    ws,
+    "Core/src/C.al",
+    `codeunit 70000 "CGR Core"\n{\n    // needs Microsoft_Library Assert_28.0.0.0.app\n}\n`,
+  );
+  const { lock: lk, info } = await closureLock();
+  const bc = new FakeBc();
+  bchAppInfo(bc, info);
+  const cache = dirBuildCache(await tmp());
+  const o = async () => ({
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+  });
+  const [cold] = await buildApps(bc, "C1", await o()); // full restore: succeeds
+  assertEquals(cold!.ok, true);
+  const [warm] = await buildApps(bc, "C1", await o());
+  assertEquals(bc.compiles, ["Core", "Core"], "a different restore set misses");
+  assertEquals(warm!.ok, false, "the cached cold success is not reused");
+});
+
+Deno.test("buildApps (H-27 r2 #2): a concurrent loser adopts the cache's winning file before building dependents", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const dir = await tmp();
+  const cache = dirBuildCache(dir);
+  const bc = new FakeBc();
+  bc.nondeterministic = true;
+  // Each compile records the package id of the Core it was built against.
+  const against: string[] = [];
+  bc.onCompile = async (project) => {
+    const f = join(project, ".alpackages", "CentralGauge_CGR Core_1.0.0.0.app");
+    try {
+      against.push(
+        (JSON.parse(await Deno.readTextFile(f)) as {
+          packageId: string;
+        }).packageId,
+      );
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    }
+  };
+  const runs = await Promise.all([
+    cached(bc, "C1", ws, lk, cache),
+    cached(bc, "C2", ws, lk, cache),
+  ]);
+  const coreKey = runs[0]!.find((b) => b.folder === "Core")!.key!;
+  const winner =
+    (JSON.parse(await Deno.readTextFile((await cache.get(coreKey))!)) as {
+      packageId: string;
+    }).packageId;
+  for (const r of runs) {
+    const core = r.find((b) => b.folder === "Core")!;
+    assertEquals(
+      (JSON.parse(await Deno.readTextFile(core.file!)) as { packageId: string })
+        .packageId,
+      winner,
+      "both builds hold the winning Core",
+    );
+  }
+  assert(against.length > 0);
+  assert(
+    against.every((id) => id === winner),
+    "every dependent compiled against the winning Core",
+  );
+});
+
+/** A build cache whose reads or writes fail (disk full, permissions). */
+function failingCache(fail: "get" | "put"): ReturnType<typeof dirBuildCache> {
+  return {
+    get: () =>
+      fail === "get"
+        ? Promise.reject(new Error("read failed"))
+        : Promise.resolve(null),
+    put: () =>
+      fail === "put"
+        ? Promise.reject(new Error("disk full"))
+        : Promise.resolve(),
+  };
+}
+
+Deno.test("buildApps (H-27 r2 #3): the cache is best-effort: a failing read is a miss and a failing write leaves the app unkeyed; the build itself succeeds", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  for (const fail of ["get", "put"] as const) {
+    const bc = new FakeBc();
+    const built = await cached(bc, "C1", ws, lk, failingCache(fail));
+    assert(built.every((b) => b.ok), fail);
+    assertEquals(bc.compiles, ["Core", "Rental", "Test"], fail);
+    if (fail === "put") {
+      assert(
+        built.every((b) => b.key === undefined),
+        "an artifact the cache did not take carries no key",
+      );
+    }
+  }
+});
+
+Deno.test("dirBuildCache (H-27 r2 #3): a put onto an existing complete entry keeps the winner; onto an incomplete one it fails", async () => {
+  const dir = await tmp();
+  const cache = dirBuildCache(dir);
+  const src = join(await tmp(), "CentralGauge_CGR Core_1.0.0.0.app");
+  await Deno.writeTextFile(src, "mine");
+  await Deno.mkdir(join(dir, "won"));
+  await Deno.writeTextFile(
+    join(dir, "won", "CentralGauge_CGR Core_1.0.0.0.app"),
+    "theirs",
+  );
+  await cache.put("won", src);
+  assertEquals(await Deno.readTextFile((await cache.get("won"))!), "theirs");
+  // An incomplete entry (no .app) blocks the rename: that is no winner.
+  await Deno.mkdir(join(dir, "broken"));
+  await Deno.writeTextFile(join(dir, "broken", "partial.tmp"), "");
+  await assertRejects(() => cache.put("broken", src));
+  assertEquals(await cache.get("broken"), null);
+  for await (const e of Deno.readDir(dir)) {
+    assert(!e.name.startsWith(".tmp-"), "no staging folder is left behind");
+  }
+});
+
+Deno.test("buildApps (H-27 r2): another effective version or another lock is a miss", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const core = async (versions: Map<string, string>, l: LockedSymbols) =>
+    await buildApps(bc, "C1", {
+      srcDir: ws,
+      apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+      versions,
+      outDir: await tmp(),
+      lock: l,
+      cache,
+    });
+  await core(new Map(), lk);
+  await core(new Map(), lk);
+  assertEquals(bc.compiles.length, 1);
+  await core(new Map([["Core", "1.0.7.7"]]), lk);
+  assertEquals(bc.compiles.length, 2, "another stamped version misses");
+  await core(
+    new Map(),
+    await lockWith({ app_id: UNRELATED_ID, file: "X.app" }),
+  );
+  assertEquals(bc.compiles.length, 3, "another lock misses");
+});
+
+Deno.test("buildApps (H-27 r2 #4): an analysis compile with a cache is refused", async () => {
+  const ws = await workspace();
+  await assertRejects(
+    () =>
+      buildApps(new FakeBc(), "C1", {
+        srcDir: ws,
+        apps: [],
+        versions: new Map(),
+        outDir: ws,
+        lock: { store: ws, packages: [] },
+        cache: dirBuildCache(ws),
+        analysis: { codeCop: true, uiCop: true } as never,
+      }),
+    Error,
+    "never with a build cache",
+  );
+});
+
 Deno.test("buildApps: a BOM app.json builds like one without", async () => {
   const ws = await workspace();
   const p = join(ws, "Core", "app.json");
