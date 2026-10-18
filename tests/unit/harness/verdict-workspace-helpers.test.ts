@@ -1031,8 +1031,9 @@ Deno.test("H-30 (Sol r3 P2): a kept using goes right at the object keyword, neve
 */ ${LIB}`;
   await assertMerged(
     `using Agent.Helpers;\n${commented}`,
+    // Own line since r4 (a using never shares the comment's closing line).
     `/* trusted header
-*/ using Agent.Helpers;
+*/ \nusing Agent.Helpers;
 
 ${LIB}`,
     ["using Agent.Helpers"],
@@ -1044,5 +1045,24 @@ ${LIB}`,
     `namespace CGR.Test;\n\nusing Agent.Helpers;\n\n${LIB}`,
     ["using Agent.Helpers"],
     ns,
+  );
+});
+
+// ---- H-30 Sol review r4 ----
+
+Deno.test("H-30 (Sol r4 P2): a kept using gets its own line after a compact namespace, and the object keyword is never found inside a quoted object name", async () => {
+  const compact = `namespace CGR.Test; ${LIB}`;
+  await assertMerged(
+    `namespace CGR.Test;\nusing Agent.Helpers;\n${libWith(MAKE_TWO)}`,
+    `namespace CGR.Test; \nusing Agent.Helpers;\n\n${libWith(MAKE_TWO)}`,
+    ["agent additions kept: procedure MakeTwo, using Agent.Helpers"],
+    compact,
+  );
+  const quoted = LIB.replace('"CGR Test Library"', '"codeunit 80091"');
+  await assertMerged(
+    `using Agent.Helpers;\n${libWith(MAKE_TWO, quoted)}`,
+    `using Agent.Helpers;\n\n${libWith(MAKE_TWO, quoted)}`,
+    ["using Agent.Helpers"],
+    quoted,
   );
 });

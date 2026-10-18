@@ -1621,7 +1621,12 @@ function prepareHelper(
   // Usings go right at the first object keyword token (Sol r3: never a line
   // boundary, which can lie inside a shipped comment), so after any
   // namespace declaration.
-  const head = stripAlNoise(pSrc.slice(0, pDecls[0]!.start));
+  // Quoted identifiers blanked, as declarations() does (Sol r4: an object
+  // named "codeunit 80091" is not a keyword).
+  const head = stripAlNoise(pSrc.slice(0, pDecls[0]!.start)).replace(
+    /"[^"\n]*"/g,
+    (q) => " ".repeat(q.length),
+  );
   const kw = [...head.matchAll(DECL_RE)].at(-1);
   const usingAt = kw === undefined ? 0 : kw.index! + kw[0].search(/[A-Za-z]/);
   const carry = (m: Member) =>
@@ -1630,9 +1635,12 @@ function prepareHelper(
   const build = (procs: Member[], keep: Member[]): string | null => {
     const inserts: { at: number; text: string }[] = [];
     if (usings.length > 0) {
+      // Own lines (Sol r4: after a compact `namespace X; codeunit ...`).
+      const lineStart = usingAt === 0 || pSrc[usingAt - 1] === "\n";
       inserts.push({
         at: usingAt,
-        text: usings.map((u) => `using ${u};${nl}`).join("") + nl,
+        text: (lineStart ? "" : nl) +
+          usings.map((u) => `using ${u};${nl}`).join("") + nl,
       });
     }
     const want: string[][] = [];
