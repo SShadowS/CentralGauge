@@ -1618,13 +1618,12 @@ function prepareHelper(
     return null;
   }
 
-  // Usings go on their own lines before the line of the first object keyword.
+  // Usings go right at the first object keyword token (Sol r3: never a line
+  // boundary, which can lie inside a shipped comment), so after any
+  // namespace declaration.
   const head = stripAlNoise(pSrc.slice(0, pDecls[0]!.start));
   const kw = [...head.matchAll(DECL_RE)].at(-1);
-  const usingAt = kw === undefined ? 0 : head.lastIndexOf(
-    "\n",
-    kw.index! + kw[0].search(/[A-Za-z]/),
-  ) + 1;
+  const usingAt = kw === undefined ? 0 : kw.index! + kw[0].search(/[A-Za-z]/);
   const carry = (m: Member) =>
     eol(aSrc.slice(m.start, m.end)).replace(/\n/g, nl);
 
@@ -1704,6 +1703,9 @@ function prepareHelper(
     const out = declarations(text);
     const oText = stripAlNoise(text);
     if (out.map(objKey).join() !== pDecls.map(objKey).join()) return null;
+    // Every kept using is an active statement before the first object.
+    const active = lines(outsideBodies(oText, out)[0]!);
+    if (usings.some((u) => !active.includes(`using ${u};`))) return null;
     for (const [i, d] of out.entries()) {
       const ms = codeunitMembers(oText, d);
       if (

@@ -1023,3 +1023,26 @@ Deno.test("H-30 (Sol r2 P2): the first global's var section goes at the procedur
     `codeunit 80090 "CGR Test Library" { }\n`,
   );
 });
+
+// ---- H-30 Sol review r3 ----
+
+Deno.test("H-30 (Sol r3 P2): a kept using goes right at the object keyword, never into a shipped comment that ends on the object's line; after a shipped namespace", async () => {
+  const commented = `/* trusted header
+*/ ${LIB}`;
+  await assertMerged(
+    `using Agent.Helpers;\n${commented}`,
+    `/* trusted header
+*/ using Agent.Helpers;
+
+${LIB}`,
+    ["using Agent.Helpers"],
+    commented,
+  );
+  const ns = `namespace CGR.Test;\n\n${LIB}`;
+  await assertMerged(
+    `namespace CGR.Test;\n\nusing Agent.Helpers;\n${LIB}`,
+    `namespace CGR.Test;\n\nusing Agent.Helpers;\n\n${LIB}`,
+    ["using Agent.Helpers"],
+    ns,
+  );
+});
