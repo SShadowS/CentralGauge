@@ -417,7 +417,7 @@ Deno.test("judge (H-26): an agent-added test that times out on one container and
     log.notes.join("\n"),
     `rerun on ${agentRuns[1]} after a passing trusted control`,
   );
-  assertEquals(log.infra_retries.length, 1);
+  assert(agentRuns[0] !== agentRuns[1]);
 });
 
 Deno.test("judge (H-26): an agent-added test that times out with no other container is unscored, never a fail", async () => {
@@ -435,7 +435,7 @@ Deno.test("judge (H-26): an agent-added test that times out with no other contai
       t.codeunit === 81000 && t.failure === "infra"
     ),
   );
-  assertStringIncludes(log.notes.join("\n"), "infra after reroutes");
+  assertStringIncludes(log.notes.join("\n"), "agent-added test rerun infra");
 });
 
 Deno.test("judge (H-26): a trusted control that fails on the rerun container leaves pass_to_pass unscored, never a fail", async () => {
@@ -467,6 +467,100 @@ Deno.test("judge (H-26): with the trusted pass_to_pass already failing, a hangin
   );
   assertEquals(judgment.scorers[1]!.passed, false);
   assertEquals(judgment.verdict, "fail");
+});
+
+// H-26 Sol review r2: per codeunit, a completed result stays decided.
+
+const AGENT_81001 = AGENT_81000.replace("81000", "81001").replace(
+  '"Agent"',
+  '"Agent B"',
+);
+
+Deno.test("judge (H-26 review): a completed agent-added failure stays a fail when another agent codeunit hangs once and then passes", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const inner = bc.script;
+  const runsB: string[] = [];
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81001) {
+      runsB.push(container);
+      return result({ AgentTest: "Assert.AreEqual failed. agent bug" });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.scorers[1]!.passed, false);
+  assertEquals(judgment.verdict, "fail");
+  // 81001 completed on the first run: kept, never rerun.
+  assertEquals(runsB.length, 1);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81001 && t.outcome === "fail" && t.failure === "assertion"
+    ),
+  );
+  // 81000 alone was rerun, and passed there.
+  assertEquals(agentRuns.length, 2);
+  assert(
+    judgment.scorers[1]!.tests.some((t) =>
+      t.codeunit === 81000 && t.outcome === "pass"
+    ),
+  );
+  assertStringIncludes(
+    log.notes.join("\n"),
+    `agent-added codeunits 81000 rerun on ${agentRuns[1]}`,
+  );
+});
+
+Deno.test("judge (H-26 review): only the codeunit that hung is rerun; one that completed keeps its first rows", async () => {
+  const { bc, agentRuns } = hangs("first");
+  const inner = bc.script;
+  const runsB: string[] = [];
+  bc.script = (cu, deployed, container) => {
+    if (cu === 81001) {
+      runsB.push(container);
+      return result({ AgentTest: true });
+    }
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Test/src/AgentB.Test.al": AGENT_81001,
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "pass");
+  assertEquals(runsB.length, 1);
+  assertEquals(agentRuns.length, 2);
+  assertEquals(
+    judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+      t.codeunit,
+      t.outcome,
+    ]),
+    [[81000, "pass"], [81001, "pass"]],
+  );
+});
+
+Deno.test("judge (H-26 review): with pass_to_pass already failing, an infra fault of the agent-added run cannot unscore the fail", async () => {
+  const bc = script();
+  const lane = new BcLane(bc, ["C1"]);
+  const inner = bc.script;
+  // The trusted run's last codeunit takes the only container out of routing:
+  // the agent-added run then has no eligible container.
+  bc.script = (cu, deployed, container) => {
+    if (cu === 85000) lane.quarantine("C1", "degraded after the trusted run");
+    return inner(cu, deployed, container);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Rental/src/Break.al": `codeunit 70210 "Break"\n{\n    // BREAK_P2P\n}\n`,
+  });
+  const { judgment, log } = await judge(lane, input);
+  assertEquals(judgment.scorers[1]!.passed, false);
+  assertEquals(judgment.verdict, "fail");
+  assert(!bc.tests.some((t) => t.codeunit === 81000));
+  assertStringIncludes(log.notes.join("\n"), "agent-added tests infra");
 });
 
 Deno.test("judge: an agent-added test reporting no result for a discovered procedure is runtime_error, not infra", async () => {

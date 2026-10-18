@@ -236,8 +236,12 @@ export class BcLane {
     ctx: { taskId: string; variantId: string; attemptNumber: number },
     fn: (container: string) => Promise<T>,
     signal?: AbortSignal,
-    /** Per-call reroute bound (e.g. one rerun for an agent suite); default: the lane's. */
-    opts: { maxInfraRetries?: number } = {},
+    /**
+     * Per-call reroute bound (e.g. one rerun for an agent suite); default: the
+     * lane's. `exclude`: containers this call never routes to (a rerun that
+     * must run elsewhere, H-26).
+     */
+    opts: { maxInfraRetries?: number; exclude?: readonly string[] } = {},
   ): Promise<Held<T>> {
     checkCancel(signal);
     let container = "";
@@ -246,11 +250,11 @@ export class BcLane {
       async ({ excludeContainers, onRouted }) => {
         checkCancel(signal);
         const eligible = this.healthy().filter((c) =>
-          !excludeContainers.includes(c)
+          !excludeContainers.includes(c) && !opts.exclude?.includes(c)
         );
         if (eligible.length === 0) {
           throw new NoEligibleContainersError(
-            excludeContainers,
+            [...excludeContainers, ...(opts.exclude ?? [])],
             this.containers,
           );
         }
