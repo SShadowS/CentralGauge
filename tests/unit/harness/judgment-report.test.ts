@@ -338,13 +338,19 @@ Deno.test("H-35 S2.5 pairFlags: policy only when both sides are known; unknown t
   assert(pairFlags(v2(ok), v2(ok, failed)).includes("policy"));
   const legacy = v1([
     { name: "build", passed: true, tests: [] },
-    { name: "pass_to_pass", passed: false, tests: [row(80010, "H", "fail")] },
+    // The shipped row that now passes (orch Sol r1 #3: the same row).
+    {
+      name: "pass_to_pass",
+      passed: false,
+      tests: [row(80010, "ShippedPasses", "fail")],
+    },
     { name: "fail_to_pass", passed: true, tests: F2P },
   ]);
   const flags = pairFlags(legacy, v2(ok, failed));
   assert(flags.includes("policy_attribution_recovered"));
   assert(!flags.includes("policy"));
-  // The old p2p suite predates the helper as written (6) and its rows changed.
+  // The old p2p suite predates the helper as written (6) and its failing
+  // shipped row passes now.
   assert(flags.includes("helper_as_written"));
   assert(!pairFlags(legacy, legacy).includes("helper_as_written"));
 });
@@ -605,4 +611,42 @@ Deno.test("H-35 orch Sol r1 #2: a conflicting completion is refused at append, a
   ], (id) => byId.get(id));
   assertEquals(r.completed, []);
   assertEquals(r.conflicting, ["a T E1"]);
+});
+
+Deno.test("H-35 orch Sol r1 #3: v1 pass_to_pass rows are split by the trusted descriptor: an agent row that moved to agent_tests is no trusted or agent change; helper_as_written needs a shipped row that now passes", () => {
+  const trusted = {
+    pass_to_pass: [{ codeunit: 80010, procedures: ["ShippedPasses"] }],
+  };
+  const shipped = row(80010, "ShippedPasses");
+  const agent = row(81000, "AgentTest");
+  const old = v1([
+    { name: "build", passed: true, tests: [] },
+    { name: "pass_to_pass", passed: true, tests: [shipped, agent] },
+    { name: "fail_to_pass", passed: true, tests: F2P },
+  ]);
+  const neu = v2([
+    m("build", true),
+    m("pass_to_pass", true, [shipped]),
+    m("fail_to_pass", true, F2P),
+    m("agent_tests", true, [agent]),
+  ]);
+  const flags = pairFlags(old, neu, undefined, trusted);
+  assert(flags.includes("unchanged"), flags.join());
+  assert(!flags.includes("trusted_row_change"), flags.join());
+  assert(!flags.includes("helper_as_written"), flags.join());
+  assert(!flags.includes("agent_test_outcome_change"), flags.join());
+  // The H-32 class: the shipped row failed under the merged helper and
+  // passes now.
+  const broken = v1([
+    { name: "build", passed: true, tests: [] },
+    {
+      name: "pass_to_pass",
+      passed: false,
+      tests: [row(80010, "ShippedPasses", "fail"), agent],
+    },
+    { name: "fail_to_pass", passed: true, tests: F2P },
+  ]);
+  assert(
+    pairFlags(broken, neu, undefined, trusted).includes("helper_as_written"),
+  );
 });

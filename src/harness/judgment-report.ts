@@ -13,6 +13,7 @@ import { hashJson } from "./hash.ts";
 import { violationRule } from "./verdict.ts";
 
 type Scorer = JudgmentRecord["scorers"][number];
+type Row = Scorer["tests"][number];
 
 export const G_SCORERS = ["build", "pass_to_pass", "fail_to_pass"] as const;
 const A_SCORERS = ["agent_tests", "mutant_kill"];
@@ -230,8 +231,40 @@ const rowsKey = (ss: readonly Scorer[]) =>
   ).sort().join("\n");
 const outcomeKey = (ss: readonly Scorer[]) =>
   `${ss.map((s) => `${s.name}:${s.passed}`).sort().join()}\n${rowsKey(ss)}`;
+/** Rows as a set, whatever scorer reported them (agent rows moved scorer). */
+const rowSet = (rows: readonly Row[]) =>
+  rows.map((t) =>
+    [t.codeunit, t.procedure, t.target, t.outcome, t.failure].join("|")
+  ).sort().join("\n");
 const byName = (j: JudgmentRecord, name: string) =>
   j.scorers.find((s) => s.name === name);
+
+/**
+ * A judgment with pass_to_pass keeping only the trusted shipped rows, and
+ * the rows it dropped (the agent's, as run before H-35).
+ */
+function splitShipped(
+  j: JudgmentRecord,
+  trusted?: {
+    pass_to_pass: readonly {
+      codeunit: number;
+      procedures: readonly string[];
+    }[];
+  },
+): [JudgmentRecord, Row[]] {
+  if (!trusted) return [j, []];
+  const isShipped = (r: Row) =>
+    trusted.pass_to_pass.some((t) =>
+      t.codeunit === r.codeunit && t.procedures.includes(r.procedure)
+    );
+  const moved: Row[] = [];
+  const scorers = j.scorers.map((s) => {
+    if (s.name !== "pass_to_pass") return s;
+    moved.push(...s.tests.filter((r) => !isShipped(r)));
+    return { ...s, tests: s.tests.filter(isShipped) };
+  });
+  return [{ ...j, scorers }, moved];
+}
 const failing = (j: JudgmentRecord) =>
   j.scorers.filter((s) => s.passed === false).map((s) => s.name).sort().join();
 const violationsKey = (j: JudgmentRecord) =>
@@ -247,14 +280,28 @@ const violationsKey = (j: JudgmentRecord) =>
  * side with no log evidence is unknown, so its v2 counterpart is
  * `policy_attribution_recovered`, never a change.
  * `helper_as_written`: the old pass_to_pass suite predates version 6 (the
- * helper as written, H-35) and the shipped rows changed (the H-32 class).
+ * helper as written, H-35) and a shipped row that did not pass then passes
+ * now (the H-32 class).
+ *
+ * Orch Sol r1 #3: before H-35 the agent's tests ran in pass_to_pass. With
+ * the task's trusted descriptor (`trusted`), an old judgment's pass_to_pass
+ * rows are split: the shipped ones stay G, the rest are agent rows and are
+ * compared with the new side's agent rows. Without it nothing is split.
  */
 export function pairFlags(
-  old: JudgmentRecord,
-  neu: JudgmentRecord,
+  oldIn: JudgmentRecord,
+  neuIn: JudgmentRecord,
   oldLog?: { violations?: readonly string[] },
+  trusted?: {
+    pass_to_pass: readonly {
+      codeunit: number;
+      procedures: readonly string[];
+    }[];
+  },
 ): PairFlag[] {
   const flags = new Set<PairFlag>();
+  const [old, oldAgent] = splitShipped(oldIn, trusted);
+  const [neu, neuAgent] = splitShipped(neuIn, trusted);
   const gOld = old.scorers.filter((s) => isG(s.name));
   const gNew = neu.scorers.filter((s) => isG(s.name));
   const same = old.verdict === neu.verdict;
@@ -267,15 +314,25 @@ export function pairFlags(
   if (same && failing(old) !== failing(neu)) flags.add("attribution_only");
   const aOf = (j: JudgmentRecord) =>
     j.scorers.filter((s) => A_SCORERS.includes(s.name));
-  if (outcomeKey(aOf(old)) !== outcomeKey(aOf(neu))) {
-    flags.add("agent_test_outcome_change");
-  }
+  const aRows = (j: JudgmentRecord, moved: readonly Row[]) =>
+    rowSet([...aOf(j).flatMap((s) => s.tests), ...moved]);
+  const sameNames = aOf(old).map((s) => s.name).join() ===
+    aOf(neu).map((s) => s.name).join();
+  if (
+    aRows(old, oldAgent) !== aRows(neu, neuAgent) ||
+    (sameNames && outcomeKey(aOf(old)) !== outcomeKey(aOf(neu)))
+  ) flags.add("agent_test_outcome_change");
   const p2pOld = byName(old, "pass_to_pass");
   const p2pNew = byName(neu, "pass_to_pass");
+  const passesNow = (r: Row) =>
+    p2pNew?.tests.some((n) =>
+      n.codeunit === r.codeunit && n.procedure === r.procedure &&
+      n.target === r.target && n.outcome === "pass"
+    ) ?? false;
   if (
     Number(old.scorer_versions["pass_to_pass"]) < 6 &&
     Number(neu.scorer_versions["pass_to_pass"]) >= 6 &&
-    p2pOld && p2pNew && rowsKey([p2pOld]) !== rowsKey([p2pNew])
+    p2pOld?.tests.some((r) => r.outcome !== "pass" && passesNow(r))
   ) flags.add("helper_as_written");
   if (
     G_SCORERS.some((n) => {
@@ -516,6 +573,15 @@ export function pairingReport(
   oldLog: (
     old: JudgmentRecord,
   ) => { violations?: readonly string[] } | undefined = () => undefined,
+  /** The old judgment's trusted task descriptor (orch Sol r1 #3), if known. */
+  trustedOf: (old: JudgmentRecord) =>
+    | {
+      pass_to_pass: readonly {
+        codeunit: number;
+        procedures: readonly string[];
+      }[];
+    }
+    | undefined = () => undefined,
 ): PairingReport {
   const r = reconcilePairing(p, completions, judgment);
   const flags = Object.fromEntries(PAIR_FLAGS.map((f) => [f, 0])) as Record<
@@ -523,7 +589,7 @@ export function pairingReport(
     number
   >;
   const cells = r.completed.map((c) => {
-    const fs = pairFlags(c.old, c.new, oldLog(c.old));
+    const fs = pairFlags(c.old, c.new, oldLog(c.old), trustedOf(c.old));
     for (const f of fs) flags[f]++;
     return {
       cell: c.cell,

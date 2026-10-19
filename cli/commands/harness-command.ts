@@ -66,6 +66,7 @@ import {
 } from "../../src/harness/identity.ts";
 import {
   descriptorLoader,
+  type OracleDescriptor,
   storeOraclePreimage,
 } from "../../src/harness/task-oracle.ts";
 import {
@@ -2221,10 +2222,12 @@ export async function harnessPairing(
   // Run 002 Sol r1 #4: a legacy descriptor is recovered before "unknown".
   const descriptor = descriptorLoader(resultsDir, repoRoot);
   const unknown = new Set<string>();
+  // Orch Sol r1 #3: the trusted descriptor splits old pass_to_pass rows.
+  const trusted = new Map<string, OracleDescriptor>();
   for (const j of byId.values()) {
-    if (await descriptor(j.task_oracle_hash, j.task_id) === "unknown") {
-      unknown.add(j.task_oracle_hash);
-    }
+    const d = await descriptor(j.task_oracle_hash, j.task_id);
+    if (d === "unknown") unknown.add(j.task_oracle_hash);
+    else trusted.set(j.task_oracle_hash, d);
   }
   // Run 002 Sol r1 #5: a v1 old judgment's policy is failed when its
   // write-once verdict log lists violations (r3 6.2).
@@ -2244,6 +2247,7 @@ export async function harnessPairing(
     (id) => byId.get(id),
     (j) => unknown.has(j.task_oracle_hash),
     (j) => logs.get(j.id),
+    (j) => trusted.get(j.task_oracle_hash),
   );
 }
 
