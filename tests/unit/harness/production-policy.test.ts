@@ -338,3 +338,26 @@ Deno.test("H-35 Sol r3 #1: every .Open with an object argument must name its obj
     [],
   );
 });
+
+Deno.test("H-35 Sol r4 #1: text inside a quoted object or variable name is never read as code", async () => {
+  assertEquals(
+    await scan("", {
+      files: {
+        "Core/src/W.Codeunit.al":
+          `codeunit 70001 "Worker.Open(Id)"\n{\n}\n\ncodeunit 70002 "Record AllObj Helper"\n{\n    var\n        "Codeunit.Run(Id) Name": Integer;\n}\n`,
+      },
+    }),
+    [],
+  );
+  // A quoted receiver is still a receiver.
+  hasRule(
+    await scan(
+      proc(
+        '        "My Ref": RecordRef;\n        Id: Integer;',
+        '"My Ref".Open(Id);',
+      ),
+    ),
+    "dynamic_object_access",
+    '"My Ref".Open(Id)',
+  );
+});

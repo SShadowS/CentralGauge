@@ -640,3 +640,15 @@ Deno.test("H-35 Sol r3 #3: a test added to a shipped codeunit that is never extr
   const r = await rebuild({ "Test/src/Shipped.Test.al": edited });
   assertEquals(r.v.creditExcluded, 1);
 });
+
+Deno.test("H-35 Sol r4 #2: an object's name is read from its own header, never from a header-like text in another object's quoted name", async () => {
+  const decoy =
+    `codeunit 80101 "codeunit 80100 Decoy"\n{\n}\n\ncodeunit 80100 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentPasses()\n    begin\n    end;\n}\n`;
+  const r = await rebuild({ "Test/src/Decoy.Test.al": decoy }, {
+    dropShippedTests: true,
+  });
+  assertStringIncludes(
+    r.v.violations.join("\n"),
+    "codeunit 80100 collides with shipped",
+  );
+});

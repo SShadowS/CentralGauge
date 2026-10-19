@@ -947,13 +947,27 @@ const isCode = (m: Member) => m.kind === "procedure" || m.kind === "trigger";
 const isTestCodeunit = (d: AlDecl) =>
   d.kind === "codeunit" && /\bSubtype\s*=\s*Test\s*;/i.test(d.body);
 
-/** The declared name of an object (quoted or bare), from the noise-stripped text. */
+/**
+ * Quoted identifiers with their contents blanked (same length), so text
+ * inside a name is never read as code; offsets stay those of the source.
+ */
+const maskQuoted = (s: string) =>
+  s.replace(/"[^"\n]*"/g, (q) => `"${"_".repeat(q.length - 2)}"`);
+
+/**
+ * The declared name of an object (quoted or bare), from the noise-stripped
+ * text: its own header, the last one before its body (Sol r4 #2: never a
+ * header-like text inside another object's quoted name).
+ */
 function objectName(text: string, d: AlDecl): string {
-  const m = new RegExp(
-    `${d.kind}\\s+${d.id}\\s+(?:"([^"\\n]+)"|([A-Za-z_][A-Za-z0-9_]*))`,
-    "i",
-  ).exec(text);
-  return m ? m[1] ?? m[2]! : `${d.kind} ${d.id}`;
+  const re = new RegExp(
+    `\\b${d.kind}\\s+${d.id}\\s+(?:"([^"\\n]*)"|([A-Za-z_][A-Za-z0-9_]*))`,
+    "gid",
+  );
+  let last: RegExpExecArray | null = null;
+  for (const m of maskQuoted(text.slice(0, d.start)).matchAll(re)) last = m;
+  const at = last?.indices?.[1] ?? last?.indices?.[2];
+  return at ? text.slice(at[0], at[1]) : `${d.kind} ${d.id}`;
 }
 
 interface ShippedTests {
@@ -1546,12 +1560,27 @@ export async function productionPolicyViolations(
         continue;
       }
       const code = stripAlNoise(src);
+      // Sol r4 #1: every rule matches on the code with quoted identifiers
+      // masked (text inside a name is never code); captures are read back
+      // from the code at the same offsets.
+      const masked = maskQuoted(code);
+      const scan = function* (re: RegExp) {
+        for (
+          const m of masked.matchAll(new RegExp(re.source, re.flags + "d"))
+        ) {
+          const at = (i: number) => {
+            const r = m.indices![i];
+            return r ? code.slice(r[0], r[1]) : "";
+          };
+          yield { all: code.slice(m.index!, m.index! + m[0].length), at };
+        }
+      };
       const found = new Set<string>();
       const ref = (detail: string) =>
         found.add(`test_detection_ref: ${where}: ${detail}`);
-      for (const m of code.matchAll(NAME_REF)) {
-        const hit = bannedByName.get(unquote(m[1]!));
-        if (hit) ref(`${m[0].trim()} (${hit})`);
+      for (const m of scan(NAME_REF)) {
+        const hit = bannedByName.get(unquote(m.at(1)));
+        if (hit) ref(`${m.all.trim()} (${hit})`);
       }
       const bannedId = (text: string, kind: string, id: number) => {
         if (banned.some(([k, b]) => k === kind && b === id)) {
@@ -1559,11 +1588,11 @@ export async function productionPolicyViolations(
         }
       };
       for (const [re, kind] of ID_REFS) {
-        for (const m of code.matchAll(re)) bannedId(m[0], kind, Number(m[1]));
+        for (const m of scan(re)) bannedId(m.all, kind, Number(m.at(1)));
       }
       for (const re of [TEST_ONLY_TYPE, TEST_SUBTYPE, DETECTION_MEMBER]) {
-        const m = re.exec(code);
-        if (m) ref(m[0].trim());
+        const m = re.exec(masked);
+        if (m) ref(code.slice(m.index, m.index + m[0].length).trim());
       }
       const dynamic = (call: string, arg: string) => {
         if (allowedDynamic.has(call.toLowerCase())) return;
@@ -1572,16 +1601,16 @@ export async function productionPolicyViolations(
           `dynamic_object_access: ${where}: ${call}(${arg.trim() || "..."})`,
         );
       };
-      for (const m of code.matchAll(STATIC_CALL)) {
-        dynamic(`${m[1]}.${m[2]}`, m[3]!);
+      for (const m of scan(STATIC_CALL)) {
+        dynamic(`${m.at(1)}.${m.at(2)}`, m.at(3));
       }
       // Sol r3 #1: any receiver (a RecordRef bare, quoted, an array element
       // or anything else): an Open with an object argument names its object.
-      for (const m of code.matchAll(OPEN_CALL)) {
-        const arg = m[1]!.trim();
+      for (const m of scan(OPEN_CALL)) {
+        const arg = m.at(1).trim();
         if (arg === "") continue;
         dynamic("RecordRef.Open", arg);
-        if (/^\d+$/.test(arg)) bannedId(m[0], "table", Number(arg));
+        if (/^\d+$/.test(arg)) bannedId(m.all, "table", Number(arg));
       }
       out.push(...found);
     }
