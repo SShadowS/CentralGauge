@@ -162,15 +162,17 @@ Deno.test("H-21: CRLF shipped text: the kept procedure is appended with the ship
   assertEquals(r.lib, agent);
 });
 
-Deno.test("H-21/H-30: every scorer version is bumped (the merged helper changes the verdict Test app)", async () => {
+Deno.test("H-21/H-30/H-35: every scorer version is bumped (the helper changes the verdict Test app)", async () => {
   const { SCORER_SUITE } = await import("../../../src/harness/verdict.ts");
   assertEquals(SCORER_SUITE, {
     // H-21 made build 2, pass_to_pass 3, fail_to_pass 2, mutant_kill 4;
-    // H-26 pass_to_pass 4; H-30 ("merge, shipped wins") bumps all four.
-    build: "3",
-    pass_to_pass: "5",
-    fail_to_pass: "3",
-    mutant_kill: "5",
+    // H-26 pass_to_pass 4; H-30 ("merge, shipped wins") bumps all four;
+    // H-35 (helper as written, G and A) bumps all four and adds agent_tests.
+    build: "4",
+    pass_to_pass: "6",
+    fail_to_pass: "4",
+    mutant_kill: "6",
+    agent_tests: "1",
   });
 });
 

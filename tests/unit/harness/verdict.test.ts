@@ -26,6 +26,7 @@ import { loadTask } from "../../../src/harness/task.ts";
 import {
   buildFailureCodes,
   currentScorerFingerprint,
+  effectiveScorers,
   infraSignature,
   isCascadeDiagnostic,
   isCurrentJudgment,
@@ -33,32 +34,34 @@ import {
   SCORER_SUITE,
   writeVerdictLog,
 } from "../../../src/harness/verdict.ts";
-import { deployedSource, FakeBc, result } from "./fake-bc.ts";
+import { deployedSource, type FakeApp, FakeBc, result } from "./fake-bc.ts";
 import { appJson, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
 import { hashFile, hashJson } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 /** Shipped test passes unless Rental carries BREAK_P2P; the oracle passes iff Rental returns 10. */
+function scripted(cu: number, deployed: Map<string, FakeApp>) {
+  const rental = deployedSource(deployed, "CGR Rental");
+  if (cu === 80010) {
+    return result({
+      ShippedPasses: rental.includes("BREAK_P2P")
+        ? "Assert.IsTrue failed. broken"
+        : true,
+    });
+  }
+  if (cu === 85000) {
+    return result({
+      FixWorks: rental.includes("exit(10)")
+        ? true
+        : "Assert.AreEqual failed. Expected:<10>",
+    });
+  }
+  if (cu === 81000) return result({ AgentTest: true });
+  return result({});
+}
+
 function script() {
-  return new FakeBc((cu, deployed) => {
-    const rental = deployedSource(deployed, "CGR Rental");
-    if (cu === 80010) {
-      return result({
-        ShippedPasses: rental.includes("BREAK_P2P")
-          ? "Assert.IsTrue failed. broken"
-          : true,
-      });
-    }
-    if (cu === 85000) {
-      return result({
-        FixWorks: rental.includes("exit(10)")
-          ? true
-          : "Assert.AreEqual failed. Expected:<10>",
-      });
-    }
-    if (cu === 81000) return result({ AgentTest: true });
-    return result({});
-  });
+  return new FakeBc(scripted);
 }
 
 /** Stage HX-001, build an artifact (solution overlay + extra edits), freeze it. */
@@ -120,6 +123,7 @@ Deno.test("judge: the correct solution passes every scorer; the record validates
     ["build", true],
     ["pass_to_pass", true],
     ["fail_to_pass", true],
+    ["agent_tests", true],
   ]);
   assertEquals(judgment.scorers[2]!.tests, [
     {
@@ -235,7 +239,12 @@ Deno.test("judge: a compile error fails build and runs no tests", async () => {
     "Rental/src/Broken.al": "COMPILE_ERROR",
   });
   const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
-  assertEquals(judgment.scorers.map((s) => s.passed), [false, false, false]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [
+    false,
+    false,
+    false,
+    false,
+  ]);
   assertEquals(bc.tests, []);
   assert(log.diagnostics.length > 0);
 });
@@ -260,14 +269,14 @@ Deno.test("judge: a pass_to_pass regression fails the verdict", async () => {
   assertEquals(judgment.verdict, "fail");
 });
 
-Deno.test("judge: agent-added tests run under pass_to_pass; a TestPage test fails with a reason", async () => {
+Deno.test("judge: agent-added tests run under agent_tests; a TestPage test fails with a reason", async () => {
   const added =
     `codeunit 81000 "Agent"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentTest()\n    begin\n    end;\n}\n`;
   const ok = await setup("correct", { "Test/src/Agent.Test.al": added });
   const r1 = await judge(new BcLane(script(), ["C1"]), ok.input);
   assertEquals(r1.judgment.verdict, "pass");
   assert(
-    r1.judgment.scorers[1]!.tests.some((t) =>
+    r1.judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81000 && t.outcome === "pass"
     ),
   );
@@ -283,7 +292,7 @@ Deno.test("judge: agent-added tests run under pass_to_pass; a TestPage test fail
     "TestPage tests are not supported",
   );
   assert(
-    r2.judgment.scorers[1]!.tests.some((t) =>
+    r2.judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81001 && t.outcome === "not_run" &&
       t.failure === "runtime_error"
     ),
@@ -292,20 +301,12 @@ Deno.test("judge: agent-added tests run under pass_to_pass; a TestPage test fail
 
 Deno.test("scorer suite: every scorer, one fingerprint for every task kind", () => {
   assertEquals(Object.keys(SCORER_SUITE).sort(), [
+    "agent_tests",
     "build",
     "fail_to_pass",
     "mutant_kill",
     "pass_to_pass",
   ]);
-});
-
-Deno.test("scorer suite (H-26, H-30): pass_to_pass 4 by H-26 (agent-added test reruns); all four bumped by H-30 (merged helper)", () => {
-  assertEquals(SCORER_SUITE, {
-    build: "3",
-    pass_to_pass: "5",
-    fail_to_pass: "3",
-    mutant_kill: "5",
-  });
 });
 
 Deno.test("scorer suite: the fingerprint does not depend on key order", async () => {
@@ -335,7 +336,7 @@ Deno.test("judge: infra on every container is unscored, never a fail", async () 
   bc.broken.add("C2");
   const { judgment, log } = await judge(lane, input);
   assertEquals(judgment.verdict, "unscored");
-  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null, null]);
   assert(log.error !== null);
 });
 
@@ -360,7 +361,7 @@ Deno.test("judge: no eligible container at all is unscored, never a crash or a f
   lane.quarantine("C1", "cleanup failed earlier");
   const { judgment, log } = await judge(lane, input);
   assertEquals(judgment.verdict, "unscored");
-  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null, null]);
   assertStringIncludes(log.error!, "No eligible containers");
 });
 
@@ -431,7 +432,7 @@ function hangs(mode: "first" | "always") {
   return { bc, agentRuns };
 }
 
-Deno.test("judge (H-26): an agent-added test that hangs on two containers, the trusted control passing on the second, fails pass_to_pass with a clear note; the oracle still decides", async () => {
+Deno.test("judge (H-26): an agent-added test that hangs on two containers, the trusted control passing on the second, fails agent_tests with a clear note; the oracle still decides", async () => {
   const { bc, agentRuns } = hangs("always");
   const { input } = await setup("correct", {
     "Test/src/Agent.Test.al": AGENT_81000,
@@ -439,10 +440,15 @@ Deno.test("judge (H-26): an agent-added test that hangs on two containers, the t
   const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
   assertEquals(log.error, null);
   assertEquals(judgment.verdict, "fail");
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, false, true]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [
+    true,
+    true,
+    true,
+    false,
+  ]);
   assertEquals(judgment.scorers[2]!.tests[0]!.outcome, "pass");
   assert(
-    judgment.scorers[1]!.tests.some((t) =>
+    judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81000 && t.procedure === "AgentTest" &&
       t.outcome === "not_run" && t.failure === "runtime_error"
     ),
@@ -475,16 +481,16 @@ Deno.test("judge (H-26): an agent-added test that hangs on two containers, the t
   );
 });
 
-Deno.test("judge (H-26): an agent-added test that times out on one container and passes on another passes pass_to_pass", async () => {
+Deno.test("judge (H-26): an agent-added test that times out on one container and passes on another passes agent_tests", async () => {
   const { bc, agentRuns } = hangs("first");
   const { input } = await setup("correct", {
     "Test/src/Agent.Test.al": AGENT_81000,
   });
   const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
   assertEquals(judgment.verdict, "pass");
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, true, true]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, true, true, true]);
   assert(
-    judgment.scorers[1]!.tests.some((t) =>
+    judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81000 && t.outcome === "pass"
     ),
   );
@@ -504,10 +510,10 @@ Deno.test("judge (H-26): an agent-added test that times out with no other contai
     new BcLane(hangs("first").bc, ["C1"]),
     input,
   );
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, true]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, true, true, null]);
   assertEquals(judgment.verdict, "unscored");
   assert(
-    judgment.scorers[1]!.tests.some((t) =>
+    judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81000 && t.failure === "infra"
     ),
   );
@@ -519,7 +525,7 @@ Deno.test("judge (H-26): an agent-added test that times out with no other contai
   );
 });
 
-Deno.test("judge (H-26): a trusted control that fails on the rerun container leaves pass_to_pass unscored, never a fail", async () => {
+Deno.test("judge (H-26): a trusted control that fails on the rerun container leaves agent_tests unscored, never a fail", async () => {
   const { bc } = hangs("always");
   const inner = bc.script;
   // The shipped test passes in the trusted run, then fails: the rerun
@@ -533,7 +539,7 @@ Deno.test("judge (H-26): a trusted control that fails on the rerun container lea
     "Test/src/Agent.Test.al": AGENT_81000,
   });
   const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, true]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, true, true, null]);
   assertEquals(judgment.verdict, "unscored");
 });
 
@@ -557,7 +563,7 @@ const AGENT_81001 = AGENT_81000.replace("81000", "81001").replace(
   '"Agent B"',
 );
 
-Deno.test("judge (H-26 review): a completed agent-added failure decides pass_to_pass: another codeunit's hang is not rerun and cannot unscore it, even with no other container", async () => {
+Deno.test("judge (H-26 review): a completed agent-added failure decides agent_tests: another codeunit's hang is not rerun and cannot unscore it, even with no other container", async () => {
   for (const containers of [["C1"], ["C1", "C2"]]) {
     const { bc, agentRuns } = hangs("first");
     const inner = bc.script;
@@ -575,11 +581,11 @@ Deno.test("judge (H-26 review): a completed agent-added failure decides pass_to_
     });
     const { judgment, log } = await judge(new BcLane(bc, containers), input);
     const tag = containers.join(",");
-    assertEquals(judgment.scorers[1]!.passed, false, tag);
+    assertEquals(judgment.scorers[3]!.passed, false, tag);
     assertEquals(judgment.verdict, "fail", tag);
     assertEquals([runsB.length, agentRuns.length], [1, 1], tag);
     assertEquals(
-      judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+      judgment.scorers[3]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
         t.codeunit,
         t.outcome,
         t.failure,
@@ -621,7 +627,7 @@ Deno.test("judge (H-26 review): the rerun repeats the agent suite in order; a co
   assertEquals(runsB.length, 2);
   assert(runsB[0] !== runsB[1]);
   assert(
-    judgment.scorers[1]!.tests.some((t) =>
+    judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81001 && t.outcome === "not_run" &&
       t.failure === "runtime_error"
     ),
@@ -666,7 +672,7 @@ Deno.test("judge (H-26 review): two codeunits hang on the first run; on the reru
   const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
   assertEquals(judgment.verdict, "fail");
   assertEquals(
-    judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+    judgment.scorers[3]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
       t.codeunit,
       t.outcome,
       t.failure,
@@ -747,7 +753,7 @@ Deno.test("judge (H-26 review): only the codeunit that hung takes the rerun's re
     [[agentRuns[0], agentRuns[1], "succeeded"]],
   );
   assertEquals(
-    judgment.scorers[1]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
+    judgment.scorers[3]!.tests.filter((t) => t.codeunit >= 81000).map((t) => [
       t.codeunit,
       t.outcome,
     ]),
@@ -795,7 +801,7 @@ Deno.test("judge: an agent-added test reporting no result for a discovered proce
   const { input } = await setup("correct", { "Test/src/Agent.Test.al": added });
   const { judgment } = await judge(new BcLane(script(), ["C1"]), input);
   assertEquals(judgment.verdict, "fail");
-  const row = judgment.scorers[1]!.tests.find((t) => t.procedure === "Other")!;
+  const row = judgment.scorers[3]!.tests.find((t) => t.procedure === "Other")!;
   assertEquals([row.outcome, row.failure], ["not_run", "runtime_error"]);
   assertEquals(judgment.scorers[2]!.passed, true);
 });
@@ -809,7 +815,7 @@ Deno.test("judge: an oracle publish failure is infra, never the agent's failure"
   const { input } = await setup("correct");
   const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
   assertEquals(judgment.verdict, "unscored");
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, null]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, null, null]);
 });
 
 Deno.test("judge: an oracle publish failure on one container rejudges on another", async () => {
@@ -845,7 +851,12 @@ Deno.test("judge: an oracle compile failure with pass_to_pass infra is a fail", 
   const { input } = await setup("correct");
   const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
   JudgmentRecordSchema.parse(judgment);
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, false]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [
+    true,
+    null,
+    false,
+    true,
+  ]);
   assertEquals(judgment.scorers[2]!.tests[0]!.failure, "compile");
   assertEquals(judgment.verdict, "fail");
 });
@@ -876,7 +887,12 @@ Deno.test("judge: a fail_to_pass assertion with a missing pass_to_pass procedure
   const { input } = await setup("naive/a");
   const { judgment } = await judge(new BcLane(missingShipped(), ["C1"]), input);
   JudgmentRecordSchema.parse(judgment);
-  assertEquals(judgment.scorers.map((s) => s.passed), [true, null, false]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [
+    true,
+    null,
+    false,
+    true,
+  ]);
   assert(
     judgment.scorers[1]!.tests.some((t) =>
       t.procedure === "ShippedPasses" && t.failure === "infra"
@@ -886,7 +902,7 @@ Deno.test("judge: a fail_to_pass assertion with a missing pass_to_pass procedure
   assertEquals(judgment.verdict, "fail");
 });
 
-Deno.test("judge: an agent-added failing test written as [ Test ] is discovered and fails pass_to_pass", async () => {
+Deno.test("judge: an agent-added failing test written as [ Test ] is discovered and fails agent_tests", async () => {
   const bc = script();
   const inner = bc.script;
   bc.script = (cu, deployed, container) =>
@@ -899,9 +915,9 @@ Deno.test("judge: an agent-added failing test written as [ Test ] is discovered 
   });
   const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
   assertEquals(judgment.verdict, "fail");
-  assertEquals(judgment.scorers[1]!.passed, false);
+  assertEquals(judgment.scorers[3]!.passed, false);
   assert(
-    judgment.scorers[1]!.tests.some((t) =>
+    judgment.scorers[3]!.tests.some((t) =>
       t.codeunit === 81003 && t.procedure === "Fails" &&
       t.failure === "assertion"
     ),
@@ -1152,7 +1168,7 @@ Deno.test("judge (H-04): a candidate build crash in a multi-app workspace (no di
   // diagnostic was ignored). H-04b: thrown inside the build, before the log.
   assertStringIncludes(log.error ?? "", "Rental, Test");
   assertEquals(judgment.verdict, "unscored");
-  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null, null]);
   assertEquals(bc.tests, []);
   assertStringIncludes(log.error ?? "", "no compiler diagnostic");
 });
@@ -1184,7 +1200,12 @@ Deno.test("judge (H-04): a genuine compile error with the same cascade stays the
   const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
   assert(log.diagnostics.some((d) => d.code === "CG0001"));
   assertEquals(judgment.verdict, "fail");
-  assertEquals(judgment.scorers.map((s) => s.passed), [false, false, false]);
+  assertEquals(judgment.scorers.map((s) => s.passed), [
+    false,
+    false,
+    false,
+    false,
+  ]);
   assertEquals(log.error, null);
 });
 
@@ -1351,7 +1372,7 @@ Deno.test("judge (H-04b): a staged prerequisite with a genuine compile error is 
   );
 });
 
-Deno.test("judge (M4-17a): a test added to a shipped test codeunit runs under pass_to_pass from the generated codeunit; a failing one fails it", async () => {
+Deno.test("judge (M4-17a): a test added to a shipped test codeunit runs under agent_tests from the generated codeunit; a failing one fails it", async () => {
   const shipped = (body: string) =>
     `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n    end;\n\n    [Test]\n    procedure AgentAdded()\n    begin\n        ${body}\n    end;\n}\n`;
   for (
@@ -1377,9 +1398,160 @@ Deno.test("judge (M4-17a): a test added to a shipped test codeunit runs under pa
     const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
     assertEquals(judgment.verdict, verdict, body);
     assert(
-      judgment.scorers[1]!.tests.some((t) =>
+      judgment.scorers[3]!.tests.some((t) =>
         t.codeunit === 84990 && t.procedure === "AgentAdded"
       ),
     );
   }
+});
+
+// ---- H-35 S1.3 (design-r2 1, 3, 4.1, 5): graded build G and agent build A ----
+
+const AGENT_TESTS =
+  `codeunit 81000 "Agent"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentTest()\n    begin\n    end;\n}\n`;
+
+/** script(), recording what each test run saw: the Test app's source and the oracle. */
+function watched() {
+  const runs: { codeunit: number; test: string; oracle: boolean }[] = [];
+  const bc = new FakeBc((cu, deployed) => {
+    runs.push({
+      codeunit: cu,
+      test: deployedSource(deployed, "CGR Test"),
+      oracle: [...deployed.values()].some((a) =>
+        a.name === "CGR Oracle HX-001"
+      ),
+    });
+    return scripted(cu, deployed);
+  });
+  return { bc, runs };
+}
+
+Deno.test("H-35: a change judgment runs the shipped and oracle tests on G (pristine Test + oracle) and the agent's tests on A (agent Test, no oracle, no shipped tests); agent rows are agent_tests", async () => {
+  const { bc, runs } = watched();
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+  JudgmentRecordSchema.parse(judgment);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", true],
+    ["pass_to_pass", true],
+    ["fail_to_pass", true],
+    ["agent_tests", true],
+  ]);
+  assertEquals(judgment.verdict, "pass");
+  const g = runs.filter((r) => r.codeunit !== 81000);
+  const a = runs.filter((r) => r.codeunit === 81000);
+  assertEquals(g.map((r) => r.codeunit).sort(), [80010, 85000]);
+  assert(g.every((r) => r.oracle && !r.test.includes("codeunit 81000")));
+  assertEquals(a.length, 1);
+  assert(
+    !a[0]!.oracle && a[0]!.test.includes("codeunit 81000") &&
+      !a[0]!.test.includes("codeunit 80010"),
+  );
+  assertEquals(judgment.scorers[1]!.tests.map((t) => t.codeunit), [80010]);
+  assertEquals(
+    judgment.scorers[3]!.tests.map((t) => [t.codeunit, t.outcome]),
+    [[81000, "pass"]],
+  );
+});
+
+Deno.test("H-35: an agent Test that does not compile fails only agent_tests (rows not_run/compile); G is built from the pristine Test and measured", async () => {
+  const { bc, runs } = watched();
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+    "Test/src/Broken.Test.al": "COMPILE_ERROR",
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", true],
+    ["pass_to_pass", true],
+    ["fail_to_pass", true],
+    ["agent_tests", false],
+  ]);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(judgment.scorers[3]!.tests, [{
+    codeunit: 81000,
+    procedure: "AgentTest",
+    target: "candidate",
+    outcome: "not_run",
+    failure: "compile",
+  }]);
+  assertEquals(runs.map((r) => r.codeunit).sort(), [80010, 85000]);
+});
+
+Deno.test("H-35: a Test-side violation leaves G measured and fails agent_tests without running A", async () => {
+  const { bc, runs } = watched();
+  const { input } = await setup("correct", {
+    "Test/src/Dup.Test.al": `codeunit 80010 "Dup"\n{\n    Subtype = Test;\n}\n`,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", true],
+    ["pass_to_pass", true],
+    ["fail_to_pass", true],
+    ["agent_tests", false],
+  ]);
+  assertEquals(judgment.verdict, "fail");
+  assertStringIncludes(log.violations.join("\n"), "collides with shipped");
+  assertEquals(runs.map((r) => r.codeunit).sort(), [80010, 85000]);
+});
+
+Deno.test("H-35: a production-side violation fails every scorer, agent_tests included, and runs nothing", async () => {
+  const bc = script();
+  const { input } = await setup("correct", {
+    "Rental/app.json": appJson(IDS.rental, "CGR Rental Renamed", [
+      70200,
+      70299,
+    ], [{ id: IDS.core, name: "CGR Core" }]),
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", false],
+    ["pass_to_pass", false],
+    ["fail_to_pass", false],
+    ["agent_tests", false],
+  ]);
+  assertStringIncludes(log.violations.join("\n"), "name changed");
+  assertEquals(bc.tests, []);
+});
+
+Deno.test("H-35: no agent test submitted: agent_tests passes with no rows and a not_submitted note", async () => {
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(script(), ["C1"]), input);
+  assertEquals(judgment.scorers[3]!.name, "agent_tests");
+  assertEquals(judgment.scorers[3]!.passed, true);
+  assertEquals(judgment.scorers[3]!.tests, []);
+  assert(
+    log.notes.includes("agent_tests: not_submitted"),
+    log.notes.join("\n"),
+  );
+});
+
+Deno.test("H-35: agent_tests is harness-defined: added to every non-test-authoring task's scorers, never to test-authoring", () => {
+  assertEquals(
+    effectiveScorers({
+      kind: "bugfix",
+      scorers: ["build", "pass_to_pass", "fail_to_pass"],
+    }),
+    ["build", "pass_to_pass", "fail_to_pass", "agent_tests"],
+  );
+  assertEquals(
+    effectiveScorers({
+      kind: "test-authoring",
+      scorers: ["build", "pass_to_pass", "mutant_kill"],
+    }),
+    ["build", "pass_to_pass", "mutant_kill"],
+  );
+});
+
+Deno.test("H-35: scorer versions bumped (build 4, pass_to_pass 6, fail_to_pass 4, mutant_kill 6, agent_tests 1)", () => {
+  assertEquals(SCORER_SUITE, {
+    build: "4",
+    pass_to_pass: "6",
+    fail_to_pass: "4",
+    mutant_kill: "6",
+    agent_tests: "1",
+  });
 });

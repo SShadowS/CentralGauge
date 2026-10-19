@@ -57,7 +57,9 @@ import { applyOverlay, readAppGraph, readAppJson } from "./staging.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
+  type ReconstructOptions,
   TEST_APP,
+  type VerdictWorkspace,
 } from "./verdict-workspace.ts";
 
 /**
@@ -72,23 +74,48 @@ export const SCORER_SUITE: Record<string, string> = {
   // 3: the shipped helper is merged with the agent's additions, shipped
   // members always as shipped, and internalsVisibleTo naming the Test app is
   // kept (H-30, owner 2026-10-18 "merge, shipped wins"; all four bumped).
-  build: "3",
+  // 4: G builds the pristine Test app, never the agent's (H-35).
+  build: "4",
   // 2: a change task's agent-added tests include those extracted from
   // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
   // 3: added helper procedures kept (H-21).
   // 4: a thrown or timed-out agent-added test is rerun behind a trusted control
   // (H-26, decision 2026-09-25-agent-suite-infra item 3).
   // 5: helper merge, shipped wins (H-30).
-  pass_to_pass: "5",
+  // 6: shipped rows only, on G; agent-added tests moved to agent_tests (H-35).
+  pass_to_pass: "6",
   // 2: added helper procedures kept (H-21). 3: helper merge (H-30).
-  fail_to_pass: "3",
+  // 4: the oracle runs on G, without agent Test code (H-35).
+  fail_to_pass: "4",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
   // 3: [Test] procedures added to shipped test codeunits are extracted into
   // a generated codeunit, with the credit rules (M4-17a).
   // 4: added helper procedures kept (H-21). 5: helper merge (H-30).
-  mutant_kill: "5",
+  // 6: the helper as written (H-35).
+  mutant_kill: "6",
+  // 1: harness-defined, every kind but test-authoring: the agent's own tests
+  // on A (agent Test, no shipped test codeunits), H-26 rerun policy (H-35).
+  agent_tests: "1",
 };
-type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
+type ScorerName =
+  | "build"
+  | "pass_to_pass"
+  | "fail_to_pass"
+  | "mutant_kill"
+  | "agent_tests";
+
+/**
+ * H-35 (design-r2 3): a judgment's scorers. `agent_tests` is harness-defined,
+ * not in task.yml (the scorer list is in every task's oracle hash), so it is
+ * added here for every kind but test-authoring.
+ */
+export function effectiveScorers(
+  task: { kind: string; scorers: readonly string[] },
+): string[] {
+  return task.kind === "test-authoring"
+    ? [...task.scorers]
+    : [...task.scorers, "agent_tests"];
+}
 
 export function currentScorerFingerprint(): Promise<string> {
   return scorerFingerprint(SCORER_SUITE);
@@ -372,27 +399,35 @@ export async function runHeld(
   return { rows: accountHeld(ctx, held) };
 }
 
+/** H-35: the trusted control of an agent rerun: G's deployment and its shipped specs. */
+interface Control {
+  wanted: WantedApp[];
+  specs: TestSpec[];
+  cleanupIds: string[];
+}
+
 /**
- * pass_to_pass's agent-added test codeunits on the candidate build (H-26),
- * per codeunit. A codeunit that completes on the first run keeps those rows.
- * `rerun` null (pass_to_pass already fails): a thrown codeunit is the
+ * agent_tests (H-35; pass_to_pass's agent rows before): the agent's test
+ * codeunits on A (H-26), per codeunit. A codeunit that completes on the first
+ * run keeps those rows.
+ * `rerun` null (agent_tests already fails): a thrown codeunit is the
  * agent's failure (agentTestsBc), and an infra fault of the whole run adds
  * no rows, so it cannot unscore that fail. The same holds when a completed
  * agent codeunit failed. Else a codeunit that throws or times out is
  * ambiguous (decision 2026-09-25-agent-suite-infra item 3): the whole agent
  * suite is rerun once, in order, on another container, right after the
- * trusted control (the shipped pass_to_pass specs, which passed on this
- * build) passes there, and only the ambiguous codeunits take the rerun's
+ * trusted control (G with the shipped pass_to_pass specs, which passed on
+ * it) passes there, and only the ambiguous codeunits take the rerun's
  * results. One that throws again is the agent's failure, noted with both
  * containers. A failing control, no other container or no control leaves
- * infra rows for the ambiguous codeunits: pass_to_pass is unscored, never a
+ * infra rows for the ambiguous codeunits: agent_tests is unscored, never a
  * fail. The rerun is recorded in infra_retries.
  */
 async function runAgentTests(
   ctx: JudgeContext,
   prep: Prepared,
   agent: TestSpec[],
-  rerun: { control: TestSpec[] | null } | null,
+  rerun: { control: Control | null } | null,
 ): Promise<TestRow[]> {
   const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures!]));
   const notes = ctx.log.notes;
@@ -419,7 +454,7 @@ async function runAgentTests(
       ctx.log.infra_retries.push(...err.retries);
     }
     notes.push(
-      `pass_to_pass: ${what} infra: ${
+      `agent_tests: ${what} infra: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -449,7 +484,7 @@ async function runAgentTests(
     threw.filter((t) => t.container === first.container).map((t) => t.codeunit),
   );
   const kept = rows.filter((r) => !ambiguous.has(r.codeunit));
-  // A completed agent failure decides pass_to_pass already (Sol r2b P1): a
+  // A completed agent failure decides agent_tests already (Sol r2b P1): a
   // hang elsewhere is the agent's too, with no rerun that could unscore it.
   if (
     !rerun || ambiguous.size === 0 || kept.some((r) => r.outcome !== "pass")
@@ -459,7 +494,7 @@ async function runAgentTests(
   const control = rerun.control;
   if (!control) {
     notes.push(
-      `pass_to_pass: no trusted control to rerun agent-added codeunits ${
+      `agent_tests: no trusted control to rerun agent-added codeunits ${
         [...ambiguous].join(", ")
       } against: unscored`,
     );
@@ -490,9 +525,9 @@ async function runAgentTests(
       async (c) => {
         rerunOn = c;
         const ctl = await deployAndTest(ctx.lane.bc, c, {
-          wanted: prep.wanted,
-          tests: control,
-          cleanupIds,
+          wanted: control.wanted,
+          tests: control.specs,
+          cleanupIds: control.cleanupIds,
           ctx: ctx.deploy,
         });
         const s = ctx.log.spans;
@@ -518,7 +553,7 @@ async function runAgentTests(
           );
         }
         notes.push(
-          `pass_to_pass: agent-added codeunits ${
+          `agent_tests: agent-added codeunits ${
             [...ambiguous].join(", ")
           } rerun on ${c} after a passing trusted control`,
         );
@@ -540,7 +575,7 @@ async function runAgentTests(
     // Rows of a codeunit that threw again are already not_run, runtime_error.
     for (const cu of new Set(again.filter((cu) => ambiguous.has(cu)))) {
       notes.push(
-        `pass_to_pass: agent-added test codeunit ${cu} did not complete on ${first.container} and on ${second.container} (the trusted control passed on ${second.container}): the agent's failure`,
+        `agent_tests: agent-added test codeunit ${cu} did not complete on ${first.container} and on ${second.container} (the trusted control passed on ${second.container}): the agent's failure`,
       );
     }
     return inOrder([...kept, ...rerunRows]);
@@ -656,101 +691,69 @@ async function buildOracle(
   };
 }
 
-/** feature, bugfix, refactor: build, pass_to_pass, fail_to_pass. */
+/**
+ * feature, bugfix, refactor (H-35, design-r2 1 and 5). G = the candidate
+ * production + the pristine Test app + the oracle: build, pass_to_pass (the
+ * shipped rows) and fail_to_pass. A = the same production + the agent's Test
+ * as written, without the shipped test codeunits: agent_tests. G reads no
+ * agent Test file, so its violations are production-side and fail every
+ * scorer; one only A has is Test-side: G is measured, agent_tests fails.
+ */
 async function scoreChange(ctx: JudgeContext): Promise<void> {
   const { i, scores, log } = ctx;
   const t = i.task.task;
   const tr = performance.now();
-  const vw = await buildVerdictWorkspace({
-    pristine: i.pristine,
-    artifact: i.artifact,
-    out: join(i.workDir, "verdict"),
-    symbolIds: i.symbolIds,
-  });
+  const workspace = (name: string, o: Partial<ReconstructOptions>) =>
+    buildVerdictWorkspace({
+      pristine: i.pristine,
+      artifact: i.artifact,
+      out: join(i.workDir, name),
+      symbolIds: i.symbolIds,
+      ...o,
+    });
+  const gw = await workspace("verdict", { rawTest: true });
+  const aw = await workspace("verdict-agent", { dropShippedTests: true });
   log.spans.reconstruct_ms = performance.now() - tr;
-  log.violations = vw.violations;
+  const production = new Set(gw.violations);
+  const testSide = aw.violations.filter((v) => !production.has(v));
+  log.violations = [...gw.violations, ...testSide];
   // Tests the agent added to shipped codeunits are discovered below as the
   // generated codeunit (addedTestCodeunits); why any were not is noted here.
-  log.notes.push(...vw.notes);
-  if (vw.violations.length > 0) return scores.failRest();
+  log.notes.push(...aw.notes);
+  if (gw.violations.length > 0) return scores.failRest();
 
-  const prep = await prepareApps(ctx.lane, {
-    pristine: i.pristine,
-    pristineApps: await readAppGraph(i.pristine),
-    candidateDir: vw.dir,
-    candidateApps: vw.apps,
-    changed: vw.changed,
-    versionPlan: "judge",
-    policy: CLOUD_POLICY,
-    workDir: join(i.workDir, "apps"),
-    lock: i.lock,
-    ...(i.buildCache ? { cache: i.buildCache } : {}),
-  });
+  const pristineApps = await readAppGraph(i.pristine);
+  const prepare = (w: VerdictWorkspace, name: string, label: string) =>
+    prepareApps(ctx.lane, {
+      pristine: i.pristine,
+      pristineApps,
+      candidateDir: w.dir,
+      candidateApps: w.apps,
+      changed: w.changed,
+      versionPlan: "judge",
+      policy: CLOUD_POLICY,
+      workDir: join(i.workDir, name),
+      lock: i.lock,
+      label,
+      ...(i.buildCache ? { cache: i.buildCache } : {}),
+    });
+  const prep = await prepare(gw, "apps", "candidate");
   recordBuild(ctx, prep, "candidate");
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
 
-  const p2p: TestSpec[] = [];
-  const agent: TestSpec[] = [];
-  const testPageRows: TestRow[] = [];
-  if (scores.has("pass_to_pass")) {
-    for (const r of t.pass_to_pass) {
-      p2p.push({
-        codeunit: r.codeunit,
-        procedures: r.procedures,
-        target: "candidate",
-      });
-    }
-    const added = await addedTestCodeunits(
-      join(i.pristine, TEST_APP),
-      join(vw.dir, TEST_APP),
-      new Set(vw.excluded),
-    );
-    for (const a of added) {
-      if (a.testPage) {
-        const message =
-          "TestPage tests are not supported by the harness test runner";
-        for (
-          const procedure of a.procedures.length > 0
-            ? a.procedures
-            : ["(TestPage)"]
-        ) {
-          testPageRows.push({
-            codeunit: a.codeunit,
-            procedure,
-            target: "candidate",
-            outcome: "not_run",
-            failure: "runtime_error",
-          });
-          log.test_messages.push({
-            codeunit: a.codeunit,
-            procedure,
-            target: "candidate",
-            message,
-          });
-        }
-        continue;
-      }
-      if (a.procedures.length === 0) {
-        // Nothing to run; running it would report zero results (infra) on every container.
-        log.notes.push(
-          `added test codeunit ${a.codeunit} (${TEST_APP}/${a.file}) has no [Test] procedure: not run`,
-        );
-        continue;
-      }
-      // Run last, in their own hold (agentTestsBc): agent code cannot unscore the verdict.
-      agent.push({
-        codeunit: a.codeunit,
-        procedures: a.procedures,
-        target: "candidate",
-      });
-    }
-  }
+  const p2p: TestSpec[] = scores.has("pass_to_pass")
+    ? t.pass_to_pass.map((r) => ({
+      codeunit: r.codeunit,
+      procedures: r.procedures,
+      target: "candidate",
+    }))
+    : [];
   const wanted = [...prep.wanted];
   const cleanup = [...prep.candidateIds];
   const f2p: TestSpec[] = [];
   if (t.fail_to_pass) {
-    const oracle = await buildOracle(ctx, prep, vw.apps);
+    const oracle = await buildOracle(ctx, prep, gw.apps);
     if (oracle === null) {
       // H-26: the reason, next to the tests it stops (reports read test_messages).
       const diags = log.diagnostics.filter((d) => d.app === "oracle");
@@ -793,7 +796,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
       }
     }
   }
-  // Trusted suites first (visible pass_to_pass and the oracle), then agent-added codeunits.
+  // G: trusted code only, every trusted suite in one hold.
   let rows: TestRow[] = [];
   if (p2p.length + f2p.length > 0) {
     rows =
@@ -806,27 +809,139 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     const r = rows.filter((x) => oracleUnits.has(x.codeunit));
     scores.set("fail_to_pass", scorerPassed(r), r);
   }
+  const shipped = rows.filter((x) => !oracleUnits.has(x.codeunit));
   if (scores.has("pass_to_pass")) {
-    const trusted = rows.filter((x) => !oracleUnits.has(x.codeunit));
-    let agentRows: TestRow[] = [];
-    if (agent.length > 0) {
-      // A thrown agent run is ambiguous only while pass_to_pass is still
-      // undecided: with a shipped or TestPage row already failing, it fails
-      // whatever the agent tests do, and a hang must not unscore that.
-      const undecided = testPageRows.length === 0 &&
-        (p2p.length === 0 || scorerPassed(trusted) === true);
-      agentRows = await runAgentTests(
-        ctx,
-        prep,
-        agent,
-        undecided ? { control: p2p.length > 0 ? p2p : null } : null,
-      );
-    }
-    const r = [...trusted, ...agentRows, ...testPageRows];
-    // Never a pass on zero rows (scorerPassed); only TestPage rows fail.
-    scores.set("pass_to_pass", scorerPassed(r), r);
+    // Never a pass on zero rows (scorerPassed).
+    scores.set("pass_to_pass", scorerPassed(shipped), shipped);
+  }
+  if (scores.has("agent_tests")) {
+    // G's deployment without the oracle, with the shipped specs, is the
+    // control of an agent rerun; only when those passed on this candidate.
+    const control = p2p.length > 0 && scorerPassed(shipped) === true
+      ? {
+        wanted: prep.wanted,
+        specs: p2p,
+        cleanupIds: [...prep.candidateIds].reverse(),
+      }
+      : null;
+    await scoreAgentTests(ctx, aw, testSide, control, prepare);
   }
   scores.failRest();
+}
+
+/** H-35: agent_tests on A (design-r2 3; the H-26 rerun policy unchanged). */
+async function scoreAgentTests(
+  ctx: JudgeContext,
+  aw: VerdictWorkspace,
+  testSide: string[],
+  control: Control | null,
+  prepare: (
+    w: VerdictWorkspace,
+    name: string,
+    label: string,
+  ) => Promise<Prepared>,
+): Promise<void> {
+  const { i, scores, log } = ctx;
+  // S2 records this as not_measured behind the policy gate.
+  if (testSide.length > 0) return scores.set("agent_tests", false);
+  const agent: TestSpec[] = [];
+  const testPageRows: TestRow[] = [];
+  const added = await addedTestCodeunits(
+    join(i.pristine, TEST_APP),
+    join(aw.dir, TEST_APP),
+    new Set(aw.excluded),
+  );
+  for (const a of added) {
+    if (a.testPage) {
+      const message =
+        "TestPage tests are not supported by the harness test runner";
+      for (
+        const procedure of a.procedures.length > 0
+          ? a.procedures
+          : ["(TestPage)"]
+      ) {
+        testPageRows.push({
+          codeunit: a.codeunit,
+          procedure,
+          target: "candidate",
+          outcome: "not_run",
+          failure: "runtime_error",
+        });
+        log.test_messages.push({
+          codeunit: a.codeunit,
+          procedure,
+          target: "candidate",
+          message,
+        });
+      }
+      continue;
+    }
+    if (a.procedures.length === 0) {
+      // Nothing to run; running it would report zero results (infra) on every container.
+      log.notes.push(
+        `added test codeunit ${a.codeunit} (${TEST_APP}/${a.file}) has no [Test] procedure: not run`,
+      );
+      continue;
+    }
+    agent.push({
+      codeunit: a.codeunit,
+      procedures: a.procedures,
+      target: "candidate",
+    });
+  }
+  if (aw.excluded.length > 0) {
+    log.notes.push(`agent_tests: credit_excluded: ${aw.excluded.length}`);
+  }
+  if (agent.length + testPageRows.length === 0) {
+    if (aw.excluded.length === 0) log.notes.push("agent_tests: not_submitted");
+    return scores.set("agent_tests", true, []);
+  }
+  if (agent.length === 0) {
+    return scores.set("agent_tests", scorerPassed(testPageRows), testPageRows);
+  }
+  const notRun = (failure: "compile" | "infra") =>
+    agent.flatMap((a) =>
+      a.procedures!.map((p) => ({
+        codeunit: a.codeunit,
+        procedure: p,
+        target: "candidate",
+        outcome: "not_run" as const,
+        failure,
+      }))
+    );
+  let prepA: Prepared;
+  try {
+    prepA = await prepare(aw, "apps-agent", "agent Test");
+  } catch (err) {
+    // G is measured: infra building A unscores agent_tests only.
+    if (!infraThrown(err)) throw err;
+    if (err instanceof InfraRetriesExhaustedError) {
+      log.infra_retries.push(...err.retries);
+    }
+    log.notes.push(
+      `agent_tests: agent-added tests infra: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    const r = [...notRun("infra"), ...testPageRows];
+    return scores.set("agent_tests", scorerPassed(r), r);
+  }
+  recordBuild(ctx, prepA, "agent");
+  if (!prepA.buildOk) {
+    return scores.set("agent_tests", false, [
+      ...notRun("compile"),
+      ...testPageRows,
+    ]);
+  }
+  // A TestPage row fails agent_tests already: a hang must not unscore that.
+  const rows = await runAgentTests(
+    ctx,
+    prepA,
+    agent,
+    testPageRows.length === 0 ? { control } : null,
+  );
+  const r = [...rows, ...testPageRows];
+  scores.set("agent_tests", scorerPassed(r), r);
 }
 
 const isTestPath = (rel: string) =>
@@ -1206,7 +1321,7 @@ export async function judge(
     per_app_compiles: 0,
     error: null,
   };
-  const scores = new Scores(i.task.task.scorers);
+  const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {
     ledgerRoot: i.deploy.ledgerRoot,
     // Both trusted staging outputs: the oracle id must be removable at cleanup.

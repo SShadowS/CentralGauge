@@ -1021,6 +1021,7 @@ Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; vari
     "build",
     "pass_to_pass",
     "fail_to_pass",
+    "agent_tests",
   ]);
   const prov = JSON.parse(
     await Deno.readTextFile(join(dir, "provenance.json")),
@@ -1941,8 +1942,8 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const js = await t.env.store.judgments(e.id);
   const latest = js.reduce((a, b) => a.started_at >= b.started_at ? a : b);
   assertEquals(latest.scorer_versions, SCORER_SUITE);
-  // 5 since H-30 (helper merge, shipped wins).
-  assertEquals(latest.scorer_versions["mutant_kill"], "5");
+  // 5 since H-30 (helper merge, shipped wins); 6 since H-35 (helper as written).
+  assertEquals(latest.scorer_versions["mutant_kill"], "6");
   assertEquals(latest.scorer_fingerprint, await currentScorerFingerprint());
   assertEquals(
     [
