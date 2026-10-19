@@ -13,6 +13,23 @@ import type {
 } from "../../../src/container/types.ts";
 import { ContainerError } from "../../../src/errors.ts";
 import type { HarnessBc } from "../../../src/harness/bc-lane.ts";
+import type { ResetMechanism } from "../../../src/harness/reset.ts";
+
+/** H-35 S3: a reset that always succeeds (unit tests run no real reset). */
+export const OK_RESET: ResetMechanism = {
+  id: "fake",
+  policyVersion: 1,
+  reset: (container) =>
+    Promise.resolve({
+      container,
+      mechanism: "fake",
+      policy_version: 1,
+      ok: true,
+      failed_step: null,
+      error: null,
+      phases_ms: {},
+    }),
+};
 
 export interface FakeApp {
   id: string;

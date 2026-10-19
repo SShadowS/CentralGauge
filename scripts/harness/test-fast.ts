@@ -92,6 +92,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}report-extras.test.ts`]: c(true, 0),
   [`${H}report.test.ts`]: c(true, 3),
   [`${H}reuse.test.ts`]: c(true, 16),
+  [`${H}reset.test.ts`]: c(true, 0),
   [`${H}rollups.test.ts`]: c(true, 0),
   [`${H}sandbox.test.ts`]: c(true, 4),
   [`${H}screening.test.ts`]: c(true, 5),

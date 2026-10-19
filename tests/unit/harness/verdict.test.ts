@@ -6,7 +6,12 @@ import {
   assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
-import { ContainerError, ValidationError } from "../../../src/errors.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../../../src/errors.ts";
+import { UNCONFIGURED_RESET } from "../../../src/harness/reset.ts";
 import {
   appVersions,
   BcLane,
@@ -36,7 +41,13 @@ import {
   SCORER_SUITE,
   writeVerdictLog,
 } from "../../../src/harness/verdict.ts";
-import { deployedSource, type FakeApp, FakeBc, result } from "./fake-bc.ts";
+import {
+  deployedSource,
+  type FakeApp,
+  FakeBc,
+  OK_RESET,
+  result,
+} from "./fake-bc.ts";
 import { appJson, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
 import { hashFile, hashJson, hashTree } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -104,7 +115,7 @@ async function setup(
       symbolIds: new Set([IDS.assert]),
       workDir: await Deno.realPath(await testTempDir()),
       lock: { store: repo.symbolStore, packages: repo.symbols },
-      deploy: { ledgerRoot: join(results, "bc-ledger") },
+      deploy: { ledgerRoot: join(results, "bc-ledger"), reset: OK_RESET },
     },
   };
 }
@@ -1868,4 +1879,41 @@ Deno.test("H-35 S2.4: A's production packages must equal G's (id, build key, dig
     Error,
     "harness bug: A's production package prod",
   );
+});
+
+// ---- H-35 S3: the reset before every judge deployment ----
+
+Deno.test("H-35 S3: every change-task deployment (G, A, the rerun's control and rerun) is preceded by its own reset on its container", async () => {
+  const { bc } = hangs("first");
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
+  const { log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(log.deployments!.map((d) => d.hold), [
+    "G",
+    "A",
+    "control",
+    "A",
+  ]);
+  assertEquals(
+    log.resets!.map((r) => [r.container, r.ok]),
+    log.deployments!.map((d) => [d.container, true]),
+  );
+});
+
+Deno.test("H-35 S3: judging with no reset lineage refuses loudly (a configuration error), never deploys and quarantines nothing", async () => {
+  const { input } = await setup("correct");
+  const bc = script();
+  const lane = new BcLane(bc, ["C1"]);
+  await assertRejects(
+    () =>
+      judge(lane, {
+        ...input,
+        deploy: { ...input.deploy, reset: UNCONFIGURED_RESET },
+      }),
+    ConfigurationError,
+    "reset lineage",
+  );
+  assertEquals(bc.syncs.length, 0);
+  assertEquals(lane.quarantined.size, 0);
 });

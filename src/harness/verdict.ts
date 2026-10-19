@@ -21,6 +21,7 @@ import type {
   Prepared,
 } from "./bc-lane.ts";
 import type { JudgmentRecord } from "./records.ts";
+import type { ResetMechanism, ResetRecord } from "./reset.ts";
 import type { StagedApp } from "./staging.ts";
 import type { LoadedTask } from "./task.ts";
 import { ContainerError, ValidationError } from "../errors.ts";
@@ -221,7 +222,8 @@ export interface JudgeInput {
   workDir: string;
   lock: LockedSymbols;
   /** The removal allowlist's trusted roots (pristine, oracle) are set by judge, never by the caller. */
-  deploy: Pick<DeployContext, "ledgerRoot">;
+  /** H-35 S3: `reset` is required: no judge deployment without a reset. */
+  deploy: Pick<DeployContext, "ledgerRoot"> & { reset: ResetMechanism };
   /** H-27: the run's shared build cache (task-fixed builds are reused across cells); none = no reuse. */
   buildCache?: BuildCache;
   /** H-35 provenance: the harness commit judging (null when unknown). */
@@ -256,6 +258,11 @@ export interface VerdictLog {
    * Absent in a log written before H-35.
    */
   deployments?: DeploymentRecord[];
+  /**
+   * H-35 S3 (design-r3 2.4): every reset of the judgment, failed ones
+   * included, in order. Absent in a log written before S3.
+   */
+  resets?: ResetRecord[];
 }
 
 /** H-35 (design-r2 4.2): one hold's deployment: what was published where. */
@@ -1656,6 +1663,7 @@ export async function judge(
     per_app_compiles: 0,
     error: null,
     deployments: [],
+    resets: [],
   };
   const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {
@@ -1664,6 +1672,9 @@ export async function judge(
     trustedRoots: i.task.task.fail_to_pass
       ? [i.pristine, join(i.task.dir, "oracle")]
       : [i.pristine],
+    // H-35 S3: every judge deployment is preceded by a reset.
+    reset: i.deploy.reset,
+    onReset: (r) => log.resets!.push(r),
   };
   const ctx: JudgeContext = {
     lane,

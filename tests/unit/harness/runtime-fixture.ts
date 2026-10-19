@@ -42,7 +42,7 @@ import {
 import { RecordStore } from "../../../src/harness/records.ts";
 import { applyOverlay } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
-import { deployedSource, FakeBc, result } from "./fake-bc.ts";
+import { deployedSource, FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { FakeDocker, type RunBehavior } from "./fake-docker.ts";
 import { makeRefappRepo, type RefappRepo, write } from "./refapp-fixture.ts";
 import { removeTempDir, testTempDir as tempDir } from "../../utils/temp-dir.ts";
@@ -300,7 +300,7 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     secretAcl: { icacls: fakeIcacls, user: ACL_USER },
     driveType: () => Promise.resolve("Fixed"),
     scanReparsePoints: NO_SCAN,
-    deploy: { ledgerRoot: join(privateRoot, "bc-ledger") },
+    deploy: { ledgerRoot: join(privateRoot, "bc-ledger"), reset: OK_RESET },
     pricing: () => Promise.resolve(BOOK),
     supervised: true,
     egressEnforced: false,

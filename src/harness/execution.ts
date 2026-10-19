@@ -46,6 +46,7 @@ import { readRecords } from "./adapters/jsonl.ts";
 import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
+import type { ResetMechanism } from "./reset.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -181,8 +182,12 @@ export interface HarnessEnv {
   driveType?: (path: string) => Promise<string>;
   /** Test seam for the freeze's reparse attribute scan (default: the real pwsh scan). */
   scanReparsePoints?: typeof scanReparsePoints;
-  /** The per-container BC ledger; trusted roots are set per grant and judgment, never here. */
-  deploy: Pick<DeployContext, "ledgerRoot">;
+  /**
+   * The per-container BC ledger; trusted roots are set per grant and
+   * judgment, never here. H-35 S3: the reset judging runs before every
+   * deployment (the agent's tool environment never resets).
+   */
+  deploy: Pick<DeployContext, "ledgerRoot"> & { reset: ResetMechanism };
   pricing(at: Date): Promise<PricingBook>;
   /** Started by a human at a terminal; no automatic retries. */
   supervised: boolean;

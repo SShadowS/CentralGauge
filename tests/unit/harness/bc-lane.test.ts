@@ -9,7 +9,13 @@ import { ContainerError, ValidationError } from "../../../src/errors.ts";
 import {
   BENCH_CANDIDATE_APP_ID,
   loadLedger,
+  saveLedger,
 } from "../../../src/harness/bc-apps.ts";
+import {
+  ResetFailedError,
+  type ResetMechanism,
+  type ResetRecord,
+} from "../../../src/harness/reset.ts";
 import {
   BcLane,
   buildApps,
@@ -2096,4 +2102,103 @@ Deno.test("H-35 orch r1 #4: the effective app.json (version, Cloud target) is st
     policy: CLOUD_POLICY,
   });
   assertEquals(seen[0], "Cloud");
+});
+
+// ---- H-35 S3: the reset before every judge deployment ----
+
+/** A reset mechanism that logs each reset; `fail` names containers it fails on. */
+function fakeReset(bc: FakeBc, fail = new Set<string>()) {
+  const log: string[] = [];
+  const records: ResetRecord[] = [];
+  const mechanism: ResetMechanism = {
+    id: "fake",
+    policyVersion: 1,
+    reset: (c) => {
+      // Ordered against the deployments: how many syncs preceded it.
+      log.push(`${c}@${bc.syncs.length}`);
+      return Promise.resolve({
+        container: c,
+        mechanism: "fake",
+        policy_version: 1,
+        ok: !fail.has(c),
+        failed_step: fail.has(c) ? "snapshot_guard" : null,
+        error: fail.has(c) ? "snapshot exists" : null,
+        phases_ms: {},
+      });
+    },
+  };
+  return {
+    log,
+    records,
+    mechanism,
+    onReset: (r: ResetRecord) => records.push(r),
+  };
+}
+
+Deno.test("H-35 S3 deployAndTest: the reset runs before the deployment, is recorded and returned, and the ledger is the baseline (empty) after it", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const ledgerRoot = await tmp();
+  await saveLedger(
+    ledgerRoot,
+    "C1",
+    {
+      stale: { id: "stale", version: "1.0.0.0", stamp: "x" },
+    } as unknown as Parameters<typeof saveLedger>[2],
+  );
+  const r = fakeReset(bc);
+  const before = bc.syncs.length;
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot,
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onReset: r.onReset,
+    },
+  });
+  assertEquals(r.log, [`C1@${before}`]);
+  assertEquals(out.reset?.ok, true);
+  assertEquals(r.records.map((x) => x.container), ["C1"]);
+  assert(!("stale" in await loadLedger(ledgerRoot, "C1")));
+});
+
+Deno.test("H-35 S3 deployAndTest: a failed reset throws ResetFailedError before any deployment; the lane quarantines that container and reroutes, and the retry gets its own reset", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const r = fakeReset(bc, new Set(["C1"]));
+  const ctx = {
+    ledgerRoot: await tmp(),
+    trustedRoots: [p.pristine],
+    reset: r.mechanism,
+    onReset: r.onReset,
+  };
+  const call = (c: string) =>
+    deployAndTest(bc, c, {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx,
+    });
+  const syncs = bc.syncs.length;
+  await assertRejects(() => call("C1"), ResetFailedError, "snapshot_guard");
+  assertEquals(bc.syncs.length, syncs, "nothing deployed after a failed reset");
+  // Through the lane: C1 (least recently routed first) fails its reset.
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    call,
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.get("C1")?.includes("snapshot_guard"));
+  assertEquals(
+    r.records.map((x) => [x.container, x.ok]),
+    [["C1", false], ["C1", false], ["C2", true]],
+  );
 });

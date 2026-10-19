@@ -64,6 +64,7 @@ import {
   realDocker,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
+import { UNCONFIGURED_RESET } from "../../src/harness/reset.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
@@ -591,7 +592,11 @@ export async function openHarnessEnv(
       symbolStore: o.symbolStore,
       secretsSource: o.secretsSource,
       // Owned ids come from each grant's and judgment's trusted roots (M1-16).
-      deploy: { ledgerRoot: join(sharedResults, "bc-ledger") },
+      // H-35 S3: judging refuses until the reset lineage is wired (--lineage).
+      deploy: {
+        ledgerRoot: join(sharedResults, "bc-ledger"),
+        reset: UNCONFIGURED_RESET,
+      },
       pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
       supervised: o.supervised,
       egressEnforced: mode === "enforced",

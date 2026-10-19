@@ -44,6 +44,11 @@ import {
 } from "./bc-apps.ts";
 import { exists, safeCopyTree } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree, isTaskBuildArtifact } from "./hash.ts";
+import {
+  ResetFailedError,
+  type ResetMechanism,
+  type ResetRecord,
+} from "./reset.ts";
 import { restoreSymbols } from "./symbols.ts";
 
 export interface HarnessBc {
@@ -317,6 +322,8 @@ export class BcLane {
           if (err instanceof CleanupFailedError) {
             this.quarantine(c, err.cleanupError);
           }
+          // H-35 S3: a failed reset leaves the container in an unknown state.
+          if (err instanceof ResetFailedError) this.quarantine(c, err.message);
           // A cancellation (even a timeout reason) is never infra: no
           // reroute, no fault recorded against the container.
           if (signal?.aborted) throw cancelled(signal);
@@ -1605,6 +1612,14 @@ export interface DeployContext {
    * the bench candidate is never owned (a leftover one is a collision).
    */
   trustedRoots: string[];
+  /**
+   * H-35 S3 (design-r3 2.1): the reset run before every deployment of this
+   * context. Judging always sets it (JudgeInput requires it); the agent's
+   * tool environment has none.
+   */
+  reset?: ResetMechanism;
+  /** Every reset's record, failed ones included (the verdict log's `resets[]`). */
+  onReset?: (r: ResetRecord) => void;
 }
 
 export interface Deployed {
@@ -1710,6 +1725,8 @@ export interface DeployTestResult {
   unexpected: UnexpectedProcedure[];
   /** Non-null when unpublishing the candidates failed: the caller quarantines the container. */
   cleanupError: string | null;
+  /** H-35 S3: the reset that preceded this deployment (null: the context has none). */
+  reset: ResetRecord | null;
 }
 
 /**
@@ -1760,7 +1777,16 @@ export async function deployAndTest(
       }`;
     }
   };
-  let r: Omit<DeployTestResult, "cleanupError">;
+  // H-35 S3: reset first; a failed reset deployed nothing, so no cleanup.
+  let reset: ResetRecord | null = null;
+  if (i.ctx.reset) {
+    reset = await i.ctx.reset.reset(container);
+    i.ctx.onReset?.(reset);
+    if (!reset.ok) throw new ResetFailedError(reset);
+    // The restored container holds the baseline only: no harness app owned.
+    await saveLedger(i.ctx.ledgerRoot, container, {});
+  }
+  let r: Omit<DeployTestResult, "cleanupError" | "reset">;
   try {
     const deployed = await deploy(bc, container, i.wanted, i.ctx);
     r = deployed.candidateFailure
@@ -1787,5 +1813,5 @@ export async function deployAndTest(
     if (c) throw new CleanupFailedError(err, c, container);
     throw err;
   }
-  return { ...r, cleanupError: await cleanup() };
+  return { ...r, reset, cleanupError: await cleanup() };
 }
