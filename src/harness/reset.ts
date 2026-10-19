@@ -480,11 +480,13 @@ export function fsDiff(
       );
     }
     const seen = new Set<string>();
+    // Sol S3 r2: a root is covered only by its own D, L or E line
+    const rootSeen = new Set<string>();
     for (const line of entries) {
       if (line.startsWith("E|")) {
         const [, p, ...why] = line.split("|");
         errors.push(`${side}: ${p}: ${why.join("|")}`);
-        seen.add((p ?? "").toLowerCase());
+        rootSeen.add((p ?? "").toLowerCase());
         continue;
       }
       const k = fsKey(line);
@@ -497,10 +499,11 @@ export function fsDiff(
       const key = k.toLowerCase();
       if (seen.has(key)) errors.push(`${side}: ${k} appears twice`);
       seen.add(key);
+      if (line[0] === "D" || line[0] === "L") rootSeen.add(key);
       if (!res.some((r) => r.test(k))) m.set(key, line);
     }
     for (const r of roots) {
-      if (!seen.has(r.toLowerCase())) {
+      if (!rootSeen.has(r.toLowerCase())) {
         errors.push(`${side}: declared root ${r} has no entry`);
       }
     }

@@ -20,8 +20,11 @@ try {
     throw "lineage fs.digest_version $($lin.fs.digest_version), fs-digest.ps1 is $FsDigestVersion"
   }
   if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
+  $wm = Get-NstSessionWatermark $Container
   $lines = @(Get-FsDigest $Container @($lin.fs.roots))
   if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent after the scan' }
+  $wm2 = Get-NstSessionWatermark $Container
+  if ($wm2 -ne $wm) { throw "an NST session ran during the scan (session log $wm -> $wm2)" }
   $lines
   "T|$($lines.Count)"
 } catch {

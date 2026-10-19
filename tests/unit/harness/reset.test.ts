@@ -322,4 +322,19 @@ Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong coun
     errs(ok, [w("C:/W"), w("C:/X")]).some((e) => e.includes("C:\\X")),
   );
   assertEquals(fsDiff([], [], []).errors.length > 0, true);
+  // Sol S3 r2: an F or S record for the root path does not cover it
+  for (
+    const only of [
+      w(`S|${"a".repeat(64)}|1|C:/W`),
+      F("C:/W"),
+    ]
+  ) {
+    const x = cap(only);
+    assert(
+      fsDiff(x, x, [], [w("C:/W")]).errors.some((e) =>
+        e.includes("declared root")
+      ),
+      only,
+    );
+  }
 });

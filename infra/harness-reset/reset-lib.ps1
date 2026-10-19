@@ -12,9 +12,10 @@ function Invoke-InContainer([string]$Container, [scriptblock]$ScriptBlock, $Argu
 function Sort-Ordinal([string[]]$Lines, [scriptblock]$Key = { $args[0] }) {
   $a = @($Lines | Where-Object { $null -ne $_ })
   if ($a.Count -eq 0) { return }
-  # "<key>NUL<index>": NUL sorts below every character, so the key decides and equal keys keep their order
+  # "<key>NUL<index, zero-padded>": NUL sorts below every character, so the key decides and equal keys keep
+  # their order (Sol S3 r2: an unpadded index puts 10 before 2)
   $k = [Collections.Generic.List[string]]::new()
-  for ($i = 0; $i -lt $a.Count; $i++) { $k.Add("$(& $Key $a[$i])$([char]0)$i") }
+  for ($i = 0; $i -lt $a.Count; $i++) { $k.Add("$(& $Key $a[$i])$([char]0)$('{0:D10}' -f $i)") }
   $k.Sort([StringComparer]::Ordinal)
   foreach ($s in $k) { $a[[int]$s.Substring($s.LastIndexOf([char]0) + 1)] }
 }

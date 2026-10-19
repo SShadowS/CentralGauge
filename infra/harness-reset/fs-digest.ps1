@@ -16,6 +16,16 @@
 # line format or the walk.
 $FsDigestVersion = 2
 
+# Sol S3 r2 (HIGH, mitigation): a watermark over the NST's session log. A session that starts and ends between the
+# two quiescence checks leaves a Session Event row, so the watermark before and after the walk must be equal.
+function Get-NstSessionWatermark([string]$Container) {
+  $w = Invoke-InContainer $Container {
+    (Invoke-Sqlcmd -Database CRONUS -ErrorAction Stop -Query "SELECT CONCAT(COUNT_BIG(*), '|', CONVERT(varchar(33), MAX([Event Datetime]), 126)) AS w FROM [Session Event]").w
+  }
+  if ("$w".Trim() -notmatch '^\d+\|') { throw "NST session watermark unreadable: '$w'" }
+  "$w".Trim()
+}
+
 # Observation point (decision item 3): no user or background session on the NST. Throws when it cannot tell.
 function Test-NstQuiescent([string]$Container) {
   $n = Invoke-InContainer $Container {
@@ -67,7 +77,8 @@ public static class CgFsStreams {
       , $b
     }
     function Streams($item) {
-      foreach ($n in [CgFsStreams]::Names($item.FullName)) {
+      $names = [CgFsStreams]::Names($item.FullName)
+      foreach ($n in $names) {
         if ($n -eq '::$DATA') { continue }
         $name = $n -replace '^:([^:]*):\$DATA$', '$1'
         $p = "$($item.FullName):$name"
@@ -78,6 +89,10 @@ public static class CgFsStreams {
           if ((Get-Sha $b) -ne $h1) { "E|$p|changed during the scan" }
           else { "S|$h1|$($b.Length)|$p" }
         } catch { "E|$p|$(Clean $_.Exception.Message)" }
+      }
+      # Sol S3 r2: a stream added or removed while the others were read
+      if ((@([CgFsStreams]::Names($item.FullName)) -join '|') -ne (@($names) -join '|')) {
+        "E|$($item.FullName)|streams changed during the scan"
       }
     }
     # One entry; a directory's children are enumerated, then its last-write time is re-read (a child added or
@@ -104,6 +119,11 @@ public static class CgFsStreams {
           } else {
             "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$($i.FullName)"
             Streams $i
+            # and the file itself after its streams were read
+            $again = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+            if ($again.Length -ne $b.Length -or $again.LastWriteTimeUtc.Ticks -ne $t) {
+              "E|$($i.FullName)|changed during the scan"
+            }
           }
         }
       } catch { "E|$($i.FullName)|$(Clean $_.Exception.Message)" }
