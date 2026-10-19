@@ -51,7 +51,8 @@ import {
   throwIfCrashed,
 } from "./bc-lane.ts";
 import { safeCopyTree } from "./fsutil.ts";
-import { hashFile, hashJson, hashTree } from "./hash.ts";
+import { envFpOf } from "./environment.ts";
+import { hashFile, hashTree } from "./hash.ts";
 import {
   type InfraSignature,
   JudgmentRecordSchema,
@@ -300,10 +301,11 @@ async function envFp(
 ): Promise<string | null> {
   const compat = ctx.i.deploy.reset.compat;
   if (!compat) return null;
-  return await hashJson({
+  // The same formula admission checks (environment.ts).
+  return await envFpOf({
     compat,
     mechanism: ctx.i.deploy.reset.id,
-    symbols_lock: await lockDigestOf(ctx.i.lock),
+    lockDigest: await lockDigestOf(ctx.i.lock),
     compiler: await ctx.lane.bc.harnessCompilerIdentity(container),
   });
 }

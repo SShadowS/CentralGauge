@@ -31,8 +31,10 @@ import {
 } from "../../../../cli/commands/harness-command.ts";
 import {
   backendAddress,
+  baselineCreate,
   EGRESS_MARKER,
   egressMode,
+  envCheck,
   type EnvDeps,
   type EnvOptions,
   openHarnessEnv,
@@ -98,7 +100,13 @@ import {
   benchLockPath,
   readBenchLock,
 } from "../../../../src/utils/bench-lock.ts";
-import { FakeBc } from "../../harness/fake-bc.ts";
+import { FakeBc, OK_RESET } from "../../harness/fake-bc.ts";
+import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
+import {
+  createBaseline,
+  renderEnvCheck,
+} from "../../../../src/harness/environment.ts";
+import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
 import {
   ADMIN_GROUPS_CSV,
   CC_MAIN_URL,
@@ -8961,15 +8969,44 @@ Deno.test("H-35 orch Sol r1 #6: a campaign judgment records the env's harness co
 Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; without it judging refuses; a bad lineage stops the start", async () => {
   await using t = await makeEnv();
   const lineage = resolve("infra/harness-reset/lineages/golden-o09-v1.json");
+  const bare = await openHarnessEnv(envOpts(t), deps([]));
+  assertEquals(bare.env.deploy.reset.id, "unconfigured");
+  // H-35 S3.4: no instance manifest yet, so the lineage run is refused.
+  await bare.close();
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, deps([])),
+    ConfigurationError,
+    "no instance manifest",
+  );
+  // `harness baseline create` for each container (its reset faked here).
+  const l = await loadLineage(lineage);
+  const again = await openHarnessEnv(envOpts(t), deps([]));
+  for (const c of again.env.lane.containers) {
+    await createBaseline(
+      again.env.lane.bc,
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest: await lockDigestOf({
+          store: again.env.symbolStore,
+          packages: again.env.symbols,
+        }),
+      },
+    );
+  }
+  await again.close();
   const h = await openHarnessEnv({ ...envOpts(t), lineage }, deps([]));
   assertEquals(
     [h.env.deploy.reset.id, h.env.deploy.reset.policyVersion],
     ["golden-restore", 1],
   );
   await h.close();
-  const bare = await openHarnessEnv(envOpts(t), deps([]));
-  assertEquals(bare.env.deploy.reset.id, "unconfigured");
-  await bare.close();
   await assertRejects(
     () =>
       openHarnessEnv(
@@ -8979,4 +9016,31 @@ Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; w
     ConfigurationError,
     "reset lineage",
   );
+});
+
+Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the container admissible for its lineage; a container without one is not", async () => {
+  await using t = await makeEnv();
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v1.json");
+  const l = await loadLineage(lineage);
+  const fake = () => ({
+    ...OK_RESET,
+    id: "golden-restore",
+    compat: { lineage: lineageCompat(l) },
+  });
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+  };
+  const before = await envCheck(o, deps([]), fake);
+  assertEquals(before.admissible, false);
+  const made = await baselineCreate(o, deps([]), fake);
+  assertEquals(made.map((m) => [m.container, m.lineage_id]), [[
+    "Cronus281",
+    "golden-o09-v1",
+  ]]);
+  const after = await envCheck(o, deps([]), fake);
+  assert(after.admissible, renderEnvCheck(after));
+  assertEquals(after.rows[0]!.env_fp, made[0]!.env_fp);
 });

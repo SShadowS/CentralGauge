@@ -28,6 +28,7 @@ import {
   buildCacheDir,
   buildCacheReport,
   dirBuildCache,
+  lockDigestOf,
 } from "../../src/harness/bc-lane.ts";
 import {
   placedConcurrencyProblem,
@@ -65,8 +66,19 @@ import {
   realDocker,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
-import { loadLineage } from "../../src/harness/lineage.ts";
-import { goldenReset, UNCONFIGURED_RESET } from "../../src/harness/reset.ts";
+import { type Lineage, loadLineage } from "../../src/harness/lineage.ts";
+import {
+  checkEnvironments,
+  createBaseline,
+  type EnvCheck,
+  type InstanceManifest,
+  renderEnvCheck,
+} from "../../src/harness/environment.ts";
+import {
+  goldenReset,
+  type ResetMechanism,
+  UNCONFIGURED_RESET,
+} from "../../src/harness/reset.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
@@ -172,6 +184,95 @@ export const REAL_DEPS: EnvDeps = {
 export interface OpenEnv {
   env: HarnessEnv;
   close(): Promise<void>;
+}
+
+/** What `harness env check` and `harness baseline create` read. */
+export interface LineageCommandOptions {
+  repoRoot: string;
+  containers: string[];
+  /** The lineage file (absolute). */
+  lineage: string;
+  symbolStore: string;
+}
+
+type ResetFor = (lineagePath: string, lineage: Lineage) => ResetMechanism;
+const goldenResetFor = (repoRoot: string): ResetFor => (lineagePath, lineage) =>
+  goldenReset({
+    repoRoot,
+    lineagePath,
+    lineage,
+    dockerEnv: dockerContextEnv(),
+  });
+
+/** Allocated containers, the lineage, its mechanism and the lock digest. */
+async function lineageContext(
+  o: LineageCommandOptions,
+  deps: EnvDeps,
+  resetFor: ResetFor,
+) {
+  const lineage = await loadLineage(o.lineage);
+  const names: string[] = [];
+  for (const c of o.containers) names.push(await deps.allocated(c));
+  const symbols = await loadSymbolsLock(o.repoRoot);
+  if (!symbols) throw new ValidationError("no symbols lock", ["symbols"]);
+  return {
+    lineage,
+    names,
+    mechanism: resetFor(o.lineage, lineage),
+    inputs: {
+      resultsRoot: join(o.repoRoot, "results", "harness"),
+      lineageId: lineage.id,
+      lockDigest: await lockDigestOf({
+        store: o.symbolStore,
+        packages: symbols,
+      }),
+    },
+  };
+}
+
+/**
+ * `harness env check` (H-35 S3.4): each container's lineage, env_fp and
+ * baseline, and whether they share one admissible env_fp. Read-only.
+ */
+export async function envCheck(
+  o: LineageCommandOptions,
+  deps: EnvDeps = REAL_DEPS,
+  resetFor: ResetFor = goldenResetFor(o.repoRoot),
+): Promise<EnvCheck> {
+  const x = await lineageContext(o, deps, resetFor);
+  const ready = await deps.setup(x.names);
+  try {
+    return await checkEnvironments(
+      ready.bc,
+      x.mechanism,
+      ready.names,
+      x.inputs,
+    );
+  } finally {
+    await ready.dispose();
+  }
+}
+
+/**
+ * `harness baseline create` (H-35 S3.4; lane-ops, under a container lease):
+ * reset each container to the lineage and write its instance manifest.
+ */
+export async function baselineCreate(
+  o: LineageCommandOptions,
+  deps: EnvDeps = REAL_DEPS,
+  resetFor: ResetFor = goldenResetFor(o.repoRoot),
+): Promise<InstanceManifest[]> {
+  const x = await lineageContext(o, deps, resetFor);
+  const ready = await deps.setup(x.names);
+  try {
+    const out: InstanceManifest[] = [];
+    for (const c of ready.names) {
+      out.push(await createBaseline(ready.bc, x.mechanism, c, x.inputs));
+    }
+    return out;
+  } finally {
+    await ready.dispose();
+  }
 }
 
 /**
@@ -362,11 +463,12 @@ export async function openHarnessEnv(
   deps: EnvDeps = REAL_DEPS,
 ): Promise<OpenEnv> {
   // H-35 S3.2: an unproven lineage stops the start, before anything opens.
-  const reset = o.lineage
+  const lineage = o.lineage ? await loadLineage(o.lineage) : null;
+  const reset = lineage
     ? goldenReset({
       repoRoot: o.repoRoot,
-      lineagePath: o.lineage,
-      lineage: await loadLineage(o.lineage),
+      lineagePath: o.lineage!,
+      lineage,
       dockerEnv: dockerContextEnv(),
     })
     : UNCONFIGURED_RESET;
@@ -532,6 +634,25 @@ export async function openHarnessEnv(
     const judgeLane = judgeNames.length > 0
       ? new BcLane(ready.bc, ready.names.slice(containers.length), { health })
       : undefined;
+    // H-35 S3.4 (ruling (c)): with a lineage, every container must be an
+    // admitted instance of it, all of one env_fp, before any lease.
+    if (lineage) {
+      const check = await checkEnvironments(ready.bc, reset, ready.names, {
+        resultsRoot: sharedResults,
+        lineageId: lineage.id,
+        lockDigest: await lockDigestOf({
+          store: o.symbolStore,
+          packages: symbols,
+        }),
+      });
+      const block = renderEnvCheck(check);
+      if (!check.admissible) {
+        throw new ConfigurationError(
+          `judging environment not admissible (run harness baseline create, or fix the containers):\n${block}`,
+        );
+      }
+      console.log(block);
+    }
     const { host, port } = await backendAddress(mode, o, deps.resolveHost);
     const egress = mode === "off"
       ? undefined

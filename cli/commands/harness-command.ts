@@ -210,7 +210,10 @@ import {
   writeVerdictLog,
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
+import { renderEnvCheck } from "../../src/harness/environment.ts";
 import {
+  baselineCreate,
+  envCheck,
   markerAuthorized,
   markerPlaces,
   markerProxyIsolation,
@@ -3375,6 +3378,81 @@ export function registerHarnessCommand(
       .action((opts) =>
         fail(() => clearPublicationReservation({ holder: opts.holder }))
       ),
+  );
+
+  // H-35 S3.4 (design-r4 5.2, r5 3.2): judging environments.
+  // deno-lint-ignore no-explicit-any
+  const lineageOpts = (c: Command<any>) =>
+    c
+      .option("--lineage <path:string>", "Reset lineage JSON", {
+        required: true,
+      })
+      .option("--symbol-store <dir:string>", "Host symbol store", {
+        default: "results/harness/symbols",
+      });
+  parent.command(
+    "env",
+    lineageOpts(
+      new Command()
+        .description("Judging environments (H-35)")
+        .command(
+          "check",
+          "Print each container's lineage, env_fp and baseline; exit non-zero unless they share one admissible env_fp (read-only)",
+        )
+        .option(
+          "--containers <names:string>",
+          "BC containers (comma-separated)",
+          {
+            required: true,
+          },
+        ),
+    ).action((opts) =>
+      fail(async () => {
+        const c = await envCheck({
+          repoRoot: Deno.cwd(),
+          containers: opts.containers.split(",").map((x: string) => x.trim())
+            .filter(Boolean),
+          lineage: resolve(opts.lineage),
+          symbolStore: resolve(opts.symbolStore),
+        });
+        console.log(renderEnvCheck(c));
+        if (!c.admissible) {
+          throw new ConfigurationError(
+            "the containers do not share one admissible env_fp",
+          );
+        }
+      })
+    ),
+  );
+  parent.command(
+    "baseline",
+    lineageOpts(
+      new Command()
+        .description("Container baselines (H-35; lane-ops, under a lease)")
+        .command(
+          "create <container:string>",
+          "Reset the container to the lineage and write its instance manifest (results/harness/baselines)",
+        ),
+    ).action((opts, container: string) =>
+      fail(async () => {
+        for (
+          const m of await baselineCreate({
+            repoRoot: Deno.cwd(),
+            containers: [container],
+            lineage: resolve(opts.lineage),
+            symbolStore: resolve(opts.symbolStore),
+          })
+        ) {
+          console.log(
+            `${
+              colors.green("[OK]")
+            } ${m.container}: baseline of ${m.lineage_id}, env_fp ${
+              m.env_fp.slice(0, 12)
+            }`,
+          );
+        }
+      })
+    ),
   );
 
   parent.command(
