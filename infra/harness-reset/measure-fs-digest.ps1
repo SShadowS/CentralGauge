@@ -12,12 +12,13 @@ Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyC
 . (Join-Path $PSScriptRoot 'reset-lib.ps1')
 . (Join-Path $PSScriptRoot 'fs-digest.ps1')
 
-$facts = @(Get-FsDigestFacts $Container)
+$roots = @(Get-FsDigestCandidateRoots $Container)
+$facts = @(Get-FsDigestFacts $Container $roots)
 $sw = [Diagnostics.Stopwatch]::StartNew()
-$lines = @(Get-FsDigest $Container)
+$lines = @(Get-FsDigest $Container $roots)
 $ms = $sw.ElapsedMilliseconds
 [pscustomobject]@{
   container = $Container; label = $Label; at = (Get-Date).ToUniversalTime().ToString('o')
-  facts = $facts; digest_ms = $ms; file_count = $lines.Count; lines = $lines
+  digest_version = $FsDigestVersion; roots = $roots; facts = $facts; digest_ms = $ms; file_count = $lines.Count; lines = $lines
 } | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 $Out
-Write-Output "FS_DIGEST files=$($lines.Count) ms=$ms errors=$(@($lines | Where-Object { $_ -like 'error|*' }).Count) -> $Out"
+Write-Output "FS_DIGEST files=$($lines.Count) ms=$ms errors=$(@($lines | Where-Object { $_ -like 'E|*' }).Count) -> $Out"
