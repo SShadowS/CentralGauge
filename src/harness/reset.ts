@@ -482,7 +482,8 @@ function cacheTolerates(
   const after = d.after ? fsParse(d.after) : undefined;
   if (!after) return false;
   return caches.some((c) => {
-    const prefix = c.base.toLowerCase() + "\\";
+    // Sol S3 r4: a trailing separator on base is the same folder
+    const prefix = c.base.replace(/[\\/]+$/, "").toLowerCase() + "\\";
     if (!d.path.toLowerCase().startsWith(prefix)) return false;
     const rel = d.path.slice(prefix.length);
     if (d.after![0] === "F") {
@@ -525,10 +526,13 @@ export function fsDiff(
 ): { diff: FsDiffEntry[]; errors: string[] } {
   const errors: string[] = [];
   const res = exclude.map(wildcard);
+  // Sol S3 r4: the whole relative path must match, whatever the source's
+  // alternation (a noncapturing wrapper keeps backreference numbers).
+  const whole = (s: string) => new RegExp(`^(?:${s})$`);
   const cacheRes = caches.map((c) => ({
     ...c,
-    files: new RegExp(c.files),
-    dirs: new RegExp(c.dirs),
+    files: whole(c.files),
+    dirs: whole(c.dirs),
   }));
   const index = (side: string, raw: readonly string[]) => {
     const m = new Map<string, string>();

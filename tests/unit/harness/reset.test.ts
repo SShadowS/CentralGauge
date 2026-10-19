@@ -448,6 +448,34 @@ Deno.test("H-35 S3 L4 platform_cache: new files of the measured shapes (and new 
   assertEquals(fsDiff(before, cap(...attrs), [], [], CACHES).diff.length, 1);
 });
 
+Deno.test("H-35 Sol S3 r4: a cache shape matches the whole relative path even when its alternation is unanchored inside, and a base with a trailing separator works as without", () => {
+  const before = cap(D(APPS));
+  const junk = F(`${APPS}/metadata/3/0A/junk${HEX}.xml`);
+  // `^a|b$`: the second arm alone would match a hash-shaped suffix
+  const loose = [{
+    base: APPS,
+    files: String.raw`^metadata\\3\\[0-9A-F]{2}\\x$|[0-9A-F]{64}\.xml$`,
+    dirs: String.raw`^metadata$`,
+  }];
+  assertEquals(
+    fsDiff(before, cap(D(APPS), junk), [], [], loose).diff.length,
+    1,
+  );
+  const trailing = CACHES.map((c) => ({ ...c, base: c.base + "\\" }));
+  const added = F(`${APPS}/metadata/3/0A/${HEX}.cs`);
+  assertEquals(
+    fsDiff(
+      before,
+      cap(D(APPS), D(`${APPS}/metadata/3/0A`), added),
+      [],
+      [],
+      trailing,
+    )
+      .diff.map((d) => d.path),
+    [],
+  );
+});
+
 Deno.test("H-35 S3 L4 (orchestrator, addendum 3): the comparison is within one deployment only; a lineage carries no stored fs digest to compare against", () => {
   const fs = LineageSchema.shape.fs.unwrap().shape;
   assertEquals(

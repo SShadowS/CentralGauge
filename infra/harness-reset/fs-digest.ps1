@@ -195,7 +195,8 @@ public static class CgFsStreams {
       catch { "E|$r|$(Clean $_.Exception.Message)" }
     }
   } (, $Roots)
-  Sort-Ordinal $lines { $p = $args[0] -split '\|'; switch ($p[0]) { 'F' { $p[5] } 'E' { $p[1] } default { $p[3] } } }
+  # the path field: F (v3) 6, E 1, D/S/L 3
+  Sort-Ordinal $lines { $p = $args[0] -split '\|'; switch ($p[0]) { 'F' { $p[6] } 'E' { $p[1] } default { $p[3] } } }
 }
 
 # The NST service identity (account, groups, privileges) and every root's file count and bytes (measurement only).
