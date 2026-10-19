@@ -1,8 +1,9 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { ContainerError } from "../../../src/errors.ts";
+import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import {
   commandReset,
   parseResetOutput,
+  RESET_PHASES,
   ResetFailedError,
 } from "../../../src/harness/reset.ts";
 
@@ -11,12 +12,8 @@ const MECH = { id: "golden-restore", policyVersion: 1 };
 Deno.test("H-35 S3 parseResetOutput: RESET_OK with exit 0 is a reset, phases timed", () => {
   const r = parseResetOutput("C1", MECH, {
     code: 0,
-    stdout: [
-      "noise",
-      "RESET_STEP snapshot_guard 12",
-      "RESET_STEP restore 3100",
-      "RESET_OK",
-    ].join("\r\n"),
+    // Sol r2 #1: every agreed phase, in order; other lines are noise.
+    stdout: ["noise", ...FULL, "RESET_OK"].join("\r\n"),
   });
   assertEquals(r, {
     container: "C1",
@@ -25,7 +22,7 @@ Deno.test("H-35 S3 parseResetOutput: RESET_OK with exit 0 is a reset, phases tim
     ok: true,
     failed_step: null,
     error: null,
-    phases_ms: { snapshot_guard: 12, restore: 3100 },
+    phases_ms: Object.fromEntries(RESET_PHASES.map((p, i) => [p, i + 1])),
   });
 });
 
@@ -61,8 +58,8 @@ Deno.test("H-35 S3 commandReset: a failed reset is a ResetFailedError (a Contain
   });
   const ok = commandReset({
     ...MECH,
-    run: (c) =>
-      Promise.resolve({ code: 0, stdout: `RESET_STEP x 1\nRESET_OK ${c}` }),
+    run: () =>
+      Promise.resolve({ code: 0, stdout: [...FULL, "RESET_OK"].join("\n") }),
   });
   assertEquals((await ok.reset("C2")).ok, true);
   const r = await m.reset("C1");
@@ -75,4 +72,54 @@ Deno.test("H-35 S3 commandReset: a failed reset is a ResetFailedError (a Contain
     ContainerError,
     "reset of C1 failed at snapshot_guard: snapshot exists",
   );
+});
+
+// ---- H-35 run 002 Sol r2 ----
+
+const FULL = RESET_PHASES.map((p, i) => `RESET_STEP ${p} ${i + 1}`);
+
+Deno.test("H-35 Sol r2 #1: success needs every agreed phase once, in order, and exactly one bare RESET_OK", () => {
+  const ok = parseResetOutput("C1", MECH, {
+    code: 0,
+    stdout: [...FULL, "RESET_OK"].join("\n"),
+  });
+  assertEquals(ok.ok, true);
+  assertEquals(Object.keys(ok.phases_ms), [...RESET_PHASES]);
+  const bad = (lines: string[]) =>
+    parseResetOutput("C1", MECH, { code: 0, stdout: lines.join("\n") });
+  for (
+    const lines of [
+      ["RESET_STEP restore 1", "RESET_OK"], // phases missing
+      [...FULL, "RESET_OK", "RESET_OK"], // duplicated marker
+      [...FULL, "RESET_OK C1"], // trailing text
+      [...FULL.slice(1), FULL[0]!, "RESET_OK"], // out of order
+      [...FULL, FULL.at(-1)!, "RESET_OK"], // a phase twice
+      [...FULL, "RESET_STEP extra 1", "RESET_OK"], // an unknown phase
+    ]
+  ) {
+    const r = bad(lines);
+    assertEquals([r.ok, r.failed_step], [false, "protocol"], lines.join("|"));
+  }
+  // A failure needs its one marker too.
+  const twice = bad([
+    "RESET_FAILED restore a",
+    "RESET_FAILED start b",
+  ]);
+  assertEquals([twice.ok, twice.failed_step], [false, "protocol"]);
+});
+
+Deno.test("H-35 Sol r2 #3: a reset command that throws is a recorded reset failure (command), never an unrecorded error; a ConfigurationError still refuses", async () => {
+  const m = commandReset({
+    ...MECH,
+    run: (c) =>
+      Promise.reject(new ContainerError("pwsh session died", c, "setup")),
+  });
+  const r = await m.reset("C1");
+  assertEquals([r.ok, r.failed_step], [false, "command"]);
+  assertEquals(r.error, "pwsh session died");
+  const refusing = commandReset({
+    ...MECH,
+    run: () => Promise.reject(new ConfigurationError("no lineage")),
+  });
+  await assertRejects(() => refusing.reset("C1"), ConfigurationError);
 });

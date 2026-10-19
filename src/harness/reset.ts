@@ -13,6 +13,19 @@
 
 import { ConfigurationError, ContainerError } from "../errors.ts";
 
+/** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
+export const RESET_PHASES = [
+  "snapshot_guard",
+  "quiesce",
+  "verify_sha",
+  "stop",
+  "restore",
+  "start",
+  "healthy",
+  "runner_verify",
+  "postconditions",
+] as const;
+
 export interface ResetRecord {
   container: string;
   mechanism: string;
@@ -48,14 +61,21 @@ export function parseResetOutput(
   out: { code: number; stdout: string },
 ): ResetRecord {
   const phases_ms: Record<string, number> = {};
-  let ok = false;
-  let failed: { step: string; reason: string } | null = null;
-  for (const line of out.stdout.split(/\r?\n/)) {
-    const step = /^RESET_STEP (\S+) (\d+)\s*$/.exec(line);
-    if (step) phases_ms[step[1]!] = Number(step[2]);
+  const seen: string[] = [];
+  let oks = 0;
+  const failed: { step: string; reason: string }[] = [];
+  for (const raw of out.stdout.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    const step = /^RESET_STEP (\S+) (\d+)$/.exec(line);
+    if (step) {
+      seen.push(step[1]!);
+      phases_ms[step[1]!] = Number(step[2]);
+    }
     const f = /^RESET_FAILED (\S+) ?(.*)$/.exec(line);
-    if (f && !failed) failed = { step: f[1]!, reason: f[2]!.trim() };
-    if (/^RESET_OK\b/.test(line)) ok = true;
+    if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
+    if (/^RESET_OK/.test(line)) oks++;
+    // Run 002 Sol r2 #1: a success marker is exactly the bare line.
+    if (/^RESET_OK./.test(line)) oks = Infinity;
   }
   const base = {
     container,
@@ -63,21 +83,29 @@ export function parseResetOutput(
     policy_version: m.policyVersion,
     phases_ms,
   };
-  if (failed) {
+  const protocol = (why: string): ResetRecord => ({
+    ...base,
+    ok: false,
+    failed_step: "protocol",
+    error: `${why} (exit ${out.code})`,
+  });
+  if (failed.length > 1) return protocol("more than one RESET_FAILED");
+  if (failed.length === 1) {
     return {
       ...base,
       ok: false,
-      failed_step: failed.step,
-      error: failed.reason,
+      failed_step: failed[0]!.step,
+      error: failed[0]!.reason,
     };
   }
-  if (!ok || out.code !== 0) {
-    return {
-      ...base,
-      ok: false,
-      failed_step: "protocol",
-      error: `no RESET_OK with exit 0 (exit ${out.code})`,
-    };
+  if (oks !== 1 || out.code !== 0) {
+    return protocol("not exactly one bare RESET_OK with exit 0");
+  }
+  // Sol r2 #1: success means every agreed phase ran, once each, in order.
+  if (seen.join() !== RESET_PHASES.join()) {
+    return protocol(
+      `phases ${seen.join(",") || "(none)"}, want ${RESET_PHASES.join(",")}`,
+    );
   }
   return { ...base, ok: true, failed_step: null, error: null };
 }
@@ -107,7 +135,35 @@ export function commandReset(o: {
   return {
     id: o.id,
     policyVersion: o.policyVersion,
-    reset: async (container) =>
-      parseResetOutput(container, o, await o.run(container)),
+    reset: async (container) => {
+      let out;
+      try {
+        out = await o.run(container);
+      } catch (err) {
+        // A refusal stays a refusal; anything else is a recorded failure
+        // (run 002 Sol r2 #3), so the lane quarantines the container.
+        if (err instanceof ConfigurationError) throw err;
+        return failedReset(container, o, "command", err);
+      }
+      return parseResetOutput(container, o, out);
+    },
+  };
+}
+
+/** A reset that threw, as a failed record (never an unrecorded error). */
+export function failedReset(
+  container: string,
+  m: { id: string; policyVersion: number },
+  step: string,
+  err: unknown,
+): ResetRecord {
+  return {
+    container,
+    mechanism: m.id,
+    policy_version: m.policyVersion,
+    ok: false,
+    failed_step: step,
+    error: err instanceof Error ? err.message : String(err),
+    phases_ms: {},
   };
 }

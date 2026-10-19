@@ -21,7 +21,11 @@ import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { SymbolPackage } from "./identity.ts";
 import type { TestResultSchema } from "./records.ts";
 import { readAppGraph, readAppJsonRaw, type StagedApp } from "./staging.ts";
-import { ContainerError, ValidationError } from "../errors.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../errors.ts";
 import {
   classifyPublishFailure,
   isCollisionPublishFailure,
@@ -45,6 +49,7 @@ import {
 import { exists, safeCopyTree } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree, isTaskBuildArtifact } from "./hash.ts";
 import {
+  failedReset,
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
@@ -1818,7 +1823,13 @@ export async function deployAndTest(
   // H-35 S3: reset first; a failed reset deployed nothing, so no cleanup.
   let reset: ResetRecord | null = null;
   if (i.ctx.reset) {
-    reset = await i.ctx.reset.reset(container);
+    const m = i.ctx.reset;
+    // Run 002 Sol r2 #3: a mechanism that throws is a recorded failure
+    // (quarantined); a configuration refusal stays loud and unrecorded.
+    reset = await m.reset(container).catch((err) => {
+      if (err instanceof ConfigurationError) throw err;
+      return failedReset(container, m, "threw", err);
+    });
     i.ctx.onReset?.(reset);
     if (!reset.ok) throw new ResetFailedError(reset);
     // The restored container holds the baseline only: no harness app owned.

@@ -1129,8 +1129,11 @@ async function assertPristineTest(
     },
   );
   if (w.build_key !== key) bug("build key");
-  // The cache is best-effort (H-27 r2): a missing entry is no claim.
-  const cached = i.buildCache ? await i.buildCache.get(key) : null;
+  // Only an entry the build adopted is a claim (run 002 Sol r2 #2): a
+  // refused, unwritten or unreadable entry is not, the cache being
+  // best-effort (H-27 r2).
+  if (!i.buildCache || prep.keys.get(TEST_APP) !== key) return;
+  const cached = await i.buildCache.get(key).catch(() => null);
   if (cached && await hashFile(dirname(cached), cached) !== w.sha256) {
     bug("cached package");
   }

@@ -1961,3 +1961,32 @@ Deno.test("H-35 Sol r1 #3: an infra-failed attempt's deployment is recorded too,
     log.deployments!.map((d) => d.container),
   );
 });
+
+// ---- H-35 run 002 Sol r2 ----
+
+Deno.test("H-35 Sol r2 #2: a refused (OnPrem) cache entry under G's Test key, or a cache whose reads fail, is no claim on the fresh build: the judgment scores", async () => {
+  const dir = await Deno.makeTempDir();
+  const onprem = join(dir, "onprem.app");
+  await Deno.writeTextFile(
+    onprem,
+    JSON.stringify({ id: "x", name: "x", version: "1", target: "OnPrem" }),
+  );
+  for (
+    const cache of [
+      // Every entry is an OnPrem package: refused, rebuilt unkeyed.
+      { get: () => Promise.resolve(onprem), put: () => Promise.resolve() },
+      // Every read fails (best-effort: a miss).
+      {
+        get: () => Promise.reject(new Error("io")),
+        put: () => Promise.resolve(),
+      },
+    ]
+  ) {
+    const { input } = await setup("correct");
+    const { judgment } = await judge(new BcLane(script(), ["C1"]), {
+      ...input,
+      buildCache: cache,
+    });
+    assertEquals(judgment.verdict, "pass");
+  }
+});

@@ -2202,3 +2202,46 @@ Deno.test("H-35 S3 deployAndTest: a failed reset throws ResetFailedError before 
     [["C1", false], ["C1", false], ["C2", true]],
   );
 });
+
+Deno.test("H-35 Sol r2 #3: a reset mechanism that throws is recorded as a failed reset and quarantines the container; the retry gets its own reset", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const records: ResetRecord[] = [];
+  const ok = fakeReset(bc).mechanism;
+  const ctx = {
+    ledgerRoot: await tmp(),
+    trustedRoots: [p.pristine],
+    reset: {
+      id: "fake",
+      policyVersion: 1,
+      reset: (c: string) =>
+        c === "C1"
+          ? Promise.reject(new ContainerError("session died", c, "setup"))
+          : ok.reset(c),
+    },
+    onReset: (r: ResetRecord) => records.push(r),
+  };
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx,
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.has("C1"));
+  assertEquals(
+    records.map((r) => [r.container, r.ok, r.failed_step]),
+    [["C1", false, "threw"], ["C2", true, null]],
+  );
+});
