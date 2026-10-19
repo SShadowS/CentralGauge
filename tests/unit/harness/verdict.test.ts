@@ -1990,3 +1990,20 @@ Deno.test("H-35 Sol r2 #2: a refused (OnPrem) cache entry under G's Test key, or
     assertEquals(judgment.verdict, "pass");
   }
 });
+
+// ---- H-35 run 002 orchestrator Sol r1 ----
+
+Deno.test("H-35 orch Sol r1 #5: G's pristine-Test check covers a Test app built as an unaffected prerequisite (an unchanged workspace)", async () => {
+  class Drifting extends FakeBc {
+    n = 0;
+    override harnessCompilerIdentity(_c: string): Promise<string> {
+      return Promise.resolve(`compiler-${this.n++}`);
+    }
+  }
+  const { input } = await setup(null);
+  await assertRejects(
+    () => judge(new BcLane(new Drifting(scripted), ["C1"]), input),
+    Error,
+    "harness bug: G's Test build key",
+  );
+});

@@ -1100,15 +1100,17 @@ async function assertPristineTest(
   graph: StagedApp[],
 ): Promise<void> {
   const { i } = ctx;
-  const b = prep.built.find((x) => x.folder === TEST_APP);
   const app = graph.find((a) => a.folder === TEST_APP);
-  if (!b || !app) return;
-  const w = prep.wanted.find((x) => x.id === b.id)!;
-  const bug = (what: string) => {
+  if (!app) return;
+  const bug = (what: string): never => {
     throw new Error(
       `harness bug: G's Test ${what} is not the pristine Test app's`,
     );
   };
+  // Orch Sol r1 #5: by the deployed set, so a Test app built as an
+  // unaffected prerequisite (not in prep.built) is checked too.
+  const w = prep.wanted.find((x) => x.id === app.id);
+  if (!w) return bug("deployment");
   if (w.source !== await hashTree(join(i.pristine, TEST_APP), "task")) {
     bug("source");
   }
@@ -1117,7 +1119,7 @@ async function assertPristineTest(
     {
       srcDir: i.pristine,
       app,
-      version: b.version,
+      version: w.version,
       // Dependencies key on their adopted cache keys, else their files, as
       // buildApps keyed the Test app.
       files: prep.files,
@@ -1422,6 +1424,8 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       [t.id],
     );
   }
+  // Orch Sol r1 #5: G' deploys the pristine Test app too.
+  await assertPristineTest(ctx, sp, sw.apps);
   scores.set("build", true);
   // H-35 (design-r3 3.3): A_ref publishes exactly G' production packages.
   const manifest = await productionManifest(sp, sw.dir);

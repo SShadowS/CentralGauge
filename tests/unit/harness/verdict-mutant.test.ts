@@ -1,4 +1,9 @@
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { join } from "@std/path";
 import { BcLane, dirBuildCache } from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
@@ -914,4 +919,23 @@ Deno.test("H-35 S3: every test-authoring deployment (G', A_ref, A_0, each A_m) i
     log.deployments!.map((d) => [d.container, true]),
   );
   assertEquals(log.resets!.length, 4);
+});
+
+Deno.test("H-35 orch Sol r1 #5: G' (test-authoring) gets the pristine-Test check too: compiler drift is a harness bug", async () => {
+  class Drifting extends FakeBc {
+    n = 0;
+    override harnessCompilerIdentity(_c: string): Promise<string> {
+      return Promise.resolve(`compiler-${this.n++}`);
+    }
+  }
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+  });
+  const base = bc();
+  const drifting = new Drifting(base.script);
+  await assertRejects(
+    () => judge(new BcLane(drifting, ["C1"]), input),
+    Error,
+    "harness bug: G's Test build key",
+  );
 });
