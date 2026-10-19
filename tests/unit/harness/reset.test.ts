@@ -138,3 +138,25 @@ Deno.test("H-35 Sol r3 #1: a combined phase name or RESET_OK before the phases i
     assertEquals([r.ok, r.failed_step], [false, "protocol"], lines.join("|"));
   }
 });
+
+// ---- H-35 run 002 orchestrator Sol r1 ----
+
+Deno.test("H-35 orch Sol r1 #1: any malformed reserved-marker line is a protocol failure, whatever follows", () => {
+  for (
+    const bad of [
+      "RESET_FAILED",
+      "RESET_FAILED snapshot_guard",
+      "RESET_FAILEDx y z",
+      "RESET_STEP restore",
+      "RESET_STEP restore 1.5",
+      "RESET_STEPrestore 1",
+      "RESET_OKAY",
+    ]
+  ) {
+    const r = parseResetOutput("C1", MECH, {
+      code: 0,
+      stdout: [...FULL, bad, "RESET_OK"].join("\n"),
+    });
+    assertEquals([r.ok, r.failed_step], [false, "protocol"], bad);
+  }
+});

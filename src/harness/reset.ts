@@ -66,20 +66,23 @@ export function parseResetOutput(
   // Run 002 Sol r3 #1: no phase may follow the success marker.
   let stepAfterOk = false;
   const failed: { step: string; reason: string }[] = [];
+  // Orch Sol r1 #1: every line in the reserved RESET_ namespace must be one
+  // well-formed marker; any other such line is a protocol failure.
+  const malformed: string[] = [];
   for (const raw of out.stdout.split(/\r?\n/)) {
     const line = raw.trimEnd();
-    if (line.startsWith("RESET_STEP")) {
+    if (!line.startsWith("RESET_")) continue;
+    // A phase name is one identifier (Sol r3 #1).
+    const step = /^RESET_STEP ([a-z_]+) (\d+)$/.exec(line);
+    const f = /^RESET_FAILED ([a-z_]+) (\S.*)$/.exec(line);
+    if (step) {
       if (oks > 0) stepAfterOk = true;
-      // A phase name is one identifier (Sol r3 #1); anything else is malformed.
-      const step = /^RESET_STEP ([a-z_]+) (\d+)$/.exec(line);
-      seen.push(step ? step[1]! : `(malformed: ${line})`);
-      if (step) phases_ms[step[1]!] = Number(step[2]);
-    }
-    const f = /^RESET_FAILED (\S+) ?(.*)$/.exec(line);
-    if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
-    if (/^RESET_OK/.test(line)) oks++;
+      seen.push(step[1]!);
+      phases_ms[step[1]!] = Number(step[2]);
+    } else if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
     // Run 002 Sol r2 #1: a success marker is exactly the bare line.
-    if (/^RESET_OK./.test(line)) oks = Infinity;
+    else if (line === "RESET_OK") oks++;
+    else malformed.push(line);
   }
   const base = {
     container,
@@ -93,6 +96,9 @@ export function parseResetOutput(
     failed_step: "protocol",
     error: `${why} (exit ${out.code})`,
   });
+  if (malformed.length > 0) {
+    return protocol(`malformed marker line: ${malformed[0]!.slice(0, 200)}`);
+  }
   if (failed.length > 1) return protocol("more than one RESET_FAILED");
   if (failed.length === 1) {
     return {

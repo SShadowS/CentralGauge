@@ -406,9 +406,18 @@ export async function appendCompletion(
   digest: string,
   c: Completion,
 ): Promise<void> {
-  const { pairing } = await loadPairing(resultsRoot, digest);
+  const { pairing, completions } = await loadPairing(resultsRoot, digest);
   if (!pairing.cells.some((x) => x.execution_id === c.execution_id)) {
     const msg = `execution ${c.execution_id} is not in pairing ${digest}`;
+    throw new ValidationError(msg, [msg]);
+  }
+  // Orch Sol r1 #2: one new judgment per cell. A repeat is a no-op;
+  // another judgment is a conflict, refused.
+  const prior = completions.find((x) => x.execution_id === c.execution_id);
+  if (prior?.new_judgment_id === c.new_judgment_id) return;
+  if (prior) {
+    const msg =
+      `conflicting completion for execution ${c.execution_id} in pairing ${digest}: ${prior.new_judgment_id} already, not ${c.new_judgment_id}`;
     throw new ValidationError(msg, [msg]);
   }
   await Deno.writeTextFile(
@@ -422,8 +431,9 @@ export async function appendCompletion(
  * Each frozen cell is completed (its latest completion's judgment and the
  * old one are found and both are of the cell: its execution and workspace,
  * the old one under its frozen fingerprint), mismatched (named: either is
- * of another cell), missing (named: a judgment is not in the store) or
- * pending (no completion yet). Nothing is dropped.
+ * of another cell), conflicting (named: completions name different new
+ * judgments), missing (named: a judgment is not in the store) or pending
+ * (no completion yet). Nothing is dropped or silently resolved.
  */
 export function reconcilePairing(
   p: Pairing,
@@ -434,8 +444,14 @@ export function reconcilePairing(
   pending: string[];
   missing: string[];
   mismatched: string[];
+  conflicting: string[];
 } {
-  const last = new Map(completions.map((c) => [c.execution_id, c]));
+  const named = new Map<string, Set<string>>();
+  for (const c of completions) {
+    const s = named.get(c.execution_id) ?? new Set<string>();
+    s.add(c.new_judgment_id);
+    named.set(c.execution_id, s);
+  }
   const r = {
     completed: [] as (PairingCell & {
       old: JudgmentRecord;
@@ -444,16 +460,22 @@ export function reconcilePairing(
     pending: [] as string[],
     missing: [] as string[],
     mismatched: [] as string[],
+    conflicting: [] as string[],
   };
   const ofCell = (cell: PairingCell, j: JudgmentRecord) =>
     j.execution_id === cell.execution_id &&
     j.workspace_hash === cell.workspace_hash;
   for (const cell of p.cells) {
-    const c = last.get(cell.execution_id);
-    if (!c) {
+    const ids = named.get(cell.execution_id);
+    if (!ids) {
       r.pending.push(cell.cell);
       continue;
     }
+    if (ids.size > 1) {
+      r.conflicting.push(cell.cell);
+      continue;
+    }
+    const c = { new_judgment_id: [...ids][0]! };
     const old = judgment(cell.old_judgment_id);
     const neu = judgment(c.new_judgment_id);
     if (!old || !neu) r.missing.push(cell.cell);
@@ -475,6 +497,8 @@ export interface PairingReport {
   missing: string[];
   /** Completions whose judgments are not of their cell (reconcilePairing). */
   mismatched: string[];
+  /** Cells whose completions name different new judgments (orch Sol r1 #2). */
+  conflicting: string[];
   matrix: Record<OldVerdict, Record<"pass" | "fail" | "unscored", number>>;
   /** Pairs per flag; flags are nonexclusive, so they need not sum to `pairs`. */
   flags: Record<PairFlag, number>;
@@ -515,6 +539,7 @@ export function pairingReport(
     pending: r.pending,
     missing: r.missing,
     mismatched: r.mismatched,
+    conflicting: r.conflicting,
     matrix: transitionMatrix(
       r.completed.map((c) => ({
         old: c.old,
@@ -537,6 +562,13 @@ export function renderPairing(r: PairingReport): string {
   if (r.mismatched.length > 0) {
     out.push(
       `  mismatched (a judgment not of its cell): ${r.mismatched.join(", ")}`,
+    );
+  }
+  if (r.conflicting.length > 0) {
+    out.push(
+      `  conflicting (completions name different judgments): ${
+        r.conflicting.join(", ")
+      }`,
     );
   }
   out.push("  old -> new verdict (completed pairs):");

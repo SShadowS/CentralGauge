@@ -555,3 +555,54 @@ Deno.test("H-35 run 002 Sol r1 #5: a v1 judgment whose verdict log lists violati
     pairFlags(plain, gatePassed).includes("policy_attribution_recovered"),
   );
 });
+
+// ---- H-35 run 002 orchestrator Sol r1 ----
+
+Deno.test("H-35 orch Sol r1 #2: a conflicting completion is refused at append, a repeat is a no-op, and a conflict already on disk is named at report time", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const old = { ...v2([m("build", true)]), execution_id: "E1" };
+  const j1 = { ...v2([m("build", true)]), execution_id: "E1" };
+  const j2 = { ...v2([m("build", false)]), execution_id: "E1" };
+  const p: Pairing = {
+    cohort: { campaign: "c1", started_at: "2026-10-19T10:00:00.000Z" },
+    cells: [{
+      execution_id: "E1",
+      cell: "a T E1",
+      workspace_hash: "a".repeat(64),
+      old_judgment_id: old.id,
+      scorer_fingerprint: old.scorer_fingerprint,
+    }],
+  };
+  const digest = await freezePairing(root, p);
+  const at = "2026-10-19T11:00:00.000Z";
+  await appendCompletion(root, digest, {
+    execution_id: "E1",
+    new_judgment_id: j1.id,
+    at,
+  });
+  await appendCompletion(root, digest, {
+    execution_id: "E1",
+    new_judgment_id: j1.id,
+    at,
+  });
+  await assertRejects(
+    () =>
+      appendCompletion(root, digest, {
+        execution_id: "E1",
+        new_judgment_id: j2.id,
+        at,
+      }),
+    ValidationError,
+    "conflicting completion",
+  );
+  const loaded = await loadPairing(root, digest);
+  assertEquals(loaded.completions.length, 1);
+  // A conflict written by other means is named, never resolved silently.
+  const byId = new Map([old, j1, j2].map((j) => [j.id, j]));
+  const r = reconcilePairing(p, [
+    { execution_id: "E1", new_judgment_id: j1.id, at },
+    { execution_id: "E1", new_judgment_id: j2.id, at },
+  ], (id) => byId.get(id));
+  assertEquals(r.completed, []);
+  assertEquals(r.conflicting, ["a T E1"]);
+});
