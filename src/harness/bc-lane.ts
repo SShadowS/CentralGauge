@@ -66,7 +66,38 @@ export interface HarnessBc {
     },
   ): Promise<HarnessSyncResult>;
   runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
+  /**
+   * H-35: the `Target` a compiled package's manifest records, or null when
+   * it records none. Host-side (reads the package file), never a container.
+   */
+  packageTarget(file: string): Promise<string | null>;
 }
+
+/**
+ * H-35 (design-r5 section 2.1, ruling r5): how a build is compiled. `Cloud`
+ * writes `"target": "Cloud"` into the effective app.json before the cache
+ * lookup and the compile (so the compiler refuses File, DotNet and every
+ * OnPrem-scoped API); `as-declared` keeps the workspace's target (trusted
+ * builds only: the oracle, analysis compiles). The policy id is in every
+ * build key, and a cache hit must carry the policy's target.
+ */
+export interface BuildPolicy {
+  target: "Cloud" | "as-declared";
+  id: string;
+}
+export const CLOUD_POLICY: BuildPolicy = { target: "Cloud", id: "h35-cloud@1" };
+export const DECLARED_POLICY: BuildPolicy = {
+  target: "as-declared",
+  id: "declared@1",
+};
+
+/**
+ * H-35 (design-r4 section 3.3, ruling r5): mandatory, set by trusted code
+ * only. `judge` publishes every app as a candidate at its pristine version
+ * (normalized, nothing kept); `backend` is the agent tool environment's plan
+ * (stamped prerequisites, kept across calls).
+ */
+export type VersionPlan = "judge" | "backend";
 
 export type TestRow = z.output<typeof TestResultSchema>;
 
@@ -464,7 +495,9 @@ export function dirBuildCache(dir: string): BuildCache {
  * artifact, so a recreated container on the same artifact may hit. The
  * symbol packages restored for the compile are in the key too (H-27 r2): the
  * whole lock before the app info is harvested, the declared closure after,
- * so a cold success never stands in for a closure compile.
+ * so a cold success never stands in for a closure compile. H-35: the build
+ * policy (effective target and policy id) is in the key, so a build under
+ * one policy never stands in for another.
  */
 async function buildKey(
   compiler: string,
@@ -475,6 +508,7 @@ async function buildKey(
   keys: ReadonlyMap<string, string>,
   lockDigest: string,
   restored: readonly SymbolPackage[],
+  policy: BuildPolicy,
 ): Promise<string> {
   const deps: [string, string][] = [];
   for (const d of app.depends) {
@@ -493,6 +527,7 @@ async function buildKey(
     compiler,
     lock: lockDigest,
     symbols: restored.map((p) => p.sha256).sort(),
+    policy: { id: policy.id, target: policy.target },
   });
 }
 
@@ -673,6 +708,8 @@ export async function buildApps(
     graph?: StagedApp[];
     /** CodeCop/UICop compile for the final-code check (M11-05); never with `cache`. */
     analysis?: AnalysisSettings;
+    /** H-35: how the apps are compiled (no default: every caller states it). */
+    policy: BuildPolicy;
   },
 ): Promise<BuiltApp[]> {
   if (o.analysis && o.cache) {
@@ -797,10 +834,14 @@ export async function buildApps(
         keys,
         lockDigest,
         restored,
+        o.policy,
       )
       : null;
     // H-27 r2: the cache is best-effort; a failed read is a miss.
     let hit: string | null = null;
+    // H-35: a hit whose package does not carry the policy's target is refused;
+    // the app is rebuilt unkeyed, so that entry is never adopted either.
+    let poisoned = false;
     if (key) {
       try {
         hit = await o.cache!.get(key);
@@ -846,6 +887,17 @@ export async function buildApps(
         hit = null;
       }
     }
+    if (hit && o.policy.target === "Cloud") {
+      const target = await bc.packageTarget(reused!).catch(() => null);
+      if (target !== "Cloud") {
+        console.warn(
+          `[WARN] build cache entry for ${app.folder} has target ${target} under a Cloud key: refused, rebuilt unkeyed`,
+        );
+        await Deno.remove(reused!).catch(() => {});
+        hit = null;
+        poisoned = true;
+      }
+    }
     if (hit) {
       const file = reused!;
       files.set(app.folder, file);
@@ -875,6 +927,7 @@ export async function buildApps(
       [k: string]: unknown;
     };
     appJson.version = version;
+    if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
     await Deno.writeTextFile(
       join(dir, "app.json"),
       JSON.stringify(appJson, null, 2),
@@ -959,7 +1012,7 @@ export async function buildApps(
       file = join(o.outDir, ".apps", basename(r.artifactPath));
       await Deno.copyFile(r.artifactPath, file);
       files.set(app.folder, file);
-      if (key) {
+      if (key && !poisoned) {
         // H-27 r2: the cache's winning file is this app's file from here on
         // (a concurrent builder may have won the key), so every dependent is
         // built against the cached file. A failed write leaves the app unkeyed.
@@ -1015,6 +1068,10 @@ export interface PrepareInput {
   cache?: BuildCache;
   /** What the candidate build is, for a crashed-build message (default "candidate"). */
   label?: string;
+  /** H-35: mandatory, trusted callers only (see VersionPlan). */
+  versionPlan: VersionPlan;
+  /** H-35: how every app of this prepare is compiled. */
+  policy: BuildPolicy;
 }
 
 /**
@@ -1075,9 +1132,10 @@ export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
 
 /**
  * Versions of a candidate workspace's apps, shared by the test path and the
- * compile op (so a test reuses the compile's builds, M1-40): candidates (the
- * changed apps and their dependents) keep the pristine version, unchanged
- * apps get the stamped prerequisite version.
+ * compile op (so a test reuses the compile's builds, M1-40). Plan `backend`:
+ * candidates (the changed apps and their dependents) keep the pristine
+ * version, unchanged apps get the stamped prerequisite version. Plan `judge`
+ * (H-35): every app is a candidate at its pristine version.
  */
 export async function appVersions(
   bc: HarnessBc,
@@ -1090,13 +1148,20 @@ export async function appVersions(
     | "candidateApps"
     | "changed"
     | "lock"
+    | "versionPlan"
   >,
 ) {
   const graph = o.candidateApps;
   const pristineVersion = new Map(
     o.pristineApps.map((a) => [a.folder, a.version]),
   );
-  const cands = new Set(candidateFolders(graph, o.changed));
+  // Apps the change can affect: compiled from the candidate tree. The rest is
+  // the staged baseline, compiled from the pristine tree (a failure there is the
+  // task's). H-35: the judge plan publishes every app as a candidate anyway.
+  const affected = new Set(candidateFolders(graph, o.changed));
+  const cands = o.versionPlan === "judge"
+    ? new Set(graph.map((a) => a.folder))
+    : affected;
   const buildId = await hashJson({
     symbols: o.lock.packages.map((p) => [p.app_id, p.version, p.sha256]),
     compiler: await bc.harnessCompilerIdentity(container),
@@ -1110,7 +1175,7 @@ export async function appVersions(
       cands.has(a.folder) ? base : prereqVersion(base, stamps.get(a.folder)!),
     ];
   }));
-  return { cands, stamps, candStamps, versions };
+  return { cands, affected, stamps, candStamps, versions };
 }
 
 /** Apps of the snapshot whose tree differs from the pristine staging (or is gone). */
@@ -1137,12 +1202,12 @@ async function prepareOn(
   o: PrepareInput,
 ): Promise<Prepared> {
   const graph = o.candidateApps;
-  const { cands, stamps, candStamps, versions } = await appVersions(
+  const { cands, affected, stamps, candStamps, versions } = await appVersions(
     lane.bc,
     container,
     o,
   );
-  const prereqs = graph.filter((a) => !cands.has(a.folder));
+  const prereqs = graph.filter((a) => !affected.has(a.folder));
   const pre = await buildApps(lane.bc, container, {
     srcDir: o.pristine,
     apps: prereqs,
@@ -1150,6 +1215,7 @@ async function prepareOn(
     outDir: join(o.workDir, "prereq"),
     lock: o.lock,
     graph,
+    policy: o.policy,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
@@ -1169,7 +1235,7 @@ async function prepareOn(
   const preKeys = new Map(
     pre.filter((b) => b.key).map((b) => [b.folder, b.key!] as const),
   );
-  const candApps = graph.filter((a) => cands.has(a.folder));
+  const candApps = graph.filter((a) => affected.has(a.folder));
   const built = await buildApps(lane.bc, container, {
     srcDir: o.candidateDir,
     apps: candApps,
@@ -1179,6 +1245,7 @@ async function prepareOn(
     graph,
     prebuilt,
     prebuiltKeys: preKeys,
+    policy: o.policy,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
@@ -1207,7 +1274,7 @@ async function prepareOn(
     container,
     built,
     wanted,
-    candidateIds: candApps.map((a) => a.id),
+    candidateIds: graph.filter((a) => cands.has(a.folder)).map((a) => a.id),
     buildOk,
     compile_ms: all.reduce((s, b) => s + b.compile_ms, 0),
     per_app_compiles: all.filter((b) => b.attempted).length,

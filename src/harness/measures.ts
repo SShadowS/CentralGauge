@@ -10,7 +10,12 @@ import { basename, dirname, join, resolve } from "@std/path";
 import { z } from "zod";
 import type { AnalysisSettings } from "../container/types.ts";
 import { ValidationError } from "../errors.ts";
-import { type BcLane, buildApps, type LockedSymbols } from "./bc-lane.ts";
+import {
+  type BcLane,
+  buildApps,
+  DECLARED_POLICY,
+  type LockedSymbols,
+} from "./bc-lane.ts";
 import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
 import { readAppJson, type StagedApp } from "./staging.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
@@ -678,6 +683,7 @@ export function finalCodeCounts(
       outDir: o.outDir,
       lock: o.lock,
       analysis: o.analysis,
+      policy: DECLARED_POLICY,
     });
     const warning_codes: Record<string, number> = {};
     let warnings = 0;

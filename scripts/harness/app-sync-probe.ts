@@ -16,6 +16,7 @@ import {
 } from "../../src/harness/bc-apps.ts";
 import {
   BcLane,
+  CLOUD_POLICY,
   deploy,
   prepareApps,
   runTests,
@@ -163,6 +164,8 @@ export async function main(
         changed,
         workDir: join(outDir, name),
         lock,
+        versionPlan: "backend",
+        policy: CLOUD_POLICY,
       });
       const before = await listed();
       const deployed = await deploy(bc!, container, prep.wanted, ctx);

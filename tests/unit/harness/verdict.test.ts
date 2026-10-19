@@ -11,6 +11,7 @@ import {
   BcLane,
   buildApps,
   changedApps,
+  CLOUD_POLICY,
   dirBuildCache,
 } from "../../../src/harness/bc-lane.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
@@ -133,7 +134,9 @@ Deno.test("judge: the correct solution passes every scorer; the record validates
   const cleanup = bc.syncs.at(-1)!;
   assertEquals(cleanup.publish, []);
   assertEquals(cleanup.removeIds[0], IDS.oracle);
-  assert(!cleanup.removeIds.includes(IDS.core));
+  // H-35 (versionPlan "judge"): every production app is a candidate, so the
+  // cleanup removes Core too (it was a kept prerequisite before).
+  assert(cleanup.removeIds.includes(IDS.core));
   for (
     const k of [
       "reconstruct_ms",
@@ -175,7 +178,9 @@ Deno.test("judge (H-27): with the shared build cache a second judgment reuses th
   assertEquals(strip(r3.judgment), strip(r1.judgment));
 });
 
-Deno.test("judge (H-27 r2 #4): builds the agent's compile path wrote to the shared cache are reused by the judge, and it scores as without them", async () => {
+// H-35 supersedes H-27 r2 #4 (rulings r5: separate judge and agent caches,
+// against PackageId prelearning): the judge reuses none of the agent's builds.
+Deno.test("judge (H-35, was H-27 r2 #4): builds the agent's compile path wrote are not reused by the judge, and it scores as without them", async () => {
   const bc = script();
   bc.nondeterministic = true;
   const lane = new BcLane(bc, ["C1", "C2"]);
@@ -196,6 +201,7 @@ Deno.test("judge (H-27 r2 #4): builds the agent's compile path wrote to the shar
     candidateApps: apps,
     changed,
     lock: input.lock,
+    versionPlan: "backend",
   });
   const agent = await buildApps(bc, "C1", {
     srcDir: input.artifact,
@@ -205,14 +211,12 @@ Deno.test("judge (H-27 r2 #4): builds the agent's compile path wrote to the shar
     lock: input.lock,
     cache,
     graph: apps,
+    policy: CLOUD_POLICY,
   });
   assert(agent.every((b) => b.ok && b.key));
   const cold = await judge(lane, (await setup("correct")).input);
   const warm = await judge(lane, { ...input, buildCache: cache });
-  assert(
-    warm.log.per_app_compiles < cold.log.per_app_compiles,
-    `${warm.log.per_app_compiles} < ${cold.log.per_app_compiles}`,
-  );
+  assertEquals(warm.log.per_app_compiles, cold.log.per_app_compiles);
   assertEquals(warm.judgment.verdict, cold.judgment.verdict);
   assertEquals(warm.judgment.scorers, cold.judgment.scorers);
 });

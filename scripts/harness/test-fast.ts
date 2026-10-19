@@ -34,6 +34,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}al-tools-mcp.test.ts`]: c(true, 6),
   [`${H}allocation.test.ts`]: c(true, 0),
   [`${H}analyze-campaign.test.ts`]: c(true, 0),
+  [`${H}app-package.test.ts`]: c(true, 0),
   [`${H}app-sync-probe.test.ts`]: c(true, 0),
   [`${H}backend-probe.test.ts`]: c(true, 0),
   [`${H}backend.test.ts`]: c(true, 12),

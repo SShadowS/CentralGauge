@@ -20,6 +20,8 @@ export interface FakeApp {
   version: string;
   folder: string;
   source: string;
+  /** H-35: the effective app.json target (absent when the manifest declares none). */
+  target?: string;
 }
 
 export type TestScript = (
@@ -105,6 +107,12 @@ export class FakeBc implements HarnessBc {
     return Promise.resolve(this.compilerId);
   }
 
+  /** H-35: the target recorded in a fake package (the real provider reads NavxManifest). */
+  async packageTarget(file: string): Promise<string | null> {
+    const app = JSON.parse(await Deno.readTextFile(file)) as FakeApp;
+    return app.target ?? null;
+  }
+
   state(container: string): Map<string, FakeApp> {
     let s = this.deployed.get(container);
     if (!s) this.deployed.set(container, s = new Map());
@@ -146,6 +154,7 @@ export class FakeBc implements HarnessBc {
         id: string;
         name: string;
         version: string;
+        target?: string;
       };
       const source = await sources(project.path);
       if (this.crashFor?.(project.path.replaceAll("\\", "/"), container)) {
@@ -202,6 +211,7 @@ export class FakeBc implements HarnessBc {
         version: aj.version,
         folder,
         source,
+        ...(aj.target !== undefined ? { target: aj.target } : {}),
       };
       await Deno.writeTextFile(
         artifactPath,

@@ -34,6 +34,8 @@ import {
   type BcLane,
   buildApps,
   CleanupFailedError,
+  CLOUD_POLICY,
+  DECLARED_POLICY,
   deployAndTest,
   isCascadeDiagnostic,
   prepareApps,
@@ -246,6 +248,7 @@ export function agentTestsBc(
   return {
     compileProject: (c, p) => bc.compileProject(c, p),
     harnessCompilerIdentity: (c) => bc.harnessCompilerIdentity(c),
+    packageTarget: (f) => bc.packageTarget(f),
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
     async runHarnessTests(c, codeunit): Promise<TestResult> {
@@ -307,6 +310,7 @@ export function agentSuiteBc(
   return {
     compileProject: (c, p) => bc.compileProject(c, p),
     harnessCompilerIdentity: (c) => bc.harnessCompilerIdentity(c),
+    packageTarget: (f) => bc.packageTarget(f),
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
     async runHarnessTests(c, codeunit): Promise<TestResult> {
@@ -610,6 +614,7 @@ async function buildOracle(
           prep.wanted.map((w) => [folderOf.get(w.id.toLowerCase())!, w.file]),
         ),
         graph,
+        policy: DECLARED_POLICY,
         ...(ctx.i.buildCache
           ? { cache: ctx.i.buildCache, prebuiltKeys: prep.keys }
           : {}),
@@ -675,6 +680,8 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     candidateDir: vw.dir,
     candidateApps: vw.apps,
     changed: vw.changed,
+    versionPlan: "judge",
+    policy: CLOUD_POLICY,
     workDir: join(i.workDir, "apps"),
     lock: i.lock,
     ...(i.buildCache ? { cache: i.buildCache } : {}),
@@ -918,6 +925,8 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       candidateDir: dir,
       candidateApps: apps,
       changed,
+      versionPlan: "judge",
+      policy: CLOUD_POLICY,
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,

@@ -84,6 +84,7 @@ import {
   writeMarker,
 } from "./compiler-folder-marker.ts";
 import { acquireLock } from "./folder-lock.ts";
+import { packageManifestTarget } from "./app-package.ts";
 import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
 import { mergeIntoTracer } from "../tracing/parse-trace-lines.ts";
 
@@ -2108,6 +2109,11 @@ ${script}
   /** BCH shared "my" folder for app files. Overridden in unit tests. */
   protected harnessSharedFolder(containerName: string): string {
     return `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+  }
+
+  /** H-35: the Target a compiled package's manifest records (host-side read). */
+  packageTarget(file: string): Promise<string | null> {
+    return packageManifestTarget(file);
   }
 
   /** Harness Bench: compiler identity for prerequisite stamps (review round 2 item 5). */

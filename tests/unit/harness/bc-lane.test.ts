@@ -15,6 +15,8 @@ import {
   buildApps,
   buildCacheReport,
   classifyTestFailure,
+  CLOUD_POLICY,
+  DECLARED_POLICY,
   deploy,
   deployAndTest,
   dirBuildCache,
@@ -91,6 +93,8 @@ const readApp = async (f: string) =>
 async function prep(_bc: FakeBc, lane: BcLane, changed: string[] = []) {
   const pristine = await workspace();
   const prepared = await prepareApps(lane, {
+    versionPlan: "backend",
+    policy: DECLARED_POLICY,
     pristine,
     pristineApps: await readAppGraph(pristine),
     candidateDir: pristine,
@@ -106,6 +110,7 @@ Deno.test("buildApps: dependency order, versions, workspace and locked symbols",
   const ws = await workspace();
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map([["Core", "1.0.7.7"]]),
@@ -137,6 +142,7 @@ Deno.test("buildApps: an unlocked package after compile is refused", async () =>
   await assertRejects(
     async () =>
       buildApps(bc, "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps: await readAppGraph(ws),
         versions: new Map(),
@@ -153,6 +159,7 @@ Deno.test("buildApps: a failed dependency stops its dependents", async () => {
   await write(ws, "Core/src/C.al", "COMPILE_ERROR");
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -535,6 +542,7 @@ Deno.test("BcLane: compiles are admitted at most compileSlots at a time per cont
     [1, 2, 3].map(() =>
       lane.compile(async (c) =>
         buildApps(bc, c, {
+          policy: DECLARED_POLICY,
           srcDir: ws,
           apps: await readAppGraph(ws),
           versions: new Map(),
@@ -589,6 +597,7 @@ Deno.test("buildApps: a dependency outside the workspace and the symbols lock is
   );
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -817,6 +826,7 @@ Deno.test("buildApps: BCH's cache_AppInfo.json index is not a symbol package; an
     );
   };
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -833,6 +843,7 @@ Deno.test("buildApps: BCH's cache_AppInfo.json index is not a symbol package; an
   await assertRejects(
     async () =>
       buildApps(bc, "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps: await readAppGraph(ws),
         versions: new Map(),
@@ -953,6 +964,7 @@ Deno.test("buildApps: the locked packages' app info cache is harvested once and 
   const first = new Map<string, string[] | null>();
   appInfoWriter(bc, first);
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -983,6 +995,7 @@ Deno.test("buildApps: a build cache reuses an unchanged app; a changed source re
   const cache = dirBuildCache(await tmp());
   const bc = new FakeBc();
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1040,6 +1053,7 @@ for (
     const bc = new FakeBc();
     const outDir = await tmp();
     const built = await buildApps(bc, "C1", {
+      policy: DECLARED_POLICY,
       srcDir: ws,
       apps: await readAppGraph(ws),
       versions: new Map([["Core", "1.0.7.7"]]),
@@ -1069,6 +1083,7 @@ Deno.test("buildApps: a workspace app whose id is a locked package's is the app'
   });
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1096,6 +1111,7 @@ Deno.test("buildApps: a reused build is refused on an id or file name collision,
   };
   const bc = new FakeBc();
   const byName = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1114,6 +1130,7 @@ Deno.test("buildApps: a reused build is refused on an id or file name collision,
   );
   assert(byName.every((b) => !b.ok));
   const byId = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1136,6 +1153,7 @@ Deno.test("buildApps: a prebuilt workspace file named as a locked package is ref
   await assertRejects(
     async () =>
       buildApps(bc, "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps,
         versions: new Map(),
@@ -1186,6 +1204,7 @@ Deno.test("buildApps: an agent-planted .ALPACKAGES app info cache (any case) is 
     );
   };
   await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1215,6 +1234,7 @@ Deno.test("buildApps: a harvest keeps only locked packages that hash-verified in
     );
   };
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1237,6 +1257,7 @@ Deno.test("buildApps: the build cache key holds the compiler identity, not only 
   const cache = dirBuildCache(await tmp());
   const bc = new FakeBc();
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1267,6 +1288,7 @@ const cached = async (
   extra: Partial<Parameters<typeof buildApps>[2]> = {},
 ) =>
   await buildApps(bc, container, {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1308,6 +1330,7 @@ Deno.test("buildApps (H-27): a prebuilt dependency is keyed by its cache key; on
   bc.nondeterministic = true;
   const all = await readAppGraph(ws);
   const core = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: all.filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1318,6 +1341,7 @@ Deno.test("buildApps (H-27): a prebuilt dependency is keyed by its cache key; on
   const rest = all.filter((a) => a.folder !== "Core");
   const onTop = (keys?: Map<string, string>) =>
     buildApps(bc, "C1", {
+      policy: DECLARED_POLICY,
       srcDir: ws,
       apps: rest,
       versions: new Map(),
@@ -1397,6 +1421,8 @@ Deno.test("prepareApps (H-27): a second prepare of the same task reuses the prer
   const lane = new BcLane(bc, ["C1", "C2"]);
   const prep = async () =>
     await prepareApps(lane, {
+      versionPlan: "backend",
+      policy: DECLARED_POLICY,
       pristine: ws,
       pristineApps: await readAppGraph(ws),
       candidateDir: ws,
@@ -1497,6 +1523,7 @@ Deno.test("buildApps: once the app info is harvested, the restore holds exactly 
   const bc = new FakeBc();
   bchAppInfo(bc, info);
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1540,6 +1567,7 @@ Deno.test("buildApps: a package the app uses but does not declare fails its comp
   const bc = new FakeBc();
   bchAppInfo(bc, info);
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1565,6 +1593,7 @@ Deno.test("buildApps (H-27 r2 #1): the restored symbol set is in the key: a cold
   bchAppInfo(bc, info);
   const cache = dirBuildCache(await tmp());
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1729,6 +1758,7 @@ Deno.test("buildApps (H-27 r2): another effective version or another lock is a m
   const bc = new FakeBc();
   const core = async (versions: Map<string, string>, l: LockedSymbols) =>
     await buildApps(bc, "C1", {
+      policy: DECLARED_POLICY,
       srcDir: ws,
       apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
       versions,
@@ -1753,6 +1783,7 @@ Deno.test("buildApps (H-27 r2 #4): an analysis compile with a cache is refused",
   await assertRejects(
     () =>
       buildApps(new FakeBc(), "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps: [],
         versions: new Map(),
@@ -1772,6 +1803,7 @@ Deno.test("buildApps: a BOM app.json builds like one without", async () => {
   await Deno.writeTextFile(p, "\uFEFF" + await Deno.readTextFile(p));
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map([["Core", "1.0.7.7"]]),
@@ -1780,4 +1812,124 @@ Deno.test("buildApps: a BOM app.json builds like one without", async () => {
   });
   assert(built.every((b) => b.ok));
   assertEquals((await readApp(built[0]!.file!)).version, "1.0.7.7");
+});
+
+// ---- H-35 (design-r5 2.1, 3.3; rulings r5): build policy and version plans ----
+
+Deno.test("H-35: the Cloud policy compiles every app with target Cloud in the effective app.json; the declared policy keeps the workspace's target", async () => {
+  const ws = await workspace();
+  const bc = new FakeBc();
+  const cloud = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+    policy: CLOUD_POLICY,
+  });
+  for (const b of cloud) assertEquals((await readApp(b.file!)).target, "Cloud");
+  const declared = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+    policy: DECLARED_POLICY,
+  });
+  for (const b of declared) {
+    assertEquals((await readApp(b.file!)).target, undefined);
+  }
+});
+
+Deno.test("H-35: the build policy is in the cache key: the same source under another policy is a miss", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const o = async (policy: typeof CLOUD_POLICY) => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+    policy,
+  });
+  const a = await buildApps(bc, "C1", await o(CLOUD_POLICY));
+  const b = await buildApps(bc, "C1", await o(DECLARED_POLICY));
+  assertEquals(bc.compiles.length, 6, "no reuse across policies");
+  assert(a.every((x, i) => x.key !== b[i]!.key));
+  await buildApps(bc, "C1", await o(CLOUD_POLICY));
+  assertEquals(bc.compiles.length, 6, "the same policy reuses");
+});
+
+Deno.test("H-35: a cached package whose target is not the policy's is refused and rebuilt; it is never reused (cached-OnPrem fixture)", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cacheDir = await tmp();
+  const cache = dirBuildCache(cacheDir);
+  const bc = new FakeBc();
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+    policy: CLOUD_POLICY,
+  });
+  const first = await buildApps(bc, "C1", await o());
+  // Tamper: the cached Core package is replaced by an OnPrem build under its Cloud key.
+  const hit = (await cache.get(first[0]!.key!))!;
+  const app = await readApp(hit);
+  await Deno.writeTextFile(hit, JSON.stringify({ ...app, target: "OnPrem" }));
+  const again = await buildApps(bc, "C1", await o());
+  // Core is rebuilt; its fresh build is unkeyed, so its dependents rebuild too (fail closed).
+  assertEquals(bc.compiles.slice(3), ["Core", "Rental", "Test"]);
+  const core = again.find((b) => b.folder === "Core")!;
+  assert(core.ok && core.attempted);
+  assertEquals((await readApp(core.file!)).target, "Cloud");
+  assertEquals(
+    core.key,
+    undefined,
+    "the fresh build is unkeyed: the bad entry stays unused",
+  );
+});
+
+Deno.test("H-35: prepareApps versionPlan judge publishes every app as a candidate at its pristine version; backend keeps stamped prerequisites", async () => {
+  const bc = new FakeBc();
+  const lane = new BcLane(bc, ["C1"]);
+  const pristine = await workspace();
+  const base = async () => ({
+    pristine,
+    pristineApps: await readAppGraph(pristine),
+    candidateDir: pristine,
+    candidateApps: await readAppGraph(pristine),
+    changed: ["Rental"],
+    workDir: await tmp(),
+    lock: await lock(),
+    policy: CLOUD_POLICY,
+  });
+  const judge = await prepareApps(lane, {
+    ...await base(),
+    versionPlan: "judge",
+  });
+  assertEquals(
+    judge.wanted.map((w) => [w.role, w.version]),
+    [["candidate", "1.0.0.0"], ["candidate", "1.0.0.0"], [
+      "candidate",
+      "1.0.0.0",
+    ]],
+  );
+  assertEquals(judge.candidateIds, [IDS.core, IDS.rental, IDS.test]);
+  const backend = await prepareApps(lane, {
+    ...await base(),
+    versionPlan: "backend",
+  });
+  const core = backend.wanted.find((w) => w.id === IDS.core)!;
+  assertEquals(core.role, "prereq");
+  assert(
+    core.version !== "1.0.0.0",
+    "the backend plan still stamps prerequisites",
+  );
 });
