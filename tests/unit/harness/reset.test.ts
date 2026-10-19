@@ -3,6 +3,7 @@ import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { loadLineage } from "../../../src/harness/lineage.ts";
 import {
   commandReset,
+  fsDiff,
   goldenReset,
   parseResetOutput,
   parseVerifyOutput,
@@ -217,4 +218,53 @@ Deno.test("H-35 S3 goldenReset.verifyClean runs verify-clean.ps1 with the lineag
   assertEquals(calls[0]!.slice(-4), ["-Container", "C1", "-Lineage", "L.json"]);
   const bad = await m.verifyClean!("C2");
   assertEquals([bad.ok, bad.error], [false, "spawn died"]);
+});
+
+// ---- H-35 S3 L4: fsDigest diff (decisions/2026-10-20-h-35-l4-scope.md) ----
+
+/** Windows paths written with "/" for readability. */
+const w = (s: string) => s.replaceAll("/", "\\");
+const F = (p: string, h = "a".repeat(64), t = 1) => `F|${h}|4|32|${t}|${w(p)}`;
+
+Deno.test("H-35 S3 L4 fsDiff: new, changed (content or metadata only) and removed entries, keyed by path and stream; identical digests are clean", () => {
+  const before = [
+    w("D|16|5|C:/W"),
+    F("C:/W/a.txt"),
+    F("C:/W/b.txt"),
+    w("S|" + "c".repeat(64) + "|3|C:/W:hid"),
+  ];
+  assertEquals(fsDiff(before, before, []), { diff: [], errors: [] });
+  const after = [
+    w("D|16|5|C:/W"),
+    F("C:/W/a.txt", "a".repeat(64), 2), // mtime only
+    F("C:/W/new.txt"),
+    w("S|" + "d".repeat(64) + "|3|C:/W:hid"), // directory ADS content
+  ];
+  const r = fsDiff(before, after, []);
+  assertEquals(r.errors, []);
+  assertEquals(
+    r.diff.map((d) => [d.path, d.before !== null, d.after !== null]),
+    [
+      [w("C:/W:hid"), true, true],
+      [w("C:/W/a.txt"), true, true],
+      [w("C:/W/b.txt"), true, false],
+      [w("C:/W/new.txt"), false, true],
+    ],
+  );
+});
+
+Deno.test("H-35 S3 L4 fsDiff: exclusions match case-insensitively with * as any run (subtree); E lines on either side and unparsable lines are errors (fail closed)", () => {
+  const before = [F("C:/W/Logs/x.log")];
+  const after = [F("C:/W/logs/x.log", "b".repeat(64)), F("C:/W/logs/y/z.log")];
+  assertEquals(fsDiff(before, after, [w("c:/w/LOGS/*")]).diff, []);
+  assertEquals(fsDiff(before, after, [w("C:/W/logs/*.txt")]).diff.length, 2);
+  const e = fsDiff([w("E|C:/W/a|access denied")], [
+    "garbage",
+    "E|(nst)|not quiescent: 1",
+  ], []);
+  assertEquals(e.errors, [
+    w("before: C:/W/a: access denied"),
+    "after: unparsable line garbage",
+    "after: (nst): not quiescent: 1",
+  ]);
 });

@@ -337,3 +337,77 @@ export function goldenReset(o: {
     },
   };
 }
+
+/** One L4 difference: the digest line before and after (null: absent). */
+export interface FsDiffEntry {
+  path: string;
+  before: string | null;
+  after: string | null;
+}
+
+/** The entry's key (path, or path:stream) of an fs-digest.ps1 line; null when unparsable. */
+function fsKey(line: string): string | null {
+  const f = line.split("|");
+  switch (f[0]) {
+    case "D":
+      return f.length === 4 ? f[3]! : null;
+    case "F":
+      return f.length === 6 ? f[5]! : null;
+    case "S":
+      return f.length === 4 ? f[3]! : null;
+    case "L":
+      return f.length === 5 ? f[3]! : null;
+    default:
+      return null;
+  }
+}
+
+/** A Windows wildcard (case-insensitive; `*` any run, subtrees included). */
+function wildcard(pattern: string): RegExp {
+  const esc = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll(
+    "*",
+    ".*",
+  );
+  return new RegExp(`^${esc}$`, "i");
+}
+
+/**
+ * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): compare two
+ * fsDigest(W) captures. Any difference in an entry's line (content, size,
+ * attributes, last-write time, a stream, a link target) outside the
+ * exclusions is a difference; E lines and unparsable lines on either side are
+ * errors, and an error fails closed like a difference.
+ */
+export function fsDiff(
+  before: readonly string[],
+  after: readonly string[],
+  exclude: readonly string[],
+): { diff: FsDiffEntry[]; errors: string[] } {
+  const errors: string[] = [];
+  const res = exclude.map(wildcard);
+  const index = (side: string, lines: readonly string[]) => {
+    const m = new Map<string, string>();
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      if (line === "") continue;
+      if (line.startsWith("E|")) {
+        const [, p, ...why] = line.split("|");
+        errors.push(`${side}: ${p}: ${why.join("|")}`);
+        continue;
+      }
+      const k = fsKey(line);
+      if (k === null) errors.push(`${side}: unparsable line ${line}`);
+      // NTFS paths are case-insensitive: one entry; a case-only rename
+      // still differs in its line.
+      else if (!res.some((r) => r.test(k))) m.set(k.toLowerCase(), line);
+    }
+    return m;
+  };
+  const b = index("before", before), a = index("after", after);
+  const diff: FsDiffEntry[] = [];
+  for (const k of [...new Set([...b.keys(), ...a.keys()])].sort()) {
+    const x = b.get(k) ?? null, y = a.get(k) ?? null;
+    if (x !== y) diff.push({ path: fsKey((y ?? x)!)!, before: x, after: y });
+  }
+  return { diff, errors };
+}
