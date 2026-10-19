@@ -25,7 +25,13 @@ import {
 } from "../../../src/harness/records.ts";
 
 export const H = (c: string) => c.repeat(64);
-export const SCORERS_V1 = { build: "1" };
+// The first suite that shipped (H-35: integrity refuses unknown suites).
+export const SCORERS_V1 = {
+  build: "1",
+  pass_to_pass: "1",
+  fail_to_pass: "1",
+  mutant_kill: "1",
+};
 export const SCORERS_V1_FP = await scorerFingerprint(SCORERS_V1);
 export const CAMPAIGN_ID = "00000000-0000-4000-8000-000000000001";
 const TASK_HASHES: Record<string, [string, string]> = {

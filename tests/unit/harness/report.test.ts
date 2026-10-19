@@ -250,7 +250,12 @@ Deno.test("renderReport: no solved task shows n/a", async () => {
 
 Deno.test("buildReport: mixed scorer versions in one comparison fail closed", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const fp2 = await scorerFingerprint(v2);
   const [j0, ...rest] = base.judgments;
   await assertRejects(
@@ -271,7 +276,12 @@ Deno.test("buildReport: mixed scorer versions in one comparison fail closed", as
 
 Deno.test("buildReport: mixed valid scorer fingerprints are refused and named", async () => {
   const base = await records();
-  const v2 = { build: "2", test: "7" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "2",
+    fail_to_pass: "1",
+    mutant_kill: "3",
+  };
   const fp2 = await scorerFingerprint(v2);
   const last = base.judgments.length - 1;
   const err = await assertRejects(
@@ -292,7 +302,12 @@ Deno.test("buildReport: mixed valid scorer fingerprints are refused and named", 
 
 Deno.test("buildReport: a superseded judgment of another scorer is not selected", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const older = judgment(base.campaign, base.executions[0]!, false, {
     scorer_versions: v2,
     scorer_fingerprint: await scorerFingerprint(v2),
@@ -432,7 +447,12 @@ async function twoVariants(): Promise<CampaignRecord> {
 
 Deno.test("buildReport: scorer fingerprints are checked across all arms, not per pair", async () => {
   const c = await twoVariants();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const fp2 = await scorerFingerprint(v2);
   // The baseline has no selected judgment; each variant is on its own scorer.
   const executions = ["plain", "skills", "skills2"].map((arm) =>
@@ -1968,7 +1988,12 @@ function measureFor(
 
 Deno.test("buildReport (M11-12 review): a measure record of a superseded judgment is ignored, not a refusal", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const older = judgment(base.campaign, base.executions[0]!, false, {
     scorer_versions: v2,
     scorer_fingerprint: await scorerFingerprint(v2),
@@ -2016,7 +2041,12 @@ Deno.test("loadReportLogs (M11-12): reads measure records of the given fingerpri
 
 Deno.test("buildReport (M11-12 r2): a counted judgment's record filed under a superseded key is refused, not dropped", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const older = judgment(base.campaign, base.executions[0]!, false, {
     scorer_versions: v2,
     scorer_fingerprint: await scorerFingerprint(v2),

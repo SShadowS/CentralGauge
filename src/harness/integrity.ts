@@ -32,6 +32,8 @@ import {
   retryProblem,
   scorerFingerprint,
 } from "./records.ts";
+import type { OracleDescriptor } from "./task-oracle.ts";
+import { expectedScorers, suiteOf } from "./verdict.ts";
 
 export interface CampaignRecords {
   campaign: CampaignRecord;
@@ -248,9 +250,19 @@ async function executionProblems(
   return out;
 }
 
-/** Throws one ValidationError listing every inconsistency. */
+/**
+ * Throws one ValidationError listing every inconsistency. H-35 (design-r3
+ * 6.3): every judgment's scorer_versions is one known suite of its record
+ * version; with `descriptor` (the task preimage store), its scorer names are
+ * the expected set of the task version it was judged against.
+ */
 export async function validateCampaignRecords(
   r: CampaignRecords,
+  o: {
+    descriptor?: (
+      oracleHash: string,
+    ) => Promise<OracleDescriptor | "unknown">;
+  } = {},
 ): Promise<void> {
   const fail = (problems: string[]) => {
     throw new ValidationError(
@@ -287,6 +299,34 @@ export async function validateCampaignRecords(
     }
     const time = timeProblem(j);
     if (time) problems.push(`judgment ${j.id}: ${time}`);
+    const suite = suiteOf(j.scorer_versions);
+    if (!suite) {
+      problems.push(`judgment ${j.id}: unknown scorer suite`);
+    } else if (suite.v !== j.v) {
+      problems.push(
+        `judgment ${j.id}: a v${j.v} judgment under the ${suite.id} suite`,
+      );
+    } else if (o.descriptor) {
+      const d = await o.descriptor(j.task_oracle_hash);
+      if (d === "unknown") {
+        // A legacy judgment may predate the store (legacy_unknown_task).
+        if (j.v === 2) {
+          problems.push(
+            `judgment ${j.id}: no task descriptor for oracle ${j.task_oracle_hash}`,
+          );
+        }
+      } else {
+        const want = expectedScorers(d, j.scorer_versions)!;
+        const got = j.scorers.map((s) => s.name);
+        if (got.join() !== want.join()) {
+          problems.push(
+            `judgment ${j.id}: scorers ${got.join(", ")} != expected ${
+              want.join(", ")
+            }`,
+          );
+        }
+      }
+    }
     const e = byId.get(j.execution_id);
     if (!e) {
       problems.push(`judgment ${j.id}: unknown execution ${j.execution_id}`);

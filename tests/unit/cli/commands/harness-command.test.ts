@@ -76,7 +76,9 @@ import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { sha256Hex } from "../../../../src/harness/hash.ts";
 import {
   type ExecutionRecord,
+  type JudgmentRecord,
   scorerFingerprint,
+  verdictOf,
 } from "../../../../src/harness/records.ts";
 import {
   measureFingerprint,
@@ -1541,14 +1543,39 @@ Deno.test("qualify judges every manifest variant at its rev and indexes judgment
   }
 });
 
-async function staleJudgment(t: TestEnv, executionId: string) {
-  const [j] = await t.env.store.judgments(executionId);
-  const versions = { ...j!.scorer_versions, build: "0-stale" };
-  await t.env.store.writeJudgment({
-    ...j!,
-    id: crypto.randomUUID(),
+/**
+ * H-35: a judgment as a pre-H-35 harness wrote it: v1, a suite that really
+ * shipped (default the H-30 one), no policy, provenance or scorer state, no
+ * agent_tests, the v1 verdict.
+ */
+async function asLegacy(
+  j: JudgmentRecord,
+  versions: Record<string, string> = {
+    build: "3",
+    pass_to_pass: "5",
+    fail_to_pass: "3",
+    mutant_kill: "5",
+  },
+): Promise<JudgmentRecord> {
+  const { policy: _p, provenance: _q, ...rest } = j;
+  const scorers = j.scorers.filter((s) => s.name !== "agent_tests").map((
+    { state: _s, ...s },
+  ) => s);
+  return {
+    ...rest,
+    v: 1,
+    scorers,
+    verdict: verdictOf(scorers),
     scorer_versions: versions,
     scorer_fingerprint: await scorerFingerprint(versions),
+  };
+}
+
+async function staleJudgment(t: TestEnv, executionId: string) {
+  const [j] = await t.env.store.judgments(executionId);
+  await t.env.store.writeJudgment({
+    ...await asLegacy(j!),
+    id: crypto.randomUUID(),
     // Newer than the original judgment, older than any rejudge that follows.
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
@@ -1597,25 +1624,21 @@ async function unscoredJudgments(
   old = 0,
 ) {
   const [j] = await t.env.store.judgments(executionId);
-  const stale = { ...j!.scorer_versions, build: "0-stale" };
   for (let i = 0; i < n; i++) {
     const at = new Date(Date.now() + i).toISOString();
+    // The oldest `old` under a legacy suite (H-35: as a pre-H-35 harness
+    // wrote them), the rest under the current one.
+    const base = i < old ? await asLegacy(j!) : j!;
     await t.env.store.writeJudgment({
-      ...j!,
+      ...base,
       id: crypto.randomUUID(),
       // A v2 judgment's unscored scorer carries its state (H-35 S2.1).
-      scorers: j!.scorers.map((s) => ({
+      scorers: base.scorers.map((s) => ({
         ...s,
         passed: null,
         ...(s.state ? { state: "unscored" as const } : {}),
       })),
       verdict: "unscored",
-      ...(i < old
-        ? {
-          scorer_versions: stale,
-          scorer_fingerprint: await scorerFingerprint(stale),
-        }
-        : {}),
       started_at: at,
       ended_at: at,
     });
@@ -1711,10 +1734,24 @@ Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under 
     await store.writeCampaign(c);
     const e = execution(c);
     await store.writeExecution(e);
+    // Under the current suite a judgment is v2 (H-35 S2.1).
     const suite = current
       ? {
+        v: 2 as const,
         scorer_versions: SCORER_SUITE,
         scorer_fingerprint: await currentScorerFingerprint(),
+        scorers: [{
+          name: "build",
+          passed: null,
+          state: "unscored" as const,
+          tests: [],
+        }],
+        policy: { passed: true, violations: [] },
+        provenance: {
+          harness_commit: null,
+          production_manifest: null,
+          env_fp: null,
+        },
       }
       : {};
     for (let i = 0; i < 3; i++) {
@@ -1926,17 +1963,15 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const c = (await t.env.store.campaigns("contract"))[0]!;
   const e = (await t.env.store.executions(c.id))[0]!;
   const [orig] = await t.env.store.judgments(e.id);
-  // The suite as recorded before M4-17a.
-  const before = {
-    ...orig!.scorer_versions,
-    mutant_kill: "2",
-    pass_to_pass: "1",
-  };
+  // The suite as recorded before M4-17a (the second suite that shipped).
   await t.env.store.writeJudgment({
-    ...orig!,
+    ...await asLegacy(orig!, {
+      build: "1",
+      pass_to_pass: "1",
+      fail_to_pass: "1",
+      mutant_kill: "2",
+    }),
     id: crypto.randomUUID(),
-    scorer_versions: before,
-    scorer_fingerprint: await scorerFingerprint(before),
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
   });
@@ -8821,4 +8856,33 @@ Deno.test("H-35: the env opens a judge and an agent build cache: judging and the
   } finally {
     await h.close();
   }
+});
+
+Deno.test("H-35 S2.3: judging stores the task preimage under the judgment's oracle hash", async () => {
+  await using t = await makeEnv();
+  await git(t.repo.root, "add", ".");
+  await git(t.repo.root, "commit", "-q", "-m", "tasks");
+  await git(t.repo.root, "tag", "refapp-v1-rc1");
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1-rc1", positive: "correct", naive: ["a"] },
+      },
+    }),
+  );
+  const o = cellOpts(t, { rev: "refapp-v1-rc1", manifest });
+  const pass = await harnessJudgeFixture("HX-001", "correct", o, opener(t));
+  const { loadOracleDescriptor } = await import(
+    "../../../../src/harness/task-oracle.ts"
+  );
+  const d = await loadOracleDescriptor(
+    t.env.resultsRoot,
+    pass.task_oracle_hash,
+  );
+  assert(d !== "unknown");
+  assertEquals(d.kind, "bugfix");
 });

@@ -99,6 +99,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}stats.test.ts`]: c(true, 1),
   [`${H}stub-anthropic.test.ts`]: c(true, 0),
   [`${H}subagent-cost.test.ts`]: c(true, 0),
+  [`${H}task-oracle.test.ts`]: c(true, 1),
   [`${H}task-rev.test.ts`]: c(true, 1),
   [`${H}task-set-v1.test.ts`]: c(true, 0),
   [`${H}task.test.ts`]: c(true, 0),

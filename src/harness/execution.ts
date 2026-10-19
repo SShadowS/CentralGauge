@@ -73,6 +73,7 @@ import {
 import { hashFile, hashJson, hashTree } from "./hash.ts";
 import { imageFacts, installedFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
+import { storeOraclePreimage } from "./task-oracle.ts";
 import { forTask } from "./manifest.ts";
 import {
   type EgressOverride,
@@ -2625,6 +2626,8 @@ export async function judgeExecution(
     `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
   );
   try {
+    // H-35 (design-r4 4): the oracle side of this judgment stays readable.
+    await storeOraclePreimage(env.resultsRoot, cell.task);
     const raw = await judge(env.lane, {
       executionId: e.id,
       workspaceHash: art.workspace_hash,

@@ -333,13 +333,24 @@ export async function visibleInputHash(
  * neither hash.
  */
 export async function oracleHash(t: LoadedTask): Promise<string> {
+  return hashJson(await oraclePreimage(t));
+}
+
+/**
+ * The exact object oracleHash hashes (rule oracleHash@1). H-35 (design-r4
+ * 4): stored by its hash, so the oracle side of a past judgment stays
+ * readable after the task changes.
+ */
+export async function oraclePreimage(
+  t: LoadedTask,
+): Promise<Record<string, unknown>> {
   const { task, dir } = t;
   const tree = (d: string) =>
     hashTree(join(dir, d), "task", { optional: true });
   const measures = (await exists(join(dir, "measures")))
     ? await tree("measures")
     : null;
-  return hashJson({
+  return {
     part: "oracle",
     id: task.id,
     kind: task.kind,
@@ -355,7 +366,7 @@ export async function oracleHash(t: LoadedTask): Promise<string> {
     ...(task.production_allow
       ? { production_allow: task.production_allow }
       : {}),
-  });
+  };
 }
 
 export const TaskIdentitySchema = z.strictObject({

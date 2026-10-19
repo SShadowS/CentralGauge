@@ -61,10 +61,13 @@ import {
 } from "../../src/harness/config.ts";
 import {
   loadSymbolsLock,
-  oracleHash,
   resolveRefapp,
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
+import {
+  loadOracleDescriptor,
+  storeOraclePreimage,
+} from "../../src/harness/task-oracle.ts";
 import {
   compareInstant,
   isOwnerApproval,
@@ -806,7 +809,7 @@ export async function harnessJudgeFixture(
         : {}),
     });
     const ids = await taskSetIdentity(o.root, [task], h.env.symbols);
-    const fixtureOracle = await oracleHash(task);
+    const fixtureOracle = await storeOraclePreimage(h.env.resultsRoot, task);
     const { judgment, log } = await judge(h.env.lane, {
       executionId: crypto.randomUUID(),
       workspaceHash: frozen.workspace_hash,
@@ -1965,7 +1968,9 @@ export async function harnessRejudge(
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: (h) => loadOracleDescriptor(env.resultsRoot, h),
+    });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
         t,
@@ -2212,7 +2217,9 @@ export async function harnessMeasure(
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: (h) => loadOracleDescriptor(env.resultsRoot, h),
+    });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
         t,

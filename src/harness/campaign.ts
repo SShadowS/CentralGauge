@@ -33,6 +33,7 @@ import {
   runCell,
 } from "./execution.ts";
 import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
+import { loadOracleDescriptor, storeOraclePreimage } from "./task-oracle.ts";
 import {
   imageFacts,
   imageTag,
@@ -788,6 +789,8 @@ export async function runCampaign(
 
   const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
+  // H-35 (design-r4 4): every task version a campaign pins stays readable.
+  for (const t of tasks) await storeOraclePreimage(env.resultsRoot, t);
   const arms: CampaignRecord["arms"] = [];
   let calibrationWaived = false;
   for (const config of configs) {
@@ -986,7 +989,9 @@ export async function runCampaign(
       if (v.problems.length > 0) throw refusal(v.problems);
     }
     data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: (h) => loadOracleDescriptor(env.resultsRoot, h),
+    });
   }
   // H-13b: every execution of a waived campaign records it.
   if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };

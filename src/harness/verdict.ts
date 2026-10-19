@@ -121,6 +121,66 @@ export function effectiveScorers(
     : [...task.scorers, "agent_tests"];
 }
 
+/**
+ * H-35 (design-r3 6.3): every scorer suite that ever shipped (the git history
+ * of SCORER_SUITE, oldest first) with the judgment record version it goes
+ * with. A judgment's scorer_versions must equal exactly one; a missing
+ * agent_tests is legacy only for an exact legacy suite.
+ */
+export const KNOWN_SUITES: readonly {
+  id: string;
+  v: 1 | 2;
+  versions: Readonly<Record<string, string>>;
+}[] = [
+  ...[
+    ["1", "1", "1", "1"],
+    ["1", "1", "1", "2"],
+    ["1", "2", "1", "3"],
+    ["2", "3", "2", "4"],
+    ["2", "4", "2", "4"],
+    ["3", "5", "3", "5"],
+  ].map(([build, p2p, f2p, mk], i) => ({
+    id: `legacy-${i + 1}`,
+    v: 1 as const,
+    versions: {
+      build: build!,
+      pass_to_pass: p2p!,
+      fail_to_pass: f2p!,
+      mutant_kill: mk!,
+    },
+  })),
+  { id: "h35", v: 2, versions: SCORER_SUITE },
+];
+
+const sameVersions = (
+  a: Readonly<Record<string, string>>,
+  b: Readonly<Record<string, string>>,
+) =>
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.entries(a).every(([k, v]) => b[k] === v);
+
+/** The known suite these versions are, or null (an unknown combination). */
+export function suiteOf(
+  versions: Readonly<Record<string, string>>,
+): (typeof KNOWN_SUITES)[number] | null {
+  return KNOWN_SUITES.find((s) => sameVersions(s.versions, versions)) ?? null;
+}
+
+/**
+ * H-35 (design-r2 3): the scorer names a judgment under these versions must
+ * carry for this task descriptor: the task's list under a legacy suite, the
+ * effective set (agent_tests added) under the H-35 suite; null when the
+ * versions are no known suite.
+ */
+export function expectedScorers(
+  task: { kind: string; scorers: readonly string[] },
+  versions: Readonly<Record<string, string>>,
+): string[] | null {
+  const suite = suiteOf(versions);
+  if (!suite) return null;
+  return suite.v === 1 ? [...task.scorers] : effectiveScorers(task);
+}
+
 export function currentScorerFingerprint(): Promise<string> {
   return scorerFingerprint(SCORER_SUITE);
 }
