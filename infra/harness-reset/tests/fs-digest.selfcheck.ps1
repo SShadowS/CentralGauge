@@ -1,6 +1,6 @@
-param([string]$Lib)
+param([string]$Lib = (Join-Path (Split-Path -Parent $PSScriptRoot) 'fs-digest.ps1'))
 # Host-only self-check of fs-digest.ps1 (no container): run under Windows PowerShell 5.1, as inside the container:
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File testss-digest.selfcheck.ps1 -Lib fs-digest.ps1
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File infra\harness-reset\tests\fs-digest.selfcheck.ps1
 $ErrorActionPreference = 'Stop'
 function Invoke-InContainer($Container, [scriptblock]$ScriptBlock, $ArgumentList) { & $ScriptBlock @ArgumentList }
 . $Lib
