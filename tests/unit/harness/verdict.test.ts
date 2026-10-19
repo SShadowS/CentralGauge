@@ -1004,8 +1004,18 @@ Deno.test("judge: the oracle build gets its workspace dependencies' declared sym
     (await Deno.readTextFile(src)) +
       "\n// needs Microsoft_Library Assert_28.0.0.0.app\n",
   );
+  // H-35 (R2, Q9): a production dependency on a test framework needs the
+  // task's reviewed grant; the closure is what this test is about.
+  const task = {
+    ...input.task,
+    task: {
+      ...input.task.task,
+      production_allow: { dependencies: [IDS.assert] },
+    },
+  };
   const { judgment } = await judge(new BcLane(bc, ["C1"]), {
     ...input,
+    task,
     lock: await harvestedLock(),
   });
   assertEquals(

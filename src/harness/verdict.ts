@@ -705,6 +705,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   const tr = performance.now();
   const workspace = (name: string, o: Partial<ReconstructOptions>) =>
     buildVerdictWorkspace({
+      productionAllow: i.task.task.production_allow,
       pristine: i.pristine,
       artifact: i.artifact,
       out: join(i.workDir, name),
@@ -1037,6 +1038,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   // on a shipped test). It decides build, and pass_to_pass by a real run in
   // its own hold, whatever the submission (M1-18 review items 1 and 2).
   const sw = await buildVerdictWorkspace({
+    productionAllow: i.task.task.production_allow,
     pristine: i.pristine,
     artifact: i.pristine,
     out: join(i.workDir, "p2p"),
@@ -1087,6 +1089,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   // without the shipped test codeunits (M4-17a run 002). Every violation is
   // Test-side here (production is the reference): G' stays measured.
   const vw = await buildVerdictWorkspace({
+    productionAllow: i.task.task.production_allow,
     pristine: i.pristine,
     artifact: i.artifact,
     out: join(i.workDir, "verdict"),
@@ -1255,6 +1258,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         });
       }
       const mv = await buildVerdictWorkspace({
+        productionAllow: i.task.task.production_allow,
         pristine: i.pristine,
         artifact: i.artifact,
         out: join(i.workDir, `mutant-${m}`),

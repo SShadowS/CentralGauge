@@ -427,3 +427,24 @@ Deno.test("oracleHash: measures/ is hashed only when present; tasks without it k
   await write(dir, "measures/measures.yml", "v: 1\n");
   assertNotEquals(await oracleHash(t!), before);
 });
+
+Deno.test("H-35 (design-r3 7): production_allow enters the oracle hash only when present; each kind of grant changes it; a table and a codeunit grant differ", async () => {
+  const root = await fixtureRepo();
+  const [t] = await loadTaskSet(join(root, "harness-tasks", "tasks"));
+  const base = await oracleHash(t!);
+  const grants = [
+    { dependencies: ["dd0be2ea-f733-4d65-bb34-a28f4624fb14"] },
+    { objects: ["table:130450"] },
+    { objects: ["codeunit:130450"] },
+    { dynamic: ["Codeunit.Run"] },
+  ];
+  const hashes = await Promise.all(
+    grants.map((production_allow) =>
+      oracleHash({ ...t!, task: { ...t!.task, production_allow } })
+    ),
+  );
+  for (const h of hashes) assertNotEquals(h, base);
+  assertEquals(new Set(hashes).size, hashes.length);
+  // Absent stays absent: the task as loaded hashes as before.
+  assertEquals(t!.task.production_allow, undefined);
+});

@@ -2858,6 +2858,7 @@ export async function measureWorkspace(
     )
     : await infraSafe(async () => {
       const vw = await buildVerdictWorkspace({
+        productionAllow: x.task.task.production_allow,
         pristine: x.pristine,
         artifact: x.artifact,
         out: join(workDir, "final"),

@@ -351,6 +351,10 @@ export async function oracleHash(t: LoadedTask): Promise<string> {
     mutants_tree: await tree("mutants"),
     correct: await tree("correct"),
     ...(measures !== null ? { measures } : {}),
+    // H-35 (design-r3 7): absent stays absent, so every task's hash holds.
+    ...(task.production_allow
+      ? { production_allow: task.production_allow }
+      : {}),
   });
 }
 

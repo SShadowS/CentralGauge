@@ -78,6 +78,15 @@ export const HarnessTaskSchema = z.strictObject({
   mutants: z.array(z.string().regex(/^[A-Za-z0-9_-]+$/)).default([]),
   contamination: z.null().default(null),
   limits: TaskLimitsSchema.default({}),
+  /**
+   * H-35 (design-r2 6.2.5, design-r3 7): a narrow, reviewed exception to the
+   * production policy rules. In the oracle hash only when present.
+   */
+  production_allow: z.strictObject({
+    dependencies: z.array(z.string().min(1)).optional(),
+    objects: z.array(z.string().regex(/^(table|codeunit):\d+$/)).optional(),
+    dynamic: z.array(z.string().min(1)).optional(),
+  }).optional(),
 }).superRefine((t, ctx) => {
   const has = (s: (typeof SCORERS)[number]) => t.scorers.includes(s);
   const issue = (message: string, path: string[]) =>

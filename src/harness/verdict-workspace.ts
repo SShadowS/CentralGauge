@@ -67,6 +67,8 @@ export interface ReconstructOptions {
    * (app.json included); nothing of the agent's Test folder is read.
    */
   rawTest?: boolean;
+  /** H-35: the task's reviewed production_allow grant (design-r2 6.2.5). */
+  productionAllow?: ProductionAllow | undefined;
 }
 
 export interface VerdictWorkspace {
@@ -381,6 +383,9 @@ export async function buildVerdictWorkspace(
     violations.push(err.message);
   }
   violations.push(...await validateApps(out, pristineApps, apps, o.symbolIds));
+  violations.push(
+    ...await productionPolicyViolations(out, apps, o.productionAllow),
+  );
   violations.push(
     ...await shippedCollisions(join(o.pristine, TEST_APP), out, newTestFiles),
   );
@@ -1371,6 +1376,173 @@ export function testPolicyViolations(
     if (life) out.push(`test_lifecycle: ${where}: ${life[0]}`);
     const iso = ISOLATION_DISABLED.exec(code);
     if (iso) out.push(`isolation_disabled: ${where}: ${iso[0]}`);
+  }
+  return out;
+}
+
+// ---- H-35 production-side policy rules (design-r2 6.2, design-r3 4; R2, R9, Q9) ----
+
+/** A task's reviewed exceptions to the production rules (task.yml production_allow). */
+export interface ProductionAllow {
+  /** App ids a production app may depend on beyond the workspace and the allowlist. */
+  dependencies?: readonly string[] | undefined;
+  /** Banned objects allowed, kind-qualified: "table:130450", "codeunit:130450". */
+  objects?: readonly string[] | undefined;
+  /** Dynamic dispatch allowed by call: "Codeunit.Run", "RecordRef.Open", ... */
+  dynamic?: readonly string[] | undefined;
+}
+
+/** The five Microsoft packages production may depend on (design-r2 6.2.1). */
+export const PRODUCTION_DEPENDENCY_ALLOWLIST: ReadonlySet<string> = new Set([
+  "8874ed3a-0643-4247-9ced-7a7002f7135d", // System
+  "63ca2fa4-4f03-4f2b-a480-172fef340d3f", // System Application
+  "f3552374-a1f2-4356-848e-196002525837", // Business Foundation
+  "437dbf0e-84ff-417a-965d-ed2bb9650972", // Base Application
+  "c1335042-3002-4257-bf8a-75c898ccb1b8", // Application
+]);
+
+/** Test-framework, metadata and installed-app objects (design-r2 6.2.2, ids from the locked symbols). */
+const BANNED_OBJECTS: readonly (readonly [string, number, string])[] = [
+  ["table", 130451, "AL Test Suite"],
+  ["table", 130450, "Test Method Line"],
+  ["codeunit", 130450, "Test Runner - Isol. Codeunit"],
+  ["codeunit", 130451, "Test Runner - Isol. Disabled"],
+  ["codeunit", 130454, "Test Runner - Mgt"],
+  ["codeunit", 130456, "Test Suite Mgt."],
+  ["table", 2000000137, "CodeUnit Metadata"],
+  ["table", 2000000038, "AllObj"],
+  ["table", 2000000058, "AllObjWithCaption"],
+  ["table", 2000000071, "Object Metadata"],
+  ["table", 2000000207, "Application Object Metadata"],
+  ["table", 2000000153, "NAV App Installed App"],
+  ["table", 2000000206, "Published Application"],
+  ["table", 2000000212, "Installed Application"],
+];
+
+const OBJECT_TYPE =
+  "Record|Codeunit|Page|Report|Query|XmlPort|Database|Table|Interface";
+/**
+ * A banned object by name in an object-typed position: after an object type
+ * keyword (`Record "X"`, `Codeunit "X"`), after `Type::`, or as a TableNo,
+ * SourceTable or TableRelation value. Quoted or bare, case-insensitive.
+ */
+const NAME_REF = new RegExp(
+  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*)("[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`,
+  "gi",
+);
+/** A number in an object-id position: `Type::<n>`, `Record <n>`, an Open/Run/RunModal argument, a TableNo-style property. */
+const ID_REF = new RegExp(
+  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:Open|Run|RunModal)\\s*\\(\\s*|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*)(\\d+)\\b`,
+  "gi",
+);
+/** A static object call and its first argument. */
+const STATIC_CALL =
+  /\b(Codeunit|Page|Report|Xmlport|Query)\s*\.\s*(Run|RunModal|Execute|SaveAs|SaveAsCsv|SaveAsPdf|SaveAsXml|Print|Open)\s*\(\s*([^,)]*)/gi;
+/** A RecordRef variable or parameter. */
+const RECORDREF_VAR = /("[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*RecordRef\b/gi;
+/** An argument that names its object: an integer literal or `Type::<name or literal>`. */
+const LITERAL_OBJECT =
+  /^(?:\d+|(?:Codeunit|Page|Report|Xmlport|Query|Database)\s*::\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*|\d+))\s*$/i;
+const TEST_ONLY_TYPE =
+  /:\s*(TestPage|TestRequestPage|TestAction|TestField|TestFilter|TestPart|TestHttpRequestMessage|TestHttpResponseMessage)\b/i;
+const TEST_SUBTYPE = /\bSubtype\s*=\s*(Test|TestRunner)\b/i;
+const DETECTION_MEMBER =
+  /\.\s*Callstack\b|\bGetLastErrorCallStack\b|\bNavApp\s*\.|\bModuleInfo\b/i;
+
+const unquote = (n: string) => n.replace(/^"|"$/g, "").toLowerCase();
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * H-35 production-side rules over every production app of a workspace (the
+ * Test app never): `dependency_not_allowed` (app.json), then per .al file
+ * `unreadable` first (ruling R9), then on noise-stripped code
+ * `test_detection_ref` (banned objects by name and id, test-only types, a
+ * test subtype, call-stack and app-identity members) and
+ * `dynamic_object_access`. `allow` is the task's reviewed grant. Each reads
+ * `<rule>: <app>/<path>: <detail>`. Shipped production has no occurrence
+ * (design-r2 6.2.5), so the rules apply to every occurrence.
+ */
+export async function productionPolicyViolations(
+  dir: string,
+  apps: readonly StagedApp[],
+  allow: ProductionAllow = {},
+): Promise<string[]> {
+  const out: string[] = [];
+  const allowedDeps = new Set(
+    [...PRODUCTION_DEPENDENCY_ALLOWLIST, ...allow.dependencies ?? []].map((
+      id,
+    ) => id.toLowerCase()),
+  );
+  const allowedObjects = new Set(
+    (allow.objects ?? []).map((o) => o.toLowerCase()),
+  );
+  const allowedDynamic = new Set(
+    (allow.dynamic ?? []).map((d) => d.toLowerCase()),
+  );
+  const banned = BANNED_OBJECTS.filter(([kind, id]) =>
+    !allowedObjects.has(`${kind}:${id}`)
+  );
+  const bannedByName = new Map(
+    banned.map(([kind, id, name]) => [name.toLowerCase(), `${kind} ${id}`]),
+  );
+  for (const app of apps) {
+    if (app.folder === TEST_APP) continue;
+    for (const id of app.external) {
+      if (!allowedDeps.has(id.toLowerCase())) {
+        out.push(`dependency_not_allowed: ${app.folder}/app.json: ${id}`);
+      }
+    }
+    for (const e of await listTree(join(dir, app.folder), "task")) {
+      if (!e.path.toLowerCase().endsWith(".al")) continue;
+      const where = `${app.folder}/${e.path}`;
+      const src = await Deno.readTextFile(
+        join(dir, app.folder, ...e.path.split("/")),
+      );
+      const why = unreadable(src);
+      if (why) {
+        out.push(`unreadable: ${where}: ${why}`);
+        continue;
+      }
+      const code = stripAlNoise(src);
+      const found = new Set<string>();
+      const ref = (detail: string) =>
+        found.add(`test_detection_ref: ${where}: ${detail}`);
+      for (const m of code.matchAll(NAME_REF)) {
+        const hit = bannedByName.get(unquote(m[1]!));
+        if (hit) ref(`${m[0].trim()} (${hit})`);
+      }
+      for (const m of code.matchAll(ID_REF)) {
+        const id = Number(m[1]);
+        const hits = banned.filter(([, b]) => b === id);
+        if (hits.length > 0) {
+          ref(
+            `${m[0].trim()} (${hits.map(([k, b]) => `${k} ${b}`).join(", ")})`,
+          );
+        }
+      }
+      for (const re of [TEST_ONLY_TYPE, TEST_SUBTYPE, DETECTION_MEMBER]) {
+        const m = re.exec(code);
+        if (m) ref(m[0].trim());
+      }
+      const dynamic = (call: string, arg: string) => {
+        if (allowedDynamic.has(call.toLowerCase())) return;
+        if (LITERAL_OBJECT.test(arg.trim())) return;
+        found.add(
+          `dynamic_object_access: ${where}: ${call}(${arg.trim() || "..."})`,
+        );
+      };
+      for (const m of code.matchAll(STATIC_CALL)) {
+        dynamic(`${m[1]}.${m[2]}`, m[3]!);
+      }
+      for (const v of code.matchAll(RECORDREF_VAR)) {
+        const open = new RegExp(
+          `${escapeRe(v[1]!)}\\s*\\.\\s*Open\\s*\\(\\s*([^,)]*)`,
+          "gi",
+        );
+        for (const m of code.matchAll(open)) dynamic("RecordRef.Open", m[1]!);
+      }
+      out.push(...found);
+    }
   }
   return out;
 }
