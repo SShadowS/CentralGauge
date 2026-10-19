@@ -2007,3 +2007,57 @@ Deno.test("H-35 orch Sol r1 #5: G's pristine-Test check covers a Test app built 
     "harness bug: G's Test build key",
   );
 });
+
+// ---- H-35 S3.3: the environment fingerprint ----
+
+/** A reset that succeeds and carries a lineage's compatibility identity. */
+const LINEAGE_RESET = {
+  ...OK_RESET,
+  compat: { lineage: { id: "golden-test", golden_sha256: "a".repeat(64) } },
+};
+
+Deno.test("H-35 S3.3: every deployment records env_fp (compat + symbols lock + the container's compiler identity), and the judgment's provenance carries the one they share", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  const { judgment, log } = await judge(new BcLane(script(), ["C1"]), {
+    ...input,
+    deploy: { ...input.deploy, reset: LINEAGE_RESET },
+  });
+  const fps = new Set(log.deployments!.map((d) => d.env_fp));
+  assertEquals(fps.size, 1);
+  const [fp] = [...fps];
+  assert(/^[0-9a-f]{64}$/.test(fp ?? ""), String(fp));
+  assertEquals(judgment.provenance!.env_fp, fp);
+  // Without a lineage (a mechanism with no compat) there is no env_fp.
+  const again = await setup("correct");
+  const bare = await judge(new BcLane(script(), ["C1"]), again.input);
+  assertEquals(bare.judgment.provenance!.env_fp, null);
+});
+
+Deno.test("H-35 S3.3: deployments on containers of different environments in one judgment are a harness bug", async () => {
+  class PerContainer extends FakeBc {
+    override harnessCompilerIdentity(c: string): Promise<string> {
+      return Promise.resolve(`compiler-of-${c}`);
+    }
+  }
+  // G passes on C1 after one infra failure on C2 or the other way round:
+  // two G attempts on two containers.
+  let calls = 0;
+  const bc = new PerContainer((cu, deployed, container) => {
+    if (cu === 80010 && calls++ === 0) {
+      throw new ContainerError("soap down", container, "test");
+    }
+    return scripted(cu, deployed);
+  });
+  const { input } = await setup("correct");
+  await assertRejects(
+    () =>
+      judge(new BcLane(bc, ["C1", "C2"]), {
+        ...input,
+        deploy: { ...input.deploy, reset: LINEAGE_RESET },
+      }),
+    Error,
+    "harness bug: deployments of one judgment span environments",
+  );
+});

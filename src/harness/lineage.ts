@@ -70,3 +70,18 @@ export async function loadLineage(path: string): Promise<Lineage> {
   }
   return l;
 }
+
+/**
+ * H-35 S3.3: the lineage's part of the environment fingerprint: every
+ * identity field, never the web-service credentials or the host path
+ * template (neither changes what a judgment runs against).
+ */
+export function lineageCompat(l: Lineage): Record<string, unknown> {
+  const {
+    soap_user: _user,
+    soap_password: _password,
+    golden_path_template: _path,
+    ...identity
+  } = l;
+  return identity;
+}

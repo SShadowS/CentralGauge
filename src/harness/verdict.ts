@@ -40,6 +40,7 @@ import {
   deployAndTest,
   effectiveBuildKey,
   isCascadeDiagnostic,
+  lockDigestOf,
   prepareApps,
   type ProductionManifest,
   productionManifest,
@@ -50,7 +51,7 @@ import {
   throwIfCrashed,
 } from "./bc-lane.ts";
 import { safeCopyTree } from "./fsutil.ts";
-import { hashFile, hashTree } from "./hash.ts";
+import { hashFile, hashJson, hashTree } from "./hash.ts";
 import {
   type InfraSignature,
   JudgmentRecordSchema,
@@ -279,18 +280,46 @@ export interface DeploymentRecord {
     build_key: string | null;
     source_tree_hash: string | null;
   }[];
+  /**
+   * H-35 S3.3 (design-r4 5.2): the container's environment fingerprint,
+   * null when the reset mechanism carries no lineage (absent before S3).
+   */
+  env_fp?: string | null;
+}
+
+/**
+ * H-35 S3.3 (design-r4 5.1, ruling 2026-10-19 (a)): env_fp v1 =
+ * hashJson(the lineage's compatibility identity, the mechanism, the symbols
+ * lock digest, the container's live compiler identity). Null without a
+ * lineage. Image digest, SQL edition, fs baseline and egress join the
+ * lineage's compat with `harness baseline create` (a new env_fp).
+ */
+async function envFp(
+  ctx: JudgeContext,
+  container: string,
+): Promise<string | null> {
+  const compat = ctx.i.deploy.reset.compat;
+  if (!compat) return null;
+  return await hashJson({
+    compat,
+    mechanism: ctx.i.deploy.reset.id,
+    symbols_lock: await lockDigestOf(ctx.i.lock),
+    compiler: await ctx.lane.bc.harnessCompilerIdentity(container),
+  });
 }
 
 /** Records one hold's deployment (every package carries its digest). */
-function recordDeployment(
+async function recordDeployment(
   ctx: JudgeContext,
   hold: string,
   container: string,
   wanted: WantedApp[],
-): void {
+): Promise<void> {
+  const env_fp = await envFp(ctx, container);
   (ctx.log.deployments ??= []).push({
     hold,
     container,
+    env_fp,
     apps: wanted.map((w) => {
       if (!w.sha256) throw new Error(`harness bug: ${w.name} has no digest`);
       return {
@@ -1730,14 +1759,24 @@ export async function judge(
   // H-35 v2 (design-r2 5, design-r3 6.2): the gate, then the scorers.
   const policy = { passed: ctx.policy.length === 0, violations: ctx.policy };
   const verdict = verdictOf(list, policy);
+  // H-35 S3.3 (design-r4 5.2): a judgment is of one environment. Routing
+  // makes a mix impossible; until it does this is the fail-closed backstop.
+  const envs = new Set((log.deployments ?? []).map((d) => d.env_fp ?? null));
+  if (envs.size > 1) {
+    throw new Error(
+      `harness bug: deployments of one judgment span environments (${
+        [...envs].map((e) => e?.slice(0, 12) ?? "none").join(", ")
+      })`,
+    );
+  }
   const judgment = JudgmentRecordSchema.parse({
     v: 2,
     policy,
     provenance: {
       harness_commit: i.harnessCommit ?? null,
       production_manifest: ctx.manifest,
-      // The environment lineage arrives with S3 (design-r3 8); never inferred.
-      env_fp: null,
+      // Null with no deployment or no lineage; never inferred.
+      env_fp: [...envs][0] ?? null,
     },
     id: log.judgment_id,
     execution_id: i.executionId,

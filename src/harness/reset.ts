@@ -12,7 +12,7 @@
  */
 
 import { join } from "@std/path";
-import type { Lineage } from "./lineage.ts";
+import { type Lineage, lineageCompat } from "./lineage.ts";
 import { ConfigurationError, ContainerError } from "../errors.ts";
 
 /** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
@@ -42,6 +42,8 @@ export interface ResetRecord {
 export interface ResetMechanism {
   readonly id: string;
   readonly policyVersion: number;
+  /** H-35 S3.3: the lineage's compatibility identity (env_fp), when it has one. */
+  readonly compat?: Readonly<Record<string, unknown>>;
   reset(container: string): Promise<ResetRecord>;
 }
 
@@ -222,19 +224,23 @@ export function goldenReset(o: {
   spawn?: Spawn;
 }): ResetMechanism {
   const spawn = o.spawn ?? spawnProcess;
-  return commandReset({
-    id: "golden-restore",
-    policyVersion: o.lineage.reset_policy_version,
-    run: (container) =>
-      spawn("pwsh", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-File",
-        join(o.repoRoot, ...RESET_SCRIPT),
-        "-Container",
-        container,
-        "-Lineage",
-        o.lineagePath,
-      ], o.dockerEnv),
-  });
+  return {
+    ...commandReset({
+      id: "golden-restore",
+      policyVersion: o.lineage.reset_policy_version,
+      run: (container) =>
+        spawn("pwsh", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-File",
+          join(o.repoRoot, ...RESET_SCRIPT),
+          "-Container",
+          container,
+          "-Lineage",
+          o.lineagePath,
+        ], o.dockerEnv),
+    }),
+    // H-35 S3.3: the lineage's identity enters every deployment's env_fp.
+    compat: { lineage: lineageCompat(o.lineage) },
+  };
 }

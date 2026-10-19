@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
-import { loadLineage } from "../../../src/harness/lineage.ts";
+import { lineageCompat, loadLineage } from "../../../src/harness/lineage.ts";
 import { goldenReset, RESET_PHASES } from "../../../src/harness/reset.ts";
 import { sha256Hex } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -109,4 +109,22 @@ Deno.test("H-35 S3.2 loadLineage: the stored inventory hash is sha256 of its byt
     join("infra/harness-reset/lineages", j.inventory.path),
   );
   assertEquals(await sha256Hex(bytes), j.inventory.sha256);
+});
+
+Deno.test("H-35 S3.3 lineageCompat: identity fields only (no credentials, no host path); goldenReset carries it as its compat", async () => {
+  const lineagePath = await copyLineage();
+  const lineage = await loadLineage(lineagePath);
+  const compat = lineageCompat(lineage);
+  assert(!("soap_password" in compat) && !("soap_user" in compat));
+  assert(!("golden_path_template" in compat));
+  assertEquals(compat["golden_sha256"], lineage.golden_sha256);
+  assertEquals(compat["inventory"], lineage.inventory);
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath,
+    lineage,
+    dockerEnv: {},
+    spawn: () => Promise.resolve({ code: 0, stdout: "" }),
+  });
+  assertEquals(m.compat, { lineage: compat });
 });

@@ -1662,7 +1662,7 @@ export interface DeployContext {
    * H-35 run 002 Sol r1 #3: called as each attempt starts deploying (after
    * its reset), whatever the attempt's outcome: the deployment record.
    */
-  onDeploy?: (container: string) => void;
+  onDeploy?: (container: string) => void | Promise<void>;
 }
 
 export interface Deployed {
@@ -1839,7 +1839,7 @@ export async function deployAndTest(
     await saveLedger(i.ctx.ledgerRoot, container, {});
   }
   let r: Omit<DeployTestResult, "cleanupError" | "reset">;
-  i.ctx.onDeploy?.(container);
+  await i.ctx.onDeploy?.(container);
   try {
     const deployed = await deploy(bc, container, i.wanted, i.ctx);
     r = deployed.candidateFailure
