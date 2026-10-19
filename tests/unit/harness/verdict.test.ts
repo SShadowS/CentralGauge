@@ -1565,3 +1565,17 @@ Deno.test("H-35: scorer versions bumped (build 4, pass_to_pass 6, fail_to_pass 4
     agent_tests: "1",
   });
 });
+
+Deno.test("H-35 (design-r3 3.2): without a build cache, a change judgment compiles each production app once (G) and A publishes those packages", async () => {
+  const bc = script();
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.verdict, "pass");
+  for (const app of ["Core", "Rental"]) {
+    assertEquals(bc.compiles.filter((f) => f === app).length, 1, app);
+  }
+  assertEquals(bc.compiles.filter((f) => f === "Test").length, 2);
+  assert(log.notes.some((n) => /^production manifest: [0-9a-f]{64}$/.test(n)));
+});

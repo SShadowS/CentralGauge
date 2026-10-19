@@ -39,6 +39,8 @@ import {
   deployAndTest,
   isCascadeDiagnostic,
   prepareApps,
+  type ProductionManifest,
+  productionManifest,
   scorerPassed,
   type TestMessage,
   type TestRow,
@@ -724,7 +726,12 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   if (gw.violations.length > 0) return scores.failRest();
 
   const pristineApps = await readAppGraph(i.pristine);
-  const prepare = (w: VerdictWorkspace, name: string, label: string) =>
+  const prepare = (
+    w: VerdictWorkspace,
+    name: string,
+    label: string,
+    production?: ProductionManifest,
+  ) =>
     prepareApps(ctx.lane, {
       pristine: i.pristine,
       pristineApps,
@@ -736,12 +743,16 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,
+      ...(production ? { production } : {}),
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
   const prep = await prepare(gw, "apps", "candidate");
   recordBuild(ctx, prep, "candidate");
   if (!prep.buildOk) return scores.failRest();
   scores.set("build", true);
+  // H-35 (design-r3 3.2): A publishes exactly G's production packages.
+  const manifest = await productionManifest(prep, gw.dir);
+  log.notes.push(`production manifest: ${manifest.digest}`);
 
   const p2p: TestSpec[] = scores.has("pass_to_pass")
     ? t.pass_to_pass.map((r) => ({
@@ -825,7 +836,13 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
         cleanupIds: [...prep.candidateIds].reverse(),
       }
       : null;
-    await scoreAgentTests(ctx, aw, testSide, control, prepare);
+    await scoreAgentTests(
+      ctx,
+      aw,
+      testSide,
+      control,
+      (w, name, label) => prepare(w, name, label, manifest),
+    );
   }
   scores.failRest();
 }
@@ -1018,6 +1035,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     changed: string[],
     name: string,
     label: string,
+    production?: ProductionManifest,
   ) =>
     prepareApps(ctx.lane, {
       pristine: i.pristine,
@@ -1030,6 +1048,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,
+      ...(production ? { production } : {}),
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
 
@@ -1061,6 +1080,9 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     );
   }
   scores.set("build", true);
+  // H-35 (design-r3 3.3): A_ref publishes exactly G' production packages.
+  const manifest = await productionManifest(sp, sw.dir);
+  log.notes.push(`production manifest: ${manifest.digest}`);
   let control: { prep: Prepared; specs: TestSpec[] } | null = null;
   if (scores.has("pass_to_pass")) {
     const p2p: TestSpec[] = t.pass_to_pass.map((r) => ({
@@ -1110,6 +1132,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     vw.changed,
     "apps-reference",
     "reference",
+    manifest,
   );
   recordBuild(ctx, prep, "reference");
 

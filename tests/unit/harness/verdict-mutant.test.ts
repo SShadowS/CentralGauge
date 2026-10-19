@@ -259,8 +259,8 @@ Deno.test("mutant_kill (H-04): a mutant build that crashes (no diagnostic) is in
 
 Deno.test("mutant_kill (H-04): a reference build that crashes (no diagnostic) is unscored, never a build failure", async () => {
   const fake = bc();
-  fake.crashFor = (p) =>
-    p.includes("/apps-reference/") && p.endsWith("/Rental");
+  // H-35: A_ref compiles only its Test app (production is G' manifest).
+  fake.crashFor = (p) => p.includes("/apps-reference/") && p.endsWith("/Test");
   const { judgment, log } = await judge(
     new BcLane(fake, ["C1"]),
     await setup({ "off-by-one": "exit(9);" }, { suite: "reference-tests" }),
@@ -625,7 +625,11 @@ Deno.test("mutant_kill (M4-17a): tests added to a shipped codeunit are extracted
       },
     }),
   );
-  assertEquals(log.notes, []);
+  // H-35: the production manifest digest is the only note.
+  assertEquals(
+    log.notes.filter((n) => !n.startsWith("production manifest: ")),
+    [],
+  );
   assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
     ["build", true],
     ["pass_to_pass", true],

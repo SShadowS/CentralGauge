@@ -20,7 +20,7 @@ import type { ContainerOutcome } from "../health/types.ts";
 import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { SymbolPackage } from "./identity.ts";
 import type { TestResultSchema } from "./records.ts";
-import { readAppJsonRaw, type StagedApp } from "./staging.ts";
+import { readAppGraph, readAppJsonRaw, type StagedApp } from "./staging.ts";
 import { ContainerError, ValidationError } from "../errors.ts";
 import {
   classifyPublishFailure,
@@ -1078,6 +1078,60 @@ export interface PrepareInput {
   versionPlan: VersionPlan;
   /** H-35: how every app of this prepare is compiled. */
   policy: BuildPolicy;
+  /**
+   * H-35 (design-r3 3.2): the judgment's production manifest. Its apps are
+   * not compiled: their source must equal the manifest's, and they publish
+   * the manifest's files (G and A alike, with or without a cache).
+   */
+  production?: ProductionManifest;
+}
+
+/** H-35 (design-r3 3.2): one judgment's production builds, published by every deployment. */
+export interface ProductionManifest {
+  /** sha256 of the canonical content (recorded in the verdict log). */
+  digest: string;
+  /** Folder -> the package, its sha256, its source tree hash and build key. */
+  apps: Map<string, {
+    id: string;
+    file: string;
+    sha256: string;
+    source: string;
+    key: string | null;
+  }>;
+}
+
+/** The production manifest of a prepare: every app of `dir` but `exclude` (the Test app). */
+export async function productionManifest(
+  prep: Prepared,
+  dir: string,
+  exclude: readonly string[] = ["Test"],
+): Promise<ProductionManifest> {
+  if (!prep.buildOk) throw new Error("a production manifest needs a build");
+  const folderOf = new Map(
+    (await readAppGraph(dir)).map((a) => [a.id, a.folder]),
+  );
+  const apps: ProductionManifest["apps"] = new Map();
+  for (const w of prep.wanted) {
+    const folder = folderOf.get(w.id);
+    if (!folder || exclude.includes(folder)) continue;
+    apps.set(folder, {
+      id: w.id,
+      file: w.file,
+      sha256: await hashFile(dirname(w.file), w.file),
+      source: await hashTree(join(dir, folder), "task"),
+      key: prep.keys.get(folder) ?? null,
+    });
+  }
+  const digest = await hashJson(
+    [...apps].sort(([a], [b]) => a < b ? -1 : 1).map(([folder, e]) => ({
+      folder,
+      id: e.id,
+      sha256: e.sha256,
+      source: e.source,
+      key: e.key,
+    })),
+  );
+  return { digest, apps };
 }
 
 /**
@@ -1213,7 +1267,17 @@ async function prepareOn(
     container,
     o,
   );
-  const prereqs = graph.filter((a) => !affected.has(a.folder));
+  const given = o.production?.apps ?? new Map();
+  for (const [folder, e] of given) {
+    if (await hashTree(join(o.candidateDir, folder), "task") !== e.source) {
+      throw new Error(
+        `harness bug: ${folder} differs from the judgment's production manifest`,
+      );
+    }
+  }
+  const prereqs = graph.filter((a) =>
+    !affected.has(a.folder) && !given.has(a.folder)
+  );
   const pre = await buildApps(lane.bc, container, {
     srcDir: o.pristine,
     apps: prereqs,
@@ -1237,11 +1301,19 @@ async function prepareOn(
       [failedPre.folder],
     );
   }
-  const prebuilt = new Map(pre.map((b) => [b.folder, b.file!] as const));
-  const preKeys = new Map(
-    pre.filter((b) => b.key).map((b) => [b.folder, b.key!] as const),
+  const prebuilt = new Map([
+    ...pre.map((b) => [b.folder, b.file!] as const),
+    ...[...given].map(([f, e]) => [f, e.file] as const),
+  ]);
+  const preKeys = new Map([
+    ...pre.filter((b) => b.key).map((b) => [b.folder, b.key!] as const),
+    ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
+      [f, e.key!] as const
+    ),
+  ]);
+  const candApps = graph.filter((a) =>
+    affected.has(a.folder) && !given.has(a.folder)
   );
-  const candApps = graph.filter((a) => affected.has(a.folder));
   const built = await buildApps(lane.bc, container, {
     srcDir: o.candidateDir,
     apps: candApps,
@@ -1258,9 +1330,10 @@ async function prepareOn(
   throwIfCrashed(built, container, o.label ?? "candidate");
   const all = [...pre, ...built];
   const buildOk = built.every((b) => b.ok);
-  const fileOf = new Map(
-    all.filter((b) => b.ok).map((b) => [b.folder, b.file!] as const),
-  );
+  const fileOf = new Map([
+    ...all.filter((b) => b.ok).map((b) => [b.folder, b.file!] as const),
+    ...[...given].map(([f, e]) => [f, e.file] as const),
+  ]);
   const idOf = new Map(graph.map((a) => [a.folder, a.id]));
   const wanted: WantedApp[] = buildOk
     ? graph.map((a) => ({
@@ -1274,6 +1347,7 @@ async function prepareOn(
       file: fileOf.get(a.folder)!,
       role: cands.has(a.folder) ? "candidate" : "prereq",
       depends: a.depends.map((d) => idOf.get(d)!),
+      ...(given.has(a.folder) ? { sha256: given.get(a.folder)!.sha256 } : {}),
     }))
     : [];
   return {
@@ -1284,9 +1358,14 @@ async function prepareOn(
     buildOk,
     compile_ms: all.reduce((s, b) => s + b.compile_ms, 0),
     per_app_compiles: all.filter((b) => b.attempted).length,
-    keys: new Map(
-      all.filter((b) => b.ok && b.key).map((b) => [b.folder, b.key!] as const),
-    ),
+    keys: new Map([
+      ...all.filter((b) => b.ok && b.key).map((b) =>
+        [b.folder, b.key!] as const
+      ),
+      ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
+        [f, e.key!] as const
+      ),
+    ]),
   };
 }
 
@@ -1467,6 +1546,17 @@ export async function deploy(
   ctx: DeployContext,
 ): Promise<Deployed> {
   const t0 = performance.now();
+  // H-35 (design-r3 3.3): a manifest package publishes only as recorded.
+  for (const w of wanted) {
+    if (
+      w.sha256 !== undefined &&
+      await hashFile(dirname(w.file), w.file) !== w.sha256
+    ) {
+      throw new Error(
+        `harness bug: ${w.name} (${w.file}) no longer matches its manifest sha256`,
+      );
+    }
+  }
   const ledger = await loadLedger(ctx.ledgerRoot, container);
   const allow = await trustedHarnessAppIds(ctx.trustedRoots, ledger);
   const plan = planAppSync(

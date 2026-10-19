@@ -22,6 +22,7 @@ import {
   dirBuildCache,
   type LockedSymbols,
   prepareApps,
+  productionManifest,
   runTests,
   scorerPassed,
 } from "../../../src/harness/bc-lane.ts";
@@ -1932,4 +1933,82 @@ Deno.test("H-35: prepareApps versionPlan judge publishes every app as a candidat
     core.version !== "1.0.0.0",
     "the backend plan still stamps prerequisites",
   );
+});
+
+// ---- H-35 S1.7b (design-r3 3.2, 3.3): one production build for G and A ----
+
+/** G's prepare (judge plan, Cloud) of a workspace; A is a copy whose Test differs. */
+async function gAndA() {
+  const bc = new FakeBc();
+  const lane = new BcLane(bc, ["C1"]);
+  const pristine = await workspace();
+  const g = await workspace();
+  const a = await workspace();
+  await write(
+    a,
+    "Test/src/Agent.al",
+    `codeunit 81000 "Agent"\n{\n    Subtype = Test;\n}\n`,
+  );
+  const l = await lock();
+  const prepare = async (dir: string, changed: string[], extra = {}) =>
+    await prepareApps(lane, {
+      pristine,
+      pristineApps: await readAppGraph(pristine),
+      candidateDir: dir,
+      candidateApps: await readAppGraph(dir),
+      changed,
+      workDir: await tmp(),
+      lock: l,
+      versionPlan: "judge",
+      policy: CLOUD_POLICY,
+      ...extra,
+    });
+  const gp = await prepare(g, []);
+  const manifest = await productionManifest(gp, g);
+  return { bc, lane, pristine, a, gp, manifest, prepare };
+}
+
+Deno.test("H-35: A publishes G's production files (the manifest), compiling only its Test app, without any build cache", async () => {
+  const { bc, a, gp, manifest, prepare } = await gAndA();
+  assertEquals([...manifest.apps.keys()].sort(), ["Core", "Rental"]);
+  assert(/^[0-9a-f]{64}$/.test(manifest.digest));
+  const before = bc.compiles.length;
+  const ap = await prepare(a, ["Test"], { production: manifest });
+  assertEquals(bc.compiles.slice(before), ["Test"]);
+  for (const id of [IDS.core, IDS.rental]) {
+    assertEquals(
+      ap.wanted.find((w) => w.id === id)!.file,
+      gp.wanted.find((w) => w.id === id)!.file,
+    );
+  }
+  const core = ap.wanted.find((w) => w.id === IDS.core)!;
+  assertEquals(core.sha256, manifest.apps.get("Core")!.sha256);
+  assertEquals(core.role, "candidate");
+});
+
+Deno.test("H-35: a production source in A that differs from G's manifest is a harness bug: the prepare throws", async () => {
+  const { a, manifest, prepare } = await gAndA();
+  await write(
+    a,
+    "Rental/src/R.al",
+    `codeunit 70200 "CGR Rental"\n{\n    // drift\n}\n`,
+  );
+  await assertRejects(
+    () => prepare(a, ["Rental", "Test"], { production: manifest }),
+    Error,
+    "production manifest",
+  );
+});
+
+Deno.test("H-35: deploy refuses a package whose bytes no longer match its manifest sha256, before touching the container", async () => {
+  const { bc, gp } = await gAndA();
+  const w = gp.wanted.map((x) => ({ ...x, sha256: "0".repeat(64) }));
+  const syncs = bc.syncs.length;
+  const ledgerRoot = join(await tmp(), "ledger");
+  await assertRejects(
+    () => deploy(bc, "C1", w, { ledgerRoot, trustedRoots: [] }),
+    Error,
+    "sha256",
+  );
+  assertEquals(bc.syncs.length, syncs);
 });

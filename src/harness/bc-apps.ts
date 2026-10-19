@@ -36,6 +36,8 @@ export interface WantedApp {
   file: string;
   role: AppRole;
   depends: string[];
+  /** H-35: the package digest a production manifest recorded; deploy checks it. */
+  sha256?: string;
 }
 
 export interface SyncPlan {
