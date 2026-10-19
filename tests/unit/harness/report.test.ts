@@ -2181,3 +2181,55 @@ Deno.test("buildReport (H-18): the declared p_value test is the one testContrast
     "declared test",
   );
 });
+
+// ---- H-35 S2.5: scoring summary and the task descriptor ----
+
+Deno.test("H-35 S2.5 buildReport: the oracle descriptor reaches record validation; a v1 descriptor mismatch refuses the report", async () => {
+  const recs = await records();
+  const seen: string[] = [];
+  const desc = {
+    kind: "bugfix" as const,
+    scorers: ["build", "pass_to_pass"],
+    pass_to_pass: [],
+    fail_to_pass: null,
+    mutants: [],
+    production_allow: null,
+    recovered_from: null,
+  };
+  await assertRejects(
+    () =>
+      buildReport(recs, {
+        resamples: 50,
+        descriptor: (h) => {
+          seen.push(h);
+          return Promise.resolve(desc);
+        },
+      }),
+    ValidationError,
+    "!= expected",
+  );
+  assert(seen.length > 0);
+});
+
+Deno.test("H-35 S2.5 buildReport: per arm scoring summary (v1 fields unavailable), rendered with its populations and policy line", async () => {
+  const r = await buildReport(await records(), { resamples: 50 });
+  assertEquals(r.scoring!.map((s) => [s.arm, s.total, s.judged, s.legacy]), [
+    ["plain", 2, 2, 2],
+    ["skills", 2, 2, 2],
+  ]);
+  assertEquals(r.scoring![0]!.policy.unavailable, 2);
+  assertEquals(r.scoring![0]!.g.unavailable, 2);
+  assertEquals(r.scoring![0]!.composite, { passed: 1, total: 2 });
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "Scoring (H-35");
+  assertStringIncludes(
+    text,
+    "plain: policy: 0 failed, 0 compliant, 2 unavailable (v1)",
+  );
+  assertStringIncludes(
+    text,
+    "G passes / G measured (conditional on G measured): 0/0",
+  );
+  assertStringIncludes(text, "composite passes / total: 1/2");
+  assertStringIncludes(text, "build: pass 1, fail 1");
+});

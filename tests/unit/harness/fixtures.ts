@@ -4,10 +4,12 @@
  * validateCampaignRecords unless a test deliberately breaks it.
  */
 
+import { join } from "@std/path";
 import {
   type Experiment,
   ExperimentSchema,
 } from "../../../src/harness/config.ts";
+import { hashJson } from "../../../src/harness/hash.ts";
 import { taskSetHash } from "../../../src/harness/identity.ts";
 import {
   manifestHash,
@@ -97,17 +99,22 @@ export async function campaign(
     tasks?: number;
     /** Replaces the plain-vs-skills experiment (same arms and `vary`). */
     experiment?: Experiment;
+    /** H-35: task id -> oracle hash (e.g. a stored preimage's, storeDescriptor). */
+    oracles?: Record<string, string>;
   } = {},
 ): Promise<CampaignRecord> {
   const repeats = opts.repeats ?? 1;
-  const taskHashes: Record<string, [string, string]> = opts.tasks === undefined
-    ? TASK_HASHES
-    : Object.fromEntries(
+  const taskHashes: Record<string, [string, string]> = {
+    ...(opts.tasks === undefined ? TASK_HASHES : Object.fromEntries(
       Array.from({ length: opts.tasks }, (_, i) => [
         `HX-00${i + 1}`,
         [H((2 * i + 1).toString(16)), H((2 * i + 2).toString(16))],
       ]),
-    );
+    )),
+  };
+  for (const [id, oracle] of Object.entries(opts.oracles ?? {})) {
+    taskHashes[id] = [taskHashes[id]![0], oracle];
+  }
   const experiment = opts.experiment ?? ExperimentSchema.parse({
     id: "skills-vs-plain",
     hypothesis: "Skills cut cost per solved task.",
@@ -166,6 +173,36 @@ export async function campaign(
       1,
     ),
   };
+}
+
+/**
+ * H-35: stores a task preimage (bugfix, `scorers`) under resultsRoot, as
+ * judging does before a v2 judgment; returns its oracle hash.
+ */
+export async function storeDescriptor(
+  resultsRoot: string,
+  taskId: string,
+  scorers: string[],
+): Promise<string> {
+  const preimage = {
+    part: "oracle",
+    id: taskId,
+    kind: "bugfix",
+    scorers,
+    pass_to_pass: [],
+    fail_to_pass: null,
+    mutants: [],
+    oracle: null,
+    mutants_tree: null,
+    correct: null,
+  };
+  const hash = await hashJson(preimage);
+  await Deno.mkdir(join(resultsRoot, "task-oracle"), { recursive: true });
+  await Deno.writeTextFile(
+    join(resultsRoot, "task-oracle", `${hash}.json`),
+    JSON.stringify({ rule: "oracleHash@1", preimage }),
+  );
+  return hash;
 }
 
 let seq = 0;

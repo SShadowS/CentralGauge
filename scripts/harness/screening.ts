@@ -26,6 +26,7 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
+import { loadOracleDescriptor } from "../../src/harness/task-oracle.ts";
 import {
   campaignJudging,
   cellsFromRecords,
@@ -1061,7 +1062,10 @@ export async function loadScreenCampaigns(
       );
     }
     const data = await loadCampaignData(store, c);
-    await validateCampaignRecords(data);
+    // H-35 S2.5: scorer names checked against the task preimage store.
+    await validateCampaignRecords(data, {
+      descriptor: (h) => loadOracleDescriptor(resultsDir, h),
+    });
     const byExecution = new Map<string, JudgmentRecord[]>();
     for (const j of data.judgments) {
       byExecution.set(j.execution_id, [

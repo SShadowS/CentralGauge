@@ -69,6 +69,14 @@ import {
   storeOraclePreimage,
 } from "../../src/harness/task-oracle.ts";
 import {
+  appendCompletion,
+  freezePairing,
+  loadPairing,
+  type PairingReport,
+  pairingReport,
+  renderPairing,
+} from "../../src/harness/judgment-report.ts";
+import {
   compareInstant,
   isOwnerApproval,
   outcomePolicy,
@@ -496,6 +504,8 @@ export async function harnessReport(
       prereg?.doc.measures.fingerprint,
     ),
     traces: await loadTraces(opts.resultsDir, executions),
+    // H-35 S2.5: scorer names checked against the task preimage store.
+    descriptor: (h) => loadOracleDescriptor(opts.resultsDir, h),
     // H-04b: the rejudge budget counts only the current scorer suite.
     judging: {
       ...(opts.judging === "current"
@@ -2128,6 +2138,33 @@ export async function harnessRejudge(
         opened.refapps.set(v, await resolveRefapp(o.root, v));
       }
     }
+    // H-35 S2.5 (design-r5 5.1): the pairing's left side is frozen before
+    // any judging: each due execution with an old judgment, and the one it
+    // had. Each new judgment is appended as it lands.
+    const cells = due.flatMap((e) => {
+      const j = latestJudgment(
+        data.judgments.filter((x) => x.execution_id === e.id),
+      );
+      return j
+        ? [{
+          execution_id: e.id,
+          cell: `${e.arm} ${e.task_id} ${e.repeat}`,
+          workspace_hash: j.workspace_hash,
+          old_judgment_id: j.id,
+          scorer_fingerprint: j.scorer_fingerprint,
+        }]
+        : [];
+    });
+    const pairing = cells.length === 0 ? null : await freezePairing(
+      env.resultsRoot,
+      {
+        cohort: { campaign: c.id, started_at: new Date().toISOString() },
+        cells,
+      },
+    );
+    if (pairing) {
+      console.log(`${colors.cyan("[info]")} pairing frozen: ${pairing}`);
+    }
     // H-24: one judging per lane container at a time (the lane leases each
     // container and reroutes infra faults, as in harness run). Each judgment
     // is written once, by judgeExecution, in this one process. The first
@@ -2139,6 +2176,13 @@ export async function harnessRejudge(
       async (env, cell, e) => {
         const oracle = byTask.get(e.task_id)!.oracle;
         const j = await rejudgeExecution(env, cell, e, oracle, forced);
+        if (pairing && cells.some((x) => x.execution_id === e.id)) {
+          await appendCompletion(env.resultsRoot, pairing, {
+            execution_id: e.id,
+            new_judgment_id: j.id,
+            at: new Date().toISOString(),
+          });
+        }
         console.log(
           `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
             oracle.slice(0, 12)
@@ -2157,6 +2201,35 @@ export async function harnessRejudge(
   } finally {
     await h.close();
   }
+}
+
+/**
+ * `harness pairing` (H-35 S2.5, design-r5 5.1): a rejudge's frozen pairing,
+ * reconciled with its completions. Read-only; a changed left side is refused.
+ */
+export async function harnessPairing(
+  digest: string,
+  resultsDir: string,
+): Promise<PairingReport> {
+  const { pairing, completions } = await loadPairing(resultsDir, digest);
+  const store = new RecordStore(resultsDir);
+  const byId = new Map<string, JudgmentRecord>();
+  for (const c of pairing.cells) {
+    for (const j of await store.judgments(c.execution_id)) byId.set(j.id, j);
+  }
+  const unknown = new Set<string>();
+  for (const j of byId.values()) {
+    if (
+      await loadOracleDescriptor(resultsDir, j.task_oracle_hash) === "unknown"
+    ) unknown.add(j.task_oracle_hash);
+  }
+  return pairingReport(
+    digest,
+    pairing,
+    completions,
+    (id) => byId.get(id),
+    (j) => unknown.has(j.task_oracle_hash),
+  );
 }
 
 /** One line per measure record: what the report's exploratory section reads. */
@@ -2887,6 +2960,22 @@ export function registerHarnessCommand(
         console.log(
           opts.json ? JSON.stringify(report, null, 2) : renderReport(report),
         );
+      })
+    );
+
+  parent
+    .command(
+      "pairing <digest:string>",
+      "Report a rejudge's frozen pairing: old x new verdict matrix, reason flags, pending and missing cells",
+    )
+    .option("--results-dir <dir:string>", "Harness records root", {
+      default: "results/harness",
+    })
+    .option("--json", "Print the pairing report as JSON")
+    .action((opts, digest: string) =>
+      fail(async () => {
+        const r = await harnessPairing(digest, opts.resultsDir);
+        console.log(opts.json ? JSON.stringify(r, null, 2) : renderPairing(r));
       })
     );
 

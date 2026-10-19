@@ -18,6 +18,7 @@ import {
   harnessJudgeFixture,
   harnessJudgePending,
   harnessMeasure,
+  harnessPairing,
   harnessQualify,
   harnessRejudge,
   harnessReport,
@@ -137,12 +138,14 @@ import {
   ValidationError,
 } from "../../../../src/errors.ts";
 import { exists } from "../../../../src/harness/fsutil.ts";
+import { loadPairing } from "../../../../src/harness/judgment-report.ts";
 import { RecordStore } from "../../../../src/harness/records.ts";
 import {
   campaign,
   CAMPAIGN_ID,
   execution,
   judgment,
+  storeDescriptor,
 } from "../../harness/fixtures.ts";
 
 async function write(root: string, rel: string, text: string) {
@@ -1730,7 +1733,10 @@ Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under 
   for (const current of [true, false]) {
     const dir = await testTempDir();
     const store = new RecordStore(dir);
-    const c = await campaign();
+    // H-35 S2.5: a v2 judgment's task preimage is stored (the report checks).
+    const c = await campaign({
+      oracles: { "HX-001": await storeDescriptor(dir, "HX-001", ["build"]) },
+    });
     await store.writeCampaign(c);
     const e = execution(c);
     await store.writeExecution(e);
@@ -1740,12 +1746,13 @@ Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under 
         v: 2 as const,
         scorer_versions: SCORER_SUITE,
         scorer_fingerprint: await currentScorerFingerprint(),
-        scorers: [{
-          name: "build",
+        // H-35 S2.5: the effective set of a change task under this suite.
+        scorers: ["build", "agent_tests"].map((name) => ({
+          name,
           passed: null,
           state: "unscored" as const,
           tests: [],
-        }],
+        })),
         policy: { passed: true, violations: [] },
         provenance: {
           harness_commit: null,
@@ -8885,4 +8892,49 @@ Deno.test("H-35 S2.3: judging stores the task preimage under the judgment's orac
   );
   assert(d !== "unknown");
   assertEquals(d.kind, "bugfix");
+});
+
+Deno.test("rejudge (H-35 S2.5): freezes the pairing of every due execution with an old judgment before judging, and appends each new judgment", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  await unscoredJudgments(t, e.id, 1);
+  const before = await t.env.store.judgments(e.id);
+  const old = before.reduce((a, b) => (b.ended_at > a.ended_at ? b : a));
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 1);
+  const dir = join(t.env.resultsRoot, "pairings");
+  const frozen = [];
+  for await (const f of Deno.readDir(dir)) {
+    if (f.name.endsWith(".json")) frozen.push(f.name.slice(0, -5));
+  }
+  assertEquals(frozen.length, 1);
+  const { pairing, completions } = await loadPairing(
+    t.env.resultsRoot,
+    frozen[0]!,
+  );
+  assertEquals(pairing.cohort.campaign, c.id);
+  assertEquals(
+    pairing.cells.map((x) => [x.execution_id, x.old_judgment_id]),
+    [[e.id, old.id]],
+  );
+  const after = await t.env.store.judgments(e.id);
+  assertEquals(completions.length, 1);
+  assertEquals(completions[0]!.execution_id, e.id);
+  assert(after.some((j) => j.id === completions[0]!.new_judgment_id));
+  assert(!before.some((j) => j.id === completions[0]!.new_judgment_id));
+  // `harness pairing` reconciles it: one completed pair, nothing pending.
+  const report = await harnessPairing(frozen[0]!, t.env.resultsRoot);
+  assertEquals([report.pairs, report.pending, report.missing], [1, [], []]);
+  assertEquals(report.cells[0]!.old, "unscored");
+  assert(report.cells[0]!.flags.includes("infra"));
 });

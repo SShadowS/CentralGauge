@@ -17,6 +17,8 @@ import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
 import { type CampaignRecords, validateCampaignRecords } from "./integrity.ts";
+import { type ScoringSummary, summarizeScoring } from "./judgment-report.ts";
+import type { OracleDescriptor } from "./task-oracle.ts";
 import { diffManifests, type ManifestKey } from "./manifest.ts";
 import {
   campaignJudging,
@@ -205,6 +207,13 @@ export interface HarnessReport {
   };
   cells: CellRecord[];
   /**
+   * H-35 S2.5 (design-r4 6.2): per arm, over the reported cells: scorer
+   * states, the policy gate, G (conditional on G measured), G' (trusted-
+   * reference validation) and composite passes / total. Absent in reports
+   * written before H-35.
+   */
+  scoring?: ScoringSummary[];
+  /**
    * M11-12: per-arm rollups and paired deltas of the exploratory metrics over
    * every counted-or-unscored terminal cell (equal task weight). A value the
    * records cannot supply is missing (counted as such), never zero.
@@ -352,6 +361,8 @@ export interface ReportOptions extends BootstrapOptions {
   };
   /** Report repeats 1..N only (1 <= N <= planned); default all planned. */
   repeats?: number;
+  /** H-35: the task preimage store, so validation checks scorer names. */
+  descriptor?: (oracleHash: string) => Promise<OracleDescriptor | "unknown">;
 }
 
 function traceCoverage(
@@ -603,7 +614,10 @@ export async function buildReport(
   records: CampaignRecords,
   opts: ReportOptions = {},
 ): Promise<HarnessReport> {
-  await validateCampaignRecords(records);
+  await validateCampaignRecords(
+    records,
+    opts.descriptor ? { descriptor: opts.descriptor } : {},
+  );
   const { campaign } = records;
   const exp = campaign.experiment;
   const arms = [exp.baseline, ...exp.variants];
@@ -1095,6 +1109,18 @@ export async function buildReport(
       : {}),
     cells,
     exploratory,
+    scoring: summarizeScoring(
+      cells.map((c) => ({
+        arm: c.arm,
+        task: c.task,
+        status: c.status,
+        judgment: c.judgment_id === null
+          ? null
+          : records.judgments.find((j) => j.id === c.judgment_id)!,
+      })),
+      (t) => campaign.tasks_meta.find((m) => m.id === t)!.kind,
+      (id) => logs.verdict.get(id)?.notes,
+    ),
     ...(overrideReasons.length > 0
       ? {
         egress_override: {
@@ -1478,6 +1504,43 @@ export function renderReport(r: HarnessReport): string {
     out.push(
       `  ${b.baseline} vs ${b.variant} over ${b.pairs} matched scored pairs: both pass ${b.both_pass}, ${b.baseline} only ${b.baseline_only}, ${b.variant} only ${b.variant_only}, neither ${b.neither}`,
     );
+  }
+  if (r.scoring) {
+    h("Scoring (H-35: scorer states, policy gate, populations)");
+    for (const s of r.scoring) {
+      out.push(
+        `  ${s.arm}: ${s.judged}/${s.total} cells judged, ${s.legacy} v1 (state, policy, env_fp unavailable)`,
+      );
+      for (const [name, c] of Object.entries(s.scorers)) {
+        out.push(
+          `    ${name}: pass ${c.pass}, fail ${c.fail}, not measured ${c.not_measured}, unscored ${c.unscored}, unavailable ${c.unavailable}`,
+        );
+      }
+      const rules = Object.entries(s.policy.by_rule)
+        .map(([k, n]) => `${k} ${n}`).join(", ");
+      out.push(
+        `  ${s.arm}: policy: ${s.policy.failed} failed, ${s.policy.compliant} compliant, ${s.policy.unavailable} unavailable (v1)${
+          rules ? `; ${rules}` : ""
+        }`,
+      );
+      out.push(
+        `    G passes / G measured (conditional on G measured): ${s.g.passed}/${s.g.measured}; not measured ${s.g.not_measured}, unavailable ${s.g.unavailable}`,
+      );
+      if (
+        s.reference.measured + s.reference.not_measured +
+            s.reference.unavailable > 0
+      ) {
+        out.push(
+          `    G' trusted-reference validation (not the agent's solution): ${s.reference.passed}/${s.reference.measured}; not measured ${s.reference.not_measured}, unavailable ${s.reference.unavailable}`,
+        );
+      }
+      out.push(
+        `    composite passes / total: ${s.composite.passed}/${s.composite.total}; infra ${s.infra}`,
+      );
+      out.push(
+        `    agent tests: submitted ${s.agent_tests.submitted}, not_submitted ${s.agent_tests.not_submitted}, credit_excluded ${s.agent_tests.credit_excluded}`,
+      );
+    }
   }
   if (r.exploratory) {
     const x = r.exploratory;
