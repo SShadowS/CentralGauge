@@ -520,6 +520,34 @@ function oneScorerFingerprint(cells: CellRecord[]): string | null {
 }
 
 /**
+ * H-35 S3.3 (design-r3 8, ruling 2026-10-19 (b)): the counted v2 judgments
+ * are of one environment (env_fp, null meaning "no lineage"), else the
+ * report is refused; `--stratify-env` is a follow-up. A v1 judgment's
+ * env_fp is unavailable and makes no mix (old-vs-new comparisons go
+ * through the frozen pairing, `harness pairing`, never pooled here).
+ */
+export function checkOneEnvironment(
+  cells: readonly { judgment_id: string | null }[],
+  judgments: readonly JudgmentRecord[],
+): void {
+  const byId = new Map(judgments.map((j) => [j.id, j]));
+  const envs = new Set<string>();
+  for (const c of cells) {
+    const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
+    if (j?.v === 2) envs.add(j.provenance?.env_fp ?? "(none)");
+  }
+  if (envs.size > 1) {
+    const list = [...envs].sort();
+    throw new ValidationError(
+      `campaign mixes environments (env_fp ${
+        list.map((e) => e.slice(0, 12)).join(", ")
+      }); rejudge on one lineage`,
+      list,
+    );
+  }
+}
+
+/**
  * A measure record counts for a cell only when it is the cell's own: its
  * counted judgment, used execution, that execution's stored workspace and the
  * judgment's oracle. With a pre-registration it must also carry the frozen
@@ -705,6 +733,7 @@ export async function buildReport(
     );
   }
   const fingerprint = oneScorerFingerprint(cells);
+  checkOneEnvironment(cells, records.judgments);
   // The same complete map drives selection and the reported identity.
   const judgedTasks = campaign.task_set.tasks.map((t) => ({
     ...t,

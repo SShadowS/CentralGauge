@@ -26,6 +26,7 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
+import { checkOneEnvironment } from "../../src/harness/report.ts";
 import { descriptorLoader } from "../../src/harness/task-oracle.ts";
 import {
   campaignJudging,
@@ -1040,6 +1041,9 @@ export async function loadScreenCampaigns(
   const store = new RecordStore(resultsDir);
   const campaigns: ScreenCampaign[] = [];
   const ran = new Map<string, TaskIdentity[]>();
+  // H-35 S3.3: the screening pools campaigns, so one environment across all.
+  const counted: { judgment_id: string | null }[] = [];
+  const judged: JudgmentRecord[] = [];
   const dir = join(resultsDir, "campaigns");
   // M8-15c: no campaigns directory yet (nothing screened) is no campaigns.
   const st = await Deno.lstat(dir).catch((err) => {
@@ -1075,10 +1079,10 @@ export async function loadScreenCampaigns(
         j,
       ]);
     }
-    const { cells, excluded } = excludeCrashCells(
-      cellsFromRecords(c, data.executions, byExecution),
-      data.executions,
-    );
+    const records = cellsFromRecords(c, data.executions, byExecution);
+    counted.push(...records);
+    judged.push(...data.judgments);
+    const { cells, excluded } = excludeCrashCells(records, data.executions);
     campaigns.push({
       id: c.id,
       experiment: c.experiment.id,
@@ -1089,6 +1093,7 @@ export async function loadScreenCampaigns(
     });
     ran.set(c.id, c.task_set.tasks);
   }
+  checkOneEnvironment(counted, judged);
   return { campaigns, ran };
 }
 

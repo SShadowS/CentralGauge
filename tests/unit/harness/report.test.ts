@@ -23,6 +23,7 @@ import {
   partialText,
   renderReport,
 } from "../../../src/harness/report.ts";
+import { SCORER_SUITE } from "../../../src/harness/verdict.ts";
 import { loadTraces } from "../../../src/harness/trace-metrics.ts";
 import { type TraceEvent, writeTrace } from "../../../src/harness/trace.ts";
 import {
@@ -2256,4 +2257,52 @@ Deno.test("H-35 orch Sol r1 #4: the report's applicable denominators come from t
   );
   const bare = await buildReport(await records(), { resamples: 50 });
   assertEquals(bare.scoring![0]!.applicability_unknown, 2);
+});
+
+// ---- H-35 S3.3: one environment per report ----
+
+Deno.test("H-35 S3.3: a report whose counted v2 judgments mix env_fp is refused; v1 judgments (env_fp unavailable) never make a mix", async () => {
+  const base = await records();
+  const fp = await scorerFingerprint(SCORER_SUITE);
+  // Valid v2 judgments under the current suite, the environment by `env`.
+  const asV2 = (
+    j: CampaignRecords["judgments"][number],
+    env: string,
+  ): CampaignRecords["judgments"][number] => {
+    const passed = j.verdict === "pass";
+    return {
+      ...j,
+      v: 2,
+      scorer_versions: SCORER_SUITE,
+      scorer_fingerprint: fp,
+      scorers: [{ name: "build", passed, state: "measured", tests: [] }],
+      policy: { passed: true, violations: [] },
+      provenance: {
+        harness_commit: null,
+        production_manifest: null,
+        env_fp: env,
+      },
+    };
+  };
+  const one = {
+    ...base,
+    judgments: base.judgments.map((j) => asV2(j, "a".repeat(64))),
+  };
+  const judging = { ...campaignJudging(one.campaign), scorer: fp };
+  // One environment: reported.
+  await buildReport(one, { resamples: 50, judging });
+  const mixed = {
+    ...base,
+    judgments: base.judgments.map((j, i) =>
+      asV2(j, (i % 2 ? "a" : "b").repeat(64))
+    ),
+  };
+  await assertRejects(
+    () => buildReport(mixed, { resamples: 50, judging }),
+    ValidationError,
+    "mixes environments",
+  );
+  // All v1: env_fp unavailable, no mix.
+  const r = await buildReport(base, { resamples: 50 });
+  assert(r.scoring !== undefined);
 });
