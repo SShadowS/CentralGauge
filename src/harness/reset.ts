@@ -59,6 +59,10 @@ export interface ResetMechanism {
   fsDigest?(container: string): Promise<string[]>;
   /** L4 exclusions (the lineage's dispositions), as Windows wildcards. */
   readonly fsExclude?: readonly string[];
+  /** H-35 S3 L2b: the lineage's NST outbound firewall state (absent: not recorded). */
+  readonly bcEgress?: "enforced" | "unenforced";
+  /** H-35 S3: the content root every restore is verified against (absent: none). */
+  readonly contentRoot?: string;
 }
 
 /** One L4 check of a deployment (the verdict log's `fs_checks[]`). */
@@ -376,6 +380,10 @@ export function goldenReset(o: {
     }),
     // H-35 S3.3: the lineage's identity enters every deployment's env_fp.
     compat: { lineage: lineageCompat(o.lineage) },
+    ...(o.lineage.egress ? { bcEgress: o.lineage.egress.mode } : {}),
+    ...(o.lineage.content_root
+      ? { contentRoot: o.lineage.content_root.root }
+      : {}),
     // H-35 S3 L4: only with the lineage's fs section (admission refuses one without).
     ...(fs
       ? {

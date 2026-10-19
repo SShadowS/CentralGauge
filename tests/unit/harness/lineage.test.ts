@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { lineageCompat, loadLineage } from "../../../src/harness/lineage.ts";
 import { goldenReset, RESET_PHASES } from "../../../src/harness/reset.ts";
@@ -205,4 +205,91 @@ Deno.test("H-35 S3 L4 goldenReset.fsDigest: runs fs-capture.ps1 with the lineage
     dockerEnv: {},
   });
   assertEquals(none.fsDigest, undefined);
+});
+
+Deno.test("H-35 S3 L2b lineage egress: enforced carries the rule digest, unenforced a reason; goldenReset exposes the mode (absent when the lineage has none); anything else is refused", async () => {
+  const enforced = { mode: "enforced", rule_sha256: "c".repeat(64) };
+  const unenforced = {
+    mode: "unenforced",
+    reason: "no Windows Firewall in the image",
+  };
+  for (
+    const [egress, mode] of [[enforced, "enforced"], [
+      unenforced,
+      "unenforced",
+    ]] as const
+  ) {
+    const lineagePath = await copyLineage((j) => (j["egress"] = egress));
+    const l = await loadLineage(lineagePath);
+    assertEquals(lineageCompat(l)["egress"], egress);
+    const m = goldenReset({
+      repoRoot: "R",
+      lineagePath,
+      lineage: l,
+      dockerEnv: {},
+    });
+    assertEquals(m.bcEgress, mode);
+  }
+  const plain = await copyLineage();
+  assertEquals(
+    goldenReset({
+      repoRoot: "R",
+      lineagePath: plain,
+      lineage: await loadLineage(plain),
+      dockerEnv: {},
+    }).bcEgress,
+    undefined,
+  );
+  for (
+    const bad of [
+      { mode: "enforced" },
+      { mode: "unenforced", reason: "" },
+      { mode: "off" },
+    ]
+  ) {
+    await assertRejects(
+      async () => loadLineage(await copyLineage((j) => (j["egress"] = bad))),
+      ConfigurationError,
+    );
+  }
+});
+
+// ---- H-35 S3 content root (design-r5 Sol HIGH; owner: on every restore) ----
+
+Deno.test("H-35 S3 lineage content_root: its per-table file must hash to the recorded sha256; exclusions need a reason; goldenReset exposes the root", async () => {
+  const tables = "CRONUS$Customer|AB\nCRONUS$Item|CD\n";
+  const sha = await sha256Hex(new TextEncoder().encode(tables));
+  const section = (over: Record<string, unknown> = {}) => ({
+    path: "golden.content.txt",
+    sha256: sha,
+    root: "e".repeat(64),
+    exclude: [{ pattern: "Session Event", reason: "NST session log" }],
+    ...over,
+  });
+  const withRoot = async (s: unknown, body = tables) => {
+    const p = await copyLineage((j) => (j["content_root"] = s));
+    await Deno.writeTextFile(join(dirname(p), "golden.content.txt"), body);
+    return p;
+  };
+  const p = await withRoot(section());
+  const l = await loadLineage(p);
+  assertEquals(l.content_root?.root, "e".repeat(64));
+  assertEquals(lineageCompat(l)["content_root"], section());
+  assertEquals(
+    goldenReset({ repoRoot: "R", lineagePath: p, lineage: l, dockerEnv: {} })
+      .contentRoot,
+    "e".repeat(64),
+  );
+  await assertRejects(
+    async () => loadLineage(await withRoot(section(), "tampered\n")),
+    ConfigurationError,
+    "golden.content.txt",
+  );
+  await assertRejects(
+    async () =>
+      loadLineage(
+        await withRoot(section({ exclude: [{ pattern: "x", reason: "" }] })),
+      ),
+    ConfigurationError,
+  );
 });

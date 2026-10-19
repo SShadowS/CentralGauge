@@ -21,6 +21,7 @@ import type {
   Prepared,
 } from "./bc-lane.ts";
 import type { JudgmentRecord } from "./records.ts";
+import type { BcEgressRecord } from "./environment.ts";
 import type {
   FsCheckRecord,
   ResetMechanism,
@@ -230,7 +231,11 @@ export interface JudgeInput {
   lock: LockedSymbols;
   /** The removal allowlist's trusted roots (pristine, oracle) are set by judge, never by the caller. */
   /** H-35 S3: `reset` is required: no judge deployment without a reset. */
-  deploy: Pick<DeployContext, "ledgerRoot"> & { reset: ResetMechanism };
+  deploy: Pick<DeployContext, "ledgerRoot"> & {
+    reset: ResetMechanism;
+    /** H-35 S3 L2b: the admitted NST egress state, recorded in the log. */
+    bcEgress?: BcEgressRecord | null;
+  };
   /** H-27: the run's shared build cache (task-fixed builds are reused across cells); none = no reuse. */
   buildCache?: BuildCache;
   /** H-35 provenance: the harness commit judging (null when unknown). */
@@ -283,6 +288,11 @@ export interface VerdictLog {
    * points, minus the lineage's exclusions; not a complete write history.
    */
   fs_checks?: FsCheckRecord[];
+  /**
+   * H-35 S3 L2b: the NST egress state the run was admitted under, and its
+   * declared override (`--unverified-bc-egress-ok`); null: not recorded.
+   */
+  bc_egress?: BcEgressRecord | null;
 }
 
 /** H-35 (design-r2 4.2): one hold's deployment: what was published where. */
@@ -1744,6 +1754,7 @@ export async function judge(
     resets: [],
     verifies: [],
     fs_checks: [],
+    bc_egress: i.deploy.bcEgress ?? null,
   };
   const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {

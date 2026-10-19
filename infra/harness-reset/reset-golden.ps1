@@ -21,6 +21,7 @@ if (-not $env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT = 'desktop-windows' }
 # Import-Module -RequiredVersion can silently keep an already-loaded version, so the resolved version is checked below.
 Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue *> $null
 . (Join-Path $PSScriptRoot 'reset-lib.ps1')
+. (Join-Path $PSScriptRoot 'content-root.ps1')
 
 function Fail([string]$step, [string]$reason) {
   $one = ($reason -replace '[\r\n]+', ' ').Trim()
@@ -118,6 +119,21 @@ Step postconditions {
   if ("$st".Trim() -ne 'Operational') { throw "tenant $st" }
   $fp = Get-GoldenFingerprint $Container
   if ($fp -ne $lin.golden_fingerprint) { throw "subset fingerprint $fp does not match the lineage" }
+  # H-35 S3 content root (complete values and LOBs) on every restore, when the lineage records one (owner: +~23 s).
+  if ($lin.content_root) {
+    $cr = $lin.content_root
+    $exclude = @($cr.exclude | ForEach-Object { $_.pattern })
+    $tables = @(Get-GoldenContentTables $Container)
+    $root = Get-GoldenContentRoot $tables $exclude
+    if ($root -ne $cr.root) {
+      $stored = @{}
+      foreach ($l in Get-Content (Join-Path (Split-Path -Parent $Lineage) $cr.path)) { $p = $l -split '\|', 2; $stored[$p[0]] = $p[1] }
+      $live = @($tables | Where-Object { $t = $_.t; -not ($exclude | Where-Object { $t -like $_ }) })
+      $diff = @($live | Where-Object { $stored[$_.t] -ne $_.h } | ForEach-Object { $_.t }) +
+        @($stored.Keys | Where-Object { $k = $_; -not ($live | Where-Object { $_.t -eq $k }) })
+      throw "content root $root does not match the lineage ($($diff.Count) table(s), first: $(($diff | Select-Object -First 3) -join ', '))"
+    }
+  }
 }
 Write-Output 'RESET_OK'
 exit 0

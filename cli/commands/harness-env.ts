@@ -68,6 +68,7 @@ import {
 } from "../../src/harness/sandbox.ts";
 import { type Lineage, loadLineage } from "../../src/harness/lineage.ts";
 import {
+  type BcEgressRecord,
   checkEnvironments,
   createBaseline,
   type EnvCheck,
@@ -115,6 +116,8 @@ export interface EnvOptions {
   supervised: boolean;
   /** H-35 S3.2: the reset lineage file (absolute); none = judging refuses. */
   lineage?: string | null;
+  /** H-35 S3 L2b: `--unverified-bc-egress-ok <reason>` (an unenforced lineage needs it). */
+  bcEgressOverride?: string | null;
   /** The qualification probe (backend-probe --enforced): a candidate marker places it. */
   probe?: boolean;
   /** Campaign blocks at once (harness run); above 1 the marker is rechecked under the lock (M1-33c). */
@@ -193,6 +196,8 @@ export interface LineageCommandOptions {
   /** The lineage file (absolute). */
   lineage: string;
   symbolStore: string;
+  /** H-35 S3 L2b: `--unverified-bc-egress-ok <reason>` (env check). */
+  bcEgressOverride?: string | null;
 }
 
 type ResetFor = (lineagePath: string, lineage: Lineage) => ResetMechanism;
@@ -226,6 +231,7 @@ async function lineageContext(
         store: o.symbolStore,
         packages: symbols,
       }),
+      ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
     },
   };
 }
@@ -636,6 +642,7 @@ export async function openHarnessEnv(
       : undefined;
     // H-35 S3.4 (ruling (c)): with a lineage, every container must be an
     // admitted instance of it, all of one env_fp, before any lease.
+    let bcEgress: BcEgressRecord | null = null;
     if (lineage) {
       const check = await checkEnvironments(ready.bc, reset, ready.names, {
         resultsRoot: sharedResults,
@@ -644,7 +651,9 @@ export async function openHarnessEnv(
           store: o.symbolStore,
           packages: symbols,
         }),
+        ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
       });
+      bcEgress = check.bc_egress;
       const block = renderEnvCheck(check);
       if (!check.admissible) {
         throw new ConfigurationError(
@@ -734,6 +743,7 @@ export async function openHarnessEnv(
       deploy: {
         ledgerRoot: join(sharedResults, "bc-ledger"),
         reset,
+        bcEgress,
       },
       pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
       supervised: o.supervised,

@@ -546,6 +546,8 @@ export interface CellCliOptions {
   deferJudging?: boolean;
   /** H-35 S3.2: the reset lineage file judging resets every container to. */
   lineage?: string | null;
+  /** H-35 S3 L2b: `--unverified-bc-egress-ok <reason>`. */
+  bcEgressOverride?: string | null;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -574,6 +576,7 @@ function envOptions(
     command,
     supervised: o.supervised,
     ...(o.lineage ? { lineage: o.lineage } : {}),
+    ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
   };
 }
 
@@ -1533,6 +1536,7 @@ interface CellCliFlags {
   deferJudging?: boolean;
   judgeConcurrency?: number;
   lineage?: string;
+  unverifiedBcEgressOk?: string;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -1567,6 +1571,9 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     recordOAuthHosts: f.recordOauthHosts === true,
     ...(f.deferJudging ? { deferJudging: true } : {}),
     ...(f.lineage ? { lineage: abs(f.lineage) } : {}),
+    ...(f.unverifiedBcEgressOk
+      ? { bcEgressOverride: f.unverifiedBcEgressOk }
+      : {}),
   };
 }
 
@@ -3055,6 +3062,10 @@ export function registerHarnessCommand(
       .option(
         "--lineage <path:string>",
         "Reset lineage JSON (H-35): every judge deployment first restores the container to it; without one, judging refuses",
+      )
+      .option(
+        "--unverified-bc-egress-ok <reason:string>",
+        "Owner override (H-35 L2b): judge on a lineage whose NST egress is unenforced; every verdict records it",
       );
 
   shared(
@@ -3405,6 +3416,10 @@ export function registerHarnessCommand(
           {
             required: true,
           },
+        )
+        .option(
+          "--unverified-bc-egress-ok <reason:string>",
+          "Check as a run that declares unenforced NST egress (H-35 L2b)",
         ),
     ).action((opts) =>
       fail(async () => {
@@ -3414,6 +3429,9 @@ export function registerHarnessCommand(
             .filter(Boolean),
           lineage: resolve(opts.lineage),
           symbolStore: resolve(opts.symbolStore),
+          ...(opts.unverifiedBcEgressOk
+            ? { bcEgressOverride: opts.unverifiedBcEgressOk }
+            : {}),
         });
         console.log(renderEnvCheck(c));
         if (!c.admissible) {

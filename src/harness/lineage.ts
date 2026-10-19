@@ -34,6 +34,22 @@ export const LineageSchema = z.strictObject({
   /** The stored inventory the reset's postconditions compare against. */
   inventory: z.strictObject({ path: z.string().min(1), sha256: Sha }),
   /**
+   * H-35 S3 (design-r5 Sol HIGH): the content root over every table's
+   * complete values and LOBs (content-root.ps1), verified after every
+   * restore. `path`: the per-table `table|hash` lines (sha256-verified like
+   * the inventory); `exclude`: the measured volatile tables, each with its
+   * reason. Absent: admission refuses the lineage.
+   */
+  content_root: z.strictObject({
+    path: z.string().min(1),
+    sha256: Sha,
+    root: Sha,
+    exclude: z.array(z.strictObject({
+      pattern: z.string().min(1),
+      reason: z.string().min(1),
+    })),
+  }).optional(),
+  /**
    * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): the declared roots W
    * (resolved on the image), the NST identity measurement, each exclusion
    * with its disposition, the baseline-create discovery survey, and the
@@ -52,6 +68,18 @@ export const LineageSchema = z.strictObject({
     })),
     survey: z.strictObject({ path: z.string().min(1), sha256: Sha }),
   }).optional(),
+  /**
+   * H-35 S3 L2b (design-r5 2.2, 3): the NST's outbound firewall rule, or
+   * why the image cannot enforce one. Enters env_fp; admission refuses an
+   * unenforced lineage unless the run declares it.
+   */
+  egress: z.discriminatedUnion("mode", [
+    z.strictObject({ mode: z.literal("enforced"), rule_sha256: Sha }),
+    z.strictObject({
+      mode: z.literal("unenforced"),
+      reason: z.string().min(1),
+    }),
+  ]).optional(),
   /** The local test container's web-service user (the runner no-op call). */
   soap_user: z.string().min(1),
   soap_password: z.string().min(1),
@@ -81,11 +109,18 @@ export async function loadLineage(path: string): Promise<Lineage> {
     );
   }
   const l = parsed.data;
-  const inv = join(dirname(path), l.inventory.path);
-  const bytes = await Deno.readFile(inv).catch(() => null);
-  if (!bytes) return refuse(`inventory ${inv} is unreadable`);
-  if (await sha256Hex(bytes) !== l.inventory.sha256) {
-    return refuse(`inventory ${inv} does not hash to ${l.inventory.sha256}`);
+  const sidecars = [["inventory", l.inventory]] as [
+    string,
+    { path: string; sha256: string },
+  ][];
+  if (l.content_root) sidecars.push(["content root", l.content_root]);
+  for (const [what, s] of sidecars) {
+    const file = join(dirname(path), s.path);
+    const bytes = await Deno.readFile(file).catch(() => null);
+    if (!bytes) return refuse(`${what} ${file} is unreadable`);
+    if (await sha256Hex(bytes) !== s.sha256) {
+      return refuse(`${what} ${file} does not hash to ${s.sha256}`);
+    }
   }
   return l;
 }

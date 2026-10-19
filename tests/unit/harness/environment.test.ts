@@ -20,6 +20,8 @@ const MECH = {
   id: "golden-restore",
   compat: COMPAT,
   fsDigest: () => Promise.resolve([]),
+  bcEgress: "enforced" as const,
+  contentRoot: "d".repeat(64),
 };
 const LOCK = "b".repeat(64);
 
@@ -125,4 +127,45 @@ Deno.test("H-35 S3 L4: a lineage without an fs section (L4 not configured) is no
   assertEquals(c.rows[0]!.why, null);
   assert(c.refusal?.includes("L4"));
   assert(renderEnvCheck(c).includes(c.refusal!));
+});
+
+Deno.test("H-35 S3 L2b: BC egress: no egress field refuses; unenforced refuses unless the run declares --unverified-bc-egress-ok with a reason; enforced needs no flag", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = { resultsRoot: root, lineageId: "golden-test", lockDigest: LOCK };
+  const { bcEgress: _, ...none } = MECH;
+  const unenforced = { ...MECH, bcEgress: "unenforced" as const };
+  for (const m of [MECH, none, unenforced]) {
+    await createBaseline(bc, m, "C1", o);
+  }
+  assertEquals(
+    (await checkEnvironments(bc, none, ["C1"], o)).refusal,
+    "the lineage has no egress field (L2b)",
+  );
+  const refused = await checkEnvironments(bc, unenforced, ["C1"], o);
+  assertEquals(refused.admissible, false);
+  assert(refused.refusal?.includes("--unverified-bc-egress-ok"));
+  const declared = await checkEnvironments(bc, unenforced, ["C1"], {
+    ...o,
+    bcEgressOverride: "firewall rules not supported on the 28.4 image",
+  });
+  assert(declared.admissible);
+  assertEquals(declared.bc_egress, {
+    mode: "unenforced",
+    override: "firewall rules not supported on the 28.4 image",
+  });
+  assert(renderEnvCheck(declared).includes("[WARN]"));
+  const ok = await checkEnvironments(bc, MECH, ["C1"], o);
+  assertEquals(ok.bc_egress, { mode: "enforced", override: null });
+});
+
+Deno.test("H-35 S3: a lineage without a content root (no per-restore content verification) is not admissible", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = { resultsRoot: root, lineageId: "golden-test", lockDigest: LOCK };
+  const { contentRoot: _, ...noRoot } = MECH;
+  await createBaseline(bc, noRoot, "C1", o);
+  const c = await checkEnvironments(bc, noRoot, ["C1"], o);
+  assertEquals(c.admissible, false);
+  assertEquals(c.refusal, "the lineage has no content root");
 });

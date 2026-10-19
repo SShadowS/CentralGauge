@@ -5,6 +5,16 @@
 #   root       = SHA-256 of sorted "table|hash" lines, minus the lineage's justified volatile exclusions
 # A table that cannot be hashed is an error row, never skipped: the caller fails on any err.
 
+# Volatile tables, measured (lane-ops, Cronus283 at f75df8d1: two resets and a 10 min idle; tasks\H-35\ops\s3-measure.log).
+# PowerShell -like patterns over table names. Each differs between restores of the same golden.bak:
+$ContentRootExclusions = @(
+  @{ pattern = '$ndo$cachesync'; reason = 'NST cache-sync bookkeeping, rewritten at every NST start' },
+  @{ pattern = 'Active Session'; reason = 'sessions of the running NST (runtime state, not content)' },
+  @{ pattern = 'Server Instance'; reason = 'NST instance registration with its start time' },
+  @{ pattern = 'Session Event'; reason = 'login/logout log of NST sessions (grows with every session)' },
+  @{ pattern = '*$AL Test Suite$*'; reason = 'suite CGWS is recreated by the reset''s own runner_verify SOAP no-op' }
+)
+
 $ContentRootSql = @'
 SET NOCOUNT ON;
 DECLARE @r TABLE (t sysname, n bigint NULL, h varchar(64) NULL, ms int, err nvarchar(400) NULL);
@@ -30,7 +40,13 @@ SELECT t, n, h, ms, err FROM @r ORDER BY t;
 function Get-GoldenContentTables([string]$Container) {
   Invoke-InContainer $Container { param($q)
     Invoke-Sqlcmd -Database CRONUS -QueryTimeout 0 -MaxCharLength 4000 -Query $q |
-      ForEach-Object { [pscustomobject]@{ t = $_.t; n = $_.n; h = $_.h; ms = $_.ms; err = $_.err } }
+      ForEach-Object {
+        # SQL NULLs arrive as DBNull ({} in JSON): plain $null instead
+        $err = if ($_.err -is [DBNull]) { $null } else { "$($_.err)" }
+        $n = if ($_.n -is [DBNull]) { $null } else { [long]$_.n }
+        $h = if ($_.h -is [DBNull]) { $null } else { "$($_.h)" }
+        [pscustomobject]@{ t = $_.t; n = $n; h = $h; ms = $_.ms; err = $err }
+      }
   } $ContentRootSql
 }
 

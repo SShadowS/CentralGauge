@@ -47,6 +47,7 @@ import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import type { ResetMechanism } from "./reset.ts";
+import type { BcEgressRecord } from "./environment.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -189,7 +190,11 @@ export interface HarnessEnv {
    * judgment, never here. H-35 S3: the reset judging runs before every
    * deployment (the agent's tool environment never resets).
    */
-  deploy: Pick<DeployContext, "ledgerRoot"> & { reset: ResetMechanism };
+  deploy: Pick<DeployContext, "ledgerRoot"> & {
+    reset: ResetMechanism;
+    /** H-35 S3 L2b: the admitted NST egress state, recorded in every verdict. */
+    bcEgress?: BcEgressRecord | null;
+  };
   pricing(at: Date): Promise<PricingBook>;
   /** Started by a human at a terminal; no automatic retries. */
   supervised: boolean;

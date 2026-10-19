@@ -69,6 +69,8 @@ interface EnvInputs {
   resultsRoot: string;
   lineageId: string;
   lockDigest: string;
+  /** H-35 S3 L2b: the run's `--unverified-bc-egress-ok` reason, when declared. */
+  bcEgressOverride?: string;
 }
 
 const liveEnvFp = async (
@@ -123,11 +125,19 @@ export async function createBaseline(
   return manifest;
 }
 
+/** H-35 S3 L2b: the NST egress state and the run's declared override. */
+export interface BcEgressRecord {
+  mode: "enforced" | "unenforced";
+  override: string | null;
+}
+
 export interface EnvCheck {
   lineage_id: string;
   admissible: boolean;
   /** A lineage-wide reason it is not admissible (null: none). */
   refusal: string | null;
+  /** H-35 S3 L2b: verdicts record it (null: the lineage has no egress field). */
+  bc_egress: BcEgressRecord | null;
   rows: {
     container: string;
     env_fp: string;
@@ -168,15 +178,26 @@ export async function checkEnvironments(
     });
   }
   const shared = new Set(rows.map((r) => r.env_fp)).size <= 1;
-  // H-35 S3 L4 is mandatory (decisions/2026-10-20-h-35-l4-scope.md).
-  const refusal = m.fsDigest
-    ? null
-    : "the lineage has no fs section: L4 (fsDigest) is not configured";
+  // H-35 S3 L4 is mandatory (decisions/2026-10-20-h-35-l4-scope.md); L2b
+  // (design-r5 2.2): an unenforced NST firewall needs the run's declaration.
+  const override = o.bcEgressOverride?.trim() || null;
+  const refusal = !m.contentRoot
+    ? "the lineage has no content root"
+    : !m.fsDigest
+    ? "the lineage has no fs section: L4 (fsDigest) is not configured"
+    : !m.bcEgress
+    ? "the lineage has no egress field (L2b)"
+    : m.bcEgress === "unenforced" && !override
+    ? "NST egress is unenforced in this lineage: declare it with --unverified-bc-egress-ok <reason>"
+    : m.bcEgress === "enforced" && override
+    ? "--unverified-bc-egress-ok is refused: NST egress IS enforced in this lineage"
+    : null;
   return {
     lineage_id: o.lineageId,
     admissible: !refusal && rows.length > 0 && shared &&
       rows.every((r) => !r.why),
     refusal,
+    bc_egress: m.bcEgress ? { mode: m.bcEgress, override } : null,
     rows,
   };
 }
@@ -196,6 +217,13 @@ export function renderEnvCheck(c: EnvCheck): string {
   if (new Set(c.rows.map((r) => r.env_fp)).size > 1) {
     out.push(
       `  ${colors.red("[FAIL]")} the containers do not share one env_fp`,
+    );
+  }
+  if (c.bc_egress?.override) {
+    out.push(
+      `  ${
+        colors.yellow("[WARN]")
+      } NST egress NOT enforced (--unverified-bc-egress-ok): ${c.bc_egress.override}`,
     );
   }
   if (c.refusal) out.push(`  ${colors.red("[FAIL]")} ${c.refusal}`);
