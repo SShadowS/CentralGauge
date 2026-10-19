@@ -38,6 +38,10 @@ export interface WantedApp {
   depends: string[];
   /** H-35: the package digest a production manifest recorded; deploy checks it. */
   sha256?: string;
+  /** H-35 (design-r2 4.2): the build key it was built or reused under. */
+  build_key?: string;
+  /** H-35 (design-r2 4.2): hashTree of the source it was built from. */
+  source?: string;
 }
 
 export interface SyncPlan {

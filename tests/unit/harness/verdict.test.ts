@@ -3,6 +3,7 @@ import {
   assertEquals,
   assertRejects,
   assertStringIncludes,
+  assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
 import { ContainerError, ValidationError } from "../../../src/errors.ts";
@@ -24,6 +25,7 @@ import {
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
+  assertSameProduction,
   buildFailureCodes,
   currentScorerFingerprint,
   effectiveScorers,
@@ -36,7 +38,7 @@ import {
 } from "../../../src/harness/verdict.ts";
 import { deployedSource, type FakeApp, FakeBc, result } from "./fake-bc.ts";
 import { appJson, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
-import { hashFile, hashJson } from "../../../src/harness/hash.ts";
+import { hashFile, hashJson, hashTree } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 /** Shipped test passes unless Rental carries BREAK_P2P; the oracle passes iff Rental returns 10. */
@@ -1743,4 +1745,127 @@ Deno.test("H-35 S2.1: infra on every container is unscored (state unscored), the
   assertEquals(judgment.verdict, "unscored");
   assertEquals(judgment.policy!.passed, true);
   assert(judgment.scorers.some((s) => s.state === "unscored"));
+});
+
+// ---- H-35 S2.4 (design-r2 4.2, design-r3 3.3): deployment records ----
+
+Deno.test("H-35 S2.4: every hold is recorded: G (pristine Test + oracle) and A, each app with its digest, build key and source; G's and A's production entries are equal", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  const { log } = await judge(new BcLane(script(), ["C1"]), input);
+  assertEquals(log.deployments!.map((d) => [d.hold, d.container]), [
+    ["G", "C1"],
+    ["A", "C1"],
+  ]);
+  type Dep = NonNullable<typeof log.deployments>[0];
+  const [g, a] = log.deployments! as [Dep, Dep];
+  for (const d of [g, a]) {
+    for (const app of d.apps) {
+      assert(/^[0-9a-f]{64}$/.test(app.file_sha256), app.name);
+      assert(/^[0-9a-f]{64}$/.test(app.build_key ?? ""), app.name);
+    }
+  }
+  const test = g.apps.find((x) => x.name === "CGR Test")!;
+  assertEquals(
+    test.source_tree_hash,
+    await hashTree(join(input.pristine, "Test"), "task"),
+  );
+  assert(g.apps.some((x) => x.name === "CGR Oracle HX-001"));
+  assert(!a.apps.some((x) => x.name === "CGR Oracle HX-001"));
+  const production = (d: typeof g) =>
+    d.apps.filter((x) => x.role === "candidate" && x.name !== "CGR Test")
+      .map((x) => [x.id, x.build_key, x.file_sha256]);
+  assertEquals(production(g), production(a));
+});
+
+Deno.test("H-35 S2.4: an agent rerun records its trusted control and the rerun as holds", async () => {
+  const { bc } = hangs("first");
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
+  const { log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(log.deployments!.map((d) => d.hold), [
+    "G",
+    "A",
+    "control",
+    "A",
+  ]);
+});
+
+Deno.test("H-35 S2.4: G's Test key is recomputed from the pristine Test app: a compiler identity that changes mid-judgment is a harness bug", async () => {
+  class Drifting extends FakeBc {
+    n = 0;
+    override harnessCompilerIdentity(_c: string): Promise<string> {
+      return Promise.resolve(`compiler-${this.n++}`);
+    }
+  }
+  const { input } = await setup("correct");
+  await assertRejects(
+    () => judge(new BcLane(new Drifting(scripted), ["C1"]), input),
+    Error,
+    "harness bug: G's Test build key",
+  );
+});
+
+Deno.test("H-35 S2.4: G's Test package must be its key's build cache entry: another file there is a harness bug", async () => {
+  const dir = await Deno.makeTempDir();
+  const inner = dirBuildCache(dir);
+  const other = join(dir, "other.app");
+  await Deno.writeTextFile(other, "not the deployed package");
+  // A build reads its key (miss) and, after its put, the winner; any later
+  // read of that key (the identity check) finds another file.
+  const reads = new Map<string, number>();
+  const cache = {
+    get: (k: string) => {
+      reads.set(k, (reads.get(k) ?? 0) + 1);
+      return reads.get(k)! > 2 ? Promise.resolve(other) : inner.get(k);
+    },
+    put: (k: string, f: string) => inner.put(k, f),
+  };
+  const { input } = await setup("correct");
+  await assertRejects(
+    () => judge(new BcLane(script(), ["C1"]), { ...input, buildCache: cache }),
+    Error,
+    "harness bug: G's Test cached package",
+  );
+});
+
+Deno.test("H-35 S2.4: A's production packages must equal G's (id, build key, digest)", () => {
+  const app = (id: string, key: string, sha: string) => ({
+    id,
+    name: id,
+    publisher: "p",
+    version: "1.0.0.0",
+    stamp: sha,
+    file: `${id}.app`,
+    role: "candidate" as const,
+    depends: [],
+    sha256: sha,
+    build_key: key,
+  });
+  const g = [
+    app("prod", "k1", "s1"),
+    app("test", "kg", "sg"),
+    app("oracle", "ko", "so"),
+  ];
+  const production = new Set(["prod"]);
+  // A's own Test app differs from G's, and A has no oracle: fine.
+  assertSameProduction(
+    g,
+    [app("prod", "k1", "s1"), app("test", "ka", "sa")],
+    production,
+  );
+  for (const bad of [app("prod", "k2", "s1"), app("prod", "k1", "s2")]) {
+    assertThrows(
+      () => assertSameProduction(g, [bad, app("test", "ka", "sa")], production),
+      Error,
+      "harness bug: A's production package prod",
+    );
+  }
+  assertThrows(
+    () => assertSameProduction(g, [app("test", "ka", "sa")], production),
+    Error,
+    "harness bug: A's production package prod",
+  );
 });

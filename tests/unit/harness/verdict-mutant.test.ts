@@ -881,3 +881,22 @@ Deno.test("H-35: test-authoring: G' deploys the pristine Test app, never an agen
   assertEquals(seen.length, 1);
   assert(!seen[0]!.includes("80130") && !seen[0]!.includes("80100"));
 });
+
+// ---- H-35 S2.4: test-authoring deployment records ----
+
+Deno.test("H-35 S2.4: test-authoring records G', A_ref, A_0 and every A_m; G' and A_ref publish the same production", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+  });
+  const { log } = await judge(new BcLane(bc(), ["C1"]), input);
+  assertEquals(log.deployments!.map((d) => d.hold), [
+    "G'",
+    "A_ref",
+    "A_0",
+    "A_m:off-by-one",
+  ]);
+  const production = (d: NonNullable<typeof log.deployments>[0]) =>
+    d.apps.filter((x) => x.role === "candidate" && x.name !== "CGR Test")
+      .map((x) => [x.id, x.build_key, x.file_sha256]);
+  assertEquals(production(log.deployments![0]!), production(log.deployments![1]!));
+});

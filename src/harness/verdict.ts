@@ -37,6 +37,7 @@ import {
   CLOUD_POLICY,
   DECLARED_POLICY,
   deployAndTest,
+  effectiveBuildKey,
   isCascadeDiagnostic,
   prepareApps,
   type ProductionManifest,
@@ -48,7 +49,7 @@ import {
   throwIfCrashed,
 } from "./bc-lane.ts";
 import { safeCopyTree } from "./fsutil.ts";
-import { hashFile } from "./hash.ts";
+import { hashFile, hashTree } from "./hash.ts";
 import {
   type InfraSignature,
   JudgmentRecordSchema,
@@ -250,6 +251,52 @@ export interface VerdictLog {
   infra_retries: InfraRetryRecord[];
   per_app_compiles: number;
   error: string | null;
+  /**
+   * H-35 (design-r2 4.2): every deployment of the judgment, in order.
+   * Absent in a log written before H-35.
+   */
+  deployments?: DeploymentRecord[];
+}
+
+/** H-35 (design-r2 4.2): one hold's deployment: what was published where. */
+export interface DeploymentRecord {
+  /** G, A, control, G', A_ref, A_0, A_m:<name>. */
+  hold: string;
+  container: string;
+  apps: {
+    id: string;
+    name: string;
+    version: string;
+    role: string;
+    file_sha256: string;
+    build_key: string | null;
+    source_tree_hash: string | null;
+  }[];
+}
+
+/** Records one hold's deployment (every package carries its digest). */
+function recordDeployment(
+  ctx: JudgeContext,
+  hold: string,
+  container: string,
+  wanted: WantedApp[],
+): void {
+  (ctx.log.deployments ??= []).push({
+    hold,
+    container,
+    apps: wanted.map((w) => {
+      if (!w.sha256) throw new Error(`harness bug: ${w.name} has no digest`);
+      return {
+        id: w.id,
+        name: w.name,
+        version: w.version,
+        role: w.role,
+        file_sha256: w.sha256,
+        build_key: w.build_key ?? null,
+        source_tree_hash: w.source ?? null,
+      };
+    }),
+  });
 }
 
 interface Scorer {
@@ -503,6 +550,7 @@ export async function runHeld(
   wanted: WantedApp[],
   tests: TestSpec[],
   cleanupIds: string[],
+  hold: string,
   bc: HarnessBc = ctx.lane.bc,
 ): Promise<{ rows: TestRow[] }> {
   const held = await ctx.lane.exclusive(
@@ -519,7 +567,7 @@ export async function runHeld(
         ctx: ctx.deploy,
       }),
   );
-  return { rows: accountHeld(ctx, held) };
+  return { rows: accountHeld(ctx, held, hold, wanted) };
 }
 
 /** H-35: the trusted control of an agent rerun: G's deployment and its shipped specs. */
@@ -602,7 +650,7 @@ async function runAgentTests(
     infraNote("agent-added tests", err);
     return rerun ? infraRowsFor(new Set(discovered.keys())) : [];
   }
-  const rows = accountHeld(ctx, first);
+  const rows = accountHeld(ctx, first, "A", prep.wanted);
   const ambiguous = new Set(
     threw.filter((t) => t.container === first.container).map((t) => t.codeunit),
   );
@@ -653,6 +701,7 @@ async function runAgentTests(
           cleanupIds: control.cleanupIds,
           ctx: ctx.deploy,
         });
+        recordDeployment(ctx, "control", c, control.wanted);
         const s = ctx.log.spans;
         s.provisioning_ms += ctl.deployed.provisioning_ms;
         s.candidate_publish_ms += ctl.deployed.candidate_publish_ms;
@@ -692,7 +741,7 @@ async function runAgentTests(
       { maxInfraRetries: 0, exclude: [first.container] },
     );
     record("succeeded");
-    const rerunRows = accountHeld(ctx, second).filter((r) =>
+    const rerunRows = accountHeld(ctx, second, "A", prep.wanted).filter((r) =>
       ambiguous.has(r.codeunit)
     );
     // Rows of a codeunit that threw again are already not_run, runtime_error.
@@ -715,7 +764,10 @@ async function runAgentTests(
 function accountHeld(
   ctx: JudgeContext,
   held: Held<DeployTestResult>,
+  hold: string,
+  wanted: WantedApp[],
 ): TestRow[] {
+  recordDeployment(ctx, hold, held.container, wanted);
   const s = ctx.log.spans;
   s.queue_ms += held.queue_ms;
   s.provisioning_ms += held.result.deployed.provisioning_ms;
@@ -808,6 +860,10 @@ async function buildOracle(
     version: aj.version,
     // Trusted, not the agent's: a publish failure is infra (reroute), never a model defect.
     stamp: await hashFile(dirname(b.file), b.file),
+    // S2.4: the deployment record's digest, key and source.
+    sha256: await hashFile(dirname(b.file), b.file),
+    ...(b.key ? { build_key: b.key } : {}),
+    source: await hashTree(dir, "task"),
     file: b.file,
     role: "prereq",
     depends: deps.filter((id) => workspaceIds.has(id)),
@@ -887,6 +943,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   const prep = await prepare(gw, "apps", "candidate");
   recordBuild(ctx, prep, "candidate");
   if (!prep.buildOk) return scores.failRest();
+  await assertPristineTest(ctx, prep, gw.apps);
   scores.set("build", true);
   // H-35 (design-r3 3.2): A publishes exactly G's production packages.
   const manifest = await productionManifest(prep, gw.dir);
@@ -950,9 +1007,14 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   // G: trusted code only, every trusted suite in one hold.
   let rows: TestRow[] = [];
   if (p2p.length + f2p.length > 0) {
-    rows =
-      (await runHeld(ctx, wanted, [...p2p, ...f2p], [...cleanup].reverse()))
-        .rows;
+    rows = (await runHeld(
+      ctx,
+      wanted,
+      [...p2p, ...f2p],
+      [...cleanup].reverse(),
+      "G",
+    ))
+      .rows;
   }
   // Visible and oracle codeunits live in disjoint bands (80000-84999, 85000-89999).
   const oracleUnits = new Set(f2p.map((s) => s.codeunit));
@@ -980,10 +1042,88 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
       aw,
       testSide,
       control,
-      (w, name, label) => prepare(w, name, label, manifest),
+      async (w, name, label) => {
+        const a = await prepare(w, name, label, manifest);
+        if (a.buildOk) {
+          assertSameProduction(
+            prep.wanted,
+            a.wanted,
+            new Set(
+              prep.built.filter((b) => b.folder !== TEST_APP).map((b) => b.id),
+            ),
+          );
+        }
+        return a;
+      },
     );
   }
   scores.failRest();
+}
+
+/**
+ * H-35 (design-r2 4.2): G deployed the pristine Test app. Its recorded source
+ * is the pristine tree, its key recomputes from the pristine app and G's
+ * production keys, and with a build cache the key's entry is the package G
+ * deployed. A mismatch is a harness bug, never a score.
+ */
+async function assertPristineTest(
+  ctx: JudgeContext,
+  prep: Prepared,
+  graph: StagedApp[],
+): Promise<void> {
+  const { i } = ctx;
+  const b = prep.built.find((x) => x.folder === TEST_APP);
+  const app = graph.find((a) => a.folder === TEST_APP);
+  if (!b || !app) return;
+  const w = prep.wanted.find((x) => x.id === b.id)!;
+  const bug = (what: string) => {
+    throw new Error(
+      `harness bug: G's Test ${what} is not the pristine Test app's`,
+    );
+  };
+  if (w.source !== await hashTree(join(i.pristine, TEST_APP), "task")) {
+    bug("source");
+  }
+  const { key } = await effectiveBuildKey(
+    await ctx.lane.bc.harnessCompilerIdentity(prep.container),
+    {
+      srcDir: i.pristine,
+      app,
+      version: b.version,
+      files: new Map(
+        prep.built.filter((x) => x.ok).map((x) => [x.folder, x.file!]),
+      ),
+      keys: prep.keys,
+      lock: i.lock,
+      graph,
+      policy: CLOUD_POLICY,
+      stageDir: join(i.workDir, "identity-g"),
+    },
+  );
+  if (w.build_key !== key) bug("build key");
+  // The cache is best-effort (H-27 r2): a missing entry is no claim.
+  const cached = i.buildCache ? await i.buildCache.get(key) : null;
+  if (cached && await hashFile(dirname(cached), cached) !== w.sha256) {
+    bug("cached package");
+  }
+}
+
+/**
+ * H-35 (design-r3 3.2): A publishes G's production packages, the same id,
+ * build key and digest each. A harness bug otherwise.
+ */
+export function assertSameProduction(
+  g: readonly WantedApp[],
+  a: readonly WantedApp[],
+  production: ReadonlySet<string>,
+): void {
+  for (const id of production) {
+    const x = g.find((w) => w.id === id);
+    const y = a.find((w) => w.id === id);
+    if (!x || !y || x.build_key !== y.build_key || x.sha256 !== y.sha256) {
+      throw new Error(`harness bug: A's production package ${id} is not G's`);
+    }
+  }
 }
 
 /** H-35: agent_tests on A (design-r2 3; the H-26 rerun policy unchanged). */
@@ -1269,6 +1409,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         sp.wanted,
         p2p,
         [...sp.candidateIds].reverse(),
+        "G'",
       )).rows;
       scores.set("pass_to_pass", scorerPassed(r), r);
       // Known to pass: the trusted control for agent-suite reruns.
@@ -1360,6 +1501,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
             cleanupIds: [...control.prep.candidateIds].reverse(),
             ctx: ctx.deploy,
           });
+          recordDeployment(ctx, "control", c, control.prep.wanted);
           if (ctl.cleanupError) {
             throw new CleanupFailedError(
               new Error("trusted control"),
@@ -1388,7 +1530,12 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       undefined,
       { maxInfraRetries: control ? 1 : 0 },
     );
-    return accountHeld(ctx, held);
+    const hold = target === "reference"
+      ? "A_ref"
+      : target === "mutant:0"
+      ? "A_0"
+      : `A_m:${target.slice("mutant:".length)}`;
+    return accountHeld(ctx, held, hold, p.wanted);
   };
 
   let mkRows: TestRow[];
@@ -1508,6 +1655,7 @@ export async function judge(
     infra_retries: [],
     per_app_compiles: 0,
     error: null,
+    deployments: [],
   };
   const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {

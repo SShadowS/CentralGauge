@@ -882,7 +882,12 @@ async function unscoredJudgments(t: TestEnv, executionId: string, n: number) {
     await t.env.store.writeJudgment({
       ...j!,
       id: crypto.randomUUID(),
-      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      // H-35 S2.1: a v2 scorer that infra left unscored says so.
+      scorers: j!.scorers.map((s) => ({
+        ...s,
+        passed: null,
+        ...(s.state ? { state: "unscored" as const } : {}),
+      })),
       verdict: "unscored",
       started_at: at,
       ended_at: at,

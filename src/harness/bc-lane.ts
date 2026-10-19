@@ -505,6 +505,77 @@ export function dirBuildCache(dir: string): BuildCache {
  * policy (effective target and policy id) is in the key, so a build under
  * one policy never stands in for another.
  */
+/**
+ * H-35: one app's build key as buildApps computes it (design-r2 4.2 #2, orch
+ * Sol r1 #4). The effective app.json (version, policy target) is staged into
+ * `stageDir/<folder>` first and the key is of that staged input, its
+ * dependency files and keys, the compiler, the lock and the restore closure.
+ * buildApps keys every build with it (and compiles the staged folder); the
+ * judge recomputes G's Test key with it from trusted inputs only.
+ */
+export async function effectiveBuildKey(
+  compiler: string,
+  o: {
+    srcDir: string;
+    app: StagedApp;
+    version: string;
+    files: ReadonlyMap<string, string>;
+    keys: ReadonlyMap<string, string>;
+    lock: LockedSymbols;
+    lockDigest?: string;
+    graph: StagedApp[];
+    policy: BuildPolicy;
+    stageDir: string;
+  },
+): Promise<{
+  key: string;
+  restored: SymbolPackage[];
+  dir: string;
+  appJson: { version?: string; [k: string]: unknown };
+}> {
+  const { app } = o;
+  const lockDigest = o.lockDigest ?? await lockDigestOf(o.lock);
+  const srcJson = await readAppJsonRaw(
+    join(o.srcDir, app.folder, "app.json"),
+  ) as { application?: unknown; platform?: unknown };
+  const roots = symbolRoots(app, srcJson, o.graph);
+  const closure = roots
+    ? await dependencyClosure(o.lock.store, lockDigest, o.lock.packages, roots)
+    : null;
+  const restored = closure ?? o.lock.packages;
+  const dir = join(o.stageDir, app.folder);
+  await Deno.remove(dir, { recursive: true }).catch(() => {});
+  await safeCopyTree(join(o.srcDir, app.folder), dir, {
+    skip: isTaskBuildArtifact,
+  });
+  const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
+    version?: string;
+    [k: string]: unknown;
+  };
+  appJson.version = o.version;
+  if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
+  await Deno.writeTextFile(
+    join(dir, "app.json"),
+    JSON.stringify(appJson, null, 2),
+  );
+  const key = await buildKey(
+    compiler,
+    app,
+    o.stageDir,
+    o.version,
+    o.files,
+    o.keys,
+    lockDigest,
+    restored,
+    o.policy,
+  );
+  return { key, restored, dir, appJson };
+}
+
+/** The lock's digest in a build key. */
+export const lockDigestOf = (lock: LockedSymbols) =>
+  hashJson({ lock: lock.packages.map((p) => [p.file, p.sha256]) });
+
 async function buildKey(
   compiler: string,
   app: StagedApp,
@@ -760,9 +831,7 @@ export async function buildApps(
     diagnostics: [...diagnostics, synthetic(message)],
     compile_ms,
   });
-  const lockDigest = await hashJson({
-    lock: o.lock.packages.map((p) => [p.file, p.sha256]),
-  });
+  const lockDigest = await lockDigestOf(o.lock);
   for (const app of o.apps) {
     checkCancel(o.signal);
     const version = o.versions.get(app.folder) ?? app.version;
@@ -818,49 +887,20 @@ export async function buildApps(
     // The symbol packages this compile restores (M1-40b), fixed before the
     // cache lookup so they are in the key (H-27 r2): the declared closure once
     // the app info is harvested, the whole lock before.
-    const srcJson = await readAppJsonRaw(
-      join(o.srcDir, app.folder, "app.json"),
-    ) as { application?: unknown; platform?: unknown };
-    const roots = symbolRoots(app, srcJson, o.graph ?? o.apps);
-    const closure = roots
-      ? await dependencyClosure(
-        o.lock.store,
-        lockDigest,
-        o.lock.packages,
-        roots,
-      )
-      : null;
-    const restored = closure ?? o.lock.packages;
-    // orch Sol r1 #4 (ruling r5): the effective app.json (version, Cloud
-    // target) is staged first; the key is of that trusted build input, and the
-    // cache is consulted with it only after.
-    const dir = join(o.outDir, app.folder);
-    await Deno.remove(dir, { recursive: true }).catch(() => {});
-    await safeCopyTree(join(o.srcDir, app.folder), dir, {
-      skip: isTaskBuildArtifact,
-    });
-    const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
-      version?: string;
-      application?: unknown;
-      platform?: unknown;
-      [k: string]: unknown;
-    };
-    appJson.version = version;
-    if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
-    await Deno.writeTextFile(
-      join(dir, "app.json"),
-      JSON.stringify(appJson, null, 2),
-    );
-    const key = await buildKey(
+    const { key, restored, dir, appJson } = await effectiveBuildKey(
       compiler,
-      app,
-      o.outDir,
-      version,
-      files,
-      keys,
-      lockDigest,
-      restored,
-      o.policy,
+      {
+        srcDir: o.srcDir,
+        app,
+        version,
+        files,
+        keys,
+        lock: o.lock,
+        lockDigest,
+        graph: o.graph ?? o.apps,
+        policy: o.policy,
+        stageDir: o.outDir,
+      },
     );
     // H-27 r2: the cache is best-effort; a failed read is a miss.
     let hit: string | null = null;
@@ -1346,13 +1386,33 @@ async function prepareOn(
   ]);
   const idOf = new Map(graph.map((a) => [a.folder, a.id]));
   // H-35 Sol r1 #5: every package carries its digest; deploy checks each.
+  // S2.4 (design-r2 4.2): and its build key and source tree, for the
+  // deployment record.
+  const keyOf = new Map([
+    ...all.filter((b) => b.ok && b.key).map((b) => [b.folder, b.key!] as const),
+    ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
+      [f, e.key!] as const
+    ),
+  ]);
   const shaOf = new Map<string, string>();
+  const sourceOf = new Map<string, string>();
   if (buildOk) {
     for (const a of graph) {
       const f = fileOf.get(a.folder)!;
       shaOf.set(
         a.folder,
         given.get(a.folder)?.sha256 ?? await hashFile(dirname(f), f),
+      );
+      sourceOf.set(
+        a.folder,
+        given.get(a.folder)?.source ??
+          await hashTree(
+            join(
+              affected.has(a.folder) ? o.candidateDir : o.pristine,
+              a.folder,
+            ),
+            "task",
+          ),
       );
     }
   }
@@ -1369,6 +1429,8 @@ async function prepareOn(
       role: cands.has(a.folder) ? "candidate" : "prereq",
       depends: a.depends.map((d) => idOf.get(d)!),
       sha256: shaOf.get(a.folder)!,
+      source: sourceOf.get(a.folder)!,
+      ...(keyOf.has(a.folder) ? { build_key: keyOf.get(a.folder)! } : {}),
     }))
     : [];
   return {
@@ -1379,14 +1441,7 @@ async function prepareOn(
     buildOk,
     compile_ms: all.reduce((s, b) => s + b.compile_ms, 0),
     per_app_compiles: all.filter((b) => b.attempted).length,
-    keys: new Map([
-      ...all.filter((b) => b.ok && b.key).map((b) =>
-        [b.folder, b.key!] as const
-      ),
-      ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
-        [f, e.key!] as const
-      ),
-    ]),
+    keys: keyOf,
   };
 }
 
