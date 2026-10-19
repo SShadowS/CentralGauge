@@ -2,7 +2,11 @@ import { assert, assertEquals, assertRejects } from "@std/assert";
 import { dirname, join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { lineageCompat, loadLineage } from "../../../src/harness/lineage.ts";
-import { goldenReset, RESET_PHASES } from "../../../src/harness/reset.ts";
+import {
+  fsDiff,
+  goldenReset,
+  RESET_PHASES,
+} from "../../../src/harness/reset.ts";
 import { sha256Hex } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
@@ -15,13 +19,13 @@ Deno.test("H-35 S3.2 loadLineage: the shipped golden-o09-v1 lineage loads, its s
   assertEquals(l.runner.package_id, "ede0ce05-9ed6-42f2-bbb4-bfee95bb033a");
 });
 
-Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section admission needs (content root, fs v2, egress) and runner 1.0.2.0", async () => {
+Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section admission needs (content root, fs v3, egress) and runner 1.0.2.0", async () => {
   const path = "infra/harness-reset/lineages/golden-o09-v2.json";
   const l = await loadLineage(path);
   assertEquals([l.id, l.reset_policy_version], ["golden-o09-v2", 2]);
   assertEquals(l.runner.version, "1.0.2.0");
   assert(l.content_root && l.content_root.exclude.length > 0);
-  assertEquals(l.fs?.digest_version, 2);
+  assertEquals(l.fs?.digest_version, 3);
   assert(l.egress);
   const m = goldenReset({
     repoRoot: ".",
@@ -30,6 +34,36 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
     dockerEnv: {},
   });
   assert(m.contentRoot && m.fsDigest && m.bcEgress && m.fsRoots?.length);
+  assertEquals(m.fsCaches?.length, 2);
+  assertEquals(m.fsExclude, []);
+  // its caches tolerate the real measured paths (Cronus283) and nothing planted
+  const apps = m.fsCaches![0]!.base;
+  const hex =
+    "0A53123EBB10012CF7AB9309302824D90E158BB785A7763F235C616DD829ADF0";
+  const f = (p: string, head = "4d5a") =>
+    `F|${"a".repeat(64)}|4|32|1|${head}|${apps}\\${p}`;
+  const before = [`D|16|1|${apps}`, "T|1"];
+  const real = [
+    `D|16|1|${apps}`,
+    f(`assembly\\release\\28.0.53667.0_1\\0A\\${hex}.dll`),
+    f(
+      `metadata\\3\\00\\001123D29F565DFE84635228DD0770E1AFE17C986430431FA1FF06D65FE03C1B.xml`,
+      "3c3f",
+    ),
+  ];
+  assertEquals(
+    fsDiff(before, [...real, `T|${real.length}`], [], [], m.fsCaches).diff,
+    [],
+  );
+  for (
+    const planted of [
+      f("metadata\\3\\0A\\cg.txt", "6869"),
+      f("assembly\\release\\28.0.53667.0_1\\0A\\evil.dll"),
+    ]
+  ) {
+    const after = [`D|16|1|${apps}`, planted, "T|2"];
+    assertEquals(fsDiff(before, after, [], [], m.fsCaches).diff.length, 1);
+  }
 });
 
 async function copyLineage(
