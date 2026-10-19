@@ -8774,3 +8774,46 @@ Deno.test("rejudge (H-24 review): after a failure the env closes only once every
   await new Promise((r) => setTimeout(r, 100));
   assertEquals(startedAfterClose, 0, "a queued judging started after close");
 });
+
+// ---- H-35 S1.7 (design-r4 3.1): two build caches, never crossed ----
+
+Deno.test("H-35: the env opens a judge and an agent build cache: judging and the agent backend never see each other's builds, and neither reads the old shared cache", async () => {
+  const { buildCacheDir, dirBuildCache } = await import(
+    "../../../../src/harness/bc-lane.ts"
+  );
+  await using t = await makeEnv();
+  const o = envOpts(t);
+  const pkg = join(o.privateRoot, "pkg.app");
+  await Deno.mkdir(o.privateRoot, { recursive: true });
+  await Deno.writeTextFile(pkg, "pkg");
+  // A build the single H-27 cache holds from before the split.
+  await dirBuildCache(join(o.privateRoot, "build-cache")).put("old", pkg);
+  const h = await openHarnessEnv(o, deps([]));
+  try {
+    const judge = h.env.buildCache;
+    const agent = h.env.backend["o"].buildCache;
+    if (!judge || !agent) throw new Error("the env opens both build caches");
+    await judge.put("judge-key", pkg);
+    await agent.put("agent-key", pkg);
+    assertEquals(await agent.get("judge-key"), null);
+    assertEquals(await judge.get("agent-key"), null);
+    assertEquals(await judge.get("old"), null);
+    assertEquals(await agent.get("old"), null);
+    assert(
+      (await judge.get("judge-key"))!.startsWith(
+        buildCacheDir(o.privateRoot, "judge"),
+      ),
+    );
+    assert(
+      (await agent.get("agent-key"))!.startsWith(
+        buildCacheDir(o.privateRoot, "agent"),
+      ),
+    );
+    assert(
+      buildCacheDir(o.privateRoot, "judge") !==
+        buildCacheDir(o.privateRoot, "agent"),
+    );
+  } finally {
+    await h.close();
+  }
+});

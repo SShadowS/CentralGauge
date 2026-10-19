@@ -530,25 +530,30 @@ export async function openHarnessEnv(
       });
     // The runtime owns the environment's one shared proxy (M1-33d): it goes with the env.
     if (egress) closers.unshift(() => egress.shutdown());
-    // H-27: one build cache for the run, shared by the agent backend and the judge.
-    const cacheDir = buildCacheDir(o.privateRoot);
-    const buildCache = dirBuildCache(cacheDir);
-    closers.push(async () => {
-      const r = await buildCacheReport(cacheDir);
-      console.log(
-        `${
-          colors.dim("[cache]")
-        } build cache ${cacheDir}: ${r.entries} builds, ${
-          (r.bytes / 1e6).toFixed(1)
-        } MB`,
-      );
-    });
+    // H-27 build caches, one per consumer and never crossed (H-35 design-r4
+    // 3.1): the agent backend's and the judge's (shared by the run's cells).
+    const openCache = (consumer: "agent" | "judge") => {
+      const dir = buildCacheDir(o.privateRoot, consumer);
+      closers.push(async () => {
+        const r = await buildCacheReport(dir);
+        console.log(
+          `${
+            colors.dim("[cache]")
+          } ${consumer} build cache ${dir}: ${r.entries} builds, ${
+            (r.bytes / 1e6).toFixed(1)
+          } MB`,
+        );
+      });
+      return dirBuildCache(dir);
+    };
+    const agentCache = openCache("agent");
+    const buildCache = openCache("judge");
     const backend = new Backend({
       approvedRoots: [join(o.privateRoot, "work")],
       workRoot: join(o.privateRoot, "backend"),
       ops: defaultBackendOps(lane),
       allowedHosts: [host],
-      buildCache,
+      buildCache: agentCache,
     });
     // H-16: a request revoke gave up on still uses this private root: the
     // locks are released only after it has drained (closers run front first).

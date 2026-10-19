@@ -423,9 +423,15 @@ export interface BuildCache {
   put(key: string, file: string): Promise<void>;
 }
 
-/** The run's shared build cache folder (H-27). */
-export const buildCacheDir = (privateRoot: string) =>
-  join(privateRoot, "build-cache");
+/**
+ * A run's build cache folder per consumer (H-27; H-35 design-r4 3.1: the
+ * judge and the agent backend never share one, against PackageId
+ * prelearning). The old shared `build-cache/` is read by neither.
+ */
+export const buildCacheDir = (
+  privateRoot: string,
+  consumer: "judge" | "agent",
+) => join(privateRoot, `build-cache-${consumer}`);
 
 /**
  * Entries and bytes of a build cache folder (H-27). No eviction yet.
