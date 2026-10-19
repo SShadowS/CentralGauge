@@ -2,6 +2,7 @@ namespace CentralGauge.TestHarness;
 
 using System.TestTools.TestRunner;
 using System.Reflection;
+using System.Apps;
 
 /// <summary>
 /// Headless test runner. Builds a fresh AL Test Suite, runs the requested
@@ -84,5 +85,32 @@ codeunit 50500 "CG WS Test Runner"
         ResultObj.Add('durationMs', CurrentDateTime() - StartedAt);
         ResultObj.Add('codeunits', CodeunitArr);
         ResultObj.WriteTo(ResultJson);
+    end;
+
+    /// <summary>
+    /// H-35 S3 L2a (design-r5 2.2): set "Allow HttpClient Requests" for one
+    /// extension and read it back from the table. Returns 'allow=true' or
+    /// 'allow=false' as stored after the write; the caller compares.
+    /// </summary>
+    procedure SetHttpClientAllowed(AppId: Text; Allowed: Boolean) Result: Text
+    var
+        NAVAppSetting: Record "NAV App Setting";
+        Id: Guid;
+    begin
+        Evaluate(Id, AppId);
+        if NAVAppSetting.Get(Id) then begin
+            NAVAppSetting."Allow HttpClient Requests" := Allowed;
+            NAVAppSetting.Modify();
+        end else begin
+            NAVAppSetting.Init();
+            NAVAppSetting."App ID" := Id;
+            NAVAppSetting."Allow HttpClient Requests" := Allowed;
+            NAVAppSetting.Insert();
+        end;
+        Clear(NAVAppSetting);
+        NAVAppSetting.Get(Id);
+        if NAVAppSetting."Allow HttpClient Requests" then
+            exit('allow=true');
+        exit('allow=false');
     end;
 }

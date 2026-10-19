@@ -54,6 +54,8 @@ import {
   fsDiff,
   type FsDiffEntry,
   HostDirtyError,
+  HttpBlockFailedError,
+  QuarantiningError,
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
@@ -81,6 +83,16 @@ export interface HarnessBc {
     },
   ): Promise<HarnessSyncResult>;
   runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
+  /**
+   * H-35 S3 L2a: set the extension's Allow HttpClient Requests through the
+   * runner app (CG Test Harness >= 1.0.2.0) and return the stored value as
+   * read back (`allow=true` / `allow=false`).
+   */
+  setHttpClientAllowed(
+    container: string,
+    appId: string,
+    allowed: boolean,
+  ): Promise<string>;
   /**
    * H-35: the `Target` a compiled package's manifest records, or null when
    * it records none. Host-side (reads the package file), never a container.
@@ -332,10 +344,9 @@ export class BcLane {
           if (err instanceof CleanupFailedError) {
             this.quarantine(c, err.cleanupError);
           }
-          // H-35 S3: a failed reset leaves the container in an unknown state.
-          if (err instanceof ResetFailedError) this.quarantine(c, err.message);
-          // H-35 S3 L4: a dirty or unobservable host is never reused.
-          if (err instanceof HostDirtyError) this.quarantine(c, err.message);
+          // H-35 S3: a failed reset, a dirty or unobservable host (L4), an
+          // HttpClient block that did not hold (L2a): never reused.
+          if (err instanceof QuarantiningError) this.quarantine(c, err.message);
           // A cancellation (even a timeout reason) is never infra: no
           // reroute, no fault recorded against the container.
           if (signal?.aborted) throw cancelled(signal);
@@ -1766,6 +1777,18 @@ export async function deploy(
       );
     }
     d.candidateFailure = { id: w!.id, message: msg };
+  }
+  // H-35 S3 L2a (design-r5 2.2): in a judge deployment (it has a reset, the
+  // agent's tool environment has none) no candidate may make outbound HTTP
+  // calls. The setting lives in the tenant DB, so every deployment sets it
+  // again; a read-back other than false quarantines.
+  if (ctx.reset && !d.candidateFailure) {
+    for (const w of wanted.filter((w) => w.role === "candidate")) {
+      const back = await bc.setHttpClientAllowed(container, w.id, false);
+      if (back.trim() !== "allow=false") {
+        throw new HttpBlockFailedError(container, w.id, back);
+      }
+    }
   }
   return d;
 }

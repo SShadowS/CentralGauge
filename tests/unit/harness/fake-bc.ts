@@ -347,6 +347,33 @@ export class FakeBc implements HarnessBc {
       this.script(codeunit, this.state(container), container),
     );
   }
+
+  /** H-35 S3 L2a: every HttpClient setting write, in order (with the sync count before it). */
+  httpSettings: {
+    container: string;
+    id: string;
+    allowed: boolean;
+    at: number;
+  }[] = [];
+  /** Test hook: the read-back for a write (default: what was written). */
+  httpReadback: ((container: string, id: string) => string) | null = null;
+
+  setHttpClientAllowed(
+    container: string,
+    appId: string,
+    allowed: boolean,
+  ): Promise<string> {
+    this.check(container, "test");
+    this.httpSettings.push({
+      container,
+      id: appId,
+      allowed,
+      at: this.syncs.length,
+    });
+    return Promise.resolve(
+      this.httpReadback?.(container, appId) ?? `allow=${allowed}`,
+    );
+  }
 }
 
 export function deployedSource(

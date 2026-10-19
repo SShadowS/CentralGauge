@@ -74,7 +74,11 @@ import {
   buildTestScript,
   escapeForPS,
 } from "./bc-script-builders.ts";
-import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
+import {
+  resolveSoapTimeoutMs,
+  runTestsViaSoap,
+  setHttpClientAllowedViaSoap,
+} from "./soap-test-client.ts";
 import { compilerCacheKey } from "./compiler-cache-key.ts";
 import { dockerContextEnv } from "./docker-context.ts";
 import { inspectContainer } from "./docker-inspect.ts";
@@ -2252,6 +2256,19 @@ ${script}
     codeunit: number,
   ): Promise<TestResult> {
     return runTestsViaSoap(this.soapConfigFor(containerName), codeunit, "");
+  }
+
+  /** Harness Bench H-35 S3 L2a: an extension's Allow HttpClient Requests, read back. */
+  setHttpClientAllowed(
+    containerName: string,
+    appId: string,
+    allowed: boolean,
+  ): Promise<string> {
+    return setHttpClientAllowedViaSoap(
+      this.soapConfigFor(containerName),
+      appId,
+      allowed,
+    );
   }
 
   /**

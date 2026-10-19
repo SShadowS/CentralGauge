@@ -70,11 +70,17 @@ export interface FsCheckRecord {
 }
 
 /**
+ * Infra that leaves the container in an unknown or unsafe state: the lane
+ * quarantines it (never reused without recovery) and reroutes.
+ */
+export class QuarantiningError extends ContainerError {}
+
+/**
  * L4 found a difference or could not observe: the host is dirty. Infra, so
  * the judgment's rows from this deployment are never scored here; the lane
  * quarantines the container and reroutes.
  */
-export class HostDirtyError extends ContainerError {
+export class HostDirtyError extends QuarantiningError {
   constructor(readonly record: FsCheckRecord) {
     const what = [
       ...record.errors,
@@ -152,8 +158,25 @@ export function parseVerifyOutput(
   return { container, ok: true, diff, error: null };
 }
 
+/**
+ * H-35 S3 L2a (design-r5 2.2): an agent extension's Allow HttpClient
+ * Requests did not read back false. Infra; quarantined.
+ */
+export class HttpBlockFailedError extends QuarantiningError {
+  constructor(container: string, appId: string, readback: string) {
+    super(
+      `HttpClient block of ${appId} on ${container} read back '${
+        readback.slice(0, 100)
+      }', want allow=false`,
+      container,
+      "publish",
+    );
+    this.name = "HttpBlockFailedError";
+  }
+}
+
 /** A reset that did not complete: infra; the lane quarantines the container. */
-export class ResetFailedError extends ContainerError {
+export class ResetFailedError extends QuarantiningError {
   constructor(readonly record: ResetRecord) {
     super(
       `reset of ${record.container} failed at ${record.failed_step}: ${record.error}`,

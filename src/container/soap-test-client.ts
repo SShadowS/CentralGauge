@@ -112,8 +112,8 @@ function xmlUnescape(s: string): string {
     .replace(/&amp;/g, "&");
 }
 
-/** Parse a SOAP response from `RunTests` into a `TestResult`. Throws on SOAP faults. */
-export function parseRunTestsResponse(soapXml: string): TestResult {
+/** The decoded `<return_value>` of a harness SOAP response. Throws on SOAP faults. */
+export function parseReturnValue(soapXml: string): string {
   const fault = soapXml.match(/<faultstring[^>]*>([\s\S]*?)<\/faultstring>/);
   if (fault) {
     throw new Error(`harness SOAP fault: ${xmlUnescape(fault[1]!.trim())}`);
@@ -125,8 +125,27 @@ export function parseRunTestsResponse(soapXml: string): TestResult {
       `harness response missing <return_value>: ${soapXml.slice(0, 400)}`,
     );
   }
+  return xmlUnescape(rv[1]!);
+}
 
-  const decoded = xmlUnescape(rv[1]!);
+/** H-35 S3 L2a: the envelope for `CG WS Test Runner.SetHttpClientAllowed`. */
+export function buildSetHttpClientAllowedEnvelope(
+  appId: string,
+  allowed: boolean,
+): string {
+  // Interpolated into XML: only a GUID gets through.
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(appId)) {
+    throw new Error(`app id ${appId} is not a GUID`);
+  }
+  return `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ` +
+    `xmlns:t="${SOAP_NS}"><soap:Body><t:SetHttpClientAllowed>` +
+    `<t:appId>${appId}</t:appId><t:allowed>${allowed}</t:allowed>` +
+    `</t:SetHttpClientAllowed></soap:Body></soap:Envelope>`;
+}
+
+/** Parse a SOAP response from `RunTests` into a `TestResult`. Throws on SOAP faults. */
+export function parseRunTestsResponse(soapXml: string): TestResult {
+  const decoded = parseReturnValue(soapXml);
   const json = JSON.parse(decoded) as HarnessJson;
   if (json.error) {
     throw new Error(`harness error: ${json.error}`);
@@ -195,6 +214,47 @@ export async function runTestsViaSoap(
   testCodeunitId: number,
   extensionId = "",
 ): Promise<TestResult> {
+  return parseRunTestsResponse(
+    await postHarness(
+      config,
+      "RunTests",
+      buildRunTestsEnvelope(extensionId, testCodeunitId),
+    ),
+  );
+}
+
+/**
+ * H-35 S3 L2a: set an extension's Allow HttpClient Requests through the
+ * harness runner app and return the stored value it read back.
+ */
+export async function setHttpClientAllowedViaSoap(
+  config: SoapTestRunnerConfig,
+  appId: string,
+  allowed: boolean,
+): Promise<string> {
+  const text = await postHarness(
+    config,
+    "SetHttpClientAllowed",
+    buildSetHttpClientAllowedEnvelope(appId, allowed),
+  );
+  try {
+    return parseReturnValue(text);
+  } catch (e) {
+    // A fault here is the setting not holding: infra on this container.
+    throw new ContainerError(
+      e instanceof Error ? e.message : String(e),
+      config.host,
+      "publish",
+    );
+  }
+}
+
+/** POST one harness SOAP action; the response text (a fault body included). */
+async function postHarness(
+  config: SoapTestRunnerConfig,
+  action: string,
+  body: string,
+): Promise<string> {
   const url = buildHarnessUrl(config);
   const auth = btoa(
     `${config.credentials.username}:${config.credentials.password}`,
@@ -206,10 +266,10 @@ export async function runTestsViaSoap(
       method: "POST",
       headers: {
         "Content-Type": "text/xml; charset=utf-8",
-        "SOAPAction": `${SOAP_NS}:RunTests`,
+        "SOAPAction": `${SOAP_NS}:${action}`,
         "Authorization": `Basic ${auth}`,
       },
-      body: buildRunTestsEnvelope(extensionId, testCodeunitId),
+      body,
       // Bound the call so an unresponsive web service can't hang indefinitely.
       // On timeout the fetch rejects; we wrap it below as a ContainerError,
       // which runTests()/decideSoapFailureAction classifies as infra and
@@ -243,7 +303,7 @@ export async function runTestsViaSoap(
     );
   }
   // BC returns HTTP 500 for AL errors but still wraps a SOAP fault in the body;
-  // parseRunTestsResponse turns that into a thrown Error with the fault string.
+  // parseReturnValue turns that into a thrown Error with the fault string.
   if (response.status !== 200 && !text.includes("<faultstring")) {
     throw new ContainerError(
       `harness SOAP call HTTP ${response.status}: ${text.slice(0, 400)}`,
@@ -251,5 +311,5 @@ export async function runTestsViaSoap(
       "test",
     );
   }
-  return parseRunTestsResponse(text);
+  return text;
 }

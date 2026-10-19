@@ -504,6 +504,7 @@ export function agentTestsBc(
     packageTarget: (f) => bc.packageTarget(f),
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
+    setHttpClientAllowed: (c, id, a) => bc.setHttpClientAllowed(c, id, a),
     async runHarnessTests(c, codeunit): Promise<TestResult> {
       const procs = discovered.get(codeunit);
       if (!procs) throw new Error(`codeunit ${codeunit} is not agent-added`);
@@ -566,6 +567,7 @@ export function agentSuiteBc(
     packageTarget: (f) => bc.packageTarget(f),
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
+    setHttpClientAllowed: (c, id, a) => bc.setHttpClientAllowed(c, id, a),
     async runHarnessTests(c, codeunit): Promise<TestResult> {
       const procs = discovered.get(codeunit);
       if (!procs) return await bc.runHarnessTests(c, codeunit);

@@ -2586,3 +2586,81 @@ Deno.test("H-35 S3 L4: an error line in the post-reset capture fails closed befo
   assertEquals(bc.syncs.length, syncs);
   assertEquals(r.checks.map((x) => x.ok), [false]);
 });
+
+// ---- H-35 S3 L2a: no outbound HttpClient for agent extensions (design-r5 2.2) ----
+
+Deno.test("H-35 S3 L2a deployAndTest: in a judge deployment every candidate gets Allow HttpClient Requests = false after the publish and before the tests; prerequisites are left alone", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = fakeReset(bc);
+  let testsAt = -1;
+  bc.script = (cu) => {
+    testsAt = bc.httpSettings.length;
+    return cu === 80010 ? result({ Works: true }) : result({});
+  };
+  await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+    },
+  });
+  const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
+  assert(cands.length > 0);
+  assertEquals(
+    bc.httpSettings.map((s) => [s.id, s.allowed]),
+    cands.map((id) => [id, false]),
+  );
+  assert(
+    bc.httpSettings.every((s) => s.at >= 1),
+    "after the deployment's sync",
+  );
+  assertEquals(testsAt, cands.length, "all set before the first test");
+});
+
+Deno.test("H-35 S3 L2a: a read-back that is not allow=false fails the deployment as infra; the lane quarantines and reroutes", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  bc.httpReadback = (c, _id) => c === "C1" ? "allow=true" : "allow=false";
+  const r = fakeReset(bc);
+  const ledgerRoot = await tmp();
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: { ledgerRoot, trustedRoots: [p.pristine], reset: r.mechanism },
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.get("C1")?.includes("HttpClient"));
+  assertEquals(bc.tests.filter((t) => t.container === "C1"), []);
+});
+
+Deno.test("H-35 S3 L2a: no setting outside a judge deployment (no reset: the agent's tool environment)", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
+  });
+  assertEquals(bc.httpSettings, []);
+});
