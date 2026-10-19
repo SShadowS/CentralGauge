@@ -29,7 +29,11 @@ import {
   mcpLabel,
 } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
-import { buildReport, renderReport } from "../../../src/harness/report.ts";
+import {
+  buildReport,
+  loadReportLogs,
+  renderReport,
+} from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
@@ -410,6 +414,69 @@ Deno.test("H-13: resume refuses an override state other than the campaign's, eit
       reason: "P-01 pilot",
     });
   }
+});
+
+Deno.test("H-35 S3 L2b: a campaign judged on an unenforced-NST-egress lineage records bc_egress_override; the report marks it; a plain run has neither", async () => {
+  const t = await mockEnv();
+  await experiment(t, "plain", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "plain", opts({ sample: 1 }), io());
+  const plain = (await t.env.store.campaigns("plain"))[0]!;
+  assertEquals(plain.bc_egress_override, undefined);
+  const plainData = await loadCampaignData(t.env.store, plain);
+  const plainReport = await buildReport(plainData, {
+    logs: await loadReportLogs(t.env.resultsRoot, plainData),
+  });
+  assertEquals(plainReport.bc_egress_override, undefined);
+  await experiment(t, "bc", "mock-positive", ["mock-naive-a"]);
+  const bcEgress = { mode: "unenforced" as const, override: "r" };
+  const env = { ...t.env, deploy: { ...t.env.deploy, bcEgress } };
+  await runCampaign(env, "bc", opts({ sample: 1 }), io());
+  const c = (await t.env.store.campaigns("bc"))[0]!;
+  assertEquals(c.bc_egress_override, { reason: "r" });
+  const data = await loadCampaignData(t.env.store, c);
+  const r = await buildReport(data, {
+    logs: await loadReportLogs(t.env.resultsRoot, data),
+  });
+  assertEquals(r.bc_egress_override, {
+    bc_egress_enforced: false,
+    reasons: ["r"],
+  });
+  assertStringIncludes(
+    renderReport(r),
+    "[WARN] NST egress NOT enforced (owner override --unverified-bc-egress-ok): r",
+  );
+});
+
+Deno.test("H-35 S3 L2b: resume refuses a BC egress override other than the campaign's", async () => {
+  const t = await mockEnv();
+  await experiment(t, "bc", "mock-positive", ["mock-naive-a"]);
+  const withBc = (override: string | null) => ({
+    ...t.env,
+    deploy: {
+      ...t.env.deploy,
+      bcEgress: { mode: "unenforced" as const, override },
+    },
+  });
+  await runCampaign(withBc("r"), "bc", opts({ sample: 1 }), io());
+  const c = (await t.env.store.campaigns("bc"))[0]!;
+  for (const env of [t.env, withBc(null), withBc("other")]) {
+    await assertRejects(
+      () => runCampaign(env, "bc", opts({ campaign: c.id }), io()),
+      ConfigurationError,
+      "unverified-bc-egress-ok",
+    );
+  }
+  await runCampaign(withBc("r"), "bc", opts({ campaign: c.id }), io());
+  assertEquals((await t.env.store.executions(c.id)).length, 2);
+  // A plain campaign never resumes under the override.
+  await experiment(t, "plain", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "plain", opts({ sample: 1 }), io());
+  const plain = (await t.env.store.campaigns("plain"))[0]!;
+  await assertRejects(
+    () => runCampaign(withBc("r"), "plain", opts({ campaign: plain.id }), io()),
+    ConfigurationError,
+    "unverified-bc-egress-ok",
+  );
 });
 
 Deno.test("tasks_meta.limits stores the task's own overrides; two arms with different limits against one task override get their own effective execution limits; reuse stays empty", async () => {

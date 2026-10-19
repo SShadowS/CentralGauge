@@ -509,6 +509,11 @@ export const CampaignRecordSchema = z.strictObject({
   egress_override: EgressOverrideSchema.optional(),
   /** H-13b: created with the calibration gate waived; a resume must match it. */
   calibration_waived: CalibrationWaived,
+  /**
+   * H-35 S3 L2b: the campaign's judging ran on a lineage with unenforced NST
+   * egress under the owner's --unverified-bc-egress-ok; a resume must match it.
+   */
+  bc_egress_override: z.strictObject({ reason: z.string().min(1) }).optional(),
 }).superRefine((c, ctx) => {
   waiverNeedsOverride(c, ctx);
   const issue = (message: string, path: (string | number)[]) =>

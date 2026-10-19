@@ -111,6 +111,8 @@ export interface HarnessReport {
   v: 1;
   /** H-13: present when the campaign or any execution ran under --unverified-egress-ok. */
   egress_override?: { egress_enforced: false; reasons: string[] };
+  /** H-35 S3 L2b: present when the campaign or any verdict ran under --unverified-bc-egress-ok. */
+  bc_egress_override?: { bc_egress_enforced: false; reasons: string[] };
   /** H-13b: present when the campaign or any execution waived the M8-07c calibration gate. */
   calibration_waived?: true;
   /** H-15: present when any execution ran before its parent's recorded usage reset. */
@@ -690,6 +692,18 @@ export async function buildReport(
       ),
     ),
   ];
+  // H-35 S3 L2b: every NST egress override reason of the campaign and its verdicts.
+  const bcOverrideReasons = [
+    ...new Set([
+      ...(campaign.bc_egress_override
+        ? [campaign.bc_egress_override.reason]
+        : []),
+      ...records.judgments.flatMap((j) => {
+        const o = opts.logs?.verdict.get(j.id)?.bc_egress?.override;
+        return o ? [o] : [];
+      }),
+    ]),
+  ].sort();
   // H-15: every --ignore-usage-reset reason of its executions.
   const resetReasons = [
     ...new Set(
@@ -1173,6 +1187,14 @@ export async function buildReport(
         },
       }
       : {}),
+    ...(bcOverrideReasons.length > 0
+      ? {
+        bc_egress_override: {
+          bc_egress_enforced: false as const,
+          reasons: bcOverrideReasons,
+        },
+      }
+      : {}),
     ...([campaign, ...records.executions].some((x) => x.calibration_waived)
       ? { calibration_waived: true as const }
       : {}),
@@ -1223,6 +1245,13 @@ export function renderReport(r: HarnessReport): string {
     out.push(colors.red(
       `[WARN] egress NOT enforced (owner override): ${
         r.egress_override.reasons.join("; ")
+      }`,
+    ));
+  }
+  if (r.bc_egress_override) {
+    out.push(colors.red(
+      `[WARN] NST egress NOT enforced (owner override --unverified-bc-egress-ok): ${
+        r.bc_egress_override.reasons.join("; ")
       }`,
     ));
   }

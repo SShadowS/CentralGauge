@@ -746,6 +746,8 @@ export async function runCampaign(
     .map((c) => c.id);
   // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
   const override = env.unverifiedEgressReason;
+  // H-35 S3 L2b: the judging lineage's NST egress override, if any.
+  const bcOverride = env.deploy.bcEgress?.override || undefined;
   if (override !== undefined) {
     if (override.trim() === "") {
       throw new ConfigurationError(
@@ -946,6 +948,7 @@ export async function runCampaign(
         }
         : {}),
       ...(calibrationWaived ? { calibration_waived: true } : {}),
+      ...(bcOverride ? { bc_egress_override: { reason: bcOverride } } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -965,6 +968,14 @@ export async function runCampaign(
         c.egress_override
           ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag and that reason`
           : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
+      );
+    }
+    // H-35 S3 L2b: and its BC (NST) egress override state and reason.
+    if (c.bc_egress_override?.reason !== bcOverride) {
+      throw new ConfigurationError(
+        c.bc_egress_override
+          ? `campaign ${c.id} was created under --unverified-bc-egress-ok (${c.bc_egress_override.reason}): resume it with the flag and that reason`
+          : `campaign ${c.id} was created without --unverified-bc-egress-ok: resume it without the flag`,
       );
     }
     // H-13b: and its calibration waiver state.
