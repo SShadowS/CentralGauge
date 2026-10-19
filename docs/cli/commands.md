@@ -1032,8 +1032,11 @@ The verdict log records each step: `resets[]`, `verifies[]`, `fs_checks[]` and
 **L4 scope.** L4 detects differences in the specified file/stream contents and
 recorded metadata between observation points within declared roots, excluding
 recorded exclusions and untraversed reparse targets. It is not a complete write
-history or persistence boundary. The campaign guarantee rests on L1 (Cloud
-compile), L2 (network) and L3 (bans).
+history or persistence boundary. Each capture requires the NST to be quiescent
+before and after the walk and its session-log watermark to be unchanged across
+it; work that writes under the roots during the walk without leaving a session
+log row is not detected. The campaign guarantee rests on L1 (Cloud compile), L2
+(network) and L3 (bans).
 
 ### Lineage file
 

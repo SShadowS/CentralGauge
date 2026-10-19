@@ -1,7 +1,9 @@
 # H-35 S3 L4 (design-r5 2.4 as amended: decisions\2026-10-20-h-35-l4-scope.md). Dot-sourced after reset-lib.ps1.
 # Scope: L4 detects differences in the specified file/stream contents and recorded metadata between observation
 # points within declared roots, excluding recorded exclusions and untraversed reparse targets. It is not a complete
-# write history or persistence boundary.
+# write history or persistence boundary. Each capture requires the NST to be quiescent before and after the walk
+# and its session-log watermark to be unchanged across it; work that writes under the roots during the walk without
+# leaving a session log row is not detected (owner, decisions\2026-10-20-h-35-l4-scope.md addendum).
 #
 # fsDigest(W): every entry under the roots, hashed in full every time (no size/mtime gate). One line per entry,
 # sorted ordinal by path, fields separated by '|':

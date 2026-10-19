@@ -286,6 +286,8 @@ export interface VerdictLog {
    * and quarantined its container. Scope: differences in the declared roots'
    * file/stream contents and recorded metadata between the two observation
    * points, minus the lineage's exclusions; not a complete write history.
+   * A write during a capture's walk that leaves no NST session-log row is
+   * not detected (owner, 2026-10-20 addendum).
    */
   fs_checks?: FsCheckRecord[];
   /**
