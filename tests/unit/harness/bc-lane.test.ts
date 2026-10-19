@@ -2012,3 +2012,48 @@ Deno.test("H-35: deploy refuses a package whose bytes no longer match its manife
   );
   assertEquals(bc.syncs.length, syncs);
 });
+
+// ---- H-35 Sol r1 ----
+
+Deno.test("H-35 Sol r1 #5: every package a prepare built carries its sha256; deploy refuses one replaced after the prepare", async () => {
+  const { bc, gp } = await gAndA();
+  assert(gp.wanted.every((w) => /^[0-9a-f]{64}$/.test(w.sha256 ?? "")));
+  const core = gp.wanted.find((w) => w.id === IDS.core)!;
+  await Deno.writeTextFile(core.file, "replaced");
+  const syncs = bc.syncs.length;
+  const ledgerRoot = join(await tmp(), "ledger");
+  await assertRejects(
+    () => deploy(bc, "C1", gp.wanted, { ledgerRoot, trustedRoots: [] }),
+    Error,
+    "sha256",
+  );
+  assertEquals(bc.syncs.length, syncs);
+});
+
+Deno.test("H-35 Sol r1 #6: a cache entry that wins the write is target-checked too: an OnPrem winner is never adopted", async () => {
+  const bc = new FakeBc();
+  const ws = await workspace();
+  const onprem = join(await tmp(), "onprem.app");
+  const winners = new Map<string, string>();
+  const cache = {
+    get: (key: string) => Promise.resolve(winners.get(key) ?? null),
+    put: async (key: string, _file: string) => {
+      // A concurrent writer won the key with an OnPrem package.
+      await Deno.writeTextFile(onprem, JSON.stringify({ target: "OnPrem" }));
+      winners.set(key, onprem);
+    },
+  };
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+    cache,
+    policy: CLOUD_POLICY,
+  });
+  const core = built[0]!;
+  assert(core.ok);
+  assertEquals(core.key, undefined, "the OnPrem winner is not adopted");
+  assertEquals(await bc.packageTarget(core.file!), "Cloud");
+});

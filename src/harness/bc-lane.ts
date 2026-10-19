@@ -1026,6 +1026,13 @@ export async function buildApps(
           await o.cache!.put(key, file);
           const won = await o.cache!.get(key);
           if (won === null) throw new Error("no entry after the write");
+          // H-35 Sol r1 #6: the winner is target-checked like a first hit.
+          if (
+            o.policy.target === "Cloud" &&
+            await bc.packageTarget(won) !== "Cloud"
+          ) {
+            throw new Error("the winning cache entry is not a Cloud package");
+          }
           // H-27 r3: the winner is copied aside and replaces the fresh build
           // only once complete; on any failure the fresh build stays, unkeyed.
           const tmp = `${file}.tmp-${crypto.randomUUID()}`;
@@ -1117,7 +1124,7 @@ export async function productionManifest(
     apps.set(folder, {
       id: w.id,
       file: w.file,
-      sha256: await hashFile(dirname(w.file), w.file),
+      sha256: w.sha256 ?? await hashFile(dirname(w.file), w.file),
       source: await hashTree(join(dir, folder), "task"),
       key: prep.keys.get(folder) ?? null,
     });
@@ -1335,6 +1342,17 @@ async function prepareOn(
     ...[...given].map(([f, e]) => [f, e.file] as const),
   ]);
   const idOf = new Map(graph.map((a) => [a.folder, a.id]));
+  // H-35 Sol r1 #5: every package carries its digest; deploy checks each.
+  const shaOf = new Map<string, string>();
+  if (buildOk) {
+    for (const a of graph) {
+      const f = fileOf.get(a.folder)!;
+      shaOf.set(
+        a.folder,
+        given.get(a.folder)?.sha256 ?? await hashFile(dirname(f), f),
+      );
+    }
+  }
   const wanted: WantedApp[] = buildOk
     ? graph.map((a) => ({
       id: a.id,
@@ -1347,7 +1365,7 @@ async function prepareOn(
       file: fileOf.get(a.folder)!,
       role: cands.has(a.folder) ? "candidate" : "prereq",
       depends: a.depends.map((d) => idOf.get(d)!),
-      ...(given.has(a.folder) ? { sha256: given.get(a.folder)!.sha256 } : {}),
+      sha256: shaOf.get(a.folder)!,
     }))
     : [];
   return {

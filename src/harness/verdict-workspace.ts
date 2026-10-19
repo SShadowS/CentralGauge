@@ -80,6 +80,11 @@ export interface VerdictWorkspace {
   notes: string[];
   /** Agent test codeunits that must not run (the credit rules could not judge them). */
   excluded: number[];
+  /**
+   * H-35 (design-r2 3, Sol r1 #8): submitted agent tests the credit rules
+   * keep from counting: excluded codeunits plus rejected [Test] procedures.
+   */
+  creditExcluded: number;
 }
 
 const IDENTITY = ["id", "name", "publisher"] as const;
@@ -245,6 +250,9 @@ async function mergeAppJson(
   await Deno.writeTextFile(candidatePath, JSON.stringify(merged, null, 2));
 }
 
+/** A freeze violation line naming a path under the Test app (`<what>: Test/<path>`). */
+const TEST_PATH_VIOLATION = /: Test[\\/]/i;
+
 /** A real directory (not a file, link or junction). */
 async function isPlainDir(p: string): Promise<boolean> {
   const st = await Deno.lstat(p).catch(() => null);
@@ -265,6 +273,9 @@ export async function buildVerdictWorkspace(
   const marker = join(o.artifact, FREEZE_VIOLATIONS_FILE);
   if (await exists(marker)) {
     for (const line of (await Deno.readTextFile(marker)).split(/\r?\n/)) {
+      // H-35 Sol r1 #3: a freeze violation that names a Test path is Test-side;
+      // G reads no agent Test file, so it is not G's (every other line is).
+      if (o.rawTest && TEST_PATH_VIOLATION.test(line)) continue;
       if (line.trim()) violations.push(`workspace ${line.trim()}`);
     }
   }
@@ -398,7 +409,7 @@ export async function buildVerdictWorkspace(
     ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
     ...editedShipped,
   ]));
-  const { notes, excluded } = violations.length === 0 &&
+  const { notes, excluded, removed } = violations.length === 0 &&
       (editedShipped.size + newTestFiles.length + asWritten.length) > 0
     ? await applyCreditRules(
       o.pristine,
@@ -408,7 +419,7 @@ export async function buildVerdictWorkspace(
       newTestFiles,
       asWritten,
     )
-    : { notes: [], excluded: [] };
+    : { notes: [], excluded: [], removed: 0 };
 
   if (o.dropShippedTests && violations.length === 0) {
     await dropShippedTestCodeunits(o.pristine, out);
@@ -430,6 +441,7 @@ export async function buildVerdictWorkspace(
     violations,
     notes: [...appNotes, ...notes],
     excluded,
+    creditExcluded: excluded.length + removed,
   };
 }
 
@@ -681,11 +693,13 @@ export async function addedTestCodeunits(
   /** VerdictWorkspace.excluded: codeunits the credit rules could not judge. */
   exclude: ReadonlySet<number> = new Set(),
 ): Promise<TestCodeunit[]> {
+  // H-35 Sol r1 #1: by shipped test codeunit id, not by file: a test
+  // codeunit the agent adds to a shipped file (the helper) is the agent's.
   const shipped = new Set(
-    (await listTree(pristineTest, "task")).map((e) => e.path.toLowerCase()),
+    (await testCodeunits(pristineTest)).map((t) => t.codeunit),
   );
   return (await testCodeunits(test)).filter((t) =>
-    !shipped.has(t.file.toLowerCase()) && !exclude.has(t.codeunit)
+    !shipped.has(t.codeunit) && !exclude.has(t.codeunit)
   );
 }
 
@@ -1430,16 +1444,30 @@ const NAME_REF = new RegExp(
   `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*)("[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`,
   "gi",
 );
-/** A number in an object-id position: `Type::<n>`, `Record <n>`, an Open/Run/RunModal argument, a TableNo-style property. */
-const ID_REF = new RegExp(
-  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:Open|Run|RunModal)\\s*\\(\\s*|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*)(\\d+)\\b`,
-  "gi",
-);
+/**
+ * A number in an object-id position, with the object kind it names (Sol r1
+ * #7: a method's integer argument is not one, and a grant is per kind): a
+ * table by `Database::<n>`, `Record <n>`, `Table <n>` or a TableNo-style
+ * property; a codeunit by `Codeunit::<n>`, `Codeunit <n>` or the static
+ * `Codeunit.Run(<n>)`. RecordRef.Open(<n>) is a table (below).
+ */
+const ID_REFS: readonly (readonly [RegExp, string])[] = [
+  [
+    /\b(?:Database\s*::\s*|Record\s+|Table\s+|(?:TableNo|SourceTable|TableRelation)\s*=\s*)(\d+)\b/gi,
+    "table",
+  ],
+  [
+    /\b(?:Codeunit\s*::\s*|Codeunit\s+|Codeunit\s*\.\s*(?:Run|RunModal)\s*\(\s*)(\d+)\b/gi,
+    "codeunit",
+  ],
+];
 /** A static object call and its first argument. */
 const STATIC_CALL =
   /\b(Codeunit|Page|Report|Xmlport|Query)\s*\.\s*(Run|RunModal|Execute|SaveAs|SaveAsCsv|SaveAsPdf|SaveAsXml|Print|Open)\s*\(\s*([^,)]*)/gi;
-/** A RecordRef variable or parameter. */
-const RECORDREF_VAR = /("[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*RecordRef\b/gi;
+/** RecordRef variables or parameters, one declaration (`A, B: RecordRef`, Sol r1 #2). */
+const RECORDREF_VAR =
+  /((?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*))*)\s*:\s*RecordRef\b/gi;
+const AL_NAME = /"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*/g;
 /** An argument that names its object: an integer literal or `Type::<name or literal>`. */
 const LITERAL_OBJECT =
   /^(?:\d+|(?:Codeunit|Page|Report|Xmlport|Query|Database)\s*::\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*|\d+))\s*$/i;
@@ -1511,14 +1539,13 @@ export async function productionPolicyViolations(
         const hit = bannedByName.get(unquote(m[1]!));
         if (hit) ref(`${m[0].trim()} (${hit})`);
       }
-      for (const m of code.matchAll(ID_REF)) {
-        const id = Number(m[1]);
-        const hits = banned.filter(([, b]) => b === id);
-        if (hits.length > 0) {
-          ref(
-            `${m[0].trim()} (${hits.map(([k, b]) => `${k} ${b}`).join(", ")})`,
-          );
+      const bannedId = (text: string, kind: string, id: number) => {
+        if (banned.some(([k, b]) => k === kind && b === id)) {
+          ref(`${text.trim()} (${kind} ${id})`);
         }
+      };
+      for (const [re, kind] of ID_REFS) {
+        for (const m of code.matchAll(re)) bannedId(m[0], kind, Number(m[1]));
       }
       for (const re of [TEST_ONLY_TYPE, TEST_SUBTYPE, DETECTION_MEMBER]) {
         const m = re.exec(code);
@@ -1535,11 +1562,18 @@ export async function productionPolicyViolations(
         dynamic(`${m[1]}.${m[2]}`, m[3]!);
       }
       for (const v of code.matchAll(RECORDREF_VAR)) {
-        const open = new RegExp(
-          `${escapeRe(v[1]!)}\\s*\\.\\s*Open\\s*\\(\\s*([^,)]*)`,
-          "gi",
-        );
-        for (const m of code.matchAll(open)) dynamic("RecordRef.Open", m[1]!);
+        for (const [name] of v[1]!.matchAll(AL_NAME)) {
+          const open = new RegExp(
+            `${escapeRe(name)}\\s*\\.\\s*Open\\s*\\(\\s*([^,)]*)`,
+            "gi",
+          );
+          for (const m of code.matchAll(open)) {
+            dynamic("RecordRef.Open", m[1]!);
+            if (/^\d+$/.test(m[1]!.trim())) {
+              bannedId(m[0], "table", Number(m[1]));
+            }
+          }
+        }
       }
       out.push(...found);
     }
@@ -1595,9 +1629,11 @@ async function applyCreditRules(
   edited: ReadonlyMap<string, string>,
   newFiles: readonly string[],
   asWritten: readonly string[],
-): Promise<{ notes: string[]; excluded: number[] }> {
+): Promise<{ notes: string[]; excluded: number[]; removed: number }> {
   const notes: string[] = [];
   const excluded: number[] = [];
+  /** Submitted [Test] procedures the credit rules reject (Sol r1 #8). */
+  let removed = 0;
   const testOut = join(out, TEST_APP);
   const shipped = await shippedTests(join(pristine, TEST_APP));
   if (shipped === null) {
@@ -1609,7 +1645,7 @@ async function applyCreditRules(
     notes.push(
       "credit rules: a shipped test codeunit could not be parsed; no agent test is run or counted",
     );
-    return { notes, excluded };
+    return { notes, excluded, removed };
   }
 
   // Unreadable agent text never gets here: it is an unreadable_test
@@ -1697,6 +1733,9 @@ async function applyCreditRules(
     ],
     shipped,
   );
+  removed =
+    [...fresh.map((f) => f.judged), ...shippedEdits.map((e) => e.judged)]
+      .flatMap((j) => j.code).filter((m) => m.test && why.has(m)).length;
   // A rejected member that cannot be removed (a table or extension trigger,
   // an unparsed codeunit) can fire from any test (an Insert(true), a
   // RecordRef): fail closed, no agent test runs or counts.
@@ -1712,7 +1751,7 @@ async function applyCreditRules(
         stuck.map(([m, w]) => `${m.displays[0]}: ${w}`).join("; ")
       }; it cannot be removed, so no agent test is run or counted`,
     );
-    return { notes, excluded };
+    return { notes, excluded, removed };
   }
 
   for (const f of fresh) {
@@ -1773,7 +1812,7 @@ async function applyCreditRules(
 
   const found = shippedEdits.map((e) => extractFrom(e, why, notes))
     .filter((x): x is Extracted => x !== null);
-  if (found.length === 0) return { notes, excluded };
+  if (found.length === 0) return { notes, excluded, removed };
   const range = HARNESS_EXTRACTED_TEST_RANGE;
   const taken: string[] = [];
   for (const app of apps) {
@@ -1789,7 +1828,7 @@ async function applyCreditRules(
         taken.join("; ")
       }); no added test procedure is extracted`,
     );
-    return { notes, excluded };
+    return { notes, excluded, removed };
   }
   found.sort((a, b) => a.from - b.from);
   for (const [i, x] of found.entries()) {
@@ -1820,7 +1859,7 @@ async function applyCreditRules(
     await validatedDest(join(dest, ".."));
     await Deno.writeTextFile(dest, text);
   }
-  return { notes, excluded };
+  return { notes, excluded, removed };
 }
 
 /**

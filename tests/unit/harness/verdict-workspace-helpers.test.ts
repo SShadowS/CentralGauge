@@ -578,3 +578,25 @@ Deno.test("H-35: G (rawTest) reads no agent Test file, so the Test-side rules ne
   });
   assertEquals(v.violations, []);
 });
+
+// ---- H-35 Sol r1 ----
+
+Deno.test("H-35 Sol r1 #1: a test codeunit the agent adds inside the shipped helper file is discovered (shipped codeunits are excluded by id, not by file name)", async () => {
+  const agent =
+    `${LIB}\ncodeunit 80100 "Agent Helper Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure Fails()\n    begin\n        Error('failure');\n    end;\n}\n`;
+  const r = await rebuild({ [LIB_REL]: agent }, { dropShippedTests: true });
+  assertEquals(r.v.violations, []);
+  assertEquals(r.added.map((a) => [a.codeunit, a.procedures]), [[80100, [
+    "Fails",
+  ]]]);
+});
+
+Deno.test("H-35 Sol r1 #8: a submitted test the credit rules remove is counted as credit-excluded", async () => {
+  const sneaky = NEW_TESTS.replace(
+    "Assert.AreEqual(2, Lib.MakeTwo(), 'two');",
+    "Codeunit.Run(80010);",
+  );
+  const r = await rebuild({ "Test/src/Agent.Test.al": sneaky });
+  assertEquals(r.v.creditExcluded, 1);
+  assertEquals(r.added.flatMap((a) => a.procedures), []);
+});

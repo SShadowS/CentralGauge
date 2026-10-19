@@ -724,6 +724,10 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   // generated codeunit (addedTestCodeunits); why any were not is noted here.
   log.notes.push(...aw.notes);
   if (gw.violations.length > 0) return scores.failRest();
+  // Sol r1 #4: decided now, so infra in G cannot unscore a policy failure.
+  if (testSide.length > 0 && scores.has("agent_tests")) {
+    scores.set("agent_tests", false);
+  }
 
   const pristineApps = await readAppGraph(i.pristine);
   const prepare = (
@@ -907,11 +911,11 @@ async function scoreAgentTests(
       target: "candidate",
     });
   }
-  if (aw.excluded.length > 0) {
-    log.notes.push(`agent_tests: credit_excluded: ${aw.excluded.length}`);
+  if (aw.creditExcluded > 0) {
+    log.notes.push(`agent_tests: credit_excluded: ${aw.creditExcluded}`);
   }
   if (agent.length + testPageRows.length === 0) {
-    if (aw.excluded.length === 0) log.notes.push("agent_tests: not_submitted");
+    if (aw.creditExcluded === 0) log.notes.push("agent_tests: not_submitted");
     return scores.set("agent_tests", true, []);
   }
   if (agent.length === 0) {
@@ -1052,6 +1056,27 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
 
+  // A_ref: the reference production plus the agent's Test as written,
+  // without the shipped test codeunits (M4-17a run 002). Every violation is
+  // Test-side here (production is the reference): G' stays measured.
+  const vw = await buildVerdictWorkspace({
+    productionAllow: i.task.task.production_allow,
+    pristine: i.pristine,
+    artifact: i.artifact,
+    out: join(i.workDir, "verdict"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+    dropShippedTests: true,
+  });
+  log.spans.reconstruct_ms = performance.now() - tr;
+  log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
+  // Sol r1 #4: decided before G', so infra there cannot unscore it. S2
+  // records it as not_measured behind the policy gate.
+  if (vw.violations.length > 0) scores.set("mutant_kill", false);
+
   // H-35 G' first: the reference production plus the pristine Test app, raw
   // (no agent file: a subscriber or install trigger in agent code could act
   // on a shipped test). It decides build, and pass_to_pass by a real run in
@@ -1107,24 +1132,6 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     }
   }
 
-  // A_ref: the reference production plus the agent's Test as written,
-  // without the shipped test codeunits (M4-17a run 002). Every violation is
-  // Test-side here (production is the reference): G' stays measured.
-  const vw = await buildVerdictWorkspace({
-    productionAllow: i.task.task.production_allow,
-    pristine: i.pristine,
-    artifact: i.artifact,
-    out: join(i.workDir, "verdict"),
-    productionFrom: reference,
-    symbolIds: i.symbolIds,
-    dropShippedTests: true,
-  });
-  log.spans.reconstruct_ms = performance.now() - tr;
-  log.violations = vw.violations;
-  // Tests the agent added to shipped codeunits are discovered below as the
-  // generated codeunit (addedTestCodeunits); why any were not is noted here.
-  log.notes.push(...vw.notes);
-  // S2 records this as not_measured behind the policy gate.
   if (vw.violations.length > 0) return scores.failRest();
   const prep = await prepare(
     vw.dir,

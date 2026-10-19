@@ -268,3 +268,34 @@ Deno.test("H-35: the workspace builder reports production violations, in G (rawT
     hasRule(v.violations, "test_detection_ref", `rawTest ${rawTest}`);
   }
 });
+
+Deno.test("H-35 Sol r1 #2: a RecordRef declared in a comma list is still checked for dynamic access", async () => {
+  hasRule(
+    await scan(
+      proc(
+        "        A, B: RecordRef;\n        Id: Integer;",
+        "Id := 2000000000 + 38; A.Open(Id);",
+      ),
+    ),
+    "dynamic_object_access",
+    "A, B: RecordRef",
+  );
+});
+
+Deno.test("H-35 Sol r1 #7: an id literal counts only in an object-id position of its kind; a method's integer argument does not", async () => {
+  assertEquals(
+    await scan(
+      proc('        Worker: Codeunit "CGR Core";', "Worker.Run(130450);"),
+    ),
+    [],
+  );
+  const table = proc("        R: Record 130450;", "R.FindFirst();");
+  assertEquals(await scan(table, { allow: { objects: ["table:130450"] } }), []);
+  hasRule(
+    await scan(proc("        X: Integer;", "X := Codeunit::130450;"), {
+      allow: { objects: ["table:130450"] },
+    }),
+    "test_detection_ref",
+    "codeunit 130450 under a table grant",
+  );
+});

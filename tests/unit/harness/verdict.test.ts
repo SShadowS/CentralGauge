@@ -1579,3 +1579,65 @@ Deno.test("H-35 (design-r3 3.2): without a build cache, a change judgment compil
   assertEquals(bc.compiles.filter((f) => f === "Test").length, 2);
   assert(log.notes.some((n) => /^production manifest: [0-9a-f]{64}$/.test(n)));
 });
+
+// ---- H-35 Sol r1 ----
+
+Deno.test("H-35 Sol r1 #3: a freeze violation on a Test path is Test-side: G is still measured", async () => {
+  const { bc, runs } = watched();
+  const { input } = await setup("correct");
+  await Deno.writeTextFile(
+    join(input.artifact, ".cg-freeze-violations.txt"),
+    "link, reparse point or special file: Test/src/Bad.al\n",
+  );
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", true],
+    ["pass_to_pass", true],
+    ["fail_to_pass", true],
+    ["agent_tests", false],
+  ]);
+  assertStringIncludes(log.violations.join("\n"), "Test/src/Bad.al");
+  assertEquals(runs.map((r) => r.codeunit).sort(), [80010, 85000]);
+  // A production path stays production-side.
+  const p = await setup("correct");
+  await Deno.writeTextFile(
+    join(p.input.artifact, ".cg-freeze-violations.txt"),
+    "link, reparse point or special file: Rental/src/Bad.al\n",
+  );
+  const r2 = await judge(new BcLane(script(), ["C1"]), p.input);
+  assertEquals(r2.judgment.scorers.map((s) => s.passed), [
+    false,
+    false,
+    false,
+    false,
+  ]);
+});
+
+Deno.test("H-35 Sol r1 #4: a Test-side violation fails agent_tests even when G is unscored by infra", async () => {
+  const bc = script();
+  bc.crashFor = (p) => p.includes("/apps/");
+  const { input } = await setup("correct", {
+    "Test/src/Install.Codeunit.al":
+      `codeunit 81050 "Agent Install"\n{\n    Subtype = Install;\n}\n`,
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(
+    judgment.scorers.find((s) => s.name === "agent_tests")!.passed,
+    false,
+  );
+  assertEquals(judgment.verdict, "fail");
+});
+
+Deno.test("H-35 Sol r1 #8: a submitted test the credit rules removed is credit_excluded, not not_submitted", async () => {
+  const sneaky =
+    `codeunit 81000 "Agent"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentTest()\n    begin\n        Codeunit.Run(80010);\n    end;\n}\n`;
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": sneaky,
+  });
+  const { log } = await judge(new BcLane(script(), ["C1"]), input);
+  assert(
+    log.notes.includes("agent_tests: credit_excluded: 1"),
+    log.notes.join("\n"),
+  );
+  assert(!log.notes.includes("agent_tests: not_submitted"));
+});
