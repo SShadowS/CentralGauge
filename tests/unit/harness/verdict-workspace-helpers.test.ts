@@ -661,3 +661,28 @@ Deno.test("H-35 Sol r5 #2: an object id written with leading zeros still has its
   });
   assertStringIncludes(r.v.violations.join("\n"), "collides with shipped");
 });
+
+Deno.test("H-35 Sol r7 #2: a lifecycle trigger name inside a quoted object name, or as an object's own name, is not lifecycle code", async () => {
+  for (
+    const name of ['"OnInstallAppPerCompany Helper"', '"OnUpgradePerDatabase"']
+  ) {
+    const r = await rebuild({
+      "Test/src/Named.Test.al":
+        `codeunit 80100 ${name}\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentPasses()\n    begin\n    end;\n}\n`,
+    });
+    assertEquals(r.v.violations, [], name);
+  }
+  // A real trigger declaration still is.
+  const real = await rebuild({
+    "Test/src/Install.Codeunit.al":
+      `codeunit 80150 "Agent Install"\n{\n    trigger OnInstallAppPerCompany()\n    begin\n    end;\n}\n`,
+  });
+  assertStringIncludes(real.v.violations.join("\n"), "test_lifecycle:");
+});
+
+Deno.test("H-35 Sol r8: quoted locals named Subtype/Install or RequiredTestIsolation/Disabled compared in code are not properties", async () => {
+  const cmp =
+    `codeunit 80100 "Comparison Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure DistinctValues()\n    var\n        "Subtype": Integer;\n        "Install": Integer;\n        "RequiredTestIsolation": Integer;\n        "Disabled": Integer;\n    begin\n        "Subtype" := 1;\n        "Install" := 2;\n        if "Subtype" = "Install" then\n            Error('Unexpected equality');\n        if "RequiredTestIsolation" = "Disabled" then\n            Error('Unexpected equality');\n    end;\n}\n`;
+  const r = await rebuild({ "Test/src/Cmp.Test.al": cmp });
+  assertEquals(r.v.violations, []);
+});

@@ -1396,9 +1396,9 @@ function unreadable(src: string): string | null {
   return null;
 }
 
-/** Any install or upgrade trigger (design-r2 6.1, ruling R5). */
+/** Any install or upgrade trigger declaration (design-r2 6.1, ruling R5; Sol r7 #2). */
 const LIFECYCLE_TRIGGER =
-  /\bOn(?:InstallAppPer|UpgradePer|ValidateUpgradePer|CheckPreconditionsPer)(?:Company|Database)\b/i;
+  /\btrigger\s+On(?:InstallAppPer|UpgradePer|ValidateUpgradePer|CheckPreconditionsPer)(?:Company|Database)\b/i;
 const LIFECYCLE_SUBTYPE = /\bSubtype\s*=\s*(?:Install|Upgrade)\b/i;
 const ISOLATION_DISABLED = /\bRequiredTestIsolation\s*=\s*Disabled\b/i;
 
@@ -1420,8 +1420,12 @@ export function testPolicyViolations(
       out.push(`unreadable_test: ${where}: ${why}`);
       continue;
     }
+    // Properties are written bare: matched on the stripped code, where a
+    // quoted local ("Subtype" = "Install") keeps its quotes (Sol r8). The
+    // trigger declaration is matched with quoted-name text masked (Sol r7 #2).
     const code = stripAlNoise(src);
-    const life = LIFECYCLE_SUBTYPE.exec(code) ?? LIFECYCLE_TRIGGER.exec(code);
+    const life = LIFECYCLE_SUBTYPE.exec(code) ??
+      LIFECYCLE_TRIGGER.exec(maskQuoted(code));
     if (life) out.push(`test_lifecycle: ${where}: ${life[0]}`);
     const iso = ISOLATION_DISABLED.exec(code);
     if (iso) out.push(`isolation_disabled: ${where}: ${iso[0]}`);
@@ -1581,7 +1585,11 @@ export async function productionPolicyViolations(
             const r = m.indices![i];
             return r ? code.slice(r[0], r[1]) : "";
           };
-          yield { all: code.slice(m.index!, m.index! + m[0].length), at };
+          yield {
+            all: code.slice(m.index!, m.index! + m[0].length),
+            at,
+            index: m.index!,
+          };
         }
       };
       const found = new Set<string>();
@@ -1605,12 +1613,16 @@ export async function productionPolicyViolations(
       }
       const dynamic = (call: string, arg: string) => {
         if (allowedDynamic.has(call.toLowerCase())) return;
-        if (LITERAL_OBJECT.test(arg.trim())) return;
+        // No argument names no object (Query.Open()).
+        if (arg.trim() === "" || LITERAL_OBJECT.test(arg.trim())) return;
         found.add(
           `dynamic_object_access: ${where}: ${call}(${arg.trim() || "..."})`,
         );
       };
       for (const m of scan(STATIC_CALL)) {
+        // Sol r7 #1: a receiver quoted in the source ("Query") is a variable,
+        // an instance call that OPEN_CALL checks, never a static one.
+        if (code[m.index - 1] === '"') continue;
         dynamic(`${m.at(1)}.${m.at(2)}`, m.at(3));
       }
       // Sol r3 #1: any receiver (a RecordRef bare, quoted, an array element

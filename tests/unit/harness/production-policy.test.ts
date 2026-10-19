@@ -393,3 +393,31 @@ Deno.test('H-35 Sol r6: an instance Open on a variable named like an object type
     '"Page".Open(Id)',
   );
 });
+
+Deno.test("H-35 Sol r7 #1: a quoted receiver named like an object type is an instance, not a static call: no false rejection, and a RecordRef.Open grant applies", async () => {
+  assertEquals(
+    await scan(
+      proc(
+        '        "Query": Query "CGR Core";',
+        '"Query".Open(); "Query".Close();',
+      ),
+    ),
+    [],
+  );
+  assertEquals(
+    await scan(
+      proc(
+        '        "Query": RecordRef;\n        Id: Integer;',
+        'Id := 18; "Query".Open(Id);',
+      ),
+      { allow: { dynamic: ["RecordRef.Open"] } },
+    ),
+    [],
+  );
+  // A real static call is still checked.
+  hasRule(
+    await scan(proc("        Id: Integer;", "Codeunit.Run(Id);")),
+    "dynamic_object_access",
+    "Codeunit.Run(Id)",
+  );
+});
