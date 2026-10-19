@@ -1124,6 +1124,7 @@ export async function buildReport(
       (t) => campaign.tasks_meta.find((m) => m.id === t)!.kind,
       (id) => logs.verdict.get(id)?.notes,
       (id) => logs.verdict.get(id)?.violations,
+      (id) => logs.verdict.get(id)?.diagnostics,
     ),
     ...(overrideReasons.length > 0
       ? {

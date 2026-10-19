@@ -26,23 +26,42 @@ export type ScorerCount =
   | "unscored"
   | "unavailable";
 
+/** What a judgment's write-once verdict log shows (r3 6.2), when it has one. */
+export interface LogEvidence {
+  violations?: readonly string[];
+  diagnostics?: readonly unknown[];
+}
+
 /**
  * One scorer as reports count it. v2 by its state. v1 has none: a failure
  * with no rows (other than build) is a legacy synthetic failure (failRest
- * after an earlier one), never an observed fail (r5 6.1).
+ * after an earlier one), never an observed fail (r5 6.1). Orch Sol r1 #7: a
+ * v1 build failure whose log lists violations and no compile diagnostics
+ * was a policy rejection before any compile: unavailable too.
  */
-export function scorerCount(j: JudgmentRecord, s: Scorer): ScorerCount {
+export function scorerCount(
+  j: JudgmentRecord,
+  s: Scorer,
+  log?: LogEvidence,
+): ScorerCount {
   if (s.passed === null) {
     return s.state === "not_measured" ? "not_measured" : "unscored";
   }
-  if (j.v === 1 && !s.passed && s.name !== "build" && s.tests.length === 0) {
-    return "unavailable";
+  if (j.v === 1 && !s.passed && s.tests.length === 0) {
+    if (s.name !== "build") return "unavailable";
+    if (
+      (log?.violations?.length ?? 0) > 0 &&
+      (log?.diagnostics?.length ?? 0) === 0
+    ) return "unavailable";
   }
   return s.passed ? "pass" : "fail";
 }
 
-const measured = (j: JudgmentRecord, s: Scorer | undefined) =>
-  s !== undefined && ["pass", "fail"].includes(scorerCount(j, s));
+const measured = (
+  j: JudgmentRecord,
+  s: Scorer | undefined,
+  log?: LogEvidence,
+) => s !== undefined && ["pass", "fail"].includes(scorerCount(j, s, log));
 
 /** G (G' for test-authoring) of one judgment: measured, passed, or v1. */
 function gOf(
@@ -119,6 +138,9 @@ export function summarizeScoring(
     undefined,
   violations: (judgmentId: string) => readonly string[] | undefined = () =>
     undefined,
+  /** The verdict log's compile diagnostics (orch Sol r1 #7). */
+  diagnostics: (judgmentId: string) => readonly unknown[] | undefined = () =>
+    undefined,
 ): ScoringSummary[] {
   const out = new Map<string, ScoringSummary>();
   const pop = (): GPopulation => ({
@@ -167,7 +189,12 @@ export function summarizeScoring(
         unscored: 0,
         unavailable: 0,
       };
-      row[scorerCount(j, sc)]++;
+      row[
+        scorerCount(j, sc, {
+          violations: violations(j.id) ?? [],
+          diagnostics: diagnostics(j.id) ?? [],
+        })
+      ]++;
     }
     const g = gOf(j);
     const p = kindOf(c.task) === "test-authoring" ? s.reference : s.g;
@@ -291,7 +318,7 @@ const violationsKey = (j: JudgmentRecord) =>
 export function pairFlags(
   oldIn: JudgmentRecord,
   neuIn: JudgmentRecord,
-  oldLog?: { violations?: readonly string[] },
+  oldLog?: LogEvidence,
   trusted?: {
     pass_to_pass: readonly {
       codeunit: number;
@@ -308,7 +335,7 @@ export function pairFlags(
   if (same && rowsKey(gOld) === rowsKey(gNew)) flags.add("unchanged");
   if (
     G_SCORERS.some((n) =>
-      measured(neu, byName(neu, n)) && !measured(old, byName(old, n))
+      measured(neu, byName(neu, n)) && !measured(old, byName(old, n), oldLog)
     )
   ) flags.add("newly_measured");
   if (same && failing(old) !== failing(neu)) flags.add("attribution_only");
@@ -338,7 +365,7 @@ export function pairFlags(
     G_SCORERS.some((n) => {
       const a = byName(old, n);
       const b = byName(neu, n);
-      return measured(old, a) && measured(neu, b) &&
+      return measured(old, a, oldLog) && measured(neu, b) &&
         rowsKey([a!]) !== rowsKey([b!]);
     })
   ) flags.add("trusted_row_change");
@@ -572,7 +599,7 @@ export function pairingReport(
   /** An old judgment's verdict log (v1 policy from log, r3 6.2). */
   oldLog: (
     old: JudgmentRecord,
-  ) => { violations?: readonly string[] } | undefined = () => undefined,
+  ) => LogEvidence | undefined = () => undefined,
   /** The old judgment's trusted task descriptor (orch Sol r1 #3), if known. */
   trustedOf: (old: JudgmentRecord) =>
     | {

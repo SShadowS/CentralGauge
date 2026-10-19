@@ -73,6 +73,7 @@ import {
   appendCompletion,
   freezePairing,
   loadPairing,
+  type LogEvidence,
   type PairingReport,
   pairingReport,
   renderPairing,
@@ -2231,7 +2232,7 @@ export async function harnessPairing(
   }
   // Run 002 Sol r1 #5: a v1 old judgment's policy is failed when its
   // write-once verdict log lists violations (r3 6.2).
-  const logs = new Map<string, { violations?: string[] }>();
+  const logs = new Map<string, LogEvidence>();
   for (const c of pairing.cells) {
     const j = byId.get(c.old_judgment_id);
     if (!j || j.policy) continue;

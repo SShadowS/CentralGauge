@@ -650,3 +650,44 @@ Deno.test("H-35 orch Sol r1 #3: v1 pass_to_pass rows are split by the trusted de
     pairFlags(broken, neu, undefined, trusted).includes("helper_as_written"),
   );
 });
+
+Deno.test("H-35 orch Sol r1 #7: a v1 build failure that its log shows as a policy rejection (violations, no compile diagnostics) is unavailable, never an observed fail; with diagnostics it is a fail", () => {
+  const rejected = v1([{ name: "build", passed: false, tests: [] }]);
+  const compiled = v1([{ name: "build", passed: false, tests: [] }]);
+  const violations = new Map([[rejected.id, ["test_lifecycle: x"]], [
+    compiled.id,
+    ["test_lifecycle: x"],
+  ]]);
+  const diagnostics = new Map([[compiled.id, [{
+    app: "Rental",
+    code: "AL0118",
+    message: "x",
+  }]]]);
+  assertEquals(
+    scorerCount(rejected, rejected.scorers[0]!, {
+      violations: violations.get(rejected.id)!,
+      diagnostics: [],
+    }),
+    "unavailable",
+  );
+  const [s] = summarizeScoring(
+    [
+      { arm: "a", task: "T1", status: "scored", judgment: rejected },
+      { arm: "a", task: "T2", status: "scored", judgment: compiled },
+    ],
+    () => "bugfix",
+    () => [],
+    (id) => violations.get(id),
+    (id) => diagnostics.get(id) ?? [],
+  );
+  assertEquals(s!.scorers["build"]!.unavailable, 1);
+  assertEquals(s!.scorers["build"]!.fail, 1);
+  // In a pair, the rejected build is not measured before: newly measured now.
+  const now = v2([m("build", true)]);
+  assert(
+    pairFlags(rejected, now, {
+      violations: violations.get(rejected.id)!,
+      diagnostics: [],
+    }).includes("newly_measured"),
+  );
+});
