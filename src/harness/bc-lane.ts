@@ -1921,6 +1921,7 @@ export async function deployAndTest(
         await capture(m),
         m.fsExclude ?? [],
         m.fsRoots ?? [],
+        m.fsCaches ?? [],
       );
       const f = fsChecked(d.diff, d.errors);
       if (!f.ok) why.push(new HostDirtyError(f).message);

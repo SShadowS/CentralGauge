@@ -2097,7 +2097,7 @@ Deno.test("H-35 S3 L4: every deployment's fsDigest check is in fs_checks[]; a di
       Promise.resolve(
         // C1's first post-cleanup capture shows a planted file.
         c === "C1" && c1++ === 1
-          ? ["D|16|1|W", "F|" + "a".repeat(64) + "|1|32|1|W\\planted", "T|2"]
+          ? ["D|16|1|W", "F|" + "a".repeat(64) + "|1|32|1|61|W\\planted", "T|2"]
           : ["D|16|1|W", "T|1"],
       ),
   };

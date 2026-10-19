@@ -178,28 +178,40 @@ export async function checkEnvironments(
     });
   }
   const shared = new Set(rows.map((r) => r.env_fp)).size <= 1;
-  // H-35 S3 L4 is mandatory (decisions/2026-10-20-h-35-l4-scope.md); L2b
-  // (design-r5 2.2): an unenforced NST firewall needs the run's declaration.
-  const override = o.bcEgressOverride?.trim() || null;
+  // H-35 S3 L4 is mandatory (decisions/2026-10-20-h-35-l4-scope.md).
+  const egress = bcEgressAdmission(m.bcEgress, o.bcEgressOverride);
   const refusal = !m.contentRoot
     ? "the lineage has no content root"
     : !m.fsDigest
     ? "the lineage has no fs section: L4 (fsDigest) is not configured"
-    : !m.bcEgress
-    ? "the lineage has no egress field (L2b)"
-    : m.bcEgress === "unenforced" && !override
-    ? "NST egress is unenforced in this lineage: declare it with --unverified-bc-egress-ok <reason>"
-    : m.bcEgress === "enforced" && override
-    ? "--unverified-bc-egress-ok is refused: NST egress IS enforced in this lineage"
-    : null;
+    : egress.refusal;
   return {
     lineage_id: o.lineageId,
     admissible: !refusal && rows.length > 0 && shared &&
       rows.every((r) => !r.why),
     refusal,
-    bc_egress: m.bcEgress ? { mode: m.bcEgress, override } : null,
+    bc_egress: egress.record,
     rows,
   };
+}
+
+/**
+ * H-35 S3 L2b (design-r5 2.2): the lineage's NST egress mode against the
+ * run's `--unverified-bc-egress-ok`. Admission and a dry run's plan share it.
+ */
+export function bcEgressAdmission(
+  mode: "enforced" | "unenforced" | undefined,
+  overrideRaw: string | null | undefined,
+): { record: BcEgressRecord | null; refusal: string | null } {
+  const override = overrideRaw?.trim() || null;
+  const refusal = !mode
+    ? "the lineage has no egress field (L2b)"
+    : mode === "unenforced" && !override
+    ? "NST egress is unenforced in this lineage: declare it with --unverified-bc-egress-ok <reason>"
+    : mode === "enforced" && override
+    ? "--unverified-bc-egress-ok is refused: NST egress IS enforced in this lineage"
+    : null;
+  return { record: mode ? { mode, override } : null, refusal };
 }
 
 /** The block `harness env check`, run and rejudge print before starting. */

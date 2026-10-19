@@ -12,6 +12,16 @@ import { ConfigurationError } from "../errors.ts";
 import { sha256Hex } from "./hash.ts";
 
 const Sha = z.string().regex(/^[0-9a-f]{64}$/);
+/** A regex source anchored at both ends that compiles. */
+const AnchoredRegex = z.string().refine((s) => {
+  if (!s.startsWith("^") || !s.endsWith("$")) return false;
+  try {
+    new RegExp(s);
+    return true;
+  } catch {
+    return false;
+  }
+}, "an anchored (^...$) regex that compiles");
 
 export const LineageSchema = z.strictObject({
   id: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/),
@@ -60,12 +70,27 @@ export const LineageSchema = z.strictObject({
     digest_version: z.number().int().positive(),
     roots: z.array(z.string().min(1)).min(1),
     identity: z.array(z.string()),
-    exclude: z.array(z.strictObject({
-      pattern: z.string().min(1),
-      /** Cleared and verified by the reset, or outside L4's stated scope. */
-      disposition: z.enum(["reset_cleared", "out_of_scope"]),
-      reason: z.string().min(1),
-    })),
+    exclude: z.array(z.union([
+      z.strictObject({
+        pattern: z.string().min(1),
+        /** Cleared and verified by the reset, or outside L4's stated scope. */
+        disposition: z.enum(["reset_cleared", "out_of_scope"]),
+        reason: z.string().min(1),
+      }),
+      /**
+       * Decision addendum 3: an NST cache folder where only NEW files of the
+       * measured shape (`files`, below `base`; starting with `magic` hex when
+       * set) and new or time-only-changed `dirs` are tolerated.
+       */
+      z.strictObject({
+        disposition: z.literal("platform_cache"),
+        base: z.string().min(1),
+        files: AnchoredRegex,
+        dirs: AnchoredRegex,
+        magic: z.string().regex(/^(?:[0-9a-f]{2}){1,2}$/).optional(),
+        reason: z.string().min(1),
+      }),
+    ])),
     survey: z.strictObject({ path: z.string().min(1), sha256: Sha }),
   }).optional(),
   /**

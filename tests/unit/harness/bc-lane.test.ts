@@ -2444,7 +2444,7 @@ Deno.test("H-35 S3 deployAndTest: no inventory check after a failed cleanup (alr
 
 // ---- H-35 S3 L4: fsDigest(W) around every judge deployment ----
 
-const FS_LINE = (p: string, h = "a") => `F|${h.repeat(64)}|4|32|1|${p}`;
+const FS_LINE = (p: string, h = "a") => `F|${h.repeat(64)}|4|32|1|6161|${p}`;
 
 /**
  * fakeReset plus an fsDigest: the n-th capture on a container is

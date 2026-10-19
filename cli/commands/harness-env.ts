@@ -68,6 +68,7 @@ import {
 } from "../../src/harness/sandbox.ts";
 import { type Lineage, loadLineage } from "../../src/harness/lineage.ts";
 import {
+  bcEgressAdmission,
   type BcEgressRecord,
   checkEnvironments,
   createBaseline,
@@ -451,7 +452,17 @@ export async function openPlanEnv(
   // run's concurrency gate sees what a real run's would.
   const sharedResults = join(o.repoRoot, "results", "harness");
   const mode = await egressMode(sharedResults, deps.verifyEgress);
+  // H-35 S3 L2b (Sol S3 r3): the lineage's NST egress, statically checked as
+  // admission checks it, so a dry run (and a dry resume) sees the override.
+  let bcEgress: BcEgressRecord | null = null;
+  if (o.lineage) {
+    const l = await loadLineage(o.lineage);
+    const a = bcEgressAdmission(l.egress?.mode, o.bcEgressOverride);
+    if (a.refusal) throw new ConfigurationError(a.refusal);
+    bcEgress = a.record;
+  }
   return {
+    ...(bcEgress ? { bcEgress } : {}),
     repoRoot: o.repoRoot,
     harnessRoot: join(o.repoRoot, "harness"),
     resultsRoot: o.resultsDir,

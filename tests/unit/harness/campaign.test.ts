@@ -15,6 +15,8 @@ import {
 } from "../../../src/errors.ts";
 import {
   loadCampaignData,
+  planCampaign,
+  type PlanEnv,
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
@@ -466,6 +468,20 @@ Deno.test("H-35 S3 L2b: resume refuses a BC egress override other than the campa
       "unverified-bc-egress-ok",
     );
   }
+  // Sol S3 r3: a dry-run resume (a plan env: no deploy, bcEgress instead)
+  // with the same override proceeds; without it, it is refused.
+  const plan = (override: string | null) =>
+    ({
+      ...t.env,
+      deploy: undefined,
+      bcEgress: { mode: "unenforced" as const, override },
+    }) as unknown as PlanEnv;
+  await planCampaign(plan("r"), "bc", opts({ campaign: c.id }), io());
+  await assertRejects(
+    () => planCampaign(plan(null), "bc", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "unverified-bc-egress-ok",
+  );
   await runCampaign(withBc("r"), "bc", opts({ campaign: c.id }), io());
   assertEquals((await t.env.store.executions(c.id)).length, 2);
   // A plain campaign never resumes under the override.

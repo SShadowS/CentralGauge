@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
-import { loadLineage } from "../../../src/harness/lineage.ts";
+import { LineageSchema, loadLineage } from "../../../src/harness/lineage.ts";
 import {
   commandReset,
   fsDiff,
@@ -224,7 +224,8 @@ Deno.test("H-35 S3 goldenReset.verifyClean runs verify-clean.ps1 with the lineag
 
 /** Windows paths written with "/" for readability. */
 const w = (s: string) => s.replaceAll("/", "\\");
-const F = (p: string, h = "a".repeat(64), t = 1) => `F|${h}|4|32|${t}|${w(p)}`;
+const F = (p: string, h = "a".repeat(64), t = 1, head = "6161") =>
+  `F|${h}|4|32|${t}|${head}|${w(p)}`;
 /** A complete capture: its lines, then the `T|<n>` marker fs-capture.ps1 ends with. */
 const cap = (...lines: string[]) => [...lines, `T|${lines.length}`];
 
@@ -337,4 +338,131 @@ Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong coun
       only,
     );
   }
+});
+
+// ---- H-35 S3 L4 platform_cache (decision addendum 3): only NEW files of the measured NST cache shapes ----
+
+const APPS = w("C:/NAV/Server/MicrosoftDynamicsNavServer$BC/apps");
+const CACHES = [
+  {
+    base: APPS,
+    files: String
+      .raw`^assembly\\release\\[0-9.]+_\d+\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.dll$`,
+    dirs: String.raw`^assembly(\\release(\\[0-9.]+_\d+(\\[0-9A-F]{2})?)?)?$`,
+    magic: "4d5a",
+  },
+  {
+    base: APPS,
+    files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.(cs|xml)$`,
+    dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+  },
+];
+const HEX = "0A53123EBB10012CF7AB9309302824D90E158BB785A7763F235C616DD829ADF0";
+const D = (p: string, t = 5) => `D|16|${t}|${w(p)}`;
+
+Deno.test("H-35 S3 L4 platform_cache: new files of the measured shapes (and new or touched directories of their shape) are tolerated; nothing else under apps is", () => {
+  const base = [
+    D("C:/NAV/Server/MicrosoftDynamicsNavServer$BC/apps"),
+    D(`${APPS}/assembly`),
+    D(`${APPS}/assembly/release`),
+    D(`${APPS}/assembly/release/28.0.53667.0_1`),
+    D(`${APPS}/metadata`),
+    D(`${APPS}/metadata/3`),
+    D(`${APPS}/metadata/3/0A`),
+    F(`${APPS}/metadata/3/0A/${HEX.replace("0A5", "0A6")}.xml`),
+  ];
+  const before = cap(...base);
+  const tolerated = cap(
+    ...base.map((l) =>
+      l.endsWith("metadata\\3") || l.endsWith("release\\28.0.53667.0_1")
+        ? l.replace("|5|", "|9|") // its last-write moved: a child was added
+        : l
+    ),
+    D(`${APPS}/assembly/release/28.0.53667.0_1/0A`, 9), // a new <xx> directory
+    F(
+      `${APPS}/assembly/release/28.0.53667.0_1/0A/${HEX}.dll`,
+      "b".repeat(64),
+      1,
+      "4d5a",
+    ),
+    F(`${APPS}/metadata/3/0A/${HEX}.cs`),
+    F(`${APPS}/metadata/3/0A/${HEX}.xml`),
+  );
+  assertEquals(fsDiff(before, tolerated, [], [], CACHES), {
+    diff: [],
+    errors: [],
+  });
+  // each of these stays a difference
+  const cases: [string, string[]][] = [
+    ["non-hex name", [F(`${APPS}/metadata/3/0A/cg.txt`)]],
+    ["dll with a non-hex name", [
+      F(
+        `${APPS}/assembly/release/28.0.53667.0_1/0A/evil.dll`,
+        "c".repeat(64),
+        1,
+        "4d5a",
+      ),
+    ]],
+    ["xx not the hash prefix", [
+      F(`${APPS}/metadata/3/0A/${HEX.replace("0A5", "FF5")}.cs`),
+    ]],
+    ["dll without an MZ header", [
+      F(
+        `${APPS}/assembly/release/28.0.53667.0_1/0A/${HEX}.dll`,
+        "c".repeat(64),
+        1,
+        "6161",
+      ),
+    ]],
+    ["an ADS on a cache file", [
+      F(`${APPS}/metadata/3/0A/${HEX}.cs`),
+      w(`S|${"d".repeat(64)}|3|${APPS}/metadata/3/0A/${HEX}.cs:hid`),
+    ]],
+    ["another apps subfolder", [F(`${APPS}/resources/3/0A/${HEX}.xml`)]],
+    ["a new directory outside the shape", [D(`${APPS}/metadata/3/0A/sub`)]],
+  ];
+  for (const [what, extra] of cases) {
+    const d = fsDiff(before, cap(...base, ...extra), [], [], CACHES).diff;
+    assert(d.length > 0, what);
+  }
+  // a changed or removed cache file is a difference
+  const changed = base.map((l) =>
+    l.startsWith("F|") ? l.replace("|1|", "|2|") : l
+  );
+  assertEquals(fsDiff(before, cap(...changed), [], [], CACHES).diff.length, 1);
+  assertEquals(
+    fsDiff(
+      before,
+      cap(...base.filter((l) => !l.startsWith("F|"))),
+      [],
+      [],
+      CACHES,
+    )
+      .diff.length,
+    1,
+  );
+  // a directory whose attributes (not only its time) changed is a difference
+  const attrs = base.map((l) =>
+    l.endsWith("metadata\\3") ? l.replace("D|16|", "D|18|") : l
+  );
+  assertEquals(fsDiff(before, cap(...attrs), [], [], CACHES).diff.length, 1);
+});
+
+Deno.test("H-35 S3 L4 (orchestrator, addendum 3): the comparison is within one deployment only; a lineage carries no stored fs digest to compare against", () => {
+  const fs = LineageSchema.shape.fs.unwrap().shape;
+  assertEquals(
+    Object.keys(fs).sort(),
+    ["digest_version", "exclude", "identity", "roots", "survey"],
+  );
+  // and a stored post-reset digest is refused by the strict schema
+  assert(
+    !LineageSchema.shape.fs.unwrap().safeParse({
+      digest_version: 3,
+      roots: ["C:\\W"],
+      identity: [],
+      exclude: [],
+      survey: { path: "s.json", sha256: "a".repeat(64) },
+      baseline_digest: "a".repeat(64),
+    }).success,
+  );
 });

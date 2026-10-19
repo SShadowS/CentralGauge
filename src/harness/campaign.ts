@@ -15,6 +15,7 @@ import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import type { Catalog } from "../ingest/catalog/read.ts";
 import type { AttemptRef, CellRef, HarnessEnv } from "./execution.ts";
+import type { BcEgressRecord } from "./environment.ts";
 import type { PriorExecution } from "./estimate.ts";
 import type { CampaignRecords } from "./integrity.ts";
 import type { RefappRef } from "./identity.ts";
@@ -310,6 +311,8 @@ export type PlanEnv =
      * sees on a dry run, the same inputs as the real environment's.
      */
     egressPlaced?: boolean;
+    /** H-35 S3 L2b: the lineage's NST egress, statically admitted (a plan env has no deploy). */
+    bcEgress?: BcEgressRecord | null;
   };
 
 /** A dry run: the plan and the egress refusal, without a lock or containers. */
@@ -746,9 +749,11 @@ export async function runCampaign(
     .map((c) => c.id);
   // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
   const override = env.unverifiedEgressReason;
-  // H-35 S3 L2b: the judging lineage's NST egress override, if any (a plan
-  // environment of a dry run has no deploy).
-  const bcOverride = env.deploy?.bcEgress?.override || undefined;
+  // H-35 S3 L2b: the judging lineage's NST egress override, if any (a dry
+  // run's plan environment carries it as bcEgress, having no deploy).
+  const bcOverride =
+    (env.deploy?.bcEgress ?? (env as PlanEnv).bcEgress)?.override ||
+    undefined;
   if (override !== undefined) {
     if (override.trim() === "") {
       throw new ConfigurationError(

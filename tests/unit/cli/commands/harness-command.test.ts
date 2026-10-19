@@ -9036,6 +9036,25 @@ Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; w
   );
 });
 
+Deno.test("H-35 Sol S3 r3: a dry run's plan env checks the lineage's NST egress as admission does and carries the override", async () => {
+  await using t = await makeEnv();
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  await assertRejects(
+    () => openPlanEnv({ ...envOpts(t), lineage }, planDeps(t, [])),
+    ConfigurationError,
+    "--unverified-bc-egress-ok",
+  );
+  const p = await openPlanEnv(
+    { ...envOpts(t), lineage, bcEgressOverride: "r" },
+    planDeps(t, []),
+  );
+  assertEquals(p.bcEgress, { mode: "unenforced", override: "r" });
+  assertEquals(
+    (await openPlanEnv(envOpts(t), planDeps(t, []))).bcEgress,
+    undefined,
+  );
+});
+
 Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the container admissible for its lineage; a container without one is not", async () => {
   await using t = await makeEnv();
   const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");

@@ -11,19 +11,29 @@ function Run([hashtable]$o) {
   $script:calls = [Collections.Generic.List[string]]::new()
   $script:o = $o
   $script:suspendedNow = $false
-  function global:Test-NstQuiescent($c) { $script:calls.Add('quiescent'); -not $script:o.busy }
-  function global:Set-NstSuspended($c, [bool]$s) {
+  $script:quiescentCalls = 0
+  $script:wmCalls = 0
+  # script: so the mocks replace the dot-sourced originals in this script's scope (Sol S3 r3)
+  function script:Test-NstQuiescent($c) {
+    $script:calls.Add('quiescent')
+    $after = ($script:quiescentCalls++) -gt 0
+    if ($after -and $script:o.unreadableAfter) { throw 'NST management API timed out' }
+    if ($after) { -not $script:o.busyAfter } else { -not $script:o.busy }
+  }
+  function script:Set-NstSuspended($c, [bool]$s) {
     $script:calls.Add($(if ($s) { 'suspend' } else { 'resume' }))
     if ($s -and $script:o.suspendFails) { throw 'NT status 0xC0000022' }
     if (-not $s -and $script:o.resumeFails) { throw 'NT status 0xC0000008' }
     $script:suspendedNow = $s
   }
-  function global:Get-NstSessionWatermark($c) {
+  function script:Get-NstSessionWatermark($c) {
     $script:calls.Add("watermark(suspended=$script:suspendedNow)")
+    if ($script:o.wmThrows) { throw 'Execution Timeout Expired' }
+    if ($script:o.wmMoves -and ($script:wmCalls++) -gt 0) { return '31|2026-10-20T10:00:19.000' }
     # the healthcheck queued during the suspension logs right after the resume
     if ($script:suspendedNow) { '30|2026-10-20T10:00:18.000' } else { '32|2026-10-20T10:00:48.000' }
   }
-  function global:Get-FsDigest($c, $r) {
+  function script:Get-FsDigest($c, $r) {
     $script:calls.Add('walk')
     if ($script:o.walkThrows) { throw 'docker exec died' }
     'D|16|1|C:\W'
@@ -54,4 +64,16 @@ Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|NST resume failed*' }) 
 $r = Run @{ busy = $true }
 Assert (($r.calls -join ',') -eq 'quiescent') "busy: $($r.calls -join ',')"
 Assert ($r.out[0] -like 'E|(fs-capture)|NST not quiescent before*') 'busy error'
+# the watermark read fails, or moves while suspended: resume still runs, fails closed
+$r = Run @{ wmThrows = $true }
+Assert ($r.calls -contains 'resume') 'resume after a failed watermark read'
+Assert ($r.out[0] -like 'E|(fs-capture)|*Execution Timeout*') "watermark read error: $($r.out -join ';')"
+$r = Run @{ wmMoves = $true }
+Assert ($r.calls -contains 'resume') 'resume after a moved watermark'
+Assert ($r.out[0] -like 'E|(fs-capture)|*moved while suspended*') "watermark moved: $($r.out -join ';')"
+# after the resume: a busy or unreadable NST fails closed
+$r = Run @{ busyAfter = $true }
+Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|NST not quiescent after*' }) 'busy after'
+$r = Run @{ unreadableAfter = $true }
+Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|*management API timed out*' }) 'unreadable after'
 'FS CAPTURE SELFCHECK OK'

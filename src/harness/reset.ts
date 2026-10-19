@@ -61,6 +61,8 @@ export interface ResetMechanism {
   readonly fsExclude?: readonly string[];
   /** L4: the declared roots every capture must cover (the lineage's fs.roots). */
   readonly fsRoots?: readonly string[];
+  /** L4: the lineage's platform_cache folders (decision addendum 3). */
+  readonly fsCaches?: readonly FsPlatformCache[];
   /** H-35 S3 L2b: the lineage's NST outbound firewall state (absent: not recorded). */
   readonly bcEgress?: "enforced" | "unenforced";
   /** H-35 S3: the content root every restore is verified against (absent: none). */
@@ -389,7 +391,19 @@ export function goldenReset(o: {
     // H-35 S3 L4: only with the lineage's fs section (admission refuses one without).
     ...(fs
       ? {
-        fsExclude: fs.exclude.map((e) => e.pattern),
+        fsExclude: fs.exclude.flatMap((e) =>
+          e.disposition === "platform_cache" ? [] : [e.pattern]
+        ),
+        fsCaches: fs.exclude.flatMap((e) =>
+          e.disposition === "platform_cache"
+            ? [{
+              base: e.base,
+              files: e.files,
+              dirs: e.dirs,
+              ...(e.magic ? { magic: e.magic } : {}),
+            }]
+            : []
+        ),
         fsRoots: fs.roots,
         fsDigest: async (container: string) => {
           const out = await run(FS_SCRIPT, container);
@@ -430,13 +444,56 @@ export interface FsDiffEntry {
  * null when the kind is unknown or a field is malformed (Sol S3 r1 #5).
  */
 const FS_LINE: Record<string, RegExp> = {
-  D: /^D\|\d+\|\d+\|([^|]+)$/,
-  F: /^F\|[0-9a-f]{64}\|\d+\|\d+\|\d+\|([^|]+)$/,
-  S: /^S\|[0-9a-f]{64}\|\d+\|([^|]+)$/,
-  L: /^L\|\d+\|\d+\|([^|]+)\|[^|]*$/,
+  D: /^D\|(?<attrs>\d+)\|\d+\|(?<p>[^|]+)$/,
+  // digest v3: the 6th field is the file's first two bytes, hex (platform_cache's magic)
+  F: /^F\|[0-9a-f]{64}\|\d+\|\d+\|\d+\|(?<head>(?:[0-9a-f]{2}){0,2})\|(?<p>[^|]+)$/,
+  S: /^S\|[0-9a-f]{64}\|\d+\|(?<p>[^|]+)$/,
+  L: /^L\|\d+\|\d+\|(?<p>[^|]+)\|[^|]*$/,
 };
+const fsParse = (line: string) => FS_LINE[line[0] ?? ""]?.exec(line)?.groups;
 function fsKey(line: string): string | null {
-  return FS_LINE[line[0] ?? ""]?.exec(line)?.[1] ?? null;
+  return fsParse(line)?.["p"] ?? null;
+}
+
+/**
+ * H-35 S3 L4 `platform_cache` (decision addendum 3): an NST cache folder
+ * where only NEW files whose path below `base` matches `files` (and start
+ * with `magic`, when set) and new or time-only-changed directories matching
+ * `dirs` are tolerated. Paths below `base` use `\`; the regexes are anchored
+ * sources from the lineage.
+ */
+export interface FsPlatformCache {
+  base: string;
+  files: string;
+  dirs: string;
+  magic?: string;
+}
+
+/** Whether one difference is a tolerated platform_cache addition. */
+function cacheTolerates(
+  caches: readonly {
+    base: string;
+    files: RegExp;
+    dirs: RegExp;
+    magic?: string;
+  }[],
+  d: FsDiffEntry,
+): boolean {
+  const after = d.after ? fsParse(d.after) : undefined;
+  if (!after) return false;
+  return caches.some((c) => {
+    const prefix = c.base.toLowerCase() + "\\";
+    if (!d.path.toLowerCase().startsWith(prefix)) return false;
+    const rel = d.path.slice(prefix.length);
+    if (d.after![0] === "F") {
+      return d.before === null && c.files.test(rel) &&
+        (c.magic === undefined || after["head"] === c.magic);
+    }
+    if (d.after![0] !== "D" || !c.dirs.test(rel)) return false;
+    // a new directory of the shape, or only its last-write time moved
+    return d.before === null ||
+      (d.before[0] === "D" && fsParse(d.before)?.["attrs"] === after["attrs"]);
+  });
 }
 
 /** A Windows wildcard (case-insensitive; `*` any run, subtrees included). */
@@ -456,15 +513,23 @@ function wildcard(pattern: string): RegExp {
  * errors, and an error fails closed like a difference. Sol S3 r1 #5: each
  * capture must end with exactly one `T|<n>` (n = its other lines), hold no
  * entry twice, and cover every declared root (a D, L or E line for it).
+ * `caches`: platform_cache folders (cacheTolerates); every other difference
+ * there stays one.
  */
 export function fsDiff(
   before: readonly string[],
   after: readonly string[],
   exclude: readonly string[],
   roots: readonly string[] = [],
+  caches: readonly FsPlatformCache[] = [],
 ): { diff: FsDiffEntry[]; errors: string[] } {
   const errors: string[] = [];
   const res = exclude.map(wildcard);
+  const cacheRes = caches.map((c) => ({
+    ...c,
+    files: new RegExp(c.files),
+    dirs: new RegExp(c.dirs),
+  }));
   const index = (side: string, raw: readonly string[]) => {
     const m = new Map<string, string>();
     const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
@@ -513,7 +578,9 @@ export function fsDiff(
   const diff: FsDiffEntry[] = [];
   for (const k of [...new Set([...b.keys(), ...a.keys()])].sort()) {
     const x = b.get(k) ?? null, y = a.get(k) ?? null;
-    if (x !== y) diff.push({ path: fsKey((y ?? x)!)!, before: x, after: y });
+    if (x === y) continue;
+    const d = { path: fsKey((y ?? x)!)!, before: x, after: y };
+    if (!cacheTolerates(cacheRes, d)) diff.push(d);
   }
   return { diff, errors };
 }

@@ -310,3 +310,45 @@ Deno.test("H-35 S3 lineage content_root: its per-table file must hash to the rec
     ConfigurationError,
   );
 });
+
+Deno.test("H-35 S3 L4 lineage platform_cache (addendum 3): an entry needs a base and anchored, compilable file and dir shapes; goldenReset hands them to fsDiff apart from the wildcard exclusions", async () => {
+  const cache = {
+    disposition: "platform_cache",
+    base: "C:\\NAV\\apps",
+    files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.(cs|xml)$`,
+    dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+    reason: "NST metadata cache",
+  };
+  const path = await copyLineage((j) =>
+    j["fs"] = { ...FS_SECTION, exclude: [...FS_SECTION.exclude, cache] }
+  );
+  const l = await loadLineage(path);
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath: path,
+    lineage: l,
+    dockerEnv: {},
+  });
+  assertEquals(m.fsExclude, [FS_SECTION.exclude[0]!.pattern]);
+  assertEquals(m.fsCaches, [{
+    base: cache.base,
+    files: cache.files,
+    dirs: cache.dirs,
+  }]);
+  for (
+    const bad of [
+      { ...cache, files: "metadata.*" }, // not anchored
+      { ...cache, dirs: "^(unclosed$" }, // does not compile
+      { ...cache, base: "" },
+      { ...cache, magic: "MZ" }, // magic is hex
+    ]
+  ) {
+    await assertRejects(
+      async () =>
+        loadLineage(
+          await copyLineage((j) => j["fs"] = { ...FS_SECTION, exclude: [bad] }),
+        ),
+      ConfigurationError,
+    );
+  }
+});

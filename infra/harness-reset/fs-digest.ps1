@@ -8,7 +8,7 @@
 # fsDigest(W): every entry under the roots, hashed in full every time (no size/mtime gate). One line per entry,
 # sorted ordinal by path, fields separated by '|':
 #   D|<attrs>|<lastWriteUtcTicks>|<path>                    directory (its own named streams follow as S lines)
-#   F|<sha256>|<size>|<attrs>|<lastWriteUtcTicks>|<path>    file, unnamed stream
+#   F|<sha256>|<size>|<attrs>|<lastWriteUtcTicks>|<head>|<path>   file, unnamed stream; head = its first 2 bytes, hex
 #   S|<sha256>|<size>|<path>:<stream>                       named NTFS stream of a file or directory
 #   L|<attrs>|<lastWriteUtcTicks>|<path>|<target>           reparse point (a root too): recorded, never followed
 #   E|<path>|<reason>                                       access error or change during the scan: fails closed
@@ -16,7 +16,7 @@
 # the walk (quiescence, suspension, watermark) and ends the capture with `T|<entry lines>` (src/harness/reset.ts
 # fsDiff refuses a capture without it). DIGEST_VERSION enters env_fp through the lineage; bump it on any change to
 # the line format or the walk.
-$FsDigestVersion = 2
+$FsDigestVersion = 3
 
 # A second check under the suspension: the NST's session-log watermark, read twice while it is suspended. A
 # suspended NST writes nothing, so a change means the suspension did not hold. READ UNCOMMITTED with a timeout, so a
@@ -177,7 +177,8 @@ public static class CgFsStreams {
           if ($after.Length -ne $b.Length -or $after.LastWriteTimeUtc.Ticks -ne $t) {
             "E|$($i.FullName)|changed during the scan"
           } else {
-            "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$($i.FullName)"
+            $head = if ($b.Length -ge 2) { '{0:x2}{1:x2}' -f $b[0], $b[1] } elseif ($b.Length -eq 1) { '{0:x2}' -f $b[0] } else { '' }
+            "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$head|$($i.FullName)"
             Streams $i
             # and the file itself after its streams were read
             $again = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
@@ -208,6 +209,40 @@ function Get-FsDigestFacts([string]$Container, [string[]]$Roots) {
       "root|$r|files=$($f.Count)|bytes=$(($f | Measure-Object Length -Sum).Sum)"
     }
   } (, $Roots)
+}
+
+# Decision addendum 3 (platform_cache): the NST's app caches, with the shapes measured on Cronus283 (lane-ops,
+# tasks\H-35\ops\suspend; 59 + 7,333 new files, all matching, uppercase hex, <xx> = the hash's first two chars).
+# Only NEW files of these shapes and new or time-only-changed directories of the dir shapes are tolerated.
+$FsPlatformCacheShapes = @(
+  [ordered]@{
+    files  = '^assembly\\release\\[0-9.]+_\d+\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.dll$'
+    dirs   = '^assembly(\\release(\\[0-9.]+_\d+(\\[0-9A-F]{2})?)?)?$'
+    magic  = '4d5a'
+    reason = 'NST compiled-assembly cache: .NET assemblies the NST compiles from published apps, named by content hash (PE files, MZ header); AL cannot write here without File/DotNet (L1/L3)'
+  },
+  [ordered]@{
+    files  = '^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.(cs|xml)$'
+    dirs   = '^metadata(\\3(\\[0-9A-F]{2})?)?$'
+    reason = 'NST app metadata cache: generated .cs/.xml per published object, named by content hash; AL cannot write here without File/DotNet (L1/L3)'
+  }
+)
+
+# The lineage's platform_cache exclude entries, the base resolved on the image (the NST's apps folder).
+function Get-FsPlatformCaches([string]$Container) {
+  $base = Invoke-InContainer $Container {
+    $svc = Get-CimInstance Win32_Service -Filter "Name='MicrosoftDynamicsNavServer`$BC'"
+    $ver = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent ($svc.PathName -replace '^"([^"]+)".*$', '$1')))
+    $p = "C:\ProgramData\Microsoft\Microsoft Dynamics NAV\$ver\Server\MicrosoftDynamicsNavServer`$BC\apps"
+    if (-not (Test-Path -LiteralPath $p)) { throw "NST apps folder not found: $p" }
+    (Get-Item -LiteralPath $p -Force).FullName
+  }
+  foreach ($s in $FsPlatformCacheShapes) {
+    $e = [ordered]@{ disposition = 'platform_cache'; base = "$base".Trim(); files = $s.files; dirs = $s.dirs }
+    if ($s.magic) { $e.magic = $s.magic }
+    $e.reason = $s.reason
+    $e
+  }
 }
 
 # Candidate roots of W for discovery on the image (decision 2026-10-20 item 2): resolved absolute paths.
