@@ -4,7 +4,7 @@ param(
 )
 # H-35 S3 L4: one fsDigest(W) capture over the lineage's fs.roots (src/harness/reset.ts goldenReset.fsDigest).
 # stdout = the digest lines (fs-digest.ps1 format), then `T|<their count>`; any failure prints an E| line and
-# exits 1 (fails closed). The NST must be quiescent before and after the walk (decision item 3), else E| lines.
+# exits 1 (fails closed). The walk runs with the NST suspended (fs-digest.ps1 Invoke-FsCaptureCore).
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 if (-not $env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT = 'desktop-windows' }
@@ -19,14 +19,9 @@ try {
   if ([int]$lin.fs.digest_version -ne $FsDigestVersion) {
     throw "lineage fs.digest_version $($lin.fs.digest_version), fs-digest.ps1 is $FsDigestVersion"
   }
-  if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
-  $wm = Get-NstSessionWatermark $Container
-  $lines = @(Get-FsDigest $Container @($lin.fs.roots))
-  if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent after the scan' }
-  $wm2 = Get-NstSessionWatermark $Container
-  if ($wm2 -ne $wm) { throw "an NST session ran during the scan (session log $wm -> $wm2)" }
-  $lines
-  "T|$($lines.Count)"
+  $out = @(Invoke-FsCaptureCore $Container @($lin.fs.roots))
+  $out
+  if ($out | Where-Object { $_ -like 'E|(fs-capture)|*' }) { exit 1 }
 } catch {
   Write-Output "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))"
   exit 1

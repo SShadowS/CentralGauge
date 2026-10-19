@@ -1,9 +1,9 @@
 # H-35 S3 L4 (design-r5 2.4 as amended: decisions\2026-10-20-h-35-l4-scope.md). Dot-sourced after reset-lib.ps1.
 # Scope: L4 detects differences in the specified file/stream contents and recorded metadata between observation
 # points within declared roots, excluding recorded exclusions and untraversed reparse targets. It is not a complete
-# write history or persistence boundary. Each capture requires the NST to be quiescent before and after the walk
-# and its session-log watermark to be unchanged across it; work that writes under the roots during the walk without
-# leaving a session log row is not detected (owner, decisions\2026-10-20-h-35-l4-scope.md addendum).
+# write history or persistence boundary. Each capture walks with the NST process suspended (owner, addendum 2 of
+# decisions\2026-10-20-h-35-l4-scope.md), so no AL runs during it; a writer outside the NST process (for example a
+# detached process an OnPrem DotNet call started) is not stopped by the suspension and is not covered.
 #
 # fsDigest(W): every entry under the roots, hashed in full every time (no size/mtime gate). One line per entry,
 # sorted ordinal by path, fields separated by '|':
@@ -12,20 +12,78 @@
 #   S|<sha256>|<size>|<path>:<stream>                       named NTFS stream of a file or directory
 #   L|<attrs>|<lastWriteUtcTicks>|<path>|<target>           reparse point (a root too): recorded, never followed
 #   E|<path>|<reason>                                       access error or change during the scan: fails closed
-# A file, stream or directory that changes while it is read or enumerated is an E line. fs-capture.ps1 brackets
-# the walk with Test-NstQuiescent and ends the capture with `T|<entry lines>` (src/harness/reset.ts fsDiff
-# refuses a capture without it). DIGEST_VERSION enters env_fp through the lineage; bump it on any change to the
-# line format or the walk.
+# A file, stream or directory that changes while it is read or enumerated is an E line. Invoke-FsCaptureCore wraps
+# the walk (quiescence, suspension, watermark) and ends the capture with `T|<entry lines>` (src/harness/reset.ts
+# fsDiff refuses a capture without it). DIGEST_VERSION enters env_fp through the lineage; bump it on any change to
+# the line format or the walk.
 $FsDigestVersion = 2
 
-# Sol S3 r2 (HIGH, mitigation): a watermark over the NST's session log. A session that starts and ends between the
-# two quiescence checks leaves a Session Event row, so the watermark before and after the walk must be equal.
+# A second check under the suspension: the NST's session-log watermark, read twice while it is suspended. A
+# suspended NST writes nothing, so a change means the suspension did not hold. READ UNCOMMITTED with a timeout, so a
+# lock a suspended NST thread holds can never hang the read (a timeout fails closed).
 function Get-NstSessionWatermark([string]$Container) {
   $w = Invoke-InContainer $Container {
-    (Invoke-Sqlcmd -Database CRONUS -ErrorAction Stop -Query "SELECT CONCAT(COUNT_BIG(*), '|', CONVERT(varchar(33), MAX([Event Datetime]), 126)) AS w FROM [Session Event]").w
+    (Invoke-Sqlcmd -Database CRONUS -QueryTimeout 30 -ErrorAction Stop -Query "SELECT CONCAT(COUNT_BIG(*), '|', CONVERT(varchar(33), MAX([Event Datetime]), 126)) AS w FROM [Session Event] WITH (NOLOCK)").w
   }
   if ("$w".Trim() -notmatch '^\d+\|') { throw "NST session watermark unreadable: '$w'" }
   "$w".Trim()
+}
+
+# Owner, addendum 2: suspend / resume every thread of the NST process (NtSuspendProcess / NtResumeProcess). Suspend
+# verifies every thread reports WaitReason Suspended; either throws on any failure.
+function Set-NstSuspended([string]$Container, [bool]$Suspended) {
+  $r = Invoke-InContainer $Container { param($suspend)
+    if (-not ('CgNtProc' -as [type])) {
+      Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public static class CgNtProc {
+  [DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr h);
+  [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);
+}
+'@
+    }
+    $p = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction Stop)
+    if ($p.Count -ne 1) { throw "expected one NST process, found $($p.Count)" }
+    $st = if ($suspend) { [CgNtProc]::NtSuspendProcess($p[0].Handle) } else { [CgNtProc]::NtResumeProcess($p[0].Handle) }
+    if ($st -ne 0) { throw "NT status 0x$('{0:X8}' -f $st)" }
+    if ($suspend) {
+      $p[0].Refresh()
+      $running = @($p[0].Threads | Where-Object { "$($_.WaitReason)" -ne 'Suspended' }).Count
+      if ($running -gt 0) { throw "$running NST thread(s) not suspended" }
+    }
+    'ok'
+  } $Suspended
+  if ("$r".Trim() -ne 'ok') { throw "NST $(if ($Suspended) { 'suspend' } else { 'resume' }) failed: $r" }
+}
+
+# One capture (fs-capture.ps1): quiescent -> suspend -> watermark w1 -> walk -> watermark w2 -> resume (always, in
+# finally) -> quiescent. w2 is read before the resume: a healthcheck request queued during the suspension logs its
+# session after the resume and must not count. Any failure is an E| line and the capture fails closed.
+function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
+  $lines = @()
+  $suspended = $false
+  try {
+    if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
+    $suspended = $true
+    Set-NstSuspended $Container $true
+    $w1 = Get-NstSessionWatermark $Container
+    $lines = @(Get-FsDigest $Container $Roots)
+    $w2 = Get-NstSessionWatermark $Container
+    if ($w2 -ne $w1) { throw "the NST session log moved while suspended ($w1 -> $w2)" }
+  } catch {
+    $lines = @("E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))")
+  } finally {
+    if ($suspended) {
+      try { Set-NstSuspended $Container $false }
+      catch { $lines += "E|(fs-capture)|NST resume failed: $((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
+    }
+  }
+  if (-not ($lines | Where-Object { $_ -like 'E|(fs-capture)|*' })) {
+    try { if (-not (Test-NstQuiescent $Container)) { $lines += 'E|(fs-capture)|NST not quiescent after the scan' } }
+    catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
+  }
+  $lines
+  "T|$($lines.Count)"
 }
 
 # Observation point (decision item 3): no user or background session on the NST. Throws when it cannot tell.
