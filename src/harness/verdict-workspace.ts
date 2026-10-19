@@ -1476,10 +1476,13 @@ const ID_REFS: readonly (readonly [RegExp, string])[] = [
 /** A static object call and its first argument. */
 const STATIC_CALL =
   /\b(Codeunit|Page|Report|Xmlport|Query)\s*\.\s*(Run|RunModal|Execute|SaveAs|SaveAsCsv|SaveAsPdf|SaveAsXml|Print|Open)\s*\(\s*([^,)]*)/gi;
-/** RecordRef variables or parameters, one declaration (`A, B: RecordRef`, Sol r1 #2). */
-const RECORDREF_VAR =
-  /((?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*))*)\s*:\s*RecordRef\b/gi;
-const AL_NAME = /"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*/g;
+/**
+ * An instance Open call with its first argument (a RecordRef, whatever its
+ * spelling: bare, quoted, an array element); the static object calls are
+ * STATIC_CALL's. Query.Open() has no argument and is skipped.
+ */
+const OPEN_CALL =
+  /(?<!\b(?:Codeunit|Page|Report|Xmlport|Query)\s*)\.\s*Open\s*\(\s*([^,)]*)/gi;
 /** An argument that names its object: an integer literal or `Type::<name or literal>`. */
 const LITERAL_OBJECT =
   /^(?:\d+|(?:Codeunit|Page|Report|Xmlport|Query|Database)\s*::\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*|\d+))\s*$/i;
@@ -1490,7 +1493,6 @@ const DETECTION_MEMBER =
   /\.\s*Callstack\b|\bGetLastErrorCallStack\b|\bNavApp\s*\.|\bModuleInfo\b/i;
 
 const unquote = (n: string) => n.replace(/^"|"$/g, "").toLowerCase();
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * H-35 production-side rules over every production app of a workspace (the
@@ -1573,21 +1575,13 @@ export async function productionPolicyViolations(
       for (const m of code.matchAll(STATIC_CALL)) {
         dynamic(`${m[1]}.${m[2]}`, m[3]!);
       }
-      for (const v of code.matchAll(RECORDREF_VAR)) {
-        for (const [name] of v[1]!.matchAll(AL_NAME)) {
-          // Sol r2 #1: a variable is referenced bare or quoted, either way.
-          const bare = escapeRe(name.replace(/^"|"$/g, ""));
-          const open = new RegExp(
-            `(?:"${bare}"|(?<![\\w"])${bare}(?![\\w"]))\\s*\\.\\s*Open\\s*\\(\\s*([^,)]*)`,
-            "gi",
-          );
-          for (const m of code.matchAll(open)) {
-            dynamic("RecordRef.Open", m[1]!);
-            if (/^\d+$/.test(m[1]!.trim())) {
-              bannedId(m[0], "table", Number(m[1]));
-            }
-          }
-        }
+      // Sol r3 #1: any receiver (a RecordRef bare, quoted, an array element
+      // or anything else): an Open with an object argument names its object.
+      for (const m of code.matchAll(OPEN_CALL)) {
+        const arg = m[1]!.trim();
+        if (arg === "") continue;
+        dynamic("RecordRef.Open", arg);
+        if (/^\d+$/.test(arg)) bannedId(m[0], "table", Number(arg));
       }
       out.push(...found);
     }
@@ -1653,6 +1647,32 @@ async function applyCreditRules(
    */
   const rejected = new Set<string>();
   const testOut = join(out, TEST_APP);
+  // Sol r3 #3: every [Test] procedure added to a shipped test codeunit, read
+  // by declaration (no member parse, so no path can skip it). The ones never
+  // extracted are credit-excluded, whatever kept them out.
+  const addedShipped = new Set<string>();
+  const extracted = new Set<string>();
+  const procName = (n: string) => n.replace(/^"|"$/g, "").toLowerCase();
+  for (const [rel, aSrc] of edited) {
+    const pDecls = declarations(
+      await Deno.readTextFile(join(pristine, TEST_APP, ...rel.split("/"))),
+    );
+    for (const a of declarations(aSrc)) {
+      const p = pDecls.find((x) => x.kind === a.kind && x.id === a.id);
+      if (!p || !isTestCodeunit(p)) continue;
+      const had = new Set(
+        [...p.body.matchAll(TEST_PROC)].map((m) => procName(m[1] ?? m[2]!)),
+      );
+      for (const m of a.body.matchAll(TEST_PROC)) {
+        const n = procName(m[1] ?? m[2]!);
+        if (!had.has(n)) addedShipped.add(`s${a.id}:${n}`);
+      }
+    }
+  }
+  const finish = () => {
+    for (const k of addedShipped) if (!extracted.has(k)) rejected.add(k);
+    return { notes, excluded, rejected };
+  };
   const shipped = await shippedTests(join(pristine, TEST_APP));
   if (shipped === null) {
     for (
@@ -1663,7 +1683,7 @@ async function applyCreditRules(
     notes.push(
       "credit rules: a shipped test codeunit could not be parsed; no agent test is run or counted",
     );
-    return { notes, excluded, rejected };
+    return finish();
   }
 
   // Unreadable agent text never gets here: it is an unreadable_test
@@ -1751,15 +1771,6 @@ async function applyCreditRules(
     ],
     shipped,
   );
-  const addedTests = (all: boolean) => {
-    for (const e of shippedEdits) {
-      for (const m of e.judged.code) {
-        if (m.test && (all || why.has(m))) {
-          rejected.add(`s${e.d.id}:${m.names[0]}`);
-        }
-      }
-    }
-  };
   // A rejected member that cannot be removed (a table or extension trigger,
   // an unparsed codeunit) can fire from any test (an Insert(true), a
   // RecordRef): fail closed, no agent test runs or counts.
@@ -1775,8 +1786,7 @@ async function applyCreditRules(
         stuck.map(([m, w]) => `${m.displays[0]}: ${w}`).join("; ")
       }; it cannot be removed, so no agent test is run or counted`,
     );
-    addedTests(true);
-    return { notes, excluded, rejected };
+    return finish();
   }
 
   for (const f of fresh) {
@@ -1836,10 +1846,9 @@ async function applyCreditRules(
     await Deno.writeTextFile(join(testOut, ...f.rel.split("/")), text);
   }
 
-  addedTests(false);
   const found = shippedEdits.map((e) => extractFrom(e, why, notes))
     .filter((x): x is Extracted => x !== null);
-  if (found.length === 0) return { notes, excluded, rejected };
+  if (found.length === 0) return finish();
   const range = HARNESS_EXTRACTED_TEST_RANGE;
   const taken: string[] = [];
   for (const app of apps) {
@@ -1855,7 +1864,7 @@ async function applyCreditRules(
         taken.join("; ")
       }); no added test procedure is extracted`,
     );
-    return { notes, excluded, rejected };
+    return finish();
   }
   found.sort((a, b) => a.from - b.from);
   for (const [i, x] of found.entries()) {
@@ -1885,8 +1894,9 @@ async function applyCreditRules(
     }
     await validatedDest(join(dest, ".."));
     await Deno.writeTextFile(dest, text);
+    for (const t of x.tests) extracted.add(`s${x.from}:${procName(t)}`);
   }
-  return { notes, excluded, rejected };
+  return finish();
 }
 
 /**
@@ -1951,15 +1961,22 @@ async function shippedCollisions(
   /** H-35 Sol r2 #2: the helper as written; its own shipped objects are not collisions. */
   asWritten: readonly string[] = [],
 ): Promise<string[]> {
+  /** kind#id -> label, and kind:name -> the kind#id of the shipped object of that name. */
   const shipped = new Map<string, string>();
+  const named = new Map<string, string>();
   for (const e of await listTree(pristineTest, "task", { optional: true })) {
     if (!e.path.toLowerCase().endsWith(".al")) continue;
     const src = await Deno.readTextFile(join(pristineTest, e.path));
     const text = stripAlNoise(src);
     for (const d of declarations(src)) {
-      const label = `${d.kind} ${d.id} ${objectName(text, d)}`;
-      shipped.set(`${d.kind}#${d.id}`, label);
-      shipped.set(`${d.kind}:${objectName(text, d).toLowerCase()}`, label);
+      shipped.set(
+        `${d.kind}#${d.id}`,
+        `${d.kind} ${d.id} ${objectName(text, d)}`,
+      );
+      named.set(
+        `${d.kind}:${objectName(text, d).toLowerCase()}`,
+        `${d.kind}#${d.id}`,
+      );
     }
   }
   const v: string[] = [];
@@ -1974,9 +1991,14 @@ async function shippedCollisions(
       )
       : new Set<string>();
     for (const d of declarations(src)) {
-      if (own.has(`${d.kind}#${d.id}`)) continue;
-      const hit = shipped.get(`${d.kind}#${d.id}`) ??
-        shipped.get(`${d.kind}:${objectName(text, d).toLowerCase()}`);
+      // Sol r3 #2: the helper's own shipped object keeps its id, but its name
+      // must still not be another shipped object's.
+      const self = `${d.kind}#${d.id}`;
+      const byName = named.get(
+        `${d.kind}:${objectName(text, d).toLowerCase()}`,
+      );
+      const hit = (own.has(self) ? undefined : shipped.get(self)) ??
+        (byName && byName !== self ? shipped.get(byName) : undefined);
       if (hit) {
         v.push(
           `${TEST_APP}/${rel}: ${d.kind} ${d.id} collides with shipped ${hit}`,

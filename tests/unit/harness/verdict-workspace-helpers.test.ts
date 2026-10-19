@@ -622,3 +622,21 @@ Deno.test("H-35 Sol r2 #4: credit-excluded counts each submitted test once, even
   });
   assertEquals(r.v.creditExcluded, 1);
 });
+
+Deno.test("H-35 Sol r3 #2: the helper's own shipped id does not exempt a collision with another shipped object's name", async () => {
+  const renamed =
+    `codeunit 80090 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentPasses()\n    begin\n    end;\n}\n`;
+  const r = await rebuild({ [LIB_REL]: renamed }, { dropShippedTests: true });
+  assertStringIncludes(r.v.violations.join("\n"), "collides with shipped");
+});
+
+Deno.test("H-35 Sol r3 #3: a test added to a shipped codeunit that is never extracted (preprocessor conditionals) counts as credit-excluded", async () => {
+  const edited = `#if UNUSED\n#endif\n${
+    SHIPPED_TESTS.replace(
+      /}\n$/,
+      "\n    [Test]\n    procedure Extra()\n    begin\n        Error('failure');\n    end;\n}\n",
+    )
+  }`;
+  const r = await rebuild({ "Test/src/Shipped.Test.al": edited });
+  assertEquals(r.v.creditExcluded, 1);
+});

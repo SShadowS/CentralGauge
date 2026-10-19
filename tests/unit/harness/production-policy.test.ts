@@ -314,3 +314,27 @@ Deno.test("H-35 Sol r2 #1: a quoted reference to a RecordRef variable is checked
     '"R".Open(Id)',
   );
 });
+
+Deno.test("H-35 Sol r3 #1: every .Open with an object argument must name its object, whatever the receiver (a RecordRef array element included)", async () => {
+  hasRule(
+    await scan(
+      proc("        R: array[1] of RecordRef;", "R[1].Open(2000000038);"),
+    ),
+    "test_detection_ref",
+    "R[1].Open(2000000038)",
+  );
+  hasRule(
+    await scan(
+      proc(
+        "        R: array[1] of RecordRef;\n        Id: Integer;",
+        "R[1].Open(Id);",
+      ),
+    ),
+    "dynamic_object_access",
+    "R[1].Open(Id)",
+  );
+  assertEquals(
+    await scan(proc("        R: RecordRef;", "R.Open(Database::Customer);")),
+    [],
+  );
+});
