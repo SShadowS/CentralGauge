@@ -950,9 +950,17 @@ const isTestCodeunit = (d: AlDecl) =>
 /**
  * Quoted identifiers with their contents blanked (same length), so text
  * inside a name is never read as code; offsets stay those of the source.
+ * A quoted plain identifier ("GetLastErrorCallStack") is that identifier
+ * (Sol r5 #1): its quotes become spaces and it stays readable code.
  */
 const maskQuoted = (s: string) =>
-  s.replace(/"[^"\n]*"/g, (q) => `"${"_".repeat(q.length - 2)}"`);
+  s.replace(
+    /"[^"\n]*"/g,
+    (q) =>
+      /^"[A-Za-z_][A-Za-z0-9_]*"$/.test(q)
+        ? ` ${q.slice(1, -1)} `
+        : `"${"_".repeat(q.length - 2)}"`,
+  );
 
 /**
  * The declared name of an object (quoted or bare), from the noise-stripped
@@ -961,7 +969,8 @@ const maskQuoted = (s: string) =>
  */
 function objectName(text: string, d: AlDecl): string {
   const re = new RegExp(
-    `\\b${d.kind}\\s+${d.id}\\s+(?:"([^"\\n]*)"|([A-Za-z_][A-Za-z0-9_]*))`,
+    // Sol r5 #2: the id as written may carry leading zeros (080100).
+    `\\b${d.kind}\\s+0*${d.id}\\s+(?:"([^"\\n]*)"|([A-Za-z_][A-Za-z0-9_]*))`,
     "gid",
   );
   let last: RegExpExecArray | null = null;

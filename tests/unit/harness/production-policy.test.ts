@@ -361,3 +361,15 @@ Deno.test("H-35 Sol r4 #1: text inside a quoted object or variable name is never
     '"My Ref".Open(Id)',
   );
 });
+
+Deno.test("H-35 Sol r5 #1: a quoted plain identifier is that identifier: a quoted banned call or type is still caught", async () => {
+  for (
+    const [decl, stmt] of [
+      ["        X: Text;", 'X := "GetLastErrorCallStack"();'],
+      ['        M: "ModuleInfo";', '"NavApp".GetCurrentModuleInfo(M);'],
+      ['        A: Record "AllObj";', "A.FindFirst();"],
+    ] as const
+  ) {
+    hasRule(await scan(proc(decl, stmt)), "test_detection_ref", stmt);
+  }
+});

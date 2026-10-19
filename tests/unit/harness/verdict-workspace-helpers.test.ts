@@ -652,3 +652,12 @@ Deno.test("H-35 Sol r4 #2: an object's name is read from its own header, never f
     "codeunit 80100 collides with shipped",
   );
 });
+
+Deno.test("H-35 Sol r5 #2: an object id written with leading zeros still has its own name read for collisions", async () => {
+  const zeros =
+    `codeunit 080100 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure AgentPasses()\n    begin\n    end;\n}\n`;
+  const r = await rebuild({ "Test/src/Zeros.Test.al": zeros }, {
+    dropShippedTests: true,
+  });
+  assertStringIncludes(r.v.violations.join("\n"), "collides with shipped");
+});
