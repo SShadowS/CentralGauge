@@ -52,7 +52,9 @@ import { hashFile } from "./hash.ts";
 import {
   type InfraSignature,
   JudgmentRecordSchema,
+  type PolicyViolation,
   scorerFingerprint,
+  type ScorerState,
   verdictOf,
 } from "./records.ts";
 import { applyOverlay, readAppGraph, readAppJson } from "./staging.ts";
@@ -161,6 +163,8 @@ export interface JudgeInput {
   deploy: Pick<DeployContext, "ledgerRoot">;
   /** H-27: the run's shared build cache (task-fixed builds are reused across cells); none = no reuse. */
   buildCache?: BuildCache;
+  /** H-35 provenance: the harness commit judging (null when unknown). */
+  harnessCommit?: string | null;
 }
 
 export interface VerdictSpans {
@@ -191,6 +195,8 @@ export interface VerdictLog {
 interface Scorer {
   name: string;
   passed: boolean | null;
+  /** H-35 v2 (design-r2 3). */
+  state: ScorerState;
   tests: TestRow[];
 }
 
@@ -199,16 +205,35 @@ export class Scores {
   readonly list: Scorer[];
   private readonly done = new Set<string>();
   constructor(names: readonly string[]) {
-    this.list = names.map((name) => ({ name, passed: false, tests: [] }));
+    this.list = names.map((name) => ({
+      name,
+      passed: false,
+      state: "measured" as ScorerState,
+      tests: [],
+    }));
   }
   has(name: ScorerName): boolean {
     return this.list.some((s) => s.name === name);
   }
+  /** A result: null is infra (unscored), a boolean is measured. */
   set(name: ScorerName, passed: boolean | null, tests: TestRow[] = []): void {
+    this.put(name, passed, passed === null ? "unscored" : "measured", tests);
+  }
+  /** H-35 (design-r2 5): the policy gate stopped this scorer. */
+  notMeasured(name: ScorerName): void {
+    this.put(name, null, "not_measured", []);
+  }
+  private put(
+    name: ScorerName,
+    passed: boolean | null,
+    state: ScorerState,
+    tests: TestRow[],
+  ): void {
     const s = this.list.find((x) => x.name === name);
     // Never a silent drop: a result for a scorer the task does not list is a harness bug.
     if (!s) throw new Error(`scorer ${name} is not in this task's scorers`);
     s.passed = passed;
+    s.state = state;
     s.tests = tests;
     this.done.add(name);
   }
@@ -224,6 +249,38 @@ export class Scores {
       if (!this.done.has(s.name)) this.set(s.name as ScorerName, null);
     }
   }
+  /** Every scorer not yet decided is stopped by the gate (a production-side violation). */
+  notMeasuredRest(): void {
+    for (const s of this.list) {
+      if (!this.done.has(s.name)) this.notMeasured(s.name as ScorerName);
+    }
+  }
+}
+
+/** The stable rule codes the H-35 policy rules emit as `<rule>: ...`. */
+const RULE_CODES = new Set([
+  "unreadable_test",
+  "test_lifecycle",
+  "isolation_disabled",
+  "dependency_not_allowed",
+  "unreadable",
+  "test_detection_ref",
+  "dynamic_object_access",
+]);
+
+/** H-35 (design-r2 5): a workspace violation's stable rule code. */
+export function violationRule(v: string): string {
+  const m = /^([a-z_]+): /.exec(v);
+  if (m && RULE_CODES.has(m[1]!)) return m[1]!;
+  if (v.startsWith("workspace ")) return "workspace_freeze";
+  if (/link refused|link, reparse point/.test(v)) return "link_refused";
+  if (/case-ambiguous|case alias/.test(v)) return "case_alias";
+  if (/collides with shipped/.test(v)) return "test_collision";
+  if (/ changed from |idRanges changed|app\.json missing/.test(v)) {
+    return "identity_changed";
+  }
+  if (/is missing$/.test(v)) return "app_missing";
+  return "app_validation";
 }
 
 export interface JudgeContext {
@@ -232,6 +289,10 @@ export interface JudgeContext {
   scores: Scores;
   log: VerdictLog;
   deploy: DeployContext;
+  /** H-35 policy gate: violations by side and rule (design-r2 5). */
+  policy: PolicyViolation[];
+  /** H-35: the digest of the judgment's production manifest, once built. */
+  manifest: string | null;
 }
 
 function recordBuild(ctx: JudgeContext, prep: Prepared, label: string): void {
@@ -723,10 +784,23 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   // Tests the agent added to shipped codeunits are discovered below as the
   // generated codeunit (addedTestCodeunits); why any were not is noted here.
   log.notes.push(...aw.notes);
-  if (gw.violations.length > 0) return scores.failRest();
+  ctx.policy.push(
+    ...gw.violations.map((detail) => ({
+      side: "production" as const,
+      rule: violationRule(detail),
+      detail,
+    })),
+    ...testSide.map((detail) => ({
+      side: "test" as const,
+      rule: violationRule(detail),
+      detail,
+    })),
+  );
+  // A production-side violation: G and A are not measured, the gate fails.
+  if (gw.violations.length > 0) return scores.notMeasuredRest();
   // Sol r1 #4: decided now, so infra in G cannot unscore a policy failure.
   if (testSide.length > 0 && scores.has("agent_tests")) {
-    scores.set("agent_tests", false);
+    scores.notMeasured("agent_tests");
   }
 
   const pristineApps = await readAppGraph(i.pristine);
@@ -757,6 +831,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
   // H-35 (design-r3 3.2): A publishes exactly G's production packages.
   const manifest = await productionManifest(prep, gw.dir);
   log.notes.push(`production manifest: ${manifest.digest}`);
+  ctx.manifest = manifest.digest;
 
   const p2p: TestSpec[] = scores.has("pass_to_pass")
     ? t.pass_to_pass.map((r) => ({
@@ -865,7 +940,7 @@ async function scoreAgentTests(
 ): Promise<void> {
   const { i, scores, log } = ctx;
   // S2 records this as not_measured behind the policy gate.
-  if (testSide.length > 0) return scores.set("agent_tests", false);
+  if (testSide.length > 0) return scores.notMeasured("agent_tests");
   const agent: TestSpec[] = [];
   const testPageRows: TestRow[] = [];
   const added = await addedTestCodeunits(
@@ -1079,7 +1154,15 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   log.notes.push(...vw.notes);
   // Sol r1 #4: decided before G', so infra there cannot unscore it. S2
   // records it as not_measured behind the policy gate.
-  if (vw.violations.length > 0) scores.set("mutant_kill", false);
+  // Production is the reference here: every violation is Test-side.
+  ctx.policy.push(
+    ...vw.violations.map((detail) => ({
+      side: "test" as const,
+      rule: violationRule(detail),
+      detail,
+    })),
+  );
+  if (vw.violations.length > 0) scores.notMeasured("mutant_kill");
 
   // H-35 G' first: the reference production plus the pristine Test app, raw
   // (no agent file: a subscriber or install trigger in agent code could act
@@ -1112,6 +1195,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   // H-35 (design-r3 3.3): A_ref publishes exactly G' production packages.
   const manifest = await productionManifest(sp, sw.dir);
   log.notes.push(`production manifest: ${manifest.digest}`);
+  ctx.manifest = manifest.digest;
   let control: { prep: Prepared; specs: TestSpec[] } | null = null;
   if (scores.has("pass_to_pass")) {
     const p2p: TestSpec[] = t.pass_to_pass.map((r) => ({
@@ -1373,7 +1457,15 @@ export async function judge(
       ? [i.pristine, join(i.task.dir, "oracle")]
       : [i.pristine],
   };
-  const ctx: JudgeContext = { lane, i, scores, log, deploy };
+  const ctx: JudgeContext = {
+    lane,
+    i,
+    scores,
+    log,
+    deploy,
+    policy: [],
+    manifest: null,
+  };
   try {
     if (i.task.task.kind === "test-authoring") await scoreTestAuthoring(ctx);
     else await scoreChange(ctx);
@@ -1389,9 +1481,18 @@ export async function judge(
   }
   log.spans.total_ms = performance.now() - t0;
   const list = scores.list;
-  const verdict = verdictOf(list);
+  // H-35 v2 (design-r2 5, design-r3 6.2): the gate, then the scorers.
+  const policy = { passed: ctx.policy.length === 0, violations: ctx.policy };
+  const verdict = verdictOf(list, policy);
   const judgment = JudgmentRecordSchema.parse({
-    v: 1,
+    v: 2,
+    policy,
+    provenance: {
+      harness_commit: i.harnessCommit ?? null,
+      production_manifest: ctx.manifest,
+      // The environment lineage arrives with S3 (design-r3 8); never inferred.
+      env_fp: null,
+    },
     id: log.judgment_id,
     execution_id: i.executionId,
     workspace_hash: i.workspaceHash,

@@ -1603,7 +1603,12 @@ async function unscoredJudgments(
     await t.env.store.writeJudgment({
       ...j!,
       id: crypto.randomUUID(),
-      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      // A v2 judgment's unscored scorer carries its state (H-35 S2.1).
+      scorers: j!.scorers.map((s) => ({
+        ...s,
+        passed: null,
+        ...(s.state ? { state: "unscored" as const } : {}),
+      })),
       verdict: "unscored",
       ...(i < old
         ? {

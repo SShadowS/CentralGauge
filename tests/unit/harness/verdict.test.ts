@@ -1500,7 +1500,7 @@ Deno.test("H-35: a Test-side violation leaves G measured and fails agent_tests w
     ["build", true],
     ["pass_to_pass", true],
     ["fail_to_pass", true],
-    ["agent_tests", false],
+    ["agent_tests", null],
   ]);
   assertEquals(judgment.verdict, "fail");
   assertStringIncludes(log.violations.join("\n"), "collides with shipped");
@@ -1518,10 +1518,10 @@ Deno.test("H-35: a production-side violation fails every scorer, agent_tests inc
   });
   const { judgment, log } = await judge(new BcLane(bc, ["C1"]), input);
   assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
-    ["build", false],
-    ["pass_to_pass", false],
-    ["fail_to_pass", false],
-    ["agent_tests", false],
+    ["build", null],
+    ["pass_to_pass", null],
+    ["fail_to_pass", null],
+    ["agent_tests", null],
   ]);
   assertStringIncludes(log.violations.join("\n"), "name changed");
   assertEquals(bc.tests, []);
@@ -1594,7 +1594,7 @@ Deno.test("H-35 Sol r1 #3: a freeze violation on a Test path is Test-side: G is 
     ["build", true],
     ["pass_to_pass", true],
     ["fail_to_pass", true],
-    ["agent_tests", false],
+    ["agent_tests", null],
   ]);
   assertStringIncludes(log.violations.join("\n"), "Test/src/Bad.al");
   assertEquals(runs.map((r) => r.codeunit).sort(), [80010, 85000]);
@@ -1606,10 +1606,10 @@ Deno.test("H-35 Sol r1 #3: a freeze violation on a Test path is Test-side: G is 
   );
   const r2 = await judge(new BcLane(script(), ["C1"]), p.input);
   assertEquals(r2.judgment.scorers.map((s) => s.passed), [
-    false,
-    false,
-    false,
-    false,
+    null,
+    null,
+    null,
+    null,
   ]);
 });
 
@@ -1623,7 +1623,7 @@ Deno.test("H-35 Sol r1 #4: a Test-side violation fails agent_tests even when G i
   const { judgment } = await judge(new BcLane(bc, ["C1", "C2"]), input);
   assertEquals(
     judgment.scorers.find((s) => s.name === "agent_tests")!.passed,
-    false,
+    null,
   );
   assertEquals(judgment.verdict, "fail");
 });
@@ -1653,7 +1653,7 @@ Deno.test("H-35 Sol r2 #3: a freeze violation naming the Test root itself is Tes
     true,
     true,
     true,
-    false,
+    null,
   ]);
 });
 
@@ -1673,4 +1673,74 @@ Deno.test("H-35 orch r1 #1: an agent Test app that does not compile fails agent_
   ]);
   assertEquals(judgment.verdict, "fail");
   assertEquals(runs.map((r) => r.codeunit).sort(), [80010, 85000]);
+});
+
+// ---- H-35 S2.1 (design-r2 3 and 5): v2 judgments, the policy gate ----
+
+Deno.test("H-35 S2.1: a clean change judgment is v2: a passed gate, measured scorers, the production manifest in provenance", async () => {
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(script(), ["C1"]), input);
+  JudgmentRecordSchema.parse(judgment);
+  assertEquals(judgment.v, 2);
+  assertEquals(judgment.policy, { passed: true, violations: [] });
+  assert(judgment.scorers.every((s) => s.state === "measured"));
+  const note = log.notes.find((n) => n.startsWith("production manifest: "))!;
+  assertEquals(
+    judgment.provenance!.production_manifest,
+    note.slice("production manifest: ".length),
+  );
+  assertEquals(judgment.provenance!.env_fp, null);
+});
+
+Deno.test("H-35 S2.1: a production-side violation fails the gate and leaves every scorer not_measured", async () => {
+  const { input } = await setup("correct", {
+    "Rental/app.json": appJson(IDS.rental, "CGR Rental Renamed", [
+      70200,
+      70299,
+    ], [{ id: IDS.core, name: "CGR Core" }]),
+  });
+  const { judgment } = await judge(new BcLane(script(), ["C1"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(judgment.policy!.passed, false);
+  assertEquals(
+    judgment.policy!.violations.map((v) => [v.side, v.rule]),
+    [["production", "identity_changed"]],
+  );
+  assert(
+    judgment.scorers.every((s) =>
+      s.passed === null && s.state === "not_measured"
+    ),
+  );
+});
+
+Deno.test("H-35 S2.1: a Test-side violation fails the gate, G stays measured, agent_tests is not_measured", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Install.Codeunit.al":
+      `codeunit 81050 "Agent Install"\n{\n    Subtype = Install;\n}\n`,
+  });
+  const { judgment } = await judge(new BcLane(script(), ["C1"]), input);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(
+    judgment.policy!.violations.map((v) => [v.side, v.rule]),
+    [["test", "test_lifecycle"]],
+  );
+  assertEquals(
+    judgment.scorers.map((s) => [s.name, s.passed, s.state]),
+    [
+      ["build", true, "measured"],
+      ["pass_to_pass", true, "measured"],
+      ["fail_to_pass", true, "measured"],
+      ["agent_tests", null, "not_measured"],
+    ],
+  );
+});
+
+Deno.test("H-35 S2.1: infra on every container is unscored (state unscored), the gate passed", async () => {
+  const bc = script();
+  bc.broken.add("C1");
+  const { input } = await setup("correct");
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(judgment.policy!.passed, true);
+  assert(judgment.scorers.some((s) => s.state === "unscored"));
 });

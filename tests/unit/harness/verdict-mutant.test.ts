@@ -861,7 +861,7 @@ Deno.test("H-35: test-authoring: a Test-side violation fails mutant_kill only; p
   const { judgment, log } = await judge(new BcLane(bc(), ["C1"]), input);
   assertEquals(sc(judgment, "build").passed, true);
   assertEquals(sc(judgment, "pass_to_pass").passed, true);
-  assertEquals(sc(judgment, "mutant_kill").passed, false);
+  assertEquals(sc(judgment, "mutant_kill").passed, null);
   assertStringIncludes(log.violations.join("\n"), "collides with shipped");
 });
 
