@@ -541,6 +541,8 @@ export interface CellCliOptions {
   recordOAuthHosts?: boolean;
   /** H-09: record the cell unjudged; `harness judge-pending` judges it. */
   deferJudging?: boolean;
+  /** H-35 S3.2: the reset lineage file judging resets every container to. */
+  lineage?: string | null;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -568,6 +570,7 @@ function envOptions(
     credentialLedger: o.credentialLedger,
     command,
     supervised: o.supervised,
+    ...(o.lineage ? { lineage: o.lineage } : {}),
   };
 }
 
@@ -1526,6 +1529,7 @@ interface CellCliFlags {
   recordOauthHosts?: boolean;
   deferJudging?: boolean;
   judgeConcurrency?: number;
+  lineage?: string;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -1559,6 +1563,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     image: f.image ?? null,
     recordOAuthHosts: f.recordOauthHosts === true,
     ...(f.deferJudging ? { deferJudging: true } : {}),
+    ...(f.lineage ? { lineage: abs(f.lineage) } : {}),
   };
 }
 
@@ -3043,6 +3048,10 @@ export function registerHarnessCommand(
       .option(
         "--rev <commit:string>",
         "Load the task from this git revision (default: the working tree)",
+      )
+      .option(
+        "--lineage <path:string>",
+        "Reset lineage JSON (H-35): every judge deployment first restores the container to it; without one, judging refuses",
       );
 
   shared(

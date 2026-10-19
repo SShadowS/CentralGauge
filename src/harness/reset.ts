@@ -11,6 +11,8 @@
  * with RESET_OK. Anything else is a `protocol` failure.
  */
 
+import { join } from "@std/path";
+import type { Lineage } from "./lineage.ts";
 import { ConfigurationError, ContainerError } from "../errors.ts";
 
 /** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
@@ -180,4 +182,59 @@ export function failedReset(
     error: err instanceof Error ? err.message : String(err),
     phases_ms: {},
   };
+}
+
+/** lane-ops' reset script (O-09), relative to the repository root. */
+export const RESET_SCRIPT = ["infra", "harness-reset", "reset-golden.ps1"];
+/** Longer than the script's own 10 min health limit; then the reset failed. */
+const RESET_TIMEOUT_MS = 20 * 60_000;
+
+export type Spawn = (
+  cmd: string,
+  args: string[],
+  env: Record<string, string>,
+) => Promise<{ code: number; stdout: string }>;
+
+const spawnProcess: Spawn = async (cmd, args, env) => {
+  const out = await new Deno.Command(cmd, {
+    args,
+    env,
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+    signal: AbortSignal.timeout(RESET_TIMEOUT_MS),
+  }).output();
+  return { code: out.code, stdout: new TextDecoder().decode(out.stdout) };
+};
+
+/**
+ * H-35 S3.2: the production mechanism. Host pwsh runs lane-ops'
+ * reset-golden.ps1 against one container with the lineage file; the script
+ * restores the lineage's golden.bak and proves the result (its markers are
+ * parsed strictly, parseResetOutput). `dockerEnv` pins the Windows docker
+ * context (dockerContextEnv).
+ */
+export function goldenReset(o: {
+  repoRoot: string;
+  lineagePath: string;
+  lineage: Lineage;
+  dockerEnv: Record<string, string>;
+  spawn?: Spawn;
+}): ResetMechanism {
+  const spawn = o.spawn ?? spawnProcess;
+  return commandReset({
+    id: "golden-restore",
+    policyVersion: o.lineage.reset_policy_version,
+    run: (container) =>
+      spawn("pwsh", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        join(o.repoRoot, ...RESET_SCRIPT),
+        "-Container",
+        container,
+        "-Lineage",
+        o.lineagePath,
+      ], o.dockerEnv),
+  });
 }

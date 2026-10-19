@@ -65,7 +65,9 @@ import {
   realDocker,
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
-import { UNCONFIGURED_RESET } from "../../src/harness/reset.ts";
+import { loadLineage } from "../../src/harness/lineage.ts";
+import { goldenReset, UNCONFIGURED_RESET } from "../../src/harness/reset.ts";
+import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
@@ -99,6 +101,8 @@ export interface EnvOptions {
   credentialLedger: string | null;
   command: string;
   supervised: boolean;
+  /** H-35 S3.2: the reset lineage file (absolute); none = judging refuses. */
+  lineage?: string | null;
   /** The qualification probe (backend-probe --enforced): a candidate marker places it. */
   probe?: boolean;
   /** Campaign blocks at once (harness run); above 1 the marker is rechecked under the lock (M1-33c). */
@@ -357,6 +361,15 @@ export async function openHarnessEnv(
   o: EnvOptions,
   deps: EnvDeps = REAL_DEPS,
 ): Promise<OpenEnv> {
+  // H-35 S3.2: an unproven lineage stops the start, before anything opens.
+  const reset = o.lineage
+    ? goldenReset({
+      repoRoot: o.repoRoot,
+      lineagePath: o.lineage,
+      lineage: await loadLineage(o.lineage),
+      dockerEnv: dockerContextEnv(),
+    })
+    : UNCONFIGURED_RESET;
   const judges = o.judgeContainers ?? [];
   const refused = [...o.containers, ...judges].filter((c) =>
     REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
@@ -595,10 +608,11 @@ export async function openHarnessEnv(
       symbolStore: o.symbolStore,
       secretsSource: o.secretsSource,
       // Owned ids come from each grant's and judgment's trusted roots (M1-16).
-      // H-35 S3: judging refuses until the reset lineage is wired (--lineage).
+      // H-35 S3: every judge deployment resets to the lineage (--lineage);
+      // without one, judging refuses.
       deploy: {
         ledgerRoot: join(sharedResults, "bc-ledger"),
-        reset: UNCONFIGURED_RESET,
+        reset,
       },
       pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
       supervised: o.supervised,

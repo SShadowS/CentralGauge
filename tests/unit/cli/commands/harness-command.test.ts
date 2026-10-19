@@ -7,7 +7,7 @@ import {
 } from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
   type CellCliOptions,
@@ -8956,4 +8956,27 @@ Deno.test("H-35 orch Sol r1 #6: a campaign judgment records the env's harness co
   const [j] = await t.env.store.judgments(e.id);
   assertEquals(j!.provenance?.harness_commit, t.env.harnessCommit);
   assertEquals(t.env.harnessCommit, "f".repeat(40));
+});
+
+Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; without it judging refuses; a bad lineage stops the start", async () => {
+  await using t = await makeEnv();
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v1.json");
+  const h = await openHarnessEnv({ ...envOpts(t), lineage }, deps([]));
+  assertEquals(
+    [h.env.deploy.reset.id, h.env.deploy.reset.policyVersion],
+    ["golden-restore", 1],
+  );
+  await h.close();
+  const bare = await openHarnessEnv(envOpts(t), deps([]));
+  assertEquals(bare.env.deploy.reset.id, "unconfigured");
+  await bare.close();
+  await assertRejects(
+    () =>
+      openHarnessEnv(
+        { ...envOpts(t), lineage: join(t.repo.root, "missing.json") },
+        deps([]),
+      ),
+    ConfigurationError,
+    "reset lineage",
+  );
 });
