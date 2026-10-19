@@ -8,13 +8,26 @@
 #   D|<attrs>|<lastWriteUtcTicks>|<path>                    directory (its own named streams follow as S lines)
 #   F|<sha256>|<size>|<attrs>|<lastWriteUtcTicks>|<path>    file, unnamed stream
 #   S|<sha256>|<size>|<path>:<stream>                       named NTFS stream of a file or directory
-#   L|<attrs>|<lastWriteUtcTicks>|<path>|<target>           reparse point: recorded, never followed (out of coverage)
+#   L|<attrs>|<lastWriteUtcTicks>|<path>|<target>           reparse point (a root too): recorded, never followed
 #   E|<path>|<reason>                                       access error or change during the scan: fails closed
-# DIGEST_VERSION enters env_fp through the lineage; bump it on any change to the line format or the walk.
-$FsDigestVersion = 1
+# A file, stream or directory that changes while it is read or enumerated is an E line. fs-capture.ps1 brackets
+# the walk with Test-NstQuiescent and ends the capture with `T|<entry lines>` (src/harness/reset.ts fsDiff
+# refuses a capture without it). DIGEST_VERSION enters env_fp through the lineage; bump it on any change to the
+# line format or the walk.
+$FsDigestVersion = 2
+
+# Observation point (decision item 3): no user or background session on the NST. Throws when it cannot tell.
+function Test-NstQuiescent([string]$Container) {
+  $n = Invoke-InContainer $Container {
+    @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction Stop |
+        Where-Object { $_.SessionID -ge 0 -or "$($_.ClientType)" -eq 'Background' }).Count
+  }
+  if ("$n".Trim() -notmatch '^\d+$') { throw "NST session count unreadable: '$n'" }
+  [int]"$n".Trim() -eq 0
+}
 
 function Get-FsDigest([string]$Container, [string[]]$Roots) {
-  Invoke-InContainer $Container { param($roots)
+  $lines = Invoke-InContainer $Container { param($roots)
     $sha = [Security.Cryptography.SHA256]::Create()
     function Get-Sha([byte[]]$b) { [BitConverter]::ToString($sha.ComputeHash($b)).Replace('-', '').ToLower() }
     function Clean([string]$s) { ($s -replace '[\r\n|]+', ' ').Trim() }
@@ -38,61 +51,70 @@ public static class CgFsStreams {
       if (e == 38) return r.ToArray(); // ERROR_HANDLE_EOF: no streams (a directory without ADS)
       throw new System.ComponentModel.Win32Exception(e);
     }
-    try { do { r.Add(d.Name); } while (FindNextStreamW(h, out d)); } finally { FindClose(h); }
+    try {
+      do { r.Add(d.Name); } while (FindNextStreamW(h, out d));
+      int e = Marshal.GetLastWin32Error();
+      if (e != 38) throw new System.ComponentModel.Win32Exception(e); // only ERROR_HANDLE_EOF ends it
+    } finally { FindClose(h); }
     return r.ToArray();
   }
 }
 '@
     }
+    function ReadStream([string]$path, [string]$name) {
+      $b = [byte[]](Get-Content -LiteralPath $path -Stream $name -Encoding Byte -Raw -ErrorAction Stop)
+      if ($null -eq $b) { $b = [byte[]]@() }
+      , $b
+    }
     function Streams($item) {
       foreach ($n in [CgFsStreams]::Names($item.FullName)) {
         if ($n -eq '::$DATA') { continue }
         $name = $n -replace '^:([^:]*):\$DATA$', '$1'
-        $b = [byte[]](Get-Content -LiteralPath $item.FullName -Stream $name -Encoding Byte -Raw -ErrorAction Stop)
-        if ($null -eq $b) { $b = [byte[]]@() }
-        "S|$(Get-Sha $b)|$($b.Length)|$($item.FullName):$name"
+        $p = "$($item.FullName):$name"
+        try {
+          # read twice: a stream rewritten during the scan is an error, never a record
+          $h1 = Get-Sha (ReadStream $item.FullName $name)
+          $b = ReadStream $item.FullName $name
+          if ((Get-Sha $b) -ne $h1) { "E|$p|changed during the scan" }
+          else { "S|$h1|$($b.Length)|$p" }
+        } catch { "E|$p|$(Clean $_.Exception.Message)" }
       }
     }
-    function Walk([string]$dir) {
-      foreach ($i in @(Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop)) {
+    # One entry; a directory's children are enumerated, then its last-write time is re-read (a child added or
+    # removed meanwhile changes it).
+    function Entry($i) {
+      try {
+        # enumeration reads the parent's index, which NTFS updates lazily: stat the entry itself
+        $i = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
         $attrs = [int]$i.Attributes
         $t = $i.LastWriteTimeUtc.Ticks
-        try {
-          if ($i.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-            "L|$attrs|$t|$($i.FullName)|$(Clean "$($i.Target)")"
-          } elseif ($i.PSIsContainer) {
-            "D|$attrs|$t|$($i.FullName)"
-            Streams $i
-            Walk $i.FullName
+        if ($i.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+          "L|$attrs|$t|$($i.FullName)|$(Clean "$($i.Target)")"
+        } elseif ($i.PSIsContainer) {
+          $lines = @("D|$attrs|$t|$($i.FullName)") + @(Streams $i)
+          foreach ($c in @(Get-ChildItem -LiteralPath $i.FullName -Force -ErrorAction Stop)) { $lines += @(Entry $c) }
+          $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+          if ($after.LastWriteTimeUtc.Ticks -ne $t) { $lines += "E|$($i.FullName)|changed during the scan" }
+          $lines
+        } else {
+          $b = [IO.File]::ReadAllBytes($i.FullName)
+          $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+          if ($after.Length -ne $b.Length -or $after.LastWriteTimeUtc.Ticks -ne $t) {
+            "E|$($i.FullName)|changed during the scan"
           } else {
-            $b = [IO.File]::ReadAllBytes($i.FullName)
-            $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
-            if ($after.Length -ne $b.Length -or $after.LastWriteTimeUtc.Ticks -ne $t) {
-              "E|$($i.FullName)|changed during the scan"
-            } else {
-              "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$($i.FullName)"
-              Streams $i
-            }
+            "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$($i.FullName)"
+            Streams $i
           }
-        } catch { "E|$($i.FullName)|$(Clean $_.Exception.Message)" }
-      }
-    }
-    # Observation point (decision item 3): the NST must be quiescent, else the digest fails closed.
-    if (Get-Command Get-NAVServerSession -ErrorAction SilentlyContinue) {
-      $busy = @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction SilentlyContinue |
-          Where-Object { $_.SessionID -ge 0 -or "$($_.ClientType)" -eq 'Background' }).Count
-      if ($busy -gt 0) { "E|(nst)|not quiescent: $busy user or background session(s)" }
+        }
+      } catch { "E|$($i.FullName)|$(Clean $_.Exception.Message)" }
     }
     foreach ($r in $roots) {
       if (-not (Test-Path -LiteralPath $r)) { "E|$r|root missing"; continue }
-      try {
-        $ri = Get-Item -LiteralPath $r -Force -ErrorAction Stop
-        "D|$([int]$ri.Attributes)|$($ri.LastWriteTimeUtc.Ticks)|$($ri.FullName)"
-        Streams $ri
-        Walk $ri.FullName
-      } catch { "E|$r|$(Clean $_.Exception.Message)" }
+      try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop) }
+      catch { "E|$r|$(Clean $_.Exception.Message)" }
     }
-  } (, $Roots) | Sort-Object { $p = $_ -split '\|'; if ($p[0] -in 'F') { $p[5] } elseif ($p[0] -eq 'S') { $p[3] } elseif ($p[0] -eq 'E') { $p[1] } else { $p[3] } } -CaseSensitive
+  } (, $Roots)
+  Sort-Ordinal $lines { $p = $args[0] -split '\|'; switch ($p[0]) { 'F' { $p[5] } 'E' { $p[1] } default { $p[3] } } }
 }
 
 # The NST service identity (account, groups, privileges) and every root's file count and bytes (measurement only).

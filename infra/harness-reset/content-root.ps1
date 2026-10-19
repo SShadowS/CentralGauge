@@ -19,18 +19,24 @@ $ContentRootSql = @'
 SET NOCOUNT ON;
 DECLARE @r TABLE (t sysname, n bigint NULL, h varchar(64) NULL, ms int, err nvarchar(400) NULL);
 DECLARE @name sysname, @sql nvarchar(max), @n bigint, @h varchar(64), @t0 datetime2;
-DECLARE c CURSOR LOCAL FAST_FORWARD FOR SELECT name FROM sys.tables WHERE is_ms_shipped = 0 ORDER BY name;
-OPEN c; FETCH NEXT FROM c INTO @name;
+DECLARE @schema sysname;
+-- every user table of every schema: one outside dbo is an error row (the root keys by name in dbo; BC uses dbo only)
+DECLARE c CURSOR LOCAL FAST_FORWARD FOR SELECT SCHEMA_NAME(schema_id), name FROM sys.tables WHERE is_ms_shipped = 0 ORDER BY name;
+OPEN c; FETCH NEXT FROM c INTO @schema, @name;
 WHILE @@FETCH_STATUS = 0 BEGIN
   SET @t0 = SYSUTCDATETIME(); SET @n = NULL; SET @h = NULL;
-  SET @sql = N'SELECT @n = COUNT_BIG(*), @h = CONVERT(varchar(64), HASHBYTES(''SHA2_256'', STRING_AGG(CONVERT(varchar(max), CONVERT(varchar(64), rh, 2)), '''') WITHIN GROUP (ORDER BY rh)), 2) FROM (SELECT HASHBYTES(''SHA2_256'', CONVERT(nvarchar(max), (SELECT t.* FOR XML RAW(''r''), BINARY BASE64))) AS rh FROM ' + QUOTENAME(@name) + N' t) x';
+  IF @schema <> N'dbo' BEGIN
+    INSERT @r VALUES (@schema + N'.' + @name, NULL, NULL, 0, N'table outside dbo');
+    FETCH NEXT FROM c INTO @schema, @name; CONTINUE;
+  END
+  SET @sql = N'SELECT @n = COUNT_BIG(*), @h = CONVERT(varchar(64), HASHBYTES(''SHA2_256'', STRING_AGG(CONVERT(varchar(max), CONVERT(varchar(64), rh, 2)), '''') WITHIN GROUP (ORDER BY rh)), 2) FROM (SELECT HASHBYTES(''SHA2_256'', CONVERT(nvarchar(max), (SELECT t.* FOR XML RAW(''r''), BINARY BASE64))) AS rh FROM [dbo].' + QUOTENAME(@name) + N' t) x';
   BEGIN TRY
     EXEC sp_executesql @sql, N'@n bigint OUTPUT, @h varchar(64) OUTPUT', @n OUTPUT, @h OUTPUT;
     INSERT @r VALUES (@name, @n, ISNULL(@h, 'empty'), DATEDIFF(ms, @t0, SYSUTCDATETIME()), NULL);
   END TRY BEGIN CATCH
     INSERT @r VALUES (@name, NULL, NULL, DATEDIFF(ms, @t0, SYSUTCDATETIME()), ERROR_MESSAGE());
   END CATCH
-  FETCH NEXT FROM c INTO @name;
+  FETCH NEXT FROM c INTO @schema, @name;
 END
 CLOSE c; DEALLOCATE c;
 SELECT t, n, h, ms, err FROM @r ORDER BY t;
@@ -54,8 +60,10 @@ function Get-GoldenContentTables([string]$Container) {
 function Get-GoldenContentRoot($Tables, [string[]]$Exclude = @()) {
   $bad = @($Tables | Where-Object { $_.err -and "$($_.err)" -ne '' })
   if ($bad) { throw "content root: $($bad.Count) table(s) not hashed, first $($bad[0].t): $($bad[0].err)" }
-  $lines = $Tables | Where-Object { $t = $_.t; -not ($Exclude | Where-Object { $t -like $_ }) } |
-    ForEach-Object { "$($_.t)|$($_.h)" } | Sort-Object -CaseSensitive
+  $lines = Sort-Ordinal @($Tables | Where-Object { $t = $_.t; -not ($Exclude | Where-Object { $t -like $_ }) } |
+      ForEach-Object { "$($_.t)|$($_.h)" })
+  $names = @($lines | ForEach-Object { ($_ -split '\|', 2)[0] })
+  if (@($names | Select-Object -Unique).Count -ne $names.Count) { throw 'content root: a table name appears twice' }
   $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
   [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes)).Replace('-', '').ToLower()
 }

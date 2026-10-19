@@ -16,8 +16,8 @@ Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyC
 $exclude = @($ContentRootExclusions | ForEach-Object { $_.pattern })
 $tables = @(Get-GoldenContentTables $Container)
 $root = Get-GoldenContentRoot $tables $exclude
-$lines = $tables | Where-Object { $t = $_.t; -not ($exclude | Where-Object { $t -like $_ }) } |
-  ForEach-Object { "$($_.t)|$($_.h)" } | Sort-Object -CaseSensitive
+$lines = Sort-Ordinal @($tables | Where-Object { $t = $_.t; -not ($exclude | Where-Object { $t -like $_ }) } |
+    ForEach-Object { "$($_.t)|$($_.h)" })
 $file = Join-Path $OutDir "$Name.content.txt"
 # LF endings, no BOM: the harness hashes the bytes.
 [IO.File]::WriteAllText($file, (($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))

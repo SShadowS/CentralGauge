@@ -8,6 +8,17 @@ function Invoke-InContainer([string]$Container, [scriptblock]$ScriptBlock, $Argu
     -scriptblock $ScriptBlock -argumentList $ArgumentList
 }
 
+# Ordinal (culture-independent) sort, so a digest or a content root is the same on every host.
+function Sort-Ordinal([string[]]$Lines, [scriptblock]$Key = { $args[0] }) {
+  $a = @($Lines | Where-Object { $null -ne $_ })
+  if ($a.Count -eq 0) { return }
+  # "<key>NUL<index>": NUL sorts below every character, so the key decides and equal keys keep their order
+  $k = [Collections.Generic.List[string]]::new()
+  for ($i = 0; $i -lt $a.Count; $i++) { $k.Add("$(& $Key $a[$i])$([char]0)$i") }
+  $k.Sort([StringComparer]::Ordinal)
+  foreach ($s in $k) { $a[[int]$s.Substring($s.LastIndexOf([char]0) + 1)] }
+}
+
 # App inventory of the single-tenant DB, sorted lines: G global apps, T tenant state, P [Published Application]
 # (ID, Package ID, Runtime Package ID, version, Published As, Tenant ID, Package Hash), I [NAV App Installed App]
 # (App ID, Package ID, version). Content Hash is left out: it is text-typed and reads back lossy.

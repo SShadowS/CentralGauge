@@ -2,6 +2,7 @@ param([string]$Lib = (Join-Path (Split-Path -Parent $PSScriptRoot) 'fs-digest.ps
 # Host-only self-check of fs-digest.ps1 (no container): run under Windows PowerShell 5.1, as inside the container:
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File infra\harness-reset\tests\fs-digest.selfcheck.ps1
 $ErrorActionPreference = 'Stop'
+. (Join-Path (Split-Path -Parent $Lib) 'reset-lib.ps1')
 function Invoke-InContainer($Container, [scriptblock]$ScriptBlock, $ArgumentList) { & $ScriptBlock @ArgumentList }
 . $Lib
 $root = Join-Path $env:TEMP ("fsd-" + [guid]::NewGuid())
@@ -27,6 +28,12 @@ $d3 = @(Get-FsDigest 'x' @($root))
 if (-not ($d3 | Where-Object { $_ -like 'L|*\j|*' })) { throw "junction not recorded: $d3" }
 if ($d3 | Where-Object { $_ -like '*\j\a.txt*' }) { throw 'junction followed' }
 if ((Get-FsDigest 'x' @("$root\nope")) -notlike 'E|*root missing') { throw 'missing root not E' }
+# a root that is itself a junction: one L line, never traversed (Sol r1 #6)
+$jr = @(Get-FsDigest 'x' @("$root\j"))
+if ($jr.Count -ne 1 -or $jr[0] -notlike 'L|*') { throw "junction root followed: $jr" }
+# ordinal order, culture-independent (Sol r1 #9)
+$o = @(Sort-Ordinal @('b', 'B', 'a', [string][char]0xE4))
+if (($o -join ',') -ne "B,a,b,$([char]0xE4)") { throw "not ordinal: $($o -join ',')" }
 cmd /c rmdir "$root\j"; Remove-Item -Recurse -Force $root
 'FS SELFCHECK OK'
 $d3 | Select-Object -First 3
