@@ -1,8 +1,11 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
+import { loadLineage } from "../../../src/harness/lineage.ts";
 import {
   commandReset,
+  goldenReset,
   parseResetOutput,
+  parseVerifyOutput,
   RESET_PHASES,
   ResetFailedError,
 } from "../../../src/harness/reset.ts";
@@ -159,4 +162,59 @@ Deno.test("H-35 orch Sol r1 #1: any malformed reserved-marker line is a protocol
     });
     assertEquals([r.ok, r.failed_step], [false, "protocol"], bad);
   }
+});
+
+// ---- H-35 S3: the post-cleanup inventory check protocol ----
+
+Deno.test("H-35 S3 parseVerifyOutput: VERIFY_OK with exit 0 is clean; VERIFY_DIRTY carries its diff lines; anything else is a failed check", () => {
+  assertEquals(
+    parseVerifyOutput("C1", { code: 0, stdout: "noise\r\nVERIFY_OK" }),
+    { container: "C1", ok: true, diff: [], error: null },
+  );
+  const dirty = parseVerifyOutput("C1", {
+    code: 1,
+    stdout: "VERIFY_DIFF + P|abc\nVERIFY_DIFF - I|def\nVERIFY_DIRTY 2",
+  });
+  assertEquals(dirty.ok, false);
+  assertEquals(dirty.diff, ["+ P|abc", "- I|def"]);
+  assertEquals(dirty.error, "inventory differs from the baseline (2 lines)");
+  for (
+    const [stdout, code, why] of [
+      ["VERIFY_FAILED sqlcmd timed out", 1, "sqlcmd timed out"],
+      ["", 0, "protocol"],
+      ["VERIFY_OK", 1, "protocol"],
+      ["VERIFY_OK\nVERIFY_OK", 0, "protocol"],
+      ["VERIFY_DIFF + x\nVERIFY_OK", 0, "protocol"], // a diff with OK
+      ["VERIFY_DIFF + x\nVERIFY_DIRTY 2", 1, "protocol"], // count mismatch
+      ["VERIFY_DIRTY", 1, "protocol"], // malformed marker
+      ["VERIFY_OK\nVERIFY_FAILED x", 1, "protocol"],
+    ] as const
+  ) {
+    const r = parseVerifyOutput("C1", { code, stdout });
+    assertEquals(r.ok, false, stdout);
+    assert(r.error!.includes(why), `${stdout}: ${r.error}`);
+  }
+});
+
+Deno.test("H-35 S3 goldenReset.verifyClean runs verify-clean.ps1 with the lineage; a spawn that throws is a failed check, not a throw", async () => {
+  const calls: string[][] = [];
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath: "L.json",
+    lineage: await loadLineage(
+      "infra/harness-reset/lineages/golden-o09-v1.json",
+    ),
+    dockerEnv: { DOCKER_CONTEXT: "desktop-windows" },
+    spawn: (_cmd, args) => {
+      calls.push(args);
+      return args.includes("C2")
+        ? Promise.reject(new Error("spawn died"))
+        : Promise.resolve({ code: 0, stdout: "VERIFY_OK" });
+    },
+  });
+  assertEquals((await m.verifyClean!("C1")).ok, true);
+  assert(calls[0]!.some((a) => a.endsWith("verify-clean.ps1")));
+  assertEquals(calls[0]!.slice(-4), ["-Container", "C1", "-Lineage", "L.json"]);
+  const bad = await m.verifyClean!("C2");
+  assertEquals([bad.ok, bad.error], [false, "spawn died"]);
 });

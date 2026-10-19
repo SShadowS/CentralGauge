@@ -2061,3 +2061,25 @@ Deno.test("H-35 S3.3: deployments on containers of different environments in one
     "harness bug: deployments of one judgment span environments",
   );
 });
+
+// ---- H-35 S3: the post-cleanup inventory check ----
+
+Deno.test("H-35 S3: every judge deployment's post-cleanup inventory check is in the verdict log (verifies[]), one per deployment, on its container", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  const verifying = {
+    ...OK_RESET,
+    verifyClean: (c: string) =>
+      Promise.resolve({ container: c, ok: true, diff: [], error: null }),
+  };
+  const { log } = await judge(new BcLane(script(), ["C1"]), {
+    ...input,
+    deploy: { ...input.deploy, reset: verifying },
+  });
+  assert(log.deployments!.length > 0);
+  assertEquals(
+    log.verifies!.map((v) => [v.container, v.ok]),
+    log.deployments!.map((d) => [d.container, true]),
+  );
+});

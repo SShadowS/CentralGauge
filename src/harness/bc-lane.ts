@@ -53,6 +53,7 @@ import {
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
+  type VerifyRecord,
 } from "./reset.ts";
 import { restoreSymbols } from "./symbols.ts";
 
@@ -1658,6 +1659,8 @@ export interface DeployContext {
   reset?: ResetMechanism;
   /** Every reset's record, failed ones included (the verdict log's `resets[]`). */
   onReset?: (r: ResetRecord) => void;
+  /** Every post-cleanup inventory check (the verdict log's `verifies[]`). */
+  onVerify?: (v: VerifyRecord) => void;
   /**
    * H-35 run 002 Sol r1 #3: called as each attempt starts deploying (after
    * its reset), whatever the attempt's outcome: the deployment record.
@@ -1770,6 +1773,8 @@ export interface DeployTestResult {
   cleanupError: string | null;
   /** H-35 S3: the reset that preceded this deployment (null: the context has none). */
   reset: ResetRecord | null;
+  /** H-35 S3: the post-cleanup inventory check (null: none ran). */
+  verify: VerifyRecord | null;
 }
 
 /**
@@ -1820,6 +1825,28 @@ export async function deployAndTest(
       }`;
     }
   };
+  // H-35 S3 (design-r4 2): after a cleanup that succeeded, the inventory
+  // must be the baseline again; a dirty or unrunnable check quarantines.
+  let verify: VerifyRecord | null = null;
+  const cleanAndVerify = async (): Promise<string | null> => {
+    const c = await cleanup();
+    const m = i.ctx.reset;
+    if (c || !m?.verifyClean) return c;
+    try {
+      verify = await m.verifyClean(container);
+    } catch (err) {
+      verify = {
+        container,
+        ok: false,
+        diff: [],
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    i.ctx.onVerify?.(verify);
+    return verify.ok
+      ? null
+      : `post-cleanup check on ${container} failed: ${verify.error}`;
+  };
   // H-35 S3: reset first; a failed reset deployed nothing, so no cleanup.
   let reset: ResetRecord | null = null;
   if (i.ctx.reset) {
@@ -1838,7 +1865,7 @@ export async function deployAndTest(
     // The restored container holds the baseline only: no harness app owned.
     await saveLedger(i.ctx.ledgerRoot, container, {});
   }
-  let r: Omit<DeployTestResult, "cleanupError" | "reset">;
+  let r: Omit<DeployTestResult, "cleanupError" | "reset" | "verify">;
   await i.ctx.onDeploy?.(container);
   try {
     const deployed = await deploy(bc, container, i.wanted, i.ctx);
@@ -1862,9 +1889,9 @@ export async function deployAndTest(
       }
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
-    const c = await cleanup();
+    const c = await cleanAndVerify();
     if (c) throw new CleanupFailedError(err, c, container);
     throw err;
   }
-  return { ...r, reset, cleanupError: await cleanup() };
+  return { ...r, reset, cleanupError: await cleanAndVerify(), verify };
 }

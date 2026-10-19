@@ -15,12 +15,14 @@ import {
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
+  type VerifyRecord,
 } from "../../../src/harness/reset.ts";
 import {
   BcLane,
   buildApps,
   buildCacheReport,
   classifyTestFailure,
+  CleanupFailedError,
   CLOUD_POLICY,
   DECLARED_POLICY,
   deploy,
@@ -2288,4 +2290,152 @@ Deno.test("H-35 Sol r3 #2: a reset mechanism that throws synchronously is record
     ["C1", "threw"],
     ["C2", null],
   ]);
+});
+
+// ---- H-35 S3: the post-cleanup inventory check (design-r4 2) ----
+
+/** fakeReset plus a verifyClean that is dirty on the `dirty` containers (or throws on `throws`). */
+function verifyingReset(
+  bc: FakeBc,
+  o: { dirty?: Set<string>; throws?: Set<string> } = {},
+) {
+  const base = fakeReset(bc);
+  const verifies: VerifyRecord[] = [];
+  const mechanism: ResetMechanism = {
+    ...base.mechanism,
+    verifyClean: (c) => {
+      base.log.push(`verify ${c}@${bc.syncs.length}`);
+      if (o.throws?.has(c)) {
+        return Promise.reject(new ContainerError("exec died", c, "setup"));
+      }
+      const dirty = o.dirty?.has(c) ?? false;
+      return Promise.resolve({
+        container: c,
+        ok: !dirty,
+        diff: dirty ? ["+ P|leftover-app"] : [],
+        error: dirty ? "inventory differs from the baseline (1 line)" : null,
+      });
+    },
+  };
+  return {
+    ...base,
+    mechanism,
+    verifies,
+    onVerify: (v: VerifyRecord) => verifies.push(v),
+  };
+}
+
+Deno.test("H-35 S3 deployAndTest: the post-cleanup inventory check runs after the cleanup and is recorded; clean means no cleanupError", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = verifyingReset(bc);
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onReset: r.onReset,
+      onVerify: r.onVerify,
+    },
+  });
+  // after the cleanup sync, the last one
+  assertEquals(r.log.at(-1), `verify C1@${bc.syncs.length}`);
+  assertEquals(bc.syncs.at(-1)?.publish, []);
+  assertEquals(out.cleanupError, null);
+  assertEquals(out.verify?.ok, true);
+  assertEquals(r.verifies.map((v) => v.container), ["C1"]);
+});
+
+Deno.test("H-35 S3 deployAndTest: a dirty post-cleanup inventory is a cleanupError (the lane quarantines; the measurement stands) and is recorded with its diff", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1"]);
+  const p = await prep(bc, lane);
+  const r = verifyingReset(bc, { dirty: new Set(["C1"]) });
+  const ledgerRoot = await tmp();
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot,
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+          onVerify: r.onVerify,
+        },
+      }),
+  );
+  assertStringIncludes(held.result.cleanupError!, "inventory differs");
+  assert(lane.quarantined.get("C1")?.includes("inventory differs"));
+  assertEquals(held.result.rows.map((x) => x.outcome), ["pass"]);
+  assertEquals(r.verifies.map((v) => v.diff), [["+ P|leftover-app"]]);
+});
+
+Deno.test("H-35 S3 deployAndTest: a deployment that throws, then a dirty or throwing check, is a CleanupFailedError (quarantine); a throwing check is recorded as a failed check", async () => {
+  for (const kind of ["dirty", "throws"] as const) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]));
+    bc.publishFailure = () => "Could not connect to the server";
+    const r = verifyingReset(bc, { [kind]: new Set(["C1"]) });
+    const ledgerRoot = await tmp();
+    await assertRejects(
+      () =>
+        deployAndTest(bc, "C1", {
+          wanted: p.wanted,
+          tests: [{
+            codeunit: 80010,
+            procedures: ["Works"],
+            target: "candidate",
+          }],
+          cleanupIds: [IDS.test],
+          ctx: {
+            ledgerRoot,
+            trustedRoots: [p.pristine],
+            reset: r.mechanism,
+            onVerify: r.onVerify,
+          },
+        }),
+      CleanupFailedError,
+      kind === "dirty" ? "inventory differs" : "exec died",
+    );
+    assertEquals(r.verifies.map((v) => v.ok), [false]);
+  }
+});
+
+Deno.test("H-35 S3 deployAndTest: no inventory check after a failed cleanup (already quarantined) or without a reset mechanism", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  bc.cleanupFails.add("C1");
+  const r = verifyingReset(bc);
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onVerify: r.onVerify,
+    },
+  });
+  assertStringIncludes(out.cleanupError!, "incomplete");
+  assertEquals(r.verifies, []);
+  assertEquals(out.verify, null);
 });

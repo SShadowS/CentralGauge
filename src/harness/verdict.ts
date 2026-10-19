@@ -21,7 +21,7 @@ import type {
   Prepared,
 } from "./bc-lane.ts";
 import type { JudgmentRecord } from "./records.ts";
-import type { ResetMechanism, ResetRecord } from "./reset.ts";
+import type { ResetMechanism, ResetRecord, VerifyRecord } from "./reset.ts";
 import type { StagedApp } from "./staging.ts";
 import type { LoadedTask } from "./task.ts";
 import { ContainerError, ValidationError } from "../errors.ts";
@@ -265,6 +265,11 @@ export interface VerdictLog {
    * included, in order. Absent in a log written before S3.
    */
   resets?: ResetRecord[];
+  /**
+   * H-35 S3 (design-r4 2): every post-cleanup inventory check, in order. A
+   * failed one quarantined its container. Absent in a log written before.
+   */
+  verifies?: VerifyRecord[];
 }
 
 /** H-35 (design-r2 4.2): one hold's deployment: what was published where. */
@@ -1722,6 +1727,7 @@ export async function judge(
     error: null,
     deployments: [],
     resets: [],
+    verifies: [],
   };
   const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {
@@ -1733,6 +1739,7 @@ export async function judge(
     // H-35 S3: every judge deployment is preceded by a reset.
     reset: i.deploy.reset,
     onReset: (r) => log.resets!.push(r),
+    onVerify: (v) => log.verifies!.push(v),
   };
   const ctx: JudgeContext = {
     lane,

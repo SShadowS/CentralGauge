@@ -45,6 +45,73 @@ export interface ResetMechanism {
   /** H-35 S3.3: the lineage's compatibility identity (env_fp), when it has one. */
   readonly compat?: Readonly<Record<string, unknown>>;
   reset(container: string): Promise<ResetRecord>;
+  /**
+   * H-35 S3 (design-r4 2): after a judge deployment's cleanup, the inventory
+   * at both scopes must equal the lineage's baseline. Never throws: a check
+   * that could not run is a failed record.
+   */
+  verifyClean?(container: string): Promise<VerifyRecord>;
+}
+
+/** One post-cleanup inventory check (the verdict log's `verifies[]`). */
+export interface VerifyRecord {
+  container: string;
+  ok: boolean;
+  /** `+ <line>` present now, not in the baseline; `- <line>` the reverse. */
+  diff: string[];
+  error: string | null;
+}
+
+/**
+ * verify-clean.ps1 protocol: `VERIFY_DIFF <+|-> <line>` per difference, then
+ * exactly one of `VERIFY_OK` (exit 0, no diff), `VERIFY_DIRTY <n>` (n = the
+ * diff lines) or `VERIFY_FAILED <reason>`. Anything else is a failed check.
+ */
+export function parseVerifyOutput(
+  container: string,
+  out: { code: number; stdout: string },
+): VerifyRecord {
+  const diff: string[] = [];
+  const ends: string[] = [];
+  let dirtyN = -1;
+  let failed: string | null = null;
+  const bad: string[] = [];
+  for (const raw of out.stdout.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line.startsWith("VERIFY_")) continue;
+    const d = /^VERIFY_DIFF ([+-] \S.*)$/.exec(line);
+    const dirty = /^VERIFY_DIRTY (\d+)$/.exec(line);
+    const f = /^VERIFY_FAILED (\S.*)$/.exec(line);
+    if (d) diff.push(d[1]!);
+    else if (line === "VERIFY_OK") ends.push("ok");
+    else if (dirty) (ends.push("dirty"), dirtyN = Number(dirty[1]));
+    else if (f) (ends.push("failed"), failed = f[1]!.trim());
+    else bad.push(line);
+  }
+  const fail = (error: string): VerifyRecord => ({
+    container,
+    ok: false,
+    diff,
+    error,
+  });
+  const protocol = (why: string) => fail(`protocol: ${why} (exit ${out.code})`);
+  if (bad.length > 0) return protocol(`malformed ${bad[0]!.slice(0, 200)}`);
+  if (ends.length !== 1) return protocol(`${ends.length} end markers`);
+  if (ends[0] === "failed") return fail(failed!);
+  if (ends[0] === "dirty") {
+    if (dirtyN !== diff.length || diff.length === 0) {
+      return protocol(`VERIFY_DIRTY ${dirtyN} with ${diff.length} diff lines`);
+    }
+    return fail(
+      `inventory differs from the baseline (${diff.length} line${
+        diff.length === 1 ? "" : "s"
+      })`,
+    );
+  }
+  if (out.code !== 0 || diff.length > 0) {
+    return protocol("VERIFY_OK with a diff or a failing exit");
+  }
+  return { container, ok: true, diff, error: null };
 }
 
 /** A reset that did not complete: infra; the lane quarantines the container. */
@@ -188,6 +255,8 @@ export function failedReset(
 
 /** lane-ops' reset script (O-09), relative to the repository root. */
 export const RESET_SCRIPT = ["infra", "harness-reset", "reset-golden.ps1"];
+/** The post-cleanup inventory check against the same lineage. */
+export const VERIFY_SCRIPT = ["infra", "harness-reset", "verify-clean.ps1"];
 /** Longer than the script's own 10 min health limit; then the reset failed. */
 const RESET_TIMEOUT_MS = 20 * 60_000;
 
@@ -242,5 +311,29 @@ export function goldenReset(o: {
     }),
     // H-35 S3.3: the lineage's identity enters every deployment's env_fp.
     compat: { lineage: lineageCompat(o.lineage) },
+    verifyClean: async (container) => {
+      try {
+        return parseVerifyOutput(
+          container,
+          await spawn("pwsh", [
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            join(o.repoRoot, ...VERIFY_SCRIPT),
+            "-Container",
+            container,
+            "-Lineage",
+            o.lineagePath,
+          ], o.dockerEnv),
+        );
+      } catch (err) {
+        return {
+          container,
+          ok: false,
+          diff: [],
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
   };
 }
