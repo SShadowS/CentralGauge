@@ -2446,10 +2446,14 @@ Deno.test("H-35 S3 deployAndTest: no inventory check after a failed cleanup (alr
 
 const FS_LINE = (p: string, h = "a") => `F|${h.repeat(64)}|4|32|1|${p}`;
 
-/** fakeReset plus an fsDigest: the n-th capture on a container is `captures(c, n)`. */
+/**
+ * fakeReset plus an fsDigest: the n-th capture on a container is
+ * `captures(c, n)`, completed with its T| marker as fs-capture.ps1 does.
+ */
 function digestingReset(
   bc: FakeBc,
   captures: (c: string, n: number) => string[],
+  roots: string[] = [],
 ) {
   const base = fakeReset(bc);
   const checks: FsCheckRecord[] = [];
@@ -2457,11 +2461,13 @@ function digestingReset(
   const mechanism: ResetMechanism = {
     ...base.mechanism,
     fsExclude: ["C:/W/logs/*"],
+    fsRoots: roots,
     fsDigest: (c) => {
       const i = n.get(c) ?? 0;
       n.set(c, i + 1);
       base.log.push(`fs ${c}#${i}@${bc.syncs.length}`);
-      return Promise.resolve(captures(c, i));
+      const lines = captures(c, i);
+      return Promise.resolve([...lines, `T|${lines.length}`]);
     },
   };
   return {
@@ -2663,4 +2669,120 @@ Deno.test("H-35 S3 L2a: no setting outside a judge deployment (no reset: the age
     ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
   });
   assertEquals(bc.httpSettings, []);
+});
+
+// ---- H-35 Sol S3 r1 fixes ----
+
+Deno.test("H-35 Sol S3 r1 #1: a failed cleanup still takes the second capture; a difference then throws HostDirtyError (never scored), a clean one keeps the measurement with the cleanupError", async () => {
+  for (const dirty of [true, false]) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]));
+    bc.cleanupFails.add("C1");
+    const r = digestingReset(
+      bc,
+      (_c, i) =>
+        dirty && i === 1
+          ? [FS_LINE("C:/W/a.txt"), FS_LINE("C:/W/planted.txt")]
+          : [FS_LINE("C:/W/a.txt")],
+    );
+    const call = async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot: await tmp(),
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+          onFsCheck: r.onFsCheck,
+        },
+      });
+    if (dirty) {
+      await assertRejects(call, HostDirtyError, "planted.txt");
+    } else {
+      const out = await call();
+      assertStringIncludes(out.cleanupError!, "incomplete");
+      assertEquals(out.rows.map((x) => x.outcome), ["pass"]);
+    }
+    assertEquals(r.checks.map((x) => x.ok), [!dirty]);
+  }
+});
+
+Deno.test("H-35 Sol S3 r1 #5: the lineage's declared roots reach fsDiff: a capture that does not cover one fails closed before any deployment", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(bc, () => [FS_LINE("C:/W/a.txt")], ["C:/X"]);
+  const syncs = bc.syncs.length;
+  await assertRejects(
+    async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot: await tmp(),
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+        },
+      }),
+    HostDirtyError,
+    "declared root C:/X",
+  );
+  assertEquals(bc.syncs.length, syncs);
+});
+
+Deno.test("H-35 Sol S3 r1 #4: a setting call that throws is HttpBlockFailedError (quarantined); a candidate publish failure still blocks every candidate", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  bc.httpReadback = (c) => {
+    if (c === "C1") throw new ContainerError("SOAP timed out", c, "test");
+    return "allow=false";
+  };
+  const r = fakeReset(bc);
+  const ledgerRoot = await tmp();
+  const deployOn = (c: string) =>
+    deployAndTest(bc, c, {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx: { ledgerRoot, trustedRoots: [p.pristine], reset: r.mechanism },
+    });
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    deployOn,
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.get("C1")?.includes("SOAP timed out"));
+  // candidate failure: every candidate is still set false
+  const bc2 = new FakeBc();
+  const p2 = await prep(bc2, new BcLane(bc2, ["C3"]), ["Rental"]);
+  bc2.publishFailure = (_c, n) =>
+    n === "CGR Rental"
+      ? "The schema synchronization failed: destructive changes"
+      : null;
+  const d = await deploy(bc2, "C3", p2.wanted, {
+    ledgerRoot: await tmp(),
+    trustedRoots: [p2.pristine],
+    reset: fakeReset(bc2).mechanism,
+  });
+  assert(d.candidateFailure);
+  assertEquals(
+    bc2.httpSettings.map((s) => s.id).sort(),
+    p2.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
+  );
 });

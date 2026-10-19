@@ -59,6 +59,8 @@ export interface ResetMechanism {
   fsDigest?(container: string): Promise<string[]>;
   /** L4 exclusions (the lineage's dispositions), as Windows wildcards. */
   readonly fsExclude?: readonly string[];
+  /** L4: the declared roots every capture must cover (the lineage's fs.roots). */
+  readonly fsRoots?: readonly string[];
   /** H-35 S3 L2b: the lineage's NST outbound firewall state (absent: not recorded). */
   readonly bcEgress?: "enforced" | "unenforced";
   /** H-35 S3: the content root every restore is verified against (absent: none). */
@@ -388,6 +390,7 @@ export function goldenReset(o: {
     ...(fs
       ? {
         fsExclude: fs.exclude.map((e) => e.pattern),
+        fsRoots: fs.roots,
         fsDigest: async (container: string) => {
           const out = await run(FS_SCRIPT, container);
           const lines = out.stdout.split(/\r?\n/).filter((l) => l !== "");
@@ -422,21 +425,18 @@ export interface FsDiffEntry {
   after: string | null;
 }
 
-/** The entry's key (path, or path:stream) of an fs-digest.ps1 line; null when unparsable. */
+/**
+ * The entry's key (path, or path:stream) of a well-formed fs-digest.ps1 line;
+ * null when the kind is unknown or a field is malformed (Sol S3 r1 #5).
+ */
+const FS_LINE: Record<string, RegExp> = {
+  D: /^D\|\d+\|\d+\|([^|]+)$/,
+  F: /^F\|[0-9a-f]{64}\|\d+\|\d+\|\d+\|([^|]+)$/,
+  S: /^S\|[0-9a-f]{64}\|\d+\|([^|]+)$/,
+  L: /^L\|\d+\|\d+\|([^|]+)\|[^|]*$/,
+};
 function fsKey(line: string): string | null {
-  const f = line.split("|");
-  switch (f[0]) {
-    case "D":
-      return f.length === 4 ? f[3]! : null;
-    case "F":
-      return f.length === 6 ? f[5]! : null;
-    case "S":
-      return f.length === 4 ? f[3]! : null;
-    case "L":
-      return f.length === 5 ? f[3]! : null;
-    default:
-      return null;
-  }
+  return FS_LINE[line[0] ?? ""]?.exec(line)?.[1] ?? null;
 }
 
 /** A Windows wildcard (case-insensitive; `*` any run, subtrees included). */
@@ -453,30 +453,56 @@ function wildcard(pattern: string): RegExp {
  * fsDigest(W) captures. Any difference in an entry's line (content, size,
  * attributes, last-write time, a stream, a link target) outside the
  * exclusions is a difference; E lines and unparsable lines on either side are
- * errors, and an error fails closed like a difference.
+ * errors, and an error fails closed like a difference. Sol S3 r1 #5: each
+ * capture must end with exactly one `T|<n>` (n = its other lines), hold no
+ * entry twice, and cover every declared root (a D, L or E line for it).
  */
 export function fsDiff(
   before: readonly string[],
   after: readonly string[],
   exclude: readonly string[],
+  roots: readonly string[] = [],
 ): { diff: FsDiffEntry[]; errors: string[] } {
   const errors: string[] = [];
   const res = exclude.map(wildcard);
-  const index = (side: string, lines: readonly string[]) => {
+  const index = (side: string, raw: readonly string[]) => {
     const m = new Map<string, string>();
-    for (const raw of lines) {
-      const line = raw.trimEnd();
-      if (line === "") continue;
+    const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
+    const marks = lines.filter((l) => l.startsWith("T|"));
+    const entries = lines.filter((l) => !l.startsWith("T|"));
+    if (marks.length !== 1 || lines.at(-1) !== marks[0]) {
+      errors.push(
+        `${side}: no T| marker as the last line (incomplete capture)`,
+      );
+    } else if (marks[0] !== `T|${entries.length}`) {
+      errors.push(
+        `${side}: ${marks[0]} does not match the count ${entries.length}`,
+      );
+    }
+    const seen = new Set<string>();
+    for (const line of entries) {
       if (line.startsWith("E|")) {
         const [, p, ...why] = line.split("|");
         errors.push(`${side}: ${p}: ${why.join("|")}`);
+        seen.add((p ?? "").toLowerCase());
         continue;
       }
       const k = fsKey(line);
-      if (k === null) errors.push(`${side}: unparsable line ${line}`);
+      if (k === null) {
+        errors.push(`${side}: unparsable line ${line}`);
+        continue;
+      }
       // NTFS paths are case-insensitive: one entry; a case-only rename
       // still differs in its line.
-      else if (!res.some((r) => r.test(k))) m.set(k.toLowerCase(), line);
+      const key = k.toLowerCase();
+      if (seen.has(key)) errors.push(`${side}: ${k} appears twice`);
+      seen.add(key);
+      if (!res.some((r) => r.test(k))) m.set(key, line);
+    }
+    for (const r of roots) {
+      if (!seen.has(r.toLowerCase())) {
+        errors.push(`${side}: declared root ${r} has no entry`);
+      }
     }
     return m;
   };

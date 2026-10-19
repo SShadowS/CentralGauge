@@ -225,22 +225,27 @@ Deno.test("H-35 S3 goldenReset.verifyClean runs verify-clean.ps1 with the lineag
 /** Windows paths written with "/" for readability. */
 const w = (s: string) => s.replaceAll("/", "\\");
 const F = (p: string, h = "a".repeat(64), t = 1) => `F|${h}|4|32|${t}|${w(p)}`;
+/** A complete capture: its lines, then the `T|<n>` marker fs-capture.ps1 ends with. */
+const cap = (...lines: string[]) => [...lines, `T|${lines.length}`];
 
 Deno.test("H-35 S3 L4 fsDiff: new, changed (content or metadata only) and removed entries, keyed by path and stream; identical digests are clean", () => {
-  const before = [
+  const before = cap(
     w("D|16|5|C:/W"),
     F("C:/W/a.txt"),
     F("C:/W/b.txt"),
     w("S|" + "c".repeat(64) + "|3|C:/W:hid"),
-  ];
-  assertEquals(fsDiff(before, before, []), { diff: [], errors: [] });
-  const after = [
+  );
+  assertEquals(fsDiff(before, before, [], [w("C:/W")]), {
+    diff: [],
+    errors: [],
+  });
+  const after = cap(
     w("D|16|5|C:/W"),
     F("C:/W/a.txt", "a".repeat(64), 2), // mtime only
     F("C:/W/new.txt"),
     w("S|" + "d".repeat(64) + "|3|C:/W:hid"), // directory ADS content
-  ];
-  const r = fsDiff(before, after, []);
+  );
+  const r = fsDiff(before, after, [], [w("C:/W")]);
   assertEquals(r.errors, []);
   assertEquals(
     r.diff.map((d) => [d.path, d.before !== null, d.after !== null]),
@@ -254,17 +259,67 @@ Deno.test("H-35 S3 L4 fsDiff: new, changed (content or metadata only) and remove
 });
 
 Deno.test("H-35 S3 L4 fsDiff: exclusions match case-insensitively with * as any run (subtree); E lines on either side and unparsable lines are errors (fail closed)", () => {
-  const before = [F("C:/W/Logs/x.log")];
-  const after = [F("C:/W/logs/x.log", "b".repeat(64)), F("C:/W/logs/y/z.log")];
+  const before = cap(F("C:/W/Logs/x.log"));
+  const after = cap(
+    F("C:/W/logs/x.log", "b".repeat(64)),
+    F("C:/W/logs/y/z.log"),
+  );
   assertEquals(fsDiff(before, after, [w("c:/w/LOGS/*")]).diff, []);
   assertEquals(fsDiff(before, after, [w("C:/W/logs/*.txt")]).diff.length, 2);
-  const e = fsDiff([w("E|C:/W/a|access denied")], [
-    "garbage",
-    "E|(nst)|not quiescent: 1",
-  ], []);
+  const e = fsDiff(
+    cap(w("E|C:/W/a|access denied")),
+    cap(
+      "garbage",
+      "E|(nst)|not quiescent: 1",
+    ),
+    [],
+  );
   assertEquals(e.errors, [
     w("before: C:/W/a: access denied"),
     "after: unparsable line garbage",
     "after: (nst): not quiescent: 1",
   ]);
+});
+
+Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong count, malformed fields, a duplicate key, or a declared root it does not cover is an error (fail closed); empty captures never compare clean", () => {
+  const ok = cap(w("D|16|5|C:/W"), F("C:/W/a.txt"));
+  const errs = (after: string[], roots = [w("C:/W")]) =>
+    fsDiff(ok, after, [], roots).errors;
+  assertEquals(errs(ok), []);
+  assert(errs([])[0]!.includes("no T| marker"), "empty capture");
+  assert(errs(ok.slice(0, -1))[0]!.includes("no T| marker"), "missing marker");
+  assert(
+    errs([w("D|16|5|C:/W"), F("C:/W/a.txt"), "T|5"])[0]!.includes("count"),
+  );
+  assert(
+    errs([...ok.slice(0, -1), "T|2", "T|2"])[0]!.includes("T| marker"),
+    "two markers",
+  );
+  for (
+    const bad of [
+      w("F|||||C:/W/f"),
+      w("F|xyz|4|32|1|C:/W/f"),
+      w("S|" + "a".repeat(64) + "|-1|C:/W:s"),
+      w("D|x|5|C:/W/d"),
+    ]
+  ) {
+    assert(
+      errs(cap(w("D|16|5|C:/W"), F("C:/W/a.txt"), bad))[0]!.includes(
+        "unparsable",
+      ),
+      bad,
+    );
+  }
+  // a changed record followed by the original for the same path
+  assert(
+    errs(
+      cap(w("D|16|5|C:/W"), F("C:/W/a.txt", "b".repeat(64)), F("C:/W/a.txt")),
+    )
+      .some((e) => e.includes("twice")),
+  );
+  // a declared root with no entry (neither D nor L nor E)
+  assert(
+    errs(ok, [w("C:/W"), w("C:/X")]).some((e) => e.includes("C:\\X")),
+  );
+  assertEquals(fsDiff([], [], []).errors.length > 0, true);
 });

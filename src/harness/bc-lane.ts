@@ -1782,9 +1782,16 @@ export async function deploy(
   // agent's tool environment has none) no candidate may make outbound HTTP
   // calls. The setting lives in the tenant DB, so every deployment sets it
   // again; a read-back other than false quarantines.
-  if (ctx.reset && !d.candidateFailure) {
+  // Sol S3 r1 #4: every candidate, a publish failure notwithstanding (the
+  // others are installed), and a call that throws quarantines as well.
+  if (ctx.reset) {
     for (const w of wanted.filter((w) => w.role === "candidate")) {
-      const back = await bc.setHttpClientAllowed(container, w.id, false);
+      let back: string;
+      try {
+        back = await bc.setHttpClientAllowed(container, w.id, false);
+      } catch (err) {
+        back = `error: ${err instanceof Error ? err.message : String(err)}`;
+      }
       if (back.trim() !== "allow=false") {
         throw new HttpBlockFailedError(container, w.id, back);
       }
@@ -1886,9 +1893,11 @@ export async function deployAndTest(
   const cleanAndVerify = async (): Promise<string | null> => {
     const c = await cleanup();
     const m = i.ctx.reset;
-    if (c || !m) return c;
-    const why: string[] = [];
-    if (m.verifyClean) {
+    if (!m) return c;
+    const why: string[] = c ? [c] : [];
+    // The inventory check needs a cleanup that ran; a failed one already
+    // quarantines.
+    if (!c && m.verifyClean) {
       try {
         verify = await m.verifyClean(container);
       } catch (err) {
@@ -1904,8 +1913,15 @@ export async function deployAndTest(
         why.push(`post-cleanup check on ${container} failed: ${verify.error}`);
       }
     }
+    // Sol S3 r1 #1: the second capture whatever the cleanup's outcome, so a
+    // dirty host is never scored behind a cleanup failure.
     if (fsBefore && m.fsDigest) {
-      const d = fsDiff(fsBefore, await capture(m), m.fsExclude ?? []);
+      const d = fsDiff(
+        fsBefore,
+        await capture(m),
+        m.fsExclude ?? [],
+        m.fsRoots ?? [],
+      );
       const f = fsChecked(d.diff, d.errors);
       if (!f.ok) why.push(new HostDirtyError(f).message);
     }
@@ -1931,10 +1947,9 @@ export async function deployAndTest(
     if (m.fsDigest) {
       fsBefore = await capture(m);
       // Unobservable right after the reset: nothing deployed, fail closed.
-      const pre = fsDiff(fsBefore, fsBefore, m.fsExclude ?? []);
-      if (pre.errors.length > 0) {
-        throw new HostDirtyError(fsChecked([], pre.errors));
-      }
+      const pre = fsDiff(fsBefore, [], m.fsExclude ?? [], m.fsRoots ?? []);
+      const errors = pre.errors.filter((e) => e.startsWith("before: "));
+      if (errors.length > 0) throw new HostDirtyError(fsChecked([], errors));
     }
   }
   let r: Omit<

@@ -15,6 +15,23 @@ Deno.test("H-35 S3.2 loadLineage: the shipped golden-o09-v1 lineage loads, its s
   assertEquals(l.runner.package_id, "ede0ce05-9ed6-42f2-bbb4-bfee95bb033a");
 });
 
+Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section admission needs (content root, fs v2, egress) and runner 1.0.2.0", async () => {
+  const path = "infra/harness-reset/lineages/golden-o09-v2.json";
+  const l = await loadLineage(path);
+  assertEquals([l.id, l.reset_policy_version], ["golden-o09-v2", 2]);
+  assertEquals(l.runner.version, "1.0.2.0");
+  assert(l.content_root && l.content_root.exclude.length > 0);
+  assertEquals(l.fs?.digest_version, 2);
+  assert(l.egress);
+  const m = goldenReset({
+    repoRoot: ".",
+    lineagePath: path,
+    lineage: l,
+    dockerEnv: {},
+  });
+  assert(m.contentRoot && m.fsDigest && m.bcEgress && m.fsRoots?.length);
+});
+
 async function copyLineage(
   edit: (j: Record<string, unknown>) => void = () => {},
   inventory?: string,

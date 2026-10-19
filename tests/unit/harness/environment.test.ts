@@ -169,3 +169,16 @@ Deno.test("H-35 S3: a lineage without a content root (no per-restore content ver
   assertEquals(c.admissible, false);
   assertEquals(c.refusal, "the lineage has no content root");
 });
+
+Deno.test("H-35 S3 (orchestrator ruling on baselines): a baseline made against another symbol store (another lock digest) is not admissible for this run", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = { resultsRoot: root, lineageId: "golden-test", lockDigest: LOCK };
+  await createBaseline(bc, MECH, "C1", o);
+  const other = await checkEnvironments(bc, MECH, ["C1"], {
+    ...o,
+    lockDigest: "f".repeat(64),
+  });
+  assertEquals(other.admissible, false);
+  assert(other.rows[0]!.why!.includes("env_fp"));
+});
