@@ -35,7 +35,7 @@
     ]
   },
   "fs": {
-    "digest_version": 2,
+    "digest_version": 3,
     "roots": [
       "C:\\Windows\\Temp",
       "C:\\Windows\\System32\\config\\systemprofile\\AppData",
@@ -47,7 +47,23 @@
       "service_account|NT AUTHORITY\\SYSTEM",
       "service_path|\"C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\Microsoft.Dynamics.Nav.Server.exe\" $BC /config \"C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\Microsoft.Dynamics.Nav.Server.exe.config\""
     ],
-    "exclude": [],
+    "exclude": [
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^assembly\\\\release\\\\[0-9.]+_\\d+\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.dll$",
+        "dirs": "^assembly(\\\\release(\\\\[0-9.]+_\\d+(\\\\[0-9A-F]{2})?)?)?$",
+        "magic": "4d5a",
+        "reason": "NST compiled-assembly cache: .NET assemblies the NST compiles from published apps, named by content hash (PE files, MZ header); AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.(cs|xml)$",
+        "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
+        "reason": "NST app metadata cache: generated .cs/.xml per published object, named by content hash; AL cannot write here without File/DotNet (L1/L3)"
+      }
+    ],
     "survey": {
       "path": "golden-o09-v2.survey.json",
       "sha256": "1fe32c2295ce9fc7db540e52c805d943570be402673ee964807dd4953236a7f3"
