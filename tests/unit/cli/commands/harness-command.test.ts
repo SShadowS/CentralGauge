@@ -8939,3 +8939,21 @@ Deno.test("rejudge (H-35 S2.5): freezes the pairing of every due execution with 
   assertEquals(report.cells[0]!.old, "unscored");
   assert(report.cells[0]!.flags.includes("infra"));
 });
+
+Deno.test("H-35 orch Sol r1 #6: a campaign judgment records the env's harness commit in its provenance", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  const [j] = await t.env.store.judgments(e.id);
+  assertEquals(j!.provenance?.harness_commit, t.env.harnessCommit);
+  assertEquals(t.env.harnessCommit, "f".repeat(40));
+});

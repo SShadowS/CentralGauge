@@ -833,6 +833,7 @@ export async function harnessJudgeFixture(
       workDir: join(scratch, "judge"),
       lock: { store: h.env.symbolStore, packages: h.env.symbols },
       deploy: h.env.deploy,
+      harnessCommit: h.env.harnessCommit,
     }, h.env.now);
     const out = join(o.resultsDir, "fixtures", taskId, variant, judgment.id);
     await Deno.mkdir(out, { recursive: true });

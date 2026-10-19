@@ -181,6 +181,29 @@ async function refappSource(
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+/**
+ * H-35 provenance (orch Sol r1 #6): the harness commit judging, HEAD of
+ * `repoRoot`; `<sha>+dirty` when the harness code (src, cli, scripts) has
+ * changes or untracked files, since then the commit does not describe what
+ * ran. Null outside a git repository.
+ */
+export async function harnessCommitOf(
+  repoRoot: string,
+): Promise<string | null> {
+  const head = await git(repoRoot, ["rev-parse", "--verify", "HEAD"]);
+  if (!head) return null;
+  const status = await git(repoRoot, [
+    "status",
+    "--porcelain",
+    "--",
+    "src",
+    "cli",
+    "scripts",
+  ]);
+  const sha = text(head);
+  return status === null || text(status) !== "" ? `${sha}+dirty` : sha;
+}
+
 /** Resolve a refapp tag or commit to an immutable commit and source hash. */
 export async function resolveRefapp(
   repoRoot: string,

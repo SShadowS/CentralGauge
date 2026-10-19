@@ -4,6 +4,7 @@ import { ValidationError } from "../../../src/errors.ts";
 import {
   AGENT_VISIBLE_FIELDS,
   agentVisibleMetadata,
+  harnessCommitOf,
   loadSymbolsLock,
   oracleHash,
   resolveRefapp,
@@ -447,4 +448,30 @@ Deno.test("H-35 (design-r3 7): production_allow enters the oracle hash only when
   assertEquals(new Set(hashes).size, hashes.length);
   // Absent stays absent: the task as loaded hashes as before.
   assertEquals(t!.task.production_allow, undefined);
+});
+
+Deno.test("H-35 orch Sol r1 #6: harnessCommitOf gives HEAD, marked +dirty when tracked harness code differs; null outside a repository", async () => {
+  const repo = await Deno.realPath(await testTempDir());
+  const g = (...args: string[]) =>
+    new Deno.Command("git", { args, cwd: repo, stdout: "null", stderr: "null" })
+      .output();
+  await g("init", "-q");
+  await g("config", "user.email", "t@example.com");
+  await g("config", "user.name", "t");
+  await Deno.mkdir(join(repo, "src"), { recursive: true });
+  await Deno.writeTextFile(join(repo, "src", "a.ts"), "1");
+  await g("add", ".");
+  await g("commit", "-q", "-m", "c");
+  const head = new TextDecoder().decode(
+    (await new Deno.Command("git", {
+      args: ["rev-parse", "HEAD"],
+      cwd: repo,
+      stdout: "piped",
+    }).output()).stdout,
+  ).trim();
+  assertEquals(await harnessCommitOf(repo), head);
+  await Deno.writeTextFile(join(repo, "src", "a.ts"), "2");
+  assertEquals(await harnessCommitOf(repo), `${head}+dirty`);
+  const bare = await Deno.realPath(await testTempDir());
+  assertEquals(await harnessCommitOf(bare), null);
 });

@@ -278,6 +278,8 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
   );
   const env: HarnessEnv = {
     repoRoot: repo.root,
+    // H-35 provenance: a fixed commit so tests can see it reach the record.
+    harnessCommit: "f".repeat(40),
     harnessRoot,
     resultsRoot,
     privateRoot,

@@ -53,6 +53,7 @@ import {
 } from "../../src/harness/execution.ts";
 import { sweepWorkspaceTemp } from "../../src/harness/fsutil.ts";
 import {
+  harnessCommitOf,
   loadSymbolsLock,
   SYMBOLS_LOCK_PATH,
 } from "../../src/harness/identity.ts";
@@ -577,6 +578,8 @@ export async function openHarnessEnv(
     });
     const env: HarnessEnv = {
       repoRoot: o.repoRoot,
+      // H-35 provenance (orch Sol r1 #6): the commit every judgment records.
+      harnessCommit: await harnessCommitOf(o.repoRoot),
       harnessRoot: join(o.repoRoot, "harness"),
       resultsRoot: o.resultsDir,
       privateRoot: o.privateRoot,

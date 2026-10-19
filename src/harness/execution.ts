@@ -152,6 +152,8 @@ export type PublishStep =
 
 export interface HarnessEnv {
   repoRoot: string;
+  /** H-35 provenance: harnessCommitOf(repoRoot) at open; every judgment records it. */
+  harnessCommit: string | null;
   harnessRoot: string;
   /** results/harness: finished, redacted files only. */
   resultsRoot: string;
@@ -2644,6 +2646,7 @@ export async function judgeExecution(
       workDir,
       lock: { store: env.symbolStore, packages: env.symbols },
       deploy: env.deploy,
+      harnessCommit: env.harnessCommit,
       ...(env.buildCache ? { buildCache: env.buildCache } : {}),
     }, env.now);
     // Every judge output is published through the custody redaction (the
