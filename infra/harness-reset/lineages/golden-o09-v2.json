@@ -1,6 +1,6 @@
 {
   "id": "golden-o09-v2",
-  "reset_policy_version": 1,
+  "reset_policy_version": 2,
   "provision_version": "2",
   "artifactUrl": "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk",
   "manifest_sha256": "b8b6fc2b35ad0c7f6a5800a755b008c5a29f6074581d9dadcf438de9816b01c6",
@@ -24,8 +24,8 @@
   },
   "content_root": {
     "path": "golden-o09-v2.content.txt",
-    "sha256": "ee4e2c2e6fe53f63ced811c4062467190273eaccf9913327264117a3dba02c1d",
-    "root": "fc519177f6ea86e8c808b64667613c093eaffce2d6a1b3048dda3975e4a5514a",
+    "sha256": "f88f902ef58820a4dc7c5836828b89bc23a0ba94b0e1ecb244d4e89cf8eb9766",
+    "root": "8a0df4d681416442069b2d7aff64c2c228efa64aea6fe9a60bae62b39be56e08",
     "exclude": [
       { "pattern": "$ndo$cachesync", "reason": "NST cache-sync bookkeeping, rewritten at every NST start" },
       { "pattern": "Active Session", "reason": "sessions of the running NST (runtime state, not content)" },
@@ -35,7 +35,7 @@
     ]
   },
   "fs": {
-    "digest_version": 1,
+    "digest_version": 2,
     "roots": [
       "C:\\Windows\\Temp",
       "C:\\Windows\\System32\\config\\systemprofile\\AppData",
