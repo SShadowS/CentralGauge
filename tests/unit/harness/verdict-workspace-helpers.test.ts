@@ -311,7 +311,15 @@ Deno.test("H-30 (Sol r2 P1): app.json values that are not strings (an id or name
 /** AL ends a line at these too; the noise stripper only at LF. */
 const ODD_EOLS = ["\r", "\u2028", "\u2029", "\u0085"];
 
-Deno.test("H-30 r002: a line terminator other than LF or CRLF in an edited helper (a // comment hiding a subscriber) restores the shipped file whole", async () => {
+// H-30 runs 002/003 made unreadable agent Test text fail closed with notes
+// (no agent test counted; the file restored or removed). H-35 (ruling R9):
+// it is an unreadable_test policy violation, so no agent build exists at all.
+// The hostile inputs stay.
+
+const unreadableIn = (r: { v: { violations: string[] } }, rel: string) =>
+  r.v.violations.find((v) => v.startsWith(`unreadable_test: Test/${rel}: `));
+
+Deno.test("H-30 r002 / H-35: a line terminator other than LF or CRLF in an edited helper (a // comment hiding a subscriber) is an unreadable_test violation", async () => {
   for (const eolChar of ODD_EOLS) {
     const hidden = libWith(`
     procedure Added()
@@ -321,16 +329,15 @@ Deno.test("H-30 r002: a line terminator other than LF or CRLF in an edited helpe
     end;
 `);
     const r = await rebuild({ [LIB_REL]: hidden });
-    assertEquals(r.v.violations, []);
-    assertEquals(r.lib, LIB, `restored whole (${JSON.stringify(eolChar)})`);
     assertStringIncludes(
-      r.notes,
-      "a line terminator other than LF or CRLF; no agent test is run or counted",
+      unreadableIn(r, "src/TestLibrary.Codeunit.al") ?? "",
+      "a line terminator other than LF or CRLF",
+      JSON.stringify(eolChar),
     );
   }
 });
 
-Deno.test("H-30 r002: a line terminator other than LF or CRLF in a new or edited Test file runs and counts no agent test (the credit rules cannot read it)", async () => {
+Deno.test("H-30 r002 / H-35: a line terminator other than LF or CRLF in a new or edited Test file is an unreadable_test violation", async () => {
   for (const eolChar of ODD_EOLS) {
     // The comment hides a procedure that runs a shipped [Test].
     const sneaky = NEW_TESTS.replace(
@@ -338,16 +345,7 @@ Deno.test("H-30 r002: a line terminator other than LF or CRLF in a new or edited
       `    procedure Wrap()\n    begin\n//x${eolChar}end;${eolChar}procedure Steal()${eolChar}begin${eolChar}ShippedPasses();\n    end;\n\n    [Test]\n    procedure UsesAddedHelper()`,
     ).replace("Lib.MakeTwo()", "2");
     const r = await rebuild({ "Test/src/Agent.Test.al": sneaky });
-    assertEquals(r.v.violations, []);
-    assertEquals(
-      r.added,
-      [],
-      `no agent test counts (${JSON.stringify(eolChar)})`,
-    );
-    assertStringIncludes(
-      r.notes,
-      "Test/src/Agent.Test.al: a line terminator other than LF or CRLF; no agent test is run or counted",
-    );
+    assert(unreadableIn(r, "src/Agent.Test.al"), JSON.stringify(eolChar));
     const edited = await rebuild({
       "Test/src/Shipped.Test.al": SHIPPED_TESTS.replace(
         /}\n$/,
@@ -355,15 +353,15 @@ Deno.test("H-30 r002: a line terminator other than LF or CRLF in a new or edited
       ),
       "Test/src/Agent.Test.al": NEW_TESTS.replace("Lib.MakeTwo()", "2"),
     });
-    assertEquals(edited.added, []);
-    assertStringIncludes(
-      edited.notes,
-      "Test/src/Shipped.Test.al: a line terminator other than LF or CRLF; no agent test is run or counted",
+    assert(
+      unreadableIn(edited, "src/Shipped.Test.al"),
+      JSON.stringify(eolChar),
     );
+    assert(!unreadableIn(edited, "src/Agent.Test.al"));
   }
 });
 
-Deno.test("H-30 r002 (Sol): a multiline string (@'...') in agent Test text fails closed: the helper is restored whole, and in a test file no agent test runs or counts", async () => {
+Deno.test("H-30 r002 (Sol) / H-35: a multiline string (@'...') in agent Test text is an unreadable_test violation, in the helper and in a test file", async () => {
   const hidden = libWith(`
     procedure Added()
     var
@@ -375,10 +373,9 @@ Deno.test("H-30 r002 (Sol): a multiline string (@'...') in agent Test text fails
     end;
 `);
   const r = await rebuild({ [LIB_REL]: hidden });
-  assertEquals(r.lib, LIB);
   assertStringIncludes(
-    r.notes,
-    "a multiline string (@'...'); no agent test is run or counted",
+    unreadableIn(r, "src/TestLibrary.Codeunit.al") ?? "",
+    "a multiline string (@'...')",
   );
   const t = await rebuild({
     "Test/src/Agent.Test.al": NEW_TESTS.replace("Lib.MakeTwo()", "2").replace(
@@ -386,16 +383,10 @@ Deno.test("H-30 r002 (Sol): a multiline string (@'...') in agent Test text fails
       "    procedure Wrap()\n    var\n        T: Text;\n    begin\n        T := @'\n//'; ShippedPasses();\n    end;\n\n    [Test]",
     ),
   });
-  assertEquals(t.added, []);
-  assertStringIncludes(
-    t.notes,
-    "Test/src/Agent.Test.al: a multiline string (@'...'); no agent test is run or counted",
-  );
+  assert(unreadableIn(t, "src/Agent.Test.al"));
 });
 
-// ---- H-30 run 003 (owner: unreadable files leave the build) ----
-
-Deno.test("H-30 r003: an unreadable new Test file (bare CR) with an automatic subscriber the credit rules would cut is removed from the build; the other agent files stay but no agent test counts", async () => {
+Deno.test("H-30 r003 / H-35: an unreadable new Test file (bare CR) with an automatic subscriber is an unreadable_test violation; a readable sibling is not", async () => {
   const subscriber = `codeunit 80031 "CGR Agent Hooks"
 {
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Rental-Post", 'OnAfterPostRentalContract', '', false, false)]
@@ -409,43 +400,18 @@ Deno.test("H-30 r003: an unreadable new Test file (bare CR) with an automatic su
     "Test/src/Hooks.Codeunit.al": subscriber,
     "Test/src/Agent.Test.al": NEW_TESTS.replace("Lib.MakeTwo()", "2"),
   });
-  assertEquals(r.v.violations, []);
-  assertEquals(
-    await Deno.stat(join(r.v.dir, "Test/src/Hooks.Codeunit.al")).catch(() =>
-      null
-    ),
-    null,
-    "the unreadable file is not in the build",
-  );
-  assert(
-    await Deno.stat(join(r.v.dir, "Test/src/Agent.Test.al")).then(() => true),
-  );
-  assertEquals(r.added, []);
-  assertStringIncludes(
-    r.notes,
-    "Test/src/Hooks.Codeunit.al: a line terminator other than LF or CRLF; no agent test is run or counted",
-  );
-  assertStringIncludes(
-    r.notes,
-    "Test/src/Hooks.Codeunit.al: removed from the build",
-  );
+  assert(unreadableIn(r, "src/Hooks.Codeunit.al"));
+  assert(!unreadableIn(r, "src/Agent.Test.al"));
 });
 
-Deno.test("H-30 r003: an unreadable edited shipped test file stays exactly as shipped in the build", async () => {
+Deno.test("H-30 r003 / H-35: an unreadable edited shipped test file is an unreadable_test violation", async () => {
   const r = await rebuild({
     "Test/src/Shipped.Test.al": SHIPPED_TESTS.replace(
       /}\n$/,
       "\n    [EventSubscriber(ObjectType::Codeunit, Codeunit::\"CGR Rental-Post\", 'OnAfterPostRentalContract', '', false, false)]\n    local procedure Hook(var Amount: Decimal)\n    begin\n        //x\r        Amount := 0;\n    end;\n}\n",
     ),
   });
-  assertEquals(
-    await Deno.readTextFile(join(r.v.dir, "Test/src/Shipped.Test.al")),
-    SHIPPED_TESTS,
-  );
-  assertStringIncludes(
-    r.notes,
-    "Test/src/Shipped.Test.al: the shipped file stays in the build",
-  );
+  assert(unreadableIn(r, "src/Shipped.Test.al"));
 });
 
 // ---- H-35 (design.md 4, design-r2 4.1, ruling Q4): the helper as written; G's raw Test ----
@@ -532,4 +498,83 @@ Deno.test("H-35: rawTest copies the pristine Test app byte for byte (app.json in
   assertEquals(v.changed, ["Core"]);
   assertEquals(v.excluded, []);
   assertEquals(v.notes, []);
+});
+
+// ---- H-35 S1.5 (design-r2 6.1, design-r3 4, rulings R1 R5 R9): Test-side policy rules ----
+
+const INSTALL =
+  `codeunit 80150 "Agent Install"\n{\n    Subtype = Install;\n\n    trigger OnInstallAppPerCompany()\n    begin\n    end;\n}\n`;
+const NO_ISOLATION =
+  `codeunit 80151 "Agent Tests NI"\n{\n    Subtype = Test;\n    RequiredTestIsolation = Disabled;\n\n    [Test]\n    procedure T()\n    begin\n    end;\n}\n`;
+
+Deno.test("H-35: agent Test lifecycle code is a test_lifecycle violation, in a new file and in the helper as written", async () => {
+  const fresh = await rebuild({ "Test/src/Install.Codeunit.al": INSTALL });
+  assertStringIncludes(fresh.v.violations.join("\n"), "test_lifecycle:");
+  assertStringIncludes(
+    fresh.v.violations.join("\n"),
+    "Test/src/Install.Codeunit.al",
+  );
+  const trigger = libWith(
+    "\n    trigger OnUpgradePerDatabase()\n    begin\n    end;\n",
+  );
+  const helper = await rebuild({ [LIB_REL]: trigger });
+  assertStringIncludes(helper.v.violations.join("\n"), "test_lifecycle:");
+  const upgrade = await rebuild({
+    [LIB_REL]: LIB.replace(
+      "{\n    var",
+      "{\n    Subtype = Upgrade;\n\n    var",
+    ),
+  });
+  assertStringIncludes(upgrade.v.violations.join("\n"), "test_lifecycle:");
+});
+
+Deno.test("H-35: RequiredTestIsolation = Disabled in agent Test code is an isolation_disabled violation, in a new file and in an edited shipped test codeunit", async () => {
+  const fresh = await rebuild({ "Test/src/NI.Test.al": NO_ISOLATION });
+  assertStringIncludes(fresh.v.violations.join("\n"), "isolation_disabled:");
+  const edited = await rebuild({
+    "Test/src/Shipped.Test.al": SHIPPED_TESTS.replace(
+      "    Subtype = Test;\n",
+      "    Subtype = Test;\n    RequiredTestIsolation = Disabled;\n",
+    ),
+  });
+  assertStringIncludes(edited.v.violations.join("\n"), "isolation_disabled:");
+});
+
+Deno.test("H-35: the policy rules read code, not comments or strings; benign agent Test code has no violation", async () => {
+  const quiet =
+    `codeunit 80152 "Agent Quiet"\n{\n    Subtype = Test;\n    // Subtype = Install; RequiredTestIsolation = Disabled\n\n    [Test]\n    procedure T()\n    var\n        S: Text;\n    begin\n        S := 'OnInstallAppPerCompany';\n    end;\n}\n`;
+  const r = await rebuild({ "Test/src/Quiet.Test.al": quiet });
+  assertEquals(r.v.violations, []);
+});
+
+Deno.test("H-35 (ruling R9): unreadable agent Test text is an unreadable_test violation, new or edited", async () => {
+  for (const eolChar of ODD_EOLS) {
+    const fresh = await rebuild({
+      "Test/src/Odd.Test.al":
+        `codeunit 80153 "Odd"\n{\n    Subtype = Test;${eolChar}}\n`,
+    });
+    assertStringIncludes(fresh.v.violations.join("\n"), "unreadable_test:");
+  }
+  const multi = await rebuild({
+    [LIB_REL]: libWith(
+      "\n    procedure M(): Text\n    begin\n        exit(@'\nx');\n    end;\n",
+    ),
+  });
+  assertStringIncludes(multi.v.violations.join("\n"), "unreadable_test:");
+});
+
+Deno.test("H-35: G (rawTest) reads no agent Test file, so the Test-side rules never fire there", async () => {
+  const p = await pristineDir();
+  const a = await tmp();
+  await safeCopyTree(p, a);
+  await write(a, "Test/src/Install.Codeunit.al", INSTALL);
+  await write(a, "Test/src/NI.Test.al", NO_ISOLATION);
+  const v = await buildVerdictWorkspace({
+    pristine: p,
+    artifact: a,
+    out: join(await tmp(), "g"),
+    symbolIds: new Set([IDS.assert]),
+    rawTest: true,
+  });
+  assertEquals(v.violations, []);
 });

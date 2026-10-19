@@ -384,6 +384,15 @@ export async function buildVerdictWorkspace(
   violations.push(
     ...await shippedCollisions(join(o.pristine, TEST_APP), out, newTestFiles),
   );
+  const agentText = async (rel: string) =>
+    [
+      rel,
+      await Deno.readTextFile(join(out, TEST_APP, ...rel.split("/"))),
+    ] as const;
+  violations.push(...testPolicyViolations([
+    ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
+    ...editedShipped,
+  ]));
   const { notes, excluded } = violations.length === 0 &&
       (editedShipped.size + newTestFiles.length + asWritten.length) > 0
     ? await applyCreditRules(
@@ -1333,6 +1342,39 @@ function unreadable(src: string): string | null {
   return null;
 }
 
+/** Any install or upgrade trigger (design-r2 6.1, ruling R5). */
+const LIFECYCLE_TRIGGER =
+  /\bOn(?:InstallAppPer|UpgradePer|ValidateUpgradePer|CheckPreconditionsPer)(?:Company|Database)\b/i;
+const LIFECYCLE_SUBTYPE = /\bSubtype\s*=\s*(?:Install|Upgrade)\b/i;
+const ISOLATION_DISABLED = /\bRequiredTestIsolation\s*=\s*Disabled\b/i;
+
+/**
+ * H-35 Test-side policy rules over the agent's Test text (new files, the
+ * helper as written, edited shipped files): `unreadable_test` first (ruling
+ * R9: the other rules cannot trust the lexer on such text), then, on
+ * noise-stripped code, `test_lifecycle` (ruling R5) and `isolation_disabled`
+ * (ruling R1). Each violation reads `<rule>: Test/<path>: <detail>`.
+ */
+export function testPolicyViolations(
+  files: Iterable<readonly [string, string]>,
+): string[] {
+  const out: string[] = [];
+  for (const [rel, src] of [...files].sort(([a], [b]) => a < b ? -1 : 1)) {
+    const where = `${TEST_APP}/${rel}`;
+    const why = unreadable(src);
+    if (why) {
+      out.push(`unreadable_test: ${where}: ${why}`);
+      continue;
+    }
+    const code = stripAlNoise(src);
+    const life = LIFECYCLE_SUBTYPE.exec(code) ?? LIFECYCLE_TRIGGER.exec(code);
+    if (life) out.push(`test_lifecycle: ${where}: ${life[0]}`);
+    const iso = ISOLATION_DISABLED.exec(code);
+    if (iso) out.push(`isolation_disabled: ${where}: ${iso[0]}`);
+  }
+  return out;
+}
+
 /** One member standing for a whole object the parser does not read (names taint its users). */
 const pseudoMember = (text: string, d: AlDecl): Member => {
   const n = objectName(text, d);
@@ -1371,9 +1413,8 @@ interface NewFile {
  * carried. Fails closed (nothing generated, a note) when a workspace object
  * is in the range, or (all agent tests excluded) when a shipped test
  * codeunit cannot be parsed. H-35 (ruling Q4): an edited shipped file without
- * a test codeunit (`asWritten`, the helper) is agent code like a new file;
- * when unreadable, the shipped file is restored instead of removed. Returns
- * the notes and the excluded codeunit ids.
+ * a test codeunit (`asWritten`, the helper) is agent code like a new file.
+ * Returns the notes and the excluded codeunit ids.
  */
 async function applyCreditRules(
   pristine: string,
@@ -1399,49 +1440,9 @@ async function applyCreditRules(
     return { notes, excluded };
   }
 
-  // H-30 run 002: a new or edited test file the parser cannot read as the
-  // compiler does (unreadable) could hide a violator from the credit rules.
-  const odd: [string, string][] = [];
+  // Unreadable agent text never gets here: it is an unreadable_test
+  // violation (testPolicyViolations, H-35 ruling R9).
   const agentFiles = [...newFiles, ...asWritten].sort();
-  for (const rel of agentFiles) {
-    const src = await Deno.readTextFile(join(testOut, ...rel.split("/")));
-    const why = unreadable(src);
-    if (why) odd.push([rel, why]);
-  }
-  for (const [rel, aSrc] of [...edited].sort(([a], [b]) => a < b ? -1 : 1)) {
-    const pSrc = await Deno.readTextFile(
-      join(pristine, TEST_APP, ...rel.split("/")),
-    );
-    const why = unreadable(aSrc);
-    if (why && declarations(pSrc).some(isTestCodeunit)) odd.push([rel, why]);
-  }
-  if (odd.length > 0) {
-    for (
-      const t of await addedTestCodeunits(join(pristine, TEST_APP), testOut)
-    ) {
-      excluded.push(t.codeunit);
-    }
-    // H-30 run 003 (owner): an unreadable file also leaves the build, so the
-    // cuts the credit rules would make cannot be skipped; a Test app that no
-    // longer builds fails the cell (intended, fail closed).
-    for (const [rel, why] of odd) {
-      notes.push(
-        `${TEST_APP}/${rel}: ${why}; no agent test is run or counted`,
-      );
-      const dest = join(testOut, ...rel.split("/"));
-      if (edited.has(rel) || asWritten.includes(rel)) {
-        await Deno.writeFile(
-          dest,
-          await Deno.readFile(join(pristine, TEST_APP, ...rel.split("/"))),
-        );
-        notes.push(`${TEST_APP}/${rel}: the shipped file stays in the build`);
-      } else {
-        await Deno.remove(dest);
-        notes.push(`${TEST_APP}/${rel}: removed from the build`);
-      }
-    }
-    return { notes, excluded };
-  }
 
   const fresh: NewFile[] = [];
   for (const rel of agentFiles) {
