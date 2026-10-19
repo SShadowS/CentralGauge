@@ -746,8 +746,9 @@ export async function runCampaign(
     .map((c) => c.id);
   // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
   const override = env.unverifiedEgressReason;
-  // H-35 S3 L2b: the judging lineage's NST egress override, if any.
-  const bcOverride = env.deploy.bcEgress?.override || undefined;
+  // H-35 S3 L2b: the judging lineage's NST egress override, if any (a plan
+  // environment of a dry run has no deploy).
+  const bcOverride = env.deploy?.bcEgress?.override || undefined;
   if (override !== undefined) {
     if (override.trim() === "") {
       throw new ConfigurationError(

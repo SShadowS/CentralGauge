@@ -107,6 +107,7 @@ import {
   renderEnvCheck,
 } from "../../../../src/harness/environment.ts";
 import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
+import { goldenReset } from "../../../../src/harness/reset.ts";
 import {
   ADMIN_GROUPS_CSV,
   CC_MAIN_URL,
@@ -8968,13 +8969,17 @@ Deno.test("H-35 orch Sol r1 #6: a campaign judgment records the env's harness co
 
 Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; without it judging refuses; a bad lineage stops the start", async () => {
   await using t = await makeEnv();
-  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v1.json");
+  // H-35 S3: v2 carries every section admission needs; its NST egress is
+  // unenforced, so the run declares it.
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  const bcEgressOverride = "no NST firewall rule in the image";
   const bare = await openHarnessEnv(envOpts(t), deps([]));
   assertEquals(bare.env.deploy.reset.id, "unconfigured");
   // H-35 S3.4: no instance manifest yet, so the lineage run is refused.
   await bare.close();
   await assertRejects(
-    () => openHarnessEnv({ ...envOpts(t), lineage }, deps([])),
+    () =>
+      openHarnessEnv({ ...envOpts(t), lineage, bcEgressOverride }, deps([])),
     ConfigurationError,
     "no instance manifest",
   );
@@ -9001,11 +9006,24 @@ Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; w
     );
   }
   await again.close();
-  const h = await openHarnessEnv({ ...envOpts(t), lineage }, deps([]));
+  // admitted, but the unenforced egress needs the run's declaration
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, deps([])),
+    ConfigurationError,
+    "--unverified-bc-egress-ok",
+  );
+  const h = await openHarnessEnv(
+    { ...envOpts(t), lineage, bcEgressOverride },
+    deps([]),
+  );
   assertEquals(
     [h.env.deploy.reset.id, h.env.deploy.reset.policyVersion],
-    ["golden-restore", 1],
+    ["golden-restore", 2],
   );
+  assertEquals(h.env.deploy.bcEgress, {
+    mode: "unenforced",
+    override: bcEgressOverride,
+  });
   await h.close();
   await assertRejects(
     () =>
@@ -9020,25 +9038,31 @@ Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; w
 
 Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the container admissible for its lineage; a container without one is not", async () => {
   await using t = await makeEnv();
-  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v1.json");
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
   const l = await loadLineage(lineage);
+  // the production mechanism with its reset faked (every admission section)
   const fake = () => ({
-    ...OK_RESET,
-    id: "golden-restore",
-    compat: { lineage: lineageCompat(l) },
+    ...goldenReset({
+      repoRoot: ".",
+      lineagePath: lineage,
+      lineage: l,
+      dockerEnv: {},
+    }),
+    reset: OK_RESET.reset,
   });
   const o = {
     repoRoot: t.repo.root,
     containers: ["Cronus281"],
     lineage,
     symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
   };
   const before = await envCheck(o, deps([]), fake);
   assertEquals(before.admissible, false);
   const made = await baselineCreate(o, deps([]), fake);
   assertEquals(made.map((m) => [m.container, m.lineage_id]), [[
     "Cronus281",
-    "golden-o09-v1",
+    "golden-o09-v2",
   ]]);
   const after = await envCheck(o, deps([]), fake);
   assert(after.admissible, renderEnvCheck(after));

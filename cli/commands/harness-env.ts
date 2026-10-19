@@ -743,7 +743,7 @@ export async function openHarnessEnv(
       deploy: {
         ledgerRoot: join(sharedResults, "bc-ledger"),
         reset,
-        bcEgress,
+        ...(bcEgress ? { bcEgress } : {}),
       },
       pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
       supervised: o.supervised,
