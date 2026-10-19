@@ -123,3 +123,18 @@ Deno.test("H-35 Sol r2 #3: a reset command that throws is a recorded reset failu
   });
   await assertRejects(() => refusing.reset("C1"), ConfigurationError);
 });
+
+Deno.test("H-35 Sol r3 #1: a combined phase name or RESET_OK before the phases is a protocol failure", () => {
+  for (
+    const lines of [
+      [`RESET_STEP ${RESET_PHASES.join(",")} 1`, "RESET_OK"],
+      ["RESET_OK", ...FULL],
+    ]
+  ) {
+    const r = parseResetOutput("C1", MECH, {
+      code: 0,
+      stdout: lines.join("\n"),
+    });
+    assertEquals([r.ok, r.failed_step], [false, "protocol"], lines.join("|"));
+  }
+});

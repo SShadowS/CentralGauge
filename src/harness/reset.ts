@@ -63,13 +63,17 @@ export function parseResetOutput(
   const phases_ms: Record<string, number> = {};
   const seen: string[] = [];
   let oks = 0;
+  // Run 002 Sol r3 #1: no phase may follow the success marker.
+  let stepAfterOk = false;
   const failed: { step: string; reason: string }[] = [];
   for (const raw of out.stdout.split(/\r?\n/)) {
     const line = raw.trimEnd();
-    const step = /^RESET_STEP (\S+) (\d+)$/.exec(line);
-    if (step) {
-      seen.push(step[1]!);
-      phases_ms[step[1]!] = Number(step[2]);
+    if (line.startsWith("RESET_STEP")) {
+      if (oks > 0) stepAfterOk = true;
+      // A phase name is one identifier (Sol r3 #1); anything else is malformed.
+      const step = /^RESET_STEP ([a-z_]+) (\d+)$/.exec(line);
+      seen.push(step ? step[1]! : `(malformed: ${line})`);
+      if (step) phases_ms[step[1]!] = Number(step[2]);
     }
     const f = /^RESET_FAILED (\S+) ?(.*)$/.exec(line);
     if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
@@ -101,8 +105,12 @@ export function parseResetOutput(
   if (oks !== 1 || out.code !== 0) {
     return protocol("not exactly one bare RESET_OK with exit 0");
   }
+  if (stepAfterOk) return protocol("a phase after RESET_OK");
   // Sol r2 #1: success means every agreed phase ran, once each, in order.
-  if (seen.join() !== RESET_PHASES.join()) {
+  if (
+    seen.length !== RESET_PHASES.length ||
+    seen.some((p, i) => p !== RESET_PHASES[i])
+  ) {
     return protocol(
       `phases ${seen.join(",") || "(none)"}, want ${RESET_PHASES.join(",")}`,
     );

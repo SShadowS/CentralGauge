@@ -1826,10 +1826,13 @@ export async function deployAndTest(
     const m = i.ctx.reset;
     // Run 002 Sol r2 #3: a mechanism that throws is a recorded failure
     // (quarantined); a configuration refusal stays loud and unrecorded.
-    reset = await m.reset(container).catch((err) => {
+    try {
+      // Awaited inside the try: a synchronous throw is caught too (Sol r3 #2).
+      reset = await m.reset(container);
+    } catch (err) {
       if (err instanceof ConfigurationError) throw err;
-      return failedReset(container, m, "threw", err);
-    });
+      reset = failedReset(container, m, "threw", err);
+    }
     i.ctx.onReset?.(reset);
     if (!reset.ok) throw new ResetFailedError(reset);
     // The restored container holds the baseline only: no harness app owned.

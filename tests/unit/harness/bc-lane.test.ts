@@ -2245,3 +2245,47 @@ Deno.test("H-35 Sol r2 #3: a reset mechanism that throws is recorded as a failed
     [["C1", false, "threw"], ["C2", true, null]],
   );
 });
+
+Deno.test("H-35 Sol r3 #2: a reset mechanism that throws synchronously is recorded and quarantines too", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const records: ResetRecord[] = [];
+  const ok = fakeReset(bc).mechanism;
+  const reset: ResetMechanism = {
+    id: "fake",
+    policyVersion: 1,
+    reset(c: string): Promise<ResetRecord> {
+      if (c === "C1") throw new ContainerError("session died", c, "setup");
+      return ok.reset(c);
+    },
+  };
+  const ledgerRoot = await tmp();
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot,
+          trustedRoots: [p.pristine],
+          reset,
+          onReset: (r) => records.push(r),
+        },
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.has("C1"));
+  assertEquals(records.map((r) => [r.container, r.failed_step]), [
+    ["C1", "threw"],
+    ["C2", null],
+  ]);
+});
