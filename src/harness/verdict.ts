@@ -1010,22 +1010,6 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   await applyOverlay(join(i.task.dir, "correct"), reference, {
     exclude: isTestPath,
   });
-  const vw = await buildVerdictWorkspace({
-    pristine: i.pristine,
-    artifact: i.artifact,
-    out: join(i.workDir, "verdict"),
-    productionFrom: reference,
-    symbolIds: i.symbolIds,
-    // mutant_kill builds carry no shipped test codeunit (M4-17a run 002).
-    dropShippedTests: true,
-  });
-  log.spans.reconstruct_ms = performance.now() - tr;
-  log.violations = vw.violations;
-  // Tests the agent added to shipped codeunits are discovered below as the
-  // generated codeunit (addedTestCodeunits); why any were not is noted here.
-  log.notes.push(...vw.notes);
-  if (vw.violations.length > 0) return scores.failRest();
-
   const pristineApps = await readAppGraph(i.pristine);
   const prepare = (
     dir: string,
@@ -1047,51 +1031,41 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       label,
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
-  const prep = await prepare(
-    vw.dir,
-    vw.apps,
-    vw.changed,
-    "apps-reference",
-    "reference",
-  );
-  recordBuild(ctx, prep, "reference");
-  if (!prep.buildOk) return scores.failRest();
-  scores.set("build", true);
 
+  // H-35 G' first: the reference production plus the pristine Test app, raw
+  // (no agent file: a subscriber or install trigger in agent code could act
+  // on a shipped test). It decides build, and pass_to_pass by a real run in
+  // its own hold, whatever the submission (M1-18 review items 1 and 2).
+  const sw = await buildVerdictWorkspace({
+    pristine: i.pristine,
+    artifact: i.pristine,
+    out: join(i.workDir, "p2p"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+    rawTest: true,
+  });
+  const sp = await prepare(
+    sw.dir,
+    sw.apps,
+    sw.changed,
+    "apps-p2p",
+    "pass_to_pass",
+  );
+  recordBuild(ctx, sp, "pass_to_pass");
+  if (!sp.buildOk) {
+    throw new ValidationError(
+      `${t.id}: the reference with the shipped tests does not build`,
+      [t.id],
+    );
+  }
+  scores.set("build", true);
   let control: { prep: Prepared; specs: TestSpec[] } | null = null;
-  // pass_to_pass first, in its own hold with trusted code only: agent test
-  // code cannot unscore it, and it is decided by a real run even when the
-  // submission is rejected below (M1-18 review items 1 and 2).
   if (scores.has("pass_to_pass")) {
     const p2p: TestSpec[] = t.pass_to_pass.map((r) => ({
       codeunit: r.codeunit,
       procedures: r.procedures,
       target: "reference",
     }));
-    // Trusted code only: the reference production plus the SHIPPED Test
-    // sources, no agent file (a subscriber or install trigger in agent code
-    // could act on a shipped test).
-    const sw = await buildVerdictWorkspace({
-      pristine: i.pristine,
-      artifact: i.pristine,
-      out: join(i.workDir, "p2p"),
-      productionFrom: reference,
-      symbolIds: i.symbolIds,
-    });
-    const sp = await prepare(
-      sw.dir,
-      sw.apps,
-      sw.changed,
-      "apps-p2p",
-      "pass_to_pass",
-    );
-    recordBuild(ctx, sp, "pass_to_pass");
-    if (!sp.buildOk) {
-      throw new ValidationError(
-        `${t.id}: the reference with the shipped tests does not build`,
-        [t.id],
-      );
-    }
     try {
       const r = (await runHeld(
         ctx,
@@ -1108,6 +1082,33 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       return scores.nullRest();
     }
   }
+
+  // A_ref: the reference production plus the agent's Test as written,
+  // without the shipped test codeunits (M4-17a run 002). Every violation is
+  // Test-side here (production is the reference): G' stays measured.
+  const vw = await buildVerdictWorkspace({
+    pristine: i.pristine,
+    artifact: i.artifact,
+    out: join(i.workDir, "verdict"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+    dropShippedTests: true,
+  });
+  log.spans.reconstruct_ms = performance.now() - tr;
+  log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
+  // S2 records this as not_measured behind the policy gate.
+  if (vw.violations.length > 0) return scores.failRest();
+  const prep = await prepare(
+    vw.dir,
+    vw.apps,
+    vw.changed,
+    "apps-reference",
+    "reference",
+  );
+  recordBuild(ctx, prep, "reference");
 
   const added = await addedTestCodeunits(
     join(i.pristine, TEST_APP),
@@ -1142,16 +1143,21 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       procedures: a.procedures,
       target,
     }));
-  const infraRows = (target: string): TestRow[] =>
+  const notRunRows = (target: string, failure: "infra" | "compile") =>
     agent.flatMap((a) =>
       a.procedures.map((p) => ({
         codeunit: a.codeunit,
         procedure: p,
         target,
         outcome: "not_run" as const,
-        failure: "infra" as const,
+        failure,
       }))
     );
+  const infraRows = (target: string): TestRow[] => notRunRows(target, "infra");
+  if (!prep.buildOk) {
+    scores.set("mutant_kill", false, notRunRows("reference", "compile"));
+    return scores.failRest();
+  }
 
   // Agent-suite runs (decision 2026-09-25-agent-suite-infra): a completed
   // run with a missing procedure is the agent's (agentSuiteBc). A thrown run

@@ -266,7 +266,9 @@ Deno.test("mutant_kill (H-04): a reference build that crashes (no diagnostic) is
     await setup({ "off-by-one": "exit(9);" }, { suite: "reference-tests" }),
   );
   assertEquals(judgment.verdict, "unscored");
-  assertEquals(sc(judgment, "build").passed, null);
+  // H-35: build is G' (built before A_ref); the crash unscores mutant_kill.
+  assertEquals(sc(judgment, "build").passed, true);
+  assertEquals(sc(judgment, "mutant_kill").passed, null);
   assertStringIncludes(log.error ?? "", "no compiler diagnostic");
 });
 
@@ -821,4 +823,57 @@ Deno.test("mutant_kill (M4-17a run 002, R1): trusted platform dispatch (JQE-styl
     ),
     "the clean dispatch test still compiles, runs and counts",
   );
+});
+
+// ---- H-35 S1.4 (design-r2 1, 4.4): test-authoring G' first, build on G' ----
+
+Deno.test("H-35: test-authoring: an agent Test that does not compile fails mutant_kill only; build and pass_to_pass are decided on G'", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: { "Test/src/Broken.Test.al": "COMPILE_ERROR" },
+  });
+  const { judgment } = await judge(new BcLane(bc(), ["C1"]), input);
+  JudgmentRecordSchema.parse(judgment);
+  assertEquals(sc(judgment, "build").passed, true);
+  assertEquals(sc(judgment, "pass_to_pass").passed, true);
+  assert(sc(judgment, "pass_to_pass").tests.length > 0);
+  assertEquals(sc(judgment, "mutant_kill").passed, false);
+  assert(
+    sc(judgment, "mutant_kill").tests.length > 0 &&
+      sc(judgment, "mutant_kill").tests.every((t) =>
+        t.target === "reference" && t.failure === "compile"
+      ),
+  );
+});
+
+Deno.test("H-35: test-authoring: a Test-side violation fails mutant_kill only; pass_to_pass is still decided on G'", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: {
+      "Test/src/Dup.Test.al":
+        `codeunit 80010 "Dup"\n{\n    Subtype = Test;\n}\n`,
+    },
+  });
+  const { judgment, log } = await judge(new BcLane(bc(), ["C1"]), input);
+  assertEquals(sc(judgment, "build").passed, true);
+  assertEquals(sc(judgment, "pass_to_pass").passed, true);
+  assertEquals(sc(judgment, "mutant_kill").passed, false);
+  assertStringIncludes(log.violations.join("\n"), "collides with shipped");
+});
+
+Deno.test("H-35: test-authoring: G' deploys the pristine Test app, never an agent file", async () => {
+  const seen: string[] = [];
+  const fake = bc();
+  const inner = fake.script;
+  fake.script = (cu, deployed, container) => {
+    if (cu === 80010) seen.push(deployedSource(deployed, "CGR Test"));
+    return inner(cu, deployed, container);
+  };
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: { "Test/src/Extra.Test.al": suite(80130) },
+  });
+  await judge(new BcLane(fake, ["C1"]), input);
+  assertEquals(seen.length, 1);
+  assert(!seen[0]!.includes("80130") && !seen[0]!.includes("80100"));
 });
