@@ -2,7 +2,7 @@ namespace CentralGauge.TestHarness;
 
 using System.TestTools.TestRunner;
 using System.Reflection;
-using System.Apps;
+using System.Environment.Configuration;
 
 /// <summary>
 /// Headless test runner. Builds a fresh AL Test Suite, runs the requested
