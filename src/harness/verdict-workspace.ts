@@ -1500,12 +1500,12 @@ const ID_REFS: readonly (readonly [RegExp, string])[] = [
 const STATIC_CALL =
   /\b(Codeunit|Page|Report|Xmlport|Query)\s*\.\s*(Run|RunModal|Execute|SaveAs|SaveAsCsv|SaveAsPdf|SaveAsXml|Print|Open)\s*\(\s*([^,)]*)/gi;
 /**
- * An instance Open call with its first argument (a RecordRef, whatever its
- * spelling: bare, quoted, an array element); the static object calls are
- * STATIC_CALL's. Query.Open() has no argument and is skipped.
+ * Every Open call with its first argument, whatever the receiver (a RecordRef
+ * bare, quoted, an array element, or a variable named like an object type,
+ * Sol r6). An Open with no argument (Query.Open()) is skipped; a static call
+ * matched here and by STATIC_CALL is reported by both, never by neither.
  */
-const OPEN_CALL =
-  /(?<!\b(?:Codeunit|Page|Report|Xmlport|Query)\s*)\.\s*Open\s*\(\s*([^,)]*)/gi;
+const OPEN_CALL = /\.\s*Open\s*\(\s*([^,)]*)/gi;
 /** An argument that names its object: an integer literal or `Type::<name or literal>`. */
 const LITERAL_OBJECT =
   /^(?:\d+|(?:Codeunit|Page|Report|Xmlport|Query|Database)\s*::\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*|\d+))\s*$/i;

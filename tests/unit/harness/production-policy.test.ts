@@ -373,3 +373,23 @@ Deno.test("H-35 Sol r5 #1: a quoted plain identifier is that identifier: a quote
     hasRule(await scan(proc(decl, stmt)), "test_detection_ref", stmt);
   }
 });
+
+Deno.test('H-35 Sol r6: an instance Open on a variable named like an object type ("Query") is still checked', async () => {
+  hasRule(
+    await scan(
+      proc('        "Query": RecordRef;', '"Query".Open(2000000038);'),
+    ),
+    "test_detection_ref",
+    '"Query".Open(2000000038)',
+  );
+  hasRule(
+    await scan(
+      proc(
+        '        "Page": RecordRef;\n        Id: Integer;',
+        '"Page".Open(Id);',
+      ),
+    ),
+    "dynamic_object_access",
+    '"Page".Open(Id)',
+  );
+});
