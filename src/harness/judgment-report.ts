@@ -89,6 +89,13 @@ export interface ScoringSummary {
   total: number;
   /** Cells with a selected judgment. */
   judged: number;
+  /**
+   * Orch Sol r1 #4: per scorer, the planned cells it applies to (by the
+   * task's trusted descriptor), judged or not: each scorer's denominator.
+   */
+  applicable: Record<string, number>;
+  /** Planned cells whose task's applicability is unknown (no descriptor). */
+  applicability_unknown: number;
   /** Of them v1: scorer state, policy and env_fp are unavailable. */
   legacy: number;
   scorers: Record<string, Record<ScorerCount, number>>;
@@ -141,6 +148,9 @@ export function summarizeScoring(
   /** The verdict log's compile diagnostics (orch Sol r1 #7). */
   diagnostics: (judgmentId: string) => readonly unknown[] | undefined = () =>
     undefined,
+  /** A task's applicable scorers (orch Sol r1 #4); undefined: unknown. */
+  applicableTo: (task: string) => readonly string[] | undefined = () =>
+    undefined,
 ): ScoringSummary[] {
   const out = new Map<string, ScoringSummary>();
   const pop = (): GPopulation => ({
@@ -156,6 +166,8 @@ export function summarizeScoring(
         arm: c.arm,
         total: 0,
         judged: 0,
+        applicable: {},
+        applicability_unknown: 0,
         legacy: 0,
         scorers: {},
         g: pop(),
@@ -175,6 +187,11 @@ export function summarizeScoring(
     }
     s.total++;
     s.composite.total++;
+    const applies = applicableTo(c.task);
+    if (!applies) s.applicability_unknown++;
+    for (const name of applies ?? []) {
+      s.applicable[name] = (s.applicable[name] ?? 0) + 1;
+    }
     const j = c.judgment;
     if (c.status === "unscored" || j?.verdict === "unscored") s.infra++;
     if (!j) continue;

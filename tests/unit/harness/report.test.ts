@@ -2233,3 +2233,27 @@ Deno.test("H-35 S2.5 buildReport: per arm scoring summary (v1 fields unavailable
   assertStringIncludes(text, "composite passes / total: 1/2");
   assertStringIncludes(text, "build: pass 1, fail 1");
 });
+
+Deno.test("H-35 orch Sol r1 #4: the report's applicable denominators come from the trusted descriptors over planned cells; without a descriptor store they are unknown", async () => {
+  const desc = {
+    kind: "bugfix" as const,
+    scorers: ["build"],
+    pass_to_pass: [],
+    fail_to_pass: null,
+    mutants: [],
+    production_allow: null,
+    recovered_from: null,
+  };
+  const r = await buildReport(await records(), {
+    resamples: 50,
+    descriptor: () => Promise.resolve(desc),
+  });
+  assertEquals(r.scoring![0]!.applicable, { build: 2, agent_tests: 2 });
+  assertEquals(r.scoring![0]!.applicability_unknown, 0);
+  assertStringIncludes(
+    stripAnsiCode(renderReport(r)),
+    "applicable (planned cells): build 2, agent_tests 2",
+  );
+  const bare = await buildReport(await records(), { resamples: 50 });
+  assertEquals(bare.scoring![0]!.applicability_unknown, 2);
+});

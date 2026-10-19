@@ -12,7 +12,7 @@
 import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
 import type { HostLogLine } from "./backend.ts";
-import type { VerdictLog } from "./verdict.ts";
+import { effectiveScorers, type VerdictLog } from "./verdict.ts";
 import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
@@ -1002,6 +1002,15 @@ export async function buildReport(
       }, 0),
     })).filter((c) => c.count > 0),
   };
+  // Orch Sol r1 #4: the scorers each task applies to, from its trusted
+  // descriptor (the judging oracle's); unknown without a descriptor store.
+  const applicability = new Map<string, readonly string[]>();
+  if (opts.descriptor) {
+    for (const t of campaign.task_set.tasks) {
+      const d = await opts.descriptor(judging.oracle.get(t.id)!, t.id);
+      if (d !== "unknown") applicability.set(t.id, effectiveScorers(d));
+    }
+  }
   const provisional = summaries.some((s) => s.provisional);
   const repeats = { planned: exp.repeats, reported };
   return {
@@ -1125,6 +1134,7 @@ export async function buildReport(
       (id) => logs.verdict.get(id)?.notes,
       (id) => logs.verdict.get(id)?.violations,
       (id) => logs.verdict.get(id)?.diagnostics,
+      (t) => applicability.get(t),
     ),
     ...(overrideReasons.length > 0
       ? {
@@ -1541,6 +1551,13 @@ export function renderReport(r: HarnessReport): string {
           `    G' trusted-reference validation (not the agent's solution): ${s.reference.passed}/${s.reference.measured}; not measured ${s.reference.not_measured}, unavailable ${s.reference.unavailable}`,
         );
       }
+      out.push(
+        `    applicable (planned cells): ${
+          Object.entries(s.applicable).map(([n, k]) => `${n} ${k}`).join(
+            ", ",
+          ) || "none known"
+        }; unknown ${s.applicability_unknown}`,
+      );
       out.push(
         `    composite passes / total: ${s.composite.passed}/${s.composite.total}; infra ${s.infra}`,
       );

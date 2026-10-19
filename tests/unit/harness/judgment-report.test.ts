@@ -691,3 +691,41 @@ Deno.test("H-35 orch Sol r1 #7: a v1 build failure that its log shows as a polic
     }).includes("newly_measured"),
   );
 });
+
+Deno.test("H-35 orch Sol r1 #4: task-applicable denominators are over planned cells, judged or not; a task whose applicability is unknown is counted apart", () => {
+  const applicable = new Map([
+    ["T1", ["build", "pass_to_pass", "fail_to_pass", "agent_tests"]],
+    ["T5", ["build", "pass_to_pass", "mutant_kill"]],
+  ]);
+  const [s] = summarizeScoring(
+    [
+      // An unjudged change-task cell: agent_tests applies although unjudged.
+      { arm: "a", task: "T1", status: "unrun", judgment: null },
+      {
+        arm: "a",
+        task: "T5",
+        status: "scored",
+        judgment: v2([
+          m("build", true),
+          m("pass_to_pass", true, P2P),
+          m("mutant_kill", false, [row(81000, "K", "pass")]),
+        ]),
+      },
+      { arm: "a", task: "T9", status: "unrun", judgment: null },
+    ],
+    (t) => t === "T5" ? "test-authoring" : "bugfix",
+    () => [],
+    () => [],
+    () => [],
+    (t) => applicable.get(t),
+  );
+  assertEquals(s!.total, 3);
+  assertEquals(s!.applicable, {
+    build: 2,
+    pass_to_pass: 2,
+    fail_to_pass: 1,
+    agent_tests: 1,
+    mutant_kill: 1,
+  });
+  assertEquals(s!.applicability_unknown, 1);
+});
