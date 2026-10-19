@@ -250,8 +250,8 @@ async function mergeAppJson(
   await Deno.writeTextFile(candidatePath, JSON.stringify(merged, null, 2));
 }
 
-/** A freeze violation line naming a path under the Test app (`<what>: Test/<path>`). */
-const TEST_PATH_VIOLATION = /: Test[\\/]/i;
+/** A freeze violation line naming the Test app or a path under it (`<what>: Test[/<path>]`). */
+const TEST_PATH_VIOLATION = /: Test(?:[\\/]|\s*$)/i;
 
 /** A real directory (not a file, link or junction). */
 async function isPlainDir(p: string): Promise<boolean> {
@@ -398,7 +398,12 @@ export async function buildVerdictWorkspace(
     ...await productionPolicyViolations(out, apps, o.productionAllow),
   );
   violations.push(
-    ...await shippedCollisions(join(o.pristine, TEST_APP), out, newTestFiles),
+    ...await shippedCollisions(
+      join(o.pristine, TEST_APP),
+      out,
+      newTestFiles,
+      asWritten,
+    ),
   );
   const agentText = async (rel: string) =>
     [
@@ -409,7 +414,7 @@ export async function buildVerdictWorkspace(
     ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
     ...editedShipped,
   ]));
-  const { notes, excluded, removed } = violations.length === 0 &&
+  const { notes, excluded, rejected } = violations.length === 0 &&
       (editedShipped.size + newTestFiles.length + asWritten.length) > 0
     ? await applyCreditRules(
       o.pristine,
@@ -419,7 +424,14 @@ export async function buildVerdictWorkspace(
       newTestFiles,
       asWritten,
     )
-    : { notes: [], excluded: [], removed: 0 };
+    : { notes: [], excluded: [], rejected: new Set<string>() };
+  // Sol r2 #4: every test of an excluded codeunit, with the rejected ones, once.
+  for (const t of await testCodeunits(join(out, TEST_APP))) {
+    if (!excluded.includes(t.codeunit)) continue;
+    for (const p of t.procedures) {
+      rejected.add(`${t.codeunit}:${p.toLowerCase()}`);
+    }
+  }
 
   if (o.dropShippedTests && violations.length === 0) {
     await dropShippedTestCodeunits(o.pristine, out);
@@ -441,7 +453,7 @@ export async function buildVerdictWorkspace(
     violations,
     notes: [...appNotes, ...notes],
     excluded,
-    creditExcluded: excluded.length + removed,
+    creditExcluded: rejected.size,
   };
 }
 
@@ -1563,8 +1575,10 @@ export async function productionPolicyViolations(
       }
       for (const v of code.matchAll(RECORDREF_VAR)) {
         for (const [name] of v[1]!.matchAll(AL_NAME)) {
+          // Sol r2 #1: a variable is referenced bare or quoted, either way.
+          const bare = escapeRe(name.replace(/^"|"$/g, ""));
           const open = new RegExp(
-            `${escapeRe(name)}\\s*\\.\\s*Open\\s*\\(\\s*([^,)]*)`,
+            `(?:"${bare}"|(?<![\\w"])${bare}(?![\\w"]))\\s*\\.\\s*Open\\s*\\(\\s*([^,)]*)`,
             "gi",
           );
           for (const m of code.matchAll(open)) {
@@ -1629,11 +1643,15 @@ async function applyCreditRules(
   edited: ReadonlyMap<string, string>,
   newFiles: readonly string[],
   asWritten: readonly string[],
-): Promise<{ notes: string[]; excluded: number[]; removed: number }> {
+): Promise<{ notes: string[]; excluded: number[]; rejected: Set<string> }> {
   const notes: string[] = [];
   const excluded: number[] = [];
-  /** Submitted [Test] procedures the credit rules reject (Sol r1 #8). */
-  let removed = 0;
+  /**
+   * Submitted [Test] procedures the credit rules keep from counting (Sol r1
+   * #8, r2 #4), as `<codeunit>:<procedure>` (lower case; `s<id>:` for a
+   * procedure added to shipped codeunit <id>), so none is counted twice.
+   */
+  const rejected = new Set<string>();
   const testOut = join(out, TEST_APP);
   const shipped = await shippedTests(join(pristine, TEST_APP));
   if (shipped === null) {
@@ -1645,7 +1663,7 @@ async function applyCreditRules(
     notes.push(
       "credit rules: a shipped test codeunit could not be parsed; no agent test is run or counted",
     );
-    return { notes, excluded, removed };
+    return { notes, excluded, rejected };
   }
 
   // Unreadable agent text never gets here: it is an unreadable_test
@@ -1733,9 +1751,15 @@ async function applyCreditRules(
     ],
     shipped,
   );
-  removed =
-    [...fresh.map((f) => f.judged), ...shippedEdits.map((e) => e.judged)]
-      .flatMap((j) => j.code).filter((m) => m.test && why.has(m)).length;
+  const addedTests = (all: boolean) => {
+    for (const e of shippedEdits) {
+      for (const m of e.judged.code) {
+        if (m.test && (all || why.has(m))) {
+          rejected.add(`s${e.d.id}:${m.names[0]}`);
+        }
+      }
+    }
+  };
   // A rejected member that cannot be removed (a table or extension trigger,
   // an unparsed codeunit) can fire from any test (an Insert(true), a
   // RecordRef): fail closed, no agent test runs or counts.
@@ -1751,7 +1775,8 @@ async function applyCreditRules(
         stuck.map(([m, w]) => `${m.displays[0]}: ${w}`).join("; ")
       }; it cannot be removed, so no agent test is run or counted`,
     );
-    return { notes, excluded, removed };
+    addedTests(true);
+    return { notes, excluded, rejected };
   }
 
   for (const f of fresh) {
@@ -1761,6 +1786,7 @@ async function applyCreditRules(
         const w = why.get(m);
         if (!w) continue;
         cuts.push(m);
+        if (m.test) rejected.add(`${d.id}:${m.names[0]}`);
         notes.push(
           `${TEST_APP}/${f.rel} codeunit ${d.id}: ${
             m.displays[0]
@@ -1810,9 +1836,10 @@ async function applyCreditRules(
     await Deno.writeTextFile(join(testOut, ...f.rel.split("/")), text);
   }
 
+  addedTests(false);
   const found = shippedEdits.map((e) => extractFrom(e, why, notes))
     .filter((x): x is Extracted => x !== null);
-  if (found.length === 0) return { notes, excluded, removed };
+  if (found.length === 0) return { notes, excluded, rejected };
   const range = HARNESS_EXTRACTED_TEST_RANGE;
   const taken: string[] = [];
   for (const app of apps) {
@@ -1828,7 +1855,7 @@ async function applyCreditRules(
         taken.join("; ")
       }); no added test procedure is extracted`,
     );
-    return { notes, excluded, removed };
+    return { notes, excluded, rejected };
   }
   found.sort((a, b) => a.from - b.from);
   for (const [i, x] of found.entries()) {
@@ -1859,7 +1886,7 @@ async function applyCreditRules(
     await validatedDest(join(dest, ".."));
     await Deno.writeTextFile(dest, text);
   }
-  return { notes, excluded, removed };
+  return { notes, excluded, rejected };
 }
 
 /**
@@ -1921,6 +1948,8 @@ async function shippedCollisions(
   pristineTest: string,
   out: string,
   newFiles: readonly string[],
+  /** H-35 Sol r2 #2: the helper as written; its own shipped objects are not collisions. */
+  asWritten: readonly string[] = [],
 ): Promise<string[]> {
   const shipped = new Map<string, string>();
   for (const e of await listTree(pristineTest, "task", { optional: true })) {
@@ -1934,10 +1963,18 @@ async function shippedCollisions(
     }
   }
   const v: string[] = [];
-  for (const rel of newFiles) {
+  for (const rel of [...newFiles, ...asWritten]) {
     const src = await Deno.readTextFile(join(out, TEST_APP, ...rel.split("/")));
     const text = stripAlNoise(src);
+    const own = asWritten.includes(rel)
+      ? new Set(
+        declarations(
+          await Deno.readTextFile(join(pristineTest, ...rel.split("/"))),
+        ).map((d) => `${d.kind}#${d.id}`),
+      )
+      : new Set<string>();
     for (const d of declarations(src)) {
+      if (own.has(`${d.kind}#${d.id}`)) continue;
       const hit = shipped.get(`${d.kind}#${d.id}`) ??
         shipped.get(`${d.kind}:${objectName(text, d).toLowerCase()}`);
       if (hit) {

@@ -299,3 +299,18 @@ Deno.test("H-35 Sol r1 #7: an id literal counts only in an object-id position of
     "codeunit 130450 under a table grant",
   );
 });
+
+Deno.test("H-35 Sol r2 #1: a quoted reference to a RecordRef variable is checked like a bare one", async () => {
+  hasRule(
+    await scan(proc("        R: RecordRef;", '"R".Open(2000000038);')),
+    "test_detection_ref",
+    '"R".Open(2000000038)',
+  );
+  hasRule(
+    await scan(
+      proc("        R: RecordRef;\n        Id: Integer;", '"R".Open(Id);'),
+    ),
+    "dynamic_object_access",
+    '"R".Open(Id)',
+  );
+});

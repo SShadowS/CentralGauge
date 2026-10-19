@@ -1641,3 +1641,18 @@ Deno.test("H-35 Sol r1 #8: a submitted test the credit rules removed is credit_e
   );
   assert(!log.notes.includes("agent_tests: not_submitted"));
 });
+
+Deno.test("H-35 Sol r2 #3: a freeze violation naming the Test root itself is Test-side", async () => {
+  const { input } = await setup("correct");
+  await Deno.writeTextFile(
+    join(input.artifact, ".cg-freeze-violations.txt"),
+    "link, reparse point or special file: Test\n",
+  );
+  const { judgment } = await judge(new BcLane(script(), ["C1"]), input);
+  assertEquals(judgment.scorers.map((s) => s.passed), [
+    true,
+    true,
+    true,
+    false,
+  ]);
+});

@@ -600,3 +600,25 @@ Deno.test("H-35 Sol r1 #8: a submitted test the credit rules remove is counted a
   assertEquals(r.v.creditExcluded, 1);
   assertEquals(r.added.flatMap((a) => a.procedures), []);
 });
+
+Deno.test("H-35 Sol r2 #2: an object the agent adds to the helper file with a shipped test codeunit's id collides; the helper's own shipped codeunit does not", async () => {
+  const agent =
+    `${LIB}\ncodeunit 80010 "Replacement Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure Fails()\n    begin\n        Error('failure');\n    end;\n}\n`;
+  const r = await rebuild({ [LIB_REL]: agent }, { dropShippedTests: true });
+  assertStringIncludes(r.v.violations.join("\n"), "collides with shipped");
+  const own = await rebuild({ [LIB_REL]: libWith(MAKE_TWO) });
+  assertEquals(own.v.violations, []);
+});
+
+Deno.test("H-35 Sol r2 #4: credit-excluded counts each submitted test once, even when it is both rejected and in an excluded codeunit", async () => {
+  const sneaky = NEW_TESTS.replace(
+    "Assert.AreEqual(2, Lib.MakeTwo(), 'two');",
+    "Codeunit.Run(80010);",
+  );
+  const r = await rebuild({
+    "Test/src/Agent.Test.al": sneaky,
+    "Test/src/Runner.Codeunit.al":
+      `codeunit 80031 "Agent Runner"\n{\n    Subtype = TestRunner;\n}\n`,
+  });
+  assertEquals(r.v.creditExcluded, 1);
+});
