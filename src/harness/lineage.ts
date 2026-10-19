@@ -33,6 +33,25 @@ export const LineageSchema = z.strictObject({
   }),
   /** The stored inventory the reset's postconditions compare against. */
   inventory: z.strictObject({ path: z.string().min(1), sha256: Sha }),
+  /**
+   * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): the declared roots W
+   * (resolved on the image), the NST identity measurement, each exclusion
+   * with its disposition, the baseline-create discovery survey, and the
+   * fsDigest version. All of it enters env_fp. Absent: L4 not configured,
+   * and admission refuses the lineage.
+   */
+  fs: z.strictObject({
+    digest_version: z.number().int().positive(),
+    roots: z.array(z.string().min(1)).min(1),
+    identity: z.array(z.string()),
+    exclude: z.array(z.strictObject({
+      pattern: z.string().min(1),
+      /** Cleared and verified by the reset, or outside L4's stated scope. */
+      disposition: z.enum(["reset_cleared", "out_of_scope"]),
+      reason: z.string().min(1),
+    })),
+    survey: z.strictObject({ path: z.string().min(1), sha256: Sha }),
+  }).optional(),
   /** The local test container's web-service user (the runner no-op call). */
   soap_user: z.string().min(1),
   soap_password: z.string().min(1),

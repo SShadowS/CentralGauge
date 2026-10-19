@@ -50,6 +50,10 @@ import { exists, safeCopyTree } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree, isTaskBuildArtifact } from "./hash.ts";
 import {
   failedReset,
+  type FsCheckRecord,
+  fsDiff,
+  type FsDiffEntry,
+  HostDirtyError,
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
@@ -330,6 +334,8 @@ export class BcLane {
           }
           // H-35 S3: a failed reset leaves the container in an unknown state.
           if (err instanceof ResetFailedError) this.quarantine(c, err.message);
+          // H-35 S3 L4: a dirty or unobservable host is never reused.
+          if (err instanceof HostDirtyError) this.quarantine(c, err.message);
           // A cancellation (even a timeout reason) is never infra: no
           // reroute, no fault recorded against the container.
           if (signal?.aborted) throw cancelled(signal);
@@ -1661,6 +1667,8 @@ export interface DeployContext {
   onReset?: (r: ResetRecord) => void;
   /** Every post-cleanup inventory check (the verdict log's `verifies[]`). */
   onVerify?: (v: VerifyRecord) => void;
+  /** Every L4 check (the verdict log's `fs_checks[]`). */
+  onFsCheck?: (f: FsCheckRecord) => void;
   /**
    * H-35 run 002 Sol r1 #3: called as each attempt starts deploying (after
    * its reset), whatever the attempt's outcome: the deployment record.
@@ -1775,6 +1783,8 @@ export interface DeployTestResult {
   reset: ResetRecord | null;
   /** H-35 S3: the post-cleanup inventory check (null: none ran). */
   verify: VerifyRecord | null;
+  /** H-35 S3 L4: the deployment's fsDigest comparison (null: none ran). */
+  fsCheck: FsCheckRecord | null;
 }
 
 /**
@@ -1828,24 +1838,55 @@ export async function deployAndTest(
   // H-35 S3 (design-r4 2): after a cleanup that succeeded, the inventory
   // must be the baseline again; a dirty or unrunnable check quarantines.
   let verify: VerifyRecord | null = null;
+  // H-35 S3 L4: fsDigest(W) after the reset and after the cleanup; a
+  // capture that throws fails closed as an error line.
+  let fsBefore: string[] | null = null;
+  let fsCheck: FsCheckRecord | null = null;
+  const capture = async (m: ResetMechanism): Promise<string[]> => {
+    try {
+      return await m.fsDigest!(container);
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      return [`E|(fsDigest)|${why.replace(/[\r\n|]+/g, " ")}`];
+    }
+  };
+  const fsChecked = (diff: FsDiffEntry[], errors: string[]) => {
+    fsCheck = {
+      container,
+      ok: diff.length === 0 && errors.length === 0,
+      diff,
+      errors,
+    };
+    i.ctx.onFsCheck?.(fsCheck);
+    return fsCheck;
+  };
   const cleanAndVerify = async (): Promise<string | null> => {
     const c = await cleanup();
     const m = i.ctx.reset;
-    if (c || !m?.verifyClean) return c;
-    try {
-      verify = await m.verifyClean(container);
-    } catch (err) {
-      verify = {
-        container,
-        ok: false,
-        diff: [],
-        error: err instanceof Error ? err.message : String(err),
-      };
+    if (c || !m) return c;
+    const why: string[] = [];
+    if (m.verifyClean) {
+      try {
+        verify = await m.verifyClean(container);
+      } catch (err) {
+        verify = {
+          container,
+          ok: false,
+          diff: [],
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+      i.ctx.onVerify?.(verify);
+      if (!verify.ok) {
+        why.push(`post-cleanup check on ${container} failed: ${verify.error}`);
+      }
     }
-    i.ctx.onVerify?.(verify);
-    return verify.ok
-      ? null
-      : `post-cleanup check on ${container} failed: ${verify.error}`;
+    if (fsBefore && m.fsDigest) {
+      const d = fsDiff(fsBefore, await capture(m), m.fsExclude ?? []);
+      const f = fsChecked(d.diff, d.errors);
+      if (!f.ok) why.push(new HostDirtyError(f).message);
+    }
+    return why.length > 0 ? why.join("; ") : null;
   };
   // H-35 S3: reset first; a failed reset deployed nothing, so no cleanup.
   let reset: ResetRecord | null = null;
@@ -1864,8 +1905,19 @@ export async function deployAndTest(
     if (!reset.ok) throw new ResetFailedError(reset);
     // The restored container holds the baseline only: no harness app owned.
     await saveLedger(i.ctx.ledgerRoot, container, {});
+    if (m.fsDigest) {
+      fsBefore = await capture(m);
+      // Unobservable right after the reset: nothing deployed, fail closed.
+      const pre = fsDiff(fsBefore, fsBefore, m.fsExclude ?? []);
+      if (pre.errors.length > 0) {
+        throw new HostDirtyError(fsChecked([], pre.errors));
+      }
+    }
   }
-  let r: Omit<DeployTestResult, "cleanupError" | "reset" | "verify">;
+  let r: Omit<
+    DeployTestResult,
+    "cleanupError" | "reset" | "verify" | "fsCheck"
+  >;
   await i.ctx.onDeploy?.(container);
   try {
     const deployed = await deploy(bc, container, i.wanted, i.ctx);
@@ -1893,5 +1945,9 @@ export async function deployAndTest(
     if (c) throw new CleanupFailedError(err, c, container);
     throw err;
   }
-  return { ...r, reset, cleanupError: await cleanAndVerify(), verify };
+  const cleanupError = await cleanAndVerify();
+  // A dirty host: these rows are never scored (infra; the lane quarantines).
+  const f = fsCheck as FsCheckRecord | null;
+  if (f && !f.ok) throw new HostDirtyError(f);
+  return { ...r, reset, cleanupError, verify, fsCheck: f };
 }

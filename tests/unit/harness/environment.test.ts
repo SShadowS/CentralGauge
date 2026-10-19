@@ -15,7 +15,12 @@ import { testTempDir } from "../../utils/temp-dir.ts";
 const COMPAT = {
   lineage: { id: "golden-test", golden_sha256: "a".repeat(64) },
 };
-const MECH = { ...OK_RESET, id: "golden-restore", compat: COMPAT };
+const MECH = {
+  ...OK_RESET,
+  id: "golden-restore",
+  compat: COMPAT,
+  fsDigest: () => Promise.resolve([]),
+};
 const LOCK = "b".repeat(64);
 
 Deno.test("H-35 S3.4 envFpOf: hashJson of compat, mechanism, lock digest and compiler identity", async () => {
@@ -107,4 +112,17 @@ Deno.test("H-35 S3.4 checkEnvironments: admissible only when every container's m
   await Deno.writeTextFile(instanceManifestPath(root, "C2"), "{");
   const bad = await checkEnvironments(bc, MECH, ["C2"], o);
   assertEquals(bad.admissible, false);
+});
+
+Deno.test("H-35 S3 L4: a lineage without an fs section (L4 not configured) is not admissible, whatever its containers", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = { resultsRoot: root, lineageId: "golden-test", lockDigest: LOCK };
+  const { fsDigest: _, ...noL4 } = MECH;
+  await createBaseline(bc, noL4, "C1", o);
+  const c = await checkEnvironments(bc, noL4, ["C1"], o);
+  assertEquals(c.admissible, false);
+  assertEquals(c.rows[0]!.why, null);
+  assert(c.refusal?.includes("L4"));
+  assert(renderEnvCheck(c).includes(c.refusal!));
 });

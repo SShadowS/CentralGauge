@@ -126,6 +126,8 @@ export async function createBaseline(
 export interface EnvCheck {
   lineage_id: string;
   admissible: boolean;
+  /** A lineage-wide reason it is not admissible (null: none). */
+  refusal: string | null;
   rows: {
     container: string;
     env_fp: string;
@@ -166,9 +168,15 @@ export async function checkEnvironments(
     });
   }
   const shared = new Set(rows.map((r) => r.env_fp)).size <= 1;
+  // H-35 S3 L4 is mandatory (decisions/2026-10-20-h-35-l4-scope.md).
+  const refusal = m.fsDigest
+    ? null
+    : "the lineage has no fs section: L4 (fsDigest) is not configured";
   return {
     lineage_id: o.lineageId,
-    admissible: rows.length > 0 && shared && rows.every((r) => !r.why),
+    admissible: !refusal && rows.length > 0 && shared &&
+      rows.every((r) => !r.why),
+    refusal,
     rows,
   };
 }
@@ -190,5 +198,6 @@ export function renderEnvCheck(c: EnvCheck): string {
       `  ${colors.red("[FAIL]")} the containers do not share one env_fp`,
     );
   }
+  if (c.refusal) out.push(`  ${colors.red("[FAIL]")} ${c.refusal}`);
   return out.join("\n");
 }

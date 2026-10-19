@@ -128,3 +128,81 @@ Deno.test("H-35 S3.3 lineageCompat: identity fields only (no credentials, no hos
   });
   assertEquals(m.compat, { lineage: compat });
 });
+
+// ---- H-35 S3 L4: the lineage's fs section (decisions/2026-10-20-h-35-l4-scope.md) ----
+
+const FS_SECTION = {
+  digest_version: 1,
+  roots: ["C:\\Windows\\Temp", "C:\\Run\\my"],
+  identity: ["service_account|LocalSystem"],
+  exclude: [{
+    pattern:
+      "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\*\\Server\\*\\log\\*",
+    disposition: "out_of_scope",
+    reason: "NST rolling logs: no file API reaches them under L1/L3",
+  }],
+  survey: { path: "golden-o09-v1.survey.json", sha256: "b".repeat(64) },
+};
+
+Deno.test("H-35 S3 L4 lineage fs: an fs section loads and enters the compat identity; a disposition outside the two, an empty reason or an empty root list is refused", async () => {
+  const l = await loadLineage(
+    await copyLineage((j) => (j["fs"] = FS_SECTION)),
+  );
+  assertEquals(l.fs?.roots, FS_SECTION.roots);
+  assertEquals(lineageCompat(l)["fs"], FS_SECTION);
+  for (
+    const bad of [
+      {
+        ...FS_SECTION,
+        exclude: [{ ...FS_SECTION.exclude[0], disposition: "volatile" }],
+      },
+      { ...FS_SECTION, exclude: [{ ...FS_SECTION.exclude[0], reason: "" }] },
+      { ...FS_SECTION, roots: [] },
+    ]
+  ) {
+    await assertRejects(
+      async () => loadLineage(await copyLineage((j) => (j["fs"] = bad))),
+      ConfigurationError,
+    );
+  }
+});
+
+Deno.test("H-35 S3 L4 goldenReset.fsDigest: runs fs-capture.ps1 with the lineage and returns its lines; a failing exit adds an error line (fail closed); no fs section, no fsDigest", async () => {
+  const lineagePath = await copyLineage((j) => (j["fs"] = FS_SECTION));
+  const lineage = await loadLineage(lineagePath);
+  const calls: string[][] = [];
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath,
+    lineage,
+    dockerEnv: {},
+    spawn: (_c, args) => {
+      calls.push(args);
+      return Promise.resolve(
+        args.includes("C2")
+          ? { code: 1, stdout: "D|16|1|C:\\Run\\my\r\n" }
+          : { code: 0, stdout: "D|16|1|C:\\Run\\my\r\nF|x\r\n" },
+      );
+    },
+  });
+  assertEquals(await m.fsDigest!("C1"), ["D|16|1|C:\\Run\\my", "F|x"]);
+  assert(calls[0]!.some((a) => a.endsWith("fs-capture.ps1")));
+  assertEquals(calls[0]!.slice(-4), [
+    "-Container",
+    "C1",
+    "-Lineage",
+    lineagePath,
+  ]);
+  assertEquals(await m.fsDigest!("C2"), [
+    "D|16|1|C:\\Run\\my",
+    "E|(fs-capture)|exit 1",
+  ]);
+  assertEquals(m.fsExclude, [FS_SECTION.exclude[0]!.pattern]);
+  const none = goldenReset({
+    repoRoot: "R",
+    lineagePath: await copyLineage(),
+    lineage: await loadLineage(await copyLineage()),
+    dockerEnv: {},
+  });
+  assertEquals(none.fsDigest, undefined);
+});

@@ -51,6 +51,44 @@ export interface ResetMechanism {
    * that could not run is a failed record.
    */
   verifyClean?(container: string): Promise<VerifyRecord>;
+  /**
+   * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): one fsDigest(W)
+   * capture (fs-digest.ps1 lines), taken right after the reset and again
+   * after the cleanup. A throw fails closed like an error line.
+   */
+  fsDigest?(container: string): Promise<string[]>;
+  /** L4 exclusions (the lineage's dispositions), as Windows wildcards. */
+  readonly fsExclude?: readonly string[];
+}
+
+/** One L4 check of a deployment (the verdict log's `fs_checks[]`). */
+export interface FsCheckRecord {
+  container: string;
+  ok: boolean;
+  diff: FsDiffEntry[];
+  errors: string[];
+}
+
+/**
+ * L4 found a difference or could not observe: the host is dirty. Infra, so
+ * the judgment's rows from this deployment are never scored here; the lane
+ * quarantines the container and reroutes.
+ */
+export class HostDirtyError extends ContainerError {
+  constructor(readonly record: FsCheckRecord) {
+    const what = [
+      ...record.errors,
+      ...record.diff.slice(0, 5).map((d) => d.path),
+    ];
+    super(
+      `L4 on ${record.container}: ${record.errors.length} error(s), ${record.diff.length} difference(s): ${
+        what.join("; ").slice(0, 400)
+      }`,
+      record.container,
+      "health",
+    );
+    this.name = "HostDirtyError";
+  }
 }
 
 /** One post-cleanup inventory check (the verdict log's `verifies[]`). */
@@ -257,6 +295,8 @@ export function failedReset(
 export const RESET_SCRIPT = ["infra", "harness-reset", "reset-golden.ps1"];
 /** The post-cleanup inventory check against the same lineage. */
 export const VERIFY_SCRIPT = ["infra", "harness-reset", "verify-clean.ps1"];
+/** One L4 fsDigest(W) capture over the lineage's fs roots. */
+export const FS_SCRIPT = ["infra", "harness-reset", "fs-capture.ps1"];
 /** Longer than the script's own 10 min health limit; then the reset failed. */
 const RESET_TIMEOUT_MS = 20 * 60_000;
 
@@ -293,38 +333,44 @@ export function goldenReset(o: {
   spawn?: Spawn;
 }): ResetMechanism {
   const spawn = o.spawn ?? spawnProcess;
+  const run = (script: string[], container: string) =>
+    spawn("pwsh", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-File",
+      join(o.repoRoot, ...script),
+      "-Container",
+      container,
+      "-Lineage",
+      o.lineagePath,
+    ], o.dockerEnv);
+  const fs = o.lineage.fs;
   return {
     ...commandReset({
       id: "golden-restore",
       policyVersion: o.lineage.reset_policy_version,
-      run: (container) =>
-        spawn("pwsh", [
-          "-NoProfile",
-          "-NonInteractive",
-          "-File",
-          join(o.repoRoot, ...RESET_SCRIPT),
-          "-Container",
-          container,
-          "-Lineage",
-          o.lineagePath,
-        ], o.dockerEnv),
+      run: (container) => run(RESET_SCRIPT, container),
     }),
     // H-35 S3.3: the lineage's identity enters every deployment's env_fp.
     compat: { lineage: lineageCompat(o.lineage) },
+    // H-35 S3 L4: only with the lineage's fs section (admission refuses one without).
+    ...(fs
+      ? {
+        fsExclude: fs.exclude.map((e) => e.pattern),
+        fsDigest: async (container: string) => {
+          const out = await run(FS_SCRIPT, container);
+          const lines = out.stdout.split(/\r?\n/).filter((l) => l !== "");
+          return out.code === 0
+            ? lines
+            : [...lines, `E|(fs-capture)|exit ${out.code}`];
+        },
+      }
+      : {}),
     verifyClean: async (container) => {
       try {
         return parseVerifyOutput(
           container,
-          await spawn("pwsh", [
-            "-NoProfile",
-            "-NonInteractive",
-            "-File",
-            join(o.repoRoot, ...VERIFY_SCRIPT),
-            "-Container",
-            container,
-            "-Lineage",
-            o.lineagePath,
-          ], o.dockerEnv),
+          await run(VERIFY_SCRIPT, container),
         );
       } catch (err) {
         return {

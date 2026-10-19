@@ -2083,3 +2083,35 @@ Deno.test("H-35 S3: every judge deployment's post-cleanup inventory check is in 
     log.deployments!.map((d) => [d.container, true]),
   );
 });
+
+// ---- H-35 S3 L4 ----
+
+Deno.test("H-35 S3 L4: every deployment's fsDigest check is in fs_checks[]; a dirty host is never measured (its deployment reroutes, the container is quarantined)", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  let c1 = 0;
+  const digesting = {
+    ...OK_RESET,
+    fsDigest: (c: string) =>
+      Promise.resolve(
+        // C1's first post-cleanup capture shows a planted file.
+        c === "C1" && c1++ === 1
+          ? ["D|16|1|W", "F|" + "a".repeat(64) + "|1|32|1|W\\planted"]
+          : ["D|16|1|W"],
+      ),
+  };
+  const lane = new BcLane(script(), ["C1", "C2"]);
+  const { log } = await judge(lane, {
+    ...input,
+    deploy: { ...input.deploy, reset: digesting },
+  });
+  assertEquals(log.fs_checks![0]!.container, "C1");
+  assertEquals(log.fs_checks![0]!.ok, false);
+  assertEquals(log.fs_checks![0]!.diff.map((d) => d.path), ["W\\planted"]);
+  assert(log.fs_checks!.slice(1).every((f) => f.ok && f.container === "C2"));
+  assert(lane.quarantined.has("C1"));
+  // Every measured deployment ran on the clean host.
+  assert(log.containers.length > 0);
+  assert(log.containers.every((c) => c === "C2"), log.containers.join());
+});

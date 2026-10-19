@@ -21,7 +21,12 @@ import type {
   Prepared,
 } from "./bc-lane.ts";
 import type { JudgmentRecord } from "./records.ts";
-import type { ResetMechanism, ResetRecord, VerifyRecord } from "./reset.ts";
+import type {
+  FsCheckRecord,
+  ResetMechanism,
+  ResetRecord,
+  VerifyRecord,
+} from "./reset.ts";
 import type { StagedApp } from "./staging.ts";
 import type { LoadedTask } from "./task.ts";
 import { ContainerError, ValidationError } from "../errors.ts";
@@ -270,6 +275,14 @@ export interface VerdictLog {
    * failed one quarantined its container. Absent in a log written before.
    */
   verifies?: VerifyRecord[];
+  /**
+   * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): every deployment's
+   * fsDigest(W) comparison, in order. A failed one was never measured (infra)
+   * and quarantined its container. Scope: differences in the declared roots'
+   * file/stream contents and recorded metadata between the two observation
+   * points, minus the lineage's exclusions; not a complete write history.
+   */
+  fs_checks?: FsCheckRecord[];
 }
 
 /** H-35 (design-r2 4.2): one hold's deployment: what was published where. */
@@ -1728,6 +1741,7 @@ export async function judge(
     deployments: [],
     resets: [],
     verifies: [],
+    fs_checks: [],
   };
   const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {
@@ -1740,6 +1754,7 @@ export async function judge(
     reset: i.deploy.reset,
     onReset: (r) => log.resets!.push(r),
     onVerify: (v) => log.verifies!.push(v),
+    onFsCheck: (f) => log.fs_checks!.push(f),
   };
   const ctx: JudgeContext = {
     lane,

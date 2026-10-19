@@ -12,6 +12,8 @@ import {
   saveLedger,
 } from "../../../src/harness/bc-apps.ts";
 import {
+  type FsCheckRecord,
+  HostDirtyError,
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
@@ -2438,4 +2440,149 @@ Deno.test("H-35 S3 deployAndTest: no inventory check after a failed cleanup (alr
   assertStringIncludes(out.cleanupError!, "incomplete");
   assertEquals(r.verifies, []);
   assertEquals(out.verify, null);
+});
+
+// ---- H-35 S3 L4: fsDigest(W) around every judge deployment ----
+
+const FS_LINE = (p: string, h = "a") => `F|${h.repeat(64)}|4|32|1|${p}`;
+
+/** fakeReset plus an fsDigest: the n-th capture on a container is `captures(c, n)`. */
+function digestingReset(
+  bc: FakeBc,
+  captures: (c: string, n: number) => string[],
+) {
+  const base = fakeReset(bc);
+  const checks: FsCheckRecord[] = [];
+  const n = new Map<string, number>();
+  const mechanism: ResetMechanism = {
+    ...base.mechanism,
+    fsExclude: ["C:/W/logs/*"],
+    fsDigest: (c) => {
+      const i = n.get(c) ?? 0;
+      n.set(c, i + 1);
+      base.log.push(`fs ${c}#${i}@${bc.syncs.length}`);
+      return Promise.resolve(captures(c, i));
+    },
+  };
+  return {
+    ...base,
+    mechanism,
+    checks,
+    onFsCheck: (f: FsCheckRecord) => checks.push(f),
+  };
+}
+
+Deno.test("H-35 S3 L4 deployAndTest: fsDigest is taken right after the reset and after the cleanup; equal captures (exclusions applied) are a clean, recorded check", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(bc, (_c, i) => [
+    FS_LINE("C:/W/a.txt"),
+    FS_LINE("C:/W/logs/x.log", i === 0 ? "a" : "b"), // excluded
+  ]);
+  const before = bc.syncs.length;
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onFsCheck: r.onFsCheck,
+    },
+  });
+  assertEquals(r.log, [
+    `C1@${before}`,
+    `fs C1#0@${before}`,
+    `fs C1#1@${bc.syncs.length}`,
+  ]);
+  assertEquals(out.fsCheck, {
+    container: "C1",
+    ok: true,
+    diff: [],
+    errors: [],
+  });
+  assertEquals(r.checks.length, 1);
+  assertEquals(out.cleanupError, null);
+});
+
+Deno.test("H-35 S3 L4: a difference after the cleanup throws HostDirtyError (unscored here), records the diff, and the lane quarantines and reroutes", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const r = digestingReset(
+    bc,
+    (c, i) =>
+      c === "C1" && i === 1
+        ? [FS_LINE("C:/W/a.txt"), FS_LINE("C:/W/planted.txt")]
+        : [FS_LINE("C:/W/a.txt")],
+  );
+  const ledgerRoot = await tmp();
+  const call = (c: string) =>
+    deployAndTest(bc, c, {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx: {
+        ledgerRoot,
+        trustedRoots: [p.pristine],
+        reset: r.mechanism,
+        onFsCheck: r.onFsCheck,
+      },
+    });
+  const thrown: unknown[] = [];
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      call(c).catch((e) => {
+        thrown.push(e);
+        throw e;
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(thrown[0] instanceof HostDirtyError);
+  assertStringIncludes(String(thrown[0]), "planted.txt");
+  assert(lane.quarantined.get("C1")?.includes("planted.txt"));
+  assertEquals(
+    r.checks.map((x) => [x.container, x.ok, x.diff.map((d) => d.path)]),
+    [
+      ["C1", false, ["C:/W/planted.txt"]],
+      ["C2", true, []],
+    ],
+  );
+});
+
+Deno.test("H-35 S3 L4: an error line in the post-reset capture fails closed before any deployment (HostDirtyError, nothing published)", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(bc, () => ["E|(nst)|not quiescent: 1"]);
+  const syncs = bc.syncs.length;
+  await assertRejects(
+    async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot: await tmp(),
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+          onFsCheck: r.onFsCheck,
+        },
+      }),
+    HostDirtyError,
+    "not quiescent",
+  );
+  assertEquals(bc.syncs.length, syncs);
+  assertEquals(r.checks.map((x) => x.ok), [false]);
 });
