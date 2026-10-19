@@ -830,7 +830,8 @@ Deno.test("openHarnessEnv: a task without an oracle app does not stop the start;
   await write(t.repo.tasksDir, "HX-002/correct/Rental/src/R.al", "x");
   const h = await openHarnessEnv(envOpts(t), deps([]));
   // Owned ids come from each grant's and judgment's trusted roots (M1-16), never from the env.
-  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot"]);
+  // H-35 S3: the env also carries the judges' reset mechanism (no allowlist).
+  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot", "reset"]);
   await h.close();
 });
 
