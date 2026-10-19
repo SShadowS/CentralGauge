@@ -2057,3 +2057,43 @@ Deno.test("H-35 Sol r1 #6: a cache entry that wins the write is target-checked t
   assertEquals(core.key, undefined, "the OnPrem winner is not adopted");
   assertEquals(await bc.packageTarget(core.file!), "Cloud");
 });
+
+// ---- H-35 orchestrator Sol r1 (S1 run 001 rejection) ----
+
+Deno.test("H-35 orch r1 #3: a build has its key without any build cache, and the production manifest records it", async () => {
+  const { gp, manifest } = await gAndA();
+  for (const id of [IDS.core, IDS.rental]) {
+    const folder = id === IDS.core ? "Core" : "Rental";
+    assert(/^[0-9a-f]{64}$/.test(gp.keys.get(folder) ?? ""), folder);
+    assertEquals(manifest.apps.get(folder)!.key, gp.keys.get(folder));
+  }
+});
+
+Deno.test("H-35 orch r1 #4: the effective app.json (version, Cloud target) is staged before the cache is consulted", async () => {
+  const bc = new FakeBc();
+  const ws = await workspace();
+  const outDir = await tmp();
+  const seen: (string | null)[] = [];
+  const cache = {
+    get: async (_key: string) => {
+      const aj = JSON.parse(
+        await Deno.readTextFile(join(outDir, "Core", "app.json")).catch(() =>
+          "{}"
+        ),
+      );
+      seen.push(aj.target ?? null);
+      return null;
+    },
+    put: () => Promise.resolve(),
+  };
+  await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map([["Core", "1.0.0.0"]]),
+    outDir,
+    lock: await lock(),
+    cache,
+    policy: CLOUD_POLICY,
+  });
+  assertEquals(seen[0], "Cloud");
+});

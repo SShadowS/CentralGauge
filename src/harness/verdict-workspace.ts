@@ -1474,13 +1474,16 @@ const BANNED_OBJECTS: readonly (readonly [string, number, string])[] = [
 
 const OBJECT_TYPE =
   "Record|Codeunit|Page|Report|Query|XmlPort|Database|Table|Interface";
+/** A CalcFormula function's table argument position (r2 6.2.2; orch Sol r1 #2). */
+const CALC_FORMULA = "count|lookup|exist|sum|average|min|max";
 /**
  * A banned object by name in an object-typed position: after an object type
- * keyword (`Record "X"`, `Codeunit "X"`), after `Type::`, or as a TableNo,
- * SourceTable or TableRelation value. Quoted or bare, case-insensitive.
+ * keyword (`Record "X"`, `Codeunit "X"`), after `Type::`, as a TableNo,
+ * SourceTable or TableRelation value, or as a CalcFormula table
+ * (`count("X" where ...)`). Quoted or bare, case-insensitive.
  */
 const NAME_REF = new RegExp(
-  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*)("[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`,
+  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*|\\b(?:${CALC_FORMULA})\\s*\\(\\s*)("[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`,
   "gi",
 );
 /**
@@ -1492,7 +1495,10 @@ const NAME_REF = new RegExp(
  */
 const ID_REFS: readonly (readonly [RegExp, string])[] = [
   [
-    /\b(?:Database\s*::\s*|Record\s+|Table\s+|(?:TableNo|SourceTable|TableRelation)\s*=\s*)(\d+)\b/gi,
+    new RegExp(
+      `\\b(?:Database\\s*::\\s*|Record\\s+|Table\\s+|(?:TableNo|SourceTable|TableRelation)\\s*=\\s*|(?:${CALC_FORMULA})\\s*\\(\\s*)(\\d+)\\b`,
+      "gi",
+    ),
     "table",
   ],
   [

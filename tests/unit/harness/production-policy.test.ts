@@ -421,3 +421,22 @@ Deno.test("H-35 Sol r7 #1: a quoted receiver named like an object type is an ins
     "Codeunit.Run(Id)",
   );
 });
+
+Deno.test("H-35 orch r1 #2: a banned table in a CalcFormula, by name or by id, is test_detection_ref", async () => {
+  for (
+    const calc of [
+      'count("NAV App Installed App")',
+      'lookup("Published Application".Name where("Package ID" = field("No.")))',
+      'exist(AllObj where("Object ID" = const(1)))',
+      "count(2000000153)",
+    ]
+  ) {
+    const table =
+      `table 70010 "CGR Probe"\n{\n    fields\n    {\n        field(1; Hits; Integer)\n        {\n            FieldClass = FlowField;\n            CalcFormula = ${calc};\n        }\n    }\n}\n`;
+    hasRule(
+      await scan("", { files: { "Core/src/Probe.Table.al": table } }),
+      "test_detection_ref",
+      calc,
+    );
+  }
+});

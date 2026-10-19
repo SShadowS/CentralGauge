@@ -736,7 +736,8 @@ export async function buildApps(
   );
   const lockedNames = new Set(o.lock.packages.map((p) => p.file));
   // An upgraded container (another artifact or BCH version) is a different compiler: a cache miss.
-  const compiler = o.cache ? await bc.harnessCompilerIdentity(container) : null;
+  // orch Sol r1 #3 (r4 3.4): every build has its key, with or without a cache.
+  const compiler = await bc.harnessCompilerIdentity(container);
   const collision = (file: string) =>
     lockedByName.get(basename(file).toLowerCase());
   // A workspace app is the agent's (publisher, name, version, id): one that
@@ -830,27 +831,45 @@ export async function buildApps(
       )
       : null;
     const restored = closure ?? o.lock.packages;
-    const key = o.cache
-      ? await buildKey(
-        compiler!,
-        app,
-        o.srcDir,
-        version,
-        files,
-        keys,
-        lockDigest,
-        restored,
-        o.policy,
-      )
-      : null;
+    // orch Sol r1 #4 (ruling r5): the effective app.json (version, Cloud
+    // target) is staged first; the key is of that trusted build input, and the
+    // cache is consulted with it only after.
+    const dir = join(o.outDir, app.folder);
+    await Deno.remove(dir, { recursive: true }).catch(() => {});
+    await safeCopyTree(join(o.srcDir, app.folder), dir, {
+      skip: isTaskBuildArtifact,
+    });
+    const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
+      version?: string;
+      application?: unknown;
+      platform?: unknown;
+      [k: string]: unknown;
+    };
+    appJson.version = version;
+    if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
+    await Deno.writeTextFile(
+      join(dir, "app.json"),
+      JSON.stringify(appJson, null, 2),
+    );
+    const key = await buildKey(
+      compiler,
+      app,
+      o.outDir,
+      version,
+      files,
+      keys,
+      lockDigest,
+      restored,
+      o.policy,
+    );
     // H-27 r2: the cache is best-effort; a failed read is a miss.
     let hit: string | null = null;
     // H-35: a hit whose package does not carry the policy's target is refused;
     // the app is rebuilt unkeyed, so that entry is never adopted either.
     let poisoned = false;
-    if (key) {
+    if (o.cache) {
       try {
-        hit = await o.cache!.get(key);
+        hit = await o.cache.get(key);
       } catch (err) {
         console.warn(
           `[WARN] build cache read for ${app.folder} failed (built instead): ${
@@ -907,7 +926,7 @@ export async function buildApps(
     if (hit) {
       const file = reused!;
       files.set(app.folder, file);
-      keys.set(app.folder, key!);
+      keys.set(app.folder, key);
       out.push({
         folder: app.folder,
         id: app.id,
@@ -917,27 +936,10 @@ export async function buildApps(
         file,
         diagnostics: [],
         compile_ms: 0,
-        key: key!,
+        key,
       });
       continue;
     }
-    const dir = join(o.outDir, app.folder);
-    await Deno.remove(dir, { recursive: true }).catch(() => {});
-    await safeCopyTree(join(o.srcDir, app.folder), dir, {
-      skip: isTaskBuildArtifact,
-    });
-    const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
-      version?: string;
-      application?: unknown;
-      platform?: unknown;
-      [k: string]: unknown;
-    };
-    appJson.version = version;
-    if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
-    await Deno.writeTextFile(
-      join(dir, "app.json"),
-      JSON.stringify(appJson, null, 2),
-    );
     const pk = join(dir, ".alpackages");
     // Only what the harness restores and seeds (the copy skips any case of it too).
     await Deno.remove(pk, { recursive: true }).catch(() => {});
@@ -1018,13 +1020,14 @@ export async function buildApps(
       file = join(o.outDir, ".apps", basename(r.artifactPath));
       await Deno.copyFile(r.artifactPath, file);
       files.set(app.folder, file);
-      if (key && !poisoned) {
+      if (!poisoned && !o.cache) keys.set(app.folder, key);
+      if (o.cache && !poisoned) {
         // H-27 r2: the cache's winning file is this app's file from here on
         // (a concurrent builder may have won the key), so every dependent is
         // built against the cached file. A failed write leaves the app unkeyed.
         try {
-          await o.cache!.put(key, file);
-          const won = await o.cache!.get(key);
+          await o.cache.put(key, file);
+          const won = await o.cache.get(key);
           if (won === null) throw new Error("no entry after the write");
           // H-35 Sol r1 #6: the winner is target-checked like a first hit.
           if (

@@ -1656,3 +1656,21 @@ Deno.test("H-35 Sol r2 #3: a freeze violation naming the Test root itself is Tes
     false,
   ]);
 });
+
+// ---- H-35 orchestrator Sol r1 ----
+
+Deno.test("H-35 orch r1 #1: an agent Test app that does not compile fails agent_tests even when no agent test is discovered", async () => {
+  const { bc, runs } = watched();
+  const { input } = await setup("correct", {
+    "Test/src/Broken.al": "COMPILE_ERROR",
+  });
+  const { judgment } = await judge(new BcLane(bc, ["C1"]), input);
+  assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
+    ["build", true],
+    ["pass_to_pass", true],
+    ["fail_to_pass", true],
+    ["agent_tests", false],
+  ]);
+  assertEquals(judgment.verdict, "fail");
+  assertEquals(runs.map((r) => r.codeunit).sort(), [80010, 85000]);
+});

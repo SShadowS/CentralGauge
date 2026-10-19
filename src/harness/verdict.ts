@@ -914,13 +914,6 @@ async function scoreAgentTests(
   if (aw.creditExcluded > 0) {
     log.notes.push(`agent_tests: credit_excluded: ${aw.creditExcluded}`);
   }
-  if (agent.length + testPageRows.length === 0) {
-    if (aw.creditExcluded === 0) log.notes.push("agent_tests: not_submitted");
-    return scores.set("agent_tests", true, []);
-  }
-  if (agent.length === 0) {
-    return scores.set("agent_tests", scorerPassed(testPageRows), testPageRows);
-  }
   const notRun = (failure: "compile" | "infra") =>
     agent.flatMap((a) =>
       a.procedures!.map((p) => ({
@@ -946,14 +939,25 @@ async function scoreAgentTests(
       }`,
     );
     const r = [...notRun("infra"), ...testPageRows];
-    return scores.set("agent_tests", scorerPassed(r), r);
+    // No row at all: unscored, never a pass or a fail on nothing.
+    return scores.set("agent_tests", r.length ? scorerPassed(r) : null, r);
   }
   recordBuild(ctx, prepA, "agent");
+  // orch Sol r1 #1: A compiles first, also with no agent test to run: an
+  // agent Test app that does not build fails agent_tests.
   if (!prepA.buildOk) {
+    log.notes.push("agent_tests: the agent Test app does not compile");
     return scores.set("agent_tests", false, [
       ...notRun("compile"),
       ...testPageRows,
     ]);
+  }
+  if (agent.length + testPageRows.length === 0) {
+    if (aw.creditExcluded === 0) log.notes.push("agent_tests: not_submitted");
+    return scores.set("agent_tests", true, []);
+  }
+  if (agent.length === 0) {
+    return scores.set("agent_tests", scorerPassed(testPageRows), testPageRows);
   }
   // A TestPage row fails agent_tests already: a hang must not unscore that.
   const rows = await runAgentTests(
