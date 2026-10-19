@@ -106,6 +106,31 @@ export async function loadOracleDescriptor(
   };
 }
 
+/**
+ * The descriptor loader validation uses (run 002 Sol r1 #4): the store,
+ * then the task's git history under `repoRoot` (by the judgment's task id).
+ * Each hash is looked up once per loader, so an unknown one costs one scan.
+ */
+export function descriptorLoader(
+  resultsRoot: string,
+  repoRoot: string,
+): (hash: string, taskId: string) => Promise<OracleDescriptor | "unknown"> {
+  const seen = new Map<string, Promise<OracleDescriptor | "unknown">>();
+  return (hash, taskId) => {
+    let p = seen.get(hash);
+    if (!p) {
+      p = loadOracleDescriptor(resultsRoot, hash, {
+        repoRoot,
+        taskId,
+        // Checkouts per commit, reused across runs.
+        workDir: join(resultsRoot, "task-oracle", ".recover"),
+      });
+      seen.set(hash, p);
+    }
+    return p;
+  };
+}
+
 /** The commit whose task version hashes to `hash`, stored; or null. */
 async function recover(
   resultsRoot: string,

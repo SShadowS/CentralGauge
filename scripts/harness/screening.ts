@@ -26,7 +26,7 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
-import { loadOracleDescriptor } from "../../src/harness/task-oracle.ts";
+import { descriptorLoader } from "../../src/harness/task-oracle.ts";
 import {
   campaignJudging,
   cellsFromRecords,
@@ -1034,6 +1034,8 @@ export async function loadSeals(
 export async function loadScreenCampaigns(
   resultsDir: string,
   rules: Rules,
+  /** H-35: where a legacy task descriptor is recovered from (git history). */
+  repoRoot = ".",
 ): Promise<{ campaigns: ScreenCampaign[]; ran: Map<string, TaskIdentity[]> }> {
   const store = new RecordStore(resultsDir);
   const campaigns: ScreenCampaign[] = [];
@@ -1064,7 +1066,7 @@ export async function loadScreenCampaigns(
     const data = await loadCampaignData(store, c);
     // H-35 S2.5: scorer names checked against the task preimage store.
     await validateCampaignRecords(data, {
-      descriptor: (h) => loadOracleDescriptor(resultsDir, h),
+      descriptor: descriptorLoader(resultsDir, repoRoot),
     });
     const byExecution = new Map<string, JudgmentRecord[]>();
     for (const j of data.judgments) {
@@ -1150,6 +1152,7 @@ async function main(): Promise<number> {
   const { campaigns, ran } = await loadScreenCampaigns(
     a["results-dir"],
     now.rules,
+    root,
   );
   const hist = screeningHistory(campaigns, now.rules);
   const tallies = tally(hist.cells, now.rules);

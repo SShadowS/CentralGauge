@@ -401,8 +401,17 @@ export interface BuiltApp {
   compile_ms: number;
   /** Analyzer warnings; set only by an analysis compile (M11-05). */
   warnings?: CompilationError[];
-  /** Its build cache key (H-27): set for a built or reused app when a cache is used. */
+  /**
+   * Its adopted build cache key (H-27): dependents key on it and the cache
+   * holds its file. Unset when the cache did not adopt it (a failed write).
+   */
   key?: string;
+  /**
+   * H-35 run 002 Sol r1 #2: its build identity (the key its input hashes
+   * to), set for every built or reused app, cache or not; the deployment
+   * record's build_key.
+   */
+  build_key?: string;
 }
 
 const synthetic = (message: string): CompilationError => ({
@@ -984,6 +993,7 @@ export async function buildApps(
         diagnostics: [],
         compile_ms: 0,
         key,
+        build_key: key,
       });
       continue;
     }
@@ -1114,6 +1124,7 @@ export async function buildApps(
       compile_ms,
       ...warned,
       ...(file && keys.get(app.folder) === key && key ? { key } : {}),
+      ...(file ? { build_key: key } : {}),
     });
   }
   return out;
@@ -1153,7 +1164,10 @@ export interface ProductionManifest {
     file: string;
     sha256: string;
     source: string;
+    /** The adopted cache key (dependents key on it); null when not adopted. */
     key: string | null;
+    /** Run 002 Sol r1 #2: the build identity, cache or not. */
+    build_key: string | null;
   }>;
 }
 
@@ -1177,6 +1191,7 @@ export async function productionManifest(
       sha256: w.sha256 ?? await hashFile(dirname(w.file), w.file),
       source: await hashTree(join(dir, folder), "task"),
       key: prep.keys.get(folder) ?? null,
+      build_key: prep.buildKeys.get(folder) ?? null,
     });
   }
   const digest = await hashJson(
@@ -1186,6 +1201,7 @@ export async function productionManifest(
       sha256: e.sha256,
       source: e.source,
       key: e.key,
+      build_key: e.build_key,
     })),
   );
   return { digest, apps };
@@ -1241,6 +1257,10 @@ export interface Prepared {
   per_app_compiles: number;
   /** Folder -> build cache key of every app built or reused with a cache (H-27). */
   keys: Map<string, string>;
+  /** H-35 run 002 Sol r1 #2: folder -> build identity (buildKey), cache or not. */
+  buildKeys: Map<string, string>;
+  /** Folder -> the package file of every app (built, reused or given). */
+  files: Map<string, string>;
 }
 
 export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
@@ -1394,11 +1414,20 @@ async function prepareOn(
   const idOf = new Map(graph.map((a) => [a.folder, a.id]));
   // H-35 Sol r1 #5: every package carries its digest; deploy checks each.
   // S2.4 (design-r2 4.2): and its build key and source tree, for the
-  // deployment record.
+  // deployment record. Run 002 Sol r1 #2: `keyOf` is the cache adoption
+  // (dependents key on it), `identityOf` the build identity (always known).
   const keyOf = new Map([
     ...all.filter((b) => b.ok && b.key).map((b) => [b.folder, b.key!] as const),
     ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
       [f, e.key!] as const
+    ),
+  ]);
+  const identityOf = new Map([
+    ...all.filter((b) => b.ok && b.build_key).map((b) =>
+      [b.folder, b.build_key!] as const
+    ),
+    ...[...given].filter(([, e]) => e.build_key).map(([f, e]) =>
+      [f, e.build_key!] as const
     ),
   ]);
   const shaOf = new Map<string, string>();
@@ -1437,7 +1466,9 @@ async function prepareOn(
       depends: a.depends.map((d) => idOf.get(d)!),
       sha256: shaOf.get(a.folder)!,
       source: sourceOf.get(a.folder)!,
-      ...(keyOf.has(a.folder) ? { build_key: keyOf.get(a.folder)! } : {}),
+      ...(identityOf.has(a.folder)
+        ? { build_key: identityOf.get(a.folder)! }
+        : {}),
     }))
     : [];
   return {
@@ -1449,6 +1480,8 @@ async function prepareOn(
     compile_ms: all.reduce((s, b) => s + b.compile_ms, 0),
     per_app_compiles: all.filter((b) => b.attempted).length,
     keys: keyOf,
+    buildKeys: identityOf,
+    files: fileOf,
   };
 }
 
@@ -1620,6 +1653,11 @@ export interface DeployContext {
   reset?: ResetMechanism;
   /** Every reset's record, failed ones included (the verdict log's `resets[]`). */
   onReset?: (r: ResetRecord) => void;
+  /**
+   * H-35 run 002 Sol r1 #3: called as each attempt starts deploying (after
+   * its reset), whatever the attempt's outcome: the deployment record.
+   */
+  onDeploy?: (container: string) => void;
 }
 
 export interface Deployed {
@@ -1787,6 +1825,7 @@ export async function deployAndTest(
     await saveLedger(i.ctx.ledgerRoot, container, {});
   }
   let r: Omit<DeployTestResult, "cleanupError" | "reset">;
+  i.ctx.onDeploy?.(container);
   try {
     const deployed = await deploy(bc, container, i.wanted, i.ctx);
     r = deployed.candidateFailure

@@ -571,10 +571,25 @@ export async function runHeld(
         wanted,
         tests,
         cleanupIds,
-        ctx: ctx.deploy,
+        ctx: holdContext(ctx, hold, wanted),
       }),
   );
-  return { rows: accountHeld(ctx, held, hold, wanted) };
+  return { rows: accountHeld(ctx, held) };
+}
+
+/**
+ * One hold's deployment context: each attempt (an infra retry included) is
+ * recorded as it starts deploying, whatever its outcome (Sol r1 #3).
+ */
+function holdContext(
+  ctx: JudgeContext,
+  hold: string,
+  wanted: WantedApp[],
+): DeployContext {
+  return {
+    ...ctx.deploy,
+    onDeploy: (c) => recordDeployment(ctx, hold, c, wanted),
+  };
 }
 
 /** H-35: the trusted control of an agent rerun: G's deployment and its shipped specs. */
@@ -650,14 +665,19 @@ async function runAgentTests(
           (container, codeunit) => threw.push({ container, codeunit }),
         ),
         c,
-        { wanted: prep.wanted, tests: agent, cleanupIds, ctx: ctx.deploy },
+        {
+          wanted: prep.wanted,
+          tests: agent,
+          cleanupIds,
+          ctx: holdContext(ctx, "A", prep.wanted),
+        },
       ));
   } catch (err) {
     if (!infraThrown(err)) throw err;
     infraNote("agent-added tests", err);
     return rerun ? infraRowsFor(new Set(discovered.keys())) : [];
   }
-  const rows = accountHeld(ctx, first, "A", prep.wanted);
+  const rows = accountHeld(ctx, first);
   const ambiguous = new Set(
     threw.filter((t) => t.container === first.container).map((t) => t.codeunit),
   );
@@ -706,9 +726,8 @@ async function runAgentTests(
           wanted: control.wanted,
           tests: control.specs,
           cleanupIds: control.cleanupIds,
-          ctx: ctx.deploy,
+          ctx: holdContext(ctx, "control", control.wanted),
         });
-        recordDeployment(ctx, "control", c, control.wanted);
         const s = ctx.log.spans;
         s.provisioning_ms += ctl.deployed.provisioning_ms;
         s.candidate_publish_ms += ctl.deployed.candidate_publish_ms;
@@ -741,14 +760,19 @@ async function runAgentTests(
             again.push(cu);
           }),
           c,
-          { wanted: prep.wanted, tests: agent, cleanupIds, ctx: ctx.deploy },
+          {
+            wanted: prep.wanted,
+            tests: agent,
+            cleanupIds,
+            ctx: holdContext(ctx, "A", prep.wanted),
+          },
         );
       },
       undefined,
       { maxInfraRetries: 0, exclude: [first.container] },
     );
     record("succeeded");
-    const rerunRows = accountHeld(ctx, second, "A", prep.wanted).filter((r) =>
+    const rerunRows = accountHeld(ctx, second).filter((r) =>
       ambiguous.has(r.codeunit)
     );
     // Rows of a codeunit that threw again are already not_run, runtime_error.
@@ -771,10 +795,7 @@ async function runAgentTests(
 function accountHeld(
   ctx: JudgeContext,
   held: Held<DeployTestResult>,
-  hold: string,
-  wanted: WantedApp[],
 ): TestRow[] {
-  recordDeployment(ctx, hold, held.container, wanted);
   const s = ctx.log.spans;
   s.queue_ms += held.queue_ms;
   s.provisioning_ms += held.result.deployed.provisioning_ms;
@@ -869,7 +890,7 @@ async function buildOracle(
     stamp: await hashFile(dirname(b.file), b.file),
     // S2.4: the deployment record's digest, key and source.
     sha256: await hashFile(dirname(b.file), b.file),
-    ...(b.key ? { build_key: b.key } : {}),
+    ...(b.build_key ? { build_key: b.build_key } : {}),
     source: await hashTree(dir, "task"),
     file: b.file,
     role: "prereq",
@@ -1097,9 +1118,9 @@ async function assertPristineTest(
       srcDir: i.pristine,
       app,
       version: b.version,
-      files: new Map(
-        prep.built.filter((x) => x.ok).map((x) => [x.folder, x.file!]),
-      ),
+      // Dependencies key on their adopted cache keys, else their files, as
+      // buildApps keyed the Test app.
+      files: prep.files,
       keys: prep.keys,
       lock: i.lock,
       graph,
@@ -1497,6 +1518,11 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures]));
   const suiteBc = agentSuiteBc(ctx.lane.bc, discovered);
   const agentRun = async (p: Prepared, target: string): Promise<TestRow[]> => {
+    const hold = target === "reference"
+      ? "A_ref"
+      : target === "mutant:0"
+      ? "A_0"
+      : `A_m:${target.slice("mutant:".length)}`;
     let attempt = 0;
     const held = await ctx.lane.exclusive(
       { taskId: t.id, variantId: i.executionId, attemptNumber: 1 },
@@ -1506,9 +1532,8 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
             wanted: control.prep.wanted,
             tests: control.specs,
             cleanupIds: [...control.prep.candidateIds].reverse(),
-            ctx: ctx.deploy,
+            ctx: holdContext(ctx, "control", control.prep.wanted),
           });
-          recordDeployment(ctx, "control", c, control.prep.wanted);
           if (ctl.cleanupError) {
             throw new CleanupFailedError(
               new Error("trusted control"),
@@ -1531,18 +1556,13 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
           wanted: p.wanted,
           tests: specs(target),
           cleanupIds: [...p.candidateIds].reverse(),
-          ctx: ctx.deploy,
+          ctx: holdContext(ctx, hold, p.wanted),
         });
       },
       undefined,
       { maxInfraRetries: control ? 1 : 0 },
     );
-    const hold = target === "reference"
-      ? "A_ref"
-      : target === "mutant:0"
-      ? "A_0"
-      : `A_m:${target.slice("mutant:".length)}`;
-    return accountHeld(ctx, held, hold, p.wanted);
+    return accountHeld(ctx, held);
   };
 
   let mkRows: TestRow[];

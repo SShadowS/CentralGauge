@@ -1917,3 +1917,47 @@ Deno.test("H-35 S3: judging with no reset lineage refuses loudly (a configuratio
   assertEquals(bc.syncs.length, 0);
   assertEquals(lane.quarantined.size, 0);
 });
+
+// ---- H-35 run 002 Sol r1 ----
+
+Deno.test("H-35 Sol r1 #2: a build cache whose writes fail is best-effort: the judgment still scores, every app keeps its build identity, and nothing is adopted", async () => {
+  const inner = dirBuildCache(await Deno.makeTempDir());
+  const cache = {
+    get: (k: string) => inner.get(k),
+    put: (_k: string, _f: string) => Promise.reject(new Error("disk full")),
+  };
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(script(), ["C1"]), {
+    ...input,
+    buildCache: cache,
+  });
+  assertEquals(judgment.verdict, "pass");
+  for (const d of log.deployments!) {
+    for (const app of d.apps) {
+      assert(
+        /^[0-9a-f]{64}$/.test(app.build_key ?? ""),
+        `${d.hold} ${app.name}`,
+      );
+    }
+  }
+});
+
+Deno.test("H-35 Sol r1 #3: an infra-failed attempt's deployment is recorded too, then the retry's, each after its own reset", async () => {
+  let calls = 0;
+  const bc = new FakeBc((cu, deployed, container) => {
+    if (cu === 80010 && calls++ === 0) {
+      throw new ContainerError("soap down", container, "test");
+    }
+    return scripted(cu, deployed);
+  });
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1", "C2"]), input);
+  assertEquals(judgment.verdict, "pass");
+  const g = log.deployments!.filter((d) => d.hold === "G");
+  assertEquals(g.length, 2);
+  assert(g[0]!.container !== g[1]!.container);
+  assertEquals(
+    log.resets!.map((r) => r.container),
+    log.deployments!.map((d) => d.container),
+  );
+});

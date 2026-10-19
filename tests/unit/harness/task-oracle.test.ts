@@ -11,6 +11,7 @@ import { hashJson } from "../../../src/harness/hash.ts";
 import { oracleHash, oraclePreimage } from "../../../src/harness/identity.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
+  descriptorLoader,
   loadOracleDescriptor,
   storeOraclePreimage,
 } from "../../../src/harness/task-oracle.ts";
@@ -124,4 +125,21 @@ Deno.test("H-35 S2.3: the descriptor carries production_allow when the task decl
   const d = await loadOracleDescriptor(results, hash);
   assert(d !== "unknown");
   assertEquals(d.production_allow, { objects: ["table:130450"] });
+});
+
+Deno.test("H-35 run 002 Sol r1 #4: the validation loader recovers a never-stored descriptor from history (by the judgment's task id), once per hash", async () => {
+  await using repo = await makeRefappRepo();
+  const results = await tmp();
+  await git(repo.root, "add", "harness-tasks/tasks");
+  await git(repo.root, "commit", "-q", "-m", "tasks v1");
+  const old = await oracleHash(await loadTask(join(repo.tasksDir, "HX-001")));
+  const load = descriptorLoader(results, repo.root);
+  const d = await load(old, "HX-001");
+  assert(d !== "unknown");
+  assertEquals(d.kind, "bugfix");
+  // An unknown hash is looked up once: the second call is the same promise.
+  const a = load("0".repeat(64), "HX-001");
+  const b = load("0".repeat(64), "HX-001");
+  assertEquals(a, b);
+  assertEquals(await a, "unknown");
 });

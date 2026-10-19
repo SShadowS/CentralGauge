@@ -362,7 +362,10 @@ export interface ReportOptions extends BootstrapOptions {
   /** Report repeats 1..N only (1 <= N <= planned); default all planned. */
   repeats?: number;
   /** H-35: the task preimage store, so validation checks scorer names. */
-  descriptor?: (oracleHash: string) => Promise<OracleDescriptor | "unknown">;
+  descriptor?: (
+    oracleHash: string,
+    taskId: string,
+  ) => Promise<OracleDescriptor | "unknown">;
 }
 
 function traceCoverage(
@@ -1120,6 +1123,7 @@ export async function buildReport(
       })),
       (t) => campaign.tasks_meta.find((m) => m.id === t)!.kind,
       (id) => logs.verdict.get(id)?.notes,
+      (id) => logs.verdict.get(id)?.violations,
     ),
     ...(overrideReasons.length > 0
       ? {
@@ -1520,8 +1524,10 @@ export function renderReport(r: HarnessReport): string {
         .map(([k, n]) => `${k} ${n}`).join(", ");
       out.push(
         `  ${s.arm}: policy: ${s.policy.failed} failed, ${s.policy.compliant} compliant, ${s.policy.unavailable} unavailable (v1)${
-          rules ? `; ${rules}` : ""
-        }`,
+          s.policy.failed_from_log > 0
+            ? `, ${s.policy.failed_from_log} failed (from log, v1)`
+            : ""
+        }${rules ? `; ${rules}` : ""}`,
       );
       out.push(
         `    G passes / G measured (conditional on G measured): ${s.g.passed}/${s.g.measured}; not measured ${s.g.not_measured}, unavailable ${s.g.unavailable}`,

@@ -258,6 +258,7 @@ Deno.test("H-35 S2.5 summarizeScoring: four populations, per-scorer states, poli
   assertEquals(s.policy, {
     compliant: 3,
     failed: 2,
+    failed_from_log: 0,
     unavailable: 1,
     by_rule: {
       "production/dynamic_object_access": 1,
@@ -369,22 +370,25 @@ Deno.test("H-35 S2.5 transitionMatrix: every pair in exactly one cell, legacy_un
 
 Deno.test("H-35 S2.5 pairing: frozen once by digest, completions append, a changed file is refused, cells completed, pending or missing", async () => {
   const root = await Deno.realPath(await testTempDir());
-  const old = v2([m("build", true)]);
+  const ids = ["e1", "e2", "e3"];
+  // Each cell's old judgment is of its own execution (Sol r1 #1).
+  const olds = new Map(
+    ids.map((id) => [id, { ...v2([m("build", true)]), execution_id: id }]),
+  );
   const cell = (id: string) => ({
     execution_id: id,
     cell: `a ${id} 1`,
     workspace_hash: "a".repeat(64),
-    old_judgment_id: old.id,
-    scorer_fingerprint: old.scorer_fingerprint,
+    old_judgment_id: olds.get(id)!.id,
+    scorer_fingerprint: olds.get(id)!.scorer_fingerprint,
   });
-  const ids = ["e1", "e2", "e3"];
   const p: Pairing = {
     cohort: { campaign: "c1", started_at: "2026-10-19T10:00:00.000Z" },
     cells: ids.map(cell),
   };
   const digest = await freezePairing(root, p);
   assertEquals(await freezePairing(root, p), digest, "idempotent");
-  const fresh = v2([m("build", false)]);
+  const fresh = { ...v2([m("build", false)]), execution_id: "e1" };
   await appendCompletion(root, digest, {
     execution_id: "e1",
     new_judgment_id: fresh.id,
@@ -396,7 +400,7 @@ Deno.test("H-35 S2.5 pairing: frozen once by digest, completions append, a chang
     at: "2026-10-19T11:00:00.000Z",
   });
   const loaded = await loadPairing(root, digest);
-  const byId = new Map([old, fresh].map((j) => [j.id, j]));
+  const byId = new Map([...olds.values(), fresh].map((j) => [j.id, j]));
   const r = reconcilePairing(
     loaded.pairing,
     loaded.completions,
@@ -429,35 +433,39 @@ Deno.test("H-35 S2.5 pairing: frozen once by digest, completions append, a chang
 });
 
 Deno.test("H-35 S2.5 pairingReport: matrix over completed pairs, flag totals, pending and missing named, rendered", () => {
-  const pass = v2([m("build", true)]);
-  const fail = v2([m("build", false)]);
-  const legacy = v1([{ name: "build", passed: true, tests: [] }]);
-  const cell = (id: string, old: JudgmentRecord) => ({
-    execution_id: id,
-    cell: `a T ${id}`,
+  // Every judgment is of its cell's execution (Sol r1 #1).
+  const of = (j: JudgmentRecord, e: string) => ({ ...j, execution_id: e });
+  const olds = [
+    of(v2([m("build", true)]), "1"),
+    of(v1([{ name: "build", passed: true, tests: [] }]), "2"),
+    of(v2([m("build", true)]), "3"),
+    of(v2([m("build", true)]), "4"),
+  ];
+  const news = [
+    of(v2([m("build", false)]), "1"),
+    of(v2([m("build", true)]), "2"),
+  ];
+  const cell = (old: JudgmentRecord) => ({
+    execution_id: old.execution_id,
+    cell: `a T ${old.execution_id}`,
     workspace_hash: "a".repeat(64),
     old_judgment_id: old.id,
     scorer_fingerprint: old.scorer_fingerprint,
   });
   const p: Pairing = {
     cohort: { campaign: "c1", started_at: "2026-10-19T10:00:00.000Z" },
-    cells: [
-      cell("1", pass),
-      cell("2", legacy),
-      cell("3", pass),
-      cell("4", pass),
-    ],
+    cells: olds.map(cell),
   };
-  const done = (id: string, j: JudgmentRecord) => ({
+  const done = (id: string, judgmentId: string) => ({
     execution_id: id,
-    new_judgment_id: j.id,
+    new_judgment_id: judgmentId,
     at: "2026-10-19T11:00:00.000Z",
   });
-  const byId = new Map([pass, fail, legacy].map((j) => [j.id, j]));
+  const byId = new Map([...olds, ...news].map((j) => [j.id, j]));
   const r = pairingReport(
     "d".repeat(64),
     p,
-    [done("1", fail), done("2", pass), done("3", { ...pass, id: "gone" })],
+    [done("1", news[0]!.id), done("2", news[1]!.id), done("3", "gone")],
     (id) => byId.get(id),
     (j) => j.v === 1,
   );
@@ -472,4 +480,78 @@ Deno.test("H-35 S2.5 pairingReport: matrix over completed pairs, flag totals, pe
   assert(text.includes("2 completed, 1 pending, 1 missing"));
   assert(text.includes("missing: a T 3"));
   assert(text.includes("legacy_unknown -> pass 1"));
+});
+
+Deno.test("H-35 run 002 Sol r1 #1: a completion naming another execution's judgment, another workspace, or an old judgment off its frozen fingerprint is mismatched (named), never a completed pair", () => {
+  const of = (j: JudgmentRecord, e: string) => ({ ...j, execution_id: e });
+  const o1 = of(v2([m("build", false)]), "E1");
+  const o2 = of(v2([m("build", false)]), "E2");
+  const o3 = of(v2([m("build", false)]), "E3");
+  const n2 = of(v2([m("build", true)]), "E2");
+  const n3 = {
+    ...of(v2([m("build", true)]), "E3"),
+    workspace_hash: "f".repeat(64),
+  };
+  const cell = (old: JudgmentRecord, fp = old.scorer_fingerprint) => ({
+    execution_id: old.execution_id,
+    cell: `a T ${old.execution_id}`,
+    workspace_hash: "a".repeat(64),
+    old_judgment_id: old.id,
+    scorer_fingerprint: fp,
+  });
+  const o4 = of(v2([m("build", false)]), "E4");
+  const n4 = of(v2([m("build", true)]), "E4");
+  const p: Pairing = {
+    cohort: { campaign: "c1", started_at: "2026-10-19T10:00:00.000Z" },
+    cells: [cell(o1), cell(o2), cell(o3), cell(o4, "0".repeat(64))],
+  };
+  const byId = new Map([o1, o2, o3, o4, n2, n3, n4].map((j) => [j.id, j]));
+  const at = "2026-10-19T11:00:00.000Z";
+  const r = reconcilePairing(p, [
+    // E1 completed with E2's passing judgment.
+    { execution_id: "E1", new_judgment_id: n2.id, at },
+    { execution_id: "E2", new_judgment_id: n2.id, at },
+    { execution_id: "E3", new_judgment_id: n3.id, at },
+    { execution_id: "E4", new_judgment_id: n4.id, at },
+  ], (id) => byId.get(id));
+  assertEquals(r.completed.map((c) => c.execution_id), ["E2"]);
+  assertEquals(r.mismatched, ["a T E1", "a T E3", "a T E4"]);
+});
+
+Deno.test("H-35 run 002 Sol r1 #5: a v1 judgment whose verdict log lists violations is policy failed (from log), never unavailable; in pairs its policy is known", () => {
+  const legacy = v1([{ name: "build", passed: false, tests: [] }]);
+  const plain = v1([{ name: "build", passed: true, tests: [] }]);
+  const logged = new Map([[legacy.id, ["test_lifecycle: Agent.Test.al"]]]);
+  const [s] = summarizeScoring(
+    [
+      { arm: "a", task: "T1", status: "scored", judgment: legacy },
+      { arm: "a", task: "T2", status: "scored", judgment: plain },
+    ],
+    () => "bugfix",
+    () => [],
+    (id) => logged.get(id),
+  );
+  assertEquals(s!.policy, {
+    compliant: 0,
+    failed: 0,
+    failed_from_log: 1,
+    unavailable: 1,
+    by_rule: { "legacy/test_lifecycle": 1 },
+  });
+  const gateFailed = v2([m("build", true)], {
+    passed: false,
+    violations: [{ side: "test", rule: "test_lifecycle", detail: "x" }],
+  });
+  const gatePassed = v2([m("build", true)]);
+  const failedOld = { violations: ["test_lifecycle: Agent.Test.al"] };
+  // Both sides failed the gate: no policy change, and nothing "recovered".
+  const same = pairFlags(legacy, gateFailed, failedOld);
+  assert(!same.includes("policy"));
+  assert(!same.includes("policy_attribution_recovered"));
+  // The log-proven failure now passes the gate: a proven policy change.
+  assert(pairFlags(legacy, gatePassed, failedOld).includes("policy"));
+  // No log evidence: unknown -> known.
+  assert(
+    pairFlags(plain, gatePassed).includes("policy_attribution_recovered"),
+  );
 });

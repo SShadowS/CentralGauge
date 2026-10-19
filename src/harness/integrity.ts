@@ -259,8 +259,10 @@ async function executionProblems(
 export async function validateCampaignRecords(
   r: CampaignRecords,
   o: {
+    /** The judgment's task id lets the loader recover from git history. */
     descriptor?: (
       oracleHash: string,
+      taskId: string,
     ) => Promise<OracleDescriptor | "unknown">;
   } = {},
 ): Promise<void> {
@@ -307,7 +309,7 @@ export async function validateCampaignRecords(
         `judgment ${j.id}: a v${j.v} judgment under the ${suite.id} suite`,
       );
     } else if (o.descriptor) {
-      const d = await o.descriptor(j.task_oracle_hash);
+      const d = await o.descriptor(j.task_oracle_hash, j.task_id);
       if (d === "unknown") {
         // A legacy judgment may predate the store (legacy_unknown_task).
         if (j.v === 2) {

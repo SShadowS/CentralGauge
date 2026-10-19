@@ -33,7 +33,7 @@ import {
   runCell,
 } from "./execution.ts";
 import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
-import { loadOracleDescriptor, storeOraclePreimage } from "./task-oracle.ts";
+import { descriptorLoader, storeOraclePreimage } from "./task-oracle.ts";
 import {
   imageFacts,
   imageTag,
@@ -990,7 +990,7 @@ export async function runCampaign(
     }
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
-      descriptor: (h) => loadOracleDescriptor(env.resultsRoot, h),
+      descriptor: descriptorLoader(env.resultsRoot, env.repoRoot),
     });
   }
   // H-13b: every execution of a waived campaign records it.

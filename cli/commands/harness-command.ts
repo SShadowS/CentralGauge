@@ -65,7 +65,7 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import {
-  loadOracleDescriptor,
+  descriptorLoader,
   storeOraclePreimage,
 } from "../../src/harness/task-oracle.ts";
 import {
@@ -505,7 +505,7 @@ export async function harnessReport(
     ),
     traces: await loadTraces(opts.resultsDir, executions),
     // H-35 S2.5: scorer names checked against the task preimage store.
-    descriptor: (h) => loadOracleDescriptor(opts.resultsDir, h),
+    descriptor: descriptorLoader(opts.resultsDir, opts.root),
     // H-04b: the rejudge budget counts only the current scorer suite.
     judging: {
       ...(opts.judging === "current"
@@ -1979,7 +1979,7 @@ export async function harnessRejudge(
     const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
-      descriptor: (h) => loadOracleDescriptor(env.resultsRoot, h),
+      descriptor: descriptorLoader(env.resultsRoot, o.root),
     });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
@@ -2210,6 +2210,7 @@ export async function harnessRejudge(
 export async function harnessPairing(
   digest: string,
   resultsDir: string,
+  repoRoot = ".",
 ): Promise<PairingReport> {
   const { pairing, completions } = await loadPairing(resultsDir, digest);
   const store = new RecordStore(resultsDir);
@@ -2217,11 +2218,24 @@ export async function harnessPairing(
   for (const c of pairing.cells) {
     for (const j of await store.judgments(c.execution_id)) byId.set(j.id, j);
   }
+  // Run 002 Sol r1 #4: a legacy descriptor is recovered before "unknown".
+  const descriptor = descriptorLoader(resultsDir, repoRoot);
   const unknown = new Set<string>();
   for (const j of byId.values()) {
-    if (
-      await loadOracleDescriptor(resultsDir, j.task_oracle_hash) === "unknown"
-    ) unknown.add(j.task_oracle_hash);
+    if (await descriptor(j.task_oracle_hash, j.task_id) === "unknown") {
+      unknown.add(j.task_oracle_hash);
+    }
+  }
+  // Run 002 Sol r1 #5: a v1 old judgment's policy is failed when its
+  // write-once verdict log lists violations (r3 6.2).
+  const logs = new Map<string, { violations?: string[] }>();
+  for (const c of pairing.cells) {
+    const j = byId.get(c.old_judgment_id);
+    if (!j || j.policy) continue;
+    const text = await Deno.readTextFile(
+      join(resultsDir, "verdicts", `${j.id}.json`),
+    ).catch(() => null);
+    if (text !== null) logs.set(j.id, JSON.parse(text));
   }
   return pairingReport(
     digest,
@@ -2229,6 +2243,7 @@ export async function harnessPairing(
     completions,
     (id) => byId.get(id),
     (j) => unknown.has(j.task_oracle_hash),
+    (j) => logs.get(j.id),
   );
 }
 
@@ -2291,7 +2306,7 @@ export async function harnessMeasure(
     const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
-      descriptor: (h) => loadOracleDescriptor(env.resultsRoot, h),
+      descriptor: descriptorLoader(env.resultsRoot, o.root),
     });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
@@ -2972,9 +2987,14 @@ export function registerHarnessCommand(
       default: "results/harness",
     })
     .option("--json", "Print the pairing report as JSON")
+    .option(
+      "--root <dir:string>",
+      "Repository root (legacy task descriptors are recovered from its history)",
+      { default: "." },
+    )
     .action((opts, digest: string) =>
       fail(async () => {
-        const r = await harnessPairing(digest, opts.resultsDir);
+        const r = await harnessPairing(digest, opts.resultsDir, opts.root);
         console.log(opts.json ? JSON.stringify(r, null, 2) : renderPairing(r));
       })
     );

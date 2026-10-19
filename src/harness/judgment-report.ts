@@ -10,6 +10,7 @@ import { join } from "@std/path";
 import type { JudgmentRecord } from "./records.ts";
 import { ValidationError } from "../errors.ts";
 import { hashJson } from "./hash.ts";
+import { violationRule } from "./verdict.ts";
 
 type Scorer = JudgmentRecord["scorers"][number];
 
@@ -75,10 +76,15 @@ export interface ScoringSummary {
   g: GPopulation;
   /** Test-authoring G': trusted-reference validation, never pooled with `g`. */
   reference: GPopulation;
-  /** Cells per gate result; `by_rule` counts cells per `side/rule`. */
+  /**
+   * Cells per gate result; `by_rule` counts cells per `side/rule` (v1:
+   * `legacy/rule`). A v1 judgment is failed (from log) when its verdict log
+   * lists violations, else unavailable (r3 6.2).
+   */
   policy: {
     compliant: number;
     failed: number;
+    failed_from_log: number;
     unavailable: number;
     by_rule: Record<string, number>;
   };
@@ -101,11 +107,16 @@ export interface ScoringCell {
   judgment: JudgmentRecord | null;
 }
 
-/** Per arm, in first-seen order. `notes` are a judgment's verdict log notes. */
+/**
+ * Per arm, in first-seen order. `notes` and `violations` are a judgment's
+ * verdict log notes and violations (undefined: no log).
+ */
 export function summarizeScoring(
   cells: readonly ScoringCell[],
   kindOf: (task: string) => string,
   notes: (judgmentId: string) => readonly string[] | undefined = () =>
+    undefined,
+  violations: (judgmentId: string) => readonly string[] | undefined = () =>
     undefined,
 ): ScoringSummary[] {
   const out = new Map<string, ScoringSummary>();
@@ -126,7 +137,13 @@ export function summarizeScoring(
         scorers: {},
         g: pop(),
         reference: pop(),
-        policy: { compliant: 0, failed: 0, unavailable: 0, by_rule: {} },
+        policy: {
+          compliant: 0,
+          failed: 0,
+          failed_from_log: 0,
+          unavailable: 0,
+          by_rule: {},
+        },
         composite: { passed: 0, total: 0 },
         infra: 0,
         agent_tests: { submitted: 0, not_submitted: 0, credit_excluded: 0 },
@@ -157,7 +174,15 @@ export function summarizeScoring(
       p.measured++;
       if (g === "passed") p.passed++;
     } else p[g]++;
-    if (!j.policy) s.policy.unavailable++;
+    const logged = j.policy ? [] : violations(j.id) ?? [];
+    if (!j.policy && logged.length > 0) {
+      s.policy.failed_from_log++;
+      for (
+        const k of new Set(logged.map((v) => `legacy/${violationRule(v)}`))
+      ) {
+        s.policy.by_rule[k] = (s.policy.by_rule[k] ?? 0) + 1;
+      }
+    } else if (!j.policy) s.policy.unavailable++;
     else if (j.policy.passed) s.policy.compliant++;
     else {
       s.policy.failed++;
@@ -216,14 +241,18 @@ const violationsKey = (j: JudgmentRecord) =>
 /**
  * The nonexclusive reason flags of one pair (frozen old -> new judgment).
  * `unchanged` is the verdict and the G rows; it can co-occur with an A
- * change. `policy` needs both sides known (v2); a v1 old side is unknown, so
- * its v2 counterpart is `policy_attribution_recovered`, never a change.
+ * change. `policy` needs both sides known: v2, or a v1 old side whose
+ * verdict log (`oldLog`) lists violations (failed from log, r3 6.2); then
+ * only the gate result is compared, their detail formats differ. A v1 old
+ * side with no log evidence is unknown, so its v2 counterpart is
+ * `policy_attribution_recovered`, never a change.
  * `helper_as_written`: the old pass_to_pass suite predates version 6 (the
  * helper as written, H-35) and the shipped rows changed (the H-32 class).
  */
 export function pairFlags(
   old: JudgmentRecord,
   neu: JudgmentRecord,
+  oldLog?: { violations?: readonly string[] },
 ): PairFlag[] {
   const flags = new Set<PairFlag>();
   const gOld = old.scorers.filter((s) => isG(s.name));
@@ -256,11 +285,14 @@ export function pairFlags(
         rowsKey([a!]) !== rowsKey([b!]);
     })
   ) flags.add("trusted_row_change");
+  const fromLog = !old.policy && (oldLog?.violations?.length ?? 0) > 0;
   if (old.policy && neu.policy) {
     if (
       old.policy.passed !== neu.policy.passed ||
       violationsKey(old) !== violationsKey(neu)
     ) flags.add("policy");
+  } else if (fromLog && neu.policy) {
+    if (neu.policy.passed) flags.add("policy");
   } else if (!old.policy && neu.policy) {
     flags.add("policy_attribution_recovered");
   }
@@ -388,7 +420,9 @@ export async function appendCompletion(
 
 /**
  * Each frozen cell is completed (its latest completion's judgment and the
- * old one are found), missing (named: a judgment is not in the store) or
+ * old one are found and both are of the cell: its execution and workspace,
+ * the old one under its frozen fingerprint), mismatched (named: either is
+ * of another cell), missing (named: a judgment is not in the store) or
  * pending (no completion yet). Nothing is dropped.
  */
 export function reconcilePairing(
@@ -399,6 +433,7 @@ export function reconcilePairing(
   completed: (PairingCell & { old: JudgmentRecord; new: JudgmentRecord })[];
   pending: string[];
   missing: string[];
+  mismatched: string[];
 } {
   const last = new Map(completions.map((c) => [c.execution_id, c]));
   const r = {
@@ -408,7 +443,11 @@ export function reconcilePairing(
     })[],
     pending: [] as string[],
     missing: [] as string[],
+    mismatched: [] as string[],
   };
+  const ofCell = (cell: PairingCell, j: JudgmentRecord) =>
+    j.execution_id === cell.execution_id &&
+    j.workspace_hash === cell.workspace_hash;
   for (const cell of p.cells) {
     const c = last.get(cell.execution_id);
     if (!c) {
@@ -418,6 +457,10 @@ export function reconcilePairing(
     const old = judgment(cell.old_judgment_id);
     const neu = judgment(c.new_judgment_id);
     if (!old || !neu) r.missing.push(cell.cell);
+    else if (
+      !ofCell(cell, old) || !ofCell(cell, neu) ||
+      old.scorer_fingerprint !== cell.scorer_fingerprint
+    ) r.mismatched.push(cell.cell);
     else r.completed.push({ ...cell, old, new: neu });
   }
   return r;
@@ -430,6 +473,8 @@ export interface PairingReport {
   pairs: number;
   pending: string[];
   missing: string[];
+  /** Completions whose judgments are not of their cell (reconcilePairing). */
+  mismatched: string[];
   matrix: Record<OldVerdict, Record<"pass" | "fail" | "unscored", number>>;
   /** Pairs per flag; flags are nonexclusive, so they need not sum to `pairs`. */
   flags: Record<PairFlag, number>;
@@ -443,6 +488,10 @@ export function pairingReport(
   completions: readonly Completion[],
   judgment: (id: string) => JudgmentRecord | undefined,
   oldUnknown: (old: JudgmentRecord) => boolean,
+  /** An old judgment's verdict log (v1 policy from log, r3 6.2). */
+  oldLog: (
+    old: JudgmentRecord,
+  ) => { violations?: readonly string[] } | undefined = () => undefined,
 ): PairingReport {
   const r = reconcilePairing(p, completions, judgment);
   const flags = Object.fromEntries(PAIR_FLAGS.map((f) => [f, 0])) as Record<
@@ -450,7 +499,7 @@ export function pairingReport(
     number
   >;
   const cells = r.completed.map((c) => {
-    const fs = pairFlags(c.old, c.new);
+    const fs = pairFlags(c.old, c.new, oldLog(c.old));
     for (const f of fs) flags[f]++;
     return {
       cell: c.cell,
@@ -465,6 +514,7 @@ export function pairingReport(
     pairs: r.completed.length,
     pending: r.pending,
     missing: r.missing,
+    mismatched: r.mismatched,
     matrix: transitionMatrix(
       r.completed.map((c) => ({
         old: c.old,
@@ -484,6 +534,11 @@ export function renderPairing(r: PairingReport): string {
   ];
   if (r.pending.length > 0) out.push(`  pending: ${r.pending.join(", ")}`);
   if (r.missing.length > 0) out.push(`  missing: ${r.missing.join(", ")}`);
+  if (r.mismatched.length > 0) {
+    out.push(
+      `  mismatched (a judgment not of its cell): ${r.mismatched.join(", ")}`,
+    );
+  }
   out.push("  old -> new verdict (completed pairs):");
   for (const [old, row] of Object.entries(r.matrix)) {
     out.push(
