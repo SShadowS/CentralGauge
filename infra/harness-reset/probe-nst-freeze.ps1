@@ -1,6 +1,10 @@
 param(
   [Parameter(Mandatory)][string]$Container,
   [int]$Seconds = 70,
+  # The killed-holder path: exit frozen (a job freeze has no automatic release; the watchdog must thaw it)
+  [switch]$NoThaw,
+  # Only thaw the named job (after -NoThaw)
+  [switch]$ThawOnly,
   [string]$Out
 )
 # H-35 run 004 PROBE (lane-ops, leased container, not product code): does a job-object freeze
@@ -14,7 +18,7 @@ if (-not $env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT = 'desktop-windows' }
 Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue *> $null
 . (Join-Path $PSScriptRoot 'reset-lib.ps1')
 
-$r = Invoke-InContainer $Container { param($secs)
+$r = Invoke-InContainer $Container { param($secs, $noThaw, $thawOnly)
   if (-not ('CgJobFreeze' -as [type])) {
     Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices;
@@ -33,8 +37,10 @@ public static class CgJobFreeze {
   }
   $log = [Collections.Generic.List[string]]::new()
   $p = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server')[0]
+  # CreateJobObject opens the existing named job when it exists
   $job = [CgJobFreeze]::CreateJobObjectW([IntPtr]::Zero, 'Global\cg-nst-freeze')
   if ($job -eq [IntPtr]::Zero) { return "ERR CreateJobObject $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+  if ($thawOnly) { return "thaw_only_status=0x$('{0:X8}' -f [CgJobFreeze]::Set($job, $false))" }
   $assigned = [CgJobFreeze]::AssignProcessToJobObject($job, $p.Handle)
   $log.Add("assign=$assigned err=$([Runtime.InteropServices.Marshal]::GetLastWin32Error())")
   $st = [CgJobFreeze]::Set($job, $true)
@@ -48,14 +54,18 @@ public static class CgJobFreeze {
       $new = @($th | Where-Object { -not $seen.ContainsKey($_.Id) })
       foreach ($x in $th) { $seen[$x.Id] = $true }
       $states = ($th | Group-Object { "$($_.ThreadState)/$($_.WaitReason)" } | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ','
-      $log.Add((@{ t = [int]((Get-Date) - $t0).TotalSeconds; threads = $th.Count; new = @($new | ForEach-Object { "$($_.Id)@$($_.StartTime.ToString('HH:mm:ss.fff'))" }); states = $states } | ConvertTo-Json -Compress))
+      # rising process CPU time while frozen means a thread ran
+      $cpu = [Math]::Round($p.TotalProcessorTime.TotalMilliseconds)
+      $log.Add((@{ t = [int]((Get-Date) - $t0).TotalSeconds; threads = $th.Count; cpu_ms = $cpu; new = @($new | ForEach-Object { "$($_.Id)@$($_.StartTime.ToString('HH:mm:ss.fff'))" }); states = $states } | ConvertTo-Json -Compress))
       Start-Sleep -Seconds 1
     }
   } finally {
-    $th = [CgJobFreeze]::Set($job, $false)
-    $log.Add("thaw_status=0x$('{0:X8}' -f $th)")
+    if (-not $noThaw) {
+      $th = [CgJobFreeze]::Set($job, $false)
+      $log.Add("thaw_status=0x$('{0:X8}' -f $th)")
+    } else { $log.Add('exit without thaw (killed-holder path): run again with -ThawOnly') }
   }
   $log -join "`n"
-} $Seconds
+} $Seconds, ([bool]$NoThaw), ([bool]$ThawOnly)
 $r
 if ($Out) { Set-Content -LiteralPath $Out -Value $r -Encoding utf8 }
