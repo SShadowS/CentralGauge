@@ -1486,11 +1486,26 @@ const CALC_FORMULA = "count|lookup|exist|sum|average|min|max";
  * keyword (`Record "X"`, `Codeunit "X"`), after `Type::`, as a TableNo,
  * SourceTable or TableRelation value, or as a CalcFormula table
  * (`count("X" where ...)`). Quoted or bare, case-insensitive.
+ * H-35 run 004 Sol r1 H1: a dotted name (`System.IO."File Management"`) is
+ * read whole; nameRefs gives the names it may denote.
  */
+const NAME_SEG = `(?:"[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`;
+const NAME_CHAIN = `(${NAME_SEG}(?:\\s*\\.\\s*${NAME_SEG})*)`;
 const NAME_REF = new RegExp(
-  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+|\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*|\\b(?:${CALC_FORMULA})\\s*\\(\\s*)("[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`,
+  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+)${NAME_CHAIN}|(?:\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*|\\b(?:${CALC_FORMULA})\\s*\\(\\s*)${NAME_CHAIN}`,
   "gi",
 );
+/**
+ * H-35 run 004 Sol r1 H1: the object names a NAME_REF match may denote
+ * (lowercase, unquoted). After an object type or `Type::` the last segment
+ * (namespaces precede it); in a table property or CalcFormula every segment
+ * (a field may follow the table, a namespace precede it: fail closed).
+ */
+function nameRefs(at: (i: number) => string): string[] {
+  const segs = (s: string) =>
+    [...s.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) => unquote(n[0]));
+  return at(1) ? segs(at(1)).slice(-1) : segs(at(2));
+}
 /**
  * A number in an object-id position, with the object kind it names (Sol r1
  * #7: a method's integer argument is not one, and a grant is per kind): a
@@ -1588,13 +1603,54 @@ const PERSISTENCE_NAMES: readonly RegExp[] = [
   /\bTaskScheduler\s*\.\s*CreateTask\b/gi,
 ];
 /**
- * A report or query export call. Argument shape: the call is a file export
- * unless one of its arguments is a name this file declares as OutStream
- * (Report.SaveAs(Id, Params, Format, OutS) and the Query stream overloads are
- * allowed; SaveAsPdf(Id, 'C:\x.pdf') and any path expression are not).
+ * A report or query export call, with its receiver. Argument shape: the call
+ * is a file export unless one of its arguments is a bare name declared in
+ * scope as InStream/OutStream (Report.SaveAs(Id, Params, Format, OutS) and
+ * the Query stream overloads are allowed; SaveAsPdf(Id, 'C:\x.pdf') and any
+ * path expression are not). H-35 run 004 Sol r1 M1: a receiver declared in
+ * scope as a Codeunit is a user method, not an export.
  */
 const SAVE_AS_CALL =
-  /(?:[A-Za-z_]\w*\s*|"[^"\n]*"\s*)?\.\s*SaveAs(?:Pdf|Excel|Word|Html|Xml|Csv)?\s*\(/gi;
+  /(?:([A-Za-z_]\w*|"[^"\n]*")\s*)?\.\s*SaveAs(?:Pdf|Excel|Word|Html|Xml|Csv)?\s*\(/gi;
+/** H-35 run 004 Sol r1 H2: `A, "B": Type`, with the type's first word. */
+const VAR_DECL =
+  /(?<![\w"])((?:"[^"\n]*"|[A-Za-z_]\w*)(?:\s*,\s*(?:"[^"\n]*"|[A-Za-z_]\w*))*)\s*:\s*([A-Za-z_]\w*)/gi;
+
+/**
+ * H-35 run 004 Sol r1 H2: procedure and trigger ranges of `flat` (the code
+ * with every quoted name blank): header keyword, its body's `begin`, and the
+ * `end` closing it (begin/case counted against end). A header with no body
+ * before the next header (an interface method) is skipped.
+ */
+function routineRanges(
+  flat: string,
+): { start: number; begin: number; end: number }[] {
+  const heads = [...flat.matchAll(/\b(?:procedure|trigger)\b/gi)].map((m) =>
+    m.index
+  );
+  const out: { start: number; begin: number; end: number }[] = [];
+  heads.forEach((start, i) => {
+    const re = /\b(begin|case|end)\b/gi;
+    re.lastIndex = start;
+    let m = re.exec(flat);
+    if (
+      !m || m[1]!.toLowerCase() !== "begin" ||
+      m.index > (heads[i + 1] ?? Infinity)
+    ) return;
+    const begin = m.index;
+    let depth = 0;
+    let end = flat.length;
+    for (; m; m = re.exec(flat)) {
+      if (m[1]!.toLowerCase() !== "end") depth++;
+      else if (--depth === 0) {
+        end = m.index + 3;
+        break;
+      }
+    }
+    out.push({ start, begin, end });
+  });
+  return out;
+}
 /** A static Xmlport.Import/Export: allowed only with a declared stream argument. */
 const XMLPORT_CALL = /\bXmlport\s*\.\s*(?:Import|Export)\s*\(/gi;
 /** A member access with its receiver (for Filename on an Xmlport variable). */
@@ -1656,6 +1712,9 @@ function callArgs(
  * XMLPORT_CALL, Filename on an Xmlport variable), PERSISTENCE_OBJECTS by name
  * and id, and any `[Scope('OnPrem')]` declaration. Matched on the
  * noise-stripped code with quoted identifiers masked; details from the source.
+ * Scope (owner, l4-scope addendum 4): OnPrem-scoped members of the Base and
+ * System Application called by name are not covered by L3; the L1 Cloud
+ * compile covers them (a symbol-derived list is follow-up H-38).
  */
 function persistenceRefs(src: string): string[] {
   const code = stripAlNoise(src);
@@ -1666,14 +1725,53 @@ function persistenceRefs(src: string): string[] {
   for (const re of PERSISTENCE_NAMES) {
     for (const m of scan(re)) found.add(m.all.trim());
   }
-  const streams = declaredNames(scan, "OutStream|InStream");
+  // H-35 run 004 Sol r1 H2: a name's type in scope at `at`: the enclosing
+  // routine's parameters and locals, else its object's globals (outside any
+  // routine). Outside a routine body or an object: unknown (fail closed).
+  const routines = routineRanges(
+    code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length)),
+  );
+  const objects = declarations(src);
+  const decls = [...scan(VAR_DECL)].map((m) => ({
+    index: m.index,
+    names: [...m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) =>
+      unquote(n[0])
+    ),
+    type: m.at(2).toLowerCase(),
+  }));
+  const typeOf = (name: string, at: number): string | undefined => {
+    const r = routines.find((x) => x.begin < at && at < x.end);
+    const o = objects.find((x) => x.start <= at && at <= x.end);
+    if (!r || !o) return undefined;
+    const local = decls.find((d) =>
+      d.index >= r.start && d.index < r.begin && d.names.includes(name)
+    );
+    return (local ??
+      decls.find((d) =>
+        d.index >= o.start && d.index < o.end && d.names.includes(name) &&
+        !routines.some((x) => d.index >= x.start && d.index < x.end)
+      ))?.type;
+  };
+  const BARE = /^(?:"[^"\n]*"|[A-Za-z_]\w*)$/;
   const fileCall = (m: { index: number; end: number }) => {
     const { args, end } = callArgs(code, masked, m.end);
-    if (!args.some((a) => streams.has(unquote(a)))) {
+    const stream = (a: string) =>
+      BARE.test(a) &&
+      /^(?:instream|outstream)$/.test(typeOf(unquote(a), m.end) ?? "");
+    if (!args.some(stream)) {
       found.add(`${src.slice(m.index, end).trim()} (no stream argument)`);
     }
   };
-  for (const m of scan(SAVE_AS_CALL)) fileCall(m);
+  for (const m of scan(SAVE_AS_CALL)) {
+    // H-35 run 004 Sol r1 M1: a bare receiver (not a member) declared in
+    // scope as a Codeunit is a user method named SaveAs*.
+    const recv = m.at(1);
+    if (
+      recv && !masked.slice(0, m.index).trimEnd().endsWith(".") &&
+      typeOf(unquote(recv), m.end) === "codeunit"
+    ) continue;
+    fileCall(m);
+  }
   for (const m of scan(XMLPORT_CALL)) {
     // Sol r7 #1: a quoted receiver ("Xmlport") is a variable, not the static.
     if (code[m.index - 1] !== '"') fileCall(m);
@@ -1686,8 +1784,10 @@ function persistenceRefs(src: string): string[] {
     PERSISTENCE_OBJECTS.map(([k, id, n]) => [n.toLowerCase(), `${k} ${id}`]),
   );
   for (const m of scan(NAME_REF)) {
-    const hit = byName.get(unquote(m.at(1)));
-    if (hit) found.add(`${m.all.trim()} (${hit})`);
+    for (const n of nameRefs(m.at)) {
+      const hit = byName.get(n);
+      if (hit) found.add(`${m.all.trim()} (${hit})`);
+    }
   }
   const byId = (text: string, kind: string, id: number) => {
     if (PERSISTENCE_OBJECTS.some(([k, b]) => k === kind && b === id)) {
@@ -1767,8 +1867,10 @@ export async function productionPolicyViolations(
       const ref = (detail: string) =>
         found.add(`test_detection_ref: ${where}: ${detail}`);
       for (const m of scan(NAME_REF)) {
-        const hit = bannedByName.get(unquote(m.at(1)));
-        if (hit) ref(`${m.all.trim()} (${hit})`);
+        for (const n of nameRefs(m.at)) {
+          const hit = bannedByName.get(n);
+          if (hit) ref(`${m.all.trim()} (${hit})`);
+        }
       }
       const bannedId = (text: string, kind: string, id: number) => {
         if (banned.some(([k, b]) => k === kind && b === id)) {

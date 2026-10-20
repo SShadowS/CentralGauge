@@ -205,6 +205,77 @@ const BANNED: readonly (readonly [string, string, string, string?])[] = [
     proc("        E: Codeunit 457;", "if E.IsSaaS() then;"),
     "codeunit 457",
   ],
+  // H-35 run 004 Sol r1 H1: a namespace-qualified name is its last segment.
+  [
+    'qualified Codeunit System.IO."File Management"',
+    proc(
+      '        FM: Codeunit System.IO."File Management";',
+      "FM.ServerTempFileName('x');",
+    ),
+    "codeunit 419",
+  ],
+  [
+    'qualified Codeunit::System.IO."File Management"',
+    proc("        X: Integer;", 'X := Codeunit::System.IO."File Management";'),
+    "codeunit 419",
+  ],
+  [
+    'qualified Codeunit System."Environment"."Environment Information"',
+    proc(
+      '        E: Codeunit System."Environment"."Environment Information";',
+      "if E.IsSaaS() then;",
+    ),
+    "codeunit 457",
+  ],
+  [
+    "qualified Record System.IO.File",
+    proc("        F: Record System.IO.File;", "F.FindFirst();"),
+    "table 2000000022",
+  ],
+  // H-35 run 004 Sol r1 H2: a stream name declared in another scope exempts nothing.
+  [
+    "SaveAsPdf to a Text named like another procedure's OutStream parameter",
+    [
+      "    local procedure Unrelated(var Destination: OutStream)",
+      "    begin",
+      "    end;",
+      "",
+      "    procedure Persist()",
+      "    var",
+      "        Destination: Text;",
+      "    begin",
+      "        Destination := 'C:\\Run\\my\\flag.pdf';",
+      '        Report.SaveAsPdf(Report::"Customer - List", Destination);',
+      "    end;",
+    ].join("\n"),
+    "Report.SaveAsPdf",
+  ],
+  [
+    "SaveAsPdf to a local Text shadowing a global OutStream",
+    [
+      "    var",
+      "        Destination: OutStream;",
+      "",
+      proc(
+        "        Destination: Text;",
+        'Report.SaveAsPdf(Report::"Customer - List", Destination);',
+      ),
+    ].join("\n"),
+    "Report.SaveAsPdf",
+  ],
+  [
+    "a stream array element (known fail-closed)",
+    proc(
+      "        Streams: array[2] of OutStream;",
+      "Report.SaveAs(50000, '', ReportFormat::Pdf, Streams[1]);",
+    ),
+    "Report.SaveAs",
+  ],
+  [
+    "SaveAsPdf on a Report variable",
+    proc("        R: Report 50000;", "R.SaveAsPdf('C:\\x.pdf');"),
+    "SaveAsPdf",
+  ],
   [
     "a [Scope('OnPrem')] procedure",
     "    [Scope('OnPrem')]\n    procedure Q()\n    begin\n    end;",
@@ -253,6 +324,38 @@ Deno.test("H-35 run 004 #1 (r5 2.3): names in strings, comments and quoted ident
       'FileName := Format("Export Type"::File);',
     ].join("\n        "),
   ) + "\n\n    [Scope('Cloud')]\n    procedure Q()\n    begin\n    end;";
+  const { production, test } = await both(body);
+  assertEquals(production.filter((v) => v.startsWith(`${RULE}: `)), []);
+  assertEquals(test.filter((v) => v.startsWith(`${RULE}: `)), []);
+});
+
+Deno.test("H-35 run 004 Sol r1 H2/M1: a stream argument in scope (local, or a global with no local of that name) and a user codeunit's SaveAsPdf are not persistence_ref", async () => {
+  const body = [
+    "    var",
+    "        Out: OutStream;",
+    '        Exporter: Codeunit "CGR Exporter";',
+    "",
+    "    procedure ToLocal()",
+    "    var",
+    "        Destination: OutStream;",
+    "    begin",
+    '        Report.SaveAsPdf(Report::"Customer - List", Destination);',
+    "    end;",
+    "",
+    "    procedure ToGlobal(Id: Integer)",
+    "    begin",
+    "        Report.SaveAs(Id, '', ReportFormat::Pdf, Out);",
+    "        Xmlport.Export(50000, Out);",
+    "    end;",
+    "",
+    "    trigger OnRun()",
+    "    var",
+    '        "Local Exporter": Codeunit "CGR Exporter";',
+    "    begin",
+    "        Exporter.SaveAsPdf('C:\\x.pdf');",
+    '        "Local Exporter".SaveAsPdf(50000, Out);',
+    "    end;",
+  ].join("\n");
   const { production, test } = await both(body);
   assertEquals(production.filter((v) => v.startsWith(`${RULE}: `)), []);
   assertEquals(test.filter((v) => v.startsWith(`${RULE}: `)), []);

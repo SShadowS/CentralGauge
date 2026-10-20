@@ -91,6 +91,16 @@ Deno.test("H-35: a banned object referenced by name (quoted or bare, any object-
         "R.Run();",
       ],
       ["        X: Integer;", "X := Database::AllObjWithCaption;"],
+      // H-35 run 004 Sol r1 H1: a namespace-qualified name is its last segment.
+      [
+        '        R: Codeunit System.TestTools.TestRunner."Test Runner - Mgt";',
+        "R.Run();",
+      ],
+      ["        X: Integer;", "X := Database::System.Reflection.AllObj;"],
+      [
+        "        X: Integer;",
+        'X := Codeunit::System."TestTools".TestRunner."Test Runner - Mgt";',
+      ],
     ] as const
   ) {
     hasRule(await scan(proc(decl, stmt)), "test_detection_ref", stmt);

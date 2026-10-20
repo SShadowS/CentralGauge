@@ -1039,6 +1039,11 @@ example a detached process an OnPrem DotNet call started) is not stopped by the
 suspension and is not covered. The campaign guarantee rests on L1 (Cloud
 compile), L2 (network) and L3 (bans).
 
+**L3 scope.** L3 (`persistence_ref`) bans the r5 2.3 table in agent production
+and Test text before the build, by name (namespace-qualified names included)
+and by object id. OnPrem-scoped members of the Base and System Application
+called by name are not covered by L3; the L1 Cloud compile covers them.
+
 ### Lineage file
 
 Lineage files are written by lane-ops (`infra/harness-reset/lineages/`) and
