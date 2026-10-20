@@ -27,6 +27,17 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
   assert(l.content_root && l.content_root.exclude.length > 0);
   assertEquals(l.fs?.digest_version, 3);
   assert(l.egress);
+  // run 004 #4: the canonical NST config digest, the hostname keys excluded
+  assertEquals(l.nst_config?.digest_version, 1);
+  assertEquals(
+    [...l.nst_config!.exclude_keys].sort(),
+    [
+      "PublicODataBaseUrl",
+      "PublicSOAPBaseUrl",
+      "PublicWebBaseUrl",
+      "PublicWinBaseUrl",
+    ],
+  );
   const m = goldenReset({
     repoRoot: ".",
     lineagePath: path,
