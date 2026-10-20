@@ -163,11 +163,13 @@ export class BcLane {
        * environment (openHarnessEnv refuses a persisted one before setup).
        * H-35 run 004 Sol r1 H6: `fsDiff` is the L4 difference behind it
        * (empty when none), which `harness recover` must see remediated.
+       * H-35 run 004 Sol r2 N4: null when no complete (error-free) L4
+       * after-capture backs it (recover then refuses).
        */
       persist?: (
         container: string,
         reason: string,
-        fsDiff: FsDiffEntry[],
+        fsDiff: FsDiffEntry[] | null,
       ) => Promise<void>;
     } = {},
   ) {
@@ -182,6 +184,20 @@ export class BcLane {
   /** Containers whose cleanup failed: never selected until `harness recover` clears them. */
   readonly quarantined = new Map<string, string>();
 
+  // H-35 run 004 Sol r2 N3: exclusive operations in flight; drain() stops
+  // admission and waits for them.
+  private active = 0;
+  private stopped = false;
+  private readonly idleWaiters: (() => void)[] = [];
+
+  /** Sol r2 N3: no new exclusive operation; resolves once none is in flight. */
+  async drain(): Promise<void> {
+    this.stopped = true;
+    while (this.active > 0) {
+      await new Promise<void>((r) => this.idleWaiters.push(r));
+    }
+  }
+
   /**
    * Quarantine in memory at once, then persist. Never rejects (it runs in
    * catch paths): a failed write is logged loudly and the in-memory entry stays.
@@ -189,17 +205,18 @@ export class BcLane {
   async quarantine(
     container: string,
     reason: string,
-    fsDiff: FsDiffEntry[] = [],
+    fsDiff: FsDiffEntry[] | null = null,
   ): Promise<void> {
     this.quarantined.set(container, reason);
     if (!this.opts.persist) return;
     try {
       await this.opts.persist(container, reason, fsDiff);
     } catch (err) {
-      // H-35 run 004 Sol r1 H4: never silent; the environment's in-use
-      // record stays (never released for a quarantined container) and refuses it.
+      // H-35 run 004 Sol r1 H4: never silent. Sol r2 N1: the in-memory
+      // quarantine stays; whatever record is on disk (ours or another
+      // owner's) is never released for it and still refuses the container.
       console.error(
-        `[FAIL] quarantine of ${container} NOT persisted (its in-use record still refuses it; run harness recover before reuse): ${
+        `[FAIL] quarantine of ${container} NOT persisted (kept in memory; its existing record still refuses it; run harness recover before reuse): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -333,6 +350,24 @@ export class BcLane {
     opts: { maxInfraRetries?: number; exclude?: readonly string[] } = {},
   ): Promise<Held<T>> {
     checkCancel(signal);
+    // H-35 run 004 Sol r2 N3: a draining lane admits nothing (not infra: no reroute)
+    if (this.stopped) throw new Error("BC lane closed: environment closing");
+    this.active++;
+    try {
+      return await this.exclusiveRun(ctx, fn, signal, opts);
+    } finally {
+      if (--this.active === 0) {
+        for (const r of this.idleWaiters.splice(0)) r();
+      }
+    }
+  }
+
+  private async exclusiveRun<T>(
+    ctx: { taskId: string; variantId: string; attemptNumber: number },
+    fn: (container: string) => Promise<T>,
+    signal: AbortSignal | undefined,
+    opts: { maxInfraRetries?: number; exclude?: readonly string[] },
+  ): Promise<Held<T>> {
     let container = "";
     let queue_ms = 0;
     const { result, retries } = await withInfraRetry<T>(
@@ -365,9 +400,13 @@ export class BcLane {
           admitted = true;
           const out = await fn(c);
           // Quarantine inside the held region, before the lock is released (round 3 B4).
-          const cleanupError = (out as { cleanupError?: string | null } | null)
-            ?.cleanupError;
-          if (cleanupError) await this.quarantine(c, cleanupError);
+          const o = out as
+            | { cleanupError?: string | null; fsCheck?: FsCheckRecord | null }
+            | null;
+          // H-35 run 004 Sol r2 N4: the clean L4 after-capture, when one ran
+          if (o?.cleanupError) {
+            await this.quarantine(c, o.cleanupError, fsEvidence(o.fsCheck));
+          }
           checkCancel(signal); // an abort while fn was pending: no pass recorded
           this.record(c, "pass");
           return out;
@@ -378,11 +417,13 @@ export class BcLane {
           // H-35 S3: a failed reset, a dirty or unobservable host (L4), an
           // HttpClient block that did not hold (L2a): never reused.
           if (err instanceof QuarantiningError) {
-            // H-35 run 004 Sol r1 H6: L4 keeps its diff for recover
+            // H-35 run 004 Sol r1 H6: L4 keeps its diff for recover. Sol r2
+            // N4: only an error-free capture counts; a reset or HttpClient
+            // failure carries none (recover refuses: recreate).
             await this.quarantine(
               c,
               err.message,
-              err instanceof HostDirtyError ? err.record.diff : [],
+              err instanceof HostDirtyError ? fsEvidence(err.record) : null,
             );
           }
           // A cancellation (even a timeout reason) is never infra: no
@@ -433,14 +474,25 @@ export interface LockedSymbols {
   packages: SymbolPackage[];
 }
 
+/**
+ * H-35 run 004 Sol r2 N4: an L4 check's diff as recovery evidence; null
+ * (none) when it is absent or could not observe everything.
+ */
+export const fsEvidence = (
+  f: FsCheckRecord | null | undefined,
+): FsDiffEntry[] | null => f && f.errors.length === 0 ? f.diff : null;
+
 /** Tests (or deploy) failed and the cleanup failed too: the container is quarantined by the lane. */
 export class CleanupFailedError extends ContainerError {
   constructor(
     readonly original: unknown,
     readonly cleanupError: string,
     container: string,
-    /** H-35 run 004 Sol r1 H6: the L4 difference within cleanupError (empty: none). */
-    readonly fsDiff: FsDiffEntry[] = [],
+    /**
+     * H-35 run 004 Sol r1 H6: the L4 difference within cleanupError. Sol r2
+     * N4: null when no error-free after-capture ran.
+     */
+    readonly fsDiff: FsDiffEntry[] | null = null,
   ) {
     super(
       `${
@@ -2023,7 +2075,7 @@ export async function deployAndTest(
     const c = await cleanAndVerify();
     // H-35 run 004 Sol r1 H6: a dirty L4 check rides along with its diff
     const f = fsCheck as FsCheckRecord | null;
-    if (c) throw new CleanupFailedError(err, c, container, f?.diff ?? []);
+    if (c) throw new CleanupFailedError(err, c, container, fsEvidence(f));
     throw err;
   }
   const cleanupError = await cleanAndVerify();

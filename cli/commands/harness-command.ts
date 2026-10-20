@@ -3482,6 +3482,9 @@ export function registerHarnessCommand(
           "Reset a quarantined container (or one a crashed environment left in use) to the lineage, verify it (inventory check, fsDigest, every recorded L4 difference undone) and only then clear its records and write its instance manifest (lane-ops, under a lease)",
         )
         .arguments("<container:string>"),
+    ).option(
+      "--abandon <token:string>",
+      "H-35 run 004 Sol r2 N2: the token of an in-use claim (environment or recover) whose owner is gone",
     ).action((opts, container: string) =>
       fail(async () => {
         const m = await recoverContainer({
@@ -3489,6 +3492,7 @@ export function registerHarnessCommand(
           containers: [container],
           lineage: resolve(opts.lineage),
           symbolStore: resolve(opts.symbolStore),
+          abandon: opts.abandon ?? null,
         });
         console.log(
           `${

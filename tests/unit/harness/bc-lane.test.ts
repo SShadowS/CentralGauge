@@ -484,8 +484,8 @@ Deno.test("H-35 run 004 #3 BcLane: a quarantine is persisted while the container
 
 Deno.test("H-35 run 004 Sol r1 H6 BcLane: an L4 quarantine persists its fs diff, also when it rides on a cleanup failure", async () => {
   const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
-  const seen: [string, string, FsDiffEntry[]][] = [];
-  const lane = new BcLane(new FakeBc(), ["C1", "C2", "C3"], {
+  const seen: [string, string, FsDiffEntry[] | null][] = [];
+  const lane = new BcLane(new FakeBc(), ["C1", "C2", "C3", "C4", "C5", "C6"], {
     maxInfraRetries: 0,
     persist: (c, reason, d) => (seen.push([c, reason, d]), Promise.resolve()),
   });
@@ -504,19 +504,80 @@ Deno.test("H-35 run 004 Sol r1 H6 BcLane: an L4 quarantine persists its fs diff,
       throw new CleanupFailedError(new Error("tests"), "L4 dirty", c, diff);
     })
   );
+  // H-35 run 004 Sol r2 N4: no after-capture is no evidence (null), a clean
+  // one is an explicit empty diff; an L4 that could not observe is none
   await lane.exclusive(ctx, () => Promise.resolve({ cleanupError: "x" }));
+  await lane.exclusive(ctx, (c) =>
+    Promise.resolve({
+      cleanupError: "post-cleanup check failed",
+      fsCheck: { container: c, ok: true, diff: [], errors: [] },
+    }));
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new HostDirtyError({
+        container: c,
+        ok: false,
+        diff,
+        errors: ["after: C:\\Run\\my: denied"],
+      });
+    })
+  );
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new ResetFailedError({
+        container: c,
+        mechanism: "m",
+        policy_version: 1,
+        ok: false,
+        failed_step: "restore",
+        error: "boom",
+        phases_ms: {},
+      });
+    })
+  );
   assertEquals(seen.map(([c, , d]) => [c, d]), [
     ["C1", diff],
     ["C2", diff],
-    ["C3", []],
+    ["C3", null],
+    ["C4", []],
+    ["C5", null],
+    ["C6", null],
   ]);
+});
+
+Deno.test("H-35 run 004 Sol r2 N3 BcLane.drain: waits for an in-flight exclusive operation and admits no new one", async () => {
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const lane = new BcLane(new FakeBc(), ["C1"]);
+  let finish!: () => void;
+  let started!: () => void;
+  const running = new Promise<void>((r) => (started = r));
+  const op = lane.exclusive(ctx, () =>
+    new Promise<void>((r) => {
+      finish = r;
+      started();
+    }));
+  await running;
+  let drained = false;
+  const d = lane.drain().then(() => void (drained = true));
+  await new Promise((r) => setTimeout(r, 10));
+  assertEquals(drained, false, "drain waits for the operation in flight");
+  await assertRejects(
+    () => lane.exclusive(ctx, () => Promise.resolve()),
+    Error,
+    "BC lane closed",
+  );
+  finish();
+  await op;
+  await d;
+  assertEquals(drained, true);
+  await lane.drain(); // idle: at once
 });
 
 Deno.test("H-35 run 004 Sol r1 H6 deployAndTest: tests throwing with a dirty L4 check hand the fs diff to the lane", async () => {
   const bc = new FakeBc(() => {
     throw new ContainerError("soap down", "C1", "test");
   });
-  const seen: FsDiffEntry[][] = [];
+  const seen: (FsDiffEntry[] | null)[] = [];
   const lane = new BcLane(bc, ["C1"], {
     maxInfraRetries: 0,
     persist: (_c, _r, d) => (seen.push(d), Promise.resolve()),
@@ -551,7 +612,7 @@ Deno.test("H-35 run 004 Sol r1 H6 deployAndTest: tests throwing with a dirty L4 
       ),
     CleanupFailedError,
   );
-  assertEquals(seen.map((d) => d.map((e) => [e.path, e.before])), [[[
+  assertEquals(seen.map((d) => d?.map((e) => [e.path, e.before])), [[[
     "C:\\Run\\my\\flag.txt",
     null,
   ]]]);

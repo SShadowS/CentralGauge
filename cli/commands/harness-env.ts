@@ -92,11 +92,14 @@ import {
   UNCONFIGURED_RESET,
 } from "../../src/harness/reset.ts";
 import {
+  claimRecord,
+  evidenceProblem,
   findRecords,
   type FoundRecord,
-  releaseInUse,
-  removeRecords,
-  writeRecord,
+  recordFile,
+  releaseOwned,
+  removeUnchanged,
+  rewriteOwned,
 } from "../../src/harness/quarantine.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import { containerId } from "../../src/container/docker-inspect.ts";
@@ -279,6 +282,9 @@ async function lineageContext(
 
 const msg = (err: unknown) => err instanceof Error ? err.message : String(err);
 
+/** H-35 run 004 Sol r2 N3: how long close waits for in-flight lane operations. */
+export const LANE_DRAIN_MS = 10 * 60_000;
+
 /**
  * H-35 run 004 Sol r1 H4/H5: the records refusing a container, found by its
  * current Docker id and by its name. An unreadable id refuses (id null).
@@ -325,6 +331,38 @@ function unremediated(
     ),
   ];
 }
+
+/**
+ * H-35 run 004 Sol r2 N5: the recorded paths this capture cannot show
+ * absent or restored: outside every root (case-insensitive, at a separator)
+ * or below a reparse point (an `L|` line, not traversed) in the capture.
+ */
+function unobservable(
+  recorded: readonly FsDiffEntry[],
+  capture: readonly string[],
+  roots: readonly string[],
+): string[] {
+  const norm = (p: string) =>
+    p.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase();
+  const under = (p: string, dir: string) => p.startsWith(`${dir}\\`);
+  const links = capture.flatMap((l) => {
+    const m = /^L\|\d+\|\d+\|([^|]+)\|[^|]*$/.exec(l.trimEnd());
+    return m ? [norm(m[1]!)] : [];
+  });
+  const rs = roots.map(norm);
+  return [
+    ...new Set(
+      recorded.map((e) => e.path).filter((raw) => {
+        const p = norm(raw);
+        return !rs.some((r) => p === r || under(p, r)) ||
+          links.some((l) => under(p, l));
+      }),
+    ),
+  ];
+}
+
+const RECREATE =
+  "no trustworthy filesystem evidence: the container must be recreated (lane-ops)";
 
 /**
  * `harness env check` (H-35 S3.4): each container's lineage, env_fp and
@@ -392,9 +430,16 @@ export async function baselineCreate(
  * inventory check, one fsDigest capture without errors that shows every
  * recorded L4 difference undone (Sol r1 H6); only then are the records
  * removed. Any failure keeps them and leaves no manifest.
+ *
+ * H-35 run 004 Sol r2 N2: recover claims `<id>.recover.json` (exclusive
+ * against environments and other recovers), refuses another owner's live
+ * claim unless `abandon` names its token, refuses records of another
+ * physical container (same name, other id), and deletes a record only if
+ * unchanged since read. Sol r2 N4/N5: without trustworthy filesystem
+ * evidence, or with a recorded path this capture cannot observe, it refuses.
  */
 export async function recoverContainer(
-  o: LineageCommandOptions,
+  o: LineageCommandOptions & { abandon?: string | null },
   deps: EnvDeps = REAL_DEPS,
   resetFor: ResetFor = goldenResetFor(o.repoRoot),
 ): Promise<InstanceManifest> {
@@ -410,78 +455,179 @@ export async function recoverContainer(
     // H-35 run 004 Sol r1 H5: the records by the current id and by name;
     // no readable id, no recovery (fail closed)
     const qDir = deps.quarantineDir();
-    const found = await findRecords(qDir, {
-      name: c,
-      id: await deps.containerId(c),
-    });
-    const m = x.mechanism;
-    if (!m.verifyClean || !m.fsDigest) {
-      throw new ConfigurationError(
-        `lineage ${x.lineage.id} has no inventory check or fs section: a recovery cannot be verified`,
+    const id = await deps.containerId(c);
+    const token = crypto.randomUUID();
+    const claim = () =>
+      claimRecord(qDir, {
+        state: "in_use",
+        container: c,
+        id,
+        token,
+        by: `${deps.owner()} harness recover`,
+        pid: Deno.pid,
+        host: deps.owner(),
+      }, { recover: true });
+    // H-35 run 004 Sol r2 N2: one recover per physical container
+    let abandon = o.abandon ?? null;
+    if (!await claim()) {
+      const other = (await findRecords(qDir, { name: c, id })).find((f) =>
+        f.file === recordFile(qDir, id, true)
       );
+      if (!other?.record || !o.abandon || other.record.token !== o.abandon) {
+        throw new ConfigurationError(
+          `recover ${c}: another recover claims it (${
+            other?.why ?? recordFile(qDir, id, true)
+          }); if that run is gone, pass --abandon <its token>`,
+        );
+      }
+      if ((await removeUnchanged([other])).length > 0 || !await claim()) {
+        throw new ConfigurationError(
+          `recover ${c}: the abandoned recover claim changed meanwhile; nothing done`,
+        );
+      }
+      abandon = null; // spent on that claim
     }
-    const manifest = instanceManifestPath(x.inputs.resultsRoot, c);
-    const dropManifest = () =>
-      Deno.remove(manifest).catch((err) => {
-        if (!(err instanceof Deno.errors.NotFound)) throw err;
-      });
-    // The old manifest predates the quarantine: none until every step passed.
-    await dropManifest();
-    const made = await createBaseline(deps.inspect(), m, c, x.inputs);
     try {
-      const v = await m.verifyClean(c);
-      if (!v.ok) {
-        throw new ContainerError(
-          `recover ${c}: post-reset inventory check failed: ${
-            v.error ?? v.diff.slice(0, 5).join("; ")
-          }`,
-          c,
-          "health",
-        );
-      }
-      let lines: string[];
-      try {
-        lines = await m.fsDigest(c);
-      } catch (err) {
-        lines = [`E|(fsDigest)|${err instanceof Error ? err.message : err}`];
-      }
-      // As right after a deployment's reset: the capture alone must be clean.
-      const errors = fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? [])
-        .errors.filter((e) => e.startsWith("before: "));
-      if (errors.length > 0) {
-        throw new ContainerError(
-          `recover ${c}: fsDigest capture not clean: ${
-            errors.slice(0, 5).join("; ")
-          }`,
-          c,
-          "health",
-        );
-      }
-      // H-35 run 004 Sol r1 H6: a well-formed capture is not removal; every
-      // recorded L4 difference must be undone in it
-      const left = unremediated(
-        found.flatMap((f) => f.record?.fs_diff ?? []),
-        lines,
-        m.fsRoots ?? [],
+      return await recoverClaimed({ ...o, abandon }, deps, x, c, id, token);
+    } finally {
+      await releaseOwned(qDir, id, token, { recover: true }).catch((err) =>
+        console.error(
+          `${colors.yellow("[WARN]")} recover claim ${
+            recordFile(qDir, id, true)
+          } not removed (it refuses ${c}): ${msg(err)}`,
+        )
       );
-      if (left.length > 0) {
-        throw new ContainerError(
-          `recover ${c}: contamination not remediated: ${
-            left.join(", ")
-          }; recreate the container or remove them`,
-          c,
-          "health",
-        );
-      }
-    } catch (err) {
-      await dropManifest();
-      throw err;
     }
-    await removeRecords(found);
-    return made;
   } finally {
     await release();
   }
+}
+
+async function recoverClaimed(
+  o: LineageCommandOptions & { abandon?: string | null },
+  deps: EnvDeps,
+  x: Awaited<ReturnType<typeof lineageContext>>,
+  c: string,
+  id: string,
+  token: string,
+): Promise<InstanceManifest> {
+  const qDir = deps.quarantineDir();
+  const found = (await findRecords(qDir, { name: c, id })).filter((f) =>
+    f.record?.token !== token
+  );
+  // H-35 run 004 Sol r2 N2: only this physical container's records
+  for (const f of found) {
+    if (f.record && f.record.id !== id) {
+      throw new ConfigurationError(
+        `recover ${c}: record of another physical container ${f.record.id} (${f.file}): recover that container (if it no longer exists, an operator removes the record)`,
+      );
+    }
+  }
+  // a live claim (an environment, or an abandoned recover) needs --abandon <its token>
+  for (const f of found) {
+    const r = f.record;
+    if (r?.state === "in_use" && r.token !== o.abandon) {
+      throw new ConfigurationError(
+        `recover ${c}: ${f.why}: a live environment may hold it; if it is gone, pass --abandon ${r.token}`,
+      );
+    }
+  }
+  if (o.abandon && !found.some((f) => f.record?.token === o.abandon)) {
+    throw new ConfigurationError(
+      `recover ${c}: --abandon ${o.abandon} names no record of this container`,
+    );
+  }
+  // H-35 run 004 Sol r2 N4: evidence before any reset
+  for (const f of found) {
+    const p = evidenceProblem(f.record);
+    if (p) {
+      throw new ConfigurationError(
+        `recover ${c}: ${RECREATE} (${f.file}: ${p})`,
+      );
+    }
+  }
+  const m = x.mechanism;
+  if (!m.verifyClean || !m.fsDigest) {
+    throw new ConfigurationError(
+      `lineage ${x.lineage.id} has no inventory check or fs section: a recovery cannot be verified`,
+    );
+  }
+  const manifest = instanceManifestPath(x.inputs.resultsRoot, c);
+  const dropManifest = () =>
+    Deno.remove(manifest).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  // The old manifest predates the quarantine: none until every step passed.
+  await dropManifest();
+  const made = await createBaseline(deps.inspect(), m, c, x.inputs);
+  try {
+    const v = await m.verifyClean(c);
+    if (!v.ok) {
+      throw new ContainerError(
+        `recover ${c}: post-reset inventory check failed: ${
+          v.error ?? v.diff.slice(0, 5).join("; ")
+        }`,
+        c,
+        "health",
+      );
+    }
+    let lines: string[];
+    try {
+      lines = await m.fsDigest(c);
+    } catch (err) {
+      lines = [`E|(fsDigest)|${err instanceof Error ? err.message : err}`];
+    }
+    // As right after a deployment's reset: the capture alone must be clean.
+    const errors = fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? [])
+      .errors.filter((e) => e.startsWith("before: "));
+    if (errors.length > 0) {
+      throw new ContainerError(
+        `recover ${c}: fsDigest capture not clean: ${
+          errors.slice(0, 5).join("; ")
+        }`,
+        c,
+        "health",
+      );
+    }
+    const recorded = found.flatMap((f) => f.record?.fs_diff ?? []);
+    // H-35 run 004 Sol r2 N5: absence counts only where this capture looks
+    const blind = unobservable(recorded, lines, m.fsRoots ?? []);
+    if (blind.length > 0) {
+      throw new ContainerError(
+        `recover ${c}: ${RECREATE}: recorded path ${
+          blind.join(", ")
+        } not observable by this capture (outside its roots or below a reparse point)`,
+        c,
+        "health",
+      );
+    }
+    // H-35 run 004 Sol r1 H6: a well-formed capture is not removal; every
+    // recorded L4 difference must be undone in it
+    const left = unremediated(recorded, lines, m.fsRoots ?? []);
+    if (left.length > 0) {
+      throw new ContainerError(
+        `recover ${c}: contamination not remediated: ${
+          left.join(", ")
+        }; recreate the container or remove them`,
+        c,
+        "health",
+      );
+    }
+  } catch (err) {
+    await dropManifest();
+    throw err;
+  }
+  // H-35 run 004 Sol r2 N2: only what was verified, unchanged since read
+  const changed = await removeUnchanged(found);
+  if (changed.length > 0) {
+    await dropManifest();
+    throw new ConfigurationError(
+      `recover ${c}: record(s) changed during recovery, kept: ${
+        changed.join(", ")
+      }; run harness recover again`,
+    );
+  }
+  return made;
 }
 
 /**
@@ -742,8 +888,12 @@ export async function openHarnessEnv(
     throw err;
   }
   const closers: (() => Promise<void>)[] = [release];
+  // H-35 run 004 Sol r2 N3: closer failures so far (the in-use release reads them)
+  const closeFailures: string[] = [];
   const closeAll = async () => {
-    for (const c of closers) await c().catch(() => {});
+    for (const c of closers) {
+      await c().catch((err) => void closeFailures.push(msg(err)));
+    }
   };
   let closing: Promise<void> | null = null;
   try {
@@ -840,18 +990,95 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
-    // H-35 run 004 #3, Sol r1 H4/H5: any record of a container, by its
-    // Docker id or its name (a quarantine, or the in-use record of a crashed
-    // or still running environment), refuses it before setup touches it;
-    // only `harness recover` clears it. An unreadable id refuses too.
     const qDir = deps.quarantineDir();
     const by = `${deps.owner()} ${o.command}`;
+    // H-35 run 004 Sol r2 N1: this environment's claim token
+    const token = crypto.randomUUID();
+    const mine = { token, by, pid: Deno.pid, host: deps.owner() };
     const ids = new Map<string, { name: string; id: string }>();
+    const claimed: { name: string; id: string }[] = [];
+    // Sol r1 H4: dirty unless proven clean. Sol r2 N3: the claims go only
+    // after a fully clean teardown (every closer succeeded, both lanes
+    // drained) and never once setup threw; a quarantined container keeps
+    // its record (a failed quarantine write leaves the in-use claim).
+    const lanes: BcLane[] = [];
+    let setupFailed = false;
+    closers.unshift(async () => {
+      const q = new Set(
+        lanes.flatMap((l) => [...l.quarantined.keys()]).map((c) =>
+          c.toLowerCase()
+        ),
+      );
+      const keep = setupFailed
+        ? "setup failed after it may have changed the container"
+        : closeFailures.length > 0
+        ? `teardown failed: ${closeFailures.join("; ")}`
+        : null;
+      for (const w of claimed) {
+        if (q.has(w.name.toLowerCase())) continue;
+        if (keep) {
+          console.error(
+            `${colors.yellow("[WARN]")} in-use record of ${w.name} kept (${
+              recordFile(qDir, w.id)
+            }, token ${token}): ${keep}; it refuses the container`,
+          );
+          continue;
+        }
+        try {
+          await releaseOwned(qDir, w.id, token);
+        } catch (err) {
+          console.error(
+            `${
+              colors.yellow("[WARN]")
+            } in-use record of ${w.name} not removed (it refuses the container): ${
+              msg(err)
+            }`,
+          );
+        }
+      }
+    });
+    // H-35 run 004 #3, Sol r1 H4/H5, Sol r2 N1: claim each container by an
+    // atomic create-new of its id's record, then refuse it if any other
+    // record (by id or name: a quarantine, another environment's or a
+    // recover's claim) exists. An unreadable id refuses too. Nothing has
+    // touched a container yet, so a refusal releases this run's claims.
     const held: string[] = [];
     for (const c of [...containers, ...judgeNames]) {
-      const h = await containerHolds(deps, qDir, c);
-      if (h.id) ids.set(c.toLowerCase(), { name: c, id: h.id });
-      held.push(...h.why.map((w) => `${c} (${w})`));
+      let id: string;
+      try {
+        id = await deps.containerId(c);
+      } catch (err) {
+        held.push(`${c} (container id unknown: ${msg(err)})`);
+        continue;
+      }
+      ids.set(c.toLowerCase(), { name: c, id });
+      let won: boolean;
+      try {
+        won = await claimRecord(qDir, {
+          state: "in_use",
+          container: c,
+          id,
+          ...mine,
+        });
+      } catch (err) {
+        throw new ConfigurationError(
+          `cannot write the in-use record of ${c} in ${qDir}: ${
+            msg(err)
+          }; the environment does not start`,
+        );
+      }
+      if (won) claimed.push({ name: c, id });
+      const others = (await findRecords(qDir, { name: c, id })).filter((f) =>
+        f.record?.token !== token
+      );
+      held.push(...others.map((f) => `${c} (${f.why})`));
+      if (!won && others.length === 0) {
+        held.push(
+          `${c} (in-use record ${
+            recordFile(qDir, id)
+          } exists but is no record)`,
+        );
+      }
     }
     if (held.length > 0) {
       throw new ConfigurationError(
@@ -860,75 +1087,57 @@ export async function openHarnessEnv(
         }`,
       );
     }
-    // Sol r1 H4: dirty unless proven clean. One in-use record per container
-    // (whichever lane uses it) before setup; a quarantine replaces it, and a
-    // normal close deletes only those of containers no lane quarantined (a
-    // failed quarantine write leaves the in-use record refusing it).
-    const lanes: BcLane[] = [];
-    const written: { name: string; id: string }[] = [];
-    closers.unshift(async () => {
-      const q = new Set(
-        lanes.flatMap((l) => [...l.quarantined.keys()]).map((c) =>
-          c.toLowerCase()
-        ),
-      );
-      for (const w of written) {
-        if (q.has(w.name.toLowerCase())) continue;
-        try {
-          await releaseInUse(qDir, w.id, by, Deno.pid);
-        } catch (err) {
-          console.error(
-            `${
-              colors.yellow("[WARN]")
-            } in-use record of ${w.name} not removed (it refuses the container until harness recover): ${
-              msg(err)
-            }`,
-          );
-        }
-      }
-    });
-    for (const w of ids.values()) {
-      try {
-        await writeRecord(qDir, {
-          state: "in_use",
-          id: w.id,
-          container: w.name,
-          by,
-          pid: Deno.pid,
-        });
-      } catch (err) {
-        throw new ConfigurationError(
-          `cannot write the in-use record of ${w.name} in ${qDir}: ${
-            msg(err)
-          }; the environment does not start`,
-        );
-      }
-      written.push(w);
-    }
-    // A quarantine (either lane) rewrites the container's record with every
-    // reason and L4 diff so far (Sol r1 H6: recover checks the diff).
-    const qs = new Map<string, { reasons: string[]; diff: FsDiffEntry[] }>();
+    // A quarantine (either lane) rewrites this environment's record with
+    // every reason and L4 diff so far (Sol r1 H6: recover checks the diff);
+    // Sol r2 N1: never another owner's record.
+    const qs = new Map<
+      string,
+      { reasons: string[]; diff: FsDiffEntry[]; captured: boolean }
+    >();
     const persist = async (
       container: string,
       reason: string,
-      fsDiff: FsDiffEntry[],
+      fsDiff: FsDiffEntry[] | null,
     ) => {
       const lc = container.toLowerCase();
-      const q = qs.get(lc) ?? { reasons: [], diff: [] };
+      const q = qs.get(lc) ?? { reasons: [], diff: [], captured: true };
       q.reasons.push(reason);
-      q.diff.push(...fsDiff);
+      q.diff.push(...fsDiff ?? []);
+      // Sol r2 N4: every quarantine of it backed by a clean after-capture
+      q.captured &&= fsDiff !== null;
       qs.set(lc, q);
-      await writeRecord(qDir, {
+      const id = ids.get(lc)?.id ?? await deps.containerId(container);
+      const r = await rewriteOwned(qDir, {
         state: "quarantined",
         container,
-        id: ids.get(lc)?.id ?? await deps.containerId(container),
-        by,
-        pid: Deno.pid,
+        id,
+        ...mine,
         reason: q.reasons.join("; "),
         fs_diff: q.diff,
+        fs_captured: q.captured,
       });
+      if (r === "foreign") {
+        throw new Error(
+          `record ${
+            recordFile(qDir, id)
+          } is no longer this environment's (token ${token}): not overwritten`,
+        );
+      }
+      if (r === "created") {
+        console.error(
+          `${
+            colors.yellow("[WARN]")
+          } in-use record of ${container} was gone; quarantine written as a new record`,
+        );
+      }
     };
-    const ready = await deps.setup([...containers, ...judgeNames]);
+    let ready: Awaited<ReturnType<EnvDeps["setup"]>>;
+    try {
+      ready = await deps.setup([...containers, ...judgeNames]);
+    } catch (err) {
+      setupFailed = true;
+      throw err;
+    }
     closers.unshift(ready.dispose);
     const health = deps.health(ready.names);
     // setup keeps the order: the agents' names first, then the judges'.
@@ -943,6 +1152,13 @@ export async function openHarnessEnv(
       })
       : undefined;
     lanes.push(lane, ...(judgeLane ? [judgeLane] : []));
+    // H-35 run 004 Sol r2 N3: no lane operation in flight before dispose and
+    // the claims' release; one still running at the bound keeps the claims.
+    closers.unshift(async () => {
+      for (const l of lanes) {
+        await bounded(l.drain(), LANE_DRAIN_MS, "BC lane drain");
+      }
+    });
     // H-35 S3.4 (ruling (c)): with a lineage, every container must be an
     // admitted instance of it, all of one env_fp, before any lease.
     let bcEgress: BcEgressRecord | null = null;
