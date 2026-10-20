@@ -442,6 +442,8 @@ const RULE_CODES = new Set([
   "unreadable",
   "test_detection_ref",
   "dynamic_object_access",
+  // H-35 run 004 #1 (r5 2.3): the L3 persistence bans
+  "persistence_ref",
 ]);
 
 /** H-35 (design-r2 5): a workspace violation's stable rule code. */

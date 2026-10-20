@@ -1407,7 +1407,8 @@ const ISOLATION_DISABLED = /\bRequiredTestIsolation\s*=\s*Disabled\b/i;
  * helper as written, edited shipped files): `unreadable_test` first (ruling
  * R9: the other rules cannot trust the lexer on such text), then, on
  * noise-stripped code, `test_lifecycle` (ruling R5) and `isolation_disabled`
- * (ruling R1). Each violation reads `<rule>: Test/<path>: <detail>`.
+ * (ruling R1), and `persistence_ref` (H-35 run 004 #1, r5 2.3:
+ * persistenceRefs). Each violation reads `<rule>: Test/<path>: <detail>`.
  */
 export function testPolicyViolations(
   files: Iterable<readonly [string, string]>,
@@ -1429,6 +1430,10 @@ export function testPolicyViolations(
     if (life) out.push(`test_lifecycle: ${where}: ${life[0]}`);
     const iso = ISOLATION_DISABLED.exec(code);
     if (iso) out.push(`isolation_disabled: ${where}: ${iso[0]}`);
+    // H-35 run 004 #1 (r5 2.3): the persistence bans apply to Test text too.
+    for (const d of persistenceRefs(src)) {
+      out.push(`persistence_ref: ${where}: ${d}`);
+    }
   }
   return out;
 }
@@ -1528,12 +1533,189 @@ const DETECTION_MEMBER =
 const unquote = (n: string) => n.replace(/^"|"$/g, "").toLowerCase();
 
 /**
+ * Matches of `re` on `masked` (maskQuoted of `code`), read back from `code` at
+ * the same offsets (Sol r4 #1: text inside a name is never code).
+ */
+function scanner(code: string, masked: string) {
+  return function* (re: RegExp) {
+    for (const m of masked.matchAll(new RegExp(re.source, re.flags + "d"))) {
+      const at = (i: number) => {
+        const r = m.indices![i];
+        return r ? code.slice(r[0], r[1]) : "";
+      };
+      yield {
+        all: code.slice(m.index!, m.index! + m[0].length),
+        at,
+        index: m.index!,
+        end: m.index! + m[0].length,
+      };
+    }
+  };
+}
+
+// ---- H-35 run 004 #1 (r5 2.3): layer 3 persistence bans, production and Test ----
+
+/**
+ * Objects only reachable OnPrem (r5 2.3; ids not in the repo's symbol data,
+ * Base App and System Application as published): resolved like
+ * BANNED_OBJECTS, by name in object position and by id in id position.
+ * Environment Information is banned whole (its OnPrem members are not
+ * listed). No production_allow grant applies.
+ */
+const PERSISTENCE_OBJECTS: readonly (readonly [string, number, string])[] = [
+  ["codeunit", 419, "File Management"],
+  ["codeunit", 457, "Environment Information"],
+  ["table", 2000000022, "File"],
+];
+const PERSISTENCE_TYPES =
+  "File|FileUpload|DotNet|HttpClient|HttpRequestMessage|HttpResponseMessage|HttpContent|HttpHeaders|WebServiceActionContext";
+/**
+ * A banned type in type position: after a single `:` (never `::` or `:=`),
+ * through `array[..] of`, or as a `List of [..]` / `Dictionary of [..]` argument.
+ */
+const PERSISTENCE_TYPE = new RegExp(
+  `(?:(?<!:):(?![:=])\\s*(?:array\\s*\\[[^\\]]*\\]\\s*of\\s+)?|\\bof\\s*\\[[^\\]]*?)\\b(${PERSISTENCE_TYPES})\\b`,
+  "gi",
+);
+/** Banned by name wherever it is code (r5 2.3 .NET, file and network classes). */
+const PERSISTENCE_NAMES: readonly RegExp[] = [
+  /\bDotNet\b/gi,
+  /\bassembly\s*\(/gi,
+  // A static File method (File.Create, File.Download, ...), never a member.
+  /(?<!\.\s*)(?<!\w)File\s*\.\s*[A-Za-z_]\w*/gi,
+  // A global method bare or with its system receiver, never another member.
+  /(?:(?<!\.\s*)(?<!\w)|\b(?:System|Session|File)\s*\.\s*)(?:UploadIntoStream|DownloadFromStream|TemporaryPath|ApplicationPath|Hyperlink|StartSession)\b/gi,
+  /\bTaskScheduler\s*\.\s*CreateTask\b/gi,
+];
+/**
+ * A report or query export call. Argument shape: the call is a file export
+ * unless one of its arguments is a name this file declares as OutStream
+ * (Report.SaveAs(Id, Params, Format, OutS) and the Query stream overloads are
+ * allowed; SaveAsPdf(Id, 'C:\x.pdf') and any path expression are not).
+ */
+const SAVE_AS_CALL =
+  /(?:[A-Za-z_]\w*\s*|"[^"\n]*"\s*)?\.\s*SaveAs(?:Pdf|Excel|Word|Html|Xml|Csv)?\s*\(/gi;
+/** A static Xmlport.Import/Export: allowed only with a declared stream argument. */
+const XMLPORT_CALL = /\bXmlport\s*\.\s*(?:Import|Export)\s*\(/gi;
+/** A member access with its receiver (for Filename on an Xmlport variable). */
+const FILENAME_ACCESS = /("[^"\n]*"|[A-Za-z_]\w*)\s*\.\s*Filename\b/gi;
+/** A procedure scope attribute; its argument is read from the source. */
+const SCOPE_ATTR = /\[\s*Scope\s*\(([^)\]]*)\)\s*\]/gi;
+
+/**
+ * Names (lowercase, unquoted) this file declares with a type matching `type`:
+ * `A, "B": OutStream`, parameters included. Structure is read on the masked
+ * text, so a quoted name cannot fake a declaration.
+ */
+function declaredNames(
+  scan: ReturnType<typeof scanner>,
+  type: string,
+): Set<string> {
+  const re = new RegExp(
+    `(?<![\\w"])((?:"[^"\\n]*"|[A-Za-z_]\\w*)(?:\\s*,\\s*(?:"[^"\\n]*"|[A-Za-z_]\\w*))*)\\s*:\\s*(?:${type})\\b`,
+    "gi",
+  );
+  const out = new Set<string>();
+  for (const m of scan(re)) {
+    for (const n of m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)) {
+      out.add(unquote(n[0]));
+    }
+  }
+  return out;
+}
+
+/** The top-level arguments (code text) of a call whose `(` ends at `from`, and its end. */
+function callArgs(
+  code: string,
+  masked: string,
+  from: number,
+): { args: string[]; end: number } {
+  const args: string[] = [];
+  let depth = 0;
+  let start = from;
+  let i = from;
+  for (; i < masked.length; i++) {
+    const c = masked[i];
+    if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth > 0) depth--;
+    else if (c === ")" || (c === "," && depth === 0)) {
+      args.push(code.slice(start, i).trim());
+      start = i + 1;
+      if (c === ")") return { args, end: i + 1 };
+    }
+  }
+  args.push(code.slice(start, i).trim());
+  return { args, end: i };
+}
+
+/**
+ * H-35 run 004 #1 (r5 2.3): the persistence bans in one readable AL file, as
+ * details: banned types in type position, DotNet and assembly declarations,
+ * static File methods, the global file, link and session methods,
+ * TaskScheduler.CreateTask, file exports by argument shape (SAVE_AS_CALL,
+ * XMLPORT_CALL, Filename on an Xmlport variable), PERSISTENCE_OBJECTS by name
+ * and id, and any `[Scope('OnPrem')]` declaration. Matched on the
+ * noise-stripped code with quoted identifiers masked; details from the source.
+ */
+function persistenceRefs(src: string): string[] {
+  const code = stripAlNoise(src);
+  const masked = maskQuoted(code);
+  const scan = scanner(code, masked);
+  const found = new Set<string>();
+  for (const m of scan(PERSISTENCE_TYPE)) found.add(`type ${m.at(1)}`);
+  for (const re of PERSISTENCE_NAMES) {
+    for (const m of scan(re)) found.add(m.all.trim());
+  }
+  const streams = declaredNames(scan, "OutStream|InStream");
+  const fileCall = (m: { index: number; end: number }) => {
+    const { args, end } = callArgs(code, masked, m.end);
+    if (!args.some((a) => streams.has(unquote(a)))) {
+      found.add(`${src.slice(m.index, end).trim()} (no stream argument)`);
+    }
+  };
+  for (const m of scan(SAVE_AS_CALL)) fileCall(m);
+  for (const m of scan(XMLPORT_CALL)) {
+    // Sol r7 #1: a quoted receiver ("Xmlport") is a variable, not the static.
+    if (code[m.index - 1] !== '"') fileCall(m);
+  }
+  const xmlports = declaredNames(scan, "Xmlport");
+  for (const m of scan(FILENAME_ACCESS)) {
+    if (xmlports.has(unquote(m.at(1)))) found.add(m.all.trim());
+  }
+  const byName = new Map(
+    PERSISTENCE_OBJECTS.map(([k, id, n]) => [n.toLowerCase(), `${k} ${id}`]),
+  );
+  for (const m of scan(NAME_REF)) {
+    const hit = byName.get(unquote(m.at(1)));
+    if (hit) found.add(`${m.all.trim()} (${hit})`);
+  }
+  const byId = (text: string, kind: string, id: number) => {
+    if (PERSISTENCE_OBJECTS.some(([k, b]) => k === kind && b === id)) {
+      found.add(`${text.trim()} (${kind} ${id})`);
+    }
+  };
+  for (const [re, kind] of ID_REFS) {
+    for (const m of scan(re)) byId(m.all, kind, Number(m.at(1)));
+  }
+  for (const m of scan(OPEN_CALL)) {
+    if (/^\d+$/.test(m.at(1).trim())) byId(m.all, "table", Number(m.at(1)));
+  }
+  // The scope is a string literal, blanked in the code: read from the source.
+  for (const m of masked.matchAll(SCOPE_ATTR)) {
+    const text = src.slice(m.index, m.index + m[0].length);
+    if (/'\s*OnPrem\s*'/i.test(text)) found.add(text);
+  }
+  return [...found];
+}
+
+/**
  * H-35 production-side rules over every production app of a workspace (the
  * Test app never): `dependency_not_allowed` (app.json), then per .al file
  * `unreadable` first (ruling R9), then on noise-stripped code
  * `test_detection_ref` (banned objects by name and id, test-only types, a
  * test subtype, call-stack and app-identity members) and
- * `dynamic_object_access`. `allow` is the task's reviewed grant. Each reads
+ * `dynamic_object_access`, and `persistence_ref` (H-35 run 004 #1, r5 2.3:
+ * persistenceRefs, no grant). `allow` is the task's reviewed grant. Each reads
  * `<rule>: <app>/<path>: <detail>`. Shipped production has no occurrence
  * (design-r2 6.2.5), so the rules apply to every occurrence.
  */
@@ -1579,25 +1761,8 @@ export async function productionPolicyViolations(
         continue;
       }
       const code = stripAlNoise(src);
-      // Sol r4 #1: every rule matches on the code with quoted identifiers
-      // masked (text inside a name is never code); captures are read back
-      // from the code at the same offsets.
       const masked = maskQuoted(code);
-      const scan = function* (re: RegExp) {
-        for (
-          const m of masked.matchAll(new RegExp(re.source, re.flags + "d"))
-        ) {
-          const at = (i: number) => {
-            const r = m.indices![i];
-            return r ? code.slice(r[0], r[1]) : "";
-          };
-          yield {
-            all: code.slice(m.index!, m.index! + m[0].length),
-            at,
-            index: m.index!,
-          };
-        }
-      };
+      const scan = scanner(code, masked);
       const found = new Set<string>();
       const ref = (detail: string) =>
         found.add(`test_detection_ref: ${where}: ${detail}`);
@@ -1638,6 +1803,9 @@ export async function productionPolicyViolations(
         if (arg === "") continue;
         dynamic("RecordRef.Open", arg);
         if (/^\d+$/.test(arg)) bannedId(m.all, "table", Number(arg));
+      }
+      for (const d of persistenceRefs(src)) {
+        found.add(`persistence_ref: ${where}: ${d}`);
       }
       out.push(...found);
     }

@@ -1014,20 +1014,6 @@ Deno.test("credit (run 002): every dynamic-dispatch pattern is rejected; literal
     end;
 
     [Test]
-    procedure ViaSession()
-    var
-        S: Integer;
-    begin
-        StartSession(S, 80090);
-    end;
-
-    [Test]
-    procedure ViaTask()
-    begin
-        TaskScheduler.CreateTask(80090, 0);
-    end;
-
-    [Test]
     procedure ViaRunCodeunit()
     begin
         Lib.RunCodeunit(80090);
@@ -1066,12 +1052,35 @@ ${GOOD}`),
       "ViaAllObjWithCaption",
       "ViaRecordRef",
       "ViaVariant",
-      "ViaSession",
-      "ViaTask",
       "ViaRunCodeunit",
     ]
   ) {
     assertStringIncludes(notes, `${t}: `);
+  }
+});
+
+Deno.test("H-35 run 004 #1 (r5 2.3): StartSession and TaskScheduler.CreateTask in agent Test text are no longer a per-test credit removal but a workspace persistence_ref violation (stricter)", async () => {
+  for (
+    const body of [
+      "var\n        S: Integer;\n    begin\n        StartSession(S, 80090);\n    end;",
+      "begin\n        TaskScheduler.CreateTask(80090, 0);\n    end;",
+    ]
+  ) {
+    const p = await pristineDir();
+    const { v } = await rebuild(
+      p,
+      await artifactFrom(p, {
+        [NEW]: newFile(`
+    [Test]
+    procedure Background()
+    ${body}
+${GOOD}`),
+      }),
+    );
+    assert(
+      v.violations.some((x) => x.startsWith("persistence_ref: ")),
+      v.violations.join("\n"),
+    );
   }
 });
 
