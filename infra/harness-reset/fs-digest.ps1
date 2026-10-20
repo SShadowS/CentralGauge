@@ -81,17 +81,30 @@ function Enable-NstAutoResume([string]$Container, [int]$Seconds = 90, [string]$D
     New-Item -ItemType Directory -Force $dir | Out-Null
     $marker = Join-Path $dir 'nst-suspension'
     $g = [guid]::NewGuid().ToString('N')
-    # atomic: write a temp file, then replace the marker
-    $tmp = "$marker.$g.tmp"
-    Set-Content -LiteralPath $tmp -Value "armed:$g" -Encoding ascii -NoNewline
-    Move-Item -LiteralPath $tmp -Destination $marker -Force
+    # Sol r2 M3: one named mutex per marker serializes arming and disarming with a watchdog's check, mark and resume,
+    # so a stale watchdog either finishes its resume before this generation suspends or sees this generation
+    $mxName = 'Global\cg-nst-' + [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash(
+        [Text.Encoding]::UTF8.GetBytes($marker.ToLower()))).Replace('-', '').Substring(0, 16)
+    $mx = New-Object Threading.Mutex($false, $mxName)
+    try { [void]$mx.WaitOne(30000) } catch [Threading.AbandonedMutexException] { }
+    try {
+      # atomic: write a temp file, then replace the marker
+      $tmp = "$marker.$g.tmp"
+      Set-Content -LiteralPath $tmp -Value "armed:$g" -Encoding ascii -NoNewline
+      Move-Item -LiteralPath $tmp -Destination $marker -Force
+    } finally { try { $mx.ReleaseMutex() } catch { } }
     $cmd = @"
 Start-Sleep -Seconds $s
-if ((Get-Content -LiteralPath '$marker' -Raw -ErrorAction SilentlyContinue) -eq 'armed:$g') {
-  Set-Content -LiteralPath '$marker' -Value 'fired:$g' -Encoding ascii -NoNewline
-  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgNtResume { [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h); }'
-  foreach (`$p in @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction SilentlyContinue)) { [void][CgNtResume]::NtResumeProcess(`$p.Handle) }
-}
+`$mx = New-Object Threading.Mutex(`$false, '$mxName')
+# a held mutex past 30 s (a stuck holder) does not stop the resume: resuming is this watchdog's purpose
+try { `$own = `$mx.WaitOne(30000) } catch [Threading.AbandonedMutexException] { `$own = `$true }
+try {
+  if ((Get-Content -LiteralPath '$marker' -Raw -ErrorAction SilentlyContinue) -eq 'armed:$g') {
+    Set-Content -LiteralPath '$marker' -Value 'fired:$g' -Encoding ascii -NoNewline
+    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgNtResume { [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h); }'
+    foreach (`$p in @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction SilentlyContinue)) { [void][CgNtResume]::NtResumeProcess(`$p.Handle) }
+  }
+} finally { if (`$own) { `$mx.ReleaseMutex() } }
 "@
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     $w = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
@@ -125,7 +138,13 @@ function Disable-NstAutoResume([string]$Container, [string]$Token) {
     # stop this generation's watchdog first (only the process this capture started), then read the marker
     Stop-Process -Id ([int]$wpid) -Force -ErrorAction SilentlyContinue
     Wait-Process -Id ([int]$wpid) -Timeout 10 -ErrorAction SilentlyContinue
-    $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+    # Sol r2 M3: read (and remove) the marker under the generation mutex
+    $mxName = 'Global\cg-nst-' + [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash(
+        [Text.Encoding]::UTF8.GetBytes($marker.ToLower()))).Replace('-', '').Substring(0, 16)
+    $mx = New-Object Threading.Mutex($false, $mxName)
+    try { [void]$mx.WaitOne(30000) } catch [Threading.AbandonedMutexException] { }
+    try { $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue }
+    finally { try { $mx.ReleaseMutex() } catch { } }
     # a fired generation is settled whether or not its watchdog has exited yet: the capture fails
     if ($m -eq "fired:$g") { Remove-Item -LiteralPath $marker -Force; return 'expired: the watchdog resumed the NST' }
     # HasExited, not mere presence: an exited process stays listed while a handle to it is open; and a killed one
