@@ -9868,6 +9868,10 @@ Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded
     // a sibling sharing the root's prefix is not under it
     [`${roots[0]}x\\flag.txt`, []],
     [`${link}\\flag.txt`, [`L|0|0|${link}|D:\\target`]],
+    // orch r004 N5 residual: a named stream on the reparse entry itself
+    [`${link}:hid`, [`L|0|0|${link}|D:\\target`]],
+    // and on an entry below it
+    [`${link}\\f.txt:hid`, [`L|0|0|${link}|D:\\target`]],
   ];
   for (const [path, lines] of cases) {
     await plant(path);

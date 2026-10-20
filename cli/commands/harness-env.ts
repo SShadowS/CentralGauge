@@ -354,8 +354,13 @@ function unobservable(
     ...new Set(
       recorded.map((e) => e.path).filter((raw) => {
         const p = norm(raw);
-        return !rs.some((r) => p === r || under(p, r)) ||
-          links.some((l) => under(p, l));
+        // orch r004 N5 residual: a named stream (`<entry>:<stream>`; a ':'
+        // past the drive is always a stream) is judged by its owning entry,
+        // so a stream on a reparse point itself is unobservable too
+        const colon = p.indexOf(":", 2);
+        const owner = colon < 0 ? p : p.slice(0, colon);
+        return !rs.some((r) => owner === r || under(owner, r)) ||
+          links.some((l) => (colon >= 0 && owner === l) || under(owner, l));
       }),
     ),
   ];
