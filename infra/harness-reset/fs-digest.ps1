@@ -106,7 +106,13 @@ try {
   if (-not [CgDbg]::DebugActiveProcess(`$p.Id)) { throw "DebugActiveProcess: error `$([CgDbg]::Err())" }
   # Sol hold M2: the bound is monotonic and counts from the attach
   `$sw = [Diagnostics.Stopwatch]::StartNew()
-  [void][CgDbg]::DebugSetProcessKillOnExit(`$false)
+  # orch r004 barrier M1: the default kills the NST when the holder exits; never publish frozen without this. A holder
+  # killed between the attach and this call can still terminate the NST (a recreation, never a silent pass).
+  if (-not [CgDbg]::DebugSetProcessKillOnExit(`$false)) {
+    `$e = [CgDbg]::Err()
+    [void][CgDbg]::DebugActiveProcessStop(`$p.Id)
+    throw "DebugSetProcessKillOnExit: error `$e (detached)"
+  }
   if (-not [CgDbg]::DebugBreakProcess(`$p.Handle)) { throw "DebugBreakProcess: error `$([CgDbg]::Err())" }
   # the attach's first event; it is never continued, so the debuggee stays stopped
   if (-not [CgDbg]::WaitForDebugEvent((New-Object byte[] 4096), [Math]::Max(1, [Math]::Min(10000, [int]($s * 1000 - `$sw.ElapsedMilliseconds))))) { throw "no debug event: error `$([CgDbg]::Err())" }
@@ -217,13 +223,15 @@ function Clear-NstFreezeLeftover([string]$Container, [string]$Dir = $NstFreezeDi
         if ($h -and -not $h.HasExited -and $h.StartTime.Ticks -eq $start) {
           $live++
           try { $h.Kill() } catch { }
-          [void]$h.WaitForExit(10000)
+          # orch r004 barrier M2: a holder that did not exit keeps its marker (evidence) and fails closed
+          if (-not $h.WaitForExit(10000)) { return "STUCK holder $($h.Id) did not exit ($($f.Name))" }
         }
       }
       Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
     }
     "$live"
   } (, $Dir)
+  if ("$n".Trim() -like 'STUCK *') { throw "NST hold leftover: $("$n".Trim().Substring(6)); recreate the container" }
   if ("$n".Trim() -notmatch '^\d+$') { throw "NST hold leftovers unreadable: '$n'" }
   [int]"$n".Trim()
 }
@@ -269,14 +277,51 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
   "T|$($lines.Count)"
 }
 
-# Observation point (decision item 3): no user or background session on the NST. Throws when it cannot tell.
-function Test-NstQuiescent([string]$Container) {
-  $n = Invoke-InContainer $Container {
-    @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction Stop |
-        Where-Object { $_.SessionID -ge 0 -or "$($_.ClientType)" -eq 'Background' }).Count
+# The NST's user + background session count, read by a bounded query (orch r004 barrier M2): the management call runs
+# in a child powershell that is killed after $TimeoutSec, so a frozen NST (a job freeze, an unknown hold) makes this
+# throw "NST unresponsive" instead of hanging; the container must then be recreated. With $DrainSeconds > 0 it
+# re-queries once a second until the count is 0 or that bound passes (orch r004 barrier M3: a healthcheck request
+# queued during a hold starts its session right after the release). No session type is exempt. $Query replaces the
+# default management query (the self-check uses it); its output must be the count.
+function Get-NstSessionCount([string]$Container, [int]$DrainSeconds = 0, [int]$TimeoutSec = 15,
+  [string]$Dir = $NstFreezeDir, [string]$Query = '') {
+  $n = Invoke-InContainer $Container { param($drain, $tmo, $dir, $query)
+    if (-not $query) {
+      $mod = (Get-Command Get-NAVServerSession -ErrorAction Stop).Module.Path
+      $query = "Import-Module '$mod' -WarningAction SilentlyContinue; @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction Stop | Where-Object { `$_.SessionID -ge 0 -or `"`$(`$_.ClientType)`" -eq 'Background' }).Count"
+    }
+    $tmp = Join-Path $dir 'tmp'
+    New-Item -ItemType Directory -Force $tmp | Out-Null
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ProgressPreference = 'SilentlyContinue'; $query"))
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+      $out = Join-Path $tmp ("q-" + [guid]::NewGuid().ToString('N') + '.txt')
+      $c = Start-Process powershell.exe -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err" `
+        -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
+      if (-not $c.WaitForExit($tmo * 1000)) {
+        try { $c.Kill() } catch { }
+        [void]$c.WaitForExit(5000)
+        Remove-Item -LiteralPath $out, "$out.err" -Force -ErrorAction SilentlyContinue
+        return "TIMEOUT"
+      }
+      $v = "$(Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue)".Trim()
+      Remove-Item -LiteralPath $out, "$out.err" -Force -ErrorAction SilentlyContinue
+      if ($v -notmatch '^\d+$' -or [int]$v -eq 0 -or $sw.Elapsed.TotalSeconds -ge $drain) { return $v }
+      Start-Sleep -Seconds 1
+    }
+  } $DrainSeconds, $TimeoutSec, $Dir, $Query
+  $n = "$n".Trim()
+  if ($n -eq 'TIMEOUT') {
+    throw "NST unresponsive: the session query exceeded $TimeoutSec s (an unknown freeze); recreate the container"
   }
-  if ("$n".Trim() -notmatch '^\d+$') { throw "NST session count unreadable: '$n'" }
-  [int]"$n".Trim() -eq 0
+  if ($n -notmatch '^\d+$') { throw "NST session count unreadable: '$n'" }
+  [int]$n
+}
+
+# Observation point (decision item 3): no user or background session on the NST, after a bounded drain. Throws when
+# it cannot tell.
+function Test-NstQuiescent([string]$Container, [int]$DrainSeconds = 15) {
+  (Get-NstSessionCount $Container $DrainSeconds) -eq 0
 }
 
 function Get-FsDigest([string]$Container, [string[]]$Roots) {

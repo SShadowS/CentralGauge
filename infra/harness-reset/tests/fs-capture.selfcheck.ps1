@@ -64,6 +64,28 @@ try {
   Remove-Item -Recurse -Force $wd -ErrorAction SilentlyContinue
 }
 
+# orch r004 barrier M2/M3: the bounded session query (its child process is real; the query text stands in for the
+# management call)
+$qd = Join-Path $env:TEMP ("cgq-" + [guid]::NewGuid())
+try {
+  # a hung query (a frozen NST) times out and is killed: "NST unresponsive", never a hang
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  Throws { Get-NstSessionCount 'x' 0 2 $qd 'Start-Sleep -Seconds 60; 0' } 'NST unresponsive' 'a hung query'
+  Assert ($sw.Elapsed.TotalSeconds -lt 20) "bounded: $($sw.Elapsed.TotalSeconds) s"
+  Assert ((Get-NstSessionCount 'x' 0 10 $qd '0') -eq 0) 'a plain count'
+  # drain: a queued session (count 1 for the first two queries) that ends within the bound passes ...
+  $cf = Join-Path $qd 'n'
+  New-Item -ItemType Directory -Force $qd | Out-Null
+  Set-Content -LiteralPath $cf -Value 0
+  $q = "`$n = [int](Get-Content -LiteralPath '$cf'); Set-Content -LiteralPath '$cf' -Value (`$n + 1); if (`$n -lt 2) { 1 } else { 0 }"
+  Assert ((Get-NstSessionCount 'x' 15 10 $qd $q) -eq 0) 'a session that ends within the drain'
+  # ... one that stays fails
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  Assert ((Get-NstSessionCount 'x' 3 10 $qd '1') -eq 1) 'a session that stays'
+  Assert ($sw.Elapsed.TotalSeconds -ge 3) 'the drain waited its bound'
+  Throws { Get-NstSessionCount 'x' 0 10 $qd "'x'" } 'unreadable' 'an unreadable count'
+} finally { Remove-Item -Recurse -Force $qd -ErrorAction SilentlyContinue }
+
 function Run([hashtable]$o) {
   $script:calls = [Collections.Generic.List[string]]::new()
   $script:o = $o

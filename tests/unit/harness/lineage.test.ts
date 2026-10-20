@@ -1,7 +1,11 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { dirname, join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
-import { lineageCompat, loadLineage } from "../../../src/harness/lineage.ts";
+import {
+  lineageCompat,
+  loadLineage,
+  overlapsHoldDir,
+} from "../../../src/harness/lineage.ts";
 import {
   fsDiff,
   goldenReset,
@@ -109,6 +113,29 @@ Deno.test("H-35 S3.2 loadLineage: a changed inventory, an unknown field or a mis
     async () =>
       loadLineage(await copyLineage((j) => delete j["golden_sha256"])),
     ConfigurationError,
+  );
+});
+
+Deno.test("H-35 run 005 (orch r004 barrier L1): a lineage whose fs roots overlap the NST hold dir is refused", async () => {
+  assert(overlapsHoldDir("C:\\ProgramData"), "a parent");
+  assert(overlapsHoldDir("c:/programdata/CG-HARNESS/"), "itself, any case");
+  assert(overlapsHoldDir("C:\\ProgramData\\cg-harness\\tmp"), "a child");
+  assert(!overlapsHoldDir("C:\\ProgramData\\cg-harness2"), "a prefix sibling");
+  assert(!overlapsHoldDir("C:\\ProgramData\\Microsoft"), "the shipped roots");
+  const v2 = JSON.parse(
+    await Deno.readTextFile(
+      "infra/harness-reset/lineages/golden-o09-v2.json",
+    ),
+  );
+  await assertRejects(
+    async () =>
+      loadLineage(
+        await copyLineage((j) => {
+          j["fs"] = { ...v2.fs, roots: [...v2.fs.roots, "C:\\ProgramData"] };
+        }),
+      ),
+    ConfigurationError,
+    "overlaps",
   );
 });
 

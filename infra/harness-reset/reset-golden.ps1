@@ -56,6 +56,9 @@ Step quiesce {
   # addendum 5: a debugger hold a killed capture left ends when its holder ends
   [void](Clear-NstFreezeLeftover $Container)
   if (Test-NstSuspended $Container) { Set-NstSuspended $Container $false }
+  # orch r004 barrier M2: a bounded liveness query before any NST management call; an unknown freeze (one the two
+  # recoveries above do not cover, e.g. a job freeze) throws "NST unresponsive" here instead of hanging below
+  [void](Get-NstSessionCount $Container)
   $q = Invoke-InContainer $Container {
     # system sessions carry negative ids, which Remove-NAVServerSession refuses; the NST stop ends them
     Get-NAVServerSession -ServerInstance BC -Tenant default | Where-Object { $_.SessionID -ge 0 } |

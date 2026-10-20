@@ -13,6 +13,21 @@ import { sha256Hex } from "./hash.ts";
 
 const Sha = z.string().regex(/^[0-9a-f]{64}$/);
 /** A regex source anchored at both ends that compiles. */
+/**
+ * orch r004 barrier L1: where infra/harness-reset/fs-digest.ps1 keeps the NST
+ * hold's files ($NstFreezeDir). L4 ruling item 3: outside every fs root.
+ */
+export const NST_HOLD_DIR = "C:\\ProgramData\\cg-harness";
+
+/** A root equal to, inside, or containing NST_HOLD_DIR. */
+export function overlapsHoldDir(root: string): boolean {
+  const n = (p: string) =>
+    p.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase();
+  const r = n(root);
+  const h = n(NST_HOLD_DIR);
+  return r === h || r.startsWith(`${h}\\`) || h.startsWith(`${r}\\`);
+}
+
 const AnchoredRegex = z.string().refine((s) => {
   if (!s.startsWith("^") || !s.endsWith("$")) return false;
   try {
@@ -81,7 +96,10 @@ export const LineageSchema = z.strictObject({
    */
   fs: z.strictObject({
     digest_version: z.number().int().positive(),
-    roots: z.array(z.string().min(1)).min(1),
+    roots: z.array(z.string().min(1)).min(1).refine(
+      (rs) => !rs.some(overlapsHoldDir),
+      `an fs root overlaps ${NST_HOLD_DIR} (the NST hold's files must stay outside W)`,
+    ),
     identity: z.array(z.string()),
     exclude: z.array(z.union([
       z.strictObject({

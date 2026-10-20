@@ -1037,7 +1037,12 @@ history or persistence boundary. Each capture walks with the NST process
 held by a debugger (a holder process in the container that attaches and never
 continues a debug event, so threads created during the walk stay stopped too),
 so no AL runs during it. The hold is bounded at 38 s, below one healthcheck
-interval plus its timeout; a holder that dies detaches by itself. A writer
+interval plus its timeout (a cooperative bound, not hard real-time). A holder
+that dies after setting kill-on-exit off detaches by itself; one killed in the
+moment between its attach and that call can terminate the NST, which fails the
+capture and needs a container recreation. A frozen NST that no recovery covers
+makes the bounded session query fail ("NST unresponsive") instead of hanging.
+The hold stops NST user-mode code only, not SQL Server or kernel I/O. A writer
 outside the NST process (for example a detached process an OnPrem DotNet call
 started) is not stopped by the hold and is not covered. The campaign guarantee rests on L1 (Cloud
 compile), L2 (network) and L3 (bans).
