@@ -36,7 +36,9 @@ Run as `/loop` without an interval (self-paced). Each sweep:
    process of that run is still working (no container job in flight per lane-ops), otherwise
    `coord ask`.
 4. New open questions: send the owner a push notification with the question id and first line.
-5. Rewrite your handoff file.
+5. Rewrite your handoff file. Start every new entry with the real time from `date -u
+   +%Y-%m-%dT%H:%MZ`, never a time you estimate (owner 2026-10-20). For where a task's time
+   went, use `coord timeline <id>`, not the handoff.
 6. Schedule the next sweep: 5 to 10 minutes while lanes are active and reviews are pending,
    20 to 30 minutes when everything is waiting on long container work.
 
