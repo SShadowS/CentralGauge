@@ -49,7 +49,8 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
     dockerEnv: {},
   });
   assert(m.contentRoot && m.fsDigest && m.bcEgress && m.fsRoots?.length);
-  assertEquals(m.fsCaches?.length, 2);
+  // addendum 6: + the metadata .app and .res (name_is_sha256) and C:\Run\my
+  assertEquals(m.fsCaches?.length, 5);
   assertEquals(m.fsExclude, []);
   // its caches tolerate the real measured paths (Cronus283) and nothing planted
   const apps = m.fsCaches![0]!.base;
@@ -78,6 +79,45 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
   ) {
     const after = [`D|16|1|${apps}`, planted, "T|2"];
     assertEquals(fsDiff(before, after, [], [], m.fsCaches).diff.length, 1);
+  }
+  // addendum 6, the shipped entries: a publish's hash-named .app/.res and
+  // C:\Run\my's time are tolerated; a misnamed .app and a new file in
+  // C:\Run\my are not
+  const pub = (ext: string, sha: string, head: string) =>
+    `F|${sha}|4|32|1|${head}|${apps}\\metadata\\3\\0A\\${hex}.${ext}`;
+  const lc = hex.toLowerCase();
+  assertEquals(
+    fsDiff(
+      [`D|16|1|${apps}`, "D|16|1|C:\\Run\\my", "T|2"],
+      [
+        `D|16|1|${apps}`,
+        pub("app", lc, "4e41"),
+        pub("res", lc, "efbb"),
+        "D|16|9|C:\\Run\\my",
+        "T|4",
+      ],
+      [],
+      [],
+      m.fsCaches,
+    ).diff,
+    [],
+  );
+  for (
+    const after of [
+      [`D|16|1|${apps}`, pub("app", "b".repeat(64), "4e41"), "T|2"],
+      [
+        `D|16|1|${apps}`,
+        "D|16|1|C:\\Run\\my",
+        "F|" + "c".repeat(64) +
+        "|4|32|1|4e41|C:\\Run\\my\\x.app",
+        "T|3",
+      ],
+    ]
+  ) {
+    const b = after.some((l) => l.includes("C:\\Run\\my"))
+      ? [`D|16|1|${apps}`, "D|16|1|C:\\Run\\my", "T|2"]
+      : before;
+    assertEquals(fsDiff(b, after, [], [], m.fsCaches).diff.length, 1);
   }
 });
 
