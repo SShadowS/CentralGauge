@@ -47,10 +47,14 @@ public static class CgNtProc {
     if ($p.Count -ne 1) { throw "expected one NST process, found $($p.Count)" }
     $st = if ($suspend) { [CgNtProc]::NtSuspendProcess($p[0].Handle) } else { [CgNtProc]::NtResumeProcess($p[0].Handle) }
     if ($st -ne 0) { throw "NT status 0x$('{0:X8}' -f $st)" }
+    $p[0].Refresh()
     if ($suspend) {
-      $p[0].Refresh()
       $running = @($p[0].Threads | Where-Object { "$($_.WaitReason)" -ne 'Suspended' }).Count
       if ($running -gt 0) { throw "$running NST thread(s) not suspended" }
+    } else {
+      # run 005 smoke: a freeze NtResumeProcess does not undo (a job freeze) leaves the threads suspended
+      $still = @($p[0].Threads | Where-Object { "$($_.WaitReason)" -eq 'Suspended' }).Count
+      if ($still -gt 0) { throw "$still NST thread(s) still suspended: frozen by something a resume does not undo; recreate the container" }
     }
     'ok'
   } $Suspended
