@@ -74,7 +74,11 @@ import {
   buildTestScript,
   escapeForPS,
 } from "./bc-script-builders.ts";
-import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
+import {
+  resolveSoapTimeoutMs,
+  runTestsViaSoap,
+  setHttpClientAllowedViaSoap,
+} from "./soap-test-client.ts";
 import { compilerCacheKey } from "./compiler-cache-key.ts";
 import { dockerContextEnv } from "./docker-context.ts";
 import { inspectContainer } from "./docker-inspect.ts";
@@ -84,6 +88,7 @@ import {
   writeMarker,
 } from "./compiler-folder-marker.ts";
 import { acquireLock } from "./folder-lock.ts";
+import { packageManifestTarget } from "./app-package.ts";
 import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
 import { mergeIntoTracer } from "../tracing/parse-trace-lines.ts";
 
@@ -366,7 +371,7 @@ export class BcContainerProvider implements ContainerProvider {
   private static readonly HARNESS_APP_NAME = "CG Test Harness";
   // Bump HARNESS_APP_VERSION (and infra/cg-test-harness/app.json) to force
   // redeployment after changing the harness source.
-  private static readonly HARNESS_APP_VERSION = "1.0.1.0";
+  private static readonly HARNESS_APP_VERSION = "1.0.2.0";
 
   // Per-container session slots. Each slot owns its own lock + session ref +
   // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`
@@ -2110,6 +2115,11 @@ ${script}
     return `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
   }
 
+  /** H-35: the Target a compiled package's manifest records (host-side read). */
+  packageTarget(file: string): Promise<string | null> {
+    return packageManifestTarget(file);
+  }
+
   /** Harness Bench: compiler identity for prerequisite stamps (review round 2 item 5). */
   async harnessCompilerIdentity(containerName: string): Promise<string> {
     const i = await this.dockerInspectSeam(containerName);
@@ -2246,6 +2256,19 @@ ${script}
     codeunit: number,
   ): Promise<TestResult> {
     return runTestsViaSoap(this.soapConfigFor(containerName), codeunit, "");
+  }
+
+  /** Harness Bench H-35 S3 L2a: an extension's Allow HttpClient Requests, read back. */
+  setHttpClientAllowed(
+    containerName: string,
+    appId: string,
+    allowed: boolean,
+  ): Promise<string> {
+    return setHttpClientAllowedViaSoap(
+      this.soapConfigFor(containerName),
+      appId,
+      allowed,
+    );
   }
 
   /**

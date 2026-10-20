@@ -20,8 +20,12 @@ import type { ContainerOutcome } from "../health/types.ts";
 import type { InfraRetryRecord } from "../tasks/interfaces.ts";
 import type { SymbolPackage } from "./identity.ts";
 import type { TestResultSchema } from "./records.ts";
-import { readAppJsonRaw, type StagedApp } from "./staging.ts";
-import { ContainerError, ValidationError } from "../errors.ts";
+import { readAppGraph, readAppJsonRaw, type StagedApp } from "./staging.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../errors.ts";
 import {
   classifyPublishFailure,
   isCollisionPublishFailure,
@@ -44,6 +48,19 @@ import {
 } from "./bc-apps.ts";
 import { exists, safeCopyTree } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree, isTaskBuildArtifact } from "./hash.ts";
+import {
+  failedReset,
+  type FsCheckRecord,
+  fsDiff,
+  type FsDiffEntry,
+  HostDirtyError,
+  HttpBlockFailedError,
+  QuarantiningError,
+  ResetFailedError,
+  type ResetMechanism,
+  type ResetRecord,
+  type VerifyRecord,
+} from "./reset.ts";
 import { restoreSymbols } from "./symbols.ts";
 
 export interface HarnessBc {
@@ -66,7 +83,48 @@ export interface HarnessBc {
     },
   ): Promise<HarnessSyncResult>;
   runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
+  /**
+   * H-35 S3 L2a: set the extension's Allow HttpClient Requests through the
+   * runner app (CG Test Harness >= 1.0.2.0) and return the stored value as
+   * read back (`allow=true` / `allow=false`).
+   */
+  setHttpClientAllowed(
+    container: string,
+    appId: string,
+    allowed: boolean,
+  ): Promise<string>;
+  /**
+   * H-35: the `Target` a compiled package's manifest records, or null when
+   * it records none. Host-side (reads the package file), never a container.
+   */
+  packageTarget(file: string): Promise<string | null>;
 }
+
+/**
+ * H-35 (design-r5 section 2.1, ruling r5): how a build is compiled. `Cloud`
+ * writes `"target": "Cloud"` into the effective app.json before the cache
+ * lookup and the compile (so the compiler refuses File, DotNet and every
+ * OnPrem-scoped API); `as-declared` keeps the workspace's target (trusted
+ * builds only: the oracle, analysis compiles). The policy id is in every
+ * build key, and a cache hit must carry the policy's target.
+ */
+export interface BuildPolicy {
+  target: "Cloud" | "as-declared";
+  id: string;
+}
+export const CLOUD_POLICY: BuildPolicy = { target: "Cloud", id: "h35-cloud@1" };
+export const DECLARED_POLICY: BuildPolicy = {
+  target: "as-declared",
+  id: "declared@1",
+};
+
+/**
+ * H-35 (design-r4 section 3.3, ruling r5): mandatory, set by trusted code
+ * only. `judge` publishes every app as a candidate at its pristine version
+ * (normalized, nothing kept); `backend` is the agent tool environment's plan
+ * (stamped prerequisites, kept across calls).
+ */
+export type VersionPlan = "judge" | "backend";
 
 export type TestRow = z.output<typeof TestResultSchema>;
 
@@ -100,6 +158,19 @@ export class BcLane {
       health?: HealthView;
       maxInfraRetries?: number;
       compileSlots?: number;
+      /**
+       * H-35 run 004 #3: writes a quarantine record that outlives the
+       * environment (openHarnessEnv refuses a persisted one before setup).
+       * H-35 run 004 Sol r1 H6: `fsDiff` is the L4 difference behind it
+       * (empty when none), which `harness recover` must see remediated.
+       * H-35 run 004 Sol r2 N4: null when no complete (error-free) L4
+       * after-capture backs it (recover then refuses).
+       */
+      persist?: (
+        container: string,
+        reason: string,
+        fsDiff: FsDiffEntry[] | null,
+      ) => Promise<void>;
     } = {},
   ) {
     if (containers.length === 0) throw new Error("BcLane needs a container");
@@ -110,11 +181,46 @@ export class BcLane {
     }
   }
 
-  /** Containers whose cleanup failed: never selected until the operator clears them. */
+  /** Containers whose cleanup failed: never selected until `harness recover` clears them. */
   readonly quarantined = new Map<string, string>();
 
-  quarantine(container: string, reason: string): void {
+  // H-35 run 004 Sol r2 N3: exclusive operations in flight; drain() stops
+  // admission and waits for them.
+  private active = 0;
+  private stopped = false;
+  private readonly idleWaiters: (() => void)[] = [];
+
+  /** Sol r2 N3: no new exclusive operation; resolves once none is in flight. */
+  async drain(): Promise<void> {
+    this.stopped = true;
+    while (this.active > 0) {
+      await new Promise<void>((r) => this.idleWaiters.push(r));
+    }
+  }
+
+  /**
+   * Quarantine in memory at once, then persist. Never rejects (it runs in
+   * catch paths): a failed write is logged loudly and the in-memory entry stays.
+   */
+  async quarantine(
+    container: string,
+    reason: string,
+    fsDiff: FsDiffEntry[] | null = null,
+  ): Promise<void> {
     this.quarantined.set(container, reason);
+    if (!this.opts.persist) return;
+    try {
+      await this.opts.persist(container, reason, fsDiff);
+    } catch (err) {
+      // H-35 run 004 Sol r1 H4: never silent. Sol r2 N1: the in-memory
+      // quarantine stays; whatever record is on disk (ours or another
+      // owner's) is never released for it and still refuses the container.
+      console.error(
+        `[FAIL] quarantine of ${container} NOT persisted (kept in memory; its existing record still refuses it; run harness recover before reuse): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private healthy(): string[] {
@@ -244,6 +350,24 @@ export class BcLane {
     opts: { maxInfraRetries?: number; exclude?: readonly string[] } = {},
   ): Promise<Held<T>> {
     checkCancel(signal);
+    // H-35 run 004 Sol r2 N3: a draining lane admits nothing (not infra: no reroute)
+    if (this.stopped) throw new Error("BC lane closed: environment closing");
+    this.active++;
+    try {
+      return await this.exclusiveRun(ctx, fn, signal, opts);
+    } finally {
+      if (--this.active === 0) {
+        for (const r of this.idleWaiters.splice(0)) r();
+      }
+    }
+  }
+
+  private async exclusiveRun<T>(
+    ctx: { taskId: string; variantId: string; attemptNumber: number },
+    fn: (container: string) => Promise<T>,
+    signal: AbortSignal | undefined,
+    opts: { maxInfraRetries?: number; exclude?: readonly string[] },
+  ): Promise<Held<T>> {
     let container = "";
     let queue_ms = 0;
     const { result, retries } = await withInfraRetry<T>(
@@ -276,15 +400,31 @@ export class BcLane {
           admitted = true;
           const out = await fn(c);
           // Quarantine inside the held region, before the lock is released (round 3 B4).
-          const cleanupError = (out as { cleanupError?: string | null } | null)
-            ?.cleanupError;
-          if (cleanupError) this.quarantine(c, cleanupError);
+          const o = out as
+            | { cleanupError?: string | null; fsCheck?: FsCheckRecord | null }
+            | null;
+          // H-35 run 004 Sol r2 N4: the clean L4 after-capture, when one ran
+          if (o?.cleanupError) {
+            await this.quarantine(c, o.cleanupError, fsEvidence(o.fsCheck));
+          }
           checkCancel(signal); // an abort while fn was pending: no pass recorded
           this.record(c, "pass");
           return out;
         } catch (err) {
           if (err instanceof CleanupFailedError) {
-            this.quarantine(c, err.cleanupError);
+            await this.quarantine(c, err.cleanupError, err.fsDiff);
+          }
+          // H-35 S3: a failed reset, a dirty or unobservable host (L4), an
+          // HttpClient block that did not hold (L2a): never reused.
+          if (err instanceof QuarantiningError) {
+            // H-35 run 004 Sol r1 H6: L4 keeps its diff for recover. Sol r2
+            // N4: only an error-free capture counts; a reset or HttpClient
+            // failure carries none (recover refuses: recreate).
+            await this.quarantine(
+              c,
+              err.message,
+              err instanceof HostDirtyError ? fsEvidence(err.record) : null,
+            );
           }
           // A cancellation (even a timeout reason) is never infra: no
           // reroute, no fault recorded against the container.
@@ -334,12 +474,25 @@ export interface LockedSymbols {
   packages: SymbolPackage[];
 }
 
+/**
+ * H-35 run 004 Sol r2 N4: an L4 check's diff as recovery evidence; null
+ * (none) when it is absent or could not observe everything.
+ */
+export const fsEvidence = (
+  f: FsCheckRecord | null | undefined,
+): FsDiffEntry[] | null => f && f.errors.length === 0 ? f.diff : null;
+
 /** Tests (or deploy) failed and the cleanup failed too: the container is quarantined by the lane. */
 export class CleanupFailedError extends ContainerError {
   constructor(
     readonly original: unknown,
     readonly cleanupError: string,
     container: string,
+    /**
+     * H-35 run 004 Sol r1 H6: the L4 difference within cleanupError. Sol r2
+     * N4: null when no error-free after-capture ran.
+     */
+    readonly fsDiff: FsDiffEntry[] | null = null,
   ) {
     super(
       `${
@@ -363,8 +516,17 @@ export interface BuiltApp {
   compile_ms: number;
   /** Analyzer warnings; set only by an analysis compile (M11-05). */
   warnings?: CompilationError[];
-  /** Its build cache key (H-27): set for a built or reused app when a cache is used. */
+  /**
+   * Its adopted build cache key (H-27): dependents key on it and the cache
+   * holds its file. Unset when the cache did not adopt it (a failed write).
+   */
   key?: string;
+  /**
+   * H-35 run 002 Sol r1 #2: its build identity (the key its input hashes
+   * to), set for every built or reused app, cache or not; the deployment
+   * record's build_key.
+   */
+  build_key?: string;
 }
 
 const synthetic = (message: string): CompilationError => ({
@@ -392,9 +554,15 @@ export interface BuildCache {
   put(key: string, file: string): Promise<void>;
 }
 
-/** The run's shared build cache folder (H-27). */
-export const buildCacheDir = (privateRoot: string) =>
-  join(privateRoot, "build-cache");
+/**
+ * A run's build cache folder per consumer (H-27; H-35 design-r4 3.1: the
+ * judge and the agent backend never share one, against PackageId
+ * prelearning). The old shared `build-cache/` is read by neither.
+ */
+export const buildCacheDir = (
+  privateRoot: string,
+  consumer: "judge" | "agent",
+) => join(privateRoot, `build-cache-${consumer}`);
 
 /**
  * Entries and bytes of a build cache folder (H-27). No eviction yet.
@@ -464,8 +632,81 @@ export function dirBuildCache(dir: string): BuildCache {
  * artifact, so a recreated container on the same artifact may hit. The
  * symbol packages restored for the compile are in the key too (H-27 r2): the
  * whole lock before the app info is harvested, the declared closure after,
- * so a cold success never stands in for a closure compile.
+ * so a cold success never stands in for a closure compile. H-35: the build
+ * policy (effective target and policy id) is in the key, so a build under
+ * one policy never stands in for another.
  */
+/**
+ * H-35: one app's build key as buildApps computes it (design-r2 4.2 #2, orch
+ * Sol r1 #4). The effective app.json (version, policy target) is staged into
+ * `stageDir/<folder>` first and the key is of that staged input, its
+ * dependency files and keys, the compiler, the lock and the restore closure.
+ * buildApps keys every build with it (and compiles the staged folder); the
+ * judge recomputes G's Test key with it from trusted inputs only.
+ */
+export async function effectiveBuildKey(
+  compiler: string,
+  o: {
+    srcDir: string;
+    app: StagedApp;
+    version: string;
+    files: ReadonlyMap<string, string>;
+    keys: ReadonlyMap<string, string>;
+    lock: LockedSymbols;
+    lockDigest?: string;
+    graph: StagedApp[];
+    policy: BuildPolicy;
+    stageDir: string;
+  },
+): Promise<{
+  key: string;
+  restored: SymbolPackage[];
+  dir: string;
+  appJson: { version?: string; [k: string]: unknown };
+}> {
+  const { app } = o;
+  const lockDigest = o.lockDigest ?? await lockDigestOf(o.lock);
+  const srcJson = await readAppJsonRaw(
+    join(o.srcDir, app.folder, "app.json"),
+  ) as { application?: unknown; platform?: unknown };
+  const roots = symbolRoots(app, srcJson, o.graph);
+  const closure = roots
+    ? await dependencyClosure(o.lock.store, lockDigest, o.lock.packages, roots)
+    : null;
+  const restored = closure ?? o.lock.packages;
+  const dir = join(o.stageDir, app.folder);
+  await Deno.remove(dir, { recursive: true }).catch(() => {});
+  await safeCopyTree(join(o.srcDir, app.folder), dir, {
+    skip: isTaskBuildArtifact,
+  });
+  const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
+    version?: string;
+    [k: string]: unknown;
+  };
+  appJson.version = o.version;
+  if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
+  await Deno.writeTextFile(
+    join(dir, "app.json"),
+    JSON.stringify(appJson, null, 2),
+  );
+  const key = await buildKey(
+    compiler,
+    app,
+    o.stageDir,
+    o.version,
+    o.files,
+    o.keys,
+    lockDigest,
+    restored,
+    o.policy,
+  );
+  return { key, restored, dir, appJson };
+}
+
+/** The lock's digest in a build key. */
+export const lockDigestOf = (lock: LockedSymbols) =>
+  hashJson({ lock: lock.packages.map((p) => [p.file, p.sha256]) });
+
 async function buildKey(
   compiler: string,
   app: StagedApp,
@@ -475,6 +716,7 @@ async function buildKey(
   keys: ReadonlyMap<string, string>,
   lockDigest: string,
   restored: readonly SymbolPackage[],
+  policy: BuildPolicy,
 ): Promise<string> {
   const deps: [string, string][] = [];
   for (const d of app.depends) {
@@ -493,6 +735,7 @@ async function buildKey(
     compiler,
     lock: lockDigest,
     symbols: restored.map((p) => p.sha256).sort(),
+    policy: { id: policy.id, target: policy.target },
   });
 }
 
@@ -673,6 +916,8 @@ export async function buildApps(
     graph?: StagedApp[];
     /** CodeCop/UICop compile for the final-code check (M11-05); never with `cache`. */
     analysis?: AnalysisSettings;
+    /** H-35: how the apps are compiled (no default: every caller states it). */
+    policy: BuildPolicy;
   },
 ): Promise<BuiltApp[]> {
   if (o.analysis && o.cache) {
@@ -693,7 +938,8 @@ export async function buildApps(
   );
   const lockedNames = new Set(o.lock.packages.map((p) => p.file));
   // An upgraded container (another artifact or BCH version) is a different compiler: a cache miss.
-  const compiler = o.cache ? await bc.harnessCompilerIdentity(container) : null;
+  // orch Sol r1 #3 (r4 3.4): every build has its key, with or without a cache.
+  const compiler = await bc.harnessCompilerIdentity(container);
   const collision = (file: string) =>
     lockedByName.get(basename(file).toLowerCase());
   // A workspace app is the agent's (publisher, name, version, id): one that
@@ -716,9 +962,7 @@ export async function buildApps(
     diagnostics: [...diagnostics, synthetic(message)],
     compile_ms,
   });
-  const lockDigest = await hashJson({
-    lock: o.lock.packages.map((p) => [p.file, p.sha256]),
-  });
+  const lockDigest = await lockDigestOf(o.lock);
   for (const app of o.apps) {
     checkCancel(o.signal);
     const version = o.versions.get(app.folder) ?? app.version;
@@ -774,36 +1018,29 @@ export async function buildApps(
     // The symbol packages this compile restores (M1-40b), fixed before the
     // cache lookup so they are in the key (H-27 r2): the declared closure once
     // the app info is harvested, the whole lock before.
-    const srcJson = await readAppJsonRaw(
-      join(o.srcDir, app.folder, "app.json"),
-    ) as { application?: unknown; platform?: unknown };
-    const roots = symbolRoots(app, srcJson, o.graph ?? o.apps);
-    const closure = roots
-      ? await dependencyClosure(
-        o.lock.store,
-        lockDigest,
-        o.lock.packages,
-        roots,
-      )
-      : null;
-    const restored = closure ?? o.lock.packages;
-    const key = o.cache
-      ? await buildKey(
-        compiler!,
+    const { key, restored, dir, appJson } = await effectiveBuildKey(
+      compiler,
+      {
+        srcDir: o.srcDir,
         app,
-        o.srcDir,
         version,
         files,
         keys,
+        lock: o.lock,
         lockDigest,
-        restored,
-      )
-      : null;
+        graph: o.graph ?? o.apps,
+        policy: o.policy,
+        stageDir: o.outDir,
+      },
+    );
     // H-27 r2: the cache is best-effort; a failed read is a miss.
     let hit: string | null = null;
-    if (key) {
+    // H-35: a hit whose package does not carry the policy's target is refused;
+    // the app is rebuilt unkeyed, so that entry is never adopted either.
+    let poisoned = false;
+    if (o.cache) {
       try {
-        hit = await o.cache!.get(key);
+        hit = await o.cache.get(key);
       } catch (err) {
         console.warn(
           `[WARN] build cache read for ${app.folder} failed (built instead): ${
@@ -846,10 +1083,21 @@ export async function buildApps(
         hit = null;
       }
     }
+    if (hit && o.policy.target === "Cloud") {
+      const target = await bc.packageTarget(reused!).catch(() => null);
+      if (target !== "Cloud") {
+        console.warn(
+          `[WARN] build cache entry for ${app.folder} has target ${target} under a Cloud key: refused, rebuilt unkeyed`,
+        );
+        await Deno.remove(reused!).catch(() => {});
+        hit = null;
+        poisoned = true;
+      }
+    }
     if (hit) {
       const file = reused!;
       files.set(app.folder, file);
-      keys.set(app.folder, key!);
+      keys.set(app.folder, key);
       out.push({
         folder: app.folder,
         id: app.id,
@@ -859,26 +1107,11 @@ export async function buildApps(
         file,
         diagnostics: [],
         compile_ms: 0,
-        key: key!,
+        key,
+        build_key: key,
       });
       continue;
     }
-    const dir = join(o.outDir, app.folder);
-    await Deno.remove(dir, { recursive: true }).catch(() => {});
-    await safeCopyTree(join(o.srcDir, app.folder), dir, {
-      skip: isTaskBuildArtifact,
-    });
-    const appJson = await readAppJsonRaw(join(dir, "app.json")) as {
-      version?: string;
-      application?: unknown;
-      platform?: unknown;
-      [k: string]: unknown;
-    };
-    appJson.version = version;
-    await Deno.writeTextFile(
-      join(dir, "app.json"),
-      JSON.stringify(appJson, null, 2),
-    );
     const pk = join(dir, ".alpackages");
     // Only what the harness restores and seeds (the copy skips any case of it too).
     await Deno.remove(pk, { recursive: true }).catch(() => {});
@@ -959,14 +1192,22 @@ export async function buildApps(
       file = join(o.outDir, ".apps", basename(r.artifactPath));
       await Deno.copyFile(r.artifactPath, file);
       files.set(app.folder, file);
-      if (key) {
+      if (!poisoned && !o.cache) keys.set(app.folder, key);
+      if (o.cache && !poisoned) {
         // H-27 r2: the cache's winning file is this app's file from here on
         // (a concurrent builder may have won the key), so every dependent is
         // built against the cached file. A failed write leaves the app unkeyed.
         try {
-          await o.cache!.put(key, file);
-          const won = await o.cache!.get(key);
+          await o.cache.put(key, file);
+          const won = await o.cache.get(key);
           if (won === null) throw new Error("no entry after the write");
+          // H-35 Sol r1 #6: the winner is target-checked like a first hit.
+          if (
+            o.policy.target === "Cloud" &&
+            await bc.packageTarget(won) !== "Cloud"
+          ) {
+            throw new Error("the winning cache entry is not a Cloud package");
+          }
           // H-27 r3: the winner is copied aside and replaces the fresh build
           // only once complete; on any failure the fresh build stays, unkeyed.
           const tmp = `${file}.tmp-${crypto.randomUUID()}`;
@@ -998,6 +1239,7 @@ export async function buildApps(
       compile_ms,
       ...warned,
       ...(file && keys.get(app.folder) === key && key ? { key } : {}),
+      ...(file ? { build_key: key } : {}),
     });
   }
   return out;
@@ -1015,6 +1257,69 @@ export interface PrepareInput {
   cache?: BuildCache;
   /** What the candidate build is, for a crashed-build message (default "candidate"). */
   label?: string;
+  /** H-35: mandatory, trusted callers only (see VersionPlan). */
+  versionPlan: VersionPlan;
+  /** H-35: how every app of this prepare is compiled. */
+  policy: BuildPolicy;
+  /**
+   * H-35 (design-r3 3.2): the judgment's production manifest. Its apps are
+   * not compiled: their source must equal the manifest's, and they publish
+   * the manifest's files (G and A alike, with or without a cache).
+   */
+  production?: ProductionManifest;
+}
+
+/** H-35 (design-r3 3.2): one judgment's production builds, published by every deployment. */
+export interface ProductionManifest {
+  /** sha256 of the canonical content (recorded in the verdict log). */
+  digest: string;
+  /** Folder -> the package, its sha256, its source tree hash and build key. */
+  apps: Map<string, {
+    id: string;
+    file: string;
+    sha256: string;
+    source: string;
+    /** The adopted cache key (dependents key on it); null when not adopted. */
+    key: string | null;
+    /** Run 002 Sol r1 #2: the build identity, cache or not. */
+    build_key: string | null;
+  }>;
+}
+
+/** The production manifest of a prepare: every app of `dir` but `exclude` (the Test app). */
+export async function productionManifest(
+  prep: Prepared,
+  dir: string,
+  exclude: readonly string[] = ["Test"],
+): Promise<ProductionManifest> {
+  if (!prep.buildOk) throw new Error("a production manifest needs a build");
+  const folderOf = new Map(
+    (await readAppGraph(dir)).map((a) => [a.id, a.folder]),
+  );
+  const apps: ProductionManifest["apps"] = new Map();
+  for (const w of prep.wanted) {
+    const folder = folderOf.get(w.id);
+    if (!folder || exclude.includes(folder)) continue;
+    apps.set(folder, {
+      id: w.id,
+      file: w.file,
+      sha256: w.sha256 ?? await hashFile(dirname(w.file), w.file),
+      source: await hashTree(join(dir, folder), "task"),
+      key: prep.keys.get(folder) ?? null,
+      build_key: prep.buildKeys.get(folder) ?? null,
+    });
+  }
+  const digest = await hashJson(
+    [...apps].sort(([a], [b]) => a < b ? -1 : 1).map(([folder, e]) => ({
+      folder,
+      id: e.id,
+      sha256: e.sha256,
+      source: e.source,
+      key: e.key,
+      build_key: e.build_key,
+    })),
+  );
+  return { digest, apps };
 }
 
 /**
@@ -1067,6 +1372,10 @@ export interface Prepared {
   per_app_compiles: number;
   /** Folder -> build cache key of every app built or reused with a cache (H-27). */
   keys: Map<string, string>;
+  /** H-35 run 002 Sol r1 #2: folder -> build identity (buildKey), cache or not. */
+  buildKeys: Map<string, string>;
+  /** Folder -> the package file of every app (built, reused or given). */
+  files: Map<string, string>;
 }
 
 export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
@@ -1075,9 +1384,10 @@ export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
 
 /**
  * Versions of a candidate workspace's apps, shared by the test path and the
- * compile op (so a test reuses the compile's builds, M1-40): candidates (the
- * changed apps and their dependents) keep the pristine version, unchanged
- * apps get the stamped prerequisite version.
+ * compile op (so a test reuses the compile's builds, M1-40). Plan `backend`:
+ * candidates (the changed apps and their dependents) keep the pristine
+ * version, unchanged apps get the stamped prerequisite version. Plan `judge`
+ * (H-35): every app is a candidate at its pristine version.
  */
 export async function appVersions(
   bc: HarnessBc,
@@ -1090,13 +1400,20 @@ export async function appVersions(
     | "candidateApps"
     | "changed"
     | "lock"
+    | "versionPlan"
   >,
 ) {
   const graph = o.candidateApps;
   const pristineVersion = new Map(
     o.pristineApps.map((a) => [a.folder, a.version]),
   );
-  const cands = new Set(candidateFolders(graph, o.changed));
+  // Apps the change can affect: compiled from the candidate tree. The rest is
+  // the staged baseline, compiled from the pristine tree (a failure there is the
+  // task's). H-35: the judge plan publishes every app as a candidate anyway.
+  const affected = new Set(candidateFolders(graph, o.changed));
+  const cands = o.versionPlan === "judge"
+    ? new Set(graph.map((a) => a.folder))
+    : affected;
   const buildId = await hashJson({
     symbols: o.lock.packages.map((p) => [p.app_id, p.version, p.sha256]),
     compiler: await bc.harnessCompilerIdentity(container),
@@ -1110,7 +1427,7 @@ export async function appVersions(
       cands.has(a.folder) ? base : prereqVersion(base, stamps.get(a.folder)!),
     ];
   }));
-  return { cands, stamps, candStamps, versions };
+  return { cands, affected, stamps, candStamps, versions };
 }
 
 /** Apps of the snapshot whose tree differs from the pristine staging (or is gone). */
@@ -1137,12 +1454,22 @@ async function prepareOn(
   o: PrepareInput,
 ): Promise<Prepared> {
   const graph = o.candidateApps;
-  const { cands, stamps, candStamps, versions } = await appVersions(
+  const { cands, affected, stamps, candStamps, versions } = await appVersions(
     lane.bc,
     container,
     o,
   );
-  const prereqs = graph.filter((a) => !cands.has(a.folder));
+  const given = o.production?.apps ?? new Map();
+  for (const [folder, e] of given) {
+    if (await hashTree(join(o.candidateDir, folder), "task") !== e.source) {
+      throw new Error(
+        `harness bug: ${folder} differs from the judgment's production manifest`,
+      );
+    }
+  }
+  const prereqs = graph.filter((a) =>
+    !affected.has(a.folder) && !given.has(a.folder)
+  );
   const pre = await buildApps(lane.bc, container, {
     srcDir: o.pristine,
     apps: prereqs,
@@ -1150,6 +1477,7 @@ async function prepareOn(
     outDir: join(o.workDir, "prereq"),
     lock: o.lock,
     graph,
+    policy: o.policy,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
@@ -1165,11 +1493,19 @@ async function prepareOn(
       [failedPre.folder],
     );
   }
-  const prebuilt = new Map(pre.map((b) => [b.folder, b.file!] as const));
-  const preKeys = new Map(
-    pre.filter((b) => b.key).map((b) => [b.folder, b.key!] as const),
+  const prebuilt = new Map([
+    ...pre.map((b) => [b.folder, b.file!] as const),
+    ...[...given].map(([f, e]) => [f, e.file] as const),
+  ]);
+  const preKeys = new Map([
+    ...pre.filter((b) => b.key).map((b) => [b.folder, b.key!] as const),
+    ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
+      [f, e.key!] as const
+    ),
+  ]);
+  const candApps = graph.filter((a) =>
+    affected.has(a.folder) && !given.has(a.folder)
   );
-  const candApps = graph.filter((a) => cands.has(a.folder));
   const built = await buildApps(lane.bc, container, {
     srcDir: o.candidateDir,
     apps: candApps,
@@ -1179,16 +1515,58 @@ async function prepareOn(
     graph,
     prebuilt,
     prebuiltKeys: preKeys,
+    policy: o.policy,
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.cache ? { cache: o.cache } : {}),
   });
   throwIfCrashed(built, container, o.label ?? "candidate");
   const all = [...pre, ...built];
   const buildOk = built.every((b) => b.ok);
-  const fileOf = new Map(
-    all.filter((b) => b.ok).map((b) => [b.folder, b.file!] as const),
-  );
+  const fileOf = new Map([
+    ...all.filter((b) => b.ok).map((b) => [b.folder, b.file!] as const),
+    ...[...given].map(([f, e]) => [f, e.file] as const),
+  ]);
   const idOf = new Map(graph.map((a) => [a.folder, a.id]));
+  // H-35 Sol r1 #5: every package carries its digest; deploy checks each.
+  // S2.4 (design-r2 4.2): and its build key and source tree, for the
+  // deployment record. Run 002 Sol r1 #2: `keyOf` is the cache adoption
+  // (dependents key on it), `identityOf` the build identity (always known).
+  const keyOf = new Map([
+    ...all.filter((b) => b.ok && b.key).map((b) => [b.folder, b.key!] as const),
+    ...[...given].filter(([, e]) => e.key).map(([f, e]) =>
+      [f, e.key!] as const
+    ),
+  ]);
+  const identityOf = new Map([
+    ...all.filter((b) => b.ok && b.build_key).map((b) =>
+      [b.folder, b.build_key!] as const
+    ),
+    ...[...given].filter(([, e]) => e.build_key).map(([f, e]) =>
+      [f, e.build_key!] as const
+    ),
+  ]);
+  const shaOf = new Map<string, string>();
+  const sourceOf = new Map<string, string>();
+  if (buildOk) {
+    for (const a of graph) {
+      const f = fileOf.get(a.folder)!;
+      shaOf.set(
+        a.folder,
+        given.get(a.folder)?.sha256 ?? await hashFile(dirname(f), f),
+      );
+      sourceOf.set(
+        a.folder,
+        given.get(a.folder)?.source ??
+          await hashTree(
+            join(
+              affected.has(a.folder) ? o.candidateDir : o.pristine,
+              a.folder,
+            ),
+            "task",
+          ),
+      );
+    }
+  }
   const wanted: WantedApp[] = buildOk
     ? graph.map((a) => ({
       id: a.id,
@@ -1201,19 +1579,24 @@ async function prepareOn(
       file: fileOf.get(a.folder)!,
       role: cands.has(a.folder) ? "candidate" : "prereq",
       depends: a.depends.map((d) => idOf.get(d)!),
+      sha256: shaOf.get(a.folder)!,
+      source: sourceOf.get(a.folder)!,
+      ...(identityOf.has(a.folder)
+        ? { build_key: identityOf.get(a.folder)! }
+        : {}),
     }))
     : [];
   return {
     container,
     built,
     wanted,
-    candidateIds: candApps.map((a) => a.id),
+    candidateIds: graph.filter((a) => cands.has(a.folder)).map((a) => a.id),
     buildOk,
     compile_ms: all.reduce((s, b) => s + b.compile_ms, 0),
     per_app_compiles: all.filter((b) => b.attempted).length,
-    keys: new Map(
-      all.filter((b) => b.ok && b.key).map((b) => [b.folder, b.key!] as const),
-    ),
+    keys: keyOf,
+    buildKeys: identityOf,
+    files: fileOf,
   };
 }
 
@@ -1377,6 +1760,23 @@ export interface DeployContext {
    * the bench candidate is never owned (a leftover one is a collision).
    */
   trustedRoots: string[];
+  /**
+   * H-35 S3 (design-r3 2.1): the reset run before every deployment of this
+   * context. Judging always sets it (JudgeInput requires it); the agent's
+   * tool environment has none.
+   */
+  reset?: ResetMechanism;
+  /** Every reset's record, failed ones included (the verdict log's `resets[]`). */
+  onReset?: (r: ResetRecord) => void;
+  /** Every post-cleanup inventory check (the verdict log's `verifies[]`). */
+  onVerify?: (v: VerifyRecord) => void;
+  /** Every L4 check (the verdict log's `fs_checks[]`). */
+  onFsCheck?: (f: FsCheckRecord) => void;
+  /**
+   * H-35 run 002 Sol r1 #3: called as each attempt starts deploying (after
+   * its reset), whatever the attempt's outcome: the deployment record.
+   */
+  onDeploy?: (container: string) => void | Promise<void>;
 }
 
 export interface Deployed {
@@ -1394,6 +1794,17 @@ export async function deploy(
   ctx: DeployContext,
 ): Promise<Deployed> {
   const t0 = performance.now();
+  // H-35 (design-r3 3.3): a manifest package publishes only as recorded.
+  for (const w of wanted) {
+    if (
+      w.sha256 !== undefined &&
+      await hashFile(dirname(w.file), w.file) !== w.sha256
+    ) {
+      throw new Error(
+        `harness bug: ${w.name} (${w.file}) no longer matches its manifest sha256`,
+      );
+    }
+  }
   const ledger = await loadLedger(ctx.ledgerRoot, container);
   const allow = await trustedHarnessAppIds(ctx.trustedRoots, ledger);
   const plan = planAppSync(
@@ -1459,6 +1870,25 @@ export async function deploy(
     }
     d.candidateFailure = { id: w!.id, message: msg };
   }
+  // H-35 S3 L2a (design-r5 2.2): in a judge deployment (it has a reset, the
+  // agent's tool environment has none) no candidate may make outbound HTTP
+  // calls. The setting lives in the tenant DB, so every deployment sets it
+  // again; a read-back other than false quarantines.
+  // Sol S3 r1 #4: every candidate, a publish failure notwithstanding (the
+  // others are installed), and a call that throws quarantines as well.
+  if (ctx.reset) {
+    for (const w of wanted.filter((w) => w.role === "candidate")) {
+      let back: string;
+      try {
+        back = await bc.setHttpClientAllowed(container, w.id, false);
+      } catch (err) {
+        back = `error: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      if (back.trim() !== "allow=false") {
+        throw new HttpBlockFailedError(container, w.id, back);
+      }
+    }
+  }
   return d;
 }
 
@@ -1471,6 +1901,12 @@ export interface DeployTestResult {
   unexpected: UnexpectedProcedure[];
   /** Non-null when unpublishing the candidates failed: the caller quarantines the container. */
   cleanupError: string | null;
+  /** H-35 S3: the reset that preceded this deployment (null: the context has none). */
+  reset: ResetRecord | null;
+  /** H-35 S3: the post-cleanup inventory check (null: none ran). */
+  verify: VerifyRecord | null;
+  /** H-35 S3 L4: the deployment's fsDigest comparison (null: none ran). */
+  fsCheck: FsCheckRecord | null;
 }
 
 /**
@@ -1521,7 +1957,99 @@ export async function deployAndTest(
       }`;
     }
   };
-  let r: Omit<DeployTestResult, "cleanupError">;
+  // H-35 S3 (design-r4 2): after a cleanup that succeeded, the inventory
+  // must be the baseline again; a dirty or unrunnable check quarantines.
+  let verify: VerifyRecord | null = null;
+  // H-35 S3 L4: fsDigest(W) after the reset and after the cleanup; a
+  // capture that throws fails closed as an error line.
+  let fsBefore: string[] | null = null;
+  let fsCheck: FsCheckRecord | null = null;
+  const capture = async (m: ResetMechanism): Promise<string[]> => {
+    try {
+      return await m.fsDigest!(container);
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      return [`E|(fsDigest)|${why.replace(/[\r\n|]+/g, " ")}`];
+    }
+  };
+  const fsChecked = (diff: FsDiffEntry[], errors: string[]) => {
+    fsCheck = {
+      container,
+      ok: diff.length === 0 && errors.length === 0,
+      diff,
+      errors,
+    };
+    i.ctx.onFsCheck?.(fsCheck);
+    return fsCheck;
+  };
+  const cleanAndVerify = async (): Promise<string | null> => {
+    const c = await cleanup();
+    const m = i.ctx.reset;
+    if (!m) return c;
+    const why: string[] = c ? [c] : [];
+    // The inventory check needs a cleanup that ran; a failed one already
+    // quarantines.
+    if (!c && m.verifyClean) {
+      try {
+        verify = await m.verifyClean(container);
+      } catch (err) {
+        verify = {
+          container,
+          ok: false,
+          diff: [],
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+      i.ctx.onVerify?.(verify);
+      if (!verify.ok) {
+        why.push(`post-cleanup check on ${container} failed: ${verify.error}`);
+      }
+    }
+    // Sol S3 r1 #1: the second capture whatever the cleanup's outcome, so a
+    // dirty host is never scored behind a cleanup failure.
+    if (fsBefore && m.fsDigest) {
+      const d = fsDiff(
+        fsBefore,
+        await capture(m),
+        m.fsExclude ?? [],
+        m.fsRoots ?? [],
+        m.fsCaches ?? [],
+      );
+      const f = fsChecked(d.diff, d.errors);
+      if (!f.ok) why.push(new HostDirtyError(f).message);
+    }
+    return why.length > 0 ? why.join("; ") : null;
+  };
+  // H-35 S3: reset first; a failed reset deployed nothing, so no cleanup.
+  let reset: ResetRecord | null = null;
+  if (i.ctx.reset) {
+    const m = i.ctx.reset;
+    // Run 002 Sol r2 #3: a mechanism that throws is a recorded failure
+    // (quarantined); a configuration refusal stays loud and unrecorded.
+    try {
+      // Awaited inside the try: a synchronous throw is caught too (Sol r3 #2).
+      reset = await m.reset(container);
+    } catch (err) {
+      if (err instanceof ConfigurationError) throw err;
+      reset = failedReset(container, m, "threw", err);
+    }
+    i.ctx.onReset?.(reset);
+    if (!reset.ok) throw new ResetFailedError(reset);
+    // The restored container holds the baseline only: no harness app owned.
+    await saveLedger(i.ctx.ledgerRoot, container, {});
+    if (m.fsDigest) {
+      fsBefore = await capture(m);
+      // Unobservable right after the reset: nothing deployed, fail closed.
+      const pre = fsDiff(fsBefore, [], m.fsExclude ?? [], m.fsRoots ?? []);
+      const errors = pre.errors.filter((e) => e.startsWith("before: "));
+      if (errors.length > 0) throw new HostDirtyError(fsChecked([], errors));
+    }
+  }
+  let r: Omit<
+    DeployTestResult,
+    "cleanupError" | "reset" | "verify" | "fsCheck"
+  >;
+  await i.ctx.onDeploy?.(container);
   try {
     const deployed = await deploy(bc, container, i.wanted, i.ctx);
     r = deployed.candidateFailure
@@ -1544,9 +2072,15 @@ export async function deployAndTest(
       }
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
-    const c = await cleanup();
-    if (c) throw new CleanupFailedError(err, c, container);
+    const c = await cleanAndVerify();
+    // H-35 run 004 Sol r1 H6: a dirty L4 check rides along with its diff
+    const f = fsCheck as FsCheckRecord | null;
+    if (c) throw new CleanupFailedError(err, c, container, fsEvidence(f));
     throw err;
   }
-  return { ...r, cleanupError: await cleanup() };
+  const cleanupError = await cleanAndVerify();
+  // A dirty host: these rows are never scored (infra; the lane quarantines).
+  const f = fsCheck as FsCheckRecord | null;
+  if (f && !f.ok) throw new HostDirtyError(f);
+  return { ...r, reset, cleanupError, verify, fsCheck: f };
 }

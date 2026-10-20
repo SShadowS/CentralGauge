@@ -21,6 +21,13 @@ import type {
   Prepared,
 } from "./bc-lane.ts";
 import type { JudgmentRecord } from "./records.ts";
+import type { BcEgressRecord } from "./environment.ts";
+import type {
+  FsCheckRecord,
+  ResetMechanism,
+  ResetRecord,
+  VerifyRecord,
+} from "./reset.ts";
 import type { StagedApp } from "./staging.ts";
 import type { LoadedTask } from "./task.ts";
 import { ContainerError, ValidationError } from "../errors.ts";
@@ -34,9 +41,15 @@ import {
   type BcLane,
   buildApps,
   CleanupFailedError,
+  CLOUD_POLICY,
+  DECLARED_POLICY,
   deployAndTest,
+  effectiveBuildKey,
   isCascadeDiagnostic,
+  lockDigestOf,
   prepareApps,
+  type ProductionManifest,
+  productionManifest,
   scorerPassed,
   type TestMessage,
   type TestRow,
@@ -44,18 +57,23 @@ import {
   throwIfCrashed,
 } from "./bc-lane.ts";
 import { safeCopyTree } from "./fsutil.ts";
-import { hashFile } from "./hash.ts";
+import { envFpOf } from "./environment.ts";
+import { hashFile, hashTree } from "./hash.ts";
 import {
   type InfraSignature,
   JudgmentRecordSchema,
+  type PolicyViolation,
   scorerFingerprint,
+  type ScorerState,
   verdictOf,
 } from "./records.ts";
 import { applyOverlay, readAppGraph, readAppJson } from "./staging.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
+  type ReconstructOptions,
   TEST_APP,
+  type VerdictWorkspace,
 } from "./verdict-workspace.ts";
 
 /**
@@ -70,23 +88,108 @@ export const SCORER_SUITE: Record<string, string> = {
   // 3: the shipped helper is merged with the agent's additions, shipped
   // members always as shipped, and internalsVisibleTo naming the Test app is
   // kept (H-30, owner 2026-10-18 "merge, shipped wins"; all four bumped).
-  build: "3",
+  // 4: G builds the pristine Test app, never the agent's (H-35).
+  build: "4",
   // 2: a change task's agent-added tests include those extracted from
   // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
   // 3: added helper procedures kept (H-21).
   // 4: a thrown or timed-out agent-added test is rerun behind a trusted control
   // (H-26, decision 2026-09-25-agent-suite-infra item 3).
   // 5: helper merge, shipped wins (H-30).
-  pass_to_pass: "5",
+  // 6: shipped rows only, on G; agent-added tests moved to agent_tests (H-35).
+  pass_to_pass: "6",
   // 2: added helper procedures kept (H-21). 3: helper merge (H-30).
-  fail_to_pass: "3",
+  // 4: the oracle runs on G, without agent Test code (H-35).
+  fail_to_pass: "4",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
   // 3: [Test] procedures added to shipped test codeunits are extracted into
   // a generated codeunit, with the credit rules (M4-17a).
   // 4: added helper procedures kept (H-21). 5: helper merge (H-30).
-  mutant_kill: "5",
+  // 6: the helper as written (H-35).
+  mutant_kill: "6",
+  // 1: harness-defined, every kind but test-authoring: the agent's own tests
+  // on A (agent Test, no shipped test codeunits), H-26 rerun policy (H-35).
+  agent_tests: "1",
 };
-type ScorerName = "build" | "pass_to_pass" | "fail_to_pass" | "mutant_kill";
+type ScorerName =
+  | "build"
+  | "pass_to_pass"
+  | "fail_to_pass"
+  | "mutant_kill"
+  | "agent_tests";
+
+/**
+ * H-35 (design-r2 3): a judgment's scorers. `agent_tests` is harness-defined,
+ * not in task.yml (the scorer list is in every task's oracle hash), so it is
+ * added here for every kind but test-authoring.
+ */
+export function effectiveScorers(
+  task: { kind: string; scorers: readonly string[] },
+): string[] {
+  return task.kind === "test-authoring"
+    ? [...task.scorers]
+    : [...task.scorers, "agent_tests"];
+}
+
+/**
+ * H-35 (design-r3 6.3): every scorer suite that ever shipped (the git history
+ * of SCORER_SUITE, oldest first) with the judgment record version it goes
+ * with. A judgment's scorer_versions must equal exactly one; a missing
+ * agent_tests is legacy only for an exact legacy suite.
+ */
+export const KNOWN_SUITES: readonly {
+  id: string;
+  v: 1 | 2;
+  versions: Readonly<Record<string, string>>;
+}[] = [
+  ...[
+    ["1", "1", "1", "1"],
+    ["1", "1", "1", "2"],
+    ["1", "2", "1", "3"],
+    ["2", "3", "2", "4"],
+    ["2", "4", "2", "4"],
+    ["3", "5", "3", "5"],
+  ].map(([build, p2p, f2p, mk], i) => ({
+    id: `legacy-${i + 1}`,
+    v: 1 as const,
+    versions: {
+      build: build!,
+      pass_to_pass: p2p!,
+      fail_to_pass: f2p!,
+      mutant_kill: mk!,
+    },
+  })),
+  { id: "h35", v: 2, versions: SCORER_SUITE },
+];
+
+const sameVersions = (
+  a: Readonly<Record<string, string>>,
+  b: Readonly<Record<string, string>>,
+) =>
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.entries(a).every(([k, v]) => b[k] === v);
+
+/** The known suite these versions are, or null (an unknown combination). */
+export function suiteOf(
+  versions: Readonly<Record<string, string>>,
+): (typeof KNOWN_SUITES)[number] | null {
+  return KNOWN_SUITES.find((s) => sameVersions(s.versions, versions)) ?? null;
+}
+
+/**
+ * H-35 (design-r2 3): the scorer names a judgment under these versions must
+ * carry for this task descriptor: the task's list under a legacy suite, the
+ * effective set (agent_tests added) under the H-35 suite; null when the
+ * versions are no known suite.
+ */
+export function expectedScorers(
+  task: { kind: string; scorers: readonly string[] },
+  versions: Readonly<Record<string, string>>,
+): string[] | null {
+  const suite = suiteOf(versions);
+  if (!suite) return null;
+  return suite.v === 1 ? [...task.scorers] : effectiveScorers(task);
+}
 
 export function currentScorerFingerprint(): Promise<string> {
   return scorerFingerprint(SCORER_SUITE);
@@ -127,9 +230,16 @@ export interface JudgeInput {
   workDir: string;
   lock: LockedSymbols;
   /** The removal allowlist's trusted roots (pristine, oracle) are set by judge, never by the caller. */
-  deploy: Pick<DeployContext, "ledgerRoot">;
+  /** H-35 S3: `reset` is required: no judge deployment without a reset. */
+  deploy: Pick<DeployContext, "ledgerRoot"> & {
+    reset: ResetMechanism;
+    /** H-35 S3 L2b: the admitted NST egress state, recorded in the log. */
+    bcEgress?: BcEgressRecord | null;
+  };
   /** H-27: the run's shared build cache (task-fixed builds are reused across cells); none = no reuse. */
   buildCache?: BuildCache;
+  /** H-35 provenance: the harness commit judging (null when unknown). */
+  harnessCommit?: string | null;
 }
 
 export interface VerdictSpans {
@@ -155,11 +265,114 @@ export interface VerdictLog {
   infra_retries: InfraRetryRecord[];
   per_app_compiles: number;
   error: string | null;
+  /**
+   * H-35 (design-r2 4.2): every deployment of the judgment, in order.
+   * Absent in a log written before H-35.
+   */
+  deployments?: DeploymentRecord[];
+  /**
+   * H-35 S3 (design-r3 2.4): every reset of the judgment, failed ones
+   * included, in order. Absent in a log written before S3.
+   */
+  resets?: ResetRecord[];
+  /**
+   * H-35 S3 (design-r4 2): every post-cleanup inventory check, in order. A
+   * failed one quarantined its container. Absent in a log written before.
+   */
+  verifies?: VerifyRecord[];
+  /**
+   * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): every deployment's
+   * fsDigest(W) comparison, in order. A failed one was never measured (infra)
+   * and quarantined its container. Scope: differences in the declared roots'
+   * file/stream contents and recorded metadata between the two observation
+   * points, minus the lineage's exclusions; not a complete write history.
+   * Each capture walks with the NST suspended; a writer outside the NST
+   * process (e.g. a detached process an OnPrem DotNet call started) is not
+   * covered (owner, 2026-10-20 addendum 2).
+   */
+  fs_checks?: FsCheckRecord[];
+  /**
+   * H-35 S3 L2b: the NST egress state the run was admitted under, and its
+   * declared override (`--unverified-bc-egress-ok`); null: not recorded.
+   */
+  bc_egress?: BcEgressRecord | null;
+}
+
+/** H-35 (design-r2 4.2): one hold's deployment: what was published where. */
+export interface DeploymentRecord {
+  /** G, A, control, G', A_ref, A_0, A_m:<name>. */
+  hold: string;
+  container: string;
+  apps: {
+    id: string;
+    name: string;
+    version: string;
+    role: string;
+    file_sha256: string;
+    build_key: string | null;
+    source_tree_hash: string | null;
+  }[];
+  /**
+   * H-35 S3.3 (design-r4 5.2): the container's environment fingerprint,
+   * null when the reset mechanism carries no lineage (absent before S3).
+   */
+  env_fp?: string | null;
+}
+
+/**
+ * H-35 S3.3 (design-r4 5.1, ruling 2026-10-19 (a)): env_fp v1 =
+ * hashJson(the lineage's compatibility identity, the mechanism, the symbols
+ * lock digest, the container's live compiler identity). Null without a
+ * lineage. Image digest, SQL edition, fs baseline and egress join the
+ * lineage's compat with `harness baseline create` (a new env_fp).
+ */
+async function envFp(
+  ctx: JudgeContext,
+  container: string,
+): Promise<string | null> {
+  const compat = ctx.i.deploy.reset.compat;
+  if (!compat) return null;
+  // The same formula admission checks (environment.ts).
+  return await envFpOf({
+    compat,
+    mechanism: ctx.i.deploy.reset.id,
+    lockDigest: await lockDigestOf(ctx.i.lock),
+    compiler: await ctx.lane.bc.harnessCompilerIdentity(container),
+  });
+}
+
+/** Records one hold's deployment (every package carries its digest). */
+async function recordDeployment(
+  ctx: JudgeContext,
+  hold: string,
+  container: string,
+  wanted: WantedApp[],
+): Promise<void> {
+  const env_fp = await envFp(ctx, container);
+  (ctx.log.deployments ??= []).push({
+    hold,
+    container,
+    env_fp,
+    apps: wanted.map((w) => {
+      if (!w.sha256) throw new Error(`harness bug: ${w.name} has no digest`);
+      return {
+        id: w.id,
+        name: w.name,
+        version: w.version,
+        role: w.role,
+        file_sha256: w.sha256,
+        build_key: w.build_key ?? null,
+        source_tree_hash: w.source ?? null,
+      };
+    }),
+  });
 }
 
 interface Scorer {
   name: string;
   passed: boolean | null;
+  /** H-35 v2 (design-r2 3). */
+  state: ScorerState;
   tests: TestRow[];
 }
 
@@ -168,16 +381,35 @@ export class Scores {
   readonly list: Scorer[];
   private readonly done = new Set<string>();
   constructor(names: readonly string[]) {
-    this.list = names.map((name) => ({ name, passed: false, tests: [] }));
+    this.list = names.map((name) => ({
+      name,
+      passed: false,
+      state: "measured" as ScorerState,
+      tests: [],
+    }));
   }
   has(name: ScorerName): boolean {
     return this.list.some((s) => s.name === name);
   }
+  /** A result: null is infra (unscored), a boolean is measured. */
   set(name: ScorerName, passed: boolean | null, tests: TestRow[] = []): void {
+    this.put(name, passed, passed === null ? "unscored" : "measured", tests);
+  }
+  /** H-35 (design-r2 5): the policy gate stopped this scorer. */
+  notMeasured(name: ScorerName): void {
+    this.put(name, null, "not_measured", []);
+  }
+  private put(
+    name: ScorerName,
+    passed: boolean | null,
+    state: ScorerState,
+    tests: TestRow[],
+  ): void {
     const s = this.list.find((x) => x.name === name);
     // Never a silent drop: a result for a scorer the task does not list is a harness bug.
     if (!s) throw new Error(`scorer ${name} is not in this task's scorers`);
     s.passed = passed;
+    s.state = state;
     s.tests = tests;
     this.done.add(name);
   }
@@ -193,6 +425,40 @@ export class Scores {
       if (!this.done.has(s.name)) this.set(s.name as ScorerName, null);
     }
   }
+  /** Every scorer not yet decided is stopped by the gate (a production-side violation). */
+  notMeasuredRest(): void {
+    for (const s of this.list) {
+      if (!this.done.has(s.name)) this.notMeasured(s.name as ScorerName);
+    }
+  }
+}
+
+/** The stable rule codes the H-35 policy rules emit as `<rule>: ...`. */
+const RULE_CODES = new Set([
+  "unreadable_test",
+  "test_lifecycle",
+  "isolation_disabled",
+  "dependency_not_allowed",
+  "unreadable",
+  "test_detection_ref",
+  "dynamic_object_access",
+  // H-35 run 004 #1 (r5 2.3): the L3 persistence bans
+  "persistence_ref",
+]);
+
+/** H-35 (design-r2 5): a workspace violation's stable rule code. */
+export function violationRule(v: string): string {
+  const m = /^([a-z_]+): /.exec(v);
+  if (m && RULE_CODES.has(m[1]!)) return m[1]!;
+  if (v.startsWith("workspace ")) return "workspace_freeze";
+  if (/link refused|link, reparse point/.test(v)) return "link_refused";
+  if (/case-ambiguous|case alias/.test(v)) return "case_alias";
+  if (/collides with shipped/.test(v)) return "test_collision";
+  if (/ changed from |idRanges changed|app\.json missing/.test(v)) {
+    return "identity_changed";
+  }
+  if (/is missing$/.test(v)) return "app_missing";
+  return "app_validation";
 }
 
 export interface JudgeContext {
@@ -201,6 +467,10 @@ export interface JudgeContext {
   scores: Scores;
   log: VerdictLog;
   deploy: DeployContext;
+  /** H-35 policy gate: violations by side and rule (design-r2 5). */
+  policy: PolicyViolation[];
+  /** H-35: the digest of the judgment's production manifest, once built. */
+  manifest: string | null;
 }
 
 function recordBuild(ctx: JudgeContext, prep: Prepared, label: string): void {
@@ -246,8 +516,10 @@ export function agentTestsBc(
   return {
     compileProject: (c, p) => bc.compileProject(c, p),
     harnessCompilerIdentity: (c) => bc.harnessCompilerIdentity(c),
+    packageTarget: (f) => bc.packageTarget(f),
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
+    setHttpClientAllowed: (c, id, a) => bc.setHttpClientAllowed(c, id, a),
     async runHarnessTests(c, codeunit): Promise<TestResult> {
       const procs = discovered.get(codeunit);
       if (!procs) throw new Error(`codeunit ${codeunit} is not agent-added`);
@@ -307,8 +579,10 @@ export function agentSuiteBc(
   return {
     compileProject: (c, p) => bc.compileProject(c, p),
     harnessCompilerIdentity: (c) => bc.harnessCompilerIdentity(c),
+    packageTarget: (f) => bc.packageTarget(f),
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
+    setHttpClientAllowed: (c, id, a) => bc.setHttpClientAllowed(c, id, a),
     async runHarnessTests(c, codeunit): Promise<TestResult> {
       const procs = discovered.get(codeunit);
       if (!procs) return await bc.runHarnessTests(c, codeunit);
@@ -349,6 +623,7 @@ export async function runHeld(
   wanted: WantedApp[],
   tests: TestSpec[],
   cleanupIds: string[],
+  hold: string,
   bc: HarnessBc = ctx.lane.bc,
 ): Promise<{ rows: TestRow[] }> {
   const held = await ctx.lane.exclusive(
@@ -362,33 +637,56 @@ export async function runHeld(
         wanted,
         tests,
         cleanupIds,
-        ctx: ctx.deploy,
+        ctx: holdContext(ctx, hold, wanted),
       }),
   );
   return { rows: accountHeld(ctx, held) };
 }
 
 /**
- * pass_to_pass's agent-added test codeunits on the candidate build (H-26),
- * per codeunit. A codeunit that completes on the first run keeps those rows.
- * `rerun` null (pass_to_pass already fails): a thrown codeunit is the
+ * One hold's deployment context: each attempt (an infra retry included) is
+ * recorded as it starts deploying, whatever its outcome (Sol r1 #3).
+ */
+function holdContext(
+  ctx: JudgeContext,
+  hold: string,
+  wanted: WantedApp[],
+): DeployContext {
+  return {
+    ...ctx.deploy,
+    onDeploy: (c) => recordDeployment(ctx, hold, c, wanted),
+  };
+}
+
+/** H-35: the trusted control of an agent rerun: G's deployment and its shipped specs. */
+interface Control {
+  wanted: WantedApp[];
+  specs: TestSpec[];
+  cleanupIds: string[];
+}
+
+/**
+ * agent_tests (H-35; pass_to_pass's agent rows before): the agent's test
+ * codeunits on A (H-26), per codeunit. A codeunit that completes on the first
+ * run keeps those rows.
+ * `rerun` null (agent_tests already fails): a thrown codeunit is the
  * agent's failure (agentTestsBc), and an infra fault of the whole run adds
  * no rows, so it cannot unscore that fail. The same holds when a completed
  * agent codeunit failed. Else a codeunit that throws or times out is
  * ambiguous (decision 2026-09-25-agent-suite-infra item 3): the whole agent
  * suite is rerun once, in order, on another container, right after the
- * trusted control (the shipped pass_to_pass specs, which passed on this
- * build) passes there, and only the ambiguous codeunits take the rerun's
+ * trusted control (G with the shipped pass_to_pass specs, which passed on
+ * it) passes there, and only the ambiguous codeunits take the rerun's
  * results. One that throws again is the agent's failure, noted with both
  * containers. A failing control, no other container or no control leaves
- * infra rows for the ambiguous codeunits: pass_to_pass is unscored, never a
+ * infra rows for the ambiguous codeunits: agent_tests is unscored, never a
  * fail. The rerun is recorded in infra_retries.
  */
 async function runAgentTests(
   ctx: JudgeContext,
   prep: Prepared,
   agent: TestSpec[],
-  rerun: { control: TestSpec[] | null } | null,
+  rerun: { control: Control | null } | null,
 ): Promise<TestRow[]> {
   const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures!]));
   const notes = ctx.log.notes;
@@ -415,7 +713,7 @@ async function runAgentTests(
       ctx.log.infra_retries.push(...err.retries);
     }
     notes.push(
-      `pass_to_pass: ${what} infra: ${
+      `agent_tests: ${what} infra: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -433,7 +731,12 @@ async function runAgentTests(
           (container, codeunit) => threw.push({ container, codeunit }),
         ),
         c,
-        { wanted: prep.wanted, tests: agent, cleanupIds, ctx: ctx.deploy },
+        {
+          wanted: prep.wanted,
+          tests: agent,
+          cleanupIds,
+          ctx: holdContext(ctx, "A", prep.wanted),
+        },
       ));
   } catch (err) {
     if (!infraThrown(err)) throw err;
@@ -445,7 +748,7 @@ async function runAgentTests(
     threw.filter((t) => t.container === first.container).map((t) => t.codeunit),
   );
   const kept = rows.filter((r) => !ambiguous.has(r.codeunit));
-  // A completed agent failure decides pass_to_pass already (Sol r2b P1): a
+  // A completed agent failure decides agent_tests already (Sol r2b P1): a
   // hang elsewhere is the agent's too, with no rerun that could unscore it.
   if (
     !rerun || ambiguous.size === 0 || kept.some((r) => r.outcome !== "pass")
@@ -455,7 +758,7 @@ async function runAgentTests(
   const control = rerun.control;
   if (!control) {
     notes.push(
-      `pass_to_pass: no trusted control to rerun agent-added codeunits ${
+      `agent_tests: no trusted control to rerun agent-added codeunits ${
         [...ambiguous].join(", ")
       } against: unscored`,
     );
@@ -486,10 +789,10 @@ async function runAgentTests(
       async (c) => {
         rerunOn = c;
         const ctl = await deployAndTest(ctx.lane.bc, c, {
-          wanted: prep.wanted,
-          tests: control,
-          cleanupIds,
-          ctx: ctx.deploy,
+          wanted: control.wanted,
+          tests: control.specs,
+          cleanupIds: control.cleanupIds,
+          ctx: holdContext(ctx, "control", control.wanted),
         });
         const s = ctx.log.spans;
         s.provisioning_ms += ctl.deployed.provisioning_ms;
@@ -514,7 +817,7 @@ async function runAgentTests(
           );
         }
         notes.push(
-          `pass_to_pass: agent-added codeunits ${
+          `agent_tests: agent-added codeunits ${
             [...ambiguous].join(", ")
           } rerun on ${c} after a passing trusted control`,
         );
@@ -523,7 +826,12 @@ async function runAgentTests(
             again.push(cu);
           }),
           c,
-          { wanted: prep.wanted, tests: agent, cleanupIds, ctx: ctx.deploy },
+          {
+            wanted: prep.wanted,
+            tests: agent,
+            cleanupIds,
+            ctx: holdContext(ctx, "A", prep.wanted),
+          },
         );
       },
       undefined,
@@ -536,7 +844,7 @@ async function runAgentTests(
     // Rows of a codeunit that threw again are already not_run, runtime_error.
     for (const cu of new Set(again.filter((cu) => ambiguous.has(cu)))) {
       notes.push(
-        `pass_to_pass: agent-added test codeunit ${cu} did not complete on ${first.container} and on ${second.container} (the trusted control passed on ${second.container}): the agent's failure`,
+        `agent_tests: agent-added test codeunit ${cu} did not complete on ${first.container} and on ${second.container} (the trusted control passed on ${second.container}): the agent's failure`,
       );
     }
     return inOrder([...kept, ...rerunRows]);
@@ -610,6 +918,7 @@ async function buildOracle(
           prep.wanted.map((w) => [folderOf.get(w.id.toLowerCase())!, w.file]),
         ),
         graph,
+        policy: DECLARED_POLICY,
         ...(ctx.i.buildCache
           ? { cache: ctx.i.buildCache, prebuiltKeys: prep.keys }
           : {}),
@@ -645,105 +954,108 @@ async function buildOracle(
     version: aj.version,
     // Trusted, not the agent's: a publish failure is infra (reroute), never a model defect.
     stamp: await hashFile(dirname(b.file), b.file),
+    // S2.4: the deployment record's digest, key and source.
+    sha256: await hashFile(dirname(b.file), b.file),
+    ...(b.build_key ? { build_key: b.build_key } : {}),
+    source: await hashTree(dir, "task"),
     file: b.file,
     role: "prereq",
     depends: deps.filter((id) => workspaceIds.has(id)),
   };
 }
 
-/** feature, bugfix, refactor: build, pass_to_pass, fail_to_pass. */
+/**
+ * feature, bugfix, refactor (H-35, design-r2 1 and 5). G = the candidate
+ * production + the pristine Test app + the oracle: build, pass_to_pass (the
+ * shipped rows) and fail_to_pass. A = the same production + the agent's Test
+ * as written, without the shipped test codeunits: agent_tests. G reads no
+ * agent Test file, so its violations are production-side and fail every
+ * scorer; one only A has is Test-side: G is measured, agent_tests fails.
+ */
 async function scoreChange(ctx: JudgeContext): Promise<void> {
   const { i, scores, log } = ctx;
   const t = i.task.task;
   const tr = performance.now();
-  const vw = await buildVerdictWorkspace({
-    pristine: i.pristine,
-    artifact: i.artifact,
-    out: join(i.workDir, "verdict"),
-    symbolIds: i.symbolIds,
-  });
+  const workspace = (name: string, o: Partial<ReconstructOptions>) =>
+    buildVerdictWorkspace({
+      productionAllow: i.task.task.production_allow,
+      pristine: i.pristine,
+      artifact: i.artifact,
+      out: join(i.workDir, name),
+      symbolIds: i.symbolIds,
+      ...o,
+    });
+  const gw = await workspace("verdict", { rawTest: true });
+  const aw = await workspace("verdict-agent", { dropShippedTests: true });
   log.spans.reconstruct_ms = performance.now() - tr;
-  log.violations = vw.violations;
+  const production = new Set(gw.violations);
+  const testSide = aw.violations.filter((v) => !production.has(v));
+  log.violations = [...gw.violations, ...testSide];
   // Tests the agent added to shipped codeunits are discovered below as the
   // generated codeunit (addedTestCodeunits); why any were not is noted here.
-  log.notes.push(...vw.notes);
-  if (vw.violations.length > 0) return scores.failRest();
+  log.notes.push(...aw.notes);
+  ctx.policy.push(
+    ...gw.violations.map((detail) => ({
+      side: "production" as const,
+      rule: violationRule(detail),
+      detail,
+    })),
+    ...testSide.map((detail) => ({
+      side: "test" as const,
+      rule: violationRule(detail),
+      detail,
+    })),
+  );
+  // A production-side violation: G and A are not measured, the gate fails.
+  if (gw.violations.length > 0) return scores.notMeasuredRest();
+  // Sol r1 #4: decided now, so infra in G cannot unscore a policy failure.
+  if (testSide.length > 0 && scores.has("agent_tests")) {
+    scores.notMeasured("agent_tests");
+  }
 
-  const prep = await prepareApps(ctx.lane, {
-    pristine: i.pristine,
-    pristineApps: await readAppGraph(i.pristine),
-    candidateDir: vw.dir,
-    candidateApps: vw.apps,
-    changed: vw.changed,
-    workDir: join(i.workDir, "apps"),
-    lock: i.lock,
-    ...(i.buildCache ? { cache: i.buildCache } : {}),
-  });
+  const pristineApps = await readAppGraph(i.pristine);
+  const prepare = (
+    w: VerdictWorkspace,
+    name: string,
+    label: string,
+    production?: ProductionManifest,
+  ) =>
+    prepareApps(ctx.lane, {
+      pristine: i.pristine,
+      pristineApps,
+      candidateDir: w.dir,
+      candidateApps: w.apps,
+      changed: w.changed,
+      versionPlan: "judge",
+      policy: CLOUD_POLICY,
+      workDir: join(i.workDir, name),
+      lock: i.lock,
+      label,
+      ...(production ? { production } : {}),
+      ...(i.buildCache ? { cache: i.buildCache } : {}),
+    });
+  const prep = await prepare(gw, "apps", "candidate");
   recordBuild(ctx, prep, "candidate");
   if (!prep.buildOk) return scores.failRest();
+  await assertPristineTest(ctx, prep, gw.apps);
   scores.set("build", true);
+  // H-35 (design-r3 3.2): A publishes exactly G's production packages.
+  const manifest = await productionManifest(prep, gw.dir);
+  log.notes.push(`production manifest: ${manifest.digest}`);
+  ctx.manifest = manifest.digest;
 
-  const p2p: TestSpec[] = [];
-  const agent: TestSpec[] = [];
-  const testPageRows: TestRow[] = [];
-  if (scores.has("pass_to_pass")) {
-    for (const r of t.pass_to_pass) {
-      p2p.push({
-        codeunit: r.codeunit,
-        procedures: r.procedures,
-        target: "candidate",
-      });
-    }
-    const added = await addedTestCodeunits(
-      join(i.pristine, TEST_APP),
-      join(vw.dir, TEST_APP),
-      new Set(vw.excluded),
-    );
-    for (const a of added) {
-      if (a.testPage) {
-        const message =
-          "TestPage tests are not supported by the harness test runner";
-        for (
-          const procedure of a.procedures.length > 0
-            ? a.procedures
-            : ["(TestPage)"]
-        ) {
-          testPageRows.push({
-            codeunit: a.codeunit,
-            procedure,
-            target: "candidate",
-            outcome: "not_run",
-            failure: "runtime_error",
-          });
-          log.test_messages.push({
-            codeunit: a.codeunit,
-            procedure,
-            target: "candidate",
-            message,
-          });
-        }
-        continue;
-      }
-      if (a.procedures.length === 0) {
-        // Nothing to run; running it would report zero results (infra) on every container.
-        log.notes.push(
-          `added test codeunit ${a.codeunit} (${TEST_APP}/${a.file}) has no [Test] procedure: not run`,
-        );
-        continue;
-      }
-      // Run last, in their own hold (agentTestsBc): agent code cannot unscore the verdict.
-      agent.push({
-        codeunit: a.codeunit,
-        procedures: a.procedures,
-        target: "candidate",
-      });
-    }
-  }
+  const p2p: TestSpec[] = scores.has("pass_to_pass")
+    ? t.pass_to_pass.map((r) => ({
+      codeunit: r.codeunit,
+      procedures: r.procedures,
+      target: "candidate",
+    }))
+    : [];
   const wanted = [...prep.wanted];
   const cleanup = [...prep.candidateIds];
   const f2p: TestSpec[] = [];
   if (t.fail_to_pass) {
-    const oracle = await buildOracle(ctx, prep, vw.apps);
+    const oracle = await buildOracle(ctx, prep, gw.apps);
     if (oracle === null) {
       // H-26: the reason, next to the tests it stops (reports read test_messages).
       const diags = log.diagnostics.filter((d) => d.app === "oracle");
@@ -786,12 +1098,17 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
       }
     }
   }
-  // Trusted suites first (visible pass_to_pass and the oracle), then agent-added codeunits.
+  // G: trusted code only, every trusted suite in one hold.
   let rows: TestRow[] = [];
   if (p2p.length + f2p.length > 0) {
-    rows =
-      (await runHeld(ctx, wanted, [...p2p, ...f2p], [...cleanup].reverse()))
-        .rows;
+    rows = (await runHeld(
+      ctx,
+      wanted,
+      [...p2p, ...f2p],
+      [...cleanup].reverse(),
+      "G",
+    ))
+      .rows;
   }
   // Visible and oracle codeunits live in disjoint bands (80000-84999, 85000-89999).
   const oracleUnits = new Set(f2p.map((s) => s.codeunit));
@@ -799,27 +1116,232 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
     const r = rows.filter((x) => oracleUnits.has(x.codeunit));
     scores.set("fail_to_pass", scorerPassed(r), r);
   }
+  const shipped = rows.filter((x) => !oracleUnits.has(x.codeunit));
   if (scores.has("pass_to_pass")) {
-    const trusted = rows.filter((x) => !oracleUnits.has(x.codeunit));
-    let agentRows: TestRow[] = [];
-    if (agent.length > 0) {
-      // A thrown agent run is ambiguous only while pass_to_pass is still
-      // undecided: with a shipped or TestPage row already failing, it fails
-      // whatever the agent tests do, and a hang must not unscore that.
-      const undecided = testPageRows.length === 0 &&
-        (p2p.length === 0 || scorerPassed(trusted) === true);
-      agentRows = await runAgentTests(
-        ctx,
-        prep,
-        agent,
-        undecided ? { control: p2p.length > 0 ? p2p : null } : null,
-      );
-    }
-    const r = [...trusted, ...agentRows, ...testPageRows];
-    // Never a pass on zero rows (scorerPassed); only TestPage rows fail.
-    scores.set("pass_to_pass", scorerPassed(r), r);
+    // Never a pass on zero rows (scorerPassed).
+    scores.set("pass_to_pass", scorerPassed(shipped), shipped);
+  }
+  if (scores.has("agent_tests")) {
+    // G's deployment without the oracle, with the shipped specs, is the
+    // control of an agent rerun; only when those passed on this candidate.
+    const control = p2p.length > 0 && scorerPassed(shipped) === true
+      ? {
+        wanted: prep.wanted,
+        specs: p2p,
+        cleanupIds: [...prep.candidateIds].reverse(),
+      }
+      : null;
+    await scoreAgentTests(
+      ctx,
+      aw,
+      testSide,
+      control,
+      async (w, name, label) => {
+        const a = await prepare(w, name, label, manifest);
+        if (a.buildOk) {
+          assertSameProduction(
+            prep.wanted,
+            a.wanted,
+            new Set(
+              prep.built.filter((b) => b.folder !== TEST_APP).map((b) => b.id),
+            ),
+          );
+        }
+        return a;
+      },
+    );
   }
   scores.failRest();
+}
+
+/**
+ * H-35 (design-r2 4.2): G deployed the pristine Test app. Its recorded source
+ * is the pristine tree, its key recomputes from the pristine app and G's
+ * production keys, and with a build cache the key's entry is the package G
+ * deployed. A mismatch is a harness bug, never a score.
+ */
+async function assertPristineTest(
+  ctx: JudgeContext,
+  prep: Prepared,
+  graph: StagedApp[],
+): Promise<void> {
+  const { i } = ctx;
+  const app = graph.find((a) => a.folder === TEST_APP);
+  if (!app) return;
+  const bug = (what: string): never => {
+    throw new Error(
+      `harness bug: G's Test ${what} is not the pristine Test app's`,
+    );
+  };
+  // Orch Sol r1 #5: by the deployed set, so a Test app built as an
+  // unaffected prerequisite (not in prep.built) is checked too.
+  const w = prep.wanted.find((x) => x.id === app.id);
+  if (!w) return bug("deployment");
+  if (w.source !== await hashTree(join(i.pristine, TEST_APP), "task")) {
+    bug("source");
+  }
+  const { key } = await effectiveBuildKey(
+    await ctx.lane.bc.harnessCompilerIdentity(prep.container),
+    {
+      srcDir: i.pristine,
+      app,
+      version: w.version,
+      // Dependencies key on their adopted cache keys, else their files, as
+      // buildApps keyed the Test app.
+      files: prep.files,
+      keys: prep.keys,
+      lock: i.lock,
+      graph,
+      policy: CLOUD_POLICY,
+      stageDir: join(i.workDir, "identity-g"),
+    },
+  );
+  if (w.build_key !== key) bug("build key");
+  // Only an entry the build adopted is a claim (run 002 Sol r2 #2): a
+  // refused, unwritten or unreadable entry is not, the cache being
+  // best-effort (H-27 r2).
+  if (!i.buildCache || prep.keys.get(TEST_APP) !== key) return;
+  const cached = await i.buildCache.get(key).catch(() => null);
+  if (cached && await hashFile(dirname(cached), cached) !== w.sha256) {
+    bug("cached package");
+  }
+}
+
+/**
+ * H-35 (design-r3 3.2): A publishes G's production packages, the same id,
+ * build key and digest each. A harness bug otherwise.
+ */
+export function assertSameProduction(
+  g: readonly WantedApp[],
+  a: readonly WantedApp[],
+  production: ReadonlySet<string>,
+): void {
+  for (const id of production) {
+    const x = g.find((w) => w.id === id);
+    const y = a.find((w) => w.id === id);
+    if (!x || !y || x.build_key !== y.build_key || x.sha256 !== y.sha256) {
+      throw new Error(`harness bug: A's production package ${id} is not G's`);
+    }
+  }
+}
+
+/** H-35: agent_tests on A (design-r2 3; the H-26 rerun policy unchanged). */
+async function scoreAgentTests(
+  ctx: JudgeContext,
+  aw: VerdictWorkspace,
+  testSide: string[],
+  control: Control | null,
+  prepare: (
+    w: VerdictWorkspace,
+    name: string,
+    label: string,
+  ) => Promise<Prepared>,
+): Promise<void> {
+  const { i, scores, log } = ctx;
+  // S2 records this as not_measured behind the policy gate.
+  if (testSide.length > 0) return scores.notMeasured("agent_tests");
+  const agent: TestSpec[] = [];
+  const testPageRows: TestRow[] = [];
+  const added = await addedTestCodeunits(
+    join(i.pristine, TEST_APP),
+    join(aw.dir, TEST_APP),
+    new Set(aw.excluded),
+  );
+  for (const a of added) {
+    if (a.testPage) {
+      const message =
+        "TestPage tests are not supported by the harness test runner";
+      for (
+        const procedure of a.procedures.length > 0
+          ? a.procedures
+          : ["(TestPage)"]
+      ) {
+        testPageRows.push({
+          codeunit: a.codeunit,
+          procedure,
+          target: "candidate",
+          outcome: "not_run",
+          failure: "runtime_error",
+        });
+        log.test_messages.push({
+          codeunit: a.codeunit,
+          procedure,
+          target: "candidate",
+          message,
+        });
+      }
+      continue;
+    }
+    if (a.procedures.length === 0) {
+      // Nothing to run; running it would report zero results (infra) on every container.
+      log.notes.push(
+        `added test codeunit ${a.codeunit} (${TEST_APP}/${a.file}) has no [Test] procedure: not run`,
+      );
+      continue;
+    }
+    agent.push({
+      codeunit: a.codeunit,
+      procedures: a.procedures,
+      target: "candidate",
+    });
+  }
+  if (aw.creditExcluded > 0) {
+    log.notes.push(`agent_tests: credit_excluded: ${aw.creditExcluded}`);
+  }
+  const notRun = (failure: "compile" | "infra") =>
+    agent.flatMap((a) =>
+      a.procedures!.map((p) => ({
+        codeunit: a.codeunit,
+        procedure: p,
+        target: "candidate",
+        outcome: "not_run" as const,
+        failure,
+      }))
+    );
+  let prepA: Prepared;
+  try {
+    prepA = await prepare(aw, "apps-agent", "agent Test");
+  } catch (err) {
+    // G is measured: infra building A unscores agent_tests only.
+    if (!infraThrown(err)) throw err;
+    if (err instanceof InfraRetriesExhaustedError) {
+      log.infra_retries.push(...err.retries);
+    }
+    log.notes.push(
+      `agent_tests: agent-added tests infra: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    const r = [...notRun("infra"), ...testPageRows];
+    // No row at all: unscored, never a pass or a fail on nothing.
+    return scores.set("agent_tests", r.length ? scorerPassed(r) : null, r);
+  }
+  recordBuild(ctx, prepA, "agent");
+  // orch Sol r1 #1: A compiles first, also with no agent test to run: an
+  // agent Test app that does not build fails agent_tests.
+  if (!prepA.buildOk) {
+    log.notes.push("agent_tests: the agent Test app does not compile");
+    return scores.set("agent_tests", false, [
+      ...notRun("compile"),
+      ...testPageRows,
+    ]);
+  }
+  if (agent.length + testPageRows.length === 0) {
+    if (aw.creditExcluded === 0) log.notes.push("agent_tests: not_submitted");
+    return scores.set("agent_tests", true, []);
+  }
+  if (agent.length === 0) {
+    return scores.set("agent_tests", scorerPassed(testPageRows), testPageRows);
+  }
+  // A TestPage row fails agent_tests already: a hang must not unscore that.
+  const rows = await runAgentTests(
+    ctx,
+    prepA,
+    agent,
+    testPageRows.length === 0 ? { control } : null,
+  );
+  const r = [...rows, ...testPageRows];
+  scores.set("agent_tests", scorerPassed(r), r);
 }
 
 const isTestPath = (rel: string) =>
@@ -888,22 +1410,6 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   await applyOverlay(join(i.task.dir, "correct"), reference, {
     exclude: isTestPath,
   });
-  const vw = await buildVerdictWorkspace({
-    pristine: i.pristine,
-    artifact: i.artifact,
-    out: join(i.workDir, "verdict"),
-    productionFrom: reference,
-    symbolIds: i.symbolIds,
-    // mutant_kill builds carry no shipped test codeunit (M4-17a run 002).
-    dropShippedTests: true,
-  });
-  log.spans.reconstruct_ms = performance.now() - tr;
-  log.violations = vw.violations;
-  // Tests the agent added to shipped codeunits are discovered below as the
-  // generated codeunit (addedTestCodeunits); why any were not is noted here.
-  log.notes.push(...vw.notes);
-  if (vw.violations.length > 0) return scores.failRest();
-
   const pristineApps = await readAppGraph(i.pristine);
   const prepare = (
     dir: string,
@@ -911,6 +1417,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     changed: string[],
     name: string,
     label: string,
+    production?: ProductionManifest,
   ) =>
     prepareApps(ctx.lane, {
       pristine: i.pristine,
@@ -918,62 +1425,92 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       candidateDir: dir,
       candidateApps: apps,
       changed,
+      versionPlan: "judge",
+      policy: CLOUD_POLICY,
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,
+      ...(production ? { production } : {}),
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
-  const prep = await prepare(
-    vw.dir,
-    vw.apps,
-    vw.changed,
-    "apps-reference",
-    "reference",
-  );
-  recordBuild(ctx, prep, "reference");
-  if (!prep.buildOk) return scores.failRest();
-  scores.set("build", true);
 
+  // A_ref: the reference production plus the agent's Test as written,
+  // without the shipped test codeunits (M4-17a run 002). Every violation is
+  // Test-side here (production is the reference): G' stays measured.
+  const vw = await buildVerdictWorkspace({
+    productionAllow: i.task.task.production_allow,
+    pristine: i.pristine,
+    artifact: i.artifact,
+    out: join(i.workDir, "verdict"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+    dropShippedTests: true,
+  });
+  log.spans.reconstruct_ms = performance.now() - tr;
+  log.violations = vw.violations;
+  // Tests the agent added to shipped codeunits are discovered below as the
+  // generated codeunit (addedTestCodeunits); why any were not is noted here.
+  log.notes.push(...vw.notes);
+  // Sol r1 #4: decided before G', so infra there cannot unscore it. S2
+  // records it as not_measured behind the policy gate.
+  // Production is the reference here: every violation is Test-side.
+  ctx.policy.push(
+    ...vw.violations.map((detail) => ({
+      side: "test" as const,
+      rule: violationRule(detail),
+      detail,
+    })),
+  );
+  if (vw.violations.length > 0) scores.notMeasured("mutant_kill");
+
+  // H-35 G' first: the reference production plus the pristine Test app, raw
+  // (no agent file: a subscriber or install trigger in agent code could act
+  // on a shipped test). It decides build, and pass_to_pass by a real run in
+  // its own hold, whatever the submission (M1-18 review items 1 and 2).
+  const sw = await buildVerdictWorkspace({
+    productionAllow: i.task.task.production_allow,
+    pristine: i.pristine,
+    artifact: i.pristine,
+    out: join(i.workDir, "p2p"),
+    productionFrom: reference,
+    symbolIds: i.symbolIds,
+    rawTest: true,
+  });
+  const sp = await prepare(
+    sw.dir,
+    sw.apps,
+    sw.changed,
+    "apps-p2p",
+    "pass_to_pass",
+  );
+  recordBuild(ctx, sp, "pass_to_pass");
+  if (!sp.buildOk) {
+    throw new ValidationError(
+      `${t.id}: the reference with the shipped tests does not build`,
+      [t.id],
+    );
+  }
+  // Orch Sol r1 #5: G' deploys the pristine Test app too.
+  await assertPristineTest(ctx, sp, sw.apps);
+  scores.set("build", true);
+  // H-35 (design-r3 3.3): A_ref publishes exactly G' production packages.
+  const manifest = await productionManifest(sp, sw.dir);
+  log.notes.push(`production manifest: ${manifest.digest}`);
+  ctx.manifest = manifest.digest;
   let control: { prep: Prepared; specs: TestSpec[] } | null = null;
-  // pass_to_pass first, in its own hold with trusted code only: agent test
-  // code cannot unscore it, and it is decided by a real run even when the
-  // submission is rejected below (M1-18 review items 1 and 2).
   if (scores.has("pass_to_pass")) {
     const p2p: TestSpec[] = t.pass_to_pass.map((r) => ({
       codeunit: r.codeunit,
       procedures: r.procedures,
       target: "reference",
     }));
-    // Trusted code only: the reference production plus the SHIPPED Test
-    // sources, no agent file (a subscriber or install trigger in agent code
-    // could act on a shipped test).
-    const sw = await buildVerdictWorkspace({
-      pristine: i.pristine,
-      artifact: i.pristine,
-      out: join(i.workDir, "p2p"),
-      productionFrom: reference,
-      symbolIds: i.symbolIds,
-    });
-    const sp = await prepare(
-      sw.dir,
-      sw.apps,
-      sw.changed,
-      "apps-p2p",
-      "pass_to_pass",
-    );
-    recordBuild(ctx, sp, "pass_to_pass");
-    if (!sp.buildOk) {
-      throw new ValidationError(
-        `${t.id}: the reference with the shipped tests does not build`,
-        [t.id],
-      );
-    }
     try {
       const r = (await runHeld(
         ctx,
         sp.wanted,
         p2p,
         [...sp.candidateIds].reverse(),
+        "G'",
       )).rows;
       scores.set("pass_to_pass", scorerPassed(r), r);
       // Known to pass: the trusted control for agent-suite reruns.
@@ -984,6 +1521,17 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       return scores.nullRest();
     }
   }
+
+  if (vw.violations.length > 0) return scores.failRest();
+  const prep = await prepare(
+    vw.dir,
+    vw.apps,
+    vw.changed,
+    "apps-reference",
+    "reference",
+    manifest,
+  );
+  recordBuild(ctx, prep, "reference");
 
   const added = await addedTestCodeunits(
     join(i.pristine, TEST_APP),
@@ -1018,16 +1566,21 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       procedures: a.procedures,
       target,
     }));
-  const infraRows = (target: string): TestRow[] =>
+  const notRunRows = (target: string, failure: "infra" | "compile") =>
     agent.flatMap((a) =>
       a.procedures.map((p) => ({
         codeunit: a.codeunit,
         procedure: p,
         target,
         outcome: "not_run" as const,
-        failure: "infra" as const,
+        failure,
       }))
     );
+  const infraRows = (target: string): TestRow[] => notRunRows(target, "infra");
+  if (!prep.buildOk) {
+    scores.set("mutant_kill", false, notRunRows("reference", "compile"));
+    return scores.failRest();
+  }
 
   // Agent-suite runs (decision 2026-09-25-agent-suite-infra): a completed
   // run with a missing procedure is the agent's (agentSuiteBc). A thrown run
@@ -1038,6 +1591,11 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
   const discovered = new Map(agent.map((a) => [a.codeunit, a.procedures]));
   const suiteBc = agentSuiteBc(ctx.lane.bc, discovered);
   const agentRun = async (p: Prepared, target: string): Promise<TestRow[]> => {
+    const hold = target === "reference"
+      ? "A_ref"
+      : target === "mutant:0"
+      ? "A_0"
+      : `A_m:${target.slice("mutant:".length)}`;
     let attempt = 0;
     const held = await ctx.lane.exclusive(
       { taskId: t.id, variantId: i.executionId, attemptNumber: 1 },
@@ -1047,7 +1605,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
             wanted: control.prep.wanted,
             tests: control.specs,
             cleanupIds: [...control.prep.candidateIds].reverse(),
-            ctx: ctx.deploy,
+            ctx: holdContext(ctx, "control", control.prep.wanted),
           });
           if (ctl.cleanupError) {
             throw new CleanupFailedError(
@@ -1071,7 +1629,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
           wanted: p.wanted,
           tests: specs(target),
           cleanupIds: [...p.candidateIds].reverse(),
-          ctx: ctx.deploy,
+          ctx: holdContext(ctx, hold, p.wanted),
         });
       },
       undefined,
@@ -1125,6 +1683,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         });
       }
       const mv = await buildVerdictWorkspace({
+        productionAllow: i.task.task.production_allow,
         pristine: i.pristine,
         artifact: i.artifact,
         out: join(i.workDir, `mutant-${m}`),
@@ -1196,16 +1755,34 @@ export async function judge(
     infra_retries: [],
     per_app_compiles: 0,
     error: null,
+    deployments: [],
+    resets: [],
+    verifies: [],
+    fs_checks: [],
+    bc_egress: i.deploy.bcEgress ?? null,
   };
-  const scores = new Scores(i.task.task.scorers);
+  const scores = new Scores(effectiveScorers(i.task.task));
   const deploy: DeployContext = {
     ledgerRoot: i.deploy.ledgerRoot,
     // Both trusted staging outputs: the oracle id must be removable at cleanup.
     trustedRoots: i.task.task.fail_to_pass
       ? [i.pristine, join(i.task.dir, "oracle")]
       : [i.pristine],
+    // H-35 S3: every judge deployment is preceded by a reset.
+    reset: i.deploy.reset,
+    onReset: (r) => log.resets!.push(r),
+    onVerify: (v) => log.verifies!.push(v),
+    onFsCheck: (f) => log.fs_checks!.push(f),
   };
-  const ctx: JudgeContext = { lane, i, scores, log, deploy };
+  const ctx: JudgeContext = {
+    lane,
+    i,
+    scores,
+    log,
+    deploy,
+    policy: [],
+    manifest: null,
+  };
   try {
     if (i.task.task.kind === "test-authoring") await scoreTestAuthoring(ctx);
     else await scoreChange(ctx);
@@ -1221,9 +1798,28 @@ export async function judge(
   }
   log.spans.total_ms = performance.now() - t0;
   const list = scores.list;
-  const verdict = verdictOf(list);
+  // H-35 v2 (design-r2 5, design-r3 6.2): the gate, then the scorers.
+  const policy = { passed: ctx.policy.length === 0, violations: ctx.policy };
+  const verdict = verdictOf(list, policy);
+  // H-35 S3.3 (design-r4 5.2): a judgment is of one environment. Routing
+  // makes a mix impossible; until it does this is the fail-closed backstop.
+  const envs = new Set((log.deployments ?? []).map((d) => d.env_fp ?? null));
+  if (envs.size > 1) {
+    throw new Error(
+      `harness bug: deployments of one judgment span environments (${
+        [...envs].map((e) => e?.slice(0, 12) ?? "none").join(", ")
+      })`,
+    );
+  }
   const judgment = JudgmentRecordSchema.parse({
-    v: 1,
+    v: 2,
+    policy,
+    provenance: {
+      harness_commit: i.harnessCommit ?? null,
+      production_manifest: ctx.manifest,
+      // Null with no deployment or no lineage; never inferred.
+      env_fp: [...envs][0] ?? null,
+    },
     id: log.judgment_id,
     execution_id: i.executionId,
     workspace_hash: i.workspaceHash,

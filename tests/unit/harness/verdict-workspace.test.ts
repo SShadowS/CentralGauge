@@ -172,7 +172,11 @@ Deno.test("app.json: identity changes are violations, compiler settings stay tru
     p,
     await artifactFrom(p, { "Core/app.json": JSON.stringify(settings) }),
   );
-  assertEquals(v2.violations, []);
+  // H-35 (R2): a production dependency on a test framework is a policy
+  // violation; the merge below still takes the agent's dependencies.
+  assertEquals(v2.violations, [
+    `dependency_not_allowed: Core/app.json: ${IDS.assert}`,
+  ]);
   const merged = JSON.parse(
     await Deno.readTextFile(join(v2.dir, "Core/app.json")),
   );

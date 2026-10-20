@@ -573,3 +573,29 @@ Deno.test("qualifyMeasures: exact per-code increases; missing is a failure", asy
     "partial_credit: expected 1, got 0.5",
   ]);
 });
+
+Deno.test("H-35 S2.1: partial credit reads G only: a not_measured agent_tests (Test-side gate) does not make it missing; G not measured is missing for the gate, not infra", () => {
+  const base = full(
+    [
+      row(85400, "A", true),
+      row(85400, "B", true),
+      row(85400, "C", true),
+      row(85400, "H", true),
+    ],
+    [row(80010, "P1", true), row(80010, "P2", true)],
+  );
+  const testSide = judgment([
+    ...base.scorers,
+    { name: "agent_tests", passed: null, state: "not_measured", tests: [] },
+  ] as never);
+  assertEquals(partialCredit(task(), M, testSide).status, "ok");
+  const gated = judgment([
+    { name: "build", passed: null, state: "not_measured", tests: [] },
+    { name: "pass_to_pass", passed: null, state: "not_measured", tests: [] },
+    { name: "fail_to_pass", passed: null, state: "not_measured", tests: [] },
+  ] as never);
+  assertEquals(partialCredit(task(), M, gated), {
+    status: "missing",
+    reason: "policy gate: G not measured",
+  });
+});

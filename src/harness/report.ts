@@ -12,11 +12,13 @@
 import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
 import type { HostLogLine } from "./backend.ts";
-import type { VerdictLog } from "./verdict.ts";
+import { effectiveScorers, type VerdictLog } from "./verdict.ts";
 import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
 import { type CampaignRecords, validateCampaignRecords } from "./integrity.ts";
+import { type ScoringSummary, summarizeScoring } from "./judgment-report.ts";
+import type { OracleDescriptor } from "./task-oracle.ts";
 import { diffManifests, type ManifestKey } from "./manifest.ts";
 import {
   campaignJudging,
@@ -109,6 +111,8 @@ export interface HarnessReport {
   v: 1;
   /** H-13: present when the campaign or any execution ran under --unverified-egress-ok. */
   egress_override?: { egress_enforced: false; reasons: string[] };
+  /** H-35 S3 L2b: present when the campaign or any verdict ran under --unverified-bc-egress-ok. */
+  bc_egress_override?: { bc_egress_enforced: false; reasons: string[] };
   /** H-13b: present when the campaign or any execution waived the M8-07c calibration gate. */
   calibration_waived?: true;
   /** H-15: present when any execution ran before its parent's recorded usage reset. */
@@ -204,6 +208,13 @@ export interface HarnessReport {
     amendments: Prereg["amendments"];
   };
   cells: CellRecord[];
+  /**
+   * H-35 S2.5 (design-r4 6.2): per arm, over the reported cells: scorer
+   * states, the policy gate, G (conditional on G measured), G' (trusted-
+   * reference validation) and composite passes / total. Absent in reports
+   * written before H-35.
+   */
+  scoring?: ScoringSummary[];
   /**
    * M11-12: per-arm rollups and paired deltas of the exploratory metrics over
    * every counted-or-unscored terminal cell (equal task weight). A value the
@@ -352,6 +363,11 @@ export interface ReportOptions extends BootstrapOptions {
   };
   /** Report repeats 1..N only (1 <= N <= planned); default all planned. */
   repeats?: number;
+  /** H-35: the task preimage store, so validation checks scorer names. */
+  descriptor?: (
+    oracleHash: string,
+    taskId: string,
+  ) => Promise<OracleDescriptor | "unknown">;
 }
 
 function traceCoverage(
@@ -506,6 +522,34 @@ function oneScorerFingerprint(cells: CellRecord[]): string | null {
 }
 
 /**
+ * H-35 S3.3 (design-r3 8, ruling 2026-10-19 (b)): the counted v2 judgments
+ * are of one environment (env_fp, null meaning "no lineage"), else the
+ * report is refused; `--stratify-env` is a follow-up. A v1 judgment's
+ * env_fp is unavailable and makes no mix (old-vs-new comparisons go
+ * through the frozen pairing, `harness pairing`, never pooled here).
+ */
+export function checkOneEnvironment(
+  cells: readonly { judgment_id: string | null }[],
+  judgments: readonly JudgmentRecord[],
+): void {
+  const byId = new Map(judgments.map((j) => [j.id, j]));
+  const envs = new Set<string>();
+  for (const c of cells) {
+    const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
+    if (j?.v === 2) envs.add(j.provenance?.env_fp ?? "(none)");
+  }
+  if (envs.size > 1) {
+    const list = [...envs].sort();
+    throw new ValidationError(
+      `campaign mixes environments (env_fp ${
+        list.map((e) => e.slice(0, 12)).join(", ")
+      }); rejudge on one lineage`,
+      list,
+    );
+  }
+}
+
+/**
  * A measure record counts for a cell only when it is the cell's own: its
  * counted judgment, used execution, that execution's stored workspace and the
  * judgment's oracle. With a pre-registration it must also carry the frozen
@@ -603,7 +647,10 @@ export async function buildReport(
   records: CampaignRecords,
   opts: ReportOptions = {},
 ): Promise<HarnessReport> {
-  await validateCampaignRecords(records);
+  await validateCampaignRecords(
+    records,
+    opts.descriptor ? { descriptor: opts.descriptor } : {},
+  );
   const { campaign } = records;
   const exp = campaign.experiment;
   const arms = [exp.baseline, ...exp.variants];
@@ -645,6 +692,18 @@ export async function buildReport(
       ),
     ),
   ];
+  // H-35 S3 L2b: every NST egress override reason of the campaign and its verdicts.
+  const bcOverrideReasons = [
+    ...new Set([
+      ...(campaign.bc_egress_override
+        ? [campaign.bc_egress_override.reason]
+        : []),
+      ...records.judgments.flatMap((j) => {
+        const o = opts.logs?.verdict.get(j.id)?.bc_egress?.override;
+        return o ? [o] : [];
+      }),
+    ]),
+  ].sort();
   // H-15: every --ignore-usage-reset reason of its executions.
   const resetReasons = [
     ...new Set(
@@ -688,6 +747,7 @@ export async function buildReport(
     );
   }
   const fingerprint = oneScorerFingerprint(cells);
+  checkOneEnvironment(cells, records.judgments);
   // The same complete map drives selection and the reported identity.
   const judgedTasks = campaign.task_set.tasks.map((t) => ({
     ...t,
@@ -985,6 +1045,15 @@ export async function buildReport(
       }, 0),
     })).filter((c) => c.count > 0),
   };
+  // Orch Sol r1 #4: the scorers each task applies to, from its trusted
+  // descriptor (the judging oracle's); unknown without a descriptor store.
+  const applicability = new Map<string, readonly string[]>();
+  if (opts.descriptor) {
+    for (const t of campaign.task_set.tasks) {
+      const d = await opts.descriptor(judging.oracle.get(t.id)!, t.id);
+      if (d !== "unknown") applicability.set(t.id, effectiveScorers(d));
+    }
+  }
   const provisional = summaries.some((s) => s.provisional);
   const repeats = { planned: exp.repeats, reported };
   return {
@@ -1095,11 +1164,34 @@ export async function buildReport(
       : {}),
     cells,
     exploratory,
+    scoring: summarizeScoring(
+      cells.map((c) => ({
+        arm: c.arm,
+        task: c.task,
+        status: c.status,
+        judgment: c.judgment_id === null
+          ? null
+          : records.judgments.find((j) => j.id === c.judgment_id)!,
+      })),
+      (t) => campaign.tasks_meta.find((m) => m.id === t)!.kind,
+      (id) => logs.verdict.get(id)?.notes,
+      (id) => logs.verdict.get(id)?.violations,
+      (id) => logs.verdict.get(id)?.diagnostics,
+      (t) => applicability.get(t),
+    ),
     ...(overrideReasons.length > 0
       ? {
         egress_override: {
           egress_enforced: false as const,
           reasons: overrideReasons,
+        },
+      }
+      : {}),
+    ...(bcOverrideReasons.length > 0
+      ? {
+        bc_egress_override: {
+          bc_egress_enforced: false as const,
+          reasons: bcOverrideReasons,
         },
       }
       : {}),
@@ -1153,6 +1245,13 @@ export function renderReport(r: HarnessReport): string {
     out.push(colors.red(
       `[WARN] egress NOT enforced (owner override): ${
         r.egress_override.reasons.join("; ")
+      }`,
+    ));
+  }
+  if (r.bc_egress_override) {
+    out.push(colors.red(
+      `[WARN] NST egress NOT enforced (owner override --unverified-bc-egress-ok): ${
+        r.bc_egress_override.reasons.join("; ")
       }`,
     ));
   }
@@ -1478,6 +1577,52 @@ export function renderReport(r: HarnessReport): string {
     out.push(
       `  ${b.baseline} vs ${b.variant} over ${b.pairs} matched scored pairs: both pass ${b.both_pass}, ${b.baseline} only ${b.baseline_only}, ${b.variant} only ${b.variant_only}, neither ${b.neither}`,
     );
+  }
+  if (r.scoring) {
+    h("Scoring (H-35: scorer states, policy gate, populations)");
+    for (const s of r.scoring) {
+      out.push(
+        `  ${s.arm}: ${s.judged}/${s.total} cells judged, ${s.legacy} v1 (state, policy, env_fp unavailable)`,
+      );
+      for (const [name, c] of Object.entries(s.scorers)) {
+        out.push(
+          `    ${name}: pass ${c.pass}, fail ${c.fail}, not measured ${c.not_measured}, unscored ${c.unscored}, unavailable ${c.unavailable}`,
+        );
+      }
+      const rules = Object.entries(s.policy.by_rule)
+        .map(([k, n]) => `${k} ${n}`).join(", ");
+      out.push(
+        `  ${s.arm}: policy: ${s.policy.failed} failed, ${s.policy.compliant} compliant, ${s.policy.unavailable} unavailable (v1)${
+          s.policy.failed_from_log > 0
+            ? `, ${s.policy.failed_from_log} failed (from log, v1)`
+            : ""
+        }${rules ? `; ${rules}` : ""}`,
+      );
+      out.push(
+        `    G passes / G measured (conditional on G measured): ${s.g.passed}/${s.g.measured}; not measured ${s.g.not_measured}, unavailable ${s.g.unavailable}`,
+      );
+      if (
+        s.reference.measured + s.reference.not_measured +
+            s.reference.unavailable > 0
+      ) {
+        out.push(
+          `    G' trusted-reference validation (not the agent's solution): ${s.reference.passed}/${s.reference.measured}; not measured ${s.reference.not_measured}, unavailable ${s.reference.unavailable}`,
+        );
+      }
+      out.push(
+        `    applicable (planned cells): ${
+          Object.entries(s.applicable).map(([n, k]) => `${n} ${k}`).join(
+            ", ",
+          ) || "none known"
+        }; unknown ${s.applicability_unknown}`,
+      );
+      out.push(
+        `    composite passes / total: ${s.composite.passed}/${s.composite.total}; infra ${s.infra}`,
+      );
+      out.push(
+        `    agent tests: submitted ${s.agent_tests.submitted}, not_submitted ${s.agent_tests.not_submitted}, credit_excluded ${s.agent_tests.credit_excluded}`,
+      );
+    }
   }
   if (r.exploratory) {
     const x = r.exploratory;

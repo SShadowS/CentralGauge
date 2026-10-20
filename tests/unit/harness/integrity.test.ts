@@ -877,3 +877,106 @@ Deno.test("assertVaryHolds (H-07 review): two claude-code arms with six vs eight
     );
   }
 });
+
+// ---- H-35 S2.2 (design-r3 6.3, design-r2 3): suites, the effective scorer set ----
+
+Deno.test("H-35 S2.2: every suite that ever shipped is known; an unknown combination and the H-35 suite without agent_tests are not", async () => {
+  const { KNOWN_SUITES, SCORER_SUITE, suiteOf } = await import(
+    "../../../src/harness/verdict.ts"
+  );
+  assertEquals(KNOWN_SUITES.length, 7);
+  assertEquals(suiteOf(SCORER_SUITE)?.v, 2);
+  assertEquals(
+    suiteOf({
+      build: "3",
+      pass_to_pass: "5",
+      fail_to_pass: "3",
+      mutant_kill: "5",
+    })?.v,
+    1,
+  );
+  assertEquals(suiteOf({ build: "9" }), null);
+  const { agent_tests: _, ...noAgent } = SCORER_SUITE;
+  assertEquals(suiteOf(noAgent), null);
+});
+
+Deno.test("H-35 S2.2: expectedScorers: a legacy suite expects the task's list, the H-35 suite adds agent_tests to every kind but test-authoring", async () => {
+  const { expectedScorers, SCORER_SUITE } = await import(
+    "../../../src/harness/verdict.ts"
+  );
+  const legacy = {
+    build: "3",
+    pass_to_pass: "5",
+    fail_to_pass: "3",
+    mutant_kill: "5",
+  };
+  const change = { kind: "bugfix", scorers: ["build", "pass_to_pass"] };
+  assertEquals(expectedScorers(change, legacy), ["build", "pass_to_pass"]);
+  assertEquals(expectedScorers(change, SCORER_SUITE), [
+    "build",
+    "pass_to_pass",
+    "agent_tests",
+  ]);
+  assertEquals(
+    expectedScorers(
+      { kind: "test-authoring", scorers: ["build"] },
+      SCORER_SUITE,
+    ),
+    ["build"],
+  );
+  assertEquals(expectedScorers(change, { build: "9" }), null);
+});
+
+Deno.test("H-35 S2.2: validateCampaignRecords refuses an unknown suite, a suite of another record version, and scorer names other than the expected set", async () => {
+  const { SCORER_SUITE, currentScorerFingerprint } = await import(
+    "../../../src/harness/verdict.ts"
+  );
+  const r = await scenario();
+  const [j1, j2] = r.judgments as [
+    typeof r.judgments[0],
+    typeof r.judgments[0],
+  ];
+  const { scorerFingerprint } = await import("../../../src/harness/records.ts");
+  const unknown = { build: "9" };
+  const p1 = await problems({
+    ...r,
+    judgments: [{
+      ...j1,
+      scorer_versions: unknown,
+      scorer_fingerprint: await scorerFingerprint(unknown),
+    }, j2],
+  });
+  assertStringIncludes(p1.join("\n"), "unknown scorer suite");
+  // A v1 record under the H-35 suite.
+  const p2 = await problems({
+    ...r,
+    judgments: [{
+      ...j1,
+      scorer_versions: SCORER_SUITE,
+      scorer_fingerprint: await currentScorerFingerprint(),
+    }, j2],
+  });
+  assertStringIncludes(p2.join("\n"), "under the h35 suite");
+  // Names other than the descriptor's expected set.
+  const descriptor = () =>
+    Promise.resolve({
+      kind: "bugfix" as const,
+      scorers: ["build", "pass_to_pass"],
+      pass_to_pass: [],
+      fail_to_pass: null,
+      mutants: [],
+      production_allow: null,
+      recovered_from: null,
+    });
+  let p3: string[] = [];
+  try {
+    await validateCampaignRecords(r, { descriptor });
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err;
+    p3 = err.errors;
+  }
+  assertStringIncludes(
+    p3.join("\n"),
+    "scorers build != expected build, pass_to_pass",
+  );
+});

@@ -15,6 +15,7 @@ import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import type { Catalog } from "../ingest/catalog/read.ts";
 import type { AttemptRef, CellRef, HarnessEnv } from "./execution.ts";
+import type { BcEgressRecord } from "./environment.ts";
 import type { PriorExecution } from "./estimate.ts";
 import type { CampaignRecords } from "./integrity.ts";
 import type { RefappRef } from "./identity.ts";
@@ -33,6 +34,7 @@ import {
   runCell,
 } from "./execution.ts";
 import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
+import { descriptorLoader, storeOraclePreimage } from "./task-oracle.ts";
 import {
   imageFacts,
   imageTag,
@@ -309,6 +311,8 @@ export type PlanEnv =
      * sees on a dry run, the same inputs as the real environment's.
      */
     egressPlaced?: boolean;
+    /** H-35 S3 L2b: the lineage's NST egress, statically admitted (a plan env has no deploy). */
+    bcEgress?: BcEgressRecord | null;
   };
 
 /** A dry run: the plan and the egress refusal, without a lock or containers. */
@@ -745,6 +749,11 @@ export async function runCampaign(
     .map((c) => c.id);
   // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
   const override = env.unverifiedEgressReason;
+  // H-35 S3 L2b: the judging lineage's NST egress override, if any (a dry
+  // run's plan environment carries it as bcEgress, having no deploy).
+  const bcOverride =
+    (env.deploy?.bcEgress ?? (env as PlanEnv).bcEgress)?.override ||
+    undefined;
   if (override !== undefined) {
     if (override.trim() === "") {
       throw new ConfigurationError(
@@ -788,6 +797,8 @@ export async function runCampaign(
 
   const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
+  // H-35 (design-r4 4): every task version a campaign pins stays readable.
+  for (const t of tasks) await storeOraclePreimage(env.resultsRoot, t);
   const arms: CampaignRecord["arms"] = [];
   let calibrationWaived = false;
   for (const config of configs) {
@@ -943,6 +954,7 @@ export async function runCampaign(
         }
         : {}),
       ...(calibrationWaived ? { calibration_waived: true } : {}),
+      ...(bcOverride ? { bc_egress_override: { reason: bcOverride } } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -962,6 +974,14 @@ export async function runCampaign(
         c.egress_override
           ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag and that reason`
           : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
+      );
+    }
+    // H-35 S3 L2b: and its BC (NST) egress override state and reason.
+    if (c.bc_egress_override?.reason !== bcOverride) {
+      throw new ConfigurationError(
+        c.bc_egress_override
+          ? `campaign ${c.id} was created under --unverified-bc-egress-ok (${c.bc_egress_override.reason}): resume it with the flag and that reason`
+          : `campaign ${c.id} was created without --unverified-bc-egress-ok: resume it without the flag`,
       );
     }
     // H-13b: and its calibration waiver state.
@@ -986,7 +1006,9 @@ export async function runCampaign(
       if (v.problems.length > 0) throw refusal(v.problems);
     }
     data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: descriptorLoader(env.resultsRoot, env.repoRoot),
+    });
   }
   // H-13b: every execution of a waived campaign records it.
   if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };

@@ -1,0 +1,263 @@
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
+
+import {
+  checkEnvironments,
+  createBaseline,
+  envFpOf,
+  instanceManifestPath,
+  readInstanceManifest,
+  renderEnvCheck,
+} from "../../../src/harness/environment.ts";
+import { hashJson } from "../../../src/harness/hash.ts";
+import { FakeBc, OK_RESET } from "./fake-bc.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
+
+const COMPAT = {
+  lineage: { id: "golden-test", golden_sha256: "a".repeat(64) },
+};
+const MECH = {
+  ...OK_RESET,
+  id: "golden-restore",
+  compat: COMPAT,
+  fsDigest: () => Promise.resolve([]),
+  bcEgress: "unenforced" as const,
+  contentRoot: "d".repeat(64),
+  nstConfigSha: "e".repeat(64),
+  nstConfigDigest: () => Promise.resolve({ sha: "e".repeat(64), error: null }),
+};
+const LOCK = "b".repeat(64);
+
+Deno.test("H-35 S3.4 envFpOf: hashJson of compat, mechanism, lock digest and compiler identity", async () => {
+  assertEquals(
+    await envFpOf({
+      compat: COMPAT,
+      mechanism: "golden-restore",
+      lockDigest: LOCK,
+      compiler: "c1",
+    }),
+    await hashJson({
+      compat: COMPAT,
+      mechanism: "golden-restore",
+      symbols_lock: LOCK,
+      compiler: "c1",
+    }),
+  );
+});
+
+Deno.test("H-35 S3.4 createBaseline: resets the container, then writes its instance manifest naming the lineage and the env_fp; a failed reset writes none", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const m = await createBaseline(bc, MECH, "C1", {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+  });
+  assertEquals(m.container, "C1");
+  assertEquals(m.lineage_id, "golden-test");
+  assertEquals(
+    m.env_fp,
+    await envFpOf({
+      compat: COMPAT,
+      mechanism: "golden-restore",
+      lockDigest: LOCK,
+      compiler: await bc.harnessCompilerIdentity("C1"),
+    }),
+  );
+  assertEquals(await readInstanceManifest(root, "C1"), m);
+  const failing = {
+    ...MECH,
+    reset: (c: string) =>
+      OK_RESET.reset(c).then((r) => ({
+        ...r,
+        ok: false,
+        failed_step: "restore",
+        error: "x",
+      })),
+  };
+  await assertRejects(
+    () =>
+      createBaseline(bc, failing, "C2", {
+        resultsRoot: root,
+        lineageId: "golden-test",
+        lockDigest: LOCK,
+      }),
+    Error,
+    "reset of C2 failed at restore",
+  );
+  assertEquals(await readInstanceManifest(root, "C2"), null);
+});
+
+Deno.test("H-35 S3.4 checkEnvironments: admissible only when every container's manifest names the lineage and its env_fp equals the live one, all sharing one", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+    bcEgressOverride: "no NST firewall rule",
+  };
+  await createBaseline(bc, MECH, "C1", o);
+  await createBaseline(bc, MECH, "C2", o);
+  const ok = await checkEnvironments(bc, MECH, ["C1", "C2"], o);
+  assert(ok.admissible);
+  assertEquals(new Set(ok.rows.map((r) => r.env_fp)).size, 1);
+  assert(renderEnvCheck(ok).includes("[OK]"));
+  // No manifest for C3: not admissible.
+  const missing = await checkEnvironments(bc, MECH, ["C1", "C3"], o);
+  assertEquals(missing.admissible, false);
+  assertEquals(missing.rows[1]!.why, "no instance manifest");
+  // Another lineage named in the manifest.
+  const other = await checkEnvironments(bc, MECH, ["C1"], {
+    ...o,
+    lineageId: "golden-other",
+  });
+  assertEquals(other.admissible, false);
+  // The live compiler changed since the baseline (stale manifest).
+  bc.compilerId = "upgraded";
+  const stale = await checkEnvironments(bc, MECH, ["C1"], o);
+  assertEquals(stale.admissible, false);
+  assert(stale.rows[0]!.why!.includes("env_fp"));
+  // A tampered manifest file is refused, not trusted.
+  await Deno.writeTextFile(instanceManifestPath(root, "C2"), "{");
+  const bad = await checkEnvironments(bc, MECH, ["C2"], o);
+  assertEquals(bad.admissible, false);
+});
+
+Deno.test("H-35 S3 L4: a lineage without an fs section (L4 not configured) is not admissible, whatever its containers", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+    bcEgressOverride: "no NST firewall rule",
+  };
+  const { fsDigest: _, ...noL4 } = MECH;
+  await createBaseline(bc, noL4, "C1", o);
+  const c = await checkEnvironments(bc, noL4, ["C1"], o);
+  assertEquals(c.admissible, false);
+  assertEquals(c.rows[0]!.why, null);
+  assert(c.refusal?.includes("L4"));
+  assert(renderEnvCheck(c).includes(c.refusal!));
+});
+
+Deno.test("H-35 S3 L2b: BC egress: no egress field refuses; unenforced refuses unless the run declares --unverified-bc-egress-ok with a reason; enforced is refused until H-36 (run 004 #4)", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = { resultsRoot: root, lineageId: "golden-test", lockDigest: LOCK };
+  const { bcEgress: _, ...none } = MECH;
+  const unenforced = { ...MECH, bcEgress: "unenforced" as const };
+  const enforced = { ...MECH, bcEgress: "enforced" as const };
+  for (const m of [enforced, none, unenforced]) {
+    await createBaseline(bc, m, "C1", o);
+  }
+  assertEquals(
+    (await checkEnvironments(bc, none, ["C1"], o)).refusal,
+    "the lineage has no egress field (L2b)",
+  );
+  const refused = await checkEnvironments(bc, unenforced, ["C1"], o);
+  assertEquals(refused.admissible, false);
+  assert(refused.refusal?.includes("--unverified-bc-egress-ok"));
+  const declared = await checkEnvironments(bc, unenforced, ["C1"], {
+    ...o,
+    bcEgressOverride: "firewall rules not supported on the 28.4 image",
+  });
+  assert(declared.admissible);
+  assertEquals(declared.bc_egress, {
+    mode: "unenforced",
+    override: "firewall rules not supported on the 28.4 image",
+  });
+  assert(renderEnvCheck(declared).includes("[WARN]"));
+  // run 004 #4: an enforced lineage is not admissible until H-36 builds and
+  // verifies the firewall rule, with or without the flag
+  for (const ov of [undefined, "x"]) {
+    const e = await checkEnvironments(bc, enforced, ["C1"], {
+      ...o,
+      ...(ov ? { bcEgressOverride: ov } : {}),
+    });
+    assertEquals(e.admissible, false);
+    assertStringIncludes(e.refusal!, "H-36");
+  }
+});
+
+Deno.test("H-35 S3: a lineage without a content root (no per-restore content verification) is not admissible", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+    bcEgressOverride: "no NST firewall rule",
+  };
+  const { contentRoot: _, ...noRoot } = MECH;
+  await createBaseline(bc, noRoot, "C1", o);
+  const c = await checkEnvironments(bc, noRoot, ["C1"], o);
+  assertEquals(c.admissible, false);
+  assertEquals(c.refusal, "the lineage has no content root");
+});
+
+Deno.test("H-35 S3 (orchestrator ruling on baselines): a baseline made against another symbol store (another lock digest) is not admissible for this run", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+    bcEgressOverride: "no NST firewall rule",
+  };
+  await createBaseline(bc, MECH, "C1", o);
+  const other = await checkEnvironments(bc, MECH, ["C1"], {
+    ...o,
+    lockDigest: "f".repeat(64),
+  });
+  assertEquals(other.admissible, false);
+  assert(other.rows[0]!.why!.includes("env_fp"));
+});
+
+Deno.test("H-35 run 004 #4: admission compares each container's LIVE NST config digest with the lineage's; drift, an unreadable config or a lineage without nst_config is not admissible", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+    bcEgressOverride: "no NST firewall rule",
+  };
+  await createBaseline(bc, MECH, "C1", o);
+  await createBaseline(bc, MECH, "C2", o);
+  const live = (c: string) =>
+    Promise.resolve(
+      c === "C2"
+        ? { sha: "f".repeat(64), error: null }
+        : { sha: "e".repeat(64), error: null },
+    );
+  const drift = await checkEnvironments(
+    bc,
+    { ...MECH, nstConfigDigest: live },
+    ["C1", "C2"],
+    o,
+  );
+  assertEquals(drift.admissible, false);
+  assertEquals(drift.rows[0]!.why, null);
+  assertStringIncludes(drift.rows[1]!.why!, "NST config");
+  const unreadable = await checkEnvironments(
+    bc,
+    {
+      ...MECH,
+      nstConfigDigest: () =>
+        Promise.resolve({ sha: null, error: "docker exec failed" }),
+    },
+    ["C1"],
+    o,
+  );
+  assertStringIncludes(unreadable.rows[0]!.why!, "docker exec failed");
+  const { nstConfigSha: _s, nstConfigDigest: _d, ...none } = MECH;
+  const c = await checkEnvironments(bc, none, ["C1"], o);
+  assertEquals(c.refusal, "the lineage has no nst_config section");
+  assert((await checkEnvironments(bc, MECH, ["C1", "C2"], o)).admissible);
+});

@@ -46,6 +46,8 @@ import { readRecords } from "./adapters/jsonl.ts";
 import { piConfigInvalid } from "./adapters/pi.ts";
 import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
+import type { ResetMechanism } from "./reset.ts";
+import type { BcEgressRecord } from "./environment.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -73,6 +75,7 @@ import {
 import { hashFile, hashJson, hashTree } from "./hash.ts";
 import { imageFacts, installedFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
+import { storeOraclePreimage } from "./task-oracle.ts";
 import { forTask } from "./manifest.ts";
 import {
   type EgressOverride,
@@ -150,6 +153,8 @@ export type PublishStep =
 
 export interface HarnessEnv {
   repoRoot: string;
+  /** H-35 provenance: harnessCommitOf(repoRoot) at open; every judgment records it. */
+  harnessCommit: string | null;
   harnessRoot: string;
   /** results/harness: finished, redacted files only. */
   resultsRoot: string;
@@ -180,8 +185,16 @@ export interface HarnessEnv {
   driveType?: (path: string) => Promise<string>;
   /** Test seam for the freeze's reparse attribute scan (default: the real pwsh scan). */
   scanReparsePoints?: typeof scanReparsePoints;
-  /** The per-container BC ledger; trusted roots are set per grant and judgment, never here. */
-  deploy: Pick<DeployContext, "ledgerRoot">;
+  /**
+   * The per-container BC ledger; trusted roots are set per grant and
+   * judgment, never here. H-35 S3: the reset judging runs before every
+   * deployment (the agent's tool environment never resets).
+   */
+  deploy: Pick<DeployContext, "ledgerRoot"> & {
+    reset: ResetMechanism;
+    /** H-35 S3 L2b: the admitted NST egress state, recorded in every verdict. */
+    bcEgress?: BcEgressRecord | null;
+  };
   pricing(at: Date): Promise<PricingBook>;
   /** Started by a human at a terminal; no automatic retries. */
   supervised: boolean;
@@ -2625,6 +2638,8 @@ export async function judgeExecution(
     `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
   );
   try {
+    // H-35 (design-r4 4): the oracle side of this judgment stays readable.
+    await storeOraclePreimage(env.resultsRoot, cell.task);
     const raw = await judge(env.lane, {
       executionId: e.id,
       workspaceHash: art.workspace_hash,
@@ -2636,6 +2651,7 @@ export async function judgeExecution(
       workDir,
       lock: { store: env.symbolStore, packages: env.symbols },
       deploy: env.deploy,
+      harnessCommit: env.harnessCommit,
       ...(env.buildCache ? { buildCache: env.buildCache } : {}),
     }, env.now);
     // Every judge output is published through the custody redaction (the
@@ -2858,6 +2874,7 @@ export async function measureWorkspace(
     )
     : await infraSafe(async () => {
       const vw = await buildVerdictWorkspace({
+        productionAllow: x.task.task.production_allow,
         pristine: x.pristine,
         artifact: x.artifact,
         out: join(workDir, "final"),

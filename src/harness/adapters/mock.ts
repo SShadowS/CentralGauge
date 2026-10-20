@@ -5,13 +5,16 @@
  * alphabetically": `positive` is the task's positive folder (`correct/` or
  * `reference-tests/`), `naive:<name>` must be listed. `fixture:<name>`
  * applies tests/fixtures/harness/hostile/<name> (the M1-30 hostile rows).
+ * `replay:<absolute dir>` applies a dir outside the repo (H-35 Phase 3).
  */
 
-import { join } from "@std/path";
+import { isAbsolute, join } from "@std/path";
 import type { HarnessAdapter, ParsedRun } from "../adapter.ts";
 import type { QualifyManifest } from "../qualify.ts";
 import type { Termination } from "../records.ts";
 import { ConfigurationError } from "../../errors.ts";
+import { FREEZE_VIOLATIONS_FILE } from "../fsutil.ts";
+import { TEST_APP } from "../verdict-workspace.ts";
 
 export const HOSTILE_FIXTURES = "tests/fixtures/harness/hostile";
 
@@ -47,6 +50,53 @@ export function resolveVariant(
   );
 }
 
+/** H-35 Phase 3: a first path segment that names the Test app on Windows (case, trailing dots or spaces, 8.3 alias). */
+const testSide = (seg: string) =>
+  seg.replace(/[. ]+$/, "").toLowerCase() === TEST_APP.toLowerCase() ||
+  seg.includes("~");
+
+/**
+ * H-35 Phase 3: `replay:<absolute dir>` applies a dir lane-ops built from a
+ * recorded execution's production files (mock.ps1 layout and `.delete`),
+ * so the replayed workspace keeps the shipped Test app untouched. Refused:
+ * a relative dir, anything that writes or deletes under Test, a freeze marker.
+ */
+export function replayDir(dir: string): string {
+  if (!isAbsolute(dir)) {
+    throw new ConfigurationError(
+      `mock replay dir must be absolute: ${JSON.stringify(dir)}`,
+    );
+  }
+  const refused: string[] = [];
+  for (const e of Deno.readDirSync(dir)) {
+    if (testSide(e.name) || e.name === FREEZE_VIOLATIONS_FILE) {
+      refused.push(e.name);
+    }
+  }
+  let list = "";
+  try {
+    list = Deno.readTextFileSync(join(dir, ".delete"));
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  for (const raw of list.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const first = line.replaceAll("\\", "/").split("/").find((s) =>
+      s !== "" && s !== "."
+    );
+    if (first === undefined || testSide(first)) refused.push(`.delete ${line}`);
+  }
+  if (refused.length > 0) {
+    throw new ConfigurationError(
+      `mock replay dir ${dir} may not touch the ${TEST_APP} app or carry a freeze marker: ${
+        refused.join(", ")
+      }`,
+    );
+  }
+  return dir;
+}
+
 type Line = Record<string, unknown> & { type?: unknown };
 
 export const mockAdapter: HarnessAdapter = {
@@ -70,6 +120,11 @@ export const mockAdapter: HarnessAdapter = {
       }
       copies.push({
         src: join(repoRoot, HOSTILE_FIXTURES, name),
+        dst: "variant",
+      });
+    } else if (typeof v === "string" && v.startsWith("replay:")) {
+      copies.push({
+        src: replayDir(v.slice("replay:".length)),
         dst: "variant",
       });
     } else if (v !== undefined) {

@@ -9,23 +9,37 @@ import { ContainerError, ValidationError } from "../../../src/errors.ts";
 import {
   BENCH_CANDIDATE_APP_ID,
   loadLedger,
+  saveLedger,
 } from "../../../src/harness/bc-apps.ts";
+import {
+  type FsCheckRecord,
+  type FsDiffEntry,
+  HostDirtyError,
+  ResetFailedError,
+  type ResetMechanism,
+  type ResetRecord,
+  type VerifyRecord,
+} from "../../../src/harness/reset.ts";
 import {
   BcLane,
   buildApps,
   buildCacheReport,
   classifyTestFailure,
+  CleanupFailedError,
+  CLOUD_POLICY,
+  DECLARED_POLICY,
   deploy,
   deployAndTest,
   dirBuildCache,
   type LockedSymbols,
   prepareApps,
+  productionManifest,
   runTests,
   scorerPassed,
 } from "../../../src/harness/bc-lane.ts";
 import { hashFile } from "../../../src/harness/hash.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
-import { type FakeApp, FakeBc, result } from "./fake-bc.ts";
+import { type FakeApp, FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
 import { testTempDir, trackTempDir } from "../../utils/temp-dir.ts";
 
@@ -91,6 +105,8 @@ const readApp = async (f: string) =>
 async function prep(_bc: FakeBc, lane: BcLane, changed: string[] = []) {
   const pristine = await workspace();
   const prepared = await prepareApps(lane, {
+    versionPlan: "backend",
+    policy: DECLARED_POLICY,
     pristine,
     pristineApps: await readAppGraph(pristine),
     candidateDir: pristine,
@@ -106,6 +122,7 @@ Deno.test("buildApps: dependency order, versions, workspace and locked symbols",
   const ws = await workspace();
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map([["Core", "1.0.7.7"]]),
@@ -137,6 +154,7 @@ Deno.test("buildApps: an unlocked package after compile is refused", async () =>
   await assertRejects(
     async () =>
       buildApps(bc, "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps: await readAppGraph(ws),
         versions: new Map(),
@@ -153,6 +171,7 @@ Deno.test("buildApps: a failed dependency stops its dependents", async () => {
   await write(ws, "Core/src/C.al", "COMPILE_ERROR");
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -420,6 +439,185 @@ Deno.test("deployAndTest: tests throwing together with a cleanup failure quarant
   assert(lane.quarantined.has("C1"));
 });
 
+Deno.test("H-35 run 004 #3 BcLane: a quarantine is persisted while the container is held; a failed write is logged loudly and the in-memory entry stays", async () => {
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const written: [string, string, boolean][] = [];
+  let fail = false;
+  const lane: BcLane = new BcLane(new FakeBc(), ["C1", "C2"], {
+    maxInfraRetries: 0,
+    persist: (c, reason) => {
+      // still held: nothing else can be routed to c before the record exists
+      written.push([c, reason, lane.quarantined.has(c)]);
+      return fail ? Promise.reject(new Error("disk full")) : Promise.resolve();
+    },
+  });
+  await lane.exclusive(ctx, () => Promise.resolve({ cleanupError: "dirty" }));
+  assertEquals(written, [["C1", "dirty", true]]);
+  // the catch path (a QuarantiningError) persists too, and its error surfaces
+  fail = true;
+  const logged: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => void logged.push(a.join(" "));
+  try {
+    await assertRejects(
+      () =>
+        lane.exclusive(ctx, (c) => {
+          throw new HostDirtyError({
+            container: c,
+            ok: false,
+            diff: [],
+            errors: ["after: planted"],
+          });
+        }),
+      HostDirtyError,
+    );
+  } finally {
+    console.error = orig;
+  }
+  assertEquals(written.length, 2);
+  assertEquals(written[1]![0], "C2");
+  assert(lane.quarantined.has("C2"), "kept in memory despite the failed write");
+  assertEquals(logged.length, 1);
+  assertStringIncludes(logged[0]!, "[FAIL] quarantine of C2 NOT persisted");
+  assertStringIncludes(logged[0]!, "disk full");
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 BcLane: an L4 quarantine persists its fs diff, also when it rides on a cleanup failure", async () => {
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const seen: [string, string, FsDiffEntry[] | null][] = [];
+  const lane = new BcLane(new FakeBc(), ["C1", "C2", "C3", "C4", "C5", "C6"], {
+    maxInfraRetries: 0,
+    persist: (c, reason, d) => (seen.push([c, reason, d]), Promise.resolve()),
+  });
+  const diff: FsDiffEntry[] = [{
+    path: "C:\\Run\\my\\flag.txt",
+    before: null,
+    after: `F|${"a".repeat(64)}|2|1|1|6262|C:\\Run\\my\\flag.txt`,
+  }];
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new HostDirtyError({ container: c, ok: false, diff, errors: [] });
+    })
+  );
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new CleanupFailedError(new Error("tests"), "L4 dirty", c, diff);
+    })
+  );
+  // H-35 run 004 Sol r2 N4: no after-capture is no evidence (null), a clean
+  // one is an explicit empty diff; an L4 that could not observe is none
+  await lane.exclusive(ctx, () => Promise.resolve({ cleanupError: "x" }));
+  await lane.exclusive(ctx, (c) =>
+    Promise.resolve({
+      cleanupError: "post-cleanup check failed",
+      fsCheck: { container: c, ok: true, diff: [], errors: [] },
+    }));
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new HostDirtyError({
+        container: c,
+        ok: false,
+        diff,
+        errors: ["after: C:\\Run\\my: denied"],
+      });
+    })
+  );
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new ResetFailedError({
+        container: c,
+        mechanism: "m",
+        policy_version: 1,
+        ok: false,
+        failed_step: "restore",
+        error: "boom",
+        phases_ms: {},
+      });
+    })
+  );
+  assertEquals(seen.map(([c, , d]) => [c, d]), [
+    ["C1", diff],
+    ["C2", diff],
+    ["C3", null],
+    ["C4", []],
+    ["C5", null],
+    ["C6", null],
+  ]);
+});
+
+Deno.test("H-35 run 004 Sol r2 N3 BcLane.drain: waits for an in-flight exclusive operation and admits no new one", async () => {
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const lane = new BcLane(new FakeBc(), ["C1"]);
+  let finish!: () => void;
+  let started!: () => void;
+  const running = new Promise<void>((r) => (started = r));
+  const op = lane.exclusive(ctx, () =>
+    new Promise<void>((r) => {
+      finish = r;
+      started();
+    }));
+  await running;
+  let drained = false;
+  const d = lane.drain().then(() => void (drained = true));
+  await new Promise((r) => setTimeout(r, 10));
+  assertEquals(drained, false, "drain waits for the operation in flight");
+  await assertRejects(
+    () => lane.exclusive(ctx, () => Promise.resolve()),
+    Error,
+    "BC lane closed",
+  );
+  finish();
+  await op;
+  await d;
+  assertEquals(drained, true);
+  await lane.drain(); // idle: at once
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 deployAndTest: tests throwing with a dirty L4 check hand the fs diff to the lane", async () => {
+  const bc = new FakeBc(() => {
+    throw new ContainerError("soap down", "C1", "test");
+  });
+  const seen: (FsDiffEntry[] | null)[] = [];
+  const lane = new BcLane(bc, ["C1"], {
+    maxInfraRetries: 0,
+    persist: (_c, _r, d) => (seen.push(d), Promise.resolve()),
+  });
+  const p = await prep(bc, lane);
+  const flag = `F|${"a".repeat(64)}|2|1|1|6262|C:\\Run\\my\\flag.txt`;
+  let n = 0;
+  const reset = {
+    ...OK_RESET,
+    fsDigest: () =>
+      Promise.resolve(
+        n++ === 0
+          ? ["D|16|0|C:\\Run\\my", "T|1"]
+          : ["D|16|0|C:\\Run\\my", flag, "T|2"],
+      ),
+  };
+  await assertRejects(
+    () =>
+      lane.exclusive(
+        { taskId: "t", variantId: "v", attemptNumber: 1 },
+        (c) =>
+          deployAndTest(bc, c, {
+            wanted: p.wanted,
+            tests: [{ codeunit: 80010, procedures: null, target: "candidate" }],
+            cleanupIds: [IDS.test],
+            ctx: {
+              ledgerRoot: trackTempDir(Deno.makeTempDirSync()),
+              trustedRoots: [p.pristine],
+              reset,
+            },
+          }),
+      ),
+    CleanupFailedError,
+  );
+  assertEquals(seen.map((d) => d?.map((e) => [e.path, e.before])), [[[
+    "C:\\Run\\my\\flag.txt",
+    null,
+  ]]]);
+});
+
 Deno.test("BcLane: queued work is refused after its container is quarantined; a cancelled signal is never admitted", async () => {
   const lane = new BcLane(new FakeBc(), ["C1"], { compileSlots: 1 });
   let release!: () => void;
@@ -535,6 +733,7 @@ Deno.test("BcLane: compiles are admitted at most compileSlots at a time per cont
     [1, 2, 3].map(() =>
       lane.compile(async (c) =>
         buildApps(bc, c, {
+          policy: DECLARED_POLICY,
           srcDir: ws,
           apps: await readAppGraph(ws),
           versions: new Map(),
@@ -589,6 +788,7 @@ Deno.test("buildApps: a dependency outside the workspace and the symbols lock is
   );
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -817,6 +1017,7 @@ Deno.test("buildApps: BCH's cache_AppInfo.json index is not a symbol package; an
     );
   };
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -833,6 +1034,7 @@ Deno.test("buildApps: BCH's cache_AppInfo.json index is not a symbol package; an
   await assertRejects(
     async () =>
       buildApps(bc, "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps: await readAppGraph(ws),
         versions: new Map(),
@@ -953,6 +1155,7 @@ Deno.test("buildApps: the locked packages' app info cache is harvested once and 
   const first = new Map<string, string[] | null>();
   appInfoWriter(bc, first);
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -983,6 +1186,7 @@ Deno.test("buildApps: a build cache reuses an unchanged app; a changed source re
   const cache = dirBuildCache(await tmp());
   const bc = new FakeBc();
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1040,6 +1244,7 @@ for (
     const bc = new FakeBc();
     const outDir = await tmp();
     const built = await buildApps(bc, "C1", {
+      policy: DECLARED_POLICY,
       srcDir: ws,
       apps: await readAppGraph(ws),
       versions: new Map([["Core", "1.0.7.7"]]),
@@ -1069,6 +1274,7 @@ Deno.test("buildApps: a workspace app whose id is a locked package's is the app'
   });
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1096,6 +1302,7 @@ Deno.test("buildApps: a reused build is refused on an id or file name collision,
   };
   const bc = new FakeBc();
   const byName = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1114,6 +1321,7 @@ Deno.test("buildApps: a reused build is refused on an id or file name collision,
   );
   assert(byName.every((b) => !b.ok));
   const byId = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1136,6 +1344,7 @@ Deno.test("buildApps: a prebuilt workspace file named as a locked package is ref
   await assertRejects(
     async () =>
       buildApps(bc, "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps,
         versions: new Map(),
@@ -1186,6 +1395,7 @@ Deno.test("buildApps: an agent-planted .ALPACKAGES app info cache (any case) is 
     );
   };
   await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1215,6 +1425,7 @@ Deno.test("buildApps: a harvest keeps only locked packages that hash-verified in
     );
   };
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1237,6 +1448,7 @@ Deno.test("buildApps: the build cache key holds the compiler identity, not only 
   const cache = dirBuildCache(await tmp());
   const bc = new FakeBc();
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1267,6 +1479,7 @@ const cached = async (
   extra: Partial<Parameters<typeof buildApps>[2]> = {},
 ) =>
   await buildApps(bc, container, {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1308,6 +1521,7 @@ Deno.test("buildApps (H-27): a prebuilt dependency is keyed by its cache key; on
   bc.nondeterministic = true;
   const all = await readAppGraph(ws);
   const core = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: all.filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1318,6 +1532,7 @@ Deno.test("buildApps (H-27): a prebuilt dependency is keyed by its cache key; on
   const rest = all.filter((a) => a.folder !== "Core");
   const onTop = (keys?: Map<string, string>) =>
     buildApps(bc, "C1", {
+      policy: DECLARED_POLICY,
       srcDir: ws,
       apps: rest,
       versions: new Map(),
@@ -1397,6 +1612,8 @@ Deno.test("prepareApps (H-27): a second prepare of the same task reuses the prer
   const lane = new BcLane(bc, ["C1", "C2"]);
   const prep = async () =>
     await prepareApps(lane, {
+      versionPlan: "backend",
+      policy: DECLARED_POLICY,
       pristine: ws,
       pristineApps: await readAppGraph(ws),
       candidateDir: ws,
@@ -1497,6 +1714,7 @@ Deno.test("buildApps: once the app info is harvested, the restore holds exactly 
   const bc = new FakeBc();
   bchAppInfo(bc, info);
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map(),
@@ -1540,6 +1758,7 @@ Deno.test("buildApps: a package the app uses but does not declare fails its comp
   const bc = new FakeBc();
   bchAppInfo(bc, info);
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1565,6 +1784,7 @@ Deno.test("buildApps (H-27 r2 #1): the restored symbol set is in the key: a cold
   bchAppInfo(bc, info);
   const cache = dirBuildCache(await tmp());
   const o = async () => ({
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
     versions: new Map(),
@@ -1729,6 +1949,7 @@ Deno.test("buildApps (H-27 r2): another effective version or another lock is a m
   const bc = new FakeBc();
   const core = async (versions: Map<string, string>, l: LockedSymbols) =>
     await buildApps(bc, "C1", {
+      policy: DECLARED_POLICY,
       srcDir: ws,
       apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
       versions,
@@ -1753,6 +1974,7 @@ Deno.test("buildApps (H-27 r2 #4): an analysis compile with a cache is refused",
   await assertRejects(
     () =>
       buildApps(new FakeBc(), "C1", {
+        policy: DECLARED_POLICY,
         srcDir: ws,
         apps: [],
         versions: new Map(),
@@ -1772,6 +1994,7 @@ Deno.test("buildApps: a BOM app.json builds like one without", async () => {
   await Deno.writeTextFile(p, "\uFEFF" + await Deno.readTextFile(p));
   const bc = new FakeBc();
   const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
     srcDir: ws,
     apps: await readAppGraph(ws),
     versions: new Map([["Core", "1.0.7.7"]]),
@@ -1780,4 +2003,966 @@ Deno.test("buildApps: a BOM app.json builds like one without", async () => {
   });
   assert(built.every((b) => b.ok));
   assertEquals((await readApp(built[0]!.file!)).version, "1.0.7.7");
+});
+
+// ---- H-35 (design-r5 2.1, 3.3; rulings r5): build policy and version plans ----
+
+Deno.test("H-35: the Cloud policy compiles every app with target Cloud in the effective app.json; the declared policy keeps the workspace's target", async () => {
+  const ws = await workspace();
+  const bc = new FakeBc();
+  const cloud = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+    policy: CLOUD_POLICY,
+  });
+  for (const b of cloud) assertEquals((await readApp(b.file!)).target, "Cloud");
+  const declared = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+    policy: DECLARED_POLICY,
+  });
+  for (const b of declared) {
+    assertEquals((await readApp(b.file!)).target, undefined);
+  }
+});
+
+Deno.test("H-35: the build policy is in the cache key: the same source under another policy is a miss", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cache = dirBuildCache(await tmp());
+  const bc = new FakeBc();
+  const o = async (policy: typeof CLOUD_POLICY) => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+    policy,
+  });
+  const a = await buildApps(bc, "C1", await o(CLOUD_POLICY));
+  const b = await buildApps(bc, "C1", await o(DECLARED_POLICY));
+  assertEquals(bc.compiles.length, 6, "no reuse across policies");
+  assert(a.every((x, i) => x.key !== b[i]!.key));
+  await buildApps(bc, "C1", await o(CLOUD_POLICY));
+  assertEquals(bc.compiles.length, 6, "the same policy reuses");
+});
+
+Deno.test("H-35: a cached package whose target is not the policy's is refused and rebuilt; it is never reused (cached-OnPrem fixture)", async () => {
+  const ws = await workspace();
+  const lk = await lock();
+  const cacheDir = await tmp();
+  const cache = dirBuildCache(cacheDir);
+  const bc = new FakeBc();
+  const o = async () => ({
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: lk,
+    cache,
+    policy: CLOUD_POLICY,
+  });
+  const first = await buildApps(bc, "C1", await o());
+  // Tamper: the cached Core package is replaced by an OnPrem build under its Cloud key.
+  const hit = (await cache.get(first[0]!.key!))!;
+  const app = await readApp(hit);
+  await Deno.writeTextFile(hit, JSON.stringify({ ...app, target: "OnPrem" }));
+  const again = await buildApps(bc, "C1", await o());
+  // Core is rebuilt; its fresh build is unkeyed, so its dependents rebuild too (fail closed).
+  assertEquals(bc.compiles.slice(3), ["Core", "Rental", "Test"]);
+  const core = again.find((b) => b.folder === "Core")!;
+  assert(core.ok && core.attempted);
+  assertEquals((await readApp(core.file!)).target, "Cloud");
+  assertEquals(
+    core.key,
+    undefined,
+    "the fresh build is unkeyed: the bad entry stays unused",
+  );
+});
+
+Deno.test("H-35: prepareApps versionPlan judge publishes every app as a candidate at its pristine version; backend keeps stamped prerequisites", async () => {
+  const bc = new FakeBc();
+  const lane = new BcLane(bc, ["C1"]);
+  const pristine = await workspace();
+  const base = async () => ({
+    pristine,
+    pristineApps: await readAppGraph(pristine),
+    candidateDir: pristine,
+    candidateApps: await readAppGraph(pristine),
+    changed: ["Rental"],
+    workDir: await tmp(),
+    lock: await lock(),
+    policy: CLOUD_POLICY,
+  });
+  const judge = await prepareApps(lane, {
+    ...await base(),
+    versionPlan: "judge",
+  });
+  assertEquals(
+    judge.wanted.map((w) => [w.role, w.version]),
+    [["candidate", "1.0.0.0"], ["candidate", "1.0.0.0"], [
+      "candidate",
+      "1.0.0.0",
+    ]],
+  );
+  assertEquals(judge.candidateIds, [IDS.core, IDS.rental, IDS.test]);
+  const backend = await prepareApps(lane, {
+    ...await base(),
+    versionPlan: "backend",
+  });
+  const core = backend.wanted.find((w) => w.id === IDS.core)!;
+  assertEquals(core.role, "prereq");
+  assert(
+    core.version !== "1.0.0.0",
+    "the backend plan still stamps prerequisites",
+  );
+});
+
+// ---- H-35 S1.7b (design-r3 3.2, 3.3): one production build for G and A ----
+
+/** G's prepare (judge plan, Cloud) of a workspace; A is a copy whose Test differs. */
+async function gAndA() {
+  const bc = new FakeBc();
+  const lane = new BcLane(bc, ["C1"]);
+  const pristine = await workspace();
+  const g = await workspace();
+  const a = await workspace();
+  await write(
+    a,
+    "Test/src/Agent.al",
+    `codeunit 81000 "Agent"\n{\n    Subtype = Test;\n}\n`,
+  );
+  const l = await lock();
+  const prepare = async (dir: string, changed: string[], extra = {}) =>
+    await prepareApps(lane, {
+      pristine,
+      pristineApps: await readAppGraph(pristine),
+      candidateDir: dir,
+      candidateApps: await readAppGraph(dir),
+      changed,
+      workDir: await tmp(),
+      lock: l,
+      versionPlan: "judge",
+      policy: CLOUD_POLICY,
+      ...extra,
+    });
+  const gp = await prepare(g, []);
+  const manifest = await productionManifest(gp, g);
+  return { bc, lane, pristine, a, gp, manifest, prepare };
+}
+
+Deno.test("H-35: A publishes G's production files (the manifest), compiling only its Test app, without any build cache", async () => {
+  const { bc, a, gp, manifest, prepare } = await gAndA();
+  assertEquals([...manifest.apps.keys()].sort(), ["Core", "Rental"]);
+  assert(/^[0-9a-f]{64}$/.test(manifest.digest));
+  const before = bc.compiles.length;
+  const ap = await prepare(a, ["Test"], { production: manifest });
+  assertEquals(bc.compiles.slice(before), ["Test"]);
+  for (const id of [IDS.core, IDS.rental]) {
+    assertEquals(
+      ap.wanted.find((w) => w.id === id)!.file,
+      gp.wanted.find((w) => w.id === id)!.file,
+    );
+  }
+  const core = ap.wanted.find((w) => w.id === IDS.core)!;
+  assertEquals(core.sha256, manifest.apps.get("Core")!.sha256);
+  assertEquals(core.role, "candidate");
+});
+
+Deno.test("H-35: a production source in A that differs from G's manifest is a harness bug: the prepare throws", async () => {
+  const { a, manifest, prepare } = await gAndA();
+  await write(
+    a,
+    "Rental/src/R.al",
+    `codeunit 70200 "CGR Rental"\n{\n    // drift\n}\n`,
+  );
+  await assertRejects(
+    () => prepare(a, ["Rental", "Test"], { production: manifest }),
+    Error,
+    "production manifest",
+  );
+});
+
+Deno.test("H-35: deploy refuses a package whose bytes no longer match its manifest sha256, before touching the container", async () => {
+  const { bc, gp } = await gAndA();
+  const w = gp.wanted.map((x) => ({ ...x, sha256: "0".repeat(64) }));
+  const syncs = bc.syncs.length;
+  const ledgerRoot = join(await tmp(), "ledger");
+  await assertRejects(
+    () => deploy(bc, "C1", w, { ledgerRoot, trustedRoots: [] }),
+    Error,
+    "sha256",
+  );
+  assertEquals(bc.syncs.length, syncs);
+});
+
+// ---- H-35 Sol r1 ----
+
+Deno.test("H-35 Sol r1 #5: every package a prepare built carries its sha256; deploy refuses one replaced after the prepare", async () => {
+  const { bc, gp } = await gAndA();
+  assert(gp.wanted.every((w) => /^[0-9a-f]{64}$/.test(w.sha256 ?? "")));
+  const core = gp.wanted.find((w) => w.id === IDS.core)!;
+  await Deno.writeTextFile(core.file, "replaced");
+  const syncs = bc.syncs.length;
+  const ledgerRoot = join(await tmp(), "ledger");
+  await assertRejects(
+    () => deploy(bc, "C1", gp.wanted, { ledgerRoot, trustedRoots: [] }),
+    Error,
+    "sha256",
+  );
+  assertEquals(bc.syncs.length, syncs);
+});
+
+Deno.test("H-35 Sol r1 #6: a cache entry that wins the write is target-checked too: an OnPrem winner is never adopted", async () => {
+  const bc = new FakeBc();
+  const ws = await workspace();
+  const onprem = join(await tmp(), "onprem.app");
+  const winners = new Map<string, string>();
+  const cache = {
+    get: (key: string) => Promise.resolve(winners.get(key) ?? null),
+    put: async (key: string, _file: string) => {
+      // A concurrent writer won the key with an OnPrem package.
+      await Deno.writeTextFile(onprem, JSON.stringify({ target: "OnPrem" }));
+      winners.set(key, onprem);
+    },
+  };
+  const built = await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+    cache,
+    policy: CLOUD_POLICY,
+  });
+  const core = built[0]!;
+  assert(core.ok);
+  assertEquals(core.key, undefined, "the OnPrem winner is not adopted");
+  assertEquals(await bc.packageTarget(core.file!), "Cloud");
+});
+
+// ---- H-35 orchestrator Sol r1 (S1 run 001 rejection) ----
+
+Deno.test("H-35 orch r1 #3: a build has its key without any build cache, and the production manifest records it", async () => {
+  const { gp, manifest } = await gAndA();
+  for (const id of [IDS.core, IDS.rental]) {
+    const folder = id === IDS.core ? "Core" : "Rental";
+    assert(/^[0-9a-f]{64}$/.test(gp.keys.get(folder) ?? ""), folder);
+    assertEquals(manifest.apps.get(folder)!.key, gp.keys.get(folder));
+  }
+});
+
+Deno.test("H-35 orch r1 #4: the effective app.json (version, Cloud target) is staged before the cache is consulted", async () => {
+  const bc = new FakeBc();
+  const ws = await workspace();
+  const outDir = await tmp();
+  const seen: (string | null)[] = [];
+  const cache = {
+    get: async (_key: string) => {
+      const aj = JSON.parse(
+        await Deno.readTextFile(join(outDir, "Core", "app.json")).catch(() =>
+          "{}"
+        ),
+      );
+      seen.push(aj.target ?? null);
+      return null;
+    },
+    put: () => Promise.resolve(),
+  };
+  await buildApps(bc, "C1", {
+    srcDir: ws,
+    apps: (await readAppGraph(ws)).filter((a) => a.folder === "Core"),
+    versions: new Map([["Core", "1.0.0.0"]]),
+    outDir,
+    lock: await lock(),
+    cache,
+    policy: CLOUD_POLICY,
+  });
+  assertEquals(seen[0], "Cloud");
+});
+
+// ---- H-35 S3: the reset before every judge deployment ----
+
+/** A reset mechanism that logs each reset; `fail` names containers it fails on. */
+function fakeReset(bc: FakeBc, fail = new Set<string>()) {
+  const log: string[] = [];
+  const records: ResetRecord[] = [];
+  const mechanism: ResetMechanism = {
+    id: "fake",
+    policyVersion: 1,
+    reset: (c) => {
+      // Ordered against the deployments: how many syncs preceded it.
+      log.push(`${c}@${bc.syncs.length}`);
+      return Promise.resolve({
+        container: c,
+        mechanism: "fake",
+        policy_version: 1,
+        ok: !fail.has(c),
+        failed_step: fail.has(c) ? "snapshot_guard" : null,
+        error: fail.has(c) ? "snapshot exists" : null,
+        phases_ms: {},
+      });
+    },
+  };
+  return {
+    log,
+    records,
+    mechanism,
+    onReset: (r: ResetRecord) => records.push(r),
+  };
+}
+
+Deno.test("H-35 S3 deployAndTest: the reset runs before the deployment, is recorded and returned, and the ledger is the baseline (empty) after it", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const ledgerRoot = await tmp();
+  await saveLedger(
+    ledgerRoot,
+    "C1",
+    {
+      stale: { id: "stale", version: "1.0.0.0", stamp: "x" },
+    } as unknown as Parameters<typeof saveLedger>[2],
+  );
+  const r = fakeReset(bc);
+  const before = bc.syncs.length;
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot,
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onReset: r.onReset,
+    },
+  });
+  assertEquals(r.log, [`C1@${before}`]);
+  assertEquals(out.reset?.ok, true);
+  assertEquals(r.records.map((x) => x.container), ["C1"]);
+  assert(!("stale" in await loadLedger(ledgerRoot, "C1")));
+});
+
+Deno.test("H-35 S3 deployAndTest: a failed reset throws ResetFailedError before any deployment; the lane quarantines that container and reroutes, and the retry gets its own reset", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const r = fakeReset(bc, new Set(["C1"]));
+  const ctx = {
+    ledgerRoot: await tmp(),
+    trustedRoots: [p.pristine],
+    reset: r.mechanism,
+    onReset: r.onReset,
+  };
+  const call = (c: string) =>
+    deployAndTest(bc, c, {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx,
+    });
+  const syncs = bc.syncs.length;
+  await assertRejects(() => call("C1"), ResetFailedError, "snapshot_guard");
+  assertEquals(bc.syncs.length, syncs, "nothing deployed after a failed reset");
+  // Through the lane: C1 (least recently routed first) fails its reset.
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    call,
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.get("C1")?.includes("snapshot_guard"));
+  assertEquals(
+    r.records.map((x) => [x.container, x.ok]),
+    [["C1", false], ["C1", false], ["C2", true]],
+  );
+});
+
+Deno.test("H-35 Sol r2 #3: a reset mechanism that throws is recorded as a failed reset and quarantines the container; the retry gets its own reset", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const records: ResetRecord[] = [];
+  const ok = fakeReset(bc).mechanism;
+  const ctx = {
+    ledgerRoot: await tmp(),
+    trustedRoots: [p.pristine],
+    reset: {
+      id: "fake",
+      policyVersion: 1,
+      reset: (c: string) =>
+        c === "C1"
+          ? Promise.reject(new ContainerError("session died", c, "setup"))
+          : ok.reset(c),
+    },
+    onReset: (r: ResetRecord) => records.push(r),
+  };
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx,
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.has("C1"));
+  assertEquals(
+    records.map((r) => [r.container, r.ok, r.failed_step]),
+    [["C1", false, "threw"], ["C2", true, null]],
+  );
+});
+
+Deno.test("H-35 Sol r3 #2: a reset mechanism that throws synchronously is recorded and quarantines too", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const records: ResetRecord[] = [];
+  const ok = fakeReset(bc).mechanism;
+  const reset: ResetMechanism = {
+    id: "fake",
+    policyVersion: 1,
+    reset(c: string): Promise<ResetRecord> {
+      if (c === "C1") throw new ContainerError("session died", c, "setup");
+      return ok.reset(c);
+    },
+  };
+  const ledgerRoot = await tmp();
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot,
+          trustedRoots: [p.pristine],
+          reset,
+          onReset: (r) => records.push(r),
+        },
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.has("C1"));
+  assertEquals(records.map((r) => [r.container, r.failed_step]), [
+    ["C1", "threw"],
+    ["C2", null],
+  ]);
+});
+
+// ---- H-35 S3: the post-cleanup inventory check (design-r4 2) ----
+
+/** fakeReset plus a verifyClean that is dirty on the `dirty` containers (or throws on `throws`). */
+function verifyingReset(
+  bc: FakeBc,
+  o: { dirty?: Set<string>; throws?: Set<string> } = {},
+) {
+  const base = fakeReset(bc);
+  const verifies: VerifyRecord[] = [];
+  const mechanism: ResetMechanism = {
+    ...base.mechanism,
+    verifyClean: (c) => {
+      base.log.push(`verify ${c}@${bc.syncs.length}`);
+      if (o.throws?.has(c)) {
+        return Promise.reject(new ContainerError("exec died", c, "setup"));
+      }
+      const dirty = o.dirty?.has(c) ?? false;
+      return Promise.resolve({
+        container: c,
+        ok: !dirty,
+        diff: dirty ? ["+ P|leftover-app"] : [],
+        error: dirty ? "inventory differs from the baseline (1 line)" : null,
+      });
+    },
+  };
+  return {
+    ...base,
+    mechanism,
+    verifies,
+    onVerify: (v: VerifyRecord) => verifies.push(v),
+  };
+}
+
+Deno.test("H-35 S3 deployAndTest: the post-cleanup inventory check runs after the cleanup and is recorded; clean means no cleanupError", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = verifyingReset(bc);
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onReset: r.onReset,
+      onVerify: r.onVerify,
+    },
+  });
+  // after the cleanup sync, the last one
+  assertEquals(r.log.at(-1), `verify C1@${bc.syncs.length}`);
+  assertEquals(bc.syncs.at(-1)?.publish, []);
+  assertEquals(out.cleanupError, null);
+  assertEquals(out.verify?.ok, true);
+  assertEquals(r.verifies.map((v) => v.container), ["C1"]);
+});
+
+Deno.test("H-35 S3 deployAndTest: a dirty post-cleanup inventory is a cleanupError (the lane quarantines; the measurement stands) and is recorded with its diff", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1"]);
+  const p = await prep(bc, lane);
+  const r = verifyingReset(bc, { dirty: new Set(["C1"]) });
+  const ledgerRoot = await tmp();
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot,
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+          onVerify: r.onVerify,
+        },
+      }),
+  );
+  assertStringIncludes(held.result.cleanupError!, "inventory differs");
+  assert(lane.quarantined.get("C1")?.includes("inventory differs"));
+  assertEquals(held.result.rows.map((x) => x.outcome), ["pass"]);
+  assertEquals(r.verifies.map((v) => v.diff), [["+ P|leftover-app"]]);
+});
+
+Deno.test("H-35 S3 deployAndTest: a deployment that throws, then a dirty or throwing check, is a CleanupFailedError (quarantine); a throwing check is recorded as a failed check", async () => {
+  for (const kind of ["dirty", "throws"] as const) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]));
+    bc.publishFailure = () => "Could not connect to the server";
+    const r = verifyingReset(bc, { [kind]: new Set(["C1"]) });
+    const ledgerRoot = await tmp();
+    await assertRejects(
+      () =>
+        deployAndTest(bc, "C1", {
+          wanted: p.wanted,
+          tests: [{
+            codeunit: 80010,
+            procedures: ["Works"],
+            target: "candidate",
+          }],
+          cleanupIds: [IDS.test],
+          ctx: {
+            ledgerRoot,
+            trustedRoots: [p.pristine],
+            reset: r.mechanism,
+            onVerify: r.onVerify,
+          },
+        }),
+      CleanupFailedError,
+      kind === "dirty" ? "inventory differs" : "exec died",
+    );
+    assertEquals(r.verifies.map((v) => v.ok), [false]);
+  }
+});
+
+Deno.test("H-35 S3 deployAndTest: no inventory check after a failed cleanup (already quarantined) or without a reset mechanism", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  bc.cleanupFails.add("C1");
+  const r = verifyingReset(bc);
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onVerify: r.onVerify,
+    },
+  });
+  assertStringIncludes(out.cleanupError!, "incomplete");
+  assertEquals(r.verifies, []);
+  assertEquals(out.verify, null);
+});
+
+// ---- H-35 S3 L4: fsDigest(W) around every judge deployment ----
+
+const FS_LINE = (p: string, h = "a") => `F|${h.repeat(64)}|4|32|1|6161|${p}`;
+
+/**
+ * fakeReset plus an fsDigest: the n-th capture on a container is
+ * `captures(c, n)`, completed with its T| marker as fs-capture.ps1 does.
+ */
+function digestingReset(
+  bc: FakeBc,
+  captures: (c: string, n: number) => string[],
+  roots: string[] = [],
+) {
+  const base = fakeReset(bc);
+  const checks: FsCheckRecord[] = [];
+  const n = new Map<string, number>();
+  const mechanism: ResetMechanism = {
+    ...base.mechanism,
+    fsExclude: ["C:/W/logs/*"],
+    fsRoots: roots,
+    fsDigest: (c) => {
+      const i = n.get(c) ?? 0;
+      n.set(c, i + 1);
+      base.log.push(`fs ${c}#${i}@${bc.syncs.length}`);
+      const lines = captures(c, i);
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  };
+  return {
+    ...base,
+    mechanism,
+    checks,
+    onFsCheck: (f: FsCheckRecord) => checks.push(f),
+  };
+}
+
+Deno.test("H-35 S3 L4 deployAndTest: fsDigest is taken right after the reset and after the cleanup; equal captures (exclusions applied) are a clean, recorded check", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(bc, (_c, i) => [
+    FS_LINE("C:/W/a.txt"),
+    FS_LINE("C:/W/logs/x.log", i === 0 ? "a" : "b"), // excluded
+  ]);
+  const before = bc.syncs.length;
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onFsCheck: r.onFsCheck,
+    },
+  });
+  assertEquals(r.log, [
+    `C1@${before}`,
+    `fs C1#0@${before}`,
+    `fs C1#1@${bc.syncs.length}`,
+  ]);
+  assertEquals(out.fsCheck, {
+    container: "C1",
+    ok: true,
+    diff: [],
+    errors: [],
+  });
+  assertEquals(r.checks.length, 1);
+  assertEquals(out.cleanupError, null);
+});
+
+Deno.test("H-35 S3 L4: a difference after the cleanup throws HostDirtyError (unscored here), records the diff, and the lane quarantines and reroutes", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  const r = digestingReset(
+    bc,
+    (c, i) =>
+      c === "C1" && i === 1
+        ? [FS_LINE("C:/W/a.txt"), FS_LINE("C:/W/planted.txt")]
+        : [FS_LINE("C:/W/a.txt")],
+  );
+  const ledgerRoot = await tmp();
+  const call = (c: string) =>
+    deployAndTest(bc, c, {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx: {
+        ledgerRoot,
+        trustedRoots: [p.pristine],
+        reset: r.mechanism,
+        onFsCheck: r.onFsCheck,
+      },
+    });
+  const thrown: unknown[] = [];
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      call(c).catch((e) => {
+        thrown.push(e);
+        throw e;
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(thrown[0] instanceof HostDirtyError);
+  assertStringIncludes(String(thrown[0]), "planted.txt");
+  assert(lane.quarantined.get("C1")?.includes("planted.txt"));
+  assertEquals(
+    r.checks.map((x) => [x.container, x.ok, x.diff.map((d) => d.path)]),
+    [
+      ["C1", false, ["C:/W/planted.txt"]],
+      ["C2", true, []],
+    ],
+  );
+});
+
+Deno.test("H-35 S3 L4: an error line in the post-reset capture fails closed before any deployment (HostDirtyError, nothing published)", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(bc, () => ["E|(nst)|not quiescent: 1"]);
+  const syncs = bc.syncs.length;
+  await assertRejects(
+    async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot: await tmp(),
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+          onFsCheck: r.onFsCheck,
+        },
+      }),
+    HostDirtyError,
+    "not quiescent",
+  );
+  assertEquals(bc.syncs.length, syncs);
+  assertEquals(r.checks.map((x) => x.ok), [false]);
+});
+
+// ---- H-35 S3 L2a: no outbound HttpClient for agent extensions (design-r5 2.2) ----
+
+Deno.test("H-35 S3 L2a deployAndTest: in a judge deployment every candidate gets Allow HttpClient Requests = false after the publish and before the tests; prerequisites are left alone", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = fakeReset(bc);
+  let testsAt = -1;
+  bc.script = (cu) => {
+    testsAt = bc.httpSettings.length;
+    return cu === 80010 ? result({ Works: true }) : result({});
+  };
+  await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+    },
+  });
+  const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
+  assert(cands.length > 0);
+  assertEquals(
+    bc.httpSettings.map((s) => [s.id, s.allowed]),
+    cands.map((id) => [id, false]),
+  );
+  assert(
+    bc.httpSettings.every((s) => s.at >= 1),
+    "after the deployment's sync",
+  );
+  assertEquals(testsAt, cands.length, "all set before the first test");
+});
+
+Deno.test("H-35 S3 L2a: a read-back that is not allow=false fails the deployment as infra; the lane quarantines and reroutes", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  bc.httpReadback = (c, _id) => c === "C1" ? "allow=true" : "allow=false";
+  const r = fakeReset(bc);
+  const ledgerRoot = await tmp();
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: { ledgerRoot, trustedRoots: [p.pristine], reset: r.mechanism },
+      }),
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.get("C1")?.includes("HttpClient"));
+  assertEquals(bc.tests.filter((t) => t.container === "C1"), []);
+});
+
+Deno.test("H-35 S3 L2a: no setting outside a judge deployment (no reset: the agent's tool environment)", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
+  });
+  assertEquals(bc.httpSettings, []);
+});
+
+// ---- H-35 Sol S3 r1 fixes ----
+
+Deno.test("H-35 Sol S3 r1 #1: a failed cleanup still takes the second capture; a difference then throws HostDirtyError (never scored), a clean one keeps the measurement with the cleanupError", async () => {
+  for (const dirty of [true, false]) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]));
+    bc.cleanupFails.add("C1");
+    const r = digestingReset(
+      bc,
+      (_c, i) =>
+        dirty && i === 1
+          ? [FS_LINE("C:/W/a.txt"), FS_LINE("C:/W/planted.txt")]
+          : [FS_LINE("C:/W/a.txt")],
+    );
+    const call = async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot: await tmp(),
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+          onFsCheck: r.onFsCheck,
+        },
+      });
+    if (dirty) {
+      await assertRejects(call, HostDirtyError, "planted.txt");
+    } else {
+      const out = await call();
+      assertStringIncludes(out.cleanupError!, "incomplete");
+      assertEquals(out.rows.map((x) => x.outcome), ["pass"]);
+    }
+    assertEquals(r.checks.map((x) => x.ok), [!dirty]);
+  }
+});
+
+Deno.test("H-35 Sol S3 r1 #5: the lineage's declared roots reach fsDiff: a capture that does not cover one fails closed before any deployment", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(bc, () => [FS_LINE("C:/W/a.txt")], ["C:/X"]);
+  const syncs = bc.syncs.length;
+  await assertRejects(
+    async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx: {
+          ledgerRoot: await tmp(),
+          trustedRoots: [p.pristine],
+          reset: r.mechanism,
+        },
+      }),
+    HostDirtyError,
+    "declared root C:/X",
+  );
+  assertEquals(bc.syncs.length, syncs);
+});
+
+Deno.test("H-35 Sol S3 r1 #4: a setting call that throws is HttpBlockFailedError (quarantined); a candidate publish failure still blocks every candidate", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  const p = await prep(bc, lane);
+  bc.httpReadback = (c) => {
+    if (c === "C1") throw new ContainerError("SOAP timed out", c, "test");
+    return "allow=false";
+  };
+  const r = fakeReset(bc);
+  const ledgerRoot = await tmp();
+  const deployOn = (c: string) =>
+    deployAndTest(bc, c, {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx: { ledgerRoot, trustedRoots: [p.pristine], reset: r.mechanism },
+    });
+  const held = await lane.exclusive(
+    { taskId: "HX-001", variantId: "e1", attemptNumber: 1 },
+    deployOn,
+  );
+  assertEquals(held.container, "C2");
+  assert(lane.quarantined.get("C1")?.includes("SOAP timed out"));
+  // candidate failure: every candidate is still set false
+  const bc2 = new FakeBc();
+  const p2 = await prep(bc2, new BcLane(bc2, ["C3"]), ["Rental"]);
+  bc2.publishFailure = (_c, n) =>
+    n === "CGR Rental"
+      ? "The schema synchronization failed: destructive changes"
+      : null;
+  const d = await deploy(bc2, "C3", p2.wanted, {
+    ledgerRoot: await tmp(),
+    trustedRoots: [p2.pristine],
+    reset: fakeReset(bc2).mechanism,
+  });
+  assert(d.candidateFailure);
+  assertEquals(
+    bc2.httpSettings.map((s) => s.id).sort(),
+    p2.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
+  );
 });

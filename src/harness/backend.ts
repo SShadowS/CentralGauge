@@ -31,6 +31,7 @@ import {
   buildApps,
   type BuildCache,
   changedApps,
+  CLOUD_POLICY,
   deployAndTest,
   type DeployContext,
   dirBuildCache,
@@ -1165,6 +1166,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           candidateApps: ctx.apps,
           changed,
           lock: ctx.grant.lock,
+          versionPlan: "backend",
         });
         const r = await buildApps(lane.bc, c, {
           srcDir: ctx.snapshot,
@@ -1175,6 +1177,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           signal: ctx.signal,
           cache: ctx.buildCache,
           graph: ctx.apps,
+          policy: CLOUD_POLICY,
         });
         // H-04b: a crash reroutes, and is infra (503), never a failed build.
         throwIfCrashed(r, c, "candidate");
@@ -1217,6 +1220,8 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
         lock: ctx.grant.lock,
         signal: ctx.signal,
         cache: ctx.buildCache,
+        versionPlan: "backend",
+        policy: CLOUD_POLICY,
       });
       const compiled = prep.built.filter((b) => b.attempted).map((b) =>
         b.folder

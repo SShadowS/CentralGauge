@@ -335,8 +335,24 @@ Deno.test("harness-tasks: units, bands, reserved subranges, 80013", async (t) =>
     assertEquals(unitOf(naiveTests), "harness-naive:HX-002:near-complete:Test");
     assertEquals(unitOf(mutant), "harness-mutants:HX-002:off-by-one:Leasing");
     assertEquals(unitOf(fixture), "harness-fixture:Test");
-    assertEquals(unitOf(hostile), "harness-hostile:Test");
+    // H-35: one unit per hostile fixture (each is applied alone)
+    assertEquals(unitOf(hostile), "harness-hostile:leave-state:Test");
   });
+
+  await t.step(
+    "H-35: two hostile fixtures may each replace the same shipped object",
+    () => {
+      const a = "tests/fixtures/harness/hostile/a-fix/Test/src/T.Codeunit.al";
+      const b = "tests/fixtures/harness/hostile/b-fix/Test/src/T.Codeunit.al";
+      assertEquals(auditObjects([f(a, 80090), f(b, 80090)]).problems, []);
+      // within one fixture a duplicate is still one
+      const a2 = "tests/fixtures/harness/hostile/a-fix/Test/src/U.Codeunit.al";
+      assertEquals(
+        auditObjects([f(a, 80090), f(a2, 80090)]).problems.length,
+        1,
+      );
+    },
+  );
 
   await t.step("in-band objects pass", () => {
     assertEquals(

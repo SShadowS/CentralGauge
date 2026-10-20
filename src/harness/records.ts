@@ -322,17 +322,39 @@ export const TestResultSchema = z.strictObject({
 /**
  * Verdict from scorer results (decision 2026-09-25-verdict-fail-wins): any
  * false scorer fails the judgment (null scorers stay null in the record);
- * otherwise any null is unscored; otherwise pass.
+ * otherwise any null is unscored; otherwise pass. H-35 v2 (design-r2 3): a
+ * failed policy gate fails first; a not_measured scorer (null, gate failed)
+ * is no evidence either way.
  */
 export function verdictOf(
-  scorers: readonly { passed: boolean | null }[],
+  scorers: readonly {
+    passed: boolean | null;
+    state?: ScorerState | undefined;
+  }[],
+  policy?: { passed: boolean },
 ): "pass" | "fail" | "unscored" {
+  if (policy && !policy.passed) return "fail";
   if (scorers.some((s) => s.passed === false)) return "fail";
-  return scorers.some((s) => s.passed === null) ? "unscored" : "pass";
+  return scorers.some((s) => s.passed === null && s.state !== "not_measured")
+    ? "unscored"
+    : "pass";
 }
 
+/** H-35 scorer state (design-r2 3): measured, stopped by the gate, or infra. */
+export const SCORER_STATES = ["measured", "not_measured", "unscored"] as const;
+export type ScorerState = (typeof SCORER_STATES)[number];
+
+/** H-35 policy gate violation (design-r2 5): its side and stable rule code. */
+export const PolicyViolationSchema = z.strictObject({
+  side: z.enum(["production", "test"]),
+  rule: z.string().regex(/^[a-z_]+$/),
+  detail: z.string(),
+});
+export type PolicyViolation = z.output<typeof PolicyViolationSchema>;
+
 export const JudgmentRecordSchema = z.strictObject({
-  v: z.literal(1),
+  /** 1: legacy (read-only); 2: H-35, with policy, scorer state and provenance. */
+  v: z.union([z.literal(1), z.literal(2)]),
   id: Uuid,
   execution_id: Uuid,
   workspace_hash: Sha256Hex,
@@ -343,8 +365,10 @@ export const JudgmentRecordSchema = z.strictObject({
   scorer_fingerprint: Sha256Hex,
   scorers: z.array(z.strictObject({
     name: z.string(),
-    /** null = infra fault, not a fail (GH #13 rule). */
+    /** null = infra fault, not a fail (GH #13 rule); v2: or not_measured. */
     passed: z.boolean().nullable(),
+    /** v2 only (and required there). */
+    state: z.enum(SCORER_STATES).optional(),
     tests: z.array(TestResultSchema),
   })).min(1).refine(
     (ss) => new Set(ss.map((s) => s.name)).size === ss.length,
@@ -376,9 +400,48 @@ export const JudgmentRecordSchema = z.strictObject({
       ),
     }),
   }).optional(),
-}).refine((j) => j.verdict === verdictOf(j.scorers), {
-  message: "verdict disagrees with scorer results",
-  path: ["verdict"],
+  /** v2 only (and required there): the policy gate (design-r2 5). */
+  policy: z.strictObject({
+    passed: z.boolean(),
+    violations: z.array(PolicyViolationSchema),
+  }).optional(),
+  /**
+   * v2 only (and required there): what the judgment was made with. A field
+   * not known yet is null (env_fp until the S3 lineage), never inferred.
+   */
+  provenance: z.strictObject({
+    harness_commit: z.string().nullable(),
+    production_manifest: Sha256Hex.nullable(),
+    env_fp: Sha256Hex.nullable(),
+  }).optional(),
+}).superRefine((j, ctx) => {
+  const issue = (message: string, path: (string | number)[]) =>
+    ctx.addIssue({ code: "custom", message, path });
+  if (j.v === 1) {
+    if (j.policy || j.provenance || j.scorers.some((s) => s.state)) {
+      issue("a v1 judgment carries no v2 field", ["v"]);
+    }
+  } else {
+    if (!j.policy) issue("a v2 judgment has a policy block", ["policy"]);
+    if (!j.provenance) issue("a v2 judgment has provenance", ["provenance"]);
+    if (j.policy && j.policy.passed === (j.policy.violations.length > 0)) {
+      issue("the gate fails exactly when there is a violation", ["policy"]);
+    }
+    j.scorers.forEach((s, i) => {
+      const at = ["scorers", i, "state"];
+      if (!s.state) issue("a v2 scorer has a state", at);
+      else if (s.state === "measured" && s.passed === null) {
+        issue("a measured scorer passed or failed", at);
+      } else if (s.state !== "measured" && s.passed !== null) {
+        issue(`a ${s.state} scorer has no result`, at);
+      } else if (s.state === "not_measured" && j.policy?.passed !== false) {
+        issue("not_measured only behind a failed gate", at);
+      }
+    });
+  }
+  if (j.verdict !== verdictOf(j.scorers, j.policy)) {
+    issue("verdict disagrees with scorer results", ["verdict"]);
+  }
 });
 export type JudgmentRecord = z.output<typeof JudgmentRecordSchema>;
 
@@ -446,6 +509,11 @@ export const CampaignRecordSchema = z.strictObject({
   egress_override: EgressOverrideSchema.optional(),
   /** H-13b: created with the calibration gate waived; a resume must match it. */
   calibration_waived: CalibrationWaived,
+  /**
+   * H-35 S3 L2b: the campaign's judging ran on a lineage with unenforced NST
+   * egress under the owner's --unverified-bc-egress-ok; a resume must match it.
+   */
+  bc_egress_override: z.strictObject({ reason: z.string().min(1) }).optional(),
 }).superRefine((c, ctx) => {
   waiverNeedsOverride(c, ctx);
   const issue = (message: string, path: (string | number)[]) =>

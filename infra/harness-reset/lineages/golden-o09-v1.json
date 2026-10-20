@@ -1,0 +1,25 @@
+{
+  "id": "golden-o09-v1",
+  "reset_policy_version": 1,
+  "provision_version": "1",
+  "artifactUrl": "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk",
+  "manifest_sha256": "b8b6fc2b35ad0c7f6a5800a755b008c5a29f6074581d9dadcf438de9816b01c6",
+  "official_bak_sha256": "3195827514cc9e9420ad063079638b9c8ff66a6010c7cf8e9f02e397758daf7a",
+  "license_sha256": "2bb4ea64ff31351d0c1ea3cc33d710eb72b7d419f581d655fe0386009bff76ad",
+  "nst_config_sha256": "6e8313d817ff0a222b1df93c07df455a8cd0739654c7b083e5da28f9d4b51114",
+  "golden_sha256": "c27cf04582295d258ec08b39d5ccf68b2a4cedf428f742322e366be64dc575a1",
+  "golden_fingerprint": "b1c0c5527fcb4eb4c97b907e2e14a71ab090f6049e6d2900016a523bfb12700d",
+  "golden_path_template": "C:\\ProgramData\\BcContainerHelper\\Extensions\\{container}\\cg-official\\golden.bak",
+  "runner": {
+    "app_id": "c0a8f1d2-7e3b-4a90-9c11-c0ffee000001",
+    "app_sha256": "49c0296bef189e236fe824e1bc680ff354965af064e63a3a46c95674ab0bce86",
+    "package_id": "ede0ce05-9ed6-42f2-bbb4-bfee95bb033a",
+    "version": "1.0.1.0"
+  },
+  "soap_user": "sshadows",
+  "soap_password": "1234",
+  "inventory": {
+    "path": "golden-o09-v1.inventory.txt",
+    "sha256": "cff57241c03390333599c55b94d5daf4c90a27ecf75f88d2ca3de8fc1ffb64de"
+  }
+}

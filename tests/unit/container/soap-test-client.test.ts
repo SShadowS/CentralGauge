@@ -2,7 +2,9 @@ import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 import {
   buildHarnessUrl,
   buildRunTestsEnvelope,
+  buildSetHttpClientAllowedEnvelope,
   DEFAULT_SOAP_TIMEOUT_MS,
+  parseReturnValue,
   parseRunTestsResponse,
   resolveSoapTimeoutMs,
 } from "../../../src/container/soap-test-client.ts";
@@ -118,5 +120,37 @@ Deno.test("parseRunTestsResponse throws when the harness reports no test methods
     () => parseRunTestsResponse(soap),
     Error,
     "no test methods found",
+  );
+});
+
+Deno.test("H-35 S3 L2a: the SetHttpClientAllowed envelope carries the app id and the boolean; the response's return value is read back, a fault throws", () => {
+  const env = buildSetHttpClientAllowedEnvelope(
+    "c0a8f1d2-7e3b-4a90-9c11-c0ffee000001",
+    false,
+  );
+  assertStringIncludes(env, "<t:SetHttpClientAllowed>");
+  assertStringIncludes(
+    env,
+    "<t:appId>c0a8f1d2-7e3b-4a90-9c11-c0ffee000001</t:appId>",
+  );
+  assertStringIncludes(env, "<t:allowed>false</t:allowed>");
+  assertThrows(
+    () => buildSetHttpClientAllowedEnvelope("not-a-guid</t:appId>", false),
+    Error,
+    "not a GUID",
+  );
+  assertEquals(
+    parseReturnValue(
+      "<Soap:Envelope><Soap:Body><SetHttpClientAllowed_Result><return_value>allow=false</return_value></SetHttpClientAllowed_Result></Soap:Body></Soap:Envelope>",
+    ),
+    "allow=false",
+  );
+  assertThrows(
+    () =>
+      parseReturnValue(
+        "<s:Fault><faultstring>The NAV App Setting does not exist</faultstring></s:Fault>",
+      ),
+    Error,
+    "NAV App Setting",
   );
 });

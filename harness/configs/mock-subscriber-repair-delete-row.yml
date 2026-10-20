@@ -1,0 +1,6 @@
+id: mock-subscriber-repair-delete-row
+harness: mock
+harness_version: "2"
+models: {}
+settings: { mode: apply, variant: "fixture:subscriber-repair-delete-row" }
+limits: { timeout_min: 10, max_budget_usd: 1 }

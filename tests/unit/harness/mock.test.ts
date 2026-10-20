@@ -12,8 +12,10 @@ import { runCell } from "../../../src/harness/execution.ts";
 import { safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { loadSymbolsLock } from "../../../src/harness/identity.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
+import type { LoadedTask } from "../../../src/harness/task.ts";
 import {
   alObjects,
+  buildVerdictWorkspace,
   validateApps,
 } from "../../../src/harness/verdict-workspace.ts";
 import { cellFor, makeEnv, mockImageBehavior } from "./runtime-fixture.ts";
@@ -243,18 +245,41 @@ Deno.test({
   },
 });
 
+// H-35 Phase 3: the subscriber-repair variants (design.md 9 item 4).
+const SUBSCRIBER_REPAIR = {
+  "subscriber-repair-reset-state": "FailBeforePost",
+  "subscriber-repair-delete-row": "DropBatchSummaryRow",
+  "subscriber-repair-is-handled": "LogErrorText",
+};
+
 Deno.test("hostile fixtures: agent-range ids that pass the verdict-workspace id checks and collide with no refapp or oracle object", async () => {
   const root = fromFileUrl(new URL("../../../", import.meta.url));
   const taken = new Set(
     (await alObjects(join(root, "harness-tasks"))).map((o) => o.id),
   );
+  // H-35 Phase 3: an edit of a shipped refapp file keeps that file's object.
+  const shipped = new Map(
+    (await alObjects(join(root, "harness-tasks", "refapp"))).map((
+      o,
+    ) => [o.file, o.id]),
+  );
   const symbols = await loadSymbolsLock(root);
   const symbolIds = new Set(
     (symbols ?? []).map((s) => s.app_id.toLowerCase()),
   );
-  for (const name of ["leave-state", "detect-state"]) {
+  for (
+    const name of [
+      "leave-state",
+      "detect-state",
+      ...Object.keys(SUBSCRIBER_REPAIR),
+    ]
+  ) {
     const fixture = join(root, HOSTILE_FIXTURES, name);
     for (const o of await alObjects(fixture)) {
+      if (shipped.has(o.file)) {
+        assertEquals(o.id, shipped.get(o.file), `${name}: ${o.file}`);
+        continue;
+      }
       assertEquals(taken.has(o.id), false, `${name}: ${o.id} is already used`);
     }
     const ws = await Deno.realPath(await testTempDir());
@@ -272,6 +297,168 @@ Deno.test("hostile fixtures: agent-range ids that pass the verdict-workspace id 
       name,
     );
   }
+});
+
+Deno.test("subscriber-repair fixtures: G holds the pristine 80090 (no repair subscriber), A holds the agent's 80090 and its test, and neither build has a violation", async () => {
+  const root = fromFileUrl(new URL("../../../", import.meta.url));
+  const refapp = join(root, "harness-tasks", "refapp");
+  const lib = join("Test", "src", "TestLibrary.Codeunit.al");
+  const pristineLib = await Deno.readTextFile(join(refapp, lib));
+  const symbolIds = new Set(
+    ((await loadSymbolsLock(root)) ?? []).map((s) => s.app_id.toLowerCase()),
+  );
+  for (const [name, subscriber] of Object.entries(SUBSCRIBER_REPAIR)) {
+    const fixture = join(root, HOSTILE_FIXTURES, name);
+    const added = (await alObjects(fixture)).filter((o) =>
+      o.file.startsWith("Test/") &&
+      o.file !== "Test/src/TestLibrary.Codeunit.al"
+    );
+    assertEquals(added.length, 1, name);
+    const ws = await Deno.realPath(await testTempDir());
+    await safeCopyTree(refapp, join(ws, "pristine"));
+    await safeCopyTree(refapp, join(ws, "artifact"));
+    for (const o of await alObjects(fixture)) {
+      const rel = o.file.split("/");
+      await Deno.mkdir(join(ws, "artifact", ...rel, ".."), { recursive: true });
+      await Deno.copyFile(join(fixture, ...rel), join(ws, "artifact", ...rel));
+    }
+    const build = (out: string, o: Record<string, boolean>) =>
+      buildVerdictWorkspace({
+        pristine: join(ws, "pristine"),
+        artifact: join(ws, "artifact"),
+        out: join(ws, out),
+        symbolIds,
+        ...o,
+      });
+    const g = await build("g", { rawTest: true });
+    const a = await build("a", { dropShippedTests: true });
+    assertEquals([g.violations, a.violations], [[], []], name);
+    assertEquals([a.excluded, a.creditExcluded], [[], 0], name);
+    const gLib = await Deno.readTextFile(join(g.dir, lib));
+    assertEquals(gLib, pristineLib, `${name}: G's 80090 is pristine`);
+    assert(!gLib.includes(subscriber), name);
+    await assertRejects(() =>
+      Deno.stat(join(g.dir, ...added[0]!.file.split("/")))
+    );
+    assert(
+      (await Deno.readTextFile(join(a.dir, lib))).includes(subscriber),
+      name,
+    );
+    await Deno.stat(join(a.dir, ...added[0]!.file.split("/")));
+    // Production (the regression) is the agent's in both builds.
+    for (const o of await alObjects(join(fixture, "Rental"))) {
+      const rel = ["Rental", ...o.file.split("/")];
+      const want = await Deno.readTextFile(join(fixture, ...rel));
+      assertEquals(await Deno.readTextFile(join(g.dir, ...rel)), want, name);
+      assertEquals(await Deno.readTextFile(join(a.dir, ...rel)), want, name);
+    }
+  }
+});
+
+// H-35 Phase 3: replay:<absolute dir> (the G byte-identity proof input).
+const replayCopies = (variant: string) =>
+  mockAdapter.configCopies!({
+    settings: { mode: "apply", variant },
+    task: {} as LoadedTask,
+    repoRoot: "C:\\unused",
+    qualify: null,
+  });
+
+Deno.test("mock replay: an absolute dir is copied as the variant; a relative one is refused", async () => {
+  const dir = await Deno.realPath(await testTempDir());
+  await Deno.mkdir(join(dir, "Rental", "src"), { recursive: true });
+  await Deno.writeTextFile(join(dir, "Rental", "src", "A.al"), "a");
+  assertEquals(replayCopies(`replay:${dir}`), [{ src: dir, dst: "variant" }]);
+  for (const rel of ["replay:rel/dir", "replay:", "replay:C:rel"]) {
+    assertThrows(() => replayCopies(rel), ConfigurationError, "absolute", rel);
+  }
+});
+
+Deno.test("mock replay: anything that writes or deletes under the Test app (any case or Windows alias), or a freeze marker, is refused", async () => {
+  const make = async (files: Record<string, string>) => {
+    const dir = await Deno.realPath(await testTempDir());
+    for (const [rel, text] of Object.entries(files)) {
+      await Deno.mkdir(join(dir, rel, ".."), { recursive: true });
+      await Deno.writeTextFile(join(dir, rel), text);
+    }
+    return dir;
+  };
+  const ok = { "Rental/src/A.al": "a" };
+  for (
+    const bad of [
+      { "Test/src/X.al": "x" },
+      { "test/src/X.al": "x" },
+      { "TEST~1/src/X.al": "x" },
+      { ".cg-freeze-violations.txt": "x" },
+      { ".delete": "Test/src/BatchPostTests.Codeunit.al\n" },
+      { ".delete": "# c\r\n./test\\src\\X.al\r\n" },
+      { ".delete": "Test./src/X.al\n" },
+      { ".delete": "Test /src/X.al\n" },
+      { ".delete": "Test\n" },
+    ]
+  ) {
+    const dir = await make({ ...ok, ...bad });
+    assertThrows(
+      () => replayCopies(`replay:${dir}`),
+      ConfigurationError,
+      "Test",
+      JSON.stringify(bad),
+    );
+  }
+  // A production .delete stays allowed.
+  const dir = await make({ ...ok, ".delete": "Rental/src/Old.al\n" });
+  assertEquals(replayCopies(`replay:${dir}`).length, 1);
+});
+
+Deno.test("mock replay: the run applies the replay dir; the shipped Test app stays pristine; a refused dir runs nothing", async () => {
+  await using t = await makeEnv();
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  const dir = await Deno.realPath(await testTempDir());
+  await Deno.mkdir(join(dir, "Rental", "src"), { recursive: true });
+  await Deno.writeTextFile(
+    join(dir, "Rental", "src", "Rental.Codeunit.al"),
+    'codeunit 70200 "CGR Rental"\n{\n    procedure Price(): Integer\n    begin\n        exit(10); // REPLAYED\n    end;\n}\n',
+  );
+  const config = (id: string, d: string) =>
+    Deno.writeTextFile(
+      join(t.harnessRoot, "configs", `${id}.yml`),
+      `id: ${id}\nharness: mock\nharness_version: "2"\nmodels: {}\nsettings: ${
+        JSON.stringify({ mode: "apply", variant: `replay:${d}` })
+      }\nlimits: { timeout_min: 5, max_budget_usd: 1 }\n`,
+    );
+  await config("mock-replay", dir);
+  const r = await runCell(t.env, await cellFor(t, "mock-replay"));
+  const art = await t.env.store.artifact(r.executions[0]!.id);
+  assert(art);
+  const frozen = join(t.env.resultsRoot, art.stored_path);
+  assert(
+    (await Deno.readTextFile(
+      join(frozen, "Rental", "src", "Rental.Codeunit.al"),
+    ))
+      .includes("REPLAYED"),
+  );
+  const shippedTest = join(
+    "harness-tasks",
+    "refapp",
+    "Test",
+    "src",
+    "Shipped.Test.al",
+  );
+  assertEquals(
+    await Deno.readTextFile(join(frozen, "Test", "src", "Shipped.Test.al")),
+    await Deno.readTextFile(join(t.repo.root, shippedTest)),
+  );
+  const runs = t.docker.runs.length;
+  await Deno.mkdir(join(dir, "Test", "src"), { recursive: true });
+  await Deno.writeTextFile(join(dir, "Test", "src", "X.al"), "x");
+  await config("mock-replay-bad", dir);
+  await assertRejects(
+    async () => runCell(t.env, await cellFor(t, "mock-replay-bad")),
+    ConfigurationError,
+    "Test",
+  );
+  assertEquals(t.docker.runs.length, runs);
 });
 
 Deno.test({

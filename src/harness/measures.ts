@@ -10,7 +10,12 @@ import { basename, dirname, join, resolve } from "@std/path";
 import { z } from "zod";
 import type { AnalysisSettings } from "../container/types.ts";
 import { ValidationError } from "../errors.ts";
-import { type BcLane, buildApps, type LockedSymbols } from "./bc-lane.ts";
+import {
+  type BcLane,
+  buildApps,
+  DECLARED_POLICY,
+  type LockedSymbols,
+} from "./bc-lane.ts";
 import { type JudgmentRecord, publishOnce, readRecord } from "./records.ts";
 import { readAppJson, type StagedApp } from "./staging.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
@@ -194,7 +199,13 @@ export function partialCredit(
   if (!build || !f2p || (declared.length > 0 && !p2p)) {
     return missing("required scorer absent");
   }
-  if (j.scorers.some((x) => x.passed === null)) {
+  // H-35: partial credit reads G only (agent_tests is A's); a G scorer the
+  // policy gate stopped is missing for the gate, never infra.
+  const g = [build, f2p, ...(p2p ? [p2p] : [])];
+  if (g.some((x) => x.state === "not_measured")) {
+    return missing("policy gate: G not measured");
+  }
+  if (g.some((x) => x.passed === null)) {
     return missing("unscored judgment (infra)");
   }
   const hidden = m.partial_credit.hidden_regressions;
@@ -678,6 +689,7 @@ export function finalCodeCounts(
       outDir: o.outDir,
       lock: o.lock,
       analysis: o.analysis,
+      policy: DECLARED_POLICY,
     });
     const warning_codes: Record<string, number> = {};
     let warnings = 0;

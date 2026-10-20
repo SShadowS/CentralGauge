@@ -1028,3 +1028,94 @@ Deno.test("H-15: usage_reset_ignored is optional, strict, and only on an auto_re
     );
   }
 });
+
+// ---- H-35 S2.1 (design-r2 3 and 5, design-r3 6.2/6.3): JudgmentRecord v2 ----
+
+/** A v2 judgment from the v1 fixture: policy, scorer states, provenance. */
+async function v2(
+  scorers: { name: string; passed: boolean | null; state: string }[],
+  policy: { passed: boolean; violations?: unknown[] } = { passed: true },
+) {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  return {
+    ...j,
+    v: 2,
+    scorers: scorers.map((s) => ({ ...s, tests: [] })),
+    policy: { violations: [], ...policy },
+    provenance: {
+      harness_commit: null,
+      production_manifest: null,
+      env_fp: null,
+    },
+  };
+}
+
+const M = "measured", NM = "not_measured", U = "unscored";
+
+Deno.test("H-35: a v2 judgment carries a policy block, scorer states and provenance; its verdict follows the gate first", async () => {
+  const pass = await v2([
+    { name: "build", passed: true, state: M },
+    { name: "agent_tests", passed: true, state: M },
+  ]);
+  assertEquals(JudgmentRecordSchema.parse({ ...pass, verdict: "pass" }).v, 2);
+  // A failed gate fails the cell even with no measured failure.
+  const gated = await v2([
+    { name: "build", passed: true, state: M },
+    { name: "agent_tests", passed: null, state: NM },
+  ], {
+    passed: false,
+    violations: [{ side: "test", rule: "test_lifecycle", detail: "x" }],
+  });
+  assertEquals(
+    JudgmentRecordSchema.parse({ ...gated, verdict: "fail" }).verdict,
+    "fail",
+  );
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...gated, verdict: "unscored" })
+  );
+  const infra = await v2([
+    { name: "build", passed: true, state: M },
+    { name: "agent_tests", passed: null, state: U },
+  ]);
+  assertEquals(
+    JudgmentRecordSchema.parse({ ...infra, verdict: "unscored" }).verdict,
+    "unscored",
+  );
+});
+
+Deno.test("H-35: v2 consistency: measured is boolean, not_measured needs a failed gate, unscored is null, every scorer has a state", async () => {
+  const bad = [
+    await v2([{ name: "build", passed: null, state: M }]),
+    await v2([{ name: "build", passed: null, state: NM }]),
+    await v2([{ name: "build", passed: true, state: U }]),
+    await v2([{ name: "build", passed: true } as never]),
+  ];
+  for (const j of bad) {
+    for (const verdict of ["pass", "fail", "unscored"]) {
+      assertThrows(() => JudgmentRecordSchema.parse({ ...j, verdict }));
+    }
+  }
+  const noPolicy = await v2([{ name: "build", passed: true, state: M }]);
+  delete (noPolicy as Record<string, unknown>)["policy"];
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...noPolicy, verdict: "pass" })
+  );
+  // A failed gate needs a violation.
+  const empty = await v2([{ name: "build", passed: true, state: M }], {
+    passed: false,
+  });
+  assertThrows(() => JudgmentRecordSchema.parse({ ...empty, verdict: "fail" }));
+});
+
+Deno.test("H-35: a v1 judgment stays valid and carries no v2 field", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  assertEquals(JudgmentRecordSchema.parse(j).v, 1);
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({
+      ...j,
+      policy: { passed: true, violations: [] },
+    })
+  );
+});

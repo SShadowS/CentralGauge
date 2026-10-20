@@ -1,0 +1,118 @@
+{
+  "id": "golden-o09-v2",
+  "reset_policy_version": 2,
+  "provision_version": "2",
+  "artifactUrl": "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk",
+  "manifest_sha256": "b8b6fc2b35ad0c7f6a5800a755b008c5a29f6074581d9dadcf438de9816b01c6",
+  "official_bak_sha256": "3195827514cc9e9420ad063079638b9c8ff66a6010c7cf8e9f02e397758daf7a",
+  "license_sha256": "2bb4ea64ff31351d0c1ea3cc33d710eb72b7d419f581d655fe0386009bff76ad",
+  "nst_config_sha256": "6e8313d817ff0a222b1df93c07df455a8cd0739654c7b083e5da28f9d4b51114",
+  "nst_config": {
+    "digest_version": 1,
+    "path": "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\CustomSettings.config",
+    "exclude_keys": ["PublicODataBaseUrl", "PublicSOAPBaseUrl", "PublicWebBaseUrl", "PublicWinBaseUrl"],
+    "sha256": "4bf48f95a7e4c7d6bda60e2eb9845bc92527e0c532534d1f3e27f9517600df71",
+    "keys": 251
+  },
+  "golden_sha256": "0cf202e05b9700d0d2eb1b88c7b4ba9f5db6d3e7e38c4b6f9b2993f3daef1667",
+  "golden_fingerprint": "2da29bfd727047fd1045ac5492b2107b7d0435e49d62620aa08a89d251753ede",
+  "golden_path_template": "C:\\ProgramData\\BcContainerHelper\\Extensions\\{container}\\cg-official\\golden-o09-v2.bak",
+  "runner": {
+    "app_id": "c0a8f1d2-7e3b-4a90-9c11-c0ffee000001",
+    "app_sha256": "00c31eb65da93e699acefb40bf4ddcd8048ba8113eb1184b3b51725a1fd4b07f",
+    "package_id": "f6a0d71e-4e8e-4825-adf8-cf96cd05e116",
+    "version": "1.0.2.0"
+  },
+  "soap_user": "sshadows",
+  "soap_password": "1234",
+  "inventory": {
+    "path": "golden-o09-v2.inventory.txt",
+    "sha256": "a5592564e3d763997fdcda3afff9249b1396a55416e00da824e28bd57bf6591e"
+  },
+  "content_root": {
+    "path": "golden-o09-v2.content.txt",
+    "sha256": "f88f902ef58820a4dc7c5836828b89bc23a0ba94b0e1ecb244d4e89cf8eb9766",
+    "root": "8a0df4d681416442069b2d7aff64c2c228efa64aea6fe9a60bae62b39be56e08",
+    "exclude": [
+      { "pattern": "$ndo$cachesync", "reason": "NST cache-sync bookkeeping, rewritten at every NST start" },
+      { "pattern": "Active Session", "reason": "sessions of the running NST (runtime state, not content)" },
+      { "pattern": "Server Instance", "reason": "NST instance registration with its start time" },
+      { "pattern": "Session Event", "reason": "login/logout log of NST sessions (grows with every session)" },
+      { "pattern": "*$AL Test Suite$*", "reason": "suite CGWS is recreated by the reset's own runner_verify SOAP no-op" }
+    ]
+  },
+  "fs": {
+    "digest_version": 3,
+    "roots": [
+      "C:\\Windows\\Temp",
+      "C:\\Windows\\System32\\config\\systemprofile\\AppData",
+      "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service",
+      "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV",
+      "C:\\Run\\my"
+    ],
+    "identity": [
+      "service_account|NT AUTHORITY\\SYSTEM",
+      "service_path|\"C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\Microsoft.Dynamics.Nav.Server.exe\" $BC /config \"C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\Microsoft.Dynamics.Nav.Server.exe.config\""
+    ],
+    "exclude": [
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^assembly\\\\release\\\\[0-9.]+_\\d+\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.dll$",
+        "dirs": "^assembly(\\\\release(\\\\[0-9.]+_\\d+(\\\\[0-9A-F]{2})?)?)?$",
+        "magic": "4d5a",
+        "reason": "NST compiled-assembly cache: .NET assemblies the NST compiles from published apps, named by content hash (PE files, MZ header); AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.(cs|xml)$",
+        "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
+        "reason": "NST app metadata cache: generated .cs/.xml per published object, named by content hash; AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.app$",
+        "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
+        "magic": "4e41",
+        "name_is_sha256": true,
+        "reason": "NST app metadata cache: the published package (NAVX header), named by its content sha256; AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.res$",
+        "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
+        "magic": "efbb",
+        "name_is_sha256": true,
+        "reason": "NST app metadata cache: the app's resource file (UTF-8 BOM), named by its content sha256; AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\Run",
+        "files": "^(?!)$",
+        "dirs": "^my$",
+        "dir_time_only": true,
+        "reason": "BCH's host-mapped transfer folder: publish copies the .app through it and deletes it; only the folder's own last-write time may move (same spelling and attributes); every entry inside stays compared"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache",
+        "files": "^MetaData\\\\[0-9A-F]{32}$",
+        "dirs": "^(?!)$",
+        "magic": "7000",
+        "in_place": true,
+        "reason": "SYSTEM account's CryptoAPI URL-retrieval cache (CRL/OCSP metadata): existing MetaData files are rewritten in place by certificate-chain checks during publish (same size and attributes); URL-hashed names; new, removed, resized or re-attributed files stay differences"
+      }
+    ],
+    "survey": {
+      "path": "golden-o09-v2.survey.json",
+      "sha256": "1fe32c2295ce9fc7db540e52c805d943570be402673ee964807dd4953236a7f3"
+    }
+  },
+  "egress": {
+    "mode": "unenforced",
+    "reason": "provision.ps1 v2 installs no NST outbound firewall rule (no admin job for it); candidate HttpClient is blocked per app by the L2a NAV App Setting instead"
+  }
+}

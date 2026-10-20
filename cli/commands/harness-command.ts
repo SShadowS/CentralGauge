@@ -61,10 +61,23 @@ import {
 } from "../../src/harness/config.ts";
 import {
   loadSymbolsLock,
-  oracleHash,
   resolveRefapp,
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
+import {
+  descriptorLoader,
+  type OracleDescriptor,
+  storeOraclePreimage,
+} from "../../src/harness/task-oracle.ts";
+import {
+  appendCompletion,
+  freezePairing,
+  loadPairing,
+  type LogEvidence,
+  type PairingReport,
+  pairingReport,
+  renderPairing,
+} from "../../src/harness/judgment-report.ts";
 import {
   compareInstant,
   isOwnerApproval,
@@ -197,12 +210,16 @@ import {
   writeVerdictLog,
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
+import { renderEnvCheck } from "../../src/harness/environment.ts";
 import {
+  baselineCreate,
+  envCheck,
   markerAuthorized,
   markerPlaces,
   markerProxyIsolation,
   openHarnessEnv,
   openPlanEnv,
+  recoverContainer,
 } from "./harness-env.ts";
 
 /** Loud, file-naming failures are collected; anything else is a bug. */
@@ -493,6 +510,8 @@ export async function harnessReport(
       prereg?.doc.measures.fingerprint,
     ),
     traces: await loadTraces(opts.resultsDir, executions),
+    // H-35 S2.5: scorer names checked against the task preimage store.
+    descriptor: descriptorLoader(opts.resultsDir, opts.root),
     // H-04b: the rejudge budget counts only the current scorer suite.
     judging: {
       ...(opts.judging === "current"
@@ -526,6 +545,10 @@ export interface CellCliOptions {
   recordOAuthHosts?: boolean;
   /** H-09: record the cell unjudged; `harness judge-pending` judges it. */
   deferJudging?: boolean;
+  /** H-35 S3.2: the reset lineage file judging resets every container to. */
+  lineage?: string | null;
+  /** H-35 S3 L2b: `--unverified-bc-egress-ok <reason>`. */
+  bcEgressOverride?: string | null;
 }
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
@@ -553,6 +576,8 @@ function envOptions(
     credentialLedger: o.credentialLedger,
     command,
     supervised: o.supervised,
+    ...(o.lineage ? { lineage: o.lineage } : {}),
+    ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
   };
 }
 
@@ -806,7 +831,7 @@ export async function harnessJudgeFixture(
         : {}),
     });
     const ids = await taskSetIdentity(o.root, [task], h.env.symbols);
-    const fixtureOracle = await oracleHash(task);
+    const fixtureOracle = await storeOraclePreimage(h.env.resultsRoot, task);
     const { judgment, log } = await judge(h.env.lane, {
       executionId: crypto.randomUUID(),
       workspaceHash: frozen.workspace_hash,
@@ -818,6 +843,7 @@ export async function harnessJudgeFixture(
       workDir: join(scratch, "judge"),
       lock: { store: h.env.symbolStore, packages: h.env.symbols },
       deploy: h.env.deploy,
+      harnessCommit: h.env.harnessCommit,
     }, h.env.now);
     const out = join(o.resultsDir, "fixtures", taskId, variant, judgment.id);
     await Deno.mkdir(out, { recursive: true });
@@ -1510,6 +1536,8 @@ interface CellCliFlags {
   recordOauthHosts?: boolean;
   deferJudging?: boolean;
   judgeConcurrency?: number;
+  lineage?: string;
+  unverifiedBcEgressOk?: string;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -1543,6 +1571,10 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     image: f.image ?? null,
     recordOAuthHosts: f.recordOauthHosts === true,
     ...(f.deferJudging ? { deferJudging: true } : {}),
+    ...(f.lineage ? { lineage: abs(f.lineage) } : {}),
+    ...(f.unverifiedBcEgressOk
+      ? { bcEgressOverride: f.unverifiedBcEgressOk }
+      : {}),
   };
 }
 
@@ -1965,7 +1997,9 @@ export async function harnessRejudge(
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: descriptorLoader(env.resultsRoot, o.root),
+    });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
         t,
@@ -2123,6 +2157,33 @@ export async function harnessRejudge(
         opened.refapps.set(v, await resolveRefapp(o.root, v));
       }
     }
+    // H-35 S2.5 (design-r5 5.1): the pairing's left side is frozen before
+    // any judging: each due execution with an old judgment, and the one it
+    // had. Each new judgment is appended as it lands.
+    const cells = due.flatMap((e) => {
+      const j = latestJudgment(
+        data.judgments.filter((x) => x.execution_id === e.id),
+      );
+      return j
+        ? [{
+          execution_id: e.id,
+          cell: `${e.arm} ${e.task_id} ${e.repeat}`,
+          workspace_hash: j.workspace_hash,
+          old_judgment_id: j.id,
+          scorer_fingerprint: j.scorer_fingerprint,
+        }]
+        : [];
+    });
+    const pairing = cells.length === 0 ? null : await freezePairing(
+      env.resultsRoot,
+      {
+        cohort: { campaign: c.id, started_at: new Date().toISOString() },
+        cells,
+      },
+    );
+    if (pairing) {
+      console.log(`${colors.cyan("[info]")} pairing frozen: ${pairing}`);
+    }
     // H-24: one judging per lane container at a time (the lane leases each
     // container and reroutes infra faults, as in harness run). Each judgment
     // is written once, by judgeExecution, in this one process. The first
@@ -2134,6 +2195,13 @@ export async function harnessRejudge(
       async (env, cell, e) => {
         const oracle = byTask.get(e.task_id)!.oracle;
         const j = await rejudgeExecution(env, cell, e, oracle, forced);
+        if (pairing && cells.some((x) => x.execution_id === e.id)) {
+          await appendCompletion(env.resultsRoot, pairing, {
+            execution_id: e.id,
+            new_judgment_id: j.id,
+            at: new Date().toISOString(),
+          });
+        }
         console.log(
           `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
             oracle.slice(0, 12)
@@ -2152,6 +2220,53 @@ export async function harnessRejudge(
   } finally {
     await h.close();
   }
+}
+
+/**
+ * `harness pairing` (H-35 S2.5, design-r5 5.1): a rejudge's frozen pairing,
+ * reconciled with its completions. Read-only; a changed left side is refused.
+ */
+export async function harnessPairing(
+  digest: string,
+  resultsDir: string,
+  repoRoot = ".",
+): Promise<PairingReport> {
+  const { pairing, completions } = await loadPairing(resultsDir, digest);
+  const store = new RecordStore(resultsDir);
+  const byId = new Map<string, JudgmentRecord>();
+  for (const c of pairing.cells) {
+    for (const j of await store.judgments(c.execution_id)) byId.set(j.id, j);
+  }
+  // Run 002 Sol r1 #4: a legacy descriptor is recovered before "unknown".
+  const descriptor = descriptorLoader(resultsDir, repoRoot);
+  const unknown = new Set<string>();
+  // Orch Sol r1 #3: the trusted descriptor splits old pass_to_pass rows.
+  const trusted = new Map<string, OracleDescriptor>();
+  for (const j of byId.values()) {
+    const d = await descriptor(j.task_oracle_hash, j.task_id);
+    if (d === "unknown") unknown.add(j.task_oracle_hash);
+    else trusted.set(j.task_oracle_hash, d);
+  }
+  // Run 002 Sol r1 #5: a v1 old judgment's policy is failed when its
+  // write-once verdict log lists violations (r3 6.2).
+  const logs = new Map<string, LogEvidence>();
+  for (const c of pairing.cells) {
+    const j = byId.get(c.old_judgment_id);
+    if (!j || j.policy) continue;
+    const text = await Deno.readTextFile(
+      join(resultsDir, "verdicts", `${j.id}.json`),
+    ).catch(() => null);
+    if (text !== null) logs.set(j.id, JSON.parse(text));
+  }
+  return pairingReport(
+    digest,
+    pairing,
+    completions,
+    (id) => byId.get(id),
+    (j) => unknown.has(j.task_oracle_hash),
+    (j) => logs.get(j.id),
+    (j) => trusted.get(j.task_oracle_hash),
+  );
 }
 
 /** One line per measure record: what the report's exploratory section reads. */
@@ -2212,7 +2327,9 @@ export async function harnessMeasure(
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
     const data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: descriptorLoader(env.resultsRoot, o.root),
+    });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
         t,
@@ -2883,6 +3000,27 @@ export function registerHarnessCommand(
       })
     );
 
+  parent
+    .command(
+      "pairing <digest:string>",
+      "Report a rejudge's frozen pairing: old x new verdict matrix, reason flags, pending and missing cells",
+    )
+    .option("--results-dir <dir:string>", "Harness records root", {
+      default: "results/harness",
+    })
+    .option("--json", "Print the pairing report as JSON")
+    .option(
+      "--root <dir:string>",
+      "Repository root (legacy task descriptors are recovered from its history)",
+      { default: "." },
+    )
+    .action((opts, digest: string) =>
+      fail(async () => {
+        const r = await harnessPairing(digest, opts.resultsDir, opts.root);
+        console.log(opts.json ? JSON.stringify(r, null, 2) : renderPairing(r));
+      })
+    );
+
   // Options shared by `cell` and `judge-fixture`.
   // deno-lint-ignore no-explicit-any
   const shared = (c: Command<any>) =>
@@ -2921,6 +3059,14 @@ export function registerHarnessCommand(
       .option(
         "--rev <commit:string>",
         "Load the task from this git revision (default: the working tree)",
+      )
+      .option(
+        "--lineage <path:string>",
+        "Reset lineage JSON (H-35): every judge deployment first restores the container to it; without one, judging refuses",
+      )
+      .option(
+        "--unverified-bc-egress-ok <reason:string>",
+        "Owner override (H-35 L2b): judge on a lineage whose NST egress is unenforced; every verdict records it",
       );
 
   shared(
@@ -3244,6 +3390,119 @@ export function registerHarnessCommand(
       .action((opts) =>
         fail(() => clearPublicationReservation({ holder: opts.holder }))
       ),
+  );
+
+  // H-35 S3.4 (design-r4 5.2, r5 3.2): judging environments.
+  // deno-lint-ignore no-explicit-any
+  const lineageOpts = (c: Command<any>) =>
+    c
+      .option("--lineage <path:string>", "Reset lineage JSON", {
+        required: true,
+      })
+      .option("--symbol-store <dir:string>", "Host symbol store", {
+        default: "results/harness/symbols",
+      });
+  parent.command(
+    "env",
+    lineageOpts(
+      new Command()
+        .description("Judging environments (H-35)")
+        .command(
+          "check",
+          "Print each container's lineage, env_fp and baseline; exit non-zero unless they share one admissible env_fp (read-only)",
+        )
+        .option(
+          "--containers <names:string>",
+          "BC containers (comma-separated)",
+          {
+            required: true,
+          },
+        )
+        .option(
+          "--unverified-bc-egress-ok <reason:string>",
+          "Check as a run that declares unenforced NST egress (H-35 L2b)",
+        ),
+    ).action((opts) =>
+      fail(async () => {
+        const c = await envCheck({
+          repoRoot: Deno.cwd(),
+          containers: opts.containers.split(",").map((x: string) => x.trim())
+            .filter(Boolean),
+          lineage: resolve(opts.lineage),
+          symbolStore: resolve(opts.symbolStore),
+          ...(opts.unverifiedBcEgressOk
+            ? { bcEgressOverride: opts.unverifiedBcEgressOk }
+            : {}),
+        });
+        console.log(renderEnvCheck(c));
+        if (!c.admissible) {
+          throw new ConfigurationError(
+            "the containers do not share one admissible env_fp",
+          );
+        }
+      })
+    ),
+  );
+  parent.command(
+    "baseline",
+    lineageOpts(
+      new Command()
+        .description("Container baselines (H-35; lane-ops, under a lease)")
+        .command(
+          "create <container:string>",
+          "Reset the container to the lineage and write its instance manifest (results/harness/baselines)",
+        ),
+    ).action((opts, container: string) =>
+      fail(async () => {
+        for (
+          const m of await baselineCreate({
+            repoRoot: Deno.cwd(),
+            containers: [container],
+            lineage: resolve(opts.lineage),
+            symbolStore: resolve(opts.symbolStore),
+          })
+        ) {
+          console.log(
+            `${
+              colors.green("[OK]")
+            } ${m.container}: baseline of ${m.lineage_id}, env_fp ${
+              m.env_fp.slice(0, 12)
+            }`,
+          );
+        }
+      })
+    ),
+  );
+  // H-35 run 004 #3: the only way out of a persisted quarantine.
+  parent.command(
+    "recover",
+    lineageOpts(
+      new Command()
+        .description(
+          "Reset a quarantined container (or one a crashed environment left in use) to the lineage, verify it (inventory check, fsDigest, every recorded L4 difference undone) and only then clear its records and write its instance manifest (lane-ops, under a lease)",
+        )
+        .arguments("<container:string>"),
+    ).option(
+      "--abandon <token:string>",
+      "H-35 run 004 Sol r2 N2: the token of an in-use claim (environment or recover) whose owner is gone",
+    ).action((opts, container: string) =>
+      fail(async () => {
+        const m = await recoverContainer({
+          repoRoot: Deno.cwd(),
+          containers: [container],
+          lineage: resolve(opts.lineage),
+          symbolStore: resolve(opts.symbolStore),
+          abandon: opts.abandon ?? null,
+        });
+        console.log(
+          `${
+            colors.green("[OK]")
+          } ${m.container}: recovered to ${m.lineage_id}, quarantine cleared, env_fp ${
+            m.env_fp.slice(0, 12)
+          }`,
+        );
+      })
+    ),
   );
 
   parent.command(

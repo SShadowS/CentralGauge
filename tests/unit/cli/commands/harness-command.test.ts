@@ -7,7 +7,7 @@ import {
 } from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
   type CellCliOptions,
@@ -18,6 +18,7 @@ import {
   harnessJudgeFixture,
   harnessJudgePending,
   harnessMeasure,
+  harnessPairing,
   harnessQualify,
   harnessRejudge,
   harnessReport,
@@ -30,14 +31,24 @@ import {
 } from "../../../../cli/commands/harness-command.ts";
 import {
   backendAddress,
+  baselineCreate,
   EGRESS_MARKER,
   egressMode,
+  envCheck,
   type EnvDeps,
   type EnvOptions,
   openHarnessEnv,
   openPlanEnv,
+  recoverContainer,
+  type ResetFor,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
+import {
+  claimRecord,
+  findRecords,
+  type NewRecord,
+  recordFile,
+} from "../../../../src/harness/quarantine.ts";
 import {
   BACKEND_PORT,
   cellEgressProblems,
@@ -76,7 +87,9 @@ import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { sha256Hex } from "../../../../src/harness/hash.ts";
 import {
   type ExecutionRecord,
+  type JudgmentRecord,
   scorerFingerprint,
+  verdictOf,
 } from "../../../../src/harness/records.ts";
 import {
   measureFingerprint,
@@ -95,7 +108,18 @@ import {
   benchLockPath,
   readBenchLock,
 } from "../../../../src/utils/bench-lock.ts";
-import { FakeBc } from "../../harness/fake-bc.ts";
+import { FakeBc, OK_RESET } from "../../harness/fake-bc.ts";
+import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
+import {
+  createBaseline,
+  readInstanceManifest,
+  renderEnvCheck,
+} from "../../../../src/harness/environment.ts";
+import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
+import {
+  type FsDiffEntry,
+  goldenReset,
+} from "../../../../src/harness/reset.ts";
 import {
   ADMIN_GROUPS_CSV,
   CC_MAIN_URL,
@@ -135,12 +159,14 @@ import {
   ValidationError,
 } from "../../../../src/errors.ts";
 import { exists } from "../../../../src/harness/fsutil.ts";
+import { loadPairing } from "../../../../src/harness/judgment-report.ts";
 import { RecordStore } from "../../../../src/harness/records.ts";
 import {
   campaign,
   CAMPAIGN_ID,
   execution,
   judgment,
+  storeDescriptor,
 } from "../../harness/fixtures.ts";
 
 async function write(root: string, rel: string, text: string) {
@@ -667,6 +693,67 @@ Deno.test("validateHarness: the catalog is read even with no experiments", async
 
 // ---- M1-24: cell, judge-fixture, images build, symbols lock ----
 
+/**
+ * H-35 run 004 #4: the golden-o09-v2 lineage with an nst_config section, in a
+ * temp dir with its sidecars (until lane-ops' v2 carries the section).
+ */
+async function v2Lineage(): Promise<string> {
+  const src = resolve("infra/harness-reset/lineages");
+  const dir = await Deno.realPath(await testTempDir());
+  const j = JSON.parse(
+    await Deno.readTextFile(join(src, "golden-o09-v2.json")),
+  );
+  j.nst_config ??= {
+    digest_version: 1,
+    path:
+      "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\CustomSettings.config",
+    exclude_keys: ["PublicWebBaseUrl"],
+    sha256: "e".repeat(64),
+    keys: 251,
+  };
+  for (const f of [j.inventory.path, j.content_root.path]) {
+    await Deno.copyFile(join(src, f), join(dir, f));
+  }
+  await Deno.writeTextFile(join(dir, "golden-o09-v2.json"), JSON.stringify(j));
+  return join(dir, "golden-o09-v2.json");
+}
+
+/**
+ * The production mechanism with nothing reaching a container: its reset is
+ * faked and its live NST config digest equals the lineage's.
+ */
+const testResetFor: ResetFor = (lineagePath, lineage) => ({
+  ...goldenReset({
+    repoRoot: ".",
+    lineagePath,
+    lineage,
+    dockerEnv: {},
+    spawn: () =>
+      Promise.resolve({
+        code: 0,
+        stdout: `NST_CONFIG ${lineage.nst_config?.sha256 ?? ""}`,
+      }),
+  }),
+  reset: OK_RESET.reset,
+});
+
+/** H-35 run 004 Sol r1 H5: a fake Docker container id, one per (case-insensitive) name. */
+const fakeId = (c: string) =>
+  [...new TextEncoder().encode(c.toLowerCase())]
+    .map((b) => b.toString(16).padStart(2, "0")).join("").padEnd(64, "0")
+    .slice(0, 64);
+
+/** H-35 run 004 Sol r2 N1: plant a record as another owner would (create-new, its own token). */
+async function plantRecord(
+  dir: string,
+  r: Omit<NewRecord, "token" | "host"> & { token?: string },
+  o: { recover?: boolean } = {},
+): Promise<string> {
+  const token = r.token ?? crypto.randomUUID();
+  assert(await claimRecord(dir, { host: "OTHER", ...r, token }, o));
+  return token;
+}
+
 function deps(
   order: string[],
   lock?: () => never,
@@ -675,6 +762,8 @@ function deps(
 ): EnvDeps {
   const docker = new FakeDocker();
   docker.owned = ["cg-harness-dead-beef"];
+  // H-35 run 004 #3: never the real coord root (absent until a test writes).
+  const quarantineDir = join(trackTempDir(Deno.makeTempDirSync()), "q");
   const listOwned = docker.listOwned.bind(docker);
   docker.listOwned = (o) => {
     // M10-08c run 003: the fake lists every owner alike; the bare hostname
@@ -705,6 +794,10 @@ function deps(
         dispose: () => Promise.resolve(),
       });
     },
+    inspect: () => new FakeBc(),
+    quarantineDir: () => quarantineDir,
+    containerId: (c) => Promise.resolve(fakeId(c)),
+    resetFor: testResetFor,
     resolveHost: () => {
       order.push("host");
       return Promise.resolve("127.0.0.1");
@@ -825,7 +918,8 @@ Deno.test("openHarnessEnv: a task without an oracle app does not stop the start;
   await write(t.repo.tasksDir, "HX-002/correct/Rental/src/R.al", "x");
   const h = await openHarnessEnv(envOpts(t), deps([]));
   // Owned ids come from each grant's and judgment's trusted roots (M1-16), never from the env.
-  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot"]);
+  // H-35 S3: the env also carries the judges' reset mechanism (no allowlist).
+  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot", "reset"]);
   await h.close();
 });
 
@@ -1021,6 +1115,7 @@ Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; vari
     "build",
     "pass_to_pass",
     "fail_to_pass",
+    "agent_tests",
   ]);
   const prov = JSON.parse(
     await Deno.readTextFile(join(dir, "provenance.json")),
@@ -1540,14 +1635,39 @@ Deno.test("qualify judges every manifest variant at its rev and indexes judgment
   }
 });
 
-async function staleJudgment(t: TestEnv, executionId: string) {
-  const [j] = await t.env.store.judgments(executionId);
-  const versions = { ...j!.scorer_versions, build: "0-stale" };
-  await t.env.store.writeJudgment({
-    ...j!,
-    id: crypto.randomUUID(),
+/**
+ * H-35: a judgment as a pre-H-35 harness wrote it: v1, a suite that really
+ * shipped (default the H-30 one), no policy, provenance or scorer state, no
+ * agent_tests, the v1 verdict.
+ */
+async function asLegacy(
+  j: JudgmentRecord,
+  versions: Record<string, string> = {
+    build: "3",
+    pass_to_pass: "5",
+    fail_to_pass: "3",
+    mutant_kill: "5",
+  },
+): Promise<JudgmentRecord> {
+  const { policy: _p, provenance: _q, ...rest } = j;
+  const scorers = j.scorers.filter((s) => s.name !== "agent_tests").map((
+    { state: _s, ...s },
+  ) => s);
+  return {
+    ...rest,
+    v: 1,
+    scorers,
+    verdict: verdictOf(scorers),
     scorer_versions: versions,
     scorer_fingerprint: await scorerFingerprint(versions),
+  };
+}
+
+async function staleJudgment(t: TestEnv, executionId: string) {
+  const [j] = await t.env.store.judgments(executionId);
+  await t.env.store.writeJudgment({
+    ...await asLegacy(j!),
+    id: crypto.randomUUID(),
     // Newer than the original judgment, older than any rejudge that follows.
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
@@ -1596,20 +1716,21 @@ async function unscoredJudgments(
   old = 0,
 ) {
   const [j] = await t.env.store.judgments(executionId);
-  const stale = { ...j!.scorer_versions, build: "0-stale" };
   for (let i = 0; i < n; i++) {
     const at = new Date(Date.now() + i).toISOString();
+    // The oldest `old` under a legacy suite (H-35: as a pre-H-35 harness
+    // wrote them), the rest under the current one.
+    const base = i < old ? await asLegacy(j!) : j!;
     await t.env.store.writeJudgment({
-      ...j!,
+      ...base,
       id: crypto.randomUUID(),
-      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      // A v2 judgment's unscored scorer carries its state (H-35 S2.1).
+      scorers: base.scorers.map((s) => ({
+        ...s,
+        passed: null,
+        ...(s.state ? { state: "unscored" as const } : {}),
+      })),
       verdict: "unscored",
-      ...(i < old
-        ? {
-          scorer_versions: stale,
-          scorer_fingerprint: await scorerFingerprint(stale),
-        }
-        : {}),
       started_at: at,
       ended_at: at,
     });
@@ -1701,14 +1822,32 @@ Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under 
   for (const current of [true, false]) {
     const dir = await testTempDir();
     const store = new RecordStore(dir);
-    const c = await campaign();
+    // H-35 S2.5: a v2 judgment's task preimage is stored (the report checks).
+    const c = await campaign({
+      oracles: { "HX-001": await storeDescriptor(dir, "HX-001", ["build"]) },
+    });
     await store.writeCampaign(c);
     const e = execution(c);
     await store.writeExecution(e);
+    // Under the current suite a judgment is v2 (H-35 S2.1).
     const suite = current
       ? {
+        v: 2 as const,
         scorer_versions: SCORER_SUITE,
         scorer_fingerprint: await currentScorerFingerprint(),
+        // H-35 S2.5: the effective set of a change task under this suite.
+        scorers: ["build", "agent_tests"].map((name) => ({
+          name,
+          passed: null,
+          state: "unscored" as const,
+          tests: [],
+        })),
+        policy: { passed: true, violations: [] },
+        provenance: {
+          harness_commit: null,
+          production_manifest: null,
+          env_fp: null,
+        },
       }
       : {};
     for (let i = 0; i < 3; i++) {
@@ -1920,17 +2059,15 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const c = (await t.env.store.campaigns("contract"))[0]!;
   const e = (await t.env.store.executions(c.id))[0]!;
   const [orig] = await t.env.store.judgments(e.id);
-  // The suite as recorded before M4-17a.
-  const before = {
-    ...orig!.scorer_versions,
-    mutant_kill: "2",
-    pass_to_pass: "1",
-  };
+  // The suite as recorded before M4-17a (the second suite that shipped).
   await t.env.store.writeJudgment({
-    ...orig!,
+    ...await asLegacy(orig!, {
+      build: "1",
+      pass_to_pass: "1",
+      fail_to_pass: "1",
+      mutant_kill: "2",
+    }),
     id: crypto.randomUUID(),
-    scorer_versions: before,
-    scorer_fingerprint: await scorerFingerprint(before),
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
   });
@@ -1941,8 +2078,8 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const js = await t.env.store.judgments(e.id);
   const latest = js.reduce((a, b) => a.started_at >= b.started_at ? a : b);
   assertEquals(latest.scorer_versions, SCORER_SUITE);
-  // 5 since H-30 (helper merge, shipped wins).
-  assertEquals(latest.scorer_versions["mutant_kill"], "5");
+  // 5 since H-30 (helper merge, shipped wins); 6 since H-35 (helper as written).
+  assertEquals(latest.scorer_versions["mutant_kill"], "6");
   assertEquals(latest.scorer_fingerprint, await currentScorerFingerprint());
   assertEquals(
     [
@@ -8248,7 +8385,7 @@ Deno.test({
 });
 
 import { clearPublicationReservation } from "../../../../cli/commands/harness-command.ts";
-import { testTempDir } from "../../../utils/temp-dir.ts";
+import { testTempDir, trackTempDir } from "../../../utils/temp-dir.ts";
 
 /** A reservation whose holder stopped heartbeating an hour ago (crashed or suspended). */
 async function staleReservation(dir: string) {
@@ -8772,4 +8909,1145 @@ Deno.test("rejudge (H-24 review): after a failure the env closes only once every
   assertEquals(activeAtClose, 0, "a judging was still running at close");
   await new Promise((r) => setTimeout(r, 100));
   assertEquals(startedAfterClose, 0, "a queued judging started after close");
+});
+
+// ---- H-35 S1.7 (design-r4 3.1): two build caches, never crossed ----
+
+Deno.test("H-35: the env opens a judge and an agent build cache: judging and the agent backend never see each other's builds, and neither reads the old shared cache", async () => {
+  const { buildCacheDir, dirBuildCache } = await import(
+    "../../../../src/harness/bc-lane.ts"
+  );
+  await using t = await makeEnv();
+  const o = envOpts(t);
+  const pkg = join(o.privateRoot, "pkg.app");
+  await Deno.mkdir(o.privateRoot, { recursive: true });
+  await Deno.writeTextFile(pkg, "pkg");
+  // A build the single H-27 cache holds from before the split.
+  await dirBuildCache(join(o.privateRoot, "build-cache")).put("old", pkg);
+  const h = await openHarnessEnv(o, deps([]));
+  try {
+    const judge = h.env.buildCache;
+    const agent = h.env.backend["o"].buildCache;
+    if (!judge || !agent) throw new Error("the env opens both build caches");
+    await judge.put("judge-key", pkg);
+    await agent.put("agent-key", pkg);
+    assertEquals(await agent.get("judge-key"), null);
+    assertEquals(await judge.get("agent-key"), null);
+    assertEquals(await judge.get("old"), null);
+    assertEquals(await agent.get("old"), null);
+    assert(
+      (await judge.get("judge-key"))!.startsWith(
+        buildCacheDir(o.privateRoot, "judge"),
+      ),
+    );
+    assert(
+      (await agent.get("agent-key"))!.startsWith(
+        buildCacheDir(o.privateRoot, "agent"),
+      ),
+    );
+    assert(
+      buildCacheDir(o.privateRoot, "judge") !==
+        buildCacheDir(o.privateRoot, "agent"),
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+Deno.test("H-35 S2.3: judging stores the task preimage under the judgment's oracle hash", async () => {
+  await using t = await makeEnv();
+  await git(t.repo.root, "add", ".");
+  await git(t.repo.root, "commit", "-q", "-m", "tasks");
+  await git(t.repo.root, "tag", "refapp-v1-rc1");
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1-rc1", positive: "correct", naive: ["a"] },
+      },
+    }),
+  );
+  const o = cellOpts(t, { rev: "refapp-v1-rc1", manifest });
+  const pass = await harnessJudgeFixture("HX-001", "correct", o, opener(t));
+  const { loadOracleDescriptor } = await import(
+    "../../../../src/harness/task-oracle.ts"
+  );
+  const d = await loadOracleDescriptor(
+    t.env.resultsRoot,
+    pass.task_oracle_hash,
+  );
+  assert(d !== "unknown");
+  assertEquals(d.kind, "bugfix");
+});
+
+Deno.test("rejudge (H-35 S2.5): freezes the pairing of every due execution with an old judgment before judging, and appends each new judgment", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  await unscoredJudgments(t, e.id, 1);
+  const before = await t.env.store.judgments(e.id);
+  const old = before.reduce((a, b) => (b.ended_at > a.ended_at ? b : a));
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 1);
+  const dir = join(t.env.resultsRoot, "pairings");
+  const frozen = [];
+  for await (const f of Deno.readDir(dir)) {
+    if (f.name.endsWith(".json")) frozen.push(f.name.slice(0, -5));
+  }
+  assertEquals(frozen.length, 1);
+  const { pairing, completions } = await loadPairing(
+    t.env.resultsRoot,
+    frozen[0]!,
+  );
+  assertEquals(pairing.cohort.campaign, c.id);
+  assertEquals(
+    pairing.cells.map((x) => [x.execution_id, x.old_judgment_id]),
+    [[e.id, old.id]],
+  );
+  const after = await t.env.store.judgments(e.id);
+  assertEquals(completions.length, 1);
+  assertEquals(completions[0]!.execution_id, e.id);
+  assert(after.some((j) => j.id === completions[0]!.new_judgment_id));
+  assert(!before.some((j) => j.id === completions[0]!.new_judgment_id));
+  // `harness pairing` reconciles it: one completed pair, nothing pending.
+  const report = await harnessPairing(frozen[0]!, t.env.resultsRoot);
+  assertEquals([report.pairs, report.pending, report.missing], [1, [], []]);
+  assertEquals(report.cells[0]!.old, "unscored");
+  assert(report.cells[0]!.flags.includes("infra"));
+});
+
+Deno.test("H-35 orch Sol r1 #6: a campaign judgment records the env's harness commit in its provenance", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  const [j] = await t.env.store.judgments(e.id);
+  assertEquals(j!.provenance?.harness_commit, t.env.harnessCommit);
+  assertEquals(t.env.harnessCommit, "f".repeat(40));
+});
+
+Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; without it judging refuses; a bad lineage stops the start", async () => {
+  await using t = await makeEnv();
+  // H-35 S3: v2 carries every section admission needs; its NST egress is
+  // unenforced, so the run declares it.
+  const lineage = await v2Lineage();
+  const bcEgressOverride = "no NST firewall rule in the image";
+  const bare = await openHarnessEnv(envOpts(t), deps([]));
+  assertEquals(bare.env.deploy.reset.id, "unconfigured");
+  // H-35 S3.4: no instance manifest yet, so the lineage run is refused.
+  await bare.close();
+  await assertRejects(
+    () =>
+      openHarnessEnv({ ...envOpts(t), lineage, bcEgressOverride }, deps([])),
+    ConfigurationError,
+    "no instance manifest",
+  );
+  // `harness baseline create` for each container (its reset faked here).
+  const l = await loadLineage(lineage);
+  const again = await openHarnessEnv(envOpts(t), deps([]));
+  for (const c of again.env.lane.containers) {
+    await createBaseline(
+      again.env.lane.bc,
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest: await lockDigestOf({
+          store: again.env.symbolStore,
+          packages: again.env.symbols,
+        }),
+      },
+    );
+  }
+  await again.close();
+  // admitted, but the unenforced egress needs the run's declaration
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, deps([])),
+    ConfigurationError,
+    "--unverified-bc-egress-ok",
+  );
+  const h = await openHarnessEnv(
+    { ...envOpts(t), lineage, bcEgressOverride },
+    deps([]),
+  );
+  assertEquals(
+    [h.env.deploy.reset.id, h.env.deploy.reset.policyVersion],
+    ["golden-restore", 2],
+  );
+  assertEquals(h.env.deploy.bcEgress, {
+    mode: "unenforced",
+    override: bcEgressOverride,
+  });
+  await h.close();
+  await assertRejects(
+    () =>
+      openHarnessEnv(
+        { ...envOpts(t), lineage: join(t.repo.root, "missing.json") },
+        deps([]),
+      ),
+    ConfigurationError,
+    "reset lineage",
+  );
+});
+
+Deno.test("H-35 Sol S3 r3: a dry run's plan env checks the lineage's NST egress as admission does and carries the override", async () => {
+  await using t = await makeEnv();
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  await assertRejects(
+    () => openPlanEnv({ ...envOpts(t), lineage }, planDeps(t, [])),
+    ConfigurationError,
+    "--unverified-bc-egress-ok",
+  );
+  const p = await openPlanEnv(
+    { ...envOpts(t), lineage, bcEgressOverride: "r" },
+    planDeps(t, []),
+  );
+  assertEquals(p.bcEgress, { mode: "unenforced", override: "r" });
+  assertEquals(
+    (await openPlanEnv(envOpts(t), planDeps(t, []))).bcEgress,
+    undefined,
+  );
+});
+
+Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the container admissible for its lineage; a container without one is not", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const l = await loadLineage(lineage);
+  // the production mechanism with its reset faked (every admission section)
+  const fake = () => testResetFor(lineage, l);
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  const before = await envCheck(o, deps([]), fake);
+  assertEquals(before.admissible, false);
+  const made = await baselineCreate(o, deps([]), fake);
+  assertEquals(made.map((m) => [m.container, m.lineage_id]), [[
+    "Cronus281",
+    "golden-o09-v2",
+  ]]);
+  const after = await envCheck(o, deps([]), fake);
+  assert(after.admissible, renderEnvCheck(after));
+  assertEquals(after.rows[0]!.env_fp, made[0]!.env_fp);
+});
+
+/** A FakeBc whose every method call is recorded by name. */
+function recordingBc(calls: string[]): FakeBc {
+  return new Proxy(new FakeBc(), {
+    get(target, p, receiver) {
+      const v = Reflect.get(target, p, receiver);
+      return typeof v === "function"
+        ? (...a: unknown[]) => {
+          calls.push(String(p));
+          return v.apply(target, a);
+        }
+        : v;
+    },
+  });
+}
+
+/** The v2 lineage's mechanism with its reset, inventory check and fsDigest faked. */
+async function fakedGolden(
+  calls: string[],
+  step = { reset: true, verify: true, fs: true },
+) {
+  const lineage = await v2Lineage();
+  const l = await loadLineage(lineage);
+  const roots = l.fs!.roots;
+  const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
+  const mechanism = () => ({
+    ...testResetFor(lineage, l),
+    reset: async (c: string) => {
+      calls.push("reset");
+      const r = await OK_RESET.reset(c);
+      return step.reset
+        ? r
+        : { ...r, ok: false, failed_step: "restore", error: "boom" };
+    },
+    verifyClean: (c: string) => {
+      calls.push("verifyClean");
+      return Promise.resolve({
+        container: c,
+        ok: step.verify,
+        diff: step.verify ? [] : ["+ app planted"],
+        error: step.verify ? null : "inventory differs",
+      });
+    },
+    fsDigest: () => {
+      calls.push("fsDigest");
+      return Promise.resolve(
+        step.fs ? clean : [...clean.slice(0, -1), "E|C:\\Run\\my|denied"],
+      );
+    },
+  });
+  return { lineage, step, mechanism };
+}
+
+Deno.test("H-35 run 004 #2 envCheck is read-only: no setupContainers (prenuke, warmup), no lock, no reset; the bc is asked for its compiler identity only", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const d: EnvDeps = {
+    ...deps(order),
+    setup: () => {
+      calls.push("setup");
+      throw new Error("env check must not run setupContainers");
+    },
+    inspect: () => recordingBc(calls),
+  };
+  const c = await envCheck(
+    {
+      repoRoot: t.repo.root,
+      containers: ["Cronus281"],
+      lineage,
+      symbolStore: t.repo.symbolStore,
+      bcEgressOverride: "r",
+    },
+    d,
+    mechanism,
+  );
+  assertEquals(c.rows.map((r) => [r.container, r.why]), [[
+    "Cronus281",
+    "no instance manifest",
+  ]]);
+  assertEquals(calls, ["harnessCompilerIdentity"]);
+  assertEquals(order, []);
+});
+
+Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the container not admissible and a new environment refuses it before setup; harness recover clears it only after reset, inventory check and fsDigest all pass", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, step, mechanism } = await fakedGolden(calls);
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    setup: () => {
+      calls.push("setup");
+      throw new Error("a quarantined container must not be set up");
+    },
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  await baselineCreate(o, d, mechanism);
+  assert((await envCheck(o, d, mechanism)).admissible);
+  // an earlier environment quarantined it (another spelling of the name);
+  // Sol r2 N4: a non-filesystem cause with a clean L4 after-capture
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const reason = "reset of Cronus281 failed at restore: boom";
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "CRONUS281",
+    id: key.id,
+    reason,
+    by: "test",
+    pid: 1,
+    fs_diff: [],
+    fs_captured: true,
+  });
+  const c = await envCheck(o, d, mechanism);
+  assertEquals(c.admissible, false);
+  assertStringIncludes(c.rows[0]!.why!, `quarantined (${reason})`);
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, d),
+    ConfigurationError,
+    "quarantined container(s)",
+  );
+  assert(!calls.includes("setup"));
+  // every failing step keeps the record and leaves no manifest
+  for (const k of ["reset", "verify", "fs"] as const) {
+    step[k] = false;
+    await assertRejects(() => recoverContainer(o, d, mechanism));
+    step[k] = true;
+    assertEquals((await findRecords(qDir, key)).length, 1, `${k} failed`);
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  }
+  calls.length = 0;
+  order.length = 0;
+  const m = await recoverContainer(o, d, mechanism);
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(order, ["lock", "release"]);
+  assertEquals(await findRecords(qDir, key), []);
+  assertEquals(
+    (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
+    m.env_fp,
+  );
+  assert((await envCheck(o, d, mechanism)).admissible);
+  // H-35 run 004 Sol r1 H4: a crashed environment's in-use record refuses
+  // the same way. Sol r2 N2/N4: recover refuses it while it may be live
+  // (no --abandon, or another token), and with its token it still refuses:
+  // no filesystem evidence, the container must be recreated
+  const live = await plantRecord(qDir, {
+    id: key.id,
+    container: "Cronus281",
+    state: "in_use",
+    by: "HOST9 x",
+    pid: 9,
+  });
+  const u = await envCheck(o, d, mechanism);
+  assertStringIncludes(u.rows[0]!.why!, "in use by HOST9 x");
+  calls.length = 0;
+  for (const abandon of [null, crypto.randomUUID()]) {
+    await assertRejects(
+      () => recoverContainer({ ...o, abandon }, d, mechanism),
+      ConfigurationError,
+      `a live environment may hold it; if it is gone, pass --abandon ${live}`,
+    );
+  }
+  await assertRejects(
+    () => recoverContainer({ ...o, abandon: live }, d, mechanism),
+    ConfigurationError,
+    "no trustworthy filesystem evidence: the container must be recreated (lane-ops)",
+  );
+  assertEquals(calls, [], "every refusal comes before the reset");
+  assertEquals(
+    (await findRecords(qDir, key)).map((f) => f.record?.token),
+    [live],
+    "kept; recover's own claim is gone",
+  );
+});
+
+Deno.test("H-35 run 004 Sol r1 H4 in-use records: written once per container (agent and judge lanes) before setup, deleted on a normal close, left while unclosed (a crash) and refusing every other environment", async () => {
+  await using t = await makeEnv();
+  await using other = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const states: string[] = [];
+  const d = (): EnvDeps => {
+    const x = deps([]);
+    return {
+      ...x,
+      quarantineDir: () => qDir,
+      setup: async (names) => {
+        for (const n of names) {
+          for (const f of await findRecords(qDir, { name: n, id: fakeId(n) })) {
+            states.push(`${n}:${f.record?.state}`);
+          }
+        }
+        return x.setup(names);
+      },
+    };
+  };
+  const key = (n: string) => ({ name: n, id: fakeId(n) });
+  const two = { ...envOpts(t), judgeContainers: ["Cronus282"] };
+  const h = await openHarnessEnv(two, d());
+  assertEquals(states, ["Cronus281:in_use", "Cronus282:in_use"]);
+  const files: string[] = [];
+  for await (const e of Deno.readDir(qDir)) files.push(e.name);
+  assertEquals(
+    files.sort(),
+    [fakeId("Cronus281"), fakeId("Cronus282")].map((i) => `${i}.json`).sort(),
+  );
+  // unclosed (as after a crash): the record stands and refuses another environment
+  await assertRejects(
+    () => openHarnessEnv(envOpts(other), d()),
+    ConfigurationError,
+    "Cronus281 (in use by HOST1 test (pid",
+  );
+  await h.close();
+  assertEquals(await findRecords(qDir, key("Cronus281")), []);
+  assertEquals(await findRecords(qDir, key("Cronus282")), []);
+  // H-35 run 004 Sol r2 N3: a failed setup (it may have changed the
+  // container) keeps the claim, loudly
+  const bad = d();
+  bad.setup = () => Promise.reject(new Error("setup failed"));
+  const logged: string[] = [];
+  const err = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  try {
+    await assertRejects(
+      () => openHarnessEnv(envOpts(t), bad),
+      Error,
+      "setup failed",
+    );
+  } finally {
+    err.restore();
+  }
+  assertEquals(
+    (await findRecords(qDir, key("Cronus281"))).map((f) => f.record?.state),
+    ["in_use"],
+  );
+  assertStringIncludes(
+    logged.join("\n"),
+    "in-use record of Cronus281 kept",
+  );
+  assertStringIncludes(logged.join("\n"), "setup failed after it may have");
+  await Deno.remove(recordFile(qDir, fakeId("Cronus281")));
+  // a refusal before setup (another container held) releases this run's claims
+  const k282 = await plantRecord(qDir, {
+    state: "in_use",
+    container: "Cronus282",
+    id: fakeId("Cronus282"),
+    by: "HOST2 run",
+    pid: 2,
+  });
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus282"]), d()),
+    ConfigurationError,
+    "Cronus282 (in use by HOST2 run",
+  );
+  assertEquals(await findRecords(qDir, key("Cronus281")), []);
+  assertEquals(
+    (await findRecords(qDir, key("Cronus282"))).map((f) => f.record?.token),
+    [k282],
+  );
+  await Deno.remove(recordFile(qDir, fakeId("Cronus282")));
+  // an in-use record that cannot be written (a directory on its path) stops
+  // the start before setup
+  const squat = join(qDir, `${fakeId("Cronus281")}.json`);
+  await Deno.mkdir(squat);
+  states.length = 0;
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d()),
+    ConfigurationError,
+    "in-use record",
+  );
+  assertEquals(states, []);
+  await Deno.remove(squat);
+});
+
+Deno.test("H-35 run 004 Sol r1 H4 quarantine at close: a quarantined container keeps its record; one whose quarantine write failed keeps its in-use record; both refuse the next environment", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const d = (): EnvDeps => ({ ...deps([]), quarantineDir: () => qDir });
+  const h = await openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d());
+  await h.env.lane.quarantine("Cronus281", "cleanup failed");
+  const logged: string[] = [];
+  const err = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  const rename = stub(
+    Deno,
+    "rename",
+    () => Promise.reject(new Error("disk full")),
+  );
+  try {
+    await h.env.lane.quarantine("Cronus285", "reset failed");
+  } finally {
+    rename.restore();
+    err.restore();
+  }
+  assertStringIncludes(
+    logged.join("\n"),
+    "[FAIL] quarantine of Cronus285 NOT persisted",
+  );
+  await h.close();
+  const a = await findRecords(qDir, {
+    name: "Cronus281",
+    id: fakeId("Cronus281"),
+  });
+  const b = await findRecords(qDir, {
+    name: "Cronus285",
+    id: fakeId("Cronus285"),
+  });
+  assertEquals(
+    [
+      a.map((f) => [f.record?.state, f.record?.reason]),
+      b.map((f) => f.record?.state),
+    ],
+    [[["quarantined", "cleanup failed"]], ["in_use"]],
+  );
+  const e = await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d()),
+    ConfigurationError,
+    "quarantined container(s)",
+  );
+  assertStringIncludes(e.message, "Cronus281 (quarantined (cleanup failed))");
+  assertStringIncludes(e.message, "Cronus285 (in use by HOST1 test");
+});
+
+Deno.test("H-35 run 004 Sol r1 H5 physical identity: a renamed container (same Docker id) and a replacement under the old name are both refused at env open and env check; an unreadable id refuses", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const ids = new Map<string, string>([["cronus285", fakeId("Cronus281")]]);
+  const d: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    containerId: (c) =>
+      c === "Cronus283"
+        ? Promise.reject(new Error("no such container"))
+        : Promise.resolve(ids.get(c.toLowerCase()) ?? fakeId(c)),
+  };
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: fakeId("Cronus281"),
+    reason: "L4 dirty",
+    by: "test",
+    pid: 1,
+  });
+  const o = (c: string) => ({
+    repoRoot: t.repo.root,
+    containers: [c],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  });
+  // Cronus281 renamed to Cronus285: same id
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus285"]), d),
+    ConfigurationError,
+    "Cronus285 (quarantined (L4 dirty))",
+  );
+  assertStringIncludes(
+    (await envCheck(o("Cronus285"), d, mechanism)).rows[0]!.why!,
+    "quarantined (L4 dirty)",
+  );
+  // a new container under the old name: still refused until recover
+  ids.set("cronus281", "f".repeat(64));
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    "Cronus281 (quarantined (L4 dirty))",
+  );
+  assertStringIncludes(
+    (await envCheck(o("Cronus281"), d, mechanism)).rows[0]!.why!,
+    "quarantined (L4 dirty)",
+  );
+  // no id: fail closed
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus283"]), d),
+    ConfigurationError,
+    "Cronus283 (container id unknown: no such container)",
+  );
+  const c = await envCheck(o("Cronus283"), d, mechanism);
+  assertEquals(c.admissible, false);
+  assertStringIncludes(c.rows[0]!.why!, "container id unknown");
+  await assertRejects(
+    () => recoverContainer(o("Cronus283"), d, mechanism),
+    Error,
+    "no such container",
+  );
+  assert(!calls.includes("reset"), "recover stops before its reset");
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 recover: a recorded L4 diff must be remediated in the recovery capture (an added file absent, a changed one exactly its before line); otherwise the quarantine stays", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let extra: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...extra];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const F = (p: string, h: string) => `F|${h.repeat(64)}|2|1|1|6262|${p}`;
+  const flag = `${roots[0]}\\flag.txt`, cfg = `${roots[0]}\\app.config`;
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  await plantRecord(qDir, {
+    id: key.id,
+    container: "Cronus281",
+    state: "quarantined",
+    reason: "L4",
+    by: "test",
+    pid: 1,
+    fs_diff: [
+      { path: flag, before: null, after: F(flag, "b") },
+      { path: cfg, before: F(cfg, "a"), after: F(cfg, "c") },
+    ],
+    fs_captured: true,
+  });
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  const cases: [string[], string][] = [
+    // the planted file survived the reset (another spelling of its path)
+    [[F(flag.toUpperCase(), "b"), F(cfg, "a")], flag],
+    // the changed file was not restored
+    [[F(cfg, "c")], cfg],
+    // nor is a removed before-line restored by its absence
+    [[], cfg],
+  ];
+  for (const [lines, path] of cases) {
+    extra = lines;
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, "contamination not remediated");
+    assertStringIncludes(e.message, path);
+    assertStringIncludes(e.message, "recreate the container or remove them");
+    assertEquals((await findRecords(qDir, key)).length, 1);
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  }
+  extra = [F(cfg, "a")];
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  assert(await readInstanceManifest(resultsRoot, "Cronus281"));
+});
+
+/** Captures console.error while fn runs. */
+async function errorsOf(fn: () => Promise<unknown>): Promise<string> {
+  const logged: string[] = [];
+  const s = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  try {
+    await fn();
+  } finally {
+    s.restore();
+  }
+  return logged.join("\n");
+}
+
+Deno.test("H-35 run 004 Sol r2 N1 exclusive claims: two environments racing for one container, one starts and the other is refused; a lane quarantine after another owner took the record does not overwrite it, and close leaves it", async () => {
+  await using a = await makeEnv();
+  await using b = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const d = (): EnvDeps => ({ ...deps([]), quarantineDir: () => qDir });
+  const r = await Promise.allSettled([
+    openHarnessEnv(envOpts(a), d()),
+    openHarnessEnv(envOpts(b), d()),
+  ]);
+  const won = r.flatMap((x) => x.status === "fulfilled" ? [x.value] : []);
+  const lost = r.flatMap((x) => x.status === "rejected" ? [x.reason] : []);
+  assertEquals([won.length, lost.length], [1, 1]);
+  assert(lost[0] instanceof ConfigurationError);
+  assertStringIncludes(lost[0].message, "quarantined container(s)");
+  assertStringIncludes(lost[0].message, "Cronus281 (");
+  const h = won[0]!;
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  // recovered (abandoned) and claimed by another environment meanwhile
+  await Deno.remove(recordFile(qDir, key.id));
+  const other = await plantRecord(qDir, {
+    state: "in_use",
+    container: "Cronus281",
+    id: key.id,
+    by: "HOST2 run",
+    pid: 2,
+  });
+  const logs = await errorsOf(() =>
+    h.env.lane.quarantine(
+      "Cronus281",
+      "L4 on Cronus281: 0 error(s), 1 difference(s): x",
+      [],
+    )
+  );
+  assertStringIncludes(logs, "[FAIL] quarantine of Cronus281 NOT persisted");
+  assertStringIncludes(logs, "not overwritten");
+  assert(h.env.lane.quarantined.has("Cronus281"), "kept in memory");
+  await h.close();
+  assertEquals(
+    (await findRecords(qDir, key)).map((
+      f,
+    ) => [f.record?.token, f.record?.state]),
+    [[other, "in_use"]],
+  );
+});
+
+Deno.test("H-35 run 004 Sol r2 N2 recover: a record of another physical container (same name, other id) is not deleted and recover refuses; a concurrent recover's claim refuses unless abandoned by its token", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const ids = new Map<string, string>([["cronus281", "f".repeat(64)]]);
+  const d: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    containerId: (c) => Promise.resolve(ids.get(c.toLowerCase()) ?? fakeId(c)),
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: key.id,
+    reason: "reset of Cronus281 failed at restore: x",
+    by: "test",
+    pid: 1,
+    fs_diff: [],
+    fs_captured: true,
+  });
+  // A was renamed away, B now carries the name: verifying B never clears A
+  await assertRejects(
+    () => recoverContainer(o, d, mechanism),
+    ConfigurationError,
+    `record of another physical container ${key.id}`,
+  );
+  assertEquals(calls, []);
+  assertEquals((await findRecords(qDir, key)).length, 1);
+  const files = async () => {
+    const out: string[] = [];
+    for await (const e of Deno.readDir(qDir)) out.push(e.name);
+    return out.sort();
+  };
+  assertEquals(await files(), [`${key.id}.json`], "recover's claim released");
+  // A itself (same id again), while another recover claims it
+  ids.delete("cronus281");
+  const r = await plantRecord(qDir, {
+    state: "in_use",
+    container: "Cronus281",
+    id: key.id,
+    by: "HOST2 harness recover",
+    pid: 3,
+  }, { recover: true });
+  for (const abandon of [null, crypto.randomUUID()]) {
+    await assertRejects(
+      () => recoverContainer({ ...o, abandon }, d, mechanism),
+      ConfigurationError,
+      "another recover claims it",
+    );
+  }
+  assertEquals(calls, []);
+  await recoverContainer({ ...o, abandon: r }, d, mechanism);
+  assertEquals(await findRecords(qDir, key), []);
+  assertEquals(await files(), []);
+  // --abandon naming no record refuses
+  await assertRejects(
+    () =>
+      recoverContainer({ ...o, abandon: crypto.randomUUID() }, d, mechanism),
+    ConfigurationError,
+    "names no record",
+  );
+});
+
+Deno.test("H-35 run 004 Sol r2 N3 close: a failing closer keeps the in-use record; an in-flight lane operation delays its release", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const failing: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    setup: (names) =>
+      Promise.resolve({
+        bc: new FakeBc(),
+        names,
+        dispose: () => Promise.reject(new Error("dispose failed")),
+      }),
+  };
+  const h = await openHarnessEnv(envOpts(t), failing);
+  const logs = await errorsOf(() => h.close());
+  assertEquals(
+    (await findRecords(qDir, key)).map((f) => f.record?.state),
+    ["in_use"],
+  );
+  assertStringIncludes(logs, "in-use record of Cronus281 kept");
+  assertStringIncludes(logs, "teardown failed: dispose failed");
+  await Deno.remove(recordFile(qDir, key.id));
+  const h2 = await openHarnessEnv(envOpts(t), {
+    ...deps([]),
+    quarantineDir: () => qDir,
+  });
+  let finish!: () => void;
+  let started!: () => void;
+  const running = new Promise<void>((r) => (started = r));
+  const op = h2.env.lane.exclusive(
+    { taskId: "t", variantId: "v", attemptNumber: 1 },
+    () =>
+      new Promise<void>((r) => {
+        finish = r;
+        started();
+      }),
+  );
+  await running;
+  const closed = h2.close();
+  await new Promise((r) => setTimeout(r, 30));
+  assertEquals(
+    (await findRecords(qDir, key)).length,
+    1,
+    "held while the operation runs",
+  );
+  finish();
+  await op;
+  await closed;
+  assertEquals(await findRecords(qDir, key), []);
+});
+
+Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platform cache tolerates (hash-named) is dropped and the container clears; a right-shaped file whose name is not its hash keeps the quarantine", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden([]);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  const base = roots[0]!;
+  const HASH =
+    "0A53123EBB10012CF7AB9309302824D90E158BB785A7763F235C616DD829ADF0";
+  const path = `${base}\\metadata\\3\\0A\\${HASH}.app`;
+  const fLine = (sha: string) => `F|${sha}|1|32|1|4e41|${path}`;
+  let present: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsCaches: [{
+      base,
+      files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+      dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+      magic: "4e41",
+      nameIsSha256: true,
+    }, {
+      base,
+      files: String.raw`^(?!)$`,
+      dirs: String.raw`^tx$`,
+      dirTimeOnly: true,
+    }, {
+      // addendum 7
+      base: `${base}\\cnc`,
+      files: String.raw`^MetaData\\[0-9A-F]{32}$`,
+      dirs: String.raw`^(?!)$`,
+      inPlace: true,
+    }, {
+      // a cache policy outside every recovery root (orch r005d test gap)
+      base: "C:\\Elsewhere",
+      files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+      dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+      magic: "4e41",
+      nameIsSha256: true,
+    }],
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const plantAll = async (fs_diff: FsDiffEntry[], now: string[]) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff,
+      fs_captured: true,
+    });
+    present = now;
+  };
+  // the cache file survives the reset, as on the containers
+  const plant = (sha: string) =>
+    plantAll([{ path, before: null, after: fLine(sha) }], [fLine(sha)]);
+  const refused = async (what: string, includes: string) => {
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, includes, what);
+    assertEquals((await findRecords(qDir, key)).length, 1, what);
+  };
+  // a right-shaped file whose name is not its content hash: kept, refused
+  await plant("a".repeat(64));
+  await refused("misnamed", "contamination not remediated");
+  // orch r005c HIGH (a): recorded hash-named, but its CURRENT content differs
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [fLine("b".repeat(64))],
+  );
+  await refused("changed content", "contamination not remediated");
+  // self-check 2: same content, but the current spelling is outside the
+  // (uppercase) shape: judged by the current path, refused
+  const lower = `${base}\\metadata\\3\\0a\\${HASH.toLowerCase()}.app`;
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [`F|${HASH.toLowerCase()}|1|32|1|4e41|${lower}`],
+  );
+  await refused("current spelling", "contamination not remediated");
+  // (b) the path now under a reparse point: unobservable, refused (recreate)
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [`L|1040|0|${base}\\metadata|D:\\elsewhere`],
+  );
+  await refused("reparse cover", "not observable");
+  // (b) a recorded cache-shaped path outside the recovery roots: refused
+  // its historical line is a valid tolerated addition under the outside
+  // policy, so only the observability check (first) can refuse it
+  const outside = `C:\\Elsewhere\\metadata\\3\\0A\\${HASH}.app`;
+  await plantAll(
+    [{
+      path: outside,
+      before: null,
+      after: `F|${HASH.toLowerCase()}|1|32|1|4e41|${outside}`,
+    }],
+    [],
+  );
+  await refused("outside the roots", "not observable");
+  // folder-only negative: the folder now has other attributes
+  const tx = `${base}\\tx`;
+  await plantAll(
+    [{ path: tx, before: `D|16|1|${tx}`, after: `D|16|9|${tx}` }],
+    [`D|18|9|${tx}`],
+  );
+  await refused(
+    "folder-only, attributes changed",
+    "contamination not remediated",
+  );
+  // folder-only positive: only its time moved, still so now
+  await plantAll(
+    [{ path: tx, before: `D|16|1|${tx}`, after: `D|16|9|${tx}` }],
+    [`D|16|12|${tx}`],
+  );
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // addendum 7: a file recorded as changed in place, changed AGAIN now
+  // (same size and attributes): tolerated against the recorded before
+  const meta = `${base}\\cnc\\MetaData\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
+  const mLine = (sha: string, size = 342, attrs = 36) =>
+    `F|${sha}|${size}|${attrs}|1|7000|${meta}`;
+  const inPlace = {
+    path: meta,
+    before: mLine("a".repeat(64)),
+    after: mLine("b".repeat(64)),
+  };
+  await plantAll([inPlace], [mLine("c".repeat(64))]);
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // ... but not when its size now differs
+  await plantAll([inPlace], [mLine("c".repeat(64), 343)]);
+  await refused("in_place, resized", "contamination not remediated");
+  // the hash-named cache file, unchanged now: dropped, the container clears
+  await plant(HASH.toLowerCase());
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+});
+
+Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded path outside the capture's roots, or one below a reparse point (L line): recover refuses (recreate) and keeps the record", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let extra: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...extra];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const RECREATE =
+    "no trustworthy filesystem evidence: the container must be recreated (lane-ops)";
+  const plant = async (
+    path: string | null,
+    o2: { captured?: boolean } = {},
+  ) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: path === null
+        ? "reset of Cronus281 failed at restore: boom"
+        : "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff: path === null ? [] : [{ path, before: null, after: "x" }],
+      fs_captured: o2.captured ?? true,
+    });
+  };
+  // N4: a reset failure whose quarantine had no clean after-capture
+  await plant(null, { captured: false });
+  await assertRejects(
+    () => recoverContainer(o, d, mech),
+    ConfigurationError,
+    RECREATE,
+  );
+  assertEquals(calls, [], "refused before the reset");
+  // N5
+  const link = `${roots[0]}\\lnk`;
+  const cases: [string, string[]][] = [
+    ["C:\\Elsewhere\\flag.txt", []],
+    // a sibling sharing the root's prefix is not under it
+    [`${roots[0]}x\\flag.txt`, []],
+    [`${link}\\flag.txt`, [`L|0|0|${link}|D:\\target`]],
+    // orch r004 N5 residual: a named stream on the reparse entry itself
+    [`${link}:hid`, [`L|0|0|${link}|D:\\target`]],
+    // and on an entry below it
+    [`${link}\\f.txt:hid`, [`L|0|0|${link}|D:\\target`]],
+    // an extended-path stream outside the roots stays outside (drive colon)
+    ["\\\\?\\C:\\Elsewhere\\f.txt:hid", []],
+  ];
+  for (const [path, lines] of cases) {
+    await plant(path);
+    extra = lines;
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, RECREATE);
+    assertStringIncludes(e.message, `recorded path ${path} not observable`);
+    assertEquals((await findRecords(qDir, key)).length, 1);
+  }
+  // the same path absent and observable (no link): cleared
+  await plant(`${link}\\flag.txt`);
+  extra = [];
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // a stream on an observable entry, now absent: cleared (owner under a root)
+  await plant(`${roots[0]}\\f.txt:hid`);
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
 });
