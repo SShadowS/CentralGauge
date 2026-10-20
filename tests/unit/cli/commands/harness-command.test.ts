@@ -9886,6 +9886,14 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
     [fLine("b".repeat(64))],
   );
   await refused("changed content", "contamination not remediated");
+  // self-check 2: same content, but the current spelling is outside the
+  // (uppercase) shape: judged by the current path, refused
+  const lower = `${base}\\metadata\\3\\0a\\${HASH.toLowerCase()}.app`;
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [`F|${HASH.toLowerCase()}|1|32|1|4e41|${lower}`],
+  );
+  await refused("current spelling", "contamination not remediated");
   // (b) the path now under a reparse point: unobservable, refused (recreate)
   await plantAll(
     [{ path, before: null, after: fLine(HASH.toLowerCase()) }],

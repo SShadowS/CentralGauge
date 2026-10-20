@@ -348,15 +348,21 @@ function cacheStillTolerated(
   capture: readonly string[],
   m: ResetMechanism,
 ): boolean {
-  const now = new Map(
+  const cur = new Map(
     fsDiff(capture, [], [], m.fsRoots ?? []).diff.map((d) => [
       d.path.toLowerCase(),
-      d.before,
+      d,
     ]),
   ).get(e.path.toLowerCase());
-  if (!now || !e.after) return false;
+  const now = cur?.before;
+  if (!cur || !now || !e.after) return false;
   if (now[0] === "F" && fileSha(now) !== fileSha(e.after)) return false;
-  return cacheToleratesEntry(m.fsCaches ?? [], { ...e, after: now });
+  // the CURRENT path spelling, as fsDiff would judge it (self-check 2)
+  return cacheToleratesEntry(m.fsCaches ?? [], {
+    path: cur.path,
+    before: e.before,
+    after: now,
+  });
 }
 
 /**
