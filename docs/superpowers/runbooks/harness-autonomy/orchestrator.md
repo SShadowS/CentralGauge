@@ -55,6 +55,10 @@ Run as `/loop` without an interval (self-paced). Each sweep:
   (`{"M1": {"title": "...", "due": "YYYY-MM-DD"}}`): the owner's status screen reads it. Header: `id`, `lane`, `deps`, `resources`. Body: the plan task's
   absolute path and section, the acceptance checks you will run at integration, the files it
   may touch. Task ids: `M1-01`, `M1-02`, ...
+- Every design and `task.md` names the mechanism, not only the rules: for example "regex over
+  stripped text" or "compiler symbol positions". A design review asks whether the mechanism
+  can meet the rules. Acceptance names `test:harness:fast` for rounds and the serial suite
+  once on the submit candidate (lane.md "Review rounds and suites").
 - Use subagents for reading and drafting. Keep raw reviews and logs out of your context:
   refer to their paths.
 
@@ -62,7 +66,10 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 
 1. `coord status --json` for the run: commit, branch.
 2. Freeze and review per README "Reviews" with `gpt-6.1-sol`. For oracle and test changes,
-   ask the reviewer specifically whether any test was weakened.
+   ask the reviewer specifically whether any test was weakened. A submit with the lane's
+   self-check (lane.md "Review rounds and suites" item 5): read the self-check, then review
+   the diff since the last reviewed run against the reject file. Do not open a fresh full
+   round.
 3. Integrate per README "Git": merge onto current master in the main checkout, run the
    task's acceptance checks on that tree (never container tests: ask lane-ops for those and
    wait for their report), commit, push, `coord accept <id> <runId> <sha>`.

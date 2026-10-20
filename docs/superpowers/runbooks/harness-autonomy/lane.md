@@ -42,10 +42,35 @@ and "lane-admin specifics" below; it does no coding tasks.
    `deno fmt` on changed files only; `deno task test:unit` only if you are lane-ops or the
    task has no container tests, otherwise
    `deno test --allow-all --ignore=tests/unit/container tests/unit/`).
-8. Commit on your branch. `coord submit <id> <runId> <token> <sha> <branch>`. Message
+8. Before submit: run the self-check in "Review rounds and suites" item 5 and attach its
+   output path to your submit note.
+   Commit on your branch. `coord submit <id> <runId> <token> <sha> <branch>`. Message
    cg-orchestrator: `submitted <id> run <runId> commit <sha>`.
 9. Rewrite your handoff file. Wait for `accepted` or `rejected`, or take the next task if one
    is ready and does not depend on the submitted one.
+
+## Review rounds and suites (owner 2026-10-20, decisions\2026-10-20-loop-speedups.md)
+
+1. During fix rounds run the targeted test files, then `deno task test:harness:fast`. Never
+   the serial full suite inside a round.
+2. Start Sol on the fix diff as soon as the fix is committed, and run the suite at the same
+   time. Do not wait for one before starting the other.
+3. The serial full suite runs once, on the submit candidate: after Sol's READY, with no fix
+   pending. Never start it on an intermediate commit. If it is killed, re-run only the failed
+   or unfinished `test-fast` chunks, not the whole suite.
+4. Severity rubric from round 1: a fail-closed false positive (a check that refuses something
+   legitimate, visibly) is MEDIUM, unless a corpus scan hits it. A bypass, a wrong score or a
+   silent pass stays HIGH. After two rounds in a row with no HIGH, submit and list the open
+   MEDIUM items in the submit note.
+5. Self-check before submit: run the orchestrator's review yourself. Use `pi_ask` with
+   `gpt-6.1-sol` against the frozen design, the decisions that apply, and the task's reject
+   file if there is one. Ask whether the submit conforms. Save the answer under
+   `H:\cg-coord\tasks\<id>\` and fix what it finds first. For a resubmit after a reject, also
+   say for each item of the reject file where it is fixed. The orchestrator then reviews the
+   fix diff, not a fresh full round.
+6. A submit note may not contain "decisions the design does not state". A mechanism the
+   design leaves open (for example how a scanner resolves symbols) goes back to the
+   orchestrator as a design question (`coord ask`) before you build on it.
 
 ## Context size
 
