@@ -1,3 +1,4 @@
+import { ContainerError } from "../errors.ts";
 import { Logger } from "../logger/mod.ts";
 import { dockerContextEnv } from "./docker-context.ts";
 
@@ -86,4 +87,28 @@ export async function inspectContainer(
     log.warn(`docker inspect failed for ${containerName}: ${error}`);
     return undefined;
   }
+}
+
+/**
+ * H-35 run 004 Sol r1 H5: the container's immutable Docker id (64 hex),
+ * read-only, under the pinned context. Throws when it cannot be read.
+ */
+export async function containerId(containerName: string): Promise<string> {
+  const { code, stdout, stderr } = await new Deno.Command("docker", {
+    args: ["inspect", "--type", "container", "-f", "{{.Id}}", containerName],
+    env: dockerContextEnv(),
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  const id = new TextDecoder().decode(stdout).trim();
+  if (code !== 0 || !/^[0-9a-f]{64}$/.test(id)) {
+    throw new ContainerError(
+      `docker inspect of ${containerName} gave no container id (exit ${code}): ${
+        new TextDecoder().decode(stderr).trim().slice(0, 200)
+      }`,
+      containerName,
+      "health",
+    );
+  }
+  return id;
 }

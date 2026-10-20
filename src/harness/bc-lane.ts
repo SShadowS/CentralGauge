@@ -161,8 +161,14 @@ export class BcLane {
       /**
        * H-35 run 004 #3: writes a quarantine record that outlives the
        * environment (openHarnessEnv refuses a persisted one before setup).
+       * H-35 run 004 Sol r1 H6: `fsDiff` is the L4 difference behind it
+       * (empty when none), which `harness recover` must see remediated.
        */
-      persist?: (container: string, reason: string) => Promise<void>;
+      persist?: (
+        container: string,
+        reason: string,
+        fsDiff: FsDiffEntry[],
+      ) => Promise<void>;
     } = {},
   ) {
     if (containers.length === 0) throw new Error("BcLane needs a container");
@@ -180,15 +186,20 @@ export class BcLane {
    * Quarantine in memory at once, then persist. Never rejects (it runs in
    * catch paths): a failed write is logged loudly and the in-memory entry stays.
    */
-  async quarantine(container: string, reason: string): Promise<void> {
+  async quarantine(
+    container: string,
+    reason: string,
+    fsDiff: FsDiffEntry[] = [],
+  ): Promise<void> {
     this.quarantined.set(container, reason);
     if (!this.opts.persist) return;
     try {
-      await this.opts.persist(container, reason);
+      await this.opts.persist(container, reason, fsDiff);
     } catch (err) {
-      // H-35 run 004 #3: never silent; a later environment would not see it.
+      // H-35 run 004 Sol r1 H4: never silent; the environment's in-use
+      // record stays (never released for a quarantined container) and refuses it.
       console.error(
-        `[FAIL] quarantine of ${container} NOT persisted (quarantined in this environment only; recover it before reuse): ${
+        `[FAIL] quarantine of ${container} NOT persisted (its in-use record still refuses it; run harness recover before reuse): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -362,12 +373,17 @@ export class BcLane {
           return out;
         } catch (err) {
           if (err instanceof CleanupFailedError) {
-            await this.quarantine(c, err.cleanupError);
+            await this.quarantine(c, err.cleanupError, err.fsDiff);
           }
           // H-35 S3: a failed reset, a dirty or unobservable host (L4), an
           // HttpClient block that did not hold (L2a): never reused.
           if (err instanceof QuarantiningError) {
-            await this.quarantine(c, err.message);
+            // H-35 run 004 Sol r1 H6: L4 keeps its diff for recover
+            await this.quarantine(
+              c,
+              err.message,
+              err instanceof HostDirtyError ? err.record.diff : [],
+            );
           }
           // A cancellation (even a timeout reason) is never infra: no
           // reroute, no fault recorded against the container.
@@ -423,6 +439,8 @@ export class CleanupFailedError extends ContainerError {
     readonly original: unknown,
     readonly cleanupError: string,
     container: string,
+    /** H-35 run 004 Sol r1 H6: the L4 difference within cleanupError (empty: none). */
+    readonly fsDiff: FsDiffEntry[] = [],
   ) {
     super(
       `${
@@ -2003,7 +2021,9 @@ export async function deployAndTest(
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
     const c = await cleanAndVerify();
-    if (c) throw new CleanupFailedError(err, c, container);
+    // H-35 run 004 Sol r1 H6: a dirty L4 check rides along with its diff
+    const f = fsCheck as FsCheckRecord | null;
+    if (c) throw new CleanupFailedError(err, c, container, f?.diff ?? []);
     throw err;
   }
   const cleanupError = await cleanAndVerify();

@@ -44,8 +44,8 @@ import {
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
 import {
-  readQuarantine,
-  writeQuarantine,
+  findRecords,
+  writeRecord,
 } from "../../../../src/harness/quarantine.ts";
 import {
   BACKEND_PORT,
@@ -732,6 +732,12 @@ const testResetFor: ResetFor = (lineagePath, lineage) => ({
   reset: OK_RESET.reset,
 });
 
+/** H-35 run 004 Sol r1 H5: a fake Docker container id, one per (case-insensitive) name. */
+const fakeId = (c: string) =>
+  [...new TextEncoder().encode(c.toLowerCase())]
+    .map((b) => b.toString(16).padStart(2, "0")).join("").padEnd(64, "0")
+    .slice(0, 64);
+
 function deps(
   order: string[],
   lock?: () => never,
@@ -774,6 +780,7 @@ function deps(
     },
     inspect: () => new FakeBc(),
     quarantineDir: () => quarantineDir,
+    containerId: (c) => Promise.resolve(fakeId(c)),
     resetFor: testResetFor,
     resolveHost: () => {
       order.push("host");
@@ -9245,10 +9252,14 @@ Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the contain
   await baselineCreate(o, d, mechanism);
   assert((await envCheck(o, d, mechanism)).admissible);
   // an earlier environment quarantined it (another spelling of the name)
-  await writeQuarantine(qDir, {
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  await writeRecord(qDir, {
+    state: "quarantined",
     container: "CRONUS281",
+    id: key.id,
     reason: "cleanup failed",
     by: "test",
+    pid: 1,
   });
   const c = await envCheck(o, d, mechanism);
   assertEquals(c.admissible, false);
@@ -9264,7 +9275,7 @@ Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the contain
     step[k] = false;
     await assertRejects(() => recoverContainer(o, d, mechanism));
     step[k] = true;
-    assert((await readQuarantine(qDir)).has("cronus281"), `${k} failed`);
+    assertEquals((await findRecords(qDir, key)).length, 1, `${k} failed`);
     assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
   }
   calls.length = 0;
@@ -9272,10 +9283,268 @@ Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the contain
   const m = await recoverContainer(o, d, mechanism);
   assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
   assertEquals(order, ["lock", "release"]);
-  assertEquals((await readQuarantine(qDir)).size, 0);
+  assertEquals(await findRecords(qDir, key), []);
   assertEquals(
     (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
     m.env_fp,
   );
   assert((await envCheck(o, d, mechanism)).admissible);
+  // H-35 run 004 Sol r1 H4: a crashed environment's in-use record refuses
+  // the same way, and recover clears it too
+  await writeRecord(qDir, {
+    id: key.id,
+    container: "Cronus281",
+    state: "in_use",
+    by: "HOST9 x",
+    pid: 9,
+  });
+  const u = await envCheck(o, d, mechanism);
+  assertStringIncludes(u.rows[0]!.why!, "in use by HOST9 x");
+  await recoverContainer(o, d, mechanism);
+  assertEquals(await findRecords(qDir, key), []);
+});
+
+Deno.test("H-35 run 004 Sol r1 H4 in-use records: written once per container (agent and judge lanes) before setup, deleted on a normal close, left while unclosed (a crash) and refusing every other environment", async () => {
+  await using t = await makeEnv();
+  await using other = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const states: string[] = [];
+  const d = (): EnvDeps => {
+    const x = deps([]);
+    return {
+      ...x,
+      quarantineDir: () => qDir,
+      setup: async (names) => {
+        for (const n of names) {
+          for (const f of await findRecords(qDir, { name: n, id: fakeId(n) })) {
+            states.push(`${n}:${f.record?.state}`);
+          }
+        }
+        return x.setup(names);
+      },
+    };
+  };
+  const key = (n: string) => ({ name: n, id: fakeId(n) });
+  const two = { ...envOpts(t), judgeContainers: ["Cronus282"] };
+  const h = await openHarnessEnv(two, d());
+  assertEquals(states, ["Cronus281:in_use", "Cronus282:in_use"]);
+  const files: string[] = [];
+  for await (const e of Deno.readDir(qDir)) files.push(e.name);
+  assertEquals(
+    files.sort(),
+    [fakeId("Cronus281"), fakeId("Cronus282")].map((i) => `${i}.json`).sort(),
+  );
+  // unclosed (as after a crash): the record stands and refuses another environment
+  await assertRejects(
+    () => openHarnessEnv(envOpts(other), d()),
+    ConfigurationError,
+    "Cronus281 (in use by HOST1 test (pid",
+  );
+  await h.close();
+  assertEquals(await findRecords(qDir, key("Cronus281")), []);
+  assertEquals(await findRecords(qDir, key("Cronus282")), []);
+  // a failed start releases what it wrote
+  const bad = d();
+  bad.setup = () => Promise.reject(new Error("setup failed"));
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), bad),
+    Error,
+    "setup failed",
+  );
+  assertEquals(await findRecords(qDir, key("Cronus281")), []);
+  // an in-use record that cannot be written (a directory on its path) stops
+  // the start before setup
+  const squat = join(qDir, `${fakeId("Cronus281")}.json`);
+  await Deno.mkdir(squat);
+  states.length = 0;
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d()),
+    ConfigurationError,
+    "in-use record",
+  );
+  assertEquals(states, []);
+  await Deno.remove(squat);
+});
+
+Deno.test("H-35 run 004 Sol r1 H4 quarantine at close: a quarantined container keeps its record; one whose quarantine write failed keeps its in-use record; both refuse the next environment", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const d = (): EnvDeps => ({ ...deps([]), quarantineDir: () => qDir });
+  const h = await openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d());
+  await h.env.lane.quarantine("Cronus281", "cleanup failed");
+  const logged: string[] = [];
+  const err = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  const rename = stub(
+    Deno,
+    "rename",
+    () => Promise.reject(new Error("disk full")),
+  );
+  try {
+    await h.env.lane.quarantine("Cronus285", "reset failed");
+  } finally {
+    rename.restore();
+    err.restore();
+  }
+  assertStringIncludes(
+    logged.join("\n"),
+    "[FAIL] quarantine of Cronus285 NOT persisted",
+  );
+  await h.close();
+  const a = await findRecords(qDir, {
+    name: "Cronus281",
+    id: fakeId("Cronus281"),
+  });
+  const b = await findRecords(qDir, {
+    name: "Cronus285",
+    id: fakeId("Cronus285"),
+  });
+  assertEquals(
+    [
+      a.map((f) => [f.record?.state, f.record?.reason]),
+      b.map((f) => f.record?.state),
+    ],
+    [[["quarantined", "cleanup failed"]], ["in_use"]],
+  );
+  const e = await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d()),
+    ConfigurationError,
+    "quarantined container(s)",
+  );
+  assertStringIncludes(e.message, "Cronus281 (quarantined (cleanup failed))");
+  assertStringIncludes(e.message, "Cronus285 (in use by HOST1 test");
+});
+
+Deno.test("H-35 run 004 Sol r1 H5 physical identity: a renamed container (same Docker id) and a replacement under the old name are both refused at env open and env check; an unreadable id refuses", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const ids = new Map<string, string>([["cronus285", fakeId("Cronus281")]]);
+  const d: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    containerId: (c) =>
+      c === "Cronus283"
+        ? Promise.reject(new Error("no such container"))
+        : Promise.resolve(ids.get(c.toLowerCase()) ?? fakeId(c)),
+  };
+  await writeRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: fakeId("Cronus281"),
+    reason: "L4 dirty",
+    by: "test",
+    pid: 1,
+  });
+  const o = (c: string) => ({
+    repoRoot: t.repo.root,
+    containers: [c],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  });
+  // Cronus281 renamed to Cronus285: same id
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus285"]), d),
+    ConfigurationError,
+    "Cronus285 (quarantined (L4 dirty))",
+  );
+  assertStringIncludes(
+    (await envCheck(o("Cronus285"), d, mechanism)).rows[0]!.why!,
+    "quarantined (L4 dirty)",
+  );
+  // a new container under the old name: still refused until recover
+  ids.set("cronus281", "f".repeat(64));
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    "Cronus281 (quarantined (L4 dirty))",
+  );
+  assertStringIncludes(
+    (await envCheck(o("Cronus281"), d, mechanism)).rows[0]!.why!,
+    "quarantined (L4 dirty)",
+  );
+  // no id: fail closed
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus283"]), d),
+    ConfigurationError,
+    "Cronus283 (container id unknown: no such container)",
+  );
+  const c = await envCheck(o("Cronus283"), d, mechanism);
+  assertEquals(c.admissible, false);
+  assertStringIncludes(c.rows[0]!.why!, "container id unknown");
+  await assertRejects(
+    () => recoverContainer(o("Cronus283"), d, mechanism),
+    Error,
+    "no such container",
+  );
+  assert(!calls.includes("reset"), "recover stops before its reset");
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 recover: a recorded L4 diff must be remediated in the recovery capture (an added file absent, a changed one exactly its before line); otherwise the quarantine stays", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let extra: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...extra];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const F = (p: string, h: string) => `F|${h.repeat(64)}|2|1|1|6262|${p}`;
+  const flag = `${roots[0]}\\flag.txt`, cfg = `${roots[0]}\\app.config`;
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  await writeRecord(qDir, {
+    id: key.id,
+    container: "Cronus281",
+    state: "quarantined",
+    reason: "L4",
+    by: "test",
+    pid: 1,
+    fs_diff: [
+      { path: flag, before: null, after: F(flag, "b") },
+      { path: cfg, before: F(cfg, "a"), after: F(cfg, "c") },
+    ],
+  });
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  const cases: [string[], string][] = [
+    // the planted file survived the reset (another spelling of its path)
+    [[F(flag.toUpperCase(), "b"), F(cfg, "a")], flag],
+    // the changed file was not restored
+    [[F(cfg, "c")], cfg],
+    // nor is a removed before-line restored by its absence
+    [[], cfg],
+  ];
+  for (const [lines, path] of cases) {
+    extra = lines;
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, "contamination not remediated");
+    assertStringIncludes(e.message, path);
+    assertStringIncludes(e.message, "recreate the container or remove them");
+    assertEquals((await findRecords(qDir, key)).length, 1);
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  }
+  extra = [F(cfg, "a")];
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  assert(await readInstanceManifest(resultsRoot, "Cronus281"));
 });

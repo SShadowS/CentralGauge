@@ -86,16 +86,20 @@ import {
 } from "../../src/harness/environment.ts";
 import {
   fsDiff,
+  type FsDiffEntry,
   goldenReset,
   type ResetMechanism,
   UNCONFIGURED_RESET,
 } from "../../src/harness/reset.ts";
 import {
-  clearQuarantine,
-  readQuarantine,
-  writeQuarantine,
+  findRecords,
+  type FoundRecord,
+  releaseInUse,
+  removeRecords,
+  writeRecord,
 } from "../../src/harness/quarantine.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
+import { containerId } from "../../src/container/docker-inspect.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
@@ -160,6 +164,8 @@ export interface EnvDeps {
   inspect(): HarnessBc;
   /** H-35 run 004 #3: where persisted quarantine records live (coord root). */
   quarantineDir(): string;
+  /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
+  containerId(name: string): Promise<string>;
   resolveHost(): Promise<string>;
   owner(): string;
   health(names: string[]): HealthView;
@@ -201,6 +207,7 @@ export const REAL_DEPS: EnvDeps = {
       Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
       "harness-quarantine",
     ),
+  containerId,
   resolveHost: resolveBackendHost,
   owner: () => Deno.hostname(),
   health: (names) =>
@@ -270,6 +277,55 @@ async function lineageContext(
   };
 }
 
+const msg = (err: unknown) => err instanceof Error ? err.message : String(err);
+
+/**
+ * H-35 run 004 Sol r1 H4/H5: the records refusing a container, found by its
+ * current Docker id and by its name. An unreadable id refuses (id null).
+ */
+async function containerHolds(
+  deps: EnvDeps,
+  qDir: string,
+  name: string,
+): Promise<{ id: string | null; found: FoundRecord[]; why: string[] }> {
+  let id: string;
+  try {
+    id = await deps.containerId(name);
+  } catch (err) {
+    return { id: null, found: [], why: [`container id unknown: ${msg(err)}`] };
+  }
+  const found = await findRecords(qDir, { name, id });
+  return { id, found, why: found.map((f) => f.why) };
+}
+
+/**
+ * H-35 run 004 Sol r1 H6: the recorded L4 paths a recovery capture does not
+ * show remediated. An added file must be absent; any other entry must be
+ * exactly its before line. Keys as fsDiff reads them (case-insensitive), no
+ * exclusions.
+ */
+function unremediated(
+  recorded: readonly FsDiffEntry[],
+  capture: readonly string[],
+  roots: readonly string[],
+): string[] {
+  const now = new Map(
+    fsDiff(capture, [], [], roots).diff.map((d) => [
+      d.path.toLowerCase(),
+      d.before,
+    ]),
+  );
+  return [
+    ...new Set(
+      recorded.filter((e) =>
+        e.before === null
+          ? now.has(e.path.toLowerCase())
+          : now.get(e.path.toLowerCase()) !== e.before
+      ).map((e) => e.path),
+    ),
+  ];
+}
+
 /**
  * `harness env check` (H-35 S3.4): each container's lineage, env_fp and
  * baseline, and whether they share one admissible env_fp. Read-only (H-35
@@ -287,14 +343,21 @@ export async function envCheck(
     x.names,
     x.inputs,
   );
-  // H-35 run 004 #3: a persisted quarantine fails its container's row.
-  const q = await readQuarantine(deps.quarantineDir());
-  const rows = check.rows.map((r) => {
-    const hit = q.get(r.container.toLowerCase());
-    if (!hit) return r;
-    const why = `quarantined (${hit.reason}): run harness recover`;
-    return { ...r, why: r.why ? `${why}; ${r.why}` : why };
-  });
+  // H-35 run 004 #3, Sol r1 H4/H5: any record (by id or name) or an
+  // unreadable id fails its container's row.
+  const qDir = deps.quarantineDir();
+  const rows: typeof check.rows = [];
+  for (const r of check.rows) {
+    const h = await containerHolds(deps, qDir, r.container);
+    if (h.why.length === 0) {
+      rows.push(r);
+      continue;
+    }
+    const why = h.id === null
+      ? h.why.join("; ")
+      : `${h.why.join("; ")}: run harness recover`;
+    rows.push({ ...r, why: r.why ? `${why}; ${r.why}` : why });
+  }
   return {
     ...check,
     rows,
@@ -324,10 +387,11 @@ export async function baselineCreate(
 
 /**
  * `harness recover <container>` (H-35 run 004 #3): the only way out of a
- * persisted quarantine. Under the harness lock: the lineage's reset (and a
- * new instance manifest), its post-reset inventory check, one fsDigest
- * capture without errors; only then is the record removed. Any failure keeps
- * the record and leaves no manifest.
+ * persisted quarantine or a leftover in-use record. Under the harness lock:
+ * the lineage's reset (and a new instance manifest), its post-reset
+ * inventory check, one fsDigest capture without errors that shows every
+ * recorded L4 difference undone (Sol r1 H6); only then are the records
+ * removed. Any failure keeps them and leaves no manifest.
  */
 export async function recoverContainer(
   o: LineageCommandOptions,
@@ -343,6 +407,13 @@ export async function recoverContainer(
   try {
     const x = await lineageContext(o, deps, resetFor);
     const c = x.names[0]!;
+    // H-35 run 004 Sol r1 H5: the records by the current id and by name;
+    // no readable id, no recovery (fail closed)
+    const qDir = deps.quarantineDir();
+    const found = await findRecords(qDir, {
+      name: c,
+      id: await deps.containerId(c),
+    });
     const m = x.mechanism;
     if (!m.verifyClean || !m.fsDigest) {
       throw new ConfigurationError(
@@ -386,11 +457,27 @@ export async function recoverContainer(
           "health",
         );
       }
+      // H-35 run 004 Sol r1 H6: a well-formed capture is not removal; every
+      // recorded L4 difference must be undone in it
+      const left = unremediated(
+        found.flatMap((f) => f.record?.fs_diff ?? []),
+        lines,
+        m.fsRoots ?? [],
+      );
+      if (left.length > 0) {
+        throw new ContainerError(
+          `recover ${c}: contamination not remediated: ${
+            left.join(", ")
+          }; recreate the container or remove them`,
+          c,
+          "health",
+        );
+      }
     } catch (err) {
       await dropManifest();
       throw err;
     }
-    await clearQuarantine(deps.quarantineDir(), c);
+    await removeRecords(found);
     return made;
   } finally {
     await release();
@@ -753,15 +840,19 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
-    // H-35 run 004 #3: a container an earlier environment quarantined is
-    // refused before setup touches it; only `harness recover` clears it. A
-    // new quarantine is written before the container's lock is released.
+    // H-35 run 004 #3, Sol r1 H4/H5: any record of a container, by its
+    // Docker id or its name (a quarantine, or the in-use record of a crashed
+    // or still running environment), refuses it before setup touches it;
+    // only `harness recover` clears it. An unreadable id refuses too.
     const qDir = deps.quarantineDir();
-    const persisted = await readQuarantine(qDir);
-    const held = [...containers, ...judgeNames].flatMap((c) => {
-      const p = persisted.get(c.toLowerCase());
-      return p ? [`${c} (${p.reason})`] : [];
-    });
+    const by = `${deps.owner()} ${o.command}`;
+    const ids = new Map<string, { name: string; id: string }>();
+    const held: string[] = [];
+    for (const c of [...containers, ...judgeNames]) {
+      const h = await containerHolds(deps, qDir, c);
+      if (h.id) ids.set(c.toLowerCase(), { name: c, id: h.id });
+      held.push(...h.why.map((w) => `${c} (${w})`));
+    }
     if (held.length > 0) {
       throw new ConfigurationError(
         `quarantined container(s), run harness recover first or leave them out: ${
@@ -769,9 +860,74 @@ export async function openHarnessEnv(
         }`,
       );
     }
-    const by = `${deps.owner()} ${o.command}`;
-    const persist = (container: string, reason: string) =>
-      writeQuarantine(qDir, { container, reason, by });
+    // Sol r1 H4: dirty unless proven clean. One in-use record per container
+    // (whichever lane uses it) before setup; a quarantine replaces it, and a
+    // normal close deletes only those of containers no lane quarantined (a
+    // failed quarantine write leaves the in-use record refusing it).
+    const lanes: BcLane[] = [];
+    const written: { name: string; id: string }[] = [];
+    closers.unshift(async () => {
+      const q = new Set(
+        lanes.flatMap((l) => [...l.quarantined.keys()]).map((c) =>
+          c.toLowerCase()
+        ),
+      );
+      for (const w of written) {
+        if (q.has(w.name.toLowerCase())) continue;
+        try {
+          await releaseInUse(qDir, w.id, by, Deno.pid);
+        } catch (err) {
+          console.error(
+            `${
+              colors.yellow("[WARN]")
+            } in-use record of ${w.name} not removed (it refuses the container until harness recover): ${
+              msg(err)
+            }`,
+          );
+        }
+      }
+    });
+    for (const w of ids.values()) {
+      try {
+        await writeRecord(qDir, {
+          state: "in_use",
+          id: w.id,
+          container: w.name,
+          by,
+          pid: Deno.pid,
+        });
+      } catch (err) {
+        throw new ConfigurationError(
+          `cannot write the in-use record of ${w.name} in ${qDir}: ${
+            msg(err)
+          }; the environment does not start`,
+        );
+      }
+      written.push(w);
+    }
+    // A quarantine (either lane) rewrites the container's record with every
+    // reason and L4 diff so far (Sol r1 H6: recover checks the diff).
+    const qs = new Map<string, { reasons: string[]; diff: FsDiffEntry[] }>();
+    const persist = async (
+      container: string,
+      reason: string,
+      fsDiff: FsDiffEntry[],
+    ) => {
+      const lc = container.toLowerCase();
+      const q = qs.get(lc) ?? { reasons: [], diff: [] };
+      q.reasons.push(reason);
+      q.diff.push(...fsDiff);
+      qs.set(lc, q);
+      await writeRecord(qDir, {
+        state: "quarantined",
+        container,
+        id: ids.get(lc)?.id ?? await deps.containerId(container),
+        by,
+        pid: Deno.pid,
+        reason: q.reasons.join("; "),
+        fs_diff: q.diff,
+      });
+    };
     const ready = await deps.setup([...containers, ...judgeNames]);
     closers.unshift(ready.dispose);
     const health = deps.health(ready.names);
@@ -786,6 +942,7 @@ export async function openHarnessEnv(
         persist,
       })
       : undefined;
+    lanes.push(lane, ...(judgeLane ? [judgeLane] : []));
     // H-35 S3.4 (ruling (c)): with a lineage, every container must be an
     // admitted instance of it, all of one env_fp, before any lease.
     let bcEgress: BcEgressRecord | null = null;

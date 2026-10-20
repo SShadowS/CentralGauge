@@ -3479,7 +3479,7 @@ export function registerHarnessCommand(
     lineageOpts(
       new Command()
         .description(
-          "Reset a quarantined container to the lineage, verify it (inventory check, fsDigest) and only then clear its quarantine and write its instance manifest (lane-ops, under a lease)",
+          "Reset a quarantined container (or one a crashed environment left in use) to the lineage, verify it (inventory check, fsDigest, every recorded L4 difference undone) and only then clear its records and write its instance manifest (lane-ops, under a lease)",
         )
         .arguments("<container:string>"),
     ).action((opts, container: string) =>

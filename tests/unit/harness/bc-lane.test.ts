@@ -13,6 +13,7 @@ import {
 } from "../../../src/harness/bc-apps.ts";
 import {
   type FsCheckRecord,
+  type FsDiffEntry,
   HostDirtyError,
   ResetFailedError,
   type ResetMechanism,
@@ -38,7 +39,7 @@ import {
 } from "../../../src/harness/bc-lane.ts";
 import { hashFile } from "../../../src/harness/hash.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
-import { type FakeApp, FakeBc, result } from "./fake-bc.ts";
+import { type FakeApp, FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
 import { testTempDir, trackTempDir } from "../../utils/temp-dir.ts";
 
@@ -479,6 +480,81 @@ Deno.test("H-35 run 004 #3 BcLane: a quarantine is persisted while the container
   assertEquals(logged.length, 1);
   assertStringIncludes(logged[0]!, "[FAIL] quarantine of C2 NOT persisted");
   assertStringIncludes(logged[0]!, "disk full");
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 BcLane: an L4 quarantine persists its fs diff, also when it rides on a cleanup failure", async () => {
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const seen: [string, string, FsDiffEntry[]][] = [];
+  const lane = new BcLane(new FakeBc(), ["C1", "C2", "C3"], {
+    maxInfraRetries: 0,
+    persist: (c, reason, d) => (seen.push([c, reason, d]), Promise.resolve()),
+  });
+  const diff: FsDiffEntry[] = [{
+    path: "C:\\Run\\my\\flag.txt",
+    before: null,
+    after: `F|${"a".repeat(64)}|2|1|1|6262|C:\\Run\\my\\flag.txt`,
+  }];
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new HostDirtyError({ container: c, ok: false, diff, errors: [] });
+    })
+  );
+  await assertRejects(() =>
+    lane.exclusive(ctx, (c) => {
+      throw new CleanupFailedError(new Error("tests"), "L4 dirty", c, diff);
+    })
+  );
+  await lane.exclusive(ctx, () => Promise.resolve({ cleanupError: "x" }));
+  assertEquals(seen.map(([c, , d]) => [c, d]), [
+    ["C1", diff],
+    ["C2", diff],
+    ["C3", []],
+  ]);
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 deployAndTest: tests throwing with a dirty L4 check hand the fs diff to the lane", async () => {
+  const bc = new FakeBc(() => {
+    throw new ContainerError("soap down", "C1", "test");
+  });
+  const seen: FsDiffEntry[][] = [];
+  const lane = new BcLane(bc, ["C1"], {
+    maxInfraRetries: 0,
+    persist: (_c, _r, d) => (seen.push(d), Promise.resolve()),
+  });
+  const p = await prep(bc, lane);
+  const flag = `F|${"a".repeat(64)}|2|1|1|6262|C:\\Run\\my\\flag.txt`;
+  let n = 0;
+  const reset = {
+    ...OK_RESET,
+    fsDigest: () =>
+      Promise.resolve(
+        n++ === 0
+          ? ["D|16|0|C:\\Run\\my", "T|1"]
+          : ["D|16|0|C:\\Run\\my", flag, "T|2"],
+      ),
+  };
+  await assertRejects(
+    () =>
+      lane.exclusive(
+        { taskId: "t", variantId: "v", attemptNumber: 1 },
+        (c) =>
+          deployAndTest(bc, c, {
+            wanted: p.wanted,
+            tests: [{ codeunit: 80010, procedures: null, target: "candidate" }],
+            cleanupIds: [IDS.test],
+            ctx: {
+              ledgerRoot: trackTempDir(Deno.makeTempDirSync()),
+              trustedRoots: [p.pristine],
+              reset,
+            },
+          }),
+      ),
+    CleanupFailedError,
+  );
+  assertEquals(seen.map((d) => d.map((e) => [e.path, e.before])), [[[
+    "C:\\Run\\my\\flag.txt",
+    null,
+  ]]]);
 });
 
 Deno.test("BcLane: queued work is refused after its container is quarantined; a cancelled signal is never admitted", async () => {
