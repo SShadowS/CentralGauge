@@ -125,8 +125,6 @@ export interface TimelineEntry {
  * History of a run; checkpoint.json only keeps the latest. Called after the
  * mutation's own record is written. Only checkpoints carry a phase; the other
  * events leave it null and group under their event name in the totals.
- * Best-effort: the mutation already happened, so a failed append only warns
- * (a throw here would lose a claim's token).
  */
 async function appendTimeline(
   rd: string,
@@ -141,18 +139,24 @@ async function appendTimeline(
     wait: o.wait ?? null,
     note: o.note ?? null,
   };
-  try {
-    await withRetry(() =>
-      Deno.writeTextFile(
-        join(rd, "timeline.jsonl"),
-        JSON.stringify(entry) + "\n",
-        { append: true },
-      )
-    );
-  } catch (e) {
-    console.error(`[WARN] timeline append failed in ${rd}: ${e}`);
-  }
+  await withRetry(() =>
+    Deno.writeTextFile(
+      join(rd, "timeline.jsonl"),
+      JSON.stringify(entry) + "\n",
+      { append: true },
+    )
+  );
 }
+
+const TIMELINE_EVENTS = new Set([
+  "claim",
+  "checkpoint",
+  "submit",
+  "fail",
+  "abandon",
+  "accept",
+  "reject",
+]);
 
 async function mkdirExclusive(path: string): Promise<boolean> {
   try {
@@ -748,6 +752,11 @@ export async function timeline(
 ): Promise<Timeline> {
   await openRoot(root);
   const st = await taskState(root, id);
+  // A corrupt record maps to "unknown" without a runId: neither the default
+  // run nor `open` can be known, so refuse rather than guess.
+  if (st.state === "unknown") {
+    throw new CoordError(`task ${id}: task state is unreadable (coord doctor)`);
+  }
   const runId = opts.runId ?? st.runId;
   if (!runId) throw new CoordError(`task ${id} has no runs`);
   const path = join(runDir(root, id, runId), "timeline.jsonl");
@@ -763,37 +772,45 @@ export async function timeline(
     throw new CoordError(`unreadable: ${path}: ${e}`);
   }
   const raw: TimelineEntry[] = [];
+  const strOrNull = (v: unknown) =>
+    v === undefined || v === null || typeof v === "string";
   text.split(/\r?\n/).forEach((l, i) => {
     if (!l.trim()) return;
-    let e: TimelineEntry;
+    const bad = () => new CoordError(`corrupt: ${path} line ${i + 1}`);
+    let e: Partial<Record<keyof TimelineEntry, unknown>>;
     try {
       e = JSON.parse(l);
     } catch {
-      throw new CoordError(`corrupt: ${path} line ${i + 1}`);
+      throw bad();
     }
-    if (typeof e?.at !== "number" || typeof e.event !== "string") {
-      throw new CoordError(`corrupt: ${path} line ${i + 1}`);
-    }
+    if (
+      typeof e !== "object" || e === null ||
+      typeof e.at !== "number" || !Number.isFinite(e.at) ||
+      typeof e.event !== "string" || !TIMELINE_EVENTS.has(e.event) ||
+      !strOrNull(e.phase) || !strOrNull(e.wait) || !strOrNull(e.note)
+    ) throw bad();
     raw.push({
       at: e.at,
       event: e.event,
-      phase: e.phase ?? null,
-      wait: e.wait ?? null,
-      note: e.note ?? null,
+      phase: (e.phase as string | undefined) ?? null,
+      wait: (e.wait as string | undefined) ?? null,
+      note: (e.note as string | undefined) ?? null,
     });
   });
+  // A concurrent mutation can append after a later one: order by time (stable).
+  raw.sort((x, y) => x.at - y.at);
   const now = opts.now ?? Date.now();
-  const totals: Record<string, number> = {};
+  const totals = new Map<string, number>();
   const entries = raw.map((e, i) => {
     const end = raw[i + 1]?.at ?? (open ? now : undefined);
     const durationMs = end === undefined ? null : end - e.at;
     if (durationMs !== null) {
       const k = e.phase ?? e.event;
-      totals[k] = (totals[k] ?? 0) + durationMs;
+      totals.set(k, (totals.get(k) ?? 0) + durationMs);
     }
     return { ...e, durationMs };
   });
-  return { id, runId, open, entries, totals };
+  return { id, runId, open, entries, totals: Object.fromEntries(totals) };
 }
 
 export function timelineText(t: Timeline): string {

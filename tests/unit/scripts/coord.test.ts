@@ -884,7 +884,8 @@ Deno.test("coord timeline: durations to the next entry and totals per phase", as
   const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
   const line = (at: number, event: string, phase: string | null) =>
     JSON.stringify({ at, event, phase, wait: null, note: null });
-  const t0 = Date.UTC(2026, 9, 20, 12, 0, 0);
+  // In the past, so the real reject appended below sorts after the fixture.
+  const t0 = Date.UTC(2026, 0, 5, 12, 0, 0);
   const min = 60000;
   await Deno.writeTextFile(
     file,
@@ -912,7 +913,7 @@ Deno.test("coord timeline: durations to the next entry and totals per phase", as
     submit: 2 * min,
   });
   const text = timelineText(t);
-  assertStringIncludes(text, "2026-10-20 12:01:00Z");
+  assertStringIncludes(text, "2026-01-05 12:01:00Z");
   assertStringIncludes(text, "phase=red");
   assertStringIncludes(text, "red 3m");
 
@@ -939,13 +940,94 @@ Deno.test("coord timeline: CLI notes a missing timeline and exits non-zero on a 
   assertEquals(old.code, 0, new TextDecoder().decode(old.stderr));
   assertStringIncludes(new TextDecoder().decode(old.stdout), "no timeline");
 
+  for (
+    const badLine of [
+      "{not json",
+      '{"at":1,"event":"checkpoint","phase":7}',
+      '{"at":1,"event":"lunch"}',
+      '{"at":1e400,"event":"claim"}',
+      '{"at":1,"event":"claim","wait":[],"note":{}}',
+    ]
+  ) {
+    await Deno.writeTextFile(
+      file,
+      JSON.stringify({ at: 1, event: "claim" }) + "\n" + badLine + "\n",
+    );
+    for (
+      const args of [["timeline", "M0-01"], ["timeline", "M0-01", "--json"]]
+    ) {
+      const bad = await run(...args, "--run", r.runId);
+      assert(bad.code !== 0, `${badLine} ${args.join(" ")}`);
+      assertStringIncludes(new TextDecoder().decode(bad.stderr), "line 2");
+    }
+  }
+});
+
+Deno.test("coord timeline: a failed append fails the mutation", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  await Deno.remove(file);
+  await Deno.mkdir(file);
+  await assertRejects(() => checkpoint(root, "M0-01", r.runId, r.token, "red"));
+});
+
+Deno.test("coord timeline: phases named like Object.prototype members total correctly", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await submit(root, "M0-01", r.runId, r.token, "c", "b");
+  await reject(root, "M0-01", r.runId, "no");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  const line = (at: number, phase: string | null, event = "checkpoint") =>
+    JSON.stringify({ at, event, phase, wait: null, note: null });
   await Deno.writeTextFile(
     file,
-    JSON.stringify({ at: 1, event: "claim" }) + "\n{not json\n",
+    [
+      line(0, "constructor"),
+      line(10, "__proto__"),
+      line(30, "constructor"),
+      line(60, null, "reject"),
+    ].join("\n") + "\n",
   );
-  for (const args of [["timeline", "M0-01"], ["timeline", "M0-01", "--json"]]) {
-    const bad = await run(...args, "--run", r.runId);
-    assert(bad.code !== 0);
-    assertStringIncludes(new TextDecoder().decode(bad.stderr), "line 2");
-  }
+  const t = await timeline(root, "M0-01");
+  assertEquals(t.totals["constructor"], 40);
+  assertEquals(t.totals["__proto__"], 20);
+  assertEquals(Object.keys(t.totals).sort(), ["__proto__", "constructor"]);
+});
+
+Deno.test("coord timeline: entries are sorted by time, so a late append keeps time order", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await submit(root, "M0-01", r.runId, r.token, "c", "b");
+  await reject(root, "M0-01", r.runId, "no");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  const line = (at: number, event: string) =>
+    JSON.stringify({ at, event, phase: null, wait: null, note: null });
+  await Deno.writeTextFile(
+    file,
+    [line(0, "claim"), line(30, "reject"), line(20, "submit")].join("\n") +
+      "\n",
+  );
+  const t = await timeline(root, "M0-01");
+  assertEquals(t.entries?.map((e) => e.event), ["claim", "submit", "reject"]);
+  assertEquals(t.entries?.map((e) => e.durationMs), [20, 10, null]);
+});
+
+Deno.test("coord timeline: an unreadable task state is an error, not a guess", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await Deno.writeTextFile(
+    join(root, "tasks", "M0-01", "runs", r.runId, "checkpoint.json"),
+    "{",
+  );
+  await assertRejects(() => timeline(root, "M0-01"), CoordError, "unreadable");
+  await assertRejects(
+    () => timeline(root, "M0-01", { runId: r.runId }),
+    CoordError,
+    "unreadable",
+  );
 });
