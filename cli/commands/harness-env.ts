@@ -357,7 +357,9 @@ function unobservable(
         // orch r004 N5 residual: a named stream (`<entry>:<stream>`; a ':'
         // past the drive is always a stream) is judged by its owning entry,
         // so a stream on a reparse point itself is unobservable too
-        const colon = p.indexOf(":", 2);
+        // run 005 self-check: only in the last component, so a drive colon
+        // (C: or \\?\C:) is never read as a stream separator
+        const colon = p.indexOf(":", Math.max(p.lastIndexOf("\\") + 1, 2));
         const owner = colon < 0 ? p : p.slice(0, colon);
         return !rs.some((r) => owner === r || under(owner, r)) ||
           links.some((l) => (colon >= 0 && owner === l) || under(owner, l));

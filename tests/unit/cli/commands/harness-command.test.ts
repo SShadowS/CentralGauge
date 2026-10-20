@@ -9872,6 +9872,8 @@ Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded
     [`${link}:hid`, [`L|0|0|${link}|D:\\target`]],
     // and on an entry below it
     [`${link}\\f.txt:hid`, [`L|0|0|${link}|D:\\target`]],
+    // an extended-path stream outside the roots stays outside (drive colon)
+    ["\\\\?\\C:\\Elsewhere\\f.txt:hid", []],
   ];
   for (const [path, lines] of cases) {
     await plant(path);
@@ -9887,6 +9889,10 @@ Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded
   // the same path absent and observable (no link): cleared
   await plant(`${link}\\flag.txt`);
   extra = [];
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // a stream on an observable entry, now absent: cleared (owner under a root)
+  await plant(`${roots[0]}\\f.txt:hid`);
   await recoverContainer(o, d, mech);
   assertEquals(await findRecords(qDir, key), []);
 });

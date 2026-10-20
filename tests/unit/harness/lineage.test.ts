@@ -137,6 +137,28 @@ Deno.test("H-35 run 005 (orch r004 barrier L1): a lineage whose fs roots overlap
     ConfigurationError,
     "overlaps",
   );
+  // non-canonical spellings that could hide an overlap are refused outright
+  for (
+    const r of [
+      "C:\\ProgramData\\.\\cg-harness",
+      "C:\\ProgramData\\x\\..\\cg-harness",
+      "\\\\?\\C:\\ProgramData",
+      "C:/ProgramData/cg-harness",
+      "ProgramData",
+    ]
+  ) {
+    await assertRejects(
+      async () =>
+        loadLineage(
+          await copyLineage((j) => {
+            j["fs"] = { ...v2.fs, roots: [...v2.fs.roots, r] };
+          }),
+        ),
+      ConfigurationError,
+      "plain absolute drive path",
+      r,
+    );
+  }
 });
 
 Deno.test("H-35 S3.2 goldenReset: runs lane-ops' script per container with the lineage and a pinned docker context, and parses its markers", async () => {

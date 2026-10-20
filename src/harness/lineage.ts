@@ -96,7 +96,14 @@ export const LineageSchema = z.strictObject({
    */
   fs: z.strictObject({
     digest_version: z.number().int().positive(),
-    roots: z.array(z.string().min(1)).min(1).refine(
+    // run 005 self-check: plain absolute drive paths only (no \\?\, no . or
+    // .. segments), so the overlap check below compares canonical spellings
+    roots: z.array(
+      z.string().regex(
+        /^[A-Za-z]:\\(?:(?!\.\.?(?:\\|$))[^\\/:*?"<>|]+(?:\\|$))*$/,
+        "an fs root must be a plain absolute drive path",
+      ),
+    ).min(1).refine(
       (rs) => !rs.some(overlapsHoldDir),
       `an fs root overlaps ${NST_HOLD_DIR} (the NST hold's files must stay outside W)`,
     ),

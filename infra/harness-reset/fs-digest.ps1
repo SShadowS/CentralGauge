@@ -287,7 +287,10 @@ function Get-NstSessionCount([string]$Container, [int]$DrainSeconds = 0, [int]$T
   [string]$Dir = $NstFreezeDir, [string]$Query = '') {
   $n = Invoke-InContainer $Container { param($drain, $tmo, $dir, $query)
     if (-not $query) {
-      $mod = (Get-Command Get-NAVServerSession -ErrorAction Stop).Module.Path
+      # run 005 self-check: the module already loaded in this session (Get-Module lists loaded modules only, no
+      # discovery or autoload), so nothing outside the child's timeout can block
+      $mod = @(Get-Module | Where-Object { $_.ExportedCommands.ContainsKey('Get-NAVServerSession') })[0].Path
+      if (-not $mod) { return 'NAV management module not loaded' }
       $query = "Import-Module '$mod' -WarningAction SilentlyContinue; @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction Stop | Where-Object { `$_.SessionID -ge 0 -or `"`$(`$_.ClientType)`" -eq 'Background' }).Count"
     }
     $tmp = Join-Path $dir 'tmp'
