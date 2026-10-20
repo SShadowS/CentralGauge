@@ -97,10 +97,12 @@ export const LineageSchema = z.strictObject({
   fs: z.strictObject({
     digest_version: z.number().int().positive(),
     // run 005 self-check: plain absolute drive paths only (no \\?\, no . or
-    // .. segments), so the overlap check below compares canonical spellings
+    // .. segments, and (orch r005 LOW) no component ending in a period or a
+    // space, which Windows strips: cg-harness. is cg-harness), so the
+    // overlap check below compares canonical spellings
     roots: z.array(
       z.string().regex(
-        /^[A-Za-z]:\\(?:(?!\.\.?(?:\\|$))[^\\/:*?"<>|]+(?:\\|$))*$/,
+        /^[A-Za-z]:\\(?:[^\\/:*?"<>|]*[^\\/:*?"<>|. ](?:\\|$))*$/,
         "an fs root must be a plain absolute drive path",
       ),
     ).min(1).refine(

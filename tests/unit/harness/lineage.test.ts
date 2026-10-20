@@ -145,6 +145,11 @@ Deno.test("H-35 run 005 (orch r004 barrier L1): a lineage whose fs roots overlap
       "\\\\?\\C:\\ProgramData",
       "C:/ProgramData/cg-harness",
       "ProgramData",
+      // orch r005 LOW: Windows aliases (a trailing period or space is stripped)
+      "C:\\ProgramData\\cg-harness.",
+      "C:\\ProgramData\\cg-harness ",
+      "C:\\ProgramData.\\cg-harness",
+      "C:\\ProgramData \\cg-harness\\tmp",
     ]
   ) {
     await assertRejects(
