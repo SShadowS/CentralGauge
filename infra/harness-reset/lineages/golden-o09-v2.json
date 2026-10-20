@@ -95,6 +95,15 @@
         "dirs": "^my$",
         "dir_time_only": true,
         "reason": "BCH's host-mapped transfer folder: publish copies the .app through it and deletes it; only the folder's own last-write time may move (same spelling and attributes); every entry inside stays compared"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache",
+        "files": "^MetaData\\\\[0-9A-F]{32}$",
+        "dirs": "^(?!)$",
+        "magic": "7000",
+        "in_place": true,
+        "reason": "SYSTEM account's CryptoAPI URL-retrieval cache (CRL/OCSP metadata): existing MetaData files are rewritten in place by certificate-chain checks during publish (same size and attributes); URL-hashed names; new, removed, resized or re-attributed files stay differences"
       }
     ],
     "survey": {
