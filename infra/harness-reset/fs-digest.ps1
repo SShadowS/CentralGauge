@@ -1,9 +1,9 @@
 # H-35 S3 L4 (design-r5 2.4 as amended: decisions\2026-10-20-h-35-l4-scope.md). Dot-sourced after reset-lib.ps1.
 # Scope: L4 detects differences in the specified file/stream contents and recorded metadata between observation
 # points within declared roots, excluding recorded exclusions and untraversed reparse targets. It is not a complete
-# write history or persistence boundary. Each capture walks with the NST process suspended (owner, addendum 2 of
-# decisions\2026-10-20-h-35-l4-scope.md), so no AL runs during it; a writer outside the NST process (for example a
-# detached process an OnPrem DotNet call started) is not stopped by the suspension and is not covered.
+# write history or persistence boundary. Each capture walks with the NST process held by a debugger (owner,
+# addenda 2 and 5 of decisions\2026-10-20-h-35-l4-scope.md), so no AL runs during it; a writer outside the NST process
+# (for example a detached process an OnPrem DotNet call started) is not stopped by the hold and is not covered.
 #
 # fsDigest(W): every entry under the roots, hashed in full every time (no size/mtime gate). One line per entry,
 # sorted ordinal by path, fields separated by '|':
@@ -13,14 +13,14 @@
 #   L|<attrs>|<lastWriteUtcTicks>|<path>|<target>           reparse point (a root too): recorded, never followed
 #   E|<path>|<reason>                                       access error or change during the scan: fails closed
 # A file, stream or directory that changes while it is read or enumerated is an E line. Invoke-FsCaptureCore wraps
-# the walk (quiescence, suspension, watermark) and ends the capture with `T|<entry lines>` (src/harness/reset.ts
+# the walk (quiescence, debugger hold, watermark) and ends the capture with `T|<entry lines>` (src/harness/reset.ts
 # fsDiff refuses a capture without it). DIGEST_VERSION enters env_fp through the lineage; bump it on any change to
 # the line format or the walk.
 $FsDigestVersion = 3
 
-# A second check under the suspension: the NST's session-log watermark, read twice while it is suspended. A
-# suspended NST writes nothing, so a change means the suspension did not hold. READ UNCOMMITTED with a timeout, so a
-# lock a suspended NST thread holds can never hang the read (a timeout fails closed).
+# A second check under the hold: the NST's session-log watermark, read twice while it is held. A
+# held NST writes nothing, so a change means the hold did not hold. READ UNCOMMITTED with a timeout, so a
+# lock a held NST thread holds can never hang the read (a timeout fails closed).
 function Get-NstSessionWatermark([string]$Container) {
   $w = Invoke-InContainer $Container {
     (Invoke-Sqlcmd -Database CRONUS -QueryTimeout 30 -ErrorAction Stop -Query "SELECT CONCAT(COUNT_BIG(*), '|', CONVERT(varchar(33), MAX([Event Datetime]), 126)) AS w FROM [Session Event] WITH (NOLOCK)").w
@@ -30,7 +30,8 @@ function Get-NstSessionWatermark([string]$Container) {
 }
 
 # Owner, addendum 2: suspend / resume every thread of the NST process (NtSuspendProcess / NtResumeProcess). Suspend
-# verifies every thread reports WaitReason Suspended; either throws on any failure.
+# verifies every thread reports WaitReason Suspended; either throws on any failure. Since addendum 5 only the resume
+# is used (an NST an older build left suspended); the capture holds with a debugger (Enable-NstFreeze).
 function Set-NstSuspended([string]$Container, [bool]$Suspended) {
   $r = Invoke-InContainer $Container { param($suspend)
     if (-not ('CgNtProc' -as [type])) {
@@ -68,134 +69,176 @@ function Test-NstSuspended([string]$Container) {
   [int]"$r".Trim() -gt 0
 }
 
-# run 004 #5 + Sol r1 H3: a container-side bound independent of this coordinator, with a suspension GENERATION.
-# One marker file per container holds `armed:<G>` of the current suspension only (each arm overwrites it). The
-# detached watchdog of generation G waits $Seconds and, only while the marker still reads `armed:<G>`, rewrites it
-# to `fired:<G>` and resumes the NST. So a stale watchdog (an earlier generation) never resumes a later suspension,
-# and a watchdog that did fire is visible: the capture checks before its resume that the marker still reads
-# `armed:<G>` and every NST thread is still suspended (Assert-NstSuspensionHeld), and disarm reports `expired`.
-# Returns the token "<G>|<pid>|<marker path>".
-$NstSuspensionDir = 'C:\ProgramData\cg-harness'
-function Enable-NstAutoResume([string]$Container, [int]$Seconds = 90, [string]$Dir = $NstSuspensionDir) {
-  $t = Invoke-InContainer $Container { param($s, $dir)
-    New-Item -ItemType Directory -Force $dir | Out-Null
-    $marker = Join-Path $dir 'nst-suspension'
+# Owner addendum 5 (decisions\2026-10-20-h-35-l4-scope.md), replacing NtSuspendProcess, which does not freeze threads
+# the thread pool creates during the walk (lane-ops, run 004): the NST is held by a DEBUGGER. A detached holder
+# process in the container attaches (DebugActiveProcess, DebugSetProcessKillOnExit(FALSE)), breaks in
+# (DebugBreakProcess) and never continues a debug event, so every thread, including one created later, stays
+# stopped. It holds until the capture asks for the release or its bound elapses, then detaches. A killed coordinator:
+# the bound ends the hold. A killed holder: the system detaches (kill-on-exit off) and the NST runs on. So no
+# separate watchdog. The bound (default 38 s) stays below one healthcheck interval plus its timeout (30 s + 10 s), so
+# a hold costs at most one failing healthcheck; a walk that outlasts it fails closed (expired).
+# Generation G names this hold's files: <dir>\nst-freeze.<G> (the marker) and <dir>\nst-freeze.<G>.release. A
+# holder only ever reads and writes its own files and ends only its own debug session, so a stale holder cannot touch
+# a later hold (and a second debugger cannot attach while one holds). Marker values:
+#   frozen|<holder pid>|<nst pid>|<nst cpu ticks>   held; cpu = TotalProcessorTime (user + kernel) at the freeze
+#   expired|... / released|... / failed|<holder pid>|<reason>
+# The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
+# C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<marker>".
+$NstFreezeDir = 'C:\ProgramData\cg-harness'
+function Enable-NstFreeze([string]$Container, [int]$Seconds = 38, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
+  $t = Invoke-InContainer $Container { param($s, $dir, $tpid)
+    New-Item -ItemType Directory -Force (Join-Path $dir 'tmp') | Out-Null
     $g = [guid]::NewGuid().ToString('N')
-    # Sol r2 M3: one named mutex per marker serializes arming and disarming with a watchdog's check, mark and resume,
-    # so a stale watchdog either finishes its resume before this generation suspends or sees this generation
-    $mxName = 'Global\cg-nst-' + [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash(
-        [Text.Encoding]::UTF8.GetBytes($marker.ToLower()))).Replace('-', '').Substring(0, 16)
-    $mx = New-Object Threading.Mutex($false, $mxName)
-    try { [void]$mx.WaitOne(30000) } catch [Threading.AbandonedMutexException] { }
-    try {
-      # atomic: write a temp file, then replace the marker
-      $tmp = "$marker.$g.tmp"
-      Set-Content -LiteralPath $tmp -Value "armed:$g" -Encoding ascii -NoNewline
-      Move-Item -LiteralPath $tmp -Destination $marker -Force
-    } finally { try { $mx.ReleaseMutex() } catch { } }
+    $marker = Join-Path $dir "nst-freeze.$g"
     $cmd = @"
-Start-Sleep -Seconds $s
-`$mx = New-Object Threading.Mutex(`$false, '$mxName')
-# a held mutex past 30 s (a stuck holder) does not stop the resume: resuming is this watchdog's purpose
-try { `$own = `$mx.WaitOne(30000) } catch [Threading.AbandonedMutexException] { `$own = `$true }
+`$env:TEMP = `$env:TMP = '$dir\tmp'
+`$marker = '$marker'
+`$release = "`$marker.release"
+function Put([string]`$v) { `$t = "`$marker.tmp"; Set-Content -LiteralPath `$t -Value `$v -Encoding ascii -NoNewline; Move-Item -LiteralPath `$t -Destination `$marker -Force }
 try {
-  if ((Get-Content -LiteralPath '$marker' -Raw -ErrorAction SilentlyContinue) -eq 'armed:$g') {
-    Set-Content -LiteralPath '$marker' -Value 'fired:$g' -Encoding ascii -NoNewline
-    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgNtResume { [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h); }'
-    foreach (`$p in @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction SilentlyContinue)) { [void][CgNtResume]::NtResumeProcess(`$p.Handle) }
+  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgDbg { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugActiveProcess(int p); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugActiveProcessStop(int p); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugSetProcessKillOnExit(bool k); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugBreakProcess(IntPtr h); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool WaitForDebugEvent(byte[] e, int ms); public static int Err() { return Marshal.GetLastWin32Error(); } }'
+  `$p = if ($tpid -gt 0) { Get-Process -Id $tpid } else {
+    `$a = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server')
+    if (`$a.Count -ne 1) { throw "expected one NST process, found `$(`$a.Count)" }
+    `$a[0]
   }
-} finally { if (`$own) { `$mx.ReleaseMutex() } }
+  if (-not [CgDbg]::DebugActiveProcess(`$p.Id)) { throw "DebugActiveProcess: error `$([CgDbg]::Err())" }
+  [void][CgDbg]::DebugSetProcessKillOnExit(`$false)
+  if (-not [CgDbg]::DebugBreakProcess(`$p.Handle)) { throw "DebugBreakProcess: error `$([CgDbg]::Err())" }
+  # the attach's first event; it is never continued, so the debuggee stays stopped
+  if (-not [CgDbg]::WaitForDebugEvent((New-Object byte[] 4096), 10000)) { throw "no debug event: error `$([CgDbg]::Err())" }
+  Start-Sleep -Milliseconds 500
+  `$p.Refresh()
+  Put "frozen|`$PID|`$(`$p.Id)|`$(`$p.TotalProcessorTime.Ticks)"
+  `$deadline = (Get-Date).AddSeconds($s)
+  while (-not (Test-Path -LiteralPath `$release) -and (Get-Date) -lt `$deadline) { Start-Sleep -Milliseconds 200 }
+  # expired is written BEFORE the detach: a marker that reads frozen means the hold is still in place
+  `$how = if (Test-Path -LiteralPath `$release) { 'released' } else { 'expired' }
+  if (`$how -eq 'expired') { Put "expired|`$PID|`$(`$p.Id)" }
+  `$ok = [CgDbg]::DebugActiveProcessStop(`$p.Id)
+  Put "`$how|`$PID|`$(`$p.Id)|detached=`$ok"
+} catch {
+  try { Put "failed|`$PID|`$((`$_.Exception.Message -replace '[\r\n|]+', ' ').Trim())" } catch { }
+  exit 1
+}
 "@
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
-    $w = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
+    $h = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
       -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
-    "$g|$($w.Id)|$marker"
-  } $Seconds, $Dir
-  if ("$t".Trim() -notmatch '^[0-9a-f]{32}\|\d+\|.+$') { throw "NST auto-resume not armed: '$t'" }
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+      $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+      if ($m -like 'frozen|*') { return "$g|$($h.Id)|$marker" }
+      if ($m -like 'failed|*') { break }
+      Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $deadline)
+    # ending the holder ends its debug session (kill-on-exit off): the NST runs on
+    Stop-Process -Id $h.Id -Force -ErrorAction SilentlyContinue
+    Wait-Process -Id $h.Id -Timeout 10 -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $marker, "$marker.tmp" -Force -ErrorAction SilentlyContinue
+    "FAILED $(if ($m) { $m } else { 'no freeze within 30 s' })"
+  } $Seconds, $Dir, $TargetPid
+  if ("$t".Trim() -notmatch '^[0-9a-f]{32}\|\d+\|.+$') { throw "NST freeze failed: $("$t".Trim())" }
   "$t".Trim()
 }
 
-# Sol r1 H3: before the resume, the suspension must have held for the whole walk: this generation's marker is still
-# armed (its watchdog did not fire, no later capture took over) and every NST thread is still suspended.
-function Assert-NstSuspensionHeld([string]$Container, [string]$Token) {
+# Before the release: the hold lasted the whole walk. This hold's marker still reads frozen (not expired), its holder
+# is alive, and the NST (same pid) used no CPU time, user or kernel, since the freeze. Thread states cannot show it:
+# threads the debug port holds at creation read Executive, not Suspended.
+function Assert-NstFreezeHeld([string]$Container, [string]$Token) {
   $r = Invoke-InContainer $Container { param($tok)
-    $g, $null, $marker = $tok -split '\|', 3
+    $null, $hpid, $marker = $tok -split '\|', 3
     $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
-    if ($m -ne "armed:$g") { return "marker reads '$m', not this suspension's (watchdog expired or superseded)" }
-    $p = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction Stop)
-    if ($p.Count -ne 1) { return "expected one NST process, found $($p.Count)" }
-    $all = @($p[0].Threads).Count
-    $s = @($p[0].Threads | Where-Object { "$($_.WaitReason)" -eq 'Suspended' }).Count
-    if ($s -ne $all) { return "$($all - $s) of $all NST threads not suspended" }
+    if ($m -notmatch "^frozen\|$hpid\|(\d+)\|(\d+)$") { return "marker reads '$m', not this hold's (expired or failed)" }
+    $npid = [int]$Matches[1]; $cpu = [long]$Matches[2]
+    $h = Get-Process -Id ([int]$hpid) -ErrorAction SilentlyContinue
+    if (-not $h -or $h.HasExited) { return 'the holder is gone' }
+    $p = Get-Process -Id $npid -ErrorAction SilentlyContinue
+    if (-not $p) { return "NST process $npid is gone" }
+    $now = $p.TotalProcessorTime.Ticks
+    if ($now -ne $cpu) { return "the NST used CPU time while held ($cpu -> $now ticks)" }
     'held'
   } (, $Token)
-  if ("$r".Trim() -ne 'held') { throw "the NST suspension did not hold: $r" }
+  if ("$r".Trim() -ne 'held') { throw "the NST hold did not hold: $r" }
 }
 
-function Disable-NstAutoResume([string]$Container, [string]$Token) {
+# Release: ask the holder to detach and wait for it. A holder that does not exit is stopped (only the process this
+# capture started; the system then detaches). Throws unless the holder reported a release.
+function Disable-NstFreeze([string]$Container, [string]$Token) {
   $r = Invoke-InContainer $Container { param($tok)
-    $g, $wpid, $marker = $tok -split '\|', 3
-    # stop this generation's watchdog first (only the process this capture started), then read the marker
-    Stop-Process -Id ([int]$wpid) -Force -ErrorAction SilentlyContinue
-    Wait-Process -Id ([int]$wpid) -Timeout 10 -ErrorAction SilentlyContinue
-    # Sol r2 M3: read (and remove) the marker under the generation mutex
-    $mxName = 'Global\cg-nst-' + [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash(
-        [Text.Encoding]::UTF8.GetBytes($marker.ToLower()))).Replace('-', '').Substring(0, 16)
-    $mx = New-Object Threading.Mutex($false, $mxName)
-    try { [void]$mx.WaitOne(30000) } catch [Threading.AbandonedMutexException] { }
-    try { $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue }
-    finally { try { $mx.ReleaseMutex() } catch { } }
-    # a fired generation is settled whether or not its watchdog has exited yet: the capture fails
-    if ($m -eq "fired:$g") { Remove-Item -LiteralPath $marker -Force; return 'expired: the watchdog resumed the NST' }
-    # HasExited, not mere presence: an exited process stays listed while a handle to it is open; and a killed one
-    # can take a moment to leave (lane-ops saw the race on Cronus283), so poll up to 10 s
-    $deadline = (Get-Date).AddSeconds(10)
+    $null, $hpid, $marker = $tok -split '\|', 3
+    Set-Content -LiteralPath "$marker.release" -Value '' -Encoding ascii -NoNewline
+    # HasExited, not mere presence: an exited process stays listed while a handle to it is open
+    $deadline = (Get-Date).AddSeconds(15)
     do {
-      $w = Get-Process -Id ([int]$wpid) -ErrorAction SilentlyContinue
-      $alive = $w -and -not $w.HasExited
-      if ($alive) { Start-Sleep -Milliseconds 250 }
+      $h = Get-Process -Id ([int]$hpid) -ErrorAction SilentlyContinue
+      $alive = $h -and -not $h.HasExited
+      if ($alive) { Start-Sleep -Milliseconds 200 }
     } while ($alive -and (Get-Date) -lt $deadline)
-    if ($alive) { return 'watchdog still running' }
-    if ($m -eq "armed:$g") { Remove-Item -LiteralPath $marker -Force; return 'ok' }
-    "superseded: marker reads '$m'"
+    if ($alive) { Stop-Process -Id ([int]$hpid) -Force -ErrorAction SilentlyContinue }
+    $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $marker, "$marker.release" -Force -ErrorAction SilentlyContinue
+    if ($alive) { "holder did not exit, stopped (marker '$m')" }
+    elseif ($m -like "released|$hpid|*") { 'ok' }
+    elseif ($m -like 'expired|*') { 'expired: the hold bound elapsed before the release' }
+    else { "marker reads '$m'" }
   } (, $Token)
-  if ("$r".Trim() -ne 'ok') { throw "NST auto-resume not disarmed: $r" }
+  if ("$r".Trim() -ne 'ok') { throw "NST release: $r" }
 }
 
-# One capture (fs-capture.ps1): NST left suspended? (resume, fail closed) -> quiescent -> arm the container-side
-# auto-resume -> suspend -> watermark w1 -> walk -> watermark w2 -> resume (always, in finally) -> disarm ->
-# quiescent. w2 is read before the resume: a healthcheck request queued during the suspension logs its session after
-# the resume and must not count. Any failure is an E| line and the capture fails closed.
+# A hold a killed coordinator left behind: end its live holder (which detaches) and remove its files. Returns how
+# many holders were still live. Concurrent captures on one container cannot happen (leases + in_use claims).
+function Clear-NstFreezeLeftover([string]$Container, [string]$Dir = $NstFreezeDir) {
+  $n = Invoke-InContainer $Container { param($dir)
+    $live = 0
+    foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter 'nst-freeze.*' -File -ErrorAction SilentlyContinue)) {
+      $m = Get-Content -LiteralPath $f.FullName -Raw -ErrorAction SilentlyContinue
+      if ($f.Name -match '^nst-freeze\.[0-9a-f]{32}$' -and "$m" -match '^frozen\|(\d+)\|') {
+        $h = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
+        if ($h -and -not $h.HasExited) {
+          $live++
+          Stop-Process -Id $h.Id -Force -ErrorAction SilentlyContinue
+          Wait-Process -Id $h.Id -Timeout 10 -ErrorAction SilentlyContinue
+        }
+      }
+      Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+    }
+    "$live"
+  } (, $Dir)
+  if ("$n".Trim() -notmatch '^\d+$') { throw "NST hold leftovers unreadable: '$n'" }
+  [int]"$n".Trim()
+}
+
+# One capture (fs-capture.ps1): a hold a killed capture left (end it, fail closed)? NST left suspended by an older
+# NtSuspendProcess build (resume, fail closed)? -> quiescent -> hold (debugger, addendum 5) -> watermark w1 -> walk ->
+# watermark w2 -> held? -> release (always, in finally) -> quiescent. w2 is read before the release: a healthcheck
+# request queued during the hold logs its session after the release and must not count. Any failure is an E| line
+# and the capture fails closed.
 function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
   $lines = @()
-  $suspended = $false
-  $armed = $null
+  $held = $null
   try {
-    # run 004 #5: a coordinator killed after its suspend leaves the NST suspended; the session query below would hang
+    if ((Clear-NstFreezeLeftover $Container) -gt 0) {
+      throw 'a killed capture left the NST held; ended, this capture fails closed'
+    }
+    # run 004 #5: a coordinator killed after an NtSuspendProcess (before addendum 5) leaves the NST suspended
     if (Test-NstSuspended $Container) {
       Set-NstSuspended $Container $false
       throw 'the NST was left suspended (a killed capture); resumed, this capture fails closed'
     }
     if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
-    $armed = Enable-NstAutoResume $Container
-    $suspended = $true
-    Set-NstSuspended $Container $true
+    $held = Enable-NstFreeze $Container
     $w1 = Get-NstSessionWatermark $Container
     $lines = @(Get-FsDigest $Container $Roots)
     $w2 = Get-NstSessionWatermark $Container
-    if ($w2 -ne $w1) { throw "the NST session log moved while suspended ($w1 -> $w2)" }
-    # Sol r1 H3: the suspension held for the whole walk (proof, not the watermark)
-    Assert-NstSuspensionHeld $Container $armed
+    if ($w2 -ne $w1) { throw "the NST session log moved while held ($w1 -> $w2)" }
+    # Sol r1 H3: the hold lasted the whole walk (proof, not the watermark)
+    Assert-NstFreezeHeld $Container $held
   } catch {
     $lines = @("E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))")
   } finally {
-    if ($suspended) {
-      try { Set-NstSuspended $Container $false }
-      catch { $lines += "E|(fs-capture)|NST resume failed: $((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
-    }
-    # after the resume: a watchdog that fires in between resumes a running NST, which is harmless
-    if ($armed) {
-      try { Disable-NstAutoResume $Container $armed }
+    if ($held) {
+      try { Disable-NstFreeze $Container $held }
       catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
     }
   }

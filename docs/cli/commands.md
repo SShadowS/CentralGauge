@@ -1034,9 +1034,12 @@ The verdict log records each step: `resets[]`, `verifies[]`, `fs_checks[]` and
 recorded metadata between observation points within declared roots, excluding
 recorded exclusions and untraversed reparse targets. It is not a complete write
 history or persistence boundary. Each capture walks with the NST process
-suspended, so no AL runs during it; a writer outside the NST process (for
-example a detached process an OnPrem DotNet call started) is not stopped by the
-suspension and is not covered. The campaign guarantee rests on L1 (Cloud
+held by a debugger (a holder process in the container that attaches and never
+continues a debug event, so threads created during the walk stay stopped too),
+so no AL runs during it. The hold is bounded at 38 s, below one healthcheck
+interval plus its timeout; a holder that dies detaches by itself. A writer
+outside the NST process (for example a detached process an OnPrem DotNet call
+started) is not stopped by the hold and is not covered. The campaign guarantee rests on L1 (Cloud
 compile), L2 (network) and L3 (bans).
 
 **L3 scope.** L3 (`persistence_ref`) bans the r5 2.3 table in agent production

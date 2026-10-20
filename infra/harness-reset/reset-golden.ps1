@@ -53,6 +53,8 @@ Step snapshot_guard {
 Step quiesce {
   # run 004 #5: a capture coordinator killed after its suspend leaves the NST suspended; the restore below resets
   # everything it could have touched, so resume it here (before any session query, which would hang)
+  # addendum 5: a debugger hold a killed capture left ends when its holder ends
+  [void](Clear-NstFreezeLeftover $Container)
   if (Test-NstSuspended $Container) { Set-NstSuspended $Container $false }
   $q = Invoke-InContainer $Container {
     # system sessions carry negative ids, which Remove-NAVServerSession refuses; the NST stop ends them

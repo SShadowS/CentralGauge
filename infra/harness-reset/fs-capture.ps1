@@ -4,7 +4,7 @@ param(
 )
 # H-35 S3 L4: one fsDigest(W) capture over the lineage's fs.roots (src/harness/reset.ts goldenReset.fsDigest).
 # stdout = the digest lines (fs-digest.ps1 format), then `T|<their count>`; any failure prints an E| line and
-# exits 1 (fails closed). The walk runs with the NST suspended (fs-digest.ps1 Invoke-FsCaptureCore).
+# exits 1 (fails closed). The walk runs with the NST held by a debugger (fs-digest.ps1 Invoke-FsCaptureCore).
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 if (-not $env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT = 'desktop-windows' }
