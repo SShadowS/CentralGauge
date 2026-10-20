@@ -7,6 +7,13 @@
   "official_bak_sha256": "3195827514cc9e9420ad063079638b9c8ff66a6010c7cf8e9f02e397758daf7a",
   "license_sha256": "2bb4ea64ff31351d0c1ea3cc33d710eb72b7d419f581d655fe0386009bff76ad",
   "nst_config_sha256": "6e8313d817ff0a222b1df93c07df455a8cd0739654c7b083e5da28f9d4b51114",
+  "nst_config": {
+    "digest_version": 1,
+    "path": "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\CustomSettings.config",
+    "exclude_keys": ["PublicODataBaseUrl", "PublicSOAPBaseUrl", "PublicWebBaseUrl", "PublicWinBaseUrl"],
+    "sha256": "4bf48f95a7e4c7d6bda60e2eb9845bc92527e0c532534d1f3e27f9517600df71",
+    "keys": 251
+  },
   "golden_sha256": "0cf202e05b9700d0d2eb1b88c7b4ba9f5db6d3e7e38c4b6f9b2993f3daef1667",
   "golden_fingerprint": "2da29bfd727047fd1045ac5492b2107b7d0435e49d62620aa08a89d251753ede",
   "golden_path_template": "C:\\ProgramData\\BcContainerHelper\\Extensions\\{container}\\cg-official\\golden-o09-v2.bak",
