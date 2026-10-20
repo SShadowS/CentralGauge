@@ -69,6 +69,32 @@
         "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.(cs|xml)$",
         "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
         "reason": "NST app metadata cache: generated .cs/.xml per published object, named by content hash; AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.app$",
+        "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
+        "magic": "4e41",
+        "name_is_sha256": true,
+        "reason": "NST app metadata cache: the published package (NAVX header), named by its content sha256; AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC\\apps",
+        "files": "^metadata\\\\3\\\\([0-9A-F]{2})\\\\\\1[0-9A-F]{62}\\.res$",
+        "dirs": "^metadata(\\\\3(\\\\[0-9A-F]{2})?)?$",
+        "magic": "efbb",
+        "name_is_sha256": true,
+        "reason": "NST app metadata cache: the app's resource file (UTF-8 BOM), named by its content sha256; AL cannot write here without File/DotNet (L1/L3)"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\Run",
+        "files": "^(?!)$",
+        "dirs": "^my$",
+        "dir_time_only": true,
+        "reason": "BCH's host-mapped transfer folder: publish copies the .app through it and deletes it; only the folder's own last-write time may move (same spelling and attributes); every entry inside stays compared"
       }
     ],
     "survey": {
