@@ -60,6 +60,19 @@ export const LineageSchema = z.strictObject({
     })),
   }).optional(),
   /**
+   * H-35 run 004 #4 (r5 3, nst_config): the canonical NST config digest
+   * (reset-lib.ps1 Get-NstConfigDigest: every <add key value> but the
+   * hostname-bearing `exclude_keys`, sorted, key=value lines), compared live
+   * at admission and after every restore. Absent: admission refuses.
+   */
+  nst_config: z.strictObject({
+    digest_version: z.literal(1),
+    path: z.string().min(1),
+    exclude_keys: z.array(z.string().min(1)),
+    sha256: Sha,
+    keys: z.number().int().positive(),
+  }).optional(),
+  /**
    * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): the declared roots W
    * (resolved on the image), the NST identity measurement, each exclusion
    * with its disposition, the baseline-create discovery survey, and the

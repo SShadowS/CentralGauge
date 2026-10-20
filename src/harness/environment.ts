@@ -147,6 +147,25 @@ export interface EnvCheck {
   }[];
 }
 
+/**
+ * H-35 run 004 #4 (r5 3): the container's LIVE NST config against the
+ * lineage's digest (read-only); null when it matches or the lineage has none
+ * (that refusal is lineage-wide).
+ */
+async function nstConfigDrift(
+  m: ResetMechanism,
+  c: string,
+): Promise<string | null> {
+  if (!m.nstConfigSha || !m.nstConfigDigest) return null;
+  const live = await m.nstConfigDigest(c);
+  if (!live.sha) return `NST config unreadable: ${live.error}`;
+  return live.sha === m.nstConfigSha
+    ? null
+    : `NST config ${live.sha.slice(0, 12)} differs from the lineage's ${
+      m.nstConfigSha.slice(0, 12)
+    } (drift)`;
+}
+
 /** Every container's live env_fp against its manifest and the lineage. */
 export async function checkEnvironments(
   bc: HarnessBc,
@@ -168,7 +187,7 @@ export async function checkEnvironments(
       ? `env_fp ${env_fp.slice(0, 12)} differs from the manifest's ${
         man.env_fp.slice(0, 12)
       }`
-      : null;
+      : await nstConfigDrift(m, c);
     rows.push({
       container: c,
       env_fp,
@@ -182,6 +201,8 @@ export async function checkEnvironments(
   const egress = bcEgressAdmission(m.bcEgress, o.bcEgressOverride);
   const refusal = !m.contentRoot
     ? "the lineage has no content root"
+    : !m.nstConfigSha || !m.nstConfigDigest
+    ? "the lineage has no nst_config section"
     : !m.fsDigest
     ? "the lineage has no fs section: L4 (fsDigest) is not configured"
     : egress.refusal;

@@ -123,6 +123,12 @@ Step postconditions {
   if ("$st".Trim() -ne 'Operational') { throw "tenant $st" }
   $fp = Get-GoldenFingerprint $Container
   if ($fp -ne $lin.golden_fingerprint) { throw "subset fingerprint $fp does not match the lineage" }
+  # H-35 run 004 #4: the live NST config equals the lineage's (canonical digest, hostname keys excluded)
+  if ($lin.nst_config) {
+    $n = $lin.nst_config
+    $live = ((Get-NstConfigDigest $Container $n.path @($n.exclude_keys)) -split '\|')[0]
+    if ($live -ne $n.sha256) { throw "NST config digest $live does not match the lineage's $($n.sha256)" }
+  }
   # H-35 S3 content root (complete values and LOBs) on every restore, when the lineage records one (owner: +~23 s).
   if ($lin.content_root) {
     $cr = $lin.content_root

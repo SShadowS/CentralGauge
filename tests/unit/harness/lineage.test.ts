@@ -386,3 +386,64 @@ Deno.test("H-35 S3 L4 lineage platform_cache (addendum 3): an entry needs a base
     );
   }
 });
+
+Deno.test("H-35 run 004 #4 lineage nst_config: the canonical digest section loads and enters env_fp; goldenReset reads the live digest through nst-config.ps1 (NST_CONFIG marker) and never throws", async () => {
+  const section = {
+    digest_version: 1,
+    path:
+      "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\CustomSettings.config",
+    exclude_keys: ["PublicWebBaseUrl"],
+    sha256: "e".repeat(64),
+    keys: 251,
+  };
+  const lineagePath = await copyLineage((j) => (j["nst_config"] = section));
+  const l = await loadLineage(lineagePath);
+  assertEquals(lineageCompat(l)["nst_config"], section);
+  const calls: string[][] = [];
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath,
+    lineage: l,
+    dockerEnv: {},
+    spawn: (_c, args) => {
+      calls.push(args);
+      return Promise.resolve(
+        args.includes("C1")
+          ? { code: 0, stdout: `noise\r\nNST_CONFIG ${"e".repeat(64)}\r\n` }
+          : args.includes("C2")
+          ? { code: 1, stdout: "NST_CONFIG_FAILED docker exec failed" }
+          : { code: 0, stdout: "nothing" },
+      );
+    },
+  });
+  assertEquals(m.nstConfigSha, "e".repeat(64));
+  assertEquals(await m.nstConfigDigest!("C1"), {
+    sha: "e".repeat(64),
+    error: null,
+  });
+  assert(calls[0]!.some((a) => a.endsWith("nst-config.ps1")));
+  assertEquals(calls[0]!.slice(-4), [
+    "-Container",
+    "C1",
+    "-Lineage",
+    lineagePath,
+  ]);
+  assertEquals(await m.nstConfigDigest!("C2"), {
+    sha: null,
+    error: "docker exec failed",
+  });
+  assertEquals((await m.nstConfigDigest!("C3")).sha, null);
+  for (
+    const bad of [
+      { ...section, digest_version: 2 },
+      { ...section, sha256: "x" },
+      { ...section, path: "" },
+    ]
+  ) {
+    await assertRejects(
+      async () =>
+        loadLineage(await copyLineage((j) => (j["nst_config"] = bad))),
+      ConfigurationError,
+    );
+  }
+});

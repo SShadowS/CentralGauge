@@ -67,6 +67,12 @@ export interface ResetMechanism {
   readonly bcEgress?: "enforced" | "unenforced";
   /** H-35 S3: the content root every restore is verified against (absent: none). */
   readonly contentRoot?: string;
+  /** H-35 run 004 #4: the lineage's canonical NST config digest (absent: none). */
+  readonly nstConfigSha?: string;
+  /** H-35 run 004 #4: the container's live NST config digest, read-only; never throws. */
+  nstConfigDigest?(
+    container: string,
+  ): Promise<{ sha: string | null; error: string | null }>;
 }
 
 /** One L4 check of a deployment (the verdict log's `fs_checks[]`). */
@@ -328,6 +334,8 @@ export const RESET_SCRIPT = ["infra", "harness-reset", "reset-golden.ps1"];
 export const VERIFY_SCRIPT = ["infra", "harness-reset", "verify-clean.ps1"];
 /** One L4 fsDigest(W) capture over the lineage's fs roots. */
 export const FS_SCRIPT = ["infra", "harness-reset", "fs-capture.ps1"];
+/** The live NST config digest against the lineage (run 004 #4). */
+export const NST_CONFIG_SCRIPT = ["infra", "harness-reset", "nst-config.ps1"];
 /** Longer than the script's own 10 min health limit; then the reset failed. */
 const RESET_TIMEOUT_MS = 20 * 60_000;
 
@@ -387,6 +395,28 @@ export function goldenReset(o: {
     ...(o.lineage.egress ? { bcEgress: o.lineage.egress.mode } : {}),
     ...(o.lineage.content_root
       ? { contentRoot: o.lineage.content_root.root }
+      : {}),
+    // H-35 run 004 #4: the live NST config digest (nst-config.ps1, read-only)
+    ...(o.lineage.nst_config
+      ? {
+        nstConfigSha: o.lineage.nst_config.sha256,
+        nstConfigDigest: async (container: string) => {
+          try {
+            const out = await run(NST_CONFIG_SCRIPT, container);
+            const ok = /^NST_CONFIG ([0-9a-f]{64})\s*$/m.exec(out.stdout);
+            const bad = /^NST_CONFIG_FAILED (.*)$/m.exec(out.stdout);
+            return ok && out.code === 0 ? { sha: ok[1]!, error: null } : {
+              sha: null,
+              error: bad?.[1]?.trim() || `nst-config.ps1 exit ${out.code}`,
+            };
+          } catch (err) {
+            return {
+              sha: null,
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        },
+      }
       : {}),
     // H-35 S3 L4: only with the lineage's fs section (admission refuses one without).
     ...(fs

@@ -164,6 +164,8 @@ export interface EnvDeps {
   owner(): string;
   health(names: string[]): HealthView;
   verifyEgress: EgressVerifier;
+  /** H-35 run 004 #4: the judging reset mechanism for a lineage (default: goldenReset). */
+  resetFor?: ResetFor;
   /** The run-time egress seam for placed sandboxes (default: the real one). */
   egressRuntime?: (
     o: {
@@ -229,7 +231,10 @@ export interface LineageCommandOptions {
   bcEgressOverride?: string | null;
 }
 
-type ResetFor = (lineagePath: string, lineage: Lineage) => ResetMechanism;
+export type ResetFor = (
+  lineagePath: string,
+  lineage: Lineage,
+) => ResetMechanism;
 const goldenResetFor = (repoRoot: string): ResetFor => (lineagePath, lineage) =>
   goldenReset({
     repoRoot,
@@ -591,13 +596,10 @@ export async function openHarnessEnv(
 ): Promise<OpenEnv> {
   // H-35 S3.2: an unproven lineage stops the start, before anything opens.
   const lineage = o.lineage ? await loadLineage(o.lineage) : null;
+  // run 004 #4: a test seam; the mechanism's live checks (NST config, fs)
+  // reach a container, so tests inject one
   const reset = lineage
-    ? goldenReset({
-      repoRoot: o.repoRoot,
-      lineagePath: o.lineage!,
-      lineage,
-      dockerEnv: dockerContextEnv(),
-    })
+    ? (deps.resetFor ?? goldenResetFor(o.repoRoot))(o.lineage!, lineage)
     : UNCONFIGURED_RESET;
   const judges = o.judgeContainers ?? [];
   const refused = [...o.containers, ...judges].filter((c) =>

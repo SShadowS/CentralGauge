@@ -40,6 +40,7 @@ import {
   openHarnessEnv,
   openPlanEnv,
   recoverContainer,
+  type ResetFor,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
 import {
@@ -687,6 +688,50 @@ Deno.test("validateHarness: the catalog is read even with no experiments", async
 
 // ---- M1-24: cell, judge-fixture, images build, symbols lock ----
 
+/**
+ * H-35 run 004 #4: the golden-o09-v2 lineage with an nst_config section, in a
+ * temp dir with its sidecars (until lane-ops' v2 carries the section).
+ */
+async function v2Lineage(): Promise<string> {
+  const src = resolve("infra/harness-reset/lineages");
+  const dir = await Deno.realPath(await testTempDir());
+  const j = JSON.parse(
+    await Deno.readTextFile(join(src, "golden-o09-v2.json")),
+  );
+  j.nst_config ??= {
+    digest_version: 1,
+    path:
+      "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\CustomSettings.config",
+    exclude_keys: ["PublicWebBaseUrl"],
+    sha256: "e".repeat(64),
+    keys: 251,
+  };
+  for (const f of [j.inventory.path, j.content_root.path]) {
+    await Deno.copyFile(join(src, f), join(dir, f));
+  }
+  await Deno.writeTextFile(join(dir, "golden-o09-v2.json"), JSON.stringify(j));
+  return join(dir, "golden-o09-v2.json");
+}
+
+/**
+ * The production mechanism with nothing reaching a container: its reset is
+ * faked and its live NST config digest equals the lineage's.
+ */
+const testResetFor: ResetFor = (lineagePath, lineage) => ({
+  ...goldenReset({
+    repoRoot: ".",
+    lineagePath,
+    lineage,
+    dockerEnv: {},
+    spawn: () =>
+      Promise.resolve({
+        code: 0,
+        stdout: `NST_CONFIG ${lineage.nst_config?.sha256 ?? ""}`,
+      }),
+  }),
+  reset: OK_RESET.reset,
+});
+
 function deps(
   order: string[],
   lock?: () => never,
@@ -729,6 +774,7 @@ function deps(
     },
     inspect: () => new FakeBc(),
     quarantineDir: () => quarantineDir,
+    resetFor: testResetFor,
     resolveHost: () => {
       order.push("host");
       return Promise.resolve("127.0.0.1");
@@ -8981,7 +9027,7 @@ Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; w
   await using t = await makeEnv();
   // H-35 S3: v2 carries every section admission needs; its NST egress is
   // unenforced, so the run declares it.
-  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  const lineage = await v2Lineage();
   const bcEgressOverride = "no NST firewall rule in the image";
   const bare = await openHarnessEnv(envOpts(t), deps([]));
   assertEquals(bare.env.deploy.reset.id, "unconfigured");
@@ -9067,18 +9113,10 @@ Deno.test("H-35 Sol S3 r3: a dry run's plan env checks the lineage's NST egress 
 
 Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the container admissible for its lineage; a container without one is not", async () => {
   await using t = await makeEnv();
-  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  const lineage = await v2Lineage();
   const l = await loadLineage(lineage);
   // the production mechanism with its reset faked (every admission section)
-  const fake = () => ({
-    ...goldenReset({
-      repoRoot: ".",
-      lineagePath: lineage,
-      lineage: l,
-      dockerEnv: {},
-    }),
-    reset: OK_RESET.reset,
-  });
+  const fake = () => testResetFor(lineage, l);
   const o = {
     repoRoot: t.repo.root,
     containers: ["Cronus281"],
@@ -9118,17 +9156,12 @@ async function fakedGolden(
   calls: string[],
   step = { reset: true, verify: true, fs: true },
 ) {
-  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  const lineage = await v2Lineage();
   const l = await loadLineage(lineage);
   const roots = l.fs!.roots;
   const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
   const mechanism = () => ({
-    ...goldenReset({
-      repoRoot: ".",
-      lineagePath: lineage,
-      lineage: l,
-      dockerEnv: {},
-    }),
+    ...testResetFor(lineage, l),
     reset: async (c: string) => {
       calls.push("reset");
       const r = await OK_RESET.reset(c);

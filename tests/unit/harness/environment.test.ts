@@ -27,6 +27,8 @@ const MECH = {
   fsDigest: () => Promise.resolve([]),
   bcEgress: "unenforced" as const,
   contentRoot: "d".repeat(64),
+  nstConfigSha: "e".repeat(64),
+  nstConfigDigest: () => Promise.resolve({ sha: "e".repeat(64), error: null }),
 };
 const LOCK = "b".repeat(64);
 
@@ -215,4 +217,47 @@ Deno.test("H-35 S3 (orchestrator ruling on baselines): a baseline made against a
   });
   assertEquals(other.admissible, false);
   assert(other.rows[0]!.why!.includes("env_fp"));
+});
+
+Deno.test("H-35 run 004 #4: admission compares each container's LIVE NST config digest with the lineage's; drift, an unreadable config or a lineage without nst_config is not admissible", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const bc = new FakeBc();
+  const o = {
+    resultsRoot: root,
+    lineageId: "golden-test",
+    lockDigest: LOCK,
+    bcEgressOverride: "no NST firewall rule",
+  };
+  await createBaseline(bc, MECH, "C1", o);
+  await createBaseline(bc, MECH, "C2", o);
+  const live = (c: string) =>
+    Promise.resolve(
+      c === "C2"
+        ? { sha: "f".repeat(64), error: null }
+        : { sha: "e".repeat(64), error: null },
+    );
+  const drift = await checkEnvironments(
+    bc,
+    { ...MECH, nstConfigDigest: live },
+    ["C1", "C2"],
+    o,
+  );
+  assertEquals(drift.admissible, false);
+  assertEquals(drift.rows[0]!.why, null);
+  assertStringIncludes(drift.rows[1]!.why!, "NST config");
+  const unreadable = await checkEnvironments(
+    bc,
+    {
+      ...MECH,
+      nstConfigDigest: () =>
+        Promise.resolve({ sha: null, error: "docker exec failed" }),
+    },
+    ["C1"],
+    o,
+  );
+  assertStringIncludes(unreadable.rows[0]!.why!, "docker exec failed");
+  const { nstConfigSha: _s, nstConfigDigest: _d, ...none } = MECH;
+  const c = await checkEnvironments(bc, none, ["C1"], o);
+  assertEquals(c.refusal, "the lineage has no nst_config section");
+  assert((await checkEnvironments(bc, MECH, ["C1", "C2"], o)).admissible);
 });

@@ -20,6 +20,25 @@ function Sort-Ordinal([string[]]$Lines, [scriptblock]$Key = { $args[0] }) {
   foreach ($s in $k) { $a[[int]$s.Substring($s.LastIndexOf([char]0) + 1)] }
 }
 
+# H-35 run 004 #4: the NST config digest, comparable across containers: every <add key value> of the config file
+# (a bare <appSettings> root, measured), minus the lineage's exclude_keys (the hostname-bearing Public*BaseUrl keys),
+# sorted ordinal by key, "key=value" lines joined by LF, UTF-8 without BOM, sha256. Returns "<sha256>|<keys hashed>".
+function Get-NstConfigDigest([string]$Container, [string]$Path, [string[]]$Exclude) {
+  $pairs = @(Invoke-InContainer $Container { param($p, $ex)
+      [xml]$x = Get-Content -Raw -LiteralPath $p -ErrorAction Stop
+      foreach ($a in $x.SelectNodes('//add')) {
+        if (@($ex) -notcontains $a.GetAttribute('key')) { "$($a.GetAttribute('key'))=$($a.GetAttribute('value'))" }
+      }
+    } $Path, $Exclude)
+  if ($pairs.Count -eq 0) { throw "no settings read from $Path" }
+  $lines = Sort-Ordinal $pairs { ($args[0] -split '=', 2)[0] }
+  $keys = @($lines | ForEach-Object { ($_ -split '=', 2)[0] })
+  if (@($keys | Select-Object -Unique).Count -ne $keys.Count) { throw "a key appears twice in $Path" }
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($lines -join "`n"))
+  $sha = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes)).Replace('-', '').ToLower()
+  "$sha|$($lines.Count)"
+}
+
 # App inventory of the single-tenant DB, sorted lines: G global apps, T tenant state, P [Published Application]
 # (ID, Package ID, Runtime Package ID, version, Published As, Tenant ID, Package Hash), I [NAV App Installed App]
 # (App ID, Package ID, version). Content Hash is left out: it is text-typed and reads back lossy.
