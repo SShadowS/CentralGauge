@@ -495,7 +495,30 @@ Deno.test("H-35 addendum 6: a folder-only cache (files match nothing) tolerates 
     base: w("C:/Run"),
     files: String.raw`^(?!)$`,
     dirs: String.raw`^my$`,
+    dirTimeOnly: true,
   }];
+  // self-check: creating the folder is a difference, not a tolerated change
+  assertEquals(
+    fsDiff(cap(D("C:/Run")), cap(D("C:/Run"), D("C:/Run/my", 9)), [], [], run)
+      .diff.length,
+    1,
+  );
+  // and so is a case-only rename with its time moved (here and in any cache)
+  assertEquals(
+    fsDiff(cap(D("C:/Run/my")), cap(D("C:/Run/MY", 9)), [], [], run).diff
+      .length,
+    1,
+  );
+  assertEquals(
+    fsDiff(
+      cap(D(`${APPS}/metadata`)),
+      cap(D(`${APPS}/METADATA`, 9)),
+      [],
+      [],
+      CACHES,
+    ).diff.length,
+    1,
+  );
   const before = cap(D("C:/Run/my"), F("C:/Run/my/keep.txt"));
   assertEquals(
     fsDiff(

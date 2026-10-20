@@ -130,6 +130,8 @@ export const LineageSchema = z.strictObject({
         magic: z.string().regex(/^(?:[0-9a-f]{2}){1,2}$/).optional(),
         /** Addendum 6: a tolerated file's name is its content sha256. */
         name_is_sha256: z.literal(true).optional(),
+        /** Addendum 6: only an existing folder's last-write time may move. */
+        dir_time_only: z.literal(true).optional(),
         reason: z.string().min(1),
       }),
     ])),

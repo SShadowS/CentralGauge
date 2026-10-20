@@ -432,6 +432,7 @@ export function goldenReset(o: {
               dirs: e.dirs,
               ...(e.magic ? { magic: e.magic } : {}),
               ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
+              ...(e.dir_time_only ? { dirTimeOnly: true } : {}),
             }]
             : []
         ),
@@ -500,6 +501,11 @@ export interface FsPlatformCache {
   magic?: string;
   /** Addendum 6: the file name (before its extension) is its content sha256. */
   nameIsSha256?: boolean;
+  /**
+   * Addendum 6: only an existing matching folder's last-write time may move
+   * (same spelling, same attributes); no new folder, no file (C:\Run\my).
+   */
+  dirTimeOnly?: boolean;
 }
 
 /**
@@ -526,6 +532,7 @@ function cacheTolerates(
     dirs: RegExp;
     magic?: string;
     nameIsSha256?: boolean;
+    dirTimeOnly?: boolean;
   }[],
   d: FsDiffEntry,
 ): boolean {
@@ -537,7 +544,7 @@ function cacheTolerates(
     if (!d.path.toLowerCase().startsWith(prefix)) return false;
     const rel = d.path.slice(prefix.length);
     if (d.after![0] === "F") {
-      return d.before === null && c.files.test(rel) &&
+      return !c.dirTimeOnly && d.before === null && c.files.test(rel) &&
         // run 004 #6: the magic (1 or 2 bytes) is a prefix of the 2-byte head
         (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic)) &&
         // addendum 6: a planted file of the right shape and header still
@@ -547,9 +554,13 @@ function cacheTolerates(
             after["sha"]);
     }
     if (d.after![0] !== "D" || !c.dirs.test(rel)) return false;
-    // a new directory of the shape, or only its last-write time moved
-    return d.before === null ||
-      (d.before[0] === "D" && fsParse(d.before)?.["attrs"] === after["attrs"]);
+    // a new directory of the shape (not for dirTimeOnly), or only its
+    // last-write time moved: same attributes and the same spelling (a
+    // case-only rename stays a difference, addendum 6 self-check)
+    if (d.before === null) return !c.dirTimeOnly;
+    const before = d.before[0] === "D" ? fsParse(d.before) : undefined;
+    return before !== undefined && before["attrs"] === after["attrs"] &&
+      before["p"] === after["p"];
   });
 }
 
