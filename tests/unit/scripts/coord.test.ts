@@ -15,6 +15,7 @@ import {
   claim,
   CoordError,
   doctor,
+  fail,
   heartbeat,
   initRoot,
   lease,
@@ -33,6 +34,8 @@ import {
   sweep,
   sweepText,
   taskState,
+  timeline,
+  timelineText,
   why,
 } from "../../../scripts/coord/coord.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -826,4 +829,206 @@ Deno.test("coord sweep (C-05 run 002): a missing leases dir under the machine ro
   assertEquals((await sweep(root)).pause.drained, true);
   await Deno.remove(join(machine, "leases"), { recursive: true });
   await assertRejects(() => sweep(root), CoordError, "leases");
+});
+
+// ---------- timeline ----------
+
+Deno.test("coord timeline: every mutation appends one line to its run's timeline.jsonl", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const events = async (runId: string) =>
+    (await timeline(root, "M0-01", { runId })).entries?.map((e) => [
+      e.event,
+      e.phase,
+      e.wait,
+      e.note,
+    ]);
+  const r1 = await claim(root, "M0-01", "content");
+  await checkpoint(root, "M0-01", r1.runId, r1.token, "red", { wait: "owner" });
+  await checkpoint(root, "M0-01", r1.runId, r1.token, "green", { note: "ok" });
+  await submit(root, "M0-01", r1.runId, r1.token, "c1", "b");
+  await reject(root, "M0-01", r1.runId, "tests missing");
+  assertEquals(await events("001"), [
+    ["claim", null, null, null],
+    ["checkpoint", "red", "owner", null],
+    ["checkpoint", "green", null, "ok"],
+    ["submit", null, null, "c1"],
+    ["reject", null, null, "tests missing"],
+  ]);
+  // checkpoint.json keeps holding only the latest checkpoint
+  assertEquals((await taskState(root, "M0-01")).checkpoint?.phase, "green");
+
+  const r2 = await claim(root, "M0-01", "content");
+  await fail(root, "M0-01", r2.runId, r2.token, "broken");
+  const r3 = await claim(root, "M0-01", "content");
+  await abandon(root, "M0-01", r3.runId, "session died");
+  const r4 = await claim(root, "M0-01", "content");
+  await submit(root, "M0-01", r4.runId, r4.token, "c4", "b");
+  await accept(root, "M0-01", r4.runId, "sha4");
+  assertEquals((await events("002"))?.map((e) => e[0]), ["claim", "fail"]);
+  assertEquals((await events("003"))?.map((e) => e[0]), ["claim", "abandon"]);
+  assertEquals((await events("004"))?.map((e) => e[0]), [
+    "claim",
+    "submit",
+    "accept",
+  ]);
+  // --run defaults to the latest run
+  assertEquals((await timeline(root, "M0-01")).runId, "004");
+});
+
+Deno.test("coord timeline: durations to the next entry and totals per phase", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await submit(root, "M0-01", r.runId, r.token, "c", "b");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  const line = (at: number, event: string, phase: string | null) =>
+    JSON.stringify({ at, event, phase, wait: null, note: null });
+  // In the past, so the real reject appended below sorts after the fixture.
+  const t0 = Date.UTC(2026, 0, 5, 12, 0, 0);
+  const min = 60000;
+  await Deno.writeTextFile(
+    file,
+    [
+      line(t0, "claim", null),
+      line(t0 + 1 * min, "checkpoint", "red"),
+      line(t0 + 3 * min, "checkpoint", "green"),
+      line(t0 + 4 * min, "checkpoint", "red"),
+      line(t0 + 5 * min, "submit", null),
+    ].join("\n") + "\n",
+  );
+  // Run is in review: the last entry runs until now.
+  const t = await timeline(root, "M0-01", { now: t0 + 7 * min });
+  assertEquals(t.entries?.map((e) => e.durationMs), [
+    1 * min,
+    2 * min,
+    1 * min,
+    1 * min,
+    2 * min,
+  ]);
+  assertEquals(t.totals, {
+    claim: 1 * min,
+    red: 3 * min,
+    green: 1 * min,
+    submit: 2 * min,
+  });
+  const text = timelineText(t);
+  assertStringIncludes(text, "2026-01-05 12:01:00Z");
+  assertStringIncludes(text, "phase=red");
+  assertStringIncludes(text, "red 3m");
+
+  // A closed run: the last entry has no duration.
+  await reject(root, "M0-01", r.runId, "no");
+  const closed = await timeline(root, "M0-01", { now: t0 + 9 * min });
+  assertEquals(closed.entries?.at(-1)?.event, "reject");
+  assertEquals(closed.entries?.at(-1)?.durationMs, null);
+});
+
+Deno.test("coord timeline: CLI notes a missing timeline and exits non-zero on a malformed line", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const run = (...args: string[]) =>
+    new Deno.Command(Deno.execPath(), {
+      args: ["run", "--allow-all", coordScript, ...args],
+      env: { CG_COORD_ROOT: root },
+    }).output();
+  const r = await claim(root, "M0-01", "content");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+
+  await Deno.remove(file);
+  const old = await run("timeline", "M0-01");
+  assertEquals(old.code, 0, new TextDecoder().decode(old.stderr));
+  assertStringIncludes(new TextDecoder().decode(old.stdout), "no timeline");
+
+  for (
+    const badLine of [
+      "{not json",
+      '{"at":1,"event":"checkpoint","phase":7}',
+      '{"at":1,"event":"lunch"}',
+      '{"at":1e400,"event":"claim"}',
+      '{"at":1e20,"event":"claim"}',
+      '{"at":1,"event":"claim","wait":[],"note":{}}',
+    ]
+  ) {
+    await Deno.writeTextFile(
+      file,
+      JSON.stringify({ at: 1, event: "claim" }) + "\n" + badLine + "\n",
+    );
+    for (
+      const args of [["timeline", "M0-01"], ["timeline", "M0-01", "--json"]]
+    ) {
+      const bad = await run(...args, "--run", r.runId);
+      assert(bad.code !== 0, `${badLine} ${args.join(" ")}`);
+      assertStringIncludes(new TextDecoder().decode(bad.stderr), "line 2");
+    }
+  }
+});
+
+Deno.test("coord timeline: a failed append fails the mutation", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  await Deno.remove(file);
+  await Deno.mkdir(file);
+  await assertRejects(() => checkpoint(root, "M0-01", r.runId, r.token, "red"));
+});
+
+Deno.test("coord timeline: phases named like Object.prototype members total correctly", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await submit(root, "M0-01", r.runId, r.token, "c", "b");
+  await reject(root, "M0-01", r.runId, "no");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  const line = (at: number, phase: string | null, event = "checkpoint") =>
+    JSON.stringify({ at, event, phase, wait: null, note: null });
+  await Deno.writeTextFile(
+    file,
+    [
+      line(0, "constructor"),
+      line(10, "__proto__"),
+      line(30, "constructor"),
+      line(60, null, "reject"),
+    ].join("\n") + "\n",
+  );
+  const t = await timeline(root, "M0-01");
+  assertEquals(t.totals["constructor"], 40);
+  assertEquals(t.totals["__proto__"], 20);
+  assertEquals(Object.keys(t.totals).sort(), ["__proto__", "constructor"]);
+});
+
+Deno.test("coord timeline: entries are sorted by time, so a late append keeps time order", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await submit(root, "M0-01", r.runId, r.token, "c", "b");
+  await reject(root, "M0-01", r.runId, "no");
+  const file = join(root, "tasks", "M0-01", "runs", r.runId, "timeline.jsonl");
+  const line = (at: number, event: string) =>
+    JSON.stringify({ at, event, phase: null, wait: null, note: null });
+  await Deno.writeTextFile(
+    file,
+    [line(0, "claim"), line(30, "reject"), line(20, "submit")].join("\n") +
+      "\n",
+  );
+  const t = await timeline(root, "M0-01");
+  assertEquals(t.entries?.map((e) => e.event), ["claim", "submit", "reject"]);
+  assertEquals(t.entries?.map((e) => e.durationMs), [20, 10, null]);
+});
+
+Deno.test("coord timeline: an unreadable task state is an error, not a guess", async () => {
+  const root = await freshRoot();
+  await seed(root);
+  const r = await claim(root, "M0-01", "content");
+  await Deno.writeTextFile(
+    join(root, "tasks", "M0-01", "runs", r.runId, "checkpoint.json"),
+    "{",
+  );
+  await assertRejects(() => timeline(root, "M0-01"), CoordError, "unreadable");
+  await assertRejects(
+    () => timeline(root, "M0-01", { runId: r.runId }),
+    CoordError,
+    "unreadable",
+  );
 });
