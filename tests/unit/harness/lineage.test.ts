@@ -49,8 +49,36 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
     dockerEnv: {},
   });
   assert(m.contentRoot && m.fsDigest && m.bcEgress && m.fsRoots?.length);
-  // addendum 6: + the metadata .app and .res (name_is_sha256) and C:\Run\my
-  assertEquals(m.fsCaches?.length, 5);
+  // addendum 6: + the metadata .app and .res (name_is_sha256) and C:\Run\my;
+  // addendum 7: + CryptnetUrlCache\MetaData (in_place)
+  assertEquals(m.fsCaches?.length, 6);
+  const cnc = m.fsCaches!.find((c) => c.inPlace)!;
+  const md = (sha: string, size: number) =>
+    `F|${sha}|${size}|36|1|7000|${cnc.base}\\MetaData\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
+  const cncD = [`D|16|1|${cnc.base}`, `D|16|1|${cnc.base}\\MetaData`];
+  const cncB = [...cncD, md("a".repeat(64), 342), "T|3"];
+  assertEquals(
+    fsDiff(cncB, [...cncD, md("b".repeat(64), 342), "T|3"], [], [], [cnc])
+      .diff,
+    [],
+  );
+  assertEquals(
+    fsDiff(
+      cncB,
+      [
+        ...cncD,
+        md("a".repeat(64), 342),
+        `F|${
+          "c".repeat(64)
+        }|330|36|1|7000|${cnc.base}\\MetaData\\77EC63BD5DF3F0AD4EE2DC2B8CFD4157`,
+        "T|4",
+      ],
+      [],
+      [],
+      [cnc],
+    ).diff.length,
+    1,
+  );
   assertEquals(m.fsExclude, []);
   // its caches tolerate the real measured paths (Cronus283) and nothing planted
   const apps = m.fsCaches![0]!.base;
