@@ -22,6 +22,7 @@ if (-not $env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT = 'desktop-windows' }
 Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue *> $null
 . (Join-Path $PSScriptRoot 'reset-lib.ps1')
 . (Join-Path $PSScriptRoot 'content-root.ps1')
+. (Join-Path $PSScriptRoot 'fs-digest.ps1')
 
 function Fail([string]$step, [string]$reason) {
   $one = ($reason -replace '[\r\n]+', ' ').Trim()
@@ -50,6 +51,9 @@ Step snapshot_guard {
   if ([int]$n -gt 0) { throw "a database snapshot of CRONUS exists ($n)" }
 }
 Step quiesce {
+  # run 004 #5: a capture coordinator killed after its suspend leaves the NST suspended; the restore below resets
+  # everything it could have touched, so resume it here (before any session query, which would hang)
+  if (Test-NstSuspended $Container) { Set-NstSuspended $Container $false }
   $q = Invoke-InContainer $Container {
     # system sessions carry negative ids, which Remove-NAVServerSession refuses; the NST stop ends them
     Get-NAVServerSession -ServerInstance BC -Tenant default | Where-Object { $_.SessionID -ge 0 } |

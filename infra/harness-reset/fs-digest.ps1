@@ -56,14 +56,75 @@ public static class CgNtProc {
   if ("$r".Trim() -ne 'ok') { throw "NST $(if ($Suspended) { 'suspend' } else { 'resume' }) failed: $r" }
 }
 
-# One capture (fs-capture.ps1): quiescent -> suspend -> watermark w1 -> walk -> watermark w2 -> resume (always, in
-# finally) -> quiescent. w2 is read before the resume: a healthcheck request queued during the suspension logs its
-# session after the resume and must not count. Any failure is an E| line and the capture fails closed.
+# run 004 #5: whether any NST thread is suspended (a coordinator killed mid-capture leaves it so). Throws when it
+# cannot tell.
+function Test-NstSuspended([string]$Container) {
+  $r = Invoke-InContainer $Container {
+    $p = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction Stop)
+    if ($p.Count -ne 1) { throw "expected one NST process, found $($p.Count)" }
+    "$(@($p[0].Threads | Where-Object { "$($_.WaitReason)" -eq 'Suspended' }).Count)"
+  }
+  if ("$r".Trim() -notmatch '^\d+$') { throw "NST thread state unreadable: '$r'" }
+  [int]"$r".Trim() -gt 0
+}
+
+# run 004 #5: a container-side bound independent of this coordinator. A detached process inside the container waits
+# $Seconds and resumes the NST only while its marker file still exists; the normal path resumes first, then disarms
+# (deletes the marker, stops that process). A stale watchdog can therefore never resume a later suspension.
+# Returns the token "<marker path>|<pid>".
+function Enable-NstAutoResume([string]$Container, [int]$Seconds = 90) {
+  $t = Invoke-InContainer $Container { param($s)
+    $dir = 'C:\ProgramData\cg-harness'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $marker = Join-Path $dir "nst-suspend-$([guid]::NewGuid()).marker"
+    Set-Content -LiteralPath $marker -Value "$PID" -Encoding ascii
+    $cmd = @"
+Start-Sleep -Seconds $s
+if (Test-Path -LiteralPath '$marker') {
+  Remove-Item -LiteralPath '$marker' -Force
+  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgNtResume { [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h); }'
+  foreach (`$p in @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction SilentlyContinue)) { [void][CgNtResume]::NtResumeProcess(`$p.Handle) }
+}
+"@
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+    $w = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
+      -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
+    "$marker|$($w.Id)"
+  } $Seconds
+  if ("$t".Trim() -notmatch '^.+\.marker\|\d+$') { throw "NST auto-resume not armed: '$t'" }
+  "$t".Trim()
+}
+
+function Disable-NstAutoResume([string]$Container, [string]$Token) {
+  $r = Invoke-InContainer $Container { param($tok)
+    $marker, $wpid = $tok -split '\|'
+    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+    # only the process this capture started, by its id
+    Stop-Process -Id ([int]$wpid) -Force -ErrorAction SilentlyContinue
+    Wait-Process -Id ([int]$wpid) -Timeout 10 -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $marker) { 'marker remains' }
+    elseif (Get-Process -Id ([int]$wpid) -ErrorAction SilentlyContinue) { 'watchdog still running' }
+    else { 'ok' }
+  } (, $Token)
+  if ("$r".Trim() -ne 'ok') { throw "NST auto-resume not disarmed: $r" }
+}
+
+# One capture (fs-capture.ps1): NST left suspended? (resume, fail closed) -> quiescent -> arm the container-side
+# auto-resume -> suspend -> watermark w1 -> walk -> watermark w2 -> resume (always, in finally) -> disarm ->
+# quiescent. w2 is read before the resume: a healthcheck request queued during the suspension logs its session after
+# the resume and must not count. Any failure is an E| line and the capture fails closed.
 function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
   $lines = @()
   $suspended = $false
+  $armed = $null
   try {
+    # run 004 #5: a coordinator killed after its suspend leaves the NST suspended; the session query below would hang
+    if (Test-NstSuspended $Container) {
+      Set-NstSuspended $Container $false
+      throw 'the NST was left suspended (a killed capture); resumed, this capture fails closed'
+    }
     if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
+    $armed = Enable-NstAutoResume $Container
     $suspended = $true
     Set-NstSuspended $Container $true
     $w1 = Get-NstSessionWatermark $Container
@@ -76,6 +137,11 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
     if ($suspended) {
       try { Set-NstSuspended $Container $false }
       catch { $lines += "E|(fs-capture)|NST resume failed: $((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
+    }
+    # after the resume: a watchdog that fires in between resumes a running NST, which is harmless
+    if ($armed) {
+      try { Disable-NstAutoResume $Container $armed }
+      catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
     }
   }
   if (-not ($lines | Where-Object { $_ -like 'E|(fs-capture)|*' })) {
