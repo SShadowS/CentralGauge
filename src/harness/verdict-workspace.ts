@@ -1766,8 +1766,13 @@ function persistenceRefs(src: string): string[] {
     // H-35 run 004 Sol r1 M1: a bare receiver (not a member) declared in
     // scope as a Codeunit is a user method named SaveAs*.
     const recv = m.at(1);
+    // Sol r2 N6: an UNQUOTED object-type keyword receiver is the static call
+    // (`Report.SaveAsPdf`), whatever a quoted `"Report"` variable is declared as
+    const staticKeyword = !recv.startsWith('"') &&
+      /^(?:report|query|xmlport|page|codeunit)$/i.test(recv);
     if (
-      recv && !masked.slice(0, m.index).trimEnd().endsWith(".") &&
+      recv && !staticKeyword &&
+      !masked.slice(0, m.index).trimEnd().endsWith(".") &&
       typeOf(unquote(recv), m.end) === "codeunit"
     ) continue;
     fileCall(m);

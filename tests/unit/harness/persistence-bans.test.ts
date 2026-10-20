@@ -361,6 +361,25 @@ Deno.test("H-35 run 004 Sol r1 H2/M1: a stream argument in scope (local, or a gl
   assertEquals(test.filter((v) => v.startsWith(`${RULE}: `)), []);
 });
 
+Deno.test('H-35 run 004 Sol r2 N6: a quoted "Report" Codeunit variable does not exempt the unquoted static Report.SaveAsPdf', async () => {
+  const body = [
+    "    procedure Persist()",
+    "    var",
+    '        "Report": Codeunit "CGR Exporter";',
+    "        Destination: Text;",
+    "    begin",
+    "        Destination := 'C:\\Run\\my\\flag.pdf';",
+    "        Report.SaveAsPdf(50000, Destination);",
+    "    end;",
+  ].join("\n");
+  const { production, test } = await both(body);
+  assert(
+    production.some((v) => v.startsWith(`${RULE}: `)),
+    production.join("\n"),
+  );
+  assert(test.some((v) => v.startsWith(`${RULE}: `)), test.join("\n"));
+});
+
 Deno.test("H-35 run 004 #1 (r5 2.3): the workspace builder rejects a persistence ban on either side before the build", async () => {
   const p = await Deno.realPath(await testTempDir());
   await write(
