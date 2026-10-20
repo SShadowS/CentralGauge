@@ -281,48 +281,43 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
   "T|$($lines.Count)"
 }
 
-# The NST's user + background session count, read by a bounded query (orch r004 barrier M2): the management call runs
-# in a child powershell that is killed after $TimeoutSec, so a frozen NST (a job freeze, an unknown hold) makes this
-# throw "NST unresponsive" instead of hanging; the container must then be recreated. With $DrainSeconds > 0 it
-# re-queries once a second until the count is 0 or that bound passes (orch r004 barrier M3: a healthcheck request
-# queued during a hold starts its session right after the release). No session type is exempt. $Query replaces the
-# default management query (the self-check uses it); its output must be the count.
-function Get-NstSessionCount([string]$Container, [int]$DrainSeconds = 0, [int]$TimeoutSec = 15,
-  [string]$Dir = $NstFreezeDir, [string]$Query = '') {
-  $n = Invoke-InContainer $Container { param($drain, $tmo, $dir, $query)
-    if (-not $query) {
-      # run 005 self-check: the module already loaded in this session (Get-Module lists loaded modules only, no
-      # discovery or autoload), so nothing outside the child's timeout can block
-      $mod = @(Get-Module | Where-Object { $_.ExportedCommands.ContainsKey('Get-NAVServerSession') })[0].Path
-      if (-not $mod) { return 'NAV management module not loaded' }
-      $query = "Import-Module '$mod' -WarningAction SilentlyContinue; @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction Stop | Where-Object { `$_.SessionID -ge 0 -or `"`$(`$_.ClientType)`" -eq 'Background' }).Count"
-    }
-    $tmp = Join-Path $dir 'tmp'
-    New-Item -ItemType Directory -Force $tmp | Out-Null
-    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ProgressPreference = 'SilentlyContinue'; $query"))
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($true) {
-      $out = Join-Path $tmp ("q-" + [guid]::NewGuid().ToString('N') + '.txt')
-      $c = Start-Process powershell.exe -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err" `
-        -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
-      if (-not $c.WaitForExit($tmo * 1000)) {
-        try { $c.Kill() } catch { }
-        [void]$c.WaitForExit(5000)
-        Remove-Item -LiteralPath $out, "$out.err" -Force -ErrorAction SilentlyContinue
-        return "TIMEOUT"
-      }
-      $v = "$(Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue)".Trim()
-      Remove-Item -LiteralPath $out, "$out.err" -Force -ErrorAction SilentlyContinue
-      if ($v -notmatch '^\d+$' -or [int]$v -eq 0 -or $sw.Elapsed.TotalSeconds -ge $drain) { return $v }
-      Start-Sleep -Seconds 1
-    }
-  } $DrainSeconds, $TimeoutSec, $Dir, $Query
-  $n = "$n".Trim()
-  if ($n -eq 'TIMEOUT') {
-    throw "NST unresponsive: the session query exceeded $TimeoutSec s (an unknown freeze); recreate the container"
+# The NST's user + background session count, read by a query bounded ON THE HOST (orch r004 barrier M2): a plain
+# `docker exec` (not BCH) the host waits on for $DrainSeconds + $TimeoutSec and kills after that, so a frozen NST makes
+# this throw "NST unresponsive" instead of hanging; the container must then be recreated. lane-ops (run 005) measured
+# that an in-container bound is not enough: on a job-frozen NST the BCH exec's host side never returned although
+# nothing of it was left in the container. With $DrainSeconds > 0 the query repeats once a second until the count is
+# 0 or that bound passes (orch r004 barrier M3: a healthcheck request queued during a hold starts its session right
+# after the release). No session type is exempt. $Query replaces the default management query and -OnHost runs it in
+# a local powershell (the self-check); the query's output must be the count. Host temp files only, removed after.
+function Get-NstSessionCount([string]$Container, [int]$DrainSeconds = 0, [int]$TimeoutSec = 15, [string]$Query = '',
+  [switch]$OnHost) {
+  if (-not $Query) {
+    # the plain exec has no BCH session: load the NST management cmdlets from the image
+    $Query = "`$d = Get-Item 'C:\Program Files\Microsoft Dynamics NAV\*\Service\Microsoft.Dynamics.Nav.Management.dll' -ErrorAction SilentlyContinue | Select-Object -First 1; if (`$d) { Import-Module `$d.FullName -WarningAction SilentlyContinue } else { . (Get-Item 'C:\Program Files\Microsoft Dynamics NAV\*\Service\NavAdminTool.ps1' | Select-Object -First 1).FullName *> `$null }; @(Get-NAVServerSession -ServerInstance BC -Tenant default -ErrorAction Stop | Where-Object { `$_.SessionID -ge 0 -or `"`$(`$_.ClientType)`" -eq 'Background' }).Count"
   }
-  if ($n -notmatch '^\d+$') { throw "NST session count unreadable: '$n'" }
-  [int]$n
+  $script = "`$ProgressPreference = 'SilentlyContinue'; `$sw = [Diagnostics.Stopwatch]::StartNew(); while (`$true) { `$v = `"`$(& { $Query })`".Trim(); if (`$v -notmatch '^\d+$' -or [int]`$v -eq 0 -or `$sw.Elapsed.TotalSeconds -ge $DrainSeconds) { `$v; break }; Start-Sleep -Seconds 1 }"
+  $ps = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script)))"
+  $out = [IO.Path]::Combine([IO.Path]::GetTempPath(), "cg-nstq-$([guid]::NewGuid().ToString('N')).txt")
+  try {
+    $p = if ($OnHost) {
+      Start-Process powershell.exe -ArgumentList $ps -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+    } else {
+      Start-Process docker -ArgumentList "exec $Container powershell $ps" -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+    }
+    if (-not $p.WaitForExit(($DrainSeconds + $TimeoutSec) * 1000)) {
+      try { $p.Kill() } catch { }
+      [void]$p.WaitForExit(5000)
+      throw "NST unresponsive: the session query exceeded $($DrainSeconds + $TimeoutSec) s (an unknown freeze); recreate the container"
+    }
+    $n = "$(Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue)".Trim()
+    if ($n -notmatch '^\d+$') {
+      $e = "$(Get-Content -LiteralPath "$out.err" -Raw -ErrorAction SilentlyContinue)" -replace '[\r\n|]+', ' '
+      throw "NST session count unreadable: '$n' $($e.Trim())"
+    }
+    [int]$n
+  } finally {
+    Remove-Item -LiteralPath $out, "$out.err" -Force -ErrorAction SilentlyContinue
+  }
 }
 
 # Observation point (decision item 3): no user or background session on the NST, after a bounded drain. Throws when
