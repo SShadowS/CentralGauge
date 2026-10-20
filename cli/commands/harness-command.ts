@@ -219,6 +219,7 @@ import {
   markerProxyIsolation,
   openHarnessEnv,
   openPlanEnv,
+  recoverContainer,
 } from "./harness-env.ts";
 
 /** Loud, file-naming failures are collected; anything else is a bug. */
@@ -3469,6 +3470,33 @@ export function registerHarnessCommand(
             }`,
           );
         }
+      })
+    ),
+  );
+  // H-35 run 004 #3: the only way out of a persisted quarantine.
+  parent.command(
+    "recover",
+    lineageOpts(
+      new Command()
+        .description(
+          "Reset a quarantined container to the lineage, verify it (inventory check, fsDigest) and only then clear its quarantine and write its instance manifest (lane-ops, under a lease)",
+        )
+        .arguments("<container:string>"),
+    ).action((opts, container: string) =>
+      fail(async () => {
+        const m = await recoverContainer({
+          repoRoot: Deno.cwd(),
+          containers: [container],
+          lineage: resolve(opts.lineage),
+          symbolStore: resolve(opts.symbolStore),
+        });
+        console.log(
+          `${
+            colors.green("[OK]")
+          } ${m.container}: recovered to ${m.lineage_id}, quarantine cleared, env_fp ${
+            m.env_fp.slice(0, 12)
+          }`,
+        );
       })
     ),
   );

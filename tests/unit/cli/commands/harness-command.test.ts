@@ -39,8 +39,13 @@ import {
   type EnvOptions,
   openHarnessEnv,
   openPlanEnv,
+  recoverContainer,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
+import {
+  readQuarantine,
+  writeQuarantine,
+} from "../../../../src/harness/quarantine.ts";
 import {
   BACKEND_PORT,
   cellEgressProblems,
@@ -104,6 +109,7 @@ import { FakeBc, OK_RESET } from "../../harness/fake-bc.ts";
 import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
 import {
   createBaseline,
+  readInstanceManifest,
   renderEnvCheck,
 } from "../../../../src/harness/environment.ts";
 import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
@@ -689,6 +695,8 @@ function deps(
 ): EnvDeps {
   const docker = new FakeDocker();
   docker.owned = ["cg-harness-dead-beef"];
+  // H-35 run 004 #3: never the real coord root (absent until a test writes).
+  const quarantineDir = join(trackTempDir(Deno.makeTempDirSync()), "q");
   const listOwned = docker.listOwned.bind(docker);
   docker.listOwned = (o) => {
     // M10-08c run 003: the fake lists every owner alike; the bare hostname
@@ -719,6 +727,8 @@ function deps(
         dispose: () => Promise.resolve(),
       });
     },
+    inspect: () => new FakeBc(),
+    quarantineDir: () => quarantineDir,
     resolveHost: () => {
       order.push("host");
       return Promise.resolve("127.0.0.1");
@@ -8306,7 +8316,7 @@ Deno.test({
 });
 
 import { clearPublicationReservation } from "../../../../cli/commands/harness-command.ts";
-import { testTempDir } from "../../../utils/temp-dir.ts";
+import { testTempDir, trackTempDir } from "../../../utils/temp-dir.ts";
 
 /** A reservation whose holder stopped heartbeating an hour ago (crashed or suspended). */
 async function staleReservation(dir: string) {
@@ -9086,4 +9096,153 @@ Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the c
   const after = await envCheck(o, deps([]), fake);
   assert(after.admissible, renderEnvCheck(after));
   assertEquals(after.rows[0]!.env_fp, made[0]!.env_fp);
+});
+
+/** A FakeBc whose every method call is recorded by name. */
+function recordingBc(calls: string[]): FakeBc {
+  return new Proxy(new FakeBc(), {
+    get(target, p, receiver) {
+      const v = Reflect.get(target, p, receiver);
+      return typeof v === "function"
+        ? (...a: unknown[]) => {
+          calls.push(String(p));
+          return v.apply(target, a);
+        }
+        : v;
+    },
+  });
+}
+
+/** The v2 lineage's mechanism with its reset, inventory check and fsDigest faked. */
+async function fakedGolden(
+  calls: string[],
+  step = { reset: true, verify: true, fs: true },
+) {
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  const l = await loadLineage(lineage);
+  const roots = l.fs!.roots;
+  const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
+  const mechanism = () => ({
+    ...goldenReset({
+      repoRoot: ".",
+      lineagePath: lineage,
+      lineage: l,
+      dockerEnv: {},
+    }),
+    reset: async (c: string) => {
+      calls.push("reset");
+      const r = await OK_RESET.reset(c);
+      return step.reset
+        ? r
+        : { ...r, ok: false, failed_step: "restore", error: "boom" };
+    },
+    verifyClean: (c: string) => {
+      calls.push("verifyClean");
+      return Promise.resolve({
+        container: c,
+        ok: step.verify,
+        diff: step.verify ? [] : ["+ app planted"],
+        error: step.verify ? null : "inventory differs",
+      });
+    },
+    fsDigest: () => {
+      calls.push("fsDigest");
+      return Promise.resolve(
+        step.fs ? clean : [...clean.slice(0, -1), "E|C:\\Run\\my|denied"],
+      );
+    },
+  });
+  return { lineage, step, mechanism };
+}
+
+Deno.test("H-35 run 004 #2 envCheck is read-only: no setupContainers (prenuke, warmup), no lock, no reset; the bc is asked for its compiler identity only", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const d: EnvDeps = {
+    ...deps(order),
+    setup: () => {
+      calls.push("setup");
+      throw new Error("env check must not run setupContainers");
+    },
+    inspect: () => recordingBc(calls),
+  };
+  const c = await envCheck(
+    {
+      repoRoot: t.repo.root,
+      containers: ["Cronus281"],
+      lineage,
+      symbolStore: t.repo.symbolStore,
+      bcEgressOverride: "r",
+    },
+    d,
+    mechanism,
+  );
+  assertEquals(c.rows.map((r) => [r.container, r.why]), [[
+    "Cronus281",
+    "no instance manifest",
+  ]]);
+  assertEquals(calls, ["harnessCompilerIdentity"]);
+  assertEquals(order, []);
+});
+
+Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the container not admissible and a new environment refuses it before setup; harness recover clears it only after reset, inventory check and fsDigest all pass", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, step, mechanism } = await fakedGolden(calls);
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    setup: () => {
+      calls.push("setup");
+      throw new Error("a quarantined container must not be set up");
+    },
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  await baselineCreate(o, d, mechanism);
+  assert((await envCheck(o, d, mechanism)).admissible);
+  // an earlier environment quarantined it (another spelling of the name)
+  await writeQuarantine(qDir, {
+    container: "CRONUS281",
+    reason: "cleanup failed",
+    by: "test",
+  });
+  const c = await envCheck(o, d, mechanism);
+  assertEquals(c.admissible, false);
+  assertStringIncludes(c.rows[0]!.why!, "quarantined (cleanup failed)");
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, d),
+    ConfigurationError,
+    "quarantined container(s)",
+  );
+  assert(!calls.includes("setup"));
+  // every failing step keeps the record and leaves no manifest
+  for (const k of ["reset", "verify", "fs"] as const) {
+    step[k] = false;
+    await assertRejects(() => recoverContainer(o, d, mechanism));
+    step[k] = true;
+    assert((await readQuarantine(qDir)).has("cronus281"), `${k} failed`);
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  }
+  calls.length = 0;
+  order.length = 0;
+  const m = await recoverContainer(o, d, mechanism);
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(order, ["lock", "release"]);
+  assertEquals((await readQuarantine(qDir)).size, 0);
+  assertEquals(
+    (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
+    m.env_fp,
+  );
+  assert((await envCheck(o, d, mechanism)).admissible);
 });

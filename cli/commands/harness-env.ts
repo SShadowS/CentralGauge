@@ -9,15 +9,22 @@
 
 import * as colors from "@std/fmt/colors";
 import { join, resolve } from "@std/path";
-import type { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
+import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
 import type { PlanEnv } from "../../src/harness/campaign.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
 import type { EgressRuntime } from "../../src/harness/egress.ts";
 import { ConfigManager } from "../../src/config/config.ts";
-import { ConfigurationError, ValidationError } from "../../src/errors.ts";
-import { allocatedContainer } from "../../src/harness/allocation.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../../src/errors.ts";
+import {
+  allocatedContainer,
+  DEFAULT_COORD_ROOT,
+} from "../../src/harness/allocation.ts";
 import {
   Backend,
   defaultBackendOps,
@@ -74,13 +81,20 @@ import {
   createBaseline,
   type EnvCheck,
   type InstanceManifest,
+  instanceManifestPath,
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
+  fsDiff,
   goldenReset,
   type ResetMechanism,
   UNCONFIGURED_RESET,
 } from "../../src/harness/reset.ts";
+import {
+  clearQuarantine,
+  readQuarantine,
+  writeQuarantine,
+} from "../../src/harness/quarantine.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
@@ -139,6 +153,13 @@ export interface EnvDeps {
   setup(
     names: string[],
   ): Promise<{ bc: HarnessBc; names: string[]; dispose(): Promise<void> }>;
+  /**
+   * H-35 run 004 #2: a HarnessBc for harnessCompilerIdentity only (docker
+   * inspect): no cleanup, publish or compiler warmup, unlike setup.
+   */
+  inspect(): HarnessBc;
+  /** H-35 run 004 #3: where persisted quarantine records live (coord root). */
+  quarantineDir(): string;
   resolveHost(): Promise<string>;
   owner(): string;
   health(names: string[]): HealthView;
@@ -171,6 +192,13 @@ export const REAL_DEPS: EnvDeps = {
     const bc = r.containerProvider as BcContainerProvider;
     return { bc, names: r.containerNames, dispose: () => bc.dispose() };
   },
+  // No session is opened: harnessCompilerIdentity is a docker inspect.
+  inspect: () => new BcContainerProvider(),
+  quarantineDir: () =>
+    join(
+      Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
+      "harness-quarantine",
+    ),
   resolveHost: resolveBackendHost,
   owner: () => Deno.hostname(),
   health: (names) =>
@@ -239,7 +267,8 @@ async function lineageContext(
 
 /**
  * `harness env check` (H-35 S3.4): each container's lineage, env_fp and
- * baseline, and whether they share one admissible env_fp. Read-only.
+ * baseline, and whether they share one admissible env_fp. Read-only (H-35
+ * run 004 #2): docker inspect and files only, never setupContainers.
  */
 export async function envCheck(
   o: LineageCommandOptions,
@@ -247,22 +276,32 @@ export async function envCheck(
   resetFor: ResetFor = goldenResetFor(o.repoRoot),
 ): Promise<EnvCheck> {
   const x = await lineageContext(o, deps, resetFor);
-  const ready = await deps.setup(x.names);
-  try {
-    return await checkEnvironments(
-      ready.bc,
-      x.mechanism,
-      ready.names,
-      x.inputs,
-    );
-  } finally {
-    await ready.dispose();
-  }
+  const check = await checkEnvironments(
+    deps.inspect(),
+    x.mechanism,
+    x.names,
+    x.inputs,
+  );
+  // H-35 run 004 #3: a persisted quarantine fails its container's row.
+  const q = await readQuarantine(deps.quarantineDir());
+  const rows = check.rows.map((r) => {
+    const hit = q.get(r.container.toLowerCase());
+    if (!hit) return r;
+    const why = `quarantined (${hit.reason}): run harness recover`;
+    return { ...r, why: r.why ? `${why}; ${r.why}` : why };
+  });
+  return {
+    ...check,
+    rows,
+    admissible: check.admissible && rows.every((r) => !r.why),
+  };
 }
 
 /**
  * `harness baseline create` (H-35 S3.4; lane-ops, under a container lease):
- * reset each container to the lineage and write its instance manifest.
+ * reset each container to the lineage and write its instance manifest. The
+ * reset is the lineage's script; the compiler identity is a docker inspect
+ * (H-35 run 004 #2: no setupContainers prenuke or warmup either).
  */
 export async function baselineCreate(
   o: LineageCommandOptions,
@@ -270,15 +309,86 @@ export async function baselineCreate(
   resetFor: ResetFor = goldenResetFor(o.repoRoot),
 ): Promise<InstanceManifest[]> {
   const x = await lineageContext(o, deps, resetFor);
-  const ready = await deps.setup(x.names);
+  const bc = deps.inspect();
+  const out: InstanceManifest[] = [];
+  for (const c of x.names) {
+    out.push(await createBaseline(bc, x.mechanism, c, x.inputs));
+  }
+  return out;
+}
+
+/**
+ * `harness recover <container>` (H-35 run 004 #3): the only way out of a
+ * persisted quarantine. Under the harness lock: the lineage's reset (and a
+ * new instance manifest), its post-reset inventory check, one fsDigest
+ * capture without errors; only then is the record removed. Any failure keeps
+ * the record and leaves no manifest.
+ */
+export async function recoverContainer(
+  o: LineageCommandOptions,
+  deps: EnvDeps = REAL_DEPS,
+  resetFor: ResetFor = goldenResetFor(o.repoRoot),
+): Promise<InstanceManifest> {
+  if (o.containers.length !== 1) {
+    throw new ConfigurationError("harness recover takes one container");
+  }
+  const release = deps.acquireLock(join(o.repoRoot, DEFAULT_BENCH_LOCK_DIR), {
+    command: "harness recover",
+  });
   try {
-    const out: InstanceManifest[] = [];
-    for (const c of ready.names) {
-      out.push(await createBaseline(ready.bc, x.mechanism, c, x.inputs));
+    const x = await lineageContext(o, deps, resetFor);
+    const c = x.names[0]!;
+    const m = x.mechanism;
+    if (!m.verifyClean || !m.fsDigest) {
+      throw new ConfigurationError(
+        `lineage ${x.lineage.id} has no inventory check or fs section: a recovery cannot be verified`,
+      );
     }
-    return out;
+    const manifest = instanceManifestPath(x.inputs.resultsRoot, c);
+    const dropManifest = () =>
+      Deno.remove(manifest).catch((err) => {
+        if (!(err instanceof Deno.errors.NotFound)) throw err;
+      });
+    // The old manifest predates the quarantine: none until every step passed.
+    await dropManifest();
+    const made = await createBaseline(deps.inspect(), m, c, x.inputs);
+    try {
+      const v = await m.verifyClean(c);
+      if (!v.ok) {
+        throw new ContainerError(
+          `recover ${c}: post-reset inventory check failed: ${
+            v.error ?? v.diff.slice(0, 5).join("; ")
+          }`,
+          c,
+          "health",
+        );
+      }
+      let lines: string[];
+      try {
+        lines = await m.fsDigest(c);
+      } catch (err) {
+        lines = [`E|(fsDigest)|${err instanceof Error ? err.message : err}`];
+      }
+      // As right after a deployment's reset: the capture alone must be clean.
+      const errors = fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? [])
+        .errors.filter((e) => e.startsWith("before: "));
+      if (errors.length > 0) {
+        throw new ContainerError(
+          `recover ${c}: fsDigest capture not clean: ${
+            errors.slice(0, 5).join("; ")
+          }`,
+          c,
+          "health",
+        );
+      }
+    } catch (err) {
+      await dropManifest();
+      throw err;
+    }
+    await clearQuarantine(deps.quarantineDir(), c);
+    return made;
   } finally {
-    await ready.dispose();
+    await release();
   }
 }
 
@@ -641,15 +751,38 @@ export async function openHarnessEnv(
         } removed ${swept.length} leftover sandbox(es): ${swept.join(", ")}`,
       );
     }
+    // H-35 run 004 #3: a container an earlier environment quarantined is
+    // refused before setup touches it; only `harness recover` clears it. A
+    // new quarantine is written before the container's lock is released.
+    const qDir = deps.quarantineDir();
+    const persisted = await readQuarantine(qDir);
+    const held = [...containers, ...judgeNames].flatMap((c) => {
+      const p = persisted.get(c.toLowerCase());
+      return p ? [`${c} (${p.reason})`] : [];
+    });
+    if (held.length > 0) {
+      throw new ConfigurationError(
+        `quarantined container(s), run harness recover first or leave them out: ${
+          held.join("; ")
+        }`,
+      );
+    }
+    const by = `${deps.owner()} ${o.command}`;
+    const persist = (container: string, reason: string) =>
+      writeQuarantine(qDir, { container, reason, by });
     const ready = await deps.setup([...containers, ...judgeNames]);
     closers.unshift(ready.dispose);
     const health = deps.health(ready.names);
     // setup keeps the order: the agents' names first, then the judges'.
     const lane = new BcLane(ready.bc, ready.names.slice(0, containers.length), {
       health,
+      persist,
     });
     const judgeLane = judgeNames.length > 0
-      ? new BcLane(ready.bc, ready.names.slice(containers.length), { health })
+      ? new BcLane(ready.bc, ready.names.slice(containers.length), {
+        health,
+        persist,
+      })
       : undefined;
     // H-35 S3.4 (ruling (c)): with a lineage, every container must be an
     // admitted instance of it, all of one env_fp, before any lease.

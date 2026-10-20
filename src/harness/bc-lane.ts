@@ -158,6 +158,11 @@ export class BcLane {
       health?: HealthView;
       maxInfraRetries?: number;
       compileSlots?: number;
+      /**
+       * H-35 run 004 #3: writes a quarantine record that outlives the
+       * environment (openHarnessEnv refuses a persisted one before setup).
+       */
+      persist?: (container: string, reason: string) => Promise<void>;
     } = {},
   ) {
     if (containers.length === 0) throw new Error("BcLane needs a container");
@@ -168,11 +173,26 @@ export class BcLane {
     }
   }
 
-  /** Containers whose cleanup failed: never selected until the operator clears them. */
+  /** Containers whose cleanup failed: never selected until `harness recover` clears them. */
   readonly quarantined = new Map<string, string>();
 
-  quarantine(container: string, reason: string): void {
+  /**
+   * Quarantine in memory at once, then persist. Never rejects (it runs in
+   * catch paths): a failed write is logged loudly and the in-memory entry stays.
+   */
+  async quarantine(container: string, reason: string): Promise<void> {
     this.quarantined.set(container, reason);
+    if (!this.opts.persist) return;
+    try {
+      await this.opts.persist(container, reason);
+    } catch (err) {
+      // H-35 run 004 #3: never silent; a later environment would not see it.
+      console.error(
+        `[FAIL] quarantine of ${container} NOT persisted (quarantined in this environment only; recover it before reuse): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private healthy(): string[] {
@@ -336,17 +356,19 @@ export class BcLane {
           // Quarantine inside the held region, before the lock is released (round 3 B4).
           const cleanupError = (out as { cleanupError?: string | null } | null)
             ?.cleanupError;
-          if (cleanupError) this.quarantine(c, cleanupError);
+          if (cleanupError) await this.quarantine(c, cleanupError);
           checkCancel(signal); // an abort while fn was pending: no pass recorded
           this.record(c, "pass");
           return out;
         } catch (err) {
           if (err instanceof CleanupFailedError) {
-            this.quarantine(c, err.cleanupError);
+            await this.quarantine(c, err.cleanupError);
           }
           // H-35 S3: a failed reset, a dirty or unobservable host (L4), an
           // HttpClient block that did not hold (L2a): never reused.
-          if (err instanceof QuarantiningError) this.quarantine(c, err.message);
+          if (err instanceof QuarantiningError) {
+            await this.quarantine(c, err.message);
+          }
           // A cancellation (even a timeout reason) is never infra: no
           // reroute, no fault recorded against the container.
           if (signal?.aborted) throw cancelled(signal);

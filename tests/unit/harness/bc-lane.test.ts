@@ -438,6 +438,49 @@ Deno.test("deployAndTest: tests throwing together with a cleanup failure quarant
   assert(lane.quarantined.has("C1"));
 });
 
+Deno.test("H-35 run 004 #3 BcLane: a quarantine is persisted while the container is held; a failed write is logged loudly and the in-memory entry stays", async () => {
+  const ctx = { taskId: "t", variantId: "v", attemptNumber: 1 };
+  const written: [string, string, boolean][] = [];
+  let fail = false;
+  const lane: BcLane = new BcLane(new FakeBc(), ["C1", "C2"], {
+    maxInfraRetries: 0,
+    persist: (c, reason) => {
+      // still held: nothing else can be routed to c before the record exists
+      written.push([c, reason, lane.quarantined.has(c)]);
+      return fail ? Promise.reject(new Error("disk full")) : Promise.resolve();
+    },
+  });
+  await lane.exclusive(ctx, () => Promise.resolve({ cleanupError: "dirty" }));
+  assertEquals(written, [["C1", "dirty", true]]);
+  // the catch path (a QuarantiningError) persists too, and its error surfaces
+  fail = true;
+  const logged: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => void logged.push(a.join(" "));
+  try {
+    await assertRejects(
+      () =>
+        lane.exclusive(ctx, (c) => {
+          throw new HostDirtyError({
+            container: c,
+            ok: false,
+            diff: [],
+            errors: ["after: planted"],
+          });
+        }),
+      HostDirtyError,
+    );
+  } finally {
+    console.error = orig;
+  }
+  assertEquals(written.length, 2);
+  assertEquals(written[1]![0], "C2");
+  assert(lane.quarantined.has("C2"), "kept in memory despite the failed write");
+  assertEquals(logged.length, 1);
+  assertStringIncludes(logged[0]!, "[FAIL] quarantine of C2 NOT persisted");
+  assertStringIncludes(logged[0]!, "disk full");
+});
+
 Deno.test("BcLane: queued work is refused after its container is quarantined; a cancelled signal is never admitted", async () => {
   const lane = new BcLane(new FakeBc(), ["C1"], { compileSlots: 1 });
   let release!: () => void;
