@@ -80,10 +80,11 @@ function Test-NstSuspended([string]$Container) {
 # Generation G names this hold's files: <dir>\nst-freeze.<G> (the marker) and <dir>\nst-freeze.<G>.release. A
 # holder only ever reads and writes its own files and ends only its own debug session, so a stale holder cannot touch
 # a later hold (and a second debugger cannot attach while one holds). Marker values:
-#   frozen|<holder pid>|<nst pid>|<nst cpu ticks>   held; cpu = TotalProcessorTime (user + kernel) at the freeze
+#   frozen|<holder pid>|<holder start ticks>|<nst pid>|<nst cpu ticks>|<nst cycles>   held; cpu = TotalProcessorTime
+#     (user + kernel) and cycles = QueryProcessCycleTime at the freeze; the bound is a monotonic clock from the attach
 #   expired|... / released|... / failed|<holder pid>|<reason>
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
-# C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<marker>".
+# C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
 $NstFreezeDir = 'C:\ProgramData\cg-harness'
 function Enable-NstFreeze([string]$Container, [int]$Seconds = 38, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
   $t = Invoke-InContainer $Container { param($s, $dir, $tpid)
@@ -96,22 +97,25 @@ function Enable-NstFreeze([string]$Container, [int]$Seconds = 38, [string]$Dir =
 `$release = "`$marker.release"
 function Put([string]`$v) { `$t = "`$marker.tmp"; Set-Content -LiteralPath `$t -Value `$v -Encoding ascii -NoNewline; Move-Item -LiteralPath `$t -Destination `$marker -Force }
 try {
-  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgDbg { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugActiveProcess(int p); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugActiveProcessStop(int p); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugSetProcessKillOnExit(bool k); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugBreakProcess(IntPtr h); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool WaitForDebugEvent(byte[] e, int ms); public static int Err() { return Marshal.GetLastWin32Error(); } }'
+  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgDbg { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugActiveProcess(int p); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugActiveProcessStop(int p); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugSetProcessKillOnExit(bool k); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool DebugBreakProcess(IntPtr h); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool WaitForDebugEvent(byte[] e, int ms); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool QueryProcessCycleTime(IntPtr h, out ulong c); public static int Err() { return Marshal.GetLastWin32Error(); } }'
   `$p = if ($tpid -gt 0) { Get-Process -Id $tpid } else {
     `$a = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server')
     if (`$a.Count -ne 1) { throw "expected one NST process, found `$(`$a.Count)" }
     `$a[0]
   }
   if (-not [CgDbg]::DebugActiveProcess(`$p.Id)) { throw "DebugActiveProcess: error `$([CgDbg]::Err())" }
+  # Sol hold M2: the bound is monotonic and counts from the attach
+  `$sw = [Diagnostics.Stopwatch]::StartNew()
   [void][CgDbg]::DebugSetProcessKillOnExit(`$false)
   if (-not [CgDbg]::DebugBreakProcess(`$p.Handle)) { throw "DebugBreakProcess: error `$([CgDbg]::Err())" }
   # the attach's first event; it is never continued, so the debuggee stays stopped
-  if (-not [CgDbg]::WaitForDebugEvent((New-Object byte[] 4096), 10000)) { throw "no debug event: error `$([CgDbg]::Err())" }
+  if (-not [CgDbg]::WaitForDebugEvent((New-Object byte[] 4096), [Math]::Max(1, [Math]::Min(10000, [int]($s * 1000 - `$sw.ElapsedMilliseconds))))) { throw "no debug event: error `$([CgDbg]::Err())" }
   Start-Sleep -Milliseconds 500
   `$p.Refresh()
-  Put "frozen|`$PID|`$(`$p.Id)|`$(`$p.TotalProcessorTime.Ticks)"
-  `$deadline = (Get-Date).AddSeconds($s)
-  while (-not (Test-Path -LiteralPath `$release) -and (Get-Date) -lt `$deadline) { Start-Sleep -Milliseconds 200 }
+  `$cyc = [uint64]0
+  if (-not [CgDbg]::QueryProcessCycleTime(`$p.Handle, [ref]`$cyc)) { throw "QueryProcessCycleTime: error `$([CgDbg]::Err())" }
+  Put "frozen|`$PID|`$((Get-Process -Id `$PID).StartTime.Ticks)|`$(`$p.Id)|`$(`$p.TotalProcessorTime.Ticks)|`$cyc"
+  while (-not (Test-Path -LiteralPath `$release) -and `$sw.Elapsed.TotalSeconds -lt $s) { Start-Sleep -Milliseconds 200 }
   # expired is written BEFORE the detach: a marker that reads frozen means the hold is still in place
   `$how = if (Test-Path -LiteralPath `$release) { 'released' } else { 'expired' }
   if (`$how -eq 'expired') { Put "expired|`$PID|`$(`$p.Id)" }
@@ -128,7 +132,8 @@ try {
     $deadline = (Get-Date).AddSeconds(30)
     do {
       $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
-      if ($m -like 'frozen|*') { return "$g|$($h.Id)|$marker" }
+      # Sol hold M1: the token carries the holder's start time, its identity beyond a reusable pid
+      if ($m -match '^frozen\|\d+\|(\d+)\|') { return "$g|$($h.Id)|$($Matches[1])|$marker" }
       if ($m -like 'failed|*') { break }
       Start-Sleep -Milliseconds 200
     } while ((Get-Date) -lt $deadline)
@@ -138,23 +143,33 @@ try {
     Remove-Item -LiteralPath $marker, "$marker.tmp" -Force -ErrorAction SilentlyContinue
     "FAILED $(if ($m) { $m } else { 'no freeze within 30 s' })"
   } $Seconds, $Dir, $TargetPid
-  if ("$t".Trim() -notmatch '^[0-9a-f]{32}\|\d+\|.+$') { throw "NST freeze failed: $("$t".Trim())" }
+  if ("$t".Trim() -notmatch '^[0-9a-f]{32}\|\d+\|\d+\|.+$') { throw "NST freeze failed: $("$t".Trim())" }
   "$t".Trim()
 }
 
 # Before the release: the hold lasted the whole walk. This hold's marker still reads frozen (not expired), its holder
-# is alive, and the NST (same pid) used no CPU time, user or kernel, since the freeze. Thread states cannot show it:
-# threads the debug port holds at creation read Executive, not Suspended.
+# (same pid AND start time) is alive, a debugger is attached to the NST (same pid), and the NST used neither CPU time
+# (user + kernel) nor processor cycles since the freeze. Thread states cannot show it: threads the debug port holds
+# at creation read Executive, not Suspended. The release then requires the holder's own `released` report.
 function Assert-NstFreezeHeld([string]$Container, [string]$Token) {
   $r = Invoke-InContainer $Container { param($tok)
-    $null, $hpid, $marker = $tok -split '\|', 3
+    if (-not ('CgHold' -as [type])) {
+      Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgHold { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool QueryProcessCycleTime(IntPtr h, out ulong c); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CheckRemoteDebuggerPresent(IntPtr h, ref bool p); }'
+    }
+    $null, $hpid, $hstart, $marker = $tok -split '\|', 4
     $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
-    if ($m -notmatch "^frozen\|$hpid\|(\d+)\|(\d+)$") { return "marker reads '$m', not this hold's (expired or failed)" }
-    $npid = [int]$Matches[1]; $cpu = [long]$Matches[2]
+    if ($m -notmatch "^frozen\|$hpid\|$hstart\|(\d+)\|(\d+)\|(\d+)$") { return "marker reads '$m', not this hold's (expired or failed)" }
+    $npid = [int]$Matches[1]; $cpu = [long]$Matches[2]; $cyc0 = [uint64]$Matches[3]
     $h = Get-Process -Id ([int]$hpid) -ErrorAction SilentlyContinue
-    if (-not $h -or $h.HasExited) { return 'the holder is gone' }
+    if (-not $h -or $h.HasExited -or $h.StartTime.Ticks -ne [long]$hstart) { return 'the holder is gone' }
     $p = Get-Process -Id $npid -ErrorAction SilentlyContinue
     if (-not $p) { return "NST process $npid is gone" }
+    $dbg = $false
+    if (-not [CgHold]::CheckRemoteDebuggerPresent($p.Handle, [ref]$dbg)) { return 'debugger state unreadable' }
+    if (-not $dbg) { return 'no debugger attached to the NST' }
+    $cyc = [uint64]0
+    if (-not [CgHold]::QueryProcessCycleTime($p.Handle, [ref]$cyc)) { return 'NST cycle time unreadable' }
+    if ($cyc -ne $cyc0) { return "the NST used processor cycles while held ($cyc0 -> $cyc)" }
     $now = $p.TotalProcessorTime.Ticks
     if ($now -ne $cpu) { return "the NST used CPU time while held ($cpu -> $now ticks)" }
     'held'
@@ -166,16 +181,18 @@ function Assert-NstFreezeHeld([string]$Container, [string]$Token) {
 # capture started; the system then detaches). Throws unless the holder reported a release.
 function Disable-NstFreeze([string]$Container, [string]$Token) {
   $r = Invoke-InContainer $Container { param($tok)
-    $null, $hpid, $marker = $tok -split '\|', 3
+    $null, $hpid, $hstart, $marker = $tok -split '\|', 4
     Set-Content -LiteralPath "$marker.release" -Value '' -Encoding ascii -NoNewline
-    # HasExited, not mere presence: an exited process stays listed while a handle to it is open
-    $deadline = (Get-Date).AddSeconds(15)
+    # HasExited, not mere presence: an exited process stays listed while a handle to it is open. Sol hold M1: a pid
+    # with another start time is not the holder (reused); it is never stopped.
+    $sw = [Diagnostics.Stopwatch]::StartNew()
     do {
       $h = Get-Process -Id ([int]$hpid) -ErrorAction SilentlyContinue
-      $alive = $h -and -not $h.HasExited
+      $alive = $h -and -not $h.HasExited -and $h.StartTime.Ticks -eq [long]$hstart
       if ($alive) { Start-Sleep -Milliseconds 200 }
-    } while ($alive -and (Get-Date) -lt $deadline)
-    if ($alive) { Stop-Process -Id ([int]$hpid) -Force -ErrorAction SilentlyContinue }
+    } while ($alive -and $sw.Elapsed.TotalSeconds -lt 15)
+    # through the handle that was just checked, not the pid again
+    if ($alive) { try { $h.Kill() } catch { } }
     $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $marker, "$marker.release" -Force -ErrorAction SilentlyContinue
     if ($alive) { "holder did not exit, stopped (marker '$m')" }
@@ -193,12 +210,14 @@ function Clear-NstFreezeLeftover([string]$Container, [string]$Dir = $NstFreezeDi
     $live = 0
     foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter 'nst-freeze.*' -File -ErrorAction SilentlyContinue)) {
       $m = Get-Content -LiteralPath $f.FullName -Raw -ErrorAction SilentlyContinue
-      if ($f.Name -match '^nst-freeze\.[0-9a-f]{32}$' -and "$m" -match '^frozen\|(\d+)\|') {
+      if ($f.Name -match '^nst-freeze\.[0-9a-f]{32}$' -and "$m" -match '^frozen\|(\d+)\|(\d+)\|') {
+        $start = [long]$Matches[2]
         $h = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
-        if ($h -and -not $h.HasExited) {
+        # Sol hold M1: only the recorded holder (pid AND start time), through the handle just checked
+        if ($h -and -not $h.HasExited -and $h.StartTime.Ticks -eq $start) {
           $live++
-          Stop-Process -Id $h.Id -Force -ErrorAction SilentlyContinue
-          Wait-Process -Id $h.Id -Timeout 10 -ErrorAction SilentlyContinue
+          try { $h.Kill() } catch { }
+          [void]$h.WaitForExit(10000)
         }
       }
       Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue

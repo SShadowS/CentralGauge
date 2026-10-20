@@ -47,6 +47,13 @@ try {
   Assert (Runs) 'runs after the holder is killed'
   Throws { Assert-NstFreezeHeld 'x' $t } 'holder is gone' 'held with the holder killed'
   Assert ((Clear-NstFreezeLeftover 'x' $wd) -eq 0) 'a dead holder is no live leftover'
+  # Sol hold M1: a leftover marker whose pid now names another process (reused: other start time) never kills it
+  $fake = Join-Path $wd ('nst-freeze.' + ('b' * 32))
+  Set-Content -LiteralPath $fake -Value "frozen|$($busy.Id)|1|$($busy.Id)|0|0" -Encoding ascii -NoNewline
+  Assert ((Clear-NstFreezeLeftover 'x' $wd) -eq 0) 'a reused pid is no live leftover'
+  $busy.Refresh()
+  Assert (-not $busy.HasExited) 'the process behind a reused pid is not stopped'
+  Assert (-not (Test-Path -LiteralPath $fake)) 'stale marker removed'
   # a live leftover (the coordinator died mid-walk): Clear ends it and the process runs
   $t = Enable-NstFreeze 'x' 30 $wd $busy.Id
   Assert ((Clear-NstFreezeLeftover 'x' $wd) -eq 1) 'one live leftover'
