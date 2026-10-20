@@ -431,6 +431,7 @@ export function goldenReset(o: {
               files: e.files,
               dirs: e.dirs,
               ...(e.magic ? { magic: e.magic } : {}),
+              ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
             }]
             : []
         ),
@@ -476,7 +477,7 @@ export interface FsDiffEntry {
 const FS_LINE: Record<string, RegExp> = {
   D: /^D\|(?<attrs>\d+)\|\d+\|(?<p>[^|]+)$/,
   // digest v3: the 6th field is the file's first two bytes, hex (platform_cache's magic)
-  F: /^F\|[0-9a-f]{64}\|\d+\|\d+\|\d+\|(?<head>(?:[0-9a-f]{2}){0,2})\|(?<p>[^|]+)$/,
+  F: /^F\|(?<sha>[0-9a-f]{64})\|\d+\|\d+\|\d+\|(?<head>(?:[0-9a-f]{2}){0,2})\|(?<p>[^|]+)$/,
   S: /^S\|[0-9a-f]{64}\|\d+\|(?<p>[^|]+)$/,
   L: /^L\|\d+\|\d+\|(?<p>[^|]+)\|[^|]*$/,
 };
@@ -497,6 +498,24 @@ export interface FsPlatformCache {
   files: string;
   dirs: string;
   magic?: string;
+  /** Addendum 6: the file name (before its extension) is its content sha256. */
+  nameIsSha256?: boolean;
+}
+
+/**
+ * Addendum 6: whether a recorded difference is one these caches tolerate,
+ * under exactly fsDiff's rules (new files only, shape, magic, name hash), for
+ * `harness recover`.
+ */
+export function cacheToleratesEntry(
+  caches: readonly FsPlatformCache[],
+  d: FsDiffEntry,
+): boolean {
+  const whole = (s: string) => new RegExp(`^(?:${s})$`);
+  return cacheTolerates(
+    caches.map((c) => ({ ...c, files: whole(c.files), dirs: whole(c.dirs) })),
+    d,
+  );
 }
 
 /** Whether one difference is a tolerated platform_cache addition. */
@@ -506,6 +525,7 @@ function cacheTolerates(
     files: RegExp;
     dirs: RegExp;
     magic?: string;
+    nameIsSha256?: boolean;
   }[],
   d: FsDiffEntry,
 ): boolean {
@@ -519,7 +539,12 @@ function cacheTolerates(
     if (d.after![0] === "F") {
       return d.before === null && c.files.test(rel) &&
         // run 004 #6: the magic (1 or 2 bytes) is a prefix of the 2-byte head
-        (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
+        (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic)) &&
+        // addendum 6: a planted file of the right shape and header still
+        // needs a name that is its own content hash
+        (!c.nameIsSha256 ||
+          rel.split("\\").at(-1)!.replace(/\.[^.]*$/, "").toLowerCase() ===
+            after["sha"]);
     }
     if (d.after![0] !== "D" || !c.dirs.test(rel)) return false;
     // a new directory of the shape, or only its last-write time moved

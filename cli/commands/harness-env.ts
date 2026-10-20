@@ -85,6 +85,7 @@ import {
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
+  cacheToleratesEntry,
   fsDiff,
   type FsDiffEntry,
   goldenReset,
@@ -596,7 +597,11 @@ async function recoverClaimed(
         "health",
       );
     }
-    const recorded = found.flatMap((f) => f.record?.fs_diff ?? []);
+    // addendum 6: entries the recovery lineage's platform caches tolerate
+    // (by fsDiff's own rules) are not contamination; everything else stays
+    const recorded = found.flatMap((f) => f.record?.fs_diff ?? []).filter(
+      (e) => !cacheToleratesEntry(m.fsCaches ?? [], e),
+    );
     // H-35 run 004 Sol r2 N5: absence counts only where this capture looks
     const blind = unobservable(recorded, lines, m.fsRoots ?? []);
     if (blind.length > 0) {

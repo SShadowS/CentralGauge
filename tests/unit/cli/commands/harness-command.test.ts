@@ -9810,6 +9810,69 @@ Deno.test("H-35 run 004 Sol r2 N3 close: a failing closer keeps the in-use recor
   assertEquals(await findRecords(qDir, key), []);
 });
 
+Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platform cache tolerates (hash-named) is dropped and the container clears; a right-shaped file whose name is not its hash keeps the quarantine", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden([]);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  const base = roots[0]!;
+  const HASH =
+    "0A53123EBB10012CF7AB9309302824D90E158BB785A7763F235C616DD829ADF0";
+  const path = `${base}\\metadata\\3\\0A\\${HASH}.app`;
+  const fLine = (sha: string) => `F|${sha}|1|32|1|4e41|${path}`;
+  let present: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsCaches: [{
+      base,
+      files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+      dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+      magic: "4e41",
+      nameIsSha256: true,
+    }],
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const plant = async (sha: string) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff: [{ path, before: null, after: fLine(sha) }],
+      fs_captured: true,
+    });
+    // the cache file survives the reset, as on the containers
+    present = [fLine(sha)];
+  };
+  // a right-shaped file whose name is not its content hash: kept, refused
+  await plant("a".repeat(64));
+  const e = await assertRejects(
+    () => recoverContainer(o, d, mech),
+    ContainerError,
+  );
+  assertStringIncludes(e.message, "contamination not remediated");
+  assertEquals((await findRecords(qDir, key)).length, 1);
+  // the hash-named cache file: dropped, the container clears
+  await plant(HASH.toLowerCase());
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+});
+
 Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded path outside the capture's roots, or one below a reparse point (L line): recover refuses (recreate) and keeps the record", async () => {
   await using t = await makeEnv();
   const qDir = join(await testTempDir(), "q");

@@ -463,6 +463,72 @@ Deno.test("H-35 run 004 #6: a cache magic is a prefix of the file's head bytes (
   assertEquals(fsDiff(before, xml(""), [], [], one).diff.length, 1);
 });
 
+Deno.test("H-35 addendum 6: a name_is_sha256 cache tolerates a new file only when its name is its own content sha256 (any case); a right-shaped file named otherwise is a difference", () => {
+  const app = [{
+    base: APPS,
+    files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+    dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+    magic: "4e41",
+    nameIsSha256: true,
+  }];
+  const before = cap(D(APPS), D(`${APPS}/metadata/3/0A`));
+  const file = (sha: string, head = "4e41") =>
+    cap(
+      D(APPS),
+      D(`${APPS}/metadata/3/0A`),
+      F(`${APPS}/metadata/3/0A/${HEX}.app`, sha, 1, head),
+    );
+  assertEquals(fsDiff(before, file(HEX.toLowerCase()), [], [], app).diff, []);
+  assertEquals(
+    fsDiff(before, file("a".repeat(64)), [], [], app).diff.length,
+    1,
+  );
+  // the hash still needs the magic
+  assertEquals(
+    fsDiff(before, file(HEX.toLowerCase(), "4d5a"), [], [], app).diff.length,
+    1,
+  );
+});
+
+Deno.test("H-35 addendum 6: a folder-only cache (files match nothing) tolerates only that folder's last-write time; a file inside or an attribute change is a difference", () => {
+  const run = [{
+    base: w("C:/Run"),
+    files: String.raw`^(?!)$`,
+    dirs: String.raw`^my$`,
+  }];
+  const before = cap(D("C:/Run/my"), F("C:/Run/my/keep.txt"));
+  assertEquals(
+    fsDiff(
+      before,
+      cap(D("C:/Run/my", 9), F("C:/Run/my/keep.txt")),
+      [],
+      [],
+      run,
+    ).diff,
+    [],
+  );
+  assertEquals(
+    fsDiff(
+      before,
+      cap(D("C:/Run/my", 9), F("C:/Run/my/keep.txt"), F("C:/Run/my/x.app")),
+      [],
+      [],
+      run,
+    ).diff.length,
+    1,
+  );
+  assertEquals(
+    fsDiff(
+      before,
+      cap(`D|18|9|${w("C:/Run/my")}`, F("C:/Run/my/keep.txt")),
+      [],
+      [],
+      run,
+    ).diff.length,
+    1,
+  );
+});
+
 Deno.test("H-35 Sol S3 r4: a cache shape matches the whole relative path even when its alternation is unanchored inside, and a base with a trailing separator works as without", () => {
   const before = cap(D(APPS));
   const junk = F(`${APPS}/metadata/3/0A/junk${HEX}.xml`);
