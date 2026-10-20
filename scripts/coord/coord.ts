@@ -5,6 +5,7 @@
  * - tasks/<id>/task.md                 orchestrator (YAML header + brief)
  * - tasks/<id>/runs/<NNN>/claim.json   claiming lane, created exclusively
  * - tasks/<id>/runs/<NNN>/checkpoint.json  run owner, replaced atomically
+ * - tasks/<id>/runs/<NNN>/timeline.jsonl   one line per run mutation, appended
  * - tasks/<id>/runs/<NNN>/terminal.json    run owner or orchestrator, exclusive
  * - tasks/<id>/runs/<NNN>/review.json      orchestrator, exclusive
  * - tasks/<id>/accepted.json           orchestrator, exclusive
@@ -110,6 +111,47 @@ async function writeReplace(path: string, data: unknown): Promise<void> {
   const tmp = `${path}.${crypto.randomUUID()}.tmp`;
   await writeExclusive(tmp, data);
   await withRetry(() => Deno.rename(tmp, path));
+}
+
+export interface TimelineEntry {
+  at: number;
+  event: string;
+  phase: string | null;
+  wait: string | null;
+  note: string | null;
+}
+
+/**
+ * History of a run; checkpoint.json only keeps the latest. Called after the
+ * mutation's own record is written. Only checkpoints carry a phase; the other
+ * events leave it null and group under their event name in the totals.
+ * Best-effort: the mutation already happened, so a failed append only warns
+ * (a throw here would lose a claim's token).
+ */
+async function appendTimeline(
+  rd: string,
+  event: string,
+  o: { phase?: string; wait?: string | undefined; note?: string | undefined } =
+    {},
+): Promise<void> {
+  const entry: TimelineEntry = {
+    at: Date.now(),
+    event,
+    phase: o.phase ?? null,
+    wait: o.wait ?? null,
+    note: o.note ?? null,
+  };
+  try {
+    await withRetry(() =>
+      Deno.writeTextFile(
+        join(rd, "timeline.jsonl"),
+        JSON.stringify(entry) + "\n",
+        { append: true },
+      )
+    );
+  } catch (e) {
+    console.error(`[WARN] timeline append failed in ${rd}: ${e}`);
+  }
 }
 
 async function mkdirExclusive(path: string): Promise<boolean> {
@@ -543,6 +585,7 @@ export async function claim(
     at: Date.now(),
     taskRev: rev,
   });
+  await appendTimeline(rd, "claim");
   return { runId, token };
 }
 
@@ -578,6 +621,7 @@ export async function checkpoint(
     ...opts,
     at: Date.now(),
   });
+  await appendTimeline(rd, "checkpoint", { phase, ...opts });
   // Every checkpoint doubles as the pause poll: a lane that sees paused stops at
   // its next safe point and releases its leases.
   return { paused: await isPaused(root) };
@@ -598,6 +642,7 @@ export async function submit(
     branch,
     at: Date.now(),
   });
+  await appendTimeline(rd, "submit", { note: commit });
 }
 
 export async function fail(
@@ -613,6 +658,7 @@ export async function fail(
     reason,
     at: Date.now(),
   });
+  await appendTimeline(rd, "fail", { note: reason });
 }
 
 /** Orchestrator only: close a run whose owner is gone. */
@@ -628,6 +674,7 @@ export async function abandon(
     reason,
     at: Date.now(),
   });
+  await appendTimeline(rd, "abandon", { note: reason });
 }
 
 async function latestSubmitted(
@@ -663,6 +710,7 @@ export async function accept(
     integratedSha,
     at: Date.now(),
   });
+  await appendTimeline(rd, "accept", { note: integratedSha });
 }
 
 /** Orchestrator only: the task returns to todo for a new attempt. */
@@ -678,6 +726,99 @@ export async function reject(
     reason,
     at: Date.now(),
   });
+  await appendTimeline(rd, "reject", { note: reason });
+}
+
+export interface Timeline {
+  id: string;
+  runId: string;
+  /** Run still doing or in review: its last entry lasts until now. */
+  open: boolean;
+  /** null: no timeline.jsonl (a run from before the timeline existed). */
+  entries: (TimelineEntry & { durationMs: number | null })[] | null;
+  /** Summed durations per phase, falling back to the event name. */
+  totals: Record<string, number>;
+}
+
+/** Read-only. A malformed line throws naming its line number. */
+export async function timeline(
+  root: string,
+  id: string,
+  opts: { runId?: string | undefined; now?: number } = {},
+): Promise<Timeline> {
+  await openRoot(root);
+  const st = await taskState(root, id);
+  const runId = opts.runId ?? st.runId;
+  if (!runId) throw new CoordError(`task ${id} has no runs`);
+  const path = join(runDir(root, id, runId), "timeline.jsonl");
+  const open = st.runId === runId &&
+    (st.state === "doing" || st.state === "review");
+  let text: string;
+  try {
+    text = await withRetry(() => Deno.readTextFile(path));
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) {
+      return { id, runId, open, entries: null, totals: {} };
+    }
+    throw new CoordError(`unreadable: ${path}: ${e}`);
+  }
+  const raw: TimelineEntry[] = [];
+  text.split(/\r?\n/).forEach((l, i) => {
+    if (!l.trim()) return;
+    let e: TimelineEntry;
+    try {
+      e = JSON.parse(l);
+    } catch {
+      throw new CoordError(`corrupt: ${path} line ${i + 1}`);
+    }
+    if (typeof e?.at !== "number" || typeof e.event !== "string") {
+      throw new CoordError(`corrupt: ${path} line ${i + 1}`);
+    }
+    raw.push({
+      at: e.at,
+      event: e.event,
+      phase: e.phase ?? null,
+      wait: e.wait ?? null,
+      note: e.note ?? null,
+    });
+  });
+  const now = opts.now ?? Date.now();
+  const totals: Record<string, number> = {};
+  const entries = raw.map((e, i) => {
+    const end = raw[i + 1]?.at ?? (open ? now : undefined);
+    const durationMs = end === undefined ? null : end - e.at;
+    if (durationMs !== null) {
+      const k = e.phase ?? e.event;
+      totals[k] = (totals[k] ?? 0) + durationMs;
+    }
+    return { ...e, durationMs };
+  });
+  return { id, runId, open, entries, totals };
+}
+
+export function timelineText(t: Timeline): string {
+  if (!t.entries) {
+    return `no timeline for ${t.id} run ${t.runId} (run predates timeline.jsonl)`;
+  }
+  const dur = (ms: number | null) => ms === null ? "-" : ago(0, ms);
+  const lines = [`${t.id} run ${t.runId}${t.open ? " (open)" : ""}`];
+  for (const e of t.entries) {
+    const what = [
+      e.event,
+      e.phase ? `phase=${e.phase}` : "",
+      e.wait ? `wait=${e.wait}` : "",
+    ].filter(Boolean).join(" ");
+    lines.push(
+      `  ${new Date(e.at).toISOString().replace("T", " ").slice(0, 19)}Z  ${
+        what.padEnd(36)
+      } ${dur(e.durationMs).padStart(6)}${e.note ? `  ${e.note}` : ""}`,
+    );
+  }
+  lines.push("Per phase");
+  for (const [k, ms] of Object.entries(t.totals)) {
+    lines.push(`  ${k} ${dur(ms)}`);
+  }
+  return lines.join("\n");
 }
 
 // ---------- questions ----------
@@ -1368,6 +1509,7 @@ async function main(args: string[]): Promise<number> {
       "campaign",
       "watch",
       "machine-root",
+      "run",
     ],
     boolean: ["json"],
   });
@@ -1541,6 +1683,11 @@ async function main(args: string[]): Promise<number> {
       a.json ? out(s) : console.log(sweepText(s));
       return 0;
     }
+    case "timeline": {
+      const t = await timeline(root, arg(rest, 0), { runId: a.run });
+      a.json ? out(t) : console.log(timelineText(t));
+      return 0;
+    }
     case "doctor": {
       const issues = await doctor(root);
       console.log(issues.join("\n") || "[OK] no issues");
@@ -1548,7 +1695,7 @@ async function main(args: string[]): Promise<number> {
     }
     default:
       console.error(
-        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|sweep [--json]|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
+        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|sweep [--json]|timeline <id> [--run R] [--json]|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
       );
       return 2;
   }

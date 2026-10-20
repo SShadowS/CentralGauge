@@ -77,7 +77,8 @@ todo --claim--> doing --submit--> review --accept--> accepted
 
 - `coord status [--lane X] [--json]`, `coord why <id>`, `coord next <lane>`,
   `coord questions`, `coord stale`, `coord holder <container>`, `coord doctor`,
-  `coord sweep [--json]` (one-call orchestrator sweep: pause/drain, leases, questions, stale, open tasks, next).
+  `coord sweep [--json]` (one-call orchestrator sweep: pause/drain, leases, questions, stale, open tasks, next),
+  `coord timeline <id> [--run <runId>] [--json]` (per-run phase history with durations; default the latest run).
 - Queries read only headers and status records. Never read every task folder by hand.
 
 ### Container leases (lane-ops only)
