@@ -488,7 +488,8 @@ function cacheTolerates(
     const rel = d.path.slice(prefix.length);
     if (d.after![0] === "F") {
       return d.before === null && c.files.test(rel) &&
-        (c.magic === undefined || after["head"] === c.magic);
+        // run 004 #6: the magic (1 or 2 bytes) is a prefix of the 2-byte head
+        (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
     }
     if (d.after![0] !== "D" || !c.dirs.test(rel)) return false;
     // a new directory of the shape, or only its last-write time moved

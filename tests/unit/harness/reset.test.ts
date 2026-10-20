@@ -448,6 +448,21 @@ Deno.test("H-35 S3 L4 platform_cache: new files of the measured shapes (and new 
   assertEquals(fsDiff(before, cap(...attrs), [], [], CACHES).diff.length, 1);
 });
 
+Deno.test("H-35 run 004 #6: a cache magic is a prefix of the file's head bytes (a one-byte magic matches a two-byte head); a different first byte is a difference", () => {
+  const before = cap(D(APPS), D(`${APPS}/metadata/3/0A`));
+  const one = [{ ...CACHES[1]!, magic: "3c" }]; // '<' of an .xml
+  const xml = (head: string) =>
+    cap(
+      D(APPS),
+      D(`${APPS}/metadata/3/0A`),
+      F(`${APPS}/metadata/3/0A/${HEX}.xml`, "a".repeat(64), 1, head),
+    );
+  assertEquals(fsDiff(before, xml("3c3f"), [], [], one).diff, []);
+  assertEquals(fsDiff(before, xml("3c"), [], [], one).diff, []);
+  assertEquals(fsDiff(before, xml("4d5a"), [], [], one).diff.length, 1);
+  assertEquals(fsDiff(before, xml(""), [], [], one).diff.length, 1);
+});
+
 Deno.test("H-35 Sol S3 r4: a cache shape matches the whole relative path even when its alternation is unanchored inside, and a base with a trailing separator works as without", () => {
   const before = cap(D(APPS));
   const junk = F(`${APPS}/metadata/3/0A/junk${HEX}.xml`);

@@ -31,6 +31,12 @@ if ((Get-FsDigest 'x' @("$root\nope")) -notlike 'E|*root missing') { throw 'miss
 # a root that is itself a junction: one L line, never traversed (Sol r1 #6)
 $jr = @(Get-FsDigest 'x' @("$root\j"))
 if ($jr.Count -ne 1 -or $jr[0] -notlike 'L|*') { throw "junction root followed: $jr" }
+# run 004 #7: F records sort by their path (field 6), not their head bytes (field 5)
+$ord = Join-Path $root 'ord'
+New-Item -ItemType Directory $ord | Out-Null
+[IO.File]::WriteAllText("$ord\a.txt", 'bb'); [IO.File]::WriteAllText("$ord\z.txt", 'aa')
+$fl = @(Get-FsDigest 'x' @($ord) | Where-Object { $_ -like 'F|*' })
+if ($fl.Count -ne 2 -or $fl[0] -notlike '*\a.txt' -or $fl[0] -notlike '*|6262|*') { throw "F order by head, not path: $($fl -join ' ; ')" }
 # ordinal order, culture-independent (Sol r1 #9)
 $o = @(Sort-Ordinal @('b', 'B', 'a', [string][char]0xE4))
 if (($o -join ',') -ne "B,a,b,$([char]0xE4)") { throw "not ordinal: $($o -join ',')" }
