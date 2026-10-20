@@ -9837,6 +9837,13 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
       files: String.raw`^(?!)$`,
       dirs: String.raw`^tx$`,
       dirTimeOnly: true,
+    }, {
+      // a cache policy outside every recovery root (orch r005d test gap)
+      base: "C:\\Elsewhere",
+      files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+      dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+      magic: "4e41",
+      nameIsSha256: true,
     }],
     fsDigest: () => {
       const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
@@ -9901,9 +9908,15 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
   );
   await refused("reparse cover", "not observable");
   // (b) a recorded cache-shaped path outside the recovery roots: refused
+  // its historical line is a valid tolerated addition under the outside
+  // policy, so only the observability check (first) can refuse it
   const outside = `C:\\Elsewhere\\metadata\\3\\0A\\${HASH}.app`;
   await plantAll(
-    [{ path: outside, before: null, after: fLine(HASH.toLowerCase()) }],
+    [{
+      path: outside,
+      before: null,
+      after: `F|${HASH.toLowerCase()}|1|32|1|4e41|${outside}`,
+    }],
     [],
   );
   await refused("outside the roots", "not observable");
