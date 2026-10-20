@@ -552,6 +552,61 @@ Deno.test("H-35 addendum 6: a folder-only cache (files match nothing) tolerates 
   );
 });
 
+Deno.test("H-35 addendum 7: an in_place cache tolerates an existing file changed in place (content, time) and nothing else: new, removed, resized, re-attributed, respelled files and streams stay differences", () => {
+  const CNC = w("C:/sys/CryptnetUrlCache");
+  const ip = [{
+    base: CNC,
+    files: String.raw`^MetaData\\[0-9A-F]{32}$`,
+    dirs: String.raw`^(?!)$`,
+    inPlace: true,
+  }];
+  const N = "57C8EDB95DF3F0AD4EE2DC2B8CFD4157";
+  const meta = (name: string, sha: string, size = 342, attrs = 36, t = 1) =>
+    w(`F|${sha}|${size}|${attrs}|${t}|7000|${CNC}/MetaData/${name}`);
+  const dirs = [D(CNC), D(`${CNC}/MetaData`)];
+  const before = cap(...dirs, meta(N, "a".repeat(64)));
+  // changed in place: tolerated
+  assertEquals(
+    fsDiff(
+      before,
+      cap(...dirs, meta(N, "b".repeat(64), 342, 36, 9)),
+      [],
+      [],
+      ip,
+    ),
+    { diff: [], errors: [] },
+  );
+  const differs = (what: string, after: string[], b = before) =>
+    assertEquals(fsDiff(b, cap(...after), [], [], ip).diff.length, 1, what);
+  differs("new file", [
+    ...dirs,
+    meta(N, "a".repeat(64)),
+    meta("77EC63BD" + N.slice(8), "c".repeat(64)),
+  ]);
+  differs("size change", [...dirs, meta(N, "b".repeat(64), 343)]);
+  differs("attribute change", [...dirs, meta(N, "b".repeat(64), 342, 38)]);
+  differs("removal", [...dirs]);
+  differs("respelled", [
+    ...dirs,
+    meta(N.toLowerCase(), "b".repeat(64)),
+  ]);
+  assertEquals(
+    fsDiff(
+      before,
+      cap(
+        ...dirs,
+        meta(N, "a".repeat(64)),
+        w(`S|${"d".repeat(64)}|3|${CNC}/MetaData/${N}:hid`),
+      ),
+      [],
+      [],
+      ip,
+    ).diff.length,
+    1,
+    "a stream",
+  );
+});
+
 Deno.test("H-35 Sol S3 r4: a cache shape matches the whole relative path even when its alternation is unanchored inside, and a base with a trailing separator works as without", () => {
   const before = cap(D(APPS));
   const junk = F(`${APPS}/metadata/3/0A/junk${HEX}.xml`);

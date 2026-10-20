@@ -132,6 +132,8 @@ export const LineageSchema = z.strictObject({
         name_is_sha256: z.literal(true).optional(),
         /** Addendum 6: only an existing folder's last-write time may move. */
         dir_time_only: z.literal(true).optional(),
+        /** Addendum 7: an existing file may change in place. */
+        in_place: z.literal(true).optional(),
         reason: z.string().min(1),
       }),
     ])),

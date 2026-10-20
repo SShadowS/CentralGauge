@@ -85,11 +85,11 @@ import {
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
-  cacheToleratesEntry,
   fsDiff,
   type FsDiffEntry,
   goldenReset,
   type ResetMechanism,
+  toleratingCache,
   UNCONFIGURED_RESET,
 } from "../../src/harness/reset.ts";
 import {
@@ -356,13 +356,17 @@ function cacheStillTolerated(
   ).get(e.path.toLowerCase());
   const now = cur?.before;
   if (!cur || !now || !e.after) return false;
-  if (now[0] === "F" && fileSha(now) !== fileSha(e.after)) return false;
   // the CURRENT path spelling, as fsDiff would judge it (self-check 2)
-  return cacheToleratesEntry(m.fsCaches ?? [], {
+  const by = toleratingCache(m.fsCaches ?? [], {
     path: cur.path,
     before: e.before,
     after: now,
   });
+  if (!by) return false;
+  // a new-file cache keeps the recorded content; an in_place cache
+  // (addendum 7) may keep changing, judged by path, size and attributes
+  return by.inPlace === true || now[0] !== "F" ||
+    fileSha(now) === fileSha(e.after);
 }
 
 /**

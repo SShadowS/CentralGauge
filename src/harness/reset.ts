@@ -433,6 +433,7 @@ export function goldenReset(o: {
               ...(e.magic ? { magic: e.magic } : {}),
               ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
               ...(e.dir_time_only ? { dirTimeOnly: true } : {}),
+              ...(e.in_place ? { inPlace: true } : {}),
             }]
             : []
         ),
@@ -478,7 +479,7 @@ export interface FsDiffEntry {
 const FS_LINE: Record<string, RegExp> = {
   D: /^D\|(?<attrs>\d+)\|\d+\|(?<p>[^|]+)$/,
   // digest v3: the 6th field is the file's first two bytes, hex (platform_cache's magic)
-  F: /^F\|(?<sha>[0-9a-f]{64})\|\d+\|\d+\|\d+\|(?<head>(?:[0-9a-f]{2}){0,2})\|(?<p>[^|]+)$/,
+  F: /^F\|(?<sha>[0-9a-f]{64})\|(?<size>\d+)\|(?<attrs>\d+)\|\d+\|(?<head>(?:[0-9a-f]{2}){0,2})\|(?<p>[^|]+)$/,
   S: /^S\|[0-9a-f]{64}\|\d+\|(?<p>[^|]+)$/,
   L: /^L\|\d+\|\d+\|(?<p>[^|]+)\|[^|]*$/,
 };
@@ -506,6 +507,8 @@ export interface FsPlatformCache {
    * (same spelling, same attributes); no new folder, no file (C:\Run\my).
    */
   dirTimeOnly?: boolean;
+  /** Addendum 7: an existing file may change in place (same path, size, attributes). */
+  inPlace?: boolean;
 }
 
 /**
@@ -517,10 +520,17 @@ export function cacheToleratesEntry(
   caches: readonly FsPlatformCache[],
   d: FsDiffEntry,
 ): boolean {
+  return toleratingCache(caches, d) !== undefined;
+}
+
+/** The first platform cache that tolerates `d` (fsDiff's rules), if any. */
+export function toleratingCache(
+  caches: readonly FsPlatformCache[],
+  d: FsDiffEntry,
+): FsPlatformCache | undefined {
   const whole = (s: string) => new RegExp(`^(?:${s})$`);
-  return cacheTolerates(
-    caches.map((c) => ({ ...c, files: whole(c.files), dirs: whole(c.dirs) })),
-    d,
+  return caches.find((c) =>
+    cacheTolerates([{ ...c, files: whole(c.files), dirs: whole(c.dirs) }], d)
   );
 }
 
@@ -533,6 +543,7 @@ function cacheTolerates(
     magic?: string;
     nameIsSha256?: boolean;
     dirTimeOnly?: boolean;
+    inPlace?: boolean;
   }[],
   d: FsDiffEntry,
 ): boolean {
@@ -543,6 +554,16 @@ function cacheTolerates(
     const prefix = c.base.replace(/[\\/]+$/, "").toLowerCase() + "\\";
     if (!d.path.toLowerCase().startsWith(prefix)) return false;
     const rel = d.path.slice(prefix.length);
+    if (d.after![0] === "F" && c.inPlace) {
+      // addendum 7: an EXISTING file changed in place: same path spelling,
+      // size and attributes; content and last-write time may move. A new,
+      // removed, resized or re-attributed file stays a difference.
+      const before = d.before?.[0] === "F" ? fsParse(d.before) : undefined;
+      return before !== undefined && c.files.test(rel) &&
+        before["p"] === after["p"] && before["size"] === after["size"] &&
+        before["attrs"] === after["attrs"] &&
+        (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
+    }
     if (d.after![0] === "F") {
       return !c.dirTimeOnly && d.before === null && c.files.test(rel) &&
         // run 004 #6: the magic (1 or 2 bytes) is a prefix of the 2-byte head
@@ -557,7 +578,7 @@ function cacheTolerates(
     // a new directory of the shape (not for dirTimeOnly), or only its
     // last-write time moved: same attributes and the same spelling (a
     // case-only rename stays a difference, addendum 6 self-check)
-    if (d.before === null) return !c.dirTimeOnly;
+    if (d.before === null) return !c.dirTimeOnly && !c.inPlace;
     const before = d.before[0] === "D" ? fsParse(d.before) : undefined;
     return before !== undefined && before["attrs"] === after["attrs"] &&
       before["p"] === after["p"];

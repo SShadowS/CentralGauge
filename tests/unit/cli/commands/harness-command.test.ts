@@ -9838,6 +9838,12 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
       dirs: String.raw`^tx$`,
       dirTimeOnly: true,
     }, {
+      // addendum 7
+      base: `${base}\\cnc`,
+      files: String.raw`^MetaData\\[0-9A-F]{32}$`,
+      dirs: String.raw`^(?!)$`,
+      inPlace: true,
+    }, {
       // a cache policy outside every recovery root (orch r005d test gap)
       base: "C:\\Elsewhere",
       files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
@@ -9937,6 +9943,22 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
   );
   await recoverContainer(o, d, mech);
   assertEquals(await findRecords(qDir, key), []);
+  // addendum 7: a file recorded as changed in place, changed AGAIN now
+  // (same size and attributes): tolerated against the recorded before
+  const meta = `${base}\\cnc\\MetaData\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
+  const mLine = (sha: string, size = 342, attrs = 36) =>
+    `F|${sha}|${size}|${attrs}|1|7000|${meta}`;
+  const inPlace = {
+    path: meta,
+    before: mLine("a".repeat(64)),
+    after: mLine("b".repeat(64)),
+  };
+  await plantAll([inPlace], [mLine("c".repeat(64))]);
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // ... but not when its size now differs
+  await plantAll([inPlace], [mLine("c".repeat(64), 343)]);
+  await refused("in_place, resized", "contamination not remediated");
   // the hash-named cache file, unchanged now: dropped, the container clears
   await plant(HASH.toLowerCase());
   await recoverContainer(o, d, mech);
