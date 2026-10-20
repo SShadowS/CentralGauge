@@ -68,20 +68,27 @@ function Test-NstSuspended([string]$Container) {
   [int]"$r".Trim() -gt 0
 }
 
-# run 004 #5: a container-side bound independent of this coordinator. A detached process inside the container waits
-# $Seconds and resumes the NST only while its marker file still exists; the normal path resumes first, then disarms
-# (deletes the marker, stops that process). A stale watchdog can therefore never resume a later suspension.
-# Returns the token "<marker path>|<pid>".
-function Enable-NstAutoResume([string]$Container, [int]$Seconds = 90) {
-  $t = Invoke-InContainer $Container { param($s)
-    $dir = 'C:\ProgramData\cg-harness'
+# run 004 #5 + Sol r1 H3: a container-side bound independent of this coordinator, with a suspension GENERATION.
+# One marker file per container holds `armed:<G>` of the current suspension only (each arm overwrites it). The
+# detached watchdog of generation G waits $Seconds and, only while the marker still reads `armed:<G>`, rewrites it
+# to `fired:<G>` and resumes the NST. So a stale watchdog (an earlier generation) never resumes a later suspension,
+# and a watchdog that did fire is visible: the capture checks before its resume that the marker still reads
+# `armed:<G>` and every NST thread is still suspended (Assert-NstSuspensionHeld), and disarm reports `expired`.
+# Returns the token "<G>|<pid>|<marker path>".
+$NstSuspensionDir = 'C:\ProgramData\cg-harness'
+function Enable-NstAutoResume([string]$Container, [int]$Seconds = 90, [string]$Dir = $NstSuspensionDir) {
+  $t = Invoke-InContainer $Container { param($s, $dir)
     New-Item -ItemType Directory -Force $dir | Out-Null
-    $marker = Join-Path $dir "nst-suspend-$([guid]::NewGuid()).marker"
-    Set-Content -LiteralPath $marker -Value "$PID" -Encoding ascii
+    $marker = Join-Path $dir 'nst-suspension'
+    $g = [guid]::NewGuid().ToString('N')
+    # atomic: write a temp file, then replace the marker
+    $tmp = "$marker.$g.tmp"
+    Set-Content -LiteralPath $tmp -Value "armed:$g" -Encoding ascii -NoNewline
+    Move-Item -LiteralPath $tmp -Destination $marker -Force
     $cmd = @"
 Start-Sleep -Seconds $s
-if (Test-Path -LiteralPath '$marker') {
-  Remove-Item -LiteralPath '$marker' -Force
+if ((Get-Content -LiteralPath '$marker' -Raw -ErrorAction SilentlyContinue) -eq 'armed:$g') {
+  Set-Content -LiteralPath '$marker' -Value 'fired:$g' -Encoding ascii -NoNewline
   Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgNtResume { [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h); }'
   foreach (`$p in @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction SilentlyContinue)) { [void][CgNtResume]::NtResumeProcess(`$p.Handle) }
 }
@@ -89,22 +96,49 @@ if (Test-Path -LiteralPath '$marker') {
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     $w = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
       -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
-    "$marker|$($w.Id)"
-  } $Seconds
-  if ("$t".Trim() -notmatch '^.+\.marker\|\d+$') { throw "NST auto-resume not armed: '$t'" }
+    "$g|$($w.Id)|$marker"
+  } $Seconds, $Dir
+  if ("$t".Trim() -notmatch '^[0-9a-f]{32}\|\d+\|.+$') { throw "NST auto-resume not armed: '$t'" }
   "$t".Trim()
+}
+
+# Sol r1 H3: before the resume, the suspension must have held for the whole walk: this generation's marker is still
+# armed (its watchdog did not fire, no later capture took over) and every NST thread is still suspended.
+function Assert-NstSuspensionHeld([string]$Container, [string]$Token) {
+  $r = Invoke-InContainer $Container { param($tok)
+    $g, $null, $marker = $tok -split '\|', 3
+    $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+    if ($m -ne "armed:$g") { return "marker reads '$m', not this suspension's (watchdog expired or superseded)" }
+    $p = @(Get-Process -Name 'Microsoft.Dynamics.Nav.Server' -ErrorAction Stop)
+    if ($p.Count -ne 1) { return "expected one NST process, found $($p.Count)" }
+    $all = @($p[0].Threads).Count
+    $s = @($p[0].Threads | Where-Object { "$($_.WaitReason)" -eq 'Suspended' }).Count
+    if ($s -ne $all) { return "$($all - $s) of $all NST threads not suspended" }
+    'held'
+  } (, $Token)
+  if ("$r".Trim() -ne 'held') { throw "the NST suspension did not hold: $r" }
 }
 
 function Disable-NstAutoResume([string]$Container, [string]$Token) {
   $r = Invoke-InContainer $Container { param($tok)
-    $marker, $wpid = $tok -split '\|'
-    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
-    # only the process this capture started, by its id
+    $g, $wpid, $marker = $tok -split '\|', 3
+    # stop this generation's watchdog first (only the process this capture started), then read the marker
     Stop-Process -Id ([int]$wpid) -Force -ErrorAction SilentlyContinue
     Wait-Process -Id ([int]$wpid) -Timeout 10 -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $marker) { 'marker remains' }
-    elseif (Get-Process -Id ([int]$wpid) -ErrorAction SilentlyContinue) { 'watchdog still running' }
-    else { 'ok' }
+    $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+    # a fired generation is settled whether or not its watchdog has exited yet: the capture fails
+    if ($m -eq "fired:$g") { Remove-Item -LiteralPath $marker -Force; return 'expired: the watchdog resumed the NST' }
+    # HasExited, not mere presence: an exited process stays listed while a handle to it is open; and a killed one
+    # can take a moment to leave (lane-ops saw the race on Cronus283), so poll up to 10 s
+    $deadline = (Get-Date).AddSeconds(10)
+    do {
+      $w = Get-Process -Id ([int]$wpid) -ErrorAction SilentlyContinue
+      $alive = $w -and -not $w.HasExited
+      if ($alive) { Start-Sleep -Milliseconds 250 }
+    } while ($alive -and (Get-Date) -lt $deadline)
+    if ($alive) { return 'watchdog still running' }
+    if ($m -eq "armed:$g") { Remove-Item -LiteralPath $marker -Force; return 'ok' }
+    "superseded: marker reads '$m'"
   } (, $Token)
   if ("$r".Trim() -ne 'ok') { throw "NST auto-resume not disarmed: $r" }
 }
@@ -131,6 +165,8 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
     $lines = @(Get-FsDigest $Container $Roots)
     $w2 = Get-NstSessionWatermark $Container
     if ($w2 -ne $w1) { throw "the NST session log moved while suspended ($w1 -> $w2)" }
+    # Sol r1 H3: the suspension held for the whole walk (proof, not the watermark)
+    Assert-NstSuspensionHeld $Container $armed
   } catch {
     $lines = @("E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))")
   } finally {

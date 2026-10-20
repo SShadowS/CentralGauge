@@ -9,19 +9,43 @@ $ErrorActionPreference = 'Stop'
 
 function Assert($cond, $msg) { if (-not $cond) { throw "FAIL: $msg" } }
 
-# run 004 #5, the coordinator-killed-after-suspend path: the real container-side watchdog (run here on the host, no
-# NST process: its resume is a no-op) fires on its own after the delay, with nobody to disarm it ...
+# run 004 #5 + Sol r1 H3, the real container-side watchdog (run here on the host in a temp dir, no NST process: its
+# resume is a no-op).
 function global:Invoke-InContainer($Container, [scriptblock]$ScriptBlock, $ArgumentList) { & $ScriptBlock @ArgumentList }
-$tok = Enable-NstAutoResume 'x' 2
-$marker = ($tok -split '\|')[0]
-Assert (Test-Path -LiteralPath $marker) 'marker armed'
-$deadline = (Get-Date).AddSeconds(30)
-while ((Test-Path -LiteralPath $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
-Assert (-not (Test-Path -LiteralPath $marker)) 'the watchdog fired without the coordinator (marker consumed)'
-# ... and a disarmed one never fires (its marker is gone and its process is stopped)
-$tok = Enable-NstAutoResume 'x' 30
-Disable-NstAutoResume 'x' $tok
-Assert (-not (Get-Process -Id ([int]($tok -split '\|')[1]) -ErrorAction SilentlyContinue)) 'watchdog stopped on disarm'
+$wd = Join-Path $env:TEMP ("cgwd-" + [guid]::NewGuid())
+function Marker { Get-Content -LiteralPath (Join-Path $wd 'nst-suspension') -Raw -ErrorAction SilentlyContinue }
+function WaitFor([string]$want) {
+  $deadline = (Get-Date).AddSeconds(30)
+  while ((Marker) -ne $want -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+  Marker
+}
+# the coordinator is killed after arming: the watchdog fires on its own and marks its generation fired
+$tok = Enable-NstAutoResume 'x' 2 $wd
+$g = ($tok -split '\|')[0]
+Assert ((Marker) -eq "armed:$g") 'marker armed'
+Assert ((WaitFor "fired:$g") -eq "fired:$g") 'the watchdog fired without the coordinator'
+# ... and that capture's disarm reports the expiry (the capture fails closed)
+try { Disable-NstAutoResume 'x' $tok; throw 'no-throw' } catch { Assert ($_.Exception.Message -match 'expired') "expired: $($_.Exception.Message)" }
+# a stale generation never resumes a later suspension: A arms (2 s), B arms over it, A's watchdog finds B's marker
+$a = Enable-NstAutoResume 'x' 2 $wd
+$b = Enable-NstAutoResume 'x' 30 $wd
+$gb = ($b -split '\|')[0]
+Start-Sleep -Seconds 5
+Assert ((Marker) -eq "armed:$gb") "stale watchdog left B's marker alone: $(Marker)"
+# HasExited: this host process still holds a handle to the watchdogs it started (in a container the arming
+# docker exec has exited)
+function Gone([string]$tok) {
+  $p = Get-Process -Id ([int]($tok -split '\|')[1]) -ErrorAction SilentlyContinue
+  (-not $p) -or $p.HasExited
+}
+Assert (Gone $a) 'stale watchdog exited'
+# A's token no longer holds the suspension (superseded) ...
+try { Assert-NstSuspensionHeld 'x' $a; throw 'no-throw' } catch { Assert ($_.Exception.Message -match 'did not hold') "held: $($_.Exception.Message)" }
+# ... and B disarms cleanly: marker removed, its watchdog stopped
+Disable-NstAutoResume 'x' $b
+Assert ($null -eq (Marker)) 'marker removed on disarm'
+Assert (Gone $b) 'watchdog stopped on disarm'
+Remove-Item -Recurse -Force $wd
 
 function Run([hashtable]$o) {
   $script:calls = [Collections.Generic.List[string]]::new()
@@ -31,7 +55,11 @@ function Run([hashtable]$o) {
   $script:wmCalls = 0
   # script: so the mocks replace the dot-sourced originals in this script's scope (Sol S3 r3)
   function script:Test-NstSuspended($c) { $script:calls.Add('suspended?'); [bool]$script:o.leftSuspended }
-  function script:Enable-NstAutoResume($c) { $script:calls.Add('arm'); 'C:\m.marker|1' }
+  function script:Enable-NstAutoResume($c) { $script:calls.Add('arm'); "$('a' * 32)|1|C:\m" }
+  function script:Assert-NstSuspensionHeld($c, $t) {
+    $script:calls.Add('held?')
+    if ($script:o.heldFails) { throw 'the NST suspension did not hold: watchdog expired' }
+  }
   function script:Disable-NstAutoResume($c, $t) {
     $script:calls.Add('disarm')
     if ($script:o.disarmFails) { throw 'marker remains' }
@@ -66,8 +94,12 @@ function Run([hashtable]$o) {
 
 # happy path: w1 and w2 both read while suspended (a post-resume healthcheck row does not count), resume, then disarm
 $r = Run @{}
-Assert (($r.calls -join ',') -eq 'suspended?,quiescent,arm,suspend,watermark(suspended=True),walk,watermark(suspended=True),resume,disarm,quiescent') "order: $($r.calls -join ',')"
+Assert (($r.calls -join ',') -eq 'suspended?,quiescent,arm,suspend,watermark(suspended=True),walk,watermark(suspended=True),held?,resume,disarm,quiescent') "order: $($r.calls -join ',')"
 Assert (($r.out -join ';') -eq 'D|16|1|C:\W;T|1') "out: $($r.out -join ';')"
+# Sol r1 H3: a suspension that did not hold for the whole walk fails the capture; resume and disarm still run
+$r = Run @{ heldFails = $true }
+Assert ($r.out[0] -like 'E|(fs-capture)|*did not hold*') "held error: $($r.out -join ';')"
+Assert (($r.calls -contains 'resume') -and ($r.calls -contains 'disarm')) 'resume and disarm after a broken suspension'
 # run 004 #5: an NST a killed capture left suspended is resumed first and this capture fails closed
 $r = Run @{ leftSuspended = $true }
 Assert (($r.calls -join ',') -eq 'suspended?,resume') "left suspended: $($r.calls -join ',')"
