@@ -206,10 +206,12 @@ export function bcEgressAdmission(
   const override = overrideRaw?.trim() || null;
   const refusal = !mode
     ? "the lineage has no egress field (L2b)"
-    : mode === "unenforced" && !override
+    // run 004 #4: nothing builds or verifies an NST firewall rule yet (H-36),
+    // so a lineage that declares one is not trusted
+    : mode === "enforced"
+    ? "egress: enforced is not admissible until H-36 verifies the NST firewall rule"
+    : !override
     ? "NST egress is unenforced in this lineage: declare it with --unverified-bc-egress-ok <reason>"
-    : mode === "enforced" && override
-    ? "--unverified-bc-egress-ok is refused: NST egress IS enforced in this lineage"
     : null;
   return { record: mode ? { mode, override } : null, refusal };
 }

@@ -939,7 +939,7 @@ The commands that judge (`cell`, `judge-pending`, `judge-fixture`, `run`,
 | Option                               | Description                                                                                                                                           |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--lineage <path>`                   | Reset lineage JSON. Every judge deployment first restores the container to the lineage's golden. Without a lineage, judging refuses with a configuration error. |
-| `--unverified-bc-egress-ok <reason>` | Owner override: judge on a lineage whose NST outbound firewall is unenforced (`egress.mode: unenforced`). Refused when the lineage enforces egress.    |
+| `--unverified-bc-egress-ok <reason>` | Owner override: judge on a lineage whose NST outbound firewall is unenforced (`egress.mode: unenforced`). Required for every lineage until H-36: `enforced` is not admissible yet. |
 
 With `--lineage`, the command checks the environment before it leases any
 container: every container must be an admitted instance of the lineage and all
@@ -984,7 +984,8 @@ Admission also refuses the whole lineage when:
 - it has no `egress` field,
 - `egress.mode` is `unenforced` and `--unverified-bc-egress-ok <reason>` is not
   given,
-- `--unverified-bc-egress-ok` is given but `egress.mode` is `enforced`.
+- `egress.mode` is `enforced`: nothing builds or verifies an NST firewall rule
+  yet (H-36), so a lineage declaring one is refused, with or without the flag.
 
 ### harness baseline create
 
