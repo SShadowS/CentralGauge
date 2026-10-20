@@ -946,6 +946,7 @@ Deno.test("coord timeline: CLI notes a missing timeline and exits non-zero on a 
       '{"at":1,"event":"checkpoint","phase":7}',
       '{"at":1,"event":"lunch"}',
       '{"at":1e400,"event":"claim"}',
+      '{"at":1e20,"event":"claim"}',
       '{"at":1,"event":"claim","wait":[],"note":{}}',
     ]
   ) {

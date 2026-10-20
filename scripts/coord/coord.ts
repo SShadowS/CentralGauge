@@ -785,7 +785,7 @@ export async function timeline(
     }
     if (
       typeof e !== "object" || e === null ||
-      typeof e.at !== "number" || !Number.isFinite(e.at) ||
+      typeof e.at !== "number" || isNaN(new Date(e.at).getTime()) ||
       typeof e.event !== "string" || !TIMELINE_EVENTS.has(e.event) ||
       !strOrNull(e.phase) || !strOrNull(e.wait) || !strOrNull(e.note)
     ) throw bad();
