@@ -116,7 +116,10 @@ import {
   renderEnvCheck,
 } from "../../../../src/harness/environment.ts";
 import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
-import { goldenReset } from "../../../../src/harness/reset.ts";
+import {
+  type FsDiffEntry,
+  goldenReset,
+} from "../../../../src/harness/reset.ts";
 import {
   ADMIN_GROUPS_CSV,
   CC_MAIN_URL,
@@ -9829,6 +9832,11 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
       dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
       magic: "4e41",
       nameIsSha256: true,
+    }, {
+      base,
+      files: String.raw`^(?!)$`,
+      dirs: String.raw`^tx$`,
+      dirTimeOnly: true,
     }],
     fsDigest: () => {
       const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
@@ -9844,7 +9852,7 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
     symbolStore: t.repo.symbolStore,
     bcEgressOverride: "r",
   };
-  const plant = async (sha: string) => {
+  const plantAll = async (fs_diff: FsDiffEntry[], now: string[]) => {
     await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
     await plantRecord(qDir, {
       id: key.id,
@@ -9853,21 +9861,62 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
       reason: "L4 on Cronus281: 0 error(s), 1 difference(s)",
       by: "test",
       pid: 1,
-      fs_diff: [{ path, before: null, after: fLine(sha) }],
+      fs_diff,
       fs_captured: true,
     });
-    // the cache file survives the reset, as on the containers
-    present = [fLine(sha)];
+    present = now;
+  };
+  // the cache file survives the reset, as on the containers
+  const plant = (sha: string) =>
+    plantAll([{ path, before: null, after: fLine(sha) }], [fLine(sha)]);
+  const refused = async (what: string, includes: string) => {
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, includes, what);
+    assertEquals((await findRecords(qDir, key)).length, 1, what);
   };
   // a right-shaped file whose name is not its content hash: kept, refused
   await plant("a".repeat(64));
-  const e = await assertRejects(
-    () => recoverContainer(o, d, mech),
-    ContainerError,
+  await refused("misnamed", "contamination not remediated");
+  // orch r005c HIGH (a): recorded hash-named, but its CURRENT content differs
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [fLine("b".repeat(64))],
   );
-  assertStringIncludes(e.message, "contamination not remediated");
-  assertEquals((await findRecords(qDir, key)).length, 1);
-  // the hash-named cache file: dropped, the container clears
+  await refused("changed content", "contamination not remediated");
+  // (b) the path now under a reparse point: unobservable, refused (recreate)
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [`L|1040|0|${base}\\metadata|D:\\elsewhere`],
+  );
+  await refused("reparse cover", "not observable");
+  // (b) a recorded cache-shaped path outside the recovery roots: refused
+  const outside = `C:\\Elsewhere\\metadata\\3\\0A\\${HASH}.app`;
+  await plantAll(
+    [{ path: outside, before: null, after: fLine(HASH.toLowerCase()) }],
+    [],
+  );
+  await refused("outside the roots", "not observable");
+  // folder-only negative: the folder now has other attributes
+  const tx = `${base}\\tx`;
+  await plantAll(
+    [{ path: tx, before: `D|16|1|${tx}`, after: `D|16|9|${tx}` }],
+    [`D|18|9|${tx}`],
+  );
+  await refused(
+    "folder-only, attributes changed",
+    "contamination not remediated",
+  );
+  // folder-only positive: only its time moved, still so now
+  await plantAll(
+    [{ path: tx, before: `D|16|1|${tx}`, after: `D|16|9|${tx}` }],
+    [`D|16|12|${tx}`],
+  );
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // the hash-named cache file, unchanged now: dropped, the container clears
   await plant(HASH.toLowerCase());
   await recoverContainer(o, d, mech);
   assertEquals(await findRecords(qDir, key), []);

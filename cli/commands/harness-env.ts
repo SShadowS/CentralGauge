@@ -333,6 +333,32 @@ function unremediated(
   ];
 }
 
+/** The F line's content sha256, or null for any other line. */
+const fileSha = (line: string | null) =>
+  line?.startsWith("F|") ? line.split("|")[1] ?? null : null;
+
+/**
+ * Addendum 6 (orch r005c HIGH): a recorded difference the recovery capture
+ * still shows as a tolerated platform-cache entry: the path is in the
+ * capture now, that current line passes the lineage's caches against the
+ * recorded before line, and a file still has its recorded sha256.
+ */
+function cacheStillTolerated(
+  e: FsDiffEntry,
+  capture: readonly string[],
+  m: ResetMechanism,
+): boolean {
+  const now = new Map(
+    fsDiff(capture, [], [], m.fsRoots ?? []).diff.map((d) => [
+      d.path.toLowerCase(),
+      d.before,
+    ]),
+  ).get(e.path.toLowerCase());
+  if (!now || !e.after) return false;
+  if (now[0] === "F" && fileSha(now) !== fileSha(e.after)) return false;
+  return cacheToleratesEntry(m.fsCaches ?? [], { ...e, after: now });
+}
+
 /**
  * H-35 run 004 Sol r2 N5: the recorded paths this capture cannot show
  * absent or restored: outside every root (case-insensitive, at a separator)
@@ -597,13 +623,10 @@ async function recoverClaimed(
         "health",
       );
     }
-    // addendum 6: entries the recovery lineage's platform caches tolerate
-    // (by fsDiff's own rules) are not contamination; everything else stays
-    const recorded = found.flatMap((f) => f.record?.fs_diff ?? []).filter(
-      (e) => !cacheToleratesEntry(m.fsCaches ?? [], e),
-    );
-    // H-35 run 004 Sol r2 N5: absence counts only where this capture looks
-    const blind = unobservable(recorded, lines, m.fsRoots ?? []);
+    const recordedAll = found.flatMap((f) => f.record?.fs_diff ?? []);
+    // H-35 run 004 Sol r2 N5: absence counts only where this capture looks;
+    // every recorded entry, cache-shaped or not (orch r005c HIGH)
+    const blind = unobservable(recordedAll, lines, m.fsRoots ?? []);
     if (blind.length > 0) {
       throw new ContainerError(
         `recover ${c}: ${RECREATE}: recorded path ${
@@ -613,6 +636,14 @@ async function recoverClaimed(
         "health",
       );
     }
+    // addendum 6 (orch r005c HIGH): a recorded entry is not contamination
+    // only when the CURRENT capture shows that path, its line still passes
+    // the recovery lineage's platform caches (fsDiff's own rules) against the
+    // recorded before, and a file still has the recorded content (sha256);
+    // everything else must be undone
+    const recorded = recordedAll.filter(
+      (e) => !cacheStillTolerated(e, lines, m),
+    );
     // H-35 run 004 Sol r1 H6: a well-formed capture is not removal; every
     // recorded L4 difference must be undone in it
     const left = unremediated(recorded, lines, m.fsRoots ?? []);
