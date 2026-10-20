@@ -81,7 +81,7 @@ function Test-NstSuspended([string]$Container) {
 # holder only ever reads and writes its own files and ends only its own debug session, so a stale holder cannot touch
 # a later hold (and a second debugger cannot attach while one holds). Marker values:
 #   frozen|<holder pid>|<holder start ticks>|<nst pid>|<nst cpu ticks>|<nst cycles>   held; cpu = TotalProcessorTime
-#     (user + kernel) and cycles = QueryProcessCycleTime at the freeze; the bound is a monotonic clock from the attach
+#     (user + kernel) and cycles = QueryProcessCycleTime (diagnostic) at the freeze; the bound is a monotonic clock from the attach
 #   expired|... / released|... / failed|<holder pid>|<reason>
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
 # C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
@@ -148,18 +148,21 @@ try {
 }
 
 # Before the release: the hold lasted the whole walk. This hold's marker still reads frozen (not expired), its holder
-# (same pid AND start time) is alive, a debugger is attached to the NST (same pid), and the NST used neither CPU time
-# (user + kernel) nor processor cycles since the freeze. Thread states cannot show it: threads the debug port holds
-# at creation read Executive, not Suspended. The release then requires the holder's own `released` report.
+# (same pid AND start time) is alive, a debugger is attached to the NST (same pid), and the NST used no CPU time
+# (user + kernel) since the freeze. Thread states cannot show it: threads the debug port holds at creation read
+# Executive, not Suspended. The release then requires the holder's own `released` report. Processor cycles are
+# recorded in the marker but not compared: kernel work for the frozen process (a thread-pool thread created and
+# stopped at its creation event, before user mode) moves them (lane-ops smoke: 1 of 10 captures, +20,640 cycles with
+# CPU time flat), which is not NST code running.
 function Assert-NstFreezeHeld([string]$Container, [string]$Token) {
   $r = Invoke-InContainer $Container { param($tok)
     if (-not ('CgHold' -as [type])) {
-      Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgHold { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool QueryProcessCycleTime(IntPtr h, out ulong c); [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CheckRemoteDebuggerPresent(IntPtr h, ref bool p); }'
+      Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgHold { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CheckRemoteDebuggerPresent(IntPtr h, ref bool p); }'
     }
     $null, $hpid, $hstart, $marker = $tok -split '\|', 4
     $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
-    if ($m -notmatch "^frozen\|$hpid\|$hstart\|(\d+)\|(\d+)\|(\d+)$") { return "marker reads '$m', not this hold's (expired or failed)" }
-    $npid = [int]$Matches[1]; $cpu = [long]$Matches[2]; $cyc0 = [uint64]$Matches[3]
+    if ($m -notmatch "^frozen\|$hpid\|$hstart\|(\d+)\|(\d+)\|\d+$") { return "marker reads '$m', not this hold's (expired or failed)" }
+    $npid = [int]$Matches[1]; $cpu = [long]$Matches[2]
     $h = Get-Process -Id ([int]$hpid) -ErrorAction SilentlyContinue
     if (-not $h -or $h.HasExited -or $h.StartTime.Ticks -ne [long]$hstart) { return 'the holder is gone' }
     $p = Get-Process -Id $npid -ErrorAction SilentlyContinue
@@ -167,9 +170,6 @@ function Assert-NstFreezeHeld([string]$Container, [string]$Token) {
     $dbg = $false
     if (-not [CgHold]::CheckRemoteDebuggerPresent($p.Handle, [ref]$dbg)) { return 'debugger state unreadable' }
     if (-not $dbg) { return 'no debugger attached to the NST' }
-    $cyc = [uint64]0
-    if (-not [CgHold]::QueryProcessCycleTime($p.Handle, [ref]$cyc)) { return 'NST cycle time unreadable' }
-    if ($cyc -ne $cyc0) { return "the NST used processor cycles while held ($cyc0 -> $cyc)" }
     $now = $p.TotalProcessorTime.Ticks
     if ($now -ne $cpu) { return "the NST used CPU time while held ($cpu -> $now ticks)" }
     'held'
