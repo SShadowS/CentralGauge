@@ -9,8 +9,9 @@
  * testPolicyViolations as a judge would: the refapp; per task the staged
  * pristine (refapp + overlay/), and the pristine with correct/, every
  * naive/<n>/, every fixture/<f>/ applied, every mutants/<m>/ over pristine +
- * correct (Test paths excluded, as verdict.ts); oracle/ and reference-tests/
- * as Test text. The task and variant directories enumerated must equal the
+ * correct (Test paths excluded, as verdict.ts); oracle/ as Test text over its
+ * compile context, pristine + correct/ (orchestrator approval), and
+ * reference-tests/ as Test text over the pristine. The task and variant directories enumerated must equal the
  * git-tracked ones. Output: lock digest, scanned .al counts, the index build
  * time and the full onprem_ref hit list; pass = zero hits.
  */
@@ -20,7 +21,6 @@ import { fromFileUrl, join, resolve } from "@std/path";
 import { assert, assertEquals } from "@std/assert";
 import { lockDigestOf } from "../../src/harness/bc-lane.ts";
 import { safeCopyTree } from "../../src/harness/fsutil.ts";
-import { listTree } from "../../src/harness/hash.ts";
 import { loadSymbolsLock } from "../../src/harness/identity.ts";
 import { loadOnPremIndex } from "../../src/harness/onprem-symbols.ts";
 import { applyOverlay, readAppGraph } from "../../src/harness/staging.ts";
@@ -31,6 +31,7 @@ import {
   testPolicyViolations,
   workspaceInterfaces,
 } from "../../src/harness/verdict-workspace.ts";
+import { alFiles, oracleContext, oracleHits } from "./onprem-gate-lib.ts";
 
 const ROOT = fromFileUrl(new URL("../../", import.meta.url));
 const VARIANT_KINDS = ["naive", "mutants", "fixture"] as const;
@@ -56,21 +57,6 @@ async function tracked(): Promise<string[]> {
   }).output();
   assert(out.success, "git ls-files failed");
   return new TextDecoder().decode(out.stdout).split("\n").filter(Boolean);
-}
-
-/** The .al files of `dir` (relative, `/`-separated) under an optional top folder. */
-async function alFiles(
-  dir: string,
-  under?: string,
-): Promise<[string, string][]> {
-  const out: [string, string][] = [];
-  for (const e of await listTree(dir, "task")) {
-    if (!e.path.toLowerCase().endsWith(".al")) continue;
-    if (under && !e.path.startsWith(`${under}/`)) continue;
-    const rel = under ? e.path.slice(under.length + 1) : e.path;
-    out.push([rel, await Deno.readTextFile(join(dir, ...e.path.split("/")))]);
-  }
-  return out;
 }
 
 Deno.test("H-38 Q2 gate (8.4): the shipped tree has no onprem_ref hit against the real symbol lock, fallback active", async () => {
@@ -116,17 +102,12 @@ Deno.test("H-38 Q2 gate (8.4): the shipped tree has no onprem_ref hit against th
       if (v.startsWith("onprem_ref: ")) hits.push(`${label}: ${v}`);
     }
   };
-  /** Test text over its pristine: the pristine's interfaces plus the text's own. */
-  const scanText = async (label: string, dir: string, pristine: string) => {
+  /** Test text over a context: the context's interfaces plus the text's own. */
+  const scanText = async (label: string, dir: string, context: string) => {
     contexts++;
-    const files = await alFiles(dir);
-    scanned += files.length;
-    const ifaces = new Set([
-      ...await workspaceInterfaces(pristine),
-      ...await workspaceInterfaces(dir),
-    ]);
-    for (const v of testPolicyViolations(files, index, ifaces)) {
-      if (v.startsWith("onprem_ref: ")) hits.push(`${label}: ${v}`);
+    scanned += (await alFiles(dir)).length;
+    for (const v of await oracleHits(dir, context, index)) {
+      hits.push(`${label}: ${v}`);
     }
   };
   try {
@@ -205,7 +186,12 @@ Deno.test("H-38 Q2 gate (8.4): the shipped tree has no onprem_ref hit against th
       for (const kind of ["oracle", "reference-tests"]) {
         if (!(await dirs(task.dir)).includes(kind)) continue;
         counts[kind]!++;
-        await scanText(`${id} ${kind}`, join(task.dir, kind), pristine);
+        // Orchestrator approval: an oracle over its compile context,
+        // pristine + correct/; reference-tests over the pristine.
+        const context = kind === "oracle"
+          ? await oracleContext(task.dir, pristine, join(tmp, id, "oracle-ctx"))
+          : pristine;
+        await scanText(`${id} ${kind}`, join(task.dir, kind), context);
       }
     }
     console.log(
