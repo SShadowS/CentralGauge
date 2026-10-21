@@ -1,7 +1,7 @@
 {
   "v": 1,
-  "judgment_id": "550758bd-a12e-47f3-ad80-703d9c7ea136",
-  "execution_id": "84d13d20-0643-4f2d-b24c-c2306c3b85fb",
+  "judgment_id": "ef952ede-f104-4cd1-97eb-278b4fd8ce2c",
+  "execution_id": "91cd2a69-608e-4c78-892f-6d1e7c270735",
   "violations": [],
   "diagnostics": [],
   "test_messages": [],
@@ -10,13 +10,13 @@
     "agent_tests: not_submitted"
   ],
   "spans": {
-    "reconstruct_ms": 197.01960000000008,
-    "compile_ms": 93.7585999999992,
-    "queue_ms": 0.03580000000056316,
+    "reconstruct_ms": 136.96979999999985,
+    "compile_ms": 71.59490000000051,
+    "queue_ms": 0.021200000000135333,
     "provisioning_ms": 0,
     "candidate_publish_ms": 15,
-    "test_ms": 0.15349999999943975,
-    "total_ms": 496.0709999999999
+    "test_ms": 0.1580999999996493,
+    "total_ms": 377.7301000000002
   },
   "containers": [
     "C1"
