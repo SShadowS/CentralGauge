@@ -19,6 +19,7 @@ import {
   validateApps,
 } from "../../../src/harness/verdict-workspace.ts";
 import { cellFor, makeEnv, mockImageBehavior } from "./runtime-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const manifest = {
@@ -328,6 +329,7 @@ Deno.test("subscriber-repair fixtures: G holds the pristine 80090 (no repair sub
         artifact: join(ws, "artifact"),
         out: join(ws, out),
         symbolIds,
+        onPrem: NO_ONPREM,
         ...o,
       });
     const g = await build("g", { rawTest: true });

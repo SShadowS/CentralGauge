@@ -844,6 +844,7 @@ export async function harnessJudgeFixture(
       symbolIds: new Set(h.env.symbols.map((s) => s.app_id.toLowerCase())),
       workDir: join(scratch, "judge"),
       lock: { store: h.env.symbolStore, packages: h.env.symbols },
+      onPrem: h.env.onPrem,
       deploy: h.env.deploy,
       harnessCommit: h.env.harnessCommit,
     }, h.env.now);

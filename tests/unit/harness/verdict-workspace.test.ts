@@ -13,6 +13,7 @@ import {
   testCodeunits,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const SHIPPED =
@@ -69,6 +70,7 @@ const rebuild = async (p: string, a: string, productionFrom?: string) =>
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: SYM,
+    onPrem: NO_ONPREM,
     productionFrom,
   });
 

@@ -24,6 +24,7 @@
     "test:unit": "deno test --allow-all --coverage=coverage tests/unit/",
     "test:status": "bash -c \"deno test --allow-all tests/unit/ 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -E '^ok \\||^FAILED \\|'\"",
     "test:harness:fast": "deno run --allow-all scripts/harness/test-fast.ts",
+    "test:harness:onprem-gate": "deno test --allow-all scripts/harness/onprem-gate.ts --",
     "test:integration": "deno test --allow-all --coverage=coverage tests/integration/",
     "test:e2e": "deno test --allow-all --coverage=coverage tests/e2e/",
     "coverage": "deno coverage coverage --lcov --output=coverage/lcov.info && deno coverage coverage",

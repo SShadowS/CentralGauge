@@ -159,6 +159,8 @@ import {
   ValidationError,
 } from "../../../../src/errors.ts";
 import { exists } from "../../../../src/harness/fsutil.ts";
+import { OnPremIndexError } from "../../../../src/harness/onprem-symbols.ts";
+import { noOnPrem } from "../../harness/onprem-fixture.ts";
 import { loadPairing } from "../../../../src/harness/judgment-report.ts";
 import { RecordStore } from "../../../../src/harness/records.ts";
 import {
@@ -808,8 +810,22 @@ function deps(
       return { getState: () => ({ containers: [] }), record: () => {} };
     },
     verifyEgress: verify,
+    // H-38: the fixture store holds no real symbol package; an empty index of its lock.
+    admitOnPrem: (l) => noOnPrem(l),
   };
 }
+
+Deno.test("openHarnessEnv (H-38 Q4): a symbol store the OnPrem index cannot be read from refuses the run before the bench lock, any sweep and recovery", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  const { admitOnPrem: _, ...real } = deps(order);
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), real),
+    OnPremIndexError,
+    "not a NAVX package",
+  );
+  assertEquals(order, []);
+});
 
 const envOpts = (t: TestEnv, containers = ["Cronus281"]) => ({
   repoRoot: t.repo.root,
@@ -2078,8 +2094,9 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const js = await t.env.store.judgments(e.id);
   const latest = js.reduce((a, b) => a.started_at >= b.started_at ? a : b);
   assertEquals(latest.scorer_versions, SCORER_SUITE);
-  // 5 since H-30 (helper merge, shipped wins); 6 since H-35 (helper as written).
-  assertEquals(latest.scorer_versions["mutant_kill"], "6");
+  // 5 since H-30 (helper merge, shipped wins); 6 since H-35 (helper as
+  // written); 7 since H-38 (the onprem_ref gate).
+  assertEquals(latest.scorer_versions["mutant_kill"], "7");
   assertEquals(latest.scorer_fingerprint, await currentScorerFingerprint());
   assertEquals(
     [

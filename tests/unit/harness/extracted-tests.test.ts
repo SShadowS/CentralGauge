@@ -22,6 +22,7 @@ import {
   normalizeAlBody,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const tmp = async () => await Deno.realPath(await testTempDir());
@@ -111,6 +112,7 @@ async function rebuild(p: string, a: string) {
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
   });
   const gen = join(v.dir, ...GEN.split("/"));
   return {
@@ -1108,6 +1110,7 @@ async function rebuildDropped(p: string, a: string) {
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
     dropShippedTests: true,
   });
 }

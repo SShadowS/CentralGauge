@@ -1049,8 +1049,19 @@ compile), L2 (network) and L3 (bans).
 
 **L3 scope.** L3 (`persistence_ref`) bans the r5 2.3 table in agent production
 and Test text before the build, by name (namespace-qualified names included)
-and by object id. OnPrem-scoped members of the Base and System Application
-called by name are not covered by L3; the L1 Cloud compile covers them.
+and by object id. L3 `onprem_ref` bans, in the same text, calls by name to
+members that any locked symbol package (all packages of
+`harness-tasks/symbols.lock.json`) declares `[Scope('OnPrem')]`, on any
+overload: through a typed variable, parameter, return value or array element,
+through `Rec`, `xRec`, `CurrPage`, `CurrReport` and `this`, and as a bare name
+against every implicit receiver of its object (the table, a page's or a page
+extension's SourceTable, a codeunit's TableNo, a report's data items, an
+extension's base object). Subscriptions to OnPrem event publishers are banned
+the same way. A receiver or bare name it cannot resolve (a call result, a
+dotted chain, `with`, an undeterminable implicit receiver) is banned when its
+name is an OnPrem name anywhere in the lock. The index is read from the symbol
+store at run start; a lock mismatch refuses the run, and a judgment without
+this lock's index is unscored.
 
 ### Lineage file
 

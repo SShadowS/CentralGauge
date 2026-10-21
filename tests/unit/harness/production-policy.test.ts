@@ -16,6 +16,7 @@ import {
   productionPolicyViolations,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const SYSTEM_APPLICATION = "63ca2fa4-4f03-4f2b-a480-172fef340d3f";
@@ -43,7 +44,12 @@ async function scan(
   for (const [rel, text] of Object.entries(o.files ?? {})) {
     await write(d, rel, text);
   }
-  return await productionPolicyViolations(d, await readAppGraph(d), o.allow);
+  return await productionPolicyViolations(
+    d,
+    await readAppGraph(d),
+    o.allow,
+    NO_ONPREM,
+  );
 }
 
 const proc = (decl: string, stmt: string) =>
@@ -273,6 +279,7 @@ Deno.test("H-35: the workspace builder reports production violations, in G (rawT
       artifact: a,
       out: join(await Deno.realPath(await testTempDir()), "v"),
       symbolIds: new Set([IDS.assert]),
+      onPrem: NO_ONPREM,
       rawTest,
     });
     hasRule(v.violations, "test_detection_ref", `rawTest ${rawTest}`);

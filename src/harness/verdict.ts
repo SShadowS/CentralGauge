@@ -20,6 +20,7 @@ import type {
   LockedSymbols,
   Prepared,
 } from "./bc-lane.ts";
+import type { OnPremIndex } from "./onprem-symbols.ts";
 import type { JudgmentRecord } from "./records.ts";
 import type { BcEgressRecord } from "./environment.ts";
 import type {
@@ -89,7 +90,9 @@ export const SCORER_SUITE: Record<string, string> = {
   // members always as shipped, and internalsVisibleTo naming the Test app is
   // kept (H-30, owner 2026-10-18 "merge, shipped wins"; all four bumped).
   // 4: G builds the pristine Test app, never the agent's (H-35).
-  build: "4",
+  // 5: the L3 policy gate bans calls by name to OnPrem members of locked
+  // objects, `onprem_ref` (H-38; all five bumped).
+  build: "5",
   // 2: a change task's agent-added tests include those extracted from
   // shipped test codeunits (M4-17a); the task's shipped rows are unchanged.
   // 3: added helper procedures kept (H-21).
@@ -97,19 +100,22 @@ export const SCORER_SUITE: Record<string, string> = {
   // (H-26, decision 2026-09-25-agent-suite-infra item 3).
   // 5: helper merge, shipped wins (H-30).
   // 6: shipped rows only, on G; agent-added tests moved to agent_tests (H-35).
-  pass_to_pass: "6",
+  // 7: the onprem_ref policy gate (H-38).
+  pass_to_pass: "7",
   // 2: added helper procedures kept (H-21). 3: helper merge (H-30).
   // 4: the oracle runs on G, without agent Test code (H-35).
-  fail_to_pass: "4",
+  // 5: the onprem_ref policy gate (H-38).
+  fail_to_pass: "5",
   // 2: agent-suite rules (decision 2026-09-25-agent-suite-infra).
   // 3: [Test] procedures added to shipped test codeunits are extracted into
   // a generated codeunit, with the credit rules (M4-17a).
   // 4: added helper procedures kept (H-21). 5: helper merge (H-30).
-  // 6: the helper as written (H-35).
-  mutant_kill: "6",
+  // 6: the helper as written (H-35). 7: the onprem_ref policy gate (H-38).
+  mutant_kill: "7",
   // 1: harness-defined, every kind but test-authoring: the agent's own tests
   // on A (agent Test, no shipped test codeunits), H-26 rerun policy (H-35).
-  agent_tests: "1",
+  // 2: the onprem_ref policy gate, Test side included (H-38).
+  agent_tests: "2",
 };
 type ScorerName =
   | "build"
@@ -159,7 +165,20 @@ export const KNOWN_SUITES: readonly {
       mutant_kill: mk!,
     },
   })),
-  { id: "h35", v: 2, versions: SCORER_SUITE },
+  // H-38 (Q9): the H-35 suite frozen, so every stored P-02 / M8-16a judgment
+  // (fingerprint b23eeb83...) still verifies.
+  {
+    id: "h35",
+    v: 2,
+    versions: {
+      build: "4",
+      pass_to_pass: "6",
+      fail_to_pass: "4",
+      mutant_kill: "6",
+      agent_tests: "1",
+    },
+  },
+  { id: "h38", v: 2, versions: SCORER_SUITE },
 ];
 
 const sameVersions = (
@@ -229,6 +248,12 @@ export interface JudgeInput {
   symbolIds: ReadonlySet<string>;
   workDir: string;
   lock: LockedSymbols;
+  /**
+   * H-38 (design 6): the run's OnPrem index (admitOnPrem at run start). The
+   * judge-entry preflight requires its lockDigest to be `lock`'s; otherwise
+   * the judgment is unscored (infra), never a model fail.
+   */
+  onPrem: OnPremIndex;
   /** The removal allowlist's trusted roots (pristine, oracle) are set by judge, never by the caller. */
   /** H-35 S3: `reset` is required: no judge deployment without a reset. */
   deploy: Pick<DeployContext, "ledgerRoot"> & {
@@ -444,6 +469,8 @@ const RULE_CODES = new Set([
   "dynamic_object_access",
   // H-35 run 004 #1 (r5 2.3): the L3 persistence bans
   "persistence_ref",
+  // H-38 (Q6): L3 calls by name to OnPrem members of locked objects
+  "onprem_ref",
 ]);
 
 /** H-35 (design-r2 5): a workspace violation's stable rule code. */
@@ -983,6 +1010,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
       artifact: i.artifact,
       out: join(i.workDir, name),
       symbolIds: i.symbolIds,
+      onPrem: i.onPrem,
       ...o,
     });
   const gw = await workspace("verdict", { rawTest: true });
@@ -1444,6 +1472,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     out: join(i.workDir, "verdict"),
     productionFrom: reference,
     symbolIds: i.symbolIds,
+    onPrem: i.onPrem,
     dropShippedTests: true,
   });
   log.spans.reconstruct_ms = performance.now() - tr;
@@ -1474,6 +1503,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
     out: join(i.workDir, "p2p"),
     productionFrom: reference,
     symbolIds: i.symbolIds,
+    onPrem: i.onPrem,
     rawTest: true,
   });
   const sp = await prepare(
@@ -1689,6 +1719,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
         out: join(i.workDir, `mutant-${m}`),
         productionFrom: production,
         symbolIds: i.symbolIds,
+        onPrem: i.onPrem,
         dropShippedTests: true,
       });
       const mp = await prepare(
@@ -1783,18 +1814,35 @@ export async function judge(
     policy: [],
     manifest: null,
   };
-  try {
-    if (i.task.task.kind === "test-authoring") await scoreTestAuthoring(ctx);
-    else await scoreChange(ctx);
-  } catch (err) {
-    if (
-      !(err instanceof InfraRetriesExhaustedError) &&
-      !(err instanceof NoEligibleContainersError) && !isInfraError(err)
-    ) {
-      throw err;
-    }
-    log.error = err instanceof Error ? err.message : String(err);
+  // H-38 (design 6, Q4): the judge-entry preflight, before any scorer or
+  // policy decision. Without this lock's OnPrem index nothing is judged: every
+  // scorer unscored and the policy empty, so the verdict is unscored (infra),
+  // never a model fail.
+  const lockDigest = await lockDigestOf(i.lock);
+  const unadmitted = !i.onPrem
+    ? "no index for this judgment"
+    : i.onPrem.lockDigest !== lockDigest
+    ? `built from another symbols lock (${
+      i.onPrem.lockDigest.slice(0, 12)
+    }, this lock ${lockDigest.slice(0, 12)})`
+    : null;
+  if (unadmitted) {
+    log.error = `onprem index: ${unadmitted}`;
     scores.nullRest();
+  } else {
+    try {
+      if (i.task.task.kind === "test-authoring") await scoreTestAuthoring(ctx);
+      else await scoreChange(ctx);
+    } catch (err) {
+      if (
+        !(err instanceof InfraRetriesExhaustedError) &&
+        !(err instanceof NoEligibleContainersError) && !isInfraError(err)
+      ) {
+        throw err;
+      }
+      log.error = err instanceof Error ? err.message : String(err);
+      scores.nullRest();
+    }
   }
   log.spans.total_ms = performance.now() - t0;
   const list = scores.list;
