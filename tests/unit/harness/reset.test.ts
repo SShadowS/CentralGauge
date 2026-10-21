@@ -657,8 +657,31 @@ Deno.test("H-40 addendum 8b: an in_place_cab cache tolerates an existing Content
     ),
     { diff: [], errors: [] },
   );
-  const differs = (what: string, after: string[], b = before) =>
-    assertEquals(fsDiff(b, cap(...after), [], [], cab).diff.length, 1, what);
+  const fileP = (name: string, folder = "Content") =>
+    w(`${CNC}/${folder}/${name}`);
+  // exactly one difference, at `path`, with its own before and after lines
+  // (case-insensitive key, as fsDiff), and no errors
+  const differs = (
+    what: string,
+    after: string[],
+    path = fileP(N),
+    b = before,
+  ) => {
+    const at = (ls: string[]) =>
+      ls.find((l) => l.toLowerCase().endsWith(`|${path.toLowerCase()}`)) ??
+        null;
+    assertEquals(
+      fsDiff(b, cap(...after), [], [], cab),
+      { diff: [{ path, before: at(b), after: at(after) }], errors: [] },
+      what,
+    );
+  };
+  const tolerated = (what: string, after: string[], b = before) =>
+    assertEquals(
+      fsDiff(b, cap(...after), [], [], cab),
+      { diff: [], errors: [] },
+      what,
+    );
   const now = (size: number, head: string, attrs = 36) => [
     ...dirs,
     content(N, "b".repeat(64), size, head, attrs, 9),
@@ -680,23 +703,24 @@ Deno.test("H-40 addendum 8b: an in_place_cab cache tolerates an existing Content
     ...dirs,
     content(N, "a".repeat(64), 4987, cabHead(4987)),
     content(M, "c".repeat(64), 5652, HEAD_57C8),
-  ]);
+  ], fileP(M));
   differs("removed file", [...dirs]);
   differs("attribute change", now(5652, HEAD_57C8, 38));
   differs("lower-cased name", [
     ...dirs,
     content(N.toLowerCase(), "b".repeat(64), 5652, HEAD_57C8, 36, 9),
-  ]);
+  ], fileP(N.toLowerCase()));
   differs("a stream", [
     ...dirs,
     content(N, "a".repeat(64), 4987, cabHead(4987)),
     w(`S|${"d".repeat(64)}|3|${CNC}/Content/${N}:hid`),
-  ]);
+  ], `${fileP(N)}:hid`);
   for (const folder of ["Content2", "MetaData"]) {
     const dirs2 = [D(CNC), D(`${CNC}/${folder}`)];
     differs(
       `a CAB-valid file in ${folder}`,
       [...dirs2, content(N, "b".repeat(64), 5652, HEAD_57C8, 36, 9, folder)],
+      fileP(N, folder),
       cap(
         ...dirs2,
         content(N, "a".repeat(64), 4987, cabHead(4987), 36, 1, folder),
@@ -707,7 +731,40 @@ Deno.test("H-40 addendum 8b: an in_place_cab cache tolerates an existing Content
     ...dirs,
     valid,
     D(`${CNC}/Content/x`),
+  ], w(`${CNC}/Content/x`));
+  // a same-spelling name outside `files` (here with an extension)
+  const odd = `${N}.tmp`;
+  differs(
+    "a non-matching Content name",
+    [...dirs, content(odd, "b".repeat(64), 5652, HEAD_57C8, 36, 9)],
+    fileP(odd),
+    cap(...dirs, content(odd, "a".repeat(64), 4987, cabHead(4987))),
+  );
+  // a spelling change above the file name: `files` still matches the
+  // relative path, only the path equality refuses it
+  const respelled = fileP(N).replace("CryptnetUrlCache", "cryptneturlcache");
+  differs("respelled above the file name", [
+    ...dirs,
+    `F|${"b".repeat(64)}|5652|36|9|${HEAD_57C8}|${respelled}`,
+  ], respelled);
+  // cbCabinet is unsigned: a size with its high bit set
+  const big = 0x80000010;
+  tolerated("cbCabinet with the high bit set", [
+    ...dirs,
+    content(N, "b".repeat(64), big, cabHead(big), 36, 9),
   ]);
+  differs("high-bit cbCabinet, another size", [
+    ...dirs,
+    content(N, "b".repeat(64), big - 1, cabHead(big), 36, 9),
+  ]);
+  // after-only (Q7): an invalid before header does not matter
+  for (const head of ["4d53", "3082" + "00".repeat(24), cabHead(1)]) {
+    tolerated(
+      `before head ${head.slice(0, 8)}`,
+      [...dirs, valid],
+      cap(...dirs, content(N, "a".repeat(64), 4987, head)),
+    );
+  }
   // the head holds at most 26 bytes
   assertEquals(
     fsDiff(
@@ -756,6 +813,12 @@ Deno.test("H-40 addendum 8b Q6: a current F line restores a recorded one only fi
   assert(fsLineRestored(`D|16|1|${p}`, `D|16|1|${p}`));
   not("a D line", `D|16|2|${p}`, `D|16|1|${p}`);
   not("an F line for a D line", line(), `D|16|1|${p}`);
+  const s = (sha: string) => `S|${sha}|3|${p}:hid`;
+  assert(fsLineRestored(s("d".repeat(64)), s("d".repeat(64))));
+  not("an S line", s("e".repeat(64)), s("d".repeat(64)));
+  const l = (target: string) => `L|1040|1|${p}|${target}`;
+  assert(fsLineRestored(l("D:\\a"), l("D:\\a")));
+  not("an L line", l("D:\\b"), l("D:\\a"));
 });
 
 Deno.test("H-35 Sol S3 r4: a cache shape matches the whole relative path even when its alternation is unanchored inside, and a base with a trailing separator works as without", () => {

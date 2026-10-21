@@ -247,6 +247,11 @@ Deno.test("H-40: the shipped lineage's other caches judge 26-byte (digest v4) he
       md("a".repeat(64)),
       md("c".repeat(64), 330, "77EC63BDA74BD0D0E0426DC8F8008506"),
     ], 1],
+    ["C:\\Run\\my time", ["D|16|1|C:\\Run\\my"], ["D|16|9|C:\\Run\\my"], 0],
+    ["C:\\Run\\my new file", ["D|16|1|C:\\Run\\my"], [
+      "D|16|1|C:\\Run\\my",
+      f("C:\\Run\\my\\x.app", "4e41", "c".repeat(64)),
+    ], 1],
   ];
   const wide = (l: string) =>
     l.replace(/^((?:[^|]*\|){5})([0-9a-f]*)\|/, `$1$2${"00".repeat(24)}|`);
