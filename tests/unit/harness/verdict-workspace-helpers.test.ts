@@ -15,6 +15,7 @@ import {
   buildVerdictWorkspace,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const tmp = async () => await Deno.realPath(await testTempDir());
@@ -111,6 +112,7 @@ async function rebuild(
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
     dropShippedTests: o.dropShippedTests === true,
   });
   return {
@@ -167,12 +169,13 @@ Deno.test("H-21/H-30/H-35: every scorer version is bumped (the helper changes th
   assertEquals(SCORER_SUITE, {
     // H-21 made build 2, pass_to_pass 3, fail_to_pass 2, mutant_kill 4;
     // H-26 pass_to_pass 4; H-30 ("merge, shipped wins") bumps all four;
-    // H-35 (helper as written, G and A) bumps all four and adds agent_tests.
-    build: "4",
-    pass_to_pass: "6",
-    fail_to_pass: "4",
-    mutant_kill: "6",
-    agent_tests: "1",
+    // H-35 (helper as written, G and A) bumps all four and adds agent_tests;
+    // H-38 (the onprem_ref gate) bumps all five.
+    build: "5",
+    pass_to_pass: "7",
+    fail_to_pass: "5",
+    mutant_kill: "7",
+    agent_tests: "2",
   });
 });
 
@@ -206,6 +209,7 @@ Deno.test("H-30: internalsVisibleTo in a production app.json is kept only for th
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
   });
   assertEquals(v.violations, []);
   const merged = JSON.parse(
@@ -249,6 +253,7 @@ Deno.test("H-30: internalsVisibleTo in the Test app.json itself is dropped with 
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
   });
   assertEquals(v.violations, []);
   const t = JSON.parse(await Deno.readTextFile(join(v.dir, "Test/app.json")));
@@ -289,6 +294,7 @@ Deno.test("H-30 (Sol r2 P1): app.json values that are not strings (an id or name
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
   });
   assertStringIncludes(
     v.violations.join("\n"),
@@ -484,6 +490,7 @@ Deno.test("H-35: rawTest copies the pristine Test app byte for byte (app.json in
     artifact: a,
     out: join(await tmp(), "g"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
     rawTest: true,
   });
   assertEquals(v.violations, []);
@@ -574,6 +581,7 @@ Deno.test("H-35: G (rawTest) reads no agent Test file, so the Test-side rules ne
     artifact: a,
     out: join(await tmp(), "g"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
     rawTest: true,
   });
   assertEquals(v.violations, []);

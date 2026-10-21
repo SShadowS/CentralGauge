@@ -36,7 +36,9 @@ import {
   buildCacheReport,
   dirBuildCache,
   lockDigestOf,
+  type LockedSymbols,
 } from "../../src/harness/bc-lane.ts";
+import type { OnPremIndex } from "../../src/harness/onprem-symbols.ts";
 import {
   placedConcurrencyProblem,
   placedConcurrencyRefusal,
@@ -55,6 +57,7 @@ import {
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import {
+  admitOnPrem,
   ensurePin,
   holdNamespace,
   recoverFences,
@@ -195,6 +198,8 @@ export interface EnvDeps {
     host: string,
     port: number,
   ) => { url: string; shutdown(): Promise<void> };
+  /** H-38 test seam for the OnPrem index admission (default: admitOnPrem). */
+  admitOnPrem?: (lock: LockedSymbols) => Promise<OnPremIndex>;
 }
 
 export const REAL_DEPS: EnvDeps = {
@@ -933,6 +938,12 @@ export async function openHarnessEnv(
       [SYMBOLS_LOCK_PATH],
     );
   }
+  // H-38 (design 6, Q4): the lock's OnPrem index, before any lock, sweep,
+  // cell, deferred judge, rejudge or recovery; an OnPremIndexError refuses.
+  const onPrem = await (deps.admitOnPrem ?? admitOnPrem)({
+    store: o.symbolStore,
+    packages: symbols,
+  });
   const sharedResults = join(o.repoRoot, "results", "harness");
   let release: () => Promise<void>;
   try {
@@ -1326,6 +1337,7 @@ export async function openHarnessEnv(
       owner,
       symbols,
       symbolStore: o.symbolStore,
+      onPrem,
       secretsSource: o.secretsSource,
       // Owned ids come from each grant's and judgment's trusted roots (M1-16).
       // H-35 S3: every judge deployment resets to the lineage (--lineage);

@@ -45,6 +45,7 @@ import { loadTask } from "../../../src/harness/task.ts";
 import { deployedSource, FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { FakeDocker, type RunBehavior } from "./fake-docker.ts";
 import { makeRefappRepo, type RefappRepo, write } from "./refapp-fixture.ts";
+import { noOnPrem } from "./onprem-fixture.ts";
 import { removeTempDir, testTempDir as tempDir } from "../../utils/temp-dir.ts";
 
 export const SECRET_OAUTH = "sk-ant-oat01-fixture-0123456789abcdefXYZ";
@@ -298,6 +299,8 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     owner: "HOST1",
     symbols: repo.symbols,
     symbolStore: repo.symbolStore,
+    // H-38: the fixture store holds no real package; an empty index of its lock.
+    onPrem: await noOnPrem({ store: repo.symbolStore, packages: repo.symbols }),
     secretsSource,
     secretAcl: { icacls: fakeIcacls, user: ACL_USER },
     driveType: () => Promise.resolve("Fixed"),

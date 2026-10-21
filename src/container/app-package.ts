@@ -16,8 +16,22 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** The manifest entry's bytes, or null. */
-async function manifestBytes(file: Uint8Array): Promise<Uint8Array | null> {
+/** One central-directory entry of a NAVX package's zip. */
+export interface NavxEntry {
+  name: string;
+  method: number;
+  size: number;
+  local: number;
+}
+
+/**
+ * The zip of a NAVX package and its central directory, in order; null when
+ * the bytes are not NAVX, have no end of central directory, or a directory
+ * record is truncated (H-38 generalises the manifest read).
+ */
+export function navxEntries(
+  file: Uint8Array,
+): { zip: Uint8Array; entries: NavxEntry[] } | null {
   if (
     file.length < 8 || new TextDecoder().decode(file.subarray(0, 4)) !== "NAVX"
   ) {
@@ -33,33 +47,45 @@ async function manifestBytes(file: Uint8Array): Promise<Uint8Array | null> {
     }
   }
   if (eocd < 0) return null;
-  const entries = u16(zip, eocd + 10);
+  const count = u16(zip, eocd + 10);
+  const entries: NavxEntry[] = [];
   let p = u32(zip, eocd + 16);
-  for (let n = 0; n < entries; n++) {
+  for (let n = 0; n < count; n++) {
     if (p + 46 > zip.length || u32(zip, p) !== 0x02014b50) return null;
-    const method = u16(zip, p + 10);
-    const size = u32(zip, p + 20);
     const nameLen = u16(zip, p + 28);
-    const extraLen = u16(zip, p + 30);
-    const commentLen = u16(zip, p + 32);
-    const local = u32(zip, p + 42);
-    const name = new TextDecoder().decode(
-      zip.subarray(p + 46, p + 46 + nameLen),
-    );
-    if (name === "NavxManifest.xml") {
-      if (local + 30 > zip.length || u32(zip, local) !== 0x04034b50) {
-        return null;
-      }
-      const start = local + 30 + u16(zip, local + 26) + u16(zip, local + 28);
-      if (start + size > zip.length) return null;
-      const data = zip.subarray(start, start + size);
-      if (method === 0) return data;
-      if (method === 8) return await inflateRaw(data);
-      return null;
-    }
-    p += 46 + nameLen + extraLen + commentLen;
+    entries.push({
+      method: u16(zip, p + 10),
+      size: u32(zip, p + 20),
+      local: u32(zip, p + 42),
+      name: new TextDecoder().decode(zip.subarray(p + 46, p + 46 + nameLen)),
+    });
+    p += 46 + nameLen + u16(zip, p + 30) + u16(zip, p + 32);
   }
+  return { zip, entries };
+}
+
+/** An entry's bytes (stored or deflate), or null when truncated or of another method. */
+export async function navxEntryBytes(
+  zip: Uint8Array,
+  e: NavxEntry,
+): Promise<Uint8Array | null> {
+  if (e.local + 30 > zip.length || u32(zip, e.local) !== 0x04034b50) {
+    return null;
+  }
+  const start = e.local + 30 + u16(zip, e.local + 26) +
+    u16(zip, e.local + 28);
+  if (start + e.size > zip.length) return null;
+  const data = zip.subarray(start, start + e.size);
+  if (e.method === 0) return data;
+  if (e.method === 8) return await inflateRaw(data);
   return null;
+}
+
+/** The manifest entry's bytes, or null. */
+async function manifestBytes(file: Uint8Array): Promise<Uint8Array | null> {
+  const nav = navxEntries(file);
+  const e = nav?.entries.find((x) => x.name === "NavxManifest.xml");
+  return nav && e ? await navxEntryBytes(nav.zip, e) : null;
 }
 
 /** The `Target` the package's manifest records ("Cloud", "OnPrem", ...), or null. */

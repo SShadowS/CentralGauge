@@ -6,13 +6,13 @@
   "task_id": "HX-001",
   "task_oracle_hash": "18e9413c7c692245fe3c518155ec67b71f8426443fea901a622166308e171ae7",
   "scorer_versions": {
-    "build": "4",
-    "pass_to_pass": "6",
-    "fail_to_pass": "4",
-    "mutant_kill": "6",
-    "agent_tests": "1"
+    "build": "5",
+    "pass_to_pass": "7",
+    "fail_to_pass": "5",
+    "mutant_kill": "7",
+    "agent_tests": "2"
   },
-  "scorer_fingerprint": "b23eeb83c8c0d79b209ac4a4d75a8b45fe03daba32646ab400e20f19a281fcfc",
+  "scorer_fingerprint": "9e784acb7e32cbc3015c439b18a64f7c3ab2f9c6a14e8b2462cec5e7f0f83704",
   "scorers": [
     {
       "name": "build",

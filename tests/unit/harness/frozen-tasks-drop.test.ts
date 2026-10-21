@@ -22,6 +22,7 @@ import {
 } from "../../../src/harness/identity.ts";
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
@@ -154,6 +155,7 @@ for (const id of ids) {
         out: join(await tmp(), label),
         productionFrom,
         symbolIds,
+        onPrem: NO_ONPREM,
         dropShippedTests: true,
       });
       const where = `${id} ${label}`;
