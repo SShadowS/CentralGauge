@@ -116,7 +116,12 @@ import {
 } from "./sandbox.ts";
 import { readAppGraph, type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
 import { selectJudgment } from "./outcome.ts";
-import { currentScorerFingerprint, judge, writeVerdictLog } from "./verdict.ts";
+import {
+  currentScorerFingerprint,
+  judge,
+  type VerdictLog,
+  writeVerdictLog,
+} from "./verdict.ts";
 import {
   type AnalyzersSchema,
   canaryCheck,
@@ -2624,6 +2629,16 @@ export async function admitOnPrem(lock: LockedSymbols): Promise<OnPremIndex> {
   return await p;
 }
 
+/** H-33: a judgment and its verdict log, computed (scrubbed) and not yet written. */
+export interface ComputedJudgment {
+  judgment: JudgmentRecord;
+  log: VerdictLog;
+}
+
+/**
+ * Judge and write (the run path). H-33: published while the judge work dir
+ * still exists, then the dir is removed, as before the split.
+ */
 export async function judgeExecution(
   env: HarnessEnv,
   cell: CellRef,
@@ -2632,6 +2647,58 @@ export async function judgeExecution(
   oracleHash = cell.oracleHash,
   forced?: JudgmentRecord["forced"],
 ): Promise<JudgmentRecord> {
+  return await inJudgeDir(env, e, async (workDir) =>
+    await publishJudgment(
+      env,
+      e,
+      oracleHash,
+      await computeIn(env, cell, e, pristine, oracleHash, forced, workDir),
+    ));
+}
+
+/** H-33: judge an execution; nothing is written to the results. */
+export async function computeJudgment(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  pristine: string,
+  oracleHash = cell.oracleHash,
+  forced?: JudgmentRecord["forced"],
+): Promise<ComputedJudgment> {
+  return await inJudgeDir(
+    env,
+    e,
+    (workDir) => computeIn(env, cell, e, pristine, oracleHash, forced, workDir),
+  );
+}
+
+/** H-33: `fn` with a fresh judge work dir, removed afterwards. */
+async function inJudgeDir<T>(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+  fn: (workDir: string) => Promise<T>,
+): Promise<T> {
+  const workDir = join(
+    env.privateRoot,
+    "judge",
+    `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    return await fn(workDir);
+  } finally {
+    await Deno.remove(workDir, { recursive: true }).catch(() => {});
+  }
+}
+
+async function computeIn(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  pristine: string,
+  oracleHash: string,
+  forced: JudgmentRecord["forced"] | undefined,
+  workDir: string,
+): Promise<ComputedJudgment> {
   // Fail closed: judging needs proof the run was not scripted. The published
   // side file must be readable and the private marker (kept after
   // publication) must not say stub; either marker refuses.
@@ -2658,79 +2725,83 @@ export async function judgeExecution(
   }
   // Before judging: no key set means nothing could be redacted (fail closed).
   const keys = await readRedactionKeys(env, e.id);
-  const workDir = join(
-    env.privateRoot,
-    "judge",
-    `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  // H-35 (design-r4 4): the oracle side of this judgment stays readable.
+  await storeOraclePreimage(env.resultsRoot, cell.task);
+  const raw = await judge(env.lane, {
+    executionId: e.id,
+    workspaceHash: art.workspace_hash,
+    task: cell.task,
+    oracleHash,
+    pristine,
+    artifact: join(env.resultsRoot, art.stored_path),
+    symbolIds: new Set(env.symbols.map((s) => s.app_id.toLowerCase())),
+    workDir,
+    lock: { store: env.symbolStore, packages: env.symbols },
+    onPrem: env.onPrem,
+    deploy: env.deploy,
+    harnessCommit: env.harnessCommit,
+    ...(env.buildCache ? { buildCache: env.buildCache } : {}),
+  }, env.now);
+  // Every judge output is published through the custody redaction (the
+  // agent's code can assemble a secret at runtime in a test message).
+  const log = scrubJudgeOutput(raw.log, keys, env);
+  const judgment = JudgmentRecordSchema.parse(
+    scrubJudgeOutput(
+      forced ? { ...raw.judgment, forced } : raw.judgment,
+      keys,
+      env,
+    ),
   );
-  try {
-    // H-35 (design-r4 4): the oracle side of this judgment stays readable.
-    await storeOraclePreimage(env.resultsRoot, cell.task);
-    const raw = await judge(env.lane, {
-      executionId: e.id,
-      workspaceHash: art.workspace_hash,
-      task: cell.task,
-      oracleHash,
-      pristine,
-      artifact: join(env.resultsRoot, art.stored_path),
-      symbolIds: new Set(env.symbols.map((s) => s.app_id.toLowerCase())),
-      workDir,
-      lock: { store: env.symbolStore, packages: env.symbols },
-      onPrem: env.onPrem,
-      deploy: env.deploy,
-      harnessCommit: env.harnessCommit,
-      ...(env.buildCache ? { buildCache: env.buildCache } : {}),
-    }, env.now);
-    // Every judge output is published through the custody redaction (the
-    // agent's code can assemble a secret at runtime in a test message).
-    const log = scrubJudgeOutput(raw.log, keys, env);
-    const judgment = JudgmentRecordSchema.parse(
-      scrubJudgeOutput(
-        forced ? { ...raw.judgment, forced } : raw.judgment,
-        keys,
-        env,
-      ),
-    );
-    // C-03 run 002: checked against the store right before writing, so a
-    // refused forced judgment (a second one, a stale --replaces, or clock
-    // skew keeping an older judgment selected) leaves nothing behind.
-    if (judgment.forced) {
-      const why = forcedRefusal(
-        e,
-        await env.store.judgments(e.id),
-        oracleHash,
-        judgment.forced.replaces,
-        judgment,
-      );
-      if (why) throw new ConfigurationError(`${why}: nothing written`);
-    }
-    // M10-08c P2-1: the token again after the judge returned, before both writes.
-    holdNamespace(env, "judgment not written");
-    // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
-    await writeVerdictLog(env.resultsRoot, log);
-    holdNamespace(env, "judgment not written");
-    await env.store.writeJudgment(judgment);
-    return judgment;
-  } finally {
-    await Deno.remove(workDir, { recursive: true }).catch(() => {});
-  }
+  return { judgment, log };
 }
 
-/** Judge a stored execution again: restage the task, never re-run the agent. */
+/** H-33: write a computed judgment: its verdict log, then the judgment (write-once). */
+export async function publishJudgment(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+  oracleHash: string,
+  { judgment, log }: ComputedJudgment,
+): Promise<JudgmentRecord> {
+  // C-03 run 002: checked against the store right before writing, so a
+  // refused forced judgment (a second one, a stale --replaces, or clock
+  // skew keeping an older judgment selected) leaves nothing behind.
+  if (judgment.forced) {
+    const why = forcedRefusal(
+      e,
+      await env.store.judgments(e.id),
+      oracleHash,
+      judgment.forced.replaces,
+      judgment,
+    );
+    if (why) throw new ConfigurationError(`${why}: nothing written`);
+  }
+  // M10-08c P2-1: the token again after the judge returned, before both writes.
+  holdNamespace(env, "judgment not written");
+  // The side file first: a crash between the two leaves an orphan log, never a judgment without its log.
+  await writeVerdictLog(env.resultsRoot, log);
+  holdNamespace(env, "judgment not written");
+  await env.store.writeJudgment(judgment);
+  return judgment;
+}
+
+/**
+ * Judge a stored execution again: restage the task, never re-run the agent.
+ * H-33: computed only; the caller publishes it (publishJudgment).
+ */
 export async function rejudgeExecution(
   env: HarnessEnv,
   cell: CellRef,
   e: ExecutionRecord,
   oracleHash: string,
   forced?: JudgmentRecord["forced"],
-): Promise<JudgmentRecord> {
+): Promise<ComputedJudgment> {
   const out = join(
     env.privateRoot,
     "work",
     `rejudge-${e.id}-${crypto.randomUUID().slice(0, 8)}`,
   );
   try {
-    return await judgeExecution(
+    return await computeJudgment(
       env,
       cell,
       e,
