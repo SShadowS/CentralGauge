@@ -39,6 +39,13 @@ const INDEX = await loadOnPremIndex(
         Name: "Fallback Names",
         Methods: ["Send", "Get"].map(onPremMethod),
       }],
+      // r2 N3: an indexed value-returning member spelled like structure syntax.
+      TableExtensions: [{
+        Id: 1,
+        Name: "RS Lookup",
+        TargetObject: "Report Selections",
+        Methods: [onPremMethod("Lookup")],
+      }],
       Namespaces: [{
         Name: "Microsoft",
         Namespaces: [{
@@ -146,5 +153,38 @@ Deno.test("H-38 self-check LOW: a declared workspace codeunit's Get is safe; a v
   ]], []);
   await expectHits([["Core.al", call("Mystery")]], [
     "W.Get (unresolved, OnPrem name Get)",
+  ]);
+});
+
+// ---- self-check r2 (runs/001/selfcheck/sol-r2.md) ----
+
+Deno.test("H-38 self-check r2 N1: directive-looking text inside a block comment does not eat the comment's end; the call after it is onprem_ref", async () => {
+  const file =
+    `codeunit 70000 "CGR Core"\n{\n    procedure P()\n    var\n        ISM: ${ISM};\n        V: Text;\n    begin\n        /*\n#region */\n        ISM.Get('k', DataScope::Module, V);\n    end;\n}\n`;
+  await expectHits([["Core.al", file]], ["ISM.Get (codeunit 1293 Get)"]);
+});
+
+Deno.test("H-38 self-check r2 N2: a directive label cannot forge a workspace interface or its namespace; the locked interface still falls back", async () => {
+  const fb = "T.Send (unresolved, OnPrem name Send)";
+  const forgedIface =
+    'namespace Microsoft.Integration;\n#region interface "Outbox Transport" {\n#endregion\n';
+  await expectHits([
+    ["Forged.al", forgedIface],
+    ["Core.al", use('Microsoft.Integration."Outbox Transport"')],
+  ], [fb]);
+  const forgedNs =
+    '#region namespace Microsoft.Integration;\n#endregion\ninterface "Outbox Transport"\n{\n    procedure Send(Payload: Text): Boolean;\n}\n';
+  await expectHits([
+    ["Forged.al", forgedNs],
+    ["Core.al", use('Microsoft.Integration."Outbox Transport"')],
+  ], [fb]);
+});
+
+Deno.test('H-38 self-check r2 N3: a call spelled like structure syntax ("Lookup"() quoted, and Lookup() that is an indexed OnPrem name) is onprem_ref at object level', async () => {
+  const file =
+    `page 70011 "CGR RS"\n{\n    SourceTable = "Report Selections";\n\n    layout\n    {\n        area(Content)\n        {\n            field(A; "Lookup"()) { }\n            field(B; Lookup()) { }\n        }\n    }\n}\n`;
+  await expectHits([["Page.al", file]], [
+    '"Lookup" (table 77 Lookup)',
+    "Lookup (table 77 Lookup)",
   ]);
 });

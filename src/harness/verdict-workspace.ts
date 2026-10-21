@@ -473,7 +473,22 @@ export async function buildVerdictWorkspace(
  * Blank comments and string literals (quoted identifiers kept) with
  * same-length whitespace, newlines kept.
  */
-export function stripAlNoise(src: string): string {
+/** A preprocessor line starts at `i` (blanks, then `#`). */
+function directiveAt(src: string, i: number): boolean {
+  const re = /[ \t]*#/y;
+  re.lastIndex = i;
+  return re.test(src);
+}
+
+export function stripAlNoise(
+  src: string,
+  /**
+   * H-38 self-check r2 N1: also blank preprocessor lines (`#region <label>`,
+   * `#pragma ...`), recognised in code position only, in the same pass, so a
+   * directive-looking line inside a comment or string is never one.
+   */
+  o: { directives?: boolean } = {},
+): string {
   const n = src.length;
   let out = "";
   let i = 0;
@@ -487,7 +502,12 @@ export function stripAlNoise(src: string): string {
   while (i < n) {
     const c = src[i]!;
     const d = src[i + 1];
-    if (c === "/" && d === "/") {
+    if (
+      o.directives && (i === 0 || src[i - 1] === "\n") && directiveAt(src, i)
+    ) {
+      const end = src.indexOf("\n", i);
+      blank(end === -1 ? n : end);
+    } else if (c === "/" && d === "/") {
       const end = src.indexOf("\n", i);
       blank(end === -1 ? n : end);
     } else if (c === "/" && d === "*") {
@@ -544,8 +564,11 @@ interface AlDecl {
  * quoted identifiers are blanked (same length) so a name cannot fake one or
  * shift the brace depth. Every header match counts, also one without a body.
  */
-function declarations(src: string): AlDecl[] {
-  const text = stripAlNoise(src);
+function declarations(
+  src: string,
+  o: { directives?: boolean } = {},
+): AlDecl[] {
+  const text = stripAlNoise(src, o);
   const flat = text.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
   const out: AlDecl[] = [];
   const headerDecls = (header: string) =>
@@ -2197,18 +2220,30 @@ const interfaceId = (ns: string, name: string) => `${ns}|${name}`;
 
 /** The interfaces one AL text declares, as identities (self-check H4). */
 function interfacesIn(src: string): string[] {
-  const code = stripAlNoise(src);
+  // r2 N2: the scanner's own text (comments, strings and preprocessor lines
+  // blank), and only declarations at brace depth 0.
+  const code = stripAlNoise(src, { directives: true });
   const masked = maskQuoted(code);
-  const nsm = new RegExp(NAMESPACE_DECL.source, "id").exec(masked);
+  const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
+  const depth = (at: number) => {
+    let d = 0;
+    for (let i = 0; i < at; i++) {
+      if (flat[i] === "{") d++;
+      else if (flat[i] === "}") d = Math.max(0, d - 1);
+    }
+    return d;
+  };
+  const nsm = [...masked.matchAll(new RegExp(NAMESPACE_DECL.source, "gid"))]
+    .find((m) => depth(m.index) === 0);
   const ns = nsm
     ? [
       ...code.slice(nsm.indices![1]![0], nsm.indices![1]![1])
         .matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g),
     ].map((s) => unquote(s[0])).join(".")
     : "";
-  return [...scanner(code, masked)(INTERFACE_DECL)].map((m) =>
-    interfaceId(ns, unquote(m.at(1)))
-  );
+  return [...scanner(code, masked)(INTERFACE_DECL)]
+    .filter((m) => depth(m.index) === 0)
+    .map((m) => interfaceId(ns, unquote(m.at(1))));
 }
 
 /** H-38 8.4 ruling (b): every interface the .al files of a workspace declare, as identities. */
@@ -2284,15 +2319,15 @@ function onPremRefs(
   idx: OnPremIndex,
   interfaces: ReadonlySet<string>,
 ): string[] {
-  // Self-check H1: preprocessor lines (#region <label>, #pragma, ...) blanked,
-  // same offsets, so no label word is read as begin/case/end.
-  const text = src.replace(/^[ \t]*#[^\n]*/gm, (l) => " ".repeat(l.length));
-  const code = stripAlNoise(text);
+  // Self-check H1 (r2 N1): preprocessor lines (#region <label>, #pragma, ...)
+  // blanked in the lexer's code state, same offsets, so no label word is read
+  // as begin/case/end and no comment boundary is lost.
+  const code = stripAlNoise(src, { directives: true });
   const masked = maskQuoted(code);
   const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
   const scan = scanner(code, masked);
   const routines = routineRanges(flat);
-  const objects = declarations(text);
+  const objects = declarations(src, { directives: true });
   const found = new Set<string>();
   const show = (from: number, to: number) =>
     src.slice(from, to).replace(/\s+/g, " ").trim();
@@ -2709,7 +2744,11 @@ function onPremRefs(
     // structure syntax (`field(`, `where(`, ...) is no call.
     if (
       !body &&
-      (masked[p] === "[" || AL_STRUCTURE.has(word) ||
+      // r2 N3 (fail closed): a structure word is skipped only unquoted and
+      // only when no locked package has an OnPrem member of that name.
+      (masked[p] === "[" ||
+        AL_STRUCTURE.has(word) && code[at - 1] !== '"' &&
+          !m[0].startsWith('"') && !idx.names.has(word) ||
         /\b(?:procedure|trigger)$/i.test(
           masked.slice(Math.max(0, p - 9), p + 1),
         ))
