@@ -884,7 +884,7 @@ Deno.test("H-35 S2.2: every suite that ever shipped is known; an unknown combina
   const { KNOWN_SUITES, SCORER_SUITE, suiteOf } = await import(
     "../../../src/harness/verdict.ts"
   );
-  assertEquals(KNOWN_SUITES.length, 7);
+  assertEquals(KNOWN_SUITES.length, 8);
   assertEquals(suiteOf(SCORER_SUITE)?.v, 2);
   assertEquals(
     suiteOf({
@@ -956,7 +956,7 @@ Deno.test("H-35 S2.2: validateCampaignRecords refuses an unknown suite, a suite 
       scorer_fingerprint: await currentScorerFingerprint(),
     }, j2],
   });
-  assertStringIncludes(p2.join("\n"), "under the h35 suite");
+  assertStringIncludes(p2.join("\n"), "under the h38 suite");
   // Names other than the descriptor's expected set.
   const descriptor = () =>
     Promise.resolve({
@@ -979,4 +979,83 @@ Deno.test("H-35 S2.2: validateCampaignRecords refuses an unknown suite, a suite 
     p3.join("\n"),
     "scorers build != expected build, pass_to_pass",
   );
+});
+
+// ---- H-38 (Q9, design 7, 8.5): the H-35 suite frozen, the live suite bumped ----
+
+/** The scorer versions every stored P-02 / M8-16a judgment carries, and their fingerprint. */
+const H35 = {
+  build: "4",
+  pass_to_pass: "6",
+  fail_to_pass: "4",
+  mutant_kill: "6",
+  agent_tests: "1",
+};
+const H35_FP =
+  "b23eeb83c8c0d79b209ac4a4d75a8b45fe03daba32646ab400e20f19a281fcfc";
+
+Deno.test("H-38 (Q9, 8.5): a stored h35 judgment (v2 record, fingerprint b23eeb83) passes full integrity with the descriptor check after the bump and is not current; the live suite is h38, the legacy suites unchanged", async () => {
+  const {
+    currentScorerFingerprint,
+    isCurrentJudgment,
+    KNOWN_SUITES,
+    SCORER_SUITE,
+    suiteOf,
+  } = await import("../../../src/harness/verdict.ts");
+  const { scorerFingerprint } = await import("../../../src/harness/records.ts");
+  assertEquals(await scorerFingerprint(H35), H35_FP);
+  assertEquals(suiteOf(H35)?.id, "h35");
+  assertEquals(SCORER_SUITE, {
+    build: "5",
+    pass_to_pass: "7",
+    fail_to_pass: "5",
+    mutant_kill: "7",
+    agent_tests: "2",
+  });
+  assertEquals(suiteOf(SCORER_SUITE)?.id, "h38");
+  assert((await currentScorerFingerprint()) !== H35_FP);
+  assertEquals(
+    KNOWN_SUITES.map((s) => [s.id, s.v, Object.values(s.versions).join(".")]),
+    [
+      ["legacy-1", 1, "1.1.1.1"],
+      ["legacy-2", 1, "1.1.1.2"],
+      ["legacy-3", 1, "1.2.1.3"],
+      ["legacy-4", 1, "2.3.2.4"],
+      ["legacy-5", 1, "2.4.2.4"],
+      ["legacy-6", 1, "3.5.3.5"],
+      ["h35", 2, "4.6.4.6.1"],
+      ["h38", 2, "5.7.5.7.2"],
+    ],
+  );
+  const r = await scenario();
+  const stored = r.judgments.map((j) => ({
+    ...j,
+    v: 2 as const,
+    scorer_versions: H35,
+    scorer_fingerprint: H35_FP,
+    scorers: ["build", "pass_to_pass", "agent_tests"].map((name) => ({
+      name,
+      passed: j.verdict === "pass",
+      state: "measured" as const,
+      tests: [],
+    })),
+    policy: { passed: true, violations: [] },
+    provenance: {
+      harness_commit: "9f14963c",
+      production_manifest: null,
+      env_fp: null,
+    },
+  }));
+  const descriptor = () =>
+    Promise.resolve({
+      kind: "bugfix" as const,
+      scorers: ["build", "pass_to_pass"],
+      pass_to_pass: [],
+      fail_to_pass: null,
+      mutants: [],
+      production_allow: null,
+      recovered_from: null,
+    });
+  await validateCampaignRecords({ ...r, judgments: stored }, { descriptor });
+  for (const j of stored) assertEquals(await isCurrentJudgment(j), false);
 });

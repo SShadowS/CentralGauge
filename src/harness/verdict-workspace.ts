@@ -21,6 +21,7 @@ import {
   safeCopyTree,
   validatedDest,
 } from "./fsutil.ts";
+import type { OnPremIndex, OnPremObject } from "./onprem-symbols.ts";
 import { readAppGraph, readAppJsonRaw, type StagedApp } from "./staging.ts";
 
 export const TEST_APP = "Test";
@@ -69,6 +70,8 @@ export interface ReconstructOptions {
   rawTest?: boolean;
   /** H-35: the task's reviewed production_allow grant (design-r2 6.2.5). */
   productionAllow?: ProductionAllow | undefined;
+  /** H-38: the run's OnPrem index (L3 `onprem_ref`); never loaded here. */
+  onPrem: OnPremIndex;
 }
 
 export interface VerdictWorkspace {
@@ -395,7 +398,12 @@ export async function buildVerdictWorkspace(
   }
   violations.push(...await validateApps(out, pristineApps, apps, o.symbolIds));
   violations.push(
-    ...await productionPolicyViolations(out, apps, o.productionAllow),
+    ...await productionPolicyViolations(
+      out,
+      apps,
+      o.productionAllow,
+      o.onPrem,
+    ),
   );
   violations.push(
     ...await shippedCollisions(
@@ -413,7 +421,7 @@ export async function buildVerdictWorkspace(
   violations.push(...testPolicyViolations([
     ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
     ...editedShipped,
-  ]));
+  ], o.onPrem));
   const { notes, excluded, rejected } = violations.length === 0 &&
       (editedShipped.size + newTestFiles.length + asWritten.length) > 0
     ? await applyCreditRules(
@@ -1412,6 +1420,7 @@ const ISOLATION_DISABLED = /\bRequiredTestIsolation\s*=\s*Disabled\b/i;
  */
 export function testPolicyViolations(
   files: Iterable<readonly [string, string]>,
+  onPrem: OnPremIndex,
 ): string[] {
   const out: string[] = [];
   for (const [rel, src] of [...files].sort(([a], [b]) => a < b ? -1 : 1)) {
@@ -1433,6 +1442,9 @@ export function testPolicyViolations(
     // H-35 run 004 #1 (r5 2.3): the persistence bans apply to Test text too.
     for (const d of persistenceRefs(src)) {
       out.push(`persistence_ref: ${where}: ${d}`);
+    }
+    for (const d of onPremRefs(src, onPrem)) {
+      out.push(`onprem_ref: ${where}: ${d}`);
     }
   }
   return out;
@@ -1680,13 +1692,18 @@ function declaredNames(
   return out;
 }
 
-/** The top-level arguments (code text) of a call whose `(` ends at `from`, and its end. */
+/**
+ * The top-level arguments (code text) of a call whose `(` ends at `from`, and
+ * its end; `ranges` are each argument's offsets (H-38: a literal is read back
+ * from the source there).
+ */
 function callArgs(
   code: string,
   masked: string,
   from: number,
-): { args: string[]; end: number } {
+): { args: string[]; end: number; ranges: [number, number][] } {
   const args: string[] = [];
+  const ranges: [number, number][] = [];
   let depth = 0;
   let start = from;
   let i = from;
@@ -1696,12 +1713,14 @@ function callArgs(
     else if ((c === ")" || c === "]") && depth > 0) depth--;
     else if (c === ")" || (c === "," && depth === 0)) {
       args.push(code.slice(start, i).trim());
+      ranges.push([start, i]);
       start = i + 1;
-      if (c === ")") return { args, end: i + 1 };
+      if (c === ")") return { args, end: i + 1, ranges };
     }
   }
   args.push(code.slice(start, i).trim());
-  return { args, end: i };
+  ranges.push([start, i]);
+  return { args, end: i, ranges };
 }
 
 /**
@@ -1712,9 +1731,7 @@ function callArgs(
  * XMLPORT_CALL, Filename on an Xmlport variable), PERSISTENCE_OBJECTS by name
  * and id, and any `[Scope('OnPrem')]` declaration. Matched on the
  * noise-stripped code with quoted identifiers masked; details from the source.
- * Scope (owner, l4-scope addendum 4): OnPrem-scoped members of the Base and
- * System Application called by name are not covered by L3; the L1 Cloud
- * compile covers them (a symbol-derived list is follow-up H-38).
+ * Calls by name to OnPrem members of locked objects are onPremRefs (H-38).
  */
 function persistenceRefs(src: string): string[] {
   const code = stripAlNoise(src);
@@ -1827,8 +1844,10 @@ function persistenceRefs(src: string): string[] {
 export async function productionPolicyViolations(
   dir: string,
   apps: readonly StagedApp[],
-  allow: ProductionAllow = {},
+  allow: ProductionAllow | undefined,
+  onPrem: OnPremIndex,
 ): Promise<string[]> {
+  allow ??= {};
   const out: string[] = [];
   const allowedDeps = new Set(
     [...PRODUCTION_DEPENDENCY_ALLOWLIST, ...allow.dependencies ?? []].map((
@@ -1914,10 +1933,540 @@ export async function productionPolicyViolations(
       for (const d of persistenceRefs(src)) {
         found.add(`persistence_ref: ${where}: ${d}`);
       }
+      for (const d of onPremRefs(src, onPrem)) {
+        found.add(`onprem_ref: ${where}: ${d}`);
+      }
       out.push(...found);
     }
   }
   return out;
+}
+
+// ---- H-38 (design 5): L3 calls by name to OnPrem members of locked objects ----
+
+/** An object named by id or by (last segment of) name, lowercase unquoted. */
+interface ObjectRef {
+  id?: number;
+  name?: string;
+}
+/** An object of an indexed kind (table, codeunit, page, report, xmlport). */
+interface Target {
+  kind: string;
+  ref: ObjectRef;
+}
+const OBJECT_REF = new RegExp(`^${NAME_CHAIN}$`);
+/** `18`, `Customer`, `"Gen. Journal Line"`, `Microsoft.Sales."Customer"`; null: does not parse. */
+function objectRef(text: string): ObjectRef | null {
+  const t = text.trim();
+  if (/^\d+$/.test(t)) return { id: Number(t) };
+  if (!OBJECT_REF.test(t)) return null;
+  return {
+    name: unquote([...t.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].at(-1)![0]),
+  };
+}
+/** A name or id as the symbols record it (`18`, `#<module>#Customer`). */
+const symbolRef = (raw: string): ObjectRef =>
+  /^\d+$/.test(raw.trim())
+    ? { id: Number(raw.trim()) }
+    : { name: raw.replace(/^#[0-9a-f]*#/i, "").toLowerCase() };
+
+/** Declared object types with the kind they are indexed under. */
+const INDEXED_TYPE: Readonly<Record<string, string>> = {
+  codeunit: "codeunit",
+  record: "table",
+  page: "page",
+  report: "report",
+  xmlport: "xmlport",
+};
+/** H-38 (5.1): `A, "B": <full type text>` (to `;`, `)` or the line end). */
+const TYPED_DECL =
+  /(?<![\w"])((?:"[^"\n]*"|[A-Za-z_]\w*)(?:\s*,\s*(?:"[^"\n]*"|[A-Za-z_]\w*))*)\s*:(?![:=])\s*([A-Za-z_][^;)\n]*)/gi;
+/** A report or query data item, an xmlport table element: its name and table. */
+const DATA_ITEM = new RegExp(
+  `\\b(?:dataitem|tableelement)\\s*\\(\\s*(${NAME_SEG})\\s*;([^)]*)\\)`,
+  "gi",
+);
+
+/**
+ * A declared type: the indexed object it names, "safe" (a system type, or a
+ * Query, never indexed: the loader refuses an OnPrem one), or null (an
+ * Interface, or object type text that does not parse: unresolved).
+ */
+function typeTarget(type: string): Target | "safe" | null {
+  const t = type.trim().replace(/\s+temporary$/i, "");
+  const m = /^(?:array\s*\[[^\]]*\]\s*of\s+)?([A-Za-z_]\w*)\b\s*([\s\S]*)$/i
+    .exec(t);
+  if (!m) return null;
+  const word = m[1]!.toLowerCase();
+  if (word === "interface") return null;
+  const kind = INDEXED_TYPE[word];
+  if (!kind) return "safe";
+  const ref = objectRef(m[2]!);
+  return ref ? { kind, ref } : null;
+}
+
+const AL_KEYWORDS = new Set(
+  "if then else begin end case of while do repeat until for to downto foreach in with exit not and or xor div mod var procedure trigger local internal protected true false break continue asserterror this event"
+    .split(" "),
+);
+/**
+ * H-38 (5.2): system methods called bare (global functions and the built-in
+ * Record, Page and Report methods of an implicit receiver); never checked.
+ */
+const AL_BUILTINS = new Set(
+  [
+    "message error confirm strmenu format evaluate strsubstno strlen strpos copystr delstr insstr lowercase uppercase incstr padstr selectstr convertstr delchr maxstrlen round abs power random randomize today time workdate currentdatetime createdatetime dt2date dt2time calcdate date2dmy date2dwy dmy2date dwy2date closingdate normaldate variant2date variant2time clear clearall clearlasterror clearcollectedErrors getlasterrortext getlasterrorcode getlasterrorobject getlasterrorcallstack geterrorcallstack hascollectederrors getcollectederrors commit sleep createguid isnullguid userid companyname tenantid serialnumber guiallowed arraylen compressarray copyarray currfieldno isserviceTier rounddatetime createencryptionkey canceltask applicationarea iscollectingerrors session",
+    "get find findfirst findlast findset next insert modify modifyall delete deleteall init setrange setfilter getfilter getfilters getrangemin getrangemax reset copy copyfilter copyfilters transferfields validate testfield fielderror fieldcaption fieldname fieldno fieldactive calcfields calcsums isempty count countapprox locktable mark markedonly clearmarks setcurrentkey setascending ascending rename tablecaption tablename hasfilter filtergroup setrecfilter istemporary setloadfields addloadfields areFieldsloaded setautocalcfields recordid getposition setposition consistent changecompany currentcompany securityfiltering writepermission readpermission relation copylinks deletelinks addlink haslinks setpermissionfilter getview setview currentkey getbysystemid systemid readisolation truncate",
+    "update close settableview setrecord getrecord run runmodal lookupmode editable caption setselectionfilter saverecord activate objectid skip quit showoutput pageno newpage createtotals totalscausedby language formatregion previewmode isreadonly usereqpage",
+  ].join(" ").toLowerCase().split(/\s+/),
+);
+/** Static receivers (`Codeunit.Run`, `Session.LogMessage`, ...): system, never an object. */
+const STATIC_RECEIVERS = new Set(
+  "codeunit page report xmlport query database session system companyproperty navapp taskscheduler isolatedstorage debugger numbersequence file dialog"
+    .split(" "),
+);
+
+/** The string literals (outside comments) in `src` from `from` to `to`. */
+function literalsIn(src: string, from: number, to: number): string[] {
+  const out: string[] = [];
+  let i = from;
+  while (i < to) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (c === "/" && d === "/") {
+      const e = src.indexOf("\n", i);
+      i = e < 0 ? to : e;
+    } else if (c === "/" && d === "*") {
+      const e = src.indexOf("*/", i + 2);
+      i = e < 0 ? to : e + 2;
+    } else if (c === "'") {
+      let j = i + 1;
+      let s = "";
+      while (j < to && src[j] !== "\n") {
+        if (src[j] === "'" && src[j + 1] === "'") {
+          s += "'";
+          j += 2;
+        } else if (src[j] === "'") break;
+        else s += src[j++];
+      }
+      out.push(s);
+      i = j + 1;
+    } else if (c === '"') {
+      const e = src.indexOf('"', i + 1);
+      i = e < 0 ? to : e + 1;
+    } else i++;
+  }
+  return out;
+}
+
+/** An object's implicit receivers (5.1, 5.2); null parts are undeterminable. */
+interface OnPremContext {
+  /** The own object as indexed (table, codeunit, page, report, xmlport); null for an extension. */
+  own: Target | null;
+  /** An extension's base object; undefined: not an extension; null: it does not parse. */
+  base: Target | null | undefined;
+  /** The implicit Rec tables outside a codeunit's OnRun; null: undeterminable. */
+  records: Target[] | null;
+  /** A codeunit's TableNo (Rec in OnRun); null: does not parse. */
+  tableNo: Target | null | undefined;
+  /** Data item and table element names, as Record variables. */
+  dataItems: Map<string, Target>;
+}
+
+/**
+ * H-38 (design 5): OnPrem members of locked objects reached by name in one
+ * readable AL file, as details: dotted calls on a typed receiver (5.1), bare
+ * names against every implicit receiver (5.2), event subscriptions (5.5);
+ * an unresolved receiver or bare name (a call result, a chain, `with`, an
+ * undeterminable implicit receiver) is banned when its name is an OnPrem name
+ * anywhere in the lock (Q2 fallback, 5.4). Matched on the noise-stripped code
+ * with quoted identifiers masked; details from the source.
+ */
+function onPremRefs(src: string, idx: OnPremIndex): string[] {
+  const code = stripAlNoise(src);
+  const masked = maskQuoted(code);
+  const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
+  const scan = scanner(code, masked);
+  const routines = routineRanges(flat);
+  const objects = declarations(src);
+  const found = new Set<string>();
+  const show = (from: number, to: number) =>
+    src.slice(from, to).replace(/\s+/g, " ").trim();
+  const lookup = (t: Target): { e: OnPremObject; ids: string } | null => {
+    const name = t.ref.id !== undefined
+      ? idx.byId.get(`${t.kind}:${t.ref.id}`)
+      : t.ref.name;
+    const e = name === undefined
+      ? undefined
+      : idx.objects.get(t.kind)?.get(name);
+    return e ? { e, ids: [...e.ids].sort((a, b) => a - b).join(",") } : null;
+  };
+  const decls = [...scan(TYPED_DECL)].map((m) => ({
+    index: m.index,
+    names: [...m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) =>
+      unquote(n[0])
+    ),
+    type: m.at(2),
+  }));
+  const routineAt = (at: number) =>
+    routines.find((x) => x.begin < at && at < x.end);
+  const objectAt = (at: number) =>
+    objects.find((x) => x.start <= at && at <= x.end);
+  /** The declared type text of `name` in scope at `at` (local, then global), as typeOf. */
+  const typeOf = (name: string, at: number): string | undefined => {
+    const r = routineAt(at);
+    const o = objectAt(at);
+    if (!r || !o) return undefined;
+    const local = decls.find((d) =>
+      d.index >= r.start && d.index < r.begin && d.names.includes(name)
+    );
+    return (local ??
+      decls.find((d) =>
+        d.index >= o.start && d.index < o.end && d.names.includes(name) &&
+        !routines.some((x) => d.index >= x.start && d.index < x.end)
+      ))?.type;
+  };
+  /** An object-level property's value (outside any routine), parsed; undefined: absent. */
+  const property = (o: AlDecl, prop: string): ObjectRef | null | undefined => {
+    const re = new RegExp(`\\b${prop}\\s*=([^;]*);`, "gid");
+    for (const m of masked.slice(0, o.end).matchAll(re)) {
+      if (
+        m.index < o.start ||
+        routines.some((x) => m.index >= x.start && m.index < x.end)
+      ) continue;
+      const r = m.indices![1]!;
+      return objectRef(code.slice(r[0], r[1]));
+    }
+    return undefined;
+  };
+  const contexts = new Map<AlDecl, OnPremContext>();
+  const contextOf = (o: AlDecl): OnPremContext => {
+    const known = contexts.get(o);
+    if (known) return known;
+    const own = INDEXED_TYPE[o.kind === "table" ? "record" : o.kind];
+    const baseKind = {
+      tableextension: "table",
+      pageextension: "page",
+      reportextension: "report",
+    }[o.kind];
+    let base: Target | null | undefined;
+    if (baseKind) {
+      let h = -1;
+      const head = new RegExp(`\\b${o.kind}\\s+0*${o.id}\\b`, "gi");
+      for (const m of flat.slice(0, o.start).matchAll(head)) h = m.index;
+      const ext = /\bextends\b([^{]*)$/i.exec(
+        masked.slice(h < 0 ? 0 : h, o.start - 1),
+      );
+      const ref = ext
+        ? objectRef(code.slice(o.start - 1 - ext[1]!.length, o.start - 1))
+        : null;
+      base = ref ? { kind: baseKind, ref } : null;
+    }
+    const dataItems = new Map<string, Target>();
+    let itemsParse = true;
+    for (const m of scan(DATA_ITEM)) {
+      if (m.index < o.start || m.index > o.end) continue;
+      const ref = objectRef(m.at(2));
+      if (ref) dataItems.set(unquote(m.at(1)), { kind: "table", ref });
+      else itemsParse = false;
+    }
+    const items = itemsParse ? [...dataItems.values()] : null;
+    const fromIndex = (
+      t: Target | null | undefined,
+      refs: (e: OnPremObject) => Set<string>,
+    ) => {
+      const hit = t ? lookup(t) : null;
+      return hit
+        ? [...refs(hit.e)].map((r): Target => ({
+          kind: "table",
+          ref: symbolRef(r),
+        }))
+        : null;
+    };
+    let records: Target[] | null = [];
+    if (o.kind === "table") {
+      records = [{
+        kind: "table",
+        ref: { name: unquote(objectName(code, o)) },
+      }];
+    } else if (o.kind === "tableextension") records = base ? [base] : null;
+    else if (o.kind === "page") {
+      const st = property(o, "SourceTable");
+      records = st === undefined
+        ? []
+        : st
+        ? [{ kind: "table", ref: st }]
+        : null;
+    } else if (o.kind === "pageextension") {
+      records = fromIndex(base, (e) => e.sourceTables);
+    } else if (o.kind === "reportextension") {
+      const inherited = fromIndex(base, (e) => e.dataItems);
+      records = inherited && items ? [...items, ...inherited] : null;
+    } else if (["report", "query", "xmlport"].includes(o.kind)) records = items;
+    const tn = o.kind === "codeunit" ? property(o, "TableNo") : undefined;
+    const c: OnPremContext = {
+      own: own
+        ? { kind: own, ref: { name: unquote(objectName(code, o)) } }
+        : null,
+      base,
+      records,
+      tableNo: tn === undefined
+        ? undefined
+        : tn
+        ? { kind: "table", ref: tn }
+        : null,
+      dataItems,
+    };
+    contexts.set(o, c);
+    return c;
+  };
+  /** Rec's tables at `at`; null: undeterminable or none (unresolved). */
+  const recordsAt = (c: OnPremContext, at: number): Target[] | null => {
+    const r = routineAt(at)!;
+    if (c.tableNo !== undefined) {
+      const onRun = /^trigger\s+OnRun\b/i.test(
+        flat.slice(r.start, r.begin).trim(),
+      );
+      return onRun && c.tableNo ? [c.tableNo] : null;
+    }
+    return c.records && c.records.length > 0 ? c.records : null;
+  };
+  const self = (c: OnPremContext): Target[] | null =>
+    c.base === null ? null : [c.own, c.base].filter((t): t is Target => !!t);
+  /** H-38 (5.2): every implicit receiver of a bare name at `at`; null: some part undeterminable. */
+  const implicit = (c: OnPremContext, at: number): Target[] | null => {
+    const own = self(c);
+    if (!own) return null;
+    if (c.tableNo !== undefined) {
+      const r = routineAt(at)!;
+      if (!/^trigger\s+OnRun\b/i.test(flat.slice(r.start, r.begin).trim())) {
+        return own;
+      }
+      return c.tableNo ? [...own, c.tableNo] : null;
+    }
+    return c.records ? [...own, ...c.records] : null;
+  };
+  /** H-38 (5.1): the targets of a one-segment receiver; "safe", or null (unresolved). */
+  const receiver = (
+    name: string,
+    shape: string,
+    at: number,
+  ): Target[] | "safe" | null => {
+    if (shape === "call" || shape === "paren") return null;
+    const declared = typeOf(name, at);
+    if (declared !== undefined) {
+      const t = typeTarget(declared);
+      return t === "safe" ? "safe" : t ? [t] : null;
+    }
+    if (shape === "index") return null;
+    const c = contextOf(objectAt(at)!);
+    if (name === "rec" || name === "xrec") return recordsAt(c, at);
+    if (name === "this") return self(c);
+    const o = objectAt(at)!;
+    if (name === "currpage") {
+      return o.kind === "page"
+        ? [c.own!]
+        : o.kind === "pageextension" && c.base
+        ? [c.base]
+        : null;
+    }
+    if (name === "currreport") {
+      return o.kind === "report"
+        ? [c.own!]
+        : o.kind === "reportextension" && c.base
+        ? [c.base]
+        : null;
+    }
+    if (name === "currxmlport") return o.kind === "xmlport" ? [c.own!] : null;
+    const item = c.dataItems.get(name);
+    if (item) return [item];
+    return STATIC_RECEIVERS.has(name) ? "safe" : null;
+  };
+  const check = (
+    targets: Target[] | "safe" | null,
+    member: string,
+    text: string,
+  ) => {
+    const m = unquote(member);
+    if (targets === "safe") return;
+    if (targets === null) {
+      if (idx.names.has(m)) {
+        found.add(
+          `${text} (unresolved, OnPrem name ${member.replace(/^"|"$/g, "")})`,
+        );
+      }
+      return;
+    }
+    for (const t of targets) {
+      const hit = lookup(t);
+      if (hit?.e.members.has(m)) {
+        found.add(
+          `${text} (${t.kind} ${hit.ids} ${member.replace(/^"|"$/g, "")})`,
+        );
+        return;
+      }
+    }
+  };
+  const inBody = (at: number) =>
+    routineAt(at) !== undefined && objectAt(at) !== undefined;
+  const wsBack = (j: number) => {
+    while (j >= 0 && /\s/.test(masked[j]!)) j--;
+    return j;
+  };
+  const matchOpen = (j: number, open: string, close: string) => {
+    let depth = 0;
+    for (; j >= 0; j--) {
+      if (masked[j] === close) depth++;
+      else if (masked[j] === open && --depth === 0) return j;
+    }
+    return -1;
+  };
+  /** The primary expression ending at `j`: identifier, `x[..]`, `f(..)` or `(..)`. */
+  const primary = (
+    j: number,
+  ): { start: number; name: string; shape: string } | null => {
+    j = wsBack(j);
+    let shape = "ident";
+    if (masked[j] === ")" || masked[j] === "]") {
+      const k = matchOpen(j, masked[j] === ")" ? "(" : "[", masked[j]!);
+      if (k < 0) return null;
+      shape = masked[j] === ")" ? "call" : "index";
+      j = wsBack(k - 1);
+      if (!/[\w"]/.test(masked[j] ?? "")) {
+        return { start: k, name: "", shape: "paren" };
+      }
+    }
+    let s = j;
+    if (masked[j] === '"') {
+      s = masked.lastIndexOf('"', j - 1);
+      if (s < 0) return null;
+      return { start: s, name: unquote(code.slice(s, j + 1)), shape };
+    }
+    if (!/\w/.test(masked[j] ?? "")) return null;
+    while (s > 0 && /\w/.test(masked[s - 1]!)) s--;
+    const name = masked.slice(s, j + 1).toLowerCase();
+    return { start: code[s - 1] === '"' ? s - 1 : s, name, shape };
+  };
+  // with X do: every bare name inside is unresolved (Q8, 5.3).
+  const withs: [number, number][] = [];
+  for (const m of flat.matchAll(/\bwith\b/gi)) {
+    const d = /\bdo\b/gi;
+    d.lastIndex = m.index + 4;
+    const dm = d.exec(flat);
+    if (!dm) continue;
+    let i = dm.index + 2;
+    while (/\s/.test(flat[i] ?? "")) i++;
+    const block = /^begin\b/i.test(flat.slice(i, i + 6));
+    const re = /\b(begin|case|end|else)\b|;/gi;
+    re.lastIndex = i;
+    let depth = 0;
+    let end = flat.length;
+    for (let t = re.exec(flat); t; t = re.exec(flat)) {
+      const w = (t[1] ?? ";").toLowerCase();
+      if (w === "begin" || w === "case") depth++;
+      else if (w === "end") {
+        if (depth === 0) {
+          end = t.index;
+          break;
+        }
+        if (--depth === 0 && block) {
+          end = t.index + 3;
+          break;
+        }
+      } else if (depth === 0) {
+        end = t.index;
+        break;
+      }
+    }
+    withs.push([i, end]);
+  }
+  // 5.1: dotted access R.M (parens optional), the receiver the whole expression before .M.
+  for (const m of masked.matchAll(/\.\s*("[^"\n]*"|[A-Za-z_]\w*)/gd)) {
+    const dot = m.index;
+    if (!inBody(dot) || masked[dot - 1] === "." || masked[dot + 1] === ".") {
+      continue;
+    }
+    const r = m.indices![1]!;
+    const member = code.slice(r[0], r[1]);
+    let end = r[1];
+    if (code[end] === '"' && code[r[0] - 1] === '"') end++;
+    const first = primary(dot - 1);
+    if (!first) continue;
+    let start = first.start;
+    let p = wsBack(first.start - 1);
+    if (masked[p] === ":" && masked[p - 1] === ":") continue;
+    let chain = false;
+    while (masked[p] === "." && masked[p - 1] !== ".") {
+      chain = true;
+      const q = primary(p - 1);
+      if (!q) break;
+      start = q.start;
+      p = wsBack(q.start - 1);
+    }
+    const text = show(start, end);
+    check(chain ? null : receiver(first.name, first.shape, dot), member, text);
+  }
+  // 5.2: bare names in call or statement position, inside routine bodies.
+  for (const m of masked.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)) {
+    const at = m.index;
+    const r = routineAt(at);
+    if (!r || at <= r.begin + 4 || !objectAt(at)) continue;
+    const word = m[0].startsWith('"')
+      ? unquote(code.slice(at, at + m[0].length))
+      : m[0].toLowerCase();
+    if (AL_KEYWORDS.has(word) || AL_BUILTINS.has(word)) continue;
+    const p = wsBack(at - 1);
+    if (masked[p] === "." || masked[p] === ":" && masked[p - 1] === ":") {
+      continue;
+    }
+    let n = at + m[0].length;
+    while (/\s/.test(masked[n] ?? "")) n++;
+    const call = masked[n] === "(";
+    const statement = !call &&
+      (masked[n] === ";" || /^(?:end|else)\b/i.test(masked.slice(n, n + 5))) &&
+      (masked[p] === ";" ||
+        /\b(?:begin|then|else|do|repeat)$/i.test(
+          masked.slice(Math.max(0, p - 5), p + 1),
+        ));
+    if (!call && !statement) continue;
+    const start = code[at - 1] === '"' ? at - 1 : at;
+    const len = m[0].length +
+      (start < at && code[at + m[0].length] === '"' ? 1 : 0);
+    const text = show(start, at + len);
+    const inWith = withs.some(([a, b]) => a <= at && at < b);
+    check(inWith ? null : implicit(contextOf(objectAt(at)!), at), text, text);
+  }
+  // 5.5: [EventSubscriber(ObjectType::<T>, <T>::<name or id>, '<Event>', ...)].
+  const EVENT_KIND: Readonly<Record<string, string>> = {
+    table: "table",
+    codeunit: "codeunit",
+    page: "page",
+    report: "report",
+  };
+  for (const m of masked.matchAll(/\[\s*EventSubscriber\s*\(/gi)) {
+    const { args, ranges, end } = callArgs(code, masked, m.index + m[0].length);
+    if (args.length < 3) continue;
+    const lits = literalsIn(src, ranges[2]![0], ranges[2]![1]);
+    if (args[2] !== "" || lits.length !== 1) continue;
+    const event = lits[0]!;
+    const k = /^ObjectType\s*::\s*([A-Za-z_]\w*)$/i.exec(args[0]!);
+    const kind = k ? EVENT_KIND[k[1]!.toLowerCase()] : undefined;
+    if (k && !kind) continue;
+    const a2 = /^(?:(?:Database|Codeunit|Page|Report)\s*::\s*([\s\S]+)|(\d+))$/i
+      .exec(args[1]!);
+    const ref = a2 ? (a2[2] ? { id: Number(a2[2]) } : objectRef(a2[1]!)) : null;
+    if (!kind || !ref) {
+      if (idx.events.has(event.toLowerCase())) {
+        found.add(`${show(m.index, end)} (unresolved, OnPrem name ${event})`);
+      }
+      continue;
+    }
+    const hit = lookup({ kind, ref });
+    if (hit?.e.events.has(event.toLowerCase())) {
+      found.add(`subscriber ${kind} ${hit.ids} '${event}'`);
+    }
+  }
+  return [...found];
 }
 
 /** One member standing for a whole object the parser does not read (names taint its users). */

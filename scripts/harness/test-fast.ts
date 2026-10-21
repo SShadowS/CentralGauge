@@ -78,6 +78,9 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}measures.test.ts`]: c(true, 0),
   [`${H}mock.test.ts`]: c(true, 13),
   [`${H}nonadmin.test.ts`]: c(true, 27),
+  // H-38: temp dirs only (measured 2026-10-21, not in the serial run above).
+  [`${H}onprem-ref.test.ts`]: c(true, 1),
+  [`${H}onprem-symbols.test.ts`]: c(true, 0),
   [`${H}otel.test.ts`]: c(true, 0),
   [`${H}outcome.test.ts`]: c(true, 0),
   [`${H}persistence-bans.test.ts`]: c(true, 1),

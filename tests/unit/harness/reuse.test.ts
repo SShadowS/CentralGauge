@@ -25,6 +25,7 @@ import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import { FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { noOnPrem } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const PRICE = "Rental/src/Price.Codeunit.al";
@@ -156,6 +157,10 @@ async function setup(
         pristine: staged.pristine,
         symbolIds: new Set([IDS.assert]),
         lock: { store: repo.symbolStore, packages: repo.symbols },
+        onPrem: await noOnPrem({
+          store: repo.symbolStore,
+          packages: repo.symbols,
+        }),
         deploy: { ledgerRoot: join(results, "bc-ledger"), reset: OK_RESET },
       },
       artifact: join(results, frozen.stored_path),

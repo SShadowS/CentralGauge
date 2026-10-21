@@ -49,6 +49,9 @@ import {
   result,
 } from "./fake-bc.ts";
 import { appJson, IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { BASE_SLICE, noOnPrem } from "./onprem-fixture.ts";
+import { buildOnPremIndex } from "../../../src/harness/onprem-symbols.ts";
+import { lockDigestOf } from "../../../src/harness/bc-lane.ts";
 import { hashFile, hashJson, hashTree } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
@@ -115,10 +118,57 @@ async function setup(
       symbolIds: new Set([IDS.assert]),
       workDir: await Deno.realPath(await testTempDir()),
       lock: { store: repo.symbolStore, packages: repo.symbols },
+      onPrem: await noOnPrem({
+        store: repo.symbolStore,
+        packages: repo.symbols,
+      }),
       deploy: { ledgerRoot: join(results, "bc-ledger"), reset: OK_RESET },
     },
   };
 }
+
+Deno.test("H-38 (6, 8.2): judge with no OnPrem index, or one of another lock, is unscored before any scorer or policy decision: every scorer unscored, policy passed, log.error set, no deployment", async () => {
+  for (const what of ["missing", "another lock"] as const) {
+    const bc = script();
+    const { input } = await setup("correct");
+    const i = what === "missing"
+      ? { ...input, onPrem: undefined as unknown as typeof input.onPrem }
+      : { ...input, onPrem: buildOnPremIndex("not-this-lock", [BASE_SLICE]) };
+    const { judgment, log } = await judge(new BcLane(bc, ["C1"]), i);
+    JudgmentRecordSchema.parse(judgment);
+    assertEquals(judgment.verdict, "unscored", what);
+    assert(
+      judgment.scorers.every((s) =>
+        s.state === "unscored" && s.passed === null
+      ),
+      what,
+    );
+    assertEquals(judgment.policy, { passed: true, violations: [] }, what);
+    assertStringIncludes(log.error ?? "", "onprem index: ", what);
+    assertEquals([bc.syncs.length, log.deployments ?? []], [0, []], what);
+  }
+});
+
+Deno.test("H-38 (6): judge threads the index into the policy gate: an OnPrem member call in production is an onprem_ref policy violation", async () => {
+  const { input } = await setup("correct", {
+    "Rental/src/Leak.Codeunit.al":
+      'codeunit 70210 "CGR Leak"\n{\n    procedure Leak(): Boolean\n    var\n        ISM: Codeunit "Isolated Storage Management";\n        V: Text;\n    begin\n        exit(ISM.Get(\'k\', DataScope::Module, V));\n    end;\n}\n',
+  });
+  const i = {
+    ...input,
+    onPrem: buildOnPremIndex(await lockDigestOf(input.lock), [BASE_SLICE]),
+  };
+  const { judgment } = await judge(new BcLane(script(), ["C1"]), i);
+  const policy = judgment.policy!;
+  assertEquals([policy.passed, judgment.verdict], [false, "fail"]);
+  assert(
+    policy.violations.some((v) =>
+      v.rule === "onprem_ref" && v.side === "production" &&
+      v.detail.includes("ISM.Get (codeunit 1293 Get)")
+    ),
+    JSON.stringify(policy.violations),
+  );
+});
 
 Deno.test("judge: the correct solution passes every scorer; the record validates", async () => {
   const bc = script();
@@ -1026,10 +1076,13 @@ Deno.test("judge: the oracle build gets its workspace dependencies' declared sym
       production_allow: { dependencies: [IDS.assert] },
     },
   };
+  const lock = await harvestedLock();
   const { judgment } = await judge(new BcLane(bc, ["C1"]), {
     ...input,
     task,
-    lock: await harvestedLock(),
+    lock,
+    // H-38: the judge-entry preflight wants the index of this lock.
+    onPrem: await noOnPrem(lock),
   });
   assertEquals(
     judgment.scorers.find((x) => x.name === "fail_to_pass")!.passed,
@@ -1569,13 +1622,13 @@ Deno.test("H-35: agent_tests is harness-defined: added to every non-test-authori
   );
 });
 
-Deno.test("H-35: scorer versions bumped (build 4, pass_to_pass 6, fail_to_pass 4, mutant_kill 6, agent_tests 1)", () => {
+Deno.test("H-38: scorer versions bumped (build 5, pass_to_pass 7, fail_to_pass 5, mutant_kill 7, agent_tests 2)", () => {
   assertEquals(SCORER_SUITE, {
-    build: "4",
-    pass_to_pass: "6",
-    fail_to_pass: "4",
-    mutant_kill: "6",
-    agent_tests: "1",
+    build: "5",
+    pass_to_pass: "7",
+    fail_to_pass: "5",
+    mutant_kill: "7",
+    agent_tests: "2",
   });
 });
 

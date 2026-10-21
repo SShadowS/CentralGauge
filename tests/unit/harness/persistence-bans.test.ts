@@ -15,6 +15,7 @@ import {
   testPolicyViolations,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const RULE = "persistence_ref";
@@ -36,11 +37,16 @@ async function both(body: string, tail = "") {
     `codeunit 70000 "CGR Core"\n{\n${body}\n}\n${tail}`,
   );
   return {
-    production: await productionPolicyViolations(d, await readAppGraph(d)),
+    production: await productionPolicyViolations(
+      d,
+      await readAppGraph(d),
+      undefined,
+      NO_ONPREM,
+    ),
     test: testPolicyViolations([[
       "src/Agent.Test.al",
       `codeunit 80160 "Agent T"\n{\n    Subtype = Test;\n${body}\n}\n${tail}`,
-    ]]),
+    ]], NO_ONPREM),
   };
 }
 
@@ -421,6 +427,7 @@ Deno.test("H-35 run 004 #1 (r5 2.3): the workspace builder rejects a persistence
     artifact: a,
     out: join(await Deno.realPath(await testTempDir()), "v"),
     symbolIds: new Set([IDS.assert]),
+    onPrem: NO_ONPREM,
   });
   const refs = v.violations.filter((x) => x.startsWith(`${RULE}: `));
   assert(

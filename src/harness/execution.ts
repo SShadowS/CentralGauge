@@ -137,6 +137,8 @@ import {
   writeMeasureRecord,
 } from "./measures.ts";
 import { buildVerdictWorkspace } from "./verdict-workspace.ts";
+import { loadOnPremIndex, type OnPremIndex } from "./onprem-symbols.ts";
+import { lockDigestOf, type LockedSymbols } from "./bc-lane.ts";
 import { isInfraError } from "../health/is-infra-error.ts";
 import {
   InfraRetriesExhaustedError,
@@ -178,6 +180,11 @@ export interface HarnessEnv {
   owner: string;
   symbols: SymbolPackage[];
   symbolStore: string;
+  /**
+   * H-38 (design 6): the OnPrem index of this lock, admitted at run start
+   * (admitOnPrem); every judge input carries it.
+   */
+  onPrem: OnPremIndex;
   secretsSource: string;
   /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
   secretAcl?: { icacls: IcaclsRunner; user: string };
@@ -2598,6 +2605,25 @@ export async function waitRunning(
   }
 }
 
+const onPremMemo = new Map<string, Promise<OnPremIndex>>();
+
+/**
+ * H-38 (design 6, Q4, Q5): the run-start admission of the lock's OnPrem
+ * index (openHarnessEnv, before recovery and any cell). An OnPremIndexError
+ * refuses the run. Memoised in this process by lock digest; a failure is
+ * not kept, so a later admission reads the store again.
+ */
+export async function admitOnPrem(lock: LockedSymbols): Promise<OnPremIndex> {
+  const key = await lockDigestOf(lock);
+  let p = onPremMemo.get(key);
+  if (!p) {
+    p = loadOnPremIndex(lock);
+    onPremMemo.set(key, p);
+    p.catch(() => onPremMemo.delete(key));
+  }
+  return await p;
+}
+
 export async function judgeExecution(
   env: HarnessEnv,
   cell: CellRef,
@@ -2650,6 +2676,7 @@ export async function judgeExecution(
       symbolIds: new Set(env.symbols.map((s) => s.app_id.toLowerCase())),
       workDir,
       lock: { store: env.symbolStore, packages: env.symbols },
+      onPrem: env.onPrem,
       deploy: env.deploy,
       harnessCommit: env.harnessCommit,
       ...(env.buildCache ? { buildCache: env.buildCache } : {}),
@@ -2879,6 +2906,7 @@ export async function measureWorkspace(
         artifact: x.artifact,
         out: join(workDir, "final"),
         symbolIds,
+        onPrem: env.onPrem,
       });
       if (vw.violations.length > 0) {
         return missing<FinalCode>(
@@ -2918,6 +2946,7 @@ export async function measureWorkspace(
           pristine: x.pristine,
           symbolIds,
           lock,
+          onPrem: env.onPrem,
           deploy: env.deploy,
         },
         artifact: x.artifact,
