@@ -63,6 +63,7 @@ import {
   type InfraSignature,
   JudgmentRecordSchema,
   type PolicyViolation,
+  publishOnce,
   scorerFingerprint,
   type ScorerState,
   verdictOf,
@@ -1836,17 +1837,18 @@ export async function judge(
   return { judgment, log };
 }
 
-/** Write-once side file results/harness/verdicts/<judgment-id>.json. */
-export async function writeVerdictLog(
+/**
+ * Write-once side file results/harness/verdicts/<judgment-id>.json. H-41
+ * (3.1): published as a link of a complete synced temp (the same bytes), so
+ * the final name never holds a partial log.
+ */
+export function writeVerdictLog(
   resultsRoot: string,
   log: VerdictLog,
 ): Promise<void> {
-  const dir = join(resultsRoot, "verdicts");
-  await Deno.mkdir(dir, { recursive: true });
-  await Deno.writeTextFile(
-    join(dir, `${log.judgment_id}.json`),
-    JSON.stringify(log, null, 2) + "\n",
-    { createNew: true },
+  return publishOnce(
+    join(resultsRoot, "verdicts", `${log.judgment_id}.json`),
+    log,
   );
 }
 

@@ -1,0 +1,71 @@
+{
+  "v": 2,
+  "id": "550758bd-a12e-47f3-ad80-703d9c7ea136",
+  "execution_id": "84d13d20-0643-4f2d-b24c-c2306c3b85fb",
+  "workspace_hash": "1f56f1947553546566a7c92443fdc44dcded9fa4591cdd90d37f921c2aea9992",
+  "task_id": "HX-001",
+  "task_oracle_hash": "18e9413c7c692245fe3c518155ec67b71f8426443fea901a622166308e171ae7",
+  "scorer_versions": {
+    "build": "4",
+    "pass_to_pass": "6",
+    "fail_to_pass": "4",
+    "mutant_kill": "6",
+    "agent_tests": "1"
+  },
+  "scorer_fingerprint": "b23eeb83c8c0d79b209ac4a4d75a8b45fe03daba32646ab400e20f19a281fcfc",
+  "scorers": [
+    {
+      "name": "build",
+      "passed": true,
+      "state": "measured",
+      "tests": []
+    },
+    {
+      "name": "pass_to_pass",
+      "passed": true,
+      "state": "measured",
+      "tests": [
+        {
+          "codeunit": 80010,
+          "procedure": "ShippedPasses",
+          "target": "candidate",
+          "outcome": "pass",
+          "failure": null
+        }
+      ]
+    },
+    {
+      "name": "fail_to_pass",
+      "passed": true,
+      "state": "measured",
+      "tests": [
+        {
+          "codeunit": 85000,
+          "procedure": "FixWorks",
+          "target": "candidate",
+          "outcome": "pass",
+          "failure": null
+        }
+      ]
+    },
+    {
+      "name": "agent_tests",
+      "passed": true,
+      "state": "measured",
+      "tests": []
+    }
+  ],
+  "verdict": "pass",
+  "verdict_container": "C1",
+  "started_at": "2026-10-21T22:15:40.981Z",
+  "ended_at": "2026-10-21T22:15:41.477Z",
+  "policy": {
+    "passed": true,
+    "violations": []
+  },
+  "provenance": {
+    "harness_commit": "ffffffffffffffffffffffffffffffffffffffff",
+    "production_manifest": "b8f41c7c14daed80bd1413aeadc99bcfb89cc063733a8f9b8b3db808ba36f906",
+    "env_fp": null
+  }
+}

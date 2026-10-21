@@ -96,12 +96,14 @@ import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { BUILTIN_INVENTORY } from "../../src/harness/adapters/claude-code.ts";
 import {
+  fenceHead,
   forcedRefusal,
   judgeDeferred,
+  judgeOnce,
   measureExecution,
   type MeasureRun,
   measureWorkspace,
-  publishJudgment,
+  recoverFences,
   rejudgeExecution,
   runCell,
   scrubForcedReason,
@@ -1798,7 +1800,10 @@ export async function harnessJudgePending(
       env,
       o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
       (env, cell, e) =>
-        judgeDeferred(env, cell, e).then(() => void n++, (err: unknown) => {
+        // H-41: null: another judge holds or did the work (logged as owed).
+        judgeDeferred(env, cell, e).then((j) => void (j && n++), (
+          err: unknown,
+        ) => {
           if (!(err instanceof ConfigurationError)) throw err;
           skip(e.id, err.message);
         }),
@@ -1858,6 +1863,32 @@ function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
     compareInstant(b.ended_at, a.ended_at) || (a.id < b.id ? 1 : -1)
   )[0];
 }
+
+/**
+ * Rejudge's due test of a judgeable execution (not forced): unscored, an old
+ * scorer suite or an old oracle, never judged; not past the budget. H-41:
+ * the due list and the commit protocol's predicate (under the claim) alike.
+ */
+function rejudgeDue(
+  e: ExecutionRecord,
+  mine: JudgmentRecord[],
+  oracle: string,
+  current: string,
+): boolean {
+  // H-04b: past the rejudge budget the cell is terminal; only --force.
+  if (rejudgeBudgetExhausted(e, mine, oracle, current)) return false;
+  const j = latestJudgment(mine);
+  return !j || j.verdict === "unscored" || j.scorer_fingerprint !== current ||
+    j.task_oracle_hash !== oracle;
+}
+
+/** H-41: why a rejudge dropped W. */
+const DROPPED = {
+  held: "another judge holds its claim; it stays due",
+  advanced: "another judge committed it meanwhile",
+  "not due": "no longer due",
+  "fence taken": "another judge committed it first",
+} as const;
 
 const askUser = (q: string) => confirm(q);
 
@@ -2000,6 +2031,10 @@ export async function harnessRejudge(
   try {
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
+    // H-41 (3.3, section 10): committed fences first, then the campaign pin;
+    // both before any due or force decision.
+    await recoverFences(env);
+    await env.bindCampaign?.(c.id);
     // H-33 r1: once interrupted, every return says so (the CLI exits 130).
     const result = (rejudged: number, left: number) => {
       if (!signal?.aborted) return { campaignId: c.id, rejudged };
@@ -2064,15 +2099,16 @@ export async function harnessRejudge(
         }
         return true;
       }
-      const mine = data.judgments.filter((x) => x.execution_id === e.id);
-      // H-04b: past the rejudge budget the cell is terminal; only --force.
-      const oracle = byTask.get(e.task_id)!.oracle;
-      if (rejudgeBudgetExhausted(e, mine, oracle, current)) return false;
-      const j = latestJudgment(mine);
-      return !j || j.verdict === "unscored" ||
-        j.scorer_fingerprint !== current ||
-        j.task_oracle_hash !== byTask.get(e.task_id)!.oracle;
+      return rejudgeDue(
+        e,
+        data.judgments.filter((x) => x.execution_id === e.id),
+        byTask.get(e.task_id)!.oracle,
+        current,
+      );
     });
+    // H-41: W = (e, head now); the due list above is advisory, judgeOnce decides.
+    const heads = new Map<string, number>();
+    for (const e of due) heads.set(e.id, await fenceHead(env, e.id));
     const used = [...new Set(due.map((e) => e.task_id))].map((id) =>
       tasks.get(id)!
     );
@@ -2207,6 +2243,8 @@ export async function harnessRejudge(
     // H-33: workers only compute; one writer publishes each judgment (write
     // once, in this one process), so every computed judgment is published
     // before drain ends, on a failure or an interrupt too.
+    // H-41: each commits through judgeOnce (claim, reconcile, due, fence);
+    // the writer serializes its steps 5-9.
     const writer = new Mutex();
     let judged = 0;
     const queue = judgeQueue(
@@ -2214,10 +2252,24 @@ export async function harnessRejudge(
       env.lane.containers.length,
       async (env, cell, e) => {
         const oracle = byTask.get(e.task_id)!.oracle;
-        const computed = await rejudgeExecution(env, cell, e, oracle, forced);
+        const r = await judgeOnce(
+          env,
+          { e, g: heads.get(e.id)! },
+          () => rejudgeExecution(env, cell, e, oracle, forced),
+          async () =>
+            o.force === true ||
+            rejudgeDue(e, await env.store.judgments(e.id), oracle, current),
+          writer,
+        );
+        if (!("judgment" in r)) {
+          console.log(
+            `${colors.yellow("[SKIP]")} ${e.id}: ${DROPPED[r.dropped]}`,
+          );
+          return;
+        }
         const release = await writer.acquire();
         try {
-          const j = await publishJudgment(env, e, oracle, computed);
+          const j = r.judgment;
           judged++;
           if (pairing && cells.some((x) => x.execution_id === e.id)) {
             await appendCompletion(env.resultsRoot, pairing, {

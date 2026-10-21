@@ -6,6 +6,7 @@ import {
   assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
+import { stub } from "@std/testing/mock";
 import {
   ConfigurationError,
   ContainerError,
@@ -171,6 +172,40 @@ Deno.test("judge: the correct solution passes every scorer; the record validates
     await Deno.readTextFile(join(results, "verdicts", `${judgment.id}.json`)),
   );
   assertEquals(stored.execution_id, input.executionId);
+});
+
+Deno.test("writeVerdictLog (H-41 3.1): the final name is only ever a link of a complete synced temp, with the same bytes; it is write-once", async () => {
+  const results = await Deno.realPath(await testTempDir());
+  const log = {
+    judgment_id: crypto.randomUUID(),
+    notes: ["a"],
+  } as unknown as Parameters<typeof writeVerdictLog>[1];
+  const path = join(results, "verdicts", `${log.judgment_id}.json`);
+  const link = stub(
+    Deno,
+    "link",
+    () => Promise.reject(new Error("killed before the link")),
+  );
+  try {
+    await assertRejects(
+      () => writeVerdictLog(results, log),
+      Error,
+      "killed before the link",
+    );
+  } finally {
+    link.restore();
+  }
+  await assertRejects(() => Deno.stat(path), Deno.errors.NotFound);
+  await writeVerdictLog(results, log);
+  assertEquals(
+    await Deno.readTextFile(path),
+    JSON.stringify(log, null, 2) + "\n",
+  );
+  await assertRejects(
+    () => writeVerdictLog(results, log),
+    ValidationError,
+    "already exists",
+  );
 });
 
 Deno.test("judge (H-27): with the shared build cache a second judgment reuses the task's builds and scores the same", async () => {

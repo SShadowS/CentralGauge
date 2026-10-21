@@ -29,7 +29,7 @@ import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import {
   judgeDeferred,
-  privatePaths,
+  judgmentOwed,
   recoverInterrupted,
   runCell,
 } from "./execution.ts";
@@ -232,13 +232,8 @@ export function checkJudgeConcurrency(n: number | undefined): void {
   }
 }
 
-/** H-09: published, judgeable and never judged (a crash before the judge queue reached it). */
-export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
-  return outcomePolicy(e.termination, e.did_work).judge &&
-    e.workspace_hash !== null &&
-    (await env.store.judgments(e.id)).length === 0 &&
-    !await exists(privatePaths(env, e.id).stubMarker);
-}
+// H-09 judgmentOwed; H-41: in execution.ts, the commit protocol's due predicate.
+export { judgmentOwed };
 
 export function nextAttempt(prior: ExecutionRecord[]): AttemptRef | null {
   if (prior.length === 0) {
@@ -1020,6 +1015,8 @@ export async function runCampaign(
   }
   // H-13b: every execution of a waived campaign records it.
   if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };
+  // H-41 (section 10): the campaign is final: its env pin, before the queue and any cell.
+  if (!o.dryRun) await env.bindCampaign?.(c.id);
   // Refused before any container run (and in a dry run).
   const rerun = o.rerun && data
     ? rerunTarget(c, data, o.rerun, await currentScorerFingerprint())

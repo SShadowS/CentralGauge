@@ -23,6 +23,7 @@ import { join, relative, SEPARATOR } from "@std/path";
 import { z } from "zod";
 import { ValidationError } from "../errors.ts";
 import { type Experiment, ExperimentSchema } from "./config.ts";
+import { olderThan, TEMP_SWEEP_AGE_MS } from "./fsutil.ts";
 import { hashJson } from "./hash.ts";
 import { Sha256Hex, TaskSetIdentitySchema } from "./identity.ts";
 import { ResolvedManifestSchema } from "./manifest.ts";
@@ -722,6 +723,8 @@ export function planBlocks(
 
 const TMP = ".tmp-";
 
+export { TEMP_SWEEP_AGE_MS };
+
 /** Ids become path segments: only a uuid may, so no path leaves the store. */
 function safeId(id: string, what: string): string {
   if (!Uuid.safeParse(id).success) {
@@ -743,6 +746,8 @@ async function removeBestEffort(path: string): Promise<void> {
 export async function publishOnce(
   path: string,
   value: unknown,
+  /** H-41 test seam: runs with the synced temp written, right before the link. */
+  beforeLink?: () => Promise<void>,
 ): Promise<void> {
   await Deno.mkdir(join(path, ".."), { recursive: true });
   const tmp = `${path}${TMP}${crypto.randomUUID()}`;
@@ -761,6 +766,7 @@ export async function publishOnce(
     } finally {
       file.close();
     }
+    await beforeLink?.();
     await Deno.link(tmp, path);
   } catch (err) {
     await removeBestEffort(tmp);
@@ -1022,15 +1028,18 @@ export class RecordStore {
     )).sort(byInstant((j) => j.started_at));
   }
 
-  /** Remove temp files left by an interrupted publish. Returns the count. */
-  async sweepTemp(): Promise<number> {
+  /**
+   * Remove temp files left by an interrupted publish. Returns the count.
+   * H-41: only those older than `maxAgeMs` (a live publisher's survive).
+   */
+  async sweepTemp(maxAgeMs = TEMP_SWEEP_AGE_MS): Promise<number> {
     let removed = 0;
     const walkDir = async (dir: string): Promise<void> => {
       try {
         for await (const e of Deno.readDir(dir)) {
           const p = join(dir, e.name);
           if (e.isDirectory) await walkDir(p);
-          else if (e.name.includes(TMP)) {
+          else if (e.name.includes(TMP) && await olderThan(p, maxAgeMs)) {
             await Deno.remove(p);
             removed++;
           }

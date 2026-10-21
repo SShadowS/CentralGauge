@@ -55,7 +55,9 @@ import {
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import {
+  ensurePin,
   holdNamespace,
+  recoverFences,
   recoverInterrupted,
   refuseLegacyState,
 } from "../../src/harness/execution.ts";
@@ -1221,17 +1223,27 @@ export async function openHarnessEnv(
     // H-35 S3.4 (ruling (c)): with a lineage, every container must be an
     // admitted instance of it, all of one env_fp, before any lease.
     let bcEgress: BcEgressRecord | null = null;
+    // H-41 (sections 4, 10): the start members' env_fp, the campaign pin's.
+    let pinContext: HarnessEnv["pinContext"];
+    let startFp: string | null = null;
     if (lineage) {
+      const lockDigest = await lockDigestOf({
+        store: o.symbolStore,
+        packages: symbols,
+      });
       const check = await checkEnvironments(ready.bc, reset, ready.names, {
         resultsRoot: sharedResults,
         lineageId: lineage.id,
-        lockDigest: await lockDigestOf({
-          store: o.symbolStore,
-          packages: symbols,
-        }),
+        lockDigest,
         ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
       });
       bcEgress = check.bc_egress;
+      pinContext = {
+        lineage_id: lineage.id,
+        lock_digest: lockDigest,
+        command: o.command,
+      };
+      startFp = check.rows[0]?.env_fp ?? null;
       const block = renderEnvCheck(check);
       if (!check.admissible) {
         throw new ConfigurationError(
@@ -1331,7 +1343,11 @@ export async function openHarnessEnv(
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
       namespaceLost,
+      ...(pinContext ? { pinContext } : {}),
+      bindCampaign: (id) => ensurePin(env, id, startFp),
     };
+    // H-41 (3.3): committed fences first; recovery then judges only what is owed.
+    await recoverFences(env);
     const recovered = await recoverInterrupted(env, loadTask);
     for (const e of recovered) {
       console.log(
