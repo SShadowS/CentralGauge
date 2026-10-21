@@ -8911,6 +8911,148 @@ Deno.test("rejudge (H-24 review): after a failure the env closes only once every
   assertEquals(startedAfterClose, 0, "a queued judging started after close");
 });
 
+Deno.test("rejudge (H-33): an interrupt admits no new judging; the running ones finish and are published, the env closes, the rest stay due", async () => {
+  const { t, seen, counts } = await h24Campaign();
+  const stop = new AbortController();
+  // The interrupt lands while the first judgings hold their containers.
+  const lane = t.env.lane;
+  const held = lane.exclusive.bind(lane);
+  lane.exclusive = ((ctx, fn, signal, opts) => {
+    stop.abort();
+    return held(ctx, fn, signal, opts);
+  }) as typeof lane.exclusive;
+  // A judging's first record read after the interrupt is a queued one starting.
+  const store = t.env.store;
+  const read = store.artifact.bind(store);
+  let startedAfterStop = 0;
+  store.artifact = (id: string) => {
+    if (stop.signal.aborted) startedAfterStop++;
+    return read(id);
+  };
+  let closed = false;
+  let activeAtClose = -1;
+  const open = () =>
+    Promise.resolve({
+      env: t.env,
+      close: () => {
+        closed = true;
+        activeAtClose = seen.active;
+        return Promise.resolve();
+      },
+    });
+  const logs = capture();
+  let r;
+  try {
+    r = await harnessRejudge(
+      "contract",
+      runOpts(t),
+      open,
+      () => true,
+      stop.signal,
+    );
+  } finally {
+    logs.restore();
+  }
+  assertEquals(r.interrupted, true);
+  assert(closed, "the env was closed");
+  assertEquals(activeAtClose, 0, "a judging was still running at close");
+  assertEquals(
+    startedAfterStop,
+    0,
+    "a queued judging started after the interrupt",
+  );
+  const after = await counts();
+  // The three admitted (one per container) were judged and published; three stay due.
+  assertEquals([...after].sort(), [2, 2, 2, 3, 3, 3]);
+  assertEquals(r.rejudged, 3);
+  assert(
+    logs.out.some((l) => l.includes("[STOP]") && l.includes("3 judged")),
+    logs.out.join("\n"),
+  );
+  store.artifact = read;
+  const again = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals([again.rejudged, again.interrupted], [3, undefined]);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
+
+Deno.test("rejudge (H-33): one writer publishes the judgments: no two judgment writes overlap although the judgings finish together", async () => {
+  const { t, counts } = await h24Campaign();
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  const w = { active: 0, max: 0 };
+  store.writeJudgment = async (j) => {
+    w.active++;
+    w.max = Math.max(w.max, w.active);
+    try {
+      await new Promise((r) => setTimeout(r, 20));
+      return await write(j);
+    } finally {
+      w.active--;
+    }
+  };
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 6);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+  assertEquals(w.max, 1, "two judgment writes overlapped");
+});
+
+Deno.test("rejudge (H-33 r1): an interrupt after the last admission still reports interrupted, with everything judged", async () => {
+  const { t, counts } = await h24Campaign();
+  const stop = new AbortController();
+  // The sixth (last) judgment write: every judging was admitted long before.
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  let writes = 0;
+  store.writeJudgment = (j) => {
+    if (++writes === 6) stop.abort();
+    return write(j);
+  };
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t),
+    opener(t),
+    () => true,
+    stop.signal,
+  );
+  assertEquals([r.rejudged, r.interrupted], [6, true]);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
+
+Deno.test("rejudge (H-33 r1): interrupted before the confirmation, it never asks, judges nothing and reports interrupted", async () => {
+  const { t, counts } = await h24Campaign();
+  const stop = new AbortController();
+  stop.abort();
+  let asked = false;
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { yes: false }),
+    opener(t),
+    () => (asked = true),
+    stop.signal,
+  );
+  assert(!asked, "asked for confirmation after the interrupt");
+  assertEquals([r.rejudged, r.interrupted], [0, true]);
+  assertEquals(await counts(), [2, 2, 2, 2, 2, 2]);
+});
+
+Deno.test("rejudge (H-33 r1): interrupted with nothing due still reports interrupted", async () => {
+  const { t } = await h24Campaign();
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    6,
+  );
+  const stop = new AbortController();
+  stop.abort();
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t),
+    opener(t),
+    () => true,
+    stop.signal,
+  );
+  assertEquals([r.rejudged, r.interrupted], [0, true]);
+});
+
 // ---- H-35 S1.7 (design-r4 3.1): two build caches, never crossed ----
 
 Deno.test("H-35: the env opens a judge and an agent build cache: judging and the agent backend never see each other's builds, and neither reads the old shared cache", async () => {

@@ -865,8 +865,12 @@ function symbolRoots(
   return walk(app) ? [...roots] : null;
 }
 
+// H-33: the read-merge-rename of an appinfo cache file is serialized.
+// ponytail: per process only; concurrent processes would need a file lock.
+const appInfoLock = new Mutex();
+
 /** `verified`: lower-cased names of the locked packages that hash-verified in this build. */
-async function harvestAppInfo(
+export async function harvestAppInfo(
   pk: string,
   store: string,
   lockDigest: string,
@@ -878,6 +882,20 @@ async function harvestAppInfo(
   } catch {
     return;
   }
+  const release = await appInfoLock.acquire();
+  try {
+    await mergeAppInfo(fresh, store, lockDigest, verified);
+  } finally {
+    release();
+  }
+}
+
+async function mergeAppInfo(
+  fresh: Record<string, unknown>,
+  store: string,
+  lockDigest: string,
+  verified: ReadonlySet<string>,
+): Promise<void> {
   const path = join(store, "appinfo", `${lockDigest}.json`);
   const saved: Record<string, unknown> = await Deno.readTextFile(path).then(
     (t) => JSON.parse(t),
