@@ -2763,7 +2763,10 @@ function onPremRefs(
       check(null, text, text);
       continue;
     }
-    if (AL_BUILTINS.has(word)) continue;
+    // Self-check r3: the spelling-only builtin exemption never covers a name
+    // some locked package has as an OnPrem member (the real lock has OnPrem
+    // table Update and page Init), at object level or in a routine body.
+    if (AL_BUILTINS.has(word) && !idx.names.has(word)) continue;
     check(implicit(contextOf(objectAt(at)!), at), text, text);
   }
   // 5.5: [EventSubscriber(ObjectType::<T>, <T>::<name or id>, '<Event>', ...)].

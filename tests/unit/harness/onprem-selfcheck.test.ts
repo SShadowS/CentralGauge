@@ -39,6 +39,19 @@ const INDEX = await loadOnPremIndex(
         Name: "Fallback Names",
         Methods: ["Send", "Get"].map(onPremMethod),
       }],
+      // r3: a locked page with an OnPrem value-returning Count, and a locked
+      // table with an OnPrem Update (the real lock's table 130202 "Test
+      // Result" has one): builtin-listed names that are OnPrem members.
+      Pages: [{
+        Id: 9001,
+        Name: "Count Page",
+        Methods: [onPremMethod("Count")],
+      }],
+      Tables: [{
+        Id: 130202,
+        Name: "Test Result",
+        Methods: [onPremMethod("Update")],
+      }],
       // r2 N3: an indexed value-returning member spelled like structure syntax.
       TableExtensions: [{
         Id: 1,
@@ -186,5 +199,24 @@ Deno.test('H-38 self-check r2 N3: a call spelled like structure syntax ("Lookup"
   await expectHits([["Page.al", file]], [
     '"Lookup" (table 77 Lookup)',
     "Lookup (table 77 Lookup)",
+  ]);
+});
+
+// ---- self-check r3 (runs/001/selfcheck/sol-r3.md) ----
+
+Deno.test("H-38 self-check r3: an OnPrem Count of the base page, called from a page extension's source expression quoted and unquoted, is onprem_ref (no builtin exemption for an OnPrem name)", async () => {
+  const file =
+    `pageextension 70020 "CGR Count" extends "Count Page"\n{\n    layout\n    {\n        addlast(Content)\n        {\n            field(A; Count()) { }\n            field(B; "Count"()) { }\n        }\n    }\n}\n`;
+  await expectHits([["PageExt.al", file]], [
+    "Count (page 9001 Count)",
+    '"Count" (page 9001 Count)',
+  ]);
+});
+
+Deno.test("H-38 self-check r3: in a routine body, a bare builtin-named call that is an OnPrem member of the extension's base table (Update on 130202) is onprem_ref", async () => {
+  const file =
+    `tableextension 70021 "CGR TR" extends "Test Result"\n{\n    procedure P()\n    begin\n        Update();\n    end;\n}\n`;
+  await expectHits([["TableExt.al", file]], [
+    "Update (table 130202 Update)",
   ]);
 });
