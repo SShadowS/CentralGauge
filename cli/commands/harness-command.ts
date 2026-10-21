@@ -2000,6 +2000,16 @@ export async function harnessRejudge(
   try {
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
+    // H-33 r1: once interrupted, every return says so (the CLI exits 130).
+    const result = (rejudged: number, left: number) => {
+      if (!signal?.aborted) return { campaignId: c.id, rejudged };
+      console.log(
+        `${
+          colors.yellow("[STOP]")
+        } interrupted: ${rejudged} judged; ${left} stay due for the next rejudge`,
+      );
+      return { campaignId: c.id, rejudged, interrupted: true as const };
+    };
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
       descriptor: descriptorLoader(env.resultsRoot, o.root),
@@ -2080,7 +2090,7 @@ export async function harnessRejudge(
       console.log(
         `${colors.green("[OK]")} nothing to rejudge in campaign ${c.id}`,
       );
-      return { campaignId: c.id, rejudged: 0 };
+      return result(0, 0);
     }
     // C-03 run 002: one forced rejudge per execution, replacing the judgment
     // the report uses, which must carry a recorded infra basis. The prompt
@@ -2143,6 +2153,8 @@ export async function harnessRejudge(
         basis: decision!,
       };
     }
+    // H-33 r1: interrupted already, nothing is asked and nothing judged.
+    if (signal?.aborted) return result(0, due.length);
     if (
       !o.yes &&
       !ask(
@@ -2152,7 +2164,7 @@ export async function harnessRejudge(
       )
     ) {
       console.log(`${colors.yellow("[SKIP]")} rejudge not confirmed`);
-      return { campaignId: c.id, rejudged: 0 };
+      return result(0, due.length);
     }
     const opened: OpenedTasks = { tasks, refapps: new Map() };
     for (const t of used) {
@@ -2239,15 +2251,7 @@ export async function harnessRejudge(
     } finally {
       signal?.removeEventListener("abort", stop);
     }
-    if (signal?.aborted && judged < due.length) {
-      console.log(
-        `${colors.yellow("[STOP]")} interrupted: ${judged} judged; the other ${
-          due.length - judged
-        } stay due for the next rejudge`,
-      );
-      return { campaignId: c.id, rejudged: judged, interrupted: true };
-    }
-    return { campaignId: c.id, rejudged: due.length };
+    return result(judged, due.length - judged);
   } finally {
     await h.close();
   }

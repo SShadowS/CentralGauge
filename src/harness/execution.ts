@@ -2609,7 +2609,10 @@ export interface ComputedJudgment {
   log: VerdictLog;
 }
 
-/** Judge and write: computeJudgment, then publishJudgment (the run path). */
+/**
+ * Judge and write (the run path). H-33: published while the judge work dir
+ * still exists, then the dir is removed, as before the split.
+ */
 export async function judgeExecution(
   env: HarnessEnv,
   cell: CellRef,
@@ -2618,12 +2621,13 @@ export async function judgeExecution(
   oracleHash = cell.oracleHash,
   forced?: JudgmentRecord["forced"],
 ): Promise<JudgmentRecord> {
-  return await publishJudgment(
-    env,
-    e,
-    oracleHash,
-    await computeJudgment(env, cell, e, pristine, oracleHash, forced),
-  );
+  return await inJudgeDir(env, e, async (workDir) =>
+    await publishJudgment(
+      env,
+      e,
+      oracleHash,
+      await computeIn(env, cell, e, pristine, oracleHash, forced, workDir),
+    ));
 }
 
 /** H-33: judge an execution; nothing is written to the results. */
@@ -2634,6 +2638,40 @@ export async function computeJudgment(
   pristine: string,
   oracleHash = cell.oracleHash,
   forced?: JudgmentRecord["forced"],
+): Promise<ComputedJudgment> {
+  return await inJudgeDir(
+    env,
+    e,
+    (workDir) => computeIn(env, cell, e, pristine, oracleHash, forced, workDir),
+  );
+}
+
+/** H-33: `fn` with a fresh judge work dir, removed afterwards. */
+async function inJudgeDir<T>(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+  fn: (workDir: string) => Promise<T>,
+): Promise<T> {
+  const workDir = join(
+    env.privateRoot,
+    "judge",
+    `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  );
+  try {
+    return await fn(workDir);
+  } finally {
+    await Deno.remove(workDir, { recursive: true }).catch(() => {});
+  }
+}
+
+async function computeIn(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  pristine: string,
+  oracleHash: string,
+  forced: JudgmentRecord["forced"] | undefined,
+  workDir: string,
 ): Promise<ComputedJudgment> {
   // Fail closed: judging needs proof the run was not scripted. The published
   // side file must be readable and the private marker (kept after
@@ -2661,42 +2699,33 @@ export async function computeJudgment(
   }
   // Before judging: no key set means nothing could be redacted (fail closed).
   const keys = await readRedactionKeys(env, e.id);
-  const workDir = join(
-    env.privateRoot,
-    "judge",
-    `${e.id}-${crypto.randomUUID().slice(0, 8)}`,
+  // H-35 (design-r4 4): the oracle side of this judgment stays readable.
+  await storeOraclePreimage(env.resultsRoot, cell.task);
+  const raw = await judge(env.lane, {
+    executionId: e.id,
+    workspaceHash: art.workspace_hash,
+    task: cell.task,
+    oracleHash,
+    pristine,
+    artifact: join(env.resultsRoot, art.stored_path),
+    symbolIds: new Set(env.symbols.map((s) => s.app_id.toLowerCase())),
+    workDir,
+    lock: { store: env.symbolStore, packages: env.symbols },
+    deploy: env.deploy,
+    harnessCommit: env.harnessCommit,
+    ...(env.buildCache ? { buildCache: env.buildCache } : {}),
+  }, env.now);
+  // Every judge output is published through the custody redaction (the
+  // agent's code can assemble a secret at runtime in a test message).
+  const log = scrubJudgeOutput(raw.log, keys, env);
+  const judgment = JudgmentRecordSchema.parse(
+    scrubJudgeOutput(
+      forced ? { ...raw.judgment, forced } : raw.judgment,
+      keys,
+      env,
+    ),
   );
-  try {
-    // H-35 (design-r4 4): the oracle side of this judgment stays readable.
-    await storeOraclePreimage(env.resultsRoot, cell.task);
-    const raw = await judge(env.lane, {
-      executionId: e.id,
-      workspaceHash: art.workspace_hash,
-      task: cell.task,
-      oracleHash,
-      pristine,
-      artifact: join(env.resultsRoot, art.stored_path),
-      symbolIds: new Set(env.symbols.map((s) => s.app_id.toLowerCase())),
-      workDir,
-      lock: { store: env.symbolStore, packages: env.symbols },
-      deploy: env.deploy,
-      harnessCommit: env.harnessCommit,
-      ...(env.buildCache ? { buildCache: env.buildCache } : {}),
-    }, env.now);
-    // Every judge output is published through the custody redaction (the
-    // agent's code can assemble a secret at runtime in a test message).
-    const log = scrubJudgeOutput(raw.log, keys, env);
-    const judgment = JudgmentRecordSchema.parse(
-      scrubJudgeOutput(
-        forced ? { ...raw.judgment, forced } : raw.judgment,
-        keys,
-        env,
-      ),
-    );
-    return { judgment, log };
-  } finally {
-    await Deno.remove(workDir, { recursive: true }).catch(() => {});
-  }
+  return { judgment, log };
 }
 
 /** H-33: write a computed judgment: its verdict log, then the judgment (write-once). */

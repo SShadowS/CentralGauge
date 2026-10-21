@@ -8996,6 +8996,63 @@ Deno.test("rejudge (H-33): one writer publishes the judgments: no two judgment w
   assertEquals(w.max, 1, "two judgment writes overlapped");
 });
 
+Deno.test("rejudge (H-33 r1): an interrupt after the last admission still reports interrupted, with everything judged", async () => {
+  const { t, counts } = await h24Campaign();
+  const stop = new AbortController();
+  // The sixth (last) judgment write: every judging was admitted long before.
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  let writes = 0;
+  store.writeJudgment = (j) => {
+    if (++writes === 6) stop.abort();
+    return write(j);
+  };
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t),
+    opener(t),
+    () => true,
+    stop.signal,
+  );
+  assertEquals([r.rejudged, r.interrupted], [6, true]);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
+
+Deno.test("rejudge (H-33 r1): interrupted before the confirmation, it never asks, judges nothing and reports interrupted", async () => {
+  const { t, counts } = await h24Campaign();
+  const stop = new AbortController();
+  stop.abort();
+  let asked = false;
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { yes: false }),
+    opener(t),
+    () => (asked = true),
+    stop.signal,
+  );
+  assert(!asked, "asked for confirmation after the interrupt");
+  assertEquals([r.rejudged, r.interrupted], [0, true]);
+  assertEquals(await counts(), [2, 2, 2, 2, 2, 2]);
+});
+
+Deno.test("rejudge (H-33 r1): interrupted with nothing due still reports interrupted", async () => {
+  const { t } = await h24Campaign();
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    6,
+  );
+  const stop = new AbortController();
+  stop.abort();
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t),
+    opener(t),
+    () => true,
+    stop.signal,
+  );
+  assertEquals([r.rejudged, r.interrupted], [0, true]);
+});
+
 // ---- H-35 S1.7 (design-r4 3.1): two build caches, never crossed ----
 
 Deno.test("H-35: the env opens a judge and an agent build cache: judging and the agent backend never see each other's builds, and neither reads the old shared cache", async () => {

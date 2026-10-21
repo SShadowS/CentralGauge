@@ -5,6 +5,7 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { basename, join } from "@std/path";
+import { stub } from "@std/testing/mock";
 import { ContainerError, ValidationError } from "../../../src/errors.ts";
 import {
   BENCH_CANDIDATE_APP_ID,
@@ -2981,10 +2982,36 @@ Deno.test("H-33: two concurrent appinfo harvests into one lock digest keep both 
     JSON.stringify({ "./B.app": { b: 2 } }),
   );
   const verified = new Set(["a.app", "b.app"]);
-  await Promise.all([
-    harvestAppInfo(pkA, store, "lock1", verified),
-    harvestAppInfo(pkB, store, "lock1", verified),
-  ]);
+  // H-33 r1: each read of the saved file takes its contents on arrival, then
+  // waits (bounded) for the other harvest's read: an unserialized merge
+  // always sees the same old file in both harvests.
+  const savedPath = join(store, "appinfo", "lock1.json");
+  const original = Deno.readTextFile;
+  let arrived = 0;
+  const reads = stub(
+    Deno,
+    "readTextFile",
+    async (p: string | URL, o?: Deno.ReadFileOptions) => {
+      const text = original(p, o);
+      text.catch(() => {}); // a missing file rejects when awaited below
+      if (String(p) === savedPath) {
+        arrived++;
+        const until = Date.now() + 200;
+        while (arrived < 2 && Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 2));
+        }
+      }
+      return await text;
+    },
+  );
+  try {
+    await Promise.all([
+      harvestAppInfo(pkA, store, "lock1", verified),
+      harvestAppInfo(pkB, store, "lock1", verified),
+    ]);
+  } finally {
+    reads.restore();
+  }
   const saved = JSON.parse(
     await Deno.readTextFile(join(store, "appinfo", "lock1.json")),
   );

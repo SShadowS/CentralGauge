@@ -1451,27 +1451,55 @@ Deno.test("judge output is redacted with the custody secrets: recovery and rejud
 
 // ---- H-33: judging computes, then publishes ----
 
-/** A judgment or verdict log without what differs between two judgings of the same input. */
-const sameInput = (x: unknown) =>
-  JSON.parse(
-    JSON.stringify(x, (k, v) =>
-      ["id", "judgment_id", "started_at", "ended_at", "spans"].includes(k)
-        ? "-"
-        : v),
-  );
+// The written bytes of this scenario under the pre-change code (9f14963c),
+// recorded once; a scorer or verdict-log change means re-recording them.
+const H33_BASELINE = "tests/fixtures/harness/h33-judging";
 
-const verdictLogOf = async (t: TestEnv, id: string) =>
-  JSON.parse(
-    await Deno.readTextFile(join(t.env.resultsRoot, "verdicts", `${id}.json`)),
+/**
+ * Written judgment or verdict-log bytes with only the per-run values
+ * replaced: the record's own ids, started_at/ended_at and the span timings.
+ */
+function perRunValuesOut(text: string): string {
+  const o = JSON.parse(text);
+  let s = text;
+  for (const v of [o.id, o.judgment_id, o.execution_id]) {
+    if (typeof v === "string") s = s.replaceAll(v, "<id>");
+  }
+  s = s.replace(/"(started_at|ended_at)": "[^"]*"/g, `"$1": "<at>"`);
+  return s.replace(
+    /"spans": \{[^}]*\}/,
+    (m) => m.replace(/": -?[0-9.e+-]+/g, `": "<ms>"`),
   );
+}
 
-Deno.test("H-33: a rejudge computed then published writes the judgment and verdict log the single-call path writes (ids and timestamps aside)", async () => {
+const writtenFiles = async (t: TestEnv, e: ExecutionRecord, id: string) => [
+  await Deno.readTextFile(
+    join(t.env.resultsRoot, "judgments", e.id, `${id}.json`),
+  ),
+  await Deno.readTextFile(join(t.env.resultsRoot, "verdicts", `${id}.json`)),
+];
+
+const baseline = async (kind: "run" | "rejudge") => [
+  await Deno.readTextFile(join(H33_BASELINE, `${kind}-judgment.json`)),
+  await Deno.readTextFile(join(H33_BASELINE, `${kind}-verdict.json`)),
+];
+
+Deno.test("H-33: the run path (judgeExecution) writes the judgment and verdict log bytes the pre-change code wrote (per-run values aside)", async () => {
+  await using t = await makeEnv();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const [j] = await t.env.store.judgments(e.id);
+  assert(j, "the run judged inline");
+  assertEquals(
+    (await writtenFiles(t, e, j.id)).map(perRunValuesOut),
+    (await baseline("run")).map(perRunValuesOut),
+  );
+});
+
+Deno.test("H-33: a rejudge computed then published writes the bytes the pre-change rejudge wrote (per-run values aside); compute alone writes nothing", async () => {
   await using t = await makeEnv();
   const cell = await cellFor(t);
   const e = (await runCell(t.env, cell)).executions[0]!;
-  // The run path judged inline through judgeExecution (compute then publish).
   const [old] = await t.env.store.judgments(e.id);
-  assert(old, "the run judged inline");
   const computed = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
   assertEquals(
     await t.env.store.judgments(e.id),
@@ -1485,13 +1513,10 @@ Deno.test("H-33: a rejudge computed then published writes the judgment and verdi
   );
   const j = await publishJudgment(t.env, e, cell.oracleHash, computed);
   assertEquals(j, computed.judgment);
-  assertEquals((await t.env.store.judgments(e.id)).length, 2);
-  assertEquals(j.scorer_fingerprint, old.scorer_fingerprint);
-  assert(j.id !== old.id);
-  assertEquals(sameInput(j), sameInput(old));
-  const log = await verdictLogOf(t, j.id);
-  assertEquals(log, computed.log);
-  assertEquals(sameInput(log), sameInput(await verdictLogOf(t, old.id)));
+  assertEquals(
+    (await writtenFiles(t, e, j.id)).map(perRunValuesOut),
+    (await baseline("rejudge")).map(perRunValuesOut),
+  );
   // Write-once: the same computed judgment is never published twice.
   await assertRejects(() =>
     publishJudgment(t.env, e, cell.oracleHash, computed)
@@ -1499,16 +1524,58 @@ Deno.test("H-33: a rejudge computed then published writes the judgment and verdi
   assertEquals((await t.env.store.judgments(e.id)).length, 2);
 });
 
-Deno.test("H-33: the run path still judges and writes inline: one judgment, its verdict log, and no judge work dir left", async () => {
+Deno.test("H-33: the run path publishes while the judge work dir still exists, and removes it afterwards", async () => {
   await using t = await makeEnv();
-  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
-  const js = await t.env.store.judgments(e.id);
-  assertEquals(js.length, 1);
-  assertEquals((await verdictLogOf(t, js[0]!.id)).judgment_id, js[0]!.id);
   const judgeDir = join(t.env.privateRoot, "judge");
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  const atWrite: number[] = [];
+  store.writeJudgment = async (j) => {
+    atWrite.push(
+      await exists(judgeDir) ? [...Deno.readDirSync(judgeDir)].length : 0,
+    );
+    return await write(j);
+  };
+  await runCell(t.env, await cellFor(t));
+  assertEquals(atWrite, [1], "the judge work dir at the judgment write");
+  assertEquals([...Deno.readDirSync(judgeDir)], [], "removed afterwards");
+});
+
+Deno.test("H-33: a forced judgment whose re-check went stale between compute and publish is refused; neither its verdict log nor it is written", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  const [old] = await t.env.store.judgments(e.id);
+  const forced = await rejudgeExecution(t.env, cell, e, cell.oracleHash, {
+    reason: "infra: verdict build starved of memory",
+    replaces: old!.id,
+    basis: {
+      kind: "decision",
+      path: "2026-10-21-h33.md",
+      sha256: "a".repeat(64),
+      approval: "OWNER-APPROVED: h33 drill (2026-10-21T12:00:00Z)",
+    },
+  });
+  // Another judgment lands in between: --replaces is no longer the one used.
+  await publishJudgment(
+    t.env,
+    e,
+    cell.oracleHash,
+    await rejudgeExecution(t.env, cell, e, cell.oracleHash),
+  );
+  await assertRejects(
+    () => publishJudgment(t.env, e, cell.oracleHash, forced),
+    ConfigurationError,
+    "nothing written",
+  );
+  const ids = (await t.env.store.judgments(e.id)).map((j) => j.id);
+  assertEquals(ids.length, 2);
+  assert(!ids.includes(forced.judgment.id), "the forced judgment was written");
   assert(
-    !await exists(judgeDir) || [...Deno.readDirSync(judgeDir)].length === 0,
-    "a judge work dir survived",
+    !await exists(
+      join(t.env.resultsRoot, "verdicts", `${forced.judgment.id}.json`),
+    ),
+    "the forced judgment's verdict log was written",
   );
 });
 
