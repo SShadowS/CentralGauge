@@ -48,6 +48,7 @@ import {
   effectiveBuildKey,
   isCascadeDiagnostic,
   lockDigestOf,
+  PoolLostError,
   prepareApps,
   type ProductionManifest,
   productionManifest,
@@ -555,6 +556,7 @@ export function agentTestsBc(
       try {
         r = await bc.runHarnessTests(c, codeunit);
       } catch (err) {
+        if (err instanceof PoolLostError) throw err; // H-41 (5): requeued, never the agent's
         notes.push(
           `agent-added test codeunit ${codeunit} did not complete on ${c}: ${
             err instanceof Error ? err.message : String(err)
@@ -618,6 +620,7 @@ export function agentSuiteBc(
       try {
         r = await bc.runHarnessTests(c, codeunit);
       } catch (err) {
+        if (err instanceof PoolLostError) throw err; // H-41 (5): requeued, never infra
         throw new ContainerError(
           `agent suite ${codeunit} did not complete on ${c}: ${
             err instanceof Error ? err.message : String(err)

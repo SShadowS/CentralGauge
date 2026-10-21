@@ -756,3 +756,46 @@ Deno.test("overwritten alert's dedupe keys are purged (fp1 can re-raise)", () =>
   assertEquals(r3.alertRaised, true, "fp1 recurrence must re-raise");
   assertEquals(r3.alert?.fingerprint, "test:fp1");
 });
+
+Deno.test("H-41 Q10: register adds a zero-count row after the configured ones, in registration order; registering twice changes nothing", () => {
+  const mon = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainerNames: ["C1"],
+  });
+  mon.record({ containerName: "Z9", result: "pass", timestamp: 1 });
+  mon.register("C3");
+  mon.register("C2");
+  mon.register("C3");
+  mon.register("C1");
+  const rows = mon.getState().containers;
+  assertEquals(rows.map((c) => c.containerName), ["C1", "C3", "C2", "Z9"]);
+  assertEquals(rows[1], {
+    containerName: "C3",
+    recent: [],
+    passCount: 0,
+    failCount: 0,
+    errorCount: 0,
+  });
+  // an existing row keeps its counts
+  mon.register("Z9");
+  assertEquals(
+    mon.getState().containers.find((c) => c.containerName === "Z9")?.passCount,
+    1,
+  );
+});
+
+Deno.test("H-41 Q10: a registered container is alerted like a configured one (the lane's eligibility reads the alert)", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  mon.register("C2");
+  const r = mon.record({
+    containerName: "C2",
+    result: "infra_error",
+    fingerprint: "test:sql",
+    signatureId: "sql_service_down",
+    timestamp: 1,
+  });
+  assertEquals(r.alert?.kind, "suspect_container");
+  const row = mon.getState().containers.find((c) => c.containerName === "C2");
+  assertEquals(row?.alert?.alertId, r.alert?.alertId);
+  assertEquals(row?.errorCount, 1);
+});

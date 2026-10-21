@@ -47,6 +47,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}claude-code.test.ts`]: c(true, 4),
   [`${H}claude-trace.test.ts`]: c(true, 0),
   [`${H}config.test.ts`]: c(true, 0),
+  [`${H}coord-lease.test.ts`]: c(true, 0),
   [`${H}credential-budget.test.ts`]: c(true, 1),
   [`${H}egress-probe-scrub.test.ts`]: c(true, 0),
   [`${H}egress-proxy.test.ts`]: c(true, 2),

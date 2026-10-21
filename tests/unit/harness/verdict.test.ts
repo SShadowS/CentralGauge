@@ -20,6 +20,7 @@ import {
   changedApps,
   CLOUD_POLICY,
   dirBuildCache,
+  PoolLostError,
 } from "../../../src/harness/bc-lane.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
@@ -46,6 +47,7 @@ import {
   deployedSource,
   type FakeApp,
   FakeBc,
+  faultAt,
   OK_RESET,
   result,
 } from "./fake-bc.ts";
@@ -2202,4 +2204,116 @@ Deno.test("H-35 S3 L4: every deployment's fsDigest check is in fs_checks[]; a di
   // Every measured deployment ran on the clean host.
   assert(log.containers.length > 0);
   assert(log.containers.every((c) => c === "C2"), log.containers.join());
+});
+
+// H-41 (design-final 5): a PoolLostError is never a scored or unscored
+// outcome: it leaves judge() at every catch site. Each site's control throws
+// genuine infra at the same call, which stays unscored there (fail-wins
+// unchanged), so the call counts are shown to reach that site.
+
+const lost = () =>
+  new PoolLostError(
+    new ContainerError("gone", "C1", "test"),
+    ["C1"],
+    { C1: { state: "departed", reason: "not running" } },
+    false,
+  );
+const infra = () => new ContainerError("SOAP request timed out", "C1", "test");
+
+Deno.test("H-41 (5) verdict.ts agentTestsBc catch: a PoolLostError from an agent-added test run propagates out of judge, never filled in as the agent's failure", async () => {
+  const bc = script();
+  const inner = bc.script;
+  bc.script = (cu, deployed, c) => {
+    if (cu === 81000) throw lost();
+    return inner(cu, deployed, c);
+  };
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+  });
+  await assertRejects(
+    () => judge(new BcLane(bc, ["C1", "C2"]), input),
+    PoolLostError,
+  );
+});
+
+for (
+  const site of [
+    {
+      name: "runAgentTests (first run)",
+      kind: "exclusive",
+      n: 2,
+      bc: script,
+      note: "agent_tests: agent-added tests infra",
+    },
+    {
+      name: "runAgentTests (rerun)",
+      kind: "exclusive",
+      n: 3,
+      bc: () => hangs("first").bc,
+      note: "agent_tests: agent-added test rerun infra",
+    },
+    {
+      name: "scoreAgentTests (prepare A)",
+      kind: "compile",
+      n: 2,
+      bc: script,
+      note: "agent_tests: agent-added tests infra",
+    },
+  ] as const
+) {
+  Deno.test(`H-41 (5) verdict.ts ${site.name} catch: a PoolLostError propagates out of judge; genuine infra there leaves agent_tests unscored`, async () => {
+    const edits = { "Test/src/Agent.Test.al": AGENT_81000 };
+    const a = await setup("correct", edits);
+    await assertRejects(
+      () =>
+        judge(
+          faultAt(new BcLane(site.bc(), ["C1", "C2"]), site.kind, site.n, lost),
+          a.input,
+        ),
+      PoolLostError,
+    );
+    const b = await setup("correct", edits);
+    const { judgment, log } = await judge(
+      faultAt(new BcLane(site.bc(), ["C1", "C2"]), site.kind, site.n, infra),
+      b.input,
+    );
+    assertEquals(judgment.scorers.map((s) => s.passed), [
+      true,
+      true,
+      true,
+      null,
+    ]);
+    assertEquals(judgment.verdict, "unscored");
+    assertStringIncludes(log.notes.join("\n"), site.note);
+  });
+}
+
+Deno.test("H-41 (5) verdict.ts judge catch: a PoolLostError propagates out of judge; genuine infra there is unscored", async () => {
+  const a = await setup("correct");
+  await assertRejects(
+    () =>
+      judge(faultAt(new BcLane(script(), ["C1"]), "compile", 1, lost), a.input),
+    PoolLostError,
+  );
+  const b = await setup("correct");
+  const { judgment, log } = await judge(
+    faultAt(new BcLane(script(), ["C1"]), "compile", 1, infra),
+    b.input,
+  );
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(judgment.scorers.map((s) => s.passed), [null, null, null, null]);
+  assertStringIncludes(log.error!, "SOAP request timed out");
+});
+
+Deno.test("H-41 (5) control: genuine infra on the agent-added run next to a failing pass_to_pass is still a fail (fail-wins unchanged)", async () => {
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_81000,
+    "Rental/src/Break.al": `codeunit 70210 "Break"\n{\n    // BREAK_P2P\n}\n`,
+  });
+  const { judgment } = await judge(
+    faultAt(new BcLane(script(), ["C1", "C2"]), "exclusive", 2, infra),
+    input,
+  );
+  assertEquals(judgment.scorers[1]!.passed, false);
+  assertEquals(judgment.verdict, "fail");
 });
