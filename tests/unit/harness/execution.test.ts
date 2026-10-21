@@ -24,6 +24,7 @@ import {
   type HarnessEnv,
   inventoryProof,
   privatePaths,
+  publishJudgment,
   type PublishStep,
   recoverInterrupted,
   rejudgeExecution,
@@ -1437,9 +1438,78 @@ Deno.test("judge output is redacted with the custody secrets: recovery and rejud
   await assertJudgeOutputRedacted(t, token());
   // After publication the custody plaintext is gone; a rejudge still redacts.
   assert(!await exists(privatePaths(t.env, e!.id).custody));
-  await rejudgeExecution(t.env, cell, e!, cell.oracleHash);
+  // H-33: rejudgeExecution computes; publishJudgment writes.
+  await publishJudgment(
+    t.env,
+    e!,
+    cell.oracleHash,
+    await rejudgeExecution(t.env, cell, e!, cell.oracleHash),
+  );
   assertEquals((await t.env.store.judgments(e!.id)).length, 2);
   await assertJudgeOutputRedacted(t, token());
+});
+
+// ---- H-33: judging computes, then publishes ----
+
+/** A judgment or verdict log without what differs between two judgings of the same input. */
+const sameInput = (x: unknown) =>
+  JSON.parse(
+    JSON.stringify(x, (k, v) =>
+      ["id", "judgment_id", "started_at", "ended_at", "spans"].includes(k)
+        ? "-"
+        : v),
+  );
+
+const verdictLogOf = async (t: TestEnv, id: string) =>
+  JSON.parse(
+    await Deno.readTextFile(join(t.env.resultsRoot, "verdicts", `${id}.json`)),
+  );
+
+Deno.test("H-33: a rejudge computed then published writes the judgment and verdict log the single-call path writes (ids and timestamps aside)", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  // The run path judged inline through judgeExecution (compute then publish).
+  const [old] = await t.env.store.judgments(e.id);
+  assert(old, "the run judged inline");
+  const computed = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  assertEquals(
+    await t.env.store.judgments(e.id),
+    [old],
+    "compute writes nothing",
+  );
+  assertEquals(
+    [...Deno.readDirSync(join(t.env.resultsRoot, "verdicts"))].length,
+    1,
+    "compute writes no verdict log",
+  );
+  const j = await publishJudgment(t.env, e, cell.oracleHash, computed);
+  assertEquals(j, computed.judgment);
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+  assertEquals(j.scorer_fingerprint, old.scorer_fingerprint);
+  assert(j.id !== old.id);
+  assertEquals(sameInput(j), sameInput(old));
+  const log = await verdictLogOf(t, j.id);
+  assertEquals(log, computed.log);
+  assertEquals(sameInput(log), sameInput(await verdictLogOf(t, old.id)));
+  // Write-once: the same computed judgment is never published twice.
+  await assertRejects(() =>
+    publishJudgment(t.env, e, cell.oracleHash, computed)
+  );
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+});
+
+Deno.test("H-33: the run path still judges and writes inline: one judgment, its verdict log, and no judge work dir left", async () => {
+  await using t = await makeEnv();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const js = await t.env.store.judgments(e.id);
+  assertEquals(js.length, 1);
+  assertEquals((await verdictLogOf(t, js[0]!.id)).judgment_id, js[0]!.id);
+  const judgeDir = join(t.env.privateRoot, "judge");
+  assert(
+    !await exists(judgeDir) || [...Deno.readDirSync(judgeDir)].length === 0,
+    "a judge work dir survived",
+  );
 });
 
 Deno.test("privateRoot is validated before any secret: under results/, under the worktree, UNC or a network drive is refused", async () => {

@@ -101,6 +101,7 @@ import {
   measureExecution,
   type MeasureRun,
   measureWorkspace,
+  publishJudgment,
   rejudgeExecution,
   runCell,
   scrubForcedReason,
@@ -186,6 +187,7 @@ import {
   sweepOwnedSandboxes,
 } from "../../src/harness/sandbox.ts";
 import { resolveDockerContext } from "../../src/container/docker-context.ts";
+import { Mutex } from "../../src/parallel/semaphore.ts";
 import {
   acquireBenchLock,
   BenchLockHeldError,
@@ -1978,13 +1980,15 @@ async function rejudgeTarget(
  * judgment's task_oracle_hash), never re-running the agent. Refused unless
  * the records validate, every campaign task is present, and each restaged
  * task has the execution's visible-input hash. Asks unless --yes.
+ * H-33: `signal` (an interrupt) stops it gracefully: `interrupted` is set.
  */
 export async function harnessRejudge(
   experimentId: string,
   o: RunCliOptions,
   open: Opener = openHarnessEnv,
   ask: (question: string) => boolean = askUser,
-): Promise<{ campaignId: string; rejudged: number }> {
+  signal?: AbortSignal,
+): Promise<{ campaignId: string; rejudged: number; interrupted?: true }> {
   // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
   await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
   const decision = o.basis === undefined
@@ -2185,37 +2189,64 @@ export async function harnessRejudge(
       console.log(`${colors.cyan("[info]")} pairing frozen: ${pairing}`);
     }
     // H-24: one judging per lane container at a time (the lane leases each
-    // container and reroutes infra faults, as in harness run). Each judgment
-    // is written once, by judgeExecution, in this one process. The first
+    // container and reroutes infra faults, as in harness run). The first
     // failure starts no further judging; running ones finish, then it is
     // thrown. What was not judged stays due for the next rejudge.
+    // H-33: workers only compute; one writer publishes each judgment (write
+    // once, in this one process), so every computed judgment is published
+    // before drain ends, on a failure or an interrupt too.
+    const writer = new Mutex();
+    let judged = 0;
     const queue = judgeQueue(
       env,
       env.lane.containers.length,
       async (env, cell, e) => {
         const oracle = byTask.get(e.task_id)!.oracle;
-        const j = await rejudgeExecution(env, cell, e, oracle, forced);
-        if (pairing && cells.some((x) => x.execution_id === e.id)) {
-          await appendCompletion(env.resultsRoot, pairing, {
-            execution_id: e.id,
-            new_judgment_id: j.id,
-            at: new Date().toISOString(),
-          });
+        const computed = await rejudgeExecution(env, cell, e, oracle, forced);
+        const release = await writer.acquire();
+        try {
+          const j = await publishJudgment(env, e, oracle, computed);
+          judged++;
+          if (pairing && cells.some((x) => x.execution_id === e.id)) {
+            await appendCompletion(env.resultsRoot, pairing, {
+              execution_id: e.id,
+              new_judgment_id: j.id,
+              at: new Date().toISOString(),
+            });
+          }
+          console.log(
+            `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
+              oracle.slice(0, 12)
+            })${j.forced ? `, forced: ${j.forced.reason}` : ""}`,
+          );
+        } finally {
+          release();
         }
-        console.log(
-          `${colors.green("[OK]")} ${e.id}: ${j.verdict} (current oracle ${
-            oracle.slice(0, 12)
-          })${j.forced ? `, forced: ${j.forced.reason}` : ""}`,
-        );
       },
     );
-    for (const e of due) {
-      queue.push(
-        cellRefFor(c, opened, c.blocks[e.block]!, e.arm, e.order_in_block),
-        e,
-      );
+    // H-33: an interrupt admits no new judging; the running ones finish.
+    const stop = () => queue.stop();
+    if (signal?.aborted) stop();
+    signal?.addEventListener("abort", stop);
+    try {
+      for (const e of due) {
+        queue.push(
+          cellRefFor(c, opened, c.blocks[e.block]!, e.arm, e.order_in_block),
+          e,
+        );
+      }
+      await queue.drain();
+    } finally {
+      signal?.removeEventListener("abort", stop);
     }
-    await queue.drain();
+    if (signal?.aborted && judged < due.length) {
+      console.log(
+        `${colors.yellow("[STOP]")} interrupted: ${judged} judged; the other ${
+          due.length - judged
+        } stay due for the next rejudge`,
+      );
+      return { campaignId: c.id, rejudged: judged, interrupted: true };
+    }
     return { campaignId: c.id, rejudged: due.length };
   } finally {
     await h.close();
@@ -3304,13 +3335,27 @@ export function registerHarnessCommand(
       opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,
       experiment: string,
     ) =>
-      fail(async () =>
-        void await harnessRejudge(
-          experiment,
-          runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
-          open,
-        )
-      )
+      fail(async () => {
+        // H-33: Ctrl-C (Ctrl-Break on Windows) stops the rejudge gracefully.
+        const stop = new AbortController();
+        const onSignal = () => stop.abort();
+        const signals: Deno.Signal[] = Deno.build.os === "windows"
+          ? ["SIGINT", "SIGBREAK"]
+          : ["SIGINT"];
+        for (const s of signals) Deno.addSignalListener(s, onSignal);
+        try {
+          const r = await harnessRejudge(
+            experiment,
+            runOpts({ ...opts, concurrency: 1, maxPauseMin: 0 }),
+            open,
+            askUser,
+            stop.signal,
+          );
+          if (r.interrupted) Deno.exitCode = 130;
+        } finally {
+          for (const s of signals) Deno.removeSignalListener(s, onSignal);
+        }
+      })
     );
 
   shared(

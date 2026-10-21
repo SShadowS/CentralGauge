@@ -13,7 +13,10 @@ import {
   ContainerError,
   ValidationError,
 } from "../../../src/errors.ts";
+import type { CellRef, HarnessEnv } from "../../../src/harness/execution.ts";
+import type { ExecutionRecord } from "../../../src/harness/records.ts";
 import {
+  judgeQueue,
   loadCampaignData,
   planCampaign,
   type PlanEnv,
@@ -2371,4 +2374,68 @@ Deno.test("M7-01 (T-06): at concurrency 2 a cell whose probe runs after the othe
   );
   assertEquals(ran.ran, 4);
   assert(eg.events.includes("unregister"), "a cell unregistered first");
+});
+
+// ---- H-33: the judge queue's admission rule and stop ----
+
+const qEnv = {} as HarnessEnv;
+const qCell = {} as CellRef;
+const qExec = (id: string) => ({ id }) as ExecutionRecord;
+const qSleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+Deno.test("judgeQueue (H-33): no queued execution starts after the first failure", async () => {
+  let failedAt: number | null = null;
+  const starts: { id: string; at: number }[] = [];
+  let clock = 0;
+  const queue = judgeQueue(qEnv, 2, async (_env, _cell, e) => {
+    starts.push({ id: e.id, at: ++clock });
+    if (e.id === "e2") {
+      await qSleep(5);
+      failedAt = ++clock;
+      throw new Error("injected judging failure");
+    }
+    await qSleep(20);
+  });
+  for (const id of ["e1", "e2", "e3", "e4", "e5", "e6"]) {
+    queue.push(qCell, qExec(id));
+  }
+  await assertRejects(() => queue.drain(), Error, "injected judging failure");
+  assert(failedAt !== null, "the failing job ran");
+  const late = starts.filter((s) => s.at > failedAt!);
+  assertEquals(
+    late,
+    [],
+    `started after the first failure: ${late.map((s) => s.id)}`,
+  );
+  assert(starts.length < 6, "some queued jobs never started");
+  assert(queue.failed());
+});
+
+Deno.test("judgeQueue (H-33): stop admits nothing new; drain resolves once the running jobs end", async () => {
+  const started: string[] = [];
+  const ended: string[] = [];
+  const queue = judgeQueue(qEnv, 2, async (_env, _cell, e) => {
+    started.push(e.id);
+    await qSleep(20);
+    ended.push(e.id);
+  });
+  for (const id of ["e1", "e2", "e3", "e4", "e5"]) {
+    queue.push(qCell, qExec(id));
+  }
+  queue.stop();
+  queue.push(qCell, qExec("e6"));
+  await queue.drain();
+  assertEquals(started, ["e1", "e2"]);
+  assertEquals(ended.sort(), ["e1", "e2"]);
+  assert(!queue.failed());
+});
+
+Deno.test("judgeQueue (H-33): after stop, drain still throws a failure recorded by a running job", async () => {
+  const queue = judgeQueue(qEnv, 2, async (_env, _cell, e) => {
+    await qSleep(5);
+    if (e.id === "e1") throw new Error("injected judging failure");
+  });
+  for (const id of ["e1", "e2", "e3"]) queue.push(qCell, qExec(id));
+  queue.stop();
+  await assertRejects(() => queue.drain(), Error, "injected judging failure");
 });
