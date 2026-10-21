@@ -418,10 +418,14 @@ export async function buildVerdictWorkspace(
       rel,
       await Deno.readTextFile(join(out, TEST_APP, ...rel.split("/"))),
     ] as const;
-  violations.push(...testPolicyViolations([
-    ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
-    ...editedShipped,
-  ], o.onPrem));
+  violations.push(...testPolicyViolations(
+    [
+      ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
+      ...editedShipped,
+    ],
+    o.onPrem,
+    await workspaceInterfaces(out),
+  ));
   const { notes, excluded, rejected } = violations.length === 0 &&
       (editedShipped.size + newTestFiles.length + asWritten.length) > 0
     ? await applyCreditRules(
@@ -1421,9 +1425,16 @@ const ISOLATION_DISABLED = /\bRequiredTestIsolation\s*=\s*Disabled\b/i;
 export function testPolicyViolations(
   files: Iterable<readonly [string, string]>,
   onPrem: OnPremIndex,
+  /** H-38 8.4 ruling (b): the workspace's interfaces; default: those `files` declare. */
+  interfaces?: ReadonlySet<string>,
 ): string[] {
   const out: string[] = [];
-  for (const [rel, src] of [...files].sort(([a], [b]) => a < b ? -1 : 1)) {
+  const list = [...files].sort(([a], [b]) => a < b ? -1 : 1);
+  const ifaces = interfaces ??
+    new Set(
+      list.flatMap(([, src]) => unreadable(src) ? [] : interfacesIn(src)),
+    );
+  for (const [rel, src] of list) {
     const where = `${TEST_APP}/${rel}`;
     const why = unreadable(src);
     if (why) {
@@ -1443,7 +1454,7 @@ export function testPolicyViolations(
     for (const d of persistenceRefs(src)) {
       out.push(`persistence_ref: ${where}: ${d}`);
     }
-    for (const d of onPremRefs(src, onPrem)) {
+    for (const d of onPremRefs(src, onPrem, ifaces)) {
       out.push(`onprem_ref: ${where}: ${d}`);
     }
   }
@@ -1849,6 +1860,8 @@ export async function productionPolicyViolations(
 ): Promise<string[]> {
   allow ??= {};
   const out: string[] = [];
+  // H-38 8.4 ruling (b): every interface the workspace declares (Test included).
+  const interfaces = await workspaceInterfaces(dir);
   const allowedDeps = new Set(
     [...PRODUCTION_DEPENDENCY_ALLOWLIST, ...allow.dependencies ?? []].map((
       id,
@@ -1933,7 +1946,7 @@ export async function productionPolicyViolations(
       for (const d of persistenceRefs(src)) {
         found.add(`persistence_ref: ${where}: ${d}`);
       }
-      for (const d of onPremRefs(src, onPrem)) {
+      for (const d of onPremRefs(src, onPrem, interfaces)) {
         found.add(`onprem_ref: ${where}: ${d}`);
       }
       out.push(...found);
@@ -1988,19 +2001,26 @@ const DATA_ITEM = new RegExp(
 );
 
 /**
- * A declared type: the indexed object it names, "safe" (a system type, or a
- * Query, never indexed: the loader refuses an OnPrem one), or null (an
- * Interface, or object type text that does not parse: unresolved).
+ * A declared type: the indexed object it names, "safe" (an AL_SYSTEM_TYPES
+ * type, or an Interface the workspace declares: 8.4 ruling a, b), or null
+ * (any other type word, an Interface of a locked package, or object type
+ * text that does not parse: unresolved).
  */
-function typeTarget(type: string): Target | "safe" | null {
+function typeTarget(
+  type: string,
+  interfaces: ReadonlySet<string>,
+): Target | "safe" | null {
   const t = type.trim().replace(/\s+temporary$/i, "");
   const m = /^(?:array\s*\[[^\]]*\]\s*of\s+)?([A-Za-z_]\w*)\b\s*([\s\S]*)$/i
     .exec(t);
   if (!m) return null;
   const word = m[1]!.toLowerCase();
-  if (word === "interface") return null;
+  if (word === "interface") {
+    const ref = objectRef(m[2]!);
+    return ref?.name !== undefined && interfaces.has(ref.name) ? "safe" : null;
+  }
   const kind = INDEXED_TYPE[word];
-  if (!kind) return "safe";
+  if (!kind) return AL_SYSTEM_TYPES.has(word) ? "safe" : null;
   const ref = objectRef(m[2]!);
   return ref ? { kind, ref } : null;
 }
@@ -2020,11 +2040,145 @@ const AL_BUILTINS = new Set(
     "update close settableview setrecord getrecord run runmodal lookupmode editable caption setselectionfilter saverecord activate objectid skip quit showoutput pageno newpage createtotals totalscausedby language formatregion previewmode isreadonly usereqpage",
   ].join(" ").toLowerCase().split(/\s+/),
 );
-/** Static receivers (`Codeunit.Run`, `Session.LogMessage`, ...): system, never an object. */
-const STATIC_RECEIVERS = new Set(
-  "codeunit page report xmlport query database session system companyproperty navapp taskscheduler isolatedstorage debugger numbersequence file dialog"
-    .split(" "),
+/**
+ * H-38 8.4 ruling (a): the built-in AL system data types, a closed list
+ * (lowercase). A receiver declared with one of these types, or one of these
+ * names used statically (`ErrorInfo.Create`, `Codeunit.Run`,
+ * `Session.LogMessage`), is resolved-safe: OnPrem scope comes only from the
+ * locked app symbols. A declared type word outside this list (and not an
+ * indexed object kind or a workspace Interface) is unresolved.
+ */
+export const AL_SYSTEM_TYPES: ReadonlySet<string> = new Set([
+  // scalar and text
+  "biginteger",
+  "bigtext",
+  "boolean",
+  "byte",
+  "char",
+  "code",
+  "date",
+  "dateformula",
+  "datetime",
+  "decimal",
+  "duration",
+  "guid",
+  "integer",
+  "label",
+  "option",
+  "secrettext",
+  "text",
+  "textbuilder",
+  "textconst",
+  "time",
+  "variant",
+  "version",
+  // collections, records by reference, streams, media
+  "blob",
+  "dictionary",
+  "fieldref",
+  "instream",
+  "keyref",
+  "list",
+  "media",
+  "mediaset",
+  "outstream",
+  "recordid",
+  "recordref",
+  // errors, notifications, dialogs
+  "dialog",
+  "errorinfo",
+  "errortype",
+  "filterpagebuilder",
+  "notification",
+  // JSON, HTTP, XML
+  "cookie",
+  "httpclient",
+  "httpcontent",
+  "httpheaders",
+  "httprequestmessage",
+  "httpresponsemessage",
+  "jsonarray",
+  "jsonobject",
+  "jsontoken",
+  "jsonvalue",
+  "xmlattribute",
+  "xmlattributecollection",
+  "xmlcdata",
+  "xmlcomment",
+  "xmldeclaration",
+  "xmldocument",
+  "xmldocumenttype",
+  "xmlelement",
+  "xmlnamespacemanager",
+  "xmlnametable",
+  "xmlnode",
+  "xmlnodelist",
+  "xmlprocessinginstruction",
+  "xmlreadoptions",
+  "xmltext",
+  "xmlwriteoptions",
+  // session, platform and app information (static receivers)
+  "companyproperty",
+  "database",
+  "datatransfer",
+  "debugger",
+  "executioncontext",
+  "executionmode",
+  "file",
+  "isolatedstorage",
+  "moduledependencyinfo",
+  "moduleinfo",
+  "navapp",
+  "numbersequence",
+  "productname",
+  "session",
+  "sessionsettings",
+  "system",
+  "taskscheduler",
+  "webserviceactioncontext",
+  // test types
+  "testaction",
+  "testfield",
+  "testfilter",
+  "testhttprequestmessage",
+  "testhttpresponsemessage",
+  "testpage",
+  "testpart",
+  "testrequestpage",
+  // object-type keywords used statically (Codeunit.Run, Report.SaveAs), and
+  // Enum (its own methods: AsInteger, Names, Ordinals, FromInteger)
+  "codeunit",
+  "enum",
+  "page",
+  "query",
+  "report",
+  "xmlport",
+]);
+
+/** H-38 8.4 ruling (b): an interface declaration `interface <name> [extends ...] {`. */
+const INTERFACE_DECL = new RegExp(
+  `(?<![\\w":])\\binterface\\s+(${NAME_SEG})\\s*(?:extends\\b[^{;]*)?\\{`,
+  "gi",
 );
+
+/** The interfaces (lowercase, unquoted) one AL text declares. */
+function interfacesIn(src: string): string[] {
+  const code = stripAlNoise(src);
+  return [...scanner(code, maskQuoted(code))(INTERFACE_DECL)].map((m) =>
+    unquote(m.at(1))
+  );
+}
+
+/** H-38 8.4 ruling (b): every interface the .al files of a workspace declare. */
+export async function workspaceInterfaces(dir: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const e of await listTree(dir, "task")) {
+    if (!e.path.toLowerCase().endsWith(".al")) continue;
+    const src = await Deno.readTextFile(join(dir, ...e.path.split("/")));
+    for (const n of interfacesIn(src)) out.add(n);
+  }
+  return out;
+}
 
 /** The string literals (outside comments) in `src` from `from` to `to`. */
 function literalsIn(src: string, from: number, to: number): string[] {
@@ -2080,9 +2234,14 @@ interface OnPremContext {
  * an unresolved receiver or bare name (a call result, a chain, `with`, an
  * undeterminable implicit receiver) is banned when its name is an OnPrem name
  * anywhere in the lock (Q2 fallback, 5.4). Matched on the noise-stripped code
- * with quoted identifiers masked; details from the source.
+ * with quoted identifiers masked; details from the source. `interfaces`: the
+ * workspace's declared interfaces (8.4 ruling b).
  */
-function onPremRefs(src: string, idx: OnPremIndex): string[] {
+function onPremRefs(
+  src: string,
+  idx: OnPremIndex,
+  interfaces: ReadonlySet<string>,
+): string[] {
   const code = stripAlNoise(src);
   const masked = maskQuoted(code);
   const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
@@ -2255,7 +2414,7 @@ function onPremRefs(src: string, idx: OnPremIndex): string[] {
     if (shape === "call" || shape === "paren") return null;
     const declared = typeOf(name, at);
     if (declared !== undefined) {
-      const t = typeTarget(declared);
+      const t = typeTarget(declared, interfaces);
       return t === "safe" ? "safe" : t ? [t] : null;
     }
     if (shape === "index") return null;
@@ -2280,7 +2439,8 @@ function onPremRefs(src: string, idx: OnPremIndex): string[] {
     if (name === "currxmlport") return o.kind === "xmlport" ? [c.own!] : null;
     const item = c.dataItems.get(name);
     if (item) return [item];
-    return STATIC_RECEIVERS.has(name) ? "safe" : null;
+    // 8.4 ruling (a): a system type used statically (ErrorInfo.Create).
+    return AL_SYSTEM_TYPES.has(name) ? "safe" : null;
   };
   const check = (
     targets: Target[] | "safe" | null,
@@ -2380,6 +2540,38 @@ function onPremRefs(src: string, idx: OnPremIndex): string[] {
     }
     withs.push([i, end]);
   }
+  /**
+   * H-38 8.4 ruling (c): `<head>.Ordinals().M` or `<head>.Names().M` whose
+   * head is an enum type (`Enum::X`), an enum value (`X::Y`) or a variable
+   * declared `Enum ...`: the call is a List, M a List method (safe). `segs`
+   * runs from the member's receiver back to the head; `p` is before the head.
+   */
+  const NOT_ENUM = new Set([
+    "database",
+    "codeunit",
+    "page",
+    "report",
+    "query",
+    "xmlport",
+    "objecttype",
+  ]);
+  const enumList = (
+    segs: { start: number; name: string; shape: string }[],
+    p: number,
+    at: number,
+  ): boolean => {
+    const [call, head] = segs;
+    if (
+      segs.length !== 2 || call!.shape !== "call" ||
+      !/^(?:ordinals|names)$/.test(call!.name) || head!.shape !== "ident"
+    ) return false;
+    if (masked[p] === ":" && masked[p - 1] === ":") {
+      const before = primary(p - 2);
+      return !!before && before.shape === "ident" &&
+        (before.name === "enum" || !NOT_ENUM.has(before.name));
+    }
+    return /^\s*enum\b/i.test(typeOf(head!.name, at) ?? "");
+  };
   // 5.1: dotted access R.M (parens optional), the receiver the whole expression before .M.
   for (const m of masked.matchAll(/\.\s*("[^"\n]*"|[A-Za-z_]\w*)/gd)) {
     const dot = m.index;
@@ -2396,15 +2588,25 @@ function onPremRefs(src: string, idx: OnPremIndex): string[] {
     let p = wsBack(first.start - 1);
     if (masked[p] === ":" && masked[p - 1] === ":") continue;
     let chain = false;
+    const segs = [first];
     while (masked[p] === "." && masked[p - 1] !== ".") {
       chain = true;
       const q = primary(p - 1);
       if (!q) break;
+      segs.push(q);
       start = q.start;
       p = wsBack(q.start - 1);
     }
     const text = show(start, end);
-    check(chain ? null : receiver(first.name, first.shape, dot), member, text);
+    check(
+      enumList(segs, p, dot)
+        ? "safe"
+        : chain
+        ? null
+        : receiver(first.name, first.shape, dot),
+      member,
+      text,
+    );
   }
   // 5.2: bare names in call or statement position, inside routine bodies.
   for (const m of masked.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)) {

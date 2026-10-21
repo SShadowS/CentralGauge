@@ -29,6 +29,7 @@ import {
   productionPolicyViolations,
   TEST_APP,
   testPolicyViolations,
+  workspaceInterfaces,
 } from "../../src/harness/verdict-workspace.ts";
 
 const ROOT = fromFileUrl(new URL("../../", import.meta.url));
@@ -108,16 +109,23 @@ Deno.test("H-38 Q2 gate (8.4): the shipped tree has no onprem_ref hit against th
     const prod = await productionPolicyViolations(dir, apps, allow, index);
     const test = await alFiles(dir, TEST_APP);
     scanned += (await alFiles(dir)).length;
-    const vs = [...prod, ...testPolicyViolations(test, index)];
+    // 8.4 ruling (b): the Test side knows the whole workspace's interfaces, as judge does.
+    const ifaces = await workspaceInterfaces(dir);
+    const vs = [...prod, ...testPolicyViolations(test, index, ifaces)];
     for (const v of vs) {
       if (v.startsWith("onprem_ref: ")) hits.push(`${label}: ${v}`);
     }
   };
-  const scanText = async (label: string, dir: string) => {
+  /** Test text over its pristine: the pristine's interfaces plus the text's own. */
+  const scanText = async (label: string, dir: string, pristine: string) => {
     contexts++;
     const files = await alFiles(dir);
     scanned += files.length;
-    for (const v of testPolicyViolations(files, index)) {
+    const ifaces = new Set([
+      ...await workspaceInterfaces(pristine),
+      ...await workspaceInterfaces(dir),
+    ]);
+    for (const v of testPolicyViolations(files, index, ifaces)) {
       if (v.startsWith("onprem_ref: ")) hits.push(`${label}: ${v}`);
     }
   };
@@ -197,7 +205,7 @@ Deno.test("H-38 Q2 gate (8.4): the shipped tree has no onprem_ref hit against th
       for (const kind of ["oracle", "reference-tests"]) {
         if (!(await dirs(task.dir)).includes(kind)) continue;
         counts[kind]!++;
-        await scanText(`${id} ${kind}`, join(task.dir, kind));
+        await scanText(`${id} ${kind}`, join(task.dir, kind), pristine);
       }
     }
     console.log(
