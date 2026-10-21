@@ -23,13 +23,14 @@ Deno.test("H-35 S3.2 loadLineage: the shipped golden-o09-v1 lineage loads, its s
   assertEquals(l.runner.package_id, "ede0ce05-9ed6-42f2-bbb4-bfee95bb033a");
 });
 
-Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section admission needs (content root, fs v3, egress) and runner 1.0.2.0", async () => {
+Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section admission needs (content root, fs v4, egress) and runner 1.0.2.0", async () => {
   const path = "infra/harness-reset/lineages/golden-o09-v2.json";
   const l = await loadLineage(path);
   assertEquals([l.id, l.reset_policy_version], ["golden-o09-v2", 2]);
   assertEquals(l.runner.version, "1.0.2.0");
   assert(l.content_root && l.content_root.exclude.length > 0);
-  assertEquals(l.fs?.digest_version, 3);
+  // H-40 (addendum 8b Q2): 26-byte heads
+  assertEquals(l.fs?.digest_version, 4);
   assert(l.egress);
   // run 004 #4: the canonical NST config digest, the hostname keys excluded
   assertEquals(l.nst_config?.digest_version, 1);
@@ -50,8 +51,14 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
   });
   assert(m.contentRoot && m.fsDigest && m.bcEgress && m.fsRoots?.length);
   // addendum 6: + the metadata .app and .res (name_is_sha256) and C:\Run\my;
-  // addendum 7: + CryptnetUrlCache\MetaData (in_place)
-  assertEquals(m.fsCaches?.length, 6);
+  // addendum 7: + CryptnetUrlCache\MetaData (in_place);
+  // addendum 8b: + CryptnetUrlCache\Content (in_place_cab)
+  assertEquals(m.fsCaches?.length, 7);
+  assertEquals(m.fsCaches!.filter((c) => c.inPlace).length, 1);
+  assertEquals(
+    m.fsCaches!.filter((c) => c.inPlaceCab).map((c) => [c.files, c.dirs]),
+    [[String.raw`^Content\\[0-9A-F]{32}$`, "^(?!)$"]],
+  );
   const cnc = m.fsCaches!.find((c) => c.inPlace)!;
   const md = (sha: string, size: number) =>
     `F|${sha}|${size}|36|1|7000|${cnc.base}\\MetaData\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
@@ -147,6 +154,143 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
       : before;
     assertEquals(fsDiff(b, after, [], [], m.fsCaches).diff.length, 1);
   }
+});
+
+/** The shipped golden-o09-v2 lineage's platform caches. */
+async function shippedCaches() {
+  const path = "infra/harness-reset/lineages/golden-o09-v2.json";
+  return goldenReset({
+    repoRoot: ".",
+    lineagePath: path,
+    lineage: await loadLineage(path),
+    dockerEnv: {},
+  }).fsCaches!;
+}
+
+/** Cronus281's quarantined Content file (record f4b75484). */
+const P57C8 =
+  "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache\\Content\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157";
+
+Deno.test("H-40 addendum 8b acceptance 1: a synthetic digest v4 diff from the f4b75484 record's values (4987 -> 5652 bytes, attrs 36, CAB heads with matching cbCabinet) is tolerated by the shipped lineage", async () => {
+  const caches = await shippedCaches();
+  const line = (sha: string, size: number, t: string, head: string) =>
+    `F|${sha}|${size}|36|${t}|${head}|${P57C8}`;
+  const SHA_B =
+    "0300e9ddb527990e8b59d06e9ccf3ec2bd92d3bbd0ef4fba69d6336e4195e82d";
+  const SHA_A =
+    "1f2719b100fcc59601f0dbb286aea5034e05bae881425792a115106e244a0ed0";
+  const before = line(
+    SHA_B,
+    4987,
+    "639251358286050693",
+    // cbCabinet 0x137b = 4987
+    "4d534346000000007b130000000000002c000000000000000301",
+  );
+  const after = line(
+    SHA_A,
+    5652,
+    "639281323644388674",
+    // the measured 57C8 head (lane-ops, Cronus281, 2026-10-21)
+    "4d534346000000001416000000000000" + "2c000000000000000301",
+  );
+  assertEquals(fsDiff([before, "T|1"], [after, "T|1"], [], [], caches), {
+    diff: [],
+    errors: [],
+  });
+  // the record's own v3 lines carry no CAB head: still a difference
+  const v3 = (l: string) => l.replace(/\|4d53[0-9a-f]*\|/, "|4d53|");
+  assertEquals(
+    fsDiff([v3(before), "T|1"], [v3(after), "T|1"], [], [], caches).diff
+      .length,
+    1,
+  );
+});
+
+Deno.test("H-40: the shipped lineage's other caches judge 26-byte (digest v4) heads as they judge 2-byte ones (addenda 3, 6 and 7 unchanged)", async () => {
+  const caches = await shippedCaches();
+  const apps = caches[0]!.base;
+  const cnc = caches.find((c) => c.inPlace)!.base;
+  const hex =
+    "0A53123EBB10012CF7AB9309302824D90E158BB785A7763F235C616DD829ADF0";
+  const f = (
+    p: string,
+    head: string,
+    sha = "a".repeat(64),
+    size = 4096,
+    attrs = 32,
+  ) => `F|${sha}|${size}|${attrs}|1|${head}|${p}`;
+  const md = (
+    sha: string,
+    size = 342,
+    name = "57C8EDB95DF3F0AD4EE2DC2B8CFD4157",
+  ) => f(`${cnc}\\MetaData\\${name}`, "7000", sha, size, 36);
+  const m3 = `${apps}\\metadata\\3\\0A`;
+  const cases: [string, string[], string[], number][] = [
+    ["assembly", [], [
+      f(`${apps}\\assembly\\release\\28.0.53667.0_1\\0A\\${hex}.dll`, "4d5a"),
+    ], 0],
+    ["metadata .xml", [], [f(`${m3}\\${hex}.xml`, "3c3f")], 0],
+    ["planted .txt", [], [f(`${m3}\\cg.txt`, "6869")], 1],
+    ["misnamed .dll", [], [
+      f(`${apps}\\assembly\\release\\28.0.53667.0_1\\0A\\evil.dll`, "4d5a"),
+    ], 1],
+    ["hash-named .app", [], [
+      f(`${m3}\\${hex}.app`, "4e41", hex.toLowerCase()),
+    ], 0],
+    ["misnamed .app", [], [f(`${m3}\\${hex}.app`, "4e41", "b".repeat(64))], 1],
+    ["hash-named .res", [], [
+      f(`${m3}\\${hex}.res`, "efbb", hex.toLowerCase()),
+    ], 0],
+    ["MetaData in place", [md("a".repeat(64))], [md("b".repeat(64))], 0],
+    ["MetaData resized", [md("a".repeat(64))], [md("b".repeat(64), 343)], 1],
+    ["MetaData new file", [md("a".repeat(64))], [
+      md("a".repeat(64)),
+      md("c".repeat(64), 330, "77EC63BDA74BD0D0E0426DC8F8008506"),
+    ], 1],
+  ];
+  const wide = (l: string) =>
+    l.replace(/^((?:[^|]*\|){5})([0-9a-f]*)\|/, `$1$2${"00".repeat(24)}|`);
+  for (const [what, b, a, n] of cases) {
+    for (const head of [(l: string) => l, wide]) {
+      const bl = b.map(head), al = a.map(head);
+      const r = fsDiff(
+        [...bl, `T|${bl.length}`],
+        [...al, `T|${al.length}`],
+        [],
+        [],
+        caches,
+      );
+      assertEquals([r.diff.length, r.errors], [n, []], what);
+    }
+  }
+});
+
+Deno.test("H-40 addendum 8b Q5: a platform_cache entry with both in_place and in_place_cab is refused", async () => {
+  const v2 = JSON.parse(
+    await Deno.readTextFile(
+      "infra/harness-reset/lineages/golden-o09-v2.json",
+    ),
+  );
+  const both = {
+    ...v2.fs.exclude.find((e: Record<string, unknown>) => e["in_place_cab"]),
+    in_place: true,
+  };
+  await assertRejects(
+    async () =>
+      loadLineage(
+        await copyLineage((j) => {
+          j["fs"] = { ...v2.fs, exclude: [...v2.fs.exclude, both] };
+        }),
+      ),
+    ConfigurationError,
+    "in_place and in_place_cab are exclusive",
+  );
+  // the shipped entries alone load
+  await loadLineage(
+    await copyLineage((j) => {
+      j["fs"] = v2.fs;
+    }),
+  );
 });
 
 async function copyLineage(

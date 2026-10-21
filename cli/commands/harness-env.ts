@@ -87,6 +87,7 @@ import {
 import {
   fsDiff,
   type FsDiffEntry,
+  fsLineRestored,
   goldenReset,
   type ResetMechanism,
   toleratingCache,
@@ -308,7 +309,8 @@ async function containerHolds(
 /**
  * H-35 run 004 Sol r1 H6: the recorded L4 paths a recovery capture does not
  * show remediated. An added file must be absent; any other entry must be
- * exactly its before line. Keys as fsDiff reads them (case-insensitive), no
+ * its before line (fsLineRestored: an F line's head to the recorded width,
+ * H-40). Keys as fsDiff reads them (case-insensitive), no
  * exclusions.
  */
 function unremediated(
@@ -324,11 +326,14 @@ function unremediated(
   );
   return [
     ...new Set(
-      recorded.filter((e) =>
-        e.before === null
-          ? now.has(e.path.toLowerCase())
-          : now.get(e.path.toLowerCase()) !== e.before
-      ).map((e) => e.path),
+      recorded.filter((e) => {
+        const cur = now.get(e.path.toLowerCase());
+        // addendum 8b Q6: an F line field by field, its head to the
+        // recorded width (a digest v3 record holds 2 bytes)
+        return e.before === null
+          ? cur !== undefined
+          : !cur || !fsLineRestored(e.before, cur);
+      }).map((e) => e.path),
     ),
   ];
 }
@@ -364,8 +369,9 @@ function cacheStillTolerated(
   });
   if (!by) return false;
   // a new-file cache keeps the recorded content; an in_place cache
-  // (addendum 7) may keep changing, judged by path, size and attributes
-  return by.inPlace === true || now[0] !== "F" ||
+  // (addendum 7) may keep changing, judged by path, size and attributes, an
+  // in_place_cab cache (addendum 8b) by path, attributes and its CAB head
+  return by.inPlace === true || by.inPlaceCab === true || now[0] !== "F" ||
     fileSha(now) === fileSha(e.after);
 }
 

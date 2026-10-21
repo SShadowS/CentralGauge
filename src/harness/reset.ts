@@ -434,6 +434,7 @@ export function goldenReset(o: {
               ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
               ...(e.dir_time_only ? { dirTimeOnly: true } : {}),
               ...(e.in_place ? { inPlace: true } : {}),
+              ...(e.in_place_cab ? { inPlaceCab: true } : {}),
             }]
             : []
         ),
@@ -478,14 +479,45 @@ export interface FsDiffEntry {
  */
 const FS_LINE: Record<string, RegExp> = {
   D: /^D\|(?<attrs>\d+)\|\d+\|(?<p>[^|]+)$/,
-  // digest v3: the 6th field is the file's first two bytes, hex (platform_cache's magic)
-  F: /^F\|(?<sha>[0-9a-f]{64})\|(?<size>\d+)\|(?<attrs>\d+)\|\d+\|(?<head>(?:[0-9a-f]{2}){0,2})\|(?<p>[^|]+)$/,
+  // digest v4 (H-40): the 6th field is the file's first min(26, size) bytes,
+  // hex (platform_cache's magic, in_place_cab's CFHEADER); a v3 record's 2
+  F: /^F\|(?<sha>[0-9a-f]{64})\|(?<size>\d+)\|(?<attrs>\d+)\|(?<mtime>\d+)\|(?<head>(?:[0-9a-f]{2}){0,26})\|(?<p>[^|]+)$/,
   S: /^S\|[0-9a-f]{64}\|\d+\|(?<p>[^|]+)$/,
   L: /^L\|\d+\|\d+\|(?<p>[^|]+)\|[^|]*$/,
 };
 const fsParse = (line: string) => FS_LINE[line[0] ?? ""]?.exec(line)?.groups;
 function fsKey(line: string): string | null {
   return fsParse(line)?.["p"] ?? null;
+}
+
+/**
+ * H-40 (addendum 8b Q6): whether a current digest line restores a recorded
+ * one. An F line must match field by field (sha256, size, attributes,
+ * last-write time, path spelling), its head only to the recorded width (a v3
+ * record holds 2 bytes; the sha pins the content); any other line exactly.
+ */
+export function fsLineRestored(recorded: string, current: string): boolean {
+  const r = recorded[0] === "F" ? fsParse(recorded) : undefined;
+  const c = current[0] === "F" ? fsParse(current) : undefined;
+  if (!r || !c) return recorded === current;
+  return (["sha", "size", "attrs", "mtime", "p"] as const).every((k) =>
+    r[k] === c[k]
+  ) && c["head"]!.startsWith(r["head"]!);
+}
+
+/**
+ * Addendum 8b: a digest v4 head (26 bytes) that is a Microsoft Cabinet
+ * CFHEADER: signature MSCF, reserved1 0, cbCabinet (u32 LE) the file size,
+ * version 1.3. A shorter head (a file under 26 bytes, a v3 line) fails.
+ */
+function cabOk(head: string, size: string): boolean {
+  if (head.length < 52) return false;
+  const b = head.match(/../g)!.map((h) => parseInt(h, 16));
+  const u32le = (o: number) =>
+    (b[o]! | b[o + 1]! << 8 | b[o + 2]! << 16 | b[o + 3]! << 24) >>> 0;
+  // reserved2/reserved3 are not checked (8b names reserved1 only; H-40 Q-A)
+  return head.startsWith("4d534346") && u32le(4) === 0 &&
+    u32le(8) === Number(size) && b[24] === 3 && b[25] === 1;
 }
 
 /**
@@ -509,6 +541,11 @@ export interface FsPlatformCache {
   dirTimeOnly?: boolean;
   /** Addendum 7: an existing file may change in place (same path, size, attributes). */
   inPlace?: boolean;
+  /**
+   * Addendum 8b: an existing file may change in place, size included (same
+   * path, attributes), when its new head is a CAB header of its new size.
+   */
+  inPlaceCab?: boolean;
 }
 
 /**
@@ -544,6 +581,7 @@ function cacheTolerates(
     nameIsSha256?: boolean;
     dirTimeOnly?: boolean;
     inPlace?: boolean;
+    inPlaceCab?: boolean;
   }[],
   d: FsDiffEntry,
 ): boolean {
@@ -564,6 +602,15 @@ function cacheTolerates(
         before["attrs"] === after["attrs"] &&
         (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
     }
+    if (d.after![0] === "F" && c.inPlaceCab) {
+      // addendum 8b: an EXISTING file rewritten in place: same path spelling
+      // and attributes; content, size and time may move when the AFTER head
+      // is a CAB header of the new size (Q7)
+      const before = d.before?.[0] === "F" ? fsParse(d.before) : undefined;
+      return before !== undefined && c.files.test(rel) &&
+        before["p"] === after["p"] && before["attrs"] === after["attrs"] &&
+        cabOk(after["head"] ?? "", after["size"]!);
+    }
     if (d.after![0] === "F") {
       return !c.dirTimeOnly && d.before === null && c.files.test(rel) &&
         // run 004 #6: the magic (1 or 2 bytes) is a prefix of the 2-byte head
@@ -578,7 +625,9 @@ function cacheTolerates(
     // a new directory of the shape (not for dirTimeOnly), or only its
     // last-write time moved: same attributes and the same spelling (a
     // case-only rename stays a difference, addendum 6 self-check)
-    if (d.before === null) return !c.dirTimeOnly && !c.inPlace;
+    if (d.before === null) {
+      return !c.dirTimeOnly && !c.inPlace && !c.inPlaceCab;
+    }
     const before = d.before[0] === "D" ? fsParse(d.before) : undefined;
     return before !== undefined && before["attrs"] === after["attrs"] &&
       before["p"] === after["p"];

@@ -9965,6 +9965,106 @@ Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platf
   assertEquals(await findRecords(qDir, key), []);
 });
 
+Deno.test("H-40 addendum 8b recover: the digest v3 record f4b75484 (CryptnetUrlCache Content refresh) clears against a current CAB-valid v4 file; a non-CAB or re-attributed current file, a reparse cover and a path outside the roots keep the quarantine; a restored file clears across digest versions only with its sha and recorded head bytes", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden([]);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let present: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const plantAll = async (fs_diff: FsDiffEntry[], now: string[]) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff,
+      fs_captured: true,
+    });
+    present = now;
+  };
+  const refused = async (what: string, includes: string) => {
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, includes, what);
+    assertEquals((await findRecords(qDir, key)).length, 1, what);
+  };
+  const cleared = async () => {
+    await recoverContainer(o, d, mech);
+    assertEquals(await findRecords(qDir, key), []);
+  };
+  const LOCALLOW =
+    "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow";
+  const P =
+    `${LOCALLOW}\\Microsoft\\CryptnetUrlCache\\Content\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
+  // harness-quarantine\f4b75484...json, its fs_diff entry verbatim (v3)
+  const f4b75484: FsDiffEntry = {
+    path: P,
+    before:
+      `F|0300e9ddb527990e8b59d06e9ccf3ec2bd92d3bbd0ef4fba69d6336e4195e82d|4987|36|639251358286050693|4d53|${P}`,
+    after:
+      `F|1f2719b100fcc59601f0dbb286aea5034e05bae881425792a115106e244a0ed0|5652|36|639281323644388674|4d53|${P}`,
+  };
+  // the measured 57C8 head (lane-ops, Cronus281, 2026-10-21)
+  const HEAD = "4d534346000000001416000000000000" + "2c000000000000000301";
+  const now = (size = 5652, attrs = 36, head = HEAD, path = P) =>
+    `F|${"e".repeat(64)}|${size}|${attrs}|639281323644388674|${head}|${path}`;
+  await plantAll([f4b75484], [now()]);
+  await cleared();
+  await plantAll([f4b75484], [now(5000)]);
+  await refused(
+    "not CAB-valid (cbCabinet != size)",
+    "contamination not remediated",
+  );
+  await plantAll([f4b75484], [now(5652, 36, "4d53")]);
+  await refused("a v3 head now", "contamination not remediated");
+  await plantAll([f4b75484], [now(5652, 38)]);
+  await refused("attributes changed", "contamination not remediated");
+  await plantAll([f4b75484], [`L|1040|0|${LOCALLOW}|D:\\elsewhere`]);
+  await refused("reparse cover", "not observable");
+  const outside = P.replace(LOCALLOW, "C:\\Elsewhere");
+  await plantAll([{
+    path: outside,
+    before: f4b75484.before!.replace(LOCALLOW, "C:\\Elsewhere"),
+    after: f4b75484.after!.replace(LOCALLOW, "C:\\Elsewhere"),
+  }], [now(5652, 36, HEAD, outside)]);
+  await refused("outside the roots", "not observable");
+  // addendum 8b Q6: a v3 record of a non-cache file, restored, in a v4 capture
+  const x = `${roots[0]}\\x.dll`;
+  const xLine = (sha: string, head: string) => `F|${sha}|10|32|5|${head}|${x}`;
+  const restored: FsDiffEntry = {
+    path: x,
+    before: xLine("a".repeat(64), "4d5a"),
+    after: xLine("b".repeat(64), "4d5a"),
+  };
+  await plantAll([restored], [xLine("a".repeat(64), "4d5a" + "00".repeat(8))]);
+  await cleared();
+  await plantAll([restored], [xLine("c".repeat(64), "4d5a" + "00".repeat(8))]);
+  await refused("restored, another sha", "contamination not remediated");
+  await plantAll([restored], [xLine("a".repeat(64), "4d5b" + "00".repeat(8))]);
+  await refused("restored, other head bytes", "contamination not remediated");
+});
+
 Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded path outside the capture's roots, or one below a reparse point (L line): recover refuses (recreate) and keeps the record", async () => {
   await using t = await makeEnv();
   const qDir = join(await testTempDir(), "q");

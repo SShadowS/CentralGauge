@@ -134,7 +134,15 @@ export const LineageSchema = z.strictObject({
         dir_time_only: z.literal(true).optional(),
         /** Addendum 7: an existing file may change in place. */
         in_place: z.literal(true).optional(),
+        /**
+         * Addendum 8b: an existing file may change in place, size included,
+         * when its new head is a CAB header of its new size.
+         */
+        in_place_cab: z.literal(true).optional(),
         reason: z.string().min(1),
+      }).refine((e) => !(e.in_place && e.in_place_cab), {
+        message: "platform_cache: in_place and in_place_cab are exclusive",
+        path: ["in_place_cab"],
       }),
     ])),
     survey: z.strictObject({ path: z.string().min(1), sha256: Sha }),

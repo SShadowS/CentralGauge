@@ -42,7 +42,7 @@
     ]
   },
   "fs": {
-    "digest_version": 3,
+    "digest_version": 4,
     "roots": [
       "C:\\Windows\\Temp",
       "C:\\Windows\\System32\\config\\systemprofile\\AppData",
@@ -104,6 +104,14 @@
         "magic": "7000",
         "in_place": true,
         "reason": "SYSTEM account's CryptoAPI URL-retrieval cache (CRL/OCSP metadata): existing MetaData files are rewritten in place by certificate-chain checks during publish (same size and attributes); URL-hashed names; new, removed, resized or re-attributed files stay differences"
+      },
+      {
+        "disposition": "platform_cache",
+        "base": "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache",
+        "files": "^Content\\\\[0-9A-F]{32}$",
+        "dirs": "^(?!)$",
+        "in_place_cab": true,
+        "reason": "SYSTEM account's CryptoAPI URL-retrieval cache (CRL/certificate content, addendum 8b): Windows refreshes an existing Content file in place on expiry and its size changes; the files are cabinets, so the new head must be a CAB header (MSCF, reserved1 0, cbCabinet = size, version 1.3); URL-hashed names; new, removed or re-attributed files, streams and non-CAB content stay differences"
       }
     ],
     "survey": {
