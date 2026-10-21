@@ -3355,7 +3355,8 @@ export function registerHarnessCommand(
             askUser,
             stop.signal,
           );
-          if (r.interrupted) Deno.exitCode = 130;
+          // Sol r2: a Ctrl-C during h.close() lands after the result is built.
+          if (r.interrupted || stop.signal.aborted) Deno.exitCode = 130;
         } finally {
           for (const s of signals) Deno.removeSignalListener(s, onSignal);
         }
