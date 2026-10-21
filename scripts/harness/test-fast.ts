@@ -82,6 +82,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}onprem-gate.test.ts`]: c(true, 0),
   [`${H}onprem-ref.test.ts`]: c(true, 1),
   [`${H}onprem-ruling.test.ts`]: c(true, 0),
+  [`${H}onprem-selfcheck.test.ts`]: c(true, 0),
   [`${H}onprem-symbols.test.ts`]: c(true, 0),
   [`${H}otel.test.ts`]: c(true, 0),
   [`${H}outcome.test.ts`]: c(true, 0),

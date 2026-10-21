@@ -45,6 +45,11 @@ export interface OnPremIndex {
   names: Set<string>;
   /** Every OnPrem event name, lowercase (the Q2 fallback for a subscriber). */
   events: Set<string>;
+  /**
+   * Self-check H4: every locked interface name, lowercase unquoted; a
+   * workspace interface of the same name is ambiguous unless qualified.
+   */
+  interfaces: Set<string>;
 }
 
 const BASE_APP = "437dbf0e-84ff-417a-965d-ed2bb9650972";
@@ -112,6 +117,7 @@ export function buildOnPremIndex(
     byId: new Map(),
     names: new Set(),
     events: new Set(),
+    interfaces: new Set(),
   };
   for (const d of docs) addDoc(index, d);
   return index;
@@ -167,6 +173,10 @@ function addDoc(index: OnPremIndex, d: unknown): number {
           }
         }
       }
+    }
+    for (const i of arr(ns["Interfaces"])) {
+      const n = symbolName(str(i["Name"]));
+      if (n) index.interfaces.add(n);
     }
     for (const n of arr(ns["Namespaces"])) walk(n);
   };

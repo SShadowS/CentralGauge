@@ -2009,6 +2009,7 @@ const DATA_ITEM = new RegExp(
 function typeTarget(
   type: string,
   interfaces: ReadonlySet<string>,
+  locked: ReadonlySet<string>,
 ): Target | "safe" | null {
   const t = type.trim().replace(/\s+temporary$/i, "");
   const m = /^(?:array\s*\[[^\]]*\]\s*of\s+)?([A-Za-z_]\w*)\b\s*([\s\S]*)$/i
@@ -2016,14 +2017,41 @@ function typeTarget(
   if (!m) return null;
   const word = m[1]!.toLowerCase();
   if (word === "interface") {
-    const ref = objectRef(m[2]!);
-    return ref?.name !== undefined && interfaces.has(ref.name) ? "safe" : null;
+    // Self-check H4: by identity. A qualified name is safe only as exactly a
+    // workspace declaration (namespace and name); an unqualified one only when
+    // the workspace declares that name and no locked package has an interface
+    // of that name (ambiguous: fall back).
+    const text = m[2]!.trim();
+    if (!OBJECT_REF.test(text)) return null;
+    const segs = [...text.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((s) =>
+      unquote(s[0])
+    );
+    const leaf = segs.at(-1)!;
+    if (segs.length > 1) {
+      return interfaces.has(interfaceId(segs.slice(0, -1).join("."), leaf))
+        ? "safe"
+        : null;
+    }
+    return !locked.has(leaf) &&
+        [...interfaces].some((i) => i.endsWith(`|${leaf}`))
+      ? "safe"
+      : null;
   }
   const kind = INDEXED_TYPE[word];
   if (!kind) return AL_SYSTEM_TYPES.has(word) ? "safe" : null;
   const ref = objectRef(m[2]!);
   return ref ? { kind, ref } : null;
 }
+
+/**
+ * Self-check H2: AL object-level syntax written `<word>(`: controls, actions,
+ * data items, keys, layout moves and the CalcFormula/TableRelation/
+ * DataItemTableView functions. Never a call at object level.
+ */
+const AL_STRUCTURE = new Set(
+  "field part action area group repeater grid fixed cuegroup systempart usercontrol chartpart actionref customaction fileuploadaction systemaction separator view key fieldgroup dataitem column value label labels tableelement textelement fieldelement fieldattribute textattribute filter where const sorting order lookup count exist sum average min max upperlimit addfirst addlast addafter addbefore movefirst movelast moveafter movebefore modify layout method ascending descending"
+    .split(" "),
+);
 
 const AL_KEYWORDS = new Set(
   "if then else begin end case of while do repeat until for to downto foreach in with exit not and or xor div mod var procedure trigger local internal protected true false break continue asserterror this event"
@@ -2161,15 +2189,29 @@ const INTERFACE_DECL = new RegExp(
   "gi",
 );
 
-/** The interfaces (lowercase, unquoted) one AL text declares. */
+/** A file's `namespace A.B;` declaration. */
+const NAMESPACE_DECL = new RegExp(`\\bnamespace\\s+${NAME_CHAIN}\\s*;`, "i");
+
+/** An interface's identity: `<namespace>|<name>`, lowercase unquoted ("" for none). */
+const interfaceId = (ns: string, name: string) => `${ns}|${name}`;
+
+/** The interfaces one AL text declares, as identities (self-check H4). */
 function interfacesIn(src: string): string[] {
   const code = stripAlNoise(src);
-  return [...scanner(code, maskQuoted(code))(INTERFACE_DECL)].map((m) =>
-    unquote(m.at(1))
+  const masked = maskQuoted(code);
+  const nsm = new RegExp(NAMESPACE_DECL.source, "id").exec(masked);
+  const ns = nsm
+    ? [
+      ...code.slice(nsm.indices![1]![0], nsm.indices![1]![1])
+        .matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g),
+    ].map((s) => unquote(s[0])).join(".")
+    : "";
+  return [...scanner(code, masked)(INTERFACE_DECL)].map((m) =>
+    interfaceId(ns, unquote(m.at(1)))
   );
 }
 
-/** H-38 8.4 ruling (b): every interface the .al files of a workspace declare. */
+/** H-38 8.4 ruling (b): every interface the .al files of a workspace declare, as identities. */
 export async function workspaceInterfaces(dir: string): Promise<Set<string>> {
   const out = new Set<string>();
   for (const e of await listTree(dir, "task")) {
@@ -2242,12 +2284,15 @@ function onPremRefs(
   idx: OnPremIndex,
   interfaces: ReadonlySet<string>,
 ): string[] {
-  const code = stripAlNoise(src);
+  // Self-check H1: preprocessor lines (#region <label>, #pragma, ...) blanked,
+  // same offsets, so no label word is read as begin/case/end.
+  const text = src.replace(/^[ \t]*#[^\n]*/gm, (l) => " ".repeat(l.length));
+  const code = stripAlNoise(text);
   const masked = maskQuoted(code);
   const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
   const scan = scanner(code, masked);
   const routines = routineRanges(flat);
-  const objects = declarations(src);
+  const objects = declarations(text);
   const found = new Set<string>();
   const show = (from: number, to: number) =>
     src.slice(from, to).replace(/\s+/g, " ").trim();
@@ -2262,6 +2307,7 @@ function onPremRefs(
   };
   const decls = [...scan(TYPED_DECL)].map((m) => ({
     index: m.index,
+    end: m.end,
     names: [...m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) =>
       unquote(n[0])
     ),
@@ -2272,13 +2318,16 @@ function onPremRefs(
   const objectAt = (at: number) =>
     objects.find((x) => x.start <= at && at <= x.end);
   /** The declared type text of `name` in scope at `at` (local, then global), as typeOf. */
+  // Self-check H2: outside a routine body (an object-level expression) only
+  // the object's globals are in scope.
   const typeOf = (name: string, at: number): string | undefined => {
     const r = routineAt(at);
     const o = objectAt(at);
-    if (!r || !o) return undefined;
-    const local = decls.find((d) =>
-      d.index >= r.start && d.index < r.begin && d.names.includes(name)
-    );
+    if (!o) return undefined;
+    const local = r &&
+      decls.find((d) =>
+        d.index >= r.start && d.index < r.begin && d.names.includes(name)
+      );
     return (local ??
       decls.find((d) =>
         d.index >= o.start && d.index < o.end && d.names.includes(name) &&
@@ -2381,9 +2430,9 @@ function onPremRefs(
   };
   /** Rec's tables at `at`; null: undeterminable or none (unresolved). */
   const recordsAt = (c: OnPremContext, at: number): Target[] | null => {
-    const r = routineAt(at)!;
+    const r = routineAt(at);
     if (c.tableNo !== undefined) {
-      const onRun = /^trigger\s+OnRun\b/i.test(
+      const onRun = !!r && /^trigger\s+OnRun\b/i.test(
         flat.slice(r.start, r.begin).trim(),
       );
       return onRun && c.tableNo ? [c.tableNo] : null;
@@ -2397,8 +2446,10 @@ function onPremRefs(
     const own = self(c);
     if (!own) return null;
     if (c.tableNo !== undefined) {
-      const r = routineAt(at)!;
-      if (!/^trigger\s+OnRun\b/i.test(flat.slice(r.start, r.begin).trim())) {
+      const r = routineAt(at);
+      if (
+        !r || !/^trigger\s+OnRun\b/i.test(flat.slice(r.start, r.begin).trim())
+      ) {
         return own;
       }
       return c.tableNo ? [...own, c.tableNo] : null;
@@ -2414,7 +2465,7 @@ function onPremRefs(
     if (shape === "call" || shape === "paren") return null;
     const declared = typeOf(name, at);
     if (declared !== undefined) {
-      const t = typeTarget(declared, interfaces);
+      const t = typeTarget(declared, interfaces, idx.interfaces);
       return t === "safe" ? "safe" : t ? [t] : null;
     }
     if (shape === "index") return null;
@@ -2469,6 +2520,8 @@ function onPremRefs(
   };
   const inBody = (at: number) =>
     routineAt(at) !== undefined && objectAt(at) !== undefined;
+  /** Inside a declaration `A: <type>` (a type position, not code). */
+  const inDecl = (at: number) => decls.some((d) => d.index <= at && at < d.end);
   const wsBack = (j: number) => {
     while (j >= 0 && /\s/.test(masked[j]!)) j--;
     return j;
@@ -2517,13 +2570,17 @@ function onPremRefs(
     let i = dm.index + 2;
     while (/\s/.test(flat[i] ?? "")) i++;
     const block = /^begin\b/i.test(flat.slice(i, i + 6));
-    const re = /\b(begin|case|end|else)\b|;/gi;
+    // Self-check H3: the whole statement: an `else` closes it only when no
+    // `if` of the statement is open; repeat ... until nests like a block.
+    const re = /\b(begin|case|repeat|end|until|if|else)\b|;/gi;
     re.lastIndex = i;
     let depth = 0;
+    let ifs = 0;
     let end = flat.length;
     for (let t = re.exec(flat); t; t = re.exec(flat)) {
       const w = (t[1] ?? ";").toLowerCase();
-      if (w === "begin" || w === "case") depth++;
+      if (w === "begin" || w === "case" || w === "repeat") depth++;
+      else if (w === "until") depth = Math.max(0, depth - 1);
       else if (w === "end") {
         if (depth === 0) {
           end = t.index;
@@ -2533,7 +2590,10 @@ function onPremRefs(
           end = t.index + 3;
           break;
         }
-      } else if (depth === 0) {
+      } else if (depth > 0) continue;
+      else if (w === "if") ifs++;
+      else if (w === "else" && ifs > 0) ifs--;
+      else {
         end = t.index;
         break;
       }
@@ -2575,7 +2635,12 @@ function onPremRefs(
   // 5.1: dotted access R.M (parens optional), the receiver the whole expression before .M.
   for (const m of masked.matchAll(/\.\s*("[^"\n]*"|[A-Za-z_]\w*)/gd)) {
     const dot = m.index;
-    if (!inBody(dot) || masked[dot - 1] === "." || masked[dot + 1] === ".") {
+    // Self-check H2: every object-level expression too (a field or column
+    // source, a property); only type positions (declarations) are not code.
+    if (
+      !objectAt(dot) || inDecl(dot) || masked[dot - 1] === "." ||
+      masked[dot + 1] === "."
+    ) {
       continue;
     }
     const r = m.indices![1]!;
@@ -2597,9 +2662,15 @@ function onPremRefs(
       start = q.start;
       p = wsBack(q.start - 1);
     }
+    const isEnumList = enumList(segs, p, dot);
+    // Outside a routine body, `Type::A.B."C"` (an attribute's or property's
+    // namespace-qualified object name) is no member access.
+    if (
+      !isEnumList && !inBody(dot) && masked[p] === ":" && masked[p - 1] === ":"
+    ) continue;
     const text = show(start, end);
     check(
-      enumList(segs, p, dot)
+      isEnumList
         ? "safe"
         : chain
         ? null
@@ -2608,15 +2679,18 @@ function onPremRefs(
       text,
     );
   }
-  // 5.2: bare names in call or statement position, inside routine bodies.
+  // 5.2: bare names in call or statement position inside routine bodies, and
+  // (self-check H2) in call position in object-level expressions.
   for (const m of masked.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)) {
     const at = m.index;
     const r = routineAt(at);
-    if (!r || at <= r.begin + 4 || !objectAt(at)) continue;
+    const body = !!r && at > r.begin + 4;
+    if (!objectAt(at) || inDecl(at)) continue;
+    if (!body && routines.some((x) => x.start <= at && at < x.end)) continue;
     const word = m[0].startsWith('"')
       ? unquote(code.slice(at, at + m[0].length))
       : m[0].toLowerCase();
-    if (AL_KEYWORDS.has(word) || AL_BUILTINS.has(word)) continue;
+    if (AL_KEYWORDS.has(word)) continue;
     const p = wsBack(at - 1);
     if (masked[p] === "." || masked[p] === ":" && masked[p - 1] === ":") {
       continue;
@@ -2624,19 +2698,34 @@ function onPremRefs(
     let n = at + m[0].length;
     while (/\s/.test(masked[n] ?? "")) n++;
     const call = masked[n] === "(";
-    const statement = !call &&
+    const statement = body && !call &&
       (masked[n] === ";" || /^(?:end|else)\b/i.test(masked.slice(n, n + 5))) &&
       (masked[p] === ";" ||
         /\b(?:begin|then|else|do|repeat)$/i.test(
           masked.slice(Math.max(0, p - 5), p + 1),
         ));
     if (!call && !statement) continue;
+    // Object level: an attribute (`[Scope(`), a routine header, or AL
+    // structure syntax (`field(`, `where(`, ...) is no call.
+    if (
+      !body &&
+      (masked[p] === "[" || AL_STRUCTURE.has(word) ||
+        /\b(?:procedure|trigger)$/i.test(
+          masked.slice(Math.max(0, p - 9), p + 1),
+        ))
+    ) continue;
     const start = code[at - 1] === '"' ? at - 1 : at;
     const len = m[0].length +
       (start < at && code[at + m[0].length] === '"' ? 1 : 0);
     const text = show(start, at + len);
-    const inWith = withs.some(([a, b]) => a <= at && at < b);
-    check(inWith ? null : implicit(contextOf(objectAt(at)!), at), text, text);
+    // Self-check H3: under `with` every bare name, builtin-named or not, is
+    // the Q8 fallback; builtins are exempt only outside `with`.
+    if (withs.some(([a, b]) => a <= at && at < b)) {
+      check(null, text, text);
+      continue;
+    }
+    if (AL_BUILTINS.has(word)) continue;
+    check(implicit(contextOf(objectAt(at)!), at), text, text);
   }
   // 5.5: [EventSubscriber(ObjectType::<T>, <T>::<name or id>, '<Event>', ...)].
   const EVENT_KIND: Readonly<Record<string, string>> = {
