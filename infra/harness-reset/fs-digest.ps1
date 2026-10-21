@@ -8,7 +8,7 @@
 # fsDigest(W): every entry under the roots, hashed in full every time (no size/mtime gate). One line per entry,
 # sorted ordinal by path, fields separated by '|':
 #   D|<attrs>|<lastWriteUtcTicks>|<path>                    directory (its own named streams follow as S lines)
-#   F|<sha256>|<size>|<attrs>|<lastWriteUtcTicks>|<head>|<path>   file, unnamed stream; head = its first 2 bytes, hex
+#   F|<sha256>|<size>|<attrs>|<lastWriteUtcTicks>|<head>|<path>   file, unnamed stream; head = its first min(26, size) bytes, hex (v4)
 #   S|<sha256>|<size>|<path>:<stream>                       named NTFS stream of a file or directory
 #   L|<attrs>|<lastWriteUtcTicks>|<path>|<target>           reparse point (a root too): recorded, never followed
 #   E|<path>|<reason>                                       access error or change during the scan: fails closed
@@ -16,7 +16,7 @@
 # the walk (quiescence, debugger hold, watermark) and ends the capture with `T|<entry lines>` (src/harness/reset.ts
 # fsDiff refuses a capture without it). DIGEST_VERSION enters env_fp through the lineage; bump it on any change to
 # the line format or the walk.
-$FsDigestVersion = 3
+$FsDigestVersion = 4
 
 # A second check under the hold: the NST's session-log watermark, read twice while it is held. A
 # held NST writes nothing, so a change means the hold did not hold. READ UNCOMMITTED with a timeout, so a
@@ -407,7 +407,7 @@ public static class CgFsStreams {
           if ($after.Length -ne $b.Length -or $after.LastWriteTimeUtc.Ticks -ne $t) {
             "E|$($i.FullName)|changed during the scan"
           } else {
-            $head = if ($b.Length -ge 2) { '{0:x2}{1:x2}' -f $b[0], $b[1] } elseif ($b.Length -eq 1) { '{0:x2}' -f $b[0] } else { '' }
+            $head = [BitConverter]::ToString($b, 0, [Math]::Min(26, $b.Length)).Replace('-', '').ToLowerInvariant()
             "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$head|$($i.FullName)"
             Streams $i
             # and the file itself after its streams were read
