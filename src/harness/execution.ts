@@ -306,8 +306,10 @@ export interface HarnessEnv {
     afterPublished?(): Promise<void>;
     /** T-06: a campaign worker's throw is recorded (no new cell starts after this). */
     workerThrew?(): void;
-    /** H-41: a fence or pin temp is written and synced, right before its link. */
-    beforeLink?(what: "fence" | "pin"): Promise<void>;
+    /** H-41: a fence, pin or materialized verdict log temp is written and synced, right before its link. */
+    beforeLink?(what: "fence" | "pin" | "log"): Promise<void>;
+    /** H-41: the fence is linked (committed), before it is materialized. */
+    afterFence?(): Promise<void>;
   };
 }
 
@@ -2924,7 +2926,12 @@ async function materialize(env: HarnessEnv, f: Fence): Promise<void> {
   await same(
     join(env.resultsRoot, "verdicts", `${f.log.judgment_id}.json`),
     f.log,
-    () => writeVerdictLog(env.resultsRoot, f.log),
+    () =>
+      writeVerdictLog(
+        env.resultsRoot,
+        f.log,
+        () => env.hooks?.beforeLink?.("log") ?? Promise.resolve(),
+      ),
   );
   const j = JudgmentRecordSchema.parse(f.judgment);
   holdNamespace(env, "judgment not written");
@@ -3047,6 +3054,7 @@ export async function judgeOnce(
           );
           continue;
         }
+        await env.hooks?.afterFence?.();
         // 9. Materialize.
         await materialize(env, fence);
         return { judgment };

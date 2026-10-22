@@ -1896,10 +1896,13 @@ export async function judge(
 export function writeVerdictLog(
   resultsRoot: string,
   log: VerdictLog,
+  /** H-41 test seam: runs with the synced temp written, right before the link. */
+  beforeLink?: () => Promise<void>,
 ): Promise<void> {
   return publishOnce(
     join(resultsRoot, "verdicts", `${log.judgment_id}.json`),
     log,
+    beforeLink,
   );
 }
 
