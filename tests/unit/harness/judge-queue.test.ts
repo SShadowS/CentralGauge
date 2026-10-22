@@ -5,7 +5,7 @@
  * on resume, never executed again. A deferred judgment equals the inline one.
  */
 
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
@@ -339,6 +339,8 @@ Deno.test("H-09: a cell with judgeLater queues instead of judging; judgeDeferred
   assertEquals(queued.map((q) => q.e.id), [e.id]);
   assertEquals(await t.env.store.judgments(e.id), [], "nothing judged inline");
   const j = await judgeDeferred(t.env, queued[0]!.cell, e);
+  // H-41: null only when the commit protocol dropped it; here it must judge.
+  assertExists(j);
   assertEquals(await t.env.store.judgments(e.id), [j]);
   assertEquals(
     { ...comparable(j), execution_id: "", workspace_hash: "" },
@@ -371,6 +373,7 @@ Deno.test("H-09: judgeDeferred refuses when the restaged task differs from the o
   }
   await Deno.writeTextFile(side, text);
   const j = await judgeDeferred(t.env, queued[0]!.cell, e);
+  assertExists(j);
   assert(j.verdict === "pass" || j.verdict === "fail", j.verdict);
 });
 

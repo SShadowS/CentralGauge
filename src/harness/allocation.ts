@@ -23,11 +23,16 @@ async function readJson(path: string): Promise<unknown> {
   }
 }
 
-/** The allocated spelling of `container`, or a ValidationError when it is not allocated. */
-export async function allocatedContainer(
-  container: string,
-  coordRoot = Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
-): Promise<string> {
+const defaultRoot = () => Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT;
+
+/** H-41 (section 6): every container allocated to the campaign now, or a ValidationError. */
+export async function allocatedContainers(
+  coordRoot = defaultRoot(),
+): Promise<string[]> {
+  return (await allocation(coordRoot)).allowed;
+}
+
+async function allocation(coordRoot: string) {
   const coord = Coord.safeParse(await readJson(join(coordRoot, "coord.json")));
   if (!coord.success) {
     throw new ValidationError(`no campaign in ${coordRoot}\\coord.json`, [
@@ -44,10 +49,19 @@ export async function allocatedContainer(
       [coord.data.campaign],
     );
   }
+  return { campaign: coord.data.campaign, allowed };
+}
+
+/** The allocated spelling of `container`, or a ValidationError when it is not allocated. */
+export async function allocatedContainer(
+  container: string,
+  coordRoot = defaultRoot(),
+): Promise<string> {
+  const { campaign, allowed } = await allocation(coordRoot);
   const hit = allowed.find((c) => c.toLowerCase() === container.toLowerCase());
   if (!hit) {
     throw new ValidationError(
-      `${container} is not allocated to ${coord.data.campaign} (allowed: ${
+      `${container} is not allocated to ${campaign} (allowed: ${
         allowed.join(", ")
       })`,
       [container],

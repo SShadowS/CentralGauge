@@ -48,6 +48,7 @@ import {
   effectiveBuildKey,
   isCascadeDiagnostic,
   lockDigestOf,
+  PoolLostError,
   prepareApps,
   type ProductionManifest,
   productionManifest,
@@ -64,6 +65,7 @@ import {
   type InfraSignature,
   JudgmentRecordSchema,
   type PolicyViolation,
+  publishOnce,
   scorerFingerprint,
   type ScorerState,
   verdictOf,
@@ -554,6 +556,7 @@ export function agentTestsBc(
       try {
         r = await bc.runHarnessTests(c, codeunit);
       } catch (err) {
+        if (err instanceof PoolLostError) throw err; // H-41 (5): requeued, never the agent's
         notes.push(
           `agent-added test codeunit ${codeunit} did not complete on ${c}: ${
             err instanceof Error ? err.message : String(err)
@@ -617,6 +620,7 @@ export function agentSuiteBc(
       try {
         r = await bc.runHarnessTests(c, codeunit);
       } catch (err) {
+        if (err instanceof PoolLostError) throw err; // H-41 (5): requeued, never infra
         throw new ContainerError(
           `agent suite ${codeunit} did not complete on ${c}: ${
             err instanceof Error ? err.message : String(err)
@@ -1884,17 +1888,21 @@ export async function judge(
   return { judgment, log };
 }
 
-/** Write-once side file results/harness/verdicts/<judgment-id>.json. */
-export async function writeVerdictLog(
+/**
+ * Write-once side file results/harness/verdicts/<judgment-id>.json. H-41
+ * (3.1): published as a link of a complete synced temp (the same bytes), so
+ * the final name never holds a partial log.
+ */
+export function writeVerdictLog(
   resultsRoot: string,
   log: VerdictLog,
+  /** H-41 test seam: runs with the synced temp written, right before the link. */
+  beforeLink?: () => Promise<void>,
 ): Promise<void> {
-  const dir = join(resultsRoot, "verdicts");
-  await Deno.mkdir(dir, { recursive: true });
-  await Deno.writeTextFile(
-    join(dir, `${log.judgment_id}.json`),
-    JSON.stringify(log, null, 2) + "\n",
-    { createNew: true },
+  return publishOnce(
+    join(resultsRoot, "verdicts", `${log.judgment_id}.json`),
+    log,
+    beforeLink,
   );
 }
 

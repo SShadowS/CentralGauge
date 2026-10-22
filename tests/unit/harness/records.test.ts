@@ -12,6 +12,7 @@ import {
   RecordStore,
   retryChains,
   retryProblem,
+  TEMP_SWEEP_AGE_MS,
 } from "../../../src/harness/records.ts";
 import { TaskSetIdentitySchema } from "../../../src/harness/identity.ts";
 import { ResolvedManifestSchema } from "../../../src/harness/manifest.ts";
@@ -293,7 +294,26 @@ Deno.test("RecordStore: an interrupted publish leaves only a temp file, which re
   assertEquals(await store.executions(CAMPAIGN_ID), []);
   await store.writeExecution(e);
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
+  assertEquals(await store.sweepTemp(0), 1);
+});
+
+Deno.test("RecordStore (H-41 section 11): sweepTemp removes only temps older than the bound (default TEMP_SWEEP_AGE_MS, 1 h)", async () => {
+  const root = await testTempDir();
+  const store = new RecordStore(root);
+  const dir = join(root, "claims", "x");
+  await Deno.mkdir(dir, { recursive: true });
+  const young = join(dir, "fence-0.json.tmp-young");
+  const old = join(dir, "fence-0.json.tmp-old");
+  await Deno.writeTextFile(young, "{");
+  await Deno.writeTextFile(old, "{");
+  const at = new Date(Date.now() - TEMP_SWEEP_AGE_MS - 60_000);
+  await Deno.utime(old, at, at);
+  assertEquals(TEMP_SWEEP_AGE_MS, 3_600_000);
   assertEquals(await store.sweepTemp(), 1);
+  assert(await Deno.stat(young).then(() => true), "a young temp survives");
+  await assertRejects(() => Deno.stat(old), Deno.errors.NotFound);
+  assertEquals(await store.sweepTemp(60_000), 0);
+  assertEquals(await store.sweepTemp(0), 1);
 });
 
 Deno.test("outcomePolicy: spec 1a section 8 table", () => {
@@ -414,7 +434,7 @@ Deno.test("RecordStore: concurrent writers of one record, exactly one succeeds",
   );
   assertEquals(results.filter((r) => r.status === "fulfilled").length, 1);
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
-  assertEquals(await store.sweepTemp(), 0);
+  assertEquals(await store.sweepTemp(0), 0);
 });
 
 Deno.test("RecordStore: ids used as paths must be uuids, so reads cannot leave the store", async () => {
@@ -652,7 +672,7 @@ Deno.test("RecordStore: temp cleanup never fails a published write and never lea
     rm.restore();
   }
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
-  assertEquals(await store.sweepTemp(), 1);
+  assertEquals(await store.sweepTemp(0), 1);
   const e2 = execution(c, { arm: "skills" });
   const sync = stub(
     Deno.FsFile.prototype,
@@ -664,7 +684,7 @@ Deno.test("RecordStore: temp cleanup never fails a published write and never lea
   } finally {
     sync.restore();
   }
-  assertEquals(await store.sweepTemp(), 0);
+  assertEquals(await store.sweepTemp(0), 0);
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
 });
 

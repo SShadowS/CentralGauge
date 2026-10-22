@@ -96,12 +96,14 @@ import { loadTaskSet } from "../../src/harness/task.ts";
 import { adapterFor } from "../../src/harness/adapters/mod.ts";
 import { BUILTIN_INVENTORY } from "../../src/harness/adapters/claude-code.ts";
 import {
+  fenceHead,
   forcedRefusal,
   judgeDeferred,
+  judgeOnce,
   measureExecution,
   type MeasureRun,
   measureWorkspace,
-  publishJudgment,
+  recoverFences,
   rejudgeExecution,
   runCell,
   scrubForcedReason,
@@ -551,7 +553,60 @@ export interface CellCliOptions {
   lineage?: string | null;
   /** H-35 S3 L2b: `--unverified-bc-egress-ok <reason>`. */
   bcEgressOverride?: string | null;
+  /** H-41 (7): `--coord-lease <container>=<token>`: coord leases this run holds. */
+  coordLeases?: ReadonlyMap<string, string>;
 }
+
+/** H-41 (7): `--coord-lease <container>=<token>`: a container name and a non-empty token. */
+export function parseCoordLease(value: string): [string, string] {
+  const m = /^([A-Za-z][A-Za-z0-9-]{0,40})=(\S+)$/.exec(value);
+  if (!m) {
+    throw new ValidationError(
+      `--coord-lease expects <container>=<token>, got ${value}`,
+      [value],
+    );
+  }
+  return [m[1]!, m[2]!];
+}
+
+/** H-41 (Q5): --pool-wait-min bounds. */
+export const POOL_WAIT_MIN_MAX = 120;
+
+/** H-41 (Q6): sysexits EX_TEMPFAIL: the `auto` pool starved, the rest stays owed. */
+export const EXIT_POOL_STARVED = 75;
+
+/** H-41 (Q1, Q5): `auto` needs a lineage and agent containers stay explicit; the wait is 0 to 120 min. */
+function checkAuto(o: RunCliOptions, command: "run" | "rejudge"): void {
+  if (command === "run" && o.auto === "containers") {
+    throw new ConfigurationError(
+      "run --containers auto is refused: agent containers stay an explicit list (only --judge-containers may be auto)",
+    );
+  }
+  if (o.auto && !o.lineage) {
+    throw new ConfigurationError(
+      `${
+        command === "run" ? "--judge-containers" : "--containers"
+      } auto needs --lineage (each joining container is admitted by its env_fp)`,
+    );
+  }
+  const n = o.poolWaitMin;
+  if (
+    n !== undefined && (!Number.isInteger(n) || n < 0 || n > POOL_WAIT_MIN_MAX)
+  ) {
+    throw new ConfigurationError(
+      `--pool-wait-min must be an integer from 0 to ${POOL_WAIT_MIN_MAX}: ${n}`,
+    );
+  }
+}
+
+/** H-41: the `auto` part of a run's or a rejudge's environment options. */
+const autoEnv = (o: RunCliOptions): Partial<EnvOptions> =>
+  o.auto
+    ? {
+      auto: o.auto,
+      ...(o.poolWaitMin !== undefined ? { poolWaitMin: o.poolWaitMin } : {}),
+    }
+    : {};
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
 type OnInterrupt = (cb: () => void) => () => void;
@@ -580,6 +635,7 @@ function envOptions(
     supervised: o.supervised,
     ...(o.lineage ? { lineage: o.lineage } : {}),
     ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
+    ...(o.coordLeases ? { coordLeases: o.coordLeases } : {}),
   };
 }
 
@@ -1541,6 +1597,23 @@ interface CellCliFlags {
   judgeConcurrency?: number;
   lineage?: string;
   unverifiedBcEgressOk?: string;
+  coordLease?: [string, string][];
+}
+
+/** H-41 (7): the --coord-lease pairs; one token per container (case-insensitive). */
+function coordLeases(pairs: [string, string][]): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const [c, token] of pairs) {
+    const at = [...m.keys()].find((k) => k.toLowerCase() === c.toLowerCase());
+    if (at !== undefined && m.get(at) !== token) {
+      throw new ValidationError(
+        `--coord-lease names ${c} twice with different tokens`,
+        [c],
+      );
+    }
+    m.set(at ?? c, token);
+  }
+  return m;
 }
 
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
@@ -1578,6 +1651,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     ...(f.unverifiedBcEgressOk
       ? { bcEgressOverride: f.unverifiedBcEgressOk }
       : {}),
+    ...(f.coordLease ? { coordLeases: coordLeases(f.coordLease) } : {}),
   };
 }
 
@@ -1619,6 +1693,10 @@ export interface RunCliOptions extends CellCliOptions {
   unverifiedEgressReason?: string;
   /** run (H-15): owner override; owed retries ignore usage resets recorded before this run. */
   ignoreUsageReset?: string;
+  /** H-41 (Q1): `rejudge --containers auto` ("containers"), `run --judge-containers auto` ("judges"). */
+  auto?: "containers" | "judges";
+  /** H-41 (Q5): --pool-wait-min (0 to 120, default 10). */
+  poolWaitMin?: number;
 }
 
 type RerunCell = NonNullable<RunOptions["rerun"]>;
@@ -1647,6 +1725,7 @@ export async function harnessRun(
   plan: Planner = (eo) => openPlanEnv(eo),
   sleep: (ms: number) => Promise<void> = sleepMs,
 ): Promise<CampaignSummary> {
+  checkAuto(o, "run");
   if (
     o.unverifiedEgressReason !== undefined &&
     o.unverifiedEgressReason.trim() === ""
@@ -1744,6 +1823,7 @@ export async function harnessRun(
   const h = await open({
     ...envOptions(o, o.resultsDir, command),
     ...(o.judgeContainers ? { judgeContainers: o.judgeContainers } : {}),
+    ...autoEnv(o),
     concurrency: o.concurrency,
     configs,
   });
@@ -1768,7 +1848,13 @@ export async function harnessRun(
         s.created ? " (new)" : ""
       }: ${s.ran} executions, ${s.judged} judged, ${s.unscored} unscored${
         s.paused ? `, paused until ${s.paused}` : ""
-      }${s.stopped ? ", stopped by a stop file" : ""}`,
+      }${s.stopped ? ", stopped by a stop file" : ""}${
+        // H-41 (9, 14): the CLI exits 75
+        s.starved
+          ? `, judging pool starved: ${s.owed} execution(s) stay owed`
+          : s.owed
+          ? `, ${s.owed} owed`
+          : ""}`,
     );
     return s;
   } finally {
@@ -1799,7 +1885,10 @@ export async function harnessJudgePending(
       env,
       o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
       (env, cell, e) =>
-        judgeDeferred(env, cell, e).then(() => void n++, (err: unknown) => {
+        // H-41: null: another judge holds or did the work (logged as owed).
+        judgeDeferred(env, cell, e).then((j) => void (j && n++), (
+          err: unknown,
+        ) => {
           if (!(err instanceof ConfigurationError)) throw err;
           skip(e.id, err.message);
         }),
@@ -1859,6 +1948,32 @@ function latestJudgment(js: JudgmentRecord[]): JudgmentRecord | undefined {
     compareInstant(b.ended_at, a.ended_at) || (a.id < b.id ? 1 : -1)
   )[0];
 }
+
+/**
+ * Rejudge's due test of a judgeable execution (not forced): unscored, an old
+ * scorer suite or an old oracle, never judged; not past the budget. H-41:
+ * the due list and the commit protocol's predicate (under the claim) alike.
+ */
+function rejudgeDue(
+  e: ExecutionRecord,
+  mine: JudgmentRecord[],
+  oracle: string,
+  current: string,
+): boolean {
+  // H-04b: past the rejudge budget the cell is terminal; only --force.
+  if (rejudgeBudgetExhausted(e, mine, oracle, current)) return false;
+  const j = latestJudgment(mine);
+  return !j || j.verdict === "unscored" || j.scorer_fingerprint !== current ||
+    j.task_oracle_hash !== oracle;
+}
+
+/** H-41: why a rejudge dropped W. */
+const DROPPED = {
+  held: "another judge holds its claim; it stays due",
+  advanced: "another judge committed it meanwhile",
+  "not due": "no longer due",
+  "fence taken": "another judge committed it first",
+} as const;
 
 const askUser = (q: string) => confirm(q);
 
@@ -1989,18 +2104,33 @@ export async function harnessRejudge(
   open: Opener = openHarnessEnv,
   ask: (question: string) => boolean = askUser,
   signal?: AbortSignal,
-): Promise<{ campaignId: string; rejudged: number; interrupted?: true }> {
+): Promise<
+  {
+    campaignId: string;
+    rejudged: number;
+    interrupted?: true;
+    /** H-41 (9, 14): the auto pool starved or hit W's bound (exit 75); `owed` stay due. */
+    starved?: true;
+    owed?: number;
+  }
+> {
+  checkAuto(o, "rejudge");
   // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
   await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
   const decision = o.basis === undefined
     ? undefined
     : await decisionBasis(o.basis, o.execution!);
-  const h = await open(
-    envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
-  );
+  const h = await open({
+    ...envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
+    ...autoEnv(o),
+  });
   try {
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
+    // H-41 (3.3, section 10): committed fences first, then the campaign pin;
+    // both before any due or force decision.
+    await recoverFences(env);
+    await env.bindCampaign?.(c.id);
     // H-33 r1: once interrupted, every return says so (the CLI exits 130).
     const result = (rejudged: number, left: number) => {
       if (!signal?.aborted) return { campaignId: c.id, rejudged };
@@ -2065,14 +2195,12 @@ export async function harnessRejudge(
         }
         return true;
       }
-      const mine = data.judgments.filter((x) => x.execution_id === e.id);
-      // H-04b: past the rejudge budget the cell is terminal; only --force.
-      const oracle = byTask.get(e.task_id)!.oracle;
-      if (rejudgeBudgetExhausted(e, mine, oracle, current)) return false;
-      const j = latestJudgment(mine);
-      return !j || j.verdict === "unscored" ||
-        j.scorer_fingerprint !== current ||
-        j.task_oracle_hash !== byTask.get(e.task_id)!.oracle;
+      return rejudgeDue(
+        e,
+        data.judgments.filter((x) => x.execution_id === e.id),
+        byTask.get(e.task_id)!.oracle,
+        current,
+      );
     });
     const used = [...new Set(due.map((e) => e.task_id))].map((id) =>
       tasks.get(id)!
@@ -2167,6 +2295,10 @@ export async function harnessRejudge(
       console.log(`${colors.yellow("[SKIP]")} rejudge not confirmed`);
       return result(0, due.length);
     }
+    // H-41: W = (e, head now), taken once confirmed; the due list above is
+    // advisory, judgeOnce's due predicate at this generation decides.
+    const heads = new Map<string, number>();
+    for (const e of due) heads.set(e.id, await fenceHead(env, e.id));
     const opened: OpenedTasks = { tasks, refapps: new Map() };
     for (const t of used) {
       const v = t.task.refapp_version;
@@ -2208,17 +2340,34 @@ export async function harnessRejudge(
     // H-33: workers only compute; one writer publishes each judgment (write
     // once, in this one process), so every computed judgment is published
     // before drain ends, on a failure or an interrupt too.
+    // H-41: each commits through judgeOnce (claim, reconcile, due, fence);
+    // the writer serializes its steps 5-9.
     const writer = new Mutex();
     let judged = 0;
+    // H-41 (9): `--containers auto`: gated on the pool (bound above).
     const queue = judgeQueue(
       env,
-      env.lane.containers.length,
+      env.judgePooled ?? env.lane.containers.length,
       async (env, cell, e) => {
         const oracle = byTask.get(e.task_id)!.oracle;
-        const computed = await rejudgeExecution(env, cell, e, oracle, forced);
+        const r = await judgeOnce(
+          env,
+          { e, g: heads.get(e.id)! },
+          () => rejudgeExecution(env, cell, e, oracle, forced),
+          async () =>
+            o.force === true ||
+            rejudgeDue(e, await env.store.judgments(e.id), oracle, current),
+          writer,
+        );
+        if (!("judgment" in r)) {
+          console.log(
+            `${colors.yellow("[SKIP]")} ${e.id}: ${DROPPED[r.dropped]}`,
+          );
+          return;
+        }
         const release = await writer.acquire();
         try {
-          const j = await publishJudgment(env, e, oracle, computed);
+          const j = r.judgment;
           judged++;
           if (pairing && cells.some((x) => x.execution_id === e.id)) {
             await appendCompletion(env.resultsRoot, pairing, {
@@ -2251,6 +2400,14 @@ export async function harnessRejudge(
       await queue.drain();
     } finally {
       signal?.removeEventListener("abort", stop);
+    }
+    if (queue.starved() && !signal?.aborted) {
+      return {
+        campaignId: c.id,
+        rejudged: judged,
+        starved: true,
+        owed: due.length - judged,
+      };
     }
     return result(judged, due.length - judged);
   } finally {
@@ -3103,6 +3260,12 @@ export function registerHarnessCommand(
       .option(
         "--unverified-bc-egress-ok <reason:string>",
         "Owner override (H-35 L2b): judge on a lineage whose NST egress is unenforced; every verdict records it",
+      )
+      .type("lease", ({ value }) => parseCoordLease(value))
+      .option(
+        "--coord-lease <pair:lease>",
+        "H-41: <container>=<token> of a coord lease this run holds (repeatable); a container another holder coord-leases is refused",
+        { collect: true },
       );
 
   shared(
@@ -3210,9 +3373,15 @@ export function registerHarnessCommand(
     judgeContainers?: string;
     unverifiedEgressOk?: string;
     ignoreUsageReset?: string;
+    poolWaitMin?: number;
   };
+  // H-41 (Q1): the literal `auto` makes that list the judging pool.
+  const isAuto = (v: string | undefined) => v?.trim().toLowerCase() === "auto";
   const runOpts = (f: RunFlags): RunCliOptions => ({
     ...cliOpts(f),
+    ...(isAuto(f.containers) ? { containers: [], auto: "containers" } : {}),
+    ...(isAuto(f.judgeContainers) ? { auto: "judges" } : {}),
+    ...(f.poolWaitMin !== undefined ? { poolWaitMin: f.poolWaitMin } : {}),
     dryRun: f.dryRun === true,
     concurrency: f.concurrency,
     maxPauseMin: f.maxPauseMin,
@@ -3232,7 +3401,7 @@ export function registerHarnessCommand(
     ...(f.preregBDecision
       ? { preregBDecision: resolve(f.preregBDecision) }
       : {}),
-    ...(f.judgeContainers
+    ...(f.judgeContainers && !isAuto(f.judgeContainers)
       ? {
         judgeContainers: f.judgeContainers.split(",").map((c) => c.trim())
           .filter(Boolean),
@@ -3264,7 +3433,12 @@ export function registerHarnessCommand(
     .option("--concurrency <n:integer>", "Blocks run at once", { default: 1 })
     .option(
       "--judge-containers <names:string>",
-      "H-09: BC containers for judging (comma-separated, allocated, disjoint from --containers; default: the agents')",
+      "H-09: BC containers for judging (comma-separated, allocated, disjoint from --containers; default: the agents'). H-41: `auto` judges on a pool of the allocated containers that changes while the run goes on (needs --lineage)",
+    )
+    .option(
+      "--pool-wait-min <n:integer>",
+      "H-41: with --judge-containers auto, how long queued judging waits for a pool member before the run stops (exit 75), 0 to 120",
+      { default: 10 },
     )
     .option(
       "--judge-concurrency <n:integer>",
@@ -3311,7 +3485,11 @@ export function registerHarnessCommand(
       "H-15, OWNER ONLY: retries owed to usage resets recorded before this run start now (e.g. after an account swap); a limit hit during this run still pauses. Each such retry and the report carry the reason",
     )
     .action((opts: RunFlags, experiment: string) =>
-      fail(async () => void await harnessRun(experiment, runOpts(opts), open))
+      fail(async () => {
+        const s = await harnessRun(experiment, runOpts(opts), open);
+        // H-41 (Q6): starved (or W's unanswered-container bound): EX_TEMPFAIL
+        if (s.starved) Deno.exitCode = EXIT_POOL_STARVED;
+      })
     );
 
   shared(
@@ -3336,6 +3514,11 @@ export function registerHarnessCommand(
       "With --force (required): owner decision file under $CG_COORD_ROOT/decisions naming the execution, with an OWNER-APPROVED: <words> (<ISO time>) line",
     )
     .option("--yes", "Do not ask for confirmation")
+    .option(
+      "--pool-wait-min <n:integer>",
+      "H-41: with --containers auto, how long queued judging waits for a pool member before the rejudge stops (exit 75), 0 to 120",
+      { default: 10 },
+    )
     .action((
       opts: Omit<RunFlags, "concurrency" | "maxPauseMin">,
       experiment: string,
@@ -3358,6 +3541,7 @@ export function registerHarnessCommand(
           );
           // Sol r2: a Ctrl-C during h.close() lands after the result is built.
           if (r.interrupted || stop.signal.aborted) Deno.exitCode = 130;
+          else if (r.starved) Deno.exitCode = EXIT_POOL_STARVED;
         } finally {
           for (const s of signals) Deno.removeSignalListener(s, onSignal);
         }

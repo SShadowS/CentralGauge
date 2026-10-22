@@ -1084,6 +1084,86 @@ copies the survey next to the lineage as `<name>.survey.json` and emits no
 exclusions (add each one, with a disposition, only from a measured difference).
 All lineage identity fields, these sections included, enter env_fp.
 
+### Judging pool (`auto`)
+
+`harness rejudge --containers auto` and `harness run --judge-containers auto`
+judge on a pool of containers that may change while the command runs (H-41).
+Agent containers (`run --containers`) stay an explicit list; `run --containers
+auto` is refused. `auto` needs `--lineage`.
+
+```bash
+centralgauge harness rejudge <experiment> --containers auto --lineage <path> \
+  [--pool-wait-min <n>] [--coord-lease <container>=<token> ...] ...
+centralgauge harness run <experiment> --containers <agents> \
+  --judge-containers auto --lineage <path> [--pool-wait-min <n>] ...
+```
+
+| Option                              | Default | Description                                                                                                  |
+| ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `--pool-wait-min <n>`               | `10`    | `run` and `rejudge`: how long queued judging waits for a pool member, an integer from 0 to 120.              |
+| `--coord-lease <container>=<token>` | -       | Every command that opens an environment: a coord lease this run holds (repeatable, one token per container). |
+
+The pool starts empty and admits nothing until the campaign is bound (its env
+pin loaded). Between admissions, and every 10 s while judging is queued, it
+re-reads `allocation.json`. A container joins when it is allocated to the
+campaign, is not `Cronus28`, `Cronus284` or one of the run's agent containers,
+is not blocked (below), Docker reports it running, no other harness record
+(another run, a quarantine, a recover) holds it, its baseline is admissible for
+the lineage, and its env_fp matches the campaign pin. A container with another
+env_fp is refused and both fingerprints are logged. Joining claims its in-use
+record, sets it up, checks all of that again, then adds it to the lane and the
+health monitor (`[JOIN]`). The first admission of a new campaign creates its
+pin. A join that fails after setup started keeps the in-use record with a
+`[WARN]` (run `harness recover` before using that container again).
+
+**Leaving.** A drain marker `<results-dir>/drain-<container>` stops new
+admissions on that container at once; calls already admitted finish, then the
+container is released (`[LEAVE]`) and its in-use record removed. Remove the
+marker to let it join again (a full join). A quarantined container keeps its
+record. Drain markers apply to the pool only; an explicit list ignores them.
+
+**Coord leases** (both list kinds, fail closed). A container whose current
+coord lease (`<machineRoot>/leases/<container>/<NNN>/lease.json` with no
+`release.json`) is held by anyone is not admitted, unless this run passes the
+exact `--coord-lease <container>=<token>` of that lease; a matching lane name
+never counts. An explicit list refuses to start on such a container, and a
+lease taken later blocks new work on it. A missing or unreadable `coord.json`,
+a missing leases root or an unreadable lease refuses.
+
+**Lost work.** When a pooled call fails on infra and a container it tried has
+departed (`[DEPART] <c>: <reason>`: not running, no longer allocated, or
+blocked by a coord lease or drain marker) or could not be checked
+(`[UNANSWERED] <c>: <check> <error>`, an unreadable coord state included), or no
+member is left, the execution is not written unscored: no judgment, verdict log
+or fence is written, the budget is not spent, and the work goes back to the
+queue. An execution requeued 3 times for unanswered checks alone stops the
+command at the 4th: `[STOP] <execution>: <n> unanswered container checks; <k>
+stay owed`. Genuine infra with every tried container still answering is
+unscored, as with an explicit list.
+
+**Starvation.** With judging queued and no member for `--pool-wait-min`
+minutes, the queue stops: `[STOP] judging pool: no member for <n> min; <k> stay
+owed`. `run` then starts no new cell; its summary counts the executions still
+owed (`owed`) instead of calling them unscored. Both commands exit 75. Owed
+work is judged by the next `run` (it seeds owed executions) or `rejudge`. The
+process may exit up to the pool's close bound (120 s, for joins still in
+flight) plus the lane drain bound after the starvation deadline.
+
+Without starvation too, a `run` execution left unjudged because another judge
+holds its claim is counted owed (`, <n> owed` in the summary), not unscored.
+
+In `auto` mode nothing is judged outside this queue: an execution recovered at
+start, or published without the queue, stays owed and is logged `[INFO] <id>:
+judgment owed (judging pool)`. `run --rerun` judges its cell through the queue
+too.
+
+**Redaction keys.** Judging reads the execution's redaction keys from the
+judging process's own private dir (`<private-root>/redaction/<execution>.json`),
+written by the process that ran the agent. A process judging work it did not
+run (another machine or another private root) needs a copy of that
+`redaction/` folder in its private dir; without it, judging refuses with
+`redaction keys ... are missing or invalid; refusing to judge`.
+
 ### harness pairing
 
 ```bash
@@ -1118,6 +1198,13 @@ recovers legacy task descriptors.
 | 3    | Configuration error |
 | 4    | Container error     |
 | 5    | LLM provider error  |
+| 75   | Pool starved        |
+| 130  | Interrupted         |
+
+`75` (EX_TEMPFAIL): `harness run` or `harness rejudge` with `auto` judging
+stopped because the pool starved or an execution hit its unanswered-check
+bound; the rest stays owed (see [Judging pool](#judging-pool-auto)). `130`:
+`harness rejudge` was interrupted (Ctrl-C); what was not judged stays due.
 
 ## Environment Variables
 

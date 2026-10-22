@@ -24,6 +24,7 @@ import {
   harnessReport,
   harnessRun,
   harnessSymbolsLock,
+  parseCoordLease,
   parseRerunCell,
   publicationLockDir,
   registerHarnessCommand,
@@ -110,6 +111,7 @@ import {
 } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc, OK_RESET } from "../../harness/fake-bc.ts";
 import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
+import { poolBlocked } from "../../../../src/harness/coord-lease.ts";
 import {
   createBaseline,
   readInstanceManifest,
@@ -143,9 +145,12 @@ import {
 } from "../../../../src/harness/sandbox.ts";
 import { __setContextListerForTests } from "../../../../src/container/docker-context.ts";
 import { createCommandMock } from "../../../utils/command-mock.ts";
+import { ContainerHealthMonitor } from "../../../../src/health/monitor.ts";
+import { runCell } from "../../../../src/harness/execution.ts";
 import {
   CATALOG,
   ccBehavior,
+  cellFor,
   fakeEgress,
   makeEnv,
   mockImageBehavior,
@@ -161,6 +166,7 @@ import {
 import { exists } from "../../../../src/harness/fsutil.ts";
 import { OnPremIndexError } from "../../../../src/harness/onprem-symbols.ts";
 import { noOnPrem } from "../../harness/onprem-fixture.ts";
+import { FP, poolWorld, until } from "../../harness/pool-fixture.ts";
 import { loadPairing } from "../../../../src/harness/judgment-report.ts";
 import { RecordStore } from "../../../../src/harness/records.ts";
 import {
@@ -766,6 +772,13 @@ function deps(
   docker.owned = ["cg-harness-dead-beef"];
   // H-35 run 004 #3: never the real coord root (absent until a test writes).
   const quarantineDir = join(trackTempDir(Deno.makeTempDirSync()), "q");
+  // H-41 (7): a coord root with no lease held (coord leases fail closed).
+  const coordRoot = trackTempDir(Deno.makeTempDirSync());
+  Deno.writeTextFileSync(
+    join(coordRoot, "coord.json"),
+    JSON.stringify({ campaign: "harness-test" }),
+  );
+  Deno.mkdirSync(join(coordRoot, "leases"));
   const listOwned = docker.listOwned.bind(docker);
   docker.listOwned = (o) => {
     // M10-08c run 003: the fake lists every owner alike; the bare hostname
@@ -798,6 +811,10 @@ function deps(
     },
     inspect: () => new FakeBc(),
     quarantineDir: () => quarantineDir,
+    coordRoot: () => coordRoot,
+    // H-41 (6): the `auto` pool's allocation and Docker's running flag.
+    allocatedAll: () => Promise.resolve([]),
+    running: () => Promise.resolve(true),
     containerId: (c) => Promise.resolve(fakeId(c)),
     resetFor: testResetFor,
     resolveHost: () => {
@@ -9068,6 +9085,1507 @@ Deno.test("rejudge (H-33 r1): interrupted with nothing due still reports interru
     stop.signal,
   );
   assertEquals([r.rejudged, r.interrupted], [0, true]);
+});
+
+// ---- H-41: every judgment writer commits through a claimed, fenced generation ----
+
+const claimDirOf = (t: TestEnv, id: string) =>
+  join(t.env.resultsRoot, "claims", id);
+
+const fencesOf = (t: TestEnv, id: string) => {
+  try {
+    return [...Deno.readDirSync(claimDirOf(t, id))].map((x) => x.name)
+      .filter((n) => /^fence-\d+\.json$/.test(n)).sort();
+  } catch {
+    return [];
+  }
+};
+
+/** Lane judgings started (every compute takes the lane). */
+function laneCalls(t: TestEnv) {
+  const lane = t.env.lane;
+  const real = lane.exclusive.bind(lane);
+  const n = { calls: 0 };
+  lane.exclusive = ((...a: Parameters<typeof lane.exclusive>) => {
+    n.calls++;
+    return real(...a);
+  }) as typeof lane.exclusive;
+  return n;
+}
+
+async function judgedCampaign(t: TestEnv) {
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  return { c, es: await t.env.store.executions(c.id) };
+}
+
+Deno.test("rejudge (H-41): a rejudged execution commits the next generation's fence; one whose claim another judge holds is skipped and stays due", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const e = es[0]!;
+  assertEquals(fencesOf(t, e.id), ["fence-0.json"], "the run's judgment");
+  const held = acquireBenchLock(claimDirOf(t, e.id), { command: "other" });
+  const logs = capture();
+  let r;
+  try {
+    r = await harnessRejudge("contract", runOpts(t), opener(t));
+  } finally {
+    logs.restore();
+    await held();
+  }
+  assertEquals(r.rejudged, 0);
+  assert(
+    logs.out.some((l) => l.includes("[SKIP]") && l.includes(e.id)),
+    logs.out.join("\n"),
+  );
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+  r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 1);
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+  assertEquals((await t.env.store.judgments(e.id)).length, 3);
+});
+
+Deno.test("rejudge (H-41 N1, budget boundary): two unscored judgments; B's due list is made, then a third is committed (unmaterialized) before B takes its generation: B reaches the due predicate at the matching generation and drops not due; no compute; the budget counts three once reconciled", async () => {
+  await using t = await makeEnv();
+  const { es } = await judgedCampaign(t);
+  const e = es[0]!;
+  await unscoredJudgments(t, e.id, 2);
+  const [j] = await t.env.store.judgments(e.id);
+  const at = new Date(Date.now() + 10).toISOString();
+  const third: JudgmentRecord = {
+    ...j!,
+    id: crypto.randomUUID(),
+    scorers: j!.scorers.map((s) => ({
+      ...s,
+      passed: null,
+      ...(s.state ? { state: "unscored" as const } : {}),
+    })),
+    verdict: "unscored",
+    started_at: at,
+    ended_at: at,
+  };
+  const log = {
+    ...JSON.parse(
+      await Deno.readTextFile(
+        join(t.env.resultsRoot, "verdicts", `${j!.id}.json`),
+      ),
+    ),
+    judgment_id: third.id,
+  };
+  const n = laneCalls(t);
+  const cap = captureAll();
+  let r;
+  try {
+    r = await harnessRejudge(
+      "contract",
+      runOpts(t, { yes: false }),
+      opener(t),
+      () => {
+        // Another process commits generation 1 now (after B's due list,
+        // before B takes its generation) and stalls before materializing.
+        Deno.writeTextFileSync(
+          join(claimDirOf(t, e.id), "fence-1.json"),
+          JSON.stringify(
+            {
+              v: 1,
+              execution_id: e.id,
+              generation: 1,
+              judgment: third,
+              log,
+              token: "A",
+              pid: 1,
+              host: "A",
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return true;
+      },
+    );
+  } finally {
+    cap.restore();
+  }
+  assertEquals(r.rejudged, 0);
+  assertEquals(n.calls, 0, "B computed");
+  // B's generation is the head after A's commit (1 -> 2): the generation
+  // check passes, and the due predicate under the claim refuses it on the
+  // budget that reconciling fence-1 exposed.
+  const skips = cap.lines.filter((l) => l.includes("[SKIP]"));
+  assertEquals(
+    skips,
+    [`[SKIP] ${e.id}: no longer due`],
+    cap.lines.join("\n"),
+  );
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+  const js = await t.env.store.judgments(e.id);
+  assertEquals(js.length, 4);
+  assert(js.some((x) => x.id === third.id), "fence-1 was materialized");
+  const { rejudgeBudgetExhausted } = await import(
+    "../../../../src/harness/outcome.ts"
+  );
+  assert(
+    rejudgeBudgetExhausted(
+      e,
+      js,
+      j!.task_oracle_hash,
+      await currentScorerFingerprint(),
+    ),
+  );
+});
+
+Deno.test("rejudge (H-41 N2-a): a future-dated old-scorer predecessor stays reported, due and the pairing baseline, as today; the next authorized rejudge commits the next generation", async () => {
+  await using t = await makeEnv();
+  const { c, es } = await judgedCampaign(t);
+  const e = es[0]!;
+  const [j0] = await t.env.store.judgments(e.id);
+  const p: JudgmentRecord = {
+    ...await asLegacy(j0!),
+    id: crypto.randomUUID(),
+    started_at: "2099-01-01T00:00:00.000Z",
+    ended_at: "2099-01-01T00:00:01.000Z",
+  };
+  await t.env.store.writeJudgment(p);
+  const { campaignJudging, cellsFromRecords } = await import(
+    "../../../../src/harness/outcome.ts"
+  );
+  const reported = async () => {
+    const data = await loadCampaignData(t.env.store, c);
+    const by = new Map<string, JudgmentRecord[]>();
+    for (const x of data.judgments) {
+      by.set(x.execution_id, [...(by.get(x.execution_id) ?? []), x]);
+    }
+    return cellsFromRecords(c, data.executions, by, {
+      ...campaignJudging(c),
+      scorer: await currentScorerFingerprint(),
+    }).find((x) =>
+      x.task === e.task_id && x.repeat === e.repeat && x.arm === e.arm
+    )!.judgment_id;
+  };
+  for (const head of [1, 2]) {
+    const r = await harnessRejudge("contract", runOpts(t), opener(t));
+    // Today: p is the newest by ended_at, so the execution is due again ...
+    assertEquals(r.rejudged, 1, `rejudge at head ${head}`);
+    assertEquals(fencesOf(t, e.id).length, head + 1);
+    // ... and the report still counts p.
+    assertEquals(await reported(), p.id);
+  }
+  // Both pairings took p as the old side.
+  const olds: string[] = [];
+  for await (const f of Deno.readDir(join(t.env.resultsRoot, "pairings"))) {
+    if (!f.name.endsWith(".json")) continue;
+    const { pairing } = await loadPairing(
+      t.env.resultsRoot,
+      f.name.slice(0, -5),
+    );
+    olds.push(
+      ...pairing.cells.filter((x) => x.execution_id === e.id).map((x) =>
+        x.old_judgment_id
+      ),
+    );
+  }
+  assertEquals(olds, [p.id, p.id]);
+});
+
+Deno.test("rejudge --force (H-41 F2): a forced commit that crashed after its fence is recovered by a plain resume, with no --basis and no compute, and is the judgment the report selects", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  store.writeJudgment = () =>
+    Promise.reject(new Error("killed after the fence"));
+  await assertRejects(
+    () =>
+      approvedRejudge(
+        e.id,
+        forceOpts(t, c, e, { replaces: oom.id }),
+        opener(t),
+      ),
+    Error,
+    "killed after the fence",
+  );
+  store.writeJudgment = write;
+  assert(!(await store.judgments(e.id)).some((j) => j.forced));
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+  const n = laneCalls(t);
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { campaign: c.id }),
+    opener(t),
+  );
+  assertEquals([r.rejudged, n.calls], [0, 0]);
+  const js = await store.judgments(e.id);
+  const forced = js.find((j) => j.forced);
+  assert(forced, "the forced judgment was recovered");
+  const { selectJudgment } = await import("../../../../src/harness/outcome.ts");
+  assertEquals(selectJudgment(e, js, forced.task_oracle_hash)?.id, forced.id);
+});
+
+Deno.test("judge-pending (H-41): a deferred cell's judgment is committed as fence-0; a claim another judge holds leaves it owed", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.docker.behavior = mockImageBehavior();
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, supervised: false },
+      close: () => Promise.resolve(),
+    });
+  const o = cellOpts(t, { supervised: false });
+  const r = await harnessCell(
+    "mock-positive",
+    "HX-001",
+    { ...o, deferJudging: true },
+    open,
+    () => false,
+    noInterrupt,
+  );
+  const e = r.executions[0]!;
+  const held = acquireBenchLock(claimDirOf(t, e.id), { command: "other" });
+  const logs = capture();
+  try {
+    assertEquals(await harnessJudgePending(o, open), 0);
+  } finally {
+    logs.restore();
+    await held();
+  }
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assert(logs.out.some((l) => l.includes(e.id) && l.includes("owed")));
+  assertEquals(await harnessJudgePending(o, open), 1);
+  const [j] = await t.env.store.judgments(e.id);
+  assertEquals(fencesOf(t, e.id), ["fence-0.json"]);
+  const f = JSON.parse(
+    await Deno.readTextFile(join(claimDirOf(t, e.id), "fence-0.json")),
+  );
+  assertEquals(f.judgment, j);
+});
+
+Deno.test("H-41 section 10: run binds its campaign once it is final and before any cell; rejudge binds before any judging, and a refused binding judges nothing", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const bound: [string, number][] = [];
+  t.env.bindCampaign = async (id) =>
+    void bound.push([id, (await t.env.store.allExecutions()).length]);
+  const { c, es } = await campaignWithStaleJudgment(t);
+  assertEquals(bound, [[c.id, 0]]);
+  const counts = async () =>
+    (await Promise.all(es.map((e) => t.env.store.judgments(e.id)))).map((js) =>
+      js.length
+    );
+  const before = await counts();
+  t.env.bindCampaign = () =>
+    Promise.reject(new ConfigurationError("campaign is pinned elsewhere"));
+  await assertRejects(
+    () => harnessRejudge("contract", runOpts(t), opener(t)),
+    ConfigurationError,
+    "pinned elsewhere",
+  );
+  assertEquals(await counts(), before);
+  bound.length = 0;
+  t.env.bindCampaign = (id) => Promise.resolve(void bound.push([id, -1]));
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    1,
+  );
+  assertEquals(bound, [[c.id, -1]]);
+});
+
+Deno.test("openHarnessEnv (H-41 section 10): with an explicit list, bindCampaign pins the campaign to the start members' env_fp; a campaign pinned to another env_fp is refused", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const bcEgressOverride = "no NST firewall rule in the image";
+  const l = await loadLineage(lineage);
+  const bare = await openHarnessEnv(envOpts(t), deps([]));
+  const fps: string[] = [];
+  for (const c of bare.env.lane.containers) {
+    const m = await createBaseline(
+      bare.env.lane.bc,
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest: await lockDigestOf({
+          store: bare.env.symbolStore,
+          packages: bare.env.symbols,
+        }),
+      },
+    );
+    fps.push(m.env_fp);
+  }
+  await bare.close();
+  const h = await openHarnessEnv(
+    { ...envOpts(t), lineage, bcEgressOverride },
+    deps([]),
+  );
+  try {
+    const id = crypto.randomUUID();
+    await h.env.bindCampaign!(id);
+    const path = join(t.env.resultsRoot, "env-pins", `${id}.json`);
+    const pin = JSON.parse(await Deno.readTextFile(path));
+    assertEquals(
+      [pin.v, pin.campaign, pin.lineage_id, pin.env_fp, pin.by.command],
+      [1, id, l.id, fps[0], "test"],
+    );
+    await h.env.bindCampaign!(id);
+    const other = crypto.randomUUID();
+    await Deno.writeTextFile(
+      join(t.env.resultsRoot, "env-pins", `${other}.json`),
+      JSON.stringify({ ...pin, campaign: other, env_fp: "0".repeat(64) }),
+    );
+    await assertRejects(
+      () => h.env.bindCampaign!(other),
+      ConfigurationError,
+      "pinned",
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+// ---- H-41 group 3: `auto` judging (design-final 6, 8, 9, 14) ----
+
+/** console.log, console.warn and console.error lines (colors stripped). */
+function captureAll() {
+  const lines: string[] = [];
+  const push = (...a: unknown[]) =>
+    void lines.push(stripAnsiCode(a.map(String).join(" ")));
+  const s = [
+    stub(console, "log", push),
+    stub(console, "warn", push),
+    stub(console, "error", push),
+  ];
+  return { lines, restore: () => s.forEach((x) => x.restore()) };
+}
+
+/**
+ * H-41: t.env judging in `auto` mode on a pool over t.bc (pinning through
+ * the real env pin): rejudge's pool is the lane, run's the judge lane.
+ * bindCampaign binds it (recorded as `bind:<id>` in the world's events).
+ */
+function autoJudging(
+  t: TestEnv,
+  as: "lane" | "judges",
+  o: NonNullable<Parameters<typeof poolWorld>[1]> = {},
+) {
+  const r = poolWorld(t.bc, { env: t.env, alloc: [], ...o });
+  if (as === "lane") t.env.lane = r.pool.lane;
+  else t.env.judgeLane = r.pool.lane;
+  t.env.judgePooled = r.pool;
+  t.env.bindCampaign = async (id) => {
+    r.w.events.push(`bind:${id}`);
+    await r.pool.bind(id);
+  };
+  return r;
+}
+
+/** Every lane call (compile, compileOn, exclusive) on `lane`. */
+function laneUse(lane: TestEnv["env"]["lane"]) {
+  const n = { calls: 0 };
+  for (const k of ["compile", "compileOn", "exclusive"] as const) {
+    const real = (lane[k] as (...a: unknown[]) => unknown).bind(lane);
+    (lane as unknown as Record<string, unknown>)[k] = (...a: unknown[]) => {
+      n.calls++;
+      return real(...a);
+    };
+  }
+  return n;
+}
+
+/** Fences, verdict logs, judgments (per execution) and env pins on disk. */
+async function judgingState(t: TestEnv, es: ExecutionRecord[]) {
+  const names = (d: string) => {
+    try {
+      return [...Deno.readDirSync(d)].map((x) => x.name).sort();
+    } catch {
+      return [];
+    }
+  };
+  return {
+    fences: es.map((e) => fencesOf(t, e.id)),
+    verdicts: names(join(t.env.resultsRoot, "verdicts")),
+    judgments: await Promise.all(
+      es.map(async (e) =>
+        (await t.env.store.judgments(e.id)).map((j) => j.id).sort()
+      ),
+    ),
+    pins: names(join(t.env.resultsRoot, "env-pins")),
+  };
+}
+
+/** The new judgment of each execution: the one its fence-<g> carries. */
+const fencedJudgment = (t: TestEnv, id: string, g: number) =>
+  JSON.parse(
+    Deno.readTextFileSync(join(claimDirOf(t, id), `fence-${g}.json`)),
+  ).judgment as JudgmentRecord;
+
+function opened() {
+  let open!: () => void;
+  const p = new Promise<void>((r) => (open = r));
+  return { p, open };
+}
+
+Deno.test("rejudge --containers auto (H-41 Task 1): C2, allocated after the first commit, joins mid-run: it is used and registered; one fence and one judgment per W", async () => {
+  const { t, es, counts } = await h24Campaign();
+  try {
+    const { w, pool } = autoJudging(t, "lane", {
+      alloc: ["C1"],
+      bounds: { pollMs: 20 },
+    });
+    const store = t.env.store;
+    const write = store.writeJudgment.bind(store);
+    let first = true;
+    store.writeJudgment = async (j) => {
+      await write(j);
+      if (first) {
+        first = false;
+        w.alloc = ["C1", "C2"];
+      }
+    };
+    const c = captureAll();
+    let r;
+    try {
+      r = await harnessRejudge("contract", runOpts(t), opener(t));
+    } finally {
+      c.restore();
+    }
+    assertEquals(r.rejudged, 6);
+    assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+    for (const e of es) {
+      assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+    }
+    assertEquals(w.registered, ["C1", "C2"]);
+    const on = es.map((e) => fencedJudgment(t, e.id, 1).verdict_container);
+    assert(on.includes("C2"), `C2 never judged: ${on}`);
+    assert(c.lines.some((l) => l.includes("[JOIN]") && l.includes("C2")));
+    await pool.close();
+  } finally {
+    await t[Symbol.asyncDispose]();
+  }
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 6): a zero-member pool starves: the exit-75 flag, the execution stays owed; no fence, verdict log, judgment or pin; the budget unchanged", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const before = await judgingState(t, es);
+  const { pool } = autoJudging(t, "lane", {
+    bounds: { pollMs: 20, waitMs: 150 },
+  });
+  const c = captureAll();
+  let r;
+  try {
+    r = await harnessRejudge("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+  }
+  assertEquals([r.rejudged, r.starved, r.owed], [0, true, 1]);
+  assertEquals(await judgingState(t, es), before);
+  assert(c.lines.some((l) => l.includes("[STOP]")), c.lines.join("\n"));
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 6): every member drains mid-run: the rest stays owed and the rejudge starves; what was judged is fenced once", async () => {
+  const { t, es } = await h24Campaign();
+  try {
+    const { w, pool } = autoJudging(t, "lane", {
+      alloc: ["C1"],
+      bounds: { pollMs: 20, waitMs: 150 },
+    });
+    const before = await judgingState(t, es);
+    const store = t.env.store;
+    const write = store.writeJudgment.bind(store);
+    store.writeJudgment = async (j) => {
+      await write(j);
+      w.blocked.set("C1", "drain marker drain-C1");
+    };
+    const c = captureAll();
+    let r;
+    try {
+      r = await harnessRejudge("contract", runOpts(t), opener(t));
+    } finally {
+      c.restore();
+    }
+    assertEquals(r.starved, true);
+    assert(r.rejudged >= 1 && r.rejudged < 6, `rejudged ${r.rejudged}`);
+    assertEquals(r.owed, 6 - r.rejudged);
+    const after = await judgingState(t, es);
+    const judged = es.filter((_, i) => after.fences[i]!.length === 2);
+    assertEquals(judged.length, r.rejudged);
+    for (const [i, e] of es.entries()) {
+      if (judged.includes(e)) continue;
+      assertEquals(after.fences[i], before.fences[i]);
+      assertEquals(after.judgments[i], before.judgments[i]);
+    }
+    await until(() => w.events.includes("release:C1"), 2_000, "C1 released");
+    await pool.close();
+  } finally {
+    await t[Symbol.asyncDispose]();
+  }
+});
+
+Deno.test("run --judge-containers auto (H-41 Task 6, section 8): with no member the cells run on the agents' lane, their judgments stay owed (never unscored), the run starves (exit-75 flag) with owed counted; no fence, judgment or pin", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const { pool } = autoJudging(t, "judges", {
+    bounds: { pollMs: 20, waitMs: 150 },
+  });
+  const agents = laneUse(t.env.lane);
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+  }
+  assertEquals(
+    [s.ran, s.judged, s.unscored, s.owed, s.starved],
+    [2, 0, 0, 2, true],
+  );
+  assertEquals(agents.calls, 0, "judging on the agents' lane");
+  const es = await t.env.store.executions(s.campaignId!);
+  assertEquals(await judgingState(t, es), {
+    fences: [[], []],
+    verdicts: [],
+    judgments: [[], []],
+    pins: [],
+  });
+  await pool.close();
+});
+
+Deno.test("run (H-41 R1-L1): a cell published while another judge holds its claim counts owed, not unscored, on ordinary completion; nothing is written for it", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  let held = null as { id: string; release: () => Promise<void> } | null;
+  t.env.hooks = {
+    after: async (step) => {
+      if (step !== "execution" || held !== null) return;
+      // The first published execution: another judge takes its claim now.
+      const [c] = await t.env.store.campaigns("contract");
+      const [e] = await t.env.store.executions(c!.id);
+      held = {
+        id: e!.id,
+        release: acquireBenchLock(claimDirOf(t, e!.id), { command: "other" }),
+      };
+    },
+  };
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+    await held?.release();
+  }
+  assert(held, "no execution was published");
+  assertEquals(
+    [s.ran, s.judged, s.unscored, s.owed, s.starved],
+    [2, 1, 0, 1, undefined],
+    c.lines.join("\n"),
+  );
+  assertEquals(await t.env.store.judgments(held.id), []);
+  assertEquals(fencesOf(t, held.id), []);
+  assert(
+    c.lines.some((l) =>
+      l.includes("[OK] campaign") && l.includes("0 unscored, 1 owed")
+    ),
+    c.lines.join("\n"),
+  );
+});
+
+Deno.test("run --judge-containers auto (H-41 F9): a new campaign with zero judge members: the first admission comes after bindCampaign and the pin carries the new campaign's id", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const { w, pool } = autoJudging(t, "judges", { bounds: { pollMs: 20 } });
+  const bind = t.env.bindCampaign!;
+  t.env.bindCampaign = async (id) => {
+    await bind(id);
+    w.alloc = ["J1"];
+  };
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+  }
+  assertEquals([s.created, s.judged, s.starved === true], [true, 2, false]);
+  const bound = w.events.indexOf(`bind:${s.campaignId}`);
+  assert(bound >= 0 && bound < w.events.indexOf("claim:J1"), `${w.events}`);
+  const pin = JSON.parse(
+    await Deno.readTextFile(
+      join(t.env.resultsRoot, "env-pins", `${s.campaignId}.json`),
+    ),
+  );
+  assertEquals([pin.campaign, pin.env_fp], [s.campaignId, FP]);
+  await pool.close();
+});
+
+/** A mock campaign whose second cell's sandbox outlived the run: its intent is kept for recovery. */
+async function interruptedCampaign(t: TestEnv) {
+  await writeCatalog(t);
+  t.env.supervised = false;
+  const base = mockImageBehavior();
+  let runs = 0;
+  t.docker.behavior = async (call, io) => {
+    if (++runs === 2) t.docker.lingering.add(call.name);
+    return await base(call, io);
+  };
+  await mockExperiment(t);
+  await assertRejects(
+    () =>
+      runCampaign(t.env, "contract", {
+        dryRun: false,
+        concurrency: 1,
+        maxPauseMs: 0,
+      }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG }),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  t.docker.behavior = base;
+  return (await t.env.store.campaigns("contract"))[0]!;
+}
+
+Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member joining it is judged once there", async () => {
+  for (const member of [null, "J1"]) {
+    await using t = await makeEnv();
+    const c = await interruptedCampaign(t);
+    const { w, pool } = autoJudging(t, "judges", {
+      bounds: { pollMs: 20, waitMs: 150 },
+    });
+    if (member) w.alloc = [member];
+    const agents = laneUse(t.env.lane);
+    const cap = captureAll();
+    let s;
+    try {
+      s = await harnessRun("contract", runOpts(t), opener(t));
+    } finally {
+      cap.restore();
+    }
+    assertEquals(agents.calls, 0, `${member}: judging on the agents' lane`);
+    const es = await t.env.store.executions(c.id);
+    const recovered = es.find((e) => e.termination === "harness_crash")!;
+    assert(
+      cap.lines.some((l) =>
+        l.includes(`${recovered.id}: judgment owed (judging pool)`)
+      ),
+      cap.lines.join("\n"),
+    );
+    const js = await t.env.store.judgments(recovered.id);
+    if (member === null) {
+      assertEquals([s.ran, s.starved, s.owed, js.length], [0, true, 1, 0]);
+    } else {
+      assertEquals([s.starved === true, js.length], [false, 1]);
+      assertEquals(js[0]!.verdict_container, "J1");
+      assertEquals(fencesOf(t, recovered.id), ["fence-0.json"]);
+    }
+    await pool.close();
+  }
+});
+
+Deno.test("run --rerun with --judge-containers auto (H-41 N4 b): the rerun cell runs on the agents' lane; with no judge member its judgment is owed and the run starves; after a join it is judged on the judge member", async () => {
+  for (const member of [null, "J1"]) {
+    await using t = await makeEnv();
+    await writeCatalog(t);
+    t.env.supervised = false;
+    t.docker.behavior = mockImageBehavior();
+    await mockExperiment(t);
+    await runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const p = (await t.env.store.executions(c.id))[0]!;
+    await unscoredJudgments(t, p.id, 3);
+    const block = c.blocks[p.block]!;
+    const { w, pool } = autoJudging(t, "judges", {
+      bounds: { pollMs: 20, waitMs: 150 },
+    });
+    if (member) w.alloc = [member];
+    const agents = laneUse(t.env.lane);
+    const cap = captureAll();
+    let s;
+    try {
+      s = await harnessRun(
+        "contract",
+        runOpts(t, {
+          rerun: { task: block.task_id, repeat: block.repeat, arm: p.arm },
+        }),
+        opener(t),
+      );
+    } finally {
+      cap.restore();
+    }
+    const m = (await t.env.store.executions(c.id)).find((x) =>
+      x.run_kind === "manual_rerun"
+    )!;
+    const js = await t.env.store.judgments(m.id);
+    assertEquals(agents.calls, 0, `${member}: judging on the agents' lane`);
+    if (member === null) {
+      assertEquals(
+        [s.ran, s.judged, s.unscored, s.owed, s.starved, js.length],
+        [1, 0, 0, 1, true, 0],
+      );
+    } else {
+      assertEquals([s.ran, s.starved === true, js.length], [1, false, 1]);
+      assertEquals(js[0]!.verdict_container, "J1");
+    }
+    await pool.close();
+  }
+});
+
+Deno.test("rejudge --containers auto (H-41 N4 c): a draft recovered while the env opened (owed, no judge) is judged after binding", async () => {
+  await using t = await makeEnv();
+  const c = await interruptedCampaign(t);
+  const { w, pool } = autoJudging(t, "lane", {
+    alloc: ["C1"],
+    bounds: { pollMs: 20 },
+  });
+  const { recoverInterrupted } = await import(
+    "../../../../src/harness/execution.ts"
+  );
+  const cap = captureAll();
+  let r;
+  try {
+    // As openHarnessEnv recovers before any campaign is bound.
+    const [e] = await recoverInterrupted(t.env, loadTask);
+    assertEquals(await t.env.store.judgments(e!.id), []);
+    assertEquals(w.events, [], "recovery admitted a container");
+    r = await harnessRejudge("contract", runOpts(t), opener(t));
+    assertEquals((await t.env.store.judgments(e!.id)).length, 1);
+  } finally {
+    cap.restore();
+  }
+  assertEquals(r.rejudged, 1);
+  assert(w.events.indexOf(`bind:${c.id}`) < w.events.indexOf("claim:C1"));
+  await pool.close();
+});
+
+/**
+ * Section 14: two due executions; one holds C2 (a member continuously
+ * eligible) until released, the other keeps landing on C1, whose test run
+ * fails with an infra error (its cleanup is clean: no quarantine) and whose
+ * terminal inspection `inspect` answers while C1 is a member (its precheck,
+ * outside the lane, answers running). `inspect` may end the failures.
+ */
+async function uncertainLoop(
+  t: TestEnv,
+  inspect: (n: number, healed: () => void) => Promise<boolean>,
+) {
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  await staleJudgment(t, es[1]!.id);
+  const before = await judgingState(t, es);
+  const r = autoJudging(t, "lane", {
+    alloc: ["C1", "C2"],
+    bounds: { pollMs: 20, waitMs: 60_000 },
+    maxInfraRetries: 0,
+  });
+  let failing = true;
+  const run = t.bc.runHarnessTests.bind(t.bc);
+  t.bc.runHarnessTests = (c, codeunit) =>
+    failing && c === "C1"
+      ? Promise.reject(
+        new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+      )
+      : run(c, codeunit);
+  let n = 0;
+  r.w.isRunning = (c) =>
+    c === "C1" && r.pool.lane.containers.includes("C1")
+      ? inspect(++n, () => (failing = false))
+      : Promise.resolve(true);
+  const held = opened();
+  const lane = r.pool.lane;
+  const exclusive = lane.exclusive.bind(lane);
+  lane.exclusive = ((ctx, fn, signal, opts) =>
+    exclusive(
+      ctx,
+      async (c: string) => {
+        if (c === "C2") await held.p;
+        return await fn(c);
+      },
+      signal,
+      opts,
+    )) as typeof lane.exclusive;
+  return { ...r, es, before, held, inspections: () => n };
+}
+
+Deno.test("rejudge --containers auto (H-41 section 14): the attempted container's terminal inspection keeps failing while refresh and setup succeed and C2 stays eligible: W requeued 3 times, the 4th stops ([STOP], [UNANSWERED]); exit-75 flag; no judgment, verdict log or fence for W; budget unchanged; leases tracked", async () => {
+  await using t = await makeEnv();
+  const { w, pool, es, before, held, inspections } = await uncertainLoop(
+    t,
+    () => Promise.reject(new Error("docker inspect hung")),
+  );
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(() => inspections() >= 4, 10_000, "four inspections")
+      .catch((err) => {
+        throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+      });
+    await new Promise((res) => setTimeout(res, 100));
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  assertEquals(inspections(), 4, "W ran once more after its 4th loss");
+  const unanswered = cap.lines.filter((l) => l.includes("[UNANSWERED] C1"));
+  assertEquals(unanswered.length, 4, cap.lines.join("\n"));
+  const stop = cap.lines.filter((l) =>
+    l.includes("[STOP]") && l.includes("4 unanswered container checks")
+  );
+  assertEquals(stop.length, 1, cap.lines.join("\n"));
+  const after = await judgingState(t, es);
+  const lost = es.findIndex((e) => stop[0]!.includes(e.id));
+  assert(lost >= 0, stop[0]);
+  assertStringIncludes(stop[0]!, "1 stay owed");
+  assertEquals([r.rejudged, r.starved, r.owed], [1, true, 1]);
+  // W: nothing written, its budget unchanged; the other judged once on C2.
+  assertEquals(after.fences[lost], before.fences[lost]);
+  assertEquals(after.judgments[lost], before.judgments[lost]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  const other = es[1 - lost]!;
+  assertEquals(fencedJudgment(t, other.id, 1).verdict_container, "C2");
+  // Leases: each departure released C1's record before its rejoin; the
+  // last one is still tracked (the env closer releases it), none kept.
+  assertEquals(w.events.filter((e) => e === "claim:C1").length, 4);
+  assertEquals(w.events.filter((e) => e === "release:C1").length, 3);
+  assertEquals([...w.records.keys()].sort(), ["C1", "C2"]);
+  assertEquals(w.kept.size, 0);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 3 / N3 end to end, R1-M3a): the last member C1 stops running while its test run throws infra: through the real queue and writer the pool loss commits nothing (fences, verdict logs, judgments, budget unchanged) and W is requeued; C2 then joins and W commits exactly one scored judgment", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const before = await judgingState(t, es);
+  const { w, pool } = autoJudging(t, "lane", {
+    alloc: ["C1"],
+    bounds: { pollMs: 20, waitMs: 60_000 },
+    maxInfraRetries: 0,
+  });
+  const run = t.bc.runHarnessTests.bind(t.bc);
+  let onC1 = 0;
+  t.bc.runHarnessTests = (c, codeunit) => {
+    if (c !== "C1") return run(c, codeunit);
+    onC1++;
+    w.running.delete("C1"); // Docker no longer reports it running
+    return Promise.reject(
+      new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+    );
+  };
+  const claim = join(claimDirOf(t, es[0]!.id), ".bench-running.json");
+  const claimed = () => {
+    try {
+      Deno.statSync(claim);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const cap = captureAll();
+  let r;
+  let lost;
+  try {
+    const p = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(
+      () =>
+        cap.lines.some((l) => l.includes("[DEPART] C1")) &&
+        pool.width() === 0 && !claimed(),
+      10_000,
+      "C1's departure, W's claim released",
+    ).catch((err) => {
+      throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+    });
+    // W is queued again with no member: nothing runs, nothing was written.
+    await new Promise((res) => setTimeout(res, 100));
+    lost = await judgingState(t, es);
+    w.alloc = ["C1", "C2"];
+    r = await p;
+  } finally {
+    cap.restore();
+  }
+  const log = cap.lines.join("\n");
+  // C1's join pinned the campaign; the loss itself wrote nothing.
+  const written = (s: typeof before) => [s.fences, s.verdicts, s.judgments];
+  assertEquals(written(lost), written(before), log);
+  assertEquals(onC1, 1, log);
+  assertEquals([r.rejudged, r.starved === true], [1, false], log);
+  assertEquals(cap.lines.filter((l) => l.includes("[UNANSWERED]")), [], log);
+  const after = await judgingState(t, es);
+  const g = before.fences[0]!.length;
+  assertEquals(after.fences[0], [...before.fences[0]!, `fence-${g}.json`]);
+  assertEquals(after.fences[1], before.fences[1]);
+  assertEquals(after.judgments[1], before.judgments[1]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  const j = fencedJudgment(t, es[0]!.id, g);
+  assertEquals(
+    after.judgments[0],
+    [...before.judgments[0]!, j.id].sort(),
+    "exactly the fence's judgment is new",
+  );
+  assertEquals(j.verdict_container, "C2");
+  assert(j.verdict !== "unscored", `W judged ${j.verdict}`);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 section 14, R1-M1): through the real coord reader, C1's lease file unreadable at each terminal reconcile but readable at each refresh, C2 eligible: [UNANSWERED] (never [DEPART]), W stops after 3 counted requeues; exit-75 flag; no judgment, verdict log or fence for W; budget unchanged", async () => {
+  await using t = await makeEnv();
+  // A coord root (its own machine root) where C1's last lease is released.
+  const coordRoot = join(t.repo.root, "coord");
+  const attempt = join(coordRoot, "leases", "C1", "001");
+  const leaseFile = join(attempt, "lease.json");
+  const readable = JSON.stringify({ lane: "lane-ops", token: "T", at: 1 });
+  await Deno.mkdir(attempt, { recursive: true });
+  await Deno.writeTextFile(
+    join(coordRoot, "coord.json"),
+    JSON.stringify({ campaign: "h41" }),
+  );
+  await Deno.writeTextFile(leaseFile, readable);
+  await Deno.writeTextFile(join(attempt, "release.json"), "{}");
+  // The terminal reconcile asks Docker first, then reads the coord state:
+  // the file is torn in between. Every refresh reads the allocation first:
+  // the file is whole again before its blocked checks.
+  const { w, pool, deps, es, before, held, inspections } = await uncertainLoop(
+    t,
+    (n, healed) => {
+      Deno.writeTextFileSync(leaseFile, "{torn");
+      if (n >= 8) healed(); // ends the loop of a reader with no bound
+      return Promise.resolve(true);
+    },
+  );
+  deps.blocked = poolBlocked({
+    coordRoot,
+    own: new Map(),
+    drainDir: t.env.resultsRoot,
+  });
+  const allocated = w.allocated;
+  w.allocated = () => {
+    Deno.writeTextFileSync(leaseFile, readable);
+    return allocated();
+  };
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(() => inspections() >= 4, 10_000, "four inspections")
+      .catch((err) => {
+        throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+      });
+    await new Promise((res) => setTimeout(res, 100));
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  const log = cap.lines.join("\n");
+  assertEquals(inspections(), 4, `W ran once more after its 4th loss:\n${log}`);
+  const unanswered = cap.lines.filter((l) => l.includes("[UNANSWERED] C1"));
+  assertEquals(unanswered.length, 4, log);
+  for (const l of unanswered) {
+    assertStringIncludes(l, "blocked");
+    assertStringIncludes(l, "C1/001 unreadable");
+  }
+  assertEquals(cap.lines.filter((l) => l.includes("[DEPART] C1")), [], log);
+  const stop = cap.lines.filter((l) =>
+    l.includes("[STOP]") && l.includes("4 unanswered container checks")
+  );
+  assertEquals(stop.length, 1, log);
+  assertStringIncludes(stop[0]!, "1 stay owed");
+  assertEquals([r.rejudged, r.starved, r.owed], [1, true, 1]);
+  const after = await judgingState(t, es);
+  const lost = es.findIndex((e) => stop[0]!.includes(e.id));
+  assert(lost >= 0, stop[0]);
+  // W: nothing written, its budget unchanged; the other judged once on C2.
+  assertEquals(after.fences[lost], before.fences[lost]);
+  assertEquals(after.judgments[lost], before.judgments[lost]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  assertEquals(fencedJudgment(t, es[1 - lost]!.id, 1).verdict_container, "C2");
+  // Each refresh read the file whole: C1 was readmitted after every loss.
+  assertEquals(w.events.filter((e) => e === "claim:C1").length, 4);
+  assertEquals(w.events.filter((e) => e === "release:C1").length, 3);
+  assertEquals(w.kept.size, 0);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 section 14 control): a confirmed departure does not consume the bound: five departures, then the deployment works and W is judged", async () => {
+  await using t = await makeEnv();
+  const { pool, es, held } = await uncertainLoop(t, (n, healed) => {
+    if (n >= 5) healed();
+    return Promise.resolve(false);
+  });
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(
+      () => cap.lines.filter((l) => l.includes("[DEPART] C1")).length >= 5,
+      10_000,
+      "five departures",
+    ).catch((err) => {
+      throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+    });
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  assertEquals([r.rejudged, r.starved === true], [2, false]);
+  assert(!cap.lines.some((l) => l.includes("[STOP]")), cap.lines.join("\n"));
+  for (const e of es) assertEquals(fencesOf(t, e.id).length, 2);
+  await pool.close();
+});
+
+// ---- H-41 group 3: the environment's pool, coord leases and the CLI ----
+
+const NO_NST_RULE = "no NST firewall rule in the image";
+
+/** An instance manifest per container for `lineage`, as `harness baseline create` writes it; their env_fps. */
+async function baselines(t: TestEnv, lineage: string, cs: string[]) {
+  const l = await loadLineage(lineage);
+  const lockDigest = await lockDigestOf({
+    store: t.repo.symbolStore,
+    packages: t.repo.symbols,
+  });
+  const fps: string[] = [];
+  for (const c of cs) {
+    const m = await createBaseline(
+      new FakeBc(),
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest,
+      },
+    );
+    fps.push(m.env_fp);
+  }
+  return fps;
+}
+
+/** deps() for an `auto` environment: one FakeBc for every setup, a mutable allocation, a real health monitor. */
+function autoDeps(order: string[]) {
+  const bc = new FakeBc();
+  const alloc: string[] = [];
+  let health: ContainerHealthMonitor | null = null;
+  const d: EnvDeps = {
+    ...deps(order),
+    setup: (names) => {
+      order.push(`setup:${names.join(",")}`);
+      return Promise.resolve({ bc, names, dispose: () => Promise.resolve() });
+    },
+    inspect: () => bc,
+    allocatedAll: () => Promise.resolve([...alloc]),
+    health: (names) =>
+      health = new ContainerHealthMonitor({
+        windowSize: 20,
+        expectedContainerNames: names,
+      }),
+  };
+  return { bc, alloc, d, monitor: () => health! };
+}
+
+Deno.test("openHarnessEnv --containers auto (H-41 sections 6, 10; Task 1): opens with no member and stays inert until bindCampaign; an allocated, baselined container then joins (in-use record, set up, health-registered) and pins the campaign; its record goes at close", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const [fp] = await baselines(t, lineage, ["Cronus283"]);
+  const order: string[] = [];
+  const a = autoDeps(order);
+  const h = await openHarnessEnv({
+    ...envOpts(t, []),
+    auto: "containers",
+    lineage,
+    bcEgressOverride: NO_NST_RULE,
+  }, a.d);
+  const records = async () =>
+    (await findRecords(a.d.quarantineDir(), {
+      name: "Cronus283",
+      id: fakeId("Cronus283"),
+    })).map((f) => f.record?.state);
+  try {
+    const pool = h.env.judgePooled;
+    assert(pool, "auto mode has a pool");
+    assertEquals([h.env.lane.containers, pool.width()], [[], 0]);
+    a.alloc.push("Cronus283");
+    await pool.refresh();
+    assertEquals(
+      h.env.lane.containers,
+      [],
+      "a container joined before binding",
+    );
+    const id = crypto.randomUUID();
+    await h.env.bindCampaign!(id);
+    const c = captureAll();
+    try {
+      await pool.refresh();
+    } finally {
+      c.restore();
+    }
+    assertEquals(h.env.lane.members(), ["Cronus283"], c.lines.join("\n"));
+    assertEquals(order.filter((x) => x.startsWith("setup")), [
+      "setup:",
+      "setup:Cronus283",
+    ]);
+    assertEquals(await records(), ["in_use"]);
+    assert(
+      a.monitor().getState().containers.some((x) =>
+        x.containerName === "Cronus283"
+      ),
+    );
+    const pin = JSON.parse(
+      await Deno.readTextFile(
+        join(t.env.resultsRoot, "env-pins", `${id}.json`),
+      ),
+    );
+    assertEquals([pin.campaign, pin.env_fp], [id, fp]);
+  } finally {
+    await h.close();
+  }
+  assertEquals(await records(), []);
+});
+
+Deno.test("openHarnessEnv --judge-containers auto (H-41 N4 a): an interrupted execution recovered at open is published and left owed ([INFO]); the env opens with no judge member and nothing is compiled, deployed or tested", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.behavior = async (call, io) => {
+    t.docker.lingering.add(call.name);
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  // As an environment of this private root runs it (namespaced owner).
+  const owner = namespaceOwner("HOST1", t.env.privateRoot);
+  await assertRejects(
+    () => runCell({ ...t.env, owner }, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  const lineage = await v2Lineage();
+  await baselines(t, lineage, ["Cronus281"]);
+  const a = autoDeps([]);
+  const c = captureAll();
+  let h;
+  try {
+    h = await openHarnessEnv({
+      ...envOpts(t),
+      auto: "judges",
+      lineage,
+      bcEgressOverride: NO_NST_RULE,
+    }, a.d);
+  } finally {
+    c.restore();
+  }
+  try {
+    const [e] = await t.env.store.executions(cell.campaignId);
+    assert(e, "the interrupted execution was recovered");
+    assertEquals(await t.env.store.judgments(e.id), []);
+    assert(
+      c.lines.some((l) => l.includes(`${e.id}: judgment owed (judging pool)`)),
+      c.lines.join("\n"),
+    );
+    assertEquals([a.bc.compiles.length, a.bc.syncs.length, a.bc.tests.length], [
+      0,
+      0,
+      0,
+    ]);
+    assertEquals(h.env.judgeLane?.containers, []);
+    assertEquals(h.env.lane.containers, ["Cronus281"]);
+  } finally {
+    await h.close();
+  }
+});
+
+Deno.test("openHarnessEnv (H-41 section 10): `auto` without a lineage is refused before the lock", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  for (
+    const o of [
+      { ...envOpts(t, []), auto: "containers" as const },
+      { ...envOpts(t), auto: "judges" as const },
+    ]
+  ) {
+    await assertRejects(
+      () => openHarnessEnv(o, deps(order)),
+      ConfigurationError,
+      "--lineage",
+    );
+  }
+  assertEquals(order, []);
+});
+
+Deno.test("openHarnessEnv (H-41 F8, Q7): a fixed container under another holder's coord lease refuses the start before the lock; this run's --coord-lease token admits it; the fixed lane then blocks on a coord lease taken later and ignores drain markers", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  const d = deps(order);
+  const lease = (c: string, token: string, lane = "lane-ops") => {
+    const dir = join(d.coordRoot(), "leases", c, "001");
+    Deno.mkdirSync(dir, { recursive: true });
+    Deno.writeTextFileSync(
+      join(dir, "lease.json"),
+      JSON.stringify({ lane, token, at: new Date().toISOString() }),
+    );
+  };
+  lease("Cronus281", "T1");
+  const fixed = envOpts(t, ["Cronus281", "Cronus282"]);
+  await assertRejects(
+    () => openHarnessEnv(fixed, d),
+    ConfigurationError,
+    "coord lease Cronus281/001 held by lane-ops",
+  );
+  await assertRejects(
+    () =>
+      openHarnessEnv({
+        ...fixed,
+        coordLeases: new Map([["Cronus281", "another token"]]),
+      }, d),
+    ConfigurationError,
+    "coord lease Cronus281/001",
+  );
+  assertEquals(order, []);
+  const h = await openHarnessEnv({
+    ...fixed,
+    coordLeases: new Map([["Cronus281", "T1"]]),
+  }, d);
+  try {
+    const healthy = () =>
+      (h.env.lane as unknown as { healthy(): string[] }).healthy();
+    await Deno.writeTextFile(join(t.env.resultsRoot, "drain-Cronus281"), "");
+    assertEquals(healthy(), ["Cronus281", "Cronus282"], "a fixed lane drained");
+    lease("Cronus282", "T9", "lane-other");
+    assertEquals(healthy(), ["Cronus281"]);
+  } finally {
+    await h.close();
+  }
+});
+
+Deno.test("CLI (H-41): rejudge --containers auto and run --judge-containers auto reach the environment as auto with --lineage, --pool-wait-min (default 10) and repeated --coord-lease; a starved rejudge exits 75", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await campaignWithStaleJudgment(t);
+  const seen: EnvOptions[] = [];
+  const open = (eo: EnvOptions) => {
+    seen.push(eo);
+    const { pool } = autoJudging(
+      t,
+      eo.auto === "containers" ? "lane" : "judges",
+      { bounds: { pollMs: 20, waitMs: 100 } },
+    );
+    return Promise.resolve({ env: t.env, close: () => pool.close() });
+  };
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, open);
+  const lineage = join(t.repo.root, "lineage.json");
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+    "--lineage",
+    lineage,
+    "--coord-lease",
+    "Cronus283=T1",
+    "--coord-lease",
+    "Cronus285=T2",
+  ];
+  const codes: (number | undefined)[] = [];
+  const cwd = Deno.cwd();
+  const c = captureAll();
+  try {
+    Deno.chdir(t.repo.root);
+    for (
+      const args of [
+        ["rejudge", "contract", "--containers", "auto", "--yes"],
+        [
+          "run",
+          "contract",
+          "--judge-containers",
+          "auto",
+          "--pool-wait-min",
+          "3",
+        ],
+      ]
+    ) {
+      await cli.parse(["harness", ...args, ...flags]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(codes, [75, 0], c.lines.join("\n"));
+  assertEquals(
+    seen.map((
+      eo,
+    ) => [eo.auto, eo.containers, eo.judgeContainers, eo.poolWaitMin]),
+    [["containers", [], undefined, 10], [
+      "judges",
+      ["Cronus281"],
+      undefined,
+      3,
+    ]],
+  );
+  for (const eo of seen) {
+    assertEquals(eo.lineage, lineage);
+    assertEquals([...eo.coordLeases!], [["Cronus283", "T1"], [
+      "Cronus285",
+      "T2",
+    ]]);
+  }
+});
+
+Deno.test("CLI (H-41): `auto` without --lineage, auto agent containers, --pool-wait-min outside 0..120 or not an integer, and a malformed or conflicting --coord-lease are refused before any environment opens", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await campaignWithStaleJudgment(t);
+  let opened = 0;
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, () => {
+    opened++;
+    return Promise.reject(new Error("an environment opened"));
+  });
+  const base = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const lin = ["--lineage", join(t.repo.root, "lineage.json")];
+  const cases: [string[], string][] = [
+    [["rejudge", "contract", "--containers", "auto", "--yes"], "--lineage"],
+    [["run", "contract", "--judge-containers", "auto"], "--lineage"],
+    [["run", "contract", "--containers", "auto", ...lin], "agent containers"],
+    [[
+      "rejudge",
+      "contract",
+      "--containers",
+      "auto",
+      "--yes",
+      "--pool-wait-min",
+      "121",
+      ...lin,
+    ], "--pool-wait-min"],
+    [[
+      "run",
+      "contract",
+      "--judge-containers",
+      "auto",
+      "--pool-wait-min=-1",
+      ...lin,
+    ], "--pool-wait-min"],
+    [[
+      "run",
+      "contract",
+      "--coord-lease",
+      "Cronus283=T1",
+      "--coord-lease",
+      "cronus283=T2",
+    ], "--coord-lease"],
+  ];
+  const codes: (number | undefined)[] = [];
+  const cwd = Deno.cwd();
+  const c = captureAll();
+  try {
+    Deno.chdir(t.repo.root);
+    for (const [args] of cases) {
+      await cli.parse(["harness", ...args, ...base]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+    await assertRejects(() =>
+      cli.parse([
+        "harness",
+        "rejudge",
+        "contract",
+        "--containers",
+        "auto",
+        "--pool-wait-min",
+        "2.5",
+        ...lin,
+        ...base,
+      ])
+    );
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(codes, cases.map(() => 1), c.lines.join("\n"));
+  for (const [args, why] of cases) {
+    assert(
+      c.lines.some((l) => l.includes("[FAIL]") && l.includes(why)),
+      `${args.join(" ")}: ${c.lines.join("\n")}`,
+    );
+  }
+  assertEquals(opened, 0);
+  for (const bad of ["Cronus283", "=T1", "Cronus283=", "Cronus 283=T1"]) {
+    assertThrows(() => parseCoordLease(bad), ValidationError, "--coord-lease");
+  }
+  assertEquals(parseCoordLease("Cronus283=T-1"), ["Cronus283", "T-1"]);
+});
+
+Deno.test("rejudge with an explicit list (H-41 regression): infra on every container stays unscored and spends the budget as today; nothing is requeued", async () => {
+  const { t, es, counts } = await h24Campaign();
+  try {
+    t.bc.runHarnessTests = (c) =>
+      Promise.reject(
+        new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+      );
+    const c = captureAll();
+    let r;
+    try {
+      r = await harnessRejudge("contract", runOpts(t), opener(t));
+    } finally {
+      c.restore();
+    }
+    assertEquals([r.rejudged, r.starved], [6, undefined]);
+    assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+    for (const e of es) {
+      assertEquals(fencedJudgment(t, e.id, 1).verdict, "unscored");
+    }
+    assert(
+      !c.lines.some((l) =>
+        l.includes("[UNANSWERED]") || l.includes("[DEPART]")
+      ),
+    );
+  } finally {
+    await t[Symbol.asyncDispose]();
+  }
 });
 
 // ---- H-35 S1.7 (design-r4 3.1): two build caches, never crossed ----
