@@ -2100,7 +2100,14 @@ export async function deployAndTest(
       }
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
-    const c = await cleanAndVerify();
+    let c: string | null;
+    try {
+      c = await cleanAndVerify();
+    } catch (cleanErr) {
+      // H-43 Sol r1: a cleanup that throws never masks a quarantining failure
+      if (err instanceof QuarantiningError) throw err;
+      throw cleanErr;
+    }
     // H-35 run 004 Sol r1 H6: a dirty L4 check rides along with its diff
     const f = fsCheck as FsCheckRecord | null;
     if (c) throw new CleanupFailedError(err, c, container, fsEvidence(f));

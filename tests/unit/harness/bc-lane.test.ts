@@ -2896,6 +2896,28 @@ Deno.test("H-43 L2a: in an agent-session deployment (no reset) a read-back other
   }
 });
 
+Deno.test("H-43 Sol r1: a cleanup that throws (allowlist refusal) never masks the HttpBlockFailedError", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  bc.httpReadback = () => "allow=true";
+  await assertRejects(
+    async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: ["00000000-0000-0000-0000-00000000dead"],
+        ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
+      }),
+    HttpBlockFailedError,
+  );
+});
+
 Deno.test("H-43 L2a: an agent-session candidate publish failure still blocks every candidate and runs no test", async () => {
   const bc = new FakeBc((cu) =>
     cu === 80010 ? result({ Works: true }) : result({})
