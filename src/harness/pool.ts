@@ -58,7 +58,11 @@ export interface PoolDeps {
   allocated(): Promise<string[]>;
   /** Why the container is never eligible (refused, an agent container), or null. */
   excluded(c: string): string | null;
-  /** laneBlocked with the drain dir: a foreign coord lease or a drain marker. */
+  /**
+   * poolBlocked with the drain dir: why an answered check blocks (a foreign
+   * coord lease, a drain marker), or null; throws when the state could not
+   * be read (admission refuses it; a terminal reconcile counts it unanswered).
+   */
   blocked(c: string): string | null;
   /** Docker reports it running. */
   running(c: string): Promise<boolean>;

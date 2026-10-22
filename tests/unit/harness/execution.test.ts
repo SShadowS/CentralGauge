@@ -45,6 +45,7 @@ import {
   STUB_COMMAND,
 } from "../../../src/harness/execution.ts";
 import { benchLockPath } from "../../../src/utils/bench-lock.ts";
+import { sweepWorkspaceTemp } from "../../../src/harness/fsutil.ts";
 import { writeVerdictLog } from "../../../src/harness/verdict.ts";
 import { taskSetIdentity } from "../../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
@@ -1920,6 +1921,30 @@ Deno.test("H-41 F10: a young fence temp survives a sweep; one swept past the bou
     assertEquals(fenceNames(t, e), ["fence-0.json", "fence-1.json"]);
     assertEquals((await t.env.store.judgments(e.id)).length, 2);
   }
+});
+
+Deno.test("H-41 F10 (R1-M3b): a workspace publisher paused before its rename while another start sweeps its over-age temp (bound injected): the cell fails loudly through the existing error path; no workspace, no temp, nothing published", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  // The sweeping start's own private root (its private sweep is its own).
+  const other = await Deno.realPath(await testTempDir());
+  const workspaces = join(t.env.resultsRoot, "workspaces");
+  const names = () => [...Deno.readDirSync(workspaces)].map((x) => x.name);
+  let temps: string[] = [];
+  let swept = -1;
+  t.env.hooks = {
+    beforeLink: async (what) => {
+      if (what !== "workspace" || swept !== -1) return;
+      temps = names().filter((n) => n.startsWith(".tmp-"));
+      swept = await sweepWorkspaceTemp(t.env.resultsRoot, other, 0);
+    },
+  };
+  const err = await assertRejects(() => runCell(t.env, cell));
+  assertEquals([temps.length, swept], [1, 1], String(err));
+  assertStringIncludes(String(err), "NotFound");
+  assertStringIncludes(String(err), temps[0]!, "the swept temp's rename");
+  assertEquals(names(), [], "no partial workspace and no temp");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
 });
 
 /** A computed judgment carrying a lineage env_fp (the fake judge records none). */

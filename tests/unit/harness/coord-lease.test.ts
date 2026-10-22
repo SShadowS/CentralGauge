@@ -1,10 +1,18 @@
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { join } from "@std/path";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
 import {
+  coordLease,
   coordLeaseBlock,
   drainBlock,
   laneBlocked,
+  laneOutcome,
+  poolBlocked,
 } from "../../../src/harness/coord-lease.ts";
 import { FakeBc } from "./fake-bc.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -134,6 +142,53 @@ Deno.test("H-41 (6): drainBlock: <resultsDir>/drain-<container>, case-insensitiv
   await Deno.writeTextFile(join(results, "Drain-CRONUS281"), "");
   assertStringIncludes(drainBlock(results, "cronus281")!, "drain");
   assertEquals(drainBlock(results, "Cronus282"), null);
+});
+
+Deno.test("H-41 (7, 14) R1-M1: the reader's outcomes keep an answered block (another holder, a drain marker) apart from a state it could not read (lease.json, coord.json, the leases root); the pool's predicate returns the first and throws the second", async () => {
+  const root = await coord();
+  const results = await tmp();
+  await lease(root, "C1", "001", { lane: "lane-ops", token: "t" });
+  await lease(root, "C2", "001", "{not json", true);
+  await Deno.mkdir(join(root, "leases", "C3", "001"), { recursive: true });
+  await Deno.writeTextFile(join(results, "drain-C4"), "");
+  const o = { coordRoot: root, own: none, drainDir: results };
+  const read = laneOutcome(o);
+  const state = (c: string) => {
+    const r = read(c);
+    return r === null ? "free" : "blocked" in r ? "blocked" : "unread";
+  };
+  assertEquals(
+    ["C1", "C2", "C3", "C4", "C5"].map(state),
+    ["blocked", "unread", "unread", "blocked", "free"],
+  );
+  assertEquals(coordLease(root, none, "C1"), {
+    blocked: "coord lease C1/001 held by lane-ops",
+  });
+  const bare = await tmp();
+  await Deno.mkdir(join(bare, "leases"));
+  assert("unread" in coordLease(bare, none, "C1")!, "coord.json missing");
+  await Deno.writeTextFile(join(bare, "coord.json"), "{");
+  assert("unread" in coordLease(bare, none, "C1")!, "coord.json unparseable");
+  const rootless = await coord();
+  await Deno.remove(join(rootless, "leases"));
+  assert("unread" in coordLease(rootless, none, "C1")!, "leases root missing");
+  // Admission refuses both kinds alike (laneBlocked: a reason, never a throw).
+  const admit = laneBlocked(o);
+  for (const c of ["C1", "C2", "C3", "C4"]) assert(admit(c), c);
+  assertEquals(admit("C5"), null);
+  // The pool's predicate: an answered block is a reason; unread state throws.
+  const pool = poolBlocked(o);
+  assertStringIncludes(pool("C1")!, "lane-ops");
+  assertStringIncludes(pool("C4")!, "drain marker");
+  assertEquals(pool("C5"), null);
+  for (const c of ["C2", "C3"]) {
+    assertThrows(() => pool(c), Error, `lease ${c}/001 unreadable`);
+  }
+  assertThrows(
+    () => poolBlocked({ coordRoot: bare, own: none })("C1"),
+    Error,
+    "coord.json",
+  );
 });
 
 Deno.test("H-41 F8: a fixed lane ignores drain markers but refuses a foreign coord lease; a pooled lane refuses both", async () => {

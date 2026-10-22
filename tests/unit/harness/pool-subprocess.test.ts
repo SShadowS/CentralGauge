@@ -624,7 +624,7 @@ Deno.test("H-41 N1 (two processes): B open before A commits fence-0; A stalls af
   assertEquals(settled(t, x.id), []);
 });
 
-Deno.test("H-41 N1 budget boundary (two processes): two unscored judgments; B's due list is made, then A commits a third (unscored) and stalls before materializing; B does not compute and the budget is exhausted once reconciled", async () => {
+Deno.test("H-41 N1 budget boundary (two processes): two unscored judgments; B's due list is made, then A commits a third (unscored) and stalls before materializing; B takes its generation after A's commit, reaches the due predicate at that generation and drops not due; B does not compute and the budget is exhausted once reconciled", async () => {
   await using t = await makeEnv();
   const { es } = await mockCampaign(t);
   const x = es[0]!;
@@ -661,6 +661,12 @@ Deno.test("H-41 N1 budget boundary (two processes): two unscored judgments; B's 
   w.go(b, "asked");
   const rb = await w.result(b);
   assertEquals([rb.rejudged, rb.computes], [0, 0]);
+  // B took its generation after A's fence (head 2): it reached the due
+  // predicate at the matching generation, which refused on the budget.
+  const skips = rb.out.split(/\r?\n/).filter((l) => l.includes("[SKIP]"));
+  assertEquals(skips.length, 1, rb.out);
+  assertStringIncludes(skips[0]!, `${x.id}: no longer due`);
+  assertEquals(fencesOf(t, x.id), ["fence-0.json", "fence-1.json"]);
   const js = await t.env.store.judgments(x.id);
   assertEquals(js.map((j) => j.id).sort(), [...before, f.judgment.id].sort());
   assert(rejudgeBudgetExhausted(x, js, oracle, current), "three unscored");

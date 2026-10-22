@@ -106,7 +106,7 @@ export interface CampaignSummary {
   ran: number;
   /** Of those, judged pass or fail. */
   judged: number;
-  /** Of those, not judged or judged unscored. */
+  /** Of those, judged unscored, or not judged and no longer owed a judgment. */
   unscored: number;
   /** Usage-limit reset (or "unknown") when the campaign stopped paused. */
   paused: string | null;
@@ -118,7 +118,11 @@ export interface CampaignSummary {
    * exits 75.
    */
   starved?: boolean;
-  /** H-41: when starved, the campaign's executions still owed a judgment. */
+  /**
+   * H-41: when starved, the campaign's executions still owed a judgment;
+   * otherwise (R1-L1) those run now still owed one (another judge holds
+   * its claim), absent when none.
+   */
   owed?: number;
 }
 
@@ -1188,13 +1192,14 @@ export async function runCampaign(
       o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
     );
   const agentEnv: HarnessEnv = { ...runEnv, judgeLater: queue.push };
-  // H-41 (9): an absent judgment under starvation is owed, not unscored.
+  // H-41 (3, 9; R1-L1): an absent judgment still owed (starved, or another
+  // judge holds its claim) is owed, not unscored, whether or not it starved.
   const count = async (e: ExecutionRecord) => {
     const j = (await env.store.judgments(e.id))[0];
     if (j && j.verdict !== "unscored") summary.judged++;
-    else if (j || !queue.starved() || !await judgmentOwed(env, e)) {
-      summary.unscored++;
-    }
+    else if (!j && await judgmentOwed(env, e)) {
+      summary.owed = (summary.owed ?? 0) + 1;
+    } else summary.unscored++;
   };
   const starvedOut = async () => {
     summary.starved = true;

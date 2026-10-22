@@ -1852,6 +1852,8 @@ export async function harnessRun(
         // H-41 (9, 14): the CLI exits 75
         s.starved
           ? `, judging pool starved: ${s.owed} execution(s) stay owed`
+          : s.owed
+          ? `, ${s.owed} owed`
           : ""}`,
     );
     return s;
@@ -2200,9 +2202,6 @@ export async function harnessRejudge(
         current,
       );
     });
-    // H-41: W = (e, head now); the due list above is advisory, judgeOnce decides.
-    const heads = new Map<string, number>();
-    for (const e of due) heads.set(e.id, await fenceHead(env, e.id));
     const used = [...new Set(due.map((e) => e.task_id))].map((id) =>
       tasks.get(id)!
     );
@@ -2296,6 +2295,10 @@ export async function harnessRejudge(
       console.log(`${colors.yellow("[SKIP]")} rejudge not confirmed`);
       return result(0, due.length);
     }
+    // H-41: W = (e, head now), taken once confirmed; the due list above is
+    // advisory, judgeOnce's due predicate at this generation decides.
+    const heads = new Map<string, number>();
+    for (const e of due) heads.set(e.id, await fenceHead(env, e.id));
     const opened: OpenedTasks = { tasks, refapps: new Map() };
     for (const t of used) {
       const v = t.task.refapp_version;

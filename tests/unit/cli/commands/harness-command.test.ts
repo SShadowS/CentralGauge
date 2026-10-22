@@ -111,6 +111,7 @@ import {
 } from "../../../../src/utils/bench-lock.ts";
 import { FakeBc, OK_RESET } from "../../harness/fake-bc.ts";
 import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
+import { poolBlocked } from "../../../../src/harness/coord-lease.ts";
 import {
   createBaseline,
   readInstanceManifest,
@@ -9153,7 +9154,7 @@ Deno.test("rejudge (H-41): a rejudged execution commits the next generation's fe
   assertEquals((await t.env.store.judgments(e.id)).length, 3);
 });
 
-Deno.test("rejudge (H-41 N1, budget boundary): two unscored judgments plus a third committed after the due list, unmaterialized: no compute; the budget counts three once reconciled", async () => {
+Deno.test("rejudge (H-41 N1, budget boundary): two unscored judgments; B's due list is made, then a third is committed (unmaterialized) before B takes its generation: B reaches the due predicate at the matching generation and drops not due; no compute; the budget counts three once reconciled", async () => {
   await using t = await makeEnv();
   const { es } = await judgedCampaign(t);
   const e = es[0]!;
@@ -9181,34 +9182,51 @@ Deno.test("rejudge (H-41 N1, budget boundary): two unscored judgments plus a thi
     judgment_id: third.id,
   };
   const n = laneCalls(t);
-  const r = await harnessRejudge(
-    "contract",
-    runOpts(t, { yes: false }),
-    opener(t),
-    () => {
-      // Another process commits generation 1 now (after B's due list) and stalls.
-      Deno.writeTextFileSync(
-        join(claimDirOf(t, e.id), "fence-1.json"),
-        JSON.stringify(
-          {
-            v: 1,
-            execution_id: e.id,
-            generation: 1,
-            judgment: third,
-            log,
-            token: "A",
-            pid: 1,
-            host: "A",
-          },
-          null,
-          2,
-        ) + "\n",
-      );
-      return true;
-    },
-  );
+  const cap = captureAll();
+  let r;
+  try {
+    r = await harnessRejudge(
+      "contract",
+      runOpts(t, { yes: false }),
+      opener(t),
+      () => {
+        // Another process commits generation 1 now (after B's due list,
+        // before B takes its generation) and stalls before materializing.
+        Deno.writeTextFileSync(
+          join(claimDirOf(t, e.id), "fence-1.json"),
+          JSON.stringify(
+            {
+              v: 1,
+              execution_id: e.id,
+              generation: 1,
+              judgment: third,
+              log,
+              token: "A",
+              pid: 1,
+              host: "A",
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return true;
+      },
+    );
+  } finally {
+    cap.restore();
+  }
   assertEquals(r.rejudged, 0);
   assertEquals(n.calls, 0, "B computed");
+  // B's generation is the head after A's commit (1 -> 2): the generation
+  // check passes, and the due predicate under the claim refuses it on the
+  // budget that reconciling fence-1 exposed.
+  const skips = cap.lines.filter((l) => l.includes("[SKIP]"));
+  assertEquals(
+    skips,
+    [`[SKIP] ${e.id}: no longer due`],
+    cap.lines.join("\n"),
+  );
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
   const js = await t.env.store.judgments(e.id);
   assertEquals(js.length, 4);
   assert(js.some((x) => x.id === third.id), "fence-1 was materialized");
@@ -9651,6 +9669,49 @@ Deno.test("run --judge-containers auto (H-41 Task 6, section 8): with no member 
   await pool.close();
 });
 
+Deno.test("run (H-41 R1-L1): a cell published while another judge holds its claim counts owed, not unscored, on ordinary completion; nothing is written for it", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  let held = null as { id: string; release: () => Promise<void> } | null;
+  t.env.hooks = {
+    after: async (step) => {
+      if (step !== "execution" || held !== null) return;
+      // The first published execution: another judge takes its claim now.
+      const [c] = await t.env.store.campaigns("contract");
+      const [e] = await t.env.store.executions(c!.id);
+      held = {
+        id: e!.id,
+        release: acquireBenchLock(claimDirOf(t, e!.id), { command: "other" }),
+      };
+    },
+  };
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+    await held?.release();
+  }
+  assert(held, "no execution was published");
+  assertEquals(
+    [s.ran, s.judged, s.unscored, s.owed, s.starved],
+    [2, 1, 0, 1, undefined],
+    c.lines.join("\n"),
+  );
+  assertEquals(await t.env.store.judgments(held.id), []);
+  assertEquals(fencesOf(t, held.id), []);
+  assert(
+    c.lines.some((l) =>
+      l.includes("[OK] campaign") && l.includes("0 unscored, 1 owed")
+    ),
+    c.lines.join("\n"),
+  );
+});
+
 Deno.test("run --judge-containers auto (H-41 F9): a new campaign with zero judge members: the first admission comes after bindCampaign and the pin carries the new campaign's id", async () => {
   await using t = await makeEnv();
   await writeCatalog(t);
@@ -9916,6 +9977,160 @@ Deno.test("rejudge --containers auto (H-41 section 14): the attempted container'
   assertEquals(w.events.filter((e) => e === "claim:C1").length, 4);
   assertEquals(w.events.filter((e) => e === "release:C1").length, 3);
   assertEquals([...w.records.keys()].sort(), ["C1", "C2"]);
+  assertEquals(w.kept.size, 0);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 3 / N3 end to end, R1-M3a): the last member C1 stops running while its test run throws infra: through the real queue and writer the pool loss commits nothing (fences, verdict logs, judgments, budget unchanged) and W is requeued; C2 then joins and W commits exactly one scored judgment", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const before = await judgingState(t, es);
+  const { w, pool } = autoJudging(t, "lane", {
+    alloc: ["C1"],
+    bounds: { pollMs: 20, waitMs: 60_000 },
+    maxInfraRetries: 0,
+  });
+  const run = t.bc.runHarnessTests.bind(t.bc);
+  let onC1 = 0;
+  t.bc.runHarnessTests = (c, codeunit) => {
+    if (c !== "C1") return run(c, codeunit);
+    onC1++;
+    w.running.delete("C1"); // Docker no longer reports it running
+    return Promise.reject(
+      new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+    );
+  };
+  const claim = join(claimDirOf(t, es[0]!.id), ".bench-running.json");
+  const claimed = () => {
+    try {
+      Deno.statSync(claim);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const cap = captureAll();
+  let r;
+  let lost;
+  try {
+    const p = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(
+      () =>
+        cap.lines.some((l) => l.includes("[DEPART] C1")) &&
+        pool.width() === 0 && !claimed(),
+      10_000,
+      "C1's departure, W's claim released",
+    ).catch((err) => {
+      throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+    });
+    // W is queued again with no member: nothing runs, nothing was written.
+    await new Promise((res) => setTimeout(res, 100));
+    lost = await judgingState(t, es);
+    w.alloc = ["C1", "C2"];
+    r = await p;
+  } finally {
+    cap.restore();
+  }
+  const log = cap.lines.join("\n");
+  // C1's join pinned the campaign; the loss itself wrote nothing.
+  const written = (s: typeof before) => [s.fences, s.verdicts, s.judgments];
+  assertEquals(written(lost), written(before), log);
+  assertEquals(onC1, 1, log);
+  assertEquals([r.rejudged, r.starved === true], [1, false], log);
+  assertEquals(cap.lines.filter((l) => l.includes("[UNANSWERED]")), [], log);
+  const after = await judgingState(t, es);
+  const g = before.fences[0]!.length;
+  assertEquals(after.fences[0], [...before.fences[0]!, `fence-${g}.json`]);
+  assertEquals(after.fences[1], before.fences[1]);
+  assertEquals(after.judgments[1], before.judgments[1]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  const j = fencedJudgment(t, es[0]!.id, g);
+  assertEquals(
+    after.judgments[0],
+    [...before.judgments[0]!, j.id].sort(),
+    "exactly the fence's judgment is new",
+  );
+  assertEquals(j.verdict_container, "C2");
+  assert(j.verdict !== "unscored", `W judged ${j.verdict}`);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 section 14, R1-M1): through the real coord reader, C1's lease file unreadable at each terminal reconcile but readable at each refresh, C2 eligible: [UNANSWERED] (never [DEPART]), W stops after 3 counted requeues; exit-75 flag; no judgment, verdict log or fence for W; budget unchanged", async () => {
+  await using t = await makeEnv();
+  // A coord root (its own machine root) where C1's last lease is released.
+  const coordRoot = join(t.repo.root, "coord");
+  const attempt = join(coordRoot, "leases", "C1", "001");
+  const leaseFile = join(attempt, "lease.json");
+  const readable = JSON.stringify({ lane: "lane-ops", token: "T", at: 1 });
+  await Deno.mkdir(attempt, { recursive: true });
+  await Deno.writeTextFile(
+    join(coordRoot, "coord.json"),
+    JSON.stringify({ campaign: "h41" }),
+  );
+  await Deno.writeTextFile(leaseFile, readable);
+  await Deno.writeTextFile(join(attempt, "release.json"), "{}");
+  // The terminal reconcile asks Docker first, then reads the coord state:
+  // the file is torn in between. Every refresh reads the allocation first:
+  // the file is whole again before its blocked checks.
+  const { w, pool, deps, es, before, held, inspections } = await uncertainLoop(
+    t,
+    (n, healed) => {
+      Deno.writeTextFileSync(leaseFile, "{torn");
+      if (n >= 8) healed(); // ends the loop of a reader with no bound
+      return Promise.resolve(true);
+    },
+  );
+  deps.blocked = poolBlocked({
+    coordRoot,
+    own: new Map(),
+    drainDir: t.env.resultsRoot,
+  });
+  const allocated = w.allocated;
+  w.allocated = () => {
+    Deno.writeTextFileSync(leaseFile, readable);
+    return allocated();
+  };
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(() => inspections() >= 4, 10_000, "four inspections")
+      .catch((err) => {
+        throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+      });
+    await new Promise((res) => setTimeout(res, 100));
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  const log = cap.lines.join("\n");
+  assertEquals(inspections(), 4, `W ran once more after its 4th loss:\n${log}`);
+  const unanswered = cap.lines.filter((l) => l.includes("[UNANSWERED] C1"));
+  assertEquals(unanswered.length, 4, log);
+  for (const l of unanswered) {
+    assertStringIncludes(l, "blocked");
+    assertStringIncludes(l, "C1/001 unreadable");
+  }
+  assertEquals(cap.lines.filter((l) => l.includes("[DEPART] C1")), [], log);
+  const stop = cap.lines.filter((l) =>
+    l.includes("[STOP]") && l.includes("4 unanswered container checks")
+  );
+  assertEquals(stop.length, 1, log);
+  assertStringIncludes(stop[0]!, "1 stay owed");
+  assertEquals([r.rejudged, r.starved, r.owed], [1, true, 1]);
+  const after = await judgingState(t, es);
+  const lost = es.findIndex((e) => stop[0]!.includes(e.id));
+  assert(lost >= 0, stop[0]);
+  // W: nothing written, its budget unchanged; the other judged once on C2.
+  assertEquals(after.fences[lost], before.fences[lost]);
+  assertEquals(after.judgments[lost], before.judgments[lost]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  assertEquals(fencedJudgment(t, es[1 - lost]!.id, 1).verdict_container, "C2");
+  // Each refresh read the file whole: C1 was readmitted after every loss.
+  assertEquals(w.events.filter((e) => e === "claim:C1").length, 4);
+  assertEquals(w.events.filter((e) => e === "release:C1").length, 3);
   assertEquals(w.kept.size, 0);
   await pool.close();
 });

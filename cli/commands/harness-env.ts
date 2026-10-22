@@ -26,7 +26,11 @@ import {
   allocatedContainers,
   DEFAULT_COORD_ROOT,
 } from "../../src/harness/allocation.ts";
-import { coordLeaseBlock, laneBlocked } from "../../src/harness/coord-lease.ts";
+import {
+  coordLeaseBlock,
+  laneBlocked,
+  poolBlocked,
+} from "../../src/harness/coord-lease.ts";
 import { JudgePool, type PoolBounds } from "../../src/harness/pool.ts";
 import { ContainerProviderRegistry } from "../../src/container/registry.ts";
 import {
@@ -1324,7 +1328,8 @@ export async function openHarnessEnv(
               : containers.some((a) => a.toLowerCase() === c.toLowerCase())
               ? "an agent container of this run"
               : null,
-          blocked: laneBlocked({ coordRoot, own, drainDir: o.resultsDir }),
+          // R1-M1: unreadable coord state throws: refused, reconciled unanswered.
+          blocked: poolBlocked({ coordRoot, own, drainDir: o.resultsDir }),
           running: (c) => deps.running(c),
           foreign: async (c) => {
             const h = await containerHolds(deps, qDir, c);

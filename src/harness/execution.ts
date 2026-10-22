@@ -306,8 +306,8 @@ export interface HarnessEnv {
     afterPublished?(): Promise<void>;
     /** T-06: a campaign worker's throw is recorded (no new cell starts after this). */
     workerThrew?(): void;
-    /** H-41: a fence, pin or materialized verdict log temp is written and synced, right before its link. */
-    beforeLink?(what: "fence" | "pin" | "log"): Promise<void>;
+    /** H-41: a fence, pin, materialized verdict log or workspace temp is written (and synced), right before its link or rename. */
+    beforeLink?(what: "fence" | "pin" | "log" | "workspace"): Promise<void>;
     /** H-41: the fence is linked (committed), before it is materialized. */
     afterFence?(): Promise<void>;
   };
@@ -1245,6 +1245,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       secrets,
       ...(env.scanReparsePoints
         ? { scanReparsePoints: env.scanReparsePoints }
+        : {}),
+      ...(env.hooks?.beforeLink
+        ? { beforePublish: () => env.hooks!.beforeLink!("workspace") }
         : {}),
     })
     : null;

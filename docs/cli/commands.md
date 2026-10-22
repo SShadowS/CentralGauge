@@ -1132,7 +1132,8 @@ a missing leases root or an unreadable lease refuses.
 
 **Lost work.** When a pooled call fails on infra and a container it tried has
 departed (`[DEPART] <c>: <reason>`: not running, no longer allocated, or
-blocked) or could not be checked (`[UNANSWERED] <c>: <check> <error>`), or no
+blocked by a coord lease or drain marker) or could not be checked
+(`[UNANSWERED] <c>: <check> <error>`, an unreadable coord state included), or no
 member is left, the execution is not written unscored: no judgment, verdict log
 or fence is written, the budget is not spent, and the work goes back to the
 queue. An execution requeued 3 times for unanswered checks alone stops the
@@ -1147,6 +1148,9 @@ owed (`owed`) instead of calling them unscored. Both commands exit 75. Owed
 work is judged by the next `run` (it seeds owed executions) or `rejudge`. The
 process may exit up to the pool's close bound (120 s, for joins still in
 flight) plus the lane drain bound after the starvation deadline.
+
+Without starvation too, a `run` execution left unjudged because another judge
+holds its claim is counted owed (`, <n> owed` in the summary), not unscored.
 
 In `auto` mode nothing is judged outside this queue: an execution recovered at
 start, or published without the queue, stays owed and is logged `[INFO] <id>:
