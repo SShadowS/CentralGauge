@@ -31,7 +31,10 @@ import {
   isCollisionPublishFailure,
 } from "../health/classify-publish-failure.ts";
 import { isInfraError } from "../health/is-infra-error.ts";
-import { NoEligibleContainersError } from "../parallel/errors.ts";
+import {
+  InfraRetriesExhaustedError,
+  NoEligibleContainersError,
+} from "../parallel/errors.ts";
 import { withInfraRetry } from "../parallel/infra-retry.ts";
 import { Mutex, Semaphore } from "../parallel/semaphore.ts";
 import {
@@ -132,6 +135,8 @@ export type TestRow = z.output<typeof TestResultSchema>;
 export interface HealthView {
   getState(): { containers: { containerName: string; alert?: unknown }[] };
   record(o: ContainerOutcome): unknown;
+  /** H-41 (Q10): a container joining a pooled lane (ContainerHealthMonitor.register). */
+  register?(name: string): void;
 }
 
 export interface Held<T> {
@@ -146,14 +151,19 @@ export class BcLane {
   private readonly locks = new Map<string, Mutex>();
   private readonly slots = new Map<string, Semaphore>();
   private readonly load = new Map<string, number>();
+  /** H-41 (6): compile slot waiters and holders per container. */
+  private readonly compiling = new Map<string, number>();
+  private readonly quietWaiters = new Map<string, (() => void)[]>();
   private rotor = 0;
   /** Exclusive-hold tie-break: least recently routed first (fair rotation). */
   private readonly lastRouted = new Map<string, number>();
   private routeTick = 0;
+  /** H-41 (6): the lane's containers (a pooled lane's change through add/retire). */
+  readonly containers: string[];
 
   constructor(
     readonly bc: HarnessBc,
-    readonly containers: string[],
+    containers: string[],
     private readonly opts: {
       health?: HealthView;
       maxInfraRetries?: number;
@@ -171,18 +181,72 @@ export class BcLane {
         reason: string,
         fsDiff: FsDiffEntry[] | null,
       ) => Promise<void>;
+      /**
+       * H-41 (5, 6, 14): a pooled lane (`auto` judging). It may start empty;
+       * an infra-shaped terminal failure reconciles departures through it.
+       */
+      pool?: {
+        reconcile(
+          containers: string[],
+        ): Promise<Readonly<Record<string, Reconciled>>>;
+      };
+      /** H-41 (6, 7): why a container is not admitted now (coord lease, drain marker), or null. */
+      blocked?: (container: string) => string | null;
     } = {},
   ) {
-    if (containers.length === 0) throw new Error("BcLane needs a container");
-    for (const c of containers) {
-      this.locks.set(c, new Mutex());
-      this.slots.set(c, new Semaphore(opts.compileSlots ?? 2));
-      this.load.set(c, 0);
+    // H-41 (6): only a pooled lane may start empty
+    if (containers.length === 0 && !opts.pool) {
+      throw new Error("BcLane needs a container");
     }
+    this.containers = [];
+    for (const c of containers) this.add(c);
   }
 
   /** Containers whose cleanup failed: never selected until `harness recover` clears them. */
   readonly quarantined = new Map<string, string>();
+
+  /** H-41 (6): join `c`; a rejoin reuses its Mutex and Semaphore, never replaces them. */
+  add(c: string): void {
+    if (!this.locks.has(c)) {
+      this.locks.set(c, new Mutex());
+      this.slots.set(c, new Semaphore(this.opts.compileSlots ?? 2));
+      this.load.set(c, 0);
+    }
+    if (!this.containers.includes(c)) this.containers.push(c);
+  }
+
+  /** H-41 (6): no new call is admitted on `c`; calls in flight finish (see quiesced). */
+  retire(c: string): void {
+    const k = this.containers.indexOf(c);
+    if (k >= 0) this.containers.splice(k, 1);
+  }
+
+  /** H-41 (6): the width: joined and not quarantined. */
+  members(): string[] {
+    return this.containers.filter((c) => !this.quarantined.has(c));
+  }
+
+  /** H-41 (6): exclusive calls routed to `c` plus compile slot waiters and holders. */
+  uses(c: string): number {
+    return (this.load.get(c) ?? 0) + (this.compiling.get(c) ?? 0);
+  }
+
+  /** H-41 (6): resolves once nothing uses `c`. */
+  quiesced(c: string): Promise<void> {
+    if (this.uses(c) === 0) return Promise.resolve();
+    return new Promise((r) => {
+      const w = this.quietWaiters.get(c) ?? [];
+      w.push(r);
+      this.quietWaiters.set(c, w);
+    });
+  }
+
+  private count(m: Map<string, number>, c: string, d: number): void {
+    m.set(c, (m.get(c) ?? 0) + d);
+    if (d < 0 && this.uses(c) === 0) {
+      for (const r of this.quietWaiters.get(c)?.splice(0) ?? []) r();
+    }
+  }
 
   // H-35 run 004 Sol r2 N3: exclusive operations in flight; drain() stops
   // admission and waits for them.
@@ -228,8 +292,9 @@ export class BcLane {
       (this.opts.health?.getState().containers ?? []).filter((c) => c.alert)
         .map((c) => c.containerName),
     );
+    // H-41 (6, 7): a blocked container (coord lease, drain marker) is never routed
     return this.containers.filter((c) =>
-      !alerted.has(c) && !this.quarantined.has(c)
+      !alerted.has(c) && !this.quarantined.has(c) && !this.opts.blocked?.(c)
     );
   }
 
@@ -243,7 +308,8 @@ export class BcLane {
     if (!this.healthy().includes(c)) {
       throw new ContainerError(
         `${c} became ineligible while queued (${
-          this.quarantined.get(c) ?? "health alert"
+          this.quarantined.get(c) ?? this.opts.blocked?.(c) ??
+            (this.containers.includes(c) ? "health alert" : "left the pool")
         })`,
         c,
         "setup",
@@ -268,18 +334,21 @@ export class BcLane {
       container,
       ...this.containers.filter((c) => c !== container),
     ];
-    let last: unknown;
-    for (const [k, c] of order.entries()) {
-      if (k > 0 && !this.healthy().includes(c)) continue;
-      try {
-        return await this.compileOnce(c, fn, signal);
-      } catch (err) {
-        if (signal?.aborted) throw cancelled(signal);
-        if (!isInfraError(err)) throw err;
-        last = err;
+    return await this.terminal(signal, async (attempted) => {
+      let last: unknown;
+      for (const [k, c] of order.entries()) {
+        if (k > 0 && !this.healthy().includes(c)) continue;
+        attempted.push(c);
+        try {
+          return await this.compileOnce(c, fn, signal);
+        } catch (err) {
+          if (signal?.aborted) throw cancelled(signal);
+          if (!isInfraError(err)) throw err;
+          last = err;
+        }
       }
-    }
-    throw last;
+      throw last;
+    });
   }
 
   private async compileOnce<T>(
@@ -289,26 +358,44 @@ export class BcLane {
   ): Promise<T> {
     const slot = this.slots.get(container)!;
     this.admit(container, signal);
-    const release = await slot.acquire();
+    this.count(this.compiling, container, 1);
     try {
-      this.admit(container, signal);
-      const out = await fn(container);
-      checkCancel(signal); // an abort while fn was pending is not a success
-      return out;
+      const release = await slot.acquire();
+      try {
+        this.admit(container, signal);
+        const out = await fn(container);
+        checkCancel(signal); // an abort while fn was pending is not a success
+        return out;
+      } finally {
+        release();
+      }
     } finally {
-      release();
+      this.count(this.compiling, container, -1);
     }
   }
 
   /** Host-side compile job; admitted per container; next container on infra error. */
-  async compile<T>(
+  compile<T>(
     fn: (container: string) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    checkCancel(signal);
+    return this.terminal(signal, (attempted) => {
+      checkCancel(signal);
+      return this.compileRun(fn, signal, attempted);
+    });
+  }
+
+  private async compileRun<T>(
+    fn: (container: string) => Promise<T>,
+    signal: AbortSignal | undefined,
+    attempted: string[],
+  ): Promise<T> {
     const eligible = this.healthy();
     if (eligible.length === 0) {
-      throw new NoEligibleContainersError(this.containers, this.containers);
+      throw new NoEligibleContainersError(
+        [...this.containers],
+        [...this.containers],
+      );
     }
     // Each retry goes to a container this job has not tried yet.
     const tried = new Set<string>();
@@ -323,6 +410,8 @@ export class BcLane {
         }
       }
       tried.add(c);
+      attempted.push(c);
+      this.count(this.compiling, c, 1);
       const release = await this.slots.get(c)!.acquire();
       try {
         this.admit(c, signal);
@@ -334,7 +423,60 @@ export class BcLane {
         if (!isInfraError(err) || tried.size >= eligible.length) throw err;
       } finally {
         release();
+        this.count(this.compiling, c, -1);
       }
+    }
+  }
+
+  /**
+   * H-41 (5, 14): the terminal wrapper of a lane call. A pooled lane's
+   * infra-shaped failure reconciles the attempted containers and the members
+   * (anything not `ok` is retired, `[DEPART]` or `[UNANSWERED]`), and becomes
+   * a PoolLostError when no member is left or an attempted container did not
+   * answer `ok`. Cancellations, non-infra errors and fixed lanes pass as is.
+   */
+  private async terminal<T>(
+    signal: AbortSignal | undefined,
+    run: (attempted: string[]) => Promise<T>,
+  ): Promise<T> {
+    const attempted: string[] = [];
+    try {
+      return await run(attempted);
+    } catch (err) {
+      const pool = this.opts.pool;
+      if (
+        !pool || signal?.aborted || err instanceof LaneCancelledError ||
+        !(err instanceof InfraRetriesExhaustedError ||
+          err instanceof NoEligibleContainersError || isInfraError(err))
+      ) {
+        throw err;
+      }
+      const tried = [...new Set(attempted)];
+      const ask = [...new Set([...tried, ...this.members()])];
+      let got: Readonly<Record<string, Reconciled>> = {};
+      let none = "no answer";
+      try {
+        if (ask.length > 0) got = await pool.reconcile(ask);
+      } catch (e) {
+        none = e instanceof Error ? e.message : String(e);
+      }
+      const outcomes: Record<string, Reconciled> = {};
+      for (const c of ask) {
+        const o: Reconciled = got[c] ??
+          { state: "unanswered", check: "reconcile", error: none };
+        outcomes[c] = o;
+        if (o.state === "ok") continue;
+        console.warn(
+          o.state === "departed"
+            ? `[DEPART] ${c}: ${o.reason}`
+            : `[UNANSWERED] ${c}: ${o.check} ${o.error}`,
+        );
+        this.retire(c);
+      }
+      const empty = this.members().length === 0;
+      const departed = tried.some((c) => outcomes[c]!.state === "departed");
+      if (!empty && !tried.some((c) => outcomes[c]!.state !== "ok")) throw err;
+      throw new PoolLostError(err, tried, outcomes, !empty && !departed);
     }
   }
 
@@ -354,7 +496,10 @@ export class BcLane {
     if (this.stopped) throw new Error("BC lane closed: environment closing");
     this.active++;
     try {
-      return await this.exclusiveRun(ctx, fn, signal, opts);
+      return await this.terminal(
+        signal,
+        (attempted) => this.exclusiveRun(ctx, fn, signal, opts, attempted),
+      );
     } finally {
       if (--this.active === 0) {
         for (const r of this.idleWaiters.splice(0)) r();
@@ -367,6 +512,7 @@ export class BcLane {
     fn: (container: string) => Promise<T>,
     signal: AbortSignal | undefined,
     opts: { maxInfraRetries?: number; exclude?: readonly string[] },
+    attempted: string[],
   ): Promise<Held<T>> {
     let container = "";
     let queue_ms = 0;
@@ -379,7 +525,7 @@ export class BcLane {
         if (eligible.length === 0) {
           throw new NoEligibleContainersError(
             [...excludeContainers, ...(opts.exclude ?? [])],
-            this.containers,
+            [...this.containers],
           );
         }
         const lru = (x: string) => this.lastRouted.get(x) ?? -1;
@@ -389,7 +535,8 @@ export class BcLane {
         });
         this.lastRouted.set(c, ++this.routeTick);
         onRouted(c);
-        this.load.set(c, this.load.get(c)! + 1);
+        attempted.push(c); // H-41 (5): onRouted is a no-op on the zero-retry path
+        this.count(this.load, c, 1);
         const t0 = performance.now();
         const release = await this.locks.get(c)!.acquire();
         queue_ms += performance.now() - t0;
@@ -434,7 +581,7 @@ export class BcLane {
           throw err;
         } finally {
           release();
-          this.load.set(c, this.load.get(c)! - 1);
+          this.count(this.load, c, -1);
         }
       },
       {
@@ -445,6 +592,36 @@ export class BcLane {
       },
     );
     return { result, container, queue_ms, retries };
+  }
+}
+
+/** H-41 (14): one container's departure check at a terminal failure. */
+export type Reconciled =
+  | { state: "ok" }
+  | { state: "departed"; reason: string }
+  | { state: "unanswered"; check: string; error: string };
+
+/**
+ * H-41 (5): the pooled lane lost the work: the pool emptied, or an
+ * attempted container departed or went unanswered. Like LaneCancelledError
+ * not a ContainerError and its message carries no infra hint, so it is never
+ * rerouted, never infra and never unscored: the work item is requeued.
+ */
+export class PoolLostError extends Error {
+  constructor(
+    cause: unknown,
+    readonly attempted: readonly string[],
+    readonly outcomes: Readonly<Record<string, Reconciled>>,
+    /** H-41 (14): only unanswered checks, no confirmed departure, members() not empty: R4-M1's bound counts it. */
+    readonly unansweredOnly: boolean,
+  ) {
+    super(
+      `judging pool lost the operation (attempted ${
+        attempted.join(", ") || "none"
+      }); requeued`,
+      { cause },
+    );
+    this.name = "PoolLostError";
   }
 }
 
@@ -1681,7 +1858,10 @@ export async function runTests(
     try {
       r = await bc.runHarnessTests(container, s.codeunit);
     } catch (err) {
-      if (err instanceof ContainerError) throw err;
+      // H-41 (5): a pool loss is typed, never rewrapped as infra
+      if (err instanceof ContainerError || err instanceof PoolLostError) {
+        throw err;
+      }
       throw new ContainerError(
         `SOAP run of ${s.codeunit} failed on ${container}: ${
           err instanceof Error ? err.message : String(err)

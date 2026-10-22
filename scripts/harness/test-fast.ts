@@ -47,6 +47,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}claude-code.test.ts`]: c(true, 4),
   [`${H}claude-trace.test.ts`]: c(true, 0),
   [`${H}config.test.ts`]: c(true, 0),
+  [`${H}coord-lease.test.ts`]: c(true, 0),
   [`${H}credential-budget.test.ts`]: c(true, 1),
   [`${H}egress-probe-scrub.test.ts`]: c(true, 0),
   [`${H}egress-proxy.test.ts`]: c(true, 2),
@@ -88,6 +89,12 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}outcome.test.ts`]: c(true, 0),
   [`${H}persistence-bans.test.ts`]: c(true, 1),
   [`${H}pi.test.ts`]: c(true, 0),
+  // H-41: in-process fakes and its own timers only.
+  [`${H}pool.test.ts`]: c(true, 2),
+  // H-41: at most two pool-driver.ts children at a time, each over its own
+  // temp dirs (no fixed path or port): safe; slow, placed by its seconds
+  // (measured 2026-10-22, standalone).
+  [`${H}pool-subprocess.test.ts`]: c(true, 50),
   [`${H}prenuke-owned.test.ts`]: c(true, 3),
   [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),

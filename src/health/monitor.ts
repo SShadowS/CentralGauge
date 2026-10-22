@@ -53,7 +53,7 @@ export class ContainerHealthMonitor {
   private readonly globalOutageRatio: number;
   private readonly expectedContainers: number | undefined;
   private readonly globalOutageMinContainers: number;
-  private readonly configuredOrder: ReadonlyArray<string>;
+  private readonly configuredOrder: string[];
   private readonly containers = new Map<string, ContainerHealth>();
   /** Per-container × fingerprint count over last window */
   private fpHistory = new Map<string, Array<{ fp?: string; t: number }>>();
@@ -85,6 +85,24 @@ export class ContainerHealthMonitor {
         errorCount: 0,
       });
     }
+  }
+
+  /**
+   * H-41 (Q10): a container joining a running pool gets its row (after the
+   * configured ones, in join order) like a configured name. Idempotent: an
+   * existing row keeps its counts and alert.
+   */
+  register(name: string): void {
+    if (!this.configuredOrder.includes(name)) this.configuredOrder.push(name);
+    if (this.containers.has(name)) return;
+    this.containers.set(name, {
+      containerName: name,
+      recent: [],
+      passCount: 0,
+      failCount: 0,
+      errorCount: 0,
+    });
+    this.eventId++;
   }
 
   /**

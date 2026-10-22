@@ -1,7 +1,10 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
-import { allocatedContainer } from "../../../src/harness/allocation.ts";
+import {
+  allocatedContainer,
+  allocatedContainers,
+} from "../../../src/harness/allocation.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function coordRoot(
@@ -56,5 +59,27 @@ Deno.test("allocatedContainer: a missing or unreadable allocation fails closed",
       () => allocatedContainer("Cronus281", root),
       ValidationError,
     );
+  }
+});
+
+Deno.test("allocatedContainers (H-41 section 6): the campaign's whole list, re-read on each call; fails closed like allocatedContainer", async () => {
+  const root = await coordRoot(ALLOC);
+  assertEquals(await allocatedContainers(root), [
+    "Cronus281",
+    "Cronus282",
+    "Cronus283",
+  ]);
+  await Deno.writeTextFile(
+    join(root, "allocation.json"),
+    JSON.stringify({ "harness-bench-2026-10": ["Cronus283"] }),
+  );
+  assertEquals(await allocatedContainers(root), ["Cronus283"]);
+  for (
+    const r of [
+      await coordRoot(null),
+      await coordRoot(ALLOC, { campaign: "other-campaign" }),
+    ]
+  ) {
+    await assertRejects(() => allocatedContainers(r), ValidationError);
   }
 });

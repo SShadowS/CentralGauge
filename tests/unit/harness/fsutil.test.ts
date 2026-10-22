@@ -409,8 +409,24 @@ Deno.test("sweepWorkspaceTemp: removes interrupted freezes and private scratch o
     "workspaces/abc/a.al": "x",
   });
   await writeTree(priv, { "freeze/1/a.al": "x" });
-  assertEquals(await sweepWorkspaceTemp(results, priv), 2);
+  assertEquals(await sweepWorkspaceTemp(results, priv, 0), 2);
   assert(await exists(join(results, "workspaces", "abc")));
+});
+
+Deno.test("sweepWorkspaceTemp (H-41 section 11): a workspace temp younger than the bound (default 1 h) survives; private scratch is always swept", async () => {
+  const results = await tmp();
+  const priv = await tmp();
+  await writeTree(results, {
+    "workspaces/.tmp-young/a.al": "x",
+    "workspaces/.tmp-old/a.al": "x",
+  });
+  await writeTree(priv, { "freeze/1/a.al": "x" });
+  const at = new Date(Date.now() - 2 * 3_600_000);
+  await Deno.utime(join(results, "workspaces", ".tmp-old"), at, at);
+  assertEquals(await sweepWorkspaceTemp(results, priv), 2);
+  assert(await exists(join(results, "workspaces", ".tmp-young")));
+  assert(!await exists(join(results, "workspaces", ".tmp-old")));
+  assert(!await exists(join(priv, "freeze", "1")));
 });
 
 Deno.test("freezeWorkspace: the publish copy accepts every tree the freeze accepted", async () => {

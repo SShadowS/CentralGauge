@@ -8,7 +8,11 @@ import {
 import { walk } from "@std/fs";
 import { basename, join } from "@std/path";
 import { stub } from "@std/testing/mock";
-import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../../../src/errors.ts";
 import {
   BUILTIN_INVENTORY,
   LSP_PLUGINS,
@@ -21,16 +25,28 @@ import {
 } from "../../../src/harness/manifest.ts";
 import {
   type CellRef,
+  computeDeferred,
+  type ComputedJudgment,
+  fenceHead,
+  fencePath,
   type HarnessEnv,
   inventoryProof,
+  judgeDeferred,
+  judgeOnce,
+  judgmentOwed,
+  pinPath,
   privatePaths,
   publishJudgment,
   type PublishStep,
+  recoverFences,
   recoverInterrupted,
   rejudgeExecution,
   runCell,
   STUB_COMMAND,
 } from "../../../src/harness/execution.ts";
+import { benchLockPath } from "../../../src/utils/bench-lock.ts";
+import { sweepWorkspaceTemp } from "../../../src/harness/fsutil.ts";
+import { writeVerdictLog } from "../../../src/harness/verdict.ts";
 import { taskSetIdentity } from "../../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
 import {
@@ -41,6 +57,7 @@ import {
   experimentHash,
   type JudgmentRecord,
   planBlocks,
+  publishOnce,
   RecordStore,
 } from "../../../src/harness/records.ts";
 import {
@@ -1479,7 +1496,7 @@ const writtenFiles = async (t: TestEnv, e: ExecutionRecord, id: string) => [
   await Deno.readTextFile(join(t.env.resultsRoot, "verdicts", `${id}.json`)),
 ];
 
-const baseline = async (kind: "run" | "rejudge") => [
+const baseline = async (kind: "run" | "rejudge" | "deferred") => [
   await Deno.readTextFile(join(H33_BASELINE, `${kind}-judgment.json`)),
   await Deno.readTextFile(join(H33_BASELINE, `${kind}-verdict.json`)),
 ];
@@ -1577,6 +1594,461 @@ Deno.test("H-33: a forced judgment whose re-check went stale between compute and
     ),
     "the forced judgment's verdict log was written",
   );
+});
+
+// ---- H-41: generations, fences and claims ----
+
+const claimsOf = (t: TestEnv, e: ExecutionRecord) =>
+  join(t.env.resultsRoot, "claims", e.id);
+
+const fenceNames = (t: TestEnv, e: ExecutionRecord) => {
+  try {
+    return [...Deno.readDirSync(claimsOf(t, e))].map((x) => x.name)
+      .filter((n) => /^fence-\d+\.json$/.test(n)).sort();
+  } catch {
+    return [];
+  }
+};
+
+/** A published execution whose judging was deferred (owed), and its cell. */
+async function owedExecution(t: TestEnv) {
+  const cell = await cellFor(t);
+  let later: ExecutionRecord | null = null;
+  t.env.judgeLater = (_c, e) => void (later = e);
+  await runCell(t.env, cell);
+  delete t.env.judgeLater;
+  if (!later) throw new Error("the cell's judging was not deferred");
+  return { cell, e: later as ExecutionRecord };
+}
+
+/** Generation g's fence as a committer that stalled before materializing leaves it. */
+async function plantFence(
+  t: TestEnv,
+  e: ExecutionRecord,
+  g: number,
+  c: ComputedJudgment,
+) {
+  await publishOnce(fencePath(t.env.resultsRoot, e.id, g), {
+    v: 1,
+    execution_id: e.id,
+    generation: g,
+    judgment: c.judgment,
+    log: c.log,
+    token: "stalled-holder",
+    pid: 1,
+    host: "A",
+  });
+}
+
+/** A claim whose holder's heartbeat stopped `ageMs` ago. */
+function plantClaim(t: TestEnv, e: ExecutionRecord, ageMs: number) {
+  Deno.mkdirSync(claimsOf(t, e), { recursive: true });
+  const p = benchLockPath(claimsOf(t, e));
+  Deno.writeTextFileSync(
+    p,
+    JSON.stringify({
+      pid: 1,
+      startedAt: "",
+      heartbeatAt: "",
+      command: "judge",
+      token: "stalled-holder",
+    }),
+  );
+  const at = new Date(Date.now() - ageMs);
+  Deno.utimeSync(p, at, at);
+}
+
+/** Lane judgings started (each compute takes the lane once per scorer run). */
+function countJudgings(t: TestEnv) {
+  const lane = t.env.lane;
+  const real = lane.exclusive.bind(lane);
+  const n = { calls: 0 };
+  lane.exclusive = ((...a: Parameters<typeof lane.exclusive>) => {
+    n.calls++;
+    return real(...a);
+  }) as typeof lane.exclusive;
+  return n;
+}
+
+const always = () => Promise.resolve(true);
+
+Deno.test("H-41: the run path commits its judgment as fence-0 under a claim it releases", async () => {
+  await using t = await makeEnv();
+  const e = (await runCell(t.env, await cellFor(t))).executions[0]!;
+  const [j] = await t.env.store.judgments(e.id);
+  assert(j, "the run judged inline");
+  const f = JSON.parse(
+    await Deno.readTextFile(fencePath(t.env.resultsRoot, e.id, 0)),
+  );
+  assertEquals(
+    [f.generation, f.execution_id, f.judgment, f.log.judgment_id],
+    [0, e.id, j, j.id],
+  );
+  assertEquals(fenceNames(t, e), ["fence-0.json"]);
+  assertEquals(await fenceHead(t.env, e.id), 1);
+  assert(!await exists(benchLockPath(claimsOf(t, e))), "the claim is released");
+});
+
+Deno.test("H-41: judgeDeferred (compute, then commit) writes the bytes the pre-change judgeDeferred wrote (per-run values aside), through fence-0", async () => {
+  await using t = await makeEnv();
+  const { cell, e } = await owedExecution(t);
+  assert(await judgmentOwed(t.env, e));
+  const j = await judgeDeferred(t.env, cell, e);
+  assert(j, "judged");
+  assertEquals(
+    (await writtenFiles(t, e, j.id)).map(perRunValuesOut),
+    (await baseline("deferred")).map(perRunValuesOut),
+  );
+  assertEquals(fenceNames(t, e), ["fence-0.json"]);
+  assertEquals(await judgeDeferred(t.env, cell, e), null, "not owed any more");
+  assertEquals((await t.env.store.judgments(e.id)).length, 1);
+});
+
+Deno.test("H-41: a fenced rejudge and a recovered fence write the bytes the pre-change rejudge wrote (per-run values aside)", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  const r = await judgeOnce(
+    t.env,
+    { e, g: 1 },
+    () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
+    always,
+  );
+  assert("judgment" in r, JSON.stringify(r));
+  assertEquals(
+    (await writtenFiles(t, e, r.judgment.id)).map(perRunValuesOut),
+    (await baseline("rejudge")).map(perRunValuesOut),
+  );
+  const c = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  await plantFence(t, e, 2, c);
+  assertEquals(await recoverFences(t.env), 1);
+  assertEquals(
+    (await writtenFiles(t, e, c.judgment.id)).map(perRunValuesOut),
+    (await baseline("rejudge")).map(perRunValuesOut),
+  );
+  assertEquals(await recoverFences(t.env), 0, "idempotent");
+});
+
+Deno.test("H-41 M4: missing redaction keys refuse to judge and say each judging process needs a copy", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  await Deno.remove(privatePaths(t.env, e.id).keys);
+  const err = await assertRejects(
+    () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
+    ValidationError,
+    "refusing to judge",
+  );
+  assertStringIncludes(
+    err.message,
+    "copy redaction/ into each judging process's private dir",
+  );
+});
+
+Deno.test("H-41 N1: a holder that stalled after its fence: a live claim is held; once stale, the taker materializes fence-0 first and drops W at either generation without computing", async () => {
+  await using t = await makeEnv();
+  const { cell, e } = await owedExecution(t);
+  const a = await computeDeferred(t.env, cell, e);
+  plantClaim(t, e, 60_000);
+  await plantFence(t, e, 0, a);
+  const n = countJudgings(t);
+  const compute = () => computeDeferred(t.env, cell, e);
+  const owed = () => judgmentOwed(t.env, e);
+  assertEquals(await judgeOnce(t.env, { e, g: 0 }, compute, owed), {
+    dropped: "held",
+  });
+  t.env.claimTimings = { staleAfterMs: 1_000 };
+  assertEquals(await judgeOnce(t.env, { e, g: 0 }, compute, owed), {
+    dropped: "advanced",
+  });
+  assertEquals(await judgeOnce(t.env, { e, g: 1 }, compute, owed), {
+    dropped: "not due",
+  });
+  assertEquals(n.calls, 0, "B computed");
+  assertEquals(
+    (await t.env.store.judgments(e.id)).map((j) => j.id),
+    [a.judgment.id],
+  );
+  assertEquals(fenceNames(t, e), ["fence-0.json"]);
+});
+
+Deno.test("H-41 F5: two authorized generations both commit; a stale generation is dropped", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  const rejudge = () => rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  for (const g of [1, 2]) {
+    assert("judgment" in await judgeOnce(t.env, { e, g }, rejudge, always));
+  }
+  assertEquals(await judgeOnce(t.env, { e, g: 1 }, rejudge, always), {
+    dropped: "advanced",
+  });
+  assertEquals(fenceNames(t, e), [
+    "fence-0.json",
+    "fence-1.json",
+    "fence-2.json",
+  ]);
+  assertEquals((await t.env.store.judgments(e.id)).length, 3);
+});
+
+Deno.test("H-41 F2: a refused forced judgment (C-03, checked against the reconciled store) leaves no fence, log or judgment, and releases the claim", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  const [old] = await t.env.store.judgments(e.id);
+  const forced = await rejudgeExecution(t.env, cell, e, cell.oracleHash, {
+    reason: "infra: verdict build starved of memory",
+    replaces: old!.id,
+    basis: {
+      kind: "decision",
+      path: "2026-10-22-h41.md",
+      sha256: "a".repeat(64),
+      approval: "OWNER-APPROVED: h41 drill (2026-10-22T12:00:00Z)",
+    },
+  });
+  // Another generation commits in between, unmaterialized: --replaces is stale once reconciled.
+  await plantFence(
+    t,
+    e,
+    1,
+    await rejudgeExecution(t.env, cell, e, cell.oracleHash),
+  );
+  await assertRejects(
+    () => judgeOnce(t.env, { e, g: 2 }, () => Promise.resolve(forced), always),
+    ConfigurationError,
+    "nothing written",
+  );
+  assertEquals(fenceNames(t, e), ["fence-0.json", "fence-1.json"]);
+  assert(
+    !(await t.env.store.judgments(e.id)).some((j) =>
+      j.id === forced.judgment.id
+    ),
+  );
+  assert(
+    !await exists(
+      join(t.env.resultsRoot, "verdicts", `${forced.judgment.id}.json`),
+    ),
+  );
+  assert(!await exists(benchLockPath(claimsOf(t, e))), "the claim is released");
+});
+
+Deno.test("H-41 3.2: materializing a fence: an identical existing log is success; different bytes throw and stay untouched; a partial temp is recovered without computing", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  const log = (id: string) => join(t.env.resultsRoot, "verdicts", `${id}.json`);
+  // Identical: the log landed, the judgment did not (a crash between the two).
+  const same = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  await plantFence(t, e, 1, same);
+  await writeVerdictLog(t.env.resultsRoot, same.log);
+  assertEquals(await recoverFences(t.env), 1);
+  assert(
+    (await t.env.store.judgments(e.id)).some((j) => j.id === same.judgment.id),
+  );
+  // Partial: only a log temp, no final name.
+  const partial = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  await plantFence(t, e, 2, partial);
+  await Deno.writeTextFile(
+    `${log(partial.judgment.id)}.tmp-${crypto.randomUUID()}`,
+    '{"v": 1, "judg',
+  );
+  const n = countJudgings(t);
+  assertEquals(await recoverFences(t.env), 1);
+  assertEquals(n.calls, 0, "recovery computed");
+  assertEquals(
+    await Deno.readTextFile(log(partial.judgment.id)),
+    JSON.stringify(partial.log, null, 2) + "\n",
+  );
+  // Different: a harness bug, never overwritten.
+  const other = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  await plantFence(t, e, 3, other);
+  await Deno.writeTextFile(log(other.judgment.id), "{}\n");
+  await assertRejects(() => recoverFences(t.env), ValidationError, "fence");
+  assertEquals(await Deno.readTextFile(log(other.judgment.id)), "{}\n");
+  assert(
+    !(await t.env.store.judgments(e.id)).some((j) =>
+      j.id === other.judgment.id
+    ),
+  );
+});
+
+Deno.test("H-41 F4: an inline judging paused after publishing races a fenced rejudge, both orders: one fence, one judgment", async () => {
+  for (const order of ["rejudge first", "inline first"] as const) {
+    await using t = await makeEnv();
+    const cell = await cellFor(t);
+    let e: ExecutionRecord | undefined;
+    let seeded = -1;
+    t.env.hooks = {
+      after: async (s) => {
+        if (s !== "artifact") return;
+        e = (await t.env.store.executions(cell.campaignId))[0]!;
+        seeded = await fenceHead(t.env, e.id);
+        if (order === "rejudge first") {
+          const r = await judgeOnce(
+            t.env,
+            { e, g: seeded },
+            () => rejudgeExecution(t.env, cell, e!, cell.oracleHash),
+            always,
+          );
+          assert("judgment" in r, `${order}: ${JSON.stringify(r)}`);
+        }
+      },
+    };
+    await runCell(t.env, cell);
+    t.env.hooks = {};
+    assert(e, order);
+    if (order === "inline first") {
+      const n = countJudgings(t);
+      assertEquals(
+        await judgeOnce(
+          t.env,
+          { e, g: seeded },
+          () => rejudgeExecution(t.env, cell, e!, cell.oracleHash),
+          always,
+        ),
+        { dropped: "advanced" },
+      );
+      assertEquals(n.calls, 0, `${order}: the rejudge computed`);
+    }
+    assertEquals(fenceNames(t, e), ["fence-0.json"], order);
+    assertEquals((await t.env.store.judgments(e.id)).length, 1, order);
+  }
+});
+
+Deno.test("H-41 F10: a young fence temp survives a sweep; one swept past the bound fails its link, nothing is committed, and W commits once on the retry", async () => {
+  for (const bound of [undefined, 0]) {
+    await using t = await makeEnv();
+    const cell = await cellFor(t);
+    const e = (await runCell(t.env, cell)).executions[0]!;
+    let swept = -1;
+    t.env.hooks = {
+      beforeLink: async (what) => {
+        if (what !== "fence" || swept !== -1) return;
+        swept = await t.env.store.sweepTemp(bound);
+      },
+    };
+    let computed = 0;
+    const r = await judgeOnce(t.env, { e, g: 1 }, () => {
+      computed++;
+      return rejudgeExecution(t.env, cell, e, cell.oracleHash);
+    }, always);
+    assert("judgment" in r, JSON.stringify(r));
+    assertEquals([swept, computed], bound === 0 ? [1, 2] : [0, 1]);
+    assertEquals(fenceNames(t, e), ["fence-0.json", "fence-1.json"]);
+    assertEquals((await t.env.store.judgments(e.id)).length, 2);
+  }
+});
+
+Deno.test("H-41 F10 (R1-M3b): a workspace publisher paused before its rename while another start sweeps its over-age temp (bound injected): the cell fails loudly through the existing error path; no workspace, no temp, nothing published", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  // The sweeping start's own private root (its private sweep is its own).
+  const other = await Deno.realPath(await testTempDir());
+  const workspaces = join(t.env.resultsRoot, "workspaces");
+  const names = () => [...Deno.readDirSync(workspaces)].map((x) => x.name);
+  let temps: string[] = [];
+  let swept = -1;
+  t.env.hooks = {
+    beforeLink: async (what) => {
+      if (what !== "workspace" || swept !== -1) return;
+      temps = names().filter((n) => n.startsWith(".tmp-"));
+      swept = await sweepWorkspaceTemp(t.env.resultsRoot, other, 0);
+    },
+  };
+  const err = await assertRejects(() => runCell(t.env, cell));
+  assertEquals([temps.length, swept], [1, 1], String(err));
+  assertStringIncludes(String(err), "NotFound");
+  assertStringIncludes(String(err), temps[0]!, "the swept temp's rename");
+  assertEquals(names(), [], "no partial workspace and no temp");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+});
+
+/** A computed judgment carrying a lineage env_fp (the fake judge records none). */
+async function withEnvFp(
+  t: TestEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+  envFp: string,
+): Promise<ComputedJudgment> {
+  const c = await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  return {
+    ...c,
+    judgment: {
+      ...c.judgment,
+      provenance: { ...c.judgment.provenance!, env_fp: envFp },
+    },
+  };
+}
+
+Deno.test("H-41 section 4: commit step 7 creates the campaign env pin (a swept pin temp is retried) and refuses a judgment on another env_fp, writing nothing", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  t.env.pinContext = {
+    lineage_id: "golden-o09-v2",
+    lock_digest: "d".repeat(64),
+    command: "test",
+  };
+  let swept = -1;
+  t.env.hooks = {
+    beforeLink: async (what) => {
+      if (what === "pin" && swept === -1) {
+        swept = await t.env.store.sweepTemp(0);
+      }
+    },
+  };
+  const a = await withEnvFp(t, cell, e, "a".repeat(64));
+  assert(
+    "judgment" in
+      await judgeOnce(t.env, { e, g: 1 }, () => Promise.resolve(a), always),
+  );
+  assertEquals(swept, 1, "the pin temp was swept once");
+  const pin = JSON.parse(
+    await Deno.readTextFile(pinPath(t.env.resultsRoot, e.campaign_id)),
+  );
+  assertEquals(
+    [pin.v, pin.campaign, pin.lineage_id, pin.env_fp, pin.lock_digest],
+    [1, e.campaign_id, "golden-o09-v2", "a".repeat(64), "d".repeat(64)],
+  );
+  const b = await withEnvFp(t, cell, e, "b".repeat(64));
+  await assertRejects(
+    () => judgeOnce(t.env, { e, g: 2 }, () => Promise.resolve(b), always),
+    ConfigurationError,
+    "pinned",
+  );
+  assertEquals(fenceNames(t, e), ["fence-0.json", "fence-1.json"]);
+  assert(
+    !(await t.env.store.judgments(e.id)).some((j) => j.id === b.judgment.id),
+  );
+  // Another lineage with the pinned env_fp is refused too.
+  t.env.pinContext = { ...t.env.pinContext, lineage_id: "other-lineage" };
+  const a2 = await withEnvFp(t, cell, e, "a".repeat(64));
+  await assertRejects(
+    () => judgeOnce(t.env, { e, g: 2 }, () => Promise.resolve(a2), always),
+    ConfigurationError,
+    "pinned",
+  );
+});
+
+Deno.test("H-41 section 4: with no pin yet, a campaign whose committed judgments carry another env_fp gets no pin and nothing is written", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  t.env.pinContext = {
+    lineage_id: "golden-o09-v2",
+    lock_digest: "d".repeat(64),
+    command: "test",
+  };
+  // Committed, not materialized yet: step 2 materializes it before the history check.
+  await plantFence(t, e, 1, await withEnvFp(t, cell, e, "b".repeat(64)));
+  const a = await withEnvFp(t, cell, e, "a".repeat(64));
+  await assertRejects(
+    () => judgeOnce(t.env, { e, g: 2 }, () => Promise.resolve(a), always),
+    ConfigurationError,
+    "b".repeat(12),
+  );
+  assert(!await exists(pinPath(t.env.resultsRoot, e.campaign_id)));
+  assertEquals(fenceNames(t, e), ["fence-0.json", "fence-1.json"]);
 });
 
 Deno.test("privateRoot is validated before any secret: under results/, under the worktree, UNC or a network drive is refused", async () => {

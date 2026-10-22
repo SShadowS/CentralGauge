@@ -48,6 +48,7 @@ import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import type { ResetMechanism } from "./reset.ts";
 import type { BcEgressRecord } from "./environment.ts";
+import type { JudgeGate } from "./pool.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -82,9 +83,12 @@ import {
   ExecutionRecordSchema,
   JudgmentRecordSchema,
   outcomePolicy,
+  publishOnce,
   RecordStore,
   retryProblem,
 } from "./records.ts";
+import { tryAcquireBenchLock } from "../utils/bench-lock.ts";
+import type { Mutex } from "../parallel/semaphore.ts";
 import {
   bounded,
   checkSandboxPrivilege,
@@ -177,6 +181,12 @@ export interface HarnessEnv {
    * unset: judged inline, as before.
    */
   judgeLater?: (cell: CellRef, e: ExecutionRecord) => void;
+  /**
+   * H-41 (section 8): `auto` judging, the judges' pool. Then no judgment is
+   * computed outside the gated judge queue: without judgeLater a due
+   * execution stays owed.
+   */
+  judgePooled?: JudgeGate;
   backend: Backend;
   backendUrl: string;
   /** H-27: the run's shared build cache, also the backend's; unset: judges build without reuse. */
@@ -255,6 +265,20 @@ export interface HarnessEnv {
   stop?: AbortSignal;
   /** M10-08c: true once another process took the private root's lock; no execution starts then. */
   namespaceLost?: () => boolean;
+  /**
+   * H-41 (section 4): the lineage a campaign env pin records and is compared
+   * on, set by openHarnessEnv with --lineage; unset: no lineage (judgments
+   * then carry env_fp null and pin nothing).
+   */
+  pinContext?: { lineage_id: string; lock_digest: string; command: string };
+  /**
+   * H-41 (section 10): bind the environment to a campaign: load or create its
+   * env pin with the start members' env_fp (a mismatch refuses, before any
+   * cell). Set by openHarnessEnv; unset: nothing to bind.
+   */
+  bindCampaign?: (campaignId: string) => Promise<void>;
+  /** H-41 test seam: per-execution claim timings (defaults: bench-lock's 30 s and 120 s). */
+  claimTimings?: { heartbeatMs?: number; staleAfterMs?: number };
   now?: () => Date;
   timeoutMsFor?: (minutes: number) => number;
   killGraceMs?: number;
@@ -282,6 +306,10 @@ export interface HarnessEnv {
     afterPublished?(): Promise<void>;
     /** T-06: a campaign worker's throw is recorded (no new cell starts after this). */
     workerThrew?(): void;
+    /** H-41: a fence, pin, materialized verdict log or workspace temp is written (and synced), right before its link or rename. */
+    beforeLink?(what: "fence" | "pin" | "log" | "workspace"): Promise<void>;
+    /** H-41: the fence is linked (committed), before it is materialized. */
+    afterFence?(): Promise<void>;
   };
 }
 
@@ -641,7 +669,7 @@ async function readRedactionKeys(
     )
   ) {
     throw new ValidationError(
-      `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted)`,
+      `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted). Judging in another process (a judging pool across machines or private roots): copy redaction/ into each judging process's private dir`,
       [path],
     );
   }
@@ -1218,6 +1246,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       ...(env.scanReparsePoints
         ? { scanReparsePoints: env.scanReparsePoints }
         : {}),
+      ...(env.hooks?.beforeLink
+        ? { beforePublish: () => env.hooks!.beforeLink!("workspace") }
+        : {}),
     })
     : null;
   let parseError: string | null = null;
@@ -1500,6 +1531,9 @@ async function publishDraft(
   if (due && env.judgeLater) {
     // H-09: the slot frees now; the judge restages (judgeDeferred).
     env.judgeLater(cell, e);
+  } else if (due && env.judgePooled) {
+    // H-41 (section 8): only the gated queue judges in auto mode.
+    console.log(`[INFO] ${e.id}: judgment owed (judging pool)`);
   } else if (due) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
     hold();
@@ -2637,7 +2671,9 @@ export interface ComputedJudgment {
 
 /**
  * Judge and write (the run path). H-33: published while the judge work dir
- * still exists, then the dir is removed, as before the split.
+ * still exists, then the dir is removed, as before the split. H-41: compute
+ * then commit (judgeOnce), due while no judgment has the current scorer
+ * fingerprint; null when another judge holds or has done the work (owed).
  */
 export async function judgeExecution(
   env: HarnessEnv,
@@ -2646,14 +2682,32 @@ export async function judgeExecution(
   pristine: string,
   oracleHash = cell.oracleHash,
   forced?: JudgmentRecord["forced"],
-): Promise<JudgmentRecord> {
+): Promise<JudgmentRecord | null> {
+  const fp = await currentScorerFingerprint();
   return await inJudgeDir(env, e, async (workDir) =>
-    await publishJudgment(
-      env,
+    committed(
       e,
-      oracleHash,
-      await computeIn(env, cell, e, pristine, oracleHash, forced, workDir),
+      await judgeOnce(
+        env,
+        { e, g: await fenceHead(env, e.id) },
+        () => computeIn(env, cell, e, pristine, oracleHash, forced, workDir),
+        async () =>
+          !(await env.store.judgments(e.id)).some((j) =>
+            j.scorer_fingerprint === fp
+          ),
+      ),
     ));
+}
+
+/** H-41: the committed judgment, else null with the reason logged (the work stays owed). */
+function committed(e: ExecutionRecord, r: JudgeOnce): JudgmentRecord | null {
+  if ("judgment" in r) return r.judgment;
+  if (r.dropped === "held") {
+    console.log(
+      `[INFO] ${e.id}: judgment owed (another judge holds its claim)`,
+    );
+  }
+  return null;
 }
 
 /** H-33: judge an execution; nothing is written to the results. */
@@ -2755,7 +2809,11 @@ async function computeIn(
   return { judgment, log };
 }
 
-/** H-33: write a computed judgment: its verdict log, then the judgment (write-once). */
+/**
+ * H-33: write a computed judgment: its verdict log, then the judgment
+ * (write-once). H-41: no production writer calls it any more (every one
+ * commits through judgeOnce); kept for the H-33 tests of the pre-write checks.
+ */
 export async function publishJudgment(
   env: HarnessEnv,
   e: ExecutionRecord,
@@ -2784,9 +2842,323 @@ export async function publishJudgment(
   return judgment;
 }
 
+// ---- H-41: generations, fences and claims (design-final sections 2-4) ----
+
+/** H-41: generation g's commit record of execution e, `claims/<e>/fence-<g>.json`. */
+export interface Fence {
+  v: 1;
+  execution_id: string;
+  generation: number;
+  judgment: JudgmentRecord;
+  log: VerdictLog;
+  /** The claim token of the committer. */
+  token: string;
+  pid: number;
+  host: string;
+}
+
+/** H-41: what judgeOnce did with W: committed its judgment, or dropped it (why). */
+export type JudgeOnce =
+  | { judgment: JudgmentRecord }
+  | { dropped: "held" | "advanced" | "not due" | "fence taken" };
+
+const FENCE = /^fence-(0|[1-9][0-9]*)\.json$/;
+
+export const fencePath = (resultsRoot: string, id: string, g: number) =>
+  join(resultsRoot, "claims", id, `fence-${g}.json`);
+
+/** Every fence of an execution, by generation; they must be contiguous from 0. */
+async function fences(env: HarnessEnv, id: string): Promise<Fence[]> {
+  const gs: number[] = [];
+  try {
+    for await (const x of Deno.readDir(join(env.resultsRoot, "claims", id))) {
+      const m = FENCE.exec(x.name);
+      if (m && x.isFile) gs.push(Number(m[1]));
+    }
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return [];
+    throw err;
+  }
+  gs.sort((a, b) => a - b);
+  const out: Fence[] = [];
+  for (const [i, g] of gs.entries()) {
+    const path = fencePath(env.resultsRoot, id, g);
+    const f = g === i ? await readJson<Fence>(path) : null;
+    if (f?.execution_id !== id || f.generation !== g) {
+      throw new ValidationError(
+        `fence ${path} is not generation ${i} of execution ${id} (fences are contiguous from 0)`,
+        [path],
+      );
+    }
+    out.push(f);
+  }
+  return out;
+}
+
+/** H-41: the head of execution `id`: its number of fences (the next generation). */
+export async function fenceHead(env: HarnessEnv, id: string): Promise<number> {
+  return (await fences(env, id)).length;
+}
+
+/**
+ * H-41 (3.2): write a fence's log, then its judgment, from the fence's bytes.
+ * An existing identical final file is success; other bytes are a harness bug:
+ * thrown, nothing overwritten. No compute, no C-03, no pin check.
+ */
+async function materialize(env: HarnessEnv, f: Fence): Promise<void> {
+  const same = async (
+    path: string,
+    value: unknown,
+    write: () => Promise<void>,
+  ) => {
+    try {
+      await write();
+    } catch (err) {
+      if (!(err instanceof ValidationError) || !await exists(path)) throw err;
+      if (
+        await Deno.readTextFile(path) !== JSON.stringify(value, null, 2) + "\n"
+      ) {
+        throw new ValidationError(
+          `${path} exists with other bytes than its fence's (a harness bug); not overwritten`,
+          [path],
+        );
+      }
+    }
+  };
+  holdNamespace(env, "judgment not written");
+  await same(
+    join(env.resultsRoot, "verdicts", `${f.log.judgment_id}.json`),
+    f.log,
+    () =>
+      writeVerdictLog(
+        env.resultsRoot,
+        f.log,
+        () => env.hooks?.beforeLink?.("log") ?? Promise.resolve(),
+      ),
+  );
+  const j = JudgmentRecordSchema.parse(f.judgment);
+  holdNamespace(env, "judgment not written");
+  await same(
+    join(env.resultsRoot, "judgments", j.execution_id, `${j.id}.json`),
+    j,
+    () => env.store.writeJudgment(j),
+  );
+}
+
+/** H-41: materialize every committed fence of `id` whose judgment is missing; returns the head. */
+async function reconcile(env: HarnessEnv, id: string): Promise<number> {
+  const fs = await fences(env, id);
+  const have = new Set((await env.store.judgments(id)).map((j) => j.id));
+  for (const f of fs) if (!have.has(f.judgment.id)) await materialize(env, f);
+  return fs.length;
+}
+
+/**
+ * H-41 (3.3): materialize every fence whose judgment is missing (a committer
+ * that died after its fence). No claim (idempotent); returns how many.
+ */
+export async function recoverFences(env: HarnessEnv): Promise<number> {
+  const root = join(env.resultsRoot, "claims");
+  const ids: string[] = [];
+  try {
+    for await (const x of Deno.readDir(root)) {
+      if (x.isDirectory) ids.push(x.name);
+    }
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return 0;
+    throw err;
+  }
+  let n = 0;
+  for (const id of ids.sort()) {
+    const have = new Set((await env.store.judgments(id)).map((j) => j.id));
+    for (const f of await fences(env, id)) {
+      if (have.has(f.judgment.id)) continue;
+      await materialize(env, f);
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * H-41 (section 3): the one commit protocol of every judgment writer. W =
+ * (e, g): judge e once at generation g (its head when the work was admitted).
+ * `due` is the caller's authoritative predicate, evaluated under the claim
+ * with every committed fence of e materialized; `writer` (rejudge's
+ * single-writer mutex) serializes steps 5-9 in this process.
+ */
+export async function judgeOnce(
+  env: HarnessEnv,
+  w: { e: ExecutionRecord; g: number },
+  compute: () => Promise<ComputedJudgment>,
+  due: () => Promise<boolean>,
+  writer?: Mutex,
+): Promise<JudgeOnce> {
+  const { e, g } = w;
+  const dir = join(env.resultsRoot, "claims", e.id);
+  // A fence temp swept from under us (section 11): W again, a few times.
+  for (let attempt = 1;; attempt++) {
+    // 1. The claim.
+    const claim = tryAcquireBenchLock(dir, {
+      command: `judge ${e.id}`,
+      ...env.claimTimings,
+    });
+    if (!claim.acquired) return { dropped: "held" };
+    try {
+      // 2-3. The committed prefix materialized, then the predicates.
+      if (await reconcile(env, e.id) !== g) return { dropped: "advanced" };
+      if (!await due()) return { dropped: "not due" };
+      // 4. Compute.
+      const { judgment, log } = await compute();
+      const release = await writer?.acquire();
+      try {
+        // 5. Another committer may have advanced the head meanwhile.
+        if (await reconcile(env, e.id) !== g) return { dropped: "advanced" };
+        // 6. C-03 run 002: against the reconciled store, before the fence.
+        if (judgment.forced) {
+          const why = forcedRefusal(
+            e,
+            await env.store.judgments(e.id),
+            judgment.task_oracle_hash,
+            judgment.forced.replaces,
+            judgment,
+          );
+          if (why) throw new ConfigurationError(`${why}: nothing written`);
+        }
+        // 7. The campaign env pin (definitive: a mismatch writes nothing).
+        await ensurePin(
+          env,
+          e.campaign_id,
+          judgment.provenance?.env_fp ?? null,
+        );
+        // 8. The fence: one link per generation.
+        holdNamespace(env, "judgment not written");
+        const fence: Fence = {
+          v: 1,
+          execution_id: e.id,
+          generation: g,
+          judgment,
+          log,
+          token: claim.token,
+          pid: Deno.pid,
+          host: env.owner,
+        };
+        try {
+          await publishOnce(
+            fencePath(env.resultsRoot, e.id, g),
+            fence,
+            () => env.hooks?.beforeLink?.("fence") ?? Promise.resolve(),
+          );
+        } catch (err) {
+          if (err instanceof ValidationError) return { dropped: "fence taken" };
+          if (!(err instanceof Deno.errors.NotFound) || attempt >= 3) throw err;
+          console.warn(
+            `[WARN] ${e.id}: fence temp swept before its link; nothing committed, judging again`,
+          );
+          continue;
+        }
+        await env.hooks?.afterFence?.();
+        // 9. Materialize.
+        await materialize(env, fence);
+        return { judgment };
+      } finally {
+        release?.();
+      }
+    } finally {
+      await claim.release();
+    }
+  }
+}
+
+/** H-41 (section 4): `<resultsRoot>/env-pins/<campaign-id>.json`. */
+export const pinPath = (resultsRoot: string, campaignId: string) =>
+  join(resultsRoot, "env-pins", `${campaignId}.json`);
+
+/** H-41 (section 4): a campaign's one env pin. */
+export interface EnvPin {
+  v: 1;
+  campaign: string;
+  lineage_id: string | null;
+  env_fp: string;
+  lock_digest: string | null;
+  by: { host: string; pid: number; command: string };
+  at: string;
+}
+
+/**
+ * H-41 (section 4): the campaign's env pin holds `envFp` and this env's
+ * lineage, else ConfigurationError. No pin yet: every non-null env_fp in the
+ * campaign's judgments and committed fences must be `envFp`, then it is
+ * created (a lost create compares the winner's). A null env_fp (no lineage)
+ * pins nothing.
+ */
+export async function ensurePin(
+  env: HarnessEnv,
+  campaignId: string,
+  envFp: string | null,
+): Promise<void> {
+  if (envFp === null) return;
+  const path = pinPath(env.resultsRoot, campaignId);
+  const lineage = env.pinContext?.lineage_id ?? null;
+  for (let attempt = 1;; attempt++) {
+    const pin = await readJson<EnvPin>(path);
+    if (pin) {
+      if (pin.env_fp === envFp && pin.lineage_id === lineage) return;
+      throw new ConfigurationError(
+        `campaign ${campaignId} is pinned to env_fp ${pin.env_fp} of lineage ${pin.lineage_id} (${path}); this environment's is ${envFp} of lineage ${lineage}: refused, nothing written (a lineage change needs a new campaign)`,
+      );
+    }
+    for (const x of await env.store.executions(campaignId)) {
+      const fps = [
+        ...(await env.store.judgments(x.id)).map((j) => j.provenance?.env_fp),
+        ...(await fences(env, x.id)).map((f) => f.judgment.provenance?.env_fp),
+      ];
+      const other = fps.find((f) => f != null && f !== envFp);
+      if (other) {
+        throw new ConfigurationError(
+          `campaign ${campaignId} already has judgments on env_fp ${other}; this environment's is ${envFp}: no pin created, nothing written`,
+        );
+      }
+    }
+    try {
+      await publishOnce(
+        path,
+        {
+          v: 1,
+          campaign: campaignId,
+          lineage_id: lineage,
+          env_fp: envFp,
+          lock_digest: env.pinContext?.lock_digest ?? null,
+          by: {
+            host: env.owner,
+            pid: Deno.pid,
+            command: env.pinContext?.command ?? "",
+          },
+          at: new Date().toISOString(),
+        } satisfies EnvPin,
+        () => env.hooks?.beforeLink?.("pin") ?? Promise.resolve(),
+      );
+      return;
+    } catch (err) {
+      // Lost the create: the next pass compares the winner's pin.
+      if (err instanceof ValidationError) continue;
+      // A swept temp (section 11): the create again.
+      if (!(err instanceof Deno.errors.NotFound) || attempt >= 3) throw err;
+    }
+  }
+}
+
+/** H-09: published, judgeable and never judged (a crash before the judge queue reached it). */
+export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
+  return outcomePolicy(e.termination, e.did_work).judge &&
+    e.workspace_hash !== null &&
+    (await env.store.judgments(e.id)).length === 0 &&
+    !await exists(privatePaths(env, e.id).stubMarker);
+}
+
 /**
  * Judge a stored execution again: restage the task, never re-run the agent.
- * H-33: computed only; the caller publishes it (publishJudgment).
+ * H-33: computed only; the caller commits it (H-41: judgeOnce).
  */
 export async function rejudgeExecution(
   env: HarnessEnv,
@@ -2818,12 +3190,31 @@ export async function rejudgeExecution(
  * H-09: judge a published execution whose judging was deferred, on the judge
  * lane. The task is restaged and must hash to the pristine tree the agent ran
  * on (its published sandbox.json), so the judgment equals the inline one.
+ * H-41: compute (computeDeferred) then commit, due while judgmentOwed; null
+ * when another judge holds or has done the work.
  */
 export async function judgeDeferred(
   env: HarnessEnv,
   cell: CellRef,
   e: ExecutionRecord,
-): Promise<JudgmentRecord> {
+): Promise<JudgmentRecord | null> {
+  return committed(
+    e,
+    await judgeOnce(
+      env,
+      { e, g: await fenceHead(env, e.id) },
+      () => computeDeferred(env, cell, e),
+      () => judgmentOwed(env, e),
+    ),
+  );
+}
+
+/** H-41: judgeDeferred's compute, every check kept; nothing is written to the results. */
+export async function computeDeferred(
+  env: HarnessEnv,
+  cell: CellRef,
+  e: ExecutionRecord,
+): Promise<ComputedJudgment> {
   const refuse = (why: string): never => {
     throw new ConfigurationError(
       `execution ${e.id}: ${why}; refusing to judge`,
@@ -2874,7 +3265,7 @@ export async function judgeDeferred(
         })`,
       );
     }
-    return await judgeExecution(
+    return await computeJudgment(
       { ...env, lane: env.judgeLane ?? env.lane },
       snap,
       e,

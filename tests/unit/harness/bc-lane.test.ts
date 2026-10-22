@@ -3,10 +3,15 @@ import {
   assertEquals,
   assertRejects,
   assertStringIncludes,
+  assertThrows,
 } from "@std/assert";
 import { basename, join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ContainerError, ValidationError } from "../../../src/errors.ts";
+import { ContainerHealthMonitor } from "../../../src/health/monitor.ts";
+import { isInfraError } from "../../../src/health/is-infra-error.ts";
+import { InfraRetriesExhaustedError } from "../../../src/parallel/errors.ts";
+import { drainBlock } from "../../../src/harness/coord-lease.ts";
 import {
   BENCH_CANDIDATE_APP_ID,
   loadLedger,
@@ -34,9 +39,12 @@ import {
   deployAndTest,
   dirBuildCache,
   harvestAppInfo,
+  LaneCancelledError,
   type LockedSymbols,
+  PoolLostError,
   prepareApps,
   productionManifest,
+  type Reconciled,
   runTests,
   scorerPassed,
 } from "../../../src/harness/bc-lane.ts";
@@ -3104,4 +3112,404 @@ Deno.test("H-33: two concurrent appinfo harvests into one lock digest keep both 
     await Deno.readTextFile(join(store, "appinfo", "lock1.json")),
   );
   assertEquals(Object.keys(saved).sort(), ["./A.app", "./B.app"]);
+});
+
+// H-41 (design-final 5, 6, 14): the pooled lane.
+
+const CTX = { taskId: "t", variantId: "v", attemptNumber: 1 };
+
+/** A pool whose departure reconcile answers `ok` unless `say` says otherwise; every call is kept. */
+function pool(say: (c: string) => Reconciled = () => ({ state: "ok" })) {
+  const asked: string[][] = [];
+  return {
+    asked,
+    reconcile: (cs: string[]) => {
+      asked.push([...cs]);
+      return Promise.resolve(Object.fromEntries(cs.map((c) => [c, say(c)])));
+    },
+  };
+}
+
+/** A lane call held open until `release()`; `inside` resolves once it runs. */
+function holdOpen() {
+  let open!: () => void;
+  let entered!: () => void;
+  const inside = new Promise<void>((r) => (entered = r));
+  return {
+    inside,
+    release: () => open(),
+    fn: () =>
+      new Promise<void>((r) => {
+        open = r;
+        entered();
+      }),
+  };
+}
+
+/** console.warn lines while `fn` runs. */
+async function warned(fn: () => Promise<unknown>): Promise<string[]> {
+  const lines: string[] = [];
+  const s = stub(console, "warn", (...a: unknown[]) => {
+    lines.push(a.join(" "));
+  });
+  try {
+    await fn();
+  } finally {
+    s.restore();
+  }
+  return lines;
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 10));
+
+Deno.test("H-41 (6): a pooled lane may start empty, a fixed one still may not; add, retire, members (no quarantined container)", async () => {
+  assertThrows(() => new BcLane(new FakeBc(), []), Error, "needs a container");
+  const lane = new BcLane(new FakeBc(), [], { pool: pool() });
+  assertEquals(lane.members(), []);
+  lane.add("C1");
+  lane.add("C2");
+  lane.add("C1");
+  assertEquals(lane.members(), ["C1", "C2"]);
+  assertEquals(
+    await lane.exclusive(CTX, (c) => Promise.resolve(c)).then((h) => h.result),
+    "C1",
+  );
+  await lane.quarantine("C2", "dirty");
+  assertEquals(lane.members(), ["C1"], "width counts members only");
+  lane.retire("C1");
+  assertEquals(lane.members(), []);
+  // a retired container is never admitted; with no member left: pool lost
+  const err = await assertRejects(
+    () => lane.compileOn("C1", () => Promise.resolve()),
+    PoolLostError,
+  );
+  assert(err.cause instanceof ContainerError);
+  assertStringIncludes(err.cause.message, "left the pool");
+});
+
+Deno.test("H-41 (6): add, retire and rejoin reuse the container's Mutex: a rejoined C1 still waits for the call holding it", async () => {
+  const lane = new BcLane(new FakeBc(), ["C1"], { pool: pool() });
+  const first = holdOpen();
+  const held = lane.exclusive(CTX, first.fn);
+  await first.inside;
+  lane.retire("C1");
+  lane.add("C1");
+  let second = false;
+  const next = lane.exclusive(CTX, () => Promise.resolve(void (second = true)));
+  await tick();
+  assertEquals(second, false, "the same lock: the first call still holds it");
+  assertEquals(lane.uses("C1"), 2);
+  first.release();
+  await held;
+  await next;
+  assert(second);
+  assertEquals(lane.uses("C1"), 0);
+});
+
+Deno.test("H-41 task test 2: drain mid-cell, adversarial release order: no admit on C1 after the marker; quiesced waits for the compile still held after the exclusive is released", async () => {
+  const results = await tmp();
+  const lane = new BcLane(new FakeBc(), ["C1"], {
+    pool: pool(),
+    blocked: (c) => drainBlock(results, c),
+  });
+  const ex = holdOpen();
+  const co = holdOpen();
+  const exP = lane.exclusive(CTX, ex.fn);
+  const coP = lane.compile(co.fn);
+  await ex.inside;
+  await co.inside;
+  assertEquals(lane.uses("C1"), 2);
+  await Deno.writeTextFile(join(results, "DRAIN-c1"), ""); // case-insensitive
+  let ran = 0;
+  const run = () => Promise.resolve(void ran++);
+  await assertRejects(() => lane.compile(run));
+  await assertRejects(() => lane.compileOn("C1", run));
+  await assertRejects(() => lane.exclusive(CTX, run));
+  assertEquals(ran, 0, "nothing admitted on C1 after the marker");
+  let quiet = false;
+  const q = lane.quiesced("C1").then(() => void (quiet = true));
+  ex.release();
+  await exP;
+  await tick();
+  assertEquals(quiet, false, "the compile still holds C1");
+  assertEquals(lane.uses("C1"), 1);
+  co.release();
+  await coP;
+  await q;
+  assertEquals(quiet, true);
+  assertEquals(lane.uses("C1"), 0);
+  await lane.quiesced("C1"); // idle: at once
+});
+
+/** Task test 3's deployment on the held container. */
+async function deployment(bc: FakeBc, lane: BcLane) {
+  const p = await prep(bc, lane);
+  const ctx = { ledgerRoot: await tmp(), trustedRoots: [p.pristine] };
+  return () =>
+    lane.exclusive(CTX, (c) =>
+      deployAndTest(bc, c, {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: [IDS.test],
+        ctx,
+      }));
+}
+
+Deno.test("H-41 task test 3: both containers fail the held deployment and its cleanup through the real retry helper: budget_exhausted reaches the wrapper with both attempted and quarantined, then PoolLostError; a joined C3 takes the work", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = pool();
+  // default maxInfraRetries: max(1, 2 - 1) = 1
+  const lane = new BcLane(bc, ["C1", "C2"], { pool: p });
+  const run = await deployment(bc, lane);
+  // the fault reaches the held deployment: the prepared apps compiled before it
+  for (const c of ["C1", "C2"]) {
+    bc.broken.add(c);
+    bc.cleanupFails.add(c);
+  }
+  const err = await assertRejects(run, PoolLostError);
+  assertEquals([...err.attempted].sort(), ["C1", "C2"]);
+  assert(err.cause instanceof InfraRetriesExhaustedError);
+  assertEquals(err.cause.reason, "budget_exhausted");
+  assert(err.cause.cause instanceof CleanupFailedError);
+  assertEquals([...lane.quarantined.keys()].sort(), ["C1", "C2"]);
+  assertEquals(p.asked.map((a) => a.sort()), [["C1", "C2"]]);
+  assertEquals(lane.members(), []);
+  assertEquals(err.unansweredOnly, false);
+  assertEquals(isInfraError(err), false, "never rerouted or unscored as infra");
+  lane.add("C3");
+  const held = await run();
+  assertEquals(held.container, "C3");
+  assertEquals(held.result.rows.map((r) => r.outcome), ["pass"]);
+});
+
+Deno.test("H-41 task test 3: a completed deployment returning only a cleanupError is quarantined and keeps its scored result: no PoolLostError, no reconcile", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = pool();
+  const lane = new BcLane(bc, ["C1"], { pool: p });
+  const run = await deployment(bc, lane);
+  bc.cleanupFails.add("C1");
+  const held = await run();
+  assertEquals(held.container, "C1");
+  assertStringIncludes(held.result.cleanupError!, "incomplete");
+  assertEquals(held.result.rows.map((r) => r.outcome), ["pass"]);
+  assert(lane.quarantined.has("C1"));
+  assertEquals(p.asked, []);
+  assertEquals(lane.members(), []);
+});
+
+/** The three lane calls, each with `fn` as its operation (exclusive: no reroute). */
+const CALLS = {
+  compile: (l: BcLane, fn: (c: string) => Promise<unknown>) => l.compile(fn),
+  compileOn: (l: BcLane, fn: (c: string) => Promise<unknown>) =>
+    l.compileOn("C1", fn),
+  exclusive: (l: BcLane, fn: (c: string) => Promise<unknown>) =>
+    l.exclusive(CTX, fn, undefined, { maxInfraRetries: 0 }),
+};
+
+Deno.test("H-41 N3: C1 the only member departs during an admitted call that throws an infra ContainerError: PoolLostError ([DEPART]), C1 retired; compile, compileOn and exclusive alike", async () => {
+  for (const [name, call] of Object.entries(CALLS)) {
+    let running = true;
+    const p = pool(() =>
+      running ? { state: "ok" } : { state: "departed", reason: "not running" }
+    );
+    const lane = new BcLane(new FakeBc(), ["C1"], { pool: p });
+    let err: unknown;
+    const lines = await warned(() =>
+      call(lane, (c) => {
+        running = false;
+        throw new ContainerError("compile session lost", c, "compile");
+      }).catch((e) => void (err = e))
+    );
+    assert(err instanceof PoolLostError, `${name}: ${err}`);
+    assertEquals(err.attempted, ["C1"], name);
+    assert(err.cause instanceof ContainerError, name);
+    assertEquals(err.unansweredOnly, false, name);
+    assertEquals(isInfraError(err), false, name);
+    assertEquals(lane.members(), [], name);
+    assertEquals(lines, ["[DEPART] C1: not running"], name);
+  }
+});
+
+Deno.test("H-41 N3 controls: C1 still ok and broken, or C1 and C2 both broken and ok, keep the original infra error (unscored downstream); a fixed lane never reconciles", async () => {
+  for (const [name, call] of Object.entries(CALLS)) {
+    for (const cs of [["C1"], ["C1", "C2"]]) {
+      const bc = new FakeBc();
+      for (const c of cs) bc.broken.add(c);
+      const p = pool();
+      const lane = new BcLane(bc, cs, { pool: p });
+      const err = await assertRejects(() =>
+        call(lane, (c) => bc.listHarnessApps(c))
+      );
+      assert(!(err instanceof PoolLostError), `${name} ${cs}`);
+      assert(isInfraError(err), `${name} ${cs}: ${err}`);
+      assertEquals(lane.members(), cs, `${name} ${cs}`);
+      assertEquals(p.asked.length, 1, `${name} ${cs}`);
+    }
+    const bc = new FakeBc();
+    bc.broken.add("C1");
+    const fixed = new BcLane(bc, ["C1"]);
+    const err = await assertRejects(() =>
+      call(fixed, (c) => bc.listHarnessApps(c))
+    );
+    assert(!(err instanceof PoolLostError), name);
+    assertEquals(fixed.members(), ["C1"]);
+  }
+});
+
+Deno.test("H-41 (14): an unanswered check of the attempted container with another member eligible is a PoolLostError flagged unanswered-only ([UNANSWERED]); a departure is not flagged ([DEPART])", async () => {
+  const fail = (c: string) => {
+    throw new ContainerError("publish timed out", c, "publish");
+  };
+  for (
+    const [say, line, only] of [
+      [
+        { state: "unanswered", check: "inspect", error: "timeout" },
+        "[UNANSWERED] C1: inspect timeout",
+        true,
+      ],
+      [
+        { state: "departed", reason: "not allocated" },
+        "[DEPART] C1: not allocated",
+        false,
+      ],
+    ] as const
+  ) {
+    const lane = new BcLane(new FakeBc(), ["C1", "C2"], {
+      pool: pool((c) => c === "C1" ? say : { state: "ok" }),
+    });
+    let err: unknown;
+    const lines = await warned(() =>
+      CALLS.exclusive(lane, fail).catch((e) => void (err = e))
+    );
+    assert(err instanceof PoolLostError, String(err));
+    assertEquals(err.attempted, ["C1"]);
+    assertEquals(err.unansweredOnly, only);
+    assertEquals(err.outcomes["C1"], say);
+    assertEquals(lines, [line]);
+    assertEquals(lane.members(), ["C2"]);
+  }
+  // a member that was not attempted and goes unanswered is retired, but the
+  // error stays the original one
+  const lane = new BcLane(new FakeBc(), ["C1", "C2"], {
+    pool: pool((c) =>
+      c === "C2"
+        ? { state: "unanswered", check: "allocated", error: "EACCES" }
+        : { state: "ok" }
+    ),
+  });
+  let err: unknown;
+  const lines = await warned(() =>
+    CALLS.exclusive(lane, fail).catch((e) => void (err = e))
+  );
+  assert(err instanceof ContainerError && !(err instanceof PoolLostError));
+  assertEquals(lines, ["[UNANSWERED] C2: allocated EACCES"]);
+  assertEquals(lane.members(), ["C1"]);
+  // a reconcile that throws answers nothing: every container unanswered;
+  // with no member left the error is not unanswered-only
+  const broken = new BcLane(new FakeBc(), ["C1"], {
+    pool: { reconcile: () => Promise.reject(new Error("docker hung")) },
+  });
+  let e2: unknown;
+  const l2 = await warned(() =>
+    CALLS.compile(broken, fail).catch((e) => void (e2 = e))
+  );
+  assert(e2 instanceof PoolLostError);
+  assertEquals(e2.unansweredOnly, false);
+  assertEquals(l2, ["[UNANSWERED] C1: reconcile docker hung"]);
+});
+
+Deno.test("H-41 (5): a cancellation and a non-infra error pass the pooled wrapper unchanged, never reconciled; an empty pooled lane is a PoolLostError", async () => {
+  const p = pool(() => ({ state: "departed", reason: "not running" }));
+  const lane = new BcLane(new FakeBc(), ["C1"], { pool: p });
+  await assertRejects(
+    () => lane.compile(() => Promise.reject(new Error("model defect"))),
+    Error,
+    "model defect",
+  );
+  const stop = new AbortController();
+  await assertRejects(
+    () =>
+      lane.compile(() => {
+        stop.abort(new Error("timeout"));
+        throw new ContainerError("timed out", "C1", "compile");
+      }, stop.signal),
+    LaneCancelledError,
+  );
+  assertEquals(p.asked, []);
+  assertEquals(lane.members(), ["C1"]);
+  const empty = new BcLane(new FakeBc(), [], { pool: pool() });
+  for (const call of Object.values(CALLS)) {
+    if (call === CALLS.compileOn) continue; // an unknown container: a harness bug
+    const err = await assertRejects(() => call(empty, () => Promise.resolve()));
+    assert(err instanceof PoolLostError, String(err));
+    assertEquals(err.unansweredOnly, false);
+  }
+});
+
+Deno.test("H-41 (6, 7): the blocked predicate is read in healthy() and admit(): a blocked container is never routed, and a queued call is refused once it is blocked", async () => {
+  const blocked = new Set<string>();
+  const lane = new BcLane(new FakeBc(), ["C1", "C2"], {
+    compileSlots: 1,
+    blocked: (c) => blocked.has(c) ? `coord lease of ${c} held` : null,
+  });
+  blocked.add("C1");
+  assertEquals(
+    (await lane.exclusive(CTX, (c) => Promise.resolve(c))).result,
+    "C2",
+  );
+  assertEquals(await lane.compile((c) => Promise.resolve(c)), "C2");
+  blocked.clear();
+  const first = holdOpen();
+  const held = lane.compileOn("C1", first.fn);
+  await first.inside;
+  const queued = lane.compileOn("C1", (c) => Promise.resolve(c));
+  blocked.add("C1");
+  first.release();
+  await held;
+  // admit() refused the queued call on C1 (infra), so it moved to C2
+  assertEquals(await queued, "C2");
+  const one = new BcLane(new FakeBc(), ["C1"], {
+    blocked: (c) => blocked.has(c) ? `coord lease of ${c} held` : null,
+  });
+  await assertRejects(
+    () => one.compileOn("C1", () => Promise.resolve()),
+    ContainerError,
+    "coord lease of C1 held",
+  );
+});
+
+Deno.test("H-41 Q10: a container registered with the health monitor and added to the lane is excluded once it is alerted", async () => {
+  const health = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainerNames: ["C1"],
+  });
+  const lane = new BcLane(new FakeBc(), ["C1"], { health, pool: pool() });
+  lane.add("C2");
+  health.register("C2");
+  await lane.exclusive(CTX, () => Promise.resolve()); // C1
+  assertEquals(
+    (await lane.exclusive(CTX, (c) => Promise.resolve(c))).result,
+    "C2",
+  );
+  health.record({
+    containerName: "C2",
+    result: "infra_error",
+    fingerprint: "test:sql",
+    signatureId: "sql_service_down",
+    timestamp: 1,
+  });
+  for (let k = 0; k < 3; k++) {
+    assertEquals(
+      (await lane.exclusive(CTX, (c) => Promise.resolve(c))).result,
+      "C1",
+    );
+  }
 });

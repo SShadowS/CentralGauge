@@ -5,14 +5,25 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { join } from "@std/path";
-import { BcLane, dirBuildCache } from "../../../src/harness/bc-lane.ts";
+import { ContainerError } from "../../../src/errors.ts";
+import {
+  BcLane,
+  dirBuildCache,
+  PoolLostError,
+} from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import { JudgmentRecordSchema } from "../../../src/harness/records.ts";
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import { judge, SCORER_SUITE } from "../../../src/harness/verdict.ts";
-import { deployedSource, FakeBc, OK_RESET, result } from "./fake-bc.ts";
+import {
+  deployedSource,
+  FakeBc,
+  faultAt,
+  OK_RESET,
+  result,
+} from "./fake-bc.ts";
 import {
   addTestAuthoringTask,
   IDS,
@@ -942,3 +953,77 @@ Deno.test("H-35 orch Sol r1 #5: G' (test-authoring) gets the pristine-Test check
     "harness bug: G's Test build key",
   );
 });
+
+// H-41 (design-final 5): the test-authoring catch sites. A PoolLostError
+// leaves judge(); genuine infra at the same call stays unscored there.
+
+const lost = () =>
+  new PoolLostError(
+    new ContainerError("gone", "C1", "test"),
+    ["C1"],
+    { C1: { state: "departed", reason: "not running" } },
+    false,
+  );
+const infra = () => new ContainerError("SOAP request timed out", "C1", "test");
+const MUTANTS = { "off-by-one": "exit(9);" };
+
+Deno.test("H-41 (5) verdict.ts agentSuiteBc catch: a PoolLostError from an agent suite run propagates out of judge, never rewrapped as infra", async () => {
+  const fake = bc((cu) => {
+    if (cu === 80106) throw lost();
+    return result({});
+  });
+  const input = await setup(MUTANTS, {
+    edits: { "Test/src/Agent80106.Test.al": suite(80106) },
+  });
+  await assertRejects(
+    () => judge(new BcLane(fake, ["C1", "C2"]), input),
+    PoolLostError,
+  );
+});
+
+for (
+  const site of [
+    {
+      name: "pass_to_pass (G')",
+      n: 1,
+      infra: (j: Parameters<typeof sc>[0]) => {
+        assertEquals(sc(j, "pass_to_pass").passed, null);
+        assertEquals(sc(j, "mutant_kill").passed, null);
+      },
+    },
+    {
+      name: "mutant_kill reference run",
+      n: 2,
+      infra: (j: Parameters<typeof sc>[0]) =>
+        assertEquals(sc(j, "mutant_kill").passed, null),
+    },
+    {
+      name: "mutant_kill mutant loop",
+      n: 3,
+      infra: (j: Parameters<typeof sc>[0]) =>
+        assert(
+          sc(j, "mutant_kill").tests.some((t) =>
+            t.target === "mutant:0" && t.failure === "infra"
+          ),
+        ),
+    },
+  ]
+) {
+  Deno.test(`H-41 (5) verdict.ts ${site.name} catch: a PoolLostError propagates out of judge; genuine infra there is unscored`, async () => {
+    const art = { suite: "reference-tests" };
+    await assertRejects(
+      async () =>
+        judge(
+          faultAt(new BcLane(bc(), ["C1", "C2"]), "exclusive", site.n, lost),
+          await setup(MUTANTS, art),
+        ),
+      PoolLostError,
+    );
+    const { judgment } = await judge(
+      faultAt(new BcLane(bc(), ["C1", "C2"]), "exclusive", site.n, infra),
+      await setup(MUTANTS, art),
+    );
+    assertEquals(judgment.verdict, "unscored");
+    site.infra(judgment);
+  });
+}

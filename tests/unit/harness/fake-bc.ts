@@ -12,7 +12,7 @@ import type {
   TestResult,
 } from "../../../src/container/types.ts";
 import { ContainerError } from "../../../src/errors.ts";
-import type { HarnessBc } from "../../../src/harness/bc-lane.ts";
+import type { BcLane, HarnessBc } from "../../../src/harness/bc-lane.ts";
 import type { ResetMechanism } from "../../../src/harness/reset.ts";
 
 /** H-35 S3: a reset that always succeeds (unit tests run no real reset). */
@@ -374,6 +374,23 @@ export class FakeBc implements HarnessBc {
       this.httpReadback?.(container, appId) ?? `allow=${allowed}`,
     );
   }
+}
+
+/**
+ * H-41: the lane's n-th `kind` call rejects with `err()` before it runs (a
+ * pool loss, or genuine infra, at a chosen verdict.ts call site).
+ */
+export function faultAt<L extends BcLane>(
+  lane: L,
+  kind: "exclusive" | "compile",
+  n: number,
+  err: () => Error,
+): L {
+  const real = lane[kind].bind(lane) as (...a: unknown[]) => Promise<unknown>;
+  let k = 0;
+  return Object.assign(lane, {
+    [kind]: (...a: unknown[]) => ++k === n ? Promise.reject(err()) : real(...a),
+  });
 }
 
 export function deployedSource(
