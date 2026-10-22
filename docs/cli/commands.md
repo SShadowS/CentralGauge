@@ -1015,8 +1015,12 @@ In order (`deployAndTest` in `src/harness/bc-lane.ts`, `src/harness/reset.ts`):
    declared roots. An entry that cannot be read here already fails closed.
 3. **Deploy** the apps.
 4. **L2a**: each candidate app gets `Allow HttpClient Requests` set to false,
-   and the setting is read back. A read-back other than false quarantines the
-   container.
+   and the setting is read back. A read-back other than false, or a call that
+   fails, refuses the deployment (no test runs) and quarantines the container.
+   L2a covers agent sessions and judging: every deployment of agent-authored
+   AL runs it, the agent's `cg-al test` deployments included (they have no
+   reset and no L4 steps). There, a block that does not hold fails the tool
+   call as infra.
 5. **Tests.**
 6. **Cleanup**: candidates and the oracle are unpublished.
 7. **Inventory check** (`verify-clean.ps1`): the inventory must equal the

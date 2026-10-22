@@ -1463,11 +1463,12 @@ Deno.test("production ops (M11): a failed compile logs code, relative file, symb
 /** H-04b: a production-ops backend on `containers`, with a granted workspace. */
 async function crashBackend(bc: FakeBc, containers: string[], tag: string) {
   const s = await setup();
+  const lane = new BcLane(bc, containers);
   const b = new Backend({
     scanReparsePoints: NO_SCAN,
     approvedRoots: [join(s.root, "work")],
     workRoot: join(s.root, `backend-${tag}`),
-    ops: defaultBackendOps(new BcLane(bc, containers)),
+    ops: defaultBackendOps(lane),
     allowedHosts: ["127.0.0.1"],
   });
   const exec = "00000000-0000-4000-8000-00000000e04b";
@@ -1485,8 +1486,47 @@ async function crashBackend(bc: FakeBc, containers: string[], tag: string) {
     deploy: { ledgerRoot: s.root, trustedRoots: [pristine] },
     hostLog,
   }, 60_000);
-  return { b, tok, exec, hostLog };
+  return { b, tok, exec, hostLog, lane };
 }
+
+Deno.test("production ops (H-43 L2a): a test request blocks HttpClient for every agent app after the publish and before the tests", async () => {
+  const bc = new FakeBc();
+  let testsAt = -1;
+  bc.script = () => {
+    testsAt = bc.httpSettings.length;
+    return result({ A: true });
+  };
+  const { b, tok, exec } = await crashBackend(bc, ["C1"], "h43-ok");
+  const res = await b.handle(
+    req("/v1/test", tok, '{"codeunits":[80010]}', exec),
+  );
+  assertEquals(res.status, 200, await res.clone().text());
+  // Core is the unchanged staged prerequisite; Test is the agent's app.
+  assertEquals(
+    bc.httpSettings.map((s) => [s.container, s.id, s.allowed]),
+    [["C1", IDS.test, false]],
+  );
+  assert(bc.httpSettings.every((s) => s.at >= 1), "after the publish");
+  assertEquals(testsAt, 1, "set before the first test");
+});
+
+Deno.test("production ops (H-43 L2a): a block that does not hold fails the test request closed (503, no test runs) and quarantines the container", async () => {
+  const bc = new FakeBc(() => result({ A: true }));
+  bc.httpReadback = () => "allow=true";
+  const { b, tok, exec, hostLog, lane } = await crashBackend(
+    bc,
+    ["C1"],
+    "h43-fail",
+  );
+  const res = await b.handle(
+    req("/v1/test", tok, '{"codeunits":[80010]}', exec),
+  );
+  assertEquals(res.status, 503, await res.clone().text());
+  assertEquals(bc.tests, []);
+  assert(lane.quarantined.get("C1")?.includes("HttpClient"));
+  const [line] = await readHostLog(hostLog);
+  assertEquals(line!.outcome, "infra");
+});
 
 Deno.test("production ops (H-04b): a compile that crashes once (no diagnostic) reroutes and succeeds", async () => {
   const bc = new FakeBc(() => result({ A: true }));
