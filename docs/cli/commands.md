@@ -1157,6 +1157,13 @@ start, or published without the queue, stays owed and is logged `[INFO] <id>:
 judgment owed (judging pool)`. `run --rerun` judges its cell through the queue
 too.
 
+**Redaction keys.** Judging reads the execution's redaction keys from the
+judging process's own private dir (`<private-root>/redaction/<execution>.json`),
+written by the process that ran the agent. A process judging work it did not
+run (another machine or another private root) needs a copy of that
+`redaction/` folder in its private dir; without it, judging refuses with
+`redaction keys ... are missing or invalid; refusing to judge`.
+
 ### harness pairing
 
 ```bash

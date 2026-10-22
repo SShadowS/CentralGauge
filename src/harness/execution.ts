@@ -669,7 +669,7 @@ async function readRedactionKeys(
     )
   ) {
     throw new ValidationError(
-      `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted)`,
+      `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted). Judging in another process (a judging pool across machines or private roots): copy redaction/ into each judging process's private dir`,
       [path],
     );
   }

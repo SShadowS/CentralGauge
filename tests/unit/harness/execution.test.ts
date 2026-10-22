@@ -1729,6 +1729,22 @@ Deno.test("H-41: a fenced rejudge and a recovered fence write the bytes the pre-
   assertEquals(await recoverFences(t.env), 0, "idempotent");
 });
 
+Deno.test("H-41 M4: missing redaction keys refuse to judge and say each judging process needs a copy", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  await Deno.remove(privatePaths(t.env, e.id).keys);
+  const err = await assertRejects(
+    () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
+    ValidationError,
+    "refusing to judge",
+  );
+  assertStringIncludes(
+    err.message,
+    "copy redaction/ into each judging process's private dir",
+  );
+});
+
 Deno.test("H-41 N1: a holder that stalled after its fence: a live claim is held; once stale, the taker materializes fence-0 first and drops W at either generation without computing", async () => {
   await using t = await makeEnv();
   const { cell, e } = await owedExecution(t);
