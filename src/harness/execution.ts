@@ -48,6 +48,7 @@ import type { Backend, HostLogLine } from "./backend.ts";
 import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import type { ResetMechanism } from "./reset.ts";
 import type { BcEgressRecord } from "./environment.ts";
+import type { JudgeGate } from "./pool.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -180,6 +181,12 @@ export interface HarnessEnv {
    * unset: judged inline, as before.
    */
   judgeLater?: (cell: CellRef, e: ExecutionRecord) => void;
+  /**
+   * H-41 (section 8): `auto` judging, the judges' pool. Then no judgment is
+   * computed outside the gated judge queue: without judgeLater a due
+   * execution stays owed.
+   */
+  judgePooled?: JudgeGate;
   backend: Backend;
   backendUrl: string;
   /** H-27: the run's shared build cache, also the backend's; unset: judges build without reuse. */
@@ -1519,6 +1526,9 @@ async function publishDraft(
   if (due && env.judgeLater) {
     // H-09: the slot frees now; the judge restages (judgeDeferred).
     env.judgeLater(cell, e);
+  } else if (due && env.judgePooled) {
+    // H-41 (section 8): only the gated queue judges in auto mode.
+    console.log(`[INFO] ${e.id}: judgment owed (judging pool)`);
   } else if (due) {
     const out = join(p.work, `restage-${crypto.randomUUID().slice(0, 8)}`);
     hold();

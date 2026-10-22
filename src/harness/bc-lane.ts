@@ -135,6 +135,8 @@ export type TestRow = z.output<typeof TestResultSchema>;
 export interface HealthView {
   getState(): { containers: { containerName: string; alert?: unknown }[] };
   record(o: ContainerOutcome): unknown;
+  /** H-41 (Q10): a container joining a pooled lane (ContainerHealthMonitor.register). */
+  register?(name: string): void;
 }
 
 export interface Held<T> {

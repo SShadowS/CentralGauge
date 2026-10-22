@@ -23,8 +23,12 @@ import {
 } from "../../src/errors.ts";
 import {
   allocatedContainer,
+  allocatedContainers,
   DEFAULT_COORD_ROOT,
 } from "../../src/harness/allocation.ts";
+import { coordLeaseBlock, laneBlocked } from "../../src/harness/coord-lease.ts";
+import { JudgePool, type PoolBounds } from "../../src/harness/pool.ts";
+import { ContainerProviderRegistry } from "../../src/container/registry.ts";
 import {
   Backend,
   defaultBackendOps,
@@ -59,7 +63,9 @@ import {
 import {
   admitOnPrem,
   ensurePin,
+  type EnvPin,
   holdNamespace,
+  pinPath,
   recoverFences,
   recoverInterrupted,
   refuseLegacyState,
@@ -109,7 +115,10 @@ import {
   rewriteOwned,
 } from "../../src/harness/quarantine.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
-import { containerId } from "../../src/container/docker-inspect.ts";
+import {
+  containerId,
+  inspectContainer,
+} from "../../src/container/docker-inspect.ts";
 import { loadTask } from "../../src/harness/task.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
@@ -153,6 +162,17 @@ export interface EnvOptions {
   concurrency?: number;
   /** The experiment's arm configs (harness run); above concurrency 1 the placed gate needs them (absent is refused). */
   configs?: readonly HarnessConfig[];
+  /**
+   * H-41 (Q1, section 6): `auto` judging: the judges are a pool that changes
+   * while the run goes on. "containers" (rejudge --containers auto): the
+   * lane itself, `containers` empty; "judges" (run --judge-containers auto):
+   * the judge lane, `judgeContainers` empty. Needs a lineage.
+   */
+  auto?: "containers" | "judges";
+  /** H-41 (Q5): --pool-wait-min, how long an empty pool may hold queued judging. */
+  poolWaitMin?: number;
+  /** H-41 (7): --coord-lease pairs: coord leases this run holds (container -> token). */
+  coordLeases?: ReadonlyMap<string, string>;
 }
 
 export interface EnvDeps {
@@ -174,6 +194,14 @@ export interface EnvDeps {
   inspect(): HarnessBc;
   /** H-35 run 004 #3: where persisted quarantine records live (coord root). */
   quarantineDir(): string;
+  /** H-41 (7): the coord root whose coord.json and leases admission reads (fail closed). */
+  coordRoot(): string;
+  /** H-41 (6): every container allocated to the campaign now (allocatedContainers). */
+  allocatedAll(): Promise<string[]>;
+  /** H-41 (5, 6): Docker reports the container running (read-only). */
+  running(name: string): Promise<boolean>;
+  /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
+  poolBounds?: Partial<PoolBounds>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
   containerId(name: string): Promise<string>;
   resolveHost(): Promise<string>;
@@ -207,6 +235,14 @@ export const REAL_DEPS: EnvDeps = {
   acquireLock: (dir, o) => acquireBenchLock(dir, o),
   docker: () => realDocker(),
   async setup(names) {
+    // H-41 (6): an `auto` pool's empty start: the provider its joins set up
+    // (setupContainers caches it per type in the registry).
+    if (names.length === 0) {
+      const bc = ContainerProviderRegistry.create(
+        "bccontainer",
+      ) as BcContainerProvider;
+      return { bc, names: [], dispose: () => bc.dispose() };
+    }
     const cfg = await ConfigManager.loadConfig();
     const r = await setupContainers(names, "bccontainer", cfg.container ?? {});
     const bc = r.containerProvider as BcContainerProvider;
@@ -219,6 +255,9 @@ export const REAL_DEPS: EnvDeps = {
       Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
       "harness-quarantine",
     ),
+  coordRoot: () => Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
+  allocatedAll: () => allocatedContainers(),
+  running: async (name) => (await inspectContainer(name))?.running === true,
   containerId,
   resolveHost: resolveBackendHost,
   owner: () => Deno.hostname(),
@@ -911,7 +950,14 @@ export async function openHarnessEnv(
       } (Cronus28: codeunit 80013 collision; Cronus284: owner pending)`,
     );
   }
-  if (o.containers.length === 0) {
+  // H-41 (Q1, section 10): `auto` judging needs a lineage (every admission
+  // compares env_fp); rejudge's pool is its only list, run's its judges.
+  if (o.auto && !lineage) {
+    throw new ConfigurationError(
+      "`auto` judging containers need --lineage (each joining container is admitted by its env_fp)",
+    );
+  }
+  if (o.containers.length === 0 && o.auto !== "containers") {
     throw new ConfigurationError(
       "pass --containers (BC containers the harness may use)",
     );
@@ -931,6 +977,21 @@ export async function openHarnessEnv(
   for (const c of o.containers) containers.push(await deps.allocated(c));
   const judgeNames: string[] = [];
   for (const c of judges) judgeNames.push(await deps.allocated(c));
+  // H-41 (7, Q7, F8): a fixed member another holder coord-leases refuses the
+  // start (fail closed); only an exact --coord-lease pair is this run's.
+  const coordRoot = deps.coordRoot();
+  const own = o.coordLeases ?? new Map<string, string>();
+  const leased = [...containers, ...judgeNames].flatMap((c) => {
+    const why = coordLeaseBlock(coordRoot, own, c);
+    return why ? [why] : [];
+  });
+  if (leased.length > 0) {
+    throw new ConfigurationError(
+      `container(s) not this run's to use (pass --coord-lease <container>=<token> for a lease it holds): ${
+        leased.join("; ")
+      }`,
+    );
+  }
   const symbols = await loadSymbolsLock(o.repoRoot);
   if (!symbols) {
     throw new ValidationError(
@@ -1075,19 +1136,23 @@ export async function openHarnessEnv(
     // its record (a failed quarantine write leaves the in-use claim).
     const lanes: BcLane[] = [];
     let setupFailed = false;
+    // H-41 (6, 9): records the judging pool keeps (a failed or unresolved
+    // join, a release it could not prove): never released here.
+    const kept = new Map<string, string>();
     closers.unshift(async () => {
       const q = new Set(
         lanes.flatMap((l) => [...l.quarantined.keys()]).map((c) =>
           c.toLowerCase()
         ),
       );
-      const keep = setupFailed
+      const all = setupFailed
         ? "setup failed after it may have changed the container"
         : closeFailures.length > 0
         ? `teardown failed: ${closeFailures.join("; ")}`
         : null;
       for (const w of claimed) {
         if (q.has(w.name.toLowerCase())) continue;
+        const keep = all ?? kept.get(w.name.toLowerCase());
         if (keep) {
           console.error(
             `${colors.yellow("[WARN]")} in-use record of ${w.name} kept (${
@@ -1114,14 +1179,20 @@ export async function openHarnessEnv(
     // record (by id or name: a quarantine, another environment's or a
     // recover's claim) exists. An unreadable id refuses too. Nothing has
     // touched a container yet, so a refusal releases this run's claims.
-    const held: string[] = [];
-    for (const c of [...containers, ...judgeNames]) {
+    // H-41 (6): claimContainer, also each pool join's claim (in `claimed`
+    // from the claim on).
+    const claimContainer = async (
+      c: string,
+    ): Promise<{ id: string | null; won: boolean; why: string[] }> => {
       let id: string;
       try {
         id = await deps.containerId(c);
       } catch (err) {
-        held.push(`${c} (container id unknown: ${msg(err)})`);
-        continue;
+        return {
+          id: null,
+          won: false,
+          why: [`${c} (container id unknown: ${msg(err)})`],
+        };
       }
       ids.set(c.toLowerCase(), { name: c, id });
       let won: boolean;
@@ -1143,14 +1214,25 @@ export async function openHarnessEnv(
       const others = (await findRecords(qDir, { name: c, id })).filter((f) =>
         f.record?.token !== token
       );
-      held.push(...others.map((f) => `${c} (${f.why})`));
+      const why = others.map((f) => `${c} (${f.why})`);
       if (!won && others.length === 0) {
-        held.push(
+        why.push(
           `${c} (in-use record ${
             recordFile(qDir, id)
           } exists but is no record)`,
         );
       }
+      return { id, won, why };
+    };
+    /** H-41 (6): release a pool member's record and drop its claimed entry. */
+    const releaseClaim = async (id: string) => {
+      await releaseOwned(qDir, id, token);
+      const k = claimed.findIndex((w) => w.id === id);
+      if (k >= 0) claimed.splice(k, 1);
+    };
+    const held: string[] = [];
+    for (const c of [...containers, ...judgeNames]) {
+      held.push(...(await claimContainer(c)).why);
     }
     if (held.length > 0) {
       throw new ConfigurationError(
@@ -1212,16 +1294,116 @@ export async function openHarnessEnv(
     }
     closers.unshift(ready.dispose);
     const health = deps.health(ready.names);
-    // setup keeps the order: the agents' names first, then the judges'.
-    const lane = new BcLane(ready.bc, ready.names.slice(0, containers.length), {
-      health,
-      persist,
-    });
-    const judgeLane = judgeNames.length > 0
-      ? new BcLane(ready.bc, ready.names.slice(containers.length), {
+    const lockDigest = lineage
+      ? await lockDigestOf({ store: o.symbolStore, packages: symbols })
+      : null;
+    const envInputs = lineage && lockDigest
+      ? {
+        resultsRoot: sharedResults,
+        lineageId: lineage.id,
+        lockDigest,
+        ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
+      }
+      : null;
+    // H-41 (6): the `auto` judging pool, inert until bindCampaign.
+    const pool = o.auto && lineage && envInputs
+      ? new JudgePool({
+        bc: ready.bc,
+        bounds: {
+          ...deps.poolBounds,
+          ...(o.poolWaitMin !== undefined
+            ? { waitMs: o.poolWaitMin * 60_000 }
+            : {}),
+        },
+        lane: { health, persist },
+        deps: {
+          allocated: () => deps.allocatedAll(),
+          excluded: (c) =>
+            REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
+              ? "refused by the harness (Cronus28, Cronus284)"
+              : containers.some((a) => a.toLowerCase() === c.toLowerCase())
+              ? "an agent container of this run"
+              : null,
+          blocked: laneBlocked({ coordRoot, own, drainDir: o.resultsDir }),
+          running: (c) => deps.running(c),
+          foreign: async (c) => {
+            const h = await containerHolds(deps, qDir, c);
+            if (h.id === null) return h.why.join("; ");
+            const why = h.found.filter((f) => f.record?.token !== token)
+              .map((f) => f.why);
+            return why.length > 0 ? why.join("; ") : null;
+          },
+          admissible: async (c) => {
+            const ch = await checkEnvironments(
+              deps.inspect(),
+              reset,
+              [c],
+              envInputs,
+            );
+            const row = ch.rows[0];
+            return ch.admissible && row
+              ? { env_fp: row.env_fp }
+              : { why: ch.refusal ?? row?.why ?? "not admissible" };
+          },
+          pinned: async (campaign) => {
+            const path = pinPath(o.resultsDir, campaign);
+            let pin: EnvPin;
+            try {
+              pin = JSON.parse(await Deno.readTextFile(path));
+            } catch (err) {
+              if (err instanceof Deno.errors.NotFound) return null;
+              throw new ConfigurationError(
+                `campaign pin ${path} unreadable: ${msg(err)}`,
+              );
+            }
+            if (pin.lineage_id !== lineage.id) {
+              throw new ConfigurationError(
+                `campaign ${campaign} is pinned to lineage ${pin.lineage_id} (${path}); this environment's is ${lineage.id}: refused (a lineage change needs a new campaign)`,
+              );
+            }
+            return pin.env_fp;
+          },
+          ensurePin: (campaign, fp) => ensurePin(env, campaign, fp),
+          claim: async (c) => {
+            const r = await claimContainer(c);
+            if (r.id !== null && r.why.length === 0) return { id: r.id };
+            // Nothing touched the container: a refused claim goes at once.
+            if (r.won && r.id !== null) await releaseClaim(r.id);
+            return { why: r.why.join("; ") };
+          },
+          release: (_c, id) => releaseClaim(id),
+          keep: (c, why) => void kept.set(c.toLowerCase(), why),
+          containerId: (c) => deps.containerId(c),
+          join: async (c) => {
+            const r = await deps.setup([c]);
+            const slot = r.bc as {
+              disposeContainerSlot?: (name: string) => Promise<void>;
+            };
+            return {
+              bc: r.bc,
+              dispose: () =>
+                slot.disposeContainerSlot?.(c) ?? Promise.resolve(),
+            };
+          },
+          register: (c) => health.register?.(c),
+        },
+      })
+      : undefined;
+    // H-41 (7): a fixed lane blocks on a coord lease, never on a drain marker.
+    const fixed = (names: string[]) =>
+      new BcLane(ready.bc, names, {
         health,
         persist,
-      })
+        blocked: laneBlocked({ coordRoot, own }),
+      });
+    // setup keeps the order: the agents' names first, then the judges'.
+    const lane = o.auto === "containers" && pool
+      ? pool.lane
+      : fixed(ready.names.slice(0, containers.length));
+    const judgeLane = o.auto === "judges" && pool
+      ? pool.lane
+      : judgeNames.length > 0
+      ? fixed(ready.names.slice(containers.length))
       : undefined;
     lanes.push(lane, ...(judgeLane ? [judgeLane] : []));
     // H-35 run 004 Sol r2 N3: no lane operation in flight before dispose and
@@ -1237,23 +1419,27 @@ export async function openHarnessEnv(
     // H-41 (sections 4, 10): the start members' env_fp, the campaign pin's.
     let pinContext: HarnessEnv["pinContext"];
     let startFp: string | null = null;
-    if (lineage) {
-      const lockDigest = await lockDigestOf({
-        store: o.symbolStore,
-        packages: symbols,
-      });
-      const check = await checkEnvironments(ready.bc, reset, ready.names, {
-        resultsRoot: sharedResults,
-        lineageId: lineage.id,
-        lockDigest,
-        ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
-      });
-      bcEgress = check.bc_egress;
+    if (lineage && lockDigest && envInputs) {
       pinContext = {
         lineage_id: lineage.id,
         lock_digest: lockDigest,
         command: o.command,
       };
+    }
+    // H-41 (Q8): a zero-member `auto` start: no row to check, the NST egress
+    // admission alone; each joining container is checked by the pool.
+    if (envInputs && ready.names.length === 0) {
+      const a = bcEgressAdmission(reset.bcEgress, o.bcEgressOverride);
+      if (a.refusal) throw new ConfigurationError(a.refusal);
+      bcEgress = a.record;
+    } else if (envInputs) {
+      const check = await checkEnvironments(
+        ready.bc,
+        reset,
+        ready.names,
+        envInputs,
+      );
+      bcEgress = check.bc_egress;
       startFp = check.rows[0]?.env_fp ?? null;
       const block = renderEnvCheck(check);
       if (!check.admissible) {
@@ -1356,8 +1542,13 @@ export async function openHarnessEnv(
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
       namespaceLost,
       ...(pinContext ? { pinContext } : {}),
-      bindCampaign: (id) => ensurePin(env, id, startFp),
+      ...(pool ? { judgePooled: pool } : {}),
+      // H-41 (10): an explicit list pins the start members' env_fp; `auto`
+      // binds the pool, whose first admission creates the pin.
+      bindCampaign: (id) => pool ? pool.bind(id) : ensurePin(env, id, startFp),
     };
+    // H-41 (9): the pool closes first (no join after it; in-flight work bounded).
+    if (pool) closers.unshift(() => pool.close());
     // H-41 (3.3): committed fences first; recovery then judges only what is owed.
     await recoverFences(env);
     const recovered = await recoverInterrupted(env, loadTask);

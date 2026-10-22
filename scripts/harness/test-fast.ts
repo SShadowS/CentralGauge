@@ -89,6 +89,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}outcome.test.ts`]: c(true, 0),
   [`${H}persistence-bans.test.ts`]: c(true, 1),
   [`${H}pi.test.ts`]: c(true, 0),
+  // H-41: in-process fakes and its own timers only.
+  [`${H}pool.test.ts`]: c(true, 2),
   [`${H}prenuke-owned.test.ts`]: c(true, 3),
   [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),
