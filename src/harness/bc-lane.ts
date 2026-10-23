@@ -1961,7 +1961,8 @@ export interface DeployContext {
   /**
    * H-35 S3 (design-r3 2.1): the reset run before every deployment of this
    * context. Judging always sets it (JudgeInput requires it); the agent's
-   * tool environment has none.
+   * tool environment has none. The L2a HttpClient block does not depend on
+   * it: every deployment sets it (H-43).
    */
   reset?: ResetMechanism;
   /** Every reset's record, failed ones included (the verdict log's `resets[]`). */
@@ -2068,26 +2069,37 @@ export async function deploy(
     }
     d.candidateFailure = { id: w!.id, message: msg };
   }
-  // H-35 S3 L2a (design-r5 2.2): in a judge deployment (it has a reset, the
-  // agent's tool environment has none) no candidate may make outbound HTTP
-  // calls. The setting lives in the tenant DB, so every deployment sets it
-  // again; a read-back other than false quarantines.
-  // Sol S3 r1 #4: every candidate, a publish failure notwithstanding (the
-  // others are installed), and a call that throws quarantines as well.
-  if (ctx.reset) {
-    for (const w of wanted.filter((w) => w.role === "candidate")) {
-      let back: string;
-      try {
-        back = await bc.setHttpClientAllowed(container, w.id, false);
-      } catch (err) {
-        back = `error: ${err instanceof Error ? err.message : String(err)}`;
-      }
-      if (back.trim() !== "allow=false") {
-        throw new HttpBlockFailedError(container, w.id, back);
-      }
+  await blockCandidateHttp(bc, container, wanted);
+  return d;
+}
+
+/**
+ * H-35 S3 L2a (design-r5 2.2), H-43: no candidate (agent-authored app) may
+ * make outbound HTTP calls, in judging and in the agent's tool environment
+ * alike, so every deployment runs this, before any test. The setting lives
+ * in the tenant DB, so every deployment sets it again; a read-back other
+ * than false refuses the deployment (HttpBlockFailedError: quarantined).
+ * Sol S3 r1 #4: every candidate, a publish failure notwithstanding (the
+ * others are installed), and a call that throws refuses as well.
+ * Owner 2026-10-23: after the publish, before any test, is the accepted
+ * scope; install/upgrade codeunits run before it (pre-publish write: H-46).
+ */
+async function blockCandidateHttp(
+  bc: HarnessBc,
+  container: string,
+  wanted: WantedApp[],
+): Promise<void> {
+  for (const w of wanted.filter((w) => w.role === "candidate")) {
+    let back: string;
+    try {
+      back = await bc.setHttpClientAllowed(container, w.id, false);
+    } catch (err) {
+      back = `error: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    if (back.trim() !== "allow=false") {
+      throw new HttpBlockFailedError(container, w.id, back);
     }
   }
-  return d;
 }
 
 export interface DeployTestResult {
@@ -2270,7 +2282,14 @@ export async function deployAndTest(
       }
       : { deployed, ...await runTests(bc, container, i.tests) };
   } catch (err) {
-    const c = await cleanAndVerify();
+    let c: string | null;
+    try {
+      c = await cleanAndVerify();
+    } catch (cleanErr) {
+      // H-43 Sol r1: a cleanup that throws never masks a quarantining failure
+      if (err instanceof QuarantiningError) throw err;
+      throw cleanErr;
+    }
     // H-35 run 004 Sol r1 H6: a dirty L4 check rides along with its diff
     const f = fsCheck as FsCheckRecord | null;
     if (c) throw new CleanupFailedError(err, c, container, fsEvidence(f));

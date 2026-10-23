@@ -21,6 +21,7 @@ import {
   type FsCheckRecord,
   type FsDiffEntry,
   HostDirtyError,
+  HttpBlockFailedError,
   ResetFailedError,
   type ResetMechanism,
   type ResetRecord,
@@ -2847,18 +2848,105 @@ Deno.test("H-35 S3 L2a: a read-back that is not allow=false fails the deployment
   assertEquals(bc.tests.filter((t) => t.container === "C1"), []);
 });
 
-Deno.test("H-35 S3 L2a: no setting outside a judge deployment (no reset: the agent's tool environment)", async () => {
+Deno.test("H-43 L2a: an agent-session deployment (no reset) blocks every candidate after the publish and before the tests; prerequisites are left alone", async () => {
+  const bc = new FakeBc();
+  const p = await prep(bc, new BcLane(bc, ["C1"]), ["Rental"]);
+  let testsAt = -1;
+  bc.script = (cu) => {
+    testsAt = bc.httpSettings.length;
+    return cu === 80010 ? result({ Works: true }) : result({});
+  };
+  await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [...p.candidateIds].reverse(),
+    ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
+  });
+  const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
+  assertEquals(cands.sort(), [IDS.rental, IDS.test].sort());
+  assertEquals(
+    bc.httpSettings.map((s) => [s.id, s.allowed]).sort(),
+    cands.map((id) => [id, false]).sort(),
+  );
+  assert(bc.httpSettings.every((s) => s.at >= 1), "after the publish");
+  assertEquals(testsAt, cands.length, "all set before the first test");
+});
+
+Deno.test("H-43 L2a: in an agent-session deployment (no reset) a read-back other than allow=false or a throw refuses the deployment (HttpBlockFailedError, no test runs)", async () => {
+  for (
+    const readback of [
+      () => "allow=true",
+      () => {
+        throw new ContainerError("SOAP timed out", "C1", "test");
+      },
+    ]
+  ) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]));
+    bc.httpReadback = readback;
+    await assertRejects(
+      async () =>
+        await deployAndTest(bc, "C1", {
+          wanted: p.wanted,
+          tests: [{
+            codeunit: 80010,
+            procedures: ["Works"],
+            target: "candidate",
+          }],
+          cleanupIds: [IDS.test],
+          ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
+        }),
+      HttpBlockFailedError,
+    );
+    assertEquals(bc.tests, []);
+  }
+});
+
+Deno.test("H-43 Sol r1: a cleanup that throws (allowlist refusal) never masks the HttpBlockFailedError", async () => {
   const bc = new FakeBc((cu) =>
     cu === 80010 ? result({ Works: true }) : result({})
   );
   const p = await prep(bc, new BcLane(bc, ["C1"]));
-  await deployAndTest(bc, "C1", {
+  bc.httpReadback = () => "allow=true";
+  await assertRejects(
+    async () =>
+      await deployAndTest(bc, "C1", {
+        wanted: p.wanted,
+        tests: [{
+          codeunit: 80010,
+          procedures: ["Works"],
+          target: "candidate",
+        }],
+        cleanupIds: ["00000000-0000-0000-0000-00000000dead"],
+        ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
+      }),
+    HttpBlockFailedError,
+  );
+});
+
+Deno.test("H-43 L2a: an agent-session candidate publish failure still blocks every candidate and runs no test", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]), ["Rental"]);
+  bc.publishFailure = (_c, n) =>
+    n === "CGR Rental"
+      ? "The schema synchronization failed: destructive changes"
+      : null;
+  const out = await deployAndTest(bc, "C1", {
     wanted: p.wanted,
     tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
-    cleanupIds: [IDS.test],
+    cleanupIds: [...p.candidateIds].reverse(),
     ctx: { ledgerRoot: await tmp(), trustedRoots: [p.pristine] },
   });
-  assertEquals(bc.httpSettings, []);
+  assert(out.deployed.candidateFailure);
+  assertEquals(bc.tests, []);
+  assertEquals(
+    bc.httpSettings.map((s) => s.id).sort(),
+    p.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
+  );
 });
 
 // ---- H-35 Sol S3 r1 fixes ----
