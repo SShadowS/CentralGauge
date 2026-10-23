@@ -398,10 +398,12 @@ function checkPayload(kind: string, p: J): string | null {
             ? "payload.findings[].category"
             : !SEVERITIES.includes(f["severity"] as string)
             ? "payload.findings[].severity"
+            // A-03 self-check r3: the id blastRadius reads, same precedence.
             : !isObj(s) ||
-                !["newStableId", "oldStableId", "normalizedStableId"].some((
-                  k,
-                ) => str(s[k]))
+                !str(
+                  s["newStableId"] ?? s["oldStableId"] ??
+                    s["normalizedStableId"],
+                )
             ? "payload.findings[].subject"
             : null;
         });

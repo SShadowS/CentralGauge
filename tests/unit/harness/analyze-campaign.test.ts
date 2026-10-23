@@ -524,6 +524,22 @@ Deno.test("alsemEnvelope: strict, a required field that is missing or mistyped i
       ...DIFF_PAYLOAD,
       findings: [{ ...GOOD_D, subject: {} }],
     }],
+    // A-03 self-check r3: an invalid higher-precedence id shadowing a valid
+    // lower one is rejected (the consumer reads new ?? old ?? normalized).
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{
+        ...GOOD_D,
+        subject: { newStableId: 0, oldStableId: "a:Codeunit:80001#h" },
+      }],
+    }],
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{
+        ...GOOD_D,
+        subject: { newStableId: "", normalizedStableId: "a:Codeunit:80001#h" },
+      }],
+    }],
     ["digest", "1.6.0", {
       ...DIGEST_PAYLOAD,
       entries: [{ routine: { anchor: {} }, effects: [] }],
