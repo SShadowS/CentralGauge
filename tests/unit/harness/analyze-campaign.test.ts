@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
-import { join } from "@std/path";
+import { basename, join } from "@std/path";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
 import {
   alsemEnvelope,
@@ -26,6 +26,7 @@ import {
   pinnedAlsemVersion,
   readDone,
   removeWorkspace,
+  resolveAlsemVersion,
   routineDeltas,
   type Row,
   startingTree,
@@ -352,6 +353,13 @@ const envelope = (
   payload,
 });
 
+const DIGEST_PAYLOAD = {
+  entries: [],
+  summary: {},
+  changedRootsDiagnostics: [],
+};
+const DIFF_PAYLOAD = { findings: [], summary: { findingsByCategory: {} } };
+
 Deno.test("alsemEnvelope: versions, kind and diagnostics; a wrong kind or an unknown schemaVersion fails loudly", () => {
   const diag = { code: "W001", message: "slow", severity: "warning" };
   const e = alsemEnvelope(
@@ -366,20 +374,27 @@ Deno.test("alsemEnvelope: versions, kind and diagnostics; a wrong kind or an unk
     payload: { findings: [] },
   });
   assertEquals(
-    alsemEnvelope(envelope("digest", "1.6.0", {}), "digest").schemaVersion,
+    alsemEnvelope(
+      envelope("digest", "1.6.0", DIGEST_PAYLOAD),
+      "digest",
+    ).schemaVersion,
     "1.6.0",
   );
   assertEquals(
-    alsemEnvelope(envelope("diff-report", "1.0.0", {}), "diff-report").kind,
+    alsemEnvelope(
+      envelope("diff-report", "1.0.0", DIFF_PAYLOAD),
+      "diff-report",
+    ).kind,
     "diff-report",
   );
   assertThrows(
-    () => alsemEnvelope(envelope("diff-report", "1.0.0", {}), "digest"),
+    () =>
+      alsemEnvelope(envelope("diff-report", "1.0.0", DIFF_PAYLOAD), "digest"),
     Error,
     'kind "diff-report"',
   );
   assertThrows(
-    () => alsemEnvelope(envelope("digest", "1.5.0", {}), "digest"),
+    () => alsemEnvelope(envelope("digest", "1.5.0", DIGEST_PAYLOAD), "digest"),
     Error,
     'schemaVersion "1.5.0"',
   );
@@ -388,6 +403,56 @@ Deno.test("alsemEnvelope: versions, kind and diagnostics; a wrong kind or an unk
     Error,
     "kind",
   );
+});
+
+Deno.test("alsemEnvelope: strict, a required field that is missing or mistyped is invalid, never defaulted", () => {
+  const ok = envelope("analyze-report", "1.0.0", { findings: [] });
+  const without = (k: string) => {
+    const { [k]: _, ...rest } = ok as Record<string, unknown>;
+    return rest;
+  };
+  const bad: [string, unknown][] = [
+    // the incomplete envelope from the self-check
+    [
+      "no alsemVersion / diagnostics",
+      {
+        kind: "analyze-report",
+        schemaVersion: "1.0.0",
+        payload: { findings: [] },
+      },
+    ],
+    ["no alsemVersion", without("alsemVersion")],
+    ["no schemaVersion", without("schemaVersion")],
+    ["numeric schemaVersion", { ...ok, schemaVersion: 1 }],
+    ["no diagnostics", without("diagnostics")],
+    ["null diagnostics", { ...ok, diagnostics: null }],
+    ["diagnostic without severity", { ...ok, diagnostics: [{ code: "X" }] }],
+    ["no payload", without("payload")],
+    ["array payload", { ...ok, payload: [] }],
+    ["numeric alsemVersion", { ...ok, alsemVersion: 2 }],
+    ["analyze without findings", { ...ok, payload: {} }],
+    ["analyze findings not an array", { ...ok, payload: { findings: {} } }],
+  ];
+  for (const [what, doc] of bad) {
+    assertThrows(() => alsemEnvelope(doc, "analyze-report"), Error, "", what);
+  }
+  const shapes: [string, string, unknown][] = [
+    ["digest", "1.6.0", {}],
+    ["digest", "1.6.0", { ...DIGEST_PAYLOAD, entries: null }],
+    ["digest", "1.6.0", { ...DIGEST_PAYLOAD, entries: [{}] }],
+    ["digest", "1.6.0", { entries: [], changedRootsDiagnostics: [] }],
+    ["diff-report", "1.0.0", {}],
+    ["diff-report", "1.0.0", { findings: [] }],
+    ["capability-snapshot", "1.1.0", null],
+  ];
+  for (const [kind, v, payload] of shapes) {
+    assertThrows(
+      () => alsemEnvelope(envelope(kind, v, payload as never), kind),
+      Error,
+      "",
+      `${kind} ${JSON.stringify(payload)}`,
+    );
+  }
 });
 
 Deno.test("exitError: exit 4 from --require-dependencies is a missing-dependency failure, other codes name the code", () => {
@@ -1200,13 +1265,24 @@ interface Fake {
   /** Tool-call overrides: the stdout (or --out file text) a command returns. */
   override: Record<string, string>;
   results: string;
+  /** Scratch workspace of every analyze call. */
+  wss: string[];
 }
+
+const DIGEST_ONE = {
+  ...DIGEST_PAYLOAD,
+  entries: [{
+    routine: { stableId: "r1", anchor: { file: "ws:Core/A.al" } },
+    effects: [],
+  }],
+};
 
 async function fake(root: string): Promise<Fake> {
   const store = join(root, "store");
   await Deno.mkdir(store, { recursive: true });
   const f: Fake = {
     calls: [],
+    wss: [],
     override: {},
     results: join(root, "results"),
     count: (w) => f.calls.filter((c) => c === w).length,
@@ -1219,9 +1295,12 @@ async function fake(root: string): Promise<Fake> {
     const out = args.includes("--out")
       ? args[args.indexOf("--out") + 1]!
       : null;
+    if (sub === "analyze") f.wss.push(args[1]!);
+    // The start tree is clean, the final tree has one finding: a real introduced finding.
+    const isStart = basename(args[1] ?? "").startsWith("start-");
     const text = f.override[sub] ?? ({
       analyze: envJson("analyze-report", "1.0.0", [], {
-        findings: [{
+        findings: isStart ? [] : [{
           detector: "d1",
           severity: "high",
           confidence: { level: "likely" },
@@ -1230,12 +1309,9 @@ async function fake(root: string): Promise<Fake> {
         }],
       }),
       ach: JSON.stringify({ metrics: [], findings: [] }),
-      digest: envJson("digest", "1.6.0", [], { entries: [], summary: {} }),
+      digest: envJson("digest", "1.6.0", [], DIGEST_ONE),
       fingerprint: envJson("capability-snapshot", "1.1.0", [], { x: 1 }),
-      diff: envJson("diff-report", "1.0.0", [], {
-        findings: [],
-        summary: { findingsByCategory: {} },
-      }),
+      diff: envJson("diff-report", "1.0.0", [], DIFF_PAYLOAD),
     } as Record<string, string>)[sub]!;
     if (out) {
       await Deno.writeTextFile(out, text);
@@ -1287,7 +1363,6 @@ async function step(
   hashes: Record<string, string>,
   startId = "S1",
   jobs = 2,
-  legacyDoneMs: number | null = null,
 ) {
   const startDir = join(f.t.dir, "starts");
   await tree(startDir, "a");
@@ -1296,7 +1371,7 @@ async function step(
     rows,
     f.results,
     new Map(Object.entries(hashes)),
-    () => Promise.resolve({ dir: startDir, id: startId, legacyDoneMs }),
+    () => Promise.resolve({ dir: startDir, id: startId }),
     [],
     jobs,
   );
@@ -1311,6 +1386,7 @@ async function step(
       id: string;
       metrics: Record<string, number>;
       introduced: unknown[];
+      touches: { roots: number };
     }[],
   };
 }
@@ -1375,18 +1451,6 @@ Deno.test("fail closed: an unparseable or wrong-kind fingerprint output fails th
   }
 });
 
-Deno.test("fail closed: a cached tree whose diagnostics hold an error is rejected on read", async () => {
-  await withFake(async (f) => {
-    const src = join(f.results, "workspaces", "h1");
-    await alsemTree(f.t, src, "h1", null);
-    const p = join(f.t.cache, "h1", "tree.json");
-    const j = JSON.parse(await Deno.readTextFile(p));
-    j.diagnostics = [{ ...ERR, command: "analyze" }];
-    await Deno.writeTextFile(p, JSON.stringify(j));
-    await assertRejects(() => alsemTree(f.t, src, "h1", null), Error, "AL0001");
-  });
-});
-
 Deno.test("cache identity: the same output dir with another start identity (rev) re-analyzes the start tree and recomputes diff and digest", async () => {
   await withFake(async (f) => {
     await step(f, [row("e1")], { e1: "h1" }, "S1");
@@ -1415,26 +1479,6 @@ Deno.test("cache identity: the same final tree reached by another patch recomput
   });
 });
 
-Deno.test("cache identity: a legacy digest.json is adopted only when its change.diff is this patch", async () => {
-  await withFake(async (f) => {
-    const src = join(f.results, "workspaces", "h1");
-    const legacy = join(f.t.cache, "h1");
-    await Deno.mkdir(legacy, { recursive: true });
-    await Deno.writeTextFile(
-      join(legacy, "change.diff"),
-      digestPatch(PATCH),
-    );
-    await Deno.writeTextFile(
-      join(legacy, "digest.json"),
-      envJson("digest", "1.6.0", [], { entries: [], summary: {} }),
-    );
-    await alsemTree(f.t, src, "h1", PATCH);
-    assertEquals(f.count("digest"), 0, "adopted without a tool run");
-    await alsemTree(f.t, src, "h1", PATCH + "+other\n");
-    assertEquals(f.count("digest"), 1, "another patch is not adopted");
-  });
-});
-
 Deno.test("DERIVATION: a stale tree.json is re-derived from the cached raw JSON, no tool runs", async () => {
   await withFake(async (f) => {
     const src = join(f.results, "workspaces", "h1");
@@ -1451,7 +1495,7 @@ Deno.test("DERIVATION: a stale tree.json is re-derived from the cached raw JSON,
     assertEquals(f.calls.length, calls, "no tool run");
     assertEquals(t.findings.map((x) => x.fingerprint), ["fp1"]);
     assertEquals(t.unused, []);
-    assertEquals(t.touches.roots, 0);
+    assertEquals(t.touches.roots, 1, "touches come from the digest file");
     assertEquals(
       JSON.parse(await Deno.readTextFile(p)).findings.length,
       1,
@@ -1460,24 +1504,120 @@ Deno.test("DERIVATION: a stale tree.json is re-derived from the cached raw JSON,
   });
 });
 
-Deno.test("concurrency: two executions with the same workspace hash at jobs>1 run the tools once and both rows are right", async () => {
+Deno.test("concurrency: same final tree at jobs>1, two patches and a second tree: tools once per distinct key, one diff per diff key, rows right", async () => {
   await withFake(async (f) => {
+    const other = PATCH + "+more\n";
     const r = await step(
       f,
-      [row("e1"), row("e2")],
-      { e1: "h1", e2: "h1" },
+      [row("e1"), row("e2"), row("e3", "HX-1", other), row("e4")],
+      { e1: "h1", e2: "h1", e3: "h1", e4: "h2" },
       "S1",
-      2,
+      4,
     );
     assertEquals(r.failed, []);
-    assertEquals(r.rows.map((x) => x.id).sort(), ["e1", "e2"]);
-    assertEquals(f.count("analyze"), 2, "start once, final once");
-    assertEquals(f.count("fingerprint"), 2);
-    assertEquals(f.count("digest"), 1);
+    assertEquals(r.rows.map((x) => x.id).sort(), ["e1", "e2", "e3", "e4"]);
+    assertEquals(f.count("analyze"), 3, "start once, two final trees once");
+    assertEquals(f.count("fingerprint"), 3);
+    assertEquals(f.count("digest"), 3, "h1 x two patches, h2 x one");
     assertEquals(
-      r.rows[0]!.metrics["alsem_new_findings"],
-      r.rows[1]!.metrics["alsem_new_findings"],
+      f.count("diff"),
+      2,
+      "one diff per (final tree, start identity)",
     );
+    for (const x of r.rows) {
+      assertEquals(x.metrics["alsem_new_findings"], 1, x.id);
+      assertEquals(x.touches.roots, 1, x.id);
+    }
+    // Scratch workspaces are named with a full UUID and never repeat.
+    assert(
+      f.wss.every((w) => /-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(w)),
+      f.wss.join(),
+    );
+    assertEquals(new Set(f.wss).size, f.wss.length);
+  });
+});
+
+Deno.test("revalidation: a raw analyze / fingerprint / ach file damaged after the cache was populated fails the tree hit; it never becomes a counted row", async () => {
+  const damage: [string, string][] = [
+    [
+      "analyze.json",
+      envJson("analyze-report", "1.0.0", [ERR], { findings: [] }),
+    ],
+    [
+      "analyze.json",
+      '{"kind":"analyze-report","schemaVersion":"1.0.0","payload":{"findings":[]}}',
+    ],
+    ["fingerprint.json", "not json"],
+    ["ach.json", '{"metrics":[{"path":1}],"findings":[]}'],
+  ];
+  for (const [file, text] of damage) {
+    await withFake(async (f) => {
+      const src = join(f.results, "workspaces", "h1");
+      const first = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(first.rows.length, 1);
+      await Deno.writeTextFile(join(f.t.cache, "h1", file), text);
+      await assertRejects(
+        () => alsemTree(f.t, src, "h1", PATCH),
+        Error,
+        "",
+        file,
+      );
+      // A new execution of the same tree (another patch, so not done) fails, no row.
+      const again = await step(f, [row("e2", "HX-1", PATCH + "+x\n")], {
+        e2: "h1",
+      });
+      assertEquals([file, again.rows.map((x) => x.id)], [file, []]);
+      assertEquals(again.failed.length, 1, file);
+    });
+  }
+});
+
+Deno.test("revalidation: an incomplete analyze envelope from the tool fails the execution", async () => {
+  await withFake(async (f) => {
+    f.override["analyze"] =
+      '{"kind":"analyze-report","schemaVersion":"1.0.0","payload":{"findings":[]}}';
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 0);
+    assertEquals(r.failed.length, 1);
+  });
+});
+
+Deno.test("done rows are bound to their artifacts: a changed digest or diff file makes the execution not done, it is recomputed", async () => {
+  for (const which of ["digest", "diff"]) {
+    await withFake(async (f) => {
+      const a = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(a.rows[0]!.touches.roots, 1);
+      const c = join(f.t.cache, "h1");
+      const names = (await Array.fromAsync(Deno.readDir(c))).map((e) => e.name);
+      const file = names.find((n) => n.startsWith(`${which}-`))!;
+      // A valid but different envelope: the row built on the old one must not survive.
+      await Deno.writeTextFile(
+        join(c, file),
+        which === "digest"
+          ? envJson("digest", "1.6.0", [], {
+            ...DIGEST_ONE,
+            entries: [...DIGEST_ONE.entries, ...DIGEST_ONE.entries],
+          })
+          : envJson("diff-report", "1.0.0", [], {
+            findings: [{ kind: "k", category: "abi", subject: {} }],
+            summary: { findingsByCategory: { abi: 1 } },
+          }),
+      );
+      const b = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(b.failed, []);
+      if (which === "digest") assertEquals(b.rows[0]!.touches.roots, 2);
+      else assertEquals(b.rows[0]!.metrics["abi_changes"], 1);
+    });
+  }
+});
+
+Deno.test("done rows: untouched artifacts keep the row done (skipped, no tool run)", async () => {
+  await withFake(async (f) => {
+    await step(f, [row("e1")], { e1: "h1" });
+    const calls = f.calls.length;
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 1);
+    assertEquals(f.calls.length, calls);
   });
 });
 
@@ -1507,7 +1647,7 @@ Deno.test("startingTree: keyed by rev + refapp commit + content; another rev reb
   }
 });
 
-Deno.test("startingTree: a legacy empty .done is adopted (not rebuilt over) when the tree equals a fresh build and was not touched after the stamp; otherwise replaced", async () => {
+Deno.test("startingTree: a legacy empty .done is never adopted, even for an untouched equal tree; the tree is rebuilt and stamped with an identity", async () => {
   const root = await Deno.makeTempDir({ prefix: "ac-start-" });
   try {
     const dir = join(root, "HX-1");
@@ -1516,43 +1656,50 @@ Deno.test("startingTree: a legacy empty .done is adopted (not rebuilt over) when
     await Deno.writeTextFile(done, "");
     const old = new Date(Date.now() - 60_000);
     await Deno.utime(done, old, old);
-    for await (const e of Deno.readDir(join(dir, "Core"))) {
-      await Deno.utime(join(dir, "Core", e.name), old, old);
+    for (const sub of ["Core", "Test"]) {
+      for await (const e of Deno.readDir(join(dir, sub))) {
+        await Deno.utime(join(dir, sub, e.name), old, old);
+      }
     }
-    for await (const e of Deno.readDir(join(dir, "Test"))) {
-      await Deno.utime(join(dir, "Test", e.name), old, old);
-    }
-    const fresh = async (d: string) => await tree(d, "a");
+    let built = 0;
+    const fresh = async (d: string) => {
+      built++;
+      await tree(d, "a");
+    };
     const s = await startingTree(".", "r1", "HX-1", "c1", root, fresh);
-    assertEquals(s.legacyDoneMs, old.getTime());
-    // Different content: the legacy stamp proves nothing, the tree is replaced.
-    await Deno.remove(root, { recursive: true });
-    await tree(join(root, "HX-1"), "stale");
-    await Deno.writeTextFile(join(root, "HX-1.done"), "");
-    const s2 = await startingTree(".", "r1", "HX-1", "c1", root, fresh);
-    assertEquals(s2.legacyDoneMs, null);
-    assertEquals(
-      await Deno.readTextFile(join(root, "HX-1", "Core", "A.al")),
-      "a",
-    );
+    assertEquals(built, 1, "rebuilt");
+    assertEquals(Object.keys(s).sort(), ["dir", "id"]);
+    const m = JSON.parse(await Deno.readTextFile(done));
+    assertEquals([m.rev, m.refapp, typeof m.tree], ["r1", "c1", "string"]);
+    assertEquals("legacy_done_ms" in m, false);
   } finally {
     await Deno.remove(root, { recursive: true }).catch(() => {});
   }
 });
 
-Deno.test("legacy start cache: adopted under the new key when proven (analyzed after the stamp), otherwise re-analyzed", async () => {
-  for (const proven of [true, false]) {
-    await withFake(async (f) => {
-      const startDir = join(f.t.dir, "starts");
-      await tree(startDir, "a");
-      await alsemTree(f.t, startDir, "start-HX-1", null); // the legacy key
-      const done = proven ? 0 : Date.now() + 3_600_000;
-      const before = f.count("analyze");
-      await step(f, [row("e1")], { e1: "h1" }, "S1", 1, done);
-      // Final tree is analyzed in both cases; the start tree only when not proven.
-      assertEquals(f.count("analyze") - before, proven ? 1 : 2);
-    });
-  }
+Deno.test("legacy-only cache (pre-identity layout): start tree and digest are recomputed, nothing is adopted", async () => {
+  await withFake(async (f) => {
+    const startDir = join(f.t.dir, "starts");
+    await tree(startDir, "a");
+    await alsemTree(f.t, startDir, "start-HX-1", null); // legacy start key
+    const legacy = join(f.t.cache, "h1");
+    await Deno.mkdir(legacy, { recursive: true });
+    await Deno.writeTextFile(join(legacy, "change.diff"), digestPatch(PATCH));
+    await Deno.writeTextFile(
+      join(legacy, "digest.json"),
+      envJson("digest", "1.6.0", [], DIGEST_PAYLOAD),
+    );
+    const analyze = f.count("analyze");
+    const r = await step(f, [row("e1")], { e1: "h1" }, "S1", 1);
+    assertEquals(r.failed, []);
+    assertEquals(f.count("analyze") - analyze, 2, "start and final analyzed");
+    assertEquals(f.count("digest"), 1, "digest recomputed, not adopted");
+    assertEquals(
+      r.rows[0]!.touches.roots,
+      1,
+      "the fresh digest, not the legacy",
+    );
+  });
 });
 
 Deno.test("pinnedAlsemVersion: reused only when the binary hash matches the recorded one", () => {
@@ -1561,6 +1708,19 @@ Deno.test("pinnedAlsemVersion: reused only when the binary hash matches the reco
   assertEquals(pinnedAlsemVersion(prev, "abd"), null);
   assertEquals(pinnedAlsemVersion(null, "abc"), null);
   assertEquals(pinnedAlsemVersion({ alsem: { sha256: "abc" } }, "abc"), null);
+});
+
+Deno.test("resolveAlsemVersion (the entrypoint's version step): `--version` is not run when the sha256 matches the pin, only when it does not", async () => {
+  const prev = { alsem: { version: "al-sem 2.0.2", sha256: "abc" } };
+  let runs = 0;
+  const run = () => {
+    runs++;
+    return Promise.resolve("al-sem 9.9.9\n");
+  };
+  assertEquals(await resolveAlsemVersion(prev, "abc", run), "al-sem 2.0.2");
+  assertEquals(runs, 0);
+  assertEquals(await resolveAlsemVersion(prev, "abd", run), "al-sem 9.9.9");
+  assertEquals(runs, 1);
 });
 
 Deno.test("keepExecution: no filter keeps all; otherwise an id or id prefix in the list", () => {

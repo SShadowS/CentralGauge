@@ -112,18 +112,25 @@ that can follow it into the store. On each tree it runs (alsem commands with `--
 
 Then per execution it runs `alsem diff` on the two fingerprints, and `alsem digest --diff` with
 the execution's patch (paths relative to the merged app folder, which is the workspace root).
-Every alsem envelope is checked (kind, schemaVersion); `alsemVersion`, `schemaVersion` and the
-envelope `diagnostics` are kept per tree in each row, and `summary.json` counts the diagnostics.
-An error-level envelope diagnostic, an unparseable or wrong-kind envelope (the fingerprint included)
-fails the tree and the execution, never a zero-findings row; cached outputs are checked the same
-way. Results are cached under `<out>\alsem\cache\`: the final tree per workspace hash, its digest
+Every alsem envelope is validated strictly: `alsemVersion` (string), `schemaVersion` (supported
+string), `kind`, `diagnostics` (array of objects with a severity) and `payload` (object) must all be
+present with their types, plus the payload fields the runner reads (analyze `findings`; digest
+`entries`, `summary`, `changedRootsDiagnostics`; diff `findings`, `summary`); nothing is defaulted.
+The al-call-hierarchy output is checked for the metrics / findings fields it uses.
+`alsemVersion`, `schemaVersion` and the envelope `diagnostics` are kept per tree in each row, and
+`summary.json` counts the diagnostics. An error-level envelope diagnostic, an unparseable, wrong-kind
+or incomplete envelope (the fingerprint included) fails the tree and the execution, never a
+zero-findings row. Every cache hit re-validates: the raw analyze / ach / fingerprint files behind a
+`tree.json` are re-checked and `tree.json` re-derived on each read, digest and diff files are
+checked on read. Results are cached under `<out>\alsem\cache\`: the final tree per workspace hash, its digest
 per patch hash (`digest-<patch>.json`), one start tree per baseline identity (`start-<task>-<id>`,
 id = rev + refapp commit + tree content, recorded in `.start\<task>.done`), the diff per
 (start id, final hash). Another `--rev` rebuilds the start artifacts. Entries from before this
-keying (`start-<task>`, `digest.json` + `change.diff`) are adopted without tool runs only when
-provable (tree equal to a fresh build and untouched since its `.done`, analysed after it; the
-digest's `change.diff` equal to this patch); otherwise recomputed. `tree.json` carries a `derive`
-version: when it differs the derived fields are rebuilt from the cached raw JSON, no tool runs.
+keying (`start-<task>`, `digest.json` + `change.diff`, an empty `.done`) are never adopted: their
+provenance cannot be proven, so start trees and digests are recomputed. `tree.json` carries a
+`derive` version; the derived fields are rebuilt from the cached raw JSON on every read, no tool
+runs. A done row also carries the sha256 of the artifacts it was computed from (start and final
+`tree.json`, the digest, the diff); if one changed or is missing the execution is not done.
 `alsem --version` is skipped when the binary's sha256 matches `tools.json`. A re-run (for example after a rejudge) only redoes the cheap part. Measured
 on v2.0.1 (smoke, 3 jobs): per tree analyze ~32-44 s at ~5.4 GB peak, al-call-hierarchy ~11-13 s
 at ~0.8 GB, fingerprint ~11-14 s at ~0.8 GB, digest ~33-45 s at ~5.4 GB, diff < 1 s: about
