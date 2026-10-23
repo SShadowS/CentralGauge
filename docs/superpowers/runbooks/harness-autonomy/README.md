@@ -154,6 +154,28 @@ Bash `/` spans every drive).
   `coord accept` with the merge SHA. A conflict goes back to the lane (`coord reject`).
 - Commit messages end with the attribution lines required by the session.
 
+## Subagent models
+
+Every Agent call sets `model` explicitly; never rely on `inherit` (agent definitions such as
+typescript-pro and code-reviewer inherit the session's Opus). Sonnet is the default (owner,
+2026-10-23):
+
+- `haiku`: searches, file and log reading, grepping evidence, listing what changed.
+- `sonnet` (default): all implementation, TDD runs, fix runs scoped by a review or rejection,
+  test-writing, re-reviews of a fix diff, refactors, doc updates.
+- `opus`, only for:
+  - design decisions and design documents for a gate;
+  - task and oracle authoring;
+  - implementation and self-review of security- or correctness-critical code: sandbox,
+    lockdown, egress, the L1-L4 judging controls, scoring, statistics;
+  - a retry after a `sonnet` attempt at the same step failed (say what failed).
+
+Outside the security- and correctness-critical list, start with `sonnet` and escalate one step
+only after it fails. The submission message lists every subagent model the run used and, for
+each `opus` use, a one-line reason from the list above (owner rulings 2026-10-03 and
+2026-10-23). The orchestrator checks that line at review; an `opus` use without a listed
+reason is a review remark.
+
 ## Reviews (orchestrator)
 
 1. Freeze inputs: write the relevant files with `git show <sha>:<path>` into
