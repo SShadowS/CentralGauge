@@ -732,6 +732,58 @@ async function diffTrees(
   return { files, patch: patches.join("") };
 }
 
+// ---------------------------------------------------------------- resumable outputs
+
+/** What one execution's output was computed from: both binaries, the task rev, the final workspace. */
+export interface DoneStamp {
+  build: string;
+  rev: string;
+  hash: string;
+}
+
+/** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
+export async function writeAtomic(path: string, text: string): Promise<void> {
+  const tmp = `${path}.tmp-${Deno.pid}-${crypto.randomUUID().slice(0, 8)}`;
+  await Deno.writeTextFile(tmp, text);
+  await Deno.rename(tmp, path);
+}
+
+export function writeDone(
+  dir: string,
+  id: string,
+  stamp: DoneStamp,
+  row: unknown,
+): Promise<void> {
+  return writeAtomic(join(dir, `${id}.json`), JSON.stringify({ stamp, row }));
+}
+
+/** The execution's stored row, or null when absent, unparsable, or made by another build / rev / workspace. */
+export async function readDone<T>(
+  dir: string,
+  id: string,
+  stamp: DoneStamp,
+): Promise<T | null> {
+  const x = await readJsonOr(join(dir, `${id}.json`));
+  const s = x?.["stamp"] as DoneStamp | undefined;
+  return s && s.build === stamp.build && s.rev === stamp.rev &&
+      s.hash === stamp.hash
+    ? (x!["row"] as T)
+    : null;
+}
+
+/** Every done row among `stamps` (earlier runs included), in id order. */
+export async function loadDone<T>(
+  dir: string,
+  stamps: Map<string, DoneStamp>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (const id of [...stamps.keys()].sort()) {
+    const r = await readDone<T>(dir, id, stamps.get(id)!);
+    if (r) rows.push(r);
+  }
+  return rows;
+}
+
 // ---------------------------------------------------------------- al-sem runner
 
 interface AlsemTools {
@@ -743,6 +795,10 @@ interface AlsemTools {
   dir: string;
   /** Cache root for this build: the two binaries' hashes, so another build never reads these results. */
   cache: string;
+  /** Full sha256 of both binaries; part of every done marker. */
+  build: string;
+  /** Task rev the starting trees come from; part of every done marker. */
+  rev: string;
 }
 
 interface AlsemTree {
@@ -856,13 +912,10 @@ async function alsemTree(
         "json",
         "--deterministic",
       ]);
-      await Deno.writeTextFile(join(cache, "digest.json"), digest);
+      await writeAtomic(join(cache, "digest.json"), digest);
       touches = digestTouches(JSON.parse(digest));
     }
-    await Deno.writeTextFile(
-      join(cache, "analyze.json"),
-      JSON.stringify(analyze),
-    );
+    await writeAtomic(join(cache, "analyze.json"), JSON.stringify(analyze));
     const tree: AlsemTree = {
       findings: alsemFindings(analyze),
       metrics: ach.metrics,
@@ -872,7 +925,7 @@ async function alsemTree(
       touches,
       diagnostics: (analyze["diagnostics"] ?? []) as unknown[],
     };
-    await Deno.writeTextFile(done, JSON.stringify(tree));
+    await writeAtomic(done, JSON.stringify(tree));
     return tree;
   } finally {
     await Deno.remove(ws, { recursive: true }).catch(() => {});
@@ -945,11 +998,22 @@ async function alsemStep(
     }
     return starts.get(task)!;
   };
-  const out: AlsemRow[] = [];
   const todo = rows.filter((r) => hashOf.has(r.id));
+  const execDir = join(t.cache, "exec");
+  await Deno.mkdir(execDir, { recursive: true });
+  const stampOf = (id: string): DoneStamp => ({
+    build: t.build,
+    rev: t.rev,
+    hash: hashOf.get(id)!,
+  });
   let n = 0;
+  let skipped = 0;
   await pool(jobs, todo, async (r) => {
     const hash = hashOf.get(r.id)!;
+    if (await readDone(execDir, r.id, stampOf(r.id))) {
+      skipped++;
+      return;
+    }
     try {
       const s = await startTree(r.task);
       const f = await alsemTree(
@@ -960,6 +1024,7 @@ async function alsemStep(
       );
       const diffOut = join(t.cache, hash, `diff-${r.task}.json`);
       if (!await Deno.stat(diffOut).then(() => true, () => false)) {
+        const tmp = `${diffOut}.tmp-${Deno.pid}`;
         await run(t.alsem, [
           "diff",
           s.fingerprint,
@@ -968,8 +1033,9 @@ async function alsemStep(
           "json",
           "--deterministic",
           "--out",
-          diffOut,
+          tmp,
         ]);
+        await Deno.rename(tmp, diffOut);
       }
       const introduced = introducedFindings(s.findings, f.findings);
       const deltas = routineDeltas(s.metrics, f.metrics, {
@@ -978,7 +1044,7 @@ async function alsemStep(
       });
       const blast = blastRadius(await readJson(diffOut), f.testRanges);
       const touches = f.touches!;
-      out.push({
+      const row: AlsemRow = {
         id: r.id,
         arm: r.arm,
         task: r.task,
@@ -990,13 +1056,25 @@ async function alsemStep(
         blast,
         touches,
         diagnostics: [...s.diagnostics, ...f.diagnostics],
-      });
+      };
+      // Written last and atomically: only a complete row marks the execution done.
+      await writeDone(execDir, r.id, stampOf(r.id), row);
     } catch (err) {
       console.error(`[WARN] alsem ${r.id}: ${(err as Error).message}`);
     }
     if (++n % 10 === 0) console.error(`[alsem] ${n}/${todo.length}`);
   });
-  out.sort((a, b) => a.id.localeCompare(b.id));
+  // Everything done for this build, this run's and earlier runs'; failures are absent.
+  const byId = new Map(todo.map((r) => [r.id, r]));
+  const out = (await loadDone<AlsemRow>(
+    execDir,
+    new Map(todo.map((r) => [r.id, stampOf(r.id)])),
+  )).map((x) => ({ ...x, verdict: byId.get(x.id)!.verdict }));
+  console.error(
+    `[alsem] ${out.length}/${todo.length} done (${skipped} were done already, ${
+      todo.length - out.length
+    } failed)`,
+  );
   await Deno.writeTextFile(
     join(t.dir, "executions.json"),
     JSON.stringify(out, null, 1),
@@ -1751,6 +1829,8 @@ async function main() {
         "cache",
         `${alsemSha.slice(0, 12)}-${achSha.slice(0, 12)}`,
       ),
+      build: `${alsemSha}-${achSha}`,
+      rev: args.rev,
     };
     const missing = [];
     for (const p of t.lock) {

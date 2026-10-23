@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { join } from "@std/path";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
 import {
   alsemFindings,
@@ -7,12 +8,16 @@ import {
   classifyLoss,
   digestTouches,
   introducedFindings,
+  loadDone,
   type LossInput,
   mergedAppJson,
   missingFromShipped,
   objectApps,
+  readDone,
   routineDeltas,
   traceProfile,
+  writeAtomic,
+  writeDone,
 } from "../../../scripts/harness/analyze-campaign.ts";
 
 Deno.test("missingFromShipped: a missing name the patch adds to a shipped test file, not one added elsewhere", () => {
@@ -690,4 +695,78 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
       unmapped_hunks: 1,
     },
   );
+});
+
+const stamp = { build: "alsem1-ach1", rev: "r1", hash: "h1" };
+
+async function tmp<T>(f: (dir: string) => Promise<T>): Promise<T> {
+  const dir = await Deno.makeTempDir({ prefix: "ac-done-" });
+  try {
+    return await f(dir);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+Deno.test("done markers: a written execution is done and skipped; reads back the row", async () => {
+  await tmp(async (dir) => {
+    assertEquals(await readDone(dir, "e1", stamp), null);
+    await writeDone(dir, "e1", stamp, { id: "e1", n: 3 });
+    assertEquals(await readDone(dir, "e1", stamp), { id: "e1", n: 3 });
+  });
+});
+
+Deno.test("done markers: a temp or truncated file never counts as done", async () => {
+  await tmp(async (dir) => {
+    // what a killed run leaves behind: a temp file, and a cut-off final file
+    await Deno.writeTextFile(join(dir, "e1.json.tmp-1-abc"), "{}");
+    assertEquals(await readDone(dir, "e1", stamp), null);
+    await Deno.writeTextFile(join(dir, "e2.json"), '{"stamp":{"build":"al');
+    assertEquals(await readDone(dir, "e2", stamp), null);
+    assertEquals(
+      await loadDone(dir, new Map([["e1", stamp], ["e2", stamp]])),
+      [],
+    );
+  });
+});
+
+Deno.test("done markers: another build, task rev or workspace is not done", async () => {
+  await tmp(async (dir) => {
+    await writeDone(dir, "e1", stamp, { id: "e1" });
+    for (
+      const other of [
+        { ...stamp, build: "alsem2-ach1" },
+        { ...stamp, rev: "r2" },
+        { ...stamp, hash: "h2" },
+      ]
+    ) assertEquals(await readDone(dir, "e1", other), null);
+  });
+});
+
+Deno.test("loadDone: aggregates every done execution of the campaign, earlier runs included, in id order", async () => {
+  await tmp(async (dir) => {
+    await writeDone(dir, "b", stamp, { id: "b" });
+    await writeDone(dir, "a", stamp, { id: "a" });
+    await writeDone(dir, "old", { ...stamp, build: "x" }, { id: "old" });
+    const stamps = new Map([
+      ["a", stamp],
+      ["b", stamp],
+      ["c", stamp],
+      ["old", stamp],
+    ]);
+    assertEquals(await loadDone(dir, stamps), [{ id: "a" }, { id: "b" }]);
+  });
+});
+
+Deno.test("writeAtomic: replaces the file and leaves no temp file", async () => {
+  await tmp(async (dir) => {
+    const p = join(dir, "x.json");
+    await writeAtomic(p, "one");
+    await writeAtomic(p, "two");
+    assertEquals(await Deno.readTextFile(p), "two");
+    assertEquals(
+      (await Array.fromAsync(Deno.readDir(dir))).map((e) => e.name),
+      ["x.json"],
+    );
+  });
 });

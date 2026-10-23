@@ -105,7 +105,14 @@ locked packages hard-linked into `.alpackages`. On each tree it runs:
 Then per execution it runs `alsem diff` on the two fingerprints, and `alsem digest --diff` with
 the execution's patch. Results are cached per workspace hash, plus one start tree per task, under
 `<out>\alsem\cache\`. A re-run (for example after a rejudge) only redoes the cheap part. Expect
-about 70 s per execution for a fresh cache. Outputs in `<out>\alsem\`:
+about 70 s per execution for a fresh cache.
+
+The step resumes per execution. Each finished execution is written atomically (temp file, then
+rename) to `cache\<build>\exec\<id>.json`, stamped with both full binary hashes, the task rev and
+the workspace hash. A re-run, also after a kill, skips every execution whose file matches, redoes
+failed ones (`[WARN] alsem <id>`), and aggregates all `exec\` files, earlier runs included. Another
+al-sem or al-call-hierarchy build gets its own cache folder and reuses nothing. The log ends with
+`[alsem] N/M done (K were done already, F failed)`. Outputs in `<out>\alsem\`:
 - `tools.json`: the build, its hashes and the store.
 - `executions.json` / `.csv`: per execution the metrics below, plus the introduced findings, the
   routine deltas, the blast radius and the digest touches.
