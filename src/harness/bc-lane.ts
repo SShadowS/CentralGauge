@@ -2081,6 +2081,8 @@ export async function deploy(
  * than false refuses the deployment (HttpBlockFailedError: quarantined).
  * Sol S3 r1 #4: every candidate, a publish failure notwithstanding (the
  * others are installed), and a call that throws refuses as well.
+ * Owner 2026-10-23: after the publish, before any test, is the accepted
+ * scope; install/upgrade codeunits run before it (pre-publish write: H-46).
  */
 async function blockCandidateHttp(
   bc: HarnessBc,
