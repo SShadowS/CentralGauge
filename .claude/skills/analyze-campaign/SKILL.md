@@ -107,6 +107,11 @@ the execution's patch. Results are cached per workspace hash, plus one start tre
 `<out>\alsem\cache\`. A re-run (for example after a rejudge) only redoes the cheap part. Expect
 about 70 s per execution for a fresh cache.
 
+Executions with termination `harness_crash` (H-29 ruling, 2026-10-18) keep their rows in
+`executions.json/.csv` and `introduced.csv`, flagged `excluded`, but are left out of `summary.json`
+(per arm, per pair). `exclusions.md` is the "Static analysis (al-sem)" exclusion paragraph with the
+ids: paste it into findings.md's section.
+
 The step resumes per execution. Each finished execution is written atomically (temp file, then
 rename) to `cache\<build>\exec\<id>.json`, stamped with both full binary hashes, the task rev and
 the workspace hash. A re-run, also after a kill, skips every execution whose file matches, redoes

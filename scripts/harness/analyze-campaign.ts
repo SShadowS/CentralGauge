@@ -932,7 +932,32 @@ async function alsemTree(
   }
 }
 
+/** H-29 ruling (2026-10-18): a harness_crash execution stays in the per-execution rows, flagged, but out of every al-sem aggregate. */
+export function alsemExclusion(termination: string): string | null {
+  return termination === "harness_crash" ? "harness_crash" : null;
+}
+
+export function alsemExclusionText(
+  excluded: {
+    id: string;
+    arm: string;
+    task: string;
+    repeat: number;
+    excluded: string | null;
+  }[],
+): string {
+  const head = "Executions with termination `harness_crash` are left out of " +
+    "every al-sem aggregate (per arm, per pair, medians and counts) under the " +
+    "2026-10-18 H-29 ruling; their per-execution rows stay, flagged `excluded`.";
+  if (!excluded.length) return `${head} Excluded here: none.\n`;
+  const lines = [...excluded].sort((a, b) => a.id.localeCompare(b.id)).map((
+    x,
+  ) => `- ${x.id} (${x.arm}, ${x.task} r${x.repeat}): ${x.excluded}`);
+  return `${head} Excluded here: ${excluded.length}.\n\n${lines.join("\n")}\n`;
+}
+
 interface AlsemRow {
+  excluded?: string | null;
   id: string;
   arm: string;
   task: string;
@@ -1066,38 +1091,52 @@ async function alsemStep(
   });
   // Everything done for this build, this run's and earlier runs'; failures are absent.
   const byId = new Map(todo.map((r) => [r.id, r]));
-  const out = (await loadDone<AlsemRow>(
+  const all = (await loadDone<AlsemRow>(
     execDir,
     new Map(todo.map((r) => [r.id, stampOf(r.id)])),
-  )).map((x) => ({ ...x, verdict: byId.get(x.id)!.verdict }));
+  )).map((x) => ({
+    ...x,
+    verdict: byId.get(x.id)!.verdict,
+    excluded: alsemExclusion(byId.get(x.id)!.termination),
+  }));
+  const excluded = all.filter((r) => r.excluded);
+  const out = all.filter((r) => !r.excluded); // aggregates read this
+  await writeAtomic(
+    join(t.dir, "exclusions.md"),
+    `## Static analysis (al-sem): exclusions\n\n${
+      alsemExclusionText(excluded)
+    }`,
+  );
   console.error(
-    `[alsem] ${out.length}/${todo.length} done (${skipped} were done already, ${
-      todo.length - out.length
-    } failed)`,
+    `[alsem] ${all.length}/${todo.length} done (${skipped} were done already, ${
+      todo.length - all.length
+    } failed), ${excluded.length} excluded from aggregates`,
   );
   await Deno.writeTextFile(
     join(t.dir, "executions.json"),
-    JSON.stringify(out, null, 1),
+    JSON.stringify(all, null, 1),
   );
   await Deno.writeTextFile(
     join(t.dir, "executions.csv"),
-    csv(out.map((r) => ({
+    csv(all.map((r) => ({
       id: r.id,
       arm: r.arm,
       task: r.task,
       repeat: r.repeat,
       verdict: r.verdict,
+      excluded: r.excluded ?? "",
       ...r.metrics,
     }))),
   );
   await Deno.writeTextFile(
     join(t.dir, "introduced.csv"),
     csv(
-      out.flatMap((r) =>
+      all.flatMap((r) =>
         r.introduced.map((f) => ({
           execution: r.id,
           arm: r.arm,
           task: r.task,
+          excluded: r.excluded ?? "",
           ...f,
         }))
       ),
@@ -1161,6 +1200,13 @@ async function alsemStep(
     join(t.dir, "summary.json"),
     JSON.stringify(
       {
+        excluded: excluded.map((r) => ({
+          id: r.id,
+          arm: r.arm,
+          task: r.task,
+          repeat: r.repeat,
+          reason: r.excluded,
+        })),
         per_arm: Object.fromEntries(
           arms.map((a) => [a, agg(out.filter((r) => r.arm === a))]),
         ),

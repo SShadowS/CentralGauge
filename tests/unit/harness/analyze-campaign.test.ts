@@ -2,6 +2,8 @@ import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
 import {
+  alsemExclusion,
+  alsemExclusionText,
   alsemFindings,
   alsemSummary,
   blastRadius,
@@ -756,6 +758,37 @@ Deno.test("loadDone: aggregates every done execution of the campaign, earlier ru
     ]);
     assertEquals(await loadDone(dir, stamps), [{ id: "a" }, { id: "b" }]);
   });
+});
+
+Deno.test("alsemExclusion: harness_crash is excluded, every other termination is kept", () => {
+  assertEquals(alsemExclusion("harness_crash"), "harness_crash");
+  for (const t of ["completed", "timeout", "budget"]) {
+    assertEquals(alsemExclusion(t), null);
+  }
+});
+
+Deno.test("alsemExclusionText: states the rule and lists the excluded executions, or says none", () => {
+  const txt = alsemExclusionText([
+    {
+      id: "e2",
+      arm: "A",
+      task: "HX-032",
+      repeat: 3,
+      excluded: "harness_crash",
+    },
+    {
+      id: "e1",
+      arm: "A",
+      task: "HX-031",
+      repeat: 3,
+      excluded: "harness_crash",
+    },
+  ]);
+  assertEquals(txt.includes("harness_crash"), true);
+  assertEquals(txt.includes("H-29"), true);
+  assertEquals(txt.indexOf("e1") < txt.indexOf("e2"), true);
+  assertEquals(txt.includes("HX-031 r3"), true);
+  assertEquals(alsemExclusionText([]).includes("none"), true);
 });
 
 Deno.test("writeAtomic: replaces the file and leaves no temp file", async () => {
