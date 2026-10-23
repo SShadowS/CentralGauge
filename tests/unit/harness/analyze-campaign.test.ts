@@ -452,6 +452,7 @@ Deno.test("alsemFindings + introducedFindings: final minus start matched by fing
   assertEquals(final[4], {
     detector: "d34-commit-in-loop",
     severity: "high",
+    confidence: "high",
     object: "CGR Tests",
     routine: "T1",
     file: "Test/src/T.al",
@@ -910,6 +911,7 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
   ) => ({
     detector,
     severity,
+    confidence: "likely",
     object: "A",
     routine: "R",
     file: `${app}/src/A.al`,
@@ -998,11 +1000,17 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
         unmapped_hunks: 1,
         unmatched_files: 2,
       },
+      changed_prod_lines: 50,
     }),
     {
       alsem_new_findings: 3,
       alsem_new_high_findings: 2,
       alsem_new_test_findings: 1,
+      curated_weighted: 7,
+      changed_prod_lines: 50,
+      curated_density: 14,
+      alsem_d3_introduced: 0,
+      alsem_d9_introduced: 0,
       complexity_delta: 5,
       lines_delta: 18,
       fan_in_delta: 2,

@@ -338,6 +338,8 @@ export function exitError(
 export interface AlsemFinding {
   detector: string;
   severity: string;
+  /** analyze `confidence.level`: "likely" or "possible"; "" when the finding has none. */
+  confidence: string;
   object: string;
   routine: string;
   file: string;
@@ -354,6 +356,7 @@ export function alsemFindings(payload: J): AlsemFinding[] {
     return {
       detector: f["detector"] as string,
       severity: f["severity"] as string,
+      confidence: String((f["confidence"] as J | undefined)?.["level"] ?? ""),
       object: (loc["objectName"] as string | undefined) ?? "",
       routine: (loc["routineName"] as string | undefined) ?? "",
       file,
@@ -693,6 +696,14 @@ export interface AlsemMetrics {
   alsem_new_findings: number;
   alsem_new_high_findings: number;
   alsem_new_test_findings: number;
+  /** Curated: likely only, critical 5 / high 3 / medium 1, d3 and d9 out (see curatedCounts). */
+  curated_weighted: number;
+  changed_prod_lines: number;
+  /** curated_weighted per 100 changed_prod_lines; null when no production line changed. */
+  curated_density: number | null;
+  /** Raw introduced counts of the detectors left out of the curated sum. */
+  alsem_d3_introduced: number;
+  alsem_d9_introduced: number;
   complexity_delta: number;
   lines_delta: number;
   fan_in_delta: number;
@@ -713,6 +724,94 @@ export interface AlsemMetrics {
   unmapped_hunks: number;
 }
 
+const SEVERITY_WEIGHT: Record<string, number> = {
+  critical: 5,
+  high: 3,
+  medium: 1,
+};
+const D3 = "d3-missing-setloadfields";
+
+/**
+ * Curated finding count (owner definition 2026-10-23), production code only:
+ * weighted sum over `likely` findings (critical 5, high 3, medium 1, low and
+ * info 0), with d3-missing-setloadfields and every d9* detector left out of it
+ * and counted raw (any confidence, any severity) as `d3` and `d9`.
+ */
+export function curatedCounts(
+  introduced: (AlsemFinding & { count: number })[],
+): { weighted: number; d3: number; d9: number } {
+  const out = { weighted: 0, d3: 0, d9: 0 };
+  for (const f of introduced) {
+    if (f.app === TEST_APP) continue;
+    if (f.detector === D3) out.d3 += f.count;
+    else if (f.detector.startsWith("d9")) out.d9 += f.count;
+    else if (f.confidence === "likely") {
+      out.weighted += (SEVERITY_WEIGHT[f.severity] ?? 0) * f.count;
+    }
+  }
+  return out;
+}
+
+/** Added + removed lines of the campaign patch in files outside the Test app. */
+export function changedProdLines(patch: string): number {
+  const lines = patch.split("\n");
+  let n = 0;
+  let prod = false;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]!;
+    if (l.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ")) {
+      const path = (p: string) =>
+        p.replace(/^[-+]{3} (start\/|final\/|a\/|b\/)?/, "");
+      const to = path(lines[i + 1]!);
+      const file = lines[i + 1]!.startsWith("+++ /dev/null") ? path(l) : to;
+      prod = file.split("/")[0] !== TEST_APP;
+      i++;
+      continue;
+    }
+    if (prod && (l.startsWith("+") || l.startsWith("-"))) n++;
+  }
+  return n;
+}
+
+/** Weighted count per 100 changed production lines; null when none changed. */
+export function curatedDensity(weighted: number, lines: number): number | null {
+  return lines === 0 ? null : (weighted * 100) / lines;
+}
+
+/** Median, mean and share of zeros over the non-null densities; the nulls are counted apart. */
+export function densityStats(xs: (number | null)[]) {
+  const v = xs.filter((x): x is number => x !== null);
+  return {
+    n: v.length,
+    null_count: xs.length - v.length,
+    median: median(v),
+    mean: v.length ? v.reduce((s, x) => s + x, 0) / v.length : null,
+    zero_share: v.length ? v.filter((x) => x === 0).length / v.length : null,
+  };
+}
+
+/** Rank of each execution among all executions of its task, ascending density; ties share the average rank, null density is unranked. */
+export function withinTaskRanks(
+  rows: { id: string; task: string; density: number | null }[],
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  const byTask = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (r.density === null) out.set(r.id, null);
+    else byTask.set(r.task, [...(byTask.get(r.task) ?? []), r]);
+  }
+  for (const rs of byTask.values()) {
+    const s = [...rs].sort((a, b) => a.density! - b.density!);
+    for (let i = 0; i < s.length;) {
+      let j = i;
+      while (j < s.length && s[j]!.density === s[i]!.density) j++;
+      for (let k = i; k < j; k++) out.set(s[k]!.id, (i + 1 + j) / 2);
+      i = j;
+    }
+  }
+  return out;
+}
+
 /** One execution's al-sem metrics; production code (not the Test app) only. */
 export function alsemSummary(x: {
   introduced: (AlsemFinding & { count: number })[];
@@ -720,8 +819,12 @@ export function alsemSummary(x: {
   unused: UnusedProc[];
   blast: Blast;
   touches: DigestTouches;
+  /** changedProdLines of the execution's patch. */
+  changed_prod_lines?: number;
 }): AlsemMetrics {
   const prod = x.introduced.filter((f) => f.app !== TEST_APP);
+  const cur = curatedCounts(x.introduced);
+  const lines = x.changed_prod_lines ?? 0;
   const sum = (fs: { count: number }[]) => fs.reduce((s, f) => s + f.count, 0);
   const d = x.deltas.filter((r) => r.app !== TEST_APP);
   const live = d.filter((r) => r.status !== "removed");
@@ -734,6 +837,11 @@ export function alsemSummary(x: {
     alsem_new_test_findings: sum(
       x.introduced.filter((f) => f.app === TEST_APP),
     ),
+    curated_weighted: cur.weighted,
+    changed_prod_lines: lines,
+    curated_density: curatedDensity(cur.weighted, lines),
+    alsem_d3_introduced: cur.d3,
+    alsem_d9_introduced: cur.d9,
     complexity_delta: d.reduce((s, r) => s + r.d_complexity, 0),
     lines_delta: d.reduce((s, r) => s + r.d_lines, 0),
     fan_in_delta: d.reduce((s, r) => s + (r.d_fan_in ?? 0), 0),
@@ -907,7 +1015,8 @@ export interface DoneStamp {
 }
 
 /** v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds). */
-const DERIVATION = 2;
+const DERIVATION = 3;
+// v3: curated finding density (findings carry confidence, rows carry changed_prod_lines); tree findings re-read from analyze.json when cached without it.
 
 /** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
 export async function writeAtomic(path: string, text: string): Promise<void> {
@@ -1058,7 +1167,18 @@ async function alsemTree(
   const cache = join(t.cache, key);
   const done = join(cache, "tree.json");
   const hit = await readJsonOr(done);
-  if (hit) return hit as unknown as AlsemTree;
+  if (hit) {
+    const tree = hit as unknown as AlsemTree;
+    // Cached before findings carried confidence (derivation 3): re-read them from analyze.json, no al-sem call.
+    if (tree.findings.some((f) => f.confidence === undefined)) {
+      const analyze = await readJson(join(cache, "analyze.json"));
+      tree.findings = alsemFindings(
+        alsemEnvelope(analyze, "analyze-report").payload,
+      );
+      await writeAtomic(done, JSON.stringify(tree));
+    }
+    return tree;
+  }
   await Deno.mkdir(cache, { recursive: true });
   const ws = join(t.dir, "ws", key);
   const testRanges = await mergedWorkspace(src, ws, t);
@@ -1185,10 +1305,14 @@ interface AlsemRow {
   diagnostics: (TaggedDiagnostic & { tree: string })[];
 }
 
-const METRIC_KEYS: (keyof AlsemMetrics)[] = [
+const METRIC_KEYS: Exclude<keyof AlsemMetrics, "curated_density">[] = [
   "alsem_new_findings",
   "alsem_new_high_findings",
   "alsem_new_test_findings",
+  "curated_weighted",
+  "changed_prod_lines",
+  "alsem_d3_introduced",
+  "alsem_d9_introduced",
   "complexity_delta",
   "lines_delta",
   "fan_in_delta",
@@ -1298,7 +1422,14 @@ async function alsemStep(
         task: r.task,
         repeat: r.repeat,
         verdict: r.verdict,
-        metrics: alsemSummary({ introduced, deltas, unused, blast, touches }),
+        metrics: alsemSummary({
+          introduced,
+          deltas,
+          unused,
+          blast,
+          touches,
+          changed_prod_lines: changedProdLines(r.patch ?? ""),
+        }),
         introduced,
         deltas,
         unused,
@@ -1345,6 +1476,19 @@ async function alsemStep(
   }));
   const excluded = all.filter((r) => r.excluded);
   const out = all.filter((r) => !r.excluded); // aggregates read this
+  // Rank among all executions of the task (every arm), lower density first; excluded rows stay unranked.
+  const rank = withinTaskRanks(
+    out.map((r) => ({
+      id: r.id,
+      task: r.task,
+      density: r.metrics.curated_density,
+    })),
+  );
+  const rankOf = (r: AlsemRow) => rank.get(r.id) ?? null;
+  const rankStats = (rs: AlsemRow[]) => {
+    const v = rs.map(rankOf);
+    return { median: median(v), mean: densityStats(v).mean };
+  };
   await writeAtomic(
     join(t.dir, "exclusions.md"),
     `## Static analysis (al-sem): exclusions\n\n${
@@ -1363,7 +1507,11 @@ async function alsemStep(
   );
   await Deno.writeTextFile(
     join(t.dir, "executions.json"),
-    JSON.stringify(all, null, 1),
+    JSON.stringify(
+      all.map((r) => ({ ...r, within_task_rank: rankOf(r) })),
+      null,
+      1,
+    ),
   );
   await Deno.writeTextFile(
     join(t.dir, "executions.csv"),
@@ -1375,6 +1523,7 @@ async function alsemStep(
       verdict: r.verdict,
       excluded: r.excluded ?? "",
       ...r.metrics,
+      within_task_rank: rankOf(r),
     }))),
   );
   await Deno.writeTextFile(
@@ -1393,6 +1542,8 @@ async function alsemStep(
   );
   const agg = (rs: AlsemRow[]) => ({
     executions: rs.length,
+    curated_density: densityStats(rs.map((r) => r.metrics.curated_density)),
+    within_task_rank: rankStats(rs),
     median: Object.fromEntries(
       METRIC_KEYS.map((k) => [k, median(rs.map((r) => r.metrics[k]))]),
     ),
@@ -1415,6 +1566,23 @@ async function alsemStep(
     });
     const cmp = (ps: (readonly [AlsemRow, AlsemRow])[]) => ({
       pairs: ps.length,
+      curated_density: {
+        base: densityStats(ps.map(([a]) => a.metrics.curated_density)),
+        variant: densityStats(ps.map(([, x]) => x.metrics.curated_density)),
+        // Variant minus base over the pairs where both have a density.
+        median_diff: median(
+          ps.map(([a, x]) =>
+            a.metrics.curated_density === null ||
+              x.metrics.curated_density === null
+              ? null
+              : x.metrics.curated_density - a.metrics.curated_density
+          ),
+        ),
+      },
+      within_task_rank: {
+        base: rankStats(ps.map(([a]) => a)),
+        variant: rankStats(ps.map(([, x]) => x)),
+      },
       median_diff: Object.fromEntries(
         METRIC_KEYS.map((k) => [
           k,

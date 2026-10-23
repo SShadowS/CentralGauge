@@ -149,6 +149,16 @@ diagnostics in X executions`. Outputs in `<out>\alsem\`:
 The metrics count production code only (not the Test app), unless the name says test:
 - `alsem_new_findings` / `alsem_new_high_findings` / `alsem_new_test_findings`: final minus
   start, matched by the analyze finding's `fingerprint`, as a multiset; high = critical or high.
+- `curated_weighted`, `changed_prod_lines`, `curated_density`, `alsem_d3_introduced`,
+  `alsem_d9_introduced` (owner definition 2026-10-23): introduced findings with
+  `confidence.level == "likely"` only, weighted critical 5 / high 3 / medium 1 / low and info 0,
+  with `d3-missing-setloadfields` and every `d9*` detector left out (their raw introduced counts,
+  any confidence, are the two `alsem_d*` columns). `changed_prod_lines` = added + removed lines of
+  the execution's patch in non-Test files; `curated_density` = `curated_weighted` per 100 of them,
+  null (not 0) when no production line changed. `within_task_rank` (executions.csv/json) ranks an
+  execution among all executions of its task by ascending density (ties average, null unranked).
+  `summary.json` carries `curated_density` (n, null_count, median, mean, zero_share) and
+  `within_task_rank` (median, mean) per arm and, per side, per matched pair.
 - `complexity_delta`, `lines_delta`, `fan_in_delta`, `max_routine_complexity`,
   `routines_added`, `routines_changed`: from al-call-hierarchy's per-routine metrics, joined
   start to final by `routine_id`. A routine counts when added, removed, with complexity / length /
