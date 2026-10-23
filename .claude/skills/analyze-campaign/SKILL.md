@@ -114,8 +114,17 @@ Then per execution it runs `alsem diff` on the two fingerprints, and `alsem dige
 the execution's patch (paths relative to the merged app folder, which is the workspace root).
 Every alsem envelope is checked (kind, schemaVersion); `alsemVersion`, `schemaVersion` and the
 envelope `diagnostics` are kept per tree in each row, and `summary.json` counts the diagnostics.
-Results are cached per workspace hash, plus one start tree per task, under
-`<out>\alsem\cache\`. A re-run (for example after a rejudge) only redoes the cheap part. Measured
+An error-level envelope diagnostic, an unparseable or wrong-kind envelope (the fingerprint included)
+fails the tree and the execution, never a zero-findings row; cached outputs are checked the same
+way. Results are cached under `<out>\alsem\cache\`: the final tree per workspace hash, its digest
+per patch hash (`digest-<patch>.json`), one start tree per baseline identity (`start-<task>-<id>`,
+id = rev + refapp commit + tree content, recorded in `.start\<task>.done`), the diff per
+(start id, final hash). Another `--rev` rebuilds the start artifacts. Entries from before this
+keying (`start-<task>`, `digest.json` + `change.diff`) are adopted without tool runs only when
+provable (tree equal to a fresh build and untouched since its `.done`, analysed after it; the
+digest's `change.diff` equal to this patch); otherwise recomputed. `tree.json` carries a `derive`
+version: when it differs the derived fields are rebuilt from the cached raw JSON, no tool runs.
+`alsem --version` is skipped when the binary's sha256 matches `tools.json`. A re-run (for example after a rejudge) only redoes the cheap part. Measured
 on v2.0.1 (smoke, 3 jobs): per tree analyze ~32-44 s at ~5.4 GB peak, al-call-hierarchy ~11-13 s
 at ~0.8 GB, fingerprint ~11-14 s at ~0.8 GB, digest ~33-45 s at ~5.4 GB, diff < 1 s: about
 110 s of tool time per execution, plus ~55 s once per task for its start tree. Keep

@@ -250,7 +250,7 @@ interface FileChange {
   shipped_test: boolean;
 }
 
-interface Row {
+export interface Row {
   id: string;
   arm: string;
   task: string;
@@ -281,7 +281,15 @@ const ALSEM_SCHEMAS: Record<string, string[]> = {
   "analyze-report": ["1.0.0"],
   "diff-report": ["1.0.0"],
   digest: ["1.6.0"],
+  "capability-snapshot": ["1.1.0"],
 };
+
+/** Error-level diagnostics of an al-sem envelope: the analysis is incomplete, so the tree / execution fails (never a zero-findings row). */
+export function errorDiagnostics(
+  ds: { severity?: string }[],
+): { severity?: string }[] {
+  return ds.filter((d) => String(d.severity).toLowerCase() === "error");
+}
 
 export interface AlsemDiagnostic {
   code: string;
@@ -912,21 +920,20 @@ async function sameText(a: string, b: string): Promise<boolean> {
   return norm(x) === norm(y);
 }
 
-/** refapp at the task's pinned commit plus the task overlay at `rev`, built once per task. */
-async function startingTree(
+/** Fills an empty `dir` with refapp at the task's pinned commit plus the task overlay at `rev`. */
+async function buildStartingTree(
   repo: string,
   rev: string,
   taskId: string,
   refappCommit: string,
   cache: string,
-): Promise<string> {
-  const dir = join(cache, taskId);
-  const done = join(cache, `${taskId}.done`);
-  if (await Deno.stat(done).then(() => true, () => false)) return dir;
-  await Deno.remove(dir, { recursive: true }).catch(() => {});
-  await Deno.mkdir(dir, { recursive: true });
+  dir: string,
+): Promise<void> {
   const at = await loadTaskAt(repo, taskId, rev, join(cache, "tasks"));
-  const tar = join(cache, `${taskId}-refapp.tar`);
+  const tar = join(
+    cache,
+    `${taskId}-refapp-${crypto.randomUUID().slice(0, 8)}.tar`,
+  );
   await run("git", [
     "-c",
     "core.autocrlf=false",
@@ -944,8 +951,102 @@ async function startingTree(
   ], dir);
   await Deno.remove(tar);
   await applyOverlay(join(at.task.dir, "overlay"), dir);
-  await Deno.writeTextFile(done, "");
-  return dir;
+}
+
+async function sha256Hex(d: string | Uint8Array<ArrayBuffer>): Promise<string> {
+  const h = await crypto.subtle.digest(
+    "SHA-256",
+    typeof d === "string" ? new TextEncoder().encode(d) : d,
+  );
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Content identity of a tree: the source files al-sem will see, by path and bytes. */
+async function treeHash(root: string): Promise<string> {
+  const parts: string[] = [];
+  for (const rel of [...await sourceFiles(root)].sort()) {
+    const bytes = await Deno.readFile(join(root, ...rel.split("/")));
+    parts.push(`${rel}\0${await sha256Hex(bytes)}`);
+  }
+  return sha256Hex(parts.join("\n"));
+}
+
+export interface StartTree {
+  dir: string;
+  /** Baseline identity: sha256(rev, refapp commit, tree content), 12 hex. Keys every artifact computed from this tree. */
+  id: string;
+  /** Set when a pre-identity (empty) `.done` was proven to belong to this tree: its mtime, the earliest time analyses of it can date from. */
+  legacyDoneMs: number | null;
+}
+
+/**
+ * refapp at the task's pinned commit plus the task overlay at `rev`, built once
+ * per identity. `.done` records rev, refapp commit and the tree's content hash;
+ * another rev / commit, or a tree edited since, is rebuilt. An old empty
+ * `.done` (no identity) is adopted when the tree equals a fresh build and no
+ * file is newer than the stamp, otherwise the tree is replaced.
+ */
+export async function startingTree(
+  repo: string,
+  rev: string,
+  taskId: string,
+  refappCommit: string,
+  cache: string,
+  build: (dir: string) => Promise<void> = (dir) =>
+    buildStartingTree(repo, rev, taskId, refappCommit, cache, dir),
+): Promise<StartTree> {
+  const dir = join(cache, taskId);
+  const done = join(cache, `${taskId}.done`);
+  const idOf = async (tree: string) =>
+    (await sha256Hex(`${rev}\0${refappCommit}\0${tree}`)).slice(0, 12);
+  const have = await Deno.stat(dir).then(() => true, () => false);
+  const m = await readJsonOr(done);
+  if (
+    m && m["rev"] === rev && m["refapp"] === refappCommit && have &&
+    await treeHash(dir) === m["tree"]
+  ) {
+    return {
+      dir,
+      id: await idOf(m["tree"] as string),
+      legacyDoneMs: (m["legacy_done_ms"] as number | undefined) ?? null,
+    };
+  }
+  const fresh = `${dir}.new`;
+  await Deno.remove(fresh, { recursive: true }).catch(() => {});
+  await Deno.mkdir(fresh, { recursive: true });
+  await build(fresh);
+  const tree = await treeHash(fresh);
+  const stamp = m === null
+    ? await Deno.stat(done).then((s) => s.mtime?.getTime() ?? null, () => null)
+    : null;
+  let legacyDoneMs: number | null = null;
+  if (
+    stamp !== null && have && await treeHash(dir) === tree &&
+    (await Promise.all(
+      [...await sourceFiles(dir)].map((r) =>
+        Deno.stat(join(dir, ...r.split("/"))).then((s) =>
+          (s.mtime?.getTime() ?? Infinity) <= stamp
+        )
+      ),
+    )).every(Boolean)
+  ) {
+    legacyDoneMs = stamp;
+    await Deno.remove(fresh, { recursive: true });
+  } else {
+    await Deno.remove(dir, { recursive: true }).catch(() => {});
+    await Deno.rename(fresh, dir);
+  }
+  await writeAtomic(
+    done,
+    JSON.stringify({
+      rev,
+      refapp: refappCommit,
+      tree,
+      ...(legacyDoneMs === null ? {} : { legacy_done_ms: legacyDoneMs }),
+    }),
+  );
+  return { dir, id: await idOf(tree), legacyDoneMs };
 }
 
 async function diffTrees(
@@ -1015,8 +1116,9 @@ export interface DoneStamp {
 }
 
 /** v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds). */
-const DERIVATION = 3;
-// v3: curated finding density (findings carry confidence, rows carry changed_prod_lines); tree findings re-read from analyze.json when cached without it.
+const DERIVATION = 4;
+// v3: curated finding density (findings carry confidence, rows carry changed_prod_lines).
+// v4: tree.json holds only the fields derived from the raw analyze / ach / fingerprint JSON (touches come from the digest-<patch> file) and is re-derived from them, no tool run, whenever its derive differs; error diagnostics fail a tree.
 
 /** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
 export async function writeAtomic(path: string, text: string): Promise<void> {
@@ -1063,7 +1165,7 @@ export async function loadDone<T>(
 
 // ---------------------------------------------------------------- al-sem runner
 
-interface AlsemTools {
+export interface AlsemTools {
   alsem: string;
   ach: string;
   /** Content-addressed symbol store (`<sha256>.app`). */
@@ -1076,6 +1178,8 @@ interface AlsemTools {
   build: string;
   /** Task rev the starting trees come from; part of every done marker. */
   rev: string;
+  /** Spawns a tool and returns its stdout (tests inject a fake). */
+  exec?: typeof run;
 }
 
 type Versions = Record<string, { alsemVersion: string; schemaVersion: string }>;
@@ -1157,106 +1261,235 @@ async function mergedWorkspace(src: string, dst: string, t: AlsemTools) {
     .map((r) => [r.from, r.to] as [number, number]);
 }
 
-/** Analyze, metrics and fingerprint for one tree (and digest when a patch is given), cached by key. */
-async function alsemTree(
+/** A parsed al-sem envelope; throws on bad JSON, another kind / schemaVersion, or any error-level diagnostic (fail closed). */
+function checkedEnvelope(command: string, text: string, kind: string) {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    throw new Error(`al-sem ${command}: output is not JSON`);
+  }
+  const e = alsemEnvelope(doc, kind);
+  const diagnostics: TaggedDiagnostic[] = e.diagnostics.map((d) => ({
+    ...d,
+    command,
+  }));
+  failOnErrors(command, diagnostics);
+  return {
+    payload: e.payload,
+    version: { alsemVersion: e.alsemVersion, schemaVersion: e.schemaVersion },
+    diagnostics,
+    e,
+  };
+}
+
+function failOnErrors(what: string, ds: AlsemDiagnostic[]) {
+  const bad = errorDiagnostics(ds) as AlsemDiagnostic[];
+  if (bad.length) {
+    throw new Error(
+      `al-sem ${what}: ${bad.length} error diagnostic(s): ${
+        bad.slice(0, 3).map((d) => `${d.code} ${d.message}`).join("; ")
+      }`,
+    );
+  }
+}
+
+/** The tree fields derived from the raw analyze / ach / fingerprint output; no tool runs. */
+type TreeBase = Omit<AlsemTree, "fingerprint" | "touches"> & { derive: number };
+
+function deriveBase(
+  analyzeText: string,
+  achText: string,
+  fingerprintText: string,
+  testRanges: [number, number][],
+): TreeBase {
+  const a = checkedEnvelope("analyze", analyzeText, "analyze-report");
+  // No envelope: top level is metrics, findings, summary.
+  const ach = JSON.parse(achText) as AchReport;
+  if (!Array.isArray(ach.metrics) || !Array.isArray(ach.findings)) {
+    throw new Error("al-call-hierarchy: output has no metrics / findings");
+  }
+  const fp = checkedEnvelope(
+    "fingerprint",
+    fingerprintText,
+    "capability-snapshot",
+  );
+  return {
+    derive: DERIVATION,
+    findings: alsemFindings(a.payload),
+    metrics: ach.metrics,
+    unused: unusedProcedures(ach),
+    testRanges,
+    versions: { analyze: a.version, fingerprint: fp.version },
+    diagnostics: [...a.diagnostics, ...fp.diagnostics],
+  };
+}
+
+/** Per cache entry: one analysis at a time, so a concurrent request for the same entry finds it done. */
+const chains = new Map<string, Promise<unknown>>();
+function serialized<T>(key: string, f: () => Promise<T>): Promise<T> {
+  const next = (chains.get(key) ?? Promise.resolve()).then(f, f);
+  // ponytail: the map only grows (one settled promise per entry), a few hundred per run.
+  chains.set(key, next.catch(() => {}));
+  return next;
+}
+
+/** A legacy `digest.json` is this patch's digest when its `change.diff` is the patch and it was written after it. */
+async function adoptLegacyDigest(
+  cache: string,
+  patchText: string,
+  to: string,
+): Promise<string | null> {
+  const diff = join(cache, "change.diff");
+  const dj = join(cache, "digest.json");
+  try {
+    if (await Deno.readTextFile(diff) !== patchText) return null;
+    const [a, b] = await Promise.all([Deno.stat(diff), Deno.stat(dj)]);
+    if ((b.mtime?.getTime() ?? 0) < (a.mtime?.getTime() ?? Infinity)) {
+      return null;
+    }
+    const text = await Deno.readTextFile(dj);
+    checkedEnvelope("digest", text, "digest");
+    await writeAtomic(to, text);
+    return text;
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return null;
+    throw e;
+  }
+}
+
+/**
+ * Analyze, metrics and fingerprint for one tree (and the digest of `patch`),
+ * cached by key. The tree entry depends on the tree only; the digest on the
+ * patch too (`digest-<patch hash>.json`). tree.json is re-derived from the raw
+ * JSON when its derive differs; an error-level diagnostic anywhere fails.
+ */
+export function alsemTree(
   t: AlsemTools,
   src: string,
   key: string,
   patch: string | null,
 ): Promise<AlsemTree> {
+  return serialized(
+    join(t.cache, key),
+    () => alsemTreeOnce(t, src, key, patch),
+  );
+}
+
+async function alsemTreeOnce(
+  t: AlsemTools,
+  src: string,
+  key: string,
+  patch: string | null,
+): Promise<AlsemTree> {
+  const sh = t.exec ?? run;
   const cache = join(t.cache, key);
-  const done = join(cache, "tree.json");
-  const hit = await readJsonOr(done);
-  if (hit) {
-    const tree = hit as unknown as AlsemTree;
-    // Cached before findings carried confidence (derivation 3): re-read them from analyze.json, no al-sem call.
-    if (tree.findings.some((f) => f.confidence === undefined)) {
-      const analyze = await readJson(join(cache, "analyze.json"));
-      tree.findings = alsemFindings(
-        alsemEnvelope(analyze, "analyze-report").payload,
+  const p = (n: string) => join(cache, n);
+  const done = p("tree.json");
+  let base = await readJsonOr(done) as TreeBase | null;
+  if (base && base.derive !== DERIVATION) {
+    try {
+      base = deriveBase(
+        await Deno.readTextFile(p("analyze.json")),
+        await Deno.readTextFile(p("ach.json")),
+        await Deno.readTextFile(p("fingerprint.json")),
+        base.testRanges,
       );
-      await writeAtomic(done, JSON.stringify(tree));
+      await writeAtomic(done, JSON.stringify(base));
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound)) throw e;
+      base = null;
     }
-    return tree;
   }
-  await Deno.mkdir(cache, { recursive: true });
-  const ws = join(t.dir, "ws", key);
-  const testRanges = await mergedWorkspace(src, ws, t);
-  try {
-    const versions: Versions = {};
-    const diagnostics: TaggedDiagnostic[] = [];
-    const envelope = (command: string, text: string, kind: string) => {
-      const e = alsemEnvelope(JSON.parse(text), kind);
-      versions[command] = {
-        alsemVersion: e.alsemVersion,
-        schemaVersion: e.schemaVersion,
-      };
-      diagnostics.push(...e.diagnostics.map((d) => ({ ...d, command })));
-      return e.payload;
-    };
-    // Exit 4 (--require-dependencies) throws: the execution fails, never under-reports.
-    const analyzeText = await run(t.alsem, [
-      "analyze",
-      ws,
-      "--format",
-      "json",
-      "--deterministic",
-      "--require-dependencies",
-    ]);
-    const analyze = envelope("analyze", analyzeText, "analyze-report");
-    // No envelope: top level is metrics, findings, summary.
-    const achText = await run(t.ach, [
-      "--project",
-      ws,
-      "--analyze",
-      "--format",
-      "json",
-      "--no-telemetry",
-    ]);
-    const ach = JSON.parse(achText) as AchReport;
-    const fingerprint = join(cache, "fingerprint.json");
-    await run(t.alsem, [
-      "fingerprint",
-      ws,
-      "--format",
-      "json",
-      "--deterministic",
-      "--out",
-      fingerprint,
-    ]);
-    let touches = digestTouches({ entries: [] });
-    if (patch) {
-      const diff = join(cache, "change.diff");
-      await Deno.writeTextFile(diff, digestPatch(patch));
-      const digest = await run(t.alsem, [
-        "digest",
-        ws,
-        "--diff",
-        diff,
-        "--format",
-        "json",
-        "--deterministic",
-      ]);
-      await writeAtomic(join(cache, "digest.json"), digest);
-      touches = digestTouches(envelope("digest", digest, "digest"));
+  if (base) failOnErrors(`${key} (cached)`, base.diagnostics);
+  let dp:
+    | { text: string; pid: string; file: string; out: string | null }
+    | null = null;
+  if (patch) {
+    const text = digestPatch(patch);
+    const pid = (await sha256Hex(text)).slice(0, 12);
+    const file = p(`digest-${pid}.json`);
+    const out = await Deno.readTextFile(file).catch(() => null) ??
+      await adoptLegacyDigest(cache, text, file);
+    dp = { text, pid, file, out };
+  }
+  if (!base || (dp && dp.out === null)) {
+    await Deno.mkdir(cache, { recursive: true });
+    const ws = join(t.dir, "ws", `${key}-${crypto.randomUUID().slice(0, 8)}`);
+    const testRanges = await mergedWorkspace(src, ws, t);
+    const tmp = p(`fingerprint.json.tmp-${crypto.randomUUID().slice(0, 8)}`);
+    try {
+      if (!base) {
+        // Exit 4 (--require-dependencies) throws: the execution fails, never under-reports.
+        const analyzeText = await sh(t.alsem, [
+          "analyze",
+          ws,
+          "--format",
+          "json",
+          "--deterministic",
+          "--require-dependencies",
+        ]);
+        const achText = await sh(t.ach, [
+          "--project",
+          ws,
+          "--analyze",
+          "--format",
+          "json",
+          "--no-telemetry",
+        ]);
+        await sh(t.alsem, [
+          "fingerprint",
+          ws,
+          "--format",
+          "json",
+          "--deterministic",
+          "--out",
+          tmp,
+        ]);
+        // Validated before anything is persisted: a bad output leaves no cache entry.
+        base = deriveBase(
+          analyzeText,
+          achText,
+          await Deno.readTextFile(tmp),
+          testRanges,
+        );
+        await Deno.rename(tmp, p("fingerprint.json"));
+        await writeAtomic(p("analyze.json"), analyzeText);
+        await writeAtomic(p("ach.json"), achText);
+        await writeAtomic(done, JSON.stringify(base));
+      }
+      if (dp && dp.out === null) {
+        const diff = p(`change-${dp.pid}.diff`);
+        await writeAtomic(diff, dp.text);
+        const digest = await sh(t.alsem, [
+          "digest",
+          ws,
+          "--diff",
+          diff,
+          "--format",
+          "json",
+          "--deterministic",
+        ]);
+        checkedEnvelope("digest", digest, "digest");
+        await writeAtomic(dp.file, digest);
+        dp.out = digest;
+      }
+    } finally {
+      await Deno.remove(tmp).catch(() => {});
+      await removeWorkspace(ws);
     }
-    await writeAtomic(join(cache, "analyze.json"), analyzeText);
-    await writeAtomic(join(cache, "ach.json"), achText);
-    const tree: AlsemTree = {
-      findings: alsemFindings(analyze),
-      metrics: ach.metrics,
-      unused: unusedProcedures(ach),
-      testRanges,
-      fingerprint,
-      touches,
-      versions,
-      diagnostics,
-    };
-    await writeAtomic(done, JSON.stringify(tree));
-    return tree;
-  } finally {
-    await removeWorkspace(ws);
   }
+  const { derive: _, ...tree } = base!;
+  const dg = dp ? checkedEnvelope("digest", dp.out!, "digest") : null;
+  return {
+    ...tree,
+    fingerprint: p("fingerprint.json"),
+    touches: digestTouches(dg ? dg.payload : { entries: [] }),
+    versions: dg ? { ...tree.versions, digest: dg.version } : tree.versions,
+    diagnostics: dg
+      ? [...tree.diagnostics, ...dg.diagnostics]
+      : tree.diagnostics,
+  };
 }
 
 /** `--only`: no list keeps every execution, else those whose id starts with a listed id. */
@@ -1331,11 +1564,15 @@ const METRIC_KEYS: Exclude<keyof AlsemMetrics, "curated_density">[] = [
   "unmapped_hunks",
 ];
 
-async function sha256File(p: string): Promise<string> {
-  const h = await crypto.subtle.digest("SHA-256", await Deno.readFile(p));
-  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+/** The version tools.json recorded for this very binary (same sha256), or null: no `alsem --version` run needed. */
+export function pinnedAlsemVersion(prev: unknown, sha: string): string | null {
+  const a = ((prev ?? {}) as J)["alsem"] as J | undefined;
+  return a?.["sha256"] === sha && typeof a["version"] === "string"
+    ? a["version"]
+    : null;
 }
+
+const sha256File = async (p: string) => sha256Hex(await Deno.readFile(p));
 
 async function pool<T>(n: number, items: T[], f: (x: T) => Promise<void>) {
   let i = 0;
@@ -1346,21 +1583,59 @@ async function pool<T>(n: number, items: T[], f: (x: T) => Promise<void>) {
   );
 }
 
-async function alsemStep(
+const hasErrorDiagnostic = (ds: AlsemDiagnostic[] | undefined) =>
+  errorDiagnostics(ds ?? []).length > 0;
+
+/**
+ * Entries cached before start trees carried an identity live under
+ * `start-<task>`. They are copied to the identity's key when `.done` proved the
+ * tree (see startingTree) and the raw outputs were written after that stamp,
+ * i.e. they analysed this very tree. tree.json is re-derived on first read.
+ */
+async function adoptLegacyStart(t: AlsemTools, task: string, s: StartTree) {
+  if (s.legacyDoneMs === null) return;
+  const to = join(t.cache, `start-${task}-${s.id}`);
+  const from = join(t.cache, `start-${task}`);
+  const files = ["analyze.json", "ach.json", "fingerprint.json", "tree.json"];
+  if (await Deno.stat(join(to, "tree.json")).then(() => true, () => false)) {
+    return;
+  }
+  try {
+    for (const f of files.slice(0, 3)) {
+      if (
+        (await Deno.stat(join(from, f))).mtime!.getTime() < s.legacyDoneMs
+      ) return;
+    }
+    await Deno.stat(join(from, "tree.json"));
+    await Deno.mkdir(to, { recursive: true });
+    for (const f of files) await Deno.copyFile(join(from, f), join(to, f));
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+}
+
+export async function alsemStep(
   t: AlsemTools,
   rows: Row[],
   results: string,
   hashOf: Map<string, string>,
-  startOf: (task: string) => Promise<string>,
+  startOf: (task: string) => Promise<StartTree>,
   pairs: [string, string][],
   jobs: number,
 ) {
-  const starts = new Map<string, Promise<AlsemTree>>();
+  // The start tree's al-sem entry is keyed by its baseline identity (rev, refapp commit, content).
+  const starts = new Map<string, Promise<{ id: string; tree: AlsemTree }>>();
   const startTree = (task: string) => {
     if (!starts.has(task)) {
       starts.set(
         task,
-        startOf(task).then((dir) => alsemTree(t, dir, `start-${task}`, null)),
+        startOf(task).then(async (s) => {
+          await adoptLegacyStart(t, task, s);
+          return {
+            id: s.id,
+            tree: await alsemTree(t, s.dir, `start-${task}-${s.id}`, null),
+          };
+        }),
       );
     }
     return starts.get(task)!;
@@ -1379,22 +1654,26 @@ async function alsemStep(
   const failed: { id: string; error: string }[] = [];
   await pool(jobs, todo, async (r) => {
     const hash = hashOf.get(r.id)!;
-    if (await readDone(execDir, r.id, stampOf(r.id))) {
+    const prior = await readDone<AlsemRow>(execDir, r.id, stampOf(r.id));
+    if (prior && !hasErrorDiagnostic(prior.diagnostics)) {
       skipped++;
       return;
     }
     try {
-      const s = await startTree(r.task);
+      const { id: sid, tree: s } = await startTree(r.task);
       const f = await alsemTree(
         t,
         join(results, "workspaces", hash),
         hash,
         r.patch ?? "",
       );
-      const diffOut = join(t.cache, hash, `diff-${r.task}.json`);
+      // The diff depends on both sides: the start identity and the final tree (this folder).
+      const diffOut = join(t.cache, hash, `diff-${sid}.json`);
       if (!await Deno.stat(diffOut).then(() => true, () => false)) {
-        const tmp = `${diffOut}.tmp-${Deno.pid}`;
-        await run(t.alsem, [
+        const tmp = `${diffOut}.tmp-${Deno.pid}-${
+          crypto.randomUUID().slice(0, 8)
+        }`;
+        await (t.exec ?? run)(t.alsem, [
           "diff",
           s.fingerprint,
           f.fingerprint,
@@ -1406,7 +1685,8 @@ async function alsemStep(
         ]);
         await Deno.rename(tmp, diffOut);
       }
-      const diff = alsemEnvelope(await readJson(diffOut), "diff-report");
+      const diffRaw = await Deno.readTextFile(diffOut);
+      const diff = { ...checkedEnvelope("diff", diffRaw, "diff-report").e };
       const introduced = introducedFindings(s.findings, f.findings);
       const touches = f.touches;
       const deltas = routineDeltas(
@@ -1469,7 +1749,7 @@ async function alsemStep(
   const all = (await loadDone<AlsemRow>(
     execDir,
     new Map(todo.map((r) => [r.id, stampOf(r.id)])),
-  )).map((x) => ({
+  )).filter((x) => !hasErrorDiagnostic(x.diagnostics)).map((x) => ({
     ...x,
     verdict: byId.get(x.id)!.verdict,
     excluded: alsemExclusion(byId.get(x.id)!.termination),
@@ -1948,6 +2228,17 @@ async function main() {
   await Deno.mkdir(join(out, "diffs"), { recursive: true });
   const cache = join(out, ".start");
   const touchesOf = new Map<string, string[]>();
+  // One identity check / build per task and run.
+  const starts = new Map<string, Promise<StartTree>>();
+  const startOf = (task: string) => {
+    if (!starts.has(task)) {
+      starts.set(
+        task,
+        startingTree(repo, args.rev!, task, refappOf.get(task)!, cache),
+      );
+    }
+    return starts.get(task)!;
+  };
 
   // Latest attempt per cell.
   const execDir = join(results, "executions", campaignId);
@@ -2013,13 +2304,7 @@ async function main() {
     let patch: string | null = null;
     if (e["workspace_hash"]) {
       hashOf.set(id, e["workspace_hash"] as string);
-      const start = await startingTree(
-        repo,
-        args.rev,
-        task,
-        refappOf.get(task)!,
-        cache,
-      );
+      const start = (await startOf(task)).dir;
       if (!touchesOf.has(task)) {
         const at = await loadTaskAt(repo, task, args.rev, join(cache, "tasks"));
         touchesOf.set(task, at.task.task.touches);
@@ -2323,13 +2608,18 @@ async function main() {
         }`,
       );
     }
+    // The binary is the one tools.json pinned (same sha256): reuse its version, no tool call.
+    const version = pinnedAlsemVersion(
+      await readJsonOr(join(dir, "tools.json")),
+      alsemSha,
+    ) ?? (await run(t.alsem, ["--version"])).trim();
     await Deno.writeTextFile(
       join(dir, "tools.json"),
       JSON.stringify(
         {
           alsem: {
             path: t.alsem,
-            version: (await run(t.alsem, ["--version"])).trim(),
+            version,
             sha256: alsemSha,
           },
           al_call_hierarchy: { path: t.ach, sha256: achSha },
@@ -2347,7 +2637,7 @@ async function main() {
       rows,
       results,
       hashOf,
-      (task) => startingTree(repo, args.rev!, task, refappOf.get(task)!, cache),
+      startOf,
       pairs,
       Number(args["alsem-jobs"]),
     );

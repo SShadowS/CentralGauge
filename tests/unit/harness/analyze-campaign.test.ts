@@ -6,7 +6,10 @@ import {
   alsemExclusion,
   alsemExclusionText,
   alsemFindings,
+  alsemStep,
   alsemSummary,
+  type AlsemTools,
+  alsemTree,
   blastRadius,
   classifyLoss,
   digestPatch,
@@ -20,9 +23,12 @@ import {
   mergedAppJson,
   missingFromShipped,
   newUnused,
+  pinnedAlsemVersion,
   readDone,
   removeWorkspace,
   routineDeltas,
+  type Row,
+  startingTree,
   traceProfile,
   unusedProcedures,
   writeAtomic,
@@ -1167,6 +1173,394 @@ Deno.test({
       await removeWorkspace(ws);
     });
   },
+});
+
+// ---------------------------------------------------------------- review r1: runner with a fake al-sem
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const envJson = (
+  kind: string,
+  schemaVersion: string,
+  diagnostics: unknown[],
+  payload: unknown,
+) =>
+  JSON.stringify({
+    alsemVersion: "2.0.2",
+    schemaVersion,
+    kind,
+    diagnostics,
+    payload,
+  });
+const ERR = { code: "AL0001", message: "boom", severity: "error" };
+
+interface Fake {
+  t: AlsemTools;
+  calls: string[];
+  count: (what: string) => number;
+  /** Tool-call overrides: the stdout (or --out file text) a command returns. */
+  override: Record<string, string>;
+  results: string;
+}
+
+async function fake(root: string): Promise<Fake> {
+  const store = join(root, "store");
+  await Deno.mkdir(store, { recursive: true });
+  const f: Fake = {
+    calls: [],
+    override: {},
+    results: join(root, "results"),
+    count: (w) => f.calls.filter((c) => c === w).length,
+    t: undefined as unknown as AlsemTools,
+  };
+  const exec = async (cmd: string, args: string[]) => {
+    const sub = cmd === "ach" ? "ach" : args[0]!;
+    f.calls.push(sub);
+    await delay(15);
+    const out = args.includes("--out")
+      ? args[args.indexOf("--out") + 1]!
+      : null;
+    const text = f.override[sub] ?? ({
+      analyze: envJson("analyze-report", "1.0.0", [], {
+        findings: [{
+          detector: "d1",
+          severity: "high",
+          confidence: { level: "likely" },
+          primaryLocation: { file: "ws:Core/A.al", line: 1 },
+          fingerprint: "fp1",
+        }],
+      }),
+      ach: JSON.stringify({ metrics: [], findings: [] }),
+      digest: envJson("digest", "1.6.0", [], { entries: [], summary: {} }),
+      fingerprint: envJson("capability-snapshot", "1.1.0", [], { x: 1 }),
+      diff: envJson("diff-report", "1.0.0", [], {
+        findings: [],
+        summary: { findingsByCategory: {} },
+      }),
+    } as Record<string, string>)[sub]!;
+    if (out) {
+      await Deno.writeTextFile(out, text);
+      return "";
+    }
+    return text;
+  };
+  f.t = {
+    alsem: "alsem",
+    ach: "ach",
+    store,
+    lock: [],
+    dir: join(root, "out"),
+    cache: join(root, "out", "cache"),
+    build: "b1",
+    rev: "r1",
+    exec: exec as NonNullable<AlsemTools["exec"]>,
+  };
+  await Deno.mkdir(f.t.dir, { recursive: true });
+  return f;
+}
+
+async function tree(dir: string, text: string) {
+  await Deno.mkdir(join(dir, "Core"), { recursive: true });
+  await Deno.mkdir(join(dir, "Test"), { recursive: true });
+  const app = (name: string) =>
+    JSON.stringify({ id: name, name, idRanges: [{ from: 1, to: 9 }] });
+  await Deno.writeTextFile(join(dir, "Core", "app.json"), app("CGR Core"));
+  await Deno.writeTextFile(join(dir, "Test", "app.json"), app("CGR Test"));
+  await Deno.writeTextFile(join(dir, "Core", "A.al"), text);
+}
+
+const PATCH = "--- start/Core/A.al\n+++ final/Core/A.al\n@@ -1 +1 @@\n-a\n+b\n";
+const row = (id: string, task = "HX-1", patch = PATCH) =>
+  ({
+    id,
+    arm: id,
+    task,
+    repeat: 1,
+    verdict: "pass",
+    termination: "completed",
+    patch,
+  }) as unknown as Row;
+
+/** Runs the step for `rows` (id -> final hash); the start tree of every task has identity `startId`. */
+async function step(
+  f: Fake,
+  rows: Row[],
+  hashes: Record<string, string>,
+  startId = "S1",
+  jobs = 2,
+  legacyDoneMs: number | null = null,
+) {
+  const startDir = join(f.t.dir, "starts");
+  await tree(startDir, "a");
+  await alsemStep(
+    f.t,
+    rows,
+    f.results,
+    new Map(Object.entries(hashes)),
+    () => Promise.resolve({ dir: startDir, id: startId, legacyDoneMs }),
+    [],
+    jobs,
+  );
+  const readOut = async (n: string) =>
+    JSON.parse(await Deno.readTextFile(join(f.t.dir, n)));
+  return {
+    failed: (await readOut("summary.json")).failed as {
+      id: string;
+      error: string;
+    }[],
+    rows: (await readOut("executions.json")) as {
+      id: string;
+      metrics: Record<string, number>;
+      introduced: unknown[];
+    }[],
+  };
+}
+
+async function withFake<T>(fn: (f: Fake) => Promise<T>): Promise<T> {
+  const root = await Deno.makeTempDir({ prefix: "ac-fake-" });
+  try {
+    const f = await fake(root);
+    await tree(join(f.results, "workspaces", "h1"), "b");
+    await tree(join(f.results, "workspaces", "h2"), "c");
+    return await fn(f);
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+}
+
+Deno.test("fail closed: exit 0 + an error diagnostic + no findings fails the execution row; it is not a zero-findings row", async () => {
+  await withFake(async (f) => {
+    f.override["analyze"] = envJson("analyze-report", "1.0.0", [ERR], {
+      findings: [],
+    });
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 0);
+    assertEquals(r.failed.length, 1);
+    assert(r.failed[0]!.error.includes("AL0001"), r.failed[0]!.error);
+  });
+});
+
+Deno.test("fail closed: an error diagnostic in the digest or the diff fails the row too", async () => {
+  for (const which of ["digest", "diff"]) {
+    await withFake(async (f) => {
+      f.override[which] = which === "digest"
+        ? envJson("digest", "1.6.0", [ERR], { entries: [], summary: {} })
+        : envJson("diff-report", "1.0.0", [ERR], {
+          findings: [],
+          summary: { findingsByCategory: {} },
+        });
+      const r = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals([which, r.rows.length], [which, 0]);
+      assertEquals([which, r.failed.length], [which, 1]);
+    });
+  }
+});
+
+Deno.test("fail closed: an unparseable or wrong-kind fingerprint output fails the tree", async () => {
+  for (
+    const bad of ["not json", envJson("analyze-report", "1.0.0", [], {})]
+  ) {
+    await withFake(async (f) => {
+      f.override["fingerprint"] = bad;
+      await assertRejects(() =>
+        alsemTree(f.t, join(f.results, "workspaces", "h1"), "h1", null)
+      );
+      assertEquals(
+        await Deno.stat(join(f.t.cache, "h1", "tree.json")).then(
+          () => true,
+          () => false,
+        ),
+        false,
+      );
+    });
+  }
+});
+
+Deno.test("fail closed: a cached tree whose diagnostics hold an error is rejected on read", async () => {
+  await withFake(async (f) => {
+    const src = join(f.results, "workspaces", "h1");
+    await alsemTree(f.t, src, "h1", null);
+    const p = join(f.t.cache, "h1", "tree.json");
+    const j = JSON.parse(await Deno.readTextFile(p));
+    j.diagnostics = [{ ...ERR, command: "analyze" }];
+    await Deno.writeTextFile(p, JSON.stringify(j));
+    await assertRejects(() => alsemTree(f.t, src, "h1", null), Error, "AL0001");
+  });
+});
+
+Deno.test("cache identity: the same output dir with another start identity (rev) re-analyzes the start tree and recomputes diff and digest", async () => {
+  await withFake(async (f) => {
+    await step(f, [row("e1")], { e1: "h1" }, "S1");
+    assertEquals(
+      [f.count("analyze"), f.count("digest"), f.count("diff")],
+      [2, 1, 1],
+    );
+    f.t.rev = "r2";
+    const a = f.count("analyze");
+    const r = await step(f, [row("e1")], { e1: "h1" }, "S2");
+    assertEquals(r.rows.length, 1);
+    assertEquals(f.count("analyze") - a, 1, "start tree analyzed again");
+    assertEquals(f.count("diff"), 2, "diff keyed by the start identity");
+  });
+});
+
+Deno.test("cache identity: the same final tree reached by another patch recomputes the digest, the same patch does not", async () => {
+  await withFake(async (f) => {
+    await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(f.count("digest"), 1);
+    await step(f, [row("e2", "HX-1", PATCH + "+more\n")], { e2: "h1" });
+    assertEquals(f.count("digest"), 2);
+    await step(f, [row("e3")], { e3: "h1" });
+    assertEquals(f.count("digest"), 2);
+    assertEquals(f.count("analyze"), 2, "final tree analyzed once");
+  });
+});
+
+Deno.test("cache identity: a legacy digest.json is adopted only when its change.diff is this patch", async () => {
+  await withFake(async (f) => {
+    const src = join(f.results, "workspaces", "h1");
+    const legacy = join(f.t.cache, "h1");
+    await Deno.mkdir(legacy, { recursive: true });
+    await Deno.writeTextFile(
+      join(legacy, "change.diff"),
+      digestPatch(PATCH),
+    );
+    await Deno.writeTextFile(
+      join(legacy, "digest.json"),
+      envJson("digest", "1.6.0", [], { entries: [], summary: {} }),
+    );
+    await alsemTree(f.t, src, "h1", PATCH);
+    assertEquals(f.count("digest"), 0, "adopted without a tool run");
+    await alsemTree(f.t, src, "h1", PATCH + "+other\n");
+    assertEquals(f.count("digest"), 1, "another patch is not adopted");
+  });
+});
+
+Deno.test("DERIVATION: a stale tree.json is re-derived from the cached raw JSON, no tool runs", async () => {
+  await withFake(async (f) => {
+    const src = join(f.results, "workspaces", "h1");
+    await alsemTree(f.t, src, "h1", PATCH);
+    const calls = f.calls.length;
+    const p = join(f.t.cache, "h1", "tree.json");
+    const j = JSON.parse(await Deno.readTextFile(p));
+    j.derive = 0;
+    j.findings = [];
+    j.unused = [{ junk: 1 }];
+    j.touches = { junk: 1 };
+    await Deno.writeTextFile(p, JSON.stringify(j));
+    const t = await alsemTree(f.t, src, "h1", PATCH);
+    assertEquals(f.calls.length, calls, "no tool run");
+    assertEquals(t.findings.map((x) => x.fingerprint), ["fp1"]);
+    assertEquals(t.unused, []);
+    assertEquals(t.touches.roots, 0);
+    assertEquals(
+      JSON.parse(await Deno.readTextFile(p)).findings.length,
+      1,
+      "rewritten",
+    );
+  });
+});
+
+Deno.test("concurrency: two executions with the same workspace hash at jobs>1 run the tools once and both rows are right", async () => {
+  await withFake(async (f) => {
+    const r = await step(
+      f,
+      [row("e1"), row("e2")],
+      { e1: "h1", e2: "h1" },
+      "S1",
+      2,
+    );
+    assertEquals(r.failed, []);
+    assertEquals(r.rows.map((x) => x.id).sort(), ["e1", "e2"]);
+    assertEquals(f.count("analyze"), 2, "start once, final once");
+    assertEquals(f.count("fingerprint"), 2);
+    assertEquals(f.count("digest"), 1);
+    assertEquals(
+      r.rows[0]!.metrics["alsem_new_findings"],
+      r.rows[1]!.metrics["alsem_new_findings"],
+    );
+  });
+});
+
+Deno.test("startingTree: keyed by rev + refapp commit + content; another rev rebuilds, the same identity does not", async () => {
+  const root = await Deno.makeTempDir({ prefix: "ac-start-" });
+  try {
+    let built = 0;
+    const mk = (text: string) => async (dir: string) => {
+      built++;
+      await tree(dir, text);
+    };
+    const a = await startingTree(".", "r1", "HX-1", "c1", root, mk("a"));
+    const again = await startingTree(".", "r1", "HX-1", "c1", root, mk("a"));
+    assertEquals([built, again.id], [1, a.id]);
+    const b = await startingTree(".", "r2", "HX-1", "c1", root, mk("a"));
+    assertEquals(built, 2, "another rev rebuilds");
+    assert(b.id !== a.id, "identity includes the rev");
+    const c = await startingTree(".", "r2", "HX-1", "c2", root, mk("a"));
+    assertEquals(built, 3, "another refapp commit rebuilds");
+    assert(c.id !== b.id);
+    // Edited after the build: the content hash no longer matches the marker.
+    await Deno.writeTextFile(join(c.dir, "Core", "A.al"), "tampered");
+    await startingTree(".", "r2", "HX-1", "c2", root, mk("a"));
+    assertEquals(built, 4, "a changed tree is rebuilt");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("startingTree: a legacy empty .done is adopted (not rebuilt over) when the tree equals a fresh build and was not touched after the stamp; otherwise replaced", async () => {
+  const root = await Deno.makeTempDir({ prefix: "ac-start-" });
+  try {
+    const dir = join(root, "HX-1");
+    await tree(dir, "a");
+    const done = join(root, "HX-1.done");
+    await Deno.writeTextFile(done, "");
+    const old = new Date(Date.now() - 60_000);
+    await Deno.utime(done, old, old);
+    for await (const e of Deno.readDir(join(dir, "Core"))) {
+      await Deno.utime(join(dir, "Core", e.name), old, old);
+    }
+    for await (const e of Deno.readDir(join(dir, "Test"))) {
+      await Deno.utime(join(dir, "Test", e.name), old, old);
+    }
+    const fresh = async (d: string) => await tree(d, "a");
+    const s = await startingTree(".", "r1", "HX-1", "c1", root, fresh);
+    assertEquals(s.legacyDoneMs, old.getTime());
+    // Different content: the legacy stamp proves nothing, the tree is replaced.
+    await Deno.remove(root, { recursive: true });
+    await tree(join(root, "HX-1"), "stale");
+    await Deno.writeTextFile(join(root, "HX-1.done"), "");
+    const s2 = await startingTree(".", "r1", "HX-1", "c1", root, fresh);
+    assertEquals(s2.legacyDoneMs, null);
+    assertEquals(
+      await Deno.readTextFile(join(root, "HX-1", "Core", "A.al")),
+      "a",
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("legacy start cache: adopted under the new key when proven (analyzed after the stamp), otherwise re-analyzed", async () => {
+  for (const proven of [true, false]) {
+    await withFake(async (f) => {
+      const startDir = join(f.t.dir, "starts");
+      await tree(startDir, "a");
+      await alsemTree(f.t, startDir, "start-HX-1", null); // the legacy key
+      const done = proven ? 0 : Date.now() + 3_600_000;
+      const before = f.count("analyze");
+      await step(f, [row("e1")], { e1: "h1" }, "S1", 1, done);
+      // Final tree is analyzed in both cases; the start tree only when not proven.
+      assertEquals(f.count("analyze") - before, proven ? 1 : 2);
+    });
+  }
+});
+
+Deno.test("pinnedAlsemVersion: reused only when the binary hash matches the recorded one", () => {
+  const prev = { alsem: { version: "al-sem 2.0.2", sha256: "abc" } };
+  assertEquals(pinnedAlsemVersion(prev, "abc"), "al-sem 2.0.2");
+  assertEquals(pinnedAlsemVersion(prev, "abd"), null);
+  assertEquals(pinnedAlsemVersion(null, "abc"), null);
+  assertEquals(pinnedAlsemVersion({ alsem: { sha256: "abc" } }, "abc"), null);
 });
 
 Deno.test("keepExecution: no filter keeps all; otherwise an id or id prefix in the list", () => {
