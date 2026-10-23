@@ -1,0 +1,3800 @@
+{
+  "schemaVersion": 1,
+  "what": "B4 over-strictness evidence. A task passes when TWO independent solutions from families OTHER than the authoring family both passed the oracle prompt-only (attempt 1). Attempt-2 passes are excluded: the model saw the oracle's failure output, so the solution is not independent of the oracle. Evidence goes STALE when the oracle is edited after the newest qualifying pass.",
+  "authoringFamilyAssumed": "anthropic",
+  "counts": {
+    "pass": 86,
+    "absent": 38,
+    "not_runnable": 79
+  },
+  "tasks": {
+    "CG-AL-H001": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.5-plus-20260420, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T12:10:12.050Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:08:42.886Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:04:20.086Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:04:49.467Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:21:20.649Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.5-plus-20260420",
+          "when": "2026-05-05T22:41:33.449Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T13:33:39.790Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:04:34.723Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-21T12:47:50+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H002": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.5-plus-20260420, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T14:02:33.619Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:08:30.088Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:03:46.469Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:08:55.150Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:23:36.406Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.5-plus-20260420",
+          "when": "2026-05-05T22:40:31.859Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T13:54:20.100Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:07:01.259Z"
+        }
+      },
+      "oracleChangedAt": "2026-02-08T01:35:34+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H003": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "7 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3.1-pro-preview, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2025-12-19T01:50:36.281Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:10:53.249Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:08:26.534Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:25:51.945Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:45:51.748Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T13:59:00.231Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T01:27:17.801Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H004": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T14:08:38.941Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:08:32.775Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:10:08.668Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:11:47.301Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:27:50.494Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:43:37.092Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-05T15:02:07.426Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:11:33.316Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H005": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2025-12-18T13:00:32.788Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T22:13:25.477Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T02:26:56.801Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T14:16:06.560Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T10:12:50+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H006": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T15:08:11.484Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:08:29.326Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:13:19.457Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:17:52.047Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:32:38.281Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:49:35.674Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T14:19:35.124Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:16:41.859Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H007": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "6 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T14:29:03.795Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:15:12.350Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:34:31.419Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:54:47.890Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-05T15:08:16.293Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:18:22.920Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H008": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T15:18:52.639Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T22:19:39.409Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-17T23:35:06.067Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:23:15.275Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:34:32.341Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:55:12.477Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T14:34:08.119Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:21:06.138Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H009": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T14:40:26.556Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:19:03.151Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:22:32.026Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:25:26.951Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:36:46.662Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:55:07.322Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T14:38:15.921Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:23:30.463Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H010": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.5-plus-20260420, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T15:20:43.915Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:18:21.666Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T01:46:00.774Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:25:41.611Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:39:20.376Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.5-plus-20260420",
+          "when": "2026-05-05T22:54:44.215Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T14:45:52.687Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:25:12.693Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H011": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2026-02-18T04:24:09.032Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T18:09:54.308Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:39:23.538Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H013": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.5-plus-20260420, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T15:23:07.743Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:19:48.196Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:27:27.513Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:28:24.179Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:42:48.106Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.5-plus-20260420",
+          "when": "2026-05-05T22:59:52.843Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T14:59:37.389Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:28:10.326Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-26T03:20:35+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H014": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:22:10.170Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "google"
+      ]
+    },
+    "CG-AL-H015": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T15:12:53.694Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T22:24:21.321Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:29:38.371Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:30:06.532Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:43:49.948Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:00:19.902Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T15:16:14.547Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:29:52.580Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H016": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:26:37.976Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:47:54.184Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T15:18:18.266Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-07T15:39:57+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H017": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2026-02-18T04:31:45.094Z"
+        },
+        "google": {
+          "model": "gemini-3-pro-preview",
+          "when": "2025-12-25T03:25:17.856Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:33:12.444Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H018": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:29:01.340Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:33:54.930Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:50:51.268Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T15:26:40.524Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H019": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "5 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:30:58.663Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T01:53:44.131Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T02:46:00.166Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T20:09:31.808Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-17T23:53:16.310Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H020": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.3-codex",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:33:59.641Z"
+        },
+        "openai": {
+          "model": "gpt-5.3-codex",
+          "when": "2026-02-24T22:31:33.433Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H021": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3-pro-preview",
+          "when": "2025-12-19T03:06:54.358Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-04T18:45:56.641Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-04T13:32:25.250Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-H022": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "5 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:37:36.366Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T02:04:30.176Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T02:49:51.833Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:11:02.051Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T02:01:37.108Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-26T03:20:35+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-H023": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T14:44:57.854Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-26T03:20:35+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H024": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:52:27.547Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T07:59:27.454Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T21:41:40.347Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-05T15:41:45.494Z"
+        }
+      },
+      "oracleChangedAt": "2026-03-05T20:28:46+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-H025": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "5 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-04T13:44:16.400Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T22:46:18.584Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:09:37.399Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T21:39:03.204Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T16:12:11.394Z"
+        }
+      },
+      "oracleChangedAt": "2026-04-15T01:20:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-H026": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "5 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T15:52:44.634Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T22:50:37.163Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:11:17.396Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:11:42.237Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-05T15:48:23.344Z"
+        }
+      },
+      "oracleChangedAt": "2026-03-05T20:28:46+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-H027": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T14:47:46.740Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-14T10:41:09.673Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T16:27:08+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H028": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:10:56.615Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:21:47.517Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T16:44:47.344Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T20:13:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H029": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T20:13:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H030": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T23:03:48.030Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-11T17:13:58.500Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T20:13:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H031": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:19:36.384Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:28:26.871Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T20:13:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H032": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:21:49.008Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:31:01.045Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T20:13:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H033": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T23:12:44.480Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:36:41.987Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T17:28:56.607Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-09T01:32:43+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H034": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:40:28.915Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H035": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T17:55:46.212Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:28:35.668Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:45:52.269Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T17:56:09.444Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H036": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "google"
+      ]
+    },
+    "CG-AL-H037": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T15:20:40.394Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H038": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:33:22.562Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:55:49.540Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H039": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T18:34:27.540Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:37:34.047Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:54:41.643Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T18:22:15.784Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H040": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T23:39:30.304Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T08:59:57.242Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T18:29:21.326Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H041": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:43:43.099Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:03:57.384Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H042": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:45:55.679Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:07:00.820Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-10T11:35:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H043": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T18:53:48.354Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:48:02.338Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:04:02.440Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T18:53:00.019Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T09:17:34+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H050": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T23:54:57.370Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:08:31.480Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T09:17:34+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-H051": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T19:13:10.673Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:02:10.783Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:11:25.536Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T19:10:25.763Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T09:17:34+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H052": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T19:32:12.633Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-29T23:55:56.121Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:16:15.427Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T19:19:48.727Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T09:50:43+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H053": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:03:10.132Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:17:29.151Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T19:25:54.815Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T10:45:06+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H054": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-11T10:45:06+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google"
+      ]
+    },
+    "CG-AL-H056": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-11T11:16:46+02:00",
+      "everSolved": [
+        "anthropic",
+        "google"
+      ]
+    },
+    "CG-AL-H057": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T19:58:31.906Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:19:34.238Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:25:57.050Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T11:16:46+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H058": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:21:55.330Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:26:43.117Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T20:02:42.870Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-11T11:49:15+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-H205": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "7 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-05T15:53:06.814Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:24:17.216Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:48:58.422Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:30:48.866Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:12:57.394Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T20:14:42.430Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:49:26.239Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M001": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "openai": {
+          "model": "gpt-5.2-2025-12-11",
+          "when": "2025-12-17T23:24:42.407Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-07T15:40:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M002": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2026-02-07T14:35:50.863Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:09:25.772Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T04:53:38.682Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T04:54:09.562Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:34:48.032Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:15:37.180Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T20:16:30.974Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T04:54:24.402Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-16T15:41:15+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M003": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "3 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T20:39:39.664Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:11:29.871Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T00:08:09.277Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-07T15:39:37+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M004": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:00:18.866Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:28:56.429Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-12T23:42:31.460Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T05:00:38.222Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T04:19:06.072Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:16:56.836Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T20:20:11.972Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T02:23:48.073Z"
+        }
+      },
+      "oracleChangedAt": "2026-06-13T17:02:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M005": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:25:35.328Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-14T12:33:33.343Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-07T15:39:30+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M006": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "5 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, openai=gpt-5.4, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2026-02-18T05:02:40.838Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-29T19:57:02.244Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-12T22:52:32.978Z"
+        },
+        "openai": {
+          "model": "gpt-5.4",
+          "when": "2026-05-11T20:37:33.259Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-05T15:58:32.417Z"
+        }
+      },
+      "oracleChangedAt": "2026-02-07T02:24:25+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-M007": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-code-fast-1",
+          "when": "2026-02-07T12:51:10.013Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-16T15:41:15+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "moonshot",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M008": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3-pro-preview, openai=gpt-5.4",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3-pro-preview",
+          "when": "2025-12-19T04:08:26.926Z"
+        },
+        "openai": {
+          "model": "gpt-5.4",
+          "when": "2026-05-05T10:34:21.362Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-16T15:41:15+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M009": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "6 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:32:37.649Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T00:33:43.787Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-14T12:45:10.264Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:25:48.207Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T20:49:09.792Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-12T12:34:23.450Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-16T15:41:15+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M010": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:29:18.884Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-11T21:03:30.179Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-07T15:39:47+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M020": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:21:52.893Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-14T12:50:27.045Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M021": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:31:23.021Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:47:25.201Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-04T00:46:01+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M022": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "6 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v3.2, google=gemini-3.5-flash, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v3.2",
+          "when": "2026-02-18T05:27:39.904Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:37:16.351Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T02:57:03.122Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T00:28:45.917Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:00:48.734Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T00:38:25.310Z"
+        }
+      },
+      "oracleChangedAt": "2026-02-07T02:24:25+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M023": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T21:37:43.443Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-11T21:33:16.575Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T00:42:01.964Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T05:31:56.359Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-13T14:00:22.807Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:32:52.985Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-05T16:22:48.472Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T05:30:01.958Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-30T01:10:14+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M024": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "4 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:37:38.029Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:55:46.057Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:32:09.443Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T21:38:28.007Z"
+        }
+      },
+      "oracleChangedAt": "2026-03-05T20:28:46+01:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-M025": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:41:37.925Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-13T14:11:15.490Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T22:07:07.550Z"
+        }
+      },
+      "oracleChangedAt": "2026-03-05T20:28:46+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "qwen"
+      ]
+    },
+    "CG-AL-M026": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "5 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T21:52:09.139Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:56:49.302Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T09:58:52.132Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:41:54.383Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T21:55:18.071Z"
+        }
+      },
+      "oracleChangedAt": "2026-03-05T20:28:46+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "qwen",
+        "xai"
+      ]
+    },
+    "CG-AL-M027": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:49:55.202Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T09:41:36+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M028": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M029": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M031": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M032": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T01:02:21.438Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:11:41.562Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M033": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T00:59:58.499Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:12:43.458Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T22:23:49.534Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T09:41:36+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M034": {
+      "status": "not_runnable",
+      "tier": "medium",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-06-13T17:02:09+02:00",
+      "everSolved": []
+    },
+    "CG-AL-M035": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T23:02:32.129Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T00:58:46.922Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:15:43.046Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T23:02:56.141Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M036": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M037": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "google"
+      ]
+    },
+    "CG-AL-M038": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T23:16:15.562Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T01:12:55.741Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:23:25.421Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T23:10:56.293Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M039": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T01:18:50.786Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:28:27.838Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M040": {
+      "status": "not_runnable",
+      "tier": "medium",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": []
+    },
+    "CG-AL-M041": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T23:41:34.264Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T01:14:41.361Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:23:12.865Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T23:33:03.279Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T08:58:07+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M042": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "3 independent non-authoring families passed prompt-only: google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T01:19:09.826Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:32:00.644Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-11T23:37:14.074Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T16:27:08+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M043": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "3 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, openai=gpt-5.5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-11T23:54:06.820Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T01:20:32.910Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:37:15.876Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T16:27:08+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M044": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-12T00:08:26.219Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T01:26:38.695Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:44:20.141Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-12T00:04:06.660Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T16:27:08+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-M045": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "3 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-12T00:14:43.801Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T01:32:35.202Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:40:54.854Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-08T16:27:08+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai"
+      ]
+    },
+    "CG-AL-M088": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "8 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.5-flash, minimax=minimax/minimax-m2.5, moonshot=moonshotai/kimi-k2.5, openai=gpt-5.5, qwen=qwen/qwen3.6-max-preview, xai=x-ai/grok-4.3, zai=z-ai/glm-5",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-12T00:16:24.609Z"
+        },
+        "google": {
+          "model": "gemini-3.5-flash",
+          "when": "2026-05-30T01:35:03.343Z"
+        },
+        "minimax": {
+          "model": "minimax/minimax-m2.5",
+          "when": "2026-02-18T05:30:58.829Z"
+        },
+        "moonshot": {
+          "model": "moonshotai/kimi-k2.5",
+          "when": "2026-02-18T05:31:42.198Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:48:12.602Z"
+        },
+        "qwen": {
+          "model": "qwen/qwen3.6-max-preview",
+          "when": "2026-05-05T23:39:40.934Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-12T00:18:03.610Z"
+        },
+        "zai": {
+          "model": "z-ai/glm-5",
+          "when": "2026-02-18T03:02:47.312Z"
+        }
+      },
+      "oracleChangedAt": "2025-12-17T20:28:53+01:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "minimax",
+        "moonshot",
+        "openai",
+        "qwen",
+        "xai",
+        "zai"
+      ]
+    },
+    "CG-AL-M112": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "4 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, google=gemini-3.1-pro-preview, openai=gpt-5.5, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-05-12T00:31:18.208Z"
+        },
+        "google": {
+          "model": "gemini-3.1-pro-preview",
+          "when": "2026-05-30T01:34:51.236Z"
+        },
+        "openai": {
+          "model": "gpt-5.5",
+          "when": "2026-05-16T10:40:07.642Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-05-12T00:22:05.855Z"
+        }
+      },
+      "oracleChangedAt": "2026-05-07T15:39:20+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "google",
+        "openai",
+        "xai"
+      ]
+    },
+    "CG-AL-X001": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:57:34.728Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:05:51.318Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T01:51:53+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X002": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-06-30T22:04:29+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X003": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-01T01:09:57+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X004": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:57:57.277Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:19.164Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T01:35:16+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X005": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:58:08.667Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:02.615Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T09:01:18+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X006": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:05.905Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T09:31:02+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X007": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:20.793Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T10:00:34+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X008": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-01T10:47:44+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X009": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:58:36.862Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:38.405Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T12:09:34+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X010": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:59:12.235Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:35.275Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T12:25:54+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X011": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:59:16.077Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:37.638Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-04T15:41:25+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X012": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:53.923Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T13:02:09+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X013": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:59:20.189Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:06:45.970Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T13:15:21+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X014": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:59:10.394Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:13.945Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T13:28:01+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X017": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-01T16:07:57+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X018": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T22:59:51.653Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:16.392Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T16:21:18+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X019": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:29.534Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-04T15:41:34+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X022": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-01T17:32:02+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X024": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:00:27.674Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:34.784Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T19:06:08+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X025": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:00:36.638Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:37.554Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T19:14:35+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X026": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:54.194Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T19:27:05+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X027": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:42.460Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T19:39:27+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X029": {
+      "status": "absent",
+      "tier": "medium",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:45.114Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T21:44:26+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X030": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:00:40.143Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:07:54.330Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T21:56:26+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X031": {
+      "status": "pass",
+      "tier": "medium",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:01:04.597Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:08:07.509Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-01T22:12:40+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X033": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:01:02.401Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:08:23.752Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-02T01:31:23+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X034": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:01:04.274Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-02T01:46:39+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek"
+      ]
+    },
+    "CG-AL-X035": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-04T15:41:43+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X037": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-04T15:59:58+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X040": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-02T13:47:30+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X041": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-04T16:09:30+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X043": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-03T00:23:14+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X044": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-03T01:09:36+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X045": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-04T16:20:02+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X046": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-03T11:21:47+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X047": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "0 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-07-03T11:43:16+02:00",
+      "everSolved": [
+        "anthropic"
+      ]
+    },
+    "CG-AL-X050": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:03:25.293Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:08:53.955Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-04T17:04:05+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X051": {
+      "status": "pass",
+      "tier": "hard",
+      "detail": "2 independent non-authoring families passed prompt-only: deepseek=deepseek/deepseek-v4-pro, xai=x-ai/grok-4.3",
+      "outsideFamilies": {
+        "deepseek": {
+          "model": "deepseek/deepseek-v4-pro",
+          "when": "2026-08-26T23:03:42.321Z"
+        },
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:08:58.411Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-03T13:38:05+02:00",
+      "everSolved": [
+        "anthropic",
+        "deepseek",
+        "xai"
+      ]
+    },
+    "CG-AL-X052": {
+      "status": "absent",
+      "tier": "hard",
+      "detail": "1 of 2 required non-authoring solutions on record",
+      "outsideFamilies": {
+        "xai": {
+          "model": "x-ai/grok-4.3",
+          "when": "2026-08-26T23:09:08.897Z"
+        }
+      },
+      "oracleChangedAt": "2026-07-04T16:45:37+02:00",
+      "everSolved": [
+        "anthropic",
+        "xai"
+      ]
+    },
+    "CG-AL-X055": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X056": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X057": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X058": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X059": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X060": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X061": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X062": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-22T01:00:31+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X063": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-20T21:22:46+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X064": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-22T22:32:25+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X065": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T16:24:38+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X066": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X067": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X068": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T21:08:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X069": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T21:08:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X070": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T21:08:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X071": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T21:08:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X072": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T21:08:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X073": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X074": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X075": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T21:08:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X076": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T22:42:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X077": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X078": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X079": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T22:42:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X080": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T22:42:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X081": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T22:42:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X082": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X083": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X084": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X085": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T22:42:19+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X086": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X087": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X088": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X089": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X090": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X091": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X092": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X093": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X094": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-23T23:44:40+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X095": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X096": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X097": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X098": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T14:47:57+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X099": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X100": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T00:08:22+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X101": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T21:48:36+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X102": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X103": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X104": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X105": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "uncommitted",
+      "everSolved": []
+    },
+    "CG-AL-X106": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X107": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X108": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X109": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-24T16:08:45+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X110": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T21:48:36+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X111": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X112": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X113": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X114": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X115": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X116": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X117": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X118": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X119": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X120": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-25T22:18:56+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X121": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X122": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X123": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X124": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X125": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X126": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X127": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X128": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X129": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    },
+    "CG-AL-X130": {
+      "status": "not_runnable",
+      "tier": "hard",
+      "detail": "no model has ever solved this task on any attempt, so a model failure cannot distinguish an over-strict oracle from a task the model could not do; the second implementation must be author-written",
+      "outsideFamilies": {},
+      "oracleChangedAt": "2026-08-26T08:56:26+02:00",
+      "everSolved": []
+    }
+  }
+}

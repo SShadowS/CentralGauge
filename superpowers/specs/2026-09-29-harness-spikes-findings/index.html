@@ -1,0 +1,2527 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-09-29-harness-spikes-findings/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Harness Bench M0 spike findings (2026-09-29) - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#harness-bench-m0-spike-findings-2026-09-29" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Harness Bench M0 spike findings (2026-09-29)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-multi-app-timing-task-2-m0-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Multi-app timing (Task 2, M0-02)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-dependency-graph-tasks-1-2-m0-01-m0-01a-m0-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Dependency graph (Tasks 1-2, M0-01, M0-01a, M0-02)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-harness-capture-task-3-m0-03" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Harness capture (Task 3, M0-03)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-log-shapes-task-4-m0-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Log shapes (Task 4, M0-04)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-backend-round-trip-task-5-m0-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Backend round trip (Task 5, M0-05)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-al-tools-nuget-task-6-m0-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. AL Tools NuGet (Task 6, M0-06)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-classification-task-7-m0-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Classification (Task 7, M0-07)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-decisions-for-m1-to-m4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Decisions for M1 to M4
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-09-29-harness-spikes-findings.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="harness-bench-m0-spike-findings-2026-09-29">Harness Bench M0 spike findings (2026-09-29)<a class="headerlink" href="#harness-bench-m0-spike-findings-2026-09-29" title="Permanent link">&para;</a></h1>
+<p>Plan: <code>docs/superpowers/plans/2026-09-24-harness-bench-spike.md</code>. Spec: <code>2026-09-24-harness-bench-design.md</code> (1a).
+All runs 2026-09-25. BC container use per task: M0-02 compiled and published on Cronus28 (<code>M0-02-results.md</code>);
+M0-04's al-tools MCP server defaulted to Cronus28 (<code>H:\cg-coord\tasks\M0-04\runs\002\notes.md</code>); M0-05's backend compiled
+on Cronus28 (<code>M0-05-results.md</code>); M0-06 compiled offline in the sandbox against Cronus28's symbol set, BC
+28.4.53241.53758 (<code>M0-06-results.md</code>). M0-03 (sandbox capture) and M0-07 (log classification) used no BC container.
+Unqualified file names are under <code>H:\Temp3\harness-spike\</code>; orchestrator decisions under <code>H:\cg-coord\decisions\</code>;
+reviews under <code>H:\cg-coord\reviews\</code>.</p>
+<h2 id="1-multi-app-timing-task-2-m0-02">1. Multi-app timing (Task 2, M0-02)<a class="headerlink" href="#1-multi-app-timing-task-2-m0-02" title="Permanent link">&para;</a></h2>
+<p>Script <code>scripts/spikes/harness/multiapp-timing.ts</code> (commit 93d72595). Raw JSON
+<code>H:\Temp3\harness-spike\multiapp-2026-09-25T12-09-21-334Z.json</code>, log <code>M0-02-run3.log</code>, summary <code>M0-02-results.md</code>.
+3 runs per set, all 6 runs succeed; every run starts with <code>prenukeCentralGaugeApps</code> and no run hit "same App ID and Version".</p>
+<p>Median per app, 7-app set (ms):</p>
+<table>
+<thead>
+<tr>
+<th>App</th>
+<th>compile</th>
+<th>publish</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core</td>
+<td>3548</td>
+<td>6380</td>
+</tr>
+<tr>
+<td>Fleet</td>
+<td>3712</td>
+<td>6381</td>
+</tr>
+<tr>
+<td>Rental</td>
+<td>4215</td>
+<td>6172</td>
+</tr>
+<tr>
+<td>Leasing</td>
+<td>4310</td>
+<td>6196</td>
+</tr>
+<tr>
+<td>Integration</td>
+<td>4459</td>
+<td>6177</td>
+</tr>
+<tr>
+<td>Reporting</td>
+<td>4457</td>
+<td>6166</td>
+</tr>
+<tr>
+<td>Test</td>
+<td>4358</td>
+<td>6256</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>3-app total (compile + publish): 35.2 / 29.7 / 30.0 s, median 30.0 s.</li>
+<li>7-app total incl. test: 75.1 / 73.2 / 72.7 s, median 73.2 s.</li>
+<li>Test execution (SOAP runner, 5 tests): 117 / 89 / 154 ms, 5/5 passed in every 7-app run.</li>
+<li>Ratio 7-app / single-candidate <code>prepare-candidate</code> span (14.6 s, <code>.claude/rules/bc-container-quirks.md</code> line 88,
+  as referenced by the plan, Task 2 Step 4): 73.2 / 14.6 = 5.0x (<code>M0-02-results.md</code>).</li>
+<li>Publish is ~60% of the 7-app time, compile ~40%. Each app compiles against the earlier apps' <code>.app</code> files copied
+  into <code>.alpackages</code> (no symbol download).</li>
+<li>First Core compile + publish of a session: 8.4 s + 15.1 s (<code>M0-02-run1.log</code>), warm-up.</li>
+</ul>
+<p>Caveats (review <code>H:\cg-coord\reviews\M0-02-001\review-gpt56sol.md</code>, decision <code>2026-09-25-accept-M0-02.md</code>):
+publish is <code>publishApp</code> (BCH wrapper, serial), not the dev-endpoint path of <code>prepareCandidateApp</code>; test time is direct
+<code>runTestsViaSoap</code>, not the full <code>runTests()</code> lifecycle; totals are operation sums, not wall time, and exclude prenuke,
+staging, dependency copying and cleanup. The 5.0x ratio is not a production scaling factor. The 14.6 s denominator is
+not in the raw JSON.</p>
+<h2 id="2-dependency-graph-tasks-1-2-m0-01-m0-01a-m0-02">2. Dependency graph (Tasks 1-2, M0-01, M0-01a, M0-02)<a class="headerlink" href="#2-dependency-graph-tasks-1-2-m0-01-m0-01a-m0-02" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Graph as committed in the repo (<code>harness-tasks/refapp/{Core,Fleet,Rental,Leasing,Integration,Reporting,Test}/app.json</code>,
+  <code>dependencies[].name</code>): Core; Fleet, Integration, Leasing -&gt; Core;
+  Rental -&gt; Core, Fleet; Reporting -&gt; Rental, Leasing, Fleet; Test -&gt; all six + Library Assert. All 7 apps compile and
+  publish in dependency order (<code>M0-02-results.md</code> run 1 and measurement sections, <code>M0-02-run1c.log</code>, raw JSON above).</li>
+<li>Change 1, test codeunit: the skeleton test codeunit lacked <code>TestPermissions = Disabled</code>; 3 of 5 tests failed with
+  "Sorry, the current permissions prevented the action. (TableData 70100 CGR Vehicle Insert: CGR Test)"
+  (<code>M0-02-run1c.log</code>). Fixed by M0-01a (commit a9d17cba, integrated c00255d2, decision <code>2026-09-25-accept-M0-01a.md</code>),
+  then 5/5 (<code>M0-02-run1d.log</code>).</li>
+<li>Change 2, test path: <code>provider.runTests()</code> cannot run the multi-app Test app. It publishes through
+  <code>prepareCandidateApp</code>, whose cleanup uninstalls and unpublishes every app with Publisher "CentralGauge" whose Name is
+  not like <code>*Prereq*</code>. For the refapp that removes all six CGR apps Test depends on, and the Test publish fails with
+  "Candidate publish failed (unclassified)" (<code>M0-02-run1.log</code>). The spike publishes Test with <code>publishApp</code> and calls
+  <code>runTestsViaSoap</code> directly.</li>
+<li><code>BcContainerProvider</code> defaults to admin/admin unless <code>setCredentials()</code> is called; the spike sets them explicitly.</li>
+<li>id audit: follow-up for M1, <code>id-audit</code> has no band rule for <code>harness-tasks/</code> (decision <code>2026-09-25-accept-M0-01.md</code>).
+  Manual check on the merge tree: 5-digit numbers only 70000-70599, 80000-80099 and the km literal 15000.</li>
+</ul>
+<h2 id="3-harness-capture-task-3-m0-03">3. Harness capture (Task 3, M0-03)<a class="headerlink" href="#3-harness-capture-task-3-m0-03" title="Permanent link">&para;</a></h2>
+<p>Results <code>M0-03-results.md</code>, build log <code>build-M0-03.log</code>, commit cee3b656, decision <code>2026-09-25-accept-M0-03.md</code>.</p>
+<ul>
+<li>Image <code>centralgauge/harness-spike:windows</code>: claude 2.1.282, pi 0.87.1, node v22.19.0. Deviation: node 22.19.0, not
+  the planned 22.12.0 (pi 0.87.1 engines require &gt;= 22.19.0).</li>
+<li>Claude smoke: model claude-sonnet-5, exit 0, 11.5 s wall, <code>hello.txt</code> created, final <code>type:result</code> success,
+  init <code>apiKeySource: "none"</code> (OAuth token path), reported cost 0.0489 USD.
+  Log <code>claude-2026-09-25T11-38-38-342Z.jsonl</code>.</li>
+<li>pi smoke: openrouter <code>google/gemini-3.8-flash</code>, exit 0, 10.9 s wall, <code>hello.txt</code> created, ends <code>type:agent_settled</code>,
+  OpenRouter spend ~0.0012 USD. Log <code>pi-2026-09-25T11-38-57-140Z.jsonl</code>.</li>
+<li>Hard kill (<code>--kill-after-s 25</code>, long.md): both exit -1 (docker kill). Both <code>.jsonl</code> files end in a complete JSON line:
+  claude 19 lines, last type <code>user</code>, 5 files written (<code>claude-2026-09-25T11-39-16-130Z.jsonl</code>); pi 73 lines, last type
+  <code>tool_execution_update</code>, 0 files written (<code>pi-2026-09-25T11-39-41-637Z.jsonl</code>). pi spent the 25 s exploring its
+  environment (<code>set | grep PI_</code>, grepping its own install docs).</li>
+<li>Orphan check: <code>docker ps -a --filter name=cg-harness-spike</code> empty after the kill runs.</li>
+<li>Secret scan: neither secret value appears in any captured <code>.jsonl</code> or <code>.stderr.txt</code>.</li>
+<li>Review round 1 rejected (pi API key in argv, container removal not guaranteed for pre-<code>try</code> errors or a killed
+  runner); round 2 accepted with carryover because both are the plan's own prescribed code
+  (<code>H:\cg-coord\reviews\M0-03-001\review-gpt56sol*.md</code>). Carryover in section 8. The results do not record a pre-run
+  bench-live check.</li>
+</ul>
+<h2 id="4-log-shapes-task-4-m0-04">4. Log shapes (Task 4, M0-04)<a class="headerlink" href="#4-log-shapes-task-4-m0-04" title="Permanent link">&para;</a></h2>
+<p>Source: corrected table <code>H:\cg-coord\tasks\M0-04\runs\002\notes.md</code> (supersedes <code>M0-04-results.md</code>), commit 765e4c46,
+decision <code>2026-09-25-accept-M0-04.md</code>. Raw logs <code>claude-2026-09-25T12-00-22-223Z.jsonl</code>,
+<code>pi-2026-09-25T12-01-21-101Z.jsonl</code>; fixtures <code>tests/fixtures/harness/claude-code/probe.jsonl</code>,
+<code>tests/fixtures/harness/pi/probe.jsonl</code>. Both runs exit 0, all 5 probe steps answered.</p>
+<p>Commands: Claude <code>claude -p &lt;prompt&gt; --output-format stream-json --verbose --model claude-sonnet-5
+--dangerously-skip-permissions --mcp-config C:\workspace\mcp.json</code> (token exported as <code>CLAUDE_CODE_OAUTH_TOKEN</code>);
+pi <code>pi --mode json --no-session -a --provider openrouter --model google/gemini-3.8-flash --api-key &lt;key&gt; &lt;prompt&gt;</code>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code 2.1.282</th>
+<th>pi 0.87.1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tool call</td>
+<td><code>assistant.message.content[]</code> <code>{type:"tool_use", id, name, input}</code>, one record per call</td>
+<td>Count from <code>tool_execution_start {toolCallId, toolName, args}</code> only; the call repeats in <code>message_update</code> <code>toolcall_end</code>, <code>message_end</code>, <code>turn_end</code>, <code>agent_end</code></td>
+</tr>
+<tr>
+<td>Tool error</td>
+<td><code>user.message.content[]</code> <code>{type:"tool_result", tool_use_id, is_error:true, content}</code></td>
+<td><code>tool_execution_end</code> <code>isError: true</code>, <code>result</code> holds output</td>
+</tr>
+<tr>
+<td>Skill invocation</td>
+<td>Yes, <code>tool_use</code> name <code>Skill</code>; <code>system/init.skills</code> lists project skills</td>
+<td>No dedicated event; seen as <code>read</code> of <code>.pi\skills\fleet-notes\SKILL.md</code></td>
+</tr>
+<tr>
+<td>MCP call</td>
+<td>Yes, <code>tool_use</code> name <code>mcp__al-tools__al_compile</code>; <code>system/init.mcp_servers</code> status <code>connected</code></td>
+<td>No native MCP in pi 0.87.1; tools only via extensions (<code>pi.registerTool()</code>, <code>docs/extensions.md</code>); package copy <code>H:\Temp3\harness-spike\pi-0.87.1-pkg\</code></td>
+</tr>
+<tr>
+<td>Sub-agent</td>
+<td>Yes, <code>tool_use</code> name <code>Agent</code>, inner records carry <code>parent_tool_use_id</code>; <code>system/task_*</code> records; <code>result.subagent_stats</code></td>
+<td>None (no sub-agent tool)</td>
+</tr>
+<tr>
+<td>Retry / compaction</td>
+<td>Not seen</td>
+<td>Not seen (<code>agent_end.willRetry</code> false)</td>
+</tr>
+<tr>
+<td>Usage keys, per message</td>
+<td><code>assistant.message.usage</code>: input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}, service_tier, inference_geo</td>
+<td><code>message_end</code> <code>message.usage</code>: input, output, cacheRead, cacheWrite, totalTokens, cost{input, output, cacheRead, cacheWrite, total}, <code>reasoning</code> when present</td>
+</tr>
+<tr>
+<td>Usage keys, final</td>
+<td><code>result.usage</code>: input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens_details{thinking_tokens}, server_tool_use{web_search_requests, web_fetch_requests}, service_tier, cache_creation{ephemeral_1h_input_tokens, ephemeral_5m_input_tokens}, inference_geo, iterations[]{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_creation{ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}, type}, speed. Run totals on <code>result</code>: duration_ms, duration_api_ms, num_turns, total_cost_usd, stop_reason, terminal_reason; per model <code>result.modelUsage.&lt;model&gt;</code> incl. costUSD, costBasis</td>
+<td>No run-level total; sum <code>message.usage</code> over assistant <code>message_end</code> only (<code>turn_end</code>, <code>agent_end</code> repeat and double count)</td>
+</tr>
+<tr>
+<td>Cost reported</td>
+<td><code>result.total_cost_usd</code> (0.1288 in the probe) and <code>modelUsage.&lt;model&gt;.costUSD</code>, <code>costBasis: "list"</code></td>
+<td>Per message <code>message.usage.cost.total</code> (USD, pi's openrouter pricing); no run total</td>
+</tr>
+<tr>
+<td>Project skills non-interactive</td>
+<td>Yes</td>
+<td>Yes with <code>-a</code> (<code>--approve</code>, trusts project-local resources, <code>docs/cli.md</code>)</td>
+</tr>
+<tr>
+<td>Rate limit</td>
+<td><code>rate_limit_event.rate_limit_info</code> incl. <code>unifiedWindows.five_hour</code>, <code>seven_day</code></td>
+<td>None reported (OpenRouter)</td>
+</tr>
+<tr>
+<td>Final record</td>
+<td><code>type:"result"</code></td>
+<td><code>type:"agent_settled"</code> after <code>agent_end</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Not established by the fixture: that the OAuth token belongs to the Team account (rests on the secrets file), and
+  whether <code>total_cost_usd</code> is billed.</li>
+<li>Team account reading at ~12:00Z: seven_day 0.79 (status <code>allowed_warning</code>, resets 2026-09-29 01:00Z), five_hour 0.08.
+  Same seven_day 0.79 at 12:20Z (<code>H:\Temp3\harness-spike\M0-07-job.log</code>, both Claude lines).</li>
+<li>The <code>system/task_progress</code> and <code>task_notification</code> <code>usage</code> (<code>total_tokens</code>, <code>tool_uses</code>, <code>duration_ms</code>) is sub-agent
+  usage, not the run.</li>
+</ul>
+<h2 id="5-backend-round-trip-task-5-m0-05">5. Backend round trip (Task 5, M0-05)<a class="headerlink" href="#5-backend-round-trip-task-5-m0-05" title="Permanent link">&para;</a></h2>
+<p>Results <code>M0-05-results.md</code>, logs <code>M0-05-client.log</code>, <code>M0-05-backend.log</code>, <code>M0-05-negative.log</code>, commit 7473fe49,
+decision <code>2026-09-25-accept-M0-05.md</code>. Backend <code>scripts/spikes/harness/backend-spike.ts</code> on host :3200, workspace
+<code>ws-cgal</code> (refapp Core), compiling on Cronus28. Token read in the sandbox from the read-only <code>C:\cg-secrets</code> mount.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>success</th>
+<th>backendMs</th>
+<th>compilerMs</th>
+<th>clientMs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>true</td>
+<td>8304</td>
+<td>8301</td>
+<td>9533</td>
+</tr>
+<tr>
+<td>2</td>
+<td>true</td>
+<td>4402</td>
+<td>4400</td>
+<td>5482</td>
+</tr>
+<tr>
+<td>3</td>
+<td>true</td>
+<td>3456</td>
+<td>3454</td>
+<td>4347</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Median backendMs 4402, median clientMs 5482. Client overhead 891-1229 ms per call (shim PowerShell start,
+  <code>Invoke-RestMethod</code>, <code>host.docker.internal</code> hop). First call pays compiler warm-up.</li>
+<li>Negative checks: no Authorization header 401; app <code>..\x</code> 400; app <code>C:\Windows</code> 400 (both rejected by the name
+  allowlist before path resolution, so the containment branch is not exercised); wrong bearer token 401. Malformed JSON
+  was not tested.</li>
+<li>The compiled <code>.app</code> is not written into the workspace; the sandbox sees only the JSON verdict.</li>
+<li>Backend token was passed on the backend's argv (<code>M0-05-results.md</code>, Notes for M1). The backend binds <code>0.0.0.0</code>
+  and times with <code>Date.now()</code> (both per review <code>H:\cg-coord\reviews\M0-05-001\review-gpt56sol.md</code>, sections 2 and 3).
+  Carryover in section 8.</li>
+</ul>
+<h2 id="6-al-tools-nuget-task-6-m0-06">6. AL Tools NuGet (Task 6, M0-06)<a class="headerlink" href="#6-al-tools-nuget-task-6-m0-06" title="Permanent link">&para;</a></h2>
+<p>Results <code>M0-06-results.md</code>, logs <code>M0-06-core.log</code>, <code>M0-06-fleet.log</code>, <code>build-M0-06*.log</code>, commit 8af56b8f,
+decision <code>2026-09-25-accept-M0-06.md</code>. Result: positive.</p>
+<ul>
+<li>Package <code>Microsoft.Dynamics.BusinessCentral.Development.Tools</code> 18.0.41.62505 (DotnetTool), command <code>al</code>, entry point
+  <code>altool.dll</code>, targets net8.0 and net10.0. Also ships <code>almcp.dll</code> + <code>ModelContextProtocol.dll</code> (presence only, not run).</li>
+<li>Image <code>centralgauge/harness-spike-nuget:windows</code> (<code>scripts/spikes/harness/image/Dockerfile.nuget.windows</code>), .NET 8 in
+  <code>C:\dotnet</code>. Deviation: <code>DOTNET_ROOT=C:\dotnet</code> is required; without it every <code>al</code> call fails in 0.03 s with
+  "Failed to resolve hostfxr.dll [not found]. Error code: 0x80008083".</li>
+<li>Symbols: 263 apps, 400 MB, from <code>C:\ProgramData\BcContainerHelper\compiler-cache-15ff3c5d109b\symbols\</code> (BC
+  28.4.53241.53758) copied into <code>&lt;ws&gt;\.alpackages</code>.</li>
+<li>Command: <code>al compile /project:C:\workspace\&lt;App&gt; /out:C:\workspace\&lt;App&gt;\out.app
+  /packagecachepath:C:\workspace\.alpackages</code> in <code>docker run --rm --network none</code>.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Compile</th>
+<th>run 1 (s)</th>
+<th>run 2 (s)</th>
+<th>out.app</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core (5 files)</td>
+<td>9.43</td>
+<td>8.39</td>
+<td>True</td>
+</tr>
+<tr>
+<td>Fleet (4 files, against Core <code>out.app</code>)</td>
+<td>9.84</td>
+<td>10.01</td>
+<td>True</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Each run is a fresh container (includes .NET start and loading 400 MB of symbols). Backend path for comparison
+  (section 5): 3.5-4.4 s warm, 8.3 s cold.</li>
+<li>Per review <code>H:\cg-coord\reviews\M0-06-001\review-gpt56sol.md</code> section 2: the Dockerfile has no default for
+  <code>AL_TOOLS_ID</code>/<code>AL_TOOLS_VERSION</code>; the base image is not digest-pinned; <code>-Channel 8.0</code> is not an exact version; no
+  package hash is recorded.</li>
+</ul>
+<h2 id="7-classification-task-7-m0-07">7. Classification (Task 7, M0-07)<a class="headerlink" href="#7-classification-task-7-m0-07" title="Permanent link">&para;</a></h2>
+<p>Run 001 (commit eb3e8598) was rejected for missing blind-label evidence (<code>H:\cg-coord\reviews\M0-07-001\reject-reason.md</code>).
+Run 002 (commit 27454f69, integrated 207545f6) is accepted (<code>H:\cg-coord\decisions\2026-09-25-accept-M0-07.md</code>).
+Evidence <code>H:\Temp3\harness-spike\M0-07\</code>: <code>input-logs.txt</code> (10 raw logs), <code>calls.jsonl</code> (45 calls), <code>calls-blind.jsonl</code>
+(index, harness, tool, input only), <code>labels-blind.csv</code>, <code>score.txt</code>, <code>rules-coverage.txt</code>, <code>M0-07-results.md</code>, run 001
+evidence in <code>H:\Temp3\harness-spike\M0-07\run001\</code> (<code>M0-07-results.md</code>, <code>calls.jsonl</code>, <code>labels.csv</code>, <code>laya.jsonl</code>,
+<code>rules-coverage.txt</code>). The Laya lines below cite that run 001 evidence.</p>
+<ul>
+<li>Extraction: Claude = assistant <code>message.content[]</code> <code>tool_use</code>; pi = <code>tool_execution_start</code> only.</li>
+<li>Labeling: a fresh subagent with no history read only <code>calls-blind.jsonl</code> (no rule category). The blind labels are
+  identical to the run 001 labels on all 45 rows.</li>
+<li>Rules (<code>scripts/spikes/harness/classify-rules.ts</code>, scored by <code>score-calls.ts</code> against <code>labels-blind.csv</code>):</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>Coverage</th>
+<th>Accuracy on covered</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>All</td>
+<td>27/45</td>
+<td>27/27</td>
+</tr>
+<tr>
+<td>Claude Code</td>
+<td>13/27</td>
+<td>13/13</td>
+</tr>
+<tr>
+<td>pi</td>
+<td>14/18</td>
+<td>14/14</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Unclassified, Claude Code (14): Skill x3, Agent x3, ToolSearch x3, <code>cg-al --version</code> x3, PowerShell
+  <code>Set-Content ...; Get-ChildItem</code> (label edit), PowerShell <code>(Get-ChildItem ...).Count</code> (label search).
+  Unclassified, pi (4): <code>cg-al --version</code> x3, <code>set | grep PI_</code> (label other).</li>
+<li>Caveat: coverage differs by harness (13/27 vs 14/18), so M0 category totals must not be used to rank harness behavior.
+  Skill use lands in different categories per harness (Claude <code>Skill</code> tool, pi <code>read</code> of a <code>SKILL.md</code> path).</li>
+<li>Laya (all from <code>H:\Temp3\harness-spike\M0-07\run001\M0-07-results.md</code>, Laya section): PyPI <code>laya</code> 0.3.20
+  (github.com/NandhaKishorM/laya), Python 3.13.14 venv <code>H:\Temp3\harness-spike\laya-venv</code>,
+  torch 2.14.0+cpu. Checkpoint <code>Router()</code> default -&gt; HF <code>convaiinnovations/laya</code> (ModernBERT-large, 421M, 512 ctx).
+  Invocation <code>router.predict(json.dumps({"tool","command"}), {"category": {"type":"choice", "instructions": ...,
+  "criteria": {&lt;9 categories&gt;}}})</code>, probability = <code>answers.category.probabilities[choice]</code>.</li>
+<li>Laya accuracy on the 18-call residue (run 001, labels identical to the blind labels): 11/18 overall; at p &gt;= 0.8:
+  3/10 correct; below 0.8 (would be <code>unclassified</code>): 8/18. <code>cg-al --version</code> -&gt; compile at p 0.91-0.92 (all 6 wrong);
+  <code>set | grep PI_</code> -&gt; search at p 0.86 (wrong). The 18 residue calls are 7 distinct inputs (run 001 results, Rules
+  section), so this is anecdotal. Per-call answers: <code>run001\laya.jsonl</code>.</li>
+<li>Laya latency (CPU, warm): median 159 ms, p95 185 ms (run 001 results). The 18 <code>ms</code> values in <code>run001\laya.jsonl</code>
+  range 148.0-184.5 ms, median 159.2 ms.</li>
+<li>Decision: Laya cut (<code>H:\cg-coord\decisions\2026-09-25-cut-laya.md</code>, launch contract cut order item 1). Call
+  categorization is rules only, post-hoc, secondary metric.</li>
+<li>CARRYOVER to M2 rule categorization (<code>accept-M0-07.md</code>): Skill, Agent, ToolSearch handling; <code>cg-al</code> version and
+  unknown operations as <code>other</code>; parenthesized and compound PowerShell commands; cross-harness skill-use semantics
+  (Claude <code>Skill</code> vs pi <code>SKILL.md</code> read); per-harness coverage and unclassified counts in the report; exact or
+  token-aware MCP tool-part mappings (the run 001 review found <code>mcp__test-server__read_file</code> -&gt; test, and MCP publish
+  recognized while shell <code>cg-al publish</code> is not).</li>
+</ul>
+<h2 id="8-decisions-for-m1-to-m4">8. Decisions for M1 to M4<a class="headerlink" href="#8-decisions-for-m1-to-m4" title="Permanent link">&para;</a></h2>
+<p>Plan decision rules:</p>
+<ul>
+<li>7-app total &gt; 10 min: does not fire (median 73.2 s, operation sum, section 1). M1 is not forced to publish only
+  changed apps or to one execution per container by this rule.</li>
+<li>pi has no MCP: fires (section 4). MCP arms are Claude Code only for the talk; pi arms compare skills, instructions and
+  models.</li>
+<li>A harness reports no cost: does not fire. Claude reports <code>result.total_cost_usd</code> with <code>costBasis: "list"</code>; pi reports
+  per-message <code>usage.cost.total</code> with no run total. The spec's cost basis (estimated from tokens, <code>cost_source:
+  estimated</code>, reported cost kept for cross-check) stands.</li>
+<li>NuGet compile fails offline: does not fire (section 6). The <code>toolchain</code> component is not deferred.</li>
+<li>Laya accuracy at p &gt;= 0.8 below 90%: fires (3/10). M2 ships rules only and marks
+  the residue <code>unclassified</code>; Laya is cut (<code>cut-laya.md</code>).</li>
+</ul>
+<p>Spec assumptions confirmed or broken:</p>
+<ul>
+<li>Broken: <code>prepareCandidateApp</code> cleanup removes refapp dependency apps. The M1 verdict workspace must scope cleanup to
+  candidate app ids (not rename apps to <code>*Prereq*</code>), define persistent prerequisite app ids, refresh stale prerequisite
+  versions, and decide whether provisioning counts in verdict latency (<code>accept-M0-02.md</code>).</li>
+<li>Broken (fixed): refapp test codeunit needs <code>TestPermissions = Disabled</code> (M0-01a, c00255d2).</li>
+<li>Confirmed: acyclic 7-app graph incl. Rental -&gt; Fleet compiles, publishes and tests 5/5.</li>
+<li>Confirmed: hard kill leaves a complete last JSON line for both harnesses; no orphan containers.</li>
+<li>Confirmed: pi loads project skills non-interactively with <code>-a</code>.</li>
+<li>Broken for pi: MCP is extension-only (<code>pi.registerTool()</code>), no native support.</li>
+<li>Rules only (M0-07 run 002, blind labels): coverage 27/45, accuracy 27/27; Claude Code 13/27, pi 14/18.
+  Coverage differs by harness, so M0 category totals must not rank harnesses.</li>
+<li>Partly: skill invocation is a <code>Skill</code> tool_use in Claude; in pi only a <code>read</code> of a <code>SKILL.md</code> path.</li>
+<li>Not observed: retry and compaction records for either harness. Carry to the M2/M3 parser plans (<code>accept-M0-04.md</code>):
+  fixture coverage for retry, compaction and fatal run/API failure records; redactor coverage beyond exact secrets.</li>
+<li>Parser rules: pi counts calls from <code>tool_execution_start</code>, usage from assistant <code>message_end</code>; Claude must not sum
+  repeated assistant chunk usage.</li>
+<li>Campaign sizing: Team account seven_day utilization 0.79 on 2026-09-25, resets 2026-09-29 01:00 UTC.</li>
+<li>Image: node 22.19.0 (pi 0.87.1 engines), not 22.12.0.</li>
+<li>Toolchain: AL Tools 18.0.41.62505 compiles offline; <code>DOTNET_ROOT=C:\dotnet</code> required. M3 carryover
+  (<code>accept-M0-06.md</code>): symbols are a versioned input (proven only against BC 28.4.53241.53758); record BC build, symbol
+  provenance, compiler version and hashes together; pin package version in the Dockerfile, digest-pin the base image,
+  exact .NET version, package hash; probe <code>almcp.dll</code> before relying on it; mount a shared read-only symbol dir instead
+  of copying 400 MB per workspace.</li>
+<li>Backend: compile dominates latency (backendMs vs compilerMs differ by 2-3 ms); <code>.app</code> is not handed back to the
+  workspace, so an M1 backend that should return artifacts must copy them.</li>
+<li>Production sandbox, hard requirements (<code>accept-M0-03.md</code>): (a) no secret in any argv, pass via env or file;
+  (b) runner creates the container and opens capture files inside <code>try</code>, checks <code>docker rm -f</code> exit status, and at
+  startup removes leftover <code>cg-harness-*</code> containers it owns (prefix + label); (c) secrets not mounted into the
+  agent-readable filesystem, or the threat model states why they must be.</li>
+<li>Production backend, hard requirements (<code>accept-M0-05.md</code>): per-sandbox short-lived scoped tokens read from a secret
+  file, timing-safe compare of fixed-length digests; canonical path resolution, reparse-point escape refusal, opaque
+  workspace ids mapped to approved roots, TOCTOU and resource limits; bind to a container-facing interface only,
+  firewall or local authenticated proxy; malformed JSON returns 400; latency on a monotonic clock, separating process
+  startup, transport, queue and compile.</li>
+<li>M1 metric rules (owner, <code>2026-09-25-m1-metric-rules.md</code>): cost per solved task = sum over tasks of per-task mean cost
+  (every attempt counted) / sum of per-task pass rates, equal task weight; pending spend is disclosed and the headline
+  is marked provisional while cells are pending; matched pairs (a comparison uses only (task, repeat) cells eligible in
+  both arms) with each arm's raw spend and exclusions reported separately; automatic infra-retry chain counts its final
+  attempt, manual reruns never silently replace a scored result and the report states which execution was used; CI and
+  distinguishable verdict suppressed when any bootstrap resample is undefined, with the undefined share reported.</li>
+<li>id-audit has no band rule for <code>harness-tasks/</code> (M1 follow-up, <code>accept-M0-01.md</code>).</li>
+<li>Paid API spend to date USD 0.034 of a 150 cap (<code>spend.md</code>).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

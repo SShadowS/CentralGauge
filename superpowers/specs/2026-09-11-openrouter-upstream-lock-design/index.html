@@ -1,0 +1,2792 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-09-11-openrouter-upstream-lock-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>OpenRouter upstream lock: record, pin, verify, profile - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#openrouter-upstream-lock-record-pin-verify-profile" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              OpenRouter upstream lock: record, pin, verify, profile
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-what-openrouter-actually-provides-spike-2026-09-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. What OpenRouter actually provides (spike, 2026-09-11)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Terminology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#d1-record-upstream-identity-provenance-and-verification-per-attempt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D1. Record: upstream identity, provenance and verification per attempt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d2-lock-a-per-model-upstream-pin-frozen-at-submit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D2. Lock: a per-model upstream pin, frozen at submit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d3-verify-verification-state-per-attempt-a-compromised-run-is-excluded-atomically" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D3. Verify: verification state per attempt; a compromised run is excluded atomically
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d4-profile-the-pin-is-part-of-the-invocation-profile-with-named-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D4. Profile: the pin is part of the invocation profile, with named schemas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d5-site-one-upstream-profile-per-model-set-and-mode-claimed-atomically" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D5. Site: one upstream profile per model, set and mode, claimed atomically
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d6-backfill-for-the-finished-openrouter-runs-per-attempt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D6. Backfill for the finished OpenRouter runs, per attempt
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Out of scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-deploy-order-and-operator-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Deploy order and operator notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-review-traceability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Review traceability
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-09-11-openrouter-upstream-lock-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="openrouter-upstream-lock-record-pin-verify-profile">OpenRouter upstream lock: record, pin, verify, profile<a class="headerlink" href="#openrouter-upstream-lock-record-pin-verify-profile" title="Permanent link">&para;</a></h1>
+<p>Status: design, revision 3, 2026-09-11. Revision 1 was owner-approved
+("All four"), then reviewed adversarially by GPT-5.6 Sol (verdict "redesign",
+<code>.panel/upstream-lock-spec-review-gpt56sol.md</code>). Revision 2 answered those
+eleven findings and was re-reviewed (verdict "ship with the listed changes",
+<code>.panel/upstream-lock-spec-review-2-gpt56sol.md</code>: four resolved, seven
+partial, nine new). Revision 3 closes all twenty. Section 8 maps each finding
+to the decision that closes it.</p>
+<h2 id="1-problem">1. Problem<a class="headerlink" href="#1-problem" title="Permanent link">&para;</a></h2>
+<p>OpenRouter routes a request for one model id to one of several backends
+("upstreams": Fireworks, Novita, Google Vertex, and so on). Those backends
+serve the same weights at different precision, context handling and sampling
+defaults. Two runs of <code>openrouter/z-ai/glm-5.3</code> served by different upstreams
+are not the same experiment, and today nothing in CentralGauge can tell them
+apart.</p>
+<p>What exists now, verified 2026-09-11:</p>
+<ul>
+<li>OpenRouter returns the serving upstream's display name as a top-level
+  <code>provider</code> field. The batch runner persists it only inside
+  <code>results/batch/&lt;id&gt;/responses/&lt;item&gt;.json</code> under <code>result.raw.provider</code>.
+  Nothing structured carries it: <code>LLMResponse</code> has <code>model</code>, <code>servedModel</code> and
+  <code>providerFinishReason</code> but no upstream field, so it never reaches
+  <code>ExecutionAttempt</code>, the results JSON, the ingest payload or D1.</li>
+<li>Neither the sync adapter (<code>src/llm/openrouter-adapter.ts</code>,
+  <code>buildRequestParams</code>) nor the batch path (<code>src/batch/provider-wiring.ts</code>,
+  which builds item bodies through the same method) sends a <code>provider</code>
+  routing block. OpenRouter picks freely on every request.</li>
+<li>The invocation profile (<code>shared/settings-hash.ts</code>, <code>CanonicalSettingsExtras</code>)
+  carries <code>provider_route</code> (<code>openrouter:&lt;api_model_id&gt;</code>) but no upstream.</li>
+<li>The batch runner freezes prompt inputs and canonical settings at submit
+  (<code>src/parallel/shared/prompt-inputs.ts</code>) and refuses on drift
+  (<code>src/batch/drift.ts</code>), but <code>buildAdvanceDeps</code>
+  (<code>cli/commands/bench-batch-command.ts</code>) reloads live configuration and
+  rebuilds provider wiring for every later step. Routing is not a frozen
+  input, so nothing would stop wave 2 of a run using a different upstream
+  than wave 1.</li>
+<li>The results file persists the invocation record, not the frozen canonical
+  settings; <code>assembleBenchResultsForVariant</code>
+  (<code>cli/commands/bench/ingest-assembly.ts</code>) reconstructs settings from the
+  invocation on every ingest and replay, and the server recomputes the hash
+  from what it receives (<code>site/src/lib/server/ingest.ts</code>).</li>
+<li>The sync executor (<code>src/parallel/orchestrator.ts</code>, <code>processTaskForVariant</code>)
+  continues to attempt 2 after any failed LLM result; batch
+  <code>transitions.ts</code> schedules wave 2 for every failed attempt except one
+  marked <code>infraSynthesized</code>.</li>
+</ul>
+<p>The spread is real. The endpoints listing for <code>z-ai/glm-5.3</code> shows <strong>26
+upstreams</strong>: eleven fp8, six fp4, nine with no declared quantization, priced
+from $3.31 to $6.60 per million output tokens. Fireworks, which served every
+item of our GLM cohort, declares nothing. Two upstreams can share one display
+name at different precision (<code>baseten/fp4</code> and <code>baseten/fp8</code> both report
+"BaseTen"). Gemini 3.8 Flash has six, all reporting "Google".</p>
+<p>The three completed OpenRouter cohorts on the September 2026 set happened to
+be uniform by display name: Gemini served by "Google" (296 to 299 items per
+run), GLM by "Fireworks" (327 to 332). That is luck, and it is only
+display-name uniformity.</p>
+<h2 id="2-what-openrouter-actually-provides-spike-2026-09-11">2. What OpenRouter actually provides (spike, 2026-09-11)<a class="headerlink" href="#2-what-openrouter-actually-provides-spike-2026-09-11" title="Permanent link">&para;</a></h2>
+<p>Measured on the synchronous chat endpoint with <code>z-ai/glm-5.3-flash</code>, five
+token replies, scratchpad scripts <code>or-spike.ts</code> and <code>or-spike2.ts</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Does <code>provider: { order: [slug], allow_fallbacks: false }</code> route only to that slug?</td>
+<td><strong>Yes.</strong> Pinned to <code>morph/fp8</code> while Morph was rate-limited, the request returned HTTP 429 naming Morph in <code>error.metadata.provider_name</code>. It did not fall back.</td>
+</tr>
+<tr>
+<td>What does a bad slug produce?</td>
+<td>HTTP 404 <code>No endpoints found for &lt;model&gt;</code>, with <code>error.metadata.routing_funnel</code> showing the fallback filter reducing 26 endpoints to 0.</td>
+</tr>
+<tr>
+<td>Is the legacy top-level <code>provider</code> field present on success?</td>
+<td>Yes, with and without the metadata header. It is the display name ("Novita").</td>
+</tr>
+<tr>
+<td>What does <code>X-OpenRouter-Metadata: enabled</code> add?</td>
+<td><code>openrouter_metadata</code> with <code>strategy</code>, <code>region</code>, and <code>endpoints.available[]</code> entries of <code>{ provider, model, selected }</code>. <code>model</code> is the upstream's dated variant (<code>z-ai/glm-5.3-flash-20260826</code>). No slug, no quantization.</td>
+</tr>
+<tr>
+<td>Does any response field carry the slug or quantization?</td>
+<td><strong>No.</strong> <code>system_fingerprint</code> and <code>service_tier</code> are null.</td>
+</tr>
+<tr>
+<td>Does <code>GET /api/v1/generation?id=</code> help?</td>
+<td>No. 404 at three and six seconds after the request.</td>
+</tr>
+</tbody>
+</table>
+<p>What this does and does not establish:</p>
+<ul>
+<li><strong>The pin is the guarantee.</strong> <code>allow_fallbacks: false</code> with a one-element
+  <code>order</code> confines routing to the pinned slug, including its precision
+  variant. No response field can independently confirm precision, so
+  verification is a consistency check on the display name, not a proof.</li>
+<li>These are <strong>synchronous</strong> observations. The Batch API is a separate service
+  whose delivery of a pinned-upstream outage (per-item error, batch-level
+  failure, or prolonged processing) is not established by this spike. D3
+  carries a batch spike as a pre-implementation gate and does not generalise
+  the 429 observation to batch.</li>
+<li>OpenRouter's documentation warns some upstreams enforce a minimum
+  <code>max_tokens</code> of 16; the spike's five-token probe would fail such an
+  upstream for that reason alone. D2's preflight uses 32.</li>
+</ul>
+<h2 id="3-terminology">3. Terminology<a class="headerlink" href="#3-terminology" title="Permanent link">&para;</a></h2>
+<p>"Provider" already means the top-level vendor (<code>anthropic</code>, <code>openai</code>,
+<code>openrouter</code>). The backend OpenRouter routes to is the <strong>upstream</strong>
+everywhere: <code>requestedUpstream</code>, <code>servedUpstream</code>, <code>upstream_pin</code>. Three
+schema versions exist in this design and are named distinctly so they cannot
+be confused: <code>IngestMeta.schema</code> (results-file metadata, today 1 to 4),
+<code>settings_extras_schema</code> (the shape of <code>CanonicalSettingsExtras</code>, new), and
+<code>invocation_schema</code> (the shape of <code>InvocationRecord</code>, new).</p>
+<h2 id="4-decisions">4. Decisions<a class="headerlink" href="#4-decisions" title="Permanent link">&para;</a></h2>
+<h3 id="d1-record-upstream-identity-provenance-and-verification-per-attempt">D1. Record: upstream identity, provenance and verification per attempt<a class="headerlink" href="#d1-record-upstream-identity-provenance-and-verification-per-attempt" title="Permanent link">&para;</a></h3>
+<p>Five fields per attempt, on <code>LLMResponse</code> where a response exists, on the
+work item and <code>ExecutionAttempt</code> always, in the results JSON, on the ingest
+wire, and in D1 (migration <code>0023</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>requested_upstream</code></td>
+<td><code>TEXT NULL</code></td>
+<td>The pinned slug sent in <code>provider.order</code>, or null when unpinned or not OpenRouter. Carried on the <strong>work item and evaluation context</strong>, never derived from a response, so it is present for attempts that received no response (404, 429, transport failure, batch expiry).</td>
+</tr>
+<tr>
+<td><code>served_upstream</code></td>
+<td><code>TEXT NULL</code></td>
+<td>The upstream's display name as observed; null when no response or no identity.</td>
+</tr>
+<tr>
+<td><code>served_upstream_model</code></td>
+<td><code>TEXT NULL</code></td>
+<td><code>openrouter_metadata.endpoints.available[].model</code> for the selected entry when present. <strong>Diagnostic, not identity</strong> (D3).</td>
+</tr>
+<tr>
+<td><code>upstream_identity_source</code></td>
+<td><code>TEXT NULL</code></td>
+<td>Where <code>served_upstream</code> came from: <code>provider_field</code>, <code>router_metadata</code>, or <code>both</code>. Null when no identity.</td>
+</tr>
+<tr>
+<td><code>upstream_verification</code></td>
+<td><code>TEXT NULL</code></td>
+<td><code>not_applicable</code> (provider is not OpenRouter), <code>unpinned</code> (OpenRouter, no pin), <code>verified</code> (pinned, identity matches the resolved pin), <code>mismatch</code> (pinned, identity differs, or the two sources disagree), <code>unverified</code> (pinned, response received, no identity), <code>not_served</code> (pinned, no response). <strong>Null means the row predates capture</strong>; the migration adds the column nullable with no default, so historical rows are honestly unknown rather than falsely <code>not_applicable</code>.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Identity extraction: the sync adapter sends <code>X-OpenRouter-Metadata:
+  enabled</code> and reads both the top-level <code>provider</code> field and
+  <code>openrouter_metadata</code> off the completion object (the OpenAI SDK 7.2.0
+  returns <code>response.json()</code> unmodified; reviewer verified against
+  <code>internal/parse.ts</code>). With exactly one <code>selected: true</code> metadata entry
+  and a <code>provider</code> field, both must name the same upstream or the attempt is
+  <code>mismatch</code>; zero or several selected entries are ignored in favour of the
+  <code>provider</code> field with source <code>provider_field</code>. The streaming path inspects
+  every decoded chunk for those fields, keeps the first identity seen, and
+  records <code>mismatch</code> if a later chunk names a different one.</li>
+<li>Batch: the collected item's <code>raw.provider</code> is the <strong>observed compatibility
+  path</strong>, present in every blob we have, not a documented contract;
+  <code>raw.openrouter_metadata</code> is read when present. Whether the metadata header
+  can be set per batch item is unknown; the plan carries a spike. If both are
+  absent on a pinned item the attempt is <code>unverified</code>, and D3 applies. The
+  spike's live-pin batch (<code>batch-1789167741-wPqWvi1QgWaUhhD1uX2c</code>, header
+  set) never reached a terminal state in 50 minutes of observation, so
+  whether <code>openrouter_metadata</code> is present per batch item is unconfirmed
+  pending a later poll.</li>
+<li><code>ExecutionAttempt</code> carries all five; <code>evaluate-attempt.ts</code>,
+  <code>failed-attempt.ts</code> and <code>infra-attempt.ts</code> populate them, taking
+  <code>requested_upstream</code> from the work item so a failed provider call still
+  records what was asked for, and setting <code>not_served</code> when no response
+  arrived.</li>
+<li>Ingest wire (<code>src/ingest/mod.ts</code>, <code>cli/commands/bench/ingest-assembly.ts</code>)
+  carries all five per result. Site ingest validates each string at 128
+  characters or less, the two enums against their values, and the tuple
+  <strong>relationally</strong>: <code>verified</code>/<code>mismatch</code>/<code>unverified</code>/<code>not_served</code> require a
+  non-null <code>requested_upstream</code>; <code>unpinned</code>/<code>not_applicable</code> require a null
+  one; <code>verified</code> and <code>mismatch</code> require a non-null <code>served_upstream</code> and
+  source; every non-null <code>requested_upstream</code> in the payload must equal the
+  run's invocation <code>upstream_pin</code>. Any violation is <code>400 invalid_upstream</code>
+  naming the row.</li>
+<li>Migration <code>0023_results_upstream.sql</code> adds the five columns, all nullable,
+  no default, plus <code>runs.excluded_code TEXT NULL</code> (D3). Old rows read as
+  null throughout. Newly ingested non-OpenRouter results carry
+  <code>not_applicable</code> explicitly; D6 backfills known OpenRouter rows to
+  <code>unpinned</code>.</li>
+<li>Scores file gets a <code># Upstream</code> block for OpenRouter runs: the pin, its
+  resolved display name and declared quantization, distinct served
+  upstreams with counts, distinct <code>served_upstream_model</code> values with counts,
+  and a count per verification state.</li>
+</ul>
+<h3 id="d2-lock-a-per-model-upstream-pin-frozen-at-submit">D2. Lock: a per-model upstream pin, frozen at submit<a class="headerlink" href="#d2-lock-a-per-model-upstream-pin-frozen-at-submit" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The pin is an <strong>upstream slug</strong>: the <code>tag</code> from
+  <code>GET /api/v1/models/{author}/{slug}/endpoints</code>, which is what
+  <code>provider.order</code> accepts. The tag names the precision variant where the
+  upstream declares one (<code>novita/fp8</code>, <code>baseten/fp4</code>, <code>google-vertex/global</code>).</li>
+<li>Config, a new top-level <code>openrouter:</code> section, because the pin applies to
+  sync and batch alike (<code>batch.openrouter.limits</code> stays where it is):</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">openrouter</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">upstream</span><span class="p">:</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="s">"z-ai/glm-5.3"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fireworks</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="s">"google/gemini-3.8-flash"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">google-vertex/global</span>
+</code></pre></div>
+<p>Keyed by api_model_id, value a slug. Validation is a manual
+  <code>validateOpenRouterConfig</code> in the style of the batch-limits validator
+  (there is no zod schema for <code>CentralGaugeConfig</code>; YAML is cast to the
+  interface): object of string to non-empty string, slug matching
+  <code>^[a-z0-9-]+(/[a-z0-9.-]+)*$</code>, unknown keys under <code>openrouter</code> rejected.
+  Merge rule: the project map replaces the home map per key, the same
+  shallow-per-key semantics the rest of the config uses, stated in the
+  config docs and tested with disjoint and duplicate keys.
+- Threading: the resolved pin travels on <code>LLMConfig.upstreamPin?: string</code> to
+  the adapter and on the work item to the evaluation units. <code>buildRequestParams</code>
+  adds <code>provider: { order: [pin], allow_fallbacks: false }</code> when set. A pin
+  configured for a model whose provider is not OpenRouter is a startup
+  error.
+  - <strong>Deviation as built:</strong> <code>resolveUpstreamPins</code> silently skips a
+    non-OpenRouter variant instead of failing at startup, because the
+    config map is keyed under the <code>openrouter:</code> namespace, which makes a
+    stray key inert rather than misrouting a request.
+- Resolution and preflight, at bench start and at batch submit:
+  1. Fetch the endpoints listing once; resolve the slug to
+     <code>{ provider_name, quantization, context_length, max_completion_tokens }</code>;
+     fail with the listing printed if the slug is absent.
+  2. Check the endpoint record against the real request: its
+     <code>max_completion_tokens</code> must be at least the configured output cap, and
+     its context length at least the longest rendered prompt plus that cap.
+     Fail naming the shortfall.
+  3. Send one pinned request with <code>max_tokens: 32</code> (above OpenRouter's
+     documented 16-token minimum), requiring HTTP 200 with a <code>provider</code>
+     equal to the resolved display name. A 404 is a bad slug and stops the
+     bench. A 429/5xx is retried three times with backoff over about a
+     minute; if it persists the bench stops with the message, because
+     submitting 232 items to an upstream that is rate-limiting us now is the
+     outcome D3 exists to avoid. <code>--skip-upstream-preflight</code> is the operator
+     override for a known transient outage; it is recorded in the
+     invocation record as <code>preflight: "skipped"</code>.
+  4. For batch mode the preflight proves the slug and the sync endpoint
+     only. Batch acceptance is left to submission, where a 404 at batch
+     creation is already loud; the sync probe is not treated as proof that
+     the upstream accepts batch work.
+- <strong>Frozen.</strong> <code>prompt-inputs.json</code> gains <code>routing: { upstream_pin,
+  provider_name, quantization, preflight }</code>, written before the first
+  request. <code>wireProvider</code> and <code>buildAdvanceDeps</code> consume only the frozen
+  value for every later step, including wave-2 rendering and pending-item
+  rebuilds; the live config is never consulted for an existing run. D13
+  covers it because <code>prompt-inputs.json</code> is digested.
+  <code>src/llm/openrouter-adapter.ts</code>, <code>src/batch/provider-wiring.ts</code> and
+  <code>src/config/config.ts</code> join <code>HARNESS_INPUTS</code>.
+- Discovery: <code>centralgauge models &lt;slug&gt; --upstreams</code> prints the endpoints
+  listing: slug, display name, quantization, context length,
+  max_completion_tokens, output price, status.</p>
+<h3 id="d3-verify-verification-state-per-attempt-a-compromised-run-is-excluded-atomically">D3. Verify: verification state per attempt; a compromised run is excluded atomically<a class="headerlink" href="#d3-verify-verification-state-per-attempt-a-compromised-run-is-excluded-atomically" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Classification per attempt is the <code>upstream_verification</code> enum of D1.
+  <code>served_upstream_model</code> is <strong>diagnostic only</strong>: it is the upstream's own
+  deployment label, which we cannot pin and OpenRouter does not stabilise,
+  so a change in it does not compromise a run or split a profile. Distinct
+  values are counted in the <code># Upstream</code> block and the run summary (D5) so
+  a mid-run version change is visible.</li>
+<li>What verification establishes, stated plainly: <code>verified</code> proves the
+  display name matched. Precision is guaranteed by the pin's
+  <code>allow_fallbacks: false</code>; two slugs under one display name would both
+  verify, so the pin, not the check, holds the precision line.</li>
+<li><strong>Error shapes are not mismatches.</strong> They are classified by the existing
+  batch classifier (<code>src/llm/batch/openrouter-batch.ts</code>), extended so an
+  error-only item (an entry with <code>error.code</code> but no <code>response.status_code</code>)
+  reads <code>error.code</code>, numeric or string, instead of collapsing to <code>unknown</code>.
+  The table the implementation must satisfy:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Observed</th>
+<th>Retryable</th>
+<th>Attempt outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>item 429 / 500 / 502 / 503 / 529</td>
+<td>yes, existing path</td>
+<td>after retries exhaust: failed, <code>not_served</code></td>
+</tr>
+<tr>
+<td>item 404 "No endpoints found"</td>
+<td>no</td>
+<td>failed, <code>not_served</code>; after preflight this means the upstream was withdrawn, and the run is reported as such</td>
+</tr>
+<tr>
+<td>error-only item with <code>error.code</code></td>
+<td>per the code</td>
+<td>as above</td>
+</tr>
+<tr>
+<td>batch-level <code>failed</code> / <code>expired</code>, <code>results: null</code></td>
+<td>existing resubmission round</td>
+<td>as above after the round</td>
+</tr>
+<tr>
+<td>prolonged <code>in_progress</code></td>
+<td>keep polling</td>
+<td>none</td>
+</tr>
+<tr>
+<td>200 with identity equal to pin</td>
+<td>n/a</td>
+<td><code>verified</code></td>
+</tr>
+<tr>
+<td>200 with a different identity, or two sources disagreeing</td>
+<td>n/a</td>
+<td><code>mismatch</code></td>
+</tr>
+<tr>
+<td>200 with no identity</td>
+<td>n/a</td>
+<td><code>unverified</code></td>
+</tr>
+</tbody>
+</table>
+<p>A one-item <strong>Batch API spike</strong> against <code>z-ai/glm-5.3-flash</code> pinned a dead
+  upstream (<code>allow_fallbacks: false</code>, no metadata header) in one batch and a
+  live upstream with <code>X-OpenRouter-Metadata: enabled</code> in a second batch, and
+  observed that a pinned dead upstream does not fail fast on the Batch API:
+  both batches (<code>batch-1789167739-GXNiy6zu8WT6fzL0zauu</code> for the dead pin,
+  <code>batch-1789167741-wPqWvi1QgWaUhhD1uX2c</code> for the live pin) stayed at
+  <code>status=in_progress</code> with <code>request_counts: {"total":1,"completed":0,
+  "failed":0}</code> for the full 50 minutes observed (10 minutes at creation, 40
+  more minutes on a later poll), never reaching a terminal state and never
+  producing a result entry, so no <code>status_code</code> or <code>error.code</code> was
+  observed. Of the table's rows, "prolonged <code>in_progress</code>" is what occurred
+  for the dead pin; the classifier must therefore key on a per-item
+  <code>error.code</code> generically whenever the batch eventually completes, rather
+  than assuming a specific fast-fail code.
+- <strong>A pinned run is compromised when any attempt is <code>mismatch</code> or
+  <code>unverified</code>.</strong> Both mean the pin cannot be shown to have held; the spike
+  shows successful pinned requests do carry an identity, so absence is an
+  anomaly, not a normal state. A compromised run:
+  - records the attempt with its real outcome so the audit trail is
+    complete;
+  - takes no further attempt on that task: batch <code>transitions.ts</code> skips
+    wave 2 for <code>mismatch</code>/<code>unverified</code> the way it skips <code>infraSynthesized</code>;
+    the sync executor gets a structured terminal disposition on
+    <code>LLMWorkResult</code>/<code>ExecutionAttempt</code> (<code>terminal: "upstream_compromised"</code>)
+    and <code>processTaskForVariant</code> breaks on it;
+  - continues the run so paid work is kept;
+  - is ingested <strong>already excluded</strong>, atomically. The ingest payload gains a
+    run-level <code>excluded: { code, reason, attempts: [{ task_id, attempt }] }</code>
+    on <code>BenchResults</code>, <code>BuildPayloadInput</code>, <code>SignedRunPayload</code> and the site
+    types. <code>code</code> is one of <code>upstream_mismatch</code> | <code>upstream_unverified</code>.
+    The server verifies the named attempts exist in the payload with the
+    matching verification state (otherwise <code>400 invalid_exclusion</code>), sets
+    <code>runs.excluded_at</code> from its own clock, <code>excluded_code</code> from the payload
+    and <code>excluded_reason</code> from a bounded human-readable string, includes
+    both in the <code>INSERT INTO runs</code>, and appends a <code>run.auto_excluded</code> audit
+    event carrying the attempt list, all in the same <code>db.batch</code> as the
+    results. There is no window in which a compromised run counts.
+  - <code>not_served</code> attempts do not compromise the run: they are provider
+    errors handled by the existing retry and scoring paths.
+- Revision 1 said a mismatch is "not scored as a model failure"; that was
+  unachievable because every non-infra attempt scores <code>passed = 0</code> against
+  the fixed denominator. Atomic exclusion is the honest replacement, and the
+  operator can <code>runs include</code> after inspection.</p>
+<h3 id="d4-profile-the-pin-is-part-of-the-invocation-profile-with-named-schemas">D4. Profile: the pin is part of the invocation profile, with named schemas<a class="headerlink" href="#d4-profile-the-pin-is-part-of-the-invocation-profile-with-named-schemas" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>CanonicalSettingsExtras</code> gains <code>upstream_pin: string | null</code> and
+  <code>settings_extras_schema: 2</code>; the present shape is retroactively
+  <code>settings_extras_schema</code> 1. <code>InvocationRecord</code> gains <code>upstream_pin</code>,
+  <code>upstream_resolved: { provider_name, quantization, preflight } | null</code>
+  (unhashed, audit only) and <code>invocation_schema: 2</code>. Every future run gets
+  a new settings hash, pinned or not, as batch-mode D4 did for
+  <code>invocation_mode</code>. Historical rows are untouched.</li>
+<li><strong>Frozen settings survive to ingest.</strong> <code>IngestMeta</code> gains, per variant,
+  <code>canonical_settings: CanonicalSettings</code> (the exact six hashed keys
+  including <code>extra_json</code> as a string) and <code>settings_hash</code>, and bumps
+  <code>IngestMeta.schema</code> to 5. <code>assembleBenchResultsForVariant</code> sends those
+  verbatim when present and never rebuilds them. The batch finalize path
+  copies them from <code>prompt-inputs.json</code>; the sync path writes them at
+  results-file time from the same <code>buildCanonicalSettings</code> call that hashed
+  them.</li>
+<li><strong>Legacy files never pass through the schema-2 type.</strong> A results file
+  with <code>IngestMeta.schema</code> 4 or lower has no <code>canonical_settings</code>; assembly
+  routes its invocation record through a <strong>schema-1 canonical builder</strong> that
+  emits exactly the old key set, so the recomputed hash equals the one the
+  run was ingested or frozen with. A record without <code>invocation_schema</code> is
+  schema 1; a missing <code>upstream_pin</code> is never normalised to null on that
+  path. <code>readFrozenExtras</code> (<code>src/batch/results.ts</code>) applies the same rule.</li>
+<li><strong>In-flight policy at deploy.</strong> D13 refuses <code>advance</code> and <code>retry</code> after a
+  checkout change, so a run in flight when this ships finishes on the
+  checkout it was submitted from or is abandoned. <code>docs/batch-mode.md</code>
+  records that. The plan includes a fixture run directory from before this
+  change with tests for <code>advance</code>, <code>retry</code>, finalize, immediate ingest, and
+  standalone replay of a finalized-but-not-ingested run.</li>
+</ul>
+<h3 id="d5-site-one-upstream-profile-per-model-set-and-mode-claimed-atomically">D5. Site: one upstream profile per model, set and mode, claimed atomically<a class="headerlink" href="#d5-site-one-upstream-profile-per-model-set-and-mode-claimed-atomically" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>A profile registry, not a pre-query.</strong> Migration <code>0023</code> adds
+  <code>upstream_profiles (model_id, task_set_hash, invocation_mode, profile_key)</code>
+  with a primary key on the first three columns. <code>profile_key</code> is the pin
+  slug or the literal <code>&lt;unpinned&gt;</code>. Ingest includes in its <code>db.batch</code> an
+  <code>INSERT ... ON CONFLICT DO NOTHING</code> for the run's profile followed by a
+  read of the stored row; if the stored key differs the batch is rolled
+  back and the run refused with <code>409 upstream_profile_conflict</code> naming the
+  stored key and the non-excluded run ids that carry it. D1 batches are
+  atomic, so two concurrent first ingests cannot both establish a profile.</li>
+<li>Ordering inside the endpoint: <strong>idempotency precedes the conflict
+  check</strong>. A replay of an already-stored run id returns the existing-run
+  response before any profile logic runs.</li>
+<li><strong>Exclusion and inclusion maintain the registry</strong> in their own batches.
+  Excluding the last non-excluded run of a profile deletes the registry row,
+  so a replacement cohort can claim the triple. <code>runs include</code> re-claims
+  the profile the same way ingest does and refuses with the same 409 if
+  that would reintroduce a conflict.</li>
+<li>Inventory before enabling the gate: every non-excluded OpenRouter run on
+  the September set is <code>&lt;unpinned&gt;</code>, so the three MiniMax M3 runs in flight
+  will claim <code>&lt;unpinned&gt;</code> and agree with one another. The deploy runbook
+  states that the first ingest after deploy establishes the profile for
+  each triple, and lists the triples that will exist.</li>
+<li>Run detail, both <code>/api/v1/runs/[id]</code> and <code>/api/v2/runs/[id]</code> and their
+  shared types, carry the five fields per result and a run-level summary
+  <code>{ pin, served: { name: count }, served_model: { version: count },
+  verification: { state: count }, excluded_code }</code>. The run page renders
+  "Served by Novita · pinned novita/fp8 · verified 299 of 299", or
+  "Served by Google · unpinned · 296 attempts", or the counts when mixed.</li>
+<li>Leaderboard rows gain <code>upstream: { pin: string | null, served: string[],
+  verification: { state: count } }</code> over the task set and invocation mode
+  (the <code>fallback_count</code> scope, deliberately not narrowed by other filters,
+  documented beside it). Rendering covers every state:</li>
+<li>pinned and every in-scope attempt <code>verified</code>: green chip with the slug;</li>
+<li>unpinned, one served name, no verification anomalies: neutral chip
+    "unpinned · Google";</li>
+<li>any <code>unverified</code> or <code>mismatch</code> in scope: amber chip with counts (should
+    not occur for a pinned model after D3, since such runs are excluded, but
+    remains reachable for legacy rows);</li>
+<li>more than one served name: red "mixed" chip;</li>
+<li>all rows null (legacy, pre-capture): grey "unrecorded" chip.</li>
+<li><code>CACHE_VERSION</code> bumps with a one-line note.</li>
+</ul>
+<h3 id="d6-backfill-for-the-finished-openrouter-runs-per-attempt">D6. Backfill for the finished OpenRouter runs, per attempt<a class="headerlink" href="#d6-backfill-for-the-finished-openrouter-runs-per-attempt" title="Permanent link">&para;</a></h3>
+<ul>
+<li>CLI <code>centralgauge runs backfill-upstream &lt;runId&gt;</code> reads every
+  <code>results/batch/&lt;runId&gt;/responses/&lt;item&gt;.json</code>, maps item to
+  <code>(task_id, attempt)</code> through <code>state.json</code>, and posts
+  <code>{ run_id, results: [{ task_id, attempt, served_upstream }] }</code> to
+  <code>POST /api/v1/admin/runs/upstream</code>, signed like the other admin routes,
+  audited as <code>run.upstream_backfilled</code>, data epoch bumped in the same batch.
+  The endpoint rejects duplicate <code>(task_id, attempt)</code> entries in one request
+  and refuses (<code>409 already_set</code>) any row that already has a different
+  non-null <code>served_upstream</code>. It sets <code>upstream_identity_source</code> to
+  <code>provider_field</code> and <code>upstream_verification</code> to <code>unpinned</code>, and leaves
+  <code>requested_upstream</code> null: these runs were not pinned and the backfill
+  must not pretend otherwise. There is no override that writes one value
+  across a run; a mixed run is recorded as mixed.</li>
+<li>Applied after deploy to the six finished OpenRouter runs: three Gemini,
+  two live GLM, and the excluded GLM run for completeness. The registry row
+  for each triple is <code>&lt;unpinned&gt;</code> either way.</li>
+</ul>
+<h2 id="5-out-of-scope">5. Out of scope<a class="headerlink" href="#5-out-of-scope" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A ranking dimension or filter by upstream. D5's registry plus
+  <code>runs exclude</code> deliver segregation; a dimension is a later decision.</li>
+<li>Independent verification of quantization. OpenRouter returns none; the
+  pin is the guarantee (section 2).</li>
+<li>Treating <code>served_upstream_model</code> as identity (D3 decides diagnostic).</li>
+<li>Pinning for native Anthropic and OpenAI providers, which have no upstream.</li>
+<li>Re-running any existing cohort. The backfill records what happened.</li>
+</ul>
+<h2 id="6-deploy-order-and-operator-notes">6. Deploy order and operator notes<a class="headerlink" href="#6-deploy-order-and-operator-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>wrangler d1 migrations apply &lt;db&gt; --remote</code> for <code>0023</code> before
+  <code>cd site &amp;&amp; npm run deploy</code>; the run and leaderboard queries read the new
+  columns unconditionally once deployed, the same failure mode as <code>0011</code>,
+  <code>0015</code> and <code>0022</code>.</li>
+<li>Finish or abandon any in-flight batch run on its original checkout before
+  switching (D4). The three MiniMax M3 runs in flight at the time of writing
+  are the first case.</li>
+<li><code>docs/batch-mode.md</code> gains an "Upstream pinning" section with the spike
+  table from section 2, the error-shape table from D3 as amended by the
+  batch spike, the profile-registry rule and the first-ingest inventory from
+  D5, and the in-flight policy.</li>
+</ul>
+<h2 id="7-verification">7. Verification<a class="headerlink" href="#7-verification" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Unit: both OpenRouter adapters for present, absent, pinned-verified,
+  pinned-mismatch, two-sources-disagree, streaming-consistent and
+  streaming-inconsistent identity; failed-attempt and infra-attempt units
+  set <code>not_served</code> with the requested pin from the work item; ingest
+  assembly emits the five fields, the run-level exclusion, and the frozen
+  canonical settings; the schema-1 canonical builder reproduces every hash
+  in the existing fixture byte for byte; config validator accepts the
+  documented shape and rejects each malformed form, with merge tests for
+  disjoint and duplicate keys; settings-hash parity on both runtimes with
+  schema-1 legacy, schema-2 pinned and schema-2 unpinned cases;
+  <code>transitions.ts</code> skips wave 2 for <code>mismatch</code> and <code>unverified</code>;
+  <code>processTaskForVariant</code> breaks on the terminal disposition; the batch
+  classifier reads numeric and string <code>error.code</code> on error-only items.</li>
+<li>Worker: migration adds the columns nullable and the registry table;
+  ingest accepts and rejects each field and each relational violation;
+  ingest stores a compromised run excluded with code, reason and audit in
+  one batch; ingest refuses a profile conflict naming the runs; two
+  concurrent first ingests with different pins yield exactly one stored
+  profile; replay of a stored run id returns before the conflict check;
+  exclude of the last run releases the profile; include refuses a
+  reintroduced conflict; both run-detail APIs return the fields and
+  summary; leaderboard <code>upstream</code> for each rendering state; admin backfill
+  sets per attempt, rejects duplicates, refuses on conflict, audits and
+  bumps.</li>
+<li>Live, once, before merge: preflight against a real pin succeeds at 32
+  tokens; a wrong slug fails the preflight with the listing printed; a
+  one-item Batch API spike against a rate-limited or disabled pin records
+  which error shape the batch path delivers.</li>
+<li>Backfill: <code>runs backfill-upstream</code> on one Gemini run, then the run page
+  reads "Served by Google · unpinned · 296 attempts".</li>
+</ul>
+<h2 id="8-review-traceability">8. Review traceability<a class="headerlink" href="#8-review-traceability" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Finding (review 1 / review 2)</th>
+<th>Closed by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 / 12: badges are not segregation; check-then-insert races; re-inclusion bypass</td>
+<td>D5 registry with PK, atomic claim in the ingest batch, exclusion and inclusion maintain it</td>
+</tr>
+<tr>
+<td>2: display name is not endpoint identity</td>
+<td>Section 2, D1 provenance, D3 "pin is the guarantee"</td>
+</tr>
+<tr>
+<td>3: "not scored as model failure" impossible; wire layers missing</td>
+<td>D3 atomic exclusion with <code>excluded</code> on all four wire layers, server-side attempt check, <code>excluded_code</code>, audit event</td>
+</tr>
+<tr>
+<td>4: sync attempt 2 after mismatch</td>
+<td>D3 terminal disposition, <code>processTaskForVariant</code> breaks</td>
+</tr>
+<tr>
+<td>5: batch delivery semantics unproven; universal 429 claim</td>
+<td>Section 2 scoped to sync; D3 error table plus a Batch API spike gate; error-only items read <code>error.code</code></td>
+</tr>
+<tr>
+<td>6: routing not frozen</td>
+<td>D2 frozen <code>routing</code> in <code>prompt-inputs.json</code>, wiring consumes it, <code>HARNESS_INPUTS</code></td>
+</tr>
+<tr>
+<td>7 / 13: schema conflation; legacy hash recomputed on replay</td>
+<td>Section 3 three schema names; D4 frozen <code>canonical_settings</code> in <code>IngestMeta</code> schema 5; schema-1 canonical builder for old files</td>
+</tr>
+<tr>
+<td>8: batch field "guaranteed"; streaming</td>
+<td>D1 "observed compatibility path", batch spike gate, streaming chunk scan</td>
+</tr>
+<tr>
+<td>9: <code>unverified</code> bypasses integrity</td>
+<td>D3 compromises the run on <code>unverified</code> too</td>
+</tr>
+<tr>
+<td>10: config validation and merge</td>
+<td>D2 manual validator, grammar, merge rule, <code>LLMConfig.upstreamPin</code></td>
+</tr>
+<tr>
+<td>11: backfill flattening; v1 and v2; scope</td>
+<td>D6 per attempt, no override; D5 both APIs; scope documented</td>
+</tr>
+<tr>
+<td>14: migration default lies about legacy rows</td>
+<td>D1 nullable column, no default; <code>not_applicable</code> set explicitly by new ingest</td>
+</tr>
+<tr>
+<td>15: preflight too strict and too weak</td>
+<td>D2 32-token probe, endpoint capability check, bounded retries, operator override, batch not inferred</td>
+</tr>
+<tr>
+<td>16: no provenance; contradictory tuples</td>
+<td>D1 <code>upstream_identity_source</code>, two-source disagreement is <code>mismatch</code>, relational validation against the run pin</td>
+</tr>
+<tr>
+<td>17: provider errors have no state or requested pin</td>
+<td>D1 <code>requested_upstream</code> from the work item; <code>not_served</code> state; D3 table row per error class</td>
+</tr>
+<tr>
+<td>18: <code>served_upstream_model</code> unused</td>
+<td>D3 decides diagnostic; counted in <code># Upstream</code>, run summary and leaderboard caveat</td>
+</tr>
+<tr>
+<td>19: unpinned rendering undefined</td>
+<td>D5 rendering covers pinned-verified, unpinned, anomalous, mixed, unrecorded</td>
+</tr>
+<tr>
+<td>20: no audit or reason code for auto-exclusion</td>
+<td>D3 <code>excluded_code</code>, <code>run.auto_excluded</code> audit with attempt list</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
