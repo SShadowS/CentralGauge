@@ -558,7 +558,10 @@ export function blastRadius(
   const r = { total, production: side(), test: side() };
   for (const f of payload["findings"] as J[]) {
     const subj = (f["subject"] ?? {}) as J;
-    const id = String(subj["newStableId"] ?? subj["oldStableId"] ?? "");
+    const id = String(
+      subj["newStableId"] ?? subj["oldStableId"] ??
+        subj["normalizedStableId"] ?? "",
+    );
     const n = Number(/:[A-Za-z]+:(\d+)/.exec(id)?.[1] ?? NaN);
     const s = testRanges.some(([lo, hi]) => n >= lo && n <= hi)
       ? r.test
@@ -899,7 +902,12 @@ export interface DoneStamp {
   build: string;
   rev: string;
   hash: string;
+  /** DERIVATION: bump when the row is computed differently from the same cached tool output. */
+  derive?: number;
 }
+
+/** v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds). */
+const DERIVATION = 2;
 
 /** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
 export async function writeAtomic(path: string, text: string): Promise<void> {
@@ -926,7 +934,7 @@ export async function readDone<T>(
   const x = await readJsonOr(join(dir, `${id}.json`));
   const s = x?.["stamp"] as DoneStamp | undefined;
   return s && s.build === stamp.build && s.rev === stamp.rev &&
-      s.hash === stamp.hash
+      s.hash === stamp.hash && s.derive === stamp.derive
     ? (x!["row"] as T)
     : null;
 }
@@ -1240,6 +1248,7 @@ async function alsemStep(
     build: t.build,
     rev: t.rev,
     hash: hashOf.get(id)!,
+    derive: DERIVATION,
   });
   let n = 0;
   let skipped = 0;

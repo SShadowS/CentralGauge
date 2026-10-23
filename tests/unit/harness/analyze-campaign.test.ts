@@ -662,6 +662,44 @@ Deno.test("unusedProcedures + newUnused: joined to metrics by path + line for ac
   ]);
 });
 
+Deno.test("blastRadius: a subject with only normalizedStableId (al-sem 2.0.2 removal kinds) is attributed by it", () => {
+  const app = "c6a1e000-0000-4000-8000-0000000000ff";
+  const removed = (id: string) => ({
+    category: "abi",
+    kind: "procedure-removed",
+    severity: "critical",
+    subject: {
+      displayName: "OnAfterDamageRegistered",
+      normalizedStableId: `${app}:Codeunit:${id}#2b201fe3`,
+    },
+    details: { kind: "procedure-removed" },
+    comparisonCone: [],
+  });
+  const r = blastRadius(
+    {
+      findings: [removed("80020"), removed("70102")],
+      summary: { findingsByCategory: { abi: 2 } },
+    },
+    [[80000, 84999]],
+  );
+  assertEquals(r.test.abi, 1);
+  assertEquals(r.production.abi, 1);
+});
+
+Deno.test("readDone: a row stamped by another derivation version is not done", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeDone(dir, "e1", { ...stamp }, { id: "e1" }); // old: no derive
+    assertEquals(await readDone(dir, "e1", { ...stamp, derive: 2 }), null);
+    await writeDone(dir, "e1", { ...stamp, derive: 2 }, { id: "e1" });
+    assertEquals(await readDone(dir, "e1", { ...stamp, derive: 2 }), {
+      id: "e1",
+    });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("blastRadius: categories per side add up to summary.findingsByCategory; signature changes by kind; production vs Test by object id", () => {
   const f = (category: string, kind: string, severity: string, id: string) => ({
     kind,
