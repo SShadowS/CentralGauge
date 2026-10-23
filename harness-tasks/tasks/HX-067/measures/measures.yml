@@ -1,0 +1,25 @@
+v: 1
+partial_credit:
+  weights:
+    "86800/BasketSharedAcrossVariables": 1
+    "86800/AddTwiceKeepsOne": 1
+    "86800/RemovedVehicleLeaves": 1
+    "86800/CallerBufferReplaced": 1
+    "86800/HandedOutRowsAreCopies": 1
+    "86800/HandedOutShowsCurrentData": 1
+    "86800/CheckOutBasketChecksOutAll": 1
+    "86800/UnavailableVehicleFailsAll": 1
+    "86800/RefusedCheckoutFailsAll": 1
+    "86800/RetryAfterFailure": 1
+    "86800/UnknownVehicleNotAdded": 1
+    "86800/EmptyBasketCheckout": 1
+    "86800/EmptyBasketDropsAll": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/commit-per-vehicle: { partial_credit: 0.7692307692307693 }
+  naive/empty-first: { partial_credit: 0.7692307692307693 }
+  naive/plain-holder: { partial_credit: 0.6153846153846154 }
+  naive/share-handout: { partial_credit: 0.9230769230769231 }
+  naive/snapshot-basket: { partial_credit: 0.9230769230769231 }

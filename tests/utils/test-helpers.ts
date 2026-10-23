@@ -5,6 +5,7 @@
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import type { LLMConfig, LLMResponse } from "../../src/llm/types.ts";
 import type { ALProject } from "../../src/container/types.ts";
+import { testTempDir } from "./temp-dir.ts";
 
 /**
  * Create a mock LLM config for testing
@@ -95,7 +96,7 @@ export function assertValidCostEstimate(cost: number): void {
 export async function createTempDir(
   prefix = "centralgauge-test",
 ): Promise<string> {
-  return await Deno.makeTempDir({ prefix });
+  return await testTempDir({ prefix });
 }
 
 /**

@@ -8,11 +8,12 @@ import {
   LEGACY_HARNESS_INPUTS_2026_08,
 } from "../../../src/utils/harness-fingerprint.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("fingerprint is 64 hex and stable across CRLF/LF", async () => {
   const a = await harnessFingerprint(".");
   assertMatch(a, /^[0-9a-f]{64}$/);
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   // HARNESS_INPUTS can name a directory (e.g. "src/parallel/shared"), so
   // expand to concrete files first rather than treating every entry as a
   // file to copy directly.
@@ -30,7 +31,7 @@ Deno.test("fingerprint is 64 hex and stable across CRLF/LF", async () => {
 });
 
 Deno.test("harnessFingerprint rejects a root missing a harness input", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const files = await expandInputs(HARNESS_INPUTS, ".");
   // Write every input but the last one - a partial checkout of the harness
   // inputs must fail loudly, not silently hash a narrower set.
@@ -48,7 +49,7 @@ Deno.test("harnessFingerprint rejects a root missing a harness input", async () 
 });
 
 Deno.test("hashFiles with missing: skip omits an absent file instead of throwing", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const present = HARNESS_INPUTS[0]!;
   await Deno.mkdir(`${dir}/${present.split("/").slice(0, -1).join("/")}`, {
     recursive: true,

@@ -12,6 +12,7 @@ import {
   RecordStore,
   retryChains,
   retryProblem,
+  TEMP_SWEEP_AGE_MS,
 } from "../../../src/harness/records.ts";
 import { TaskSetIdentitySchema } from "../../../src/harness/identity.ts";
 import { ResolvedManifestSchema } from "../../../src/harness/manifest.ts";
@@ -22,6 +23,7 @@ import {
   judgment,
   telemetry,
 } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("planBlocks: repeat-major, every block a permutation, seeded", () => {
   const arms = ["a", "b", "c"];
@@ -205,7 +207,7 @@ Deno.test("campaign schema: coverage, uniqueness and arm set are enforced", asyn
 });
 
 Deno.test("RecordStore: round trip, write-once, newest campaign first", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const c = await campaign();
   await store.writeCampaign(c);
   await store.writeCampaign(
@@ -233,7 +235,7 @@ Deno.test("RecordStore: round trip, write-once, newest campaign first", async ()
 });
 
 Deno.test("RecordStore: two executions with identical workspaces keep separate artifacts and judgments", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const c = await campaign();
   const same = "f".repeat(64);
   const e1 = execution(c, { arm: "plain" }, { workspace_hash: same });
@@ -259,7 +261,7 @@ Deno.test("RecordStore: two executions with identical workspaces keep separate a
 });
 
 Deno.test("RecordStore: hand-edited or truncated records fail with the file name", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -281,7 +283,7 @@ Deno.test("RecordStore: hand-edited or truncated records fail with the file name
 });
 
 Deno.test("RecordStore: an interrupted publish leaves only a temp file, which reads ignore and sweep removes", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -292,7 +294,26 @@ Deno.test("RecordStore: an interrupted publish leaves only a temp file, which re
   assertEquals(await store.executions(CAMPAIGN_ID), []);
   await store.writeExecution(e);
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
+  assertEquals(await store.sweepTemp(0), 1);
+});
+
+Deno.test("RecordStore (H-41 section 11): sweepTemp removes only temps older than the bound (default TEMP_SWEEP_AGE_MS, 1 h)", async () => {
+  const root = await testTempDir();
+  const store = new RecordStore(root);
+  const dir = join(root, "claims", "x");
+  await Deno.mkdir(dir, { recursive: true });
+  const young = join(dir, "fence-0.json.tmp-young");
+  const old = join(dir, "fence-0.json.tmp-old");
+  await Deno.writeTextFile(young, "{");
+  await Deno.writeTextFile(old, "{");
+  const at = new Date(Date.now() - TEMP_SWEEP_AGE_MS - 60_000);
+  await Deno.utime(old, at, at);
+  assertEquals(TEMP_SWEEP_AGE_MS, 3_600_000);
   assertEquals(await store.sweepTemp(), 1);
+  assert(await Deno.stat(young).then(() => true), "a young temp survives");
+  await assertRejects(() => Deno.stat(old), Deno.errors.NotFound);
+  assertEquals(await store.sweepTemp(60_000), 0);
+  assertEquals(await store.sweepTemp(0), 1);
 });
 
 Deno.test("outcomePolicy: spec 1a section 8 table", () => {
@@ -406,18 +427,18 @@ Deno.test("schemas: cost declared incomplete cannot carry a value; reuse is refu
 });
 
 Deno.test("RecordStore: concurrent writers of one record, exactly one succeeds", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const e = execution(await campaign());
   const results = await Promise.allSettled(
     Array.from({ length: 8 }, () => store.writeExecution(e)),
   );
   assertEquals(results.filter((r) => r.status === "fulfilled").length, 1);
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
-  assertEquals(await store.sweepTemp(), 0);
+  assertEquals(await store.sweepTemp(0), 0);
 });
 
 Deno.test("RecordStore: ids used as paths must be uuids, so reads cannot leave the store", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(join(root, "store"));
   for (const bad of ["..", "../campaigns", "a/b", "C:\\x"]) {
     await assertRejects(() => store.executions(bad), ValidationError, "id");
@@ -427,7 +448,7 @@ Deno.test("RecordStore: ids used as paths must be uuids, so reads cannot leave t
 });
 
 Deno.test("RecordStore: a record filed under the wrong id fails with the file name", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e1 = execution(c);
@@ -496,7 +517,7 @@ Deno.test("schemas: hashes are lower-case hex, ids are lower-case uuids", async 
   );
   const upper = CAMPAIGN_ID.replace("0001", "000A");
   assertThrows(() => CampaignRecordSchema.parse({ ...c, id: upper }));
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   await assertRejects(() => store.executions(upper), ValidationError, "id");
 });
 
@@ -515,7 +536,7 @@ Deno.test("schemas: raw_usage must be present; tasks_meta equals the task set as
 });
 
 Deno.test("RecordStore: a record vanishing mid-listing is an error naming it", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -536,7 +557,7 @@ Deno.test("RecordStore: a record vanishing mid-listing is an error naming it", a
 });
 
 Deno.test("RecordStore: unexpected entries and invalid UTF-8 fail loudly", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -570,11 +591,11 @@ Deno.test("RecordStore: unexpected entries and invalid UTF-8 fail loudly", async
 });
 
 Deno.test("RecordStore: linked records are refused", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
-  const outside = join(await Deno.makeTempDir(), "a.json");
+  const outside = join(await testTempDir(), "a.json");
   await Deno.writeTextFile(
     outside,
     JSON.stringify({
@@ -596,7 +617,7 @@ Deno.test("RecordStore: linked records are refused", async () => {
 });
 
 Deno.test("RecordStore: campaigns newest first by instant, lists sorted", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   // Same instant order differs from string order with mixed precision.
   const older = "00000000-0000-4000-8000-000000000003";
   const newer = "00000000-0000-4000-8000-000000000004";
@@ -636,7 +657,7 @@ Deno.test("RecordStore: campaigns newest first by instant, lists sorted", async 
 });
 
 Deno.test("RecordStore: temp cleanup never fails a published write and never leaks on a failed one", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
@@ -651,7 +672,7 @@ Deno.test("RecordStore: temp cleanup never fails a published write and never lea
     rm.restore();
   }
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
-  assertEquals(await store.sweepTemp(), 1);
+  assertEquals(await store.sweepTemp(0), 1);
   const e2 = execution(c, { arm: "skills" });
   const sync = stub(
     Deno.FsFile.prototype,
@@ -663,16 +684,16 @@ Deno.test("RecordStore: temp cleanup never fails a published write and never lea
   } finally {
     sync.restore();
   }
-  assertEquals(await store.sweepTemp(), 0);
+  assertEquals(await store.sweepTemp(0), 0);
   assertEquals(await store.executions(CAMPAIGN_ID), [e]);
 });
 
 Deno.test("RecordStore: a junctioned record folder is refused", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const store = new RecordStore(root);
   const c = await campaign();
   const e = execution(c);
-  const elsewhere = new RecordStore(await Deno.makeTempDir());
+  const elsewhere = new RecordStore(await testTempDir());
   await elsewhere.writeExecution(e);
   await elsewhere.writeJudgment(judgment(c, e, true));
   await Deno.mkdir(join(root, "executions"));
@@ -751,7 +772,7 @@ Deno.test("schemas: incomplete_telemetry names known fields; null cost must be d
 });
 
 Deno.test("RecordStore: lists order exactly below a millisecond", async () => {
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   const c = await campaign();
   // The later execution gets the smaller id, so an id tie-break would flip them.
   const b = execution(c, { arm: "skills" }, {
@@ -835,7 +856,7 @@ Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; bo
       validity: { ...e2.validity, incomplete_observed: ["cost_usd"] },
     })
   );
-  const store = new RecordStore(await Deno.makeTempDir());
+  const store = new RecordStore(await testTempDir());
   await store.writeExecution(e2);
   assertEquals(
     (await store.executions(c.id))[0],
@@ -1026,4 +1047,95 @@ Deno.test("H-15: usage_reset_ignored is optional, strict, and only on an auto_re
       JSON.stringify(bad),
     );
   }
+});
+
+// ---- H-35 S2.1 (design-r2 3 and 5, design-r3 6.2/6.3): JudgmentRecord v2 ----
+
+/** A v2 judgment from the v1 fixture: policy, scorer states, provenance. */
+async function v2(
+  scorers: { name: string; passed: boolean | null; state: string }[],
+  policy: { passed: boolean; violations?: unknown[] } = { passed: true },
+) {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  return {
+    ...j,
+    v: 2,
+    scorers: scorers.map((s) => ({ ...s, tests: [] })),
+    policy: { violations: [], ...policy },
+    provenance: {
+      harness_commit: null,
+      production_manifest: null,
+      env_fp: null,
+    },
+  };
+}
+
+const M = "measured", NM = "not_measured", U = "unscored";
+
+Deno.test("H-35: a v2 judgment carries a policy block, scorer states and provenance; its verdict follows the gate first", async () => {
+  const pass = await v2([
+    { name: "build", passed: true, state: M },
+    { name: "agent_tests", passed: true, state: M },
+  ]);
+  assertEquals(JudgmentRecordSchema.parse({ ...pass, verdict: "pass" }).v, 2);
+  // A failed gate fails the cell even with no measured failure.
+  const gated = await v2([
+    { name: "build", passed: true, state: M },
+    { name: "agent_tests", passed: null, state: NM },
+  ], {
+    passed: false,
+    violations: [{ side: "test", rule: "test_lifecycle", detail: "x" }],
+  });
+  assertEquals(
+    JudgmentRecordSchema.parse({ ...gated, verdict: "fail" }).verdict,
+    "fail",
+  );
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...gated, verdict: "unscored" })
+  );
+  const infra = await v2([
+    { name: "build", passed: true, state: M },
+    { name: "agent_tests", passed: null, state: U },
+  ]);
+  assertEquals(
+    JudgmentRecordSchema.parse({ ...infra, verdict: "unscored" }).verdict,
+    "unscored",
+  );
+});
+
+Deno.test("H-35: v2 consistency: measured is boolean, not_measured needs a failed gate, unscored is null, every scorer has a state", async () => {
+  const bad = [
+    await v2([{ name: "build", passed: null, state: M }]),
+    await v2([{ name: "build", passed: null, state: NM }]),
+    await v2([{ name: "build", passed: true, state: U }]),
+    await v2([{ name: "build", passed: true } as never]),
+  ];
+  for (const j of bad) {
+    for (const verdict of ["pass", "fail", "unscored"]) {
+      assertThrows(() => JudgmentRecordSchema.parse({ ...j, verdict }));
+    }
+  }
+  const noPolicy = await v2([{ name: "build", passed: true, state: M }]);
+  delete (noPolicy as Record<string, unknown>)["policy"];
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({ ...noPolicy, verdict: "pass" })
+  );
+  // A failed gate needs a violation.
+  const empty = await v2([{ name: "build", passed: true, state: M }], {
+    passed: false,
+  });
+  assertThrows(() => JudgmentRecordSchema.parse({ ...empty, verdict: "fail" }));
+});
+
+Deno.test("H-35: a v1 judgment stays valid and carries no v2 field", async () => {
+  const c = await campaign();
+  const j = judgment(c, execution(c), true);
+  assertEquals(JudgmentRecordSchema.parse(j).v, 1);
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({
+      ...j,
+      policy: { passed: true, violations: [] },
+    })
+  );
 });

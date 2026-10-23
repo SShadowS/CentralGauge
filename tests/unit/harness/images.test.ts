@@ -61,6 +61,7 @@ import {
   lspReleaseLabels,
   lspResolvedJson,
 } from "./fake-docker.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const ID = `sha256:${"a".repeat(64)}`;
 const BASE = `sha256:${"b".repeat(64)}`;
@@ -335,7 +336,7 @@ Deno.test("mcpDefinitions: a definition without tools, with a nameless or duplic
       [{ name: "al_compile" }, { name: "al_compile" }],
     ]
   ) {
-    const root = await Deno.makeTempDir();
+    const root = await testTempDir();
     await Deno.mkdir(`${root}/harness/images/base`, { recursive: true });
     await Deno.writeTextFile(
       `${root}/harness/images/base/al-tools-tools.json`,
@@ -796,7 +797,7 @@ Deno.test("lspLabel: the value is al-lsp.json's version and its hashJson; no fil
   assertEquals(k, "centralgauge.lsp.al");
   const def = JSON.parse(await Deno.readTextFile(AL_LSP_DEF));
   assertEquals(v, `${def.version} ${await hashJson(def)}`);
-  assertEquals(await lspLabel(await Deno.makeTempDir()), null);
+  assertEquals(await lspLabel(await testTempDir()), null);
 });
 
 Deno.test("imageFacts: an LSP label needs the shipped al-lsp.json to hash to it; unknown LSP labels refused", async () => {

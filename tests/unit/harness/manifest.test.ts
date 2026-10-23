@@ -16,6 +16,7 @@ import {
   resolveManifest,
   type RuntimeFacts,
 } from "../../../src/harness/manifest.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const FACTS: RuntimeFacts = {
   native_settings: { model: "model-a", effort: "high" },
@@ -26,7 +27,7 @@ const FACTS: RuntimeFacts = {
 };
 
 async function root(): Promise<string> {
-  const r = await Deno.makeTempDir();
+  const r = await testTempDir();
   for (
     const [rel, text] of Object.entries({
       "bundles/al/skills/objid/SKILL.md": "Allocate object ids.",
@@ -209,15 +210,30 @@ Deno.test("assertVaryHolds: a manifest under other hashing rules is refused", as
   );
 });
 
-Deno.test("forTask: task limits tighten the execution, not the arm", async () => {
+// H-23 owner ruling 2026-10-17: the arm's timeout_min is the cell's limit (a task's timeout_min
+// no longer tightens it); a task still tightens the budget. Each execution manifest records the
+// resolved limits.
+Deno.test("forTask: the execution records the arm's timeout and the task-tightened budget, not changing the arm", async () => {
   const r = await root();
   const template = await resolveManifest(r, config("a"), FACTS);
-  const exec = forTask(template, { timeout_min: 20 });
-  assertEquals(exec.limits, { timeout_min: 20, max_budget_usd: 5 });
-  assertEquals(template.limits.timeout_min, 30);
+  const exec = forTask(template, { timeout_min: 20, max_budget_usd: 2 });
+  assertEquals(exec.limits, { timeout_min: 30, max_budget_usd: 2 });
+  assertEquals(template.limits, { timeout_min: 30, max_budget_usd: 5 });
   assertEquals(
-    await executionMismatch(template, exec, { timeout_min: 20 }),
+    await executionMismatch(template, exec, {
+      timeout_min: 20,
+      max_budget_usd: 2,
+    }),
     [],
+  );
+  // An execution manifest that kept the task's 20 min is now a mismatch.
+  assertEquals(
+    await executionMismatch(
+      template,
+      { ...exec, limits: { timeout_min: 20, max_budget_usd: 2 } },
+      { timeout_min: 20, max_budget_usd: 2 },
+    ),
+    ["component limits differs from the arm template with task limits"],
   );
   const other = await resolveManifest(
     r,
@@ -264,7 +280,7 @@ Deno.test("ResolvedManifestSchema: nonpositive limits are refused", () => {
 
 Deno.test("resolveManifest: a link between the harness root and a component is refused", async () => {
   const r = await root();
-  const outside = await Deno.makeTempDir();
+  const outside = await testTempDir();
   await Deno.mkdir(join(outside, "skills"));
   await Deno.writeTextFile(join(outside, "skills", "SKILL.md"), "x");
   await Deno.symlink(outside, join(r, "bundles", "linked"), {
@@ -281,7 +297,7 @@ Deno.test("resolveManifest: a link between the harness root and a component is r
 
 Deno.test("resolveManifest: a component path outside the harness root is refused", async () => {
   const r = await root();
-  const outside = await Deno.makeTempDir();
+  const outside = await testTempDir();
   await Deno.writeTextFile(join(outside, "SKILL.md"), "x");
   const rel = `../${basename(outside)}`;
   const base = config("cc-a");

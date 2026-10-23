@@ -1,0 +1,23 @@
+v: 1
+partial_credit:
+  weights:
+    "87100/NonAdjacentRepeatRefused": 1
+    "87100/AdjacentRepeatRefused": 1
+    "87100/FirstRepeatNamed": 1
+    "87100/InterleavedRepeatsFirstNamed": 1
+  hidden_regressions:
+    - "87100/ValidImportReplacesSchedule"
+    - "87100/CallerLinesKept"
+    - "87100/BlankDueDateRefused"
+    - "87100/DueBeforeStartRefused"
+    - "87100/InvoicedLeaseRefused"
+    - "87100/MissingLeaseRaises"
+    - "87100/EmptyImportRefused"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/adjacent-only: { partial_credit: 0.75 }
+  naive/check-schedule: { partial_credit: 0 }
+  naive/filter-caller: { partial_credit: 0.75 }
+  naive/share-and-remove: { partial_credit: 0.5 }
+  naive/zero-amounts-on-success: { partial_credit: 1 }

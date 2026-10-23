@@ -10,6 +10,7 @@
 import { assert, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { markerOneLiner } from "../../../src/container/pwsh-session.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const hasPwsh = await new Deno.Command("pwsh", {
   args: ["-NoProfile", "-Command", "exit 0"],
@@ -19,7 +20,7 @@ const hasPwsh = await new Deno.Command("pwsh", {
 
 /** Feed the session's one-liner for `body` to `pwsh -NoExit -Command -`, as the warm session does. */
 async function runInSession(body: string): Promise<string> {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const script = join(dir, "s.ps1");
   await Deno.writeTextFile(script, body);
   const p = new Deno.Command("pwsh", {

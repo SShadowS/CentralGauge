@@ -1,0 +1,86 @@
+{
+  "v": 1,
+  "judgment_id": "55a158d9-e806-49ae-b7c5-d4ea6e59c7af",
+  "execution_id": "cb99bd70-3a18-4c0e-850d-d378b6fe6a06",
+  "violations": [],
+  "diagnostics": [],
+  "test_messages": [],
+  "notes": [
+    "production manifest: b8f41c7c14daed80bd1413aeadc99bcfb89cc063733a8f9b8b3db808ba36f906",
+    "agent_tests: not_submitted"
+  ],
+  "spans": {
+    "reconstruct_ms": 115.94669999999996,
+    "compile_ms": 84.04049999999961,
+    "queue_ms": 0.004399999999805004,
+    "provisioning_ms": 0,
+    "candidate_publish_ms": 15,
+    "test_ms": 0.027000000000043656,
+    "total_ms": 330.1391000000003
+  },
+  "containers": [
+    "C1"
+  ],
+  "infra_retries": [],
+  "per_app_compiles": 5,
+  "error": null,
+  "deployments": [
+    {
+      "hold": "G",
+      "container": "C1",
+      "env_fp": null,
+      "apps": [
+        {
+          "id": "c6a1e000-0000-4000-8000-000000000001",
+          "name": "CGR Core",
+          "version": "1.0.0.0",
+          "role": "candidate",
+          "file_sha256": "ee7cc69c9293005b7501f38fe4e77654b9c59dd68c22c169e81df4bf5e7e0838",
+          "build_key": "a19dffcc5ff1a0ef9407443e263fa702ac1a7e76d8d1f3cd79232471518aa9b0",
+          "source_tree_hash": "72b63ac227a9d029d5a2ecad5d7fc028bc53215d3e0a168ad8c97317a390e07c"
+        },
+        {
+          "id": "c6a1e000-0000-4000-8000-000000000003",
+          "name": "CGR Rental",
+          "version": "1.0.0.0",
+          "role": "candidate",
+          "file_sha256": "16bd108410db3d25fd51e38c78a81e46ed06a3da95fa63b69e30e00807b565e5",
+          "build_key": "b63122077f6b19c5d1f9358d913116686eac31090e068980db1cb3a03ead337b",
+          "source_tree_hash": "b0c63672db04cdeefc86ea08a0f3f0ca2a9ab9b9995f5442ddf0f224b78ec6f4"
+        },
+        {
+          "id": "c6a1e000-0000-4000-8000-000000000007",
+          "name": "CGR Test",
+          "version": "1.0.0.0",
+          "role": "candidate",
+          "file_sha256": "cddae22b2d62dad966773e7da85617307dcdda6278a96360c88fa5e866647c05",
+          "build_key": "d25915403ec8c17f0f7b403e76e4932d47f7e351d21798ee80a845ccba3c3a7d",
+          "source_tree_hash": "85d3554b6ab87f6b80629ce6ee94f0815837fb83de6083b6e4d53a01866d38fe"
+        },
+        {
+          "id": "c6a1e000-0000-4000-8000-0000000000f1",
+          "name": "CGR Oracle HX-001",
+          "version": "1.0.0.0",
+          "role": "prereq",
+          "file_sha256": "a820d83c104003e1b2e27ccb38098f71bdb43e9202ead0bb3b17c8d1d1fa3317",
+          "build_key": "4e4764220b3eb8d87b4efadc6418d3ebd48e85a8e9eb58048936dcc20a841463",
+          "source_tree_hash": "e44ae689435a6bfcf3a8a90448d4b3d37daadc33b8ef553640a5957c3a0ba2e0"
+        }
+      ]
+    }
+  ],
+  "resets": [
+    {
+      "container": "C1",
+      "mechanism": "fake",
+      "policy_version": 1,
+      "ok": true,
+      "failed_step": null,
+      "error": null,
+      "phases_ms": {}
+    }
+  ],
+  "verifies": [],
+  "fs_checks": [],
+  "bc_egress": null
+}

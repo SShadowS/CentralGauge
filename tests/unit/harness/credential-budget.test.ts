@@ -5,6 +5,7 @@ import {
   CREDENTIAL_RUN_LIMIT,
   reserveCredentialRun,
 } from "../../../src/harness/credential-budget.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const r = {
   lane: "lane-ops",
@@ -13,18 +14,18 @@ const r = {
   purpose: "M1-29 gate",
 };
 
-Deno.test("reserveCredentialRun: five hundred across all lanes (H-17), then refused; concurrent callers serialize", async () => {
-  assertEquals(CREDENTIAL_RUN_LIMIT, 500);
+Deno.test("reserveCredentialRun: fifteen hundred across all lanes (H-25), then refused; concurrent callers serialize", async () => {
+  assertEquals(CREDENTIAL_RUN_LIMIT, 1500);
   const ledger = join(
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
     "credential-runs.jsonl",
   );
-  // 495 earlier reservations, then 7 racing callers: exactly 5 fit (496-500).
-  // (502 live racers would outlast the 60 s lock wait, not test the limit.)
+  // 1495 earlier reservations, then 7 racing callers: exactly 5 fit (1496-1500).
+  // (1502 live racers would outlast the 60 s lock wait, not test the limit.)
   await Deno.writeTextFile(
     ledger,
     Array.from(
-      { length: 495 },
+      { length: 1495 },
       (_, i) => JSON.stringify({ v: 1, ordinal: i + 1, lane: "M4-17" }),
     ).join("\n") + "\n",
   );
@@ -42,16 +43,16 @@ Deno.test("reserveCredentialRun: five hundred across all lanes (H-17), then refu
     results.filter((x) => x.status === "fulfilled").map((x) =>
       (x as PromiseFulfilledResult<number>).value
     ).sort(),
-    [496, 497, 498, 499, 500],
+    [1496, 1497, 1498, 1499, 1500],
   );
   assertEquals(
     (await Deno.readTextFile(ledger)).trim().split("\n").length,
-    500,
+    1500,
   );
   await assertRejects(
     () => reserveCredentialRun(ledger, r),
     ConfigurationError,
-    "500 supervised",
+    "1500 supervised",
   );
 });
 
@@ -64,7 +65,7 @@ Deno.test("reserveCredentialRun: no shared ledger configured is refused (fail cl
 });
 
 Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines still count", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const asDir = join(dir, "ledger-is-a-directory");
   await Deno.mkdir(asDir);
   await assertRejects(
@@ -75,17 +76,17 @@ Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines sti
   const partial = join(dir, "partial.jsonl");
   await Deno.writeTextFile(
     partial,
-    '{"v":1}\n{"trunc\n' + "x\n".repeat(498),
+    '{"v":1}\n{"trunc\n' + "x\n".repeat(1498),
   );
   await assertRejects(
     () => reserveCredentialRun(partial, r),
     ConfigurationError,
-    "500 supervised",
+    "1500 supervised",
   );
 });
 
 Deno.test("reserveCredentialRun: a crash-truncated last line is never merged with the next reservation", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const ledger = join(dir, "credential-runs.jsonl");
   // A writer died mid-line: no trailing newline.
   await Deno.writeTextFile(ledger, '{"v":1}\n{"v":1,"ordi');
@@ -97,7 +98,7 @@ Deno.test("reserveCredentialRun: a crash-truncated last line is never merged wit
 });
 
 Deno.test("reserveCredentialRun: a missing ledger folder or an empty field is refused", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await assertRejects(
     () => reserveCredentialRun(join(dir, "no-such-dir", "l.jsonl"), r),
     ConfigurationError,
@@ -111,7 +112,7 @@ Deno.test("reserveCredentialRun: a missing ledger folder or an empty field is re
 });
 
 Deno.test("reserveCredentialRun: a lock file left by a crashed holder never blocks or double-spends", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const ledger = join(dir, "credential-runs.jsonl");
   // A crashed holder left its lock file behind (fresh, not stale by age).
   await Deno.writeTextFile(`${ledger}.lock`, "");
@@ -125,7 +126,7 @@ Deno.test("reserveCredentialRun: a lock file left by a crashed holder never bloc
 });
 
 Deno.test("reserveCredentialRun: a held lock refuses after the bounded wait and leaves nothing pending", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const ledger = join(dir, "credential-runs.jsonl");
   const holder = await Deno.open(`${ledger}.lock`, {
     read: true,
@@ -147,7 +148,7 @@ Deno.test("reserveCredentialRun: a held lock refuses after the bounded wait and 
 });
 
 Deno.test("reserveCredentialRun: the stop signal aborts the wait; an aborted signal reserves nothing", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const ledger = join(dir, "credential-runs.jsonl");
   const stop = new AbortController();
   stop.abort();
@@ -184,7 +185,7 @@ Deno.test("reserveCredentialRun: the stop signal aborts the wait; an aborted sig
 
 Deno.test("reserveCredentialRun: an unknown or placeholder lane is refused and nothing is recorded", async () => {
   const ledger = join(
-    await Deno.realPath(await Deno.makeTempDir()),
+    await Deno.realPath(await testTempDir()),
     "credential-runs.jsonl",
   );
   for (const lane of ["unknown-lane", "unknown", "Unknown", " "]) {

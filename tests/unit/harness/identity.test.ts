@@ -4,6 +4,7 @@ import { ValidationError } from "../../../src/errors.ts";
 import {
   AGENT_VISIBLE_FIELDS,
   agentVisibleMetadata,
+  harnessCommitOf,
   loadSymbolsLock,
   oracleHash,
   resolveRefapp,
@@ -12,6 +13,7 @@ import {
 } from "../../../src/harness/identity.ts";
 import { hashJson, hashTree, listTree } from "../../../src/harness/hash.ts";
 import { loadTaskSet } from "../../../src/harness/task.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const TASK = (id: string) =>
   `id: ${id}
@@ -44,7 +46,7 @@ async function git(root: string, ...args: string[]) {
 
 /** Temp repo with a tagged refapp and two tasks. */
 async function fixtureRepo(): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
   await git(root, "config", "user.name", "t");
@@ -197,7 +199,7 @@ const A = "00000000-0000-4000-8000-00000000000a";
 const B = "00000000-0000-4000-8000-00000000000b";
 
 Deno.test("loadSymbolsLock: absent is null, packages sorted by app_id", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   assertEquals(await loadSymbolsLock(root), null);
   await write(
     root,
@@ -218,7 +220,7 @@ Deno.test("loadSymbolsLock: duplicates, bad digests, unknown version and bad JSO
     "{ not json",
   ];
   for (const text of cases) {
-    const root = await Deno.makeTempDir();
+    const root = await testTempDir();
     await write(root, "harness-tasks/symbols.lock.json", text);
     await assertRejects(
       () => loadSymbolsLock(root),
@@ -229,7 +231,7 @@ Deno.test("loadSymbolsLock: duplicates, bad digests, unknown version and bad JSO
 });
 
 Deno.test("loadSymbolsLock: app_ids differing only in case are duplicates", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await write(
     root,
     "harness-tasks/symbols.lock.json",
@@ -425,4 +427,51 @@ Deno.test("oracleHash: measures/ is hashed only when present; tasks without it k
   assertEquals(await oracleHash(t!), before);
   await write(dir, "measures/measures.yml", "v: 1\n");
   assertNotEquals(await oracleHash(t!), before);
+});
+
+Deno.test("H-35 (design-r3 7): production_allow enters the oracle hash only when present; each kind of grant changes it; a table and a codeunit grant differ", async () => {
+  const root = await fixtureRepo();
+  const [t] = await loadTaskSet(join(root, "harness-tasks", "tasks"));
+  const base = await oracleHash(t!);
+  const grants = [
+    { dependencies: ["dd0be2ea-f733-4d65-bb34-a28f4624fb14"] },
+    { objects: ["table:130450"] },
+    { objects: ["codeunit:130450"] },
+    { dynamic: ["Codeunit.Run"] },
+  ];
+  const hashes = await Promise.all(
+    grants.map((production_allow) =>
+      oracleHash({ ...t!, task: { ...t!.task, production_allow } })
+    ),
+  );
+  for (const h of hashes) assertNotEquals(h, base);
+  assertEquals(new Set(hashes).size, hashes.length);
+  // Absent stays absent: the task as loaded hashes as before.
+  assertEquals(t!.task.production_allow, undefined);
+});
+
+Deno.test("H-35 orch Sol r1 #6: harnessCommitOf gives HEAD, marked +dirty when tracked harness code differs; null outside a repository", async () => {
+  const repo = await Deno.realPath(await testTempDir());
+  const g = (...args: string[]) =>
+    new Deno.Command("git", { args, cwd: repo, stdout: "null", stderr: "null" })
+      .output();
+  await g("init", "-q");
+  await g("config", "user.email", "t@example.com");
+  await g("config", "user.name", "t");
+  await Deno.mkdir(join(repo, "src"), { recursive: true });
+  await Deno.writeTextFile(join(repo, "src", "a.ts"), "1");
+  await g("add", ".");
+  await g("commit", "-q", "-m", "c");
+  const head = new TextDecoder().decode(
+    (await new Deno.Command("git", {
+      args: ["rev-parse", "HEAD"],
+      cwd: repo,
+      stdout: "piped",
+    }).output()).stdout,
+  ).trim();
+  assertEquals(await harnessCommitOf(repo), head);
+  await Deno.writeTextFile(join(repo, "src", "a.ts"), "2");
+  assertEquals(await harnessCommitOf(repo), `${head}+dirty`);
+  const bare = await Deno.realPath(await testTempDir());
+  assertEquals(await harnessCommitOf(bare), null);
 });

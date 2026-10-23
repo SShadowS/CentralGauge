@@ -1,0 +1,16 @@
+id: HX-078
+refapp_version: refapp-v2-rc1
+kind: test-authoring
+prompt: prompt.md
+touches: [Core, Test]
+coupling: [core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80050, procedures: [SetupIsCachedUntilRefresh, CurrentBranchFallsBackToSetupDefault, StateIsSharedAcrossInstances, NewContractTakesCurrentBranch] }
+  - { codeunit: 80052, procedures: [ZeroPrecisionFallsBackToCents, SetupPrecisionApplied, WholeUnitPrecision] }
+fail_to_pass: null
+mutants: [remainder-first, fixed-cents, uncached-precision, appends, zero-parts-empty, negative-as-positive]
+contamination: null
+limits: { timeout_min: 30 }

@@ -2,9 +2,10 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkCatalogBench } from "../../../../../src/doctor/sections/ingest/check-catalog-bench.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 async function setup(): Promise<string> {
-  const tmp = await Deno.makeTempDir();
+  const tmp = await testTempDir();
   const keyPath = `${tmp}/k.ed25519`;
   // 32 non-zero bytes — valid ed25519 seed.
   const seed = new Uint8Array(32);

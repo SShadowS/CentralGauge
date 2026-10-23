@@ -21,6 +21,7 @@ import {
   safeCopyTree,
   validatedDest,
 } from "./fsutil.ts";
+import type { OnPremIndex, OnPremObject } from "./onprem-symbols.ts";
 import { readAppGraph, readAppJsonRaw, type StagedApp } from "./staging.ts";
 
 export const TEST_APP = "Test";
@@ -62,6 +63,15 @@ export interface ReconstructOptions {
    * codeunit running a computed id, a test runner) can reach a shipped test.
    */
   dropShippedTests?: boolean;
+  /**
+   * H-35 G and G' builds: the Test app stays the pristine one byte for byte
+   * (app.json included); nothing of the agent's Test folder is read.
+   */
+  rawTest?: boolean;
+  /** H-35: the task's reviewed production_allow grant (design-r2 6.2.5). */
+  productionAllow?: ProductionAllow | undefined;
+  /** H-38: the run's OnPrem index (L3 `onprem_ref`); never loaded here. */
+  onPrem: OnPremIndex;
 }
 
 export interface VerdictWorkspace {
@@ -73,6 +83,11 @@ export interface VerdictWorkspace {
   notes: string[];
   /** Agent test codeunits that must not run (the credit rules could not judge them). */
   excluded: number[];
+  /**
+   * H-35 (design-r2 3, Sol r1 #8): submitted agent tests the credit rules
+   * keep from counting: excluded codeunits plus rejected [Test] procedures.
+   */
+  creditExcluded: number;
 }
 
 const IDENTITY = ["id", "name", "publisher"] as const;
@@ -85,12 +100,107 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** Trusted app.json with only `dependencies` from the candidate; identity changes are violations. */
+/** An app's identity (an internalsVisibleTo entry names one). */
+interface AppIdentity {
+  id: string;
+  name: string;
+  publisher: string;
+}
+
+/**
+ * An untrusted JSON value as text: a string as is, anything else as JSON
+ * (Sol r2: never String(), an object's toString may throw).
+ */
+const show = (v: unknown): string =>
+  typeof v === "string" ? v : JSON.stringify(v) ?? typeof v;
+
+/** The id, name and publisher of an app.json or entry, when all are strings. */
+function identityOf(r: Record<string, unknown>): AppIdentity | null {
+  const [id, name, publisher] = [r["id"], r["name"], r["publisher"]];
+  return typeof id === "string" && typeof name === "string" &&
+      typeof publisher === "string"
+    ? { id, name, publisher }
+    : null;
+}
+
+/**
+ * H-30: the merged internalsVisibleTo. The shipped entries stay; an entry the
+ * agent adds is kept only in a production app and only when it is exactly the
+ * pristine Test app's identity (id case aside, no other key), written as that
+ * identity. Every other entry is dropped with a note.
+ */
+function mergeInternalsVisibleTo(
+  folder: string,
+  trusted: unknown,
+  cand: unknown,
+  test: AppIdentity | null,
+  notes: string[],
+): unknown[] {
+  const list = (v: unknown) =>
+    Array.isArray(v) ? v : v === undefined ? [] : [v];
+  const shipped = list(trusted);
+  const out = [...shipped];
+  const same = (a: unknown, b: unknown) =>
+    JSON.stringify(a) === JSON.stringify(b);
+  const isTest = (e: unknown) => {
+    if (test === null || folder === TEST_APP) return false;
+    if (typeof e !== "object" || e === null || Array.isArray(e)) return false;
+    const r = e as Record<string, unknown>;
+    const i = identityOf(r);
+    return Object.keys(r).every((k) =>
+      (IDENTITY as readonly string[]).includes(k)
+    ) && i !== null && i.id.toLowerCase() === test.id.toLowerCase() &&
+      i.name === test.name && i.publisher === test.publisher;
+  };
+  for (const e of list(cand)) {
+    if (shipped.some((s) => same(s, e))) continue;
+    if (isTest(e)) {
+      if (!out.some(isTest)) {
+        out.push({
+          id: test!.id,
+          name: test!.name,
+          publisher: test!.publisher,
+        });
+        notes.push(
+          `${folder}: app.json internalsVisibleTo entry kept: ${test!.name}`,
+        );
+      }
+      continue;
+    }
+    const r = (typeof e === "object" && e !== null ? e : {}) as Record<
+      string,
+      unknown
+    >;
+    notes.push(
+      `${folder}: app.json internalsVisibleTo entry dropped: ${
+        show(r["id"] ?? e)
+      } ${show(r["name"] ?? "")} (${
+        folder === TEST_APP
+          ? "the Test app grants nothing"
+          : "not the shipped Test app"
+      })`,
+    );
+  }
+  if (shipped.some((s) => !list(cand).some((e) => same(s, e)))) {
+    notes.push(
+      `${folder}: app.json internalsVisibleTo: a shipped entry is removed by the agent; it stays`,
+    );
+  }
+  return out;
+}
+
+/**
+ * Trusted app.json with only `dependencies` from the candidate (and, H-30,
+ * internalsVisibleTo naming the Test app); identity changes are violations,
+ * every other key the agent changed is dropped with a note.
+ */
 async function mergeAppJson(
   folder: string,
   trustedPath: string,
   candidatePath: string,
   violations: string[],
+  notes: string[],
+  test: AppIdentity | null,
 ) {
   const trusted = (await readJson(trustedPath))!;
   const cand = await readJson(candidatePath);
@@ -100,8 +210,8 @@ async function mergeAppJson(
     return;
   }
   for (const k of IDENTITY) {
-    const a = String(trusted[k] ?? "");
-    const b = String(cand[k] ?? "");
+    const a = show(trusted[k] ?? "");
+    const b = show(cand[k] ?? "");
     if (k === "id" ? a.toLowerCase() !== b.toLowerCase() : a !== b) {
       violations.push(`${folder}: ${k} changed from ${a} to ${b}`);
     }
@@ -112,14 +222,39 @@ async function mergeAppJson(
   ) {
     violations.push(`${folder}: idRanges changed`);
   }
-  const merged = {
+  const merged: Record<string, unknown> = {
     ...trusted,
     dependencies: Array.isArray(cand["dependencies"])
       ? cand["dependencies"]
       : trusted["dependencies"] ?? [],
   };
+  const reported = new Set<string>([
+    ...IDENTITY,
+    "idRanges",
+    "dependencies",
+    "internalsVisibleTo",
+  ]);
+  for (const k of new Set([...Object.keys(trusted), ...Object.keys(cand)])) {
+    if (reported.has(k)) continue;
+    if (JSON.stringify(trusted[k]) !== JSON.stringify(cand[k])) {
+      notes.push(
+        `${folder}: app.json ${k} differs from the shipped value; the shipped value is kept`,
+      );
+    }
+  }
+  const ivt = mergeInternalsVisibleTo(
+    folder,
+    trusted["internalsVisibleTo"],
+    cand["internalsVisibleTo"],
+    test,
+    notes,
+  );
+  if (ivt.length > 0) merged["internalsVisibleTo"] = ivt;
   await Deno.writeTextFile(candidatePath, JSON.stringify(merged, null, 2));
 }
+
+/** A freeze violation line naming the Test app or a path under it (`<what>: Test[/<path>]`). */
+const TEST_PATH_VIOLATION = /: Test(?:[\\/]|\s*$)/i;
 
 /** A real directory (not a file, link or junction). */
 async function isPlainDir(p: string): Promise<boolean> {
@@ -131,13 +266,19 @@ export async function buildVerdictWorkspace(
   o: ReconstructOptions,
 ): Promise<VerdictWorkspace> {
   const violations: string[] = [];
+  const appNotes: string[] = [];
   const pristineApps = await readAppGraph(o.pristine);
+  const tj = await readJson(join(o.pristine, TEST_APP, "app.json"));
+  const testIdentity = tj ? identityOf(tj) : null;
   const copy = await safeCopyTree(o.pristine, o.out);
   const out = copy.dst;
 
   const marker = join(o.artifact, FREEZE_VIOLATIONS_FILE);
   if (await exists(marker)) {
     for (const line of (await Deno.readTextFile(marker)).split(/\r?\n/)) {
+      // H-35 Sol r1 #3: a freeze violation that names a Test path is Test-side;
+      // G reads no agent Test file, so it is not G's (every other line is).
+      if (o.rawTest && TEST_PATH_VIOLATION.test(line)) continue;
       if (line.trim()) violations.push(`workspace ${line.trim()}`);
     }
   }
@@ -165,13 +306,19 @@ export async function buildVerdictWorkspace(
       join(o.pristine, app.folder, "app.json"),
       join(out, app.folder, "app.json"),
       violations,
+      appNotes,
+      testIdentity,
     );
   }
 
   const testSrc = join(o.artifact, TEST_APP);
   const editedShipped = new Map<string, string>();
   const newTestFiles: string[] = [];
-  if (await exists(testSrc) && !await isPlainDir(testSrc)) {
+  /** H-35 (ruling Q4): edited shipped files without a test codeunit, as written. */
+  const asWritten: string[] = [];
+  if (o.rawTest) {
+    // G: the pristine Test app copied above stays.
+  } else if (await exists(testSrc) && !await isPlainDir(testSrc)) {
     violations.push(`app folder ${TEST_APP} is missing`);
   } else if (await exists(testSrc)) {
     const shipped = new Map(
@@ -196,18 +343,24 @@ export async function buildVerdictWorkspace(
       }
       if (known !== undefined) {
         // Shipped: the pristine copy stays; an edited .al is kept aside for
-        // extracting the procedures the agent added (M4-17a).
+        // extracting the procedures the agent added (M4-17a). H-35: an edited
+        // shipped file without a test codeunit (the helper) is the agent's.
         const text = await Deno.readTextFile(
           join(scratch, ...e.path.split("/")),
         );
-        if (
-          e.path.toLowerCase().endsWith(".al") &&
-          text !==
-            await Deno.readTextFile(
-              join(o.pristine, TEST_APP, ...known.split("/")),
-            )
-        ) {
-          editedShipped.set(known, text);
+        const shippedText = await Deno.readTextFile(
+          join(o.pristine, TEST_APP, ...known.split("/")),
+        );
+        if (e.path.toLowerCase().endsWith(".al") && text !== shippedText) {
+          if (declarations(shippedText).some(isTestCodeunit)) {
+            editedShipped.set(known, text);
+          } else {
+            await Deno.writeTextFile(
+              join(out, TEST_APP, ...known.split("/")),
+              text,
+            );
+            asWritten.push(known);
+          }
         }
         continue;
       }
@@ -231,6 +384,8 @@ export async function buildVerdictWorkspace(
       join(o.pristine, TEST_APP, "app.json"),
       join(out, TEST_APP, "app.json"),
       violations,
+      appNotes,
+      testIdentity,
     );
   }
 
@@ -243,18 +398,52 @@ export async function buildVerdictWorkspace(
   }
   violations.push(...await validateApps(out, pristineApps, apps, o.symbolIds));
   violations.push(
-    ...await shippedCollisions(join(o.pristine, TEST_APP), out, newTestFiles),
+    ...await productionPolicyViolations(
+      out,
+      apps,
+      o.productionAllow,
+      o.onPrem,
+    ),
   );
-  const { notes, excluded } =
-    violations.length === 0 && (editedShipped.size + newTestFiles.length) > 0
-      ? await applyCreditRules(
-        o.pristine,
-        out,
-        pristineApps,
-        editedShipped,
-        newTestFiles,
-      )
-      : { notes: [], excluded: [] };
+  violations.push(
+    ...await shippedCollisions(
+      join(o.pristine, TEST_APP),
+      out,
+      newTestFiles,
+      asWritten,
+    ),
+  );
+  const agentText = async (rel: string) =>
+    [
+      rel,
+      await Deno.readTextFile(join(out, TEST_APP, ...rel.split("/"))),
+    ] as const;
+  violations.push(...testPolicyViolations(
+    [
+      ...await Promise.all([...newTestFiles, ...asWritten].map(agentText)),
+      ...editedShipped,
+    ],
+    o.onPrem,
+    await workspaceInterfaces(out),
+  ));
+  const { notes, excluded, rejected } = violations.length === 0 &&
+      (editedShipped.size + newTestFiles.length + asWritten.length) > 0
+    ? await applyCreditRules(
+      o.pristine,
+      out,
+      pristineApps,
+      editedShipped,
+      newTestFiles,
+      asWritten,
+    )
+    : { notes: [], excluded: [], rejected: new Set<string>() };
+  // Sol r2 #4: every test of an excluded codeunit, with the rejected ones, once.
+  for (const t of await testCodeunits(join(out, TEST_APP))) {
+    if (!excluded.includes(t.codeunit)) continue;
+    for (const p of t.procedures) {
+      rejected.add(`${t.codeunit}:${p.toLowerCase()}`);
+    }
+  }
 
   if (o.dropShippedTests && violations.length === 0) {
     await dropShippedTestCodeunits(o.pristine, out);
@@ -269,14 +458,37 @@ export async function buildVerdictWorkspace(
       changed.push(app.folder);
     }
   }
-  return { dir: out, apps, changed, violations, notes, excluded };
+  return {
+    dir: out,
+    apps,
+    changed,
+    violations,
+    notes: [...appNotes, ...notes],
+    excluded,
+    creditExcluded: rejected.size,
+  };
 }
 
 /**
  * Blank comments and string literals (quoted identifiers kept) with
  * same-length whitespace, newlines kept.
  */
-export function stripAlNoise(src: string): string {
+/** A preprocessor line starts at `i` (blanks, then `#`). */
+function directiveAt(src: string, i: number): boolean {
+  const re = /[ \t]*#/y;
+  re.lastIndex = i;
+  return re.test(src);
+}
+
+export function stripAlNoise(
+  src: string,
+  /**
+   * H-38 self-check r2 N1: also blank preprocessor lines (`#region <label>`,
+   * `#pragma ...`), recognised in code position only, in the same pass, so a
+   * directive-looking line inside a comment or string is never one.
+   */
+  o: { directives?: boolean } = {},
+): string {
   const n = src.length;
   let out = "";
   let i = 0;
@@ -290,7 +502,12 @@ export function stripAlNoise(src: string): string {
   while (i < n) {
     const c = src[i]!;
     const d = src[i + 1];
-    if (c === "/" && d === "/") {
+    if (
+      o.directives && (i === 0 || src[i - 1] === "\n") && directiveAt(src, i)
+    ) {
+      const end = src.indexOf("\n", i);
+      blank(end === -1 ? n : end);
+    } else if (c === "/" && d === "/") {
       const end = src.indexOf("\n", i);
       blank(end === -1 ? n : end);
     } else if (c === "/" && d === "*") {
@@ -347,8 +564,11 @@ interface AlDecl {
  * quoted identifiers are blanked (same length) so a name cannot fake one or
  * shift the brace depth. Every header match counts, also one without a body.
  */
-function declarations(src: string): AlDecl[] {
-  const text = stripAlNoise(src);
+function declarations(
+  src: string,
+  o: { directives?: boolean } = {},
+): AlDecl[] {
+  const text = stripAlNoise(src, o);
   const flat = text.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
   const out: AlDecl[] = [];
   const headerDecls = (header: string) =>
@@ -520,11 +740,13 @@ export async function addedTestCodeunits(
   /** VerdictWorkspace.excluded: codeunits the credit rules could not judge. */
   exclude: ReadonlySet<number> = new Set(),
 ): Promise<TestCodeunit[]> {
+  // H-35 Sol r1 #1: by shipped test codeunit id, not by file: a test
+  // codeunit the agent adds to a shipped file (the helper) is the agent's.
   const shipped = new Set(
-    (await listTree(pristineTest, "task")).map((e) => e.path.toLowerCase()),
+    (await testCodeunits(pristineTest)).map((t) => t.codeunit),
   );
   return (await testCodeunits(test)).filter((t) =>
-    !shipped.has(t.file.toLowerCase()) && !exclude.has(t.codeunit)
+    !shipped.has(t.codeunit) && !exclude.has(t.codeunit)
   );
 }
 
@@ -760,13 +982,36 @@ const isCode = (m: Member) => m.kind === "procedure" || m.kind === "trigger";
 const isTestCodeunit = (d: AlDecl) =>
   d.kind === "codeunit" && /\bSubtype\s*=\s*Test\s*;/i.test(d.body);
 
-/** The declared name of an object (quoted or bare), from the noise-stripped text. */
+/**
+ * Quoted identifiers with their contents blanked (same length), so text
+ * inside a name is never read as code; offsets stay those of the source.
+ * A quoted plain identifier ("GetLastErrorCallStack") is that identifier
+ * (Sol r5 #1): its quotes become spaces and it stays readable code.
+ */
+const maskQuoted = (s: string) =>
+  s.replace(
+    /"[^"\n]*"/g,
+    (q) =>
+      /^"[A-Za-z_][A-Za-z0-9_]*"$/.test(q)
+        ? ` ${q.slice(1, -1)} `
+        : `"${"_".repeat(q.length - 2)}"`,
+  );
+
+/**
+ * The declared name of an object (quoted or bare), from the noise-stripped
+ * text: its own header, the last one before its body (Sol r4 #2: never a
+ * header-like text inside another object's quoted name).
+ */
 function objectName(text: string, d: AlDecl): string {
-  const m = new RegExp(
-    `${d.kind}\\s+${d.id}\\s+(?:"([^"\\n]+)"|([A-Za-z_][A-Za-z0-9_]*))`,
-    "i",
-  ).exec(text);
-  return m ? m[1] ?? m[2]! : `${d.kind} ${d.id}`;
+  const re = new RegExp(
+    // Sol r5 #2: the id as written may carry leading zeros (080100).
+    `\\b${d.kind}\\s+0*${d.id}\\s+(?:"([^"\\n]*)"|([A-Za-z_][A-Za-z0-9_]*))`,
+    "gid",
+  );
+  let last: RegExpExecArray | null = null;
+  for (const m of maskQuoted(text.slice(0, d.start)).matchAll(re)) last = m;
+  const at = last?.indices?.[1] ?? last?.indices?.[2];
+  return at ? text.slice(at[0], at[1]) : `${d.kind} ${d.id}`;
 }
 
 interface ShippedTests {
@@ -1166,169 +1411,1395 @@ function extractFrom(
   };
 }
 
-// ---- H-21: plain procedures an agent added to a SHIPPED helper codeunit ----
-
-/** A shipped non-test helper file whose added procedures may be kept. */
-interface Helper {
-  rel: string;
-  /** The added procedures (all codeunits of the file); judged by the credit rules. */
-  judged: Judged;
-  /** The shipped text with the added procedures appended. */
-  text: string;
-}
-
-/** A codeunit that is neither a test codeunit nor any other Subtype than Normal. */
-const isHelperCodeunit = (d: AlDecl) =>
-  d.kind === "codeunit" && d.end !== 0 &&
-  (!/\bSubtype\s*=/i.test(d.body) ||
-    /\bSubtype\s*=\s*Normal\s*;/i.test(d.body));
-
-/** Text outside the object bodies: headers, text between objects, the tail. */
-const outsideBodies = (src: string, ds: AlDecl[]) =>
-  [
-    ...ds.map((d, i) => src.slice(i === 0 ? 0 : ds[i - 1]!.end, d.start)),
-    src.slice(ds.at(-1)!.end),
-  ].map((s) => s.replace(/\r\n/g, "\n"));
+// ---- H-30 run 002: agent text the lexer cannot read as the compiler does ----
 
 /**
- * H-21 (owner ruling 2026-10-17, "keep added helpers"). An edited shipped
- * Test file whose objects are all plain (non-test, Subtype Normal) codeunits:
- * the shipped text stays the base and only the procedures new by name are
- * appended (before each codeunit's closing brace, shipped line ends). Fails
- * closed, null and a note, the shipped file restored, when: the agent's
- * objects or any text outside their bodies differ from the shipped file
- * (line ends aside); a codeunit cannot be parsed; a shipped member
- * (property, global, trigger, procedure, attributes included) is not kept
- * byte for byte and in order; or an added member is not a procedure, carries
- * an attribute, has a modifier other than local or internal, or has the
- * name of a shipped member (case-insensitive, quoted or not: an overload).
- * The credit rules judge the added procedures afterwards (applyCreditRules).
+ * H-30 run 002: AL also ends a line at a bare CR and the Unicode line
+ * separators, where stripAlNoise does not end a `//` comment, so the parser
+ * would not see code the compiler does. Agent Test text with one fails closed.
  */
-function prepareHelper(
-  rel: string,
-  pSrc: string,
-  pDecls: AlDecl[],
-  aSrc: string,
-  notes: string[],
-): Helper | null {
-  const where = `${TEST_APP}/${rel}`;
-  const refuse = (why: string) => {
-    notes.push(
-      `${where}: ${why}; the shipped file is restored (added procedures not kept)`,
+const ODD_EOL = /\r(?!\n)|[\u2028\u2029\u0085]/;
+
+/**
+ * Why this lexer could read agent AL text differently from the compiler, or
+ * null: an ODD_EOL line end, or a multiline string literal `@'...'` (BC 26+),
+ * which stripAlNoise ends at the first LF (Sol, H-30 run 002).
+ */
+function unreadable(src: string): string | null {
+  if (ODD_EOL.test(src)) return "a line terminator other than LF or CRLF";
+  if (/@\s*'/.test(src)) return "a multiline string (@'...')";
+  return null;
+}
+
+/** Any install or upgrade trigger declaration (design-r2 6.1, ruling R5; Sol r7 #2). */
+const LIFECYCLE_TRIGGER =
+  /\btrigger\s+On(?:InstallAppPer|UpgradePer|ValidateUpgradePer|CheckPreconditionsPer)(?:Company|Database)\b/i;
+const LIFECYCLE_SUBTYPE = /\bSubtype\s*=\s*(?:Install|Upgrade)\b/i;
+const ISOLATION_DISABLED = /\bRequiredTestIsolation\s*=\s*Disabled\b/i;
+
+/**
+ * H-35 Test-side policy rules over the agent's Test text (new files, the
+ * helper as written, edited shipped files): `unreadable_test` first (ruling
+ * R9: the other rules cannot trust the lexer on such text), then, on
+ * noise-stripped code, `test_lifecycle` (ruling R5) and `isolation_disabled`
+ * (ruling R1), and `persistence_ref` (H-35 run 004 #1, r5 2.3:
+ * persistenceRefs). Each violation reads `<rule>: Test/<path>: <detail>`.
+ */
+export function testPolicyViolations(
+  files: Iterable<readonly [string, string]>,
+  onPrem: OnPremIndex,
+  /** H-38 8.4 ruling (b): the workspace's interfaces; default: those `files` declare. */
+  interfaces?: ReadonlySet<string>,
+): string[] {
+  const out: string[] = [];
+  const list = [...files].sort(([a], [b]) => a < b ? -1 : 1);
+  const ifaces = interfaces ??
+    new Set(
+      list.flatMap(([, src]) => unreadable(src) ? [] : interfacesIn(src)),
     );
-    return null;
-  };
-  const key = (ds: AlDecl[]) => ds.map((d) => `${d.kind} ${d.id}`).join(",");
-  const aDecls = declarations(aSrc);
-  if (key(aDecls) !== key(pDecls) || aDecls.some((d) => d.end === 0)) {
-    return refuse("its objects differ from the shipped file");
-  }
-  const pOut = outsideBodies(pSrc, pDecls);
-  const aOut = outsideBodies(aSrc, aDecls);
-  if (pOut.some((s, i) => s !== aOut[i])) {
-    return refuse("text outside the codeunit bodies (a header) is changed");
-  }
-  const pText = stripAlNoise(pSrc);
-  const aText = stripAlNoise(aSrc);
-  const eol = (s: string) => s.replace(/\r\n/g, "\n");
-  const nl = pSrc.includes("\r\n") ? "\r\n" : "\n";
-  // A local method wins over a built-in (Error, Message) or anything else
-  // shipped code calls by that name: every name the shipped file uses is refused.
-  const used = new Set(
-    tokenize(pText, 0, pText.length).filter((t) => t.id).map((t) => t.v),
-  );
-  const code: Member[] = [];
-  const vars: Member[] = [];
-  const inserts: { at: number; procs: Member[] }[] = [];
-  for (const [i, p] of pDecls.entries()) {
-    const a = aDecls[i]!;
-    const pm = codeunitMembers(pText, p);
-    const am = codeunitMembers(aText, a);
-    if (pm === null || am === null) {
-      return refuse(`codeunit ${p.id} could not be parsed`);
+  for (const [rel, src] of list) {
+    const where = `${TEST_APP}/${rel}`;
+    const why = unreadable(src);
+    if (why) {
+      out.push(`unreadable_test: ${where}: ${why}`);
+      continue;
     }
-    const shippedNames = new Set(pm.flatMap((m) => m.names));
-    const adds: Member[] = [];
-    let k = 0;
-    for (const m of am) {
-      const s = pm[k];
-      if (
-        s !== undefined && s.kind === m.kind &&
-        eol(aSrc.slice(m.start, m.end)) === eol(pSrc.slice(s.start, s.end))
-      ) {
-        k++;
+    // Properties are written bare: matched on the stripped code, where a
+    // quoted local ("Subtype" = "Install") keeps its quotes (Sol r8). The
+    // trigger declaration is matched with quoted-name text masked (Sol r7 #2).
+    const code = stripAlNoise(src);
+    const life = LIFECYCLE_SUBTYPE.exec(code) ??
+      LIFECYCLE_TRIGGER.exec(maskQuoted(code));
+    if (life) out.push(`test_lifecycle: ${where}: ${life[0]}`);
+    const iso = ISOLATION_DISABLED.exec(code);
+    if (iso) out.push(`isolation_disabled: ${where}: ${iso[0]}`);
+    // H-35 run 004 #1 (r5 2.3): the persistence bans apply to Test text too.
+    for (const d of persistenceRefs(src)) {
+      out.push(`persistence_ref: ${where}: ${d}`);
+    }
+    for (const d of onPremRefs(src, onPrem, ifaces)) {
+      out.push(`onprem_ref: ${where}: ${d}`);
+    }
+  }
+  return out;
+}
+
+// ---- H-35 production-side policy rules (design-r2 6.2, design-r3 4; R2, R9, Q9) ----
+
+/** A task's reviewed exceptions to the production rules (task.yml production_allow). */
+export interface ProductionAllow {
+  /** App ids a production app may depend on beyond the workspace and the allowlist. */
+  dependencies?: readonly string[] | undefined;
+  /** Banned objects allowed, kind-qualified: "table:130450", "codeunit:130450". */
+  objects?: readonly string[] | undefined;
+  /** Dynamic dispatch allowed by call: "Codeunit.Run", "RecordRef.Open", ... */
+  dynamic?: readonly string[] | undefined;
+}
+
+/** The five Microsoft packages production may depend on (design-r2 6.2.1). */
+export const PRODUCTION_DEPENDENCY_ALLOWLIST: ReadonlySet<string> = new Set([
+  "8874ed3a-0643-4247-9ced-7a7002f7135d", // System
+  "63ca2fa4-4f03-4f2b-a480-172fef340d3f", // System Application
+  "f3552374-a1f2-4356-848e-196002525837", // Business Foundation
+  "437dbf0e-84ff-417a-965d-ed2bb9650972", // Base Application
+  "c1335042-3002-4257-bf8a-75c898ccb1b8", // Application
+]);
+
+/** Test-framework, metadata and installed-app objects (design-r2 6.2.2, ids from the locked symbols). */
+const BANNED_OBJECTS: readonly (readonly [string, number, string])[] = [
+  ["table", 130451, "AL Test Suite"],
+  ["table", 130450, "Test Method Line"],
+  ["codeunit", 130450, "Test Runner - Isol. Codeunit"],
+  ["codeunit", 130451, "Test Runner - Isol. Disabled"],
+  ["codeunit", 130454, "Test Runner - Mgt"],
+  ["codeunit", 130456, "Test Suite Mgt."],
+  ["table", 2000000137, "CodeUnit Metadata"],
+  ["table", 2000000038, "AllObj"],
+  ["table", 2000000058, "AllObjWithCaption"],
+  ["table", 2000000071, "Object Metadata"],
+  ["table", 2000000207, "Application Object Metadata"],
+  ["table", 2000000153, "NAV App Installed App"],
+  ["table", 2000000206, "Published Application"],
+  ["table", 2000000212, "Installed Application"],
+];
+
+const OBJECT_TYPE =
+  "Record|Codeunit|Page|Report|Query|XmlPort|Database|Table|Interface";
+/** A CalcFormula function's table argument position (r2 6.2.2; orch Sol r1 #2). */
+const CALC_FORMULA = "count|lookup|exist|sum|average|min|max";
+/**
+ * A banned object by name in an object-typed position: after an object type
+ * keyword (`Record "X"`, `Codeunit "X"`), after `Type::`, as a TableNo,
+ * SourceTable or TableRelation value, or as a CalcFormula table
+ * (`count("X" where ...)`). Quoted or bare, case-insensitive.
+ * H-35 run 004 Sol r1 H1: a dotted name (`System.IO."File Management"`) is
+ * read whole; nameRefs gives the names it may denote.
+ */
+const NAME_SEG = `(?:"[^"\\n]+"|[A-Za-z_][A-Za-z0-9_]*)`;
+const NAME_CHAIN = `(${NAME_SEG}(?:\\s*\\.\\s*${NAME_SEG})*)`;
+const NAME_REF = new RegExp(
+  `(?:\\b(?:${OBJECT_TYPE})\\s*::\\s*|\\b(?:${OBJECT_TYPE})\\s+)${NAME_CHAIN}|(?:\\b(?:TableNo|SourceTable|TableRelation)\\s*=\\s*|\\b(?:${CALC_FORMULA})\\s*\\(\\s*)${NAME_CHAIN}`,
+  "gi",
+);
+/**
+ * H-35 run 004 Sol r1 H1: the object names a NAME_REF match may denote
+ * (lowercase, unquoted). After an object type or `Type::` the last segment
+ * (namespaces precede it); in a table property or CalcFormula every segment
+ * (a field may follow the table, a namespace precede it: fail closed).
+ */
+function nameRefs(at: (i: number) => string): string[] {
+  const segs = (s: string) =>
+    [...s.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) => unquote(n[0]));
+  return at(1) ? segs(at(1)).slice(-1) : segs(at(2));
+}
+/**
+ * A number in an object-id position, with the object kind it names (Sol r1
+ * #7: a method's integer argument is not one, and a grant is per kind): a
+ * table by `Database::<n>`, `Record <n>`, `Table <n>` or a TableNo-style
+ * property; a codeunit by `Codeunit::<n>`, `Codeunit <n>` or the static
+ * `Codeunit.Run(<n>)`. RecordRef.Open(<n>) is a table (below).
+ */
+const ID_REFS: readonly (readonly [RegExp, string])[] = [
+  [
+    new RegExp(
+      `\\b(?:Database\\s*::\\s*|Record\\s+|Table\\s+|(?:TableNo|SourceTable|TableRelation)\\s*=\\s*|(?:${CALC_FORMULA})\\s*\\(\\s*)(\\d+)\\b`,
+      "gi",
+    ),
+    "table",
+  ],
+  [
+    /\b(?:Codeunit\s*::\s*|Codeunit\s+|Codeunit\s*\.\s*(?:Run|RunModal)\s*\(\s*)(\d+)\b/gi,
+    "codeunit",
+  ],
+];
+/** A static object call and its first argument. */
+const STATIC_CALL =
+  /\b(Codeunit|Page|Report|Xmlport|Query)\s*\.\s*(Run|RunModal|Execute|SaveAs|SaveAsCsv|SaveAsPdf|SaveAsXml|Print|Open)\s*\(\s*([^,)]*)/gi;
+/**
+ * Every Open call with its first argument, whatever the receiver (a RecordRef
+ * bare, quoted, an array element, or a variable named like an object type,
+ * Sol r6). An Open with no argument (Query.Open()) is skipped; a static call
+ * matched here and by STATIC_CALL is reported by both, never by neither.
+ */
+const OPEN_CALL = /\.\s*Open\s*\(\s*([^,)]*)/gi;
+/** An argument that names its object: an integer literal or `Type::<name or literal>`. */
+const LITERAL_OBJECT =
+  /^(?:\d+|(?:Codeunit|Page|Report|Xmlport|Query|Database)\s*::\s*(?:"[^"\n]+"|[A-Za-z_][A-Za-z0-9_]*|\d+))\s*$/i;
+const TEST_ONLY_TYPE =
+  /:\s*(TestPage|TestRequestPage|TestAction|TestField|TestFilter|TestPart|TestHttpRequestMessage|TestHttpResponseMessage)\b/i;
+const TEST_SUBTYPE = /\bSubtype\s*=\s*(Test|TestRunner)\b/i;
+const DETECTION_MEMBER =
+  /\.\s*Callstack\b|\bGetLastErrorCallStack\b|\bNavApp\s*\.|\bModuleInfo\b/i;
+
+const unquote = (n: string) => n.replace(/^"|"$/g, "").toLowerCase();
+
+/**
+ * Matches of `re` on `masked` (maskQuoted of `code`), read back from `code` at
+ * the same offsets (Sol r4 #1: text inside a name is never code).
+ */
+function scanner(code: string, masked: string) {
+  return function* (re: RegExp) {
+    for (const m of masked.matchAll(new RegExp(re.source, re.flags + "d"))) {
+      const at = (i: number) => {
+        const r = m.indices![i];
+        return r ? code.slice(r[0], r[1]) : "";
+      };
+      yield {
+        all: code.slice(m.index!, m.index! + m[0].length),
+        at,
+        index: m.index!,
+        end: m.index! + m[0].length,
+      };
+    }
+  };
+}
+
+// ---- H-35 run 004 #1 (r5 2.3): layer 3 persistence bans, production and Test ----
+
+/**
+ * Objects only reachable OnPrem (r5 2.3; ids not in the repo's symbol data,
+ * Base App and System Application as published): resolved like
+ * BANNED_OBJECTS, by name in object position and by id in id position.
+ * Environment Information is banned whole (its OnPrem members are not
+ * listed). No production_allow grant applies.
+ */
+const PERSISTENCE_OBJECTS: readonly (readonly [string, number, string])[] = [
+  ["codeunit", 419, "File Management"],
+  ["codeunit", 457, "Environment Information"],
+  ["table", 2000000022, "File"],
+];
+const PERSISTENCE_TYPES =
+  "File|FileUpload|DotNet|HttpClient|HttpRequestMessage|HttpResponseMessage|HttpContent|HttpHeaders|WebServiceActionContext";
+/**
+ * A banned type in type position: after a single `:` (never `::` or `:=`),
+ * through `array[..] of`, or as a `List of [..]` / `Dictionary of [..]` argument.
+ */
+const PERSISTENCE_TYPE = new RegExp(
+  `(?:(?<!:):(?![:=])\\s*(?:array\\s*\\[[^\\]]*\\]\\s*of\\s+)?|\\bof\\s*\\[[^\\]]*?)\\b(${PERSISTENCE_TYPES})\\b`,
+  "gi",
+);
+/** Banned by name wherever it is code (r5 2.3 .NET, file and network classes). */
+const PERSISTENCE_NAMES: readonly RegExp[] = [
+  /\bDotNet\b/gi,
+  /\bassembly\s*\(/gi,
+  // A static File method (File.Create, File.Download, ...), never a member.
+  /(?<!\.\s*)(?<!\w)File\s*\.\s*[A-Za-z_]\w*/gi,
+  // A global method bare or with its system receiver, never another member.
+  /(?:(?<!\.\s*)(?<!\w)|\b(?:System|Session|File)\s*\.\s*)(?:UploadIntoStream|DownloadFromStream|TemporaryPath|ApplicationPath|Hyperlink|StartSession)\b/gi,
+  /\bTaskScheduler\s*\.\s*CreateTask\b/gi,
+];
+/**
+ * A report or query export call, with its receiver. Argument shape: the call
+ * is a file export unless one of its arguments is a bare name declared in
+ * scope as InStream/OutStream (Report.SaveAs(Id, Params, Format, OutS) and
+ * the Query stream overloads are allowed; SaveAsPdf(Id, 'C:\x.pdf') and any
+ * path expression are not). H-35 run 004 Sol r1 M1: a receiver declared in
+ * scope as a Codeunit is a user method, not an export.
+ */
+const SAVE_AS_CALL =
+  /(?:([A-Za-z_]\w*|"[^"\n]*")\s*)?\.\s*SaveAs(?:Pdf|Excel|Word|Html|Xml|Csv)?\s*\(/gi;
+/** H-35 run 004 Sol r1 H2: `A, "B": Type`, with the type's first word. */
+const VAR_DECL =
+  /(?<![\w"])((?:"[^"\n]*"|[A-Za-z_]\w*)(?:\s*,\s*(?:"[^"\n]*"|[A-Za-z_]\w*))*)\s*:\s*([A-Za-z_]\w*)/gi;
+
+/**
+ * H-35 run 004 Sol r1 H2: procedure and trigger ranges of `flat` (the code
+ * with every quoted name blank): header keyword, its body's `begin`, and the
+ * `end` closing it (begin/case counted against end). A header with no body
+ * before the next header (an interface method) is skipped.
+ */
+function routineRanges(
+  flat: string,
+): { start: number; begin: number; end: number }[] {
+  const heads = [...flat.matchAll(/\b(?:procedure|trigger)\b/gi)].map((m) =>
+    m.index
+  );
+  const out: { start: number; begin: number; end: number }[] = [];
+  heads.forEach((start, i) => {
+    const re = /\b(begin|case|end)\b/gi;
+    re.lastIndex = start;
+    let m = re.exec(flat);
+    if (
+      !m || m[1]!.toLowerCase() !== "begin" ||
+      m.index > (heads[i + 1] ?? Infinity)
+    ) return;
+    const begin = m.index;
+    let depth = 0;
+    let end = flat.length;
+    for (; m; m = re.exec(flat)) {
+      if (m[1]!.toLowerCase() !== "end") depth++;
+      else if (--depth === 0) {
+        end = m.index + 3;
+        break;
+      }
+    }
+    out.push({ start, begin, end });
+  });
+  return out;
+}
+/** A static Xmlport.Import/Export: allowed only with a declared stream argument. */
+const XMLPORT_CALL = /\bXmlport\s*\.\s*(?:Import|Export)\s*\(/gi;
+/** A member access with its receiver (for Filename on an Xmlport variable). */
+const FILENAME_ACCESS = /("[^"\n]*"|[A-Za-z_]\w*)\s*\.\s*Filename\b/gi;
+/** A procedure scope attribute; its argument is read from the source. */
+const SCOPE_ATTR = /\[\s*Scope\s*\(([^)\]]*)\)\s*\]/gi;
+
+/**
+ * Names (lowercase, unquoted) this file declares with a type matching `type`:
+ * `A, "B": OutStream`, parameters included. Structure is read on the masked
+ * text, so a quoted name cannot fake a declaration.
+ */
+function declaredNames(
+  scan: ReturnType<typeof scanner>,
+  type: string,
+): Set<string> {
+  const re = new RegExp(
+    `(?<![\\w"])((?:"[^"\\n]*"|[A-Za-z_]\\w*)(?:\\s*,\\s*(?:"[^"\\n]*"|[A-Za-z_]\\w*))*)\\s*:\\s*(?:${type})\\b`,
+    "gi",
+  );
+  const out = new Set<string>();
+  for (const m of scan(re)) {
+    for (const n of m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)) {
+      out.add(unquote(n[0]));
+    }
+  }
+  return out;
+}
+
+/**
+ * The top-level arguments (code text) of a call whose `(` ends at `from`, and
+ * its end; `ranges` are each argument's offsets (H-38: a literal is read back
+ * from the source there).
+ */
+function callArgs(
+  code: string,
+  masked: string,
+  from: number,
+): { args: string[]; end: number; ranges: [number, number][] } {
+  const args: string[] = [];
+  const ranges: [number, number][] = [];
+  let depth = 0;
+  let start = from;
+  let i = from;
+  for (; i < masked.length; i++) {
+    const c = masked[i];
+    if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth > 0) depth--;
+    else if (c === ")" || (c === "," && depth === 0)) {
+      args.push(code.slice(start, i).trim());
+      ranges.push([start, i]);
+      start = i + 1;
+      if (c === ")") return { args, end: i + 1, ranges };
+    }
+  }
+  args.push(code.slice(start, i).trim());
+  ranges.push([start, i]);
+  return { args, end: i, ranges };
+}
+
+/**
+ * H-35 run 004 #1 (r5 2.3): the persistence bans in one readable AL file, as
+ * details: banned types in type position, DotNet and assembly declarations,
+ * static File methods, the global file, link and session methods,
+ * TaskScheduler.CreateTask, file exports by argument shape (SAVE_AS_CALL,
+ * XMLPORT_CALL, Filename on an Xmlport variable), PERSISTENCE_OBJECTS by name
+ * and id, and any `[Scope('OnPrem')]` declaration. Matched on the
+ * noise-stripped code with quoted identifiers masked; details from the source.
+ * Calls by name to OnPrem members of locked objects are onPremRefs (H-38).
+ */
+function persistenceRefs(src: string): string[] {
+  const code = stripAlNoise(src);
+  const masked = maskQuoted(code);
+  const scan = scanner(code, masked);
+  const found = new Set<string>();
+  for (const m of scan(PERSISTENCE_TYPE)) found.add(`type ${m.at(1)}`);
+  for (const re of PERSISTENCE_NAMES) {
+    for (const m of scan(re)) found.add(m.all.trim());
+  }
+  // H-35 run 004 Sol r1 H2: a name's type in scope at `at`: the enclosing
+  // routine's parameters and locals, else its object's globals (outside any
+  // routine). Outside a routine body or an object: unknown (fail closed).
+  const routines = routineRanges(
+    code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length)),
+  );
+  const objects = declarations(src);
+  const decls = [...scan(VAR_DECL)].map((m) => ({
+    index: m.index,
+    names: [...m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) =>
+      unquote(n[0])
+    ),
+    type: m.at(2).toLowerCase(),
+  }));
+  const typeOf = (name: string, at: number): string | undefined => {
+    const r = routines.find((x) => x.begin < at && at < x.end);
+    const o = objects.find((x) => x.start <= at && at <= x.end);
+    if (!r || !o) return undefined;
+    const local = decls.find((d) =>
+      d.index >= r.start && d.index < r.begin && d.names.includes(name)
+    );
+    return (local ??
+      decls.find((d) =>
+        d.index >= o.start && d.index < o.end && d.names.includes(name) &&
+        !routines.some((x) => d.index >= x.start && d.index < x.end)
+      ))?.type;
+  };
+  const BARE = /^(?:"[^"\n]*"|[A-Za-z_]\w*)$/;
+  const fileCall = (m: { index: number; end: number }) => {
+    const { args, end } = callArgs(code, masked, m.end);
+    const stream = (a: string) =>
+      BARE.test(a) &&
+      /^(?:instream|outstream)$/.test(typeOf(unquote(a), m.end) ?? "");
+    if (!args.some(stream)) {
+      found.add(`${src.slice(m.index, end).trim()} (no stream argument)`);
+    }
+  };
+  for (const m of scan(SAVE_AS_CALL)) {
+    // H-35 run 004 Sol r1 M1: a bare receiver (not a member) declared in
+    // scope as a Codeunit is a user method named SaveAs*.
+    const recv = m.at(1);
+    // Sol r2 N6: an UNQUOTED object-type keyword receiver is the static call
+    // (`Report.SaveAsPdf`), whatever a quoted `"Report"` variable is declared as
+    const staticKeyword = !recv.startsWith('"') &&
+      /^(?:report|query|xmlport|page|codeunit)$/i.test(recv);
+    if (
+      recv && !staticKeyword &&
+      !masked.slice(0, m.index).trimEnd().endsWith(".") &&
+      typeOf(unquote(recv), m.end) === "codeunit"
+    ) continue;
+    fileCall(m);
+  }
+  for (const m of scan(XMLPORT_CALL)) {
+    // Sol r7 #1: a quoted receiver ("Xmlport") is a variable, not the static.
+    if (code[m.index - 1] !== '"') fileCall(m);
+  }
+  const xmlports = declaredNames(scan, "Xmlport");
+  for (const m of scan(FILENAME_ACCESS)) {
+    if (xmlports.has(unquote(m.at(1)))) found.add(m.all.trim());
+  }
+  const byName = new Map(
+    PERSISTENCE_OBJECTS.map(([k, id, n]) => [n.toLowerCase(), `${k} ${id}`]),
+  );
+  for (const m of scan(NAME_REF)) {
+    for (const n of nameRefs(m.at)) {
+      const hit = byName.get(n);
+      if (hit) found.add(`${m.all.trim()} (${hit})`);
+    }
+  }
+  const byId = (text: string, kind: string, id: number) => {
+    if (PERSISTENCE_OBJECTS.some(([k, b]) => k === kind && b === id)) {
+      found.add(`${text.trim()} (${kind} ${id})`);
+    }
+  };
+  for (const [re, kind] of ID_REFS) {
+    for (const m of scan(re)) byId(m.all, kind, Number(m.at(1)));
+  }
+  for (const m of scan(OPEN_CALL)) {
+    if (/^\d+$/.test(m.at(1).trim())) byId(m.all, "table", Number(m.at(1)));
+  }
+  // The scope is a string literal, blanked in the code: read from the source.
+  for (const m of masked.matchAll(SCOPE_ATTR)) {
+    const text = src.slice(m.index, m.index + m[0].length);
+    if (/'\s*OnPrem\s*'/i.test(text)) found.add(text);
+  }
+  return [...found];
+}
+
+/**
+ * H-35 production-side rules over every production app of a workspace (the
+ * Test app never): `dependency_not_allowed` (app.json), then per .al file
+ * `unreadable` first (ruling R9), then on noise-stripped code
+ * `test_detection_ref` (banned objects by name and id, test-only types, a
+ * test subtype, call-stack and app-identity members) and
+ * `dynamic_object_access`, and `persistence_ref` (H-35 run 004 #1, r5 2.3:
+ * persistenceRefs, no grant). `allow` is the task's reviewed grant. Each reads
+ * `<rule>: <app>/<path>: <detail>`. Shipped production has no occurrence
+ * (design-r2 6.2.5), so the rules apply to every occurrence.
+ */
+export async function productionPolicyViolations(
+  dir: string,
+  apps: readonly StagedApp[],
+  allow: ProductionAllow | undefined,
+  onPrem: OnPremIndex,
+): Promise<string[]> {
+  allow ??= {};
+  const out: string[] = [];
+  // H-38 8.4 ruling (b): every interface the workspace declares (Test included).
+  const interfaces = await workspaceInterfaces(dir);
+  const allowedDeps = new Set(
+    [...PRODUCTION_DEPENDENCY_ALLOWLIST, ...allow.dependencies ?? []].map((
+      id,
+    ) => id.toLowerCase()),
+  );
+  const allowedObjects = new Set(
+    (allow.objects ?? []).map((o) => o.toLowerCase()),
+  );
+  const allowedDynamic = new Set(
+    (allow.dynamic ?? []).map((d) => d.toLowerCase()),
+  );
+  const banned = BANNED_OBJECTS.filter(([kind, id]) =>
+    !allowedObjects.has(`${kind}:${id}`)
+  );
+  const bannedByName = new Map(
+    banned.map(([kind, id, name]) => [name.toLowerCase(), `${kind} ${id}`]),
+  );
+  for (const app of apps) {
+    if (app.folder === TEST_APP) continue;
+    for (const id of app.external) {
+      if (!allowedDeps.has(id.toLowerCase())) {
+        out.push(`dependency_not_allowed: ${app.folder}/app.json: ${id}`);
+      }
+    }
+    for (const e of await listTree(join(dir, app.folder), "task")) {
+      if (!e.path.toLowerCase().endsWith(".al")) continue;
+      const where = `${app.folder}/${e.path}`;
+      const src = await Deno.readTextFile(
+        join(dir, app.folder, ...e.path.split("/")),
+      );
+      const why = unreadable(src);
+      if (why) {
+        out.push(`unreadable: ${where}: ${why}`);
         continue;
       }
-      const name = m.displays.join(", ");
-      if (m.kind !== "procedure") {
-        return refuse(`codeunit ${p.id}: added or changed ${m.kind} ${name}`);
+      const code = stripAlNoise(src);
+      const masked = maskQuoted(code);
+      const scan = scanner(code, masked);
+      const found = new Set<string>();
+      const ref = (detail: string) =>
+        found.add(`test_detection_ref: ${where}: ${detail}`);
+      for (const m of scan(NAME_REF)) {
+        for (const n of nameRefs(m.at)) {
+          const hit = bannedByName.get(n);
+          if (hit) ref(`${m.all.trim()} (${hit})`);
+        }
       }
-      if (m.names.some((n) => shippedNames.has(n))) {
-        return refuse(
-          `codeunit ${p.id}: procedure ${name} changes, moves or overloads a shipped member`,
+      const bannedId = (text: string, kind: string, id: number) => {
+        if (banned.some(([k, b]) => k === kind && b === id)) {
+          ref(`${text.trim()} (${kind} ${id})`);
+        }
+      };
+      for (const [re, kind] of ID_REFS) {
+        for (const m of scan(re)) bannedId(m.all, kind, Number(m.at(1)));
+      }
+      for (const re of [TEST_ONLY_TYPE, TEST_SUBTYPE, DETECTION_MEMBER]) {
+        const m = re.exec(masked);
+        if (m) ref(code.slice(m.index, m.index + m[0].length).trim());
+      }
+      const dynamic = (call: string, arg: string) => {
+        if (allowedDynamic.has(call.toLowerCase())) return;
+        // No argument names no object (Query.Open()).
+        if (arg.trim() === "" || LITERAL_OBJECT.test(arg.trim())) return;
+        found.add(
+          `dynamic_object_access: ${where}: ${call}(${arg.trim() || "..."})`,
         );
+      };
+      for (const m of scan(STATIC_CALL)) {
+        // Sol r7 #1: a receiver quoted in the source ("Query") is a variable,
+        // an instance call that OPEN_CALL checks, never a static one.
+        if (code[m.index - 1] === '"') continue;
+        dynamic(`${m.at(1)}.${m.at(2)}`, m.at(3));
       }
-      if (m.names.some((n) => used.has(n))) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} has a name the shipped file uses (it could rebind shipped code)`,
-        );
+      // Sol r3 #1: any receiver (a RecordRef bare, quoted, an array element
+      // or anything else): an Open with an object argument names its object.
+      for (const m of scan(OPEN_CALL)) {
+        const arg = m.at(1).trim();
+        if (arg === "") continue;
+        dynamic("RecordRef.Open", arg);
+        if (/^\d+$/.test(arg)) bannedId(m.all, "table", Number(arg));
       }
-      if (/^[ \t]*#/m.test(aSrc.slice(m.start, m.end))) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} contains a compiler directive`,
-        );
+      for (const d of persistenceRefs(src)) {
+        found.add(`persistence_ref: ${where}: ${d}`);
       }
-      if (m.attrs.length > 0) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} carries an attribute`,
-        );
+      for (const d of onPremRefs(src, onPrem, interfaces)) {
+        found.add(`onprem_ref: ${where}: ${d}`);
       }
-      if (
-        !/^(?:(?:local|internal)\s+)?procedure\s/i.test(aText.slice(m.start))
-      ) {
-        return refuse(
-          `codeunit ${p.id}: added procedure ${name} has a modifier other than local or internal`,
-        );
-      }
-      adds.push(m);
+      out.push(...found);
     }
-    // Every token outside the added procedures (section keywords such as
-    // `protected var` included) must be the shipped body's, in order.
-    const body = (txt: string, d: AlDecl, cut: Member[]) =>
-      tokenize(txt, d.start, d.end).filter((t) =>
-        !cut.some((m) => t.start >= m.start && t.start < m.end)
-      ).map((t) => t.raw).join(" ");
-    if (k !== pm.length || body(aText, a, adds) !== body(pText, p, [])) {
-      return refuse(
-        `codeunit ${p.id}: a shipped member is changed, moved or removed`,
+  }
+  return out;
+}
+
+// ---- H-38 (design 5): L3 calls by name to OnPrem members of locked objects ----
+
+/** An object named by id or by (last segment of) name, lowercase unquoted. */
+interface ObjectRef {
+  id?: number;
+  name?: string;
+}
+/** An object of an indexed kind (table, codeunit, page, report, xmlport). */
+interface Target {
+  kind: string;
+  ref: ObjectRef;
+}
+const OBJECT_REF = new RegExp(`^${NAME_CHAIN}$`);
+/** `18`, `Customer`, `"Gen. Journal Line"`, `Microsoft.Sales."Customer"`; null: does not parse. */
+function objectRef(text: string): ObjectRef | null {
+  const t = text.trim();
+  if (/^\d+$/.test(t)) return { id: Number(t) };
+  if (!OBJECT_REF.test(t)) return null;
+  return {
+    name: unquote([...t.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].at(-1)![0]),
+  };
+}
+/** A name or id as the symbols record it (`18`, `#<module>#Customer`). */
+const symbolRef = (raw: string): ObjectRef =>
+  /^\d+$/.test(raw.trim())
+    ? { id: Number(raw.trim()) }
+    : { name: raw.replace(/^#[0-9a-f]*#/i, "").toLowerCase() };
+
+/** Declared object types with the kind they are indexed under. */
+const INDEXED_TYPE: Readonly<Record<string, string>> = {
+  codeunit: "codeunit",
+  record: "table",
+  page: "page",
+  report: "report",
+  xmlport: "xmlport",
+};
+/** H-38 (5.1): `A, "B": <full type text>` (to `;`, `)` or the line end). */
+const TYPED_DECL =
+  /(?<![\w"])((?:"[^"\n]*"|[A-Za-z_]\w*)(?:\s*,\s*(?:"[^"\n]*"|[A-Za-z_]\w*))*)\s*:(?![:=])\s*([A-Za-z_][^;)\n]*)/gi;
+/** A report or query data item, an xmlport table element: its name and table. */
+const DATA_ITEM = new RegExp(
+  `\\b(?:dataitem|tableelement)\\s*\\(\\s*(${NAME_SEG})\\s*;([^)]*)\\)`,
+  "gi",
+);
+
+/**
+ * A declared type: the indexed object it names, "safe" (an AL_SYSTEM_TYPES
+ * type, or an Interface the workspace declares: 8.4 ruling a, b), or null
+ * (any other type word, an Interface of a locked package, or object type
+ * text that does not parse: unresolved).
+ */
+function typeTarget(
+  type: string,
+  interfaces: ReadonlySet<string>,
+  locked: ReadonlySet<string>,
+): Target | "safe" | null {
+  const t = type.trim().replace(/\s+temporary$/i, "");
+  const m = /^(?:array\s*\[[^\]]*\]\s*of\s+)?([A-Za-z_]\w*)\b\s*([\s\S]*)$/i
+    .exec(t);
+  if (!m) return null;
+  const word = m[1]!.toLowerCase();
+  if (word === "interface") {
+    // Self-check H4: by identity. A qualified name is safe only as exactly a
+    // workspace declaration (namespace and name); an unqualified one only when
+    // the workspace declares that name and no locked package has an interface
+    // of that name (ambiguous: fall back).
+    const text = m[2]!.trim();
+    if (!OBJECT_REF.test(text)) return null;
+    const segs = [...text.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((s) =>
+      unquote(s[0])
+    );
+    const leaf = segs.at(-1)!;
+    if (segs.length > 1) {
+      return interfaces.has(interfaceId(segs.slice(0, -1).join("."), leaf))
+        ? "safe"
+        : null;
+    }
+    return !locked.has(leaf) &&
+        [...interfaces].some((i) => i.endsWith(`|${leaf}`))
+      ? "safe"
+      : null;
+  }
+  const kind = INDEXED_TYPE[word];
+  if (!kind) return AL_SYSTEM_TYPES.has(word) ? "safe" : null;
+  const ref = objectRef(m[2]!);
+  return ref ? { kind, ref } : null;
+}
+
+/**
+ * Self-check H2: AL object-level syntax written `<word>(`: controls, actions,
+ * data items, keys, layout moves and the CalcFormula/TableRelation/
+ * DataItemTableView functions. Never a call at object level.
+ */
+const AL_STRUCTURE = new Set(
+  "field part action area group repeater grid fixed cuegroup systempart usercontrol chartpart actionref customaction fileuploadaction systemaction separator view key fieldgroup dataitem column value label labels tableelement textelement fieldelement fieldattribute textattribute filter where const sorting order lookup count exist sum average min max upperlimit addfirst addlast addafter addbefore movefirst movelast moveafter movebefore modify layout method ascending descending"
+    .split(" "),
+);
+
+const AL_KEYWORDS = new Set(
+  "if then else begin end case of while do repeat until for to downto foreach in with exit not and or xor div mod var procedure trigger local internal protected true false break continue asserterror this event"
+    .split(" "),
+);
+/**
+ * H-38 (5.2): system methods called bare (global functions and the built-in
+ * Record, Page and Report methods of an implicit receiver); never checked.
+ */
+const AL_BUILTINS = new Set(
+  [
+    "message error confirm strmenu format evaluate strsubstno strlen strpos copystr delstr insstr lowercase uppercase incstr padstr selectstr convertstr delchr maxstrlen round abs power random randomize today time workdate currentdatetime createdatetime dt2date dt2time calcdate date2dmy date2dwy dmy2date dwy2date closingdate normaldate variant2date variant2time clear clearall clearlasterror clearcollectedErrors getlasterrortext getlasterrorcode getlasterrorobject getlasterrorcallstack geterrorcallstack hascollectederrors getcollectederrors commit sleep createguid isnullguid userid companyname tenantid serialnumber guiallowed arraylen compressarray copyarray currfieldno isserviceTier rounddatetime createencryptionkey canceltask applicationarea iscollectingerrors session",
+    "get find findfirst findlast findset next insert modify modifyall delete deleteall init setrange setfilter getfilter getfilters getrangemin getrangemax reset copy copyfilter copyfilters transferfields validate testfield fielderror fieldcaption fieldname fieldno fieldactive calcfields calcsums isempty count countapprox locktable mark markedonly clearmarks setcurrentkey setascending ascending rename tablecaption tablename hasfilter filtergroup setrecfilter istemporary setloadfields addloadfields areFieldsloaded setautocalcfields recordid getposition setposition consistent changecompany currentcompany securityfiltering writepermission readpermission relation copylinks deletelinks addlink haslinks setpermissionfilter getview setview currentkey getbysystemid systemid readisolation truncate",
+    "update close settableview setrecord getrecord run runmodal lookupmode editable caption setselectionfilter saverecord activate objectid skip quit showoutput pageno newpage createtotals totalscausedby language formatregion previewmode isreadonly usereqpage",
+  ].join(" ").toLowerCase().split(/\s+/),
+);
+/**
+ * H-38 8.4 ruling (a): the built-in AL system data types, a closed list
+ * (lowercase). A receiver declared with one of these types, or one of these
+ * names used statically (`ErrorInfo.Create`, `Codeunit.Run`,
+ * `Session.LogMessage`), is resolved-safe: OnPrem scope comes only from the
+ * locked app symbols. A declared type word outside this list (and not an
+ * indexed object kind or a workspace Interface) is unresolved.
+ */
+export const AL_SYSTEM_TYPES: ReadonlySet<string> = new Set([
+  // scalar and text
+  "biginteger",
+  "bigtext",
+  "boolean",
+  "byte",
+  "char",
+  "code",
+  "date",
+  "dateformula",
+  "datetime",
+  "decimal",
+  "duration",
+  "guid",
+  "integer",
+  "label",
+  "option",
+  "secrettext",
+  "text",
+  "textbuilder",
+  "textconst",
+  "time",
+  "variant",
+  "version",
+  // collections, records by reference, streams, media
+  "blob",
+  "dictionary",
+  "fieldref",
+  "instream",
+  "keyref",
+  "list",
+  "media",
+  "mediaset",
+  "outstream",
+  "recordid",
+  "recordref",
+  // errors, notifications, dialogs
+  "dialog",
+  "errorinfo",
+  "errortype",
+  "filterpagebuilder",
+  "notification",
+  // JSON, HTTP, XML
+  "cookie",
+  "httpclient",
+  "httpcontent",
+  "httpheaders",
+  "httprequestmessage",
+  "httpresponsemessage",
+  "jsonarray",
+  "jsonobject",
+  "jsontoken",
+  "jsonvalue",
+  "xmlattribute",
+  "xmlattributecollection",
+  "xmlcdata",
+  "xmlcomment",
+  "xmldeclaration",
+  "xmldocument",
+  "xmldocumenttype",
+  "xmlelement",
+  "xmlnamespacemanager",
+  "xmlnametable",
+  "xmlnode",
+  "xmlnodelist",
+  "xmlprocessinginstruction",
+  "xmlreadoptions",
+  "xmltext",
+  "xmlwriteoptions",
+  // session, platform and app information (static receivers)
+  "companyproperty",
+  "database",
+  "datatransfer",
+  "debugger",
+  "executioncontext",
+  "executionmode",
+  "file",
+  "isolatedstorage",
+  "moduledependencyinfo",
+  "moduleinfo",
+  "navapp",
+  "numbersequence",
+  "productname",
+  "session",
+  "sessionsettings",
+  "system",
+  "taskscheduler",
+  "webserviceactioncontext",
+  // test types
+  "testaction",
+  "testfield",
+  "testfilter",
+  "testhttprequestmessage",
+  "testhttpresponsemessage",
+  "testpage",
+  "testpart",
+  "testrequestpage",
+  // object-type keywords used statically (Codeunit.Run, Report.SaveAs), and
+  // Enum (its own methods: AsInteger, Names, Ordinals, FromInteger)
+  "codeunit",
+  "enum",
+  "page",
+  "query",
+  "report",
+  "xmlport",
+]);
+
+/** H-38 8.4 ruling (b): an interface declaration `interface <name> [extends ...] {`. */
+const INTERFACE_DECL = new RegExp(
+  `(?<![\\w":])\\binterface\\s+(${NAME_SEG})\\s*(?:extends\\b[^{;]*)?\\{`,
+  "gi",
+);
+
+/** A file's `namespace A.B;` declaration. */
+const NAMESPACE_DECL = new RegExp(`\\bnamespace\\s+${NAME_CHAIN}\\s*;`, "i");
+
+/** An interface's identity: `<namespace>|<name>`, lowercase unquoted ("" for none). */
+const interfaceId = (ns: string, name: string) => `${ns}|${name}`;
+
+/** The interfaces one AL text declares, as identities (self-check H4). */
+function interfacesIn(src: string): string[] {
+  // r2 N2: the scanner's own text (comments, strings and preprocessor lines
+  // blank), and only declarations at brace depth 0.
+  const code = stripAlNoise(src, { directives: true });
+  const masked = maskQuoted(code);
+  const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
+  const depth = (at: number) => {
+    let d = 0;
+    for (let i = 0; i < at; i++) {
+      if (flat[i] === "{") d++;
+      else if (flat[i] === "}") d = Math.max(0, d - 1);
+    }
+    return d;
+  };
+  const nsm = [...masked.matchAll(new RegExp(NAMESPACE_DECL.source, "gid"))]
+    .find((m) => depth(m.index) === 0);
+  const ns = nsm
+    ? [
+      ...code.slice(nsm.indices![1]![0], nsm.indices![1]![1])
+        .matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g),
+    ].map((s) => unquote(s[0])).join(".")
+    : "";
+  return [...scanner(code, masked)(INTERFACE_DECL)]
+    .filter((m) => depth(m.index) === 0)
+    .map((m) => interfaceId(ns, unquote(m.at(1))));
+}
+
+/** H-38 8.4 ruling (b): every interface the .al files of a workspace declare, as identities. */
+export async function workspaceInterfaces(dir: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const e of await listTree(dir, "task")) {
+    if (!e.path.toLowerCase().endsWith(".al")) continue;
+    const src = await Deno.readTextFile(join(dir, ...e.path.split("/")));
+    for (const n of interfacesIn(src)) out.add(n);
+  }
+  return out;
+}
+
+/** The string literals (outside comments) in `src` from `from` to `to`. */
+function literalsIn(src: string, from: number, to: number): string[] {
+  const out: string[] = [];
+  let i = from;
+  while (i < to) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (c === "/" && d === "/") {
+      const e = src.indexOf("\n", i);
+      i = e < 0 ? to : e;
+    } else if (c === "/" && d === "*") {
+      const e = src.indexOf("*/", i + 2);
+      i = e < 0 ? to : e + 2;
+    } else if (c === "'") {
+      let j = i + 1;
+      let s = "";
+      while (j < to && src[j] !== "\n") {
+        if (src[j] === "'" && src[j + 1] === "'") {
+          s += "'";
+          j += 2;
+        } else if (src[j] === "'") break;
+        else s += src[j++];
+      }
+      out.push(s);
+      i = j + 1;
+    } else if (c === '"') {
+      const e = src.indexOf('"', i + 1);
+      i = e < 0 ? to : e + 1;
+    } else i++;
+  }
+  return out;
+}
+
+/** An object's implicit receivers (5.1, 5.2); null parts are undeterminable. */
+interface OnPremContext {
+  /** The own object as indexed (table, codeunit, page, report, xmlport); null for an extension. */
+  own: Target | null;
+  /** An extension's base object; undefined: not an extension; null: it does not parse. */
+  base: Target | null | undefined;
+  /** The implicit Rec tables outside a codeunit's OnRun; null: undeterminable. */
+  records: Target[] | null;
+  /** A codeunit's TableNo (Rec in OnRun); null: does not parse. */
+  tableNo: Target | null | undefined;
+  /** Data item and table element names, as Record variables. */
+  dataItems: Map<string, Target>;
+}
+
+/**
+ * H-38 (design 5): OnPrem members of locked objects reached by name in one
+ * readable AL file, as details: dotted calls on a typed receiver (5.1), bare
+ * names against every implicit receiver (5.2), event subscriptions (5.5);
+ * an unresolved receiver or bare name (a call result, a chain, `with`, an
+ * undeterminable implicit receiver) is banned when its name is an OnPrem name
+ * anywhere in the lock (Q2 fallback, 5.4). Matched on the noise-stripped code
+ * with quoted identifiers masked; details from the source. `interfaces`: the
+ * workspace's declared interfaces (8.4 ruling b).
+ */
+function onPremRefs(
+  src: string,
+  idx: OnPremIndex,
+  interfaces: ReadonlySet<string>,
+): string[] {
+  // Self-check H1 (r2 N1): preprocessor lines (#region <label>, #pragma, ...)
+  // blanked in the lexer's code state, same offsets, so no label word is read
+  // as begin/case/end and no comment boundary is lost.
+  const code = stripAlNoise(src, { directives: true });
+  const masked = maskQuoted(code);
+  const flat = code.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
+  const scan = scanner(code, masked);
+  const routines = routineRanges(flat);
+  const objects = declarations(src, { directives: true });
+  const found = new Set<string>();
+  const show = (from: number, to: number) =>
+    src.slice(from, to).replace(/\s+/g, " ").trim();
+  const lookup = (t: Target): { e: OnPremObject; ids: string } | null => {
+    const name = t.ref.id !== undefined
+      ? idx.byId.get(`${t.kind}:${t.ref.id}`)
+      : t.ref.name;
+    const e = name === undefined
+      ? undefined
+      : idx.objects.get(t.kind)?.get(name);
+    return e ? { e, ids: [...e.ids].sort((a, b) => a - b).join(",") } : null;
+  };
+  const decls = [...scan(TYPED_DECL)].map((m) => ({
+    index: m.index,
+    end: m.end,
+    names: [...m.at(1).matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)].map((n) =>
+      unquote(n[0])
+    ),
+    type: m.at(2),
+  }));
+  const routineAt = (at: number) =>
+    routines.find((x) => x.begin < at && at < x.end);
+  const objectAt = (at: number) =>
+    objects.find((x) => x.start <= at && at <= x.end);
+  /** The declared type text of `name` in scope at `at` (local, then global), as typeOf. */
+  // Self-check H2: outside a routine body (an object-level expression) only
+  // the object's globals are in scope.
+  const typeOf = (name: string, at: number): string | undefined => {
+    const r = routineAt(at);
+    const o = objectAt(at);
+    if (!o) return undefined;
+    const local = r &&
+      decls.find((d) =>
+        d.index >= r.start && d.index < r.begin && d.names.includes(name)
       );
+    return (local ??
+      decls.find((d) =>
+        d.index >= o.start && d.index < o.end && d.names.includes(name) &&
+        !routines.some((x) => d.index >= x.start && d.index < x.end)
+      ))?.type;
+  };
+  /** An object-level property's value (outside any routine), parsed; undefined: absent. */
+  const property = (o: AlDecl, prop: string): ObjectRef | null | undefined => {
+    const re = new RegExp(`\\b${prop}\\s*=([^;]*);`, "gid");
+    for (const m of masked.slice(0, o.end).matchAll(re)) {
+      if (
+        m.index < o.start ||
+        routines.some((x) => m.index >= x.start && m.index < x.end)
+      ) continue;
+      const r = m.indices![1]!;
+      return objectRef(code.slice(r[0], r[1]));
     }
-    code.push(...adds);
-    vars.push(...am.filter((m) => m.kind === "var"));
-    if (adds.length > 0) inserts.push({ at: p.end, procs: adds });
+    return undefined;
+  };
+  const contexts = new Map<AlDecl, OnPremContext>();
+  const contextOf = (o: AlDecl): OnPremContext => {
+    const known = contexts.get(o);
+    if (known) return known;
+    const own = INDEXED_TYPE[o.kind === "table" ? "record" : o.kind];
+    const baseKind = {
+      tableextension: "table",
+      pageextension: "page",
+      reportextension: "report",
+    }[o.kind];
+    let base: Target | null | undefined;
+    if (baseKind) {
+      let h = -1;
+      const head = new RegExp(`\\b${o.kind}\\s+0*${o.id}\\b`, "gi");
+      for (const m of flat.slice(0, o.start).matchAll(head)) h = m.index;
+      const ext = /\bextends\b([^{]*)$/i.exec(
+        masked.slice(h < 0 ? 0 : h, o.start - 1),
+      );
+      const ref = ext
+        ? objectRef(code.slice(o.start - 1 - ext[1]!.length, o.start - 1))
+        : null;
+      base = ref ? { kind: baseKind, ref } : null;
+    }
+    const dataItems = new Map<string, Target>();
+    let itemsParse = true;
+    for (const m of scan(DATA_ITEM)) {
+      if (m.index < o.start || m.index > o.end) continue;
+      const ref = objectRef(m.at(2));
+      if (ref) dataItems.set(unquote(m.at(1)), { kind: "table", ref });
+      else itemsParse = false;
+    }
+    const items = itemsParse ? [...dataItems.values()] : null;
+    const fromIndex = (
+      t: Target | null | undefined,
+      refs: (e: OnPremObject) => Set<string>,
+    ) => {
+      const hit = t ? lookup(t) : null;
+      return hit
+        ? [...refs(hit.e)].map((r): Target => ({
+          kind: "table",
+          ref: symbolRef(r),
+        }))
+        : null;
+    };
+    let records: Target[] | null = [];
+    if (o.kind === "table") {
+      records = [{
+        kind: "table",
+        ref: { name: unquote(objectName(code, o)) },
+      }];
+    } else if (o.kind === "tableextension") records = base ? [base] : null;
+    else if (o.kind === "page") {
+      const st = property(o, "SourceTable");
+      records = st === undefined
+        ? []
+        : st
+        ? [{ kind: "table", ref: st }]
+        : null;
+    } else if (o.kind === "pageextension") {
+      records = fromIndex(base, (e) => e.sourceTables);
+    } else if (o.kind === "reportextension") {
+      const inherited = fromIndex(base, (e) => e.dataItems);
+      records = inherited && items ? [...items, ...inherited] : null;
+    } else if (["report", "query", "xmlport"].includes(o.kind)) records = items;
+    const tn = o.kind === "codeunit" ? property(o, "TableNo") : undefined;
+    const c: OnPremContext = {
+      own: own
+        ? { kind: own, ref: { name: unquote(objectName(code, o)) } }
+        : null,
+      base,
+      records,
+      tableNo: tn === undefined
+        ? undefined
+        : tn
+        ? { kind: "table", ref: tn }
+        : null,
+      dataItems,
+    };
+    contexts.set(o, c);
+    return c;
+  };
+  /** Rec's tables at `at`; null: undeterminable or none (unresolved). */
+  const recordsAt = (c: OnPremContext, at: number): Target[] | null => {
+    const r = routineAt(at);
+    if (c.tableNo !== undefined) {
+      const onRun = !!r && /^trigger\s+OnRun\b/i.test(
+        flat.slice(r.start, r.begin).trim(),
+      );
+      return onRun && c.tableNo ? [c.tableNo] : null;
+    }
+    return c.records && c.records.length > 0 ? c.records : null;
+  };
+  const self = (c: OnPremContext): Target[] | null =>
+    c.base === null ? null : [c.own, c.base].filter((t): t is Target => !!t);
+  /** H-38 (5.2): every implicit receiver of a bare name at `at`; null: some part undeterminable. */
+  const implicit = (c: OnPremContext, at: number): Target[] | null => {
+    const own = self(c);
+    if (!own) return null;
+    if (c.tableNo !== undefined) {
+      const r = routineAt(at);
+      if (
+        !r || !/^trigger\s+OnRun\b/i.test(flat.slice(r.start, r.begin).trim())
+      ) {
+        return own;
+      }
+      return c.tableNo ? [...own, c.tableNo] : null;
+    }
+    return c.records ? [...own, ...c.records] : null;
+  };
+  /** H-38 (5.1): the targets of a one-segment receiver; "safe", or null (unresolved). */
+  const receiver = (
+    name: string,
+    shape: string,
+    at: number,
+  ): Target[] | "safe" | null => {
+    if (shape === "call" || shape === "paren") return null;
+    const declared = typeOf(name, at);
+    if (declared !== undefined) {
+      const t = typeTarget(declared, interfaces, idx.interfaces);
+      return t === "safe" ? "safe" : t ? [t] : null;
+    }
+    if (shape === "index") return null;
+    const c = contextOf(objectAt(at)!);
+    if (name === "rec" || name === "xrec") return recordsAt(c, at);
+    if (name === "this") return self(c);
+    const o = objectAt(at)!;
+    if (name === "currpage") {
+      return o.kind === "page"
+        ? [c.own!]
+        : o.kind === "pageextension" && c.base
+        ? [c.base]
+        : null;
+    }
+    if (name === "currreport") {
+      return o.kind === "report"
+        ? [c.own!]
+        : o.kind === "reportextension" && c.base
+        ? [c.base]
+        : null;
+    }
+    if (name === "currxmlport") return o.kind === "xmlport" ? [c.own!] : null;
+    const item = c.dataItems.get(name);
+    if (item) return [item];
+    // 8.4 ruling (a): a system type used statically (ErrorInfo.Create).
+    return AL_SYSTEM_TYPES.has(name) ? "safe" : null;
+  };
+  const check = (
+    targets: Target[] | "safe" | null,
+    member: string,
+    text: string,
+  ) => {
+    const m = unquote(member);
+    if (targets === "safe") return;
+    if (targets === null) {
+      if (idx.names.has(m)) {
+        found.add(
+          `${text} (unresolved, OnPrem name ${member.replace(/^"|"$/g, "")})`,
+        );
+      }
+      return;
+    }
+    for (const t of targets) {
+      const hit = lookup(t);
+      if (hit?.e.members.has(m)) {
+        found.add(
+          `${text} (${t.kind} ${hit.ids} ${member.replace(/^"|"$/g, "")})`,
+        );
+        return;
+      }
+    }
+  };
+  const inBody = (at: number) =>
+    routineAt(at) !== undefined && objectAt(at) !== undefined;
+  /** Inside a declaration `A: <type>` (a type position, not code). */
+  const inDecl = (at: number) => decls.some((d) => d.index <= at && at < d.end);
+  const wsBack = (j: number) => {
+    while (j >= 0 && /\s/.test(masked[j]!)) j--;
+    return j;
+  };
+  const matchOpen = (j: number, open: string, close: string) => {
+    let depth = 0;
+    for (; j >= 0; j--) {
+      if (masked[j] === close) depth++;
+      else if (masked[j] === open && --depth === 0) return j;
+    }
+    return -1;
+  };
+  /** The primary expression ending at `j`: identifier, `x[..]`, `f(..)` or `(..)`. */
+  const primary = (
+    j: number,
+  ): { start: number; name: string; shape: string } | null => {
+    j = wsBack(j);
+    let shape = "ident";
+    if (masked[j] === ")" || masked[j] === "]") {
+      const k = matchOpen(j, masked[j] === ")" ? "(" : "[", masked[j]!);
+      if (k < 0) return null;
+      shape = masked[j] === ")" ? "call" : "index";
+      j = wsBack(k - 1);
+      if (!/[\w"]/.test(masked[j] ?? "")) {
+        return { start: k, name: "", shape: "paren" };
+      }
+    }
+    let s = j;
+    if (masked[j] === '"') {
+      s = masked.lastIndexOf('"', j - 1);
+      if (s < 0) return null;
+      return { start: s, name: unquote(code.slice(s, j + 1)), shape };
+    }
+    if (!/\w/.test(masked[j] ?? "")) return null;
+    while (s > 0 && /\w/.test(masked[s - 1]!)) s--;
+    const name = masked.slice(s, j + 1).toLowerCase();
+    return { start: code[s - 1] === '"' ? s - 1 : s, name, shape };
+  };
+  // with X do: every bare name inside is unresolved (Q8, 5.3).
+  const withs: [number, number][] = [];
+  for (const m of flat.matchAll(/\bwith\b/gi)) {
+    const d = /\bdo\b/gi;
+    d.lastIndex = m.index + 4;
+    const dm = d.exec(flat);
+    if (!dm) continue;
+    let i = dm.index + 2;
+    while (/\s/.test(flat[i] ?? "")) i++;
+    const block = /^begin\b/i.test(flat.slice(i, i + 6));
+    // Self-check H3: the whole statement: an `else` closes it only when no
+    // `if` of the statement is open; repeat ... until nests like a block.
+    const re = /\b(begin|case|repeat|end|until|if|else)\b|;/gi;
+    re.lastIndex = i;
+    let depth = 0;
+    let ifs = 0;
+    let end = flat.length;
+    for (let t = re.exec(flat); t; t = re.exec(flat)) {
+      const w = (t[1] ?? ";").toLowerCase();
+      if (w === "begin" || w === "case" || w === "repeat") depth++;
+      else if (w === "until") depth = Math.max(0, depth - 1);
+      else if (w === "end") {
+        if (depth === 0) {
+          end = t.index;
+          break;
+        }
+        if (--depth === 0 && block) {
+          end = t.index + 3;
+          break;
+        }
+      } else if (depth > 0) continue;
+      else if (w === "if") ifs++;
+      else if (w === "else" && ifs > 0) ifs--;
+      else {
+        end = t.index;
+        break;
+      }
+    }
+    withs.push([i, end]);
   }
-  if (code.length === 0) {
-    return refuse("no added procedure (only comments or layout changed)");
+  /**
+   * H-38 8.4 ruling (c): `<head>.Ordinals().M` or `<head>.Names().M` whose
+   * head is an enum type (`Enum::X`), an enum value (`X::Y`) or a variable
+   * declared `Enum ...`: the call is a List, M a List method (safe). `segs`
+   * runs from the member's receiver back to the head; `p` is before the head.
+   */
+  const NOT_ENUM = new Set([
+    "database",
+    "codeunit",
+    "page",
+    "report",
+    "query",
+    "xmlport",
+    "objecttype",
+  ]);
+  const enumList = (
+    segs: { start: number; name: string; shape: string }[],
+    p: number,
+    at: number,
+  ): boolean => {
+    const [call, head] = segs;
+    if (
+      segs.length !== 2 || call!.shape !== "call" ||
+      !/^(?:ordinals|names)$/.test(call!.name) || head!.shape !== "ident"
+    ) return false;
+    if (masked[p] === ":" && masked[p - 1] === ":") {
+      const before = primary(p - 2);
+      return !!before && before.shape === "ident" &&
+        (before.name === "enum" || !NOT_ENUM.has(before.name));
+    }
+    return /^\s*enum\b/i.test(typeOf(head!.name, at) ?? "");
+  };
+  // 5.1: dotted access R.M (parens optional), the receiver the whole expression before .M.
+  for (const m of masked.matchAll(/\.\s*("[^"\n]*"|[A-Za-z_]\w*)/gd)) {
+    const dot = m.index;
+    // Self-check H2: every object-level expression too (a field or column
+    // source, a property); only type positions (declarations) are not code.
+    if (
+      !objectAt(dot) || inDecl(dot) || masked[dot - 1] === "." ||
+      masked[dot + 1] === "."
+    ) {
+      continue;
+    }
+    const r = m.indices![1]!;
+    const member = code.slice(r[0], r[1]);
+    let end = r[1];
+    if (code[end] === '"' && code[r[0] - 1] === '"') end++;
+    const first = primary(dot - 1);
+    if (!first) continue;
+    let start = first.start;
+    let p = wsBack(first.start - 1);
+    if (masked[p] === ":" && masked[p - 1] === ":") continue;
+    let chain = false;
+    const segs = [first];
+    while (masked[p] === "." && masked[p - 1] !== ".") {
+      chain = true;
+      const q = primary(p - 1);
+      if (!q) break;
+      segs.push(q);
+      start = q.start;
+      p = wsBack(q.start - 1);
+    }
+    const isEnumList = enumList(segs, p, dot);
+    // Outside a routine body, `Type::A.B."C"` (an attribute's or property's
+    // namespace-qualified object name) is no member access.
+    if (
+      !isEnumList && !inBody(dot) && masked[p] === ":" && masked[p - 1] === ":"
+    ) continue;
+    const text = show(start, end);
+    check(
+      isEnumList
+        ? "safe"
+        : chain
+        ? null
+        : receiver(first.name, first.shape, dot),
+      member,
+      text,
+    );
   }
-  let text = pSrc;
-  for (const { at, procs } of inserts.reverse()) {
-    const block = procs.map((m) =>
-      `${nl}    ${eol(aSrc.slice(m.start, m.end)).replace(/\n/g, nl)}${nl}`
-    ).join("");
-    text = text.slice(0, at) + block + text.slice(at);
+  // 5.2: bare names in call or statement position inside routine bodies, and
+  // (self-check H2) in call position in object-level expressions.
+  for (const m of masked.matchAll(/"[^"\n]*"|[A-Za-z_]\w*/g)) {
+    const at = m.index;
+    const r = routineAt(at);
+    const body = !!r && at > r.begin + 4;
+    if (!objectAt(at) || inDecl(at)) continue;
+    if (!body && routines.some((x) => x.start <= at && at < x.end)) continue;
+    const word = m[0].startsWith('"')
+      ? unquote(code.slice(at, at + m[0].length))
+      : m[0].toLowerCase();
+    if (AL_KEYWORDS.has(word)) continue;
+    const p = wsBack(at - 1);
+    if (masked[p] === "." || masked[p] === ":" && masked[p - 1] === ":") {
+      continue;
+    }
+    let n = at + m[0].length;
+    while (/\s/.test(masked[n] ?? "")) n++;
+    const call = masked[n] === "(";
+    const statement = body && !call &&
+      (masked[n] === ";" || /^(?:end|else)\b/i.test(masked.slice(n, n + 5))) &&
+      (masked[p] === ";" ||
+        /\b(?:begin|then|else|do|repeat)$/i.test(
+          masked.slice(Math.max(0, p - 5), p + 1),
+        ));
+    if (!call && !statement) continue;
+    // Object level: an attribute (`[Scope(`), a routine header, or AL
+    // structure syntax (`field(`, `where(`, ...) is no call.
+    if (
+      !body &&
+      // r2 N3 (fail closed): a structure word is skipped only unquoted and
+      // only when no locked package has an OnPrem member of that name.
+      (masked[p] === "[" ||
+        AL_STRUCTURE.has(word) && code[at - 1] !== '"' &&
+          !m[0].startsWith('"') && !idx.names.has(word) ||
+        /\b(?:procedure|trigger)$/i.test(
+          masked.slice(Math.max(0, p - 9), p + 1),
+        ))
+    ) continue;
+    const start = code[at - 1] === '"' ? at - 1 : at;
+    const len = m[0].length +
+      (start < at && code[at + m[0].length] === '"' ? 1 : 0);
+    const text = show(start, at + len);
+    // Self-check H3: under `with` every bare name, builtin-named or not, is
+    // the Q8 fallback; builtins are exempt only outside `with`.
+    if (withs.some(([a, b]) => a <= at && at < b)) {
+      check(null, text, text);
+      continue;
+    }
+    // Self-check r3: the spelling-only builtin exemption never covers a name
+    // some locked package has as an OnPrem member (the real lock has OnPrem
+    // table Update and page Init), at object level or in a routine body.
+    if (AL_BUILTINS.has(word) && !idx.names.has(word)) continue;
+    check(implicit(contextOf(objectAt(at)!), at), text, text);
   }
-  // The result must parse as the shipped members plus exactly the added ones.
-  const out = declarations(text);
-  const oText = stripAlNoise(text);
-  const counts = out.map((d) => codeunitMembers(oText, d)?.length ?? -1);
-  const want = pDecls.map((p) =>
-    codeunitMembers(pText, p)!.length +
-    (inserts.find((x) => x.at === p.end)?.procs.length ?? 0)
-  );
-  if (key(out) !== key(pDecls) || counts.join() !== want.join()) {
-    return refuse("the shipped file with the added procedures does not parse");
+  // 5.5: [EventSubscriber(ObjectType::<T>, <T>::<name or id>, '<Event>', ...)].
+  const EVENT_KIND: Readonly<Record<string, string>> = {
+    table: "table",
+    codeunit: "codeunit",
+    page: "page",
+    report: "report",
+  };
+  for (const m of masked.matchAll(/\[\s*EventSubscriber\s*\(/gi)) {
+    const { args, ranges, end } = callArgs(code, masked, m.index + m[0].length);
+    if (args.length < 3) continue;
+    const lits = literalsIn(src, ranges[2]![0], ranges[2]![1]);
+    if (args[2] !== "" || lits.length !== 1) continue;
+    const event = lits[0]!;
+    const k = /^ObjectType\s*::\s*([A-Za-z_]\w*)$/i.exec(args[0]!);
+    const kind = k ? EVENT_KIND[k[1]!.toLowerCase()] : undefined;
+    if (k && !kind) continue;
+    const a2 = /^(?:(?:Database|Codeunit|Page|Report)\s*::\s*([\s\S]+)|(\d+))$/i
+      .exec(args[1]!);
+    const ref = a2 ? (a2[2] ? { id: Number(a2[2]) } : objectRef(a2[1]!)) : null;
+    if (!kind || !ref) {
+      if (idx.events.has(event.toLowerCase())) {
+        found.add(`${show(m.index, end)} (unresolved, OnPrem name ${event})`);
+      }
+      continue;
+    }
+    const hit = lookup({ kind, ref });
+    if (hit?.e.events.has(event.toLowerCase())) {
+      found.add(`subscriber ${kind} ${hit.ids} '${event}'`);
+    }
   }
-  return { rel, judged: { src: aSrc, text: aText, code, vars }, text };
+  return [...found];
 }
 
 /** One member standing for a whole object the parser does not read (names taint its users). */
@@ -1368,7 +2839,9 @@ interface NewFile {
  * agent's edits to properties, triggers and shipped procedures are never
  * carried. Fails closed (nothing generated, a note) when a workspace object
  * is in the range, or (all agent tests excluded) when a shipped test
- * codeunit cannot be parsed. Returns the notes and the excluded codeunit ids.
+ * codeunit cannot be parsed. H-35 (ruling Q4): an edited shipped file without
+ * a test codeunit (`asWritten`, the helper) is agent code like a new file.
+ * Returns the notes and the excluded codeunit ids.
  */
 async function applyCreditRules(
   pristine: string,
@@ -1376,10 +2849,43 @@ async function applyCreditRules(
   apps: StagedApp[],
   edited: ReadonlyMap<string, string>,
   newFiles: readonly string[],
-): Promise<{ notes: string[]; excluded: number[] }> {
+  asWritten: readonly string[],
+): Promise<{ notes: string[]; excluded: number[]; rejected: Set<string> }> {
   const notes: string[] = [];
   const excluded: number[] = [];
+  /**
+   * Submitted [Test] procedures the credit rules keep from counting (Sol r1
+   * #8, r2 #4), as `<codeunit>:<procedure>` (lower case; `s<id>:` for a
+   * procedure added to shipped codeunit <id>), so none is counted twice.
+   */
+  const rejected = new Set<string>();
   const testOut = join(out, TEST_APP);
+  // Sol r3 #3: every [Test] procedure added to a shipped test codeunit, read
+  // by declaration (no member parse, so no path can skip it). The ones never
+  // extracted are credit-excluded, whatever kept them out.
+  const addedShipped = new Set<string>();
+  const extracted = new Set<string>();
+  const procName = (n: string) => n.replace(/^"|"$/g, "").toLowerCase();
+  for (const [rel, aSrc] of edited) {
+    const pDecls = declarations(
+      await Deno.readTextFile(join(pristine, TEST_APP, ...rel.split("/"))),
+    );
+    for (const a of declarations(aSrc)) {
+      const p = pDecls.find((x) => x.kind === a.kind && x.id === a.id);
+      if (!p || !isTestCodeunit(p)) continue;
+      const had = new Set(
+        [...p.body.matchAll(TEST_PROC)].map((m) => procName(m[1] ?? m[2]!)),
+      );
+      for (const m of a.body.matchAll(TEST_PROC)) {
+        const n = procName(m[1] ?? m[2]!);
+        if (!had.has(n)) addedShipped.add(`s${a.id}:${n}`);
+      }
+    }
+  }
+  const finish = () => {
+    for (const k of addedShipped) if (!extracted.has(k)) rejected.add(k);
+    return { notes, excluded, rejected };
+  };
   const shipped = await shippedTests(join(pristine, TEST_APP));
   if (shipped === null) {
     for (
@@ -1390,11 +2896,15 @@ async function applyCreditRules(
     notes.push(
       "credit rules: a shipped test codeunit could not be parsed; no agent test is run or counted",
     );
-    return { notes, excluded };
+    return finish();
   }
 
+  // Unreadable agent text never gets here: it is an unreadable_test
+  // violation (testPolicyViolations, H-35 ruling R9).
+  const agentFiles = [...newFiles, ...asWritten].sort();
+
   const fresh: NewFile[] = [];
-  for (const rel of [...newFiles].sort()) {
+  for (const rel of agentFiles) {
     const src = await Deno.readTextFile(join(testOut, ...rel.split("/")));
     const text = stripAlNoise(src);
     const f: NewFile = {
@@ -1431,7 +2941,6 @@ async function applyCreditRules(
   }
 
   const shippedEdits: Edited[] = [];
-  const helpers: Helper[] = [];
   for (const [rel, aSrc] of [...edited].sort(([a], [b]) => a < b ? -1 : 1)) {
     const where = `${TEST_APP}/${rel}`;
     if (CONDITIONAL_DIRECTIVE.test(aSrc)) {
@@ -1444,19 +2953,6 @@ async function applyCreditRules(
       join(pristine, TEST_APP, ...rel.split("/")),
     );
     const pDecls = declarations(pSrc);
-    if (!pDecls.some(isTestCodeunit)) {
-      if (pDecls.length > 0 && pDecls.every(isHelperCodeunit)) {
-        const h = prepareHelper(rel, pSrc, pDecls, aSrc, notes);
-        if (h) helpers.push(h);
-      } else {
-        notes.push(
-          `${where}: ${
-            pDecls.map((d) => `${d.kind} ${d.id}`).join(", ")
-          } is not a plain helper codeunit (not a codeunit, or a Subtype other than Normal); the shipped file is restored (added procedures not kept)`,
-        );
-      }
-      continue;
-    }
     const aDecls = declarations(aSrc);
     for (const a of aDecls) {
       if (!pDecls.some((p) => p.kind === a.kind && p.id === a.id)) {
@@ -1485,31 +2981,9 @@ async function applyCreditRules(
     [
       ...fresh.map((f) => f.judged),
       ...shippedEdits.map((e) => e.judged),
-      ...helpers.map((h) => h.judged),
     ],
     shipped,
   );
-  // H-21: a helper file is kept only when none of its added procedures is a
-  // violator (agent code calling a rejected one is a violator by name).
-  for (const h of helpers) {
-    const where = `${TEST_APP}/${h.rel}`;
-    const bad = h.judged.code.filter((m) => why.has(m));
-    if (bad.length > 0) {
-      notes.push(
-        `${where}: ${
-          bad.map((m) => `added procedure ${m.displays[0]}: ${why.get(m)}`)
-            .join("; ")
-        }; the shipped file is restored (added procedures not kept)`,
-      );
-      continue;
-    }
-    await Deno.writeTextFile(join(testOut, ...h.rel.split("/")), h.text);
-    notes.push(
-      `${where}: added procedures kept: ${
-        h.judged.code.map((m) => m.displays[0]).join(", ")
-      }`,
-    );
-  }
   // A rejected member that cannot be removed (a table or extension trigger,
   // an unparsed codeunit) can fire from any test (an Insert(true), a
   // RecordRef): fail closed, no agent test runs or counts.
@@ -1525,7 +2999,7 @@ async function applyCreditRules(
         stuck.map(([m, w]) => `${m.displays[0]}: ${w}`).join("; ")
       }; it cannot be removed, so no agent test is run or counted`,
     );
-    return { notes, excluded };
+    return finish();
   }
 
   for (const f of fresh) {
@@ -1535,6 +3009,7 @@ async function applyCreditRules(
         const w = why.get(m);
         if (!w) continue;
         cuts.push(m);
+        if (m.test) rejected.add(`${d.id}:${m.names[0]}`);
         notes.push(
           `${TEST_APP}/${f.rel} codeunit ${d.id}: ${
             m.displays[0]
@@ -1586,7 +3061,7 @@ async function applyCreditRules(
 
   const found = shippedEdits.map((e) => extractFrom(e, why, notes))
     .filter((x): x is Extracted => x !== null);
-  if (found.length === 0) return { notes, excluded };
+  if (found.length === 0) return finish();
   const range = HARNESS_EXTRACTED_TEST_RANGE;
   const taken: string[] = [];
   for (const app of apps) {
@@ -1602,7 +3077,7 @@ async function applyCreditRules(
         taken.join("; ")
       }); no added test procedure is extracted`,
     );
-    return { notes, excluded };
+    return finish();
   }
   found.sort((a, b) => a.from - b.from);
   for (const [i, x] of found.entries()) {
@@ -1632,8 +3107,9 @@ async function applyCreditRules(
     }
     await validatedDest(join(dest, ".."));
     await Deno.writeTextFile(dest, text);
+    for (const t of x.tests) extracted.add(`s${x.from}:${procName(t)}`);
   }
-  return { notes, excluded };
+  return finish();
 }
 
 /**
@@ -1695,25 +3171,47 @@ async function shippedCollisions(
   pristineTest: string,
   out: string,
   newFiles: readonly string[],
+  /** H-35 Sol r2 #2: the helper as written; its own shipped objects are not collisions. */
+  asWritten: readonly string[] = [],
 ): Promise<string[]> {
+  /** kind#id -> label, and kind:name -> the kind#id of the shipped object of that name. */
   const shipped = new Map<string, string>();
+  const named = new Map<string, string>();
   for (const e of await listTree(pristineTest, "task", { optional: true })) {
     if (!e.path.toLowerCase().endsWith(".al")) continue;
     const src = await Deno.readTextFile(join(pristineTest, e.path));
     const text = stripAlNoise(src);
     for (const d of declarations(src)) {
-      const label = `${d.kind} ${d.id} ${objectName(text, d)}`;
-      shipped.set(`${d.kind}#${d.id}`, label);
-      shipped.set(`${d.kind}:${objectName(text, d).toLowerCase()}`, label);
+      shipped.set(
+        `${d.kind}#${d.id}`,
+        `${d.kind} ${d.id} ${objectName(text, d)}`,
+      );
+      named.set(
+        `${d.kind}:${objectName(text, d).toLowerCase()}`,
+        `${d.kind}#${d.id}`,
+      );
     }
   }
   const v: string[] = [];
-  for (const rel of newFiles) {
+  for (const rel of [...newFiles, ...asWritten]) {
     const src = await Deno.readTextFile(join(out, TEST_APP, ...rel.split("/")));
     const text = stripAlNoise(src);
+    const own = asWritten.includes(rel)
+      ? new Set(
+        declarations(
+          await Deno.readTextFile(join(pristineTest, ...rel.split("/"))),
+        ).map((d) => `${d.kind}#${d.id}`),
+      )
+      : new Set<string>();
     for (const d of declarations(src)) {
-      const hit = shipped.get(`${d.kind}#${d.id}`) ??
-        shipped.get(`${d.kind}:${objectName(text, d).toLowerCase()}`);
+      // Sol r3 #2: the helper's own shipped object keeps its id, but its name
+      // must still not be another shipped object's.
+      const self = `${d.kind}#${d.id}`;
+      const byName = named.get(
+        `${d.kind}:${objectName(text, d).toLowerCase()}`,
+      );
+      const hit = (own.has(self) ? undefined : shipped.get(self)) ??
+        (byName && byName !== self ? shipped.get(byName) : undefined);
       if (hit) {
         v.push(
           `${TEST_APP}/${rel}: ${d.kind} ${d.id} collides with shipped ${hit}`,

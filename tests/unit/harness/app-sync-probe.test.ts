@@ -3,6 +3,7 @@ import { stub } from "@std/testing/mock";
 import type { ContainerProvider } from "../../../src/container/interface.ts";
 import { ContainerProviderRegistry } from "../../../src/container/registry.ts";
 import { main } from "../../../scripts/harness/app-sync-probe.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("app-sync-probe --list-only: strictly read-only (no setup, prenuke, publish, harness or warmup); the kept apps are listed", async () => {
   const calls: string[] = [];
@@ -45,7 +46,7 @@ Deno.test("app-sync-probe --list-only: strictly read-only (no setup, prenuke, pu
     },
   } as unknown as ContainerProvider;
   ContainerProviderRegistry.register("fake-probe", () => provider);
-  const out = await Deno.realPath(await Deno.makeTempDir());
+  const out = await Deno.realPath(await testTempDir());
   const lines: string[] = [];
   const log = stub(console, "log", (...a: unknown[]) => {
     lines.push(a.join(" "));

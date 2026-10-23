@@ -1,0 +1,23 @@
+v: 1
+partial_credit:
+  weights:
+    "87040/SignInKeepsToken": 1
+    "87040/NewTokenReplaces": 1
+    "87040/FailedRegistrationKeepsNewToken": 1
+    "87040/PartnersSeeNewToken": 1
+    "87040/BlankTokenRefused": 1
+    "87040/RegistrationWritesKeptOnSuccess": 1
+    "87040/ForgetDropsToken": 1
+    "87040/ForgetUndoneWithItsTransaction": 1
+    "87040/NoTokenBeforeFirstSignIn": 1
+    "87040/SignInFieldAsSpecified": 1
+    "87040/SignInWithoutSetupRow": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/event-before-store: { partial_credit: 0.8181818181818182 }
+  naive/no-commit: { partial_credit: 0.9090909090909091 }
+  naive/session-holder: { partial_credit: 0.9090909090909091 }
+  naive/stamp-before-commit: { partial_credit: 0.9090909090909091 }
+  naive/try-registration: { partial_credit: 0.8181818181818182 }

@@ -1,0 +1,28 @@
+v: 1
+partial_credit:
+  weights:
+    "87160/CheckoutMirrorOnly": 1
+    "87160/ReturnMirrorOnly": 1
+    "87160/BothMirrors": 1
+    "87160/StopReturnKeepsCheckout": 1
+    "87160/OffMirrorsQueueNothing": 1
+    "87160/SessionWideMirror": 1
+    "87160/NewProceduresDirect": 1
+    "87160/StopWhenOffAndRestart": 1
+    "87160/LegacyReturnDeskStops": 1
+    "87160/DeskReturnLegacyStops": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70429, procedure: SetCheckoutMirror, signature: "(On: Boolean)", file: Integration/src/DeskMirror.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 87160, procedures: [BothMirrors, StopReturnKeepsCheckout, SessionWideMirror, StopWhenOffAndRestart] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/one-flag: { partial_credit: 0.4 }
+  naive/unbind-on-any-off: { partial_credit: 0.8 }
+  naive/old-subscribers-kept: { partial_credit: 0.1 }
+  naive/plain-merged: { partial_credit: 0.1 }
+  naive/legacy-return-kept: { partial_credit: 0.8 }

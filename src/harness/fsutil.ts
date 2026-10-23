@@ -18,6 +18,18 @@ import { basename, dirname, isAbsolute, join, resolve } from "@std/path";
 import { ValidationError } from "../errors.ts";
 import { hashTree, isTaskBuildArtifact } from "./hash.ts";
 
+/**
+ * H-41 (section 11): a temp sweep removes only temps older than this, so a
+ * live publisher's temp (another process on the same results root) survives.
+ */
+export const TEMP_SWEEP_AGE_MS = 3_600_000;
+
+/** H-41: true when `p` was last written at least `maxAgeMs` ago (a vanished entry: false). */
+export async function olderThan(p: string, maxAgeMs: number): Promise<boolean> {
+  const at = (await Deno.lstat(p).catch(() => null))?.mtime?.getTime();
+  return at !== undefined && Date.now() - at >= maxAgeMs;
+}
+
 export const FREEZE_VIOLATIONS_FILE = ".cg-freeze-violations.txt";
 export const MAX_SCAN_BYTES = 64 * 1024 * 1024;
 
@@ -805,12 +817,17 @@ async function freezeInner(i: FreezeInput): Promise<Frozen> {
 export async function sweepWorkspaceTemp(
   resultsRoot: string,
   privateRoot: string,
+  /** H-41 (section 11): shared workspace temps only once older than this. */
+  maxAgeMs = TEMP_SWEEP_AGE_MS,
 ): Promise<number> {
   let removed = 0;
-  const sweep = async (dir: string, match: (name: string) => boolean) => {
+  const sweep = async (
+    dir: string,
+    match: (name: string) => boolean | Promise<boolean>,
+  ) => {
     try {
       for await (const e of Deno.readDir(dir)) {
-        if (!match(e.name)) continue;
+        if (!await match(e.name)) continue;
         await Deno.remove(join(dir, e.name), { recursive: true });
         removed++;
       }
@@ -818,7 +835,13 @@ export async function sweepWorkspaceTemp(
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     }
   };
-  await sweep(join(resultsRoot, "workspaces"), (n) => n.startsWith(".tmp-"));
+  const workspaces = join(resultsRoot, "workspaces");
+  await sweep(
+    workspaces,
+    async (n) =>
+      n.startsWith(".tmp-") && await olderThan(join(workspaces, n), maxAgeMs),
+  );
+  // The private root is this environment's alone (its lock is held): all of it.
   await sweep(join(privateRoot, "freeze"), () => true);
   return removed;
 }

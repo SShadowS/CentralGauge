@@ -1,13 +1,29 @@
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { join } from "@std/path";
-import { BcLane } from "../../../src/harness/bc-lane.ts";
+import { ContainerError } from "../../../src/errors.ts";
+import {
+  BcLane,
+  dirBuildCache,
+  PoolLostError,
+} from "../../../src/harness/bc-lane.ts";
 import { freezeWorkspace, safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { oracleHash, resolveRefapp } from "../../../src/harness/identity.ts";
 import { JudgmentRecordSchema } from "../../../src/harness/records.ts";
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import { judge, SCORER_SUITE } from "../../../src/harness/verdict.ts";
-import { deployedSource, FakeBc, result } from "./fake-bc.ts";
+import {
+  deployedSource,
+  FakeBc,
+  faultAt,
+  OK_RESET,
+  result,
+} from "./fake-bc.ts";
 import {
   addTestAuthoringTask,
   IDS,
@@ -15,6 +31,8 @@ import {
   rental,
   write,
 } from "./refapp-fixture.ts";
+import { noOnPrem } from "./onprem-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const suite = (cu: number, procs: string[] = ["PriceIsTen"], extra = "") =>
   `codeunit ${cu} "Suite ${cu}"\n{\n    Subtype = Test;\n${extra}\n${
@@ -84,7 +102,7 @@ async function setup(
       "naive/crashy": suite(80103),
     }, opts),
   );
-  const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+  const tmp = async () => await Deno.realPath(await testTempDir());
   const staged = await stageRefappTask({
     repoRoot: repo.root,
     task,
@@ -119,7 +137,8 @@ async function setup(
     symbolIds: new Set([IDS.assert]),
     workDir: await tmp(),
     lock: { store: repo.symbolStore, packages: repo.symbols },
-    deploy: { ledgerRoot: join(results, "bc-ledger") },
+    onPrem: await noOnPrem({ store: repo.symbolStore, packages: repo.symbols }),
+    deploy: { ledgerRoot: join(results, "bc-ledger"), reset: OK_RESET },
   };
 }
 
@@ -161,6 +180,36 @@ Deno.test("mutant_kill: reference-tests is the positive artifact; the real HX-00
       ["mutant:off-by-one", "PriceIsTen", "fail", "assertion"],
     ],
   );
+});
+
+Deno.test("mutant_kill (H-27 r2 #4): test-authoring judgments of different submissions score the same with the shared build cache on and off; later ones reuse the task-fixed builds", async () => {
+  const subs = [
+    { suite: "reference-tests" },
+    { suite: "naive/weak" },
+    { tests: [80104] },
+    { suite: "naive/crashy" },
+  ];
+  const mutants = { "off-by-one": "exit(9);", "zero": "exit(0);" };
+  const fake = bc();
+  fake.nondeterministic = true;
+  const lane = new BcLane(fake, ["C1", "C2"]);
+  const cache = dirBuildCache(await testTempDir());
+  const strip = (j: { verdict: string; scorers: unknown }) => [
+    j.verdict,
+    j.scorers,
+  ];
+  const on: number[] = [];
+  for (const s of subs) {
+    const off = await judge(lane, await setup(mutants, s));
+    const hit = await judge(lane, {
+      ...(await setup(mutants, s)),
+      buildCache: cache,
+    });
+    assertEquals(strip(hit.judgment), strip(off.judgment), JSON.stringify(s));
+    on.push(hit.log.per_app_compiles);
+    assert(hit.log.per_app_compiles <= off.log.per_app_compiles);
+  }
+  assert(on.slice(1).every((n) => n < on[0]!), `later reuse: ${on}`);
 });
 
 Deno.test("mutant_kill: each named naive suite fails (weak survives, runtime errors are not kills)", async () => {
@@ -228,14 +277,16 @@ Deno.test("mutant_kill (H-04): a mutant build that crashes (no diagnostic) is in
 
 Deno.test("mutant_kill (H-04): a reference build that crashes (no diagnostic) is unscored, never a build failure", async () => {
   const fake = bc();
-  fake.crashFor = (p) =>
-    p.includes("/apps-reference/") && p.endsWith("/Rental");
+  // H-35: A_ref compiles only its Test app (production is G' manifest).
+  fake.crashFor = (p) => p.includes("/apps-reference/") && p.endsWith("/Test");
   const { judgment, log } = await judge(
     new BcLane(fake, ["C1"]),
     await setup({ "off-by-one": "exit(9);" }, { suite: "reference-tests" }),
   );
   assertEquals(judgment.verdict, "unscored");
-  assertEquals(sc(judgment, "build").passed, null);
+  // H-35: build is G' (built before A_ref); the crash unscores mutant_kill.
+  assertEquals(sc(judgment, "build").passed, true);
+  assertEquals(sc(judgment, "mutant_kill").passed, null);
   assertStringIncludes(log.error ?? "", "no compiler diagnostic");
 });
 
@@ -533,8 +584,9 @@ Deno.test("mutant_kill: no pass_to_pass means no trusted control: a thrown agent
 
 Deno.test("mutant_kill: the scorer version is bumped for the agent-suite rules", () => {
   // 2: agent-suite rules; 3: tests extracted from shipped codeunits (M4-17a);
-  // 4: added helper procedures kept (H-21).
-  assertEquals(SCORER_SUITE["mutant_kill"], "4");
+  // 4: added helper procedures kept (H-21). 5: helper merge, shipped wins (H-30).
+  // 6: the helper as written (H-35). 7: the onprem_ref gate (H-38).
+  assertEquals(SCORER_SUITE["mutant_kill"], "7");
 });
 
 // ---- M4-17a: tests added to a SHIPPED test codeunit (the HX-002 pilot shape) ----
@@ -591,7 +643,11 @@ Deno.test("mutant_kill (M4-17a): tests added to a shipped codeunit are extracted
       },
     }),
   );
-  assertEquals(log.notes, []);
+  // H-35: the production manifest digest is the only note.
+  assertEquals(
+    log.notes.filter((n) => !n.startsWith("production manifest: ")),
+    [],
+  );
   assertEquals(judgment.scorers.map((s) => [s.name, s.passed]), [
     ["build", true],
     ["pass_to_pass", true],
@@ -677,10 +733,13 @@ Deno.test("mutant_kill (M4-17a): only edits to shipped procedures, or only uncou
 });
 
 Deno.test("scorer suite (M4-17a): mutant_kill and pass_to_pass are bumped for tests extracted from shipped codeunits", () => {
-  // Bumped again by H-21 (added helper procedures kept): 4 and 3.
+  // Bumped again by H-21 (added helper procedures kept): 4 and 3; pass_to_pass
+  // again by H-26 (agent-added test reruns): 4; both by H-30 (helper merge): 5, 5;
+  // both by H-35 (helper as written; pass_to_pass shipped rows on G): 6, 6;
+  // both by H-38 (the onprem_ref gate): 7, 7.
   assertEquals([SCORER_SUITE["mutant_kill"], SCORER_SUITE["pass_to_pass"]], [
-    "4",
-    "3",
+    "7",
+    "7",
   ]);
 });
 
@@ -788,3 +847,183 @@ Deno.test("mutant_kill (M4-17a run 002, R1): trusted platform dispatch (JQE-styl
     "the clean dispatch test still compiles, runs and counts",
   );
 });
+
+// ---- H-35 S1.4 (design-r2 1, 4.4): test-authoring G' first, build on G' ----
+
+Deno.test("H-35: test-authoring: an agent Test that does not compile fails mutant_kill only; build and pass_to_pass are decided on G'", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: { "Test/src/Broken.Test.al": "COMPILE_ERROR" },
+  });
+  const { judgment } = await judge(new BcLane(bc(), ["C1"]), input);
+  JudgmentRecordSchema.parse(judgment);
+  assertEquals(sc(judgment, "build").passed, true);
+  assertEquals(sc(judgment, "pass_to_pass").passed, true);
+  assert(sc(judgment, "pass_to_pass").tests.length > 0);
+  assertEquals(sc(judgment, "mutant_kill").passed, false);
+  assert(
+    sc(judgment, "mutant_kill").tests.length > 0 &&
+      sc(judgment, "mutant_kill").tests.every((t) =>
+        t.target === "reference" && t.failure === "compile"
+      ),
+  );
+});
+
+Deno.test("H-35: test-authoring: a Test-side violation fails mutant_kill only; pass_to_pass is still decided on G'", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: {
+      "Test/src/Dup.Test.al":
+        `codeunit 80010 "Dup"\n{\n    Subtype = Test;\n}\n`,
+    },
+  });
+  const { judgment, log } = await judge(new BcLane(bc(), ["C1"]), input);
+  assertEquals(sc(judgment, "build").passed, true);
+  assertEquals(sc(judgment, "pass_to_pass").passed, true);
+  assertEquals(sc(judgment, "mutant_kill").passed, null);
+  assertStringIncludes(log.violations.join("\n"), "collides with shipped");
+});
+
+Deno.test("H-35: test-authoring: G' deploys the pristine Test app, never an agent file", async () => {
+  const seen: string[] = [];
+  const fake = bc();
+  const inner = fake.script;
+  fake.script = (cu, deployed, container) => {
+    if (cu === 80010) seen.push(deployedSource(deployed, "CGR Test"));
+    return inner(cu, deployed, container);
+  };
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+    edits: { "Test/src/Extra.Test.al": suite(80130) },
+  });
+  await judge(new BcLane(fake, ["C1"]), input);
+  assertEquals(seen.length, 1);
+  assert(!seen[0]!.includes("80130") && !seen[0]!.includes("80100"));
+});
+
+// ---- H-35 S2.4: test-authoring deployment records ----
+
+Deno.test("H-35 S2.4: test-authoring records G', A_ref, A_0 and every A_m; G' and A_ref publish the same production", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+  });
+  const { log } = await judge(new BcLane(bc(), ["C1"]), input);
+  assertEquals(log.deployments!.map((d) => d.hold), [
+    "G'",
+    "A_ref",
+    "A_0",
+    "A_m:off-by-one",
+  ]);
+  const production = (d: NonNullable<typeof log.deployments>[0]) =>
+    d.apps.filter((x) => x.role === "candidate" && x.name !== "CGR Test")
+      .map((x) => [x.id, x.build_key, x.file_sha256]);
+  assertEquals(
+    production(log.deployments![0]!),
+    production(log.deployments![1]!),
+  );
+});
+
+Deno.test("H-35 S3: every test-authoring deployment (G', A_ref, A_0, each A_m) is preceded by its own reset on its container", async () => {
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+  });
+  const { log } = await judge(new BcLane(bc(), ["C1"]), input);
+  assertEquals(
+    log.resets!.map((r) => [r.container, r.ok]),
+    log.deployments!.map((d) => [d.container, true]),
+  );
+  assertEquals(log.resets!.length, 4);
+});
+
+Deno.test("H-35 orch Sol r1 #5: G' (test-authoring) gets the pristine-Test check too: compiler drift is a harness bug", async () => {
+  class Drifting extends FakeBc {
+    n = 0;
+    override harnessCompilerIdentity(_c: string): Promise<string> {
+      return Promise.resolve(`compiler-${this.n++}`);
+    }
+  }
+  const input = await setup({ "off-by-one": "exit(9);" }, {
+    suite: "reference-tests",
+  });
+  const base = bc();
+  const drifting = new Drifting(base.script);
+  await assertRejects(
+    () => judge(new BcLane(drifting, ["C1"]), input),
+    Error,
+    "harness bug: G's Test build key",
+  );
+});
+
+// H-41 (design-final 5): the test-authoring catch sites. A PoolLostError
+// leaves judge(); genuine infra at the same call stays unscored there.
+
+const lost = () =>
+  new PoolLostError(
+    new ContainerError("gone", "C1", "test"),
+    ["C1"],
+    { C1: { state: "departed", reason: "not running" } },
+    false,
+  );
+const infra = () => new ContainerError("SOAP request timed out", "C1", "test");
+const MUTANTS = { "off-by-one": "exit(9);" };
+
+Deno.test("H-41 (5) verdict.ts agentSuiteBc catch: a PoolLostError from an agent suite run propagates out of judge, never rewrapped as infra", async () => {
+  const fake = bc((cu) => {
+    if (cu === 80106) throw lost();
+    return result({});
+  });
+  const input = await setup(MUTANTS, {
+    edits: { "Test/src/Agent80106.Test.al": suite(80106) },
+  });
+  await assertRejects(
+    () => judge(new BcLane(fake, ["C1", "C2"]), input),
+    PoolLostError,
+  );
+});
+
+for (
+  const site of [
+    {
+      name: "pass_to_pass (G')",
+      n: 1,
+      infra: (j: Parameters<typeof sc>[0]) => {
+        assertEquals(sc(j, "pass_to_pass").passed, null);
+        assertEquals(sc(j, "mutant_kill").passed, null);
+      },
+    },
+    {
+      name: "mutant_kill reference run",
+      n: 2,
+      infra: (j: Parameters<typeof sc>[0]) =>
+        assertEquals(sc(j, "mutant_kill").passed, null),
+    },
+    {
+      name: "mutant_kill mutant loop",
+      n: 3,
+      infra: (j: Parameters<typeof sc>[0]) =>
+        assert(
+          sc(j, "mutant_kill").tests.some((t) =>
+            t.target === "mutant:0" && t.failure === "infra"
+          ),
+        ),
+    },
+  ]
+) {
+  Deno.test(`H-41 (5) verdict.ts ${site.name} catch: a PoolLostError propagates out of judge; genuine infra there is unscored`, async () => {
+    const art = { suite: "reference-tests" };
+    await assertRejects(
+      async () =>
+        judge(
+          faultAt(new BcLane(bc(), ["C1", "C2"]), "exclusive", site.n, lost),
+          await setup(MUTANTS, art),
+        ),
+      PoolLostError,
+    );
+    const { judgment } = await judge(
+      faultAt(new BcLane(bc(), ["C1", "C2"]), "exclusive", site.n, infra),
+      await setup(MUTANTS, art),
+    );
+    assertEquals(judgment.verdict, "unscored");
+    site.infra(judgment);
+  });
+}

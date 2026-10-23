@@ -13,10 +13,12 @@ import {
   testCodeunits,
 } from "../../../src/harness/verdict-workspace.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const SHIPPED =
   `codeunit 80010 "CGR Shipped Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure ShippedPasses()\n    begin\n        Assert.AreEqual(10, Rental.Price(), 'price');\n    end;\n}\n`;
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 
 async function pristineDir(): Promise<string> {
   const d = await tmp();
@@ -68,6 +70,7 @@ const rebuild = async (p: string, a: string, productionFrom?: string) =>
     artifact: a,
     out: join(await tmp(), "verdict"),
     symbolIds: SYM,
+    onPrem: NO_ONPREM,
     productionFrom,
   });
 
@@ -171,7 +174,11 @@ Deno.test("app.json: identity changes are violations, compiler settings stay tru
     p,
     await artifactFrom(p, { "Core/app.json": JSON.stringify(settings) }),
   );
-  assertEquals(v2.violations, []);
+  // H-35 (R2): a production dependency on a test framework is a policy
+  // violation; the merge below still takes the agent's dependencies.
+  assertEquals(v2.violations, [
+    `dependency_not_allowed: Core/app.json: ${IDS.assert}`,
+  ]);
   const merged = JSON.parse(
     await Deno.readTextFile(join(v2.dir, "Core/app.json")),
   );

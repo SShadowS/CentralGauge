@@ -7,6 +7,7 @@ import {
   probeExitCode,
   runThenExport,
 } from "../../../scripts/harness/backend-probe.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /** A sandbox that ran to exit 0 and was cleaned up. */
 const OK = {
@@ -63,7 +64,7 @@ Deno.test("backend-probe args: --image and --route (M3-08) resolve the route's h
 });
 
 Deno.test("backend-probe args: --enforced, --command-file (JSON string array) and --withhold-token", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const f = join(dir, "cmd.json");
     await Deno.writeTextFile(
@@ -97,7 +98,7 @@ Deno.test("backend-probe args: --enforced, --command-file (JSON string array) an
 });
 
 Deno.test("backend-probe args: a command file that is not a non-empty string array is refused", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const f = join(dir, "cmd.json");
     for (const bad of ["[]", "[1]", "{}", '"x"']) {
@@ -191,8 +192,8 @@ Deno.test({
     "backend-probe mount: a real dir under the root passes; a junction at or under it is refused (M9-01a run 002)",
   ignore: Deno.build.os !== "windows",
   fn: async () => {
-    const root = await Deno.makeTempDir();
-    const outside = await Deno.makeTempDir();
+    const root = await testTempDir();
+    const outside = await testTempDir();
     try {
       const ok = join(root, "spike", "probe");
       await Deno.mkdir(join(ok, "sub"), { recursive: true });
@@ -235,7 +236,7 @@ Deno.test({
 });
 
 Deno.test("backend-probe proxy log export: allowed-host lines only, denied targets reduced to counts (M9-01a run 002)", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const src = join(dir, "egress.jsonl");
     const secret = "sk-ant-oat01-secretvalue0123456789";

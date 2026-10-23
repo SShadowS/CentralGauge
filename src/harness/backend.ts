@@ -31,6 +31,7 @@ import {
   buildApps,
   type BuildCache,
   changedApps,
+  CLOUD_POLICY,
   deployAndTest,
   type DeployContext,
   dirBuildCache,
@@ -519,6 +520,8 @@ export class Backend {
       approvedRoots: string[];
       workRoot: string;
       ops: BackendOps;
+      /** H-27: the run's shared build cache (agent and judge); default a per-execution one, dropped with the grant. */
+      buildCache?: BuildCache;
       /** Container-facing addresses the server may bind (the nat gateway; loopback in tests). */
       allowedHosts: string[];
       bodyTimeoutMs?: number;
@@ -942,9 +945,10 @@ export class Backend {
         requestId,
         workDir,
         signal,
-        buildCache: dirBuildCache(
-          join(this.o.workRoot, st.g.executionId, "build-cache"),
-        ),
+        buildCache: this.o.buildCache ??
+          dirBuildCache(
+            join(this.o.workRoot, st.g.executionId, "build-cache"),
+          ),
       };
       const r = op === "compile"
         ? await this.o.ops.compile(ctx, apps)
@@ -1162,6 +1166,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           candidateApps: ctx.apps,
           changed,
           lock: ctx.grant.lock,
+          versionPlan: "backend",
         });
         const r = await buildApps(lane.bc, c, {
           srcDir: ctx.snapshot,
@@ -1172,6 +1177,7 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
           signal: ctx.signal,
           cache: ctx.buildCache,
           graph: ctx.apps,
+          policy: CLOUD_POLICY,
         });
         // H-04b: a crash reroutes, and is infra (503), never a failed build.
         throwIfCrashed(r, c, "candidate");
@@ -1214,6 +1220,8 @@ export function defaultBackendOps(lane: BcLane): BackendOps {
         lock: ctx.grant.lock,
         signal: ctx.signal,
         cache: ctx.buildCache,
+        versionPlan: "backend",
+        policy: CLOUD_POLICY,
       });
       const compiled = prep.built.filter((b) => b.attempted).map((b) =>
         b.folder

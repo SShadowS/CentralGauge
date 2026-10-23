@@ -7,6 +7,7 @@ import {
   stampResultsFile,
 } from "../../../src/ingest/run-exclusion.ts";
 import { canonicalJSON } from "../../../src/ingest/canonical.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /**
  * `centralgauge runs exclude` / `runs include`: the signed admin POST and the
@@ -22,7 +23,7 @@ const REASON = "host OOM during evaluation";
 const PRIVATE_KEY = new Uint8Array(32).fill(7);
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-run-exclusion-" });
+  const dir = await testTempDir({ prefix: "cg-run-exclusion-" });
   try {
     await fn(dir);
   } finally {

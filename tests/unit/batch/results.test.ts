@@ -45,6 +45,7 @@ import {
   createMockTaskExecutionContext,
   createMockTaskManifest,
 } from "../../utils/test-helpers.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const VARIANT_ID = "anthropic/claude-haiku-4-5";
 const RUN_ID = "run-fin-001";
@@ -243,7 +244,7 @@ async function setupRun(): Promise<{
   contexts: Map<string, TaskExecutionContext>;
   state: BatchRunState;
 }> {
-  const output = await Deno.makeTempDir({ prefix: "cg-batch-finalize-" });
+  const output = await testTempDir({ prefix: "cg-batch-finalize-" });
   const dir = runDir(output, RUN_ID);
   await ensureDir(join(dir, "attempts"));
   await writePromptInputs(dir, baseExtras());

@@ -23,6 +23,7 @@ import {
   partialText,
   renderReport,
 } from "../../../src/harness/report.ts";
+import { SCORER_SUITE } from "../../../src/harness/verdict.ts";
 import { loadTraces } from "../../../src/harness/trace-metrics.ts";
 import { type TraceEvent, writeTrace } from "../../../src/harness/trace.ts";
 import {
@@ -250,7 +251,12 @@ Deno.test("renderReport: no solved task shows n/a", async () => {
 
 Deno.test("buildReport: mixed scorer versions in one comparison fail closed", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const fp2 = await scorerFingerprint(v2);
   const [j0, ...rest] = base.judgments;
   await assertRejects(
@@ -271,7 +277,12 @@ Deno.test("buildReport: mixed scorer versions in one comparison fail closed", as
 
 Deno.test("buildReport: mixed valid scorer fingerprints are refused and named", async () => {
   const base = await records();
-  const v2 = { build: "2", test: "7" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "2",
+    fail_to_pass: "1",
+    mutant_kill: "3",
+  };
   const fp2 = await scorerFingerprint(v2);
   const last = base.judgments.length - 1;
   const err = await assertRejects(
@@ -292,7 +303,12 @@ Deno.test("buildReport: mixed valid scorer fingerprints are refused and named", 
 
 Deno.test("buildReport: a superseded judgment of another scorer is not selected", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const older = judgment(base.campaign, base.executions[0]!, false, {
     scorer_versions: v2,
     scorer_fingerprint: await scorerFingerprint(v2),
@@ -432,7 +448,12 @@ async function twoVariants(): Promise<CampaignRecord> {
 
 Deno.test("buildReport: scorer fingerprints are checked across all arms, not per pair", async () => {
   const c = await twoVariants();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const fp2 = await scorerFingerprint(v2);
   // The baseline has no selected judgment; each variant is on its own scorer.
   const executions = ["plain", "skills", "skills2"].map((arm) =>
@@ -656,7 +677,7 @@ const CAPS = {
  * `invalidRepeat` 2 swaps the repeats of skills' invalid and no-trace rows.
  */
 async function tracedRecords(invalidRepeat = 1) {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = await campaign({ repeats: 2 });
   type Kind = "complete" | "partial" | "invalid" | "none";
   const rows: Array<[string, string, number, Kind, TraceEvent[]]> = [
@@ -1942,6 +1963,7 @@ import {
   writeMeasureRecord,
 } from "../../../src/harness/measures.ts";
 import { loadReportLogs } from "../../../src/harness/report.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 function measureFor(
   recs: CampaignRecords,
@@ -1967,7 +1989,12 @@ function measureFor(
 
 Deno.test("buildReport (M11-12 review): a measure record of a superseded judgment is ignored, not a refusal", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const older = judgment(base.campaign, base.executions[0]!, false, {
     scorer_versions: v2,
     scorer_fingerprint: await scorerFingerprint(v2),
@@ -1996,7 +2023,7 @@ Deno.test("buildReport (M11-12 review): a measure record of a superseded judgmen
 
 Deno.test("loadReportLogs (M11-12): reads measure records of the given fingerprint, else the current one", async () => {
   const recs = await records();
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const j = recs.judgments[0]!;
   const pinned = H("f");
   await writeMeasureRecord(root, await measureFor(recs, j, pinned));
@@ -2015,7 +2042,12 @@ Deno.test("loadReportLogs (M11-12): reads measure records of the given fingerpri
 
 Deno.test("buildReport (M11-12 r2): a counted judgment's record filed under a superseded key is refused, not dropped", async () => {
   const base = await records();
-  const v2 = { build: "2" };
+  const v2 = {
+    build: "1",
+    pass_to_pass: "1",
+    fail_to_pass: "1",
+    mutant_kill: "2",
+  };
   const older = judgment(base.campaign, base.executions[0]!, false, {
     scorer_versions: v2,
     scorer_fingerprint: await scorerFingerprint(v2),
@@ -2149,4 +2181,128 @@ Deno.test("buildReport (H-18): the declared p_value test is the one testContrast
     ValidationError,
     "declared test",
   );
+});
+
+// ---- H-35 S2.5: scoring summary and the task descriptor ----
+
+Deno.test("H-35 S2.5 buildReport: the oracle descriptor reaches record validation; a v1 descriptor mismatch refuses the report", async () => {
+  const recs = await records();
+  const seen: string[] = [];
+  const desc = {
+    kind: "bugfix" as const,
+    scorers: ["build", "pass_to_pass"],
+    pass_to_pass: [],
+    fail_to_pass: null,
+    mutants: [],
+    production_allow: null,
+    recovered_from: null,
+  };
+  await assertRejects(
+    () =>
+      buildReport(recs, {
+        resamples: 50,
+        descriptor: (h) => {
+          seen.push(h);
+          return Promise.resolve(desc);
+        },
+      }),
+    ValidationError,
+    "!= expected",
+  );
+  assert(seen.length > 0);
+});
+
+Deno.test("H-35 S2.5 buildReport: per arm scoring summary (v1 fields unavailable), rendered with its populations and policy line", async () => {
+  const r = await buildReport(await records(), { resamples: 50 });
+  assertEquals(r.scoring!.map((s) => [s.arm, s.total, s.judged, s.legacy]), [
+    ["plain", 2, 2, 2],
+    ["skills", 2, 2, 2],
+  ]);
+  assertEquals(r.scoring![0]!.policy.unavailable, 2);
+  assertEquals(r.scoring![0]!.g.unavailable, 2);
+  assertEquals(r.scoring![0]!.composite, { passed: 1, total: 2 });
+  const text = stripAnsiCode(renderReport(r));
+  assertStringIncludes(text, "Scoring (H-35");
+  assertStringIncludes(
+    text,
+    "plain: policy: 0 failed, 0 compliant, 2 unavailable (v1)",
+  );
+  assertStringIncludes(
+    text,
+    "G passes / G measured (conditional on G measured): 0/0",
+  );
+  assertStringIncludes(text, "composite passes / total: 1/2");
+  assertStringIncludes(text, "build: pass 1, fail 1");
+});
+
+Deno.test("H-35 orch Sol r1 #4: the report's applicable denominators come from the trusted descriptors over planned cells; without a descriptor store they are unknown", async () => {
+  const desc = {
+    kind: "bugfix" as const,
+    scorers: ["build"],
+    pass_to_pass: [],
+    fail_to_pass: null,
+    mutants: [],
+    production_allow: null,
+    recovered_from: null,
+  };
+  const r = await buildReport(await records(), {
+    resamples: 50,
+    descriptor: () => Promise.resolve(desc),
+  });
+  assertEquals(r.scoring![0]!.applicable, { build: 2, agent_tests: 2 });
+  assertEquals(r.scoring![0]!.applicability_unknown, 0);
+  assertStringIncludes(
+    stripAnsiCode(renderReport(r)),
+    "applicable (planned cells): build 2, agent_tests 2",
+  );
+  const bare = await buildReport(await records(), { resamples: 50 });
+  assertEquals(bare.scoring![0]!.applicability_unknown, 2);
+});
+
+// ---- H-35 S3.3: one environment per report ----
+
+Deno.test("H-35 S3.3: a report whose counted v2 judgments mix env_fp is refused; v1 judgments (env_fp unavailable) never make a mix", async () => {
+  const base = await records();
+  const fp = await scorerFingerprint(SCORER_SUITE);
+  // Valid v2 judgments under the current suite, the environment by `env`.
+  const asV2 = (
+    j: CampaignRecords["judgments"][number],
+    env: string,
+  ): CampaignRecords["judgments"][number] => {
+    const passed = j.verdict === "pass";
+    return {
+      ...j,
+      v: 2,
+      scorer_versions: SCORER_SUITE,
+      scorer_fingerprint: fp,
+      scorers: [{ name: "build", passed, state: "measured", tests: [] }],
+      policy: { passed: true, violations: [] },
+      provenance: {
+        harness_commit: null,
+        production_manifest: null,
+        env_fp: env,
+      },
+    };
+  };
+  const one = {
+    ...base,
+    judgments: base.judgments.map((j) => asV2(j, "a".repeat(64))),
+  };
+  const judging = { ...campaignJudging(one.campaign), scorer: fp };
+  // One environment: reported.
+  await buildReport(one, { resamples: 50, judging });
+  const mixed = {
+    ...base,
+    judgments: base.judgments.map((j, i) =>
+      asV2(j, (i % 2 ? "a" : "b").repeat(64))
+    ),
+  };
+  await assertRejects(
+    () => buildReport(mixed, { resamples: 50, judging }),
+    ValidationError,
+    "mixes environments",
+  );
+  // All v1: env_fp unavailable, no mix.
+  const r = await buildReport(base, { resamples: 50 });
+  assert(r.scoring !== undefined);
 });

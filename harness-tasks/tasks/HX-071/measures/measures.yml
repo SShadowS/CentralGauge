@@ -1,0 +1,19 @@
+v: 1
+partial_credit:
+  weights:
+    "86880/AcceptedDamageRegistered": 1
+    "86880/RefusedDamageStoredPending": 1
+    "86880/RefusedCheckWritesNothing": 1
+    "86880/CheckSeesDamageBeforeStoring": 1
+    "86880/LaterFailureKeepsNothing": 1
+    "86880/NoInsurerAppAccepts": 1
+    "86880/TwoDamagesOneVehicle": 1
+    "86880/LongRefusalCut": 1
+  hidden_regressions:
+    - "86880/RegisterDamageAsToday"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/commit-before-check: { partial_credit: 0.75 }
+  naive/run-without-result: { partial_credit: 0.5 }
+  naive/try-function-check: { partial_credit: 0.5 }

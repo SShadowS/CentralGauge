@@ -37,6 +37,7 @@ import {
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { FakeDocker, parseRunArgs, type RunIO } from "./fake-docker.ts";
 import { tempDir } from "./temp-dirs.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const TOKEN = "tok-0123456789abcdef";
 const tmp = async () =>
@@ -1030,7 +1031,7 @@ Deno.test({
 });
 
 Deno.test("publishRedacted redacts patterns in a serialized raw log, trace and UTF-16LE stderr (exact secrets first)", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const key = `sk-ant-oat01-${"B".repeat(40)}`;
   const tok = "s".repeat(20);
   const raw = JSON.stringify({
@@ -1084,7 +1085,7 @@ Deno.test("publishRedacted redacts patterns in a serialized raw log, trace and U
 Deno.test("publishRedacted: a capture cut inside a pattern token leaves no prefix of 20 chars or more", async () => {
   // Accepted ceiling: a cut tail shorter than the pattern minimum is not a complete key and is left as is.
   // The minimum counts every char after "sk-ant-", including "oat01-" (6 chars): 6 + 14 = 20 is redacted, 6 + 13 = 19 is not.
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(dir, "a.txt"),
     `x sk-ant-oat01-${"D".repeat(14)}`,
@@ -1386,7 +1387,7 @@ Deno.test("image-read orphans (M10-08c): swept with their owner's namespace; a r
 });
 
 Deno.test("captureStream: bytes reach the capture file while the child still runs", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const path = join(dir, "out.txt");
   const file = await Deno.open(path, { write: true, createNew: true });
   // The child cannot print END until the test creates the release file.

@@ -6,6 +6,7 @@ import {
 } from "../../../src/ingest/capture.ts";
 import type { ContainerInspection } from "../../../src/container/docker-inspect.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 /**
  * Executor-resolved profile fields `invocationSnapshot` now requires
@@ -189,7 +190,7 @@ Deno.test("environment manifest THROWS when a harness input is missing (capture 
   // above) — so every caller of `buildEnvironmentManifest` MUST wrap the
   // call in its own try/catch rather than let a bench-time ingest abort on
   // it (`ingestBenchResults` in `cli/commands/bench-command.ts` does this).
-  const emptyRoot = await Deno.makeTempDir({ prefix: "cg-no-harness-" });
+  const emptyRoot = await testTempDir({ prefix: "cg-no-harness-" });
   const mock = createCommandMock();
   try {
     installCleanGitMock(mock);
@@ -265,7 +266,7 @@ Deno.test("environment manifest reports a clean tree and null sha when git fails
 });
 
 Deno.test("promptTemplateDigest is deterministic and sensitive to a template's content", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-prompt-digest-" });
+  const dir = await testTempDir({ prefix: "cg-prompt-digest-" });
   try {
     await Deno.mkdir(`${dir}/templates`);
     // Only 2 of the 5 fixed template names are present in this synthetic
@@ -295,10 +296,10 @@ Deno.test("promptTemplateDigest is deterministic and sensitive to a template's c
 });
 
 Deno.test("promptTemplateDigest hashes a missing template as a distinct marker from an empty one", async () => {
-  const dirMissing = await Deno.makeTempDir({
+  const dirMissing = await testTempDir({
     prefix: "cg-prompt-digest-missing-",
   });
-  const dirEmpty = await Deno.makeTempDir({
+  const dirEmpty = await testTempDir({
     prefix: "cg-prompt-digest-empty-",
   });
   try {

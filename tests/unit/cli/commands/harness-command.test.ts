@@ -7,7 +7,7 @@ import {
 } from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
   type CellCliOptions,
@@ -18,11 +18,13 @@ import {
   harnessJudgeFixture,
   harnessJudgePending,
   harnessMeasure,
+  harnessPairing,
   harnessQualify,
   harnessRejudge,
   harnessReport,
   harnessRun,
   harnessSymbolsLock,
+  parseCoordLease,
   parseRerunCell,
   publicationLockDir,
   registerHarnessCommand,
@@ -30,14 +32,24 @@ import {
 } from "../../../../cli/commands/harness-command.ts";
 import {
   backendAddress,
+  baselineCreate,
   EGRESS_MARKER,
   egressMode,
+  envCheck,
   type EnvDeps,
   type EnvOptions,
   openHarnessEnv,
   openPlanEnv,
+  recoverContainer,
+  type ResetFor,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
+import {
+  claimRecord,
+  findRecords,
+  type NewRecord,
+  recordFile,
+} from "../../../../src/harness/quarantine.ts";
 import {
   BACKEND_PORT,
   cellEgressProblems,
@@ -76,7 +88,9 @@ import { writeVerdictLog } from "../../../../src/harness/verdict.ts";
 import { sha256Hex } from "../../../../src/harness/hash.ts";
 import {
   type ExecutionRecord,
+  type JudgmentRecord,
   scorerFingerprint,
+  verdictOf,
 } from "../../../../src/harness/records.ts";
 import {
   measureFingerprint,
@@ -95,7 +109,19 @@ import {
   benchLockPath,
   readBenchLock,
 } from "../../../../src/utils/bench-lock.ts";
-import { FakeBc } from "../../harness/fake-bc.ts";
+import { FakeBc, OK_RESET } from "../../harness/fake-bc.ts";
+import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
+import { poolBlocked } from "../../../../src/harness/coord-lease.ts";
+import {
+  createBaseline,
+  readInstanceManifest,
+  renderEnvCheck,
+} from "../../../../src/harness/environment.ts";
+import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
+import {
+  type FsDiffEntry,
+  goldenReset,
+} from "../../../../src/harness/reset.ts";
 import {
   ADMIN_GROUPS_CSV,
   CC_MAIN_URL,
@@ -119,9 +145,12 @@ import {
 } from "../../../../src/harness/sandbox.ts";
 import { __setContextListerForTests } from "../../../../src/container/docker-context.ts";
 import { createCommandMock } from "../../../utils/command-mock.ts";
+import { ContainerHealthMonitor } from "../../../../src/health/monitor.ts";
+import { runCell } from "../../../../src/harness/execution.ts";
 import {
   CATALOG,
   ccBehavior,
+  cellFor,
   fakeEgress,
   makeEnv,
   mockImageBehavior,
@@ -135,12 +164,17 @@ import {
   ValidationError,
 } from "../../../../src/errors.ts";
 import { exists } from "../../../../src/harness/fsutil.ts";
+import { OnPremIndexError } from "../../../../src/harness/onprem-symbols.ts";
+import { noOnPrem } from "../../harness/onprem-fixture.ts";
+import { FP, poolWorld, until } from "../../harness/pool-fixture.ts";
+import { loadPairing } from "../../../../src/harness/judgment-report.ts";
 import { RecordStore } from "../../../../src/harness/records.ts";
 import {
   campaign,
   CAMPAIGN_ID,
   execution,
   judgment,
+  storeDescriptor,
 } from "../../harness/fixtures.ts";
 
 async function write(root: string, rel: string, text: string) {
@@ -159,7 +193,7 @@ async function git(root: string, ...args: string[]) {
 }
 
 async function repo(ids = ["HX-001"]): Promise<string> {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
   await git(root, "config", "user.name", "t");
@@ -246,7 +280,7 @@ Deno.test("validateHarness: broken experiment or unknown model fails loudly", as
 });
 
 async function storeWithOneCell(): Promise<string> {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   const store = new RecordStore(dir);
   const c = await campaign();
   await store.writeCampaign(c);
@@ -264,7 +298,7 @@ const OPTS = {
 };
 
 Deno.test("harnessReport: newest campaign from the store, loud when none, bad options refused", async () => {
-  const empty = await Deno.makeTempDir();
+  const empty = await testTempDir();
   await assertRejects(
     () => harnessReport("skills-vs-plain", { resultsDir: empty, ...OPTS }),
     CentralGaugeError,
@@ -432,7 +466,7 @@ Deno.test("validateHarness: lists every problem, not only the first", async () =
 });
 
 Deno.test("validateHarness: a missing task dir is a problem that names it, experiments still checked", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await write(root, "harness/experiments/x.yml", "id: x\n");
   const err = await assertRejects(
     () => validateHarness(root),
@@ -667,6 +701,67 @@ Deno.test("validateHarness: the catalog is read even with no experiments", async
 
 // ---- M1-24: cell, judge-fixture, images build, symbols lock ----
 
+/**
+ * H-35 run 004 #4: the golden-o09-v2 lineage with an nst_config section, in a
+ * temp dir with its sidecars (until lane-ops' v2 carries the section).
+ */
+async function v2Lineage(): Promise<string> {
+  const src = resolve("infra/harness-reset/lineages");
+  const dir = await Deno.realPath(await testTempDir());
+  const j = JSON.parse(
+    await Deno.readTextFile(join(src, "golden-o09-v2.json")),
+  );
+  j.nst_config ??= {
+    digest_version: 1,
+    path:
+      "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service\\CustomSettings.config",
+    exclude_keys: ["PublicWebBaseUrl"],
+    sha256: "e".repeat(64),
+    keys: 251,
+  };
+  for (const f of [j.inventory.path, j.content_root.path]) {
+    await Deno.copyFile(join(src, f), join(dir, f));
+  }
+  await Deno.writeTextFile(join(dir, "golden-o09-v2.json"), JSON.stringify(j));
+  return join(dir, "golden-o09-v2.json");
+}
+
+/**
+ * The production mechanism with nothing reaching a container: its reset is
+ * faked and its live NST config digest equals the lineage's.
+ */
+const testResetFor: ResetFor = (lineagePath, lineage) => ({
+  ...goldenReset({
+    repoRoot: ".",
+    lineagePath,
+    lineage,
+    dockerEnv: {},
+    spawn: () =>
+      Promise.resolve({
+        code: 0,
+        stdout: `NST_CONFIG ${lineage.nst_config?.sha256 ?? ""}`,
+      }),
+  }),
+  reset: OK_RESET.reset,
+});
+
+/** H-35 run 004 Sol r1 H5: a fake Docker container id, one per (case-insensitive) name. */
+const fakeId = (c: string) =>
+  [...new TextEncoder().encode(c.toLowerCase())]
+    .map((b) => b.toString(16).padStart(2, "0")).join("").padEnd(64, "0")
+    .slice(0, 64);
+
+/** H-35 run 004 Sol r2 N1: plant a record as another owner would (create-new, its own token). */
+async function plantRecord(
+  dir: string,
+  r: Omit<NewRecord, "token" | "host"> & { token?: string },
+  o: { recover?: boolean } = {},
+): Promise<string> {
+  const token = r.token ?? crypto.randomUUID();
+  assert(await claimRecord(dir, { host: "OTHER", ...r, token }, o));
+  return token;
+}
+
 function deps(
   order: string[],
   lock?: () => never,
@@ -675,6 +770,15 @@ function deps(
 ): EnvDeps {
   const docker = new FakeDocker();
   docker.owned = ["cg-harness-dead-beef"];
+  // H-35 run 004 #3: never the real coord root (absent until a test writes).
+  const quarantineDir = join(trackTempDir(Deno.makeTempDirSync()), "q");
+  // H-41 (7): a coord root with no lease held (coord leases fail closed).
+  const coordRoot = trackTempDir(Deno.makeTempDirSync());
+  Deno.writeTextFileSync(
+    join(coordRoot, "coord.json"),
+    JSON.stringify({ campaign: "harness-test" }),
+  );
+  Deno.mkdirSync(join(coordRoot, "leases"));
   const listOwned = docker.listOwned.bind(docker);
   docker.listOwned = (o) => {
     // M10-08c run 003: the fake lists every owner alike; the bare hostname
@@ -705,6 +809,14 @@ function deps(
         dispose: () => Promise.resolve(),
       });
     },
+    inspect: () => new FakeBc(),
+    quarantineDir: () => quarantineDir,
+    coordRoot: () => coordRoot,
+    // H-41 (6): the `auto` pool's allocation and Docker's running flag.
+    allocatedAll: () => Promise.resolve([]),
+    running: () => Promise.resolve(true),
+    containerId: (c) => Promise.resolve(fakeId(c)),
+    resetFor: testResetFor,
     resolveHost: () => {
       order.push("host");
       return Promise.resolve("127.0.0.1");
@@ -715,8 +827,22 @@ function deps(
       return { getState: () => ({ containers: [] }), record: () => {} };
     },
     verifyEgress: verify,
+    // H-38: the fixture store holds no real symbol package; an empty index of its lock.
+    admitOnPrem: (l) => noOnPrem(l),
   };
 }
+
+Deno.test("openHarnessEnv (H-38 Q4): a symbol store the OnPrem index cannot be read from refuses the run before the bench lock, any sweep and recovery", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  const { admitOnPrem: _, ...real } = deps(order);
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), real),
+    OnPremIndexError,
+    "not a NAVX package",
+  );
+  assertEquals(order, []);
+});
 
 const envOpts = (t: TestEnv, containers = ["Cronus281"]) => ({
   repoRoot: t.repo.root,
@@ -766,7 +892,7 @@ async function writeCatalog(t: TestEnv) {
 }
 
 Deno.test("openHarnessEnv: refused containers first, then lock, sweep, containers, health monitor, backend, recovery; release last", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   await assertRejects(
     () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus28"]), deps(order)),
@@ -799,7 +925,7 @@ Deno.test("openHarnessEnv: refused containers first, then lock, sweep, container
 });
 
 Deno.test("openHarnessEnv: a container outside the campaign allocation is refused before the lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const d = deps(order);
   d.allocated = (c) =>
@@ -815,7 +941,7 @@ Deno.test("openHarnessEnv: a container outside the campaign allocation is refuse
 });
 
 Deno.test("openHarnessEnv: a task without an oracle app does not stop the start; the removal allowlist is never env-wide", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await write(
     t.repo.tasksDir,
     "HX-002/task.yml",
@@ -825,12 +951,13 @@ Deno.test("openHarnessEnv: a task without an oracle app does not stop the start;
   await write(t.repo.tasksDir, "HX-002/correct/Rental/src/R.al", "x");
   const h = await openHarnessEnv(envOpts(t), deps([]));
   // Owned ids come from each grant's and judgment's trusted roots (M1-16), never from the env.
-  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot"]);
+  // H-35 S3: the env also carries the judges' reset mechanism (no allowlist).
+  assertEquals(Object.keys(h.env.deploy), ["ledgerRoot", "reset"]);
   await h.close();
 });
 
 Deno.test("openHarnessEnv: a held bench lock stops before any docker call", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const held = () => {
     throw new BenchLockHeldError(null, "results/.bench-running.json");
@@ -902,7 +1029,7 @@ Deno.test("cellGate: credential-bearing arms need enforcement, or --supervised a
 });
 
 Deno.test("harnessCell: a mock arm runs unattended with the variant from --qualify-manifest", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   const manifest = join(t.env.privateRoot, "qualify-manifest.json");
@@ -944,7 +1071,7 @@ Deno.test("harnessCell: a mock arm runs unattended with the variant from --quali
 });
 
 Deno.test("harnessCell: one supervised cell; the reservation lands in the shared ledger", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const r = await harnessCell(
     "cc-sonnet-plain",
@@ -966,7 +1093,7 @@ Deno.test("harnessCell: one supervised cell; the reservation lands in the shared
 });
 
 Deno.test("harnessCell: Ctrl+C stops the sandbox at once and the attempt is recorded", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   let fire: () => void = () => {};
   t.docker.behavior = async (call, io) => {
@@ -995,7 +1122,7 @@ Deno.test("harnessCell: Ctrl+C stops the sandbox at once and the attempt is reco
 });
 
 Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; variants and revisions follow the manifest", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await git(t.repo.root, "add", ".");
   await git(t.repo.root, "commit", "-q", "-m", "tasks");
   await git(t.repo.root, "tag", "refapp-v1-rc1");
@@ -1021,6 +1148,7 @@ Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; vari
     "build",
     "pass_to_pass",
     "fail_to_pass",
+    "agent_tests",
   ]);
   const prov = JSON.parse(
     await Deno.readTextFile(join(dir, "provenance.json")),
@@ -1067,7 +1195,7 @@ Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; vari
 });
 
 Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets the base and is verified by layers", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await assertRejects(
     () => harnessImagesBuild("base", { root }, docker),
@@ -1198,8 +1326,8 @@ Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets t
 });
 
 Deno.test("harnessSymbolsLock: writes a strict lock the identity accepts", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
-  const from = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
+  const from = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(from, "Microsoft_System_28.0.0.0.app"),
     "sys",
@@ -1218,7 +1346,7 @@ Deno.test("harnessSymbolsLock: writes a strict lock the identity accepts", async
 });
 
 Deno.test("harnessImagesBuild: a base tag that moves between inspect and build cannot change the base", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
@@ -1284,7 +1412,7 @@ function planDeps(
 }
 
 Deno.test("run --dry-run prints the plan without a lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const order: string[] = [];
@@ -1309,7 +1437,7 @@ Deno.test("run --dry-run prints the plan without a lock", async () => {
 });
 
 Deno.test("run refuses a credential-bearing arm unless the verified state is authorized; a marker failing verification stops", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await write(
     t.harnessRoot,
@@ -1372,7 +1500,7 @@ repeats: 1
 });
 
 Deno.test("H-13: run --unverified-egress-ok passes the egress refusal (dry run too); a blank reason or an enforced marker is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await write(
     t.harnessRoot,
@@ -1437,7 +1565,7 @@ repeats: 1
 });
 
 Deno.test("H-13: `harness run --unverified-egress-ok <reason>` records the override on the campaign and its executions; absent, nothing is recorded", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1477,7 +1605,7 @@ Deno.test("H-13: `harness run --unverified-egress-ok <reason>` records the overr
 });
 
 Deno.test("qualify judges every manifest variant at its rev and indexes judgment, provenance, expected and actual verdicts", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1540,14 +1668,39 @@ Deno.test("qualify judges every manifest variant at its rev and indexes judgment
   }
 });
 
-async function staleJudgment(t: TestEnv, executionId: string) {
-  const [j] = await t.env.store.judgments(executionId);
-  const versions = { ...j!.scorer_versions, build: "0-stale" };
-  await t.env.store.writeJudgment({
-    ...j!,
-    id: crypto.randomUUID(),
+/**
+ * H-35: a judgment as a pre-H-35 harness wrote it: v1, a suite that really
+ * shipped (default the H-30 one), no policy, provenance or scorer state, no
+ * agent_tests, the v1 verdict.
+ */
+async function asLegacy(
+  j: JudgmentRecord,
+  versions: Record<string, string> = {
+    build: "3",
+    pass_to_pass: "5",
+    fail_to_pass: "3",
+    mutant_kill: "5",
+  },
+): Promise<JudgmentRecord> {
+  const { policy: _p, provenance: _q, ...rest } = j;
+  const scorers = j.scorers.filter((s) => s.name !== "agent_tests").map((
+    { state: _s, ...s },
+  ) => s);
+  return {
+    ...rest,
+    v: 1,
+    scorers,
+    verdict: verdictOf(scorers),
     scorer_versions: versions,
     scorer_fingerprint: await scorerFingerprint(versions),
+  };
+}
+
+async function staleJudgment(t: TestEnv, executionId: string) {
+  const [j] = await t.env.store.judgments(executionId);
+  await t.env.store.writeJudgment({
+    ...await asLegacy(j!),
+    id: crypto.randomUUID(),
     // Newer than the original judgment, older than any rejudge that follows.
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
@@ -1570,7 +1723,7 @@ async function campaignWithStaleJudgment(t: TestEnv) {
 }
 
 Deno.test("rejudge adds one judgment per execution whose scorer fingerprint is not current, and none on a second call", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { es } = await campaignWithStaleJudgment(t);
   const count = async () =>
@@ -1596,20 +1749,21 @@ async function unscoredJudgments(
   old = 0,
 ) {
   const [j] = await t.env.store.judgments(executionId);
-  const stale = { ...j!.scorer_versions, build: "0-stale" };
   for (let i = 0; i < n; i++) {
     const at = new Date(Date.now() + i).toISOString();
+    // The oldest `old` under a legacy suite (H-35: as a pre-H-35 harness
+    // wrote them), the rest under the current one.
+    const base = i < old ? await asLegacy(j!) : j!;
     await t.env.store.writeJudgment({
-      ...j!,
+      ...base,
       id: crypto.randomUUID(),
-      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      // A v2 judgment's unscored scorer carries its state (H-35 S2.1).
+      scorers: base.scorers.map((s) => ({
+        ...s,
+        passed: null,
+        ...(s.state ? { state: "unscored" as const } : {}),
+      })),
       verdict: "unscored",
-      ...(i < old
-        ? {
-          scorer_versions: stale,
-          scorer_fingerprint: await scorerFingerprint(stale),
-        }
-        : {}),
       started_at: at,
       ended_at: at,
     });
@@ -1619,7 +1773,7 @@ async function unscoredJudgments(
 Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only under the current scorer suite", async () => {
   // [unscored judgments, of them under an old suite, executions due]
   for (const [n, old, due] of [[3, 3, 1], [3, 1, 1]] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     await writeCatalog(t);
     t.env.supervised = false;
     t.docker.behavior = mockImageBehavior();
@@ -1642,7 +1796,7 @@ Deno.test("rejudge (H-04b b): unscored judgments count toward the budget only un
 });
 
 Deno.test("rejudge --force (H-04b run 003): after a --rerun of a budget-terminal cell, --force admits the rerun the report counts and refuses the planned execution", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1699,16 +1853,34 @@ Deno.test("rejudge --force (H-04b run 003): after a --rerun of a budget-terminal
 
 Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under the current scorer suite", async () => {
   for (const current of [true, false]) {
-    const dir = await Deno.makeTempDir();
+    const dir = await testTempDir();
     const store = new RecordStore(dir);
-    const c = await campaign();
+    // H-35 S2.5: a v2 judgment's task preimage is stored (the report checks).
+    const c = await campaign({
+      oracles: { "HX-001": await storeDescriptor(dir, "HX-001", ["build"]) },
+    });
     await store.writeCampaign(c);
     const e = execution(c);
     await store.writeExecution(e);
+    // Under the current suite a judgment is v2 (H-35 S2.1).
     const suite = current
       ? {
+        v: 2 as const,
         scorer_versions: SCORER_SUITE,
         scorer_fingerprint: await currentScorerFingerprint(),
+        // H-35 S2.5: the effective set of a change task under this suite.
+        scorers: ["build", "agent_tests"].map((name) => ({
+          name,
+          passed: null,
+          state: "unscored" as const,
+          tests: [],
+        })),
+        policy: { passed: true, violations: [] },
+        provenance: {
+          harness_commit: null,
+          production_manifest: null,
+          env_fp: null,
+        },
       }
       : {};
     for (let i = 0; i < 3; i++) {
@@ -1730,7 +1902,7 @@ Deno.test("harnessReport (H-04b b): a cell is terminal on the budget only under 
 
 Deno.test("rejudge (H-04b): an execution with 2 non-forced unscored judgments is due; with 3 it hit the rejudge budget and is not", async () => {
   for (const [n, due] of [[2, 1], [3, 0]] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     await writeCatalog(t);
     t.env.supervised = false;
     t.docker.behavior = mockImageBehavior();
@@ -1907,7 +2079,7 @@ Deno.test("measure (M11-07): two scored cells, one already measured under the cu
 });
 
 Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is rejudged with the current suite on the original artifact, task and oracle", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -1920,17 +2092,15 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const c = (await t.env.store.campaigns("contract"))[0]!;
   const e = (await t.env.store.executions(c.id))[0]!;
   const [orig] = await t.env.store.judgments(e.id);
-  // The suite as recorded before M4-17a.
-  const before = {
-    ...orig!.scorer_versions,
-    mutant_kill: "2",
-    pass_to_pass: "1",
-  };
+  // The suite as recorded before M4-17a (the second suite that shipped).
   await t.env.store.writeJudgment({
-    ...orig!,
+    ...await asLegacy(orig!, {
+      build: "1",
+      pass_to_pass: "1",
+      fail_to_pass: "1",
+      mutant_kill: "2",
+    }),
     id: crypto.randomUUID(),
-    scorer_versions: before,
-    scorer_fingerprint: await scorerFingerprint(before),
     started_at: new Date().toISOString(),
     ended_at: new Date().toISOString(),
   });
@@ -1941,7 +2111,9 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
   const js = await t.env.store.judgments(e.id);
   const latest = js.reduce((a, b) => a.started_at >= b.started_at ? a : b);
   assertEquals(latest.scorer_versions, SCORER_SUITE);
-  assertEquals(latest.scorer_versions["mutant_kill"], "4");
+  // 5 since H-30 (helper merge, shipped wins); 6 since H-35 (helper as
+  // written); 7 since H-38 (the onprem_ref gate).
+  assertEquals(latest.scorer_versions["mutant_kill"], "7");
   assertEquals(latest.scorer_fingerprint, await currentScorerFingerprint());
   assertEquals(
     [
@@ -1961,7 +2133,7 @@ Deno.test("rejudge (M4-17a): a judgment from before the mutant_kill 3 bump is re
 });
 
 Deno.test("rejudge refuses when the restaged visible inputs differ", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { es } = await campaignWithStaleJudgment(t);
   await Deno.writeTextFile(
@@ -1977,7 +2149,7 @@ Deno.test("rejudge refuses when the restaged visible inputs differ", async () =>
 });
 
 Deno.test("rejudge asks for confirmation unless --yes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { es } = await campaignWithStaleJudgment(t);
   const asked: string[] = [];
@@ -2006,7 +2178,7 @@ Deno.test("rejudge asks for confirmation unless --yes", async () => {
 });
 
 Deno.test("images build lists the resulting digest and labels", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
@@ -2037,7 +2209,7 @@ Deno.test("images build lists the resulting digest and labels", async () => {
 });
 
 Deno.test("rejudge: an oracle-only change makes every judged execution due, judged against the new oracle", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -2126,7 +2298,7 @@ Deno.test("harnessReport: efficiency and slices read the store's published host 
 });
 
 Deno.test("openHarnessEnv: the lane comes from CG_LANE, never a placeholder", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const prev = Deno.env.get("CG_LANE");
   try {
     Deno.env.set("CG_LANE", "lane-ops");
@@ -2163,7 +2335,7 @@ async function scenarioFile(t: TestEnv): Promise<string> {
 }
 
 Deno.test("harnessCell: --image is refused without --stub-provider", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await assertRejects(
     () =>
@@ -2182,7 +2354,7 @@ Deno.test("harnessCell: --image is refused without --stub-provider", async () =>
 });
 
 Deno.test("harnessCell: a stub cell needs no supervision, records under <results>/stub-cells, is never judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const results = join(t.repo.root, "results", "harness");
   const mounted: string[] = [];
@@ -2223,7 +2395,7 @@ Deno.test("harnessCell: a stub cell needs no supervision, records under <results
 });
 
 Deno.test("harnessCell: a malformed stub scenario is refused before anything runs", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const bad = join(t.env.privateRoot, "bad.json");
   await Deno.writeTextFile(bad, JSON.stringify({ steps: "no" }));
@@ -2249,7 +2421,7 @@ Deno.test("harnessCell: a malformed stub scenario is refused before anything run
 // M1-33: egress mode, backend placement and `harness egress verify`.
 
 Deno.test("egressMode: qualified places, authorized enforces; an unknown or unreadable marker stops", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const ok = () => Promise.resolve([]);
   const mark = (v: unknown) =>
     Deno.writeTextFile(join(root, EGRESS_MARKER), JSON.stringify(v));
@@ -2361,7 +2533,7 @@ function markerAwareCollector(mutate: (s: EgressState) => void = () => {}) {
 }
 
 Deno.test("harness egress verify: problems fail; without --mark the marker is part of the verification", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const marker = join(root, "results", "harness", EGRESS_MARKER);
   const p = await harnessEgressVerify(
     { root, mark: "candidate" },
@@ -2386,7 +2558,7 @@ Deno.test("harness egress verify: problems fail; without --mark the marker is pa
 });
 
 Deno.test("harness egress verify --mark: ordered states, no skip, no downgrade, no overwrite", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   const refused = async (
     o: Parameters<typeof harnessEgressVerify>[0],
@@ -2400,7 +2572,7 @@ Deno.test("harness egress verify --mark: ordered states, no skip, no downgrade, 
 });
 
 Deno.test("harness egress verify --mark (M1-33d review): the marker carries proxy_isolation = PROXY_ISOLATION", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   assertEquals(
     await harnessEgressVerify(
       { root, mark: "candidate" },
@@ -2438,7 +2610,7 @@ async function probeEvidence(
 }
 
 Deno.test("harness egress verify --mark qualified: needs passing in-sandbox probe evidence for the current network", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
   const q = (probe?: string) =>
@@ -2484,7 +2656,7 @@ Deno.test("harness egress verify --mark qualified: needs passing in-sandbox prob
 });
 
 Deno.test("harness egress verify --mark authorized: needs recorded rotation, recorded OAuth hosts and a later enforced supervised Claude cell", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
   assertEquals(
@@ -2647,7 +2819,7 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
 
 Deno.test("qualification bootstrap: a candidate marker places the probe only; the probe's evidence allows marking qualified; nothing is released before it passes", async () => {
   for (const passing of [true, false]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const root = t.env.privateRoot; // any fresh dir works as the repo root here
     const shared = join(root, "results", "harness");
     const markerPath = join(shared, EGRESS_MARKER);
@@ -2740,7 +2912,7 @@ Deno.test("qualification bootstrap: a candidate marker places the probe only; th
 
 Deno.test("qualification probe: extra secrets are released only after a passed preflight; a readWrite mount is not readonly (M9-01a)", async () => {
   for (const passing of [true, false]) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const root = t.env.privateRoot;
     const markerPath = join(root, "results", "harness", EGRESS_MARKER);
     const collect = markerAwareCollector();
@@ -2831,7 +3003,7 @@ Deno.test("qualification probe: extra secrets are released only after a passed p
 });
 
 Deno.test("qualification probe: released secret values printed by the sandbox are scrubbed from the retained captures (M9-01a run 002)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const root = t.env.privateRoot;
   const markerPath = join(root, "results", "harness", EGRESS_MARKER);
   const collect = markerAwareCollector();
@@ -3088,7 +3260,7 @@ Deno.test("qualification probe (H-01): the privilege check runs before the prefl
 
 /** A repo root taken through candidate, qualified and authorized with complete evidence. */
 async function authorizedRoot(at?: string): Promise<string> {
-  const root = at ?? await Deno.realPath(await Deno.makeTempDir());
+  const root = at ?? await Deno.realPath(await testTempDir());
   const c = markerAwareCollector();
   assertEquals(await harnessEgressVerify({ root, mark: "candidate" }, c), []);
   assertEquals(
@@ -3288,7 +3460,7 @@ Deno.test("run --concurrency > 1 is refused before any environment opens while t
 });
 
 Deno.test("run --concurrency > 1: an unknown, malformed or unreadable marker is refused as placing (fail closed; M1-33c review)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -3318,7 +3490,7 @@ Deno.test("run --concurrency > 1: an unknown, malformed or unreadable marker is 
 });
 
 Deno.test("openHarnessEnv: with concurrency > 1 the marker is rechecked under the lock, before any sweep (M1-33c review: TOCTOU)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   // The marker became placing after harness run's up-front check.
@@ -3336,7 +3508,7 @@ Deno.test("openHarnessEnv: with concurrency > 1 the marker is rechecked under th
 });
 
 Deno.test("openHarnessEnv: the effective egress mode is computed under the lock, before any sweep (M1-33c review round 2)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -3357,7 +3529,7 @@ Deno.test("openHarnessEnv: the effective egress mode is computed under the lock,
 });
 
 Deno.test("openHarnessEnv (M1-33d review): a shared proxy that cannot bind stops the start naming the gateway and port, before the backend and any cell; the runtime gets the concurrency", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -3407,7 +3579,7 @@ const markerWith = (state: string, v: unknown) =>
   });
 
 Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker proxy_isolation other than exactly PROXY_ISOLATION, before any environment opens; it is refused unless every placed-concurrency condition holds (M7-01)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -3438,7 +3610,7 @@ Deno.test("run --concurrency > 1 (M1-33e): the up-front check names a marker pro
 });
 
 Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate runs under the lock, before any sweep, at both refusal points; it is refused unless every placed-concurrency condition holds (M7-01)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   const refused = async (marker: string, probe = false) => {
@@ -3472,7 +3644,7 @@ Deno.test("openHarnessEnv concurrency > 1 (M1-33e): the proxy_isolation gate run
 });
 
 Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, the existing registration revoked, in-flight tunnels ended, no registration after close, a second close is a no-op; env.proxyIsolation is fixed under the lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -3616,7 +3788,7 @@ Deno.test("openHarnessEnv close (M1-33e): proxy listener closed, the existing re
 const UNKNOWN_CAMPAIGN = "00000000-0000-0000-0000-000000000000";
 
 Deno.test("harnessRun forwards two --stop-file values and --campaign into runCampaign", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -3681,7 +3853,7 @@ async function twoCampaigns(t: TestEnv) {
 }
 
 Deno.test("rejudge --campaign: the named campaign although a newer one exists; an execution outside it or an unknown id is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { older, olderExec, newerExec } = await twoCampaigns(t);
   // Without --campaign the newest campaign is used.
@@ -3727,7 +3899,7 @@ Deno.test("rejudge --campaign: the named campaign although a newer one exists; a
 });
 
 Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `harness rejudge` parses and forwards --campaign", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { older, olderExec, newer } = await twoCampaigns(t);
   const absent = join(t.repo.root, "pause.json");
@@ -3791,7 +3963,7 @@ Deno.test("CLI: `harness run` collects repeated --stop-file and --campaign; `har
 });
 
 Deno.test("--campaign refusals come before the environment opens: no lock, sweep, recovery or docker call (M5-03 review)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { older, olderExec, newerExec } = await twoCampaigns(t);
   const order: string[] = [];
@@ -3892,7 +4064,7 @@ Deno.test("parseRerunCell refuses a repeat that is not a safe positive integer",
 });
 
 Deno.test("CLI: `harness run --rerun HX-001:1:mock-crash` reruns that cell; HX-001:x:arm and HX-001:1 are refused by the parser", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -4183,7 +4355,7 @@ async function probeWith(
 }
 
 Deno.test("qualification probe (M5-08a): a stuck rm -f runs only after the token is revoked and the proxy is down; secrets kept; fail closed", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = fakeEgress();
   t.docker.waitForReady = true;
   let secrets = "";
@@ -4225,7 +4397,7 @@ Deno.test({
     "qualification probe (M5-08a): a held secrets dir (os error 32) after the sandbox is gone fails closed with the reason",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = fakeEgress();
     t.docker.waitForReady = true;
     let release: (() => Promise<void>) | null = null;
@@ -4251,7 +4423,7 @@ Deno.test({
 });
 
 Deno.test("qualification probe (M5-08a): a failed token write while the sandbox runs keeps the secrets until the sandbox is gone; the write error is not masked", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const eg = fakeEgress();
   // The planted file must exist before the token write: this image code does
   // not wait for ready (the H-01 fixture default waits, like the entrypoints).
@@ -4288,7 +4460,7 @@ for (
   ] as [string, () => Promise<unknown>][]
 ) {
   Deno.test(`qualification probe (M5-08b): a revoke that ${how} is reported, still shuts the proxy and tears the sandbox down, and fails closed`, async () => {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const eg = fakeEgress();
     t.docker.waitForReady = true;
     let secrets = "";
@@ -4311,7 +4483,7 @@ for (
 // ---- H-01 run 004: image_revision ----
 
 Deno.test("harnessImagesBuild: --revision adds the revision label and the -r tag; without it the frozen tag and no revision label", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1", "l2"]);
@@ -4487,7 +4659,7 @@ async function writeOomLog(
 }
 
 Deno.test("rejudge --force (C-03): refused without --execution, without a non-blank --reason, and --reason without --force; before the environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e } = await campaignWithOomJudgment(t);
   const never = () => {
@@ -4532,7 +4704,7 @@ Deno.test("rejudge --force (C-03): refused without --execution, without a non-bl
 });
 
 Deno.test("rejudge --force (C-03): a non-judgeable execution is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
@@ -4580,7 +4752,7 @@ repeats: 1
 });
 
 Deno.test("rejudge --force (C-03): a current judgment gets a second judgment that is latest, carries the reason; the old one stays; the report counts the new verdict", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, original, oom } = await campaignWithOomJudgment(t);
   const load = async () =>
@@ -4654,7 +4826,7 @@ Deno.test("rejudge --force (C-03): a current judgment gets a second judgment tha
 });
 
 Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards both", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const cli = new Command().name("centralgauge").noExit();
@@ -4703,7 +4875,7 @@ Deno.test("CLI (C-03): `harness rejudge --force --reason` parses and forwards bo
 });
 
 Deno.test("rejudge --force (C-03 run 002): a forced judgment the report would not select (clock skew) is refused before anything is written", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A judgment stamped by a clock ahead of this one stays newest by ended_at.
@@ -4756,7 +4928,7 @@ Deno.test("rejudge --force (C-03 run 002): a forced judgment the report would no
 });
 
 Deno.test("rejudge --force (C-03 review): refused before writing when the task's current oracle differs from the campaign's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const oracle = join(
@@ -4795,7 +4967,7 @@ Deno.test("rejudge --force (C-03 review): refused before writing when the task's
 });
 
 Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused before the environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e } = await campaignWithOomJudgment(t);
   for (const reason of ["one\ntwo", "one\rtwo", "one\r\n"]) {
@@ -4822,7 +4994,7 @@ Deno.test("rejudge --force (C-03 review): a multi-line --reason is refused befor
 });
 
 Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scrubbed reason", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const asked: string[] = [];
@@ -4850,7 +5022,7 @@ Deno.test("rejudge --force (C-03 review): the confirmation prompt echoes the scr
 });
 
 Deno.test("CLI (C-03 review): `harness rejudge --force` with --execution twice is rejected by parsing", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e } = await campaignWithOomJudgment(t);
   const cli = new Command().name("centralgauge").noExit();
@@ -4913,7 +5085,7 @@ const forceOpts = (
   });
 
 Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same execution is refused, whichever judgment it names", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   await approved(e.id, (basis) =>
@@ -4944,7 +5116,7 @@ Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same e
 });
 
 Deno.test("rejudge --force (C-03 run 002): --replaces must name the judgment the report uses for the execution", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, original } = await campaignWithOomJudgment(t);
   for (const replaces of [original.id, crypto.randomUUID()]) {
@@ -4966,7 +5138,7 @@ Deno.test("rejudge --force (C-03 run 002): --replaces must name the judgment the
 });
 
 Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra signature needs --basis, a file under $CG_COORD_ROOT/decisions", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A plain FAIL with a test result and no verdict side file: no signature.
@@ -5006,7 +5178,7 @@ Deno.test("rejudge --force (C-03 run 002): a replaced judgment without an infra 
     ConfigurationError,
     "--force needs --basis",
   );
-  const root = await Deno.makeTempDir({ prefix: "coord-" });
+  const root = await testTempDir({ prefix: "coord-" });
   await Deno.mkdir(join(root, "decisions"));
   const decision = join(root, "decisions", "2026-09-28-c03-forced.md");
   await Deno.writeTextFile(decision, approvalText(e.id));
@@ -5071,7 +5243,7 @@ async function withCoordRoot(
   decisions: Record<string, string>,
   f: (root: string) => Promise<void>,
 ) {
-  const root = await Deno.makeTempDir({ prefix: "coord-" });
+  const root = await testTempDir({ prefix: "coord-" });
   await Deno.mkdir(join(root, "decisions"));
   for (const [name, text] of Object.entries(decisions)) {
     await Deno.writeTextFile(join(root, "decisions", name), text);
@@ -5088,7 +5260,7 @@ async function withCoordRoot(
 }
 
 Deno.test("rejudge --force (C-03 run 003): a relative --basis is under the decisions dir, must name the execution, and is recorded with its sha256", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const good = approvalText(e.id);
@@ -5126,7 +5298,7 @@ Deno.test("rejudge --force (C-03 run 003): a relative --basis is under the decis
 });
 
 Deno.test("rejudge --force (C-03 run 003): an execution its cell does not count is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A manual rerun beside the scored planned result: judged, never counted.
@@ -5204,7 +5376,7 @@ const approvedRejudge = (
   );
 
 Deno.test("rejudge --force (C-03 run 003): --basis is required even when the replaced judgment matches the infra signature", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   await assertRejects(
@@ -5223,7 +5395,7 @@ Deno.test("rejudge --force (C-03 run 003): --basis is required even when the rep
 });
 
 Deno.test("rejudge --force (C-03 run 003): the basis needs an OWNER-APPROVED line with words and an ISO time", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   const named = `Execution ${e.id}.\n`;
@@ -5285,7 +5457,7 @@ Deno.test("rejudge --force (C-03 run 003): the basis needs an OWNER-APPROVED lin
 });
 
 Deno.test("rejudge --force (C-03 run 003): a replaced judgment without an infra signature prints so and is still accepted on an owner approval", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
   // A plain FAIL with no verdict side file: no signature.
@@ -5317,7 +5489,7 @@ Deno.test("rejudge --force (C-03 run 003): a replaced judgment without an infra 
 // ---- H-01 run 004 review: an existing tag is never rebuilt ----
 
 Deno.test("harnessImagesBuild: an existing tag (frozen, revised or base) is refused before any build", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   await Deno.mkdir(join(root, "harness", "images", "base"), {
     recursive: true,
   });
@@ -5379,7 +5551,7 @@ Deno.test("BASE_IMAGE is base:2; base:1 is frozen", () => {
 // ---- H-01 run 005 (review H-01-004 P1): frozen tags are reserved in code ----
 
 Deno.test("harnessImagesBuild: a frozen tag is refused on a clean host (not present locally), before any build", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker(); // clean host: no image at all
   docker.addImage(BASE_IMAGE, `sha256:${"b".repeat(64)}`, {}, ["l1"]);
   for (
@@ -5510,7 +5682,7 @@ async function gitOut(root: string, ...args: string[]): Promise<string> {
 async function preregReportEnv(
   metric: "cost_per_solved_task" | "pass_rate" = "cost_per_solved_task",
 ) {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "t@example.com");
   await git(root, "config", "user.name", "t");
@@ -5595,7 +5767,7 @@ async function preregReportEnv(
     "-m",
     `stage_b_sha256: ${bSha}`,
   );
-  const decisions = await Deno.makeTempDir();
+  const decisions = await testTempDir();
   const decisionA = join(decisions, "decision-a.md");
   await Deno.writeTextFile(
     decisionA,
@@ -5643,7 +5815,7 @@ async function preregReportEnv(
       stage_b_decision_sha256: v.stage_b_decision_sha256,
     },
   };
-  const results = await Deno.makeTempDir();
+  const results = await testTempDir();
   const store = new RecordStore(results);
   await store.writeCampaign(c);
   for (const arm of ["plain", "skills"]) {
@@ -5748,7 +5920,7 @@ Deno.test("CLI: `harness report` takes --prereg-decision and --prereg-b-decision
 });
 
 Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.json; the built image must show it", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -5804,7 +5976,7 @@ Deno.test("harnessImagesBuild: claude-code carries the LSP label from al-lsp.jso
 });
 
 Deno.test("harnessCell: a stub cell's --image is the image runtimeFacts reads (dev-tag LSP proofs)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await Deno.mkdir(
     join(t.repo.root, "harness", "images", "claude-code", "lsp"),
@@ -5858,7 +6030,7 @@ Deno.test("harnessCell: a stub cell's --image is the image runtimeFacts reads (d
 });
 
 Deno.test("runCampaign: an LSP arm resolves when the image label matches the repo definition and is refused when it does not", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await Deno.mkdir(
     join(t.repo.root, "harness", "images", "claude-code", "lsp"),
@@ -5907,7 +6079,7 @@ Deno.test("runCampaign: an LSP arm resolves when the image label matches the rep
 });
 
 Deno.test("harnessCell: a stub cell's --image whose LSP label has the right hash but a wrong version is refused", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await Deno.mkdir(
     join(t.repo.root, "harness", "images", "claude-code", "lsp"),
@@ -5950,7 +6122,7 @@ Deno.test("harnessCell: a stub cell's --image whose LSP label has the right hash
 
 // M7-01: the CLI runs the same placedConcurrencyProblem gate as runCampaign.
 Deno.test("run --concurrency 2 (M7-01): the up-front gate allows an authorized marker with exact proxy_isolation, and names every other failing condition before any environment opens", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   await mockExperiment(t);
   const shared = join(t.repo.root, "results", "harness");
@@ -6003,7 +6175,7 @@ Deno.test("run --concurrency 2 (M7-01): the up-front gate allows an authorized m
 });
 
 Deno.test("openHarnessEnv concurrency 2 (M7-01): the same gate runs under the lock, before any sweep", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   const refused = async (marker: string, concurrency: number) => {
@@ -6043,7 +6215,7 @@ const armOf = (harness: string, version: string, revision?: string) =>
   });
 
 Deno.test("openHarnessEnv concurrency 2 (M7-01 review): the full gate, arms included, runs under the lock before any sweep; absent configs fail closed; an authorized marker that fails host verification still stops the start", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const shared = join(t.repo.root, "results", "harness");
   await Deno.mkdir(shared, { recursive: true });
   await Deno.writeTextFile(
@@ -6083,7 +6255,7 @@ Deno.test("openHarnessEnv concurrency 2 (M7-01 review): the full gate, arms incl
 });
 
 Deno.test("run --dry-run --concurrency 2 (M7-01 run 002): the plan environment carries the verified gate inputs, so a valid dry run and a resume plan, and unmet conditions still refuse", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   await writeCatalog(t);
@@ -6179,7 +6351,7 @@ Deno.test("CLI: `harness report` refuses an experiment whose primary_metric diff
 });
 
 Deno.test("CLI: `harness run` refuses a campaign start whose experiment primary_metric differs from the preregistration's (M11-10c)", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   t.docker.behavior = mockImageBehavior();
   await writeCatalog(t);
@@ -6278,7 +6450,7 @@ preregistration: ${rel}
     "harness-v2-prereg-b",
     `stage_b_sha256: ${bSha}`,
   );
-  const decisions = await Deno.makeTempDir();
+  const decisions = await testTempDir();
   const decisionA = join(decisions, "decision-a.md");
   await Deno.writeTextFile(
     decisionA,
@@ -6372,8 +6544,8 @@ Deno.test("harnessReport (M11-12): a pre-registered campaign reads measure recor
 // on the same private root is refused by the root's lock before any sweep; a
 // restart on the root recovers its predecessor's leftovers under the same owner.
 Deno.test("openHarnessEnv (M10-08c): one namespace owner per private root; its lock refuses a second environment before any sweep; a restart sweeps the same owner", async () => {
-  const t = await makeEnv();
-  const other = await makeEnv();
+  await using t = await makeEnv();
+  await using other = await makeEnv();
   const owners: string[] = [];
   const track = (order: string[]) => {
     const d = deps(order);
@@ -6419,7 +6591,7 @@ Deno.test("openHarnessEnv (M10-08c): one namespace owner per private root; its l
 // M10-08c review 1: the private root's lock is taken before both temp sweeps,
 // so a refused second environment never deletes the live one's freeze dir.
 Deno.test("openHarnessEnv (M10-08c review 1): a refused second environment on the same private root sweeps nothing of the live one's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const a = await openHarnessEnv(envOpts(t), deps([]));
   try {
     const frozen = join(t.env.privateRoot, "freeze", "x");
@@ -6442,7 +6614,7 @@ Deno.test("openHarnessEnv (M10-08c review 1): a refused second environment on th
 
 // M10-08c review 5: the private root's lock goes through the injected seam.
 Deno.test("openHarnessEnv (M10-08c review 5): both locks come from deps.acquireLock, the repo's first, then the private root's", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const d = deps([]);
   const dirs: string[] = [];
   const acquire = d.acquireLock;
@@ -6457,7 +6629,7 @@ Deno.test("openHarnessEnv (M10-08c review 5): both locks come from deps.acquireL
 
 // M10-08c review 6 / O3: the refusal names the --private-dir and the holder's pid.
 Deno.test("openHarnessEnv (M10-08c review 6, O3): a second environment on the same private root is refused naming --private-dir and the holder pid", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const a = await openHarnessEnv(envOpts(t), deps([]));
   try {
     const err = await assertRejects(
@@ -6474,7 +6646,7 @@ Deno.test("openHarnessEnv (M10-08c review 6, O3): a second environment on the sa
 // O2: the private root's lock is released on a normal close; a crashed
 // holder's marker (no heartbeat) is reclaimable after 120 s, never before.
 Deno.test("openHarnessEnv (M10-08c O2): the private root's lock is released on close; a crashed holder's lock is reclaimed only after 120 s", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const marker = benchLockPath(t.env.privateRoot);
   const a = await openHarnessEnv(envOpts(t), deps([]));
   assert(await exists(marker), "held while open");
@@ -6509,7 +6681,7 @@ Deno.test("openHarnessEnv (M10-08c O2): the private root's lock is released on c
 // M10-08c review 4: a suspended environment whose lock another process
 // reclaimed (no heartbeat for 120 s) learns it before its next cell.
 Deno.test("openHarnessEnv (M10-08c review 4): env.namespaceLost turns true once another process holds the private root's lock; close leaves that holder's marker", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const h = await openHarnessEnv(envOpts(t), deps([]));
   assertEquals(h.env.namespaceLost?.(), false);
   const marker = benchLockPath(t.env.privateRoot);
@@ -6594,7 +6766,7 @@ Deno.test("openHarnessEnv (M10-08c review 2): legacy bare-hostname sandboxes of 
 // M10-08c review 7: concurrent `images build` runs read under their own
 // owner; a build sweeps only bare-hostname (legacy) read leftovers.
 Deno.test("harnessImagesBuild (M10-08c review 7): each build reads under its own owner; the sweep lists only the bare hostname", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -6648,7 +6820,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 1): the token it acquired is the
       }),
     );
   for (const when of ["acquired", "opening", "removal"] as const) {
-    const t = await makeEnv();
+    await using t = await makeEnv();
     const d = deps([]);
     const docker = d.docker() as FakeDocker;
     const acquire = d.acquireLock;
@@ -6831,7 +7003,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 4): this root's legacy custody d
 // read containers of namespaces whose lock is stale (a crashed build) and
 // leaves a live build's alone.
 Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read container is swept by the next build; a live build's is kept", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -6891,7 +7063,7 @@ Deno.test("harnessImagesBuild (M10-08c run 002 item 6): a crashed build's read c
 // repository lock first; through the real lock its refusal names
 // --private-dir and the holder's pid.
 Deno.test("openHarnessEnv (M10-08c run 002 item 7): a second environment in the same checkout is refused by the real repository lock naming --private-dir and the holder pid", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const real = () => {
     const d = deps([]);
     d.acquireLock = (dir, o) => acquireBenchLock(dir, o);
@@ -6916,7 +7088,7 @@ Deno.test("openHarnessEnv (M10-08c run 002 item 7): a second environment in the 
 // NotFound on that remove is ignored; any other remove error still throws.
 Deno.test("harnessImagesBuild (review 546e8337 P3-3): a namespace dir removed concurrently is not an error; other remove errors are", async () => {
   const setup = async () => {
-    const root = await Deno.realPath(await Deno.makeTempDir());
+    const root = await Deno.realPath(await testTempDir());
     const docker = new FakeDocker();
     await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
       recursive: true,
@@ -7178,7 +7350,7 @@ Deno.test("openHarnessEnv (M10-08c run 003 item 1): a legacy intent, exited or r
 // M10-08c run 003 item 2: the acquired token is checked again between the two
 // temp sweeps: lost during the first, the second never runs.
 Deno.test("openHarnessEnv (M10-08c run 003 item 2): a lock lost between the two temp sweeps stops before the second", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const d = deps([]);
   const temp = join(t.env.resultsRoot, "workspaces", ".tmp-live");
   await Deno.mkdir(temp, { recursive: true });
@@ -7218,7 +7390,7 @@ Deno.test("openHarnessEnv (M10-08c run 003 item 2): a lock lost between the two 
 // after a successful capture: the read reports it and the build keeps its
 // namespace (lock dir) so the next build's sweep finds the container.
 Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture whose docker rm -f failed is reported; the build namespace stays discoverable", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -7235,7 +7407,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
     [lk]: lv,
   });
   // `docker cp` lands the file here: the capture itself succeeds.
-  const capture = await Deno.makeTempDir();
+  const capture = await testTempDir();
   await Deno.writeTextFile(
     join(capture, AL_LSP_SHIPPED.replace(/\\/g, "/").split("/").pop()!),
     await Deno.readTextFile(AL_LSP_DEF),
@@ -7287,7 +7459,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 3): a successful capture who
 // M10-08c run 003 item 1: an older build may be reading under the bare
 // hostname right now: its read container is never removed (a warning names it).
 Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read container survives a build", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -7318,7 +7490,7 @@ Deno.test("harnessImagesBuild (M10-08c run 003 item 1): a bare-hostname read con
 // Review M10-08c P2-2: the legacy refusal also names the existing per-id
 // private paths of each legacy intent (read-only: all survive).
 Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its existing per-id private paths; all survive", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const d = deps([]);
   const root = t.env.privateRoot;
   await Deno.mkdir(join(root, "intents"), { recursive: true });
@@ -7353,7 +7525,7 @@ Deno.test("openHarnessEnv (M10-08c P2-2): a legacy intent's refusal names its ex
 });
 
 Deno.test("harnessImagesBuild (M10-10): claude-code resolves the newest LSP release once and passes tag, URL and digest as build args and labels; a failed resolution builds nothing", async () => {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   await Deno.mkdir(join(root, "harness", "images", "claude-code", "lsp"), {
     recursive: true,
@@ -7482,7 +7654,7 @@ function ccBuild(
 }
 
 async function ccRoot() {
-  const root = await Deno.realPath(await Deno.makeTempDir());
+  const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
   const baseId = `sha256:${"b".repeat(64)}`;
   docker.addImage(BASE_IMAGE, baseId, {}, ["l1"]);
@@ -8202,7 +8374,7 @@ Deno.test({
     "publicationLockDir (H-03 run 002): ProgramData, keyed by the Docker context; the root is shared with BUILTIN\\Users (inherited Modify) when created",
   ignore: Deno.build.os !== "windows",
   fn: async () => {
-    const pd = await Deno.realPath(await Deno.makeTempDir());
+    const pd = await Deno.realPath(await testTempDir());
     const root = join(pd, "centralgauge", "image-locks");
     const saved = Deno.env.get("CENTRALGAUGE_DOCKER_CONTEXT");
     Deno.env.set("CENTRALGAUGE_DOCKER_CONTEXT", "desktop-windows");
@@ -8247,6 +8419,7 @@ Deno.test({
 });
 
 import { clearPublicationReservation } from "../../../../cli/commands/harness-command.ts";
+import { testTempDir, trackTempDir } from "../../../utils/temp-dir.ts";
 
 /** A reservation whose holder stopped heartbeating an hour ago (crashed or suspended). */
 async function staleReservation(dir: string) {
@@ -8386,7 +8559,7 @@ Deno.test("registerHarnessCommand (H-09): run takes --judge-containers and --jud
 });
 
 Deno.test("openHarnessEnv (H-09): judge containers get their own lane; overlapping, refused or unallocated ones are refused before the lock", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const judged = (agents: string[], judges: string[]) => ({
     ...envOpts(t, agents),
@@ -8452,7 +8625,7 @@ Deno.test("harnessRun (H-09): --judge-containers reaches the environment and --j
 });
 
 Deno.test("harnessCell --defer-judging (H-09): the cell is recorded unjudged; judge-pending judges it once, as the inline cell would", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   const open = () =>
@@ -8506,7 +8679,7 @@ Deno.test("harness judge-pending (H-09 run 002): --judge-concurrency below 1 is 
 });
 
 Deno.test("harness judge-pending (H-09 run 002): a later failure drains the queued judgments before the environment closes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   let judgedAtClose = -1;
@@ -8542,7 +8715,7 @@ Deno.test("harness judge-pending (H-09 run 002): a later failure drains the queu
 });
 
 Deno.test("harness judge-pending (H-09 review): a refused execution is warned and skipped; the others are judged", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   await writeCatalog(t);
   t.docker.behavior = mockImageBehavior();
   const open = () =>
@@ -8588,7 +8761,7 @@ Deno.test("harness judge-pending (H-09 review): a refused execution is warned an
 });
 
 Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before planning or any environment", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   for (const reason of ["", "  "]) {
     for (const dryRun of [true, false]) {
       await assertRejects(
@@ -8607,7 +8780,7 @@ Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before 
 });
 
 Deno.test("H-16 (Sol r2): close holds the locks until a backend request revoke gave up on has drained, so no successor recovers state it still uses", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const order: string[] = [];
   const h = await openHarnessEnv(
     { ...envOpts(t), backendPort: BACKEND_PORT },
@@ -8633,4 +8806,3025 @@ Deno.test("H-16 (Sol r2): close holds the locks until a backend request revoke g
     idle.restore();
     await h.close();
   }
+});
+
+// ---- H-24: campaign rejudge spreads its judging over every lane container ----
+
+/** A 3-container lane, a 6-execution campaign (2 arms x 3 repeats) and every judgment stale. */
+async function h24Campaign() {
+  const { BcLane } = await import("../../../../src/harness/bc-lane.ts");
+  const t = await makeEnv();
+  t.env.lane = new BcLane(t.bc, ["C1", "C2", "C3"]);
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await write(
+    t.harnessRoot,
+    "experiments/contract.yml",
+    (await Deno.readTextFile(join(t.harnessRoot, "experiments/contract.yml")))
+      .replace("repeats: 1", "repeats: 3"),
+  );
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  for (const e of es) await staleJudgment(t, e.id);
+  // Exclusive judging jobs in flight, the most seen at once, and per container.
+  const lane = t.env.lane;
+  const original = lane.exclusive.bind(lane);
+  const seen = { active: 0, max: 0, containers: new Set<string>() };
+  lane.exclusive = ((ctx, fn, signal, opts) =>
+    original(
+      ctx,
+      async (container: string) => {
+        seen.active++;
+        seen.max = Math.max(seen.max, seen.active);
+        seen.containers.add(container);
+        try {
+          await new Promise((r) => setTimeout(r, 30));
+          return await fn(container);
+        } finally {
+          seen.active--;
+        }
+      },
+      signal,
+      opts,
+    )) as typeof lane.exclusive;
+  const counts = async () =>
+    (await Promise.all(es.map((e) => t.env.store.judgments(e.id)))).map((js) =>
+      js.length
+    );
+  return { t, es, seen, counts };
+}
+
+Deno.test("rejudge (H-24): N executions over 3 containers are all judged exactly once, in parallel", async () => {
+  const { t, es, seen, counts } = await h24Campaign();
+  assertEquals(es.length, 6);
+  assertEquals(await counts(), [2, 2, 2, 2, 2, 2]);
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 6);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+  assert(seen.max > 1, `judging ran one at a time (max ${seen.max})`);
+  assert(seen.max <= 3, `more judgings than containers at once: ${seen.max}`);
+  assertEquals([...seen.containers].sort(), ["C1", "C2", "C3"]);
+  const again = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals([again.rejudged, await counts()], [0, [3, 3, 3, 3, 3, 3]]);
+});
+
+Deno.test("rejudge (H-24): an infra fault on one container is rerouted; no judgment is lost or duplicated", async () => {
+  const { t, seen, counts } = await h24Campaign();
+  t.bc.broken.add("C2");
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 6);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+  assert(seen.max > 1, `judging ran one at a time (max ${seen.max})`);
+});
+
+Deno.test("rejudge (H-24): a failing execution stops the rejudge without losing or duplicating the others; a resume judges only what is not current", async () => {
+  const { t, es, counts } = await h24Campaign();
+  // One execution's artifact record is unreadable: its judging throws.
+  const bad = es[3]!;
+  const art = join(t.env.resultsRoot, "artifacts", `${bad.id}.json`);
+  const kept = await Deno.readTextFile(art);
+  await Deno.remove(art);
+  await assertRejects(() => harnessRejudge("contract", runOpts(t), opener(t)));
+  const after = await counts();
+  assert(
+    after.every((n) => n === 2 || n === 3),
+    `a judgment was duplicated: ${after}`,
+  );
+  assertEquals(after[3], 2, "the failing execution has no new judgment");
+  await Deno.writeTextFile(art, kept);
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, after.filter((n) => n === 2).length);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
+
+Deno.test("rejudge (H-24 review): after a failure the env closes only once every running judging has ended, and no queued judging starts after it", async () => {
+  const { t, es, seen } = await h24Campaign();
+  // The first execution's artifact read fails, but only once two other
+  // judgings hold their container: the failure lands while they run.
+  // (The first read is the campaign load before any judging starts.)
+  const store = t.env.store;
+  const read = store.artifact.bind(store);
+  let reads = 0;
+  store.artifact = async (id: string) => {
+    if (id !== es[0]!.id || ++reads === 1) return await read(id);
+    const until = Date.now() + 5_000;
+    while (seen.active < 2 && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    throw new Error(`injected artifact read failure (active ${seen.active})`);
+  };
+  let closed = false;
+  let activeAtClose = -1;
+  let startedAfterClose = 0;
+  const lane = t.env.lane;
+  const counted = lane.exclusive.bind(lane);
+  lane.exclusive = ((ctx, fn, signal, opts) => {
+    if (closed) startedAfterClose++;
+    return counted(ctx, fn, signal, opts);
+  }) as typeof lane.exclusive;
+  const open = () =>
+    Promise.resolve({
+      env: t.env,
+      close: () => {
+        closed = true;
+        activeAtClose = seen.active;
+        return Promise.resolve();
+      },
+    });
+  await assertRejects(() => harnessRejudge("contract", runOpts(t), open));
+  assert(closed, "the env was closed");
+  assertEquals(activeAtClose, 0, "a judging was still running at close");
+  await new Promise((r) => setTimeout(r, 100));
+  assertEquals(startedAfterClose, 0, "a queued judging started after close");
+});
+
+Deno.test("rejudge (H-33): an interrupt admits no new judging; the running ones finish and are published, the env closes, the rest stay due", async () => {
+  const { t, seen, counts } = await h24Campaign();
+  const stop = new AbortController();
+  // The interrupt lands while the first judgings hold their containers.
+  const lane = t.env.lane;
+  const held = lane.exclusive.bind(lane);
+  lane.exclusive = ((ctx, fn, signal, opts) => {
+    stop.abort();
+    return held(ctx, fn, signal, opts);
+  }) as typeof lane.exclusive;
+  // A judging's first record read after the interrupt is a queued one starting.
+  const store = t.env.store;
+  const read = store.artifact.bind(store);
+  let startedAfterStop = 0;
+  store.artifact = (id: string) => {
+    if (stop.signal.aborted) startedAfterStop++;
+    return read(id);
+  };
+  let closed = false;
+  let activeAtClose = -1;
+  const open = () =>
+    Promise.resolve({
+      env: t.env,
+      close: () => {
+        closed = true;
+        activeAtClose = seen.active;
+        return Promise.resolve();
+      },
+    });
+  const logs = capture();
+  let r;
+  try {
+    r = await harnessRejudge(
+      "contract",
+      runOpts(t),
+      open,
+      () => true,
+      stop.signal,
+    );
+  } finally {
+    logs.restore();
+  }
+  assertEquals(r.interrupted, true);
+  assert(closed, "the env was closed");
+  assertEquals(activeAtClose, 0, "a judging was still running at close");
+  assertEquals(
+    startedAfterStop,
+    0,
+    "a queued judging started after the interrupt",
+  );
+  const after = await counts();
+  // The three admitted (one per container) were judged and published; three stay due.
+  assertEquals([...after].sort(), [2, 2, 2, 3, 3, 3]);
+  assertEquals(r.rejudged, 3);
+  assert(
+    logs.out.some((l) => l.includes("[STOP]") && l.includes("3 judged")),
+    logs.out.join("\n"),
+  );
+  store.artifact = read;
+  const again = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals([again.rejudged, again.interrupted], [3, undefined]);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
+
+Deno.test("rejudge (H-33): one writer publishes the judgments: no two judgment writes overlap although the judgings finish together", async () => {
+  const { t, counts } = await h24Campaign();
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  const w = { active: 0, max: 0 };
+  store.writeJudgment = async (j) => {
+    w.active++;
+    w.max = Math.max(w.max, w.active);
+    try {
+      await new Promise((r) => setTimeout(r, 20));
+      return await write(j);
+    } finally {
+      w.active--;
+    }
+  };
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 6);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+  assertEquals(w.max, 1, "two judgment writes overlapped");
+});
+
+Deno.test("rejudge (H-33 r1): an interrupt after the last admission still reports interrupted, with everything judged", async () => {
+  const { t, counts } = await h24Campaign();
+  const stop = new AbortController();
+  // The sixth (last) judgment write: every judging was admitted long before.
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  let writes = 0;
+  store.writeJudgment = (j) => {
+    if (++writes === 6) stop.abort();
+    return write(j);
+  };
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t),
+    opener(t),
+    () => true,
+    stop.signal,
+  );
+  assertEquals([r.rejudged, r.interrupted], [6, true]);
+  assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+});
+
+Deno.test("rejudge (H-33 r1): interrupted before the confirmation, it never asks, judges nothing and reports interrupted", async () => {
+  const { t, counts } = await h24Campaign();
+  const stop = new AbortController();
+  stop.abort();
+  let asked = false;
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { yes: false }),
+    opener(t),
+    () => (asked = true),
+    stop.signal,
+  );
+  assert(!asked, "asked for confirmation after the interrupt");
+  assertEquals([r.rejudged, r.interrupted], [0, true]);
+  assertEquals(await counts(), [2, 2, 2, 2, 2, 2]);
+});
+
+Deno.test("rejudge (H-33 r1): interrupted with nothing due still reports interrupted", async () => {
+  const { t } = await h24Campaign();
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    6,
+  );
+  const stop = new AbortController();
+  stop.abort();
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t),
+    opener(t),
+    () => true,
+    stop.signal,
+  );
+  assertEquals([r.rejudged, r.interrupted], [0, true]);
+});
+
+// ---- H-41: every judgment writer commits through a claimed, fenced generation ----
+
+const claimDirOf = (t: TestEnv, id: string) =>
+  join(t.env.resultsRoot, "claims", id);
+
+const fencesOf = (t: TestEnv, id: string) => {
+  try {
+    return [...Deno.readDirSync(claimDirOf(t, id))].map((x) => x.name)
+      .filter((n) => /^fence-\d+\.json$/.test(n)).sort();
+  } catch {
+    return [];
+  }
+};
+
+/** Lane judgings started (every compute takes the lane). */
+function laneCalls(t: TestEnv) {
+  const lane = t.env.lane;
+  const real = lane.exclusive.bind(lane);
+  const n = { calls: 0 };
+  lane.exclusive = ((...a: Parameters<typeof lane.exclusive>) => {
+    n.calls++;
+    return real(...a);
+  }) as typeof lane.exclusive;
+  return n;
+}
+
+async function judgedCampaign(t: TestEnv) {
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  return { c, es: await t.env.store.executions(c.id) };
+}
+
+Deno.test("rejudge (H-41): a rejudged execution commits the next generation's fence; one whose claim another judge holds is skipped and stays due", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const e = es[0]!;
+  assertEquals(fencesOf(t, e.id), ["fence-0.json"], "the run's judgment");
+  const held = acquireBenchLock(claimDirOf(t, e.id), { command: "other" });
+  const logs = capture();
+  let r;
+  try {
+    r = await harnessRejudge("contract", runOpts(t), opener(t));
+  } finally {
+    logs.restore();
+    await held();
+  }
+  assertEquals(r.rejudged, 0);
+  assert(
+    logs.out.some((l) => l.includes("[SKIP]") && l.includes(e.id)),
+    logs.out.join("\n"),
+  );
+  assertEquals((await t.env.store.judgments(e.id)).length, 2);
+  r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 1);
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+  assertEquals((await t.env.store.judgments(e.id)).length, 3);
+});
+
+Deno.test("rejudge (H-41 N1, budget boundary): two unscored judgments; B's due list is made, then a third is committed (unmaterialized) before B takes its generation: B reaches the due predicate at the matching generation and drops not due; no compute; the budget counts three once reconciled", async () => {
+  await using t = await makeEnv();
+  const { es } = await judgedCampaign(t);
+  const e = es[0]!;
+  await unscoredJudgments(t, e.id, 2);
+  const [j] = await t.env.store.judgments(e.id);
+  const at = new Date(Date.now() + 10).toISOString();
+  const third: JudgmentRecord = {
+    ...j!,
+    id: crypto.randomUUID(),
+    scorers: j!.scorers.map((s) => ({
+      ...s,
+      passed: null,
+      ...(s.state ? { state: "unscored" as const } : {}),
+    })),
+    verdict: "unscored",
+    started_at: at,
+    ended_at: at,
+  };
+  const log = {
+    ...JSON.parse(
+      await Deno.readTextFile(
+        join(t.env.resultsRoot, "verdicts", `${j!.id}.json`),
+      ),
+    ),
+    judgment_id: third.id,
+  };
+  const n = laneCalls(t);
+  const cap = captureAll();
+  let r;
+  try {
+    r = await harnessRejudge(
+      "contract",
+      runOpts(t, { yes: false }),
+      opener(t),
+      () => {
+        // Another process commits generation 1 now (after B's due list,
+        // before B takes its generation) and stalls before materializing.
+        Deno.writeTextFileSync(
+          join(claimDirOf(t, e.id), "fence-1.json"),
+          JSON.stringify(
+            {
+              v: 1,
+              execution_id: e.id,
+              generation: 1,
+              judgment: third,
+              log,
+              token: "A",
+              pid: 1,
+              host: "A",
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return true;
+      },
+    );
+  } finally {
+    cap.restore();
+  }
+  assertEquals(r.rejudged, 0);
+  assertEquals(n.calls, 0, "B computed");
+  // B's generation is the head after A's commit (1 -> 2): the generation
+  // check passes, and the due predicate under the claim refuses it on the
+  // budget that reconciling fence-1 exposed.
+  const skips = cap.lines.filter((l) => l.includes("[SKIP]"));
+  assertEquals(
+    skips,
+    [`[SKIP] ${e.id}: no longer due`],
+    cap.lines.join("\n"),
+  );
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+  const js = await t.env.store.judgments(e.id);
+  assertEquals(js.length, 4);
+  assert(js.some((x) => x.id === third.id), "fence-1 was materialized");
+  const { rejudgeBudgetExhausted } = await import(
+    "../../../../src/harness/outcome.ts"
+  );
+  assert(
+    rejudgeBudgetExhausted(
+      e,
+      js,
+      j!.task_oracle_hash,
+      await currentScorerFingerprint(),
+    ),
+  );
+});
+
+Deno.test("rejudge (H-41 N2-a): a future-dated old-scorer predecessor stays reported, due and the pairing baseline, as today; the next authorized rejudge commits the next generation", async () => {
+  await using t = await makeEnv();
+  const { c, es } = await judgedCampaign(t);
+  const e = es[0]!;
+  const [j0] = await t.env.store.judgments(e.id);
+  const p: JudgmentRecord = {
+    ...await asLegacy(j0!),
+    id: crypto.randomUUID(),
+    started_at: "2099-01-01T00:00:00.000Z",
+    ended_at: "2099-01-01T00:00:01.000Z",
+  };
+  await t.env.store.writeJudgment(p);
+  const { campaignJudging, cellsFromRecords } = await import(
+    "../../../../src/harness/outcome.ts"
+  );
+  const reported = async () => {
+    const data = await loadCampaignData(t.env.store, c);
+    const by = new Map<string, JudgmentRecord[]>();
+    for (const x of data.judgments) {
+      by.set(x.execution_id, [...(by.get(x.execution_id) ?? []), x]);
+    }
+    return cellsFromRecords(c, data.executions, by, {
+      ...campaignJudging(c),
+      scorer: await currentScorerFingerprint(),
+    }).find((x) =>
+      x.task === e.task_id && x.repeat === e.repeat && x.arm === e.arm
+    )!.judgment_id;
+  };
+  for (const head of [1, 2]) {
+    const r = await harnessRejudge("contract", runOpts(t), opener(t));
+    // Today: p is the newest by ended_at, so the execution is due again ...
+    assertEquals(r.rejudged, 1, `rejudge at head ${head}`);
+    assertEquals(fencesOf(t, e.id).length, head + 1);
+    // ... and the report still counts p.
+    assertEquals(await reported(), p.id);
+  }
+  // Both pairings took p as the old side.
+  const olds: string[] = [];
+  for await (const f of Deno.readDir(join(t.env.resultsRoot, "pairings"))) {
+    if (!f.name.endsWith(".json")) continue;
+    const { pairing } = await loadPairing(
+      t.env.resultsRoot,
+      f.name.slice(0, -5),
+    );
+    olds.push(
+      ...pairing.cells.filter((x) => x.execution_id === e.id).map((x) =>
+        x.old_judgment_id
+      ),
+    );
+  }
+  assertEquals(olds, [p.id, p.id]);
+});
+
+Deno.test("rejudge --force (H-41 F2): a forced commit that crashed after its fence is recovered by a plain resume, with no --basis and no compute, and is the judgment the report selects", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  const store = t.env.store;
+  const write = store.writeJudgment.bind(store);
+  store.writeJudgment = () =>
+    Promise.reject(new Error("killed after the fence"));
+  await assertRejects(
+    () =>
+      approvedRejudge(
+        e.id,
+        forceOpts(t, c, e, { replaces: oom.id }),
+        opener(t),
+      ),
+    Error,
+    "killed after the fence",
+  );
+  store.writeJudgment = write;
+  assert(!(await store.judgments(e.id)).some((j) => j.forced));
+  assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+  const n = laneCalls(t);
+  const r = await harnessRejudge(
+    "contract",
+    runOpts(t, { campaign: c.id }),
+    opener(t),
+  );
+  assertEquals([r.rejudged, n.calls], [0, 0]);
+  const js = await store.judgments(e.id);
+  const forced = js.find((j) => j.forced);
+  assert(forced, "the forced judgment was recovered");
+  const { selectJudgment } = await import("../../../../src/harness/outcome.ts");
+  assertEquals(selectJudgment(e, js, forced.task_oracle_hash)?.id, forced.id);
+});
+
+Deno.test("judge-pending (H-41): a deferred cell's judgment is committed as fence-0; a claim another judge holds leaves it owed", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.docker.behavior = mockImageBehavior();
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, supervised: false },
+      close: () => Promise.resolve(),
+    });
+  const o = cellOpts(t, { supervised: false });
+  const r = await harnessCell(
+    "mock-positive",
+    "HX-001",
+    { ...o, deferJudging: true },
+    open,
+    () => false,
+    noInterrupt,
+  );
+  const e = r.executions[0]!;
+  const held = acquireBenchLock(claimDirOf(t, e.id), { command: "other" });
+  const logs = capture();
+  try {
+    assertEquals(await harnessJudgePending(o, open), 0);
+  } finally {
+    logs.restore();
+    await held();
+  }
+  assertEquals(await t.env.store.judgments(e.id), []);
+  assert(logs.out.some((l) => l.includes(e.id) && l.includes("owed")));
+  assertEquals(await harnessJudgePending(o, open), 1);
+  const [j] = await t.env.store.judgments(e.id);
+  assertEquals(fencesOf(t, e.id), ["fence-0.json"]);
+  const f = JSON.parse(
+    await Deno.readTextFile(join(claimDirOf(t, e.id), "fence-0.json")),
+  );
+  assertEquals(f.judgment, j);
+});
+
+Deno.test("H-41 section 10: run binds its campaign once it is final and before any cell; rejudge binds before any judging, and a refused binding judges nothing", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const bound: [string, number][] = [];
+  t.env.bindCampaign = async (id) =>
+    void bound.push([id, (await t.env.store.allExecutions()).length]);
+  const { c, es } = await campaignWithStaleJudgment(t);
+  assertEquals(bound, [[c.id, 0]]);
+  const counts = async () =>
+    (await Promise.all(es.map((e) => t.env.store.judgments(e.id)))).map((js) =>
+      js.length
+    );
+  const before = await counts();
+  t.env.bindCampaign = () =>
+    Promise.reject(new ConfigurationError("campaign is pinned elsewhere"));
+  await assertRejects(
+    () => harnessRejudge("contract", runOpts(t), opener(t)),
+    ConfigurationError,
+    "pinned elsewhere",
+  );
+  assertEquals(await counts(), before);
+  bound.length = 0;
+  t.env.bindCampaign = (id) => Promise.resolve(void bound.push([id, -1]));
+  assertEquals(
+    (await harnessRejudge("contract", runOpts(t), opener(t))).rejudged,
+    1,
+  );
+  assertEquals(bound, [[c.id, -1]]);
+});
+
+Deno.test("openHarnessEnv (H-41 section 10): with an explicit list, bindCampaign pins the campaign to the start members' env_fp; a campaign pinned to another env_fp is refused", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const bcEgressOverride = "no NST firewall rule in the image";
+  const l = await loadLineage(lineage);
+  const bare = await openHarnessEnv(envOpts(t), deps([]));
+  const fps: string[] = [];
+  for (const c of bare.env.lane.containers) {
+    const m = await createBaseline(
+      bare.env.lane.bc,
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest: await lockDigestOf({
+          store: bare.env.symbolStore,
+          packages: bare.env.symbols,
+        }),
+      },
+    );
+    fps.push(m.env_fp);
+  }
+  await bare.close();
+  const h = await openHarnessEnv(
+    { ...envOpts(t), lineage, bcEgressOverride },
+    deps([]),
+  );
+  try {
+    const id = crypto.randomUUID();
+    await h.env.bindCampaign!(id);
+    const path = join(t.env.resultsRoot, "env-pins", `${id}.json`);
+    const pin = JSON.parse(await Deno.readTextFile(path));
+    assertEquals(
+      [pin.v, pin.campaign, pin.lineage_id, pin.env_fp, pin.by.command],
+      [1, id, l.id, fps[0], "test"],
+    );
+    await h.env.bindCampaign!(id);
+    const other = crypto.randomUUID();
+    await Deno.writeTextFile(
+      join(t.env.resultsRoot, "env-pins", `${other}.json`),
+      JSON.stringify({ ...pin, campaign: other, env_fp: "0".repeat(64) }),
+    );
+    await assertRejects(
+      () => h.env.bindCampaign!(other),
+      ConfigurationError,
+      "pinned",
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+// ---- H-41 group 3: `auto` judging (design-final 6, 8, 9, 14) ----
+
+/** console.log, console.warn and console.error lines (colors stripped). */
+function captureAll() {
+  const lines: string[] = [];
+  const push = (...a: unknown[]) =>
+    void lines.push(stripAnsiCode(a.map(String).join(" ")));
+  const s = [
+    stub(console, "log", push),
+    stub(console, "warn", push),
+    stub(console, "error", push),
+  ];
+  return { lines, restore: () => s.forEach((x) => x.restore()) };
+}
+
+/**
+ * H-41: t.env judging in `auto` mode on a pool over t.bc (pinning through
+ * the real env pin): rejudge's pool is the lane, run's the judge lane.
+ * bindCampaign binds it (recorded as `bind:<id>` in the world's events).
+ */
+function autoJudging(
+  t: TestEnv,
+  as: "lane" | "judges",
+  o: NonNullable<Parameters<typeof poolWorld>[1]> = {},
+) {
+  const r = poolWorld(t.bc, { env: t.env, alloc: [], ...o });
+  if (as === "lane") t.env.lane = r.pool.lane;
+  else t.env.judgeLane = r.pool.lane;
+  t.env.judgePooled = r.pool;
+  t.env.bindCampaign = async (id) => {
+    r.w.events.push(`bind:${id}`);
+    await r.pool.bind(id);
+  };
+  return r;
+}
+
+/** Every lane call (compile, compileOn, exclusive) on `lane`. */
+function laneUse(lane: TestEnv["env"]["lane"]) {
+  const n = { calls: 0 };
+  for (const k of ["compile", "compileOn", "exclusive"] as const) {
+    const real = (lane[k] as (...a: unknown[]) => unknown).bind(lane);
+    (lane as unknown as Record<string, unknown>)[k] = (...a: unknown[]) => {
+      n.calls++;
+      return real(...a);
+    };
+  }
+  return n;
+}
+
+/** Fences, verdict logs, judgments (per execution) and env pins on disk. */
+async function judgingState(t: TestEnv, es: ExecutionRecord[]) {
+  const names = (d: string) => {
+    try {
+      return [...Deno.readDirSync(d)].map((x) => x.name).sort();
+    } catch {
+      return [];
+    }
+  };
+  return {
+    fences: es.map((e) => fencesOf(t, e.id)),
+    verdicts: names(join(t.env.resultsRoot, "verdicts")),
+    judgments: await Promise.all(
+      es.map(async (e) =>
+        (await t.env.store.judgments(e.id)).map((j) => j.id).sort()
+      ),
+    ),
+    pins: names(join(t.env.resultsRoot, "env-pins")),
+  };
+}
+
+/** The new judgment of each execution: the one its fence-<g> carries. */
+const fencedJudgment = (t: TestEnv, id: string, g: number) =>
+  JSON.parse(
+    Deno.readTextFileSync(join(claimDirOf(t, id), `fence-${g}.json`)),
+  ).judgment as JudgmentRecord;
+
+function opened() {
+  let open!: () => void;
+  const p = new Promise<void>((r) => (open = r));
+  return { p, open };
+}
+
+Deno.test("rejudge --containers auto (H-41 Task 1): C2, allocated after the first commit, joins mid-run: it is used and registered; one fence and one judgment per W", async () => {
+  const { t, es, counts } = await h24Campaign();
+  try {
+    const { w, pool } = autoJudging(t, "lane", {
+      alloc: ["C1"],
+      bounds: { pollMs: 20 },
+    });
+    const store = t.env.store;
+    const write = store.writeJudgment.bind(store);
+    let first = true;
+    store.writeJudgment = async (j) => {
+      await write(j);
+      if (first) {
+        first = false;
+        w.alloc = ["C1", "C2"];
+      }
+    };
+    const c = captureAll();
+    let r;
+    try {
+      r = await harnessRejudge("contract", runOpts(t), opener(t));
+    } finally {
+      c.restore();
+    }
+    assertEquals(r.rejudged, 6);
+    assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+    for (const e of es) {
+      assertEquals(fencesOf(t, e.id), ["fence-0.json", "fence-1.json"]);
+    }
+    assertEquals(w.registered, ["C1", "C2"]);
+    const on = es.map((e) => fencedJudgment(t, e.id, 1).verdict_container);
+    assert(on.includes("C2"), `C2 never judged: ${on}`);
+    assert(c.lines.some((l) => l.includes("[JOIN]") && l.includes("C2")));
+    await pool.close();
+  } finally {
+    await t[Symbol.asyncDispose]();
+  }
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 6): a zero-member pool starves: the exit-75 flag, the execution stays owed; no fence, verdict log, judgment or pin; the budget unchanged", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const before = await judgingState(t, es);
+  const { pool } = autoJudging(t, "lane", {
+    bounds: { pollMs: 20, waitMs: 150 },
+  });
+  const c = captureAll();
+  let r;
+  try {
+    r = await harnessRejudge("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+  }
+  assertEquals([r.rejudged, r.starved, r.owed], [0, true, 1]);
+  assertEquals(await judgingState(t, es), before);
+  assert(c.lines.some((l) => l.includes("[STOP]")), c.lines.join("\n"));
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 6): every member drains mid-run: the rest stays owed and the rejudge starves; what was judged is fenced once", async () => {
+  const { t, es } = await h24Campaign();
+  try {
+    const { w, pool } = autoJudging(t, "lane", {
+      alloc: ["C1"],
+      bounds: { pollMs: 20, waitMs: 150 },
+    });
+    const before = await judgingState(t, es);
+    const store = t.env.store;
+    const write = store.writeJudgment.bind(store);
+    store.writeJudgment = async (j) => {
+      await write(j);
+      w.blocked.set("C1", "drain marker drain-C1");
+    };
+    const c = captureAll();
+    let r;
+    try {
+      r = await harnessRejudge("contract", runOpts(t), opener(t));
+    } finally {
+      c.restore();
+    }
+    assertEquals(r.starved, true);
+    assert(r.rejudged >= 1 && r.rejudged < 6, `rejudged ${r.rejudged}`);
+    assertEquals(r.owed, 6 - r.rejudged);
+    const after = await judgingState(t, es);
+    const judged = es.filter((_, i) => after.fences[i]!.length === 2);
+    assertEquals(judged.length, r.rejudged);
+    for (const [i, e] of es.entries()) {
+      if (judged.includes(e)) continue;
+      assertEquals(after.fences[i], before.fences[i]);
+      assertEquals(after.judgments[i], before.judgments[i]);
+    }
+    await until(() => w.events.includes("release:C1"), 2_000, "C1 released");
+    await pool.close();
+  } finally {
+    await t[Symbol.asyncDispose]();
+  }
+});
+
+Deno.test("run --judge-containers auto (H-41 Task 6, section 8): with no member the cells run on the agents' lane, their judgments stay owed (never unscored), the run starves (exit-75 flag) with owed counted; no fence, judgment or pin", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const { pool } = autoJudging(t, "judges", {
+    bounds: { pollMs: 20, waitMs: 150 },
+  });
+  const agents = laneUse(t.env.lane);
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+  }
+  assertEquals(
+    [s.ran, s.judged, s.unscored, s.owed, s.starved],
+    [2, 0, 0, 2, true],
+  );
+  assertEquals(agents.calls, 0, "judging on the agents' lane");
+  const es = await t.env.store.executions(s.campaignId!);
+  assertEquals(await judgingState(t, es), {
+    fences: [[], []],
+    verdicts: [],
+    judgments: [[], []],
+    pins: [],
+  });
+  await pool.close();
+});
+
+Deno.test("run (H-41 R1-L1): a cell published while another judge holds its claim counts owed, not unscored, on ordinary completion; nothing is written for it", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  let held = null as { id: string; release: () => Promise<void> } | null;
+  t.env.hooks = {
+    after: async (step) => {
+      if (step !== "execution" || held !== null) return;
+      // The first published execution: another judge takes its claim now.
+      const [c] = await t.env.store.campaigns("contract");
+      const [e] = await t.env.store.executions(c!.id);
+      held = {
+        id: e!.id,
+        release: acquireBenchLock(claimDirOf(t, e!.id), { command: "other" }),
+      };
+    },
+  };
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+    await held?.release();
+  }
+  assert(held, "no execution was published");
+  assertEquals(
+    [s.ran, s.judged, s.unscored, s.owed, s.starved],
+    [2, 1, 0, 1, undefined],
+    c.lines.join("\n"),
+  );
+  assertEquals(await t.env.store.judgments(held.id), []);
+  assertEquals(fencesOf(t, held.id), []);
+  assert(
+    c.lines.some((l) =>
+      l.includes("[OK] campaign") && l.includes("0 unscored, 1 owed")
+    ),
+    c.lines.join("\n"),
+  );
+});
+
+Deno.test("run --judge-containers auto (H-41 F9): a new campaign with zero judge members: the first admission comes after bindCampaign and the pin carries the new campaign's id", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  const { w, pool } = autoJudging(t, "judges", { bounds: { pollMs: 20 } });
+  const bind = t.env.bindCampaign!;
+  t.env.bindCampaign = async (id) => {
+    await bind(id);
+    w.alloc = ["J1"];
+  };
+  const c = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t), opener(t));
+  } finally {
+    c.restore();
+  }
+  assertEquals([s.created, s.judged, s.starved === true], [true, 2, false]);
+  const bound = w.events.indexOf(`bind:${s.campaignId}`);
+  assert(bound >= 0 && bound < w.events.indexOf("claim:J1"), `${w.events}`);
+  const pin = JSON.parse(
+    await Deno.readTextFile(
+      join(t.env.resultsRoot, "env-pins", `${s.campaignId}.json`),
+    ),
+  );
+  assertEquals([pin.campaign, pin.env_fp], [s.campaignId, FP]);
+  await pool.close();
+});
+
+/** A mock campaign whose second cell's sandbox outlived the run: its intent is kept for recovery. */
+async function interruptedCampaign(t: TestEnv) {
+  await writeCatalog(t);
+  t.env.supervised = false;
+  const base = mockImageBehavior();
+  let runs = 0;
+  t.docker.behavior = async (call, io) => {
+    if (++runs === 2) t.docker.lingering.add(call.name);
+    return await base(call, io);
+  };
+  await mockExperiment(t);
+  await assertRejects(
+    () =>
+      runCampaign(t.env, "contract", {
+        dryRun: false,
+        concurrency: 1,
+        maxPauseMs: 0,
+      }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG }),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  t.docker.behavior = base;
+  return (await t.env.store.campaigns("contract"))[0]!;
+}
+
+Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member joining it is judged once there", async () => {
+  for (const member of [null, "J1"]) {
+    await using t = await makeEnv();
+    const c = await interruptedCampaign(t);
+    const { w, pool } = autoJudging(t, "judges", {
+      bounds: { pollMs: 20, waitMs: 150 },
+    });
+    if (member) w.alloc = [member];
+    const agents = laneUse(t.env.lane);
+    const cap = captureAll();
+    let s;
+    try {
+      s = await harnessRun("contract", runOpts(t), opener(t));
+    } finally {
+      cap.restore();
+    }
+    assertEquals(agents.calls, 0, `${member}: judging on the agents' lane`);
+    const es = await t.env.store.executions(c.id);
+    const recovered = es.find((e) => e.termination === "harness_crash")!;
+    assert(
+      cap.lines.some((l) =>
+        l.includes(`${recovered.id}: judgment owed (judging pool)`)
+      ),
+      cap.lines.join("\n"),
+    );
+    const js = await t.env.store.judgments(recovered.id);
+    if (member === null) {
+      assertEquals([s.ran, s.starved, s.owed, js.length], [0, true, 1, 0]);
+    } else {
+      assertEquals([s.starved === true, js.length], [false, 1]);
+      assertEquals(js[0]!.verdict_container, "J1");
+      assertEquals(fencesOf(t, recovered.id), ["fence-0.json"]);
+    }
+    await pool.close();
+  }
+});
+
+Deno.test("run --rerun with --judge-containers auto (H-41 N4 b): the rerun cell runs on the agents' lane; with no judge member its judgment is owed and the run starves; after a join it is judged on the judge member", async () => {
+  for (const member of [null, "J1"]) {
+    await using t = await makeEnv();
+    await writeCatalog(t);
+    t.env.supervised = false;
+    t.docker.behavior = mockImageBehavior();
+    await mockExperiment(t);
+    await runCampaign(t.env, "contract", {
+      dryRun: false,
+      concurrency: 1,
+      maxPauseMs: 0,
+    }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+    const c = (await t.env.store.campaigns("contract"))[0]!;
+    const p = (await t.env.store.executions(c.id))[0]!;
+    await unscoredJudgments(t, p.id, 3);
+    const block = c.blocks[p.block]!;
+    const { w, pool } = autoJudging(t, "judges", {
+      bounds: { pollMs: 20, waitMs: 150 },
+    });
+    if (member) w.alloc = [member];
+    const agents = laneUse(t.env.lane);
+    const cap = captureAll();
+    let s;
+    try {
+      s = await harnessRun(
+        "contract",
+        runOpts(t, {
+          rerun: { task: block.task_id, repeat: block.repeat, arm: p.arm },
+        }),
+        opener(t),
+      );
+    } finally {
+      cap.restore();
+    }
+    const m = (await t.env.store.executions(c.id)).find((x) =>
+      x.run_kind === "manual_rerun"
+    )!;
+    const js = await t.env.store.judgments(m.id);
+    assertEquals(agents.calls, 0, `${member}: judging on the agents' lane`);
+    if (member === null) {
+      assertEquals(
+        [s.ran, s.judged, s.unscored, s.owed, s.starved, js.length],
+        [1, 0, 0, 1, true, 0],
+      );
+    } else {
+      assertEquals([s.ran, s.starved === true, js.length], [1, false, 1]);
+      assertEquals(js[0]!.verdict_container, "J1");
+    }
+    await pool.close();
+  }
+});
+
+Deno.test("rejudge --containers auto (H-41 N4 c): a draft recovered while the env opened (owed, no judge) is judged after binding", async () => {
+  await using t = await makeEnv();
+  const c = await interruptedCampaign(t);
+  const { w, pool } = autoJudging(t, "lane", {
+    alloc: ["C1"],
+    bounds: { pollMs: 20 },
+  });
+  const { recoverInterrupted } = await import(
+    "../../../../src/harness/execution.ts"
+  );
+  const cap = captureAll();
+  let r;
+  try {
+    // As openHarnessEnv recovers before any campaign is bound.
+    const [e] = await recoverInterrupted(t.env, loadTask);
+    assertEquals(await t.env.store.judgments(e!.id), []);
+    assertEquals(w.events, [], "recovery admitted a container");
+    r = await harnessRejudge("contract", runOpts(t), opener(t));
+    assertEquals((await t.env.store.judgments(e!.id)).length, 1);
+  } finally {
+    cap.restore();
+  }
+  assertEquals(r.rejudged, 1);
+  assert(w.events.indexOf(`bind:${c.id}`) < w.events.indexOf("claim:C1"));
+  await pool.close();
+});
+
+/**
+ * Section 14: two due executions; one holds C2 (a member continuously
+ * eligible) until released, the other keeps landing on C1, whose test run
+ * fails with an infra error (its cleanup is clean: no quarantine) and whose
+ * terminal inspection `inspect` answers while C1 is a member (its precheck,
+ * outside the lane, answers running). `inspect` may end the failures.
+ */
+async function uncertainLoop(
+  t: TestEnv,
+  inspect: (n: number, healed: () => void) => Promise<boolean>,
+) {
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  await staleJudgment(t, es[1]!.id);
+  const before = await judgingState(t, es);
+  const r = autoJudging(t, "lane", {
+    alloc: ["C1", "C2"],
+    bounds: { pollMs: 20, waitMs: 60_000 },
+    maxInfraRetries: 0,
+  });
+  let failing = true;
+  const run = t.bc.runHarnessTests.bind(t.bc);
+  t.bc.runHarnessTests = (c, codeunit) =>
+    failing && c === "C1"
+      ? Promise.reject(
+        new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+      )
+      : run(c, codeunit);
+  let n = 0;
+  r.w.isRunning = (c) =>
+    c === "C1" && r.pool.lane.containers.includes("C1")
+      ? inspect(++n, () => (failing = false))
+      : Promise.resolve(true);
+  const held = opened();
+  const lane = r.pool.lane;
+  const exclusive = lane.exclusive.bind(lane);
+  lane.exclusive = ((ctx, fn, signal, opts) =>
+    exclusive(
+      ctx,
+      async (c: string) => {
+        if (c === "C2") await held.p;
+        return await fn(c);
+      },
+      signal,
+      opts,
+    )) as typeof lane.exclusive;
+  return { ...r, es, before, held, inspections: () => n };
+}
+
+Deno.test("rejudge --containers auto (H-41 section 14): the attempted container's terminal inspection keeps failing while refresh and setup succeed and C2 stays eligible: W requeued 3 times, the 4th stops ([STOP], [UNANSWERED]); exit-75 flag; no judgment, verdict log or fence for W; budget unchanged; leases tracked", async () => {
+  await using t = await makeEnv();
+  const { w, pool, es, before, held, inspections } = await uncertainLoop(
+    t,
+    () => Promise.reject(new Error("docker inspect hung")),
+  );
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(() => inspections() >= 4, 10_000, "four inspections")
+      .catch((err) => {
+        throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+      });
+    await new Promise((res) => setTimeout(res, 100));
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  assertEquals(inspections(), 4, "W ran once more after its 4th loss");
+  const unanswered = cap.lines.filter((l) => l.includes("[UNANSWERED] C1"));
+  assertEquals(unanswered.length, 4, cap.lines.join("\n"));
+  const stop = cap.lines.filter((l) =>
+    l.includes("[STOP]") && l.includes("4 unanswered container checks")
+  );
+  assertEquals(stop.length, 1, cap.lines.join("\n"));
+  const after = await judgingState(t, es);
+  const lost = es.findIndex((e) => stop[0]!.includes(e.id));
+  assert(lost >= 0, stop[0]);
+  assertStringIncludes(stop[0]!, "1 stay owed");
+  assertEquals([r.rejudged, r.starved, r.owed], [1, true, 1]);
+  // W: nothing written, its budget unchanged; the other judged once on C2.
+  assertEquals(after.fences[lost], before.fences[lost]);
+  assertEquals(after.judgments[lost], before.judgments[lost]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  const other = es[1 - lost]!;
+  assertEquals(fencedJudgment(t, other.id, 1).verdict_container, "C2");
+  // Leases: each departure released C1's record before its rejoin; the
+  // last one is still tracked (the env closer releases it), none kept.
+  assertEquals(w.events.filter((e) => e === "claim:C1").length, 4);
+  assertEquals(w.events.filter((e) => e === "release:C1").length, 3);
+  assertEquals([...w.records.keys()].sort(), ["C1", "C2"]);
+  assertEquals(w.kept.size, 0);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 Task 3 / N3 end to end, R1-M3a): the last member C1 stops running while its test run throws infra: through the real queue and writer the pool loss commits nothing (fences, verdict logs, judgments, budget unchanged) and W is requeued; C2 then joins and W commits exactly one scored judgment", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { es } = await campaignWithStaleJudgment(t);
+  const before = await judgingState(t, es);
+  const { w, pool } = autoJudging(t, "lane", {
+    alloc: ["C1"],
+    bounds: { pollMs: 20, waitMs: 60_000 },
+    maxInfraRetries: 0,
+  });
+  const run = t.bc.runHarnessTests.bind(t.bc);
+  let onC1 = 0;
+  t.bc.runHarnessTests = (c, codeunit) => {
+    if (c !== "C1") return run(c, codeunit);
+    onC1++;
+    w.running.delete("C1"); // Docker no longer reports it running
+    return Promise.reject(
+      new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+    );
+  };
+  const claim = join(claimDirOf(t, es[0]!.id), ".bench-running.json");
+  const claimed = () => {
+    try {
+      Deno.statSync(claim);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const cap = captureAll();
+  let r;
+  let lost;
+  try {
+    const p = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(
+      () =>
+        cap.lines.some((l) => l.includes("[DEPART] C1")) &&
+        pool.width() === 0 && !claimed(),
+      10_000,
+      "C1's departure, W's claim released",
+    ).catch((err) => {
+      throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+    });
+    // W is queued again with no member: nothing runs, nothing was written.
+    await new Promise((res) => setTimeout(res, 100));
+    lost = await judgingState(t, es);
+    w.alloc = ["C1", "C2"];
+    r = await p;
+  } finally {
+    cap.restore();
+  }
+  const log = cap.lines.join("\n");
+  // C1's join pinned the campaign; the loss itself wrote nothing.
+  const written = (s: typeof before) => [s.fences, s.verdicts, s.judgments];
+  assertEquals(written(lost), written(before), log);
+  assertEquals(onC1, 1, log);
+  assertEquals([r.rejudged, r.starved === true], [1, false], log);
+  assertEquals(cap.lines.filter((l) => l.includes("[UNANSWERED]")), [], log);
+  const after = await judgingState(t, es);
+  const g = before.fences[0]!.length;
+  assertEquals(after.fences[0], [...before.fences[0]!, `fence-${g}.json`]);
+  assertEquals(after.fences[1], before.fences[1]);
+  assertEquals(after.judgments[1], before.judgments[1]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  const j = fencedJudgment(t, es[0]!.id, g);
+  assertEquals(
+    after.judgments[0],
+    [...before.judgments[0]!, j.id].sort(),
+    "exactly the fence's judgment is new",
+  );
+  assertEquals(j.verdict_container, "C2");
+  assert(j.verdict !== "unscored", `W judged ${j.verdict}`);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 section 14, R1-M1): through the real coord reader, C1's lease file unreadable at each terminal reconcile but readable at each refresh, C2 eligible: [UNANSWERED] (never [DEPART]), W stops after 3 counted requeues; exit-75 flag; no judgment, verdict log or fence for W; budget unchanged", async () => {
+  await using t = await makeEnv();
+  // A coord root (its own machine root) where C1's last lease is released.
+  const coordRoot = join(t.repo.root, "coord");
+  const attempt = join(coordRoot, "leases", "C1", "001");
+  const leaseFile = join(attempt, "lease.json");
+  const readable = JSON.stringify({ lane: "lane-ops", token: "T", at: 1 });
+  await Deno.mkdir(attempt, { recursive: true });
+  await Deno.writeTextFile(
+    join(coordRoot, "coord.json"),
+    JSON.stringify({ campaign: "h41" }),
+  );
+  await Deno.writeTextFile(leaseFile, readable);
+  await Deno.writeTextFile(join(attempt, "release.json"), "{}");
+  // The terminal reconcile asks Docker first, then reads the coord state:
+  // the file is torn in between. Every refresh reads the allocation first:
+  // the file is whole again before its blocked checks.
+  const { w, pool, deps, es, before, held, inspections } = await uncertainLoop(
+    t,
+    (n, healed) => {
+      Deno.writeTextFileSync(leaseFile, "{torn");
+      if (n >= 8) healed(); // ends the loop of a reader with no bound
+      return Promise.resolve(true);
+    },
+  );
+  deps.blocked = poolBlocked({
+    coordRoot,
+    own: new Map(),
+    drainDir: t.env.resultsRoot,
+  });
+  const allocated = w.allocated;
+  w.allocated = () => {
+    Deno.writeTextFileSync(leaseFile, readable);
+    return allocated();
+  };
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(() => inspections() >= 4, 10_000, "four inspections")
+      .catch((err) => {
+        throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+      });
+    await new Promise((res) => setTimeout(res, 100));
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  const log = cap.lines.join("\n");
+  assertEquals(inspections(), 4, `W ran once more after its 4th loss:\n${log}`);
+  const unanswered = cap.lines.filter((l) => l.includes("[UNANSWERED] C1"));
+  assertEquals(unanswered.length, 4, log);
+  for (const l of unanswered) {
+    assertStringIncludes(l, "blocked");
+    assertStringIncludes(l, "C1/001 unreadable");
+  }
+  assertEquals(cap.lines.filter((l) => l.includes("[DEPART] C1")), [], log);
+  const stop = cap.lines.filter((l) =>
+    l.includes("[STOP]") && l.includes("4 unanswered container checks")
+  );
+  assertEquals(stop.length, 1, log);
+  assertStringIncludes(stop[0]!, "1 stay owed");
+  assertEquals([r.rejudged, r.starved, r.owed], [1, true, 1]);
+  const after = await judgingState(t, es);
+  const lost = es.findIndex((e) => stop[0]!.includes(e.id));
+  assert(lost >= 0, stop[0]);
+  // W: nothing written, its budget unchanged; the other judged once on C2.
+  assertEquals(after.fences[lost], before.fences[lost]);
+  assertEquals(after.judgments[lost], before.judgments[lost]);
+  assertEquals(after.verdicts.length, before.verdicts.length + 1);
+  assertEquals(fencedJudgment(t, es[1 - lost]!.id, 1).verdict_container, "C2");
+  // Each refresh read the file whole: C1 was readmitted after every loss.
+  assertEquals(w.events.filter((e) => e === "claim:C1").length, 4);
+  assertEquals(w.events.filter((e) => e === "release:C1").length, 3);
+  assertEquals(w.kept.size, 0);
+  await pool.close();
+});
+
+Deno.test("rejudge --containers auto (H-41 section 14 control): a confirmed departure does not consume the bound: five departures, then the deployment works and W is judged", async () => {
+  await using t = await makeEnv();
+  const { pool, es, held } = await uncertainLoop(t, (n, healed) => {
+    if (n >= 5) healed();
+    return Promise.resolve(false);
+  });
+  const cap = captureAll();
+  let r;
+  try {
+    const run = harnessRejudge("contract", runOpts(t), opener(t));
+    await until(
+      () => cap.lines.filter((l) => l.includes("[DEPART] C1")).length >= 5,
+      10_000,
+      "five departures",
+    ).catch((err) => {
+      throw new Error(`${err.message}:\n${cap.lines.join("\n")}`);
+    });
+    held.open();
+    r = await run;
+  } finally {
+    cap.restore();
+  }
+  assertEquals([r.rejudged, r.starved === true], [2, false]);
+  assert(!cap.lines.some((l) => l.includes("[STOP]")), cap.lines.join("\n"));
+  for (const e of es) assertEquals(fencesOf(t, e.id).length, 2);
+  await pool.close();
+});
+
+// ---- H-41 group 3: the environment's pool, coord leases and the CLI ----
+
+const NO_NST_RULE = "no NST firewall rule in the image";
+
+/** An instance manifest per container for `lineage`, as `harness baseline create` writes it; their env_fps. */
+async function baselines(t: TestEnv, lineage: string, cs: string[]) {
+  const l = await loadLineage(lineage);
+  const lockDigest = await lockDigestOf({
+    store: t.repo.symbolStore,
+    packages: t.repo.symbols,
+  });
+  const fps: string[] = [];
+  for (const c of cs) {
+    const m = await createBaseline(
+      new FakeBc(),
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest,
+      },
+    );
+    fps.push(m.env_fp);
+  }
+  return fps;
+}
+
+/** deps() for an `auto` environment: one FakeBc for every setup, a mutable allocation, a real health monitor. */
+function autoDeps(order: string[]) {
+  const bc = new FakeBc();
+  const alloc: string[] = [];
+  let health: ContainerHealthMonitor | null = null;
+  const d: EnvDeps = {
+    ...deps(order),
+    setup: (names) => {
+      order.push(`setup:${names.join(",")}`);
+      return Promise.resolve({ bc, names, dispose: () => Promise.resolve() });
+    },
+    inspect: () => bc,
+    allocatedAll: () => Promise.resolve([...alloc]),
+    health: (names) =>
+      health = new ContainerHealthMonitor({
+        windowSize: 20,
+        expectedContainerNames: names,
+      }),
+  };
+  return { bc, alloc, d, monitor: () => health! };
+}
+
+Deno.test("openHarnessEnv --containers auto (H-41 sections 6, 10; Task 1): opens with no member and stays inert until bindCampaign; an allocated, baselined container then joins (in-use record, set up, health-registered) and pins the campaign; its record goes at close", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const [fp] = await baselines(t, lineage, ["Cronus283"]);
+  const order: string[] = [];
+  const a = autoDeps(order);
+  const h = await openHarnessEnv({
+    ...envOpts(t, []),
+    auto: "containers",
+    lineage,
+    bcEgressOverride: NO_NST_RULE,
+  }, a.d);
+  const records = async () =>
+    (await findRecords(a.d.quarantineDir(), {
+      name: "Cronus283",
+      id: fakeId("Cronus283"),
+    })).map((f) => f.record?.state);
+  try {
+    const pool = h.env.judgePooled;
+    assert(pool, "auto mode has a pool");
+    assertEquals([h.env.lane.containers, pool.width()], [[], 0]);
+    a.alloc.push("Cronus283");
+    await pool.refresh();
+    assertEquals(
+      h.env.lane.containers,
+      [],
+      "a container joined before binding",
+    );
+    const id = crypto.randomUUID();
+    await h.env.bindCampaign!(id);
+    const c = captureAll();
+    try {
+      await pool.refresh();
+    } finally {
+      c.restore();
+    }
+    assertEquals(h.env.lane.members(), ["Cronus283"], c.lines.join("\n"));
+    assertEquals(order.filter((x) => x.startsWith("setup")), [
+      "setup:",
+      "setup:Cronus283",
+    ]);
+    assertEquals(await records(), ["in_use"]);
+    assert(
+      a.monitor().getState().containers.some((x) =>
+        x.containerName === "Cronus283"
+      ),
+    );
+    const pin = JSON.parse(
+      await Deno.readTextFile(
+        join(t.env.resultsRoot, "env-pins", `${id}.json`),
+      ),
+    );
+    assertEquals([pin.campaign, pin.env_fp], [id, fp]);
+  } finally {
+    await h.close();
+  }
+  assertEquals(await records(), []);
+});
+
+Deno.test("openHarnessEnv --judge-containers auto (H-41 N4 a): an interrupted execution recovered at open is published and left owed ([INFO]); the env opens with no judge member and nothing is compiled, deployed or tested", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  t.docker.behavior = async (call, io) => {
+    t.docker.lingering.add(call.name);
+    return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  // As an environment of this private root runs it (namespaced owner).
+  const owner = namespaceOwner("HOST1", t.env.privateRoot);
+  await assertRejects(
+    () => runCell({ ...t.env, owner }, cell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  t.docker.lingering.clear();
+  const lineage = await v2Lineage();
+  await baselines(t, lineage, ["Cronus281"]);
+  const a = autoDeps([]);
+  const c = captureAll();
+  let h;
+  try {
+    h = await openHarnessEnv({
+      ...envOpts(t),
+      auto: "judges",
+      lineage,
+      bcEgressOverride: NO_NST_RULE,
+    }, a.d);
+  } finally {
+    c.restore();
+  }
+  try {
+    const [e] = await t.env.store.executions(cell.campaignId);
+    assert(e, "the interrupted execution was recovered");
+    assertEquals(await t.env.store.judgments(e.id), []);
+    assert(
+      c.lines.some((l) => l.includes(`${e.id}: judgment owed (judging pool)`)),
+      c.lines.join("\n"),
+    );
+    assertEquals([a.bc.compiles.length, a.bc.syncs.length, a.bc.tests.length], [
+      0,
+      0,
+      0,
+    ]);
+    assertEquals(h.env.judgeLane?.containers, []);
+    assertEquals(h.env.lane.containers, ["Cronus281"]);
+  } finally {
+    await h.close();
+  }
+});
+
+Deno.test("openHarnessEnv (H-41 section 10): `auto` without a lineage is refused before the lock", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  for (
+    const o of [
+      { ...envOpts(t, []), auto: "containers" as const },
+      { ...envOpts(t), auto: "judges" as const },
+    ]
+  ) {
+    await assertRejects(
+      () => openHarnessEnv(o, deps(order)),
+      ConfigurationError,
+      "--lineage",
+    );
+  }
+  assertEquals(order, []);
+});
+
+Deno.test("openHarnessEnv (H-41 F8, Q7): a fixed container under another holder's coord lease refuses the start before the lock; this run's --coord-lease token admits it; the fixed lane then blocks on a coord lease taken later and ignores drain markers", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  const d = deps(order);
+  const lease = (c: string, token: string, lane = "lane-ops") => {
+    const dir = join(d.coordRoot(), "leases", c, "001");
+    Deno.mkdirSync(dir, { recursive: true });
+    Deno.writeTextFileSync(
+      join(dir, "lease.json"),
+      JSON.stringify({ lane, token, at: new Date().toISOString() }),
+    );
+  };
+  lease("Cronus281", "T1");
+  const fixed = envOpts(t, ["Cronus281", "Cronus282"]);
+  await assertRejects(
+    () => openHarnessEnv(fixed, d),
+    ConfigurationError,
+    "coord lease Cronus281/001 held by lane-ops",
+  );
+  await assertRejects(
+    () =>
+      openHarnessEnv({
+        ...fixed,
+        coordLeases: new Map([["Cronus281", "another token"]]),
+      }, d),
+    ConfigurationError,
+    "coord lease Cronus281/001",
+  );
+  assertEquals(order, []);
+  const h = await openHarnessEnv({
+    ...fixed,
+    coordLeases: new Map([["Cronus281", "T1"]]),
+  }, d);
+  try {
+    const healthy = () =>
+      (h.env.lane as unknown as { healthy(): string[] }).healthy();
+    await Deno.writeTextFile(join(t.env.resultsRoot, "drain-Cronus281"), "");
+    assertEquals(healthy(), ["Cronus281", "Cronus282"], "a fixed lane drained");
+    lease("Cronus282", "T9", "lane-other");
+    assertEquals(healthy(), ["Cronus281"]);
+  } finally {
+    await h.close();
+  }
+});
+
+Deno.test("CLI (H-41): rejudge --containers auto and run --judge-containers auto reach the environment as auto with --lineage, --pool-wait-min (default 10) and repeated --coord-lease; a starved rejudge exits 75", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await campaignWithStaleJudgment(t);
+  const seen: EnvOptions[] = [];
+  const open = (eo: EnvOptions) => {
+    seen.push(eo);
+    const { pool } = autoJudging(
+      t,
+      eo.auto === "containers" ? "lane" : "judges",
+      { bounds: { pollMs: 20, waitMs: 100 } },
+    );
+    return Promise.resolve({ env: t.env, close: () => pool.close() });
+  };
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, open);
+  const lineage = join(t.repo.root, "lineage.json");
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+    "--lineage",
+    lineage,
+    "--coord-lease",
+    "Cronus283=T1",
+    "--coord-lease",
+    "Cronus285=T2",
+  ];
+  const codes: (number | undefined)[] = [];
+  const cwd = Deno.cwd();
+  const c = captureAll();
+  try {
+    Deno.chdir(t.repo.root);
+    for (
+      const args of [
+        ["rejudge", "contract", "--containers", "auto", "--yes"],
+        [
+          "run",
+          "contract",
+          "--judge-containers",
+          "auto",
+          "--pool-wait-min",
+          "3",
+        ],
+      ]
+    ) {
+      await cli.parse(["harness", ...args, ...flags]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(codes, [75, 0], c.lines.join("\n"));
+  assertEquals(
+    seen.map((
+      eo,
+    ) => [eo.auto, eo.containers, eo.judgeContainers, eo.poolWaitMin]),
+    [["containers", [], undefined, 10], [
+      "judges",
+      ["Cronus281"],
+      undefined,
+      3,
+    ]],
+  );
+  for (const eo of seen) {
+    assertEquals(eo.lineage, lineage);
+    assertEquals([...eo.coordLeases!], [["Cronus283", "T1"], [
+      "Cronus285",
+      "T2",
+    ]]);
+  }
+});
+
+Deno.test("CLI (H-41): `auto` without --lineage, auto agent containers, --pool-wait-min outside 0..120 or not an integer, and a malformed or conflicting --coord-lease are refused before any environment opens", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await campaignWithStaleJudgment(t);
+  let opened = 0;
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, () => {
+    opened++;
+    return Promise.reject(new Error("an environment opened"));
+  });
+  const base = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const lin = ["--lineage", join(t.repo.root, "lineage.json")];
+  const cases: [string[], string][] = [
+    [["rejudge", "contract", "--containers", "auto", "--yes"], "--lineage"],
+    [["run", "contract", "--judge-containers", "auto"], "--lineage"],
+    [["run", "contract", "--containers", "auto", ...lin], "agent containers"],
+    [[
+      "rejudge",
+      "contract",
+      "--containers",
+      "auto",
+      "--yes",
+      "--pool-wait-min",
+      "121",
+      ...lin,
+    ], "--pool-wait-min"],
+    [[
+      "run",
+      "contract",
+      "--judge-containers",
+      "auto",
+      "--pool-wait-min=-1",
+      ...lin,
+    ], "--pool-wait-min"],
+    [[
+      "run",
+      "contract",
+      "--coord-lease",
+      "Cronus283=T1",
+      "--coord-lease",
+      "cronus283=T2",
+    ], "--coord-lease"],
+  ];
+  const codes: (number | undefined)[] = [];
+  const cwd = Deno.cwd();
+  const c = captureAll();
+  try {
+    Deno.chdir(t.repo.root);
+    for (const [args] of cases) {
+      await cli.parse(["harness", ...args, ...base]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+    await assertRejects(() =>
+      cli.parse([
+        "harness",
+        "rejudge",
+        "contract",
+        "--containers",
+        "auto",
+        "--pool-wait-min",
+        "2.5",
+        ...lin,
+        ...base,
+      ])
+    );
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(codes, cases.map(() => 1), c.lines.join("\n"));
+  for (const [args, why] of cases) {
+    assert(
+      c.lines.some((l) => l.includes("[FAIL]") && l.includes(why)),
+      `${args.join(" ")}: ${c.lines.join("\n")}`,
+    );
+  }
+  assertEquals(opened, 0);
+  for (const bad of ["Cronus283", "=T1", "Cronus283=", "Cronus 283=T1"]) {
+    assertThrows(() => parseCoordLease(bad), ValidationError, "--coord-lease");
+  }
+  assertEquals(parseCoordLease("Cronus283=T-1"), ["Cronus283", "T-1"]);
+});
+
+Deno.test("rejudge with an explicit list (H-41 regression): infra on every container stays unscored and spends the budget as today; nothing is requeued", async () => {
+  const { t, es, counts } = await h24Campaign();
+  try {
+    t.bc.runHarnessTests = (c) =>
+      Promise.reject(
+        new ContainerError(`SOAP test run on ${c} timed out`, c, "test"),
+      );
+    const c = captureAll();
+    let r;
+    try {
+      r = await harnessRejudge("contract", runOpts(t), opener(t));
+    } finally {
+      c.restore();
+    }
+    assertEquals([r.rejudged, r.starved], [6, undefined]);
+    assertEquals(await counts(), [3, 3, 3, 3, 3, 3]);
+    for (const e of es) {
+      assertEquals(fencedJudgment(t, e.id, 1).verdict, "unscored");
+    }
+    assert(
+      !c.lines.some((l) =>
+        l.includes("[UNANSWERED]") || l.includes("[DEPART]")
+      ),
+    );
+  } finally {
+    await t[Symbol.asyncDispose]();
+  }
+});
+
+// ---- H-35 S1.7 (design-r4 3.1): two build caches, never crossed ----
+
+Deno.test("H-35: the env opens a judge and an agent build cache: judging and the agent backend never see each other's builds, and neither reads the old shared cache", async () => {
+  const { buildCacheDir, dirBuildCache } = await import(
+    "../../../../src/harness/bc-lane.ts"
+  );
+  await using t = await makeEnv();
+  const o = envOpts(t);
+  const pkg = join(o.privateRoot, "pkg.app");
+  await Deno.mkdir(o.privateRoot, { recursive: true });
+  await Deno.writeTextFile(pkg, "pkg");
+  // A build the single H-27 cache holds from before the split.
+  await dirBuildCache(join(o.privateRoot, "build-cache")).put("old", pkg);
+  const h = await openHarnessEnv(o, deps([]));
+  try {
+    const judge = h.env.buildCache;
+    const agent = h.env.backend["o"].buildCache;
+    if (!judge || !agent) throw new Error("the env opens both build caches");
+    await judge.put("judge-key", pkg);
+    await agent.put("agent-key", pkg);
+    assertEquals(await agent.get("judge-key"), null);
+    assertEquals(await judge.get("agent-key"), null);
+    assertEquals(await judge.get("old"), null);
+    assertEquals(await agent.get("old"), null);
+    assert(
+      (await judge.get("judge-key"))!.startsWith(
+        buildCacheDir(o.privateRoot, "judge"),
+      ),
+    );
+    assert(
+      (await agent.get("agent-key"))!.startsWith(
+        buildCacheDir(o.privateRoot, "agent"),
+      ),
+    );
+    assert(
+      buildCacheDir(o.privateRoot, "judge") !==
+        buildCacheDir(o.privateRoot, "agent"),
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+Deno.test("H-35 S2.3: judging stores the task preimage under the judgment's oracle hash", async () => {
+  await using t = await makeEnv();
+  await git(t.repo.root, "add", ".");
+  await git(t.repo.root, "commit", "-q", "-m", "tasks");
+  await git(t.repo.root, "tag", "refapp-v1-rc1");
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1-rc1", positive: "correct", naive: ["a"] },
+      },
+    }),
+  );
+  const o = cellOpts(t, { rev: "refapp-v1-rc1", manifest });
+  const pass = await harnessJudgeFixture("HX-001", "correct", o, opener(t));
+  const { loadOracleDescriptor } = await import(
+    "../../../../src/harness/task-oracle.ts"
+  );
+  const d = await loadOracleDescriptor(
+    t.env.resultsRoot,
+    pass.task_oracle_hash,
+  );
+  assert(d !== "unknown");
+  assertEquals(d.kind, "bugfix");
+});
+
+Deno.test("rejudge (H-35 S2.5): freezes the pairing of every due execution with an old judgment before judging, and appends each new judgment", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  await unscoredJudgments(t, e.id, 1);
+  const before = await t.env.store.judgments(e.id);
+  const old = before.reduce((a, b) => (b.ended_at > a.ended_at ? b : a));
+  const r = await harnessRejudge("contract", runOpts(t), opener(t));
+  assertEquals(r.rejudged, 1);
+  const dir = join(t.env.resultsRoot, "pairings");
+  const frozen = [];
+  for await (const f of Deno.readDir(dir)) {
+    if (f.name.endsWith(".json")) frozen.push(f.name.slice(0, -5));
+  }
+  assertEquals(frozen.length, 1);
+  const { pairing, completions } = await loadPairing(
+    t.env.resultsRoot,
+    frozen[0]!,
+  );
+  assertEquals(pairing.cohort.campaign, c.id);
+  assertEquals(
+    pairing.cells.map((x) => [x.execution_id, x.old_judgment_id]),
+    [[e.id, old.id]],
+  );
+  const after = await t.env.store.judgments(e.id);
+  assertEquals(completions.length, 1);
+  assertEquals(completions[0]!.execution_id, e.id);
+  assert(after.some((j) => j.id === completions[0]!.new_judgment_id));
+  assert(!before.some((j) => j.id === completions[0]!.new_judgment_id));
+  // `harness pairing` reconciles it: one completed pair, nothing pending.
+  const report = await harnessPairing(frozen[0]!, t.env.resultsRoot);
+  assertEquals([report.pairs, report.pending, report.missing], [1, [], []]);
+  assertEquals(report.cells[0]!.old, "unscored");
+  assert(report.cells[0]!.flags.includes("infra"));
+});
+
+Deno.test("H-35 orch Sol r1 #6: a campaign judgment records the env's harness commit in its provenance", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const e = (await t.env.store.executions(c.id))[0]!;
+  const [j] = await t.env.store.judgments(e.id);
+  assertEquals(j!.provenance?.harness_commit, t.env.harnessCommit);
+  assertEquals(t.env.harnessCommit, "f".repeat(40));
+});
+
+Deno.test("H-35 S3.2 openHarnessEnv: --lineage gives judging the golden reset; without it judging refuses; a bad lineage stops the start", async () => {
+  await using t = await makeEnv();
+  // H-35 S3: v2 carries every section admission needs; its NST egress is
+  // unenforced, so the run declares it.
+  const lineage = await v2Lineage();
+  const bcEgressOverride = "no NST firewall rule in the image";
+  const bare = await openHarnessEnv(envOpts(t), deps([]));
+  assertEquals(bare.env.deploy.reset.id, "unconfigured");
+  // H-35 S3.4: no instance manifest yet, so the lineage run is refused.
+  await bare.close();
+  await assertRejects(
+    () =>
+      openHarnessEnv({ ...envOpts(t), lineage, bcEgressOverride }, deps([])),
+    ConfigurationError,
+    "no instance manifest",
+  );
+  // `harness baseline create` for each container (its reset faked here).
+  const l = await loadLineage(lineage);
+  const again = await openHarnessEnv(envOpts(t), deps([]));
+  for (const c of again.env.lane.containers) {
+    await createBaseline(
+      again.env.lane.bc,
+      {
+        ...OK_RESET,
+        id: "golden-restore",
+        compat: { lineage: lineageCompat(l) },
+      },
+      c,
+      {
+        resultsRoot: join(t.repo.root, "results", "harness"),
+        lineageId: l.id,
+        lockDigest: await lockDigestOf({
+          store: again.env.symbolStore,
+          packages: again.env.symbols,
+        }),
+      },
+    );
+  }
+  await again.close();
+  // admitted, but the unenforced egress needs the run's declaration
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, deps([])),
+    ConfigurationError,
+    "--unverified-bc-egress-ok",
+  );
+  const h = await openHarnessEnv(
+    { ...envOpts(t), lineage, bcEgressOverride },
+    deps([]),
+  );
+  assertEquals(
+    [h.env.deploy.reset.id, h.env.deploy.reset.policyVersion],
+    ["golden-restore", 2],
+  );
+  assertEquals(h.env.deploy.bcEgress, {
+    mode: "unenforced",
+    override: bcEgressOverride,
+  });
+  await h.close();
+  await assertRejects(
+    () =>
+      openHarnessEnv(
+        { ...envOpts(t), lineage: join(t.repo.root, "missing.json") },
+        deps([]),
+      ),
+    ConfigurationError,
+    "reset lineage",
+  );
+});
+
+Deno.test("H-35 Sol S3 r3: a dry run's plan env checks the lineage's NST egress as admission does and carries the override", async () => {
+  await using t = await makeEnv();
+  const lineage = resolve("infra/harness-reset/lineages/golden-o09-v2.json");
+  await assertRejects(
+    () => openPlanEnv({ ...envOpts(t), lineage }, planDeps(t, [])),
+    ConfigurationError,
+    "--unverified-bc-egress-ok",
+  );
+  const p = await openPlanEnv(
+    { ...envOpts(t), lineage, bcEgressOverride: "r" },
+    planDeps(t, []),
+  );
+  assertEquals(p.bcEgress, { mode: "unenforced", override: "r" });
+  assertEquals(
+    (await openPlanEnv(envOpts(t), planDeps(t, []))).bcEgress,
+    undefined,
+  );
+});
+
+Deno.test("H-35 S3.4 baselineCreate and envCheck: a created baseline makes the container admissible for its lineage; a container without one is not", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const l = await loadLineage(lineage);
+  // the production mechanism with its reset faked (every admission section)
+  const fake = () => testResetFor(lineage, l);
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  const before = await envCheck(o, deps([]), fake);
+  assertEquals(before.admissible, false);
+  const made = await baselineCreate(o, deps([]), fake);
+  assertEquals(made.map((m) => [m.container, m.lineage_id]), [[
+    "Cronus281",
+    "golden-o09-v2",
+  ]]);
+  const after = await envCheck(o, deps([]), fake);
+  assert(after.admissible, renderEnvCheck(after));
+  assertEquals(after.rows[0]!.env_fp, made[0]!.env_fp);
+});
+
+/** A FakeBc whose every method call is recorded by name. */
+function recordingBc(calls: string[]): FakeBc {
+  return new Proxy(new FakeBc(), {
+    get(target, p, receiver) {
+      const v = Reflect.get(target, p, receiver);
+      return typeof v === "function"
+        ? (...a: unknown[]) => {
+          calls.push(String(p));
+          return v.apply(target, a);
+        }
+        : v;
+    },
+  });
+}
+
+/** The v2 lineage's mechanism with its reset, inventory check and fsDigest faked. */
+async function fakedGolden(
+  calls: string[],
+  step = { reset: true, verify: true, fs: true },
+) {
+  const lineage = await v2Lineage();
+  const l = await loadLineage(lineage);
+  const roots = l.fs!.roots;
+  const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
+  const mechanism = () => ({
+    ...testResetFor(lineage, l),
+    reset: async (c: string) => {
+      calls.push("reset");
+      const r = await OK_RESET.reset(c);
+      return step.reset
+        ? r
+        : { ...r, ok: false, failed_step: "restore", error: "boom" };
+    },
+    verifyClean: (c: string) => {
+      calls.push("verifyClean");
+      return Promise.resolve({
+        container: c,
+        ok: step.verify,
+        diff: step.verify ? [] : ["+ app planted"],
+        error: step.verify ? null : "inventory differs",
+      });
+    },
+    fsDigest: () => {
+      calls.push("fsDigest");
+      return Promise.resolve(
+        step.fs ? clean : [...clean.slice(0, -1), "E|C:\\Run\\my|denied"],
+      );
+    },
+  });
+  return { lineage, step, mechanism };
+}
+
+Deno.test("H-35 run 004 #2 envCheck is read-only: no setupContainers (prenuke, warmup), no lock, no reset; the bc is asked for its compiler identity only", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const d: EnvDeps = {
+    ...deps(order),
+    setup: () => {
+      calls.push("setup");
+      throw new Error("env check must not run setupContainers");
+    },
+    inspect: () => recordingBc(calls),
+  };
+  const c = await envCheck(
+    {
+      repoRoot: t.repo.root,
+      containers: ["Cronus281"],
+      lineage,
+      symbolStore: t.repo.symbolStore,
+      bcEgressOverride: "r",
+    },
+    d,
+    mechanism,
+  );
+  assertEquals(c.rows.map((r) => [r.container, r.why]), [[
+    "Cronus281",
+    "no instance manifest",
+  ]]);
+  assertEquals(calls, ["harnessCompilerIdentity"]);
+  assertEquals(order, []);
+});
+
+Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the container not admissible and a new environment refuses it before setup; harness recover clears it only after reset, inventory check and fsDigest all pass", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, step, mechanism } = await fakedGolden(calls);
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    setup: () => {
+      calls.push("setup");
+      throw new Error("a quarantined container must not be set up");
+    },
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  await baselineCreate(o, d, mechanism);
+  assert((await envCheck(o, d, mechanism)).admissible);
+  // an earlier environment quarantined it (another spelling of the name);
+  // Sol r2 N4: a non-filesystem cause with a clean L4 after-capture
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const reason = "reset of Cronus281 failed at restore: boom";
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "CRONUS281",
+    id: key.id,
+    reason,
+    by: "test",
+    pid: 1,
+    fs_diff: [],
+    fs_captured: true,
+  });
+  const c = await envCheck(o, d, mechanism);
+  assertEquals(c.admissible, false);
+  assertStringIncludes(c.rows[0]!.why!, `quarantined (${reason})`);
+  await assertRejects(
+    () => openHarnessEnv({ ...envOpts(t), lineage }, d),
+    ConfigurationError,
+    "quarantined container(s)",
+  );
+  assert(!calls.includes("setup"));
+  // every failing step keeps the record and leaves no manifest
+  for (const k of ["reset", "verify", "fs"] as const) {
+    step[k] = false;
+    await assertRejects(() => recoverContainer(o, d, mechanism));
+    step[k] = true;
+    assertEquals((await findRecords(qDir, key)).length, 1, `${k} failed`);
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  }
+  calls.length = 0;
+  order.length = 0;
+  const m = await recoverContainer(o, d, mechanism);
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(order, ["lock", "release"]);
+  assertEquals(await findRecords(qDir, key), []);
+  assertEquals(
+    (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
+    m.env_fp,
+  );
+  assert((await envCheck(o, d, mechanism)).admissible);
+  // H-35 run 004 Sol r1 H4: a crashed environment's in-use record refuses
+  // the same way. Sol r2 N2/N4: recover refuses it while it may be live
+  // (no --abandon, or another token), and with its token it still refuses:
+  // no filesystem evidence, the container must be recreated
+  const live = await plantRecord(qDir, {
+    id: key.id,
+    container: "Cronus281",
+    state: "in_use",
+    by: "HOST9 x",
+    pid: 9,
+  });
+  const u = await envCheck(o, d, mechanism);
+  assertStringIncludes(u.rows[0]!.why!, "in use by HOST9 x");
+  calls.length = 0;
+  for (const abandon of [null, crypto.randomUUID()]) {
+    await assertRejects(
+      () => recoverContainer({ ...o, abandon }, d, mechanism),
+      ConfigurationError,
+      `a live environment may hold it; if it is gone, pass --abandon ${live}`,
+    );
+  }
+  await assertRejects(
+    () => recoverContainer({ ...o, abandon: live }, d, mechanism),
+    ConfigurationError,
+    "no trustworthy filesystem evidence: the container must be recreated (lane-ops)",
+  );
+  assertEquals(calls, [], "every refusal comes before the reset");
+  assertEquals(
+    (await findRecords(qDir, key)).map((f) => f.record?.token),
+    [live],
+    "kept; recover's own claim is gone",
+  );
+});
+
+Deno.test("H-35 run 004 Sol r1 H4 in-use records: written once per container (agent and judge lanes) before setup, deleted on a normal close, left while unclosed (a crash) and refusing every other environment", async () => {
+  await using t = await makeEnv();
+  await using other = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const states: string[] = [];
+  const d = (): EnvDeps => {
+    const x = deps([]);
+    return {
+      ...x,
+      quarantineDir: () => qDir,
+      setup: async (names) => {
+        for (const n of names) {
+          for (const f of await findRecords(qDir, { name: n, id: fakeId(n) })) {
+            states.push(`${n}:${f.record?.state}`);
+          }
+        }
+        return x.setup(names);
+      },
+    };
+  };
+  const key = (n: string) => ({ name: n, id: fakeId(n) });
+  const two = { ...envOpts(t), judgeContainers: ["Cronus282"] };
+  const h = await openHarnessEnv(two, d());
+  assertEquals(states, ["Cronus281:in_use", "Cronus282:in_use"]);
+  const files: string[] = [];
+  for await (const e of Deno.readDir(qDir)) files.push(e.name);
+  assertEquals(
+    files.sort(),
+    [fakeId("Cronus281"), fakeId("Cronus282")].map((i) => `${i}.json`).sort(),
+  );
+  // unclosed (as after a crash): the record stands and refuses another environment
+  await assertRejects(
+    () => openHarnessEnv(envOpts(other), d()),
+    ConfigurationError,
+    "Cronus281 (in use by HOST1 test (pid",
+  );
+  await h.close();
+  assertEquals(await findRecords(qDir, key("Cronus281")), []);
+  assertEquals(await findRecords(qDir, key("Cronus282")), []);
+  // H-35 run 004 Sol r2 N3: a failed setup (it may have changed the
+  // container) keeps the claim, loudly
+  const bad = d();
+  bad.setup = () => Promise.reject(new Error("setup failed"));
+  const logged: string[] = [];
+  const err = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  try {
+    await assertRejects(
+      () => openHarnessEnv(envOpts(t), bad),
+      Error,
+      "setup failed",
+    );
+  } finally {
+    err.restore();
+  }
+  assertEquals(
+    (await findRecords(qDir, key("Cronus281"))).map((f) => f.record?.state),
+    ["in_use"],
+  );
+  assertStringIncludes(
+    logged.join("\n"),
+    "in-use record of Cronus281 kept",
+  );
+  assertStringIncludes(logged.join("\n"), "setup failed after it may have");
+  await Deno.remove(recordFile(qDir, fakeId("Cronus281")));
+  // a refusal before setup (another container held) releases this run's claims
+  const k282 = await plantRecord(qDir, {
+    state: "in_use",
+    container: "Cronus282",
+    id: fakeId("Cronus282"),
+    by: "HOST2 run",
+    pid: 2,
+  });
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus282"]), d()),
+    ConfigurationError,
+    "Cronus282 (in use by HOST2 run",
+  );
+  assertEquals(await findRecords(qDir, key("Cronus281")), []);
+  assertEquals(
+    (await findRecords(qDir, key("Cronus282"))).map((f) => f.record?.token),
+    [k282],
+  );
+  await Deno.remove(recordFile(qDir, fakeId("Cronus282")));
+  // an in-use record that cannot be written (a directory on its path) stops
+  // the start before setup
+  const squat = join(qDir, `${fakeId("Cronus281")}.json`);
+  await Deno.mkdir(squat);
+  states.length = 0;
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d()),
+    ConfigurationError,
+    "in-use record",
+  );
+  assertEquals(states, []);
+  await Deno.remove(squat);
+});
+
+Deno.test("H-35 run 004 Sol r1 H4 quarantine at close: a quarantined container keeps its record; one whose quarantine write failed keeps its in-use record; both refuse the next environment", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const d = (): EnvDeps => ({ ...deps([]), quarantineDir: () => qDir });
+  const h = await openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d());
+  await h.env.lane.quarantine("Cronus281", "cleanup failed");
+  const logged: string[] = [];
+  const err = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  const rename = stub(
+    Deno,
+    "rename",
+    () => Promise.reject(new Error("disk full")),
+  );
+  try {
+    await h.env.lane.quarantine("Cronus285", "reset failed");
+  } finally {
+    rename.restore();
+    err.restore();
+  }
+  assertStringIncludes(
+    logged.join("\n"),
+    "[FAIL] quarantine of Cronus285 NOT persisted",
+  );
+  await h.close();
+  const a = await findRecords(qDir, {
+    name: "Cronus281",
+    id: fakeId("Cronus281"),
+  });
+  const b = await findRecords(qDir, {
+    name: "Cronus285",
+    id: fakeId("Cronus285"),
+  });
+  assertEquals(
+    [
+      a.map((f) => [f.record?.state, f.record?.reason]),
+      b.map((f) => f.record?.state),
+    ],
+    [[["quarantined", "cleanup failed"]], ["in_use"]],
+  );
+  const e = await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus281", "Cronus285"]), d()),
+    ConfigurationError,
+    "quarantined container(s)",
+  );
+  assertStringIncludes(e.message, "Cronus281 (quarantined (cleanup failed))");
+  assertStringIncludes(e.message, "Cronus285 (in use by HOST1 test");
+});
+
+Deno.test("H-35 run 004 Sol r1 H5 physical identity: a renamed container (same Docker id) and a replacement under the old name are both refused at env open and env check; an unreadable id refuses", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const ids = new Map<string, string>([["cronus285", fakeId("Cronus281")]]);
+  const d: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    containerId: (c) =>
+      c === "Cronus283"
+        ? Promise.reject(new Error("no such container"))
+        : Promise.resolve(ids.get(c.toLowerCase()) ?? fakeId(c)),
+  };
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: fakeId("Cronus281"),
+    reason: "L4 dirty",
+    by: "test",
+    pid: 1,
+  });
+  const o = (c: string) => ({
+    repoRoot: t.repo.root,
+    containers: [c],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  });
+  // Cronus281 renamed to Cronus285: same id
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus285"]), d),
+    ConfigurationError,
+    "Cronus285 (quarantined (L4 dirty))",
+  );
+  assertStringIncludes(
+    (await envCheck(o("Cronus285"), d, mechanism)).rows[0]!.why!,
+    "quarantined (L4 dirty)",
+  );
+  // a new container under the old name: still refused until recover
+  ids.set("cronus281", "f".repeat(64));
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d),
+    ConfigurationError,
+    "Cronus281 (quarantined (L4 dirty))",
+  );
+  assertStringIncludes(
+    (await envCheck(o("Cronus281"), d, mechanism)).rows[0]!.why!,
+    "quarantined (L4 dirty)",
+  );
+  // no id: fail closed
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t, ["Cronus283"]), d),
+    ConfigurationError,
+    "Cronus283 (container id unknown: no such container)",
+  );
+  const c = await envCheck(o("Cronus283"), d, mechanism);
+  assertEquals(c.admissible, false);
+  assertStringIncludes(c.rows[0]!.why!, "container id unknown");
+  await assertRejects(
+    () => recoverContainer(o("Cronus283"), d, mechanism),
+    Error,
+    "no such container",
+  );
+  assert(!calls.includes("reset"), "recover stops before its reset");
+});
+
+Deno.test("H-35 run 004 Sol r1 H6 recover: a recorded L4 diff must be remediated in the recovery capture (an added file absent, a changed one exactly its before line); otherwise the quarantine stays", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let extra: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...extra];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const F = (p: string, h: string) => `F|${h.repeat(64)}|2|1|1|6262|${p}`;
+  const flag = `${roots[0]}\\flag.txt`, cfg = `${roots[0]}\\app.config`;
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  await plantRecord(qDir, {
+    id: key.id,
+    container: "Cronus281",
+    state: "quarantined",
+    reason: "L4",
+    by: "test",
+    pid: 1,
+    fs_diff: [
+      { path: flag, before: null, after: F(flag, "b") },
+      { path: cfg, before: F(cfg, "a"), after: F(cfg, "c") },
+    ],
+    fs_captured: true,
+  });
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  const cases: [string[], string][] = [
+    // the planted file survived the reset (another spelling of its path)
+    [[F(flag.toUpperCase(), "b"), F(cfg, "a")], flag],
+    // the changed file was not restored
+    [[F(cfg, "c")], cfg],
+    // nor is a removed before-line restored by its absence
+    [[], cfg],
+  ];
+  for (const [lines, path] of cases) {
+    extra = lines;
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, "contamination not remediated");
+    assertStringIncludes(e.message, path);
+    assertStringIncludes(e.message, "recreate the container or remove them");
+    assertEquals((await findRecords(qDir, key)).length, 1);
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  }
+  extra = [F(cfg, "a")];
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  assert(await readInstanceManifest(resultsRoot, "Cronus281"));
+});
+
+/** Captures console.error while fn runs. */
+async function errorsOf(fn: () => Promise<unknown>): Promise<string> {
+  const logged: string[] = [];
+  const s = stub(
+    console,
+    "error",
+    (...a: unknown[]) => void logged.push(a.join(" ")),
+  );
+  try {
+    await fn();
+  } finally {
+    s.restore();
+  }
+  return logged.join("\n");
+}
+
+Deno.test("H-35 run 004 Sol r2 N1 exclusive claims: two environments racing for one container, one starts and the other is refused; a lane quarantine after another owner took the record does not overwrite it, and close leaves it", async () => {
+  await using a = await makeEnv();
+  await using b = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const d = (): EnvDeps => ({ ...deps([]), quarantineDir: () => qDir });
+  const r = await Promise.allSettled([
+    openHarnessEnv(envOpts(a), d()),
+    openHarnessEnv(envOpts(b), d()),
+  ]);
+  const won = r.flatMap((x) => x.status === "fulfilled" ? [x.value] : []);
+  const lost = r.flatMap((x) => x.status === "rejected" ? [x.reason] : []);
+  assertEquals([won.length, lost.length], [1, 1]);
+  assert(lost[0] instanceof ConfigurationError);
+  assertStringIncludes(lost[0].message, "quarantined container(s)");
+  assertStringIncludes(lost[0].message, "Cronus281 (");
+  const h = won[0]!;
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  // recovered (abandoned) and claimed by another environment meanwhile
+  await Deno.remove(recordFile(qDir, key.id));
+  const other = await plantRecord(qDir, {
+    state: "in_use",
+    container: "Cronus281",
+    id: key.id,
+    by: "HOST2 run",
+    pid: 2,
+  });
+  const logs = await errorsOf(() =>
+    h.env.lane.quarantine(
+      "Cronus281",
+      "L4 on Cronus281: 0 error(s), 1 difference(s): x",
+      [],
+    )
+  );
+  assertStringIncludes(logs, "[FAIL] quarantine of Cronus281 NOT persisted");
+  assertStringIncludes(logs, "not overwritten");
+  assert(h.env.lane.quarantined.has("Cronus281"), "kept in memory");
+  await h.close();
+  assertEquals(
+    (await findRecords(qDir, key)).map((
+      f,
+    ) => [f.record?.token, f.record?.state]),
+    [[other, "in_use"]],
+  );
+});
+
+Deno.test("H-35 run 004 Sol r2 N2 recover: a record of another physical container (same name, other id) is not deleted and recover refuses; a concurrent recover's claim refuses unless abandoned by its token", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const ids = new Map<string, string>([["cronus281", "f".repeat(64)]]);
+  const d: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    containerId: (c) => Promise.resolve(ids.get(c.toLowerCase()) ?? fakeId(c)),
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: key.id,
+    reason: "reset of Cronus281 failed at restore: x",
+    by: "test",
+    pid: 1,
+    fs_diff: [],
+    fs_captured: true,
+  });
+  // A was renamed away, B now carries the name: verifying B never clears A
+  await assertRejects(
+    () => recoverContainer(o, d, mechanism),
+    ConfigurationError,
+    `record of another physical container ${key.id}`,
+  );
+  assertEquals(calls, []);
+  assertEquals((await findRecords(qDir, key)).length, 1);
+  const files = async () => {
+    const out: string[] = [];
+    for await (const e of Deno.readDir(qDir)) out.push(e.name);
+    return out.sort();
+  };
+  assertEquals(await files(), [`${key.id}.json`], "recover's claim released");
+  // A itself (same id again), while another recover claims it
+  ids.delete("cronus281");
+  const r = await plantRecord(qDir, {
+    state: "in_use",
+    container: "Cronus281",
+    id: key.id,
+    by: "HOST2 harness recover",
+    pid: 3,
+  }, { recover: true });
+  for (const abandon of [null, crypto.randomUUID()]) {
+    await assertRejects(
+      () => recoverContainer({ ...o, abandon }, d, mechanism),
+      ConfigurationError,
+      "another recover claims it",
+    );
+  }
+  assertEquals(calls, []);
+  await recoverContainer({ ...o, abandon: r }, d, mechanism);
+  assertEquals(await findRecords(qDir, key), []);
+  assertEquals(await files(), []);
+  // --abandon naming no record refuses
+  await assertRejects(
+    () =>
+      recoverContainer({ ...o, abandon: crypto.randomUUID() }, d, mechanism),
+    ConfigurationError,
+    "names no record",
+  );
+});
+
+Deno.test("H-35 run 004 Sol r2 N3 close: a failing closer keeps the in-use record; an in-flight lane operation delays its release", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const failing: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    setup: (names) =>
+      Promise.resolve({
+        bc: new FakeBc(),
+        names,
+        dispose: () => Promise.reject(new Error("dispose failed")),
+      }),
+  };
+  const h = await openHarnessEnv(envOpts(t), failing);
+  const logs = await errorsOf(() => h.close());
+  assertEquals(
+    (await findRecords(qDir, key)).map((f) => f.record?.state),
+    ["in_use"],
+  );
+  assertStringIncludes(logs, "in-use record of Cronus281 kept");
+  assertStringIncludes(logs, "teardown failed: dispose failed");
+  await Deno.remove(recordFile(qDir, key.id));
+  const h2 = await openHarnessEnv(envOpts(t), {
+    ...deps([]),
+    quarantineDir: () => qDir,
+  });
+  let finish!: () => void;
+  let started!: () => void;
+  const running = new Promise<void>((r) => (started = r));
+  const op = h2.env.lane.exclusive(
+    { taskId: "t", variantId: "v", attemptNumber: 1 },
+    () =>
+      new Promise<void>((r) => {
+        finish = r;
+        started();
+      }),
+  );
+  await running;
+  const closed = h2.close();
+  await new Promise((r) => setTimeout(r, 30));
+  assertEquals(
+    (await findRecords(qDir, key)).length,
+    1,
+    "held while the operation runs",
+  );
+  finish();
+  await op;
+  await closed;
+  assertEquals(await findRecords(qDir, key), []);
+});
+
+Deno.test("H-35 addendum 6 recover: a recorded file the recovery lineage's platform cache tolerates (hash-named) is dropped and the container clears; a right-shaped file whose name is not its hash keeps the quarantine", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden([]);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  const base = roots[0]!;
+  const HASH =
+    "0A53123EBB10012CF7AB9309302824D90E158BB785A7763F235C616DD829ADF0";
+  const path = `${base}\\metadata\\3\\0A\\${HASH}.app`;
+  const fLine = (sha: string) => `F|${sha}|1|32|1|4e41|${path}`;
+  let present: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsCaches: [{
+      base,
+      files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+      dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+      magic: "4e41",
+      nameIsSha256: true,
+    }, {
+      base,
+      files: String.raw`^(?!)$`,
+      dirs: String.raw`^tx$`,
+      dirTimeOnly: true,
+    }, {
+      // addendum 7
+      base: `${base}\\cnc`,
+      files: String.raw`^MetaData\\[0-9A-F]{32}$`,
+      dirs: String.raw`^(?!)$`,
+      inPlace: true,
+    }, {
+      // a cache policy outside every recovery root (orch r005d test gap)
+      base: "C:\\Elsewhere",
+      files: String.raw`^metadata\\3\\([0-9A-F]{2})\\\1[0-9A-F]{62}\.app$`,
+      dirs: String.raw`^metadata(\\3(\\[0-9A-F]{2})?)?$`,
+      magic: "4e41",
+      nameIsSha256: true,
+    }],
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const plantAll = async (fs_diff: FsDiffEntry[], now: string[]) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff,
+      fs_captured: true,
+    });
+    present = now;
+  };
+  // the cache file survives the reset, as on the containers
+  const plant = (sha: string) =>
+    plantAll([{ path, before: null, after: fLine(sha) }], [fLine(sha)]);
+  const refused = async (what: string, includes: string) => {
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, includes, what);
+    assertEquals((await findRecords(qDir, key)).length, 1, what);
+  };
+  // a right-shaped file whose name is not its content hash: kept, refused
+  await plant("a".repeat(64));
+  await refused("misnamed", "contamination not remediated");
+  // orch r005c HIGH (a): recorded hash-named, but its CURRENT content differs
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [fLine("b".repeat(64))],
+  );
+  await refused("changed content", "contamination not remediated");
+  // self-check 2: same content, but the current spelling is outside the
+  // (uppercase) shape: judged by the current path, refused
+  const lower = `${base}\\metadata\\3\\0a\\${HASH.toLowerCase()}.app`;
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [`F|${HASH.toLowerCase()}|1|32|1|4e41|${lower}`],
+  );
+  await refused("current spelling", "contamination not remediated");
+  // (b) the path now under a reparse point: unobservable, refused (recreate)
+  await plantAll(
+    [{ path, before: null, after: fLine(HASH.toLowerCase()) }],
+    [`L|1040|0|${base}\\metadata|D:\\elsewhere`],
+  );
+  await refused("reparse cover", "not observable");
+  // (b) a recorded cache-shaped path outside the recovery roots: refused
+  // its historical line is a valid tolerated addition under the outside
+  // policy, so only the observability check (first) can refuse it
+  const outside = `C:\\Elsewhere\\metadata\\3\\0A\\${HASH}.app`;
+  await plantAll(
+    [{
+      path: outside,
+      before: null,
+      after: `F|${HASH.toLowerCase()}|1|32|1|4e41|${outside}`,
+    }],
+    [],
+  );
+  await refused("outside the roots", "not observable");
+  // folder-only negative: the folder now has other attributes
+  const tx = `${base}\\tx`;
+  await plantAll(
+    [{ path: tx, before: `D|16|1|${tx}`, after: `D|16|9|${tx}` }],
+    [`D|18|9|${tx}`],
+  );
+  await refused(
+    "folder-only, attributes changed",
+    "contamination not remediated",
+  );
+  // folder-only positive: only its time moved, still so now
+  await plantAll(
+    [{ path: tx, before: `D|16|1|${tx}`, after: `D|16|9|${tx}` }],
+    [`D|16|12|${tx}`],
+  );
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // addendum 7: a file recorded as changed in place, changed AGAIN now
+  // (same size and attributes): tolerated against the recorded before
+  const meta = `${base}\\cnc\\MetaData\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
+  const mLine = (sha: string, size = 342, attrs = 36) =>
+    `F|${sha}|${size}|${attrs}|1|7000|${meta}`;
+  const inPlace = {
+    path: meta,
+    before: mLine("a".repeat(64)),
+    after: mLine("b".repeat(64)),
+  };
+  await plantAll([inPlace], [mLine("c".repeat(64))]);
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // ... but not when its size now differs
+  await plantAll([inPlace], [mLine("c".repeat(64), 343)]);
+  await refused("in_place, resized", "contamination not remediated");
+  // the hash-named cache file, unchanged now: dropped, the container clears
+  await plant(HASH.toLowerCase());
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+});
+
+Deno.test("H-40 addendum 8b recover: the digest v3 record f4b75484 (CryptnetUrlCache Content refresh) clears against a current CAB-valid v4 file; a non-CAB or re-attributed current file, a reparse cover and a path outside the roots keep the quarantine; a restored file clears across digest versions only with its sha and recorded head bytes", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden([]);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let present: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...present];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const plantAll = async (fs_diff: FsDiffEntry[], now: string[]) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff,
+      fs_captured: true,
+    });
+    present = now;
+  };
+  const refused = async (what: string, includes: string) => {
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, includes, what);
+    assertEquals((await findRecords(qDir, key)).length, 1, what);
+  };
+  const cleared = async () => {
+    await recoverContainer(o, d, mech);
+    assertEquals(await findRecords(qDir, key), []);
+  };
+  const LOCALLOW =
+    "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow";
+  const P =
+    `${LOCALLOW}\\Microsoft\\CryptnetUrlCache\\Content\\57C8EDB95DF3F0AD4EE2DC2B8CFD4157`;
+  // harness-quarantine\f4b75484...json, its fs_diff entry verbatim (v3)
+  const f4b75484: FsDiffEntry = {
+    path: P,
+    before:
+      `F|0300e9ddb527990e8b59d06e9ccf3ec2bd92d3bbd0ef4fba69d6336e4195e82d|4987|36|639251358286050693|4d53|${P}`,
+    after:
+      `F|1f2719b100fcc59601f0dbb286aea5034e05bae881425792a115106e244a0ed0|5652|36|639281323644388674|4d53|${P}`,
+  };
+  // the measured 57C8 head (lane-ops, Cronus281, 2026-10-21)
+  const HEAD = "4d534346000000001416000000000000" + "2c000000000000000301";
+  const now = (size = 5652, attrs = 36, head = HEAD, path = P) =>
+    `F|${"e".repeat(64)}|${size}|${attrs}|639281323644388674|${head}|${path}`;
+  await plantAll([f4b75484], [now()]);
+  await cleared();
+  await plantAll([f4b75484], [now(5000)]);
+  await refused(
+    "not CAB-valid (cbCabinet != size)",
+    "contamination not remediated",
+  );
+  await plantAll([f4b75484], [now(5652, 36, "4d53")]);
+  await refused("a v3 head now", "contamination not remediated");
+  await plantAll([f4b75484], [now(5652, 38)]);
+  await refused("attributes changed", "contamination not remediated");
+  await plantAll([f4b75484], [`L|1040|0|${LOCALLOW}|D:\\elsewhere`]);
+  await refused("reparse cover", "not observable");
+  const outside = P.replace(LOCALLOW, "C:\\Elsewhere");
+  await plantAll([{
+    path: outside,
+    before: f4b75484.before!.replace(LOCALLOW, "C:\\Elsewhere"),
+    after: f4b75484.after!.replace(LOCALLOW, "C:\\Elsewhere"),
+  }], [now(5652, 36, HEAD, outside)]);
+  await refused("outside the roots", "not observable");
+  // addendum 8b Q6: a v3 record of a non-cache file, restored, in a v4 capture
+  const x = `${roots[0]}\\x.dll`;
+  const xLine = (sha: string, head: string) => `F|${sha}|10|32|5|${head}|${x}`;
+  const restored: FsDiffEntry = {
+    path: x,
+    before: xLine("a".repeat(64), "4d5a"),
+    after: xLine("b".repeat(64), "4d5a"),
+  };
+  await plantAll([restored], [xLine("a".repeat(64), "4d5a" + "00".repeat(8))]);
+  await cleared();
+  await plantAll([restored], [xLine("c".repeat(64), "4d5a" + "00".repeat(8))]);
+  await refused("restored, another sha", "contamination not remediated");
+  await plantAll([restored], [xLine("a".repeat(64), "4d5b" + "00".repeat(8))]);
+  await refused("restored, other head bytes", "contamination not remediated");
+});
+
+Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded path outside the capture's roots, or one below a reparse point (L line): recover refuses (recreate) and keeps the record", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  let extra: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => `D|16|0|${r}`), ...extra];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const RECREATE =
+    "no trustworthy filesystem evidence: the container must be recreated (lane-ops)";
+  const plant = async (
+    path: string | null,
+    o2: { captured?: boolean } = {},
+  ) => {
+    await Deno.remove(recordFile(qDir, key.id)).catch(() => {});
+    await plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: path === null
+        ? "reset of Cronus281 failed at restore: boom"
+        : "L4 on Cronus281: 0 error(s), 1 difference(s)",
+      by: "test",
+      pid: 1,
+      fs_diff: path === null ? [] : [{ path, before: null, after: "x" }],
+      fs_captured: o2.captured ?? true,
+    });
+  };
+  // N4: a reset failure whose quarantine had no clean after-capture
+  await plant(null, { captured: false });
+  await assertRejects(
+    () => recoverContainer(o, d, mech),
+    ConfigurationError,
+    RECREATE,
+  );
+  assertEquals(calls, [], "refused before the reset");
+  // N5
+  const link = `${roots[0]}\\lnk`;
+  const cases: [string, string[]][] = [
+    ["C:\\Elsewhere\\flag.txt", []],
+    // a sibling sharing the root's prefix is not under it
+    [`${roots[0]}x\\flag.txt`, []],
+    [`${link}\\flag.txt`, [`L|0|0|${link}|D:\\target`]],
+    // orch r004 N5 residual: a named stream on the reparse entry itself
+    [`${link}:hid`, [`L|0|0|${link}|D:\\target`]],
+    // and on an entry below it
+    [`${link}\\f.txt:hid`, [`L|0|0|${link}|D:\\target`]],
+    // an extended-path stream outside the roots stays outside (drive colon)
+    ["\\\\?\\C:\\Elsewhere\\f.txt:hid", []],
+  ];
+  for (const [path, lines] of cases) {
+    await plant(path);
+    extra = lines;
+    const e = await assertRejects(
+      () => recoverContainer(o, d, mech),
+      ContainerError,
+    );
+    assertStringIncludes(e.message, RECREATE);
+    assertStringIncludes(e.message, `recorded path ${path} not observable`);
+    assertEquals((await findRecords(qDir, key)).length, 1);
+  }
+  // the same path absent and observable (no link): cleared
+  await plant(`${link}\\flag.txt`);
+  extra = [];
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
+  // a stream on an observable entry, now absent: cleared (owner under a root)
+  await plant(`${roots[0]}\\f.txt:hid`);
+  await recoverContainer(o, d, mech);
+  assertEquals(await findRecords(qDir, key), []);
 });

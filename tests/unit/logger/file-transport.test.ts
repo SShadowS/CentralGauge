@@ -1,9 +1,10 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { FileTransport } from "../../../src/logger/transports/file.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 Deno.test("FileTransport", async (t) => {
-  const tempDir = await Deno.makeTempDir({ prefix: "cg-file-transport-" });
+  const tempDir = await testTempDir({ prefix: "cg-file-transport-" });
 
   try {
     await t.step("writes log events as JSONL", async () => {

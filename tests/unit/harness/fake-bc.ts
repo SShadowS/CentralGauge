@@ -12,7 +12,24 @@ import type {
   TestResult,
 } from "../../../src/container/types.ts";
 import { ContainerError } from "../../../src/errors.ts";
-import type { HarnessBc } from "../../../src/harness/bc-lane.ts";
+import type { BcLane, HarnessBc } from "../../../src/harness/bc-lane.ts";
+import type { ResetMechanism } from "../../../src/harness/reset.ts";
+
+/** H-35 S3: a reset that always succeeds (unit tests run no real reset). */
+export const OK_RESET: ResetMechanism = {
+  id: "fake",
+  policyVersion: 1,
+  reset: (container) =>
+    Promise.resolve({
+      container,
+      mechanism: "fake",
+      policy_version: 1,
+      ok: true,
+      failed_step: null,
+      error: null,
+      phases_ms: {},
+    }),
+};
 
 export interface FakeApp {
   id: string;
@@ -20,6 +37,8 @@ export interface FakeApp {
   version: string;
   folder: string;
   source: string;
+  /** H-35: the effective app.json target (absent when the manifest declares none). */
+  target?: string;
 }
 
 export type TestScript = (
@@ -94,6 +113,8 @@ export class FakeBc implements HarnessBc {
   cleaned: string[][] = [];
 
   compilerId = "fake-artifact|bccontainerhelper 6.1.14";
+  /** H-27: like alc.exe, every compile writes a new package id (non-deterministic bytes). */
+  nondeterministic = false;
   /** Containers whose cleanup (a sync with no publish) fails. */
   cleanupFails = new Set<string>();
 
@@ -101,6 +122,12 @@ export class FakeBc implements HarnessBc {
 
   harnessCompilerIdentity(_container: string): Promise<string> {
     return Promise.resolve(this.compilerId);
+  }
+
+  /** H-35: the target recorded in a fake package (the real provider reads NavxManifest). */
+  async packageTarget(file: string): Promise<string | null> {
+    const app = JSON.parse(await Deno.readTextFile(file)) as FakeApp;
+    return app.target ?? null;
   }
 
   state(container: string): Map<string, FakeApp> {
@@ -144,6 +171,7 @@ export class FakeBc implements HarnessBc {
         id: string;
         name: string;
         version: string;
+        target?: string;
       };
       const source = await sources(project.path);
       if (this.crashFor?.(project.path.replaceAll("\\", "/"), container)) {
@@ -200,8 +228,16 @@ export class FakeBc implements HarnessBc {
         version: aj.version,
         folder,
         source,
+        ...(aj.target !== undefined ? { target: aj.target } : {}),
       };
-      await Deno.writeTextFile(artifactPath, JSON.stringify(app));
+      await Deno.writeTextFile(
+        artifactPath,
+        JSON.stringify(
+          this.nondeterministic
+            ? { ...app, packageId: crypto.randomUUID() }
+            : app,
+        ),
+      );
       return {
         success: true,
         errors: [],
@@ -311,6 +347,50 @@ export class FakeBc implements HarnessBc {
       this.script(codeunit, this.state(container), container),
     );
   }
+
+  /** H-35 S3 L2a: every HttpClient setting write, in order (with the sync count before it). */
+  httpSettings: {
+    container: string;
+    id: string;
+    allowed: boolean;
+    at: number;
+  }[] = [];
+  /** Test hook: the read-back for a write (default: what was written). */
+  httpReadback: ((container: string, id: string) => string) | null = null;
+
+  setHttpClientAllowed(
+    container: string,
+    appId: string,
+    allowed: boolean,
+  ): Promise<string> {
+    this.check(container, "test");
+    this.httpSettings.push({
+      container,
+      id: appId,
+      allowed,
+      at: this.syncs.length,
+    });
+    return Promise.resolve(
+      this.httpReadback?.(container, appId) ?? `allow=${allowed}`,
+    );
+  }
+}
+
+/**
+ * H-41: the lane's n-th `kind` call rejects with `err()` before it runs (a
+ * pool loss, or genuine infra, at a chosen verdict.ts call site).
+ */
+export function faultAt<L extends BcLane>(
+  lane: L,
+  kind: "exclusive" | "compile",
+  n: number,
+  err: () => Error,
+): L {
+  const real = lane[kind].bind(lane) as (...a: unknown[]) => Promise<unknown>;
+  let k = 0;
+  return Object.assign(lane, {
+    [kind]: (...a: unknown[]) => ++k === n ? Promise.reject(err()) : real(...a),
+  });
 }
 
 export function deployedSource(

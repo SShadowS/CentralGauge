@@ -7,6 +7,7 @@ import {
   headerBytes,
   MAX_HEADER_BYTES,
 } from "../../../harness/images/claude-code/lsp/lsp-probe-lib.mjs";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // M10-01b run 002/003: clock bounds and fragmented header limits, through the
 // probe's pure helper library (the probe itself is only ever run, never
@@ -47,11 +48,13 @@ const LINE = "exit(1 + Months / 100);";
 const LINE2 = "exit(25);";
 const WINDOWS = Deno.build.os === "windows";
 // Probe timeout for runs expected to finish (not to time out): host load under
-// the full suite stretched a 14 s run past a 20 s timeout.
-const LOAD_TIMEOUT_MS = "60000";
+// the full suite stretched a 14 s run past a 20 s timeout, and (T-06) a ~10 s
+// run past 60 s in an 18-min fast-suite chunk. A margin, not a wait: a
+// passing run still ends in ~10 s; timeout tests set their own.
+const LOAD_TIMEOUT_MS = "180000";
 
 async function setup(withApp = true) {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const plugin = join(dir, "plugin");
   const ws = join(dir, "workspace");
   await Deno.mkdir(plugin, { recursive: true });

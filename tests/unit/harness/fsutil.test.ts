@@ -23,13 +23,14 @@ import {
   validatedDir,
 } from "../../../src/harness/fsutil.ts";
 import { hashTree, isTaskBuildArtifact } from "../../../src/harness/hash.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const windows = Deno.build.os === "windows";
 const TOKEN = "a".repeat(8) + "0123456789abcdef0123456789abcdef";
 const SECRETS = [{ name: "backend-token", value: TOKEN }];
 
 async function tmp(): Promise<string> {
-  return await validatedDir(await Deno.realPath(await Deno.makeTempDir()));
+  return await validatedDir(await Deno.realPath(await testTempDir()));
 }
 
 async function writeTree(root: string, files: Record<string, string>) {
@@ -408,8 +409,24 @@ Deno.test("sweepWorkspaceTemp: removes interrupted freezes and private scratch o
     "workspaces/abc/a.al": "x",
   });
   await writeTree(priv, { "freeze/1/a.al": "x" });
-  assertEquals(await sweepWorkspaceTemp(results, priv), 2);
+  assertEquals(await sweepWorkspaceTemp(results, priv, 0), 2);
   assert(await exists(join(results, "workspaces", "abc")));
+});
+
+Deno.test("sweepWorkspaceTemp (H-41 section 11): a workspace temp younger than the bound (default 1 h) survives; private scratch is always swept", async () => {
+  const results = await tmp();
+  const priv = await tmp();
+  await writeTree(results, {
+    "workspaces/.tmp-young/a.al": "x",
+    "workspaces/.tmp-old/a.al": "x",
+  });
+  await writeTree(priv, { "freeze/1/a.al": "x" });
+  const at = new Date(Date.now() - 2 * 3_600_000);
+  await Deno.utime(join(results, "workspaces", ".tmp-old"), at, at);
+  assertEquals(await sweepWorkspaceTemp(results, priv), 2);
+  assert(await exists(join(results, "workspaces", ".tmp-young")));
+  assert(!await exists(join(results, "workspaces", ".tmp-old")));
+  assert(!await exists(join(priv, "freeze", "1")));
 });
 
 Deno.test("freezeWorkspace: the publish copy accepts every tree the freeze accepted", async () => {
@@ -782,7 +799,7 @@ Deno.test({
 
 Deno.test("validatedDest: concurrent callers creating the same missing ancestor both succeed", async () => {
   for (let i = 0; i < 5; i++) {
-    const root = await Deno.realPath(await Deno.makeTempDir());
+    const root = await Deno.realPath(await testTempDir());
     const dirs = await Promise.all(
       ["x", "y", "z"].map((leaf) =>
         validatedDest(join(root, "shared", "deep", leaf))

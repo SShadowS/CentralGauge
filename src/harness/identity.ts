@@ -181,6 +181,29 @@ async function refappSource(
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+/**
+ * H-35 provenance (orch Sol r1 #6): the harness commit judging, HEAD of
+ * `repoRoot`; `<sha>+dirty` when the harness code (src, cli, scripts) has
+ * changes or untracked files, since then the commit does not describe what
+ * ran. Null outside a git repository.
+ */
+export async function harnessCommitOf(
+  repoRoot: string,
+): Promise<string | null> {
+  const head = await git(repoRoot, ["rev-parse", "--verify", "HEAD"]);
+  if (!head) return null;
+  const status = await git(repoRoot, [
+    "status",
+    "--porcelain",
+    "--",
+    "src",
+    "cli",
+    "scripts",
+  ]);
+  const sha = text(head);
+  return status === null || text(status) !== "" ? `${sha}+dirty` : sha;
+}
+
 /** Resolve a refapp tag or commit to an immutable commit and source hash. */
 export async function resolveRefapp(
   repoRoot: string,
@@ -333,13 +356,24 @@ export async function visibleInputHash(
  * neither hash.
  */
 export async function oracleHash(t: LoadedTask): Promise<string> {
+  return hashJson(await oraclePreimage(t));
+}
+
+/**
+ * The exact object oracleHash hashes (rule oracleHash@1). H-35 (design-r4
+ * 4): stored by its hash, so the oracle side of a past judgment stays
+ * readable after the task changes.
+ */
+export async function oraclePreimage(
+  t: LoadedTask,
+): Promise<Record<string, unknown>> {
   const { task, dir } = t;
   const tree = (d: string) =>
     hashTree(join(dir, d), "task", { optional: true });
   const measures = (await exists(join(dir, "measures")))
     ? await tree("measures")
     : null;
-  return hashJson({
+  return {
     part: "oracle",
     id: task.id,
     kind: task.kind,
@@ -351,7 +385,11 @@ export async function oracleHash(t: LoadedTask): Promise<string> {
     mutants_tree: await tree("mutants"),
     correct: await tree("correct"),
     ...(measures !== null ? { measures } : {}),
-  });
+    // H-35 (design-r3 7): absent stays absent, so every task's hash holds.
+    ...(task.production_allow
+      ? { production_allow: task.production_allow }
+      : {}),
+  };
 }
 
 export const TaskIdentitySchema = z.strictObject({

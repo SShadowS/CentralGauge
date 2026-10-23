@@ -15,12 +15,15 @@ import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
 import type { Catalog } from "../ingest/catalog/read.ts";
 import type { AttemptRef, CellRef, HarnessEnv } from "./execution.ts";
+import type { BcEgressRecord } from "./environment.ts";
 import type { PriorExecution } from "./estimate.ts";
 import type { CampaignRecords } from "./integrity.ts";
 import type { RefappRef } from "./identity.ts";
 import type { LoadedTask } from "./task.ts";
 import type { HarnessConfig } from "./config.ts";
+import type { JudgeGate } from "./pool.ts";
 import { ConfigurationError } from "../errors.ts";
+import { PoolLostError } from "./bc-lane.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import { proxyIsolationProblem } from "./egress.ts";
 import { PROXY_ISOLATION } from "./egress-proxy.ts";
@@ -28,11 +31,12 @@ import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import {
   judgeDeferred,
-  privatePaths,
+  judgmentOwed,
   recoverInterrupted,
   runCell,
 } from "./execution.ts";
 import { loadSymbolsLock, resolveRefapp, taskSetIdentity } from "./identity.ts";
+import { descriptorLoader, storeOraclePreimage } from "./task-oracle.ts";
 import {
   imageFacts,
   imageTag,
@@ -102,12 +106,24 @@ export interface CampaignSummary {
   ran: number;
   /** Of those, judged pass or fail. */
   judged: number;
-  /** Of those, not judged or judged unscored. */
+  /** Of those, judged unscored, or not judged and no longer owed a judgment. */
   unscored: number;
   /** Usage-limit reset (or "unknown") when the campaign stopped paused. */
   paused: string | null;
   /** A stop file stopped the campaign before its next cell. */
   stopped: boolean;
+  /**
+   * H-41 (9, 14): the `auto` judge queue starved (no member for the wait
+   * bound) or stopped on an execution's unanswered-container bound; the CLI
+   * exits 75.
+   */
+  starved?: boolean;
+  /**
+   * H-41: when starved, the campaign's executions still owed a judgment;
+   * otherwise (R1-L1) those run now still owed one (another judge holds
+   * its claim), absent when none.
+   */
+  owed?: number;
 }
 
 export interface RunIO {
@@ -175,43 +191,135 @@ export async function loadCampaignData(
  * H-09: the campaign's judge queue, `width` judgments at once on the judge
  * lane. The first failure is kept: no new judgment starts, the agents start
  * no new cell, and drain() throws it once the running judgments ended.
+ * H-33: stop() (an interrupt) also admits nothing new; drain() then waits
+ * for the running judgments only.
+ * H-41 (9, 14): gated on an `auto` pool, the width is the pool's members
+ * now; it refreshes after each settle, on push and on the pool's poll. With
+ * no member and work queued for the pool's wait bound (its own timer) it
+ * starves: stopped, the refresh aborted, the epoch bumped. A PoolLostError
+ * requeues W unchanged; W's 4th unanswered-only loss stops the queue
+ * instead. drain() never waits on a pending refresh or setup.
  */
 export function judgeQueue(
   env: HarnessEnv,
-  width: number,
+  width: number | JudgeGate,
   judge: (env: HarnessEnv, cell: CellRef, e: ExecutionRecord) => Promise<
     unknown
   > = judgeDeferred,
+  /** H-41: --judge-concurrency over a gated width. */
+  limit = Infinity,
 ) {
-  const jobs: [CellRef, ExecutionRecord][] = [];
+  const gate = typeof width === "number" ? null : width;
+  const cap = () => Math.min(gate ? gate.width() : width as number, limit);
+  type Job = { cell: CellRef; e: ExecutionRecord; uncertain: number };
+  const jobs: Job[] = [];
   const idle: (() => void)[] = [];
   let active = 0;
   let failure: { err: unknown } | null = null;
-  const pump = () => {
-    while (failure === null && active < width && jobs.length > 0) {
-      const [cell, e] = jobs.shift()!;
-      active++;
-      judge(env, cell, e)
-        .catch((err) => void (failure ??= { err }))
-        .finally(() => {
-          active--;
-          pump();
-          if (active === 0) { for (const f of idle.splice(0)) f(); }
-        });
+  let stopped = false;
+  let starved = false;
+  let uncertain: { id: string; checks: number } | null = null;
+  let told = false;
+  let polling = false;
+  let refreshing = false;
+  let starve: ReturnType<typeof setTimeout> | undefined;
+  const abort = new AbortController();
+  const settled = () =>
+    active === 0 && (jobs.length === 0 || stopped || failure !== null);
+  const wake = () => {
+    if (!settled()) return;
+    if (uncertain && !told) {
+      told = true;
+      console.log(
+        `[STOP] ${uncertain.id}: ${uncertain.checks} unanswered container checks; ${jobs.length} stay owed`,
+      );
     }
+    for (const f of idle.splice(0)) f();
+  };
+  const starveNow = () => {
+    starve = undefined;
+    if (
+      !gate || stopped || failure !== null || active > 0 ||
+      jobs.length === 0 || gate.width() > 0
+    ) {
+      return pump();
+    }
+    starved = stopped = true;
+    abort.abort();
+    gate.invalidate();
+    console.log(
+      `[STOP] judging pool: no member for ${
+        gate.bounds.waitMs / 60_000
+      } min; ${jobs.length} stay owed`,
+    );
+    pump();
+  };
+  const start = (job: Job) => {
+    active++;
+    judge(env, job.cell, job.e)
+      .catch((err) => {
+        if (!(err instanceof PoolLostError)) return void (failure ??= { err });
+        // W again, unchanged (no fence, its claim released by judgeOnce).
+        if (err.unansweredOnly) job.uncertain++;
+        if (job.uncertain > MAX_UNCERTAIN_REQUEUES && !stopped) {
+          uncertain = { id: job.e.id, checks: job.uncertain };
+          stopped = true;
+        }
+        jobs.push(job);
+      })
+      .finally(() => {
+        active--;
+        pump();
+      });
+  };
+  const pump = (refresh = true) => {
+    while (failure === null && !stopped && active < cap() && jobs.length > 0) {
+      start(jobs.shift()!);
+    }
+    if (gate) {
+      const want = failure === null && !stopped && jobs.length > 0;
+      if (want !== polling) {
+        polling = want;
+        gate.poll(want ? () => pump() : null);
+      }
+      if (want && refresh && !refreshing) {
+        refreshing = true;
+        void gate.refresh(abort.signal).finally(() => {
+          refreshing = false;
+          pump(false);
+        });
+      }
+      const empty = want && active === 0 && gate.width() === 0;
+      if (empty && starve === undefined) {
+        starve = setTimeout(starveNow, gate.bounds.waitMs);
+      } else if (!empty && starve !== undefined) {
+        clearTimeout(starve);
+        starve = undefined;
+      }
+    }
+    wake();
   };
   return {
     push(cell: CellRef, e: ExecutionRecord) {
-      jobs.push([cell, e]);
+      jobs.push({ cell, e, uncertain: 0 });
       pump();
     },
     failed: () => failure !== null,
+    /** H-41: starved, or stopped by W's unanswered-container bound (exit 75). */
+    starved: () => starved || uncertain !== null,
+    stop() {
+      stopped = true;
+      pump(false);
+    },
     async drain() {
-      if (active > 0) await new Promise<void>((r) => idle.push(r));
+      if (!settled()) await new Promise<void>((r) => idle.push(r));
       if (failure !== null) throw failure.err;
     },
   };
 }
+
+/** H-41 (14, R4-M1): unanswered-only pool losses requeue one W at most this often. */
+export const MAX_UNCERTAIN_REQUEUES = 3;
 
 /** H-09: an explicit --judge-concurrency is a positive integer (unset: one per judge container). */
 export function checkJudgeConcurrency(n: number | undefined): void {
@@ -222,13 +330,8 @@ export function checkJudgeConcurrency(n: number | undefined): void {
   }
 }
 
-/** H-09: published, judgeable and never judged (a crash before the judge queue reached it). */
-export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
-  return outcomePolicy(e.termination, e.did_work).judge &&
-    e.workspace_hash !== null &&
-    (await env.store.judgments(e.id)).length === 0 &&
-    !await exists(privatePaths(env, e.id).stubMarker);
-}
+// H-09 judgmentOwed; H-41: in execution.ts, the commit protocol's due predicate.
+export { judgmentOwed };
 
 export function nextAttempt(prior: ExecutionRecord[]): AttemptRef | null {
   if (prior.length === 0) {
@@ -309,6 +412,8 @@ export type PlanEnv =
      * sees on a dry run, the same inputs as the real environment's.
      */
     egressPlaced?: boolean;
+    /** H-35 S3 L2b: the lineage's NST egress, statically admitted (a plan env has no deploy). */
+    bcEgress?: BcEgressRecord | null;
   };
 
 /** A dry run: the plan and the egress refusal, without a lock or containers. */
@@ -745,6 +850,11 @@ export async function runCampaign(
     .map((c) => c.id);
   // H-13 owner override (decisions/2026-10-15-p-01-egress-override.md).
   const override = env.unverifiedEgressReason;
+  // H-35 S3 L2b: the judging lineage's NST egress override, if any (a dry
+  // run's plan environment carries it as bcEgress, having no deploy).
+  const bcOverride =
+    (env.deploy?.bcEgress ?? (env as PlanEnv).bcEgress)?.override ||
+    undefined;
   if (override !== undefined) {
     if (override.trim() === "") {
       throw new ConfigurationError(
@@ -788,6 +898,8 @@ export async function runCampaign(
 
   const tasks = await experimentTasks(env.repoRoot, experimentId, experiment);
   const ids = await taskSetIdentity(env.repoRoot, tasks, env.symbols);
+  // H-35 (design-r4 4): every task version a campaign pins stays readable.
+  for (const t of tasks) await storeOraclePreimage(env.resultsRoot, t);
   const arms: CampaignRecord["arms"] = [];
   let calibrationWaived = false;
   for (const config of configs) {
@@ -943,6 +1055,7 @@ export async function runCampaign(
         }
         : {}),
       ...(calibrationWaived ? { calibration_waived: true } : {}),
+      ...(bcOverride ? { bc_egress_override: { reason: bcOverride } } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -962,6 +1075,14 @@ export async function runCampaign(
         c.egress_override
           ? `campaign ${c.id} was created under --unverified-egress-ok (${c.egress_override.reason}): resume it with the flag and that reason`
           : `campaign ${c.id} was created without --unverified-egress-ok: resume it without the flag`,
+      );
+    }
+    // H-35 S3 L2b: and its BC (NST) egress override state and reason.
+    if (c.bc_egress_override?.reason !== bcOverride) {
+      throw new ConfigurationError(
+        c.bc_egress_override
+          ? `campaign ${c.id} was created under --unverified-bc-egress-ok (${c.bc_egress_override.reason}): resume it with the flag and that reason`
+          : `campaign ${c.id} was created without --unverified-bc-egress-ok: resume it without the flag`,
       );
     }
     // H-13b: and its calibration waiver state.
@@ -986,10 +1107,14 @@ export async function runCampaign(
       if (v.problems.length > 0) throw refusal(v.problems);
     }
     data = await loadCampaignData(env.store, c);
-    await validateCampaignRecords(data);
+    await validateCampaignRecords(data, {
+      descriptor: descriptorLoader(env.resultsRoot, env.repoRoot),
+    });
   }
   // H-13b: every execution of a waived campaign records it.
   if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };
+  // H-41 (section 10): the campaign is final: its env pin, before the queue and any cell.
+  if (!o.dryRun) await env.bindCampaign?.(c.id);
   // Refused before any container run (and in a dry run).
   const rerun = o.rerun && data
     ? rerunTarget(c, data, o.rerun, await currentScorerFingerprint())
@@ -1053,10 +1178,41 @@ export async function runCampaign(
     return false;
   };
   if (await stopRequested()) return summary;
+  // H-09: an agent slot frees once its execution is published; the judge
+  // queue judges on the judge lane. Owed judgments (a crash after
+  // publication) go first; they are judged, never executed again.
+  // A dry run (the plan environment) has no lane: the default is read here.
+  // H-41 (sections 8, 9): in auto mode the queue is gated on the pool (bound
+  // above) and also judges a --rerun cell.
+  const pooled = env.judgePooled;
+  const queue = pooled
+    ? judgeQueue(runEnv, pooled, judgeDeferred, o.judgeConcurrency)
+    : judgeQueue(
+      runEnv,
+      o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
+    );
+  const agentEnv: HarnessEnv = { ...runEnv, judgeLater: queue.push };
+  // H-41 (3, 9; R1-L1): an absent judgment still owed (starved, or another
+  // judge holds its claim) is owed, not unscored, whether or not it starved.
+  const count = async (e: ExecutionRecord) => {
+    const j = (await env.store.judgments(e.id))[0];
+    if (j && j.verdict !== "unscored") summary.judged++;
+    else if (!j && await judgmentOwed(env, e)) {
+      summary.owed = (summary.owed ?? 0) + 1;
+    } else summary.unscored++;
+  };
+  const starvedOut = async () => {
+    summary.starved = true;
+    summary.owed = 0;
+    for (const e of await env.store.executions(campaign.id)) {
+      if (await judgmentOwed(env, e)) summary.owed++;
+    }
+    return summary;
+  };
   if (rerun) {
     const arm = o.rerun!.arm;
     const r = await runCell(
-      runEnv,
+      pooled ? agentEnv : runEnv,
       cellRefFor(
         campaign,
         opened,
@@ -1067,11 +1223,10 @@ export async function runCampaign(
       rerun.at,
       rerun.prior,
     );
+    if (pooled) await queue.drain();
     for (const e of r.executions) {
       summary.ran++;
-      const j = (await env.store.judgments(e.id))[0];
-      if (j && j.verdict !== "unscored") summary.judged++;
-      else summary.unscored++;
+      await count(e);
     }
     if (r.pause) {
       // Its owed retry waits for the reset; a plain resume runs it.
@@ -1080,17 +1235,8 @@ export async function runCampaign(
         `[PAUSE] usage limit until ${r.pause}; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
       );
     }
-    return summary;
+    return queue.starved() ? await starvedOut() : summary;
   }
-  // H-09: an agent slot frees once its execution is published; the judge
-  // queue judges on the judge lane. Owed judgments (a crash after
-  // publication) go first; they are judged, never executed again.
-  // A dry run (the plan environment) has no lane: the default is read here.
-  const queue = judgeQueue(
-    runEnv,
-    o.judgeConcurrency ?? (env.judgeLane ?? env.lane).containers.length,
-  );
-  const agentEnv: HarnessEnv = { ...runEnv, judgeLater: queue.push };
   for (const e of await env.store.executions(campaign.id)) {
     if (!await judgmentOwed(env, e)) continue;
     const block = campaign.blocks.find((b) => b.index === e.block)!;
@@ -1099,7 +1245,8 @@ export async function runCampaign(
   const ran: ExecutionRecord[] = [];
   // H-09 run 002: the first worker's throw; no worker admits a cell after it.
   let crashed: { err: unknown } | null = null;
-  const halted = () => crashed !== null || queue.failed();
+  // H-41 (9): a starved queue admits no new cell either.
+  const halted = () => crashed !== null || queue.failed() || queue.starved();
   for (;;) {
     let paused: string | null = null;
     let next = 0;
@@ -1156,7 +1303,11 @@ export async function runCampaign(
     await Promise.all(
       Array.from(
         { length: Math.min(o.concurrency, blocks.length) },
-        () => worker().catch((err) => void (crashed ??= { err })),
+        () =>
+          worker().catch((err) => {
+            crashed ??= { err };
+            env.hooks?.workerThrew?.();
+          }),
       ),
     );
     if (crashed !== null) {
@@ -1173,11 +1324,8 @@ export async function runCampaign(
     }
     // Counted once judged: a judge failure stops the campaign here.
     await queue.drain();
-    for (const e of ran.splice(0)) {
-      const j = (await env.store.judgments(e.id))[0];
-      if (j && j.verdict !== "unscored") summary.judged++;
-      else summary.unscored++;
-    }
+    for (const e of ran.splice(0)) await count(e);
+    if (queue.starved()) return await starvedOut();
     if (paused === null || summary.stopped) return summary;
     const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now();
     if (wait > o.maxPauseMs) {

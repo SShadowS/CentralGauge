@@ -1,0 +1,727 @@
+/**
+ * H-35 S3 (design-r3 2, r4 2, r5 3; owner rulings 2026-10-19 "Tenancy
+ * REVISED" and "Base state"): the reset before every judge deployment,
+ * behind one interface so the mechanism stays pluggable. The production
+ * mechanism restores the golden set (lane-ops' reset script); a failed reset
+ * is infra and the lane quarantines the container.
+ *
+ * Script protocol (agreed with lane-ops): one `RESET_STEP <name> <ms>` line
+ * per phase (snapshot_guard first, ..., runner_verify, postconditions), then
+ * exactly one of `RESET_OK` or `RESET_FAILED <step> <reason>`; exit 0 only
+ * with RESET_OK. Anything else is a `protocol` failure.
+ */
+
+import { join } from "@std/path";
+import { type Lineage, lineageCompat } from "./lineage.ts";
+import { ConfigurationError, ContainerError } from "../errors.ts";
+
+/** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
+export const RESET_PHASES = [
+  "snapshot_guard",
+  "quiesce",
+  "verify_sha",
+  "stop",
+  "restore",
+  "start",
+  "healthy",
+  "runner_verify",
+  "postconditions",
+] as const;
+
+export interface ResetRecord {
+  container: string;
+  mechanism: string;
+  policy_version: number;
+  ok: boolean;
+  /** The failed step (e.g. snapshot_guard, restore, runner_verify), else null. */
+  failed_step: string | null;
+  error: string | null;
+  phases_ms: Record<string, number>;
+}
+
+export interface ResetMechanism {
+  readonly id: string;
+  readonly policyVersion: number;
+  /** H-35 S3.3: the lineage's compatibility identity (env_fp), when it has one. */
+  readonly compat?: Readonly<Record<string, unknown>>;
+  reset(container: string): Promise<ResetRecord>;
+  /**
+   * H-35 S3 (design-r4 2): after a judge deployment's cleanup, the inventory
+   * at both scopes must equal the lineage's baseline. Never throws: a check
+   * that could not run is a failed record.
+   */
+  verifyClean?(container: string): Promise<VerifyRecord>;
+  /**
+   * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): one fsDigest(W)
+   * capture (fs-digest.ps1 lines), taken right after the reset and again
+   * after the cleanup. A throw fails closed like an error line.
+   */
+  fsDigest?(container: string): Promise<string[]>;
+  /** L4 exclusions (the lineage's dispositions), as Windows wildcards. */
+  readonly fsExclude?: readonly string[];
+  /** L4: the declared roots every capture must cover (the lineage's fs.roots). */
+  readonly fsRoots?: readonly string[];
+  /** L4: the lineage's platform_cache folders (decision addendum 3). */
+  readonly fsCaches?: readonly FsPlatformCache[];
+  /** H-35 S3 L2b: the lineage's NST outbound firewall state (absent: not recorded). */
+  readonly bcEgress?: "enforced" | "unenforced";
+  /** H-35 S3: the content root every restore is verified against (absent: none). */
+  readonly contentRoot?: string;
+  /** H-35 run 004 #4: the lineage's canonical NST config digest (absent: none). */
+  readonly nstConfigSha?: string;
+  /** H-35 run 004 #4: the container's live NST config digest, read-only; never throws. */
+  nstConfigDigest?(
+    container: string,
+  ): Promise<{ sha: string | null; error: string | null }>;
+}
+
+/** One L4 check of a deployment (the verdict log's `fs_checks[]`). */
+export interface FsCheckRecord {
+  container: string;
+  ok: boolean;
+  diff: FsDiffEntry[];
+  errors: string[];
+}
+
+/**
+ * Infra that leaves the container in an unknown or unsafe state: the lane
+ * quarantines it (never reused without recovery) and reroutes.
+ */
+export class QuarantiningError extends ContainerError {}
+
+/**
+ * L4 found a difference or could not observe: the host is dirty. Infra, so
+ * the judgment's rows from this deployment are never scored here; the lane
+ * quarantines the container and reroutes.
+ */
+export class HostDirtyError extends QuarantiningError {
+  constructor(readonly record: FsCheckRecord) {
+    const what = [
+      ...record.errors,
+      ...record.diff.slice(0, 5).map((d) => d.path),
+    ];
+    super(
+      `L4 on ${record.container}: ${record.errors.length} error(s), ${record.diff.length} difference(s): ${
+        what.join("; ").slice(0, 400)
+      }`,
+      record.container,
+      "health",
+    );
+    this.name = "HostDirtyError";
+  }
+}
+
+/** One post-cleanup inventory check (the verdict log's `verifies[]`). */
+export interface VerifyRecord {
+  container: string;
+  ok: boolean;
+  /** `+ <line>` present now, not in the baseline; `- <line>` the reverse. */
+  diff: string[];
+  error: string | null;
+}
+
+/**
+ * verify-clean.ps1 protocol: `VERIFY_DIFF <+|-> <line>` per difference, then
+ * exactly one of `VERIFY_OK` (exit 0, no diff), `VERIFY_DIRTY <n>` (n = the
+ * diff lines) or `VERIFY_FAILED <reason>`. Anything else is a failed check.
+ */
+export function parseVerifyOutput(
+  container: string,
+  out: { code: number; stdout: string },
+): VerifyRecord {
+  const diff: string[] = [];
+  const ends: string[] = [];
+  let dirtyN = -1;
+  let failed: string | null = null;
+  const bad: string[] = [];
+  for (const raw of out.stdout.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line.startsWith("VERIFY_")) continue;
+    const d = /^VERIFY_DIFF ([+-] \S.*)$/.exec(line);
+    const dirty = /^VERIFY_DIRTY (\d+)$/.exec(line);
+    const f = /^VERIFY_FAILED (\S.*)$/.exec(line);
+    if (d) diff.push(d[1]!);
+    else if (line === "VERIFY_OK") ends.push("ok");
+    else if (dirty) (ends.push("dirty"), dirtyN = Number(dirty[1]));
+    else if (f) (ends.push("failed"), failed = f[1]!.trim());
+    else bad.push(line);
+  }
+  const fail = (error: string): VerifyRecord => ({
+    container,
+    ok: false,
+    diff,
+    error,
+  });
+  const protocol = (why: string) => fail(`protocol: ${why} (exit ${out.code})`);
+  if (bad.length > 0) return protocol(`malformed ${bad[0]!.slice(0, 200)}`);
+  if (ends.length !== 1) return protocol(`${ends.length} end markers`);
+  if (ends[0] === "failed") return fail(failed!);
+  if (ends[0] === "dirty") {
+    if (dirtyN !== diff.length || diff.length === 0) {
+      return protocol(`VERIFY_DIRTY ${dirtyN} with ${diff.length} diff lines`);
+    }
+    return fail(
+      `inventory differs from the baseline (${diff.length} line${
+        diff.length === 1 ? "" : "s"
+      })`,
+    );
+  }
+  if (out.code !== 0 || diff.length > 0) {
+    return protocol("VERIFY_OK with a diff or a failing exit");
+  }
+  return { container, ok: true, diff, error: null };
+}
+
+/**
+ * H-35 S3 L2a (design-r5 2.2): an agent extension's Allow HttpClient
+ * Requests did not read back false. Infra; quarantined.
+ */
+export class HttpBlockFailedError extends QuarantiningError {
+  constructor(container: string, appId: string, readback: string) {
+    super(
+      `HttpClient block of ${appId} on ${container} read back '${
+        readback.slice(0, 100)
+      }', want allow=false`,
+      container,
+      "publish",
+    );
+    this.name = "HttpBlockFailedError";
+  }
+}
+
+/** A reset that did not complete: infra; the lane quarantines the container. */
+export class ResetFailedError extends QuarantiningError {
+  constructor(readonly record: ResetRecord) {
+    super(
+      `reset of ${record.container} failed at ${record.failed_step}: ${record.error}`,
+      record.container,
+      "setup",
+    );
+    this.name = "ResetFailedError";
+  }
+}
+
+export function parseResetOutput(
+  container: string,
+  m: { id: string; policyVersion: number },
+  out: { code: number; stdout: string },
+): ResetRecord {
+  const phases_ms: Record<string, number> = {};
+  const seen: string[] = [];
+  let oks = 0;
+  // Run 002 Sol r3 #1: no phase may follow the success marker.
+  let stepAfterOk = false;
+  const failed: { step: string; reason: string }[] = [];
+  // Orch Sol r1 #1: every line in the reserved RESET_ namespace must be one
+  // well-formed marker; any other such line is a protocol failure.
+  const malformed: string[] = [];
+  for (const raw of out.stdout.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line.startsWith("RESET_")) continue;
+    // A phase name is one identifier (Sol r3 #1).
+    const step = /^RESET_STEP ([a-z_]+) (\d+)$/.exec(line);
+    const f = /^RESET_FAILED ([a-z_]+) (\S.*)$/.exec(line);
+    if (step) {
+      if (oks > 0) stepAfterOk = true;
+      seen.push(step[1]!);
+      phases_ms[step[1]!] = Number(step[2]);
+    } else if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
+    // Run 002 Sol r2 #1: a success marker is exactly the bare line.
+    else if (line === "RESET_OK") oks++;
+    else malformed.push(line);
+  }
+  const base = {
+    container,
+    mechanism: m.id,
+    policy_version: m.policyVersion,
+    phases_ms,
+  };
+  const protocol = (why: string): ResetRecord => ({
+    ...base,
+    ok: false,
+    failed_step: "protocol",
+    error: `${why} (exit ${out.code})`,
+  });
+  if (malformed.length > 0) {
+    return protocol(`malformed marker line: ${malformed[0]!.slice(0, 200)}`);
+  }
+  if (failed.length > 1) return protocol("more than one RESET_FAILED");
+  if (failed.length === 1) {
+    return {
+      ...base,
+      ok: false,
+      failed_step: failed[0]!.step,
+      error: failed[0]!.reason,
+    };
+  }
+  if (oks !== 1 || out.code !== 0) {
+    return protocol("not exactly one bare RESET_OK with exit 0");
+  }
+  if (stepAfterOk) return protocol("a phase after RESET_OK");
+  // Sol r2 #1: success means every agreed phase ran, once each, in order.
+  if (
+    seen.length !== RESET_PHASES.length ||
+    seen.some((p, i) => p !== RESET_PHASES[i])
+  ) {
+    return protocol(
+      `phases ${seen.join(",") || "(none)"}, want ${RESET_PHASES.join(",")}`,
+    );
+  }
+  return { ...base, ok: true, failed_step: null, error: null };
+}
+
+/**
+ * The judging environment's mechanism until a reset lineage is configured:
+ * judging refuses (a configuration error, never infra, so nothing is
+ * quarantined or rerouted). No judge deployment without a reset.
+ */
+export const UNCONFIGURED_RESET: ResetMechanism = {
+  id: "unconfigured",
+  policyVersion: 0,
+  reset: () =>
+    Promise.reject(
+      new ConfigurationError(
+        "judging needs a reset lineage (H-35 S3): no judge deployment without a reset",
+      ),
+    ),
+};
+
+/** A mechanism that runs a reset command per container and parses its output. */
+export function commandReset(o: {
+  id: string;
+  policyVersion: number;
+  run: (container: string) => Promise<{ code: number; stdout: string }>;
+}): ResetMechanism {
+  return {
+    id: o.id,
+    policyVersion: o.policyVersion,
+    reset: async (container) => {
+      let out;
+      try {
+        out = await o.run(container);
+      } catch (err) {
+        // A refusal stays a refusal; anything else is a recorded failure
+        // (run 002 Sol r2 #3), so the lane quarantines the container.
+        if (err instanceof ConfigurationError) throw err;
+        return failedReset(container, o, "command", err);
+      }
+      return parseResetOutput(container, o, out);
+    },
+  };
+}
+
+/** A reset that threw, as a failed record (never an unrecorded error). */
+export function failedReset(
+  container: string,
+  m: { id: string; policyVersion: number },
+  step: string,
+  err: unknown,
+): ResetRecord {
+  return {
+    container,
+    mechanism: m.id,
+    policy_version: m.policyVersion,
+    ok: false,
+    failed_step: step,
+    error: err instanceof Error ? err.message : String(err),
+    phases_ms: {},
+  };
+}
+
+/** lane-ops' reset script (O-09), relative to the repository root. */
+export const RESET_SCRIPT = ["infra", "harness-reset", "reset-golden.ps1"];
+/** The post-cleanup inventory check against the same lineage. */
+export const VERIFY_SCRIPT = ["infra", "harness-reset", "verify-clean.ps1"];
+/** One L4 fsDigest(W) capture over the lineage's fs roots. */
+export const FS_SCRIPT = ["infra", "harness-reset", "fs-capture.ps1"];
+/** The live NST config digest against the lineage (run 004 #4). */
+export const NST_CONFIG_SCRIPT = ["infra", "harness-reset", "nst-config.ps1"];
+/** Longer than the script's own 10 min health limit; then the reset failed. */
+const RESET_TIMEOUT_MS = 20 * 60_000;
+
+export type Spawn = (
+  cmd: string,
+  args: string[],
+  env: Record<string, string>,
+) => Promise<{ code: number; stdout: string }>;
+
+const spawnProcess: Spawn = async (cmd, args, env) => {
+  const out = await new Deno.Command(cmd, {
+    args,
+    env,
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+    signal: AbortSignal.timeout(RESET_TIMEOUT_MS),
+  }).output();
+  return { code: out.code, stdout: new TextDecoder().decode(out.stdout) };
+};
+
+/**
+ * H-35 S3.2: the production mechanism. Host pwsh runs lane-ops'
+ * reset-golden.ps1 against one container with the lineage file; the script
+ * restores the lineage's golden.bak and proves the result (its markers are
+ * parsed strictly, parseResetOutput). `dockerEnv` pins the Windows docker
+ * context (dockerContextEnv).
+ */
+export function goldenReset(o: {
+  repoRoot: string;
+  lineagePath: string;
+  lineage: Lineage;
+  dockerEnv: Record<string, string>;
+  spawn?: Spawn;
+}): ResetMechanism {
+  const spawn = o.spawn ?? spawnProcess;
+  const run = (script: string[], container: string) =>
+    spawn("pwsh", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-File",
+      join(o.repoRoot, ...script),
+      "-Container",
+      container,
+      "-Lineage",
+      o.lineagePath,
+    ], o.dockerEnv);
+  const fs = o.lineage.fs;
+  return {
+    ...commandReset({
+      id: "golden-restore",
+      policyVersion: o.lineage.reset_policy_version,
+      run: (container) => run(RESET_SCRIPT, container),
+    }),
+    // H-35 S3.3: the lineage's identity enters every deployment's env_fp.
+    compat: { lineage: lineageCompat(o.lineage) },
+    ...(o.lineage.egress ? { bcEgress: o.lineage.egress.mode } : {}),
+    ...(o.lineage.content_root
+      ? { contentRoot: o.lineage.content_root.root }
+      : {}),
+    // H-35 run 004 #4: the live NST config digest (nst-config.ps1, read-only)
+    ...(o.lineage.nst_config
+      ? {
+        nstConfigSha: o.lineage.nst_config.sha256,
+        nstConfigDigest: async (container: string) => {
+          try {
+            const out = await run(NST_CONFIG_SCRIPT, container);
+            const ok = /^NST_CONFIG ([0-9a-f]{64})\s*$/m.exec(out.stdout);
+            const bad = /^NST_CONFIG_FAILED (.*)$/m.exec(out.stdout);
+            return ok && out.code === 0 ? { sha: ok[1]!, error: null } : {
+              sha: null,
+              error: bad?.[1]?.trim() || `nst-config.ps1 exit ${out.code}`,
+            };
+          } catch (err) {
+            return {
+              sha: null,
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        },
+      }
+      : {}),
+    // H-35 S3 L4: only with the lineage's fs section (admission refuses one without).
+    ...(fs
+      ? {
+        fsExclude: fs.exclude.flatMap((e) =>
+          e.disposition === "platform_cache" ? [] : [e.pattern]
+        ),
+        fsCaches: fs.exclude.flatMap((e) =>
+          e.disposition === "platform_cache"
+            ? [{
+              base: e.base,
+              files: e.files,
+              dirs: e.dirs,
+              ...(e.magic ? { magic: e.magic } : {}),
+              ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
+              ...(e.dir_time_only ? { dirTimeOnly: true } : {}),
+              ...(e.in_place ? { inPlace: true } : {}),
+              ...(e.in_place_cab ? { inPlaceCab: true } : {}),
+            }]
+            : []
+        ),
+        fsRoots: fs.roots,
+        fsDigest: async (container: string) => {
+          const out = await run(FS_SCRIPT, container);
+          const lines = out.stdout.split(/\r?\n/).filter((l) => l !== "");
+          return out.code === 0
+            ? lines
+            : [...lines, `E|(fs-capture)|exit ${out.code}`];
+        },
+      }
+      : {}),
+    verifyClean: async (container) => {
+      try {
+        return parseVerifyOutput(
+          container,
+          await run(VERIFY_SCRIPT, container),
+        );
+      } catch (err) {
+        return {
+          container,
+          ok: false,
+          diff: [],
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  };
+}
+
+/** One L4 difference: the digest line before and after (null: absent). */
+export interface FsDiffEntry {
+  path: string;
+  before: string | null;
+  after: string | null;
+}
+
+/**
+ * The entry's key (path, or path:stream) of a well-formed fs-digest.ps1 line;
+ * null when the kind is unknown or a field is malformed (Sol S3 r1 #5).
+ */
+const FS_LINE: Record<string, RegExp> = {
+  D: /^D\|(?<attrs>\d+)\|\d+\|(?<p>[^|]+)$/,
+  // digest v4 (H-40): the 6th field is the file's first min(26, size) bytes,
+  // hex (platform_cache's magic, in_place_cab's CFHEADER); a v3 record's 2
+  F: /^F\|(?<sha>[0-9a-f]{64})\|(?<size>\d+)\|(?<attrs>\d+)\|(?<mtime>\d+)\|(?<head>(?:[0-9a-f]{2}){0,26})\|(?<p>[^|]+)$/,
+  S: /^S\|[0-9a-f]{64}\|\d+\|(?<p>[^|]+)$/,
+  L: /^L\|\d+\|\d+\|(?<p>[^|]+)\|[^|]*$/,
+};
+const fsParse = (line: string) => FS_LINE[line[0] ?? ""]?.exec(line)?.groups;
+function fsKey(line: string): string | null {
+  return fsParse(line)?.["p"] ?? null;
+}
+
+/**
+ * H-40 (addendum 8b Q6): whether a current digest line restores a recorded
+ * one. An F line must match field by field (sha256, size, attributes,
+ * last-write time, path spelling), its head only to the recorded width (a v3
+ * record holds 2 bytes; the sha pins the content); any other line exactly.
+ */
+export function fsLineRestored(recorded: string, current: string): boolean {
+  const r = recorded[0] === "F" ? fsParse(recorded) : undefined;
+  const c = current[0] === "F" ? fsParse(current) : undefined;
+  if (!r || !c) return recorded === current;
+  return (["sha", "size", "attrs", "mtime", "p"] as const).every((k) =>
+    r[k] === c[k]
+  ) && c["head"]!.startsWith(r["head"]!);
+}
+
+/**
+ * Addendum 8b: a digest v4 head (26 bytes) that is a Microsoft Cabinet
+ * CFHEADER: signature MSCF, reserved1 0, cbCabinet (u32 LE) the file size,
+ * version 1.3. A shorter head (a file under 26 bytes, a v3 line) fails.
+ */
+function cabOk(head: string, size: string): boolean {
+  if (head.length < 52) return false;
+  const b = head.match(/../g)!.map((h) => parseInt(h, 16));
+  const u32le = (o: number) =>
+    (b[o]! | b[o + 1]! << 8 | b[o + 2]! << 16 | b[o + 3]! << 24) >>> 0;
+  // reserved2/reserved3 are not checked (8b names reserved1 only; H-40 Q-A)
+  return head.startsWith("4d534346") && u32le(4) === 0 &&
+    u32le(8) === Number(size) && b[24] === 3 && b[25] === 1;
+}
+
+/**
+ * H-35 S3 L4 `platform_cache` (decision addendum 3): an NST cache folder
+ * where only NEW files whose path below `base` matches `files` (and start
+ * with `magic`, when set) and new or time-only-changed directories matching
+ * `dirs` are tolerated. Paths below `base` use `\`; the regexes are anchored
+ * sources from the lineage.
+ */
+export interface FsPlatformCache {
+  base: string;
+  files: string;
+  dirs: string;
+  magic?: string;
+  /** Addendum 6: the file name (before its extension) is its content sha256. */
+  nameIsSha256?: boolean;
+  /**
+   * Addendum 6: only an existing matching folder's last-write time may move
+   * (same spelling, same attributes); no new folder, no file (C:\Run\my).
+   */
+  dirTimeOnly?: boolean;
+  /** Addendum 7: an existing file may change in place (same path, size, attributes). */
+  inPlace?: boolean;
+  /**
+   * Addendum 8b: an existing file may change in place, size included (same
+   * path, attributes), when its new head is a CAB header of its new size.
+   */
+  inPlaceCab?: boolean;
+}
+
+/**
+ * Addendum 6: whether a recorded difference is one these caches tolerate,
+ * under exactly fsDiff's rules (new files only, shape, magic, name hash), for
+ * `harness recover`.
+ */
+export function cacheToleratesEntry(
+  caches: readonly FsPlatformCache[],
+  d: FsDiffEntry,
+): boolean {
+  return toleratingCache(caches, d) !== undefined;
+}
+
+/** The first platform cache that tolerates `d` (fsDiff's rules), if any. */
+export function toleratingCache(
+  caches: readonly FsPlatformCache[],
+  d: FsDiffEntry,
+): FsPlatformCache | undefined {
+  const whole = (s: string) => new RegExp(`^(?:${s})$`);
+  return caches.find((c) =>
+    cacheTolerates([{ ...c, files: whole(c.files), dirs: whole(c.dirs) }], d)
+  );
+}
+
+/** Whether one difference is a tolerated platform_cache addition. */
+function cacheTolerates(
+  caches: readonly {
+    base: string;
+    files: RegExp;
+    dirs: RegExp;
+    magic?: string;
+    nameIsSha256?: boolean;
+    dirTimeOnly?: boolean;
+    inPlace?: boolean;
+    inPlaceCab?: boolean;
+  }[],
+  d: FsDiffEntry,
+): boolean {
+  const after = d.after ? fsParse(d.after) : undefined;
+  if (!after) return false;
+  return caches.some((c) => {
+    // Sol S3 r4: a trailing separator on base is the same folder
+    const prefix = c.base.replace(/[\\/]+$/, "").toLowerCase() + "\\";
+    if (!d.path.toLowerCase().startsWith(prefix)) return false;
+    const rel = d.path.slice(prefix.length);
+    if (d.after![0] === "F" && c.inPlace) {
+      // addendum 7: an EXISTING file changed in place: same path spelling,
+      // size and attributes; content and last-write time may move. A new,
+      // removed, resized or re-attributed file stays a difference.
+      const before = d.before?.[0] === "F" ? fsParse(d.before) : undefined;
+      return before !== undefined && c.files.test(rel) &&
+        before["p"] === after["p"] && before["size"] === after["size"] &&
+        before["attrs"] === after["attrs"] &&
+        (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
+    }
+    if (d.after![0] === "F" && c.inPlaceCab) {
+      // addendum 8b: an EXISTING file rewritten in place: same path spelling
+      // and attributes; content, size and time may move when the AFTER head
+      // is a CAB header of the new size (Q7)
+      const before = d.before?.[0] === "F" ? fsParse(d.before) : undefined;
+      return before !== undefined && c.files.test(rel) &&
+        before["p"] === after["p"] && before["attrs"] === after["attrs"] &&
+        cabOk(after["head"] ?? "", after["size"]!);
+    }
+    if (d.after![0] === "F") {
+      return !c.dirTimeOnly && d.before === null && c.files.test(rel) &&
+        // run 004 #6: the magic (1 or 2 bytes) is a prefix of the 2-byte head
+        (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic)) &&
+        // addendum 6: a planted file of the right shape and header still
+        // needs a name that is its own content hash
+        (!c.nameIsSha256 ||
+          rel.split("\\").at(-1)!.replace(/\.[^.]*$/, "").toLowerCase() ===
+            after["sha"]);
+    }
+    if (d.after![0] !== "D" || !c.dirs.test(rel)) return false;
+    // a new directory of the shape (not for dirTimeOnly), or only its
+    // last-write time moved: same attributes and the same spelling (a
+    // case-only rename stays a difference, addendum 6 self-check)
+    if (d.before === null) {
+      return !c.dirTimeOnly && !c.inPlace && !c.inPlaceCab;
+    }
+    const before = d.before[0] === "D" ? fsParse(d.before) : undefined;
+    return before !== undefined && before["attrs"] === after["attrs"] &&
+      before["p"] === after["p"];
+  });
+}
+
+/** A Windows wildcard (case-insensitive; `*` any run, subtrees included). */
+function wildcard(pattern: string): RegExp {
+  const esc = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll(
+    "*",
+    ".*",
+  );
+  return new RegExp(`^${esc}$`, "i");
+}
+
+/**
+ * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): compare two
+ * fsDigest(W) captures. Any difference in an entry's line (content, size,
+ * attributes, last-write time, a stream, a link target) outside the
+ * exclusions is a difference; E lines and unparsable lines on either side are
+ * errors, and an error fails closed like a difference. Sol S3 r1 #5: each
+ * capture must end with exactly one `T|<n>` (n = its other lines), hold no
+ * entry twice, and cover every declared root (a D, L or E line for it).
+ * `caches`: platform_cache folders (cacheTolerates); every other difference
+ * there stays one.
+ */
+export function fsDiff(
+  before: readonly string[],
+  after: readonly string[],
+  exclude: readonly string[],
+  roots: readonly string[] = [],
+  caches: readonly FsPlatformCache[] = [],
+): { diff: FsDiffEntry[]; errors: string[] } {
+  const errors: string[] = [];
+  const res = exclude.map(wildcard);
+  // Sol S3 r4: the whole relative path must match, whatever the source's
+  // alternation (a noncapturing wrapper keeps backreference numbers).
+  const whole = (s: string) => new RegExp(`^(?:${s})$`);
+  const cacheRes = caches.map((c) => ({
+    ...c,
+    files: whole(c.files),
+    dirs: whole(c.dirs),
+  }));
+  const index = (side: string, raw: readonly string[]) => {
+    const m = new Map<string, string>();
+    const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
+    const marks = lines.filter((l) => l.startsWith("T|"));
+    const entries = lines.filter((l) => !l.startsWith("T|"));
+    if (marks.length !== 1 || lines.at(-1) !== marks[0]) {
+      errors.push(
+        `${side}: no T| marker as the last line (incomplete capture)`,
+      );
+    } else if (marks[0] !== `T|${entries.length}`) {
+      errors.push(
+        `${side}: ${marks[0]} does not match the count ${entries.length}`,
+      );
+    }
+    const seen = new Set<string>();
+    // Sol S3 r2: a root is covered only by its own D, L or E line
+    const rootSeen = new Set<string>();
+    for (const line of entries) {
+      if (line.startsWith("E|")) {
+        const [, p, ...why] = line.split("|");
+        errors.push(`${side}: ${p}: ${why.join("|")}`);
+        rootSeen.add((p ?? "").toLowerCase());
+        continue;
+      }
+      const k = fsKey(line);
+      if (k === null) {
+        errors.push(`${side}: unparsable line ${line}`);
+        continue;
+      }
+      // NTFS paths are case-insensitive: one entry; a case-only rename
+      // still differs in its line.
+      const key = k.toLowerCase();
+      if (seen.has(key)) errors.push(`${side}: ${k} appears twice`);
+      seen.add(key);
+      if (line[0] === "D" || line[0] === "L") rootSeen.add(key);
+      if (!res.some((r) => r.test(k))) m.set(key, line);
+    }
+    for (const r of roots) {
+      if (!rootSeen.has(r.toLowerCase())) {
+        errors.push(`${side}: declared root ${r} has no entry`);
+      }
+    }
+    return m;
+  };
+  const b = index("before", before), a = index("after", after);
+  const diff: FsDiffEntry[] = [];
+  for (const k of [...new Set([...b.keys(), ...a.keys()])].sort()) {
+    const x = b.get(k) ?? null, y = a.get(k) ?? null;
+    if (x === y) continue;
+    const d = { path: fsKey((y ?? x)!)!, before: x, after: y };
+    if (!cacheTolerates(cacheRes, d)) diff.push(d);
+  }
+  return { diff, errors };
+}

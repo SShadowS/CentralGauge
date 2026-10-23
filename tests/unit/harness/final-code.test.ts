@@ -15,6 +15,7 @@ import {
 import { readAppGraph } from "../../../src/harness/staging.ts";
 import { FakeBc } from "./fake-bc.ts";
 import { appJson, IDS, write } from "./refapp-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const analysis = { codeCop: true, uiCop: true, rulesetFile: "r.json" };
 const w = (code: string) => ({
@@ -105,7 +106,7 @@ Deno.test("parsers: without analysis the bench parsing is unchanged (generic AL0
 });
 
 Deno.test("finalCodeCounts: analysis reaches the compile; a failed app is incomplete", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const ws = join(root, "ws");
   await write(
     ws,
@@ -183,7 +184,7 @@ Deno.test("finalCode: per-code increases; incomplete final has no warning number
 });
 
 Deno.test("canaryCheck: ok only when every expected code appears", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const bc = new FakeBc();
   const lane = new BcLane(bc, ["C1"]);
   const o = {

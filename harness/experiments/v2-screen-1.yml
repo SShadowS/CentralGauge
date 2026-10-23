@@ -1,0 +1,10 @@
+# M8-15b: task set v2 screening pilot of the start seal (developmental, never confirmatory).
+# Symmetric: both diagonal arms, 3 repeats each; drop rule and strata in harness-tasks/v2/screening.yml.
+id: v2-screen-1
+hypothesis: "Screening pilot of the v2 start-seal candidates on the plain and realistic+LSP arms; developmental, excluded from every confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-plain
+variants: [cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-007,HX-008,HX-009,HX-011,HX-012,HX-013,HX-014,HX-015,HX-016,HX-017,HX-018,HX-019,HX-020,HX-021,HX-022,HX-023,HX-024,HX-025,HX-026,HX-027,HX-028,HX-029,HX-031,HX-032,HX-033,HX-034,HX-035,HX-036,HX-038,HX-040,HX-041,HX-042}"
+repeats: 3

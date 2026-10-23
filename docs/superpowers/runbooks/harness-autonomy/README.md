@@ -77,7 +77,11 @@ todo --claim--> doing --submit--> review --accept--> accepted
 
 - `coord status [--lane X] [--json]`, `coord why <id>`, `coord next <lane>`,
   `coord questions`, `coord stale`, `coord holder <container>`, `coord doctor`,
-  `coord sweep [--json]` (one-call orchestrator sweep: pause/drain, leases, questions, stale, open tasks, next).
+  `coord sweep [--json]` (one-call orchestrator sweep: pause/drain, leases, questions, stale, open tasks, next),
+  `coord timeline <id> [--run <runId>] [--json]` (per-run phase history with durations; default the latest run).
+  Only checkpoints carry a phase; the interval after any other event totals under the event name, so
+  review time shows as `submit`. The last entry of an open run (doing or review) lasts until the query
+  time; the last entry of a closed run has no duration.
 - Queries read only headers and status records. Never read every task folder by hand.
 
 ### Container leases (lane-ops only)

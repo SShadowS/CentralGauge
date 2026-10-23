@@ -140,9 +140,12 @@ export function unitOf(file: string): string {
   if (refapp) return `refapp:${refapp[1]}`;
   // Hostile fixtures stand in for agent output (ruling 2026-09-26): checked
   // before the trusted-fixture rule.
-  if (/^tests\/fixtures\/harness\/hostile\/.*\/Test\//.test(file)) {
-    return "harness-hostile:Test";
-  }
+  // Each hostile fixture is applied alone onto a task, so each is its own
+  // unit (H-35: the subscriber-repair variants each replace shipped 80090).
+  const hostile = /^tests\/fixtures\/harness\/hostile\/([^/]+)\/Test\//.exec(
+    file,
+  );
+  if (hostile) return `harness-hostile:${hostile[1]}:Test`;
   if (/^tests\/fixtures\/harness\/.*\/Test\//.test(file)) {
     return "harness-fixture:Test";
   }
@@ -217,7 +220,7 @@ function bandOf(unit: string): Band | null {
   if (unit === "harness-fixture:Test") {
     return { label: "harness fixture", ...HARNESS_FIXTURE_TEST_RANGE };
   }
-  if (unit === "harness-hostile:Test") {
+  if (/^harness-hostile:[^:]+:Test$/.test(unit)) {
     // The range an agent may add to the Test app (backend agentCodeunit):
     // the Test app band below the fixture band; 80013 is refused separately.
     return {

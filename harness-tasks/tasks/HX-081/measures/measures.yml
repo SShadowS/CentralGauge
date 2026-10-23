@@ -1,0 +1,25 @@
+v: 1
+partial_credit:
+  weights:
+    "87080/SwapThenUndo": 1
+    "87080/SwapRaisesEvent": 1
+    "87080/UndoRaisesEvent": 1
+    "87080/FailedSwapKeepsEarlierSwap": 1
+    "87080/RefusedSwapRecordsNothing": 1
+    "87080/RefusedSwapKeepsOtherContractsSwap": 1
+    "87080/FailedUndoKeepsSwap": 1
+    "87080/UndoWithoutSwap": 1
+    "87080/SecondSwapReplaces": 1
+    "87080/UndoOnlyOnce": 1
+    "87080/PlainSwapNotRemembered": 1
+    "87080/ForgetDropsSwap": 1
+    "87080/RefusedUndoKeepsSwap": 1
+    "87080/MissingContractFails": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/forget-before-undo: { partial_credit: 0.8571428571428571 }
+  naive/plain-memory: { partial_credit: 0.2857142857142857 }
+  naive/remember-before-event: { partial_credit: 0.8571428571428571 }
+  naive/remember-before-swap: { partial_credit: 0.7142857142857143 }

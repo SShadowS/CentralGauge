@@ -316,7 +316,8 @@ export async function checkModelsInCatalog(
 }
 
 /**
- * Task limits may only tighten config limits (spec 1a section 4). Ownership:
+ * A task's budget may only tighten the config's (spec 1a section 4); the time
+ * limit is always the config's (H-23). Ownership:
  * config limits are part of the arm template (campaign arm manifest); the
  * result of this function goes into each execution's manifest (M1-05
  * `forTask`), so a task override never changes arm identity.
@@ -326,7 +327,9 @@ export function effectiveLimits(
   task: HarnessTask["limits"],
 ): Limits {
   return {
-    timeout_min: Math.min(config.timeout_min, task.timeout_min ?? Infinity),
+    // H-23 owner ruling 2026-10-17: the arm's time limit holds on every task (the schema
+    // requires it), so every arm runs under one limit. A task's timeout_min is not applied.
+    timeout_min: config.timeout_min,
     max_budget_usd: Math.min(
       config.max_budget_usd,
       task.max_budget_usd ?? Infinity,

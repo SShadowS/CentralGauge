@@ -1,0 +1,112 @@
+{
+  "RuntimeVersion": "17.0",
+  "Namespaces": [
+    {
+      "Name": "Microsoft",
+      "Namespaces": [
+        {
+          "Name": "Finance",
+          "Namespaces": [
+            {
+              "Name": "GeneralLedger",
+              "Namespaces": [
+                {
+                  "Name": "Journal",
+                  "Tables": [
+                    {
+                      "Id": 81,
+                      "Name": "Gen. Journal Line",
+                      "Methods": [
+                        {"Attributes":[{"Name":"IntegrationEvent","Arguments":[{"Value":"True"},{"Value":"False"}]},{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":757279673,"Name":"OnCheckGenJournalLinePostRestrictions"},
+                        {"IsLocal":true,"Parameters":[{"IsVar":true,"Name":"GenJournalLine","TypeDefinition":{"Name":"Record","Subtype":{"Name":"Gen. Journal Line","Id":81}}},{"Name":"GenJournalTemplate","TypeDefinition":{"Name":"Record","Subtype":{"Name":"Gen. Journal Template","Id":80}}},{"Name":"GenJournalBatch","TypeDefinition":{"Name":"Record","Subtype":{"Name":"Gen. Journal Batch","Id":232}}},{"Name":"LastGenJournalLine","TypeDefinition":{"Name":"Record","Subtype":{"Name":"Gen. Journal Line","Id":81}}},{"Name":"Balance","TypeDefinition":{"Name":"Decimal"}},{"Name":"BottomLine","TypeDefinition":{"Name":"Boolean"}}],"Attributes":[{"Name":"IntegrationEvent","Arguments":[{"Value":"False"},{"Value":"False"}]}],"Id":1549969698,"Name":"OnAfterSetupNewLine"}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Name": "Foundation",
+          "Namespaces": [
+            {
+              "Name": "Reporting",
+              "Tables": [
+                {
+                  "Id": 77,
+                  "Name": "Report Selections",
+                  "Methods": [
+                    {"Parameters":[{"IsVar":true,"Name":"DocumentContent","TypeDefinition":{"Name":"Text"}},{"Name":"ReportUsage","TypeDefinition":{"Name":"Enum","Subtype":{"Name":"Report Selection Usage","Id":77}}},{"Name":"RecordVariant","TypeDefinition":{"Name":"Variant"}},{"Name":"CustNo","TypeDefinition":{"Name":"Code[20]"}}],"Attributes":[{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":-103068734,"Name":"GetHtmlReportForCust"},
+                    {"Parameters":[{"IsVar":true,"Name":"ServerEmailBodyFilePath","TypeDefinition":{"Name":"Text[250]"}},{"Name":"ReportUsage","TypeDefinition":{"Name":"Enum","Subtype":{"Name":"Report Selection Usage","Id":77}}},{"Name":"RecordVariant","TypeDefinition":{"Name":"Variant"}},{"Name":"CustNo","TypeDefinition":{"Name":"Code[20]"}}],"Attributes":[{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":122939270,"Name":"GetPdfReportForCust"},
+                    {"Parameters":[{"IsVar":true,"Name":"TempBlob","TypeDefinition":{"Name":"Codeunit","Subtype":{"ModuleId":"63ca2fa4-4f03-4f2b-a480-172fef340d3f","Name":"Temp Blob","Id":4100}}},{"Name":"ReportUsage","TypeDefinition":{"Name":"Enum","Subtype":{"Name":"Report Selection Usage","Id":77}}},{"Name":"RecordVariant","TypeDefinition":{"Name":"Variant"}},{"Name":"CustNo","TypeDefinition":{"Name":"Code[20]"}}],"Id":1503768061,"Name":"GetPdfReportForCust"}
+                  ]
+                }
+              ],
+              "Pages": [
+                {"Id": 306, "Name": "Report Selection - Sales", "Properties": [{"Name":"SourceTable","Value":"77"}]}
+              ]
+            }
+          ]
+        },
+        {
+          "Name": "Sales",
+          "Namespaces": [
+            {
+              "Name": "Customer",
+              "Tables": [
+                {"Id": 18, "Name": "Customer"}
+              ],
+              "Pages": [
+                {
+                  "Id": 21,
+                  "Name": "Customer Card",
+                  "Properties": [{"Name":"SourceTable","Value":"18"}],
+                  "Methods": [
+                    {"Parameters":[{"IsVar":true,"Name":"InText","TypeDefinition":{"Name":"Text"}}],"Attributes":[{"Name":"IntegrationEvent","Arguments":[{"Value":"False"},{"Value":"False"}]},{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":-369111434,"Name":"SetCaption"}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Name": "Bank",
+          "Namespaces": [
+            {
+              "Name": "Reconciliation",
+              "Tables": [
+                {"Id": 270, "Name": "Bank Account"}
+              ],
+              "Reports": [
+                {
+                  "Id": 1496,
+                  "Name": "Suggest Bank Acc. Recon. Lines",
+                  "DataItems": [{"Name":"Bank Account","RelatedTable":"Bank Account"}],
+                  "Methods": [
+                    {"Parameters":[{"IsVar":true,"Name":"ExcludeReversedEntries","TypeDefinition":{"Name":"Boolean"}}],"Attributes":[{"Name":"IntegrationEvent","Arguments":[{"Value":"False"},{"Value":"False"}]},{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":439248603,"Name":"OnPreDataItemBankAccount"}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Codeunits": [
+    {
+      "Id": 1293,
+      "Name": "Isolated Storage Management",
+      "Methods": [
+        {"ReturnTypeDefinition":{"Name":"Boolean"},"Parameters":[{"Name":"Key","TypeDefinition":{"Name":"Text"}},{"Name":"Datascope","TypeDefinition":{"Name":"DataScope"}},{"IsVar":true,"Name":"Value","TypeDefinition":{"Name":"Text"}}],"Attributes":[{"Name":"NonDebuggable"},{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":1668466490,"Name":"Get"},
+        {"ReturnTypeDefinition":{"Name":"Boolean"},"Parameters":[{"Name":"Key","TypeDefinition":{"Name":"Text"}},{"Name":"Datascope","TypeDefinition":{"Name":"DataScope"}}],"Attributes":[{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":-393103535,"Name":"Contains"},
+        {"ReturnTypeDefinition":{"Name":"Boolean"},"Parameters":[{"Name":"Key","TypeDefinition":{"Name":"Text"}},{"Name":"Datascope","TypeDefinition":{"Name":"DataScope"}},{"IsVar":true,"Name":"Value","TypeDefinition":{"Name":"SecretText"}}],"Attributes":[{"Name":"Scope","Arguments":[{"Value":"OnPrem"}]}],"Id":1669515226,"Name":"Get"}
+      ]
+    }
+  ],
+  "AppId": "437dbf0e-84ff-417a-965d-ed2bb9650972",
+  "Name": "Base Application",
+  "Publisher": "Microsoft",
+  "Version": "28.4.53241.53758"
+}

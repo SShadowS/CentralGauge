@@ -16,6 +16,7 @@ import {
   TaskMeasuresSchema,
   writeMeasureRecord,
 } from "../../../src/harness/measures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const task = (kind: HarnessTask["kind"] = "feature"): HarnessTask => ({
   id: "HX-101",
@@ -121,12 +122,12 @@ Deno.test("partialCredit: incomplete rows, absent scorer or infra are missing; f
 });
 
 Deno.test("loadTaskMeasures: weights + hidden regressions cover exactly the fail_to_pass procedures; never empty; never test-authoring", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   await Deno.mkdir(join(dir, "measures"));
   const write = (y: string) =>
     Deno.writeTextFile(join(dir, "measures", "measures.yml"), y);
   assertEquals(
-    await loadTaskMeasures({ task: task(), dir: await Deno.makeTempDir() }),
+    await loadTaskMeasures({ task: task(), dir: await testTempDir() }),
     null,
   );
   await write(
@@ -163,7 +164,7 @@ Deno.test("loadTaskMeasures: weights + hidden regressions cover exactly the fail
 });
 
 Deno.test("measure records: versioned by fingerprint, write once, bound to artifact and oracle", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const r: MeasureRecord = {
     v: 1,
     judgment_id: "00000000-0000-4000-8000-0000000000a1",
@@ -255,7 +256,7 @@ Deno.test("loadTaskMeasures: duplicate hidden regressions are refused (M11-04 ru
     }).success,
     false,
   );
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   await Deno.mkdir(join(dir, "measures"));
   await Deno.writeTextFile(
     join(dir, "measures", "measures.yml"),
@@ -269,7 +270,7 @@ Deno.test("loadTaskMeasures: duplicate hidden regressions are refused (M11-04 ru
 });
 
 Deno.test("readMeasureRecord: a record whose judgment or fingerprint disagrees with its location is refused (M11-04 run 002)", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const r = await record();
   await writeMeasureRecord(root, r);
   const src = join(
@@ -302,7 +303,7 @@ Deno.test("readMeasureRecord: a record whose judgment or fingerprint disagrees w
 });
 
 Deno.test("writeMeasureRecord: published through a synced temp file; a stale temp never takes the key (M11-04 run 002)", async () => {
-  const root = await Deno.makeTempDir();
+  const root = await testTempDir();
   const r = await record();
   const dir = join(root, "measures", r.judgment_id);
   const final = join(dir, `${r.measure_fingerprint}.json`);
@@ -571,4 +572,30 @@ Deno.test("qualifyMeasures: exact per-code increases; missing is a failure", asy
     "reuse: expected false, got missing (no reuse target located in the final workspace)",
     "partial_credit: expected 1, got 0.5",
   ]);
+});
+
+Deno.test("H-35 S2.1: partial credit reads G only: a not_measured agent_tests (Test-side gate) does not make it missing; G not measured is missing for the gate, not infra", () => {
+  const base = full(
+    [
+      row(85400, "A", true),
+      row(85400, "B", true),
+      row(85400, "C", true),
+      row(85400, "H", true),
+    ],
+    [row(80010, "P1", true), row(80010, "P2", true)],
+  );
+  const testSide = judgment([
+    ...base.scorers,
+    { name: "agent_tests", passed: null, state: "not_measured", tests: [] },
+  ] as never);
+  assertEquals(partialCredit(task(), M, testSide).status, "ok");
+  const gated = judgment([
+    { name: "build", passed: null, state: "not_measured", tests: [] },
+    { name: "pass_to_pass", passed: null, state: "not_measured", tests: [] },
+    { name: "fail_to_pass", passed: null, state: "not_measured", tests: [] },
+  ] as never);
+  assertEquals(partialCredit(task(), M, gated), {
+    status: "missing",
+    reason: "policy gate: G not measured",
+  });
 });

@@ -10,6 +10,7 @@ import {
 } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/aliases.ts";
 import { FACET_DEFINITIONS } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/facet-definitions.ts";
 import { mergeEnrichment } from "../../../.claude/skills/refresh-task-taxonomy/pipeline/merge-taxonomy.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const opts = {
   tasksDir: "tests/fixtures/taxonomy/manifests",
@@ -160,7 +161,7 @@ Deno.test("surface tag names spell acronyms and AL type names correctly", () => 
 });
 
 Deno.test("manifest parse failure records violation and continues", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     // Write a malformed manifest
     await Deno.writeTextFile(
@@ -184,7 +185,7 @@ Deno.test("manifest parse failure records violation and continues", async () => 
 });
 
 Deno.test("id field disagreement with filename records violation and skips", async () => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     // Write a manifest whose id disagrees with filename
     await Deno.writeTextFile(

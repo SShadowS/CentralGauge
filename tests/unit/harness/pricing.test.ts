@@ -12,6 +12,7 @@ import {
   type ModelTokens,
   type PricingBook,
 } from "../../../src/harness/pricing.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const BOOK: PricingBook = {
   at: "2026-10-05T00:00:00.000Z",
@@ -63,7 +64,7 @@ const MODELS_YML = `- slug: anthropic/claude-sonnet-5
 `;
 
 async function catalog(models: string, pricing: string): Promise<string> {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(dir, "models.yml"), models);
   await Deno.writeTextFile(join(dir, "pricing.yml"), pricing);
   return dir;
@@ -83,7 +84,7 @@ const GPT_X = PRICE("v1", "openai/gpt-x", "2026-01-01T00:00:00.000Z");
 const AT = new Date("2026-10-05T00:00:00.000Z");
 
 Deno.test("loadPricingBook: newest entry effective at the run time; 1-hour write derived for anthropic/* only", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(dir, "models.yml"),
     `- slug: anthropic/claude-sonnet-5
@@ -188,7 +189,7 @@ Deno.test("loadPricingBook: malformed YAML, unknown keys, bad rates and bad date
 });
 
 Deno.test("loadPricingBook: a missing file and duplicate api ids fail naming the file", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(join(dir, "models.yml"), MODELS_YML);
   const missing = await assertRejects(
     () => loadPricingBook(dir, AT),

@@ -29,6 +29,7 @@ These options are available for all commands:
 | `config`         | Configuration management                                 |
 | `stats-*`        | Historical statistics commands                           |
 | `workbench`      | Local authoring dashboard for draft trap-tasks           |
+| `harness`        | Harness Bench: cells, campaigns, judging environments    |
 | `container`      | Container management                                     |
 | `compile`        | Compile AL code                                          |
 | `test`           | Run AL tests                                             |
@@ -921,6 +922,272 @@ check: opening the event stream is not itself container work, and jobs
 already queued are re-checked against the gate individually as their own
 turn comes up.
 
+## harness
+
+Harness Bench commands (`cli/commands/harness-command.ts`). `centralgauge
+harness --help` lists every subcommand. This section covers judging
+environments (H-35 S3) and the rejudge pairing report.
+
+### Judging environments
+
+Every judge deployment runs on a BC container that was first restored to a
+**reset lineage**: a JSON file that pins the golden database backup and the
+evidence the restore is checked against (see [Lineage file](#lineage-file)).
+The commands that judge (`cell`, `judge-pending`, `judge-fixture`, `run`,
+`rejudge`, `measure`, `qualify`) share two options:
+
+| Option                               | Description                                                                                                                                           |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--lineage <path>`                   | Reset lineage JSON. Every judge deployment first restores the container to the lineage's golden. Without a lineage, judging refuses with a configuration error. |
+| `--unverified-bc-egress-ok <reason>` | Owner override: judge on a lineage whose NST outbound firewall is unenforced (`egress.mode: unenforced`). Required for every lineage until H-36: `enforced` is not admissible yet. |
+
+With `--lineage`, the command checks the environment before it leases any
+container: every container must be an admitted instance of the lineage and all
+of them must share one env_fp. It prints the same block as `harness env check`
+and stops with `judging environment not admissible` otherwise.
+
+The egress override is recorded in every verdict log (`bc_egress`, the NST
+egress mode and the override reason) and in the campaign, so a resume must pass
+the same flag with the same reason. The harness report then carries a
+`bc_egress_override` field and starts with `[WARN] NST egress NOT enforced`.
+This flag is separate from `--unverified-egress-ok`, which concerns the agent
+sandbox egress, not the BC container.
+
+### harness env check
+
+Read-only. Prints each container's lineage, env_fp and baseline time, and exits
+non-zero unless all containers are admitted instances of the lineage sharing
+one env_fp.
+
+```bash
+centralgauge harness env check --containers <names> --lineage <path> \
+  [--symbol-store <dir>] [--unverified-bc-egress-ok <reason>]
+```
+
+| Option                               | Default                   | Description                                    |
+| ------------------------------------ | ------------------------- | ---------------------------------------------- |
+| `--containers <names>`               | required                  | Comma-separated BC containers                  |
+| `--lineage <path>`                   | required                  | Reset lineage JSON                             |
+| `--symbol-store <dir>`               | `results/harness/symbols` | Host symbol store (its lock digest enters env_fp) |
+| `--unverified-bc-egress-ok <reason>` | -                         | Check as a run that declares unenforced NST egress |
+
+A container is admitted when its instance manifest
+(`results/harness/baselines/<container>.json`) exists, names this container
+and this lineage, and records the same env_fp as the live one. The env_fp
+hashes the lineage's identity fields, the reset mechanism, the symbols lock
+digest and the container's compiler identity.
+
+Admission also refuses the whole lineage when:
+
+- it has no `content_root` section,
+- it has no `fs` section (L4 is not configured),
+- it has no `egress` field,
+- `egress.mode` is `unenforced` and `--unverified-bc-egress-ok <reason>` is not
+  given,
+- `egress.mode` is `enforced`: nothing builds or verifies an NST firewall rule
+  yet (H-36), so a lineage declaring one is refused, with or without the flag.
+
+### harness baseline create
+
+```bash
+centralgauge harness baseline create <container> --lineage <path> [--symbol-store <dir>]
+```
+
+Resets the container to the lineage (`reset-golden.ps1`), then writes its
+instance manifest to `results/harness/baselines/<container>.json`: container,
+lineage id, env_fp, creation time and the reset's mechanism, policy version and
+phase timings. A failed reset writes no manifest. Run it under a lease on the
+container (lane-ops). It prints `[OK] <container>: baseline of <lineage id>,
+env_fp <first 12 hex>`.
+
+### What a judge deployment does
+
+In order (`deployAndTest` in `src/harness/bc-lane.ts`, `src/harness/reset.ts`):
+
+1. **Reset** to the lineage's golden with `infra/harness-reset/reset-golden.ps1`.
+   Its phases are `snapshot_guard`, `quiesce`, `verify_sha`, `stop`, `restore`,
+   `start`, `healthy`, `runner_verify` and `postconditions`. The postconditions
+   require the inventory to equal the lineage's stored inventory, the subset
+   fingerprint to equal the lineage's, and the content root (over every table's
+   complete values and LOBs) to match. A failed reset is infra: the container
+   is quarantined.
+2. **L4 capture** (`fs-capture.ps1`): the first fsDigest over the lineage's
+   declared roots. An entry that cannot be read here already fails closed.
+3. **Deploy** the apps.
+4. **L2a**: each candidate app gets `Allow HttpClient Requests` set to false,
+   and the setting is read back. A read-back other than false quarantines the
+   container.
+5. **Tests.**
+6. **Cleanup**: candidates and the oracle are unpublished.
+7. **Inventory check** (`verify-clean.ps1`): the inventory must equal the
+   lineage's baseline again. A mismatch, or a check that could not run,
+   quarantines the container.
+8. **Second L4 capture**, compared with the first. Any difference outside the
+   lineage's exclusions, or any unreadable entry, makes the deployment infra:
+   its rows are never scored, the container is quarantined and the work is
+   rerouted.
+
+The verdict log records each step: `resets[]`, `verifies[]`, `fs_checks[]` and
+`bc_egress`.
+
+**L4 scope.** L4 detects differences in the specified file/stream contents and
+recorded metadata between observation points within declared roots, excluding
+recorded exclusions and untraversed reparse targets. It is not a complete write
+history or persistence boundary. Each capture walks with the NST process
+held by a debugger (a holder process in the container that attaches and never
+continues a debug event, so threads created during the walk stay stopped too),
+so no AL runs during it. The hold is bounded at 38 s, below one healthcheck
+interval plus its timeout (a cooperative bound, not hard real-time). A holder
+that dies after setting kill-on-exit off detaches by itself; one killed in the
+moment between its attach and that call can terminate the NST, which fails the
+capture and needs a container recreation. A frozen NST that no recovery covers
+makes the bounded session query fail ("NST unresponsive") instead of hanging.
+The hold stops NST user-mode code only, not SQL Server or kernel I/O. A writer
+outside the NST process (for example a detached process an OnPrem DotNet call
+started) is not stopped by the hold and is not covered. The campaign guarantee rests on L1 (Cloud
+compile), L2 (network) and L3 (bans).
+
+**L3 scope.** L3 (`persistence_ref`) bans the r5 2.3 table in agent production
+and Test text before the build, by name (namespace-qualified names included)
+and by object id. L3 `onprem_ref` bans, in the same text, calls by name to
+members that any locked symbol package (all packages of
+`harness-tasks/symbols.lock.json`) declares `[Scope('OnPrem')]`, on any
+overload: through a typed variable, parameter, return value or array element,
+through `Rec`, `xRec`, `CurrPage`, `CurrReport` and `this`, and as a bare name
+against every implicit receiver of its object (the table, a page's or a page
+extension's SourceTable, a codeunit's TableNo, a report's data items, an
+extension's base object). Subscriptions to OnPrem event publishers are banned
+the same way. A receiver or bare name it cannot resolve (a call result, a
+dotted chain, `with`, an undeterminable implicit receiver) is banned when its
+name is an OnPrem name anywhere in the lock. The index is read from the symbol
+store at run start; a lock mismatch refuses the run, and a judgment without
+this lock's index is unscored.
+
+### Lineage file
+
+Lineage files are written by lane-ops (`infra/harness-reset/lineages/`) and
+validated by `LineageSchema` in `src/harness/lineage.ts`. Besides the golden
+backup hashes, runner identity and stored inventory, three sections are
+optional in the schema but required for admission:
+
+| Section        | Content                                                                                                         | Generated by                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `content_root` | Sidecar of per-table `table\|hash` lines (sha256-verified on load), the root hash, and measured volatile tables excluded with a reason | `infra/harness-reset/new-content-root.ps1`   |
+| `fs`           | L4 configuration: fsDigest version, declared roots resolved on the image, NST identity measurement, exclusions (each with a disposition, `reset_cleared` or `out_of_scope`, and a reason), and the discovery survey with its sha256 | `infra/harness-reset/new-fs-section.ps1`     |
+| `egress`       | `{ "mode": "enforced", "rule_sha256": ... }` or `{ "mode": "unenforced", "reason": ... }` for the NST outbound firewall | written by lane-ops                           |
+
+Both scripts run on a container right after a verified reset to its golden and
+print the section as JSON. `new-content-root.ps1 -Container <c> -OutDir <dir>
+-Name <name>` also writes the sidecar `<name>.content.txt`;
+`new-fs-section.ps1 -Container <c> -OutDir <dir> -Name <name> -Survey <file>`
+copies the survey next to the lineage as `<name>.survey.json` and emits no
+exclusions (add each one, with a disposition, only from a measured difference).
+All lineage identity fields, these sections included, enter env_fp.
+
+### Judging pool (`auto`)
+
+`harness rejudge --containers auto` and `harness run --judge-containers auto`
+judge on a pool of containers that may change while the command runs (H-41).
+Agent containers (`run --containers`) stay an explicit list; `run --containers
+auto` is refused. `auto` needs `--lineage`.
+
+```bash
+centralgauge harness rejudge <experiment> --containers auto --lineage <path> \
+  [--pool-wait-min <n>] [--coord-lease <container>=<token> ...] ...
+centralgauge harness run <experiment> --containers <agents> \
+  --judge-containers auto --lineage <path> [--pool-wait-min <n>] ...
+```
+
+| Option                              | Default | Description                                                                                                  |
+| ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `--pool-wait-min <n>`               | `10`    | `run` and `rejudge`: how long queued judging waits for a pool member, an integer from 0 to 120.              |
+| `--coord-lease <container>=<token>` | -       | Every command that opens an environment: a coord lease this run holds (repeatable, one token per container). |
+
+The pool starts empty and admits nothing until the campaign is bound (its env
+pin loaded). Between admissions, and every 10 s while judging is queued, it
+re-reads `allocation.json`. A container joins when it is allocated to the
+campaign, is not `Cronus28`, `Cronus284` or one of the run's agent containers,
+is not blocked (below), Docker reports it running, no other harness record
+(another run, a quarantine, a recover) holds it, its baseline is admissible for
+the lineage, and its env_fp matches the campaign pin. A container with another
+env_fp is refused and both fingerprints are logged. Joining claims its in-use
+record, sets it up, checks all of that again, then adds it to the lane and the
+health monitor (`[JOIN]`). The first admission of a new campaign creates its
+pin. A join that fails after setup started keeps the in-use record with a
+`[WARN]` (run `harness recover` before using that container again).
+
+**Leaving.** A drain marker `<results-dir>/drain-<container>` stops new
+admissions on that container at once; calls already admitted finish, then the
+container is released (`[LEAVE]`) and its in-use record removed. Remove the
+marker to let it join again (a full join). A quarantined container keeps its
+record. Drain markers apply to the pool only; an explicit list ignores them.
+
+**Coord leases** (both list kinds, fail closed). A container whose current
+coord lease (`<machineRoot>/leases/<container>/<NNN>/lease.json` with no
+`release.json`) is held by anyone is not admitted, unless this run passes the
+exact `--coord-lease <container>=<token>` of that lease; a matching lane name
+never counts. An explicit list refuses to start on such a container, and a
+lease taken later blocks new work on it. A missing or unreadable `coord.json`,
+a missing leases root or an unreadable lease refuses.
+
+**Lost work.** When a pooled call fails on infra and a container it tried has
+departed (`[DEPART] <c>: <reason>`: not running, no longer allocated, or
+blocked by a coord lease or drain marker) or could not be checked
+(`[UNANSWERED] <c>: <check> <error>`, an unreadable coord state included), or no
+member is left, the execution is not written unscored: no judgment, verdict log
+or fence is written, the budget is not spent, and the work goes back to the
+queue. An execution requeued 3 times for unanswered checks alone stops the
+command at the 4th: `[STOP] <execution>: <n> unanswered container checks; <k>
+stay owed`. Genuine infra with every tried container still answering is
+unscored, as with an explicit list.
+
+**Starvation.** With judging queued and no member for `--pool-wait-min`
+minutes, the queue stops: `[STOP] judging pool: no member for <n> min; <k> stay
+owed`. `run` then starts no new cell; its summary counts the executions still
+owed (`owed`) instead of calling them unscored. Both commands exit 75. Owed
+work is judged by the next `run` (it seeds owed executions) or `rejudge`. The
+process may exit up to the pool's close bound (120 s, for joins still in
+flight) plus the lane drain bound after the starvation deadline.
+
+Without starvation too, a `run` execution left unjudged because another judge
+holds its claim is counted owed (`, <n> owed` in the summary), not unscored.
+
+In `auto` mode nothing is judged outside this queue: an execution recovered at
+start, or published without the queue, stays owed and is logged `[INFO] <id>:
+judgment owed (judging pool)`. `run --rerun` judges its cell through the queue
+too.
+
+**Redaction keys.** Judging reads the execution's redaction keys from the
+judging process's own private dir (`<private-root>/redaction/<execution>.json`),
+written by the process that ran the agent. A process judging work it did not
+run (another machine or another private root) needs a copy of that
+`redaction/` folder in its private dir; without it, judging refuses with
+`redaction keys ... are missing or invalid; refusing to judge`.
+
+### harness pairing
+
+```bash
+centralgauge harness pairing <digest> [--results-dir <dir>] [--json] [--root <dir>]
+```
+
+Read-only report on a rejudge's frozen pairing. `harness rejudge` freezes the
+left side (each due execution and the judgment it had) before any judging,
+prints `pairing frozen: <digest>`, and appends each new judgment as it lands.
+`harness pairing` prints:
+
+- the campaign and freeze time, and the counts of completed, pending and
+  missing cells,
+- the cells that are pending, missing, mismatched (a judgment not of its cell)
+  or conflicting (completions name different judgments),
+- the old to new verdict matrix over completed pairs (old verdicts include
+  `legacy_unknown` when the old oracle has no task descriptor),
+- per-flag counts. Flags are nonexclusive, so they need not sum to the pairs.
+
+`--json` prints the full report including per-cell flags. A pairing file that
+changed since it was frozen is refused. `--results-dir` defaults to
+`results/harness`; `--root` (default `.`) is the repository whose history
+recovers legacy task descriptors.
+
 ## Exit Codes
 
 | Code | Description         |
@@ -931,6 +1198,13 @@ turn comes up.
 | 3    | Configuration error |
 | 4    | Container error     |
 | 5    | LLM provider error  |
+| 75   | Pool starved        |
+| 130  | Interrupted         |
+
+`75` (EX_TEMPFAIL): `harness run` or `harness rejudge` with `auto` judging
+stopped because the pool starved or an execution hit its unanswered-check
+bound; the rest stays owed (see [Judging pool](#judging-pool-auto)). `130`:
+`harness rejudge` was interrupted (Ctrl-C); what was not judged stays due.
 
 ## Environment Variables
 

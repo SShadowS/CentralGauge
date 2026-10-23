@@ -5,13 +5,14 @@ import {
   validateFolder,
   writeMarker,
 } from "../../../src/container/compiler-folder-marker.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const URL_A = "https://x/sandbox/28.3.52162.52884/dk";
 const BCH = "6.1.14";
 
 /** Build a folder that satisfies every expected-file check. */
 async function makeGoodFolder(): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: "cg-marker-" });
+  const dir = await testTempDir({ prefix: "cg-marker-" });
   await Deno.mkdir(`${dir}/compiler/extension/bin`, { recursive: true });
   await Deno.writeTextFile(`${dir}/compiler/extension/bin/alc.exe`, "x");
   await Deno.mkdir(`${dir}/symbols`, { recursive: true });
@@ -309,7 +310,7 @@ Deno.test("validateFolder accepts a case-insensitive .app extension", async () =
 });
 
 Deno.test("writeMarker leaves no temp file behind", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-marker-tmp-" });
+  const dir = await testTempDir({ prefix: "cg-marker-tmp-" });
   try {
     await writeMarker(dir, {
       layoutVersion: LAYOUT_VERSION,

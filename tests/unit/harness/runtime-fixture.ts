@@ -42,10 +42,11 @@ import {
 import { RecordStore } from "../../../src/harness/records.ts";
 import { applyOverlay } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
-import { deployedSource, FakeBc, result } from "./fake-bc.ts";
+import { deployedSource, FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { FakeDocker, type RunBehavior } from "./fake-docker.ts";
 import { makeRefappRepo, type RefappRepo, write } from "./refapp-fixture.ts";
-import { tempDir } from "./temp-dirs.ts";
+import { noOnPrem } from "./onprem-fixture.ts";
+import { removeTempDir, testTempDir as tempDir } from "../../utils/temp-dir.ts";
 
 export const SECRET_OAUTH = "sk-ant-oat01-fixture-0123456789abcdefXYZ";
 const PROBE = "tests/fixtures/harness/claude-code/probe.jsonl";
@@ -206,7 +207,8 @@ export function mockImageBehavior(): RunBehavior {
   };
 }
 
-export interface TestEnv {
+/** `await using t = await makeEnv()` removes the repo, privateRoot and secretsSource (GH #28). */
+export interface TestEnv extends AsyncDisposable {
   env: HarnessEnv;
   repo: RefappRepo;
   docker: FakeDocker;
@@ -277,6 +279,8 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
   );
   const env: HarnessEnv = {
     repoRoot: repo.root,
+    // H-35 provenance: a fixed commit so tests can see it reach the record.
+    harnessCommit: "f".repeat(40),
     harnessRoot,
     resultsRoot,
     privateRoot,
@@ -295,11 +299,13 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     owner: "HOST1",
     symbols: repo.symbols,
     symbolStore: repo.symbolStore,
+    // H-38: the fixture store holds no real package; an empty index of its lock.
+    onPrem: await noOnPrem({ store: repo.symbolStore, packages: repo.symbols }),
     secretsSource,
     secretAcl: { icacls: fakeIcacls, user: ACL_USER },
     driveType: () => Promise.resolve("Fixed"),
     scanReparsePoints: NO_SCAN,
-    deploy: { ledgerRoot: join(privateRoot, "bc-ledger") },
+    deploy: { ledgerRoot: join(privateRoot, "bc-ledger"), reset: OK_RESET },
     pricing: () => Promise.resolve(BOOK),
     supervised: true,
     egressEnforced: false,
@@ -309,7 +315,18 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     killGraceMs: 50,
     opTimeoutMs: 100,
   };
-  return { env, repo, docker, bc, harnessRoot };
+  return {
+    env,
+    repo,
+    docker,
+    bc,
+    harnessRoot,
+    async [Symbol.asyncDispose]() {
+      await repo[Symbol.asyncDispose]();
+      await removeTempDir(privateRoot);
+      await removeTempDir(secretsSource);
+    },
+  };
 }
 
 export async function cellFor(
@@ -363,6 +380,12 @@ export interface FakeEgress extends EgressRuntime {
   onProbe: (sandbox: string) => Promise<void>;
   /** The live registration (M1-33d shared proxy); null before and after. */
   registered: RegisterOptions | null;
+  /**
+   * T-06: registrations live now. With concurrency 2 one cell's unregister
+   * clears `registered` while the other cell is still before its probe; the
+   * probe's auth reads this count instead.
+   */
+  live: number;
   /** The last registration's credential. */
   credential: ProxyCredential | null;
   /** Every source ever registered. */
@@ -407,6 +430,7 @@ export function fakeEgress(): FakeEgress {
     lines: (ok) => ok,
     onProbe: () => Promise.resolve(),
     registered: null,
+    live: 0,
     credential: null,
     sources: [],
     regFailure: null,
@@ -442,6 +466,8 @@ export function fakeEgress(): FakeEgress {
         )).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""),
       };
       eg.credential = credential;
+      eg.live++;
+      let open = true;
       return {
         credential,
         reg: {
@@ -455,6 +481,8 @@ export function fakeEgress(): FakeEgress {
           unregister: () => {
             eg.events.push("unregister");
             eg.registered = null;
+            if (open) eg.live--;
+            open = false;
             return Promise.resolve();
           },
         },
@@ -498,7 +526,7 @@ export function fakeEgress(): FakeEgress {
       return eg.lines(
         passingLines(hosts, {
           record: eg.proxyRecord,
-          auth: eg.registered !== null,
+          auth: eg.live > 0,
         }),
       );
     },

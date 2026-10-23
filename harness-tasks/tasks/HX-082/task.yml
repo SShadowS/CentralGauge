@@ -1,0 +1,19 @@
+id: HX-082
+refapp_version: refapp-v2-rc1
+kind: bugfix
+prompt: prompt.md
+touches: [Leasing]
+coupling: [temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 87100, procedures: [NonAdjacentRepeatRefused, AdjacentRepeatRefused, FirstRepeatNamed, ValidImportReplacesSchedule, CallerLinesKept, BlankDueDateRefused, DueBeforeStartRefused, InvoicedLeaseRefused, MissingLeaseRaises, EmptyImportRefused, InterleavedRepeatsFirstNamed] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

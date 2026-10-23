@@ -18,6 +18,7 @@ import {
   validateRequiredStringParams,
   validateToolCallEnvelope,
 } from "../../../mcp/server-utils.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 function makeRequest(headers: Record<string, string> = {}): Request {
   return new Request("http://127.0.0.1:3100/mcp", {
@@ -166,7 +167,7 @@ Deno.test("validateRequiredStringParams (M13)", async (t) => {
 
 Deno.test("appendTextWithRotation (M8)", async (t) => {
   await t.step("appends below the cap", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-rotation-" });
+    const dir = await testTempDir({ prefix: "cg-rotation-" });
     try {
       const file = join(dir, "test.log");
       appendTextWithRotation(file, "line one\n", 1024);
@@ -179,7 +180,7 @@ Deno.test("appendTextWithRotation (M8)", async (t) => {
   });
 
   await t.step("rotates to .1 when the cap is reached", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-rotation-" });
+    const dir = await testTempDir({ prefix: "cg-rotation-" });
     try {
       const file = join(dir, "test.log");
       appendTextWithRotation(file, "x".repeat(100), 100);
@@ -193,7 +194,7 @@ Deno.test("appendTextWithRotation (M8)", async (t) => {
   });
 
   await t.step("rotation replaces a previous .1", async () => {
-    const dir = await Deno.makeTempDir({ prefix: "cg-rotation-" });
+    const dir = await testTempDir({ prefix: "cg-rotation-" });
     try {
       const file = join(dir, "test.log");
       await Deno.writeTextFile(file + ".1", "old rotation");

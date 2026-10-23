@@ -24,6 +24,7 @@ import {
 } from "../../../src/harness/config.ts";
 import { budgetStep } from "../../../harness/images/pi/cg-budget.ts";
 import { manifest } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const FIXTURE = "tests/fixtures/harness/pi/probe.jsonl";
 const BOOK: PricingBook = {
@@ -781,7 +782,7 @@ Deno.test("pi adapter: registered; contract fields; parse writes the trace; a mi
     piAdapter.enforcesBudget,
     piAdapter.secretFiles,
   ], [true, true, ["openrouter-api-key"]]);
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(dir, "raw.jsonl"),
     HEAD + await Deno.readTextFile(FIXTURE),
@@ -994,7 +995,7 @@ Deno.test("cg-budget: refuses a key pi would interpolate or a missing key file, 
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   const registered: unknown[] = [];
   const api = {
     registerProvider: (_n: string, c: { apiKey: string }) => registered.push(c),
@@ -1067,7 +1068,7 @@ Deno.test("cg-budget: one armed entry; a trip aborts even if recording fails, th
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(dir, "key"),
     "sk-or-v1-cgfake" + "0".repeat(48),
@@ -1175,7 +1176,7 @@ Deno.test("cg-budget: armed only once the record is written; a failed arm retrie
   const { default: guard } = await import(
     "../../../harness/images/pi/cg-budget.ts"
   );
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(dir, "key"),
     "sk-or-v1-cgfake" + "0".repeat(48),
@@ -1446,7 +1447,7 @@ Deno.test("run.ps1 (M1-33d): after ready, the proxy credential file sets HTTPS_P
 // "Invalid settings file" on stderr and keeps running; such a run is not a
 // valid cell. Fail closed, also when stderr cannot be read or was not passed.
 Deno.test("pi adapter (H-01u): stderr with Invalid settings file, an unreadable or absent stderr log, is setup_failed with pi_config_invalid; a clean stderr changes nothing", async () => {
-  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const dir = await Deno.realPath(await testTempDir());
   await Deno.writeTextFile(
     join(dir, "raw.jsonl"),
     HEAD + await Deno.readTextFile(FIXTURE),

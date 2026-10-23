@@ -5,7 +5,7 @@
  * on resume, never executed again. A deferred judgment equals the inline one.
  */
 
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
@@ -185,7 +185,7 @@ async function alText(dir: string): Promise<string> {
 }
 
 Deno.test("H-09 run 002: judgeDeferred judges the snapshot it validated; an oracle edited after the check never reaches a compile", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
   const r = await runCell({
     ...t.env,
@@ -236,7 +236,8 @@ Deno.test("H-09 run 003: a sibling suspended between admission and its cell (in 
   let reads = 0;
   let release!: () => void;
   const gate = new Promise<void>((r) => release = r);
-  const safety = setTimeout(() => release(), 10_000);
+  // Only against a hang (the hook never firing); the release is workerThrew.
+  const safety = setTimeout(() => release(), 120_000);
   store.executions = async (id: string) => {
     const n = ++reads;
     const out = await read(id);
@@ -245,12 +246,13 @@ Deno.test("H-09 run 003: a sibling suspended between admission and its cell (in 
   };
   let drafts = 0;
   t.env.hooks = {
-    beforeDraft: () => {
-      if (++drafts !== 1) return Promise.resolve();
-      // The throw reaches the campaign well before the held read returns.
-      setTimeout(() => release(), 1000);
-      return Promise.reject(new Error("runner killed"));
-    },
+    beforeDraft: () =>
+      ++drafts === 1
+        ? Promise.reject(new Error("runner killed"))
+        : Promise.resolve(),
+    // T-06: the held read returns only once the campaign has recorded the
+    // throw (a fixed delay lost the race on a loaded host).
+    workerThrew: () => release(),
   };
   try {
     await assertRejects(
@@ -323,7 +325,7 @@ const comparable = (j: JudgmentRecord) => {
 };
 
 Deno.test("H-09: a cell with judgeLater queues instead of judging; judgeDeferred then writes the judgment the inline path writes", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const inline = await runCell(t.env, await cellFor(t));
   const ref = (await t.env.store.judgments(inline.executions[0]!.id))[0]!;
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
@@ -337,6 +339,8 @@ Deno.test("H-09: a cell with judgeLater queues instead of judging; judgeDeferred
   assertEquals(queued.map((q) => q.e.id), [e.id]);
   assertEquals(await t.env.store.judgments(e.id), [], "nothing judged inline");
   const j = await judgeDeferred(t.env, queued[0]!.cell, e);
+  // H-41: null only when the commit protocol dropped it; here it must judge.
+  assertExists(j);
   assertEquals(await t.env.store.judgments(e.id), [j]);
   assertEquals(
     { ...comparable(j), execution_id: "", workspace_hash: "" },
@@ -345,7 +349,7 @@ Deno.test("H-09: a cell with judgeLater queues instead of judging; judgeDeferred
 });
 
 Deno.test("H-09: judgeDeferred refuses when the restaged task differs from the one the agent ran on; nothing written", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
   const r = await runCell({
     ...t.env,
@@ -369,11 +373,12 @@ Deno.test("H-09: judgeDeferred refuses when the restaged task differs from the o
   }
   await Deno.writeTextFile(side, text);
   const j = await judgeDeferred(t.env, queued[0]!.cell, e);
+  assertExists(j);
   assert(j.verdict === "pass" || j.verdict === "fail", j.verdict);
 });
 
 Deno.test("H-09 review: judgeDeferred refuses when the oracle changed since the run (on disk, or another oracle recorded by the run); nothing written", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   const queued: { cell: CellRef; e: ExecutionRecord }[] = [];
   const r = await runCell({
     ...t.env,

@@ -22,6 +22,7 @@ import {
 } from "../../../src/harness/identity.ts";
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
+import { NO_ONPREM } from "./onprem-fixture.ts";
 import {
   addedTestCodeunits,
   buildVerdictWorkspace,
@@ -29,10 +30,11 @@ import {
   TEST_APP,
   testCodeunits,
 } from "../../../src/harness/verdict-workspace.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const ROOT = fromFileUrl(new URL("../../../", import.meta.url));
 const TASKS = join(ROOT, "harness-tasks", "tasks");
-const tmp = async () => await Deno.realPath(await Deno.makeTempDir());
+const tmp = async () => await Deno.realPath(await testTempDir());
 const isTestPath = (rel: string) =>
   rel === TEST_APP || rel.startsWith(`${TEST_APP}/`);
 
@@ -153,6 +155,7 @@ for (const id of ids) {
         out: join(await tmp(), label),
         productionFrom,
         symbolIds,
+        onPrem: NO_ONPREM,
         dropShippedTests: true,
       });
       const where = `${id} ${label}`;

@@ -12,6 +12,7 @@ import {
   main,
   renderCharts,
 } from "../../../scripts/harness/report-charts.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const base = async (): Promise<HarnessReport> =>
   JSON.parse(
@@ -692,7 +693,7 @@ Deno.test("charts: a ledger that fails its schema is refused", async () => {
 });
 
 Deno.test("charts CLI: writes 3 SVGs and 3 CSVs, 4 with a ledger; refuses a non-empty --out", async () => {
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const report = "tests/fixtures/harness/report-mock-contract.json";
     const out = join(dir, "charts");
@@ -1047,7 +1048,7 @@ Deno.test("charts (M6-02a F1): a ledger with no report writes only ledger.csv, e
     ]
   ) assert(fs[0]!.content.includes(line), line);
 
-  const dir = await Deno.makeTempDir();
+  const dir = await testTempDir();
   try {
     const path = join(dir, "ledger.json");
     await Deno.writeTextFile(path, JSON.stringify(ledger));

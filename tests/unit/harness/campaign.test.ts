@@ -13,8 +13,13 @@ import {
   ContainerError,
   ValidationError,
 } from "../../../src/errors.ts";
+import type { CellRef, HarnessEnv } from "../../../src/harness/execution.ts";
+import type { ExecutionRecord } from "../../../src/harness/records.ts";
 import {
+  judgeQueue,
   loadCampaignData,
+  planCampaign,
+  type PlanEnv,
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
@@ -29,7 +34,11 @@ import {
   mcpLabel,
 } from "../../../src/harness/images.ts";
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
-import { buildReport, renderReport } from "../../../src/harness/report.ts";
+import {
+  buildReport,
+  loadReportLogs,
+  renderReport,
+} from "../../../src/harness/report.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import { mockAdapter } from "../../../src/harness/adapters/mock.ts";
 import { EXECUTION_LABEL } from "../../../src/harness/sandbox.ts";
@@ -48,6 +57,7 @@ import {
   mockImageBehavior,
   type TestEnv,
 } from "./runtime-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function experiment(
   t: TestEnv,
@@ -244,7 +254,7 @@ Deno.test("an unconfirmed sandbox termination stops the campaign with the intent
 });
 
 Deno.test("a credential-bearing arm is refused without egress enforcement; with it, the campaign runs unattended", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await write(
     t.harnessRoot,
@@ -271,7 +281,7 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
 });
 
 Deno.test("H-13: --unverified-egress-ok runs a credential-bearing campaign unattended; campaign, every execution and the report carry egress_override", async () => {
-  const t = await makeEnv();
+  await using t = await makeEnv();
   t.env.supervised = false;
   await write(
     t.harnessRoot,
@@ -411,6 +421,83 @@ Deno.test("H-13: resume refuses an override state other than the campaign's, eit
   }
 });
 
+Deno.test("H-35 S3 L2b: a campaign judged on an unenforced-NST-egress lineage records bc_egress_override; the report marks it; a plain run has neither", async () => {
+  const t = await mockEnv();
+  await experiment(t, "plain", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "plain", opts({ sample: 1 }), io());
+  const plain = (await t.env.store.campaigns("plain"))[0]!;
+  assertEquals(plain.bc_egress_override, undefined);
+  const plainData = await loadCampaignData(t.env.store, plain);
+  const plainReport = await buildReport(plainData, {
+    logs: await loadReportLogs(t.env.resultsRoot, plainData),
+  });
+  assertEquals(plainReport.bc_egress_override, undefined);
+  await experiment(t, "bc", "mock-positive", ["mock-naive-a"]);
+  const bcEgress = { mode: "unenforced" as const, override: "r" };
+  const env = { ...t.env, deploy: { ...t.env.deploy, bcEgress } };
+  await runCampaign(env, "bc", opts({ sample: 1 }), io());
+  const c = (await t.env.store.campaigns("bc"))[0]!;
+  assertEquals(c.bc_egress_override, { reason: "r" });
+  const data = await loadCampaignData(t.env.store, c);
+  const r = await buildReport(data, {
+    logs: await loadReportLogs(t.env.resultsRoot, data),
+  });
+  assertEquals(r.bc_egress_override, {
+    bc_egress_enforced: false,
+    reasons: ["r"],
+  });
+  assertStringIncludes(
+    renderReport(r),
+    "[WARN] NST egress NOT enforced (owner override --unverified-bc-egress-ok): r",
+  );
+});
+
+Deno.test("H-35 S3 L2b: resume refuses a BC egress override other than the campaign's", async () => {
+  const t = await mockEnv();
+  await experiment(t, "bc", "mock-positive", ["mock-naive-a"]);
+  const withBc = (override: string | null) => ({
+    ...t.env,
+    deploy: {
+      ...t.env.deploy,
+      bcEgress: { mode: "unenforced" as const, override },
+    },
+  });
+  await runCampaign(withBc("r"), "bc", opts({ sample: 1 }), io());
+  const c = (await t.env.store.campaigns("bc"))[0]!;
+  for (const env of [t.env, withBc(null), withBc("other")]) {
+    await assertRejects(
+      () => runCampaign(env, "bc", opts({ campaign: c.id }), io()),
+      ConfigurationError,
+      "unverified-bc-egress-ok",
+    );
+  }
+  // Sol S3 r3: a dry-run resume (a plan env: no deploy, bcEgress instead)
+  // with the same override proceeds; without it, it is refused.
+  const plan = (override: string | null) =>
+    ({
+      ...t.env,
+      deploy: undefined,
+      bcEgress: { mode: "unenforced" as const, override },
+    }) as unknown as PlanEnv;
+  await planCampaign(plan("r"), "bc", opts({ campaign: c.id }), io());
+  await assertRejects(
+    () => planCampaign(plan(null), "bc", opts({ campaign: c.id }), io()),
+    ConfigurationError,
+    "unverified-bc-egress-ok",
+  );
+  await runCampaign(withBc("r"), "bc", opts({ campaign: c.id }), io());
+  assertEquals((await t.env.store.executions(c.id)).length, 2);
+  // A plain campaign never resumes under the override.
+  await experiment(t, "plain", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "plain", opts({ sample: 1 }), io());
+  const plain = (await t.env.store.campaigns("plain"))[0]!;
+  await assertRejects(
+    () => runCampaign(withBc("r"), "plain", opts({ campaign: plain.id }), io()),
+    ConfigurationError,
+    "unverified-bc-egress-ok",
+  );
+});
+
 Deno.test("tasks_meta.limits stores the task's own overrides; two arms with different limits against one task override get their own effective execution limits; reuse stays empty", async () => {
   const t = await mockEnv();
   await write(
@@ -440,7 +527,9 @@ limits: { timeout_min: 60, max_budget_usd: 1 }
       e,
     ) => [e.arm, e.manifest.limits.timeout_min]),
   );
-  assertEquals(byArm, { "mock-positive": 5, "mock-positive-long": 20 });
+  // H-23 owner ruling 2026-10-17: each arm keeps its own time limit; the task's 20 no longer
+  // tightens the 60-min arm.
+  assertEquals(byArm, { "mock-positive": 5, "mock-positive-long": 60 });
   assertEquals(
     c.arms.map((a) => [a.config_id, a.manifest.limits.timeout_min]).sort(),
     [["mock-positive", 5], ["mock-positive-long", 60]],
@@ -879,7 +968,12 @@ async function unscoredJudgments(t: TestEnv, executionId: string, n: number) {
     await t.env.store.writeJudgment({
       ...j!,
       id: crypto.randomUUID(),
-      scorers: j!.scorers.map((s) => ({ ...s, passed: null })),
+      // H-35 S2.1: a v2 scorer that infra left unscored says so.
+      scorers: j!.scorers.map((s) => ({
+        ...s,
+        passed: null,
+        ...(s.state ? { state: "unscored" as const } : {}),
+      })),
       verdict: "unscored",
       started_at: at,
       ended_at: at,
@@ -1241,7 +1335,7 @@ preregistration: ${PR_REL}
     "harness-v2-prereg-a",
     `protocol_sha256: ${approved}`,
   );
-  const decisions = await Deno.makeTempDir();
+  const decisions = await testTempDir();
   const decisionA = join(decisions, "2026-10-24-harness-v2-prereg-a.md");
   await Deno.writeTextFile(
     decisionA,
@@ -2249,4 +2343,99 @@ Deno.test("H-16: one cell's undrained backend request (sandbox gone) does not ha
   } finally {
     revoke.restore();
   }
+});
+
+Deno.test("M7-01 (T-06): at concurrency 2 a cell whose probe runs after the other cell unregistered still runs the authenticated preflight", async () => {
+  const t = await gated();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  const eg = t.env.egress as ReturnType<typeof enforce>;
+  // The first probe goes through; every later one waits until some cell has
+  // unregistered, the interleaving a loaded host produced at random.
+  let probes = 0;
+  eg.onProbe = async () => {
+    if (++probes === 1) return;
+    const until = Date.now() + 60_000;
+    while (!eg.events.includes("unregister") && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  const ran = await runCampaign(
+    t.env,
+    "contract",
+    opts({ concurrency: 2 }),
+    io(),
+  );
+  assertEquals(ran.ran, 4);
+  assert(eg.events.includes("unregister"), "a cell unregistered first");
+});
+
+// ---- H-33: the judge queue's admission rule and stop ----
+
+const qEnv = {} as HarnessEnv;
+const qCell = {} as CellRef;
+const qExec = (id: string) => ({ id }) as ExecutionRecord;
+const qSleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+Deno.test("judgeQueue (H-33): no queued execution starts after the first failure", async () => {
+  let failedAt: number | null = null;
+  const starts: { id: string; at: number }[] = [];
+  let clock = 0;
+  const queue = judgeQueue(qEnv, 2, async (_env, _cell, e) => {
+    starts.push({ id: e.id, at: ++clock });
+    if (e.id === "e2") {
+      await qSleep(5);
+      failedAt = ++clock;
+      throw new Error("injected judging failure");
+    }
+    await qSleep(20);
+  });
+  for (const id of ["e1", "e2", "e3", "e4", "e5", "e6"]) {
+    queue.push(qCell, qExec(id));
+  }
+  await assertRejects(() => queue.drain(), Error, "injected judging failure");
+  assert(failedAt !== null, "the failing job ran");
+  const late = starts.filter((s) => s.at > failedAt!);
+  assertEquals(
+    late,
+    [],
+    `started after the first failure: ${late.map((s) => s.id)}`,
+  );
+  assert(starts.length < 6, "some queued jobs never started");
+  assert(queue.failed());
+});
+
+Deno.test("judgeQueue (H-33): stop admits nothing new; drain resolves once the running jobs end", async () => {
+  const started: string[] = [];
+  const ended: string[] = [];
+  const queue = judgeQueue(qEnv, 2, async (_env, _cell, e) => {
+    started.push(e.id);
+    await qSleep(20);
+    ended.push(e.id);
+  });
+  for (const id of ["e1", "e2", "e3", "e4", "e5"]) {
+    queue.push(qCell, qExec(id));
+  }
+  queue.stop();
+  queue.push(qCell, qExec("e6"));
+  await queue.drain();
+  assertEquals(started, ["e1", "e2"]);
+  assertEquals(ended.sort(), ["e1", "e2"]);
+  assert(!queue.failed());
+});
+
+Deno.test("judgeQueue (H-33): after stop, drain still throws a failure recorded by a running job", async () => {
+  const queue = judgeQueue(qEnv, 2, async (_env, _cell, e) => {
+    await qSleep(5);
+    if (e.id === "e1") throw new Error("injected judging failure");
+  });
+  for (const id of ["e1", "e2", "e3"]) queue.push(qCell, qExec(id));
+  queue.stop();
+  await assertRejects(() => queue.drain(), Error, "injected judging failure");
 });

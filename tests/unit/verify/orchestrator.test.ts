@@ -9,6 +9,7 @@ import type {
   VerifyOptions,
 } from "../../../src/verify/mod.ts";
 import { VerifyOrchestrator } from "../../../src/verify/mod.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 // Helper to create a mock failing task
 function createMockTask(
@@ -74,7 +75,7 @@ Deno.test("orchestrator: deduplicates tasks by taskId in fixes-only mode", async
     createMockTask("CG-AL-E002", "claude-sonnet"),
   ];
 
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const orchestrator = new VerifyOrchestrator({
       mode: "fixes-only",
@@ -137,7 +138,7 @@ Deno.test("orchestrator: does not deduplicate in shortcomings-only mode", async 
     createMockTask("CG-AL-E001", "claude-sonnet"),
   ];
 
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const orchestrator = new VerifyOrchestrator({
       mode: "shortcomings-only",
@@ -189,7 +190,7 @@ Deno.test("orchestrator: keeps all failures in shortcomings-only mode with singl
     createMockTask("CG-AL-E003", "gpt-4o"),
   ];
 
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const orchestrator = new VerifyOrchestrator({
       mode: "shortcomings-only",
@@ -247,7 +248,7 @@ Deno.test("orchestrator: selects best model task during deduplication", async ()
     createMockTask("CG-AL-E001", "claude-opus-4-5-20251101"), // Highest priority
   ];
 
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const orchestrator = new VerifyOrchestrator({
       mode: "fixes-only",
@@ -301,7 +302,7 @@ Deno.test("orchestrator: handles versioned model names in priority matching", as
     createMockTask("CG-AL-E001", "gpt-5.2-2025-12-11"), // Higher priority (85) via prefix match
   ];
 
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await testTempDir();
   try {
     const orchestrator = new VerifyOrchestrator({
       mode: "fixes-only",

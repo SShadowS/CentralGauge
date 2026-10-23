@@ -26,6 +26,7 @@ import {
   FakeDocker,
   USER_GROUPS_CSV,
 } from "./fake-docker.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const GUARD = "harness/images/base/cg-nonadmin.ps1";
 const ENTRYPOINTS = {
@@ -452,7 +453,7 @@ const pwsh = async (args: string[], env?: Record<string, string>) => {
 
 /** A tree shaped like the C:\ root default: Authenticated Users Modify, inherited. */
 const rootShapedTree = async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-" });
+  const dir = await testTempDir({ prefix: "cg-lockdown-" });
   await Deno.mkdir(`${dir}\\tool\\sub`, { recursive: true });
   await Deno.writeTextFile(`${dir}\\tool\\sub\\shim.cmd`, "@echo off");
   await Deno.writeTextFile(`${dir}\\run.ps1`, "exit 0");
@@ -727,14 +728,14 @@ const meSid = async () => {
 };
 /** A temp dir with the Dockerfile's exact C:\pi-agent ACL. */
 const piAgentDir = async () => {
-  const dir = await Deno.makeTempDir({ prefix: "cg-pi-agent-" });
+  const dir = await testTempDir({ prefix: "cg-pi-agent-" });
   const g = await ps1(await piAgentGrants(dir));
   assertEquals(g.code, 0, g.out);
   return dir;
 };
 /** C:\config as the harness writes it: valid pi_settings and an AGENTS.md/CLAUDE.md bundle. */
 const piConfigDir = async (piSettings: unknown) => {
-  const cfg = await Deno.makeTempDir({ prefix: "cg-pi-config-" });
+  const cfg = await testTempDir({ prefix: "cg-pi-config-" });
   await Deno.writeTextFile(
     `${cfg}\\settings.json`,
     JSON.stringify({ settings: { pi_settings: piSettings } }),
@@ -755,7 +756,7 @@ Deno.test({
     "H-01 run 005: cg-pi-stage -VerifyOnly fails the run 004 shape (Users (OI)(CI)M) on the dir and on a file in it",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.makeTempDir({ prefix: "cg-pi-agent-" });
+    const dir = await testTempDir({ prefix: "cg-pi-agent-" });
     try {
       await Deno.writeTextFile(`${dir}\\settings.json`, "{}");
       const g = await ps1([
@@ -916,7 +917,7 @@ Deno.test({
     "H-01s: cg-lockdown leaves exactly SYSTEM, Administrators and Users on a supplied root that carries explicit ACEs of other SIDs, and on its children",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01s-" });
+    const dir = await testTempDir({ prefix: "cg-lockdown-h01s-" });
     const file = `${dir}\\cg-al.ps1`;
     const tree = `${dir}\\Git`;
     const child = `${tree}\\usr\\bin\\cg-al`;
@@ -998,7 +999,7 @@ Deno.test({
     "H-01t: cg-lockdown leaves the exact DACL: protected roots with SYSTEM F, Administrators F, Users RX (OI|CI on directories), children inheriting only those",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01t-" });
+    const dir = await testTempDir({ prefix: "cg-lockdown-h01t-" });
     const file = `${dir}\\run.ps1`;
     const tree = `${dir}\\Git`;
     await Deno.mkdir(`${tree}\\usr\\bin`, { recursive: true });
@@ -1040,7 +1041,7 @@ Deno.test({
     "H-01t: a conditional (callback) ACE is a [FAIL] in the verify pass and gone after cg-lockdown (fresh DACL)",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01t-" });
+    const dir = await testTempDir({ prefix: "cg-lockdown-h01t-" });
     const file = `${dir}\\cg-al.ps1`;
     await Deno.writeTextFile(file, "exit 0");
     const s = await plantConditional(file);
@@ -1071,7 +1072,7 @@ Deno.test({
     "H-01t: a junction inside a supplied tree is refused before any ACL changes (target untouched) and is a [FAIL] in the verify pass",
   ignore: Deno.build.os !== "windows",
   async fn() {
-    const dir = await Deno.makeTempDir({ prefix: "cg-lockdown-h01t-" });
+    const dir = await testTempDir({ prefix: "cg-lockdown-h01t-" });
     const tree = `${dir}\\Git`;
     const outside = `${dir}\\outside`;
     const link = `${tree}\\usr\\link`;

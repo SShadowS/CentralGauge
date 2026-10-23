@@ -7,3 +7,8 @@ harness/egress/recorded-hosts.json -text
 # Hashed by al-lsp.json (probe block) and checked at image build: LF on every checkout (M10-04)
 harness/images/claude-code/lsp/*.mjs text eol=lf
 harness/images/claude-code/lsp/al-lsp.json text eol=lf
+# Hashed by the reset lineage (inventory.sha256) and checked before every reset: never convert line endings (O-09)
+infra/harness-reset/lineages/*.inventory.txt -text
+# Same for the content-root sidecar (content_root.sha256) and the fs survey (fs.survey.sha256) (H-35 S3)
+infra/harness-reset/lineages/*.content.txt -text
+infra/harness-reset/lineages/*.survey.json -text

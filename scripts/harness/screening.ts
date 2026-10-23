@@ -26,6 +26,8 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
+import { checkOneEnvironment } from "../../src/harness/report.ts";
+import { descriptorLoader } from "../../src/harness/task-oracle.ts";
 import {
   campaignJudging,
   cellsFromRecords,
@@ -448,11 +450,63 @@ export function tally(cells: Cell[], rules: Rules): Map<string, Tally> {
   return out;
 }
 
+export interface Excluded {
+  execution: string;
+  task: string;
+  reason: "harness_crash";
+}
+
+/**
+ * H-29 (decision 2026-10-18-screening-crash-cells): a cell whose counted
+ * execution ended in harness_crash never counts, whatever its verdict, so its
+ * task is incomplete and gets its one rescreen. Screening only: records and
+ * the report are unchanged.
+ */
+export function excludeCrashCells(
+  cells: (Cell & { used_execution: string | null })[],
+  executions: Pick<ExecutionRecord, "id" | "termination">[],
+): { cells: Cell[]; excluded: Excluded[] } {
+  const crashed = new Set(
+    executions.filter((e) => e.termination === "harness_crash").map((e) =>
+      e.id
+    ),
+  );
+  const excluded: Excluded[] = [];
+  const out = cells.map((c) => {
+    if (c.used_execution === null || !crashed.has(c.used_execution)) return c;
+    excluded.push({
+      execution: c.used_execution,
+      task: c.task,
+      reason: "harness_crash",
+    });
+    return {
+      ...c,
+      status: "unscored" as const,
+      pass: null,
+      reason: "harness_crash",
+    };
+  });
+  return { cells: out, excluded };
+}
+
+/** Status lines for excluded cells: execution, task, reason; never the arm. */
+export function excludedLines(excluded: Excluded[]): string[] {
+  return excluded.map((x) => `excluded ${x.execution} ${x.task} ${x.reason}`);
+}
+
+/** Tasks the next screen must run: incomplete or never screened. */
+export function rescreenTasks(status: Map<string, Status>): string[] {
+  return [...status].filter(([, s]) => s === "incomplete" || s === "unscreened")
+    .map(([id]) => id);
+}
+
 export interface ScreenCampaign {
   id: string;
   experiment: string;
   created_at: string;
   cells: Cell[];
+  /** H-29: cells excluded because their execution ended in harness_crash. */
+  excluded?: Excluded[];
   /** M8-02b: problems found in the campaign's raw records (manualRerunProblems). */
   problems?: string[];
 }
@@ -506,7 +560,13 @@ export function manualRerunProblems(
 export function screeningHistory(
   campaigns: ScreenCampaign[],
   rules: Rules,
-): { cells: Cell[]; screens: Map<string, number>; problems: string[] } {
+): {
+  cells: Cell[];
+  screens: Map<string, number>;
+  problems: string[];
+  /** H-29: the excluded cells of each task's counted (newest) screen. */
+  excluded: Excluded[];
+} {
   const problems: string[] = [];
   const ids = campaigns.map((c) => c.id);
   if (new Set(ids).size !== ids.length) problems.push("duplicate campaign id");
@@ -516,6 +576,7 @@ export function screeningHistory(
   }
   for (const c of campaigns) problems.push(...(c.problems ?? []));
   const latest = new Map<string, Cell[]>();
+  const latestExcluded = new Map<string, Excluded[]>();
   const screens = new Map<string, number>();
   const order = [...campaigns].sort((a, b) =>
     compareInstant(a.created_at, b.created_at) || a.id.localeCompare(b.id)
@@ -534,9 +595,15 @@ export function screeningHistory(
       }
       screens.set(t, n);
       latest.set(t, c.cells.filter((x) => x.task === t));
+      latestExcluded.set(t, (c.excluded ?? []).filter((x) => x.task === t));
     }
   }
-  return { cells: [...latest.values()].flat(), screens, problems };
+  return {
+    cells: [...latest.values()].flat(),
+    screens,
+    problems,
+    excluded: [...latestExcluded.values()].flat(),
+  };
 }
 
 /** Stratum boundaries on the pooled count of `total` scored cells. */
@@ -968,11 +1035,22 @@ export async function loadSeals(
 export async function loadScreenCampaigns(
   resultsDir: string,
   rules: Rules,
+  /** H-35: where a legacy task descriptor is recovered from (git history). */
+  repoRoot = ".",
 ): Promise<{ campaigns: ScreenCampaign[]; ran: Map<string, TaskIdentity[]> }> {
   const store = new RecordStore(resultsDir);
   const campaigns: ScreenCampaign[] = [];
   const ran = new Map<string, TaskIdentity[]>();
+  // H-35 S3.3: the screening pools campaigns, so one environment across all.
+  const counted: { judgment_id: string | null }[] = [];
+  const judged: JudgmentRecord[] = [];
   const dir = join(resultsDir, "campaigns");
+  // M8-15c: no campaigns directory yet (nothing screened) is no campaigns.
+  const st = await Deno.lstat(dir).catch((err) => {
+    if (err instanceof Deno.errors.NotFound) return null;
+    throw err;
+  });
+  if (st === null) return { campaigns, ran };
   for await (const e of Deno.readDir(dir)) {
     if (!e.isFile || !e.name.endsWith(".json")) continue;
     const c = CampaignRecordSchema.parse(
@@ -990,7 +1068,10 @@ export async function loadScreenCampaigns(
       );
     }
     const data = await loadCampaignData(store, c);
-    await validateCampaignRecords(data);
+    // H-35 S2.5: scorer names checked against the task preimage store.
+    await validateCampaignRecords(data, {
+      descriptor: descriptorLoader(resultsDir, repoRoot),
+    });
     const byExecution = new Map<string, JudgmentRecord[]>();
     for (const j of data.judgments) {
       byExecution.set(j.execution_id, [
@@ -998,15 +1079,21 @@ export async function loadScreenCampaigns(
         j,
       ]);
     }
+    const records = cellsFromRecords(c, data.executions, byExecution);
+    counted.push(...records);
+    judged.push(...data.judgments);
+    const { cells, excluded } = excludeCrashCells(records, data.executions);
     campaigns.push({
       id: c.id,
       experiment: c.experiment.id,
       created_at: c.created_at,
-      cells: cellsFromRecords(c, data.executions, byExecution),
+      cells,
+      excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
     });
     ran.set(c.id, c.task_set.tasks);
   }
+  checkOneEnvironment(counted, judged);
   return { campaigns, ran };
 }
 
@@ -1070,6 +1157,7 @@ async function main(): Promise<number> {
   const { campaigns, ran } = await loadScreenCampaigns(
     a["results-dir"],
     now.rules,
+    root,
   );
   const hist = screeningHistory(campaigns, now.rules);
   const tallies = tally(hist.cells, now.rules);
@@ -1104,9 +1192,8 @@ async function main(): Promise<number> {
     const t = tallies.get(id);
     console.log(`${id} ${s}${t ? ` ${t.solved}/${t.scored}` : ""}`);
   }
-  const rescreen = [...status].filter(([, s]) =>
-    s === "incomplete" || s === "unscreened"
-  ).map(([id]) => id);
+  for (const l of excludedLines(hist.excluded)) console.log(l);
+  const rescreen = rescreenTasks(status);
   if (rescreen.length > 0) {
     console.log(`next screen tasks: "${tasksGlob(rescreen)}"`);
   }

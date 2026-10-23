@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { checkKeysFiles } from "../../../../../src/doctor/sections/ingest/check-keys-files.ts";
 import type { DoctorContext } from "../../../../../src/doctor/types.ts";
+import { testTempDir } from "../../../../utils/temp-dir.ts";
 
 function ctx(cwd: string): DoctorContext {
   return { cwd, fetchFn: globalThis.fetch, previousResults: new Map() };
@@ -13,7 +14,7 @@ async function writeKey(path: string, bytes: number) {
 
 describe("checkKeysFiles", () => {
   it("passes when ingest key file exists at exactly 32 bytes", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     const keyPath = `${tmp}/key.ed25519`;
     await writeKey(keyPath, 32);
     await Deno.writeTextFile(
@@ -31,7 +32,7 @@ describe("checkKeysFiles", () => {
   });
 
   it("fails when key file does not exist", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     await Deno.writeTextFile(
       `${tmp}/.centralgauge.yml`,
       `ingest:\n  url: x\n  key_id: 1\n  key_path: ${tmp}/missing.ed25519\n  machine_id: m\n`,
@@ -50,7 +51,7 @@ describe("checkKeysFiles", () => {
   });
 
   it("fails when key file size is not 32 bytes", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     const keyPath = `${tmp}/wrong.ed25519`;
     await writeKey(keyPath, 64); // wrong size
     await Deno.writeTextFile(
@@ -72,7 +73,7 @@ describe("checkKeysFiles", () => {
   });
 
   it("checks admin key too when configured", async () => {
-    const tmp = await Deno.makeTempDir();
+    const tmp = await testTempDir();
     const ingestKey = `${tmp}/i.ed25519`;
     const adminKey = `${tmp}/a.ed25519`;
     await writeKey(ingestKey, 32);

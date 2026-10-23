@@ -1,0 +1,43 @@
+{
+  "survey": "H-35 S3 L4 fs digest discovery survey (decision 2026-10-20 item 5)",
+  "measured_by": "lane-ops",
+  "container": "Cronus283",
+  "golden": "golden-o09-v1 (runner 1.0.1.0; the fs roots do not hold the runner package)",
+  "code_commit": "f75df8d1",
+  "fs_digest_version": 1,
+  "captures": [
+    { "label": "fs-A", "when": "right after reset 1 (RESET_OK, VERIFY_OK)", "at": "2026-10-19T20:53:01Z", "files": 20661, "errors": 0, "file": "H:\\Temp3\\harness-spike\\h-35-content-root\\Cronus283-fs-A.json" },
+    { "label": "fs-B", "when": "after 10 min idle, no reset", "at": "2026-10-19T21:03:39Z", "files": 20661, "errors": 0, "file": "H:\\Temp3\\harness-spike\\h-35-content-root\\Cronus283-fs-B.json" },
+    { "label": "fs-C", "when": "right after reset 2 (RESET_OK, VERIFY_OK)", "at": "2026-10-19T21:05:12Z", "files": 20661, "errors": 0, "file": "H:\\Temp3\\harness-spike\\h-35-content-root\\Cronus283-fs-C.json" }
+  ],
+  "roots": [
+    { "root": "C:\\Windows\\Temp", "files": 1, "bytes": 102 },
+    { "root": "C:\\Windows\\System32\\config\\systemprofile\\AppData", "files": 8, "bytes": 96406 },
+    { "root": "C:\\Program Files\\Microsoft Dynamics NAV\\280\\Service", "files": 1147, "bytes": 701711388 },
+    { "root": "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV", "files": 18779, "bytes": 1347620867 },
+    { "root": "C:\\Run\\my", "files": 8, "bytes": 77874 }
+  ],
+  "identity": ["service_account|NT AUTHORITY\\SYSTEM"],
+  "comparisons": [
+    { "pair": "fs-A vs fs-B (idle, no NST restart)", "differing_lines": 0 },
+    {
+      "pair": "fs-A vs fs-C (across a reset, NST restarted)",
+      "differing_lines": 11,
+      "kind": "D| directory lines, timestamp field only; no file (F|) line differs",
+      "directories": [
+        "C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\280\\Server\\MicrosoftDynamicsNavServer$BC",
+        "...\\MicrosoftDynamicsNavServer$BC\\temp",
+        "...\\MicrosoftDynamicsNavServer$BC\\users",
+        "...\\users\\default",
+        "...\\users\\default\\00000000-0000-0000-0000-000000000001",
+        "...\\users\\default\\00000000-0000-0000-0000-000000000001\\TEMP",
+        "...\\users\\default\\40d54d10-f7a3-4c1e-95e7-464071e6b6c3",
+        "...\\users\\default\\40d54d10-f7a3-4c1e-95e7-464071e6b6c3\\TEMP",
+        "...\\users\\nav-systemapplication",
+        "...\\users\\nav-systemapplication\\00000000-0000-0000-0000-000000000001",
+        "...\\users\\nav-systemapplication\\00000000-0000-0000-0000-000000000001\\TEMP"
+      ]
+    }
+  ],
+  "disposition": "exclude stays []: the per-deployment comparison never spans an NST restart (lane-infra, 2026-10-19); the ban-off fixture survey comes at the Phase 3 proof"
+}

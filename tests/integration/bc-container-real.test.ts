@@ -13,6 +13,7 @@ import {
   assert,
   assertEquals,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { testTempDir } from "../utils/temp-dir.ts";
 
 const CONTAINER_NAME = Deno.env.get("CENTRALGAUGE_TEST_CONTAINER") ??
   "Cronus28";
@@ -124,7 +125,7 @@ Deno.test({
   sanitizeOps: false,
   async fn() {
     // Create a temporary AL project locally
-    const tempDir = await Deno.makeTempDir({ prefix: "centralgauge_test_" });
+    const tempDir = await testTempDir({ prefix: "centralgauge_test_" });
 
     try {
       // Write app.json for BC 27
@@ -239,7 +240,7 @@ Deno.test({
   sanitizeOps: false,
   async fn() {
     // Create a temporary AL project with errors
-    const tempDir = await Deno.makeTempDir({
+    const tempDir = await testTempDir({
       prefix: "centralgauge_error_test_",
     });
 
@@ -353,7 +354,7 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
-    const tempDir = await Deno.makeTempDir({
+    const tempDir = await testTempDir({
       prefix: "centralgauge_fulltest_",
     });
     const appId = "33333333-3333-3333-3333-333333333333";

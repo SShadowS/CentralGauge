@@ -23,8 +23,10 @@ import {
 import type { JudgmentRecord } from "../../../src/harness/records.ts";
 import { applyOverlay, stageRefappTask } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
-import { FakeBc, result } from "./fake-bc.ts";
+import { FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { IDS, makeRefappRepo, write } from "./refapp-fixture.ts";
+import { noOnPrem } from "./onprem-fixture.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 const PRICE = "Rental/src/Price.Codeunit.al";
 const ALT = "Rental/src/PriceAlt.Codeunit.al";
@@ -114,16 +116,16 @@ async function setup(
     refapp: await resolveRefapp(repo.root, "refapp-v1"),
     symbols: repo.symbols,
     symbolStore: repo.symbolStore,
-    out: join(await Deno.realPath(await Deno.makeTempDir()), "stage"),
+    out: join(await Deno.realPath(await testTempDir()), "stage"),
   });
-  const ws = await Deno.realPath(await Deno.makeTempDir());
+  const ws = await Deno.realPath(await testTempDir());
   await safeCopyTree(staged.pristine, ws);
   await applyOverlay(join(task.dir, "correct"), ws);
   for (const [rel, text] of Object.entries(files)) await write(ws, rel, text);
-  const results = await Deno.realPath(await Deno.makeTempDir());
+  const results = await Deno.realPath(await testTempDir());
   const frozen = await freezeWorkspace({
     resultsRoot: results,
-    privateRoot: await Deno.realPath(await Deno.makeTempDir()),
+    privateRoot: await Deno.realPath(await testTempDir()),
     workspace: ws,
     secrets: [],
   });
@@ -155,10 +157,14 @@ async function setup(
         pristine: staged.pristine,
         symbolIds: new Set([IDS.assert]),
         lock: { store: repo.symbolStore, packages: repo.symbols },
-        deploy: { ledgerRoot: join(results, "bc-ledger") },
+        onPrem: await noOnPrem({
+          store: repo.symbolStore,
+          packages: repo.symbols,
+        }),
+        deploy: { ledgerRoot: join(results, "bc-ledger"), reset: OK_RESET },
       },
       artifact: join(results, frozen.stored_path),
-      workDir: await Deno.realPath(await Deno.makeTempDir()),
+      workDir: await Deno.realPath(await testTempDir()),
     });
 }
 

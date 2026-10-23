@@ -7,7 +7,7 @@ import { setupContainers } from "../../cli/commands/bench/container-setup.ts";
 import type { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import { ConfigManager } from "../../src/config/config.ts";
 import { allocatedContainer } from "../../src/harness/allocation.ts";
-import { buildApps } from "../../src/harness/bc-lane.ts";
+import { buildApps, CLOUD_POLICY } from "../../src/harness/bc-lane.ts";
 import { hashFile } from "../../src/harness/hash.ts";
 import { loadSymbolsLock, REFAPP_PATH } from "../../src/harness/identity.ts";
 import {
@@ -144,6 +144,7 @@ try {
         versions: new Map(),
         outDir: join(out, `build-${pass}`),
         lock,
+        policy: CLOUD_POLICY,
       })
     );
     log(`buildApps-${pass}`, {

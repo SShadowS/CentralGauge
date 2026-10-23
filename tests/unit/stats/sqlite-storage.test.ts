@@ -13,6 +13,7 @@ import {
 } from "@std/assert";
 import { SqliteStorage } from "../../../src/stats/sqlite-storage.ts";
 import type { ResultRecord, RunRecord } from "../../../src/stats/types.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 describe("SqliteStorage", () => {
   let storage: SqliteStorage;
@@ -61,7 +62,7 @@ describe("SqliteStorage", () => {
   }
 
   beforeEach(async () => {
-    tempDir = await Deno.makeTempDir({ prefix: "sqlite-storage-test-" });
+    tempDir = await testTempDir({ prefix: "sqlite-storage-test-" });
     dbPath = `${tempDir}/test.db`;
     storage = new SqliteStorage(dbPath);
   });
