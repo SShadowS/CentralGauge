@@ -305,6 +305,8 @@ export interface AlsemEnvelope {
   payload: J;
 }
 
+const SEVERITIES = ["critical", "high", "medium", "low", "info"];
+
 const isObj = (x: unknown): x is J =>
   typeof x === "object" && x !== null && !Array.isArray(x);
 
@@ -312,25 +314,98 @@ const isObj = (x: unknown): x is J =>
 function checkPayload(kind: string, p: J): string | null {
   const arr = (k: string) => Array.isArray(p[k]) ? null : `payload.${k}`;
   const obj = (k: string) => isObj(p[k]) ? null : `payload.${k}`;
+  const str = (x: unknown) => typeof x === "string" && x !== "";
+  const first = <T>(xs: T[], bad: (x: T) => string | null) => {
+    for (const x of xs) {
+      const b = bad(x);
+      if (b) return b;
+    }
+    return null;
+  };
   switch (kind) {
     case "analyze-report":
-      return arr("findings") ??
-        ((p["findings"] as unknown[]).every(isObj)
-          ? null
-          : "payload.findings[]");
+      return arr("findings") ?? first(p["findings"] as unknown[], (f) => {
+        if (!isObj(f)) return "payload.findings[]";
+        const loc = f["primaryLocation"];
+        const conf = f["confidence"];
+        return !str(f["detector"])
+          ? "payload.findings[].detector"
+          : !SEVERITIES.includes(f["severity"] as string)
+          ? "payload.findings[].severity"
+          : !isObj(conf) ||
+              !["likely", "possible"].includes(conf["level"] as string)
+          ? "payload.findings[].confidence.level"
+          : !isObj(loc) || !str(loc["file"])
+          ? "payload.findings[].primaryLocation.file"
+          : !str(f["fingerprint"])
+          ? "payload.findings[].fingerprint"
+          : null;
+      });
     case "digest":
       return arr("entries") ?? obj("summary") ??
         arr("changedRootsDiagnostics") ??
-        ((p["entries"] as unknown[]).every((e) =>
-            isObj(e) && isObj(e["routine"])
-          )
-          ? null
-          : "payload.entries[].routine");
-    case "diff-report":
+        first(
+          ["rootsRequested", "rootsResolved", "totalUnresolved"],
+          (k) =>
+            (p["summary"] as J)[k] === undefined ||
+              typeof (p["summary"] as J)[k] === "number"
+              ? null
+              : `payload.summary.${k}`,
+        ) ??
+        first(
+          p["changedRootsDiagnostics"] as unknown[],
+          (d) =>
+            isObj(d) && str(d["kind"])
+              ? null
+              : "payload.changedRootsDiagnostics[].kind",
+        ) ??
+        first(p["entries"] as unknown[], (e) => {
+          if (!isObj(e) || !isObj(e["routine"])) {
+            return "payload.entries[].routine";
+          }
+          const r = e["routine"];
+          const anchor = r["anchor"];
+          const fx = e["effects"];
+          return !str(r["stableId"])
+            ? "payload.entries[].routine.stableId"
+            : anchor !== undefined && !isObj(anchor)
+            ? "payload.entries[].routine.anchor"
+            : fx !== undefined && !Array.isArray(fx)
+            ? "payload.entries[].effects"
+            : first((fx ?? []) as unknown[], (x) =>
+              isObj(x) && str(x["type"]) &&
+                (x["detail"] === undefined || isObj(x["detail"]))
+                ? null
+                : "payload.entries[].effects[]");
+        });
+    case "diff-report": {
+      const cats = isObj(p["summary"])
+        ? (p["summary"] as J)["findingsByCategory"]
+        : undefined;
       return arr("findings") ?? obj("summary") ??
-        ((p["findings"] as unknown[]).every(isObj)
-          ? null
-          : "payload.findings[]");
+        (!isObj(cats) ||
+            !Object.values(cats).every((n) =>
+              typeof n === "number" && Number.isInteger(n) && n >= 0
+            )
+          ? "payload.summary.findingsByCategory"
+          : null) ??
+        first(p["findings"] as unknown[], (f) => {
+          if (!isObj(f)) return "payload.findings[]";
+          const s = f["subject"];
+          return !str(f["kind"])
+            ? "payload.findings[].kind"
+            : !str(f["category"])
+            ? "payload.findings[].category"
+            : !SEVERITIES.includes(f["severity"] as string)
+            ? "payload.findings[].severity"
+            : !isObj(s) ||
+                !["newStableId", "oldStableId", "normalizedStableId"].some((
+                  k,
+                ) => str(s[k]))
+            ? "payload.findings[].subject"
+            : null;
+        });
+    }
     default:
       return null; // capability-snapshot: only handed to `alsem diff` as a file
   }
@@ -1156,7 +1231,7 @@ export interface DoneStamp {
   hash: string;
   /** DERIVATION: bump when the row is computed differently from the same cached tool output. */
   derive?: number;
-  /** sha256 of each artifact the row was computed from (start / final tree.json, digest, diff); "" when absent. A changed artifact means not done. */
+  /** sha256 of each artifact the row was computed from (start / final tree.json and raw analyze / ach / fingerprint, digest, diff); "" when absent. A changed artifact means not done. */
   bind?: Record<string, string>;
 }
 
@@ -1663,11 +1738,20 @@ export async function alsemStep(
     try {
       const sid = (await startOfOnce(r.task)).id;
       const final = join(t.cache, hash);
+      const start = join(t.cache, `start-${r.task}-${sid}`);
       bind = {
-        start: await hashOrEmpty(
-          join(t.cache, `start-${r.task}-${sid}`, "tree.json"),
-        ),
+        start: await hashOrEmpty(join(start, "tree.json")),
         final: await hashOrEmpty(join(final, "tree.json")),
+        // The raw tool outputs behind both trees: a damaged one is never a done row.
+        ...Object.fromEntries(
+          await Promise.all(
+            ["analyze", "ach", "fingerprint"].flatMap((n) =>
+              [["start", start], ["final", final]].map(async (
+                [side, dir],
+              ) => [`${side}_${n}`, await hashOrEmpty(join(dir!, `${n}.json`))])
+            ),
+          ),
+        ),
         digest: r.patch
           ? await hashOrEmpty(
             join(final, `digest-${await digestId(r.patch)}.json`),

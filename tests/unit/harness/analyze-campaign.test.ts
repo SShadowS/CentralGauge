@@ -359,6 +359,43 @@ const DIGEST_PAYLOAD = {
   changedRootsDiagnostics: [],
 };
 const DIFF_PAYLOAD = { findings: [], summary: { findingsByCategory: {} } };
+const GOOD_F = {
+  detector: "d1",
+  severity: "high",
+  confidence: { level: "likely" },
+  primaryLocation: { file: "ws:Core/A.al" },
+  fingerprint: "fp1",
+};
+const GOOD_D = {
+  kind: "k",
+  category: "abi",
+  severity: "info",
+  subject: { newStableId: "a:Codeunit:70001#h" },
+};
+const withFinding = (f: unknown) =>
+  envelope("analyze-report", "1.0.0", { findings: [f] });
+
+Deno.test("alsemEnvelope: complete per-item fields are accepted", () => {
+  alsemEnvelope(withFinding(GOOD_F), "analyze-report");
+  alsemEnvelope(
+    envelope("diff-report", "1.0.0", {
+      findings: [GOOD_D],
+      summary: { findingsByCategory: { abi: 1 } },
+    }),
+    "diff-report",
+  );
+  alsemEnvelope(
+    envelope("digest", "1.6.0", {
+      entries: [{
+        routine: { stableId: "r", anchor: { file: "ws:Core/A.al" } },
+        effects: [{ type: "DB_INSERT", detail: { resourceDisplay: "T" } }],
+      }],
+      summary: { rootsRequested: 1, rootsResolved: 1, totalUnresolved: 0 },
+      changedRootsDiagnostics: [{ kind: "hunk-outside-routines" }],
+    }),
+    "digest",
+  );
+});
 
 Deno.test("alsemEnvelope: versions, kind and diagnostics; a wrong kind or an unknown schemaVersion fails loudly", () => {
   const diag = { code: "W001", message: "slow", severity: "warning" };
@@ -432,6 +469,30 @@ Deno.test("alsemEnvelope: strict, a required field that is missing or mistyped i
     ["numeric alsemVersion", { ...ok, alsemVersion: 2 }],
     ["analyze without findings", { ...ok, payload: {} }],
     ["analyze findings not an array", { ...ok, payload: { findings: {} } }],
+    // the finding from the self-check: no severity
+    [
+      "finding without severity",
+      withFinding({
+        detector: "d1",
+        confidence: { level: "likely" },
+        primaryLocation: { file: "ws:Core/A.al" },
+        fingerprint: "fp1",
+      }),
+    ],
+    [
+      "finding with unknown severity",
+      withFinding({ ...GOOD_F, severity: "x" }),
+    ],
+    [
+      "finding without detector",
+      withFinding({ ...GOOD_F, detector: undefined }),
+    ],
+    ["finding without fingerprint", withFinding({ ...GOOD_F, fingerprint: 1 })],
+    ["finding without confidence", withFinding({ ...GOOD_F, confidence: {} })],
+    [
+      "finding without a file",
+      withFinding({ ...GOOD_F, primaryLocation: { line: 1 } }),
+    ],
   ];
   for (const [what, doc] of bad) {
     assertThrows(() => alsemEnvelope(doc, "analyze-report"), Error, "", what);
@@ -443,6 +504,42 @@ Deno.test("alsemEnvelope: strict, a required field that is missing or mistyped i
     ["digest", "1.6.0", { entries: [], changedRootsDiagnostics: [] }],
     ["diff-report", "1.0.0", {}],
     ["diff-report", "1.0.0", { findings: [] }],
+    ["diff-report", "1.0.0", { findings: [], summary: {} }],
+    [
+      "diff-report",
+      "1.0.0",
+      { findings: [], summary: { findingsByCategory: { abi: "1" } } },
+    ],
+    ...(["kind", "category", "severity", "subject"] as const).map((k) =>
+      ["diff-report", "1.0.0", {
+        ...DIFF_PAYLOAD,
+        findings: [{ ...GOOD_D, [k]: undefined }],
+      }] as [string, string, unknown]
+    ),
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{ ...GOOD_D, severity: "x" }],
+    }],
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{ ...GOOD_D, subject: {} }],
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      entries: [{ routine: { anchor: {} }, effects: [] }],
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      entries: [{ routine: { stableId: "r" }, effects: [{ detail: {} }] }],
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      summary: { rootsRequested: "1" },
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      changedRootsDiagnostics: [{}],
+    }],
     ["capability-snapshot", "1.1.0", null],
   ];
   for (const [kind, v, payload] of shapes) {
@@ -1419,14 +1516,12 @@ Deno.test("fail closed: an error diagnostic in the digest or the diff fails the 
   for (const which of ["digest", "diff"]) {
     await withFake(async (f) => {
       f.override[which] = which === "digest"
-        ? envJson("digest", "1.6.0", [ERR], { entries: [], summary: {} })
-        : envJson("diff-report", "1.0.0", [ERR], {
-          findings: [],
-          summary: { findingsByCategory: {} },
-        });
+        ? envJson("digest", "1.6.0", [ERR], DIGEST_PAYLOAD)
+        : envJson("diff-report", "1.0.0", [ERR], DIFF_PAYLOAD);
       const r = await step(f, [row("e1")], { e1: "h1" });
       assertEquals([which, r.rows.length], [which, 0]);
       assertEquals([which, r.failed.length], [which, 1]);
+      assert(r.failed[0]!.error.includes("AL0001"), r.failed[0]!.error);
     });
   }
 });
@@ -1599,7 +1694,12 @@ Deno.test("done rows are bound to their artifacts: a changed digest or diff file
             entries: [...DIGEST_ONE.entries, ...DIGEST_ONE.entries],
           })
           : envJson("diff-report", "1.0.0", [], {
-            findings: [{ kind: "k", category: "abi", subject: {} }],
+            findings: [{
+              kind: "k",
+              category: "abi",
+              severity: "info",
+              subject: { newStableId: "a:Codeunit:70001#h" },
+            }],
             summary: { findingsByCategory: { abi: 1 } },
           }),
       );
@@ -1607,6 +1707,46 @@ Deno.test("done rows are bound to their artifacts: a changed digest or diff file
       assertEquals(b.failed, []);
       if (which === "digest") assertEquals(b.rows[0]!.touches.roots, 2);
       else assertEquals(b.rows[0]!.metrics["abi_changes"], 1);
+    });
+  }
+});
+
+Deno.test("done rows are bound to the raw tree files: the SAME completed execution after raw damage is not skipped, not counted", async () => {
+  const cases: [string, string, string | null][] = [
+    [
+      "h1",
+      "analyze.json",
+      envJson("analyze-report", "1.0.0", [ERR], {
+        findings: [],
+      }),
+    ],
+    ["h1", "fingerprint.json", null],
+    ["h1", "ach.json", "not json"],
+    [
+      "start-HX-1-S1",
+      "analyze.json",
+      envJson("analyze-report", "1.0.0", [ERR], {
+        findings: [],
+      }),
+    ],
+    ["start-HX-1-S1", "fingerprint.json", null],
+  ];
+  for (const [dir, file, text] of cases) {
+    await withFake(async (f) => {
+      const a = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(a.rows.length, 1);
+      const calls = f.calls.length;
+      const p = join(f.t.cache, dir, file);
+      if (text === null) await Deno.remove(p);
+      else await Deno.writeTextFile(p, text);
+      const b = await step(f, [row("e1")], { e1: "h1" });
+      const what = `${dir}/${file}`;
+      if (text !== null && text !== "") {
+        assertEquals([what, b.rows.length], [what, 0]);
+        assertEquals([what, b.failed.length], [what, 1]);
+      } else {
+        assert(f.calls.length > calls, `${what}: recomputed`);
+      }
     });
   }
 });
