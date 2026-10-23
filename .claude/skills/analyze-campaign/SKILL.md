@@ -77,16 +77,18 @@ verdict build error is one the agent added to a shipped test file), `review_heav
 
 ### Static analysis with al-sem (when a pinned binary is given)
 
-Run this when the user or the task names an al-sem build. Pinned build: release v1.7.2 in
-`H:\cg-coord\analysis\tools\al-sem-v1.7.2\`:
-- `alsem-windows-x64.exe`, sha256 `815ffcda90cc2e37aef1eb8084a4ed8cdd3db314b146254eed6922856b6bab3b`
+Run this when the user or the task names an al-sem build. Pinned build: release v2.0.1 in
+`H:\cg-coord\analysis\tools\al-sem-v2.0.1\` (the first supported version; the script parses the
+2.0.1 output contract only, `H:\cg-coord\tasks\A-03\alsem-2.0.1-spec.md`):
+- `alsem-windows-x64.exe`, sha256 `b323c73b9ae0b4fe8da8cbaf6ac059fdbb51f2e10b2ef3ec0e089ce4ee2f5637`
+  (`--version` prints `al-sem 2.0.1`)
 - `al-call-hierarchy-windows-x64.exe`, sha256
-  `88e7e6a41fe453275b185bfaca622b439def655caa9b4e3f057a4e05ac2ff3d2`
-
-Do not use v1.7.1: its digest loses changed routines (#158).
+  `52373bafa1da945264f678d9df1bbfb2ae1f3599a09911509492243654407ea9` (no `--version`)
 
 For a newer build, download it with `gh release download <tag> -R SShadowS/al-sem` into a new
-folder. Record both hashes and say which build you used.
+folder. Record both hashes and say which build you used. A build whose envelope `kind` or
+`schemaVersion` the script does not know fails every execution loudly (`[WARN] alsem <id>`):
+extend `ALSEM_SCHEMAS` only after reading that build's contract.
 
 Add three options to the step-2 command:
 - `--alsem <alsem exe> --ach <al-call-hierarchy exe>`
@@ -95,17 +97,29 @@ Add three options to the step-2 command:
   `harness-tasks/symbols.lock.json` at the rev. The script checks every hash and refuses a store
   with a missing package.
 - `[--alsem-jobs 3]`
+- `[--only <id or id prefix>,...]`: a smoke on a few executions.
 
-Per tree, the script builds one synthetic app: the refapp's 7 apps merged (`mergedAppJson`), the
-locked packages hard-linked into `.alpackages`. On each tree it runs:
-- `alsem analyze --require-dependencies`
-- `al-call-hierarchy --analyze`
+Per tree, the script builds one synthetic app in a scratch copy under `<out>\alsem\ws\`: the
+refapp's 7 apps merged (`mergedAppJson`), `.alpackages` a directory junction to the symbol store
+(al-call-hierarchy reads only `<ws>\.alpackages`; without the Microsoft symbols every Base App
+event subscriber shows as unused). The junction is removed with `cmd /c rmdir` before the scratch
+copy is deleted; never delete a scratch workspace recursively by hand while the junction is in it,
+that can follow it into the store. On each tree it runs (alsem commands with `--deterministic`):
+- `alsem analyze --require-dependencies`: exit 4 (a missing dependency) fails the execution, it is
+  never skipped or under-reported.
+- `al-call-hierarchy --analyze` (no envelope).
 - `alsem fingerprint`
 
 Then per execution it runs `alsem diff` on the two fingerprints, and `alsem digest --diff` with
-the execution's patch. Results are cached per workspace hash, plus one start tree per task, under
-`<out>\alsem\cache\`. A re-run (for example after a rejudge) only redoes the cheap part. Expect
-about 70 s per execution for a fresh cache.
+the execution's patch (paths relative to the merged app folder, which is the workspace root).
+Every alsem envelope is checked (kind, schemaVersion); `alsemVersion`, `schemaVersion` and the
+envelope `diagnostics` are kept per tree in each row, and `summary.json` counts the diagnostics.
+Results are cached per workspace hash, plus one start tree per task, under
+`<out>\alsem\cache\`. A re-run (for example after a rejudge) only redoes the cheap part. Measured
+on v2.0.1 (smoke, 3 jobs): per tree analyze ~32-44 s at ~5.4 GB peak, al-call-hierarchy ~11-13 s
+at ~0.8 GB, fingerprint ~11-14 s at ~0.8 GB, digest ~33-45 s at ~5.4 GB, diff < 1 s: about
+110 s of tool time per execution, plus ~55 s once per task for its start tree. Keep
+`--alsem-jobs` x 5.5 GB under the machine's free memory.
 
 Executions with termination `harness_crash` (H-29 ruling, 2026-10-18) keep their rows in
 `executions.json/.csv` and `introduced.csv`, flagged `excluded`, but are left out of `summary.json`
@@ -117,12 +131,16 @@ rename) to `cache\<build>\exec\<id>.json`, stamped with both full binary hashes,
 the workspace hash. A re-run, also after a kill, skips every execution whose file matches, redoes
 failed ones (`[WARN] alsem <id>`), and aggregates all `exec\` files, earlier runs included. Another
 al-sem or al-call-hierarchy build gets its own cache folder and reuses nothing. The log ends with
-`[alsem] N/M done (K were done already, F failed)`. Outputs in `<out>\alsem\`:
+`[alsem] N/M done (K were done already, F failed, E of them on missing dependencies), ... D al-sem
+diagnostics in X executions`. Outputs in `<out>\alsem\`:
 - `tools.json`: the build, its hashes and the store.
 - `executions.json` / `.csv`: per execution the metrics below, plus the introduced findings, the
-  routine deltas, the blast radius and the digest touches.
+  routine deltas, the new unused procedures, the blast radius (with `total` =
+  summary.findingsByCategory), the digest touches, the versions and the diagnostics.
 - `introduced.csv`: every introduced finding, with execution, arm and task.
 - `summary.json`:
+  - `failed` (this run's failures with the error) and `diagnostics` (count by command, severity
+    and code).
   - `per_arm` (all executions) and `per_arm_passing` (verdict pass only): median per metric,
     executions above zero, introduced findings by detector.
   - `per_pair`: median of variant minus base per metric, and the count of pairs where the
@@ -130,21 +148,29 @@ al-sem or al-call-hierarchy build gets its own cache folder and reuses nothing. 
 
 The metrics count production code only (not the Test app), unless the name says test:
 - `alsem_new_findings` / `alsem_new_high_findings` / `alsem_new_test_findings`: final minus
-  start, keyed by detector, object and routine (not line), as a multiset; high = critical or high.
-- `complexity_delta`, `lines_delta`, `max_routine_complexity`, `routines_added`,
-  `routines_changed`: from al-call-hierarchy's per-routine metrics.
-- `abi_changes`, `schema_changes`, `event_changes`, `permission_changes`: `alsem diff`
-  categories, on objects outside the Test app's id range.
+  start, matched by the analyze finding's `fingerprint`, as a multiset; high = critical or high.
+- `complexity_delta`, `lines_delta`, `fan_in_delta`, `max_routine_complexity`,
+  `routines_added`, `routines_changed`: from al-call-hierarchy's per-routine metrics, joined
+  start to final by `routine_id`. A routine counts when added, removed, with complexity / length /
+  parameters changed, or a changed root of the patch (`routine_id` = digest `routine.stableId`;
+  never join it with analyze's `routineId`, a different id). `d_fan_in` is null when a side has no
+  call graph (interface members).
+- `new_unused` / `new_unused_public`: al-call-hierarchy `unused_procedure` findings in final but
+  not in start; access from the metrics row at the same path and line. `new_unused` counts local,
+  internal and protected; public ones (unused inside the app, maybe called by other apps) count
+  apart.
+- `abi_changes`, `abi_signature_changes` (kind `procedure-signature-changed`), `schema_changes`,
+  `event_changes`, `permission_changes`: `alsem diff` categories, on objects outside the Test
+  app's id range; the per-side counts must add up to `summary.findingsByCategory` or the
+  execution fails.
 - `tables_written`, `events_published`: from digest effects of the changed production routines.
-- `unmapped_hunks`: hunks digest could not place in a routine.
+- `unmapped_hunks`: hunks digest could not place in a routine (`unmatched_files`, kept per row,
+  is normal for files without routines, such as an enum or a fields-only table extension).
 
 Known al-sem gaps; state the ones that bear on a number in the caveats:
-- SShadowS/al-sem#156: a changed `local` procedure counts as a critical ABI removal plus an
-  addition, so `abi_changes` over-counts.
 - #157: no multi-app source workspaces, hence the synthetic merged app. Internal and
-  internalsVisibleTo boundaries vanish.
-- Check `unmapped_hunks` all the same. It should be 0 on v1.7.2; if not, it marks a new digest gap.
-- #159: al-call-hierarchy has no fan-in or unused procedures, so neither is measured yet.
+  internalsVisibleTo boundaries vanish, so `access` internal is internal to the merged app.
+- Check `unmapped_hunks` all the same. It should be 0; if not, it marks a new digest gap.
 
 Open new issues there (with a repro) for any further gap, and list them in the report.
 

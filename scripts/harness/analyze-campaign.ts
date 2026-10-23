@@ -5,21 +5,22 @@
  *
  *   deno run --allow-all scripts/harness/analyze-campaign.ts <campaign-id>
  *     --results <harness results root> --rev <task rev> --out <dir>
- *     [--pair baseArm:variantArm ...] [--repo .]
+ *     [--pair baseArm:variantArm ...] [--repo .] [--only <id prefix>,...]
  *
  * Without --pair every variant is paired with the experiment baseline.
+ * --only keeps the executions whose id starts with a listed prefix (a smoke).
  * Outputs: executions.json/.csv, pairs.json, losses.csv, summary.json,
  * diffs/<execution>.patch and dossiers/<base>__<variant>/<task>-r<n>.md.
  *
  * A-03: with `--alsem <alsem> --ach <al-call-hierarchy> --symbols <store>
- * [--alsem-jobs 3]` it also runs al-sem on each starting tree and final
- * workspace (no containers) into alsem/: introduced findings, routine
- * metric deltas, blast radius (alsem diff) and digest touches, per execution,
- * per arm and per matched pair.
+ * [--alsem-jobs 3]` it also runs al-sem (v2.0.1 output contract) on each
+ * starting tree and final workspace (no containers) into alsem/: introduced
+ * findings, routine metric deltas, new unused procedures, blast radius (alsem
+ * diff) and digest touches, per execution, per arm and per matched pair.
  */
 
 import { parseArgs } from "@std/cli/parse-args";
-import { basename, join } from "@std/path";
+import { basename, join, resolve } from "@std/path";
 import type { TraceEvent } from "../../src/harness/trace.ts";
 import { applyOverlay, TAR_BINARY } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
@@ -275,6 +276,65 @@ interface Row {
 
 // ---------------------------------------------------------------- al-sem (A-03)
 
+/** The al-sem 2.0.1 output contract: schemaVersion per envelope kind. */
+const ALSEM_SCHEMAS: Record<string, string[]> = {
+  "analyze-report": ["1.0.0"],
+  "diff-report": ["1.0.0"],
+  digest: ["1.6.0"],
+};
+
+export interface AlsemDiagnostic {
+  code: string;
+  message: string;
+  severity: string;
+}
+
+export interface AlsemEnvelope {
+  alsemVersion: string;
+  schemaVersion: string;
+  kind: string;
+  diagnostics: AlsemDiagnostic[];
+  payload: J;
+}
+
+/** An `alsem ... --format json` envelope; throws on another kind or an unknown schemaVersion. */
+export function alsemEnvelope(doc: unknown, kind: string): AlsemEnvelope {
+  const d = (doc ?? {}) as J;
+  if (d["kind"] !== kind) {
+    throw new Error(`al-sem: expected kind "${kind}", got kind "${d["kind"]}"`);
+  }
+  const v = String(d["schemaVersion"]);
+  if (!ALSEM_SCHEMAS[kind]!.includes(v)) {
+    throw new Error(
+      `al-sem ${kind}: unknown schemaVersion "${v}" (known: ${
+        ALSEM_SCHEMAS[kind]!.join(", ")
+      })`,
+    );
+  }
+  return {
+    alsemVersion: String(d["alsemVersion"]),
+    schemaVersion: v,
+    kind,
+    diagnostics: (d["diagnostics"] ?? []) as AlsemDiagnostic[],
+    payload: d["payload"] as J,
+  };
+}
+
+/** A failed spawn; exit 4 is `--require-dependencies` refusing an incomplete dependency closure. */
+export function exitError(
+  cmd: string,
+  args: string[],
+  code: number,
+  stderr: string,
+): Error {
+  const what = `${basename(cmd)} ${args.join(" ")}`;
+  return new Error(
+    code === 4
+      ? `missing dependencies (exit 4): ${what}: ${stderr}`
+      : `${what}: exit ${code}: ${stderr}`,
+  );
+}
+
 export interface AlsemFinding {
   detector: string;
   severity: string;
@@ -283,12 +343,12 @@ export interface AlsemFinding {
   file: string;
   line: number;
   app: string;
+  fingerprint: string;
 }
 
-/** `alsem analyze --format json` findings, located by workspace-relative file. */
-export function alsemFindings(report: unknown): AlsemFinding[] {
-  const fs = (report as { payload: { findings: J[] } }).payload.findings;
-  return fs.map((f) => {
+/** `alsem analyze` payload findings, located by workspace-relative file. */
+export function alsemFindings(payload: J): AlsemFinding[] {
+  return (payload["findings"] as J[]).map((f) => {
     const loc = (f["primaryLocation"] ?? {}) as J;
     const file = String(loc["file"] ?? "").replace(/^ws:/, "");
     return {
@@ -299,20 +359,21 @@ export function alsemFindings(report: unknown): AlsemFinding[] {
       file,
       line: (loc["line"] as number | undefined) ?? 0,
       app: file.split("/")[0]!,
+      fingerprint: f["fingerprint"] as string,
     };
   });
 }
 
 /**
- * Findings the agent introduced: final minus start, keyed by detector +
- * object + routine (a line shift is the same finding), as a multiset. One row
- * per key: its first surplus final instance and how many surplus there are.
+ * Findings the agent introduced: final minus start, matched by al-sem's
+ * fingerprint (stable across line shifts), as a multiset. One row per
+ * fingerprint: its first surplus final instance and how many surplus there are.
  */
 export function introducedFindings(
   start: AlsemFinding[],
   final: AlsemFinding[],
 ): (AlsemFinding & { count: number })[] {
-  const key = (f: AlsemFinding) => `${f.detector}|${f.object}|${f.routine}`;
+  const key = (f: AlsemFinding) => f.fingerprint;
   const budget = new Map<string, number>();
   for (const f of start) budget.set(key(f), (budget.get(key(f)) ?? 0) + 1);
   const out = new Map<string, AlsemFinding & { count: number }>();
@@ -330,56 +391,62 @@ export function introducedFindings(
   return [...out.values()];
 }
 
-const OBJECT_HEADER =
-  /^﻿?\s*(?:tableextension|table|pageextension|page|codeunit|reportextension|report|query|xmlport|enumextension|enum|interface|permissionsetextension|permissionset|controladdin|profile|entitlement)\s+(?:\d+\s+)?(?:"([^"]+)"|(\S+))/im;
-
-/** Object name -> app folder, from each source file's object header. */
-export function objectApps(
-  files: { path: string; text: string }[],
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const f of files) {
-    const m = OBJECT_HEADER.exec(f.text);
-    if (m) out[m[1] ?? m[2]!] = f.path.split("/")[0]!;
-  }
-  return out;
-}
-
+/** One `al-call-hierarchy --analyze --format json` metrics row (2.0.1). */
 export interface RoutineMetric {
   object_type: string;
   object_name: string;
   procedure_name: string;
+  line: number;
   complexity: number;
   line_count: number;
   parameter_count: number;
+  /** Workspace-relative POSIX path. */
+  path: string;
+  access: string;
+  /** = alsem digest routine.stableId and diff subject.*StableId (not analyze's routineId); null for some members. */
+  routine_id: string | null;
+  fan_in: number | null;
+  fan_out: number | null;
 }
+
+export interface AchReport {
+  metrics: RoutineMetric[];
+  findings: J[];
+}
+
+const routineKey = (m: RoutineMetric) =>
+  m.routine_id ?? `${m.object_type}|${m.object_name}|${m.procedure_name}`;
 
 export interface RoutineDelta {
   app: string;
   object: string;
   routine: string;
+  routine_id: string | null;
   status: "added" | "changed" | "removed";
   /** Final complexity (0 when removed). */
   complexity: number;
   d_complexity: number;
   d_lines: number;
   d_params: number;
+  /** null when either side has no call graph. */
+  d_fan_in: number | null;
+  /** A changed root of the patch (alsem digest stableId). */
+  in_patch: boolean;
 }
 
 /**
- * Per routine (`al-call-hierarchy --analyze` metrics, keyed by object type,
- * object and procedure name, so overloads share a key): the routines added,
- * removed or with any metric changed, sorted by app, object, routine.
+ * Per routine (al-call-hierarchy metrics joined by routine_id, so overloads
+ * stay apart): the routines added, removed, with complexity / length /
+ * parameters changed, or touched by the patch (`changed`: digest stableIds),
+ * sorted by app, object, routine. App = first segment of the path.
  */
 export function routineDeltas(
   start: RoutineMetric[],
   final: RoutineMetric[],
-  apps: Record<string, string>,
+  changed: Set<string>,
 ): RoutineDelta[] {
-  const key = (m: RoutineMetric) =>
-    `${m.object_type}|${m.object_name}|${m.procedure_name}`;
-  const a = new Map(start.map((m) => [key(m), m]));
-  const b = new Map(final.map((m) => [key(m), m]));
+  const a = new Map(start.map((m) => [routineKey(m), m]));
+  const b = new Map(final.map((m) => [routineKey(m), m]));
   const out: RoutineDelta[] = [];
   for (const k of new Set([...a.keys(), ...b.keys()])) {
     const s = a.get(k);
@@ -388,20 +455,66 @@ export function routineDeltas(
     const dc = (f?.complexity ?? 0) - (s?.complexity ?? 0);
     const dl = (f?.line_count ?? 0) - (s?.line_count ?? 0);
     const dp = (f?.parameter_count ?? 0) - (s?.parameter_count ?? 0);
-    if (s && f && dc === 0 && dl === 0 && dp === 0) continue;
+    const inPatch = m.routine_id !== null && changed.has(m.routine_id);
+    if (s && f && dc === 0 && dl === 0 && dp === 0 && !inPatch) continue;
+    const fi = (x: RoutineMetric | undefined) => x ? x.fan_in : 0;
     out.push({
-      app: apps[m.object_name] ?? "?",
+      app: m.path.split("/")[0]!,
       object: m.object_name,
       routine: m.procedure_name,
+      routine_id: m.routine_id,
       status: !s ? "added" : !f ? "removed" : "changed",
       complexity: f?.complexity ?? 0,
       d_complexity: dc,
       d_lines: dl,
       d_params: dp,
+      d_fan_in: fi(f) === null || fi(s) === null ? null : fi(f)! - fi(s)!,
+      in_patch: inPatch,
     });
   }
-  const cmp = (x: RoutineDelta) => `${x.app}\0${x.object}\0${x.routine}`;
+  const cmp = (x: RoutineDelta) =>
+    `${x.app}\0${x.object}\0${x.routine}\0${x.routine_id}`;
   return out.sort((x, y) => cmp(x).localeCompare(cmp(y)));
+}
+
+export interface UnusedProc {
+  app: string;
+  procedure: string;
+  path: string;
+  line: number;
+  /** From the metrics row at the same path + line; "unknown" when none. */
+  access: string;
+  routine_id: string | null;
+}
+
+/** al-call-hierarchy `unused_procedure` findings, joined to their metrics row by path + line. */
+export function unusedProcedures(ach: AchReport): UnusedProc[] {
+  const at = new Map(ach.metrics.map((m) => [`${m.path}:${m.line}`, m]));
+  return ach.findings.filter((f) => f["category"] === "unused_procedure").map(
+    (f) => {
+      const path = f["path"] as string;
+      const line = Number(String(f["location"]).split(":").pop());
+      const m = at.get(`${path}:${line}`);
+      return {
+        app: path.split("/")[0]!,
+        procedure: f["procedure"] as string,
+        path,
+        line,
+        access: m?.access ?? "unknown",
+        routine_id: m?.routine_id ?? null,
+      };
+    },
+  );
+}
+
+/** Unused in final, not unused in start (by routine_id, else path + procedure). */
+export function newUnused(
+  start: UnusedProc[],
+  final: UnusedProc[],
+): UnusedProc[] {
+  const key = (u: UnusedProc) => u.routine_id ?? `${u.path}|${u.procedure}`;
+  const before = new Set(start.map(key));
+  return final.filter((u) => !before.has(key(u)));
 }
 
 export interface BlastSide {
@@ -414,11 +527,22 @@ export interface BlastSide {
   critical_or_high: number;
 }
 
-/** `alsem diff --format json` findings, production vs Test app by object id. */
+export interface Blast {
+  /** summary.findingsByCategory, both apps. */
+  total: Record<string, number>;
+  production: BlastSide;
+  test: BlastSide;
+}
+
+/**
+ * `alsem diff` payload findings, production vs Test app by object id; the
+ * per-side categories must add up to summary.findingsByCategory. A changed
+ * public signature is one `procedure-signature-changed` finding (by_kind).
+ */
 export function blastRadius(
-  report: unknown,
+  payload: J,
   testRanges: [number, number][],
-): { production: BlastSide; test: BlastSide } {
+): Blast {
   const side = (): BlastSide => ({
     abi: 0,
     schema: 0,
@@ -428,15 +552,13 @@ export function blastRadius(
     by_kind: {},
     critical_or_high: 0,
   });
-  const r = { production: side(), test: side() };
-  for (
-    const f of (report as { payload: { findings: J[] } }).payload.findings
-  ) {
+  const total =
+    ((payload["summary"] as J | undefined)?.["findingsByCategory"] ??
+      {}) as Record<string, number>;
+  const r = { total, production: side(), test: side() };
+  for (const f of payload["findings"] as J[]) {
     const subj = (f["subject"] ?? {}) as J;
-    const id = String(
-      subj["normalizedStableId"] ?? subj["newStableId"] ??
-        subj["oldStableId"] ?? "",
-    );
+    const id = String(subj["newStableId"] ?? subj["oldStableId"] ?? "");
     const n = Number(/:[A-Za-z]+:(\d+)/.exec(id)?.[1] ?? NaN);
     const s = testRanges.some(([lo, hi]) => n >= lo && n <= hi)
       ? r.test
@@ -450,12 +572,25 @@ export function blastRadius(
       s.critical_or_high++;
     }
   }
+  for (const [cat, n] of Object.entries(total)) {
+    const got = (r.production as unknown as Record<string, number>)[cat]! +
+      (r.test as unknown as Record<string, number>)[cat]!;
+    if (got !== n) {
+      throw new Error(
+        `alsem diff: summary.findingsByCategory.${cat} = ${n}, findings give ${got}`,
+      );
+    }
+  }
   return r;
 }
 
 export interface DigestTouches {
   roots: number;
   production_roots: number;
+  roots_requested: number;
+  roots_resolved: number;
+  /** routine.stableId of every changed root (joins al-call-hierarchy routine_id). */
+  changed_routines: string[];
   tables_written: string[];
   tables_read: string[];
   events_published: string[];
@@ -463,24 +598,23 @@ export interface DigestTouches {
   unresolved: number;
   /** Diff hunks al-sem could not map to a routine. */
   unmapped_hunks: number;
+  /** Changed files with no routine to map (e.g. an enum or a fields-only table extension). */
   unmatched_files: number;
 }
 
 const WRITES = new Set(["DB_INSERT", "DB_MODIFY", "DB_DELETE", "DB_RENAME"]);
 
-/** `alsem digest --diff`: what the changed production routines touch. */
-export function digestTouches(report: unknown): DigestTouches {
-  const p = (report as { payload: J }).payload;
+/** `alsem digest --diff` payload: what the changed production routines touch. */
+export function digestTouches(p: J): DigestTouches {
   const entries = p["entries"] as J[];
+  const sum = (p["summary"] ?? {}) as J;
   const diags = (p["changedRootsDiagnostics"] ?? []) as J[];
   const written = new Set<string>();
   const read = new Set<string>();
   const events = new Set<string>();
   let commits = 0;
   let prod = 0;
-  let unresolved = 0;
   for (const e of entries) {
-    unresolved += ((e["unresolved"] ?? []) as unknown[]).length;
     const anchor = ((e["routine"] as J)["anchor"] ?? {}) as J;
     if (String(anchor["file"] ?? "").startsWith(`ws:${TEST_APP}/`)) continue;
     prod++;
@@ -499,16 +633,28 @@ export function digestTouches(report: unknown): DigestTouches {
   return {
     roots: entries.length,
     production_roots: prod,
+    roots_requested: Number(sum["rootsRequested"] ?? 0),
+    roots_resolved: Number(sum["rootsResolved"] ?? 0),
+    changed_routines: entries.map((e) => (e["routine"] as J)["stableId"])
+      .filter((x): x is string => typeof x === "string"),
     tables_written: sorted(written),
     tables_read: sorted(read).filter((t) => !written.has(t)),
     events_published: sorted(events),
     commits,
-    unresolved,
+    unresolved: Number(sum["totalUnresolved"] ?? 0),
     unmapped_hunks: diags.filter((d) => d["kind"] === "hunk-outside-routines")
       .length,
     unmatched_files: diags.filter((d) => d["kind"] === "diff-file-unmatched")
       .length,
   };
+}
+
+/** The campaign patch (start/, final/) with paths relative to the merged app folder, which is the workspace root. */
+export function digestPatch(patch: string): string {
+  return patch.replace(/^--- start\//gm, "--- a/").replace(
+    /^\+\+\+ final\//gm,
+    "+++ b/",
+  );
 }
 
 /**
@@ -546,10 +692,16 @@ export interface AlsemMetrics {
   alsem_new_test_findings: number;
   complexity_delta: number;
   lines_delta: number;
+  fan_in_delta: number;
   max_routine_complexity: number;
   routines_added: number;
   routines_changed: number;
+  /** New unused local / internal / protected procedures. */
+  new_unused: number;
+  /** New unused public procedures (callable from other apps, so reported apart). */
+  new_unused_public: number;
   abi_changes: number;
+  abi_signature_changes: number;
   schema_changes: number;
   event_changes: number;
   permission_changes: number;
@@ -562,13 +714,15 @@ export interface AlsemMetrics {
 export function alsemSummary(x: {
   introduced: (AlsemFinding & { count: number })[];
   deltas: RoutineDelta[];
-  blast: { production: BlastSide; test: BlastSide };
+  unused: UnusedProc[];
+  blast: Blast;
   touches: DigestTouches;
 }): AlsemMetrics {
   const prod = x.introduced.filter((f) => f.app !== TEST_APP);
   const sum = (fs: { count: number }[]) => fs.reduce((s, f) => s + f.count, 0);
   const d = x.deltas.filter((r) => r.app !== TEST_APP);
   const live = d.filter((r) => r.status !== "removed");
+  const unused = x.unused.filter((u) => u.app !== TEST_APP);
   return {
     alsem_new_findings: sum(prod),
     alsem_new_high_findings: sum(
@@ -579,10 +733,18 @@ export function alsemSummary(x: {
     ),
     complexity_delta: d.reduce((s, r) => s + r.d_complexity, 0),
     lines_delta: d.reduce((s, r) => s + r.d_lines, 0),
+    fan_in_delta: d.reduce((s, r) => s + (r.d_fan_in ?? 0), 0),
     max_routine_complexity: Math.max(0, ...live.map((r) => r.complexity)),
     routines_added: d.filter((r) => r.status === "added").length,
     routines_changed: d.filter((r) => r.status === "changed").length,
+    new_unused:
+      unused.filter((u) =>
+        ["local", "internal", "protected"].includes(u.access)
+      ).length,
+    new_unused_public: unused.filter((u) => u.access === "public").length,
     abi_changes: x.blast.production.abi,
+    abi_signature_changes:
+      x.blast.production.by_kind["procedure-signature-changed"] ?? 0,
     schema_changes: x.blast.production.schema,
     event_changes: x.blast.production.events,
     permission_changes: x.blast.production.permissions,
@@ -611,9 +773,7 @@ async function run(
     stderr: "piped",
   }).output();
   if (!okCodes.includes(o.code)) {
-    throw new Error(
-      `${cmd} ${args.join(" ")}: ${new TextDecoder().decode(o.stderr)}`,
-    );
+    throw exitError(cmd, args, o.code, new TextDecoder().decode(o.stderr));
   }
   return new TextDecoder().decode(o.stdout);
 }
@@ -801,25 +961,65 @@ interface AlsemTools {
   rev: string;
 }
 
+type Versions = Record<string, { alsemVersion: string; schemaVersion: string }>;
+type TaggedDiagnostic = AlsemDiagnostic & { command: string };
+
 interface AlsemTree {
   findings: AlsemFinding[];
   metrics: RoutineMetric[];
-  apps: Record<string, string>;
+  unused: UnusedProc[];
   testRanges: [number, number][];
   fingerprint: string;
-  touches: DigestTouches | null;
-  diagnostics: unknown[];
+  touches: DigestTouches;
+  /** alsemVersion + schemaVersion per alsem command on this tree. */
+  versions: Versions;
+  diagnostics: TaggedDiagnostic[];
+}
+
+/** `<ws>\.alpackages` as a directory junction to the symbol store (al-call-hierarchy reads only that folder). */
+export async function linkAlpackages(ws: string, store: string) {
+  await run("cmd", [
+    "/c",
+    "mklink",
+    "/J",
+    join(ws, ".alpackages"),
+    resolve(store),
+  ]);
 }
 
 /**
- * The tree as one al-sem workspace (mergedAppJson) with the locked symbol
- * packages hard-linked into .alpackages; sources keep their relative paths,
- * so the campaign's patches apply as they are.
+ * Deletes a scratch workspace. The .alpackages junction goes first with a
+ * plain `rmdir`, which removes the link only: a recursive delete through it
+ * could reach into the symbol store. If the junction is still there after
+ * that, nothing is deleted.
+ */
+export async function removeWorkspace(
+  ws: string,
+  unlink: (p: string) => Promise<unknown> = (p) =>
+    run("cmd", ["/c", "rmdir", p]),
+) {
+  const pk = join(ws, ".alpackages");
+  if ((await Deno.lstat(pk).catch(() => null))?.isSymlink) {
+    await unlink(pk);
+    if (await Deno.lstat(pk).then(() => true, () => false)) {
+      throw new Error(
+        `junction ${pk} is still there: not deleting ${ws} recursively`,
+      );
+    }
+  }
+  await Deno.remove(ws, { recursive: true }).catch((e) => {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  });
+}
+
+/**
+ * The tree as one al-sem workspace (mergedAppJson) in scratch, with
+ * .alpackages a junction to the symbol store; sources keep their relative
+ * paths, so the campaign's patches apply as they are.
  */
 async function mergedWorkspace(src: string, dst: string, t: AlsemTools) {
-  await Deno.remove(dst, { recursive: true }).catch(() => {});
+  await removeWorkspace(dst);
   const apps: J[] = [];
-  const texts: { path: string; text: string }[] = [];
   for (const rel of [...await sourceFiles(src)].sort()) {
     const text = await Deno.readTextFile(join(src, ...rel.split("/")));
     if (rel.split("/").length === 2 && basename(rel) === "app.json") {
@@ -829,23 +1029,15 @@ async function mergedWorkspace(src: string, dst: string, t: AlsemTools) {
     const to = join(dst, ...rel.split("/"));
     await Deno.mkdir(join(to, ".."), { recursive: true });
     await Deno.writeTextFile(to, text);
-    texts.push({ path: rel, text });
   }
   await Deno.writeTextFile(
     join(dst, "app.json"),
     JSON.stringify(mergedAppJson(apps), null, 2),
   );
-  const pk = join(dst, ".alpackages");
-  await Deno.mkdir(pk);
-  for (const p of t.lock) {
-    await Deno.link(join(t.store, `${p.sha256}.app`), join(pk, p.file));
-  }
+  await linkAlpackages(dst, t.store);
   const test = apps.find((a) => a["name"] === "CGR Test");
-  return {
-    apps: objectApps(texts),
-    testRanges: ((test?.["idRanges"] ?? []) as { from: number; to: number }[])
-      .map((r) => [r.from, r.to] as [number, number]),
-  };
+  return ((test?.["idRanges"] ?? []) as { from: number; to: number }[])
+    .map((r) => [r.from, r.to] as [number, number]);
 }
 
 /** Analyze, metrics and fingerprint for one tree (and digest when a patch is given), cached by key. */
@@ -861,28 +1053,39 @@ async function alsemTree(
   if (hit) return hit as unknown as AlsemTree;
   await Deno.mkdir(cache, { recursive: true });
   const ws = join(t.dir, "ws", key);
-  const { apps, testRanges } = await mergedWorkspace(src, ws, t);
+  const testRanges = await mergedWorkspace(src, ws, t);
   try {
-    const analyze = JSON.parse(
-      await run(t.alsem, [
-        "analyze",
-        ws,
-        "--format",
-        "json",
-        "--deterministic",
-        "--require-dependencies",
-      ]),
-    ) as J;
-    const ach = JSON.parse(
-      await run(t.ach, [
-        "--project",
-        ws,
-        "--analyze",
-        "--format",
-        "json",
-        "--no-telemetry",
-      ]),
-    ) as { metrics: RoutineMetric[] };
+    const versions: Versions = {};
+    const diagnostics: TaggedDiagnostic[] = [];
+    const envelope = (command: string, text: string, kind: string) => {
+      const e = alsemEnvelope(JSON.parse(text), kind);
+      versions[command] = {
+        alsemVersion: e.alsemVersion,
+        schemaVersion: e.schemaVersion,
+      };
+      diagnostics.push(...e.diagnostics.map((d) => ({ ...d, command })));
+      return e.payload;
+    };
+    // Exit 4 (--require-dependencies) throws: the execution fails, never under-reports.
+    const analyzeText = await run(t.alsem, [
+      "analyze",
+      ws,
+      "--format",
+      "json",
+      "--deterministic",
+      "--require-dependencies",
+    ]);
+    const analyze = envelope("analyze", analyzeText, "analyze-report");
+    // No envelope: top level is metrics, findings, summary.
+    const achText = await run(t.ach, [
+      "--project",
+      ws,
+      "--analyze",
+      "--format",
+      "json",
+      "--no-telemetry",
+    ]);
+    const ach = JSON.parse(achText) as AchReport;
     const fingerprint = join(cache, "fingerprint.json");
     await run(t.alsem, [
       "fingerprint",
@@ -893,16 +1096,10 @@ async function alsemTree(
       "--out",
       fingerprint,
     ]);
-    let touches: DigestTouches | null = null;
+    let touches = digestTouches({ entries: [] });
     if (patch) {
-      const diff = join(ws, "change.diff");
-      await Deno.writeTextFile(
-        diff,
-        patch.replace(/^--- start\//gm, "--- a/").replace(
-          /^\+\+\+ final\//gm,
-          "+++ b/",
-        ),
-      );
+      const diff = join(cache, "change.diff");
+      await Deno.writeTextFile(diff, digestPatch(patch));
       const digest = await run(t.alsem, [
         "digest",
         ws,
@@ -913,23 +1110,30 @@ async function alsemTree(
         "--deterministic",
       ]);
       await writeAtomic(join(cache, "digest.json"), digest);
-      touches = digestTouches(JSON.parse(digest));
+      touches = digestTouches(envelope("digest", digest, "digest"));
     }
-    await writeAtomic(join(cache, "analyze.json"), JSON.stringify(analyze));
+    await writeAtomic(join(cache, "analyze.json"), analyzeText);
+    await writeAtomic(join(cache, "ach.json"), achText);
     const tree: AlsemTree = {
       findings: alsemFindings(analyze),
       metrics: ach.metrics,
-      apps,
+      unused: unusedProcedures(ach),
       testRanges,
       fingerprint,
       touches,
-      diagnostics: (analyze["diagnostics"] ?? []) as unknown[],
+      versions,
+      diagnostics,
     };
     await writeAtomic(done, JSON.stringify(tree));
     return tree;
   } finally {
-    await Deno.remove(ws, { recursive: true }).catch(() => {});
+    await removeWorkspace(ws);
   }
+}
+
+/** `--only`: no list keeps every execution, else those whose id starts with a listed id. */
+export function keepExecution(id: string, only: string[]): boolean {
+  return !only.length || only.some((p) => id.startsWith(p));
 }
 
 /** H-29 ruling (2026-10-18): a harness_crash execution stays in the per-execution rows, flagged, but out of every al-sem aggregate. */
@@ -966,9 +1170,11 @@ interface AlsemRow {
   metrics: AlsemMetrics;
   introduced: (AlsemFinding & { count: number })[];
   deltas: RoutineDelta[];
-  blast: { production: BlastSide; test: BlastSide };
+  unused: UnusedProc[];
+  blast: Blast;
   touches: DigestTouches;
-  diagnostics: unknown[];
+  versions: { start: Versions; final: Versions; diff: Versions };
+  diagnostics: (TaggedDiagnostic & { tree: string })[];
 }
 
 const METRIC_KEYS: (keyof AlsemMetrics)[] = [
@@ -977,10 +1183,14 @@ const METRIC_KEYS: (keyof AlsemMetrics)[] = [
   "alsem_new_test_findings",
   "complexity_delta",
   "lines_delta",
+  "fan_in_delta",
   "max_routine_complexity",
   "routines_added",
   "routines_changed",
+  "new_unused",
+  "new_unused_public",
   "abi_changes",
+  "abi_signature_changes",
   "schema_changes",
   "event_changes",
   "permission_changes",
@@ -1033,6 +1243,7 @@ async function alsemStep(
   });
   let n = 0;
   let skipped = 0;
+  const failed: { id: string; error: string }[] = [];
   await pool(jobs, todo, async (r) => {
     const hash = hashOf.get(r.id)!;
     if (await readDone(execDir, r.id, stampOf(r.id))) {
@@ -1062,30 +1273,54 @@ async function alsemStep(
         ]);
         await Deno.rename(tmp, diffOut);
       }
+      const diff = alsemEnvelope(await readJson(diffOut), "diff-report");
       const introduced = introducedFindings(s.findings, f.findings);
-      const deltas = routineDeltas(s.metrics, f.metrics, {
-        ...s.apps,
-        ...f.apps,
-      });
-      const blast = blastRadius(await readJson(diffOut), f.testRanges);
-      const touches = f.touches!;
+      const touches = f.touches;
+      const deltas = routineDeltas(
+        s.metrics,
+        f.metrics,
+        new Set(touches.changed_routines),
+      );
+      const unused = newUnused(s.unused, f.unused);
+      const blast = blastRadius(diff.payload, f.testRanges);
       const row: AlsemRow = {
         id: r.id,
         arm: r.arm,
         task: r.task,
         repeat: r.repeat,
         verdict: r.verdict,
-        metrics: alsemSummary({ introduced, deltas, blast, touches }),
+        metrics: alsemSummary({ introduced, deltas, unused, blast, touches }),
         introduced,
         deltas,
+        unused,
         blast,
         touches,
-        diagnostics: [...s.diagnostics, ...f.diagnostics],
+        versions: {
+          start: s.versions,
+          final: f.versions,
+          diff: {
+            diff: {
+              alsemVersion: diff.alsemVersion,
+              schemaVersion: diff.schemaVersion,
+            },
+          },
+        },
+        diagnostics: [
+          ...s.diagnostics.map((d) => ({ ...d, tree: "start" })),
+          ...f.diagnostics.map((d) => ({ ...d, tree: "final" })),
+          ...diff.diagnostics.map((d) => ({
+            ...d,
+            command: "diff",
+            tree: "diff",
+          })),
+        ],
       };
       // Written last and atomically: only a complete row marks the execution done.
       await writeDone(execDir, r.id, stampOf(r.id), row);
     } catch (err) {
-      console.error(`[WARN] alsem ${r.id}: ${(err as Error).message}`);
+      const error = (err as Error).message;
+      failed.push({ id: r.id, error });
+      console.error(`[WARN] alsem ${r.id}: ${error}`);
     }
     if (++n % 10 === 0) console.error(`[alsem] ${n}/${todo.length}`);
   });
@@ -1107,10 +1342,15 @@ async function alsemStep(
       alsemExclusionText(excluded)
     }`,
   );
+  const diagnostics = all.flatMap((r) => r.diagnostics);
   console.error(
     `[alsem] ${all.length}/${todo.length} done (${skipped} were done already, ${
       todo.length - all.length
-    } failed), ${excluded.length} excluded from aggregates`,
+    } failed, ${
+      failed.filter((f) => f.error.startsWith("missing dependencies")).length
+    } of them on missing dependencies), ${excluded.length} excluded from aggregates, ${diagnostics.length} al-sem diagnostics in ${
+      all.filter((r) => r.diagnostics.length).length
+    } executions`,
   );
   await Deno.writeTextFile(
     join(t.dir, "executions.json"),
@@ -1200,6 +1440,16 @@ async function alsemStep(
     join(t.dir, "summary.json"),
     JSON.stringify(
       {
+        // This run's failures (exit 4 = missing dependencies); a rerun retries them.
+        failed,
+        diagnostics: {
+          executions_with_diagnostics:
+            all.filter((r) => r.diagnostics.length).length,
+          by_code: diagnostics.reduce(
+            (m, d) => (bump(m, `${d.command}:${d.severity}:${d.code}`), m),
+            {} as Record<string, number>,
+          ),
+        },
         excluded: excluded.map((r) => ({
           id: r.id,
           arm: r.arm,
@@ -1480,6 +1730,7 @@ async function main() {
       "ach",
       "symbols",
       "alsem-jobs",
+      "only",
     ],
     collect: ["pair"],
     default: { repo: ".", "alsem-jobs": "3" },
@@ -1490,7 +1741,7 @@ async function main() {
     (args.alsem && (!args.ach || !args.symbols))
   ) {
     console.error(
-      "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .]\n" +
+      "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .] [--only <id or id prefix>,...]\n" +
         "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]",
     );
     Deno.exit(2);
@@ -1524,9 +1775,11 @@ async function main() {
   // Latest attempt per cell.
   const execDir = join(results, "executions", campaignId);
   const cells = new Map<string, J>();
+  const only = args.only ? args.only.split(",") : [];
   for await (const f of Deno.readDir(execDir)) {
     if (!f.name.endsWith(".json")) continue;
     const e = await readJson(join(execDir, f.name));
+    if (!keepExecution(e["id"] as string, only)) continue;
     const key = `${e["arm"]}|${e["task_id"]}|${e["repeat"]}`;
     const prev = cells.get(key);
     if (!prev || (e["attempt"] as number) > (prev["attempt"] as number)) {
@@ -1906,7 +2159,7 @@ async function main() {
           cache: t.cache,
           symbols: { store: t.store, packages: t.lock.length, rev: args.rev },
           workspace:
-            "one synthetic app per tree (mergedAppJson); analyze --require-dependencies",
+            "one synthetic app per tree (mergedAppJson), scratch copy with .alpackages a junction to the symbol store; analyze --require-dependencies; alsem commands --deterministic",
         },
         null,
         1,
