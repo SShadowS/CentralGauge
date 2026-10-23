@@ -175,6 +175,29 @@ The metrics count production code only (not the Test app), unless the name says 
   execution among all executions of its task by ascending density (ties average, null unranked).
   `summary.json` carries `curated_density` (n, null_count, median, mean, zero_share) and
   `within_task_rank` (median, mean) per arm and, per side, per matched pair.
+
+al-sem 2.0.3 (A-03b; the script now requires its output: a 2.0.2 build fails closed on the first
+analyze finding without `looseFingerprint`):
+- Introduced findings follow the looseFingerprint rule: per key, `max(0, after - before)`, summed
+  (the key is not unique). The new ones are named by pairing start and final on `fingerprint` +
+  `looseFingerprint` first, then on `looseFingerprint`; a finding that moved to another routine is
+  not new. A-03's fingerprint-only count stays as `alsem_new_findings_fp`, `curated_weighted_fp`,
+  `curated_density_fp` (and `introduced_fp` in executions.json). Comparable only for the same
+  scope, filters and dependencies (the runner never uses `--baseline` or `--limit`).
+- Test quality (`al-call-hierarchy` `test_quality`, validated strictly; every tree keeps its
+  [Test] procedures): over the Test app's [Test] procedures introduced (not in start) or changed
+  (a changed root of the digest) by the execution: `new_test_procs`, `test_procs_scored`,
+  `test_assert_reachable_mean`, `test_zero_assert_share`, `test_asserterror_share`,
+  `test_areequal_literal_share` (+ the underlying counts). Shares are null, not 0, with no scored
+  procedure. The digest marks a procedure changed at hunk level, so a procedure inside a hunk's
+  context lines can count as changed.
+- Test coverage: the digest runs with `--tests` (the only change to the digest output is the added
+  `payload.testCoverage`; the file is `digest-tests-<patch>.json`). `test_coverage_ratio`
+  (covered / changed production routines, null with none changed), `test_changed_routines`,
+  `test_covered_routines`, `test_uncovered_routines`. al-sem leaves test code out of the ratio.
+- `summary.json` per arm / per side of a pair: `test_quality` and `test_coverage` pooled over the
+  executions (shares from summed counts), `median_nullable` and, per pair, `median_diff_nullable`
+  over the executions / pairs where the metric is defined.
 - `complexity_delta`, `lines_delta`, `fan_in_delta`, `max_routine_complexity`,
   `routines_added`, `routines_changed`: from al-call-hierarchy's per-routine metrics, joined
   start to final by `routine_id`. A routine counts when added, removed, with complexity / length /

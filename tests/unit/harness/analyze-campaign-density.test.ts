@@ -24,6 +24,7 @@ const f = (
   line: 1,
   app,
   fingerprint: `${detector}-${severity}-${confidence}-${app}`,
+  looseFingerprint: `loose-${detector}-${app}`,
   count,
 });
 
@@ -35,9 +36,15 @@ Deno.test("alsemFindings keeps confidence.level", () => {
         severity: "high",
         confidence: { level: "likely" },
         fingerprint: "a",
+        looseFingerprint: "la",
         primaryLocation: { file: "ws:Core/src/A.al" },
       },
-      { detector: "d1", severity: "high", fingerprint: "b" },
+      {
+        detector: "d1",
+        severity: "high",
+        fingerprint: "b",
+        looseFingerprint: "lb",
+      },
     ],
   });
   assertEquals(x!.confidence, "likely");

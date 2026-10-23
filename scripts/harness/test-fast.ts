@@ -33,6 +33,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}adapter.test.ts`]: c(true, 0),
   [`${H}al-tools-mcp.test.ts`]: c(true, 6),
   [`${H}allocation.test.ts`]: c(true, 0),
+  [`${H}analyze-campaign-alsem203.test.ts`]: c(true, 0),
   [`${H}analyze-campaign-density.test.ts`]: c(true, 0),
   [`${H}analyze-campaign.test.ts`]: c(true, 0),
   [`${H}app-package.test.ts`]: c(true, 0),

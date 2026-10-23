@@ -322,6 +322,7 @@ const finding = (
   line = 1,
   fingerprint = `${detector}|${object}|${routine}`,
 ) => ({
+  looseFingerprint: `${detector}|${object}`,
   detector,
   title: detector,
   severity,
@@ -530,6 +531,7 @@ Deno.test("alsemFindings + introducedFindings: final minus start matched by fing
     line: 9,
     app: "Test",
     fingerprint: "d34-commit-in-loop|CGR Tests|T1",
+    looseFingerprint: "d34-commit-in-loop|CGR Tests",
   });
   assertEquals(introducedFindings(start, final), [
     { ...final[2]!, count: 1 },
@@ -931,6 +933,11 @@ Deno.test("digestTouches: production roots, tables written / read, events publis
     unresolved: 1,
     unmapped_hunks: 1,
     unmatched_files: 1,
+    test_changed_routines: 0,
+    test_covered_routines: 0,
+    test_uncovered_routines: 0,
+    test_coverage_ratio: null,
+    test_coverage_status: null,
   });
 });
 
@@ -989,6 +996,7 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
     line: 1,
     app,
     fingerprint: `${detector}-${app}`,
+    looseFingerprint: `loose-${detector}-${app}`,
     count,
   });
   const d = (
@@ -1070,11 +1078,50 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
         unresolved: 0,
         unmapped_hunks: 1,
         unmatched_files: 2,
+        test_changed_routines: 4,
+        test_covered_routines: 3,
+        test_uncovered_routines: 1,
+        test_coverage_ratio: 0.75,
+        test_coverage_status: "complete",
       },
       changed_prod_lines: 50,
+      // the fingerprint rule counts one more (a moved finding)
+      introduced_fp: [
+        f("d1", "high", "Core", 2),
+        f("d3", "medium", "Core", 1),
+        f("d34", "critical", "Test", 1),
+        f("d11", "medium", "Core", 1),
+      ],
+      testQuality: {
+        new_test_procs: 0,
+        scored: 0,
+        assert_reachable: 0,
+        zero_assert: 0,
+        asserterror: 0,
+        areequal_total: 0,
+        areequal_literal: 0,
+      },
     }),
     {
       alsem_new_findings: 3,
+      alsem_new_findings_fp: 4,
+      curated_weighted_fp: 8,
+      curated_density_fp: 16,
+      new_test_procs: 0,
+      test_procs_scored: 0,
+      test_assert_reachable_sum: 0,
+      test_assert_reachable_mean: null,
+      test_zero_assert_procs: 0,
+      test_zero_assert_share: null,
+      test_asserterror_procs: 0,
+      test_asserterror_share: null,
+      test_areequal_total: 0,
+      test_areequal_literal: 0,
+      test_areequal_literal_share: null,
+      test_changed_routines: 4,
+      test_covered_routines: 3,
+      test_uncovered_routines: 1,
+      test_coverage_ratio: 0.75,
       alsem_new_high_findings: 2,
       alsem_new_test_findings: 1,
       curated_weighted: 7,
@@ -1261,6 +1308,8 @@ const ERR = { code: "AL0001", message: "boom", severity: "error" };
 interface Fake {
   t: AlsemTools;
   calls: string[];
+  /** Every spawn: the subcommand, then its arguments. */
+  argv: string[][];
   count: (what: string) => number;
   /** Tool-call overrides: the stdout (or --out file text) a command returns. */
   override: Record<string, string>;
@@ -1271,6 +1320,20 @@ interface Fake {
 
 const DIGEST_ONE = {
   ...DIGEST_PAYLOAD,
+  testCoverage: {
+    changedRoutines: 1,
+    coverage: { reasons: [], status: "complete" },
+    covered: [{
+      display: "R",
+      reachedFrom: ["t"],
+      stableId: "r1",
+      viaEvent: false,
+    }],
+    coveredChangedRoutines: 1,
+    excludedTestCode: 0,
+    ratio: 1,
+    testProceduresConsidered: 1,
+  },
   entries: [{
     routine: { stableId: "r1", anchor: { file: "ws:Core/A.al" } },
     effects: [],
@@ -1282,6 +1345,7 @@ async function fake(root: string): Promise<Fake> {
   await Deno.mkdir(store, { recursive: true });
   const f: Fake = {
     calls: [],
+    argv: [],
     wss: [],
     override: {},
     results: join(root, "results"),
@@ -1291,6 +1355,7 @@ async function fake(root: string): Promise<Fake> {
   const exec = async (cmd: string, args: string[]) => {
     const sub = cmd === "ach" ? "ach" : args[0]!;
     f.calls.push(sub);
+    f.argv.push([sub, ...args]);
     await delay(15);
     const out = args.includes("--out")
       ? args[args.indexOf("--out") + 1]!
@@ -1306,9 +1371,29 @@ async function fake(root: string): Promise<Fake> {
           confidence: { level: "likely" },
           primaryLocation: { file: "ws:Core/A.al", line: 1 },
           fingerprint: "fp1",
+          looseFingerprint: "lfp1",
         }],
       }),
-      ach: JSON.stringify({ metrics: [], findings: [] }),
+      ach: JSON.stringify({
+        metrics: [],
+        findings: [],
+        test_quality: {
+          procedures: [],
+          codeunits: [],
+          workspace: {
+            test_procedures: 0,
+            assert_count: 0,
+            assert_count_reachable: 0,
+            zero_assert_procedures: 0,
+            asserterror_procedures: 0,
+            are_equal: {
+              total: 0,
+              literal_expected: 0,
+              expression_expected: 0,
+            },
+          },
+        },
+      }),
       digest: envJson("digest", "1.6.0", [], DIGEST_ONE),
       fingerprint: envJson("capability-snapshot", "1.1.0", [], { x: 1 }),
       diff: envJson("diff-report", "1.0.0", [], DIFF_PAYLOAD),
@@ -1721,6 +1806,114 @@ Deno.test("resolveAlsemVersion (the entrypoint's version step): `--version` is n
   assertEquals(runs, 0);
   assertEquals(await resolveAlsemVersion(prev, "abd", run), "al-sem 9.9.9");
   assertEquals(runs, 1);
+});
+
+Deno.test("A-03b: digest runs with --tests into its own cache file; a digest without testCoverage fails the execution; rows and summary carry test quality and coverage", async () => {
+  await withFake(async (f) => {
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.failed, []);
+    const digests = f.argv.filter((a) => a[0] === "digest");
+    assertEquals(digests.length, 1);
+    assert(digests[0]!.includes("--tests"), digests[0]!.join(" "));
+    const names = (await Array.fromAsync(Deno.readDir(join(f.t.cache, "h1"))))
+      .map((e) => e.name);
+    assert(
+      names.some((n) => /^digest-tests-[0-9a-f]{12}\.json$/.test(n)),
+      names.join(),
+    );
+    assert(
+      !names.some((n) => /^digest-[0-9a-f]{12}\.json$/.test(n)),
+      names.join(),
+    );
+    const m = r.rows[0]!.metrics;
+    assertEquals(
+      [
+        m["test_changed_routines"],
+        m["test_covered_routines"],
+        m["test_coverage_ratio"],
+      ],
+      [1, 1, 1],
+    );
+    // looseFingerprint rule: the final finding (lfp1) is absent from the clean start tree.
+    assertEquals([m["alsem_new_findings"], m["alsem_new_findings_fp"]], [1, 1]);
+    const summary = JSON.parse(
+      await Deno.readTextFile(join(f.t.dir, "summary.json")),
+    );
+    const arm = summary.per_arm["e1"];
+    assertEquals(arm.test_coverage.ratio, 1);
+    assertEquals(arm.test_quality.procs_scored, 0);
+    assertEquals(arm.test_quality.assert_reachable_mean, null);
+  });
+  await withFake(async (f) => {
+    const noTests = { ...DIGEST_ONE } as Record<string, unknown>;
+    delete noTests["testCoverage"];
+    f.override["digest"] = envJson("digest", "1.6.0", [], noTests);
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 0);
+    assertEquals(r.failed.length, 1);
+    assert(r.failed[0]!.error.includes("testCoverage"), r.failed[0]!.error);
+  });
+});
+
+Deno.test("A-03b: the tree carries the Test app's [Test] procedures; a changed one is scored from the final tree's digest roots", async () => {
+  await withFake(async (f) => {
+    const proc = (name: string, reach: number) => ({
+      path: "Test/src/T.al",
+      line: 1,
+      object_type: "Codeunit",
+      object_name: "T",
+      object_id: 1,
+      object_stable_id: "a/Codeunit/1",
+      procedure_name: name,
+      routine_id: `r1`,
+      assert_count: reach,
+      assert_count_reachable: reach,
+      zero_assert: reach === 0,
+      has_asserterror: false,
+      are_equal: { total: 0, literal_expected: 0, expression_expected: 0 },
+    });
+    const achText = (reach: number) =>
+      JSON.stringify({
+        metrics: [],
+        findings: [],
+        test_quality: {
+          procedures: [proc("TestX", reach)],
+          codeunits: [],
+          workspace: {
+            test_procedures: 1,
+            assert_count: reach,
+            assert_count_reachable: reach,
+            zero_assert_procedures: reach === 0 ? 1 : 0,
+            asserterror_procedures: 0,
+            are_equal: {
+              total: 0,
+              literal_expected: 0,
+              expression_expected: 0,
+            },
+          },
+        },
+      });
+    const base = f.t.exec!;
+    // start tree: TestX with 0 asserts; final tree: 3 asserts, and the digest names r1 as changed.
+    f.t.exec = ((cmd: string, args: string[]) =>
+      cmd === "ach"
+        ? Promise.resolve(
+          achText(basename(args[1] ?? "").startsWith("start-") ? 0 : 3),
+        )
+        : base(cmd, args)) as typeof base;
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.failed, []);
+    const m = r.rows[0]!.metrics;
+    assertEquals(
+      [
+        m["new_test_procs"],
+        m["test_procs_scored"],
+        m["test_assert_reachable_sum"],
+        m["test_zero_assert_procs"],
+      ],
+      [0, 1, 3, 0],
+    );
+  });
 });
 
 Deno.test("keepExecution: no filter keeps all; otherwise an id or id prefix in the list", () => {
