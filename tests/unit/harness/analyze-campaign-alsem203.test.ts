@@ -379,6 +379,8 @@ Deno.test("alsemEnvelope: an analyze finding without looseFingerprint (2.0.2 out
   const finding = {
     detector: "d1",
     severity: "high",
+    confidence: { level: "likely" },
+    primaryLocation: { file: "ws:Core/A.al" },
     fingerprint: "fp",
     looseFingerprint: "lfp",
   };
