@@ -75,6 +75,136 @@ or more of the wall in sub-agents), `timeout_main_loop`, `other_termination`, `n
 `scope_creep`, `edited_shipped_tests`, `uses_restored_shipped_edit` (a missing name in the
 verdict build error is one the agent added to a shipped test file), `review_heavy`.
 
+### Static analysis with al-sem (when a pinned binary is given)
+
+Run this when the user or the task names an al-sem build. Pinned build: release v2.0.1 in
+`H:\cg-coord\analysis\tools\al-sem-v2.0.1\` (the first supported version; the script parses the
+2.0.1 output contract only, `H:\cg-coord\tasks\A-03\alsem-2.0.1-spec.md`):
+- `alsem-windows-x64.exe`, sha256 `b323c73b9ae0b4fe8da8cbaf6ac059fdbb51f2e10b2ef3ec0e089ce4ee2f5637`
+  (`--version` prints `al-sem 2.0.1`)
+- `al-call-hierarchy-windows-x64.exe`, sha256
+  `52373bafa1da945264f678d9df1bbfb2ae1f3599a09911509492243654407ea9` (no `--version`)
+
+For a newer build, download it with `gh release download <tag> -R SShadowS/al-sem` into a new
+folder. Record both hashes and say which build you used. A build whose envelope `kind` or
+`schemaVersion` the script does not know fails every execution loudly (`[WARN] alsem <id>`):
+extend `ALSEM_SCHEMAS` only after reading that build's contract.
+
+Add three options to the step-2 command:
+- `--alsem <alsem exe> --ach <al-call-hierarchy exe>`
+- `--symbols <symbol store>`: a content-addressed `<sha256>.app` store, such as any
+  `H:\cg-coord\jobs\*\results\harness\symbols` that holds every package of
+  `harness-tasks/symbols.lock.json` at the rev. The script checks every hash and refuses a store
+  with a missing package.
+- `[--alsem-jobs 3]`
+- `[--only <id or id prefix>,...]`: a smoke on a few executions.
+
+Per tree, the script builds one synthetic app in a scratch copy under `<out>\alsem\ws\`: the
+refapp's 7 apps merged (`mergedAppJson`), `.alpackages` a directory junction to the symbol store
+(al-call-hierarchy reads only `<ws>\.alpackages`; without the Microsoft symbols every Base App
+event subscriber shows as unused). The junction is removed with `cmd /c rmdir` before the scratch
+copy is deleted; never delete a scratch workspace recursively by hand while the junction is in it,
+that can follow it into the store. On each tree it runs (alsem commands with `--deterministic`):
+- `alsem analyze --require-dependencies`: exit 4 (a missing dependency) fails the execution, it is
+  never skipped or under-reported.
+- `al-call-hierarchy --analyze` (no envelope).
+- `alsem fingerprint`
+
+Then per execution it runs `alsem diff` on the two fingerprints, and `alsem digest --diff` with
+the execution's patch (paths relative to the merged app folder, which is the workspace root).
+Every alsem envelope is validated strictly: `alsemVersion` (string), `schemaVersion` (supported
+string), `kind`, `diagnostics` (array of objects with a severity) and `payload` (object) must all be
+present with their types, plus the payload fields the runner reads (analyze `findings`; digest
+`entries`, `summary`, `changedRootsDiagnostics`; diff `findings`, `summary`); nothing is defaulted.
+The al-call-hierarchy output is checked for the metrics / findings fields it uses.
+`alsemVersion`, `schemaVersion` and the envelope `diagnostics` are kept per tree in each row, and
+`summary.json` counts the diagnostics. An error-level envelope diagnostic, an unparseable, wrong-kind
+or incomplete envelope (the fingerprint included) fails the tree and the execution, never a
+zero-findings row. Every cache hit re-validates: the raw analyze / ach / fingerprint files behind a
+`tree.json` are re-checked and `tree.json` re-derived on each read, digest and diff files are
+checked on read. Results are cached under `<out>\alsem\cache\`: the final tree per workspace hash, its digest
+per patch hash (`digest-<patch>.json`), one start tree per baseline identity (`start-<task>-<id>`,
+id = rev + refapp commit + tree content, recorded in `.start\<task>.done`), the diff per
+(start id, final hash). Another `--rev` rebuilds the start artifacts. Entries from before this
+keying (`start-<task>`, `digest.json` + `change.diff`, an empty `.done`) are never adopted: their
+provenance cannot be proven, so start trees and digests are recomputed. `tree.json` carries a
+`derive` version; the derived fields are rebuilt from the cached raw JSON on every read, no tool
+runs. A done row also carries the sha256 of the artifacts it was computed from (start and final
+`tree.json`, the digest, the diff); if one changed or is missing the execution is not done.
+`alsem --version` is skipped when the binary's sha256 matches `tools.json`. A re-run (for example after a rejudge) only redoes the cheap part. Measured
+on v2.0.1 (smoke, 3 jobs): per tree analyze ~32-44 s at ~5.4 GB peak, al-call-hierarchy ~11-13 s
+at ~0.8 GB, fingerprint ~11-14 s at ~0.8 GB, digest ~33-45 s at ~5.4 GB, diff < 1 s: about
+110 s of tool time per execution, plus ~55 s once per task for its start tree. Keep
+`--alsem-jobs` x 5.5 GB under the machine's free memory.
+
+Executions with termination `harness_crash` (H-29 ruling, 2026-10-18) keep their rows in
+`executions.json/.csv` and `introduced.csv`, flagged `excluded`, but are left out of `summary.json`
+(per arm, per pair). `exclusions.md` is the "Static analysis (al-sem)" exclusion paragraph with the
+ids: paste it into findings.md's section.
+
+The step resumes per execution. Each finished execution is written atomically (temp file, then
+rename) to `cache\<build>\exec\<id>.json`, stamped with both full binary hashes, the task rev and
+the workspace hash. A re-run, also after a kill, skips every execution whose file matches, redoes
+failed ones (`[WARN] alsem <id>`), and aggregates all `exec\` files, earlier runs included. Another
+al-sem or al-call-hierarchy build gets its own cache folder and reuses nothing. The log ends with
+`[alsem] N/M done (K were done already, F failed, E of them on missing dependencies), ... D al-sem
+diagnostics in X executions`. Outputs in `<out>\alsem\`:
+- `tools.json`: the build, its hashes and the store.
+- `executions.json` / `.csv`: per execution the metrics below, plus the introduced findings, the
+  routine deltas, the new unused procedures, the blast radius (with `total` =
+  summary.findingsByCategory), the digest touches, the versions and the diagnostics.
+- `introduced.csv`: every introduced finding, with execution, arm and task.
+- `summary.json`:
+  - `failed` (this run's failures with the error) and `diagnostics` (count by command, severity
+    and code).
+  - `per_arm` (all executions) and `per_arm_passing` (verdict pass only): median per metric,
+    executions above zero, introduced findings by detector.
+  - `per_pair`: median of variant minus base per metric, and the count of pairs where the
+    variant is higher or lower, over `all` matched pairs and over `both_pass`.
+
+The metrics count production code only (not the Test app), unless the name says test:
+- `alsem_new_findings` / `alsem_new_high_findings` / `alsem_new_test_findings`: final minus
+  start, matched by the analyze finding's `fingerprint`, as a multiset; high = critical or high.
+- `curated_weighted`, `changed_prod_lines`, `curated_density`, `alsem_d3_introduced`,
+  `alsem_d9_introduced` (owner definition 2026-10-23): introduced findings with
+  `confidence.level == "likely"` only, weighted critical 5 / high 3 / medium 1 / low and info 0,
+  with `d3-missing-setloadfields` and every `d9*` detector left out (their raw introduced counts,
+  any confidence, are the two `alsem_d*` columns). `changed_prod_lines` = added + removed lines of
+  the execution's patch in non-Test files; `curated_density` = `curated_weighted` per 100 of them,
+  null (not 0) when no production line changed. `within_task_rank` (executions.csv/json) ranks an
+  execution among all executions of its task by ascending density (ties average, null unranked).
+  `summary.json` carries `curated_density` (n, null_count, median, mean, zero_share) and
+  `within_task_rank` (median, mean) per arm and, per side, per matched pair.
+- `complexity_delta`, `lines_delta`, `fan_in_delta`, `max_routine_complexity`,
+  `routines_added`, `routines_changed`: from al-call-hierarchy's per-routine metrics, joined
+  start to final by `routine_id`. A routine counts when added, removed, with complexity / length /
+  parameters changed, or a changed root of the patch (`routine_id` = digest `routine.stableId`;
+  never join it with analyze's `routineId`, a different id). `d_fan_in` is null when a side has no
+  call graph (interface members).
+- `new_unused` / `new_unused_public`: al-call-hierarchy `unused_procedure` findings in final but
+  not in start; access from the metrics row at the same path and line. `new_unused` counts local,
+  internal and protected; public ones (unused inside the app, maybe called by other apps) count
+  apart.
+- `abi_changes`, `abi_signature_changes` (kind `procedure-signature-changed`), `schema_changes`,
+  `event_changes`, `permission_changes`: `alsem diff` categories, on objects outside the Test
+  app's id range; the per-side counts must add up to `summary.findingsByCategory` or the
+  execution fails.
+- `tables_written`, `events_published`: from digest effects of the changed production routines.
+- `unmapped_hunks`: hunks digest could not place in a routine (`unmatched_files`, kept per row,
+  is normal for files without routines, such as an enum or a fields-only table extension).
+
+Known al-sem gaps; state the ones that bear on a number in the caveats:
+- #157: no multi-app source workspaces, hence the synthetic merged app. Internal and
+  internalsVisibleTo boundaries vanish, so `access` internal is internal to the merged app.
+- Check `unmapped_hunks` all the same. It should be 0; if not, it marks a new digest gap.
+
+Open new issues there (with a repro) for any further gap, and list them in the report.
+
+Spot-check 3 introduced findings before writing about them. Take the `introduced.csv` row, open
+the final workspace file at the line (`<results>\workspaces\<hash>\<file>`), and confirm that
+the starting tree (`<out>\.start\<task>`) has no finding of that detector in that routine
+(`<out>\alsem\cache\start-<task>\analyze.json`).
+
 ## 3. Blind structural comparison (exploratory only)
 
 Write this rubric to `<out>\quality\rubric.md` verbatim, before building any packet:
@@ -226,7 +356,14 @@ EOF
    preference counts and mean scores per criterion, named defects. A judge's reason speaks of
    "A" and "B": map each named defect to its arm through `quality/key.json` before writing it
    (the P-01 run got two of four wrong on the first pass).
-8. **Method notes**: what the profile fields and file-change flags mean (as A-01's findings).
+8. **Static analysis (al-sem)**, when it ran, exploratory and never a headline metric:
+   - the build and its hashes (`alsem\tools.json`);
+   - the per-arm medians and counts (all executions and passing only);
+   - the per-pair median differences for the comparisons in question;
+   - the top introduced detectors per arm;
+   - 3 spot-checked findings with file and line;
+   - the al-sem issues that limit the numbers.
+9. **Method notes**: what the profile fields and file-change flags mean (as A-01's findings).
 
 A-01's `H:\cg-coord\analysis\P-02\findings.md` is the reference.
 

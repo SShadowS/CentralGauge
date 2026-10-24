@@ -5,15 +5,22 @@
  *
  *   deno run --allow-all scripts/harness/analyze-campaign.ts <campaign-id>
  *     --results <harness results root> --rev <task rev> --out <dir>
- *     [--pair baseArm:variantArm ...] [--repo .]
+ *     [--pair baseArm:variantArm ...] [--repo .] [--only <id prefix>,...]
  *
  * Without --pair every variant is paired with the experiment baseline.
+ * --only keeps the executions whose id starts with a listed prefix (a smoke).
  * Outputs: executions.json/.csv, pairs.json, losses.csv, summary.json,
  * diffs/<execution>.patch and dossiers/<base>__<variant>/<task>-r<n>.md.
+ *
+ * A-03: with `--alsem <alsem> --ach <al-call-hierarchy> --symbols <store>
+ * [--alsem-jobs 3]` it also runs al-sem (v2.0.1 output contract) on each
+ * starting tree and final workspace (no containers) into alsem/: introduced
+ * findings, routine metric deltas, new unused procedures, blast radius (alsem
+ * diff) and digest touches, per execution, per arm and per matched pair.
  */
 
 import { parseArgs } from "@std/cli/parse-args";
-import { basename, join } from "@std/path";
+import { basename, join, resolve } from "@std/path";
 import type { TraceEvent } from "../../src/harness/trace.ts";
 import { applyOverlay, TAR_BINARY } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
@@ -243,7 +250,7 @@ interface FileChange {
   shipped_test: boolean;
 }
 
-interface Row {
+export interface Row {
   id: string;
   arm: string;
   task: string;
@@ -267,6 +274,758 @@ interface Row {
   patch: string | null;
 }
 
+// ---------------------------------------------------------------- al-sem (A-03)
+
+/** The al-sem 2.0.1 output contract: schemaVersion per envelope kind. */
+const ALSEM_SCHEMAS: Record<string, string[]> = {
+  "analyze-report": ["1.0.0"],
+  "diff-report": ["1.0.0"],
+  digest: ["1.6.0"],
+  "capability-snapshot": ["1.1.0"],
+};
+
+/** Error-level diagnostics of an al-sem envelope: the analysis is incomplete, so the tree / execution fails (never a zero-findings row). */
+export function errorDiagnostics(
+  ds: { severity?: string }[],
+): { severity?: string }[] {
+  return ds.filter((d) => String(d.severity).toLowerCase() === "error");
+}
+
+export interface AlsemDiagnostic {
+  code: string;
+  message: string;
+  severity: string;
+}
+
+export interface AlsemEnvelope {
+  alsemVersion: string;
+  schemaVersion: string;
+  kind: string;
+  diagnostics: AlsemDiagnostic[];
+  payload: J;
+}
+
+const SEVERITIES = ["critical", "high", "medium", "low", "info"];
+
+const isObj = (x: unknown): x is J =>
+  typeof x === "object" && x !== null && !Array.isArray(x);
+
+/** Payload fields the runner reads, per envelope kind (2.0.2 shapes). */
+function checkPayload(kind: string, p: J): string | null {
+  const arr = (k: string) => Array.isArray(p[k]) ? null : `payload.${k}`;
+  const obj = (k: string) => isObj(p[k]) ? null : `payload.${k}`;
+  const str = (x: unknown) => typeof x === "string" && x !== "";
+  const first = <T>(xs: T[], bad: (x: T) => string | null) => {
+    for (const x of xs) {
+      const b = bad(x);
+      if (b) return b;
+    }
+    return null;
+  };
+  switch (kind) {
+    case "analyze-report":
+      return arr("findings") ?? first(p["findings"] as unknown[], (f) => {
+        if (!isObj(f)) return "payload.findings[]";
+        const loc = f["primaryLocation"];
+        const conf = f["confidence"];
+        return !str(f["detector"])
+          ? "payload.findings[].detector"
+          : !SEVERITIES.includes(f["severity"] as string)
+          ? "payload.findings[].severity"
+          : !isObj(conf) ||
+              !["likely", "possible"].includes(conf["level"] as string)
+          ? "payload.findings[].confidence.level"
+          : !isObj(loc) || !str(loc["file"])
+          ? "payload.findings[].primaryLocation.file"
+          : !str(f["fingerprint"])
+          ? "payload.findings[].fingerprint"
+          : null;
+      });
+    case "digest":
+      return arr("entries") ?? obj("summary") ??
+        arr("changedRootsDiagnostics") ??
+        first(
+          ["rootsRequested", "rootsResolved", "totalUnresolved"],
+          (k) =>
+            (p["summary"] as J)[k] === undefined ||
+              typeof (p["summary"] as J)[k] === "number"
+              ? null
+              : `payload.summary.${k}`,
+        ) ??
+        first(
+          p["changedRootsDiagnostics"] as unknown[],
+          (d) =>
+            isObj(d) && str(d["kind"])
+              ? null
+              : "payload.changedRootsDiagnostics[].kind",
+        ) ??
+        first(p["entries"] as unknown[], (e) => {
+          if (!isObj(e) || !isObj(e["routine"])) {
+            return "payload.entries[].routine";
+          }
+          const r = e["routine"];
+          const anchor = r["anchor"];
+          const fx = e["effects"];
+          return !str(r["stableId"])
+            ? "payload.entries[].routine.stableId"
+            : anchor !== undefined && !isObj(anchor)
+            ? "payload.entries[].routine.anchor"
+            : fx !== undefined && !Array.isArray(fx)
+            ? "payload.entries[].effects"
+            : first((fx ?? []) as unknown[], (x) =>
+              isObj(x) && str(x["type"]) &&
+                (x["detail"] === undefined || isObj(x["detail"]))
+                ? null
+                : "payload.entries[].effects[]");
+        });
+    case "diff-report": {
+      const cats = isObj(p["summary"])
+        ? (p["summary"] as J)["findingsByCategory"]
+        : undefined;
+      return arr("findings") ?? obj("summary") ??
+        (!isObj(cats) ||
+            !Object.values(cats).every((n) =>
+              typeof n === "number" && Number.isInteger(n) && n >= 0
+            )
+          ? "payload.summary.findingsByCategory"
+          : null) ??
+        first(p["findings"] as unknown[], (f) => {
+          if (!isObj(f)) return "payload.findings[]";
+          const s = f["subject"];
+          return !str(f["kind"])
+            ? "payload.findings[].kind"
+            : !str(f["category"])
+            ? "payload.findings[].category"
+            : !SEVERITIES.includes(f["severity"] as string)
+            ? "payload.findings[].severity"
+            // A-03 self-check r3: the id blastRadius reads, same precedence.
+            : !isObj(s) ||
+                !str(
+                  s["newStableId"] ?? s["oldStableId"] ??
+                    s["normalizedStableId"],
+                )
+            ? "payload.findings[].subject"
+            : null;
+        });
+    }
+    default:
+      return null; // capability-snapshot: only handed to `alsem diff` as a file
+  }
+}
+
+/**
+ * An `alsem ... --format json` envelope. Strict: every required field must be
+ * present with its type (never coerced or defaulted), the kind and schemaVersion
+ * must be the expected ones, and the payload must have the fields the runner reads.
+ */
+export function alsemEnvelope(doc: unknown, kind: string): AlsemEnvelope {
+  if (!isObj(doc)) throw new Error(`al-sem ${kind}: output is not an object`);
+  const d = doc;
+  if (d["kind"] !== kind) {
+    throw new Error(`al-sem: expected kind "${kind}", got kind "${d["kind"]}"`);
+  }
+  const v = d["schemaVersion"];
+  if (typeof v !== "string" || !ALSEM_SCHEMAS[kind]!.includes(v)) {
+    throw new Error(
+      `al-sem ${kind}: unknown schemaVersion "${v}" (known: ${
+        ALSEM_SCHEMAS[kind]!.join(", ")
+      })`,
+    );
+  }
+  const bad = typeof d["alsemVersion"] !== "string"
+    ? "alsemVersion"
+    : !Array.isArray(d["diagnostics"]) ||
+        !d["diagnostics"].every((x) =>
+          isObj(x) && typeof x["severity"] === "string"
+        )
+    ? "diagnostics"
+    : !isObj(d["payload"])
+    ? "payload"
+    : checkPayload(kind, d["payload"]);
+  if (bad) throw new Error(`al-sem ${kind}: missing or malformed ${bad}`);
+  return {
+    alsemVersion: d["alsemVersion"] as string,
+    schemaVersion: v,
+    kind,
+    diagnostics: d["diagnostics"] as AlsemDiagnostic[],
+    payload: d["payload"] as J,
+  };
+}
+
+/** al-call-hierarchy output (no envelope): the metrics / findings fields the runner reads. */
+export function checkedAch(text: string): AchReport {
+  let ach: unknown;
+  try {
+    ach = JSON.parse(text);
+  } catch {
+    throw new Error("al-call-hierarchy: output is not JSON");
+  }
+  if (
+    !isObj(ach) || !Array.isArray(ach["metrics"]) ||
+    !Array.isArray(ach["findings"])
+  ) {
+    throw new Error("al-call-hierarchy: output has no metrics / findings");
+  }
+  const num = (x: unknown) => typeof x === "number";
+  const str = (x: unknown) => typeof x === "string";
+  const okMetric = (m: unknown) =>
+    isObj(m) && str(m["path"]) && str(m["object_name"]) &&
+    str(m["procedure_name"]) && str(m["access"]) && num(m["line"]) &&
+    num(m["complexity"]) && num(m["line_count"]) && num(m["parameter_count"]);
+  if (!ach["metrics"].every(okMetric)) {
+    throw new Error("al-call-hierarchy: a metrics row is malformed");
+  }
+  if (!ach["findings"].every(isObj)) {
+    throw new Error("al-call-hierarchy: a finding is malformed");
+  }
+  return ach as unknown as AchReport;
+}
+
+/** A failed spawn; exit 4 is `--require-dependencies` refusing an incomplete dependency closure. */
+export function exitError(
+  cmd: string,
+  args: string[],
+  code: number,
+  stderr: string,
+): Error {
+  const what = `${basename(cmd)} ${args.join(" ")}`;
+  return new Error(
+    code === 4
+      ? `missing dependencies (exit 4): ${what}: ${stderr}`
+      : `${what}: exit ${code}: ${stderr}`,
+  );
+}
+
+export interface AlsemFinding {
+  detector: string;
+  severity: string;
+  /** analyze `confidence.level`: "likely" or "possible"; "" when the finding has none. */
+  confidence: string;
+  object: string;
+  routine: string;
+  file: string;
+  line: number;
+  app: string;
+  fingerprint: string;
+}
+
+/** `alsem analyze` payload findings, located by workspace-relative file. */
+export function alsemFindings(payload: J): AlsemFinding[] {
+  return (payload["findings"] as J[]).map((f) => {
+    const loc = (f["primaryLocation"] ?? {}) as J;
+    const file = String(loc["file"] ?? "").replace(/^ws:/, "");
+    return {
+      detector: f["detector"] as string,
+      severity: f["severity"] as string,
+      confidence: String((f["confidence"] as J | undefined)?.["level"] ?? ""),
+      object: (loc["objectName"] as string | undefined) ?? "",
+      routine: (loc["routineName"] as string | undefined) ?? "",
+      file,
+      line: (loc["line"] as number | undefined) ?? 0,
+      app: file.split("/")[0]!,
+      fingerprint: f["fingerprint"] as string,
+    };
+  });
+}
+
+/**
+ * Findings the agent introduced: final minus start, matched by al-sem's
+ * fingerprint (stable across line shifts), as a multiset. One row per
+ * fingerprint: its first surplus final instance and how many surplus there are.
+ */
+export function introducedFindings(
+  start: AlsemFinding[],
+  final: AlsemFinding[],
+): (AlsemFinding & { count: number })[] {
+  const key = (f: AlsemFinding) => f.fingerprint;
+  const budget = new Map<string, number>();
+  for (const f of start) budget.set(key(f), (budget.get(key(f)) ?? 0) + 1);
+  const out = new Map<string, AlsemFinding & { count: number }>();
+  for (const f of final) {
+    const k = key(f);
+    const left = budget.get(k) ?? 0;
+    if (left > 0) {
+      budget.set(k, left - 1);
+      continue;
+    }
+    const row = out.get(k);
+    if (row) row.count++;
+    else out.set(k, { ...f, count: 1 });
+  }
+  return [...out.values()];
+}
+
+/** One `al-call-hierarchy --analyze --format json` metrics row (2.0.1). */
+export interface RoutineMetric {
+  object_type: string;
+  object_name: string;
+  procedure_name: string;
+  line: number;
+  complexity: number;
+  line_count: number;
+  parameter_count: number;
+  /** Workspace-relative POSIX path. */
+  path: string;
+  access: string;
+  /** = alsem digest routine.stableId and diff subject.*StableId (not analyze's routineId); null for some members. */
+  routine_id: string | null;
+  fan_in: number | null;
+  fan_out: number | null;
+}
+
+export interface AchReport {
+  metrics: RoutineMetric[];
+  findings: J[];
+}
+
+const routineKey = (m: RoutineMetric) =>
+  m.routine_id ?? `${m.object_type}|${m.object_name}|${m.procedure_name}`;
+
+export interface RoutineDelta {
+  app: string;
+  object: string;
+  routine: string;
+  routine_id: string | null;
+  status: "added" | "changed" | "removed";
+  /** Final complexity (0 when removed). */
+  complexity: number;
+  d_complexity: number;
+  d_lines: number;
+  d_params: number;
+  /** null when either side has no call graph. */
+  d_fan_in: number | null;
+  /** A changed root of the patch (alsem digest stableId). */
+  in_patch: boolean;
+}
+
+/**
+ * Per routine (al-call-hierarchy metrics joined by routine_id, so overloads
+ * stay apart): the routines added, removed, with complexity / length /
+ * parameters changed, or touched by the patch (`changed`: digest stableIds),
+ * sorted by app, object, routine. App = first segment of the path.
+ */
+export function routineDeltas(
+  start: RoutineMetric[],
+  final: RoutineMetric[],
+  changed: Set<string>,
+): RoutineDelta[] {
+  const a = new Map(start.map((m) => [routineKey(m), m]));
+  const b = new Map(final.map((m) => [routineKey(m), m]));
+  const out: RoutineDelta[] = [];
+  for (const k of new Set([...a.keys(), ...b.keys()])) {
+    const s = a.get(k);
+    const f = b.get(k);
+    const m = (f ?? s)!;
+    const dc = (f?.complexity ?? 0) - (s?.complexity ?? 0);
+    const dl = (f?.line_count ?? 0) - (s?.line_count ?? 0);
+    const dp = (f?.parameter_count ?? 0) - (s?.parameter_count ?? 0);
+    const inPatch = m.routine_id !== null && changed.has(m.routine_id);
+    if (s && f && dc === 0 && dl === 0 && dp === 0 && !inPatch) continue;
+    const fi = (x: RoutineMetric | undefined) => x ? x.fan_in : 0;
+    out.push({
+      app: m.path.split("/")[0]!,
+      object: m.object_name,
+      routine: m.procedure_name,
+      routine_id: m.routine_id,
+      status: !s ? "added" : !f ? "removed" : "changed",
+      complexity: f?.complexity ?? 0,
+      d_complexity: dc,
+      d_lines: dl,
+      d_params: dp,
+      d_fan_in: fi(f) === null || fi(s) === null ? null : fi(f)! - fi(s)!,
+      in_patch: inPatch,
+    });
+  }
+  const cmp = (x: RoutineDelta) =>
+    `${x.app}\0${x.object}\0${x.routine}\0${x.routine_id}`;
+  return out.sort((x, y) => cmp(x).localeCompare(cmp(y)));
+}
+
+export interface UnusedProc {
+  app: string;
+  procedure: string;
+  path: string;
+  line: number;
+  /** From the metrics row at the same path + line; "unknown" when none. */
+  access: string;
+  routine_id: string | null;
+}
+
+/** al-call-hierarchy `unused_procedure` findings, joined to their metrics row by path + line. */
+export function unusedProcedures(ach: AchReport): UnusedProc[] {
+  const at = new Map(ach.metrics.map((m) => [`${m.path}:${m.line}`, m]));
+  return ach.findings.filter((f) => f["category"] === "unused_procedure").map(
+    (f) => {
+      const path = f["path"] as string;
+      const line = Number(String(f["location"]).split(":").pop());
+      const m = at.get(`${path}:${line}`);
+      return {
+        app: path.split("/")[0]!,
+        procedure: f["procedure"] as string,
+        path,
+        line,
+        access: m?.access ?? "unknown",
+        routine_id: m?.routine_id ?? null,
+      };
+    },
+  );
+}
+
+/** Unused in final, not unused in start (by routine_id, else path + procedure). */
+export function newUnused(
+  start: UnusedProc[],
+  final: UnusedProc[],
+): UnusedProc[] {
+  const key = (u: UnusedProc) => u.routine_id ?? `${u.path}|${u.procedure}`;
+  const before = new Set(start.map(key));
+  return final.filter((u) => !before.has(key(u)));
+}
+
+export interface BlastSide {
+  abi: number;
+  schema: number;
+  events: number;
+  permissions: number;
+  capabilities: number;
+  by_kind: Record<string, number>;
+  critical_or_high: number;
+}
+
+export interface Blast {
+  /** summary.findingsByCategory, both apps. */
+  total: Record<string, number>;
+  production: BlastSide;
+  test: BlastSide;
+}
+
+/**
+ * `alsem diff` payload findings, production vs Test app by object id; the
+ * per-side categories must add up to summary.findingsByCategory. A changed
+ * public signature is one `procedure-signature-changed` finding (by_kind).
+ */
+export function blastRadius(
+  payload: J,
+  testRanges: [number, number][],
+): Blast {
+  const side = (): BlastSide => ({
+    abi: 0,
+    schema: 0,
+    events: 0,
+    permissions: 0,
+    capabilities: 0,
+    by_kind: {},
+    critical_or_high: 0,
+  });
+  const total =
+    ((payload["summary"] as J | undefined)?.["findingsByCategory"] ??
+      {}) as Record<string, number>;
+  const r = { total, production: side(), test: side() };
+  for (const f of payload["findings"] as J[]) {
+    const subj = (f["subject"] ?? {}) as J;
+    const id = String(
+      subj["newStableId"] ?? subj["oldStableId"] ??
+        subj["normalizedStableId"] ?? "",
+    );
+    const n = Number(/:[A-Za-z]+:(\d+)/.exec(id)?.[1] ?? NaN);
+    const s = testRanges.some(([lo, hi]) => n >= lo && n <= hi)
+      ? r.test
+      : r.production;
+    const cat = f["category"] as string;
+    if (cat in s && cat !== "by_kind" && cat !== "critical_or_high") {
+      (s as unknown as Record<string, number>)[cat]!++;
+    }
+    bump(s.by_kind, f["kind"] as string);
+    if (f["severity"] === "critical" || f["severity"] === "high") {
+      s.critical_or_high++;
+    }
+  }
+  for (const [cat, n] of Object.entries(total)) {
+    const got = (r.production as unknown as Record<string, number>)[cat]! +
+      (r.test as unknown as Record<string, number>)[cat]!;
+    if (got !== n) {
+      throw new Error(
+        `alsem diff: summary.findingsByCategory.${cat} = ${n}, findings give ${got}`,
+      );
+    }
+  }
+  return r;
+}
+
+export interface DigestTouches {
+  roots: number;
+  production_roots: number;
+  roots_requested: number;
+  roots_resolved: number;
+  /** routine.stableId of every changed root (joins al-call-hierarchy routine_id). */
+  changed_routines: string[];
+  tables_written: string[];
+  tables_read: string[];
+  events_published: string[];
+  commits: number;
+  unresolved: number;
+  /** Diff hunks al-sem could not map to a routine. */
+  unmapped_hunks: number;
+  /** Changed files with no routine to map (e.g. an enum or a fields-only table extension). */
+  unmatched_files: number;
+}
+
+const WRITES = new Set(["DB_INSERT", "DB_MODIFY", "DB_DELETE", "DB_RENAME"]);
+
+/** `alsem digest --diff` payload: what the changed production routines touch. */
+export function digestTouches(p: J): DigestTouches {
+  const entries = p["entries"] as J[];
+  const sum = (p["summary"] ?? {}) as J;
+  const diags = (p["changedRootsDiagnostics"] ?? []) as J[];
+  const written = new Set<string>();
+  const read = new Set<string>();
+  const events = new Set<string>();
+  let commits = 0;
+  let prod = 0;
+  for (const e of entries) {
+    const anchor = ((e["routine"] as J)["anchor"] ?? {}) as J;
+    if (String(anchor["file"] ?? "").startsWith(`ws:${TEST_APP}/`)) continue;
+    prod++;
+    for (const x of (e["effects"] ?? []) as J[]) {
+      const t = x["type"] as string;
+      const what = String(
+        (x["detail"] as J | undefined)?.["resourceDisplay"] ?? "",
+      );
+      if (WRITES.has(t)) written.add(what);
+      else if (t.startsWith("DB_")) read.add(what);
+      else if (t === "EVENT_PUBLISH") events.add(what);
+      else if (t === "COMMIT") commits++;
+    }
+  }
+  const sorted = (s: Set<string>) => [...s].sort();
+  return {
+    roots: entries.length,
+    production_roots: prod,
+    roots_requested: Number(sum["rootsRequested"] ?? 0),
+    roots_resolved: Number(sum["rootsResolved"] ?? 0),
+    changed_routines: entries.map((e) => (e["routine"] as J)["stableId"])
+      .filter((x): x is string => typeof x === "string"),
+    tables_written: sorted(written),
+    tables_read: sorted(read).filter((t) => !written.has(t)),
+    events_published: sorted(events),
+    commits,
+    unresolved: Number(sum["totalUnresolved"] ?? 0),
+    unmapped_hunks: diags.filter((d) => d["kind"] === "hunk-outside-routines")
+      .length,
+    unmatched_files: diags.filter((d) => d["kind"] === "diff-file-unmatched")
+      .length,
+  };
+}
+
+/** The campaign patch (start/, final/) with paths relative to the merged app folder, which is the workspace root. */
+export function digestPatch(patch: string): string {
+  return patch.replace(/^--- start\//gm, "--- a/").replace(
+    /^\+\+\+ final\//gm,
+    "+++ b/",
+  );
+}
+
+/**
+ * The refapp's apps as one synthetic app: al-sem analyzes one app.json and
+ * reads dependencies only as packages in .alpackages, while the CGR apps
+ * depend on each other as source. Object ids are disjoint across the apps.
+ */
+export function mergedAppJson(apps: J[]): J {
+  const ids = new Set(apps.map((a) => a["id"]));
+  const core = apps.find((a) => a["name"] === "CGR Core") ?? apps[0]!;
+  const deps = new Map<unknown, J>();
+  for (const a of apps) {
+    for (const d of (a["dependencies"] ?? []) as J[]) {
+      if (!ids.has(d["id"])) deps.set(d["id"], d);
+    }
+  }
+  return {
+    id: "c6a1e000-0000-4000-8000-0000000000ff",
+    name: "CGR Merged",
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+    platform: core["platform"],
+    application: core["application"],
+    runtime: core["runtime"],
+    target: core["target"],
+    features: core["features"] ?? [],
+    idRanges: apps.flatMap((a) => a["idRanges"] as J[]),
+    dependencies: [...deps.values()],
+  };
+}
+
+export interface AlsemMetrics {
+  alsem_new_findings: number;
+  alsem_new_high_findings: number;
+  alsem_new_test_findings: number;
+  /** Curated: likely only, critical 5 / high 3 / medium 1, d3 and d9 out (see curatedCounts). */
+  curated_weighted: number;
+  changed_prod_lines: number;
+  /** curated_weighted per 100 changed_prod_lines; null when no production line changed. */
+  curated_density: number | null;
+  /** Raw introduced counts of the detectors left out of the curated sum. */
+  alsem_d3_introduced: number;
+  alsem_d9_introduced: number;
+  complexity_delta: number;
+  lines_delta: number;
+  fan_in_delta: number;
+  max_routine_complexity: number;
+  routines_added: number;
+  routines_changed: number;
+  /** New unused local / internal / protected procedures. */
+  new_unused: number;
+  /** New unused public procedures (callable from other apps, so reported apart). */
+  new_unused_public: number;
+  abi_changes: number;
+  abi_signature_changes: number;
+  schema_changes: number;
+  event_changes: number;
+  permission_changes: number;
+  tables_written: number;
+  events_published: number;
+  unmapped_hunks: number;
+}
+
+const SEVERITY_WEIGHT: Record<string, number> = {
+  critical: 5,
+  high: 3,
+  medium: 1,
+};
+const D3 = "d3-missing-setloadfields";
+
+/**
+ * Curated finding count (owner definition 2026-10-23), production code only:
+ * weighted sum over `likely` findings (critical 5, high 3, medium 1, low and
+ * info 0), with d3-missing-setloadfields and every d9* detector left out of it
+ * and counted raw (any confidence, any severity) as `d3` and `d9`.
+ */
+export function curatedCounts(
+  introduced: (AlsemFinding & { count: number })[],
+): { weighted: number; d3: number; d9: number } {
+  const out = { weighted: 0, d3: 0, d9: 0 };
+  for (const f of introduced) {
+    if (f.app === TEST_APP) continue;
+    if (f.detector === D3) out.d3 += f.count;
+    else if (f.detector.startsWith("d9")) out.d9 += f.count;
+    else if (f.confidence === "likely") {
+      out.weighted += (SEVERITY_WEIGHT[f.severity] ?? 0) * f.count;
+    }
+  }
+  return out;
+}
+
+/** Added + removed lines of the campaign patch in files outside the Test app. */
+export function changedProdLines(patch: string): number {
+  const lines = patch.split("\n");
+  let n = 0;
+  let prod = false;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]!;
+    if (l.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ")) {
+      const path = (p: string) =>
+        p.replace(/^[-+]{3} (start\/|final\/|a\/|b\/)?/, "");
+      const to = path(lines[i + 1]!);
+      const file = lines[i + 1]!.startsWith("+++ /dev/null") ? path(l) : to;
+      prod = file.split("/")[0] !== TEST_APP;
+      i++;
+      continue;
+    }
+    if (prod && (l.startsWith("+") || l.startsWith("-"))) n++;
+  }
+  return n;
+}
+
+/** Weighted count per 100 changed production lines; null when none changed. */
+export function curatedDensity(weighted: number, lines: number): number | null {
+  return lines === 0 ? null : (weighted * 100) / lines;
+}
+
+/** Median, mean and share of zeros over the non-null densities; the nulls are counted apart. */
+export function densityStats(xs: (number | null)[]) {
+  const v = xs.filter((x): x is number => x !== null);
+  return {
+    n: v.length,
+    null_count: xs.length - v.length,
+    median: median(v),
+    mean: v.length ? v.reduce((s, x) => s + x, 0) / v.length : null,
+    zero_share: v.length ? v.filter((x) => x === 0).length / v.length : null,
+  };
+}
+
+/** Rank of each execution among all executions of its task, ascending density; ties share the average rank, null density is unranked. */
+export function withinTaskRanks(
+  rows: { id: string; task: string; density: number | null }[],
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  const byTask = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (r.density === null) out.set(r.id, null);
+    else byTask.set(r.task, [...(byTask.get(r.task) ?? []), r]);
+  }
+  for (const rs of byTask.values()) {
+    const s = [...rs].sort((a, b) => a.density! - b.density!);
+    for (let i = 0; i < s.length;) {
+      let j = i;
+      while (j < s.length && s[j]!.density === s[i]!.density) j++;
+      for (let k = i; k < j; k++) out.set(s[k]!.id, (i + 1 + j) / 2);
+      i = j;
+    }
+  }
+  return out;
+}
+
+/** One execution's al-sem metrics; production code (not the Test app) only. */
+export function alsemSummary(x: {
+  introduced: (AlsemFinding & { count: number })[];
+  deltas: RoutineDelta[];
+  unused: UnusedProc[];
+  blast: Blast;
+  touches: DigestTouches;
+  /** changedProdLines of the execution's patch. */
+  changed_prod_lines?: number;
+}): AlsemMetrics {
+  const prod = x.introduced.filter((f) => f.app !== TEST_APP);
+  const cur = curatedCounts(x.introduced);
+  const lines = x.changed_prod_lines ?? 0;
+  const sum = (fs: { count: number }[]) => fs.reduce((s, f) => s + f.count, 0);
+  const d = x.deltas.filter((r) => r.app !== TEST_APP);
+  const live = d.filter((r) => r.status !== "removed");
+  const unused = x.unused.filter((u) => u.app !== TEST_APP);
+  return {
+    alsem_new_findings: sum(prod),
+    alsem_new_high_findings: sum(
+      prod.filter((f) => f.severity === "critical" || f.severity === "high"),
+    ),
+    alsem_new_test_findings: sum(
+      x.introduced.filter((f) => f.app === TEST_APP),
+    ),
+    curated_weighted: cur.weighted,
+    changed_prod_lines: lines,
+    curated_density: curatedDensity(cur.weighted, lines),
+    alsem_d3_introduced: cur.d3,
+    alsem_d9_introduced: cur.d9,
+    complexity_delta: d.reduce((s, r) => s + r.d_complexity, 0),
+    lines_delta: d.reduce((s, r) => s + r.d_lines, 0),
+    fan_in_delta: d.reduce((s, r) => s + (r.d_fan_in ?? 0), 0),
+    max_routine_complexity: Math.max(0, ...live.map((r) => r.complexity)),
+    routines_added: d.filter((r) => r.status === "added").length,
+    routines_changed: d.filter((r) => r.status === "changed").length,
+    new_unused:
+      unused.filter((u) =>
+        ["local", "internal", "protected"].includes(u.access)
+      ).length,
+    new_unused_public: unused.filter((u) => u.access === "public").length,
+    abi_changes: x.blast.production.abi,
+    abi_signature_changes:
+      x.blast.production.by_kind["procedure-signature-changed"] ?? 0,
+    schema_changes: x.blast.production.schema,
+    event_changes: x.blast.production.events,
+    permission_changes: x.blast.production.permissions,
+    tables_written: x.touches.tables_written.length,
+    events_published: x.touches.events_published.length,
+    unmapped_hunks: x.touches.unmapped_hunks,
+  };
+}
+
 type J = Record<string, unknown>;
 const readJson = async (p: string): Promise<J> =>
   JSON.parse(await Deno.readTextFile(p)) as J;
@@ -286,9 +1045,7 @@ async function run(
     stderr: "piped",
   }).output();
   if (!okCodes.includes(o.code)) {
-    throw new Error(
-      `${cmd} ${args.join(" ")}: ${new TextDecoder().decode(o.stderr)}`,
-    );
+    throw exitError(cmd, args, o.code, new TextDecoder().decode(o.stderr));
   }
   return new TextDecoder().decode(o.stdout);
 }
@@ -316,21 +1073,20 @@ async function sameText(a: string, b: string): Promise<boolean> {
   return norm(x) === norm(y);
 }
 
-/** refapp at the task's pinned commit plus the task overlay at `rev`, built once per task. */
-async function startingTree(
+/** Fills an empty `dir` with refapp at the task's pinned commit plus the task overlay at `rev`. */
+async function buildStartingTree(
   repo: string,
   rev: string,
   taskId: string,
   refappCommit: string,
   cache: string,
-): Promise<string> {
-  const dir = join(cache, taskId);
-  const done = join(cache, `${taskId}.done`);
-  if (await Deno.stat(done).then(() => true, () => false)) return dir;
-  await Deno.remove(dir, { recursive: true }).catch(() => {});
-  await Deno.mkdir(dir, { recursive: true });
+  dir: string,
+): Promise<void> {
   const at = await loadTaskAt(repo, taskId, rev, join(cache, "tasks"));
-  const tar = join(cache, `${taskId}-refapp.tar`);
+  const tar = join(
+    cache,
+    `${taskId}-refapp-${crypto.randomUUID()}.tar`,
+  );
   await run("git", [
     "-c",
     "core.autocrlf=false",
@@ -348,8 +1104,69 @@ async function startingTree(
   ], dir);
   await Deno.remove(tar);
   await applyOverlay(join(at.task.dir, "overlay"), dir);
-  await Deno.writeTextFile(done, "");
-  return dir;
+}
+
+async function sha256Hex(d: string | Uint8Array<ArrayBuffer>): Promise<string> {
+  const h = await crypto.subtle.digest(
+    "SHA-256",
+    typeof d === "string" ? new TextEncoder().encode(d) : d,
+  );
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Content identity of a tree: the source files al-sem will see, by path and bytes. */
+async function treeHash(root: string): Promise<string> {
+  const parts: string[] = [];
+  for (const rel of [...await sourceFiles(root)].sort()) {
+    const bytes = await Deno.readFile(join(root, ...rel.split("/")));
+    parts.push(`${rel}\0${await sha256Hex(bytes)}`);
+  }
+  return sha256Hex(parts.join("\n"));
+}
+
+export interface StartTree {
+  dir: string;
+  /** Baseline identity: sha256(rev, refapp commit, tree content), 12 hex. Keys every artifact computed from this tree. */
+  id: string;
+}
+
+/**
+ * refapp at the task's pinned commit plus the task overlay at `rev`, built once
+ * per identity. `.done` records rev, refapp commit and the tree's content hash;
+ * another rev / commit, a tree edited since, or an old `.done` without an
+ * identity is rebuilt (nothing is adopted from a pre-identity cache).
+ */
+export async function startingTree(
+  repo: string,
+  rev: string,
+  taskId: string,
+  refappCommit: string,
+  cache: string,
+  build: (dir: string) => Promise<void> = (dir) =>
+    buildStartingTree(repo, rev, taskId, refappCommit, cache, dir),
+): Promise<StartTree> {
+  const dir = join(cache, taskId);
+  const done = join(cache, `${taskId}.done`);
+  const idOf = async (tree: string) =>
+    (await sha256Hex(`${rev}\0${refappCommit}\0${tree}`)).slice(0, 12);
+  const have = await Deno.stat(dir).then(() => true, () => false);
+  const m = await readJsonOr(done);
+  if (
+    m && m["rev"] === rev && m["refapp"] === refappCommit && have &&
+    await treeHash(dir) === m["tree"]
+  ) {
+    return { dir, id: await idOf(m["tree"] as string) };
+  }
+  const fresh = `${dir}.new`;
+  await Deno.remove(fresh, { recursive: true }).catch(() => {});
+  await Deno.mkdir(fresh, { recursive: true });
+  await build(fresh);
+  const tree = await treeHash(fresh);
+  await Deno.remove(dir, { recursive: true }).catch(() => {});
+  await Deno.rename(fresh, dir);
+  await writeAtomic(done, JSON.stringify({ rev, refapp: refappCommit, tree }));
+  return { dir, id: await idOf(tree) };
 }
 
 async function diffTrees(
@@ -405,6 +1222,837 @@ async function diffTrees(
     );
   }
   return { files, patch: patches.join("") };
+}
+
+// ---------------------------------------------------------------- resumable outputs
+
+/** What one execution's output was computed from: both binaries, the task rev, the final workspace. */
+export interface DoneStamp {
+  build: string;
+  rev: string;
+  hash: string;
+  /** DERIVATION: bump when the row is computed differently from the same cached tool output. */
+  derive?: number;
+  /** sha256 of each artifact the row was computed from (start / final tree.json and raw analyze / ach / fingerprint, digest, diff); "" when absent. A changed artifact means not done. */
+  bind?: Record<string, string>;
+}
+
+/** v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds). */
+const DERIVATION = 5;
+// v3: curated finding density (findings carry confidence, rows carry changed_prod_lines).
+// v4: tree.json holds only the fields derived from the raw analyze / ach / fingerprint JSON (touches come from the digest-<patch> file) and is re-derived from them, no tool run, whenever its derive differs; error diagnostics fail a tree.
+// v5: strict envelope / payload validation; every tree.json hit re-validates its raw files; done rows carry the sha256 of the artifacts they were computed from; no legacy cache adoption.
+
+/** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
+export async function writeAtomic(path: string, text: string): Promise<void> {
+  const tmp = `${path}.tmp-${Deno.pid}-${crypto.randomUUID()}`;
+  await Deno.writeTextFile(tmp, text);
+  await Deno.rename(tmp, path);
+}
+
+export function writeDone(
+  dir: string,
+  id: string,
+  stamp: DoneStamp,
+  row: unknown,
+): Promise<void> {
+  return writeAtomic(join(dir, `${id}.json`), JSON.stringify({ stamp, row }));
+}
+
+/** The execution's stored row, or null when absent, unparsable, or made by another build / rev / workspace. */
+export async function readDone<T>(
+  dir: string,
+  id: string,
+  stamp: DoneStamp,
+): Promise<T | null> {
+  const x = await readJsonOr(join(dir, `${id}.json`));
+  const s = x?.["stamp"] as DoneStamp | undefined;
+  return s && s.build === stamp.build && s.rev === stamp.rev &&
+      s.hash === stamp.hash && s.derive === stamp.derive &&
+      JSON.stringify(s.bind ?? null) === JSON.stringify(stamp.bind ?? null)
+    ? (x!["row"] as T)
+    : null;
+}
+
+/** Every done row among `stamps` (earlier runs included), in id order. */
+export async function loadDone<T>(
+  dir: string,
+  stamps: Map<string, DoneStamp>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (const id of [...stamps.keys()].sort()) {
+    const r = await readDone<T>(dir, id, stamps.get(id)!);
+    if (r) rows.push(r);
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------- al-sem runner
+
+export interface AlsemTools {
+  alsem: string;
+  ach: string;
+  /** Content-addressed symbol store (`<sha256>.app`). */
+  store: string;
+  lock: { file: string; sha256: string }[];
+  dir: string;
+  /** Cache root for this build: the two binaries' hashes, so another build never reads these results. */
+  cache: string;
+  /** Full sha256 of both binaries; part of every done marker. */
+  build: string;
+  /** Task rev the starting trees come from; part of every done marker. */
+  rev: string;
+  /** Spawns a tool and returns its stdout (tests inject a fake). */
+  exec?: typeof run;
+}
+
+type Versions = Record<string, { alsemVersion: string; schemaVersion: string }>;
+type TaggedDiagnostic = AlsemDiagnostic & { command: string };
+
+interface AlsemTree {
+  findings: AlsemFinding[];
+  metrics: RoutineMetric[];
+  unused: UnusedProc[];
+  testRanges: [number, number][];
+  fingerprint: string;
+  touches: DigestTouches;
+  /** alsemVersion + schemaVersion per alsem command on this tree. */
+  versions: Versions;
+  diagnostics: TaggedDiagnostic[];
+}
+
+/** `<ws>\.alpackages` as a directory junction to the symbol store (al-call-hierarchy reads only that folder). */
+export async function linkAlpackages(ws: string, store: string) {
+  await run("cmd", [
+    "/c",
+    "mklink",
+    "/J",
+    join(ws, ".alpackages"),
+    resolve(store),
+  ]);
+}
+
+/**
+ * Deletes a scratch workspace. The .alpackages junction goes first with a
+ * plain `rmdir`, which removes the link only: a recursive delete through it
+ * could reach into the symbol store. If the junction is still there after
+ * that, nothing is deleted.
+ */
+export async function removeWorkspace(
+  ws: string,
+  unlink: (p: string) => Promise<unknown> = (p) =>
+    run("cmd", ["/c", "rmdir", p]),
+) {
+  const pk = join(ws, ".alpackages");
+  if ((await Deno.lstat(pk).catch(() => null))?.isSymlink) {
+    await unlink(pk);
+    if (await Deno.lstat(pk).then(() => true, () => false)) {
+      throw new Error(
+        `junction ${pk} is still there: not deleting ${ws} recursively`,
+      );
+    }
+  }
+  await Deno.remove(ws, { recursive: true }).catch((e) => {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  });
+}
+
+/**
+ * The tree as one al-sem workspace (mergedAppJson) in scratch, with
+ * .alpackages a junction to the symbol store; sources keep their relative
+ * paths, so the campaign's patches apply as they are.
+ */
+async function mergedWorkspace(src: string, dst: string, t: AlsemTools) {
+  await removeWorkspace(dst);
+  const apps: J[] = [];
+  for (const rel of [...await sourceFiles(src)].sort()) {
+    const text = await Deno.readTextFile(join(src, ...rel.split("/")));
+    if (rel.split("/").length === 2 && basename(rel) === "app.json") {
+      apps.push(JSON.parse(text.replace(/^﻿/, "")) as J);
+      continue;
+    }
+    const to = join(dst, ...rel.split("/"));
+    await Deno.mkdir(join(to, ".."), { recursive: true });
+    await Deno.writeTextFile(to, text);
+  }
+  await Deno.writeTextFile(
+    join(dst, "app.json"),
+    JSON.stringify(mergedAppJson(apps), null, 2),
+  );
+  await linkAlpackages(dst, t.store);
+  const test = apps.find((a) => a["name"] === "CGR Test");
+  return ((test?.["idRanges"] ?? []) as { from: number; to: number }[])
+    .map((r) => [r.from, r.to] as [number, number]);
+}
+
+/** A parsed al-sem envelope; throws on bad JSON, another kind / schemaVersion, or any error-level diagnostic (fail closed). */
+function checkedEnvelope(command: string, text: string, kind: string) {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    throw new Error(`al-sem ${command}: output is not JSON`);
+  }
+  const e = alsemEnvelope(doc, kind);
+  const diagnostics: TaggedDiagnostic[] = e.diagnostics.map((d) => ({
+    ...d,
+    command,
+  }));
+  failOnErrors(command, diagnostics);
+  return {
+    payload: e.payload,
+    version: { alsemVersion: e.alsemVersion, schemaVersion: e.schemaVersion },
+    diagnostics,
+    e,
+  };
+}
+
+function failOnErrors(what: string, ds: AlsemDiagnostic[]) {
+  const bad = errorDiagnostics(ds) as AlsemDiagnostic[];
+  if (bad.length) {
+    throw new Error(
+      `al-sem ${what}: ${bad.length} error diagnostic(s): ${
+        bad.slice(0, 3).map((d) => `${d.code} ${d.message}`).join("; ")
+      }`,
+    );
+  }
+}
+
+/** The tree fields derived from the raw analyze / ach / fingerprint output; no tool runs. */
+type TreeBase = Omit<AlsemTree, "fingerprint" | "touches"> & { derive: number };
+
+function deriveBase(
+  analyzeText: string,
+  achText: string,
+  fingerprintText: string,
+  testRanges: [number, number][],
+): TreeBase {
+  const a = checkedEnvelope("analyze", analyzeText, "analyze-report");
+  const ach = checkedAch(achText); // no envelope: top level is metrics, findings, summary
+  const fp = checkedEnvelope(
+    "fingerprint",
+    fingerprintText,
+    "capability-snapshot",
+  );
+  return {
+    derive: DERIVATION,
+    findings: alsemFindings(a.payload),
+    metrics: ach.metrics,
+    unused: unusedProcedures(ach),
+    testRanges,
+    versions: { analyze: a.version, fingerprint: fp.version },
+    diagnostics: [...a.diagnostics, ...fp.diagnostics],
+  };
+}
+
+/** Per cache entry: one analysis at a time, so a concurrent request for the same entry finds it done. */
+const chains = new Map<string, Promise<unknown>>();
+function serialized<T>(key: string, f: () => Promise<T>): Promise<T> {
+  const next = (chains.get(key) ?? Promise.resolve()).then(f, f);
+  // ponytail: the map only grows (one settled promise per entry), a few hundred per run.
+  chains.set(key, next.catch(() => {}));
+  return next;
+}
+
+/** Names the digest of a patch: `digest-<id>.json`. */
+const digestId = async (patch: string) =>
+  (await sha256Hex(digestPatch(patch))).slice(0, 12);
+
+/**
+ * Analyze, metrics and fingerprint for one tree (and the digest of `patch`),
+ * cached by key. The tree entry depends on the tree only; the digest on the
+ * patch too (`digest-<patch hash>.json`). tree.json is re-derived from the raw
+ * JSON when its derive differs; an error-level diagnostic anywhere fails.
+ */
+export function alsemTree(
+  t: AlsemTools,
+  src: string,
+  key: string,
+  patch: string | null,
+): Promise<AlsemTree> {
+  return serialized(
+    join(t.cache, key),
+    () => alsemTreeOnce(t, src, key, patch),
+  );
+}
+
+async function alsemTreeOnce(
+  t: AlsemTools,
+  src: string,
+  key: string,
+  patch: string | null,
+): Promise<AlsemTree> {
+  const sh = t.exec ?? run;
+  const cache = join(t.cache, key);
+  const p = (n: string) => join(cache, n);
+  const done = p("tree.json");
+  // A hit is never trusted as stored: the raw files are re-validated and tree.json
+  // re-derived from them every time (a missing raw file is a miss, an invalid one fails).
+  let base: TreeBase | null = null;
+  const stored = await readJsonOr(done) as TreeBase | null;
+  if (stored && Array.isArray(stored.testRanges)) {
+    try {
+      base = deriveBase(
+        await Deno.readTextFile(p("analyze.json")),
+        await Deno.readTextFile(p("ach.json")),
+        await Deno.readTextFile(p("fingerprint.json")),
+        stored.testRanges,
+      );
+      const text = JSON.stringify(base);
+      if (text !== JSON.stringify(stored)) await writeAtomic(done, text);
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound)) throw e;
+    }
+  }
+  let dp:
+    | { text: string; file: string; out: string | null }
+    | null = null;
+  if (patch) {
+    const text = digestPatch(patch);
+    const file = p(`digest-${await digestId(patch)}.json`);
+    dp = { text, file, out: await Deno.readTextFile(file).catch(() => null) };
+  }
+  if (!base || (dp && dp.out === null)) {
+    await Deno.mkdir(cache, { recursive: true });
+    const ws = join(t.dir, "ws", `${key}-${crypto.randomUUID()}`);
+    const testRanges = await mergedWorkspace(src, ws, t);
+    const tmp = p(`fingerprint.json.tmp-${crypto.randomUUID()}`);
+    try {
+      if (!base) {
+        // Exit 4 (--require-dependencies) throws: the execution fails, never under-reports.
+        const analyzeText = await sh(t.alsem, [
+          "analyze",
+          ws,
+          "--format",
+          "json",
+          "--deterministic",
+          "--require-dependencies",
+        ]);
+        const achText = await sh(t.ach, [
+          "--project",
+          ws,
+          "--analyze",
+          "--format",
+          "json",
+          "--no-telemetry",
+        ]);
+        await sh(t.alsem, [
+          "fingerprint",
+          ws,
+          "--format",
+          "json",
+          "--deterministic",
+          "--out",
+          tmp,
+        ]);
+        // Validated before anything is persisted: a bad output leaves no cache entry.
+        base = deriveBase(
+          analyzeText,
+          achText,
+          await Deno.readTextFile(tmp),
+          testRanges,
+        );
+        await Deno.rename(tmp, p("fingerprint.json"));
+        await writeAtomic(p("analyze.json"), analyzeText);
+        await writeAtomic(p("ach.json"), achText);
+        await writeAtomic(done, JSON.stringify(base));
+      }
+      if (dp && dp.out === null) {
+        const diff = p(`change-${await digestId(patch!)}.diff`);
+        await writeAtomic(diff, dp.text);
+        const digest = await sh(t.alsem, [
+          "digest",
+          ws,
+          "--diff",
+          diff,
+          "--format",
+          "json",
+          "--deterministic",
+        ]);
+        checkedEnvelope("digest", digest, "digest");
+        await writeAtomic(dp.file, digest);
+        dp.out = digest;
+      }
+    } finally {
+      await Deno.remove(tmp).catch(() => {});
+      await removeWorkspace(ws);
+    }
+  }
+  const { derive: _, ...tree } = base!;
+  const dg = dp ? checkedEnvelope("digest", dp.out!, "digest") : null;
+  return {
+    ...tree,
+    fingerprint: p("fingerprint.json"),
+    touches: digestTouches(dg ? dg.payload : { entries: [] }),
+    versions: dg ? { ...tree.versions, digest: dg.version } : tree.versions,
+    diagnostics: dg
+      ? [...tree.diagnostics, ...dg.diagnostics]
+      : tree.diagnostics,
+  };
+}
+
+/** `--only`: no list keeps every execution, else those whose id starts with a listed id. */
+export function keepExecution(id: string, only: string[]): boolean {
+  return !only.length || only.some((p) => id.startsWith(p));
+}
+
+/** H-29 ruling (2026-10-18): a harness_crash execution stays in the per-execution rows, flagged, but out of every al-sem aggregate. */
+export function alsemExclusion(termination: string): string | null {
+  return termination === "harness_crash" ? "harness_crash" : null;
+}
+
+export function alsemExclusionText(
+  excluded: {
+    id: string;
+    arm: string;
+    task: string;
+    repeat: number;
+    excluded: string | null;
+  }[],
+): string {
+  const head = "Executions with termination `harness_crash` are left out of " +
+    "every al-sem aggregate (per arm, per pair, medians and counts) under the " +
+    "2026-10-18 H-29 ruling; their per-execution rows stay, flagged `excluded`.";
+  if (!excluded.length) return `${head} Excluded here: none.\n`;
+  const lines = [...excluded].sort((a, b) => a.id.localeCompare(b.id)).map((
+    x,
+  ) => `- ${x.id} (${x.arm}, ${x.task} r${x.repeat}): ${x.excluded}`);
+  return `${head} Excluded here: ${excluded.length}.\n\n${lines.join("\n")}\n`;
+}
+
+interface AlsemRow {
+  excluded?: string | null;
+  id: string;
+  arm: string;
+  task: string;
+  repeat: number;
+  verdict: string | null;
+  metrics: AlsemMetrics;
+  introduced: (AlsemFinding & { count: number })[];
+  deltas: RoutineDelta[];
+  unused: UnusedProc[];
+  blast: Blast;
+  touches: DigestTouches;
+  versions: { start: Versions; final: Versions; diff: Versions };
+  diagnostics: (TaggedDiagnostic & { tree: string })[];
+}
+
+const METRIC_KEYS: Exclude<keyof AlsemMetrics, "curated_density">[] = [
+  "alsem_new_findings",
+  "alsem_new_high_findings",
+  "alsem_new_test_findings",
+  "curated_weighted",
+  "changed_prod_lines",
+  "alsem_d3_introduced",
+  "alsem_d9_introduced",
+  "complexity_delta",
+  "lines_delta",
+  "fan_in_delta",
+  "max_routine_complexity",
+  "routines_added",
+  "routines_changed",
+  "new_unused",
+  "new_unused_public",
+  "abi_changes",
+  "abi_signature_changes",
+  "schema_changes",
+  "event_changes",
+  "permission_changes",
+  "tables_written",
+  "events_published",
+  "unmapped_hunks",
+];
+
+/** The version tools.json recorded for this very binary (same sha256), or null: no `alsem --version` run needed. */
+export function pinnedAlsemVersion(prev: unknown, sha: string): string | null {
+  const a = ((prev ?? {}) as J)["alsem"] as J | undefined;
+  return a?.["sha256"] === sha && typeof a["version"] === "string"
+    ? a["version"]
+    : null;
+}
+
+/** The recorded version when it belongs to this very binary, else `runVersion()` (`alsem --version`). */
+export async function resolveAlsemVersion(
+  prev: unknown,
+  sha: string,
+  runVersion: () => Promise<string>,
+): Promise<string> {
+  return pinnedAlsemVersion(prev, sha) ?? (await runVersion()).trim();
+}
+
+const sha256File = async (p: string) => sha256Hex(await Deno.readFile(p));
+
+async function pool<T>(n: number, items: T[], f: (x: T) => Promise<void>) {
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(n, items.length) }, async () => {
+      while (i < items.length) await f(items[i++]!);
+    }),
+  );
+}
+
+const hasErrorDiagnostic = (ds: AlsemDiagnostic[] | undefined) =>
+  errorDiagnostics(ds ?? []).length > 0;
+
+/** sha256 of a file, "" when it is absent. */
+const hashOrEmpty = (p: string) => Deno.readFile(p).then(sha256Hex, () => "");
+
+export async function alsemStep(
+  t: AlsemTools,
+  rows: Row[],
+  results: string,
+  hashOf: Map<string, string>,
+  startOf: (task: string) => Promise<StartTree>,
+  pairs: [string, string][],
+  jobs: number,
+) {
+  // The start tree's al-sem entry is keyed by its baseline identity (rev, refapp commit, content).
+  const startInfo = new Map<string, Promise<StartTree>>();
+  const startOfOnce = (task: string) => {
+    if (!startInfo.has(task)) startInfo.set(task, startOf(task));
+    return startInfo.get(task)!;
+  };
+  const starts = new Map<string, Promise<{ id: string; tree: AlsemTree }>>();
+  const startTree = (task: string) => {
+    if (!starts.has(task)) {
+      starts.set(
+        task,
+        startOfOnce(task).then(async (s) => ({
+          id: s.id,
+          tree: await alsemTree(t, s.dir, `start-${task}-${s.id}`, null),
+        })),
+      );
+    }
+    return starts.get(task)!;
+  };
+  const todo = rows.filter((r) => hashOf.has(r.id));
+  const execDir = join(t.cache, "exec");
+  await Deno.mkdir(execDir, { recursive: true });
+  /**
+   * The done stamp of an execution: build, rev, workspace, derivation, and the
+   * sha256 of the artifacts its row is computed from (start and final tree.json,
+   * the digest of its patch, the diff). A changed or missing artifact changes the
+   * stamp, so the row is not done. A start tree that cannot be built binds to nothing.
+   */
+  const stampOf = async (r: Row): Promise<DoneStamp> => {
+    const hash = hashOf.get(r.id)!;
+    let bind: Record<string, string>;
+    try {
+      const sid = (await startOfOnce(r.task)).id;
+      const final = join(t.cache, hash);
+      const start = join(t.cache, `start-${r.task}-${sid}`);
+      bind = {
+        start: await hashOrEmpty(join(start, "tree.json")),
+        final: await hashOrEmpty(join(final, "tree.json")),
+        // The raw tool outputs behind both trees: a damaged one is never a done row.
+        ...Object.fromEntries(
+          await Promise.all(
+            ["analyze", "ach", "fingerprint"].flatMap((n) =>
+              [["start", start], ["final", final]].map(async (
+                [side, dir],
+              ) => [`${side}_${n}`, await hashOrEmpty(join(dir!, `${n}.json`))])
+            ),
+          ),
+        ),
+        digest: r.patch
+          ? await hashOrEmpty(
+            join(final, `digest-${await digestId(r.patch)}.json`),
+          )
+          : "",
+        diff: await hashOrEmpty(join(final, `diff-${sid}.json`)),
+      };
+    } catch {
+      bind = { error: "" };
+    }
+    return { build: t.build, rev: t.rev, hash, derive: DERIVATION, bind };
+  };
+  let n = 0;
+  let skipped = 0;
+  const failed: { id: string; error: string }[] = [];
+  await pool(jobs, todo, async (r) => {
+    const hash = hashOf.get(r.id)!;
+    const prior = await readDone<AlsemRow>(execDir, r.id, await stampOf(r));
+    if (prior && !hasErrorDiagnostic(prior.diagnostics)) {
+      skipped++;
+      return;
+    }
+    try {
+      const { id: sid, tree: s } = await startTree(r.task);
+      const f = await alsemTree(
+        t,
+        join(results, "workspaces", hash),
+        hash,
+        r.patch ?? "",
+      );
+      // The diff depends on both sides: the start identity and the final tree (this folder).
+      const diffOut = join(t.cache, hash, `diff-${sid}.json`);
+      // One creation per diff entry at a time; a concurrent request finds it done.
+      await serialized(diffOut, async () => {
+        if (await Deno.stat(diffOut).then(() => true, () => false)) return;
+        const tmp = `${diffOut}.tmp-${Deno.pid}-${crypto.randomUUID()}`;
+        await (t.exec ?? run)(t.alsem, [
+          "diff",
+          s.fingerprint,
+          f.fingerprint,
+          "--format",
+          "json",
+          "--deterministic",
+          "--out",
+          tmp,
+        ]);
+        await Deno.rename(tmp, diffOut);
+      });
+      const diffRaw = await Deno.readTextFile(diffOut);
+      const diff = { ...checkedEnvelope("diff", diffRaw, "diff-report").e };
+      const introduced = introducedFindings(s.findings, f.findings);
+      const touches = f.touches;
+      const deltas = routineDeltas(
+        s.metrics,
+        f.metrics,
+        new Set(touches.changed_routines),
+      );
+      const unused = newUnused(s.unused, f.unused);
+      const blast = blastRadius(diff.payload, f.testRanges);
+      const row: AlsemRow = {
+        id: r.id,
+        arm: r.arm,
+        task: r.task,
+        repeat: r.repeat,
+        verdict: r.verdict,
+        metrics: alsemSummary({
+          introduced,
+          deltas,
+          unused,
+          blast,
+          touches,
+          changed_prod_lines: changedProdLines(r.patch ?? ""),
+        }),
+        introduced,
+        deltas,
+        unused,
+        blast,
+        touches,
+        versions: {
+          start: s.versions,
+          final: f.versions,
+          diff: {
+            diff: {
+              alsemVersion: diff.alsemVersion,
+              schemaVersion: diff.schemaVersion,
+            },
+          },
+        },
+        diagnostics: [
+          ...s.diagnostics.map((d) => ({ ...d, tree: "start" })),
+          ...f.diagnostics.map((d) => ({ ...d, tree: "final" })),
+          ...diff.diagnostics.map((d) => ({
+            ...d,
+            command: "diff",
+            tree: "diff",
+          })),
+        ],
+      };
+      // Written last and atomically: only a complete row marks the execution done.
+      await writeDone(execDir, r.id, await stampOf(r), row);
+    } catch (err) {
+      const error = (err as Error).message;
+      failed.push({ id: r.id, error });
+      console.error(`[WARN] alsem ${r.id}: ${error}`);
+    }
+    if (++n % 10 === 0) console.error(`[alsem] ${n}/${todo.length}`);
+  });
+  // Everything done for this build, this run's and earlier runs'; failures are absent.
+  const byId = new Map(todo.map((r) => [r.id, r]));
+  const all = (await loadDone<AlsemRow>(
+    execDir,
+    new Map(
+      await Promise.all(
+        todo.map(async (r) => [r.id, await stampOf(r)] as [string, DoneStamp]),
+      ),
+    ),
+  )).filter((x) => !hasErrorDiagnostic(x.diagnostics)).map((x) => ({
+    ...x,
+    verdict: byId.get(x.id)!.verdict,
+    excluded: alsemExclusion(byId.get(x.id)!.termination),
+  }));
+  const excluded = all.filter((r) => r.excluded);
+  const out = all.filter((r) => !r.excluded); // aggregates read this
+  // Rank among all executions of the task (every arm), lower density first; excluded rows stay unranked.
+  const rank = withinTaskRanks(
+    out.map((r) => ({
+      id: r.id,
+      task: r.task,
+      density: r.metrics.curated_density,
+    })),
+  );
+  const rankOf = (r: AlsemRow) => rank.get(r.id) ?? null;
+  const rankStats = (rs: AlsemRow[]) => {
+    const v = rs.map(rankOf);
+    return { median: median(v), mean: densityStats(v).mean };
+  };
+  await writeAtomic(
+    join(t.dir, "exclusions.md"),
+    `## Static analysis (al-sem): exclusions\n\n${
+      alsemExclusionText(excluded)
+    }`,
+  );
+  const diagnostics = all.flatMap((r) => r.diagnostics);
+  console.error(
+    `[alsem] ${all.length}/${todo.length} done (${skipped} were done already, ${
+      todo.length - all.length
+    } failed, ${
+      failed.filter((f) => f.error.startsWith("missing dependencies")).length
+    } of them on missing dependencies), ${excluded.length} excluded from aggregates, ${diagnostics.length} al-sem diagnostics in ${
+      all.filter((r) => r.diagnostics.length).length
+    } executions`,
+  );
+  await Deno.writeTextFile(
+    join(t.dir, "executions.json"),
+    JSON.stringify(
+      all.map((r) => ({ ...r, within_task_rank: rankOf(r) })),
+      null,
+      1,
+    ),
+  );
+  await Deno.writeTextFile(
+    join(t.dir, "executions.csv"),
+    csv(all.map((r) => ({
+      id: r.id,
+      arm: r.arm,
+      task: r.task,
+      repeat: r.repeat,
+      verdict: r.verdict,
+      excluded: r.excluded ?? "",
+      ...r.metrics,
+      within_task_rank: rankOf(r),
+    }))),
+  );
+  await Deno.writeTextFile(
+    join(t.dir, "introduced.csv"),
+    csv(
+      all.flatMap((r) =>
+        r.introduced.map((f) => ({
+          execution: r.id,
+          arm: r.arm,
+          task: r.task,
+          excluded: r.excluded ?? "",
+          ...f,
+        }))
+      ),
+    ),
+  );
+  const agg = (rs: AlsemRow[]) => ({
+    executions: rs.length,
+    curated_density: densityStats(rs.map((r) => r.metrics.curated_density)),
+    within_task_rank: rankStats(rs),
+    median: Object.fromEntries(
+      METRIC_KEYS.map((k) => [k, median(rs.map((r) => r.metrics[k]))]),
+    ),
+    executions_above_zero: Object.fromEntries(
+      METRIC_KEYS.map((k) => [k, rs.filter((r) => r.metrics[k] > 0).length]),
+    ),
+    by_detector: rs.flatMap((r) => r.introduced).filter((f) =>
+      f.app !== TEST_APP
+    ).reduce(
+      (m, f) => (m[f.detector] = (m[f.detector] ?? 0) + f.count, m),
+      {} as Record<string, number>,
+    ),
+  });
+  const arms = [...new Set(out.map((r) => r.arm))].sort();
+  const byCell = new Map(out.map((r) => [`${r.arm}|${r.task}|${r.repeat}`, r]));
+  const perPair = pairs.map(([b, v]) => {
+    const matched = out.filter((r) => r.arm === b).flatMap((a) => {
+      const x = byCell.get(`${v}|${a.task}|${a.repeat}`);
+      return x ? [[a, x] as const] : [];
+    });
+    const cmp = (ps: (readonly [AlsemRow, AlsemRow])[]) => ({
+      pairs: ps.length,
+      curated_density: {
+        base: densityStats(ps.map(([a]) => a.metrics.curated_density)),
+        variant: densityStats(ps.map(([, x]) => x.metrics.curated_density)),
+        // Variant minus base over the pairs where both have a density.
+        median_diff: median(
+          ps.map(([a, x]) =>
+            a.metrics.curated_density === null ||
+              x.metrics.curated_density === null
+              ? null
+              : x.metrics.curated_density - a.metrics.curated_density
+          ),
+        ),
+      },
+      within_task_rank: {
+        base: rankStats(ps.map(([a]) => a)),
+        variant: rankStats(ps.map(([, x]) => x)),
+      },
+      median_diff: Object.fromEntries(
+        METRIC_KEYS.map((k) => [
+          k,
+          median(ps.map(([a, x]) => x.metrics[k] - a.metrics[k])),
+        ]),
+      ),
+      variant_higher: Object.fromEntries(
+        METRIC_KEYS.map((k) => [
+          k,
+          ps.filter(([a, x]) => x.metrics[k] > a.metrics[k]).length,
+        ]),
+      ),
+      variant_lower: Object.fromEntries(
+        METRIC_KEYS.map((k) => [
+          k,
+          ps.filter(([a, x]) => x.metrics[k] < a.metrics[k]).length,
+        ]),
+      ),
+    });
+    return {
+      base: b,
+      variant: v,
+      all: cmp(matched),
+      both_pass: cmp(
+        matched.filter(([a, x]) =>
+          a.verdict === "pass" && x.verdict === "pass"
+        ),
+      ),
+    };
+  });
+  await Deno.writeTextFile(
+    join(t.dir, "summary.json"),
+    JSON.stringify(
+      {
+        // This run's failures (exit 4 = missing dependencies); a rerun retries them.
+        failed,
+        diagnostics: {
+          executions_with_diagnostics:
+            all.filter((r) => r.diagnostics.length).length,
+          by_code: diagnostics.reduce(
+            (m, d) => (bump(m, `${d.command}:${d.severity}:${d.code}`), m),
+            {} as Record<string, number>,
+          ),
+        },
+        excluded: excluded.map((r) => ({
+          id: r.id,
+          arm: r.arm,
+          task: r.task,
+          repeat: r.repeat,
+          reason: r.excluded,
+        })),
+        per_arm: Object.fromEntries(
+          arms.map((a) => [a, agg(out.filter((r) => r.arm === a))]),
+        ),
+        per_arm_passing: Object.fromEntries(
+          arms.map((a) => [
+            a,
+            agg(out.filter((r) => r.arm === a && r.verdict === "pass")),
+          ]),
+        ),
+        per_pair: perPair,
+      },
+      null,
+      1,
+    ),
+  );
+  console.error(
+    `[OK] alsem: ${out.length} of ${todo.length} executions -> ${t.dir}`,
+  );
 }
 
 const classifyRow = (b: Row) =>
@@ -650,14 +2298,29 @@ function dossier(
 
 async function main() {
   const args = parseArgs(Deno.args, {
-    string: ["results", "rev", "out", "repo", "pair"],
+    string: [
+      "results",
+      "rev",
+      "out",
+      "repo",
+      "pair",
+      "alsem",
+      "ach",
+      "symbols",
+      "alsem-jobs",
+      "only",
+    ],
     collect: ["pair"],
-    default: { repo: "." },
+    default: { repo: ".", "alsem-jobs": "3" },
   });
   const campaignId = String(args._[0] ?? "");
-  if (!campaignId || !args.results || !args.rev || !args.out) {
+  if (
+    !campaignId || !args.results || !args.rev || !args.out ||
+    (args.alsem && (!args.ach || !args.symbols))
+  ) {
     console.error(
-      "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .]",
+      "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .] [--only <id or id prefix>,...]\n" +
+        "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]",
     );
     Deno.exit(2);
   }
@@ -686,13 +2349,26 @@ async function main() {
   await Deno.mkdir(join(out, "diffs"), { recursive: true });
   const cache = join(out, ".start");
   const touchesOf = new Map<string, string[]>();
+  // One identity check / build per task and run.
+  const starts = new Map<string, Promise<StartTree>>();
+  const startOf = (task: string) => {
+    if (!starts.has(task)) {
+      starts.set(
+        task,
+        startingTree(repo, args.rev!, task, refappOf.get(task)!, cache),
+      );
+    }
+    return starts.get(task)!;
+  };
 
   // Latest attempt per cell.
   const execDir = join(results, "executions", campaignId);
   const cells = new Map<string, J>();
+  const only = args.only ? args.only.split(",") : [];
   for await (const f of Deno.readDir(execDir)) {
     if (!f.name.endsWith(".json")) continue;
     const e = await readJson(join(execDir, f.name));
+    if (!keepExecution(e["id"] as string, only)) continue;
     const key = `${e["arm"]}|${e["task_id"]}|${e["repeat"]}`;
     const prev = cells.get(key);
     if (!prev || (e["attempt"] as number) > (prev["attempt"] as number)) {
@@ -701,6 +2377,7 @@ async function main() {
   }
 
   const rows: Row[] = [];
+  const hashOf = new Map<string, string>();
   let n = 0;
   for (
     const e of [...cells.values()].sort((a, b) =>
@@ -747,13 +2424,8 @@ async function main() {
     let files: FileChange[] = [];
     let patch: string | null = null;
     if (e["workspace_hash"]) {
-      const start = await startingTree(
-        repo,
-        args.rev,
-        task,
-        refappOf.get(task)!,
-        cache,
-      );
+      hashOf.set(id, e["workspace_hash"] as string);
+      const start = (await startOf(task)).dir;
       if (!touchesOf.has(task)) {
         const at = await loadTaskAt(repo, task, args.rev, join(cache, "tasks"));
         touchesOf.set(task, at.task.task.touches);
@@ -1016,6 +2688,82 @@ async function main() {
   console.error(
     `[OK] ${rows.length} executions, ${pairRows.length} pairs, ${lossRows.length} losses -> ${out}`,
   );
+
+  if (args.alsem) {
+    const dir = join(out, "alsem");
+    await Deno.mkdir(dir, { recursive: true });
+    const lockText = await run(
+      "git",
+      ["show", `${args.rev}:harness-tasks/symbols.lock.json`],
+      repo,
+    );
+    const alsemSha = await sha256File(args.alsem);
+    const achSha = await sha256File(args.ach!);
+    const t: AlsemTools = {
+      alsem: args.alsem,
+      ach: args.ach!,
+      store: args.symbols!,
+      lock: (JSON.parse(lockText) as { packages: AlsemTools["lock"] })
+        .packages,
+      dir,
+      cache: join(
+        dir,
+        "cache",
+        `${alsemSha.slice(0, 12)}-${achSha.slice(0, 12)}`,
+      ),
+      build: `${alsemSha}-${achSha}`,
+      rev: args.rev,
+    };
+    const missing = [];
+    for (const p of t.lock) {
+      const f = join(t.store, `${p.sha256}.app`);
+      if (
+        !await Deno.stat(f).then(() => true, () => false) ||
+        await sha256File(f) !== p.sha256
+      ) missing.push(p.file);
+    }
+    if (missing.length) {
+      throw new Error(
+        `symbol store ${t.store} lacks ${missing.length} locked packages: ${
+          missing.slice(0, 3).join(", ")
+        }`,
+      );
+    }
+    // The binary is the one tools.json pinned (same sha256): reuse its version, no tool call.
+    const version = await resolveAlsemVersion(
+      await readJsonOr(join(dir, "tools.json")),
+      alsemSha,
+      () => run(t.alsem, ["--version"]),
+    );
+    await Deno.writeTextFile(
+      join(dir, "tools.json"),
+      JSON.stringify(
+        {
+          alsem: {
+            path: t.alsem,
+            version,
+            sha256: alsemSha,
+          },
+          al_call_hierarchy: { path: t.ach, sha256: achSha },
+          cache: t.cache,
+          symbols: { store: t.store, packages: t.lock.length, rev: args.rev },
+          workspace:
+            "one synthetic app per tree (mergedAppJson), scratch copy with .alpackages a junction to the symbol store; analyze --require-dependencies; alsem commands --deterministic",
+        },
+        null,
+        1,
+      ),
+    );
+    await alsemStep(
+      t,
+      rows,
+      results,
+      hashOf,
+      startOf,
+      pairs,
+      Number(args["alsem-jobs"]),
+    );
+  }
 }
 
 if (import.meta.main) await main();

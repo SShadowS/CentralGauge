@@ -1,10 +1,39 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { basename, join } from "@std/path";
 import type { TraceEvent } from "../../../src/harness/trace.ts";
 import {
+  alsemEnvelope,
+  alsemExclusion,
+  alsemExclusionText,
+  alsemFindings,
+  alsemStep,
+  alsemSummary,
+  type AlsemTools,
+  alsemTree,
+  blastRadius,
   classifyLoss,
+  digestPatch,
+  digestTouches,
+  exitError,
+  introducedFindings,
+  keepExecution,
+  linkAlpackages,
+  loadDone,
   type LossInput,
+  mergedAppJson,
   missingFromShipped,
+  newUnused,
+  pinnedAlsemVersion,
+  readDone,
+  removeWorkspace,
+  resolveAlsemVersion,
+  routineDeltas,
+  type Row,
+  startingTree,
   traceProfile,
+  unusedProcedures,
+  writeAtomic,
+  writeDone,
 } from "../../../scripts/harness/analyze-campaign.ts";
 
 Deno.test("missingFromShipped: a missing name the patch adds to a shipped test file, not one added elsewhere", () => {
@@ -280,4 +309,1578 @@ Deno.test("classifyLoss: precedence and tags", () => {
     classifyLoss({ ...base, termination: "setup_failed" }).cls,
     "other_termination",
   );
+});
+
+// ---- A-03: al-sem static analysis ----
+
+const finding = (
+  detector: string,
+  severity: string,
+  object: string,
+  routine: string,
+  file: string,
+  line = 1,
+  fingerprint = `${detector}|${object}|${routine}`,
+) => ({
+  detector,
+  title: detector,
+  severity,
+  confidence: { level: "high" },
+  primaryLocation: {
+    file: `ws:${file}`,
+    line,
+    column: 5,
+    routineName: routine,
+    routineId: `r-${routine}`,
+    objectName: object,
+    objectId: `c6a1e000-0000-4000-8000-0000000000ff/Codeunit/70001`,
+  },
+  id: `id-${line}`,
+  fingerprint,
+});
+
+const envelope = (
+  kind: string,
+  schemaVersion: string,
+  payload: Record<string, unknown>,
+  diagnostics: { code: string; message: string; severity: string }[] = [],
+) => ({
+  alsemVersion: "2.0.1",
+  schemaVersion,
+  kind,
+  deterministic: true,
+  diagnostics,
+  payload,
+});
+
+const DIGEST_PAYLOAD = {
+  entries: [],
+  summary: {},
+  changedRootsDiagnostics: [],
+};
+const DIFF_PAYLOAD = { findings: [], summary: { findingsByCategory: {} } };
+const GOOD_F = {
+  detector: "d1",
+  severity: "high",
+  confidence: { level: "likely" },
+  primaryLocation: { file: "ws:Core/A.al" },
+  fingerprint: "fp1",
+};
+const GOOD_D = {
+  kind: "k",
+  category: "abi",
+  severity: "info",
+  subject: { newStableId: "a:Codeunit:70001#h" },
+};
+const withFinding = (f: unknown) =>
+  envelope("analyze-report", "1.0.0", { findings: [f] });
+
+Deno.test("alsemEnvelope: complete per-item fields are accepted", () => {
+  alsemEnvelope(withFinding(GOOD_F), "analyze-report");
+  alsemEnvelope(
+    envelope("diff-report", "1.0.0", {
+      findings: [GOOD_D],
+      summary: { findingsByCategory: { abi: 1 } },
+    }),
+    "diff-report",
+  );
+  alsemEnvelope(
+    envelope("digest", "1.6.0", {
+      entries: [{
+        routine: { stableId: "r", anchor: { file: "ws:Core/A.al" } },
+        effects: [{ type: "DB_INSERT", detail: { resourceDisplay: "T" } }],
+      }],
+      summary: { rootsRequested: 1, rootsResolved: 1, totalUnresolved: 0 },
+      changedRootsDiagnostics: [{ kind: "hunk-outside-routines" }],
+    }),
+    "digest",
+  );
+});
+
+Deno.test("alsemEnvelope: versions, kind and diagnostics; a wrong kind or an unknown schemaVersion fails loudly", () => {
+  const diag = { code: "W001", message: "slow", severity: "warning" };
+  const e = alsemEnvelope(
+    envelope("analyze-report", "1.0.0", { findings: [] }, [diag]),
+    "analyze-report",
+  );
+  assertEquals(e, {
+    alsemVersion: "2.0.1",
+    schemaVersion: "1.0.0",
+    kind: "analyze-report",
+    diagnostics: [diag],
+    payload: { findings: [] },
+  });
+  assertEquals(
+    alsemEnvelope(
+      envelope("digest", "1.6.0", DIGEST_PAYLOAD),
+      "digest",
+    ).schemaVersion,
+    "1.6.0",
+  );
+  assertEquals(
+    alsemEnvelope(
+      envelope("diff-report", "1.0.0", DIFF_PAYLOAD),
+      "diff-report",
+    ).kind,
+    "diff-report",
+  );
+  assertThrows(
+    () =>
+      alsemEnvelope(envelope("diff-report", "1.0.0", DIFF_PAYLOAD), "digest"),
+    Error,
+    'kind "diff-report"',
+  );
+  assertThrows(
+    () => alsemEnvelope(envelope("digest", "1.5.0", DIGEST_PAYLOAD), "digest"),
+    Error,
+    'schemaVersion "1.5.0"',
+  );
+  assertThrows(
+    () => alsemEnvelope({ payload: { findings: [] } }, "analyze-report"),
+    Error,
+    "kind",
+  );
+});
+
+Deno.test("alsemEnvelope: strict, a required field that is missing or mistyped is invalid, never defaulted", () => {
+  const ok = envelope("analyze-report", "1.0.0", { findings: [] });
+  const without = (k: string) => {
+    const { [k]: _, ...rest } = ok as Record<string, unknown>;
+    return rest;
+  };
+  const bad: [string, unknown][] = [
+    // the incomplete envelope from the self-check
+    [
+      "no alsemVersion / diagnostics",
+      {
+        kind: "analyze-report",
+        schemaVersion: "1.0.0",
+        payload: { findings: [] },
+      },
+    ],
+    ["no alsemVersion", without("alsemVersion")],
+    ["no schemaVersion", without("schemaVersion")],
+    ["numeric schemaVersion", { ...ok, schemaVersion: 1 }],
+    ["no diagnostics", without("diagnostics")],
+    ["null diagnostics", { ...ok, diagnostics: null }],
+    ["diagnostic without severity", { ...ok, diagnostics: [{ code: "X" }] }],
+    ["no payload", without("payload")],
+    ["array payload", { ...ok, payload: [] }],
+    ["numeric alsemVersion", { ...ok, alsemVersion: 2 }],
+    ["analyze without findings", { ...ok, payload: {} }],
+    ["analyze findings not an array", { ...ok, payload: { findings: {} } }],
+    // the finding from the self-check: no severity
+    [
+      "finding without severity",
+      withFinding({
+        detector: "d1",
+        confidence: { level: "likely" },
+        primaryLocation: { file: "ws:Core/A.al" },
+        fingerprint: "fp1",
+      }),
+    ],
+    [
+      "finding with unknown severity",
+      withFinding({ ...GOOD_F, severity: "x" }),
+    ],
+    [
+      "finding without detector",
+      withFinding({ ...GOOD_F, detector: undefined }),
+    ],
+    ["finding without fingerprint", withFinding({ ...GOOD_F, fingerprint: 1 })],
+    ["finding without confidence", withFinding({ ...GOOD_F, confidence: {} })],
+    [
+      "finding without a file",
+      withFinding({ ...GOOD_F, primaryLocation: { line: 1 } }),
+    ],
+  ];
+  for (const [what, doc] of bad) {
+    assertThrows(() => alsemEnvelope(doc, "analyze-report"), Error, "", what);
+  }
+  const shapes: [string, string, unknown][] = [
+    ["digest", "1.6.0", {}],
+    ["digest", "1.6.0", { ...DIGEST_PAYLOAD, entries: null }],
+    ["digest", "1.6.0", { ...DIGEST_PAYLOAD, entries: [{}] }],
+    ["digest", "1.6.0", { entries: [], changedRootsDiagnostics: [] }],
+    ["diff-report", "1.0.0", {}],
+    ["diff-report", "1.0.0", { findings: [] }],
+    ["diff-report", "1.0.0", { findings: [], summary: {} }],
+    [
+      "diff-report",
+      "1.0.0",
+      { findings: [], summary: { findingsByCategory: { abi: "1" } } },
+    ],
+    ...(["kind", "category", "severity", "subject"] as const).map((k) =>
+      ["diff-report", "1.0.0", {
+        ...DIFF_PAYLOAD,
+        findings: [{ ...GOOD_D, [k]: undefined }],
+      }] as [string, string, unknown]
+    ),
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{ ...GOOD_D, severity: "x" }],
+    }],
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{ ...GOOD_D, subject: {} }],
+    }],
+    // A-03 self-check r3: an invalid higher-precedence id shadowing a valid
+    // lower one is rejected (the consumer reads new ?? old ?? normalized).
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{
+        ...GOOD_D,
+        subject: { newStableId: 0, oldStableId: "a:Codeunit:80001#h" },
+      }],
+    }],
+    ["diff-report", "1.0.0", {
+      ...DIFF_PAYLOAD,
+      findings: [{
+        ...GOOD_D,
+        subject: { newStableId: "", normalizedStableId: "a:Codeunit:80001#h" },
+      }],
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      entries: [{ routine: { anchor: {} }, effects: [] }],
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      entries: [{ routine: { stableId: "r" }, effects: [{ detail: {} }] }],
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      summary: { rootsRequested: "1" },
+    }],
+    ["digest", "1.6.0", {
+      ...DIGEST_PAYLOAD,
+      changedRootsDiagnostics: [{}],
+    }],
+    ["capability-snapshot", "1.1.0", null],
+  ];
+  for (const [kind, v, payload] of shapes) {
+    assertThrows(
+      () => alsemEnvelope(envelope(kind, v, payload as never), kind),
+      Error,
+      "",
+      `${kind} ${JSON.stringify(payload)}`,
+    );
+  }
+});
+
+Deno.test("exitError: exit 4 from --require-dependencies is a missing-dependency failure, other codes name the code", () => {
+  const e4 = exitError("alsem", ["analyze", "ws"], 4, "cannot read X.app");
+  assert(e4.message.startsWith("missing dependencies (exit 4)"), e4.message);
+  assert(e4.message.includes("cannot read X.app"));
+  const e1 = exitError("alsem", ["diff"], 1, "boom");
+  assert(e1.message.includes("exit 1"), e1.message);
+  assert(!e1.message.includes("missing dependencies"));
+});
+
+Deno.test("alsemFindings + introducedFindings: final minus start matched by fingerprint (not line, not routine name), with the app", () => {
+  const start = alsemFindings({
+    findings: [
+      finding("d1-db-op-in-loop", "high", "CGR A", "Run", "Core/src/A.al", 10),
+      finding(
+        "d3-missing-setloadfields",
+        "medium",
+        "CGR A",
+        "Run",
+        "Core/src/A.al",
+        12,
+        "fp-d3-a",
+      ),
+    ],
+  });
+  const final = alsemFindings({
+    findings: [
+      // moved down 5 lines: the same fingerprint, so the same finding
+      finding("d1-db-op-in-loop", "high", "CGR A", "Run", "Core/src/A.al", 15),
+      finding(
+        "d3-missing-setloadfields",
+        "medium",
+        "CGR A",
+        "Run",
+        "Core/src/A.al",
+        17,
+        "fp-d3-a",
+      ),
+      // same detector and routine, another fingerprint: a new finding
+      finding(
+        "d3-missing-setloadfields",
+        "medium",
+        "CGR A",
+        "Run",
+        "Core/src/A.al",
+        30,
+        "fp-d3-b",
+      ),
+      finding(
+        "d11-modify-without-get",
+        "medium",
+        "CGR B",
+        "Post",
+        "Rental/src/B.al",
+        4,
+      ),
+      finding(
+        "d34-commit-in-loop",
+        "high",
+        "CGR Tests",
+        "T1",
+        "Test/src/T.al",
+        9,
+      ),
+    ],
+  });
+  assertEquals(final[4], {
+    detector: "d34-commit-in-loop",
+    severity: "high",
+    confidence: "high",
+    object: "CGR Tests",
+    routine: "T1",
+    file: "Test/src/T.al",
+    line: 9,
+    app: "Test",
+    fingerprint: "d34-commit-in-loop|CGR Tests|T1",
+  });
+  assertEquals(introducedFindings(start, final), [
+    { ...final[2]!, count: 1 },
+    { ...final[3]!, count: 1 },
+    { ...final[4]!, count: 1 },
+  ]);
+  // A finding the agent fixed is not "introduced".
+  assertEquals(introducedFindings(final, start), []);
+});
+
+const metric = (
+  procedure: string,
+  complexity: number,
+  lines: number,
+  params: number,
+  o: Record<string, unknown> = {},
+) => ({
+  object_type: "Codeunit",
+  object_name: "CGR A",
+  procedure_name: procedure,
+  file: "A.Codeunit.al",
+  line: 10,
+  complexity,
+  line_count: lines,
+  parameter_count: params,
+  quality_score: 9.5,
+  path: "Core/src/A.Codeunit.al",
+  object_id: 70001,
+  access: "public",
+  is_event_subscriber: false,
+  is_trigger: false,
+  routine_id:
+    `c6a1e000-0000-4000-8000-0000000000ff:Codeunit:70001#${procedure}`,
+  fan_in: 1,
+  fan_out: 0,
+  ...o,
+});
+
+Deno.test("routineDeltas: joined by routine_id (overloads apart), app from path, fan-in delta, digest-changed routines kept", () => {
+  const sid = (p: string) =>
+    `c6a1e000-0000-4000-8000-0000000000ff:Codeunit:70001#${p}`;
+  const start = [
+    metric("Run", 2, 10, 1, { fan_in: 1 }),
+    metric("Old", 1, 3, 0),
+    metric("Same", 1, 4, 0),
+    // the patch touched it without changing its metrics
+    metric("Touched", 1, 4, 0, { fan_in: 2 }),
+    // only its fan-in changed and the patch did not touch it: not a row
+    metric("Callee", 1, 4, 0, { fan_in: 1 }),
+    metric("Over", 1, 5, 1, { routine_id: sid("Over1") }),
+    metric("Over", 1, 5, 2, { routine_id: sid("Over2") }),
+  ];
+  const final = [
+    metric("Run", 5, 22, 2, { fan_in: 3 }),
+    metric("Same", 1, 4, 0),
+    metric("Touched", 1, 4, 0, { fan_in: 2 }),
+    metric("Callee", 1, 4, 0, { fan_in: 4 }),
+    metric("New", 3, 12, 4, { fan_in: null }),
+    metric("Over", 1, 5, 1, { routine_id: sid("Over1") }),
+    metric("Over", 2, 9, 2, { routine_id: sid("Over2") }),
+    metric("T1", 1, 30, 0, {
+      object_name: "CGR Tests",
+      path: "Test/src/T.Codeunit.al",
+      routine_id: sid("T1"),
+    }),
+  ];
+  const row = (
+    app: string,
+    object: string,
+    routine: string,
+    routine_id: string,
+    status: "added" | "changed" | "removed",
+    complexity: number,
+    d_complexity: number,
+    d_lines: number,
+    d_params: number,
+    d_fan_in: number | null,
+    in_patch = false,
+  ) => ({
+    app,
+    object,
+    routine,
+    routine_id,
+    status,
+    complexity,
+    d_complexity,
+    d_lines,
+    d_params,
+    d_fan_in,
+    in_patch,
+  });
+  assertEquals(
+    routineDeltas(start, final, new Set([sid("Touched"), sid("Run")])),
+    [
+      row("Core", "CGR A", "New", sid("New"), "added", 3, 3, 12, 4, null),
+      row("Core", "CGR A", "Old", sid("Old"), "removed", 0, -1, -3, 0, -1),
+      row("Core", "CGR A", "Over", sid("Over2"), "changed", 2, 1, 4, 0, 0),
+      row("Core", "CGR A", "Run", sid("Run"), "changed", 5, 3, 12, 1, 2, true),
+      row(
+        "Core",
+        "CGR A",
+        "Touched",
+        sid("Touched"),
+        "changed",
+        1,
+        0,
+        0,
+        0,
+        0,
+        true,
+      ),
+      row("Test", "CGR Tests", "T1", sid("T1"), "added", 1, 1, 30, 0, 1),
+    ],
+  );
+});
+
+Deno.test("unusedProcedures + newUnused: joined to metrics by path + line for access; final minus start by routine", () => {
+  const unused = (procedure: string, path: string, line: number) => ({
+    category: "unused_procedure",
+    severity: "info",
+    location: `${path.split("/").pop()}:${line}`,
+    procedure,
+    description: `Procedure '${procedure}' is never called`,
+    path,
+  });
+  const metrics = [
+    metric("Helper", 1, 3, 0, { access: "local", line: 20 }),
+    metric("Api", 1, 3, 0, { access: "public", line: 30 }),
+    metric("Old", 1, 3, 0, { access: "internal", line: 40 }),
+  ];
+  const p = "Core/src/A.Codeunit.al";
+  const ach = {
+    metrics,
+    findings: [
+      {
+        category: "long_method",
+        severity: "warning",
+        location: "A.Codeunit.al:20",
+        procedure: "CGR A.Helper",
+        description: "long",
+        path: p,
+      },
+      unused("CGR A.Helper", p, 20),
+      unused("CGR A.Api", p, 30),
+      unused("CGR A.Old", p, 40),
+      unused("CGR A.Ghost", p, 99),
+    ],
+    summary: {
+      total_procedures: 3,
+      avg_complexity: 1,
+      avg_quality_score: 9,
+      critical_findings: 0,
+      warning_findings: 1,
+    },
+  };
+  const f = unusedProcedures(ach);
+  const sid = (n: string) =>
+    `c6a1e000-0000-4000-8000-0000000000ff:Codeunit:70001#${n}`;
+  assertEquals(f, [
+    {
+      app: "Core",
+      procedure: "CGR A.Helper",
+      path: p,
+      line: 20,
+      access: "local",
+      routine_id: sid("Helper"),
+    },
+    {
+      app: "Core",
+      procedure: "CGR A.Api",
+      path: p,
+      line: 30,
+      access: "public",
+      routine_id: sid("Api"),
+    },
+    {
+      app: "Core",
+      procedure: "CGR A.Old",
+      path: p,
+      line: 40,
+      access: "internal",
+      routine_id: sid("Old"),
+    },
+    {
+      app: "Core",
+      procedure: "CGR A.Ghost",
+      path: p,
+      line: 99,
+      access: "unknown",
+      routine_id: null,
+    },
+  ]);
+  // Old was unused before too (at another line): not new.
+  const start = unusedProcedures({
+    metrics: [metric("Old", 1, 3, 0, { access: "internal", line: 12 })],
+    findings: [unused("CGR A.Old", p, 12)],
+  });
+  assertEquals(newUnused(start, f).map((u) => u.procedure), [
+    "CGR A.Helper",
+    "CGR A.Api",
+    "CGR A.Ghost",
+  ]);
+});
+
+Deno.test("blastRadius: a subject with only normalizedStableId (al-sem 2.0.2 removal kinds) is attributed by it", () => {
+  const app = "c6a1e000-0000-4000-8000-0000000000ff";
+  const removed = (id: string) => ({
+    category: "abi",
+    kind: "procedure-removed",
+    severity: "critical",
+    subject: {
+      displayName: "OnAfterDamageRegistered",
+      normalizedStableId: `${app}:Codeunit:${id}#2b201fe3`,
+    },
+    details: { kind: "procedure-removed" },
+    comparisonCone: [],
+  });
+  const r = blastRadius(
+    {
+      findings: [removed("80020"), removed("70102")],
+      summary: { findingsByCategory: { abi: 2 } },
+    },
+    [[80000, 84999]],
+  );
+  assertEquals(r.test.abi, 1);
+  assertEquals(r.production.abi, 1);
+});
+
+Deno.test("readDone: a row stamped by another derivation version is not done", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeDone(dir, "e1", { ...stamp }, { id: "e1" }); // old: no derive
+    assertEquals(await readDone(dir, "e1", { ...stamp, derive: 2 }), null);
+    await writeDone(dir, "e1", { ...stamp, derive: 2 }, { id: "e1" });
+    assertEquals(await readDone(dir, "e1", { ...stamp, derive: 2 }), {
+      id: "e1",
+    });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("blastRadius: categories per side add up to summary.findingsByCategory; signature changes by kind; production vs Test by object id", () => {
+  const f = (category: string, kind: string, severity: string, id: string) => ({
+    kind,
+    category,
+    severity,
+    subject: {
+      displayName: kind,
+      newStableId: `c6a1e000-0000-4000-8000-0000000000ff:${id}#x`,
+    },
+    details: {},
+    comparisonCone: [],
+  });
+  const findings = [
+    f("abi", "procedure-signature-changed", "critical", "Codeunit:70203"),
+    f("abi", "procedure-added", "info", "Codeunit:70203"),
+    f("abi", "procedure-added", "info", "Codeunit:80090"),
+    f("schema", "table-field-added", "info", "Table:70210"),
+    f("events", "event-removed", "high", "Codeunit:70000"),
+    f("permissions", "permission-target-added", "high", "Codeunit:80053"),
+    f("capabilities", "capability-gained-commit", "high", "Codeunit:70001"),
+  ];
+  const removed = {
+    ...f("abi", "procedure-removed", "critical", "Codeunit:1"),
+    subject: {
+      displayName: "Gone",
+      oldStableId: "c6a1e000-0000-4000-8000-0000000000ff:Codeunit:80001#y",
+    },
+  };
+  const summary = (abi: number) => ({
+    findingsByCategory: {
+      abi,
+      capabilities: 1,
+      events: 1,
+      permissions: 1,
+      schema: 1,
+    },
+    findingsBySeverity: { critical: 1, high: 3, info: 3 },
+    coverageIncompleteCones: 0,
+    renamesApplied: 0,
+  });
+  const r = blastRadius(
+    { findings: [...findings, removed], summary: summary(4) },
+    [[80000, 84999]],
+  );
+  assertEquals(r, {
+    total: { abi: 4, capabilities: 1, events: 1, permissions: 1, schema: 1 },
+    production: {
+      abi: 2,
+      schema: 1,
+      events: 1,
+      permissions: 0,
+      capabilities: 1,
+      by_kind: {
+        "procedure-signature-changed": 1,
+        "procedure-added": 1,
+        "table-field-added": 1,
+        "event-removed": 1,
+        "capability-gained-commit": 1,
+      },
+      critical_or_high: 3,
+    },
+    test: {
+      abi: 2,
+      schema: 0,
+      events: 0,
+      permissions: 1,
+      capabilities: 0,
+      by_kind: {
+        "procedure-added": 1,
+        "permission-target-added": 1,
+        "procedure-removed": 1,
+      },
+      critical_or_high: 2,
+    },
+  });
+  // A summary that disagrees with the findings fails loudly.
+  assertThrows(
+    () => blastRadius({ findings, summary: summary(9) }, [[80000, 84999]]),
+    Error,
+    "findingsByCategory",
+  );
+});
+
+Deno.test("digestPatch: the campaign patch with paths relative to the merged app folder (the workspace root)", () => {
+  const p = "--- start/Core/src/A.al\n+++ final/Core/src/A.al\n@@ -1 +1 @@\n" +
+    "-x\n+--- start/y\n--- /dev/null\n+++ final/Test/src/N.al\n@@ -0,0 +1 @@\n+z\n";
+  assertEquals(
+    digestPatch(p),
+    "--- a/Core/src/A.al\n+++ b/Core/src/A.al\n@@ -1 +1 @@\n" +
+      "-x\n+--- start/y\n--- /dev/null\n+++ b/Test/src/N.al\n@@ -0,0 +1 @@\n+z\n",
+  );
+});
+
+Deno.test("digestTouches: production roots, tables written / read, events published, commits; changed routine stableIds", () => {
+  const eff = (
+    type: string,
+    display: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    type,
+    detail: { resourceDisplay: display, resourceId: display, ...extra },
+    evidence: [],
+    viaPaths: [],
+  });
+  const r = digestTouches({
+    changed: { diffProvided: true },
+    changedRootsDiagnostics: [
+      { kind: "hunk-outside-routines", file: "Rental/src/P.al" },
+      { kind: "diff-file-unmatched", file: "Rental/src/L.Enum.al" },
+    ],
+    dependencies: { mode: "load", apps: [] },
+    summary: {
+      rootsRequested: 2,
+      rootsResolved: 2,
+      totalEffects: 6,
+      totalUnresolved: 1,
+    },
+    entries: [
+      {
+        routine: {
+          display: "CalcLines",
+          objectDisplay: "Codeunit CGR P",
+          stableId: "sid-calc",
+          anchor: { file: "ws:Rental/src/P.al" },
+        },
+        effects: [
+          eff("DB_INSERT", "CGR Line"),
+          eff("DB_DELETE", "CGR Line"),
+          eff("DB_READ", "CGR Setup"),
+          eff("EVENT_PUBLISH", "onafterpost", { eventClass: "Integration" }),
+          eff("COMMIT", ""),
+        ],
+        coverage: { status: "complete" },
+      },
+      {
+        routine: {
+          display: "T1",
+          objectDisplay: "Codeunit CGR Tests",
+          stableId: "sid-t1",
+          anchor: { file: "ws:Test/src/T.al" },
+        },
+        effects: [eff("DB_MODIFY", "CGR Contract")],
+        coverage: { status: "complete" },
+      },
+    ],
+  });
+  assertEquals(r, {
+    roots: 2,
+    production_roots: 1,
+    roots_requested: 2,
+    roots_resolved: 2,
+    changed_routines: ["sid-calc", "sid-t1"],
+    tables_written: ["CGR Line"],
+    tables_read: ["CGR Setup"],
+    events_published: ["onafterpost"],
+    commits: 1,
+    unresolved: 1,
+    unmapped_hunks: 1,
+    unmatched_files: 1,
+  });
+});
+
+Deno.test("mergedAppJson: the refapp's apps as one synthetic app (union of id ranges, only external dependencies)", () => {
+  const app = (
+    name: string,
+    id: string,
+    from: number,
+    deps: { id: string; name: string }[] = [],
+  ) => ({
+    id,
+    name,
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+    platform: "28.0.0.0",
+    application: "28.0.0.0",
+    runtime: "17.0",
+    target: "OnPrem",
+    features: ["NoImplicitWith"],
+    idRanges: [{ from, to: from + 99 }],
+    dependencies: deps,
+  });
+  const core = app("CGR Core", "c1", 70000);
+  const test = app("CGR Test", "c7", 80000, [
+    { id: "c1", name: "CGR Core" },
+    { id: "dd0be2ea", name: "Library Assert" },
+  ]);
+  assertEquals(mergedAppJson([core, test]), {
+    id: "c6a1e000-0000-4000-8000-0000000000ff",
+    name: "CGR Merged",
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+    platform: "28.0.0.0",
+    application: "28.0.0.0",
+    runtime: "17.0",
+    target: "OnPrem",
+    features: ["NoImplicitWith"],
+    idRanges: [{ from: 70000, to: 70099 }, { from: 80000, to: 80099 }],
+    dependencies: [{ id: "dd0be2ea", name: "Library Assert" }],
+  });
+});
+
+Deno.test("alsemSummary: one execution's metrics (production only, high = critical or high)", () => {
+  const f = (
+    detector: string,
+    severity: string,
+    app: string,
+    count: number,
+  ) => ({
+    detector,
+    severity,
+    confidence: "likely",
+    object: "A",
+    routine: "R",
+    file: `${app}/src/A.al`,
+    line: 1,
+    app,
+    fingerprint: `${detector}-${app}`,
+    count,
+  });
+  const d = (
+    app: string,
+    status: "added" | "changed" | "removed",
+    complexity: number,
+    d_complexity: number,
+    d_lines: number,
+    d_fan_in: number | null,
+  ) => ({
+    app,
+    object: "A",
+    routine: `R${complexity}`,
+    routine_id: `sid-${complexity}`,
+    status,
+    complexity,
+    d_complexity,
+    d_lines,
+    d_params: 0,
+    d_fan_in,
+    in_patch: true,
+  });
+  const u = (app: string, access: string) => ({
+    app,
+    procedure: `A.${access}`,
+    path: `${app}/src/A.al`,
+    line: 1,
+    access,
+    routine_id: null,
+  });
+  const zero = {
+    abi: 0,
+    schema: 0,
+    events: 0,
+    permissions: 0,
+    capabilities: 0,
+    by_kind: {},
+    critical_or_high: 0,
+  };
+  assertEquals(
+    alsemSummary({
+      introduced: [
+        f("d1", "high", "Core", 2),
+        f("d3", "medium", "Core", 1),
+        f("d34", "critical", "Test", 1),
+      ],
+      deltas: [
+        d("Core", "changed", 6, 3, 10, 2),
+        d("Core", "added", 2, 2, 8, null),
+        d("Test", "added", 9, 9, 40, 1),
+      ],
+      unused: [
+        u("Core", "local"),
+        u("Core", "internal"),
+        u("Core", "public"),
+        u("Core", "unknown"),
+        u("Test", "local"),
+      ],
+      blast: {
+        total: {},
+        production: {
+          ...zero,
+          abi: 3,
+          schema: 1,
+          by_kind: { "procedure-signature-changed": 1, "procedure-added": 2 },
+        },
+        test: zero,
+      },
+      touches: {
+        roots: 4,
+        production_roots: 2,
+        roots_requested: 4,
+        roots_resolved: 4,
+        changed_routines: [],
+        tables_written: ["X", "Y"],
+        tables_read: [],
+        events_published: ["e"],
+        commits: 0,
+        unresolved: 0,
+        unmapped_hunks: 1,
+        unmatched_files: 2,
+      },
+      changed_prod_lines: 50,
+    }),
+    {
+      alsem_new_findings: 3,
+      alsem_new_high_findings: 2,
+      alsem_new_test_findings: 1,
+      curated_weighted: 7,
+      changed_prod_lines: 50,
+      curated_density: 14,
+      alsem_d3_introduced: 0,
+      alsem_d9_introduced: 0,
+      complexity_delta: 5,
+      lines_delta: 18,
+      fan_in_delta: 2,
+      max_routine_complexity: 6,
+      routines_added: 1,
+      routines_changed: 1,
+      new_unused: 2,
+      new_unused_public: 1,
+      abi_changes: 3,
+      abi_signature_changes: 1,
+      schema_changes: 1,
+      event_changes: 0,
+      permission_changes: 0,
+      tables_written: 2,
+      events_published: 1,
+      unmapped_hunks: 1,
+    },
+  );
+});
+
+const stamp = { build: "alsem1-ach1", rev: "r1", hash: "h1" };
+
+async function tmp<T>(f: (dir: string) => Promise<T>): Promise<T> {
+  const dir = await Deno.makeTempDir({ prefix: "ac-done-" });
+  try {
+    return await f(dir);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+Deno.test("done markers: a written execution is done and skipped; reads back the row", async () => {
+  await tmp(async (dir) => {
+    assertEquals(await readDone(dir, "e1", stamp), null);
+    await writeDone(dir, "e1", stamp, { id: "e1", n: 3 });
+    assertEquals(await readDone(dir, "e1", stamp), { id: "e1", n: 3 });
+  });
+});
+
+Deno.test("done markers: a temp or truncated file never counts as done", async () => {
+  await tmp(async (dir) => {
+    // what a killed run leaves behind: a temp file, and a cut-off final file
+    await Deno.writeTextFile(join(dir, "e1.json.tmp-1-abc"), "{}");
+    assertEquals(await readDone(dir, "e1", stamp), null);
+    await Deno.writeTextFile(join(dir, "e2.json"), '{"stamp":{"build":"al');
+    assertEquals(await readDone(dir, "e2", stamp), null);
+    assertEquals(
+      await loadDone(dir, new Map([["e1", stamp], ["e2", stamp]])),
+      [],
+    );
+  });
+});
+
+Deno.test("done markers: another build, task rev or workspace is not done", async () => {
+  await tmp(async (dir) => {
+    await writeDone(dir, "e1", stamp, { id: "e1" });
+    for (
+      const other of [
+        { ...stamp, build: "alsem2-ach1" },
+        { ...stamp, rev: "r2" },
+        { ...stamp, hash: "h2" },
+      ]
+    ) assertEquals(await readDone(dir, "e1", other), null);
+  });
+});
+
+Deno.test("loadDone: aggregates every done execution of the campaign, earlier runs included, in id order", async () => {
+  await tmp(async (dir) => {
+    await writeDone(dir, "b", stamp, { id: "b" });
+    await writeDone(dir, "a", stamp, { id: "a" });
+    await writeDone(dir, "old", { ...stamp, build: "x" }, { id: "old" });
+    const stamps = new Map([
+      ["a", stamp],
+      ["b", stamp],
+      ["c", stamp],
+      ["old", stamp],
+    ]);
+    assertEquals(await loadDone(dir, stamps), [{ id: "a" }, { id: "b" }]);
+  });
+});
+
+Deno.test("alsemExclusion: harness_crash is excluded, every other termination is kept", () => {
+  assertEquals(alsemExclusion("harness_crash"), "harness_crash");
+  for (const t of ["completed", "timeout", "budget"]) {
+    assertEquals(alsemExclusion(t), null);
+  }
+});
+
+Deno.test("alsemExclusionText: states the rule and lists the excluded executions, or says none", () => {
+  const txt = alsemExclusionText([
+    {
+      id: "e2",
+      arm: "A",
+      task: "HX-032",
+      repeat: 3,
+      excluded: "harness_crash",
+    },
+    {
+      id: "e1",
+      arm: "A",
+      task: "HX-031",
+      repeat: 3,
+      excluded: "harness_crash",
+    },
+  ]);
+  assertEquals(txt.includes("harness_crash"), true);
+  assertEquals(txt.includes("H-29"), true);
+  assertEquals(txt.indexOf("e1") < txt.indexOf("e2"), true);
+  assertEquals(txt.includes("HX-031 r3"), true);
+  assertEquals(alsemExclusionText([]).includes("none"), true);
+});
+
+Deno.test("writeAtomic: replaces the file and leaves no temp file", async () => {
+  await tmp(async (dir) => {
+    const p = join(dir, "x.json");
+    await writeAtomic(p, "one");
+    await writeAtomic(p, "two");
+    assertEquals(await Deno.readTextFile(p), "two");
+    assertEquals(
+      (await Array.fromAsync(Deno.readDir(dir))).map((e) => e.name),
+      ["x.json"],
+    );
+  });
+});
+
+Deno.test({
+  name:
+    "removeWorkspace: drops the .alpackages junction without following it, so the symbol store keeps its files",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    await tmp(async (dir) => {
+      const store = join(dir, "store");
+      await Deno.mkdir(store);
+      await Deno.writeTextFile(join(store, "abc.app"), "pkg");
+      const ws = join(dir, "ws");
+      await Deno.mkdir(join(ws, "Core"), { recursive: true });
+      await Deno.writeTextFile(join(ws, "Core", "A.al"), "x");
+      await linkAlpackages(ws, store);
+      assertEquals(
+        await Deno.readTextFile(join(ws, ".alpackages", "abc.app")),
+        "pkg",
+      );
+      // A failed junction removal stops before any recursive delete.
+      await assertRejects(
+        () => removeWorkspace(ws, async () => {}),
+        Error,
+        "junction",
+      );
+      assertEquals(await Deno.readTextFile(join(store, "abc.app")), "pkg");
+      await removeWorkspace(ws);
+      assertEquals(await Deno.stat(ws).then(() => true, () => false), false);
+      assertEquals(await Deno.readTextFile(join(store, "abc.app")), "pkg");
+      // Absent workspace: nothing to do.
+      await removeWorkspace(ws);
+    });
+  },
+});
+
+// ---------------------------------------------------------------- review r1: runner with a fake al-sem
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const envJson = (
+  kind: string,
+  schemaVersion: string,
+  diagnostics: unknown[],
+  payload: unknown,
+) =>
+  JSON.stringify({
+    alsemVersion: "2.0.2",
+    schemaVersion,
+    kind,
+    diagnostics,
+    payload,
+  });
+const ERR = { code: "AL0001", message: "boom", severity: "error" };
+
+interface Fake {
+  t: AlsemTools;
+  calls: string[];
+  count: (what: string) => number;
+  /** Tool-call overrides: the stdout (or --out file text) a command returns. */
+  override: Record<string, string>;
+  results: string;
+  /** Scratch workspace of every analyze call. */
+  wss: string[];
+}
+
+const DIGEST_ONE = {
+  ...DIGEST_PAYLOAD,
+  entries: [{
+    routine: { stableId: "r1", anchor: { file: "ws:Core/A.al" } },
+    effects: [],
+  }],
+};
+
+async function fake(root: string): Promise<Fake> {
+  const store = join(root, "store");
+  await Deno.mkdir(store, { recursive: true });
+  const f: Fake = {
+    calls: [],
+    wss: [],
+    override: {},
+    results: join(root, "results"),
+    count: (w) => f.calls.filter((c) => c === w).length,
+    t: undefined as unknown as AlsemTools,
+  };
+  const exec = async (cmd: string, args: string[]) => {
+    const sub = cmd === "ach" ? "ach" : args[0]!;
+    f.calls.push(sub);
+    await delay(15);
+    const out = args.includes("--out")
+      ? args[args.indexOf("--out") + 1]!
+      : null;
+    if (sub === "analyze") f.wss.push(args[1]!);
+    // The start tree is clean, the final tree has one finding: a real introduced finding.
+    const isStart = basename(args[1] ?? "").startsWith("start-");
+    const text = f.override[sub] ?? ({
+      analyze: envJson("analyze-report", "1.0.0", [], {
+        findings: isStart ? [] : [{
+          detector: "d1",
+          severity: "high",
+          confidence: { level: "likely" },
+          primaryLocation: { file: "ws:Core/A.al", line: 1 },
+          fingerprint: "fp1",
+        }],
+      }),
+      ach: JSON.stringify({ metrics: [], findings: [] }),
+      digest: envJson("digest", "1.6.0", [], DIGEST_ONE),
+      fingerprint: envJson("capability-snapshot", "1.1.0", [], { x: 1 }),
+      diff: envJson("diff-report", "1.0.0", [], DIFF_PAYLOAD),
+    } as Record<string, string>)[sub]!;
+    if (out) {
+      await Deno.writeTextFile(out, text);
+      return "";
+    }
+    return text;
+  };
+  f.t = {
+    alsem: "alsem",
+    ach: "ach",
+    store,
+    lock: [],
+    dir: join(root, "out"),
+    cache: join(root, "out", "cache"),
+    build: "b1",
+    rev: "r1",
+    exec: exec as NonNullable<AlsemTools["exec"]>,
+  };
+  await Deno.mkdir(f.t.dir, { recursive: true });
+  return f;
+}
+
+async function tree(dir: string, text: string) {
+  await Deno.mkdir(join(dir, "Core"), { recursive: true });
+  await Deno.mkdir(join(dir, "Test"), { recursive: true });
+  const app = (name: string) =>
+    JSON.stringify({ id: name, name, idRanges: [{ from: 1, to: 9 }] });
+  await Deno.writeTextFile(join(dir, "Core", "app.json"), app("CGR Core"));
+  await Deno.writeTextFile(join(dir, "Test", "app.json"), app("CGR Test"));
+  await Deno.writeTextFile(join(dir, "Core", "A.al"), text);
+}
+
+const PATCH = "--- start/Core/A.al\n+++ final/Core/A.al\n@@ -1 +1 @@\n-a\n+b\n";
+const row = (id: string, task = "HX-1", patch = PATCH) =>
+  ({
+    id,
+    arm: id,
+    task,
+    repeat: 1,
+    verdict: "pass",
+    termination: "completed",
+    patch,
+  }) as unknown as Row;
+
+/** Runs the step for `rows` (id -> final hash); the start tree of every task has identity `startId`. */
+async function step(
+  f: Fake,
+  rows: Row[],
+  hashes: Record<string, string>,
+  startId = "S1",
+  jobs = 2,
+) {
+  const startDir = join(f.t.dir, "starts");
+  await tree(startDir, "a");
+  await alsemStep(
+    f.t,
+    rows,
+    f.results,
+    new Map(Object.entries(hashes)),
+    () => Promise.resolve({ dir: startDir, id: startId }),
+    [],
+    jobs,
+  );
+  const readOut = async (n: string) =>
+    JSON.parse(await Deno.readTextFile(join(f.t.dir, n)));
+  return {
+    failed: (await readOut("summary.json")).failed as {
+      id: string;
+      error: string;
+    }[],
+    rows: (await readOut("executions.json")) as {
+      id: string;
+      metrics: Record<string, number>;
+      introduced: unknown[];
+      touches: { roots: number };
+    }[],
+  };
+}
+
+async function withFake<T>(fn: (f: Fake) => Promise<T>): Promise<T> {
+  const root = await Deno.makeTempDir({ prefix: "ac-fake-" });
+  try {
+    const f = await fake(root);
+    await tree(join(f.results, "workspaces", "h1"), "b");
+    await tree(join(f.results, "workspaces", "h2"), "c");
+    return await fn(f);
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+}
+
+Deno.test("fail closed: exit 0 + an error diagnostic + no findings fails the execution row; it is not a zero-findings row", async () => {
+  await withFake(async (f) => {
+    f.override["analyze"] = envJson("analyze-report", "1.0.0", [ERR], {
+      findings: [],
+    });
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 0);
+    assertEquals(r.failed.length, 1);
+    assert(r.failed[0]!.error.includes("AL0001"), r.failed[0]!.error);
+  });
+});
+
+Deno.test("fail closed: an error diagnostic in the digest or the diff fails the row too", async () => {
+  for (const which of ["digest", "diff"]) {
+    await withFake(async (f) => {
+      f.override[which] = which === "digest"
+        ? envJson("digest", "1.6.0", [ERR], DIGEST_PAYLOAD)
+        : envJson("diff-report", "1.0.0", [ERR], DIFF_PAYLOAD);
+      const r = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals([which, r.rows.length], [which, 0]);
+      assertEquals([which, r.failed.length], [which, 1]);
+      assert(r.failed[0]!.error.includes("AL0001"), r.failed[0]!.error);
+    });
+  }
+});
+
+Deno.test("fail closed: an unparseable or wrong-kind fingerprint output fails the tree", async () => {
+  for (
+    const bad of ["not json", envJson("analyze-report", "1.0.0", [], {})]
+  ) {
+    await withFake(async (f) => {
+      f.override["fingerprint"] = bad;
+      await assertRejects(() =>
+        alsemTree(f.t, join(f.results, "workspaces", "h1"), "h1", null)
+      );
+      assertEquals(
+        await Deno.stat(join(f.t.cache, "h1", "tree.json")).then(
+          () => true,
+          () => false,
+        ),
+        false,
+      );
+    });
+  }
+});
+
+Deno.test("cache identity: the same output dir with another start identity (rev) re-analyzes the start tree and recomputes diff and digest", async () => {
+  await withFake(async (f) => {
+    await step(f, [row("e1")], { e1: "h1" }, "S1");
+    assertEquals(
+      [f.count("analyze"), f.count("digest"), f.count("diff")],
+      [2, 1, 1],
+    );
+    f.t.rev = "r2";
+    const a = f.count("analyze");
+    const r = await step(f, [row("e1")], { e1: "h1" }, "S2");
+    assertEquals(r.rows.length, 1);
+    assertEquals(f.count("analyze") - a, 1, "start tree analyzed again");
+    assertEquals(f.count("diff"), 2, "diff keyed by the start identity");
+  });
+});
+
+Deno.test("cache identity: the same final tree reached by another patch recomputes the digest, the same patch does not", async () => {
+  await withFake(async (f) => {
+    await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(f.count("digest"), 1);
+    await step(f, [row("e2", "HX-1", PATCH + "+more\n")], { e2: "h1" });
+    assertEquals(f.count("digest"), 2);
+    await step(f, [row("e3")], { e3: "h1" });
+    assertEquals(f.count("digest"), 2);
+    assertEquals(f.count("analyze"), 2, "final tree analyzed once");
+  });
+});
+
+Deno.test("DERIVATION: a stale tree.json is re-derived from the cached raw JSON, no tool runs", async () => {
+  await withFake(async (f) => {
+    const src = join(f.results, "workspaces", "h1");
+    await alsemTree(f.t, src, "h1", PATCH);
+    const calls = f.calls.length;
+    const p = join(f.t.cache, "h1", "tree.json");
+    const j = JSON.parse(await Deno.readTextFile(p));
+    j.derive = 0;
+    j.findings = [];
+    j.unused = [{ junk: 1 }];
+    j.touches = { junk: 1 };
+    await Deno.writeTextFile(p, JSON.stringify(j));
+    const t = await alsemTree(f.t, src, "h1", PATCH);
+    assertEquals(f.calls.length, calls, "no tool run");
+    assertEquals(t.findings.map((x) => x.fingerprint), ["fp1"]);
+    assertEquals(t.unused, []);
+    assertEquals(t.touches.roots, 1, "touches come from the digest file");
+    assertEquals(
+      JSON.parse(await Deno.readTextFile(p)).findings.length,
+      1,
+      "rewritten",
+    );
+  });
+});
+
+Deno.test("concurrency: same final tree at jobs>1, two patches and a second tree: tools once per distinct key, one diff per diff key, rows right", async () => {
+  await withFake(async (f) => {
+    const other = PATCH + "+more\n";
+    const r = await step(
+      f,
+      [row("e1"), row("e2"), row("e3", "HX-1", other), row("e4")],
+      { e1: "h1", e2: "h1", e3: "h1", e4: "h2" },
+      "S1",
+      4,
+    );
+    assertEquals(r.failed, []);
+    assertEquals(r.rows.map((x) => x.id).sort(), ["e1", "e2", "e3", "e4"]);
+    assertEquals(f.count("analyze"), 3, "start once, two final trees once");
+    assertEquals(f.count("fingerprint"), 3);
+    assertEquals(f.count("digest"), 3, "h1 x two patches, h2 x one");
+    assertEquals(
+      f.count("diff"),
+      2,
+      "one diff per (final tree, start identity)",
+    );
+    for (const x of r.rows) {
+      assertEquals(x.metrics["alsem_new_findings"], 1, x.id);
+      assertEquals(x.touches.roots, 1, x.id);
+    }
+    // Scratch workspaces are named with a full UUID and never repeat.
+    assert(
+      f.wss.every((w) => /-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(w)),
+      f.wss.join(),
+    );
+    assertEquals(new Set(f.wss).size, f.wss.length);
+  });
+});
+
+Deno.test("revalidation: a raw analyze / fingerprint / ach file damaged after the cache was populated fails the tree hit; it never becomes a counted row", async () => {
+  const damage: [string, string][] = [
+    [
+      "analyze.json",
+      envJson("analyze-report", "1.0.0", [ERR], { findings: [] }),
+    ],
+    [
+      "analyze.json",
+      '{"kind":"analyze-report","schemaVersion":"1.0.0","payload":{"findings":[]}}',
+    ],
+    ["fingerprint.json", "not json"],
+    ["ach.json", '{"metrics":[{"path":1}],"findings":[]}'],
+  ];
+  for (const [file, text] of damage) {
+    await withFake(async (f) => {
+      const src = join(f.results, "workspaces", "h1");
+      const first = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(first.rows.length, 1);
+      await Deno.writeTextFile(join(f.t.cache, "h1", file), text);
+      await assertRejects(
+        () => alsemTree(f.t, src, "h1", PATCH),
+        Error,
+        "",
+        file,
+      );
+      // A new execution of the same tree (another patch, so not done) fails, no row.
+      const again = await step(f, [row("e2", "HX-1", PATCH + "+x\n")], {
+        e2: "h1",
+      });
+      assertEquals([file, again.rows.map((x) => x.id)], [file, []]);
+      assertEquals(again.failed.length, 1, file);
+    });
+  }
+});
+
+Deno.test("revalidation: an incomplete analyze envelope from the tool fails the execution", async () => {
+  await withFake(async (f) => {
+    f.override["analyze"] =
+      '{"kind":"analyze-report","schemaVersion":"1.0.0","payload":{"findings":[]}}';
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 0);
+    assertEquals(r.failed.length, 1);
+  });
+});
+
+Deno.test("done rows are bound to their artifacts: a changed digest or diff file makes the execution not done, it is recomputed", async () => {
+  for (const which of ["digest", "diff"]) {
+    await withFake(async (f) => {
+      const a = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(a.rows[0]!.touches.roots, 1);
+      const c = join(f.t.cache, "h1");
+      const names = (await Array.fromAsync(Deno.readDir(c))).map((e) => e.name);
+      const file = names.find((n) => n.startsWith(`${which}-`))!;
+      // A valid but different envelope: the row built on the old one must not survive.
+      await Deno.writeTextFile(
+        join(c, file),
+        which === "digest"
+          ? envJson("digest", "1.6.0", [], {
+            ...DIGEST_ONE,
+            entries: [...DIGEST_ONE.entries, ...DIGEST_ONE.entries],
+          })
+          : envJson("diff-report", "1.0.0", [], {
+            findings: [{
+              kind: "k",
+              category: "abi",
+              severity: "info",
+              subject: { newStableId: "a:Codeunit:70001#h" },
+            }],
+            summary: { findingsByCategory: { abi: 1 } },
+          }),
+      );
+      const b = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(b.failed, []);
+      if (which === "digest") assertEquals(b.rows[0]!.touches.roots, 2);
+      else assertEquals(b.rows[0]!.metrics["abi_changes"], 1);
+    });
+  }
+});
+
+Deno.test("done rows are bound to the raw tree files: the SAME completed execution after raw damage is not skipped, not counted", async () => {
+  const cases: [string, string, string | null][] = [
+    [
+      "h1",
+      "analyze.json",
+      envJson("analyze-report", "1.0.0", [ERR], {
+        findings: [],
+      }),
+    ],
+    ["h1", "fingerprint.json", null],
+    ["h1", "ach.json", "not json"],
+    [
+      "start-HX-1-S1",
+      "analyze.json",
+      envJson("analyze-report", "1.0.0", [ERR], {
+        findings: [],
+      }),
+    ],
+    ["start-HX-1-S1", "fingerprint.json", null],
+  ];
+  for (const [dir, file, text] of cases) {
+    await withFake(async (f) => {
+      const a = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(a.rows.length, 1);
+      const calls = f.calls.length;
+      const p = join(f.t.cache, dir, file);
+      if (text === null) await Deno.remove(p);
+      else await Deno.writeTextFile(p, text);
+      const b = await step(f, [row("e1")], { e1: "h1" });
+      const what = `${dir}/${file}`;
+      if (text !== null && text !== "") {
+        assertEquals([what, b.rows.length], [what, 0]);
+        assertEquals([what, b.failed.length], [what, 1]);
+      } else {
+        assert(f.calls.length > calls, `${what}: recomputed`);
+      }
+    });
+  }
+});
+
+Deno.test("done rows: untouched artifacts keep the row done (skipped, no tool run)", async () => {
+  await withFake(async (f) => {
+    await step(f, [row("e1")], { e1: "h1" });
+    const calls = f.calls.length;
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 1);
+    assertEquals(f.calls.length, calls);
+  });
+});
+
+Deno.test("startingTree: keyed by rev + refapp commit + content; another rev rebuilds, the same identity does not", async () => {
+  const root = await Deno.makeTempDir({ prefix: "ac-start-" });
+  try {
+    let built = 0;
+    const mk = (text: string) => async (dir: string) => {
+      built++;
+      await tree(dir, text);
+    };
+    const a = await startingTree(".", "r1", "HX-1", "c1", root, mk("a"));
+    const again = await startingTree(".", "r1", "HX-1", "c1", root, mk("a"));
+    assertEquals([built, again.id], [1, a.id]);
+    const b = await startingTree(".", "r2", "HX-1", "c1", root, mk("a"));
+    assertEquals(built, 2, "another rev rebuilds");
+    assert(b.id !== a.id, "identity includes the rev");
+    const c = await startingTree(".", "r2", "HX-1", "c2", root, mk("a"));
+    assertEquals(built, 3, "another refapp commit rebuilds");
+    assert(c.id !== b.id);
+    // Edited after the build: the content hash no longer matches the marker.
+    await Deno.writeTextFile(join(c.dir, "Core", "A.al"), "tampered");
+    await startingTree(".", "r2", "HX-1", "c2", root, mk("a"));
+    assertEquals(built, 4, "a changed tree is rebuilt");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("startingTree: a legacy empty .done is never adopted, even for an untouched equal tree; the tree is rebuilt and stamped with an identity", async () => {
+  const root = await Deno.makeTempDir({ prefix: "ac-start-" });
+  try {
+    const dir = join(root, "HX-1");
+    await tree(dir, "a");
+    const done = join(root, "HX-1.done");
+    await Deno.writeTextFile(done, "");
+    const old = new Date(Date.now() - 60_000);
+    await Deno.utime(done, old, old);
+    for (const sub of ["Core", "Test"]) {
+      for await (const e of Deno.readDir(join(dir, sub))) {
+        await Deno.utime(join(dir, sub, e.name), old, old);
+      }
+    }
+    let built = 0;
+    const fresh = async (d: string) => {
+      built++;
+      await tree(d, "a");
+    };
+    const s = await startingTree(".", "r1", "HX-1", "c1", root, fresh);
+    assertEquals(built, 1, "rebuilt");
+    assertEquals(Object.keys(s).sort(), ["dir", "id"]);
+    const m = JSON.parse(await Deno.readTextFile(done));
+    assertEquals([m.rev, m.refapp, typeof m.tree], ["r1", "c1", "string"]);
+    assertEquals("legacy_done_ms" in m, false);
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("legacy-only cache (pre-identity layout): start tree and digest are recomputed, nothing is adopted", async () => {
+  await withFake(async (f) => {
+    const startDir = join(f.t.dir, "starts");
+    await tree(startDir, "a");
+    await alsemTree(f.t, startDir, "start-HX-1", null); // legacy start key
+    const legacy = join(f.t.cache, "h1");
+    await Deno.mkdir(legacy, { recursive: true });
+    await Deno.writeTextFile(join(legacy, "change.diff"), digestPatch(PATCH));
+    await Deno.writeTextFile(
+      join(legacy, "digest.json"),
+      envJson("digest", "1.6.0", [], DIGEST_PAYLOAD),
+    );
+    const analyze = f.count("analyze");
+    const r = await step(f, [row("e1")], { e1: "h1" }, "S1", 1);
+    assertEquals(r.failed, []);
+    assertEquals(f.count("analyze") - analyze, 2, "start and final analyzed");
+    assertEquals(f.count("digest"), 1, "digest recomputed, not adopted");
+    assertEquals(
+      r.rows[0]!.touches.roots,
+      1,
+      "the fresh digest, not the legacy",
+    );
+  });
+});
+
+Deno.test("pinnedAlsemVersion: reused only when the binary hash matches the recorded one", () => {
+  const prev = { alsem: { version: "al-sem 2.0.2", sha256: "abc" } };
+  assertEquals(pinnedAlsemVersion(prev, "abc"), "al-sem 2.0.2");
+  assertEquals(pinnedAlsemVersion(prev, "abd"), null);
+  assertEquals(pinnedAlsemVersion(null, "abc"), null);
+  assertEquals(pinnedAlsemVersion({ alsem: { sha256: "abc" } }, "abc"), null);
+});
+
+Deno.test("resolveAlsemVersion (the entrypoint's version step): `--version` is not run when the sha256 matches the pin, only when it does not", async () => {
+  const prev = { alsem: { version: "al-sem 2.0.2", sha256: "abc" } };
+  let runs = 0;
+  const run = () => {
+    runs++;
+    return Promise.resolve("al-sem 9.9.9\n");
+  };
+  assertEquals(await resolveAlsemVersion(prev, "abc", run), "al-sem 2.0.2");
+  assertEquals(runs, 0);
+  assertEquals(await resolveAlsemVersion(prev, "abd", run), "al-sem 9.9.9");
+  assertEquals(runs, 1);
+});
+
+Deno.test("keepExecution: no filter keeps all; otherwise an id or id prefix in the list", () => {
+  assertEquals(keepExecution("3462f7a7-ead6", []), true);
+  assertEquals(keepExecution("3462f7a7-ead6", ["0ad3", "3462f7a7"]), true);
+  assertEquals(keepExecution("3462f7a7-ead6", ["0ad3"]), false);
 });
