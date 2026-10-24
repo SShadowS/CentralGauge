@@ -1051,6 +1051,11 @@ Deno.test("digestTouches: production roots, tables written / read, events publis
     test_covered_routines: 0,
     test_uncovered_routines: 0,
     test_coverage_ratio: null,
+    test_declaration_only: 0,
+    test_changed_routines_raw: 0,
+    test_covered_routines_raw: 0,
+    test_uncovered_routines_raw: 0,
+    test_coverage_ratio_raw: null,
     test_coverage_status: null,
   });
 });
@@ -1196,6 +1201,11 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
         test_covered_routines: 3,
         test_uncovered_routines: 1,
         test_coverage_ratio: 0.75,
+        test_declaration_only: 2,
+        test_changed_routines_raw: 8,
+        test_covered_routines_raw: 3,
+        test_uncovered_routines_raw: 5,
+        test_coverage_ratio_raw: 0.375,
         test_coverage_status: "complete",
       },
       changed_prod_lines: 50,
@@ -1236,6 +1246,10 @@ Deno.test("alsemSummary: one execution's metrics (production only, high = critic
       test_covered_routines: 3,
       test_uncovered_routines: 1,
       test_coverage_ratio: 0.75,
+      test_declaration_only: 2,
+      test_changed_routines_raw: 8,
+      test_covered_routines_raw: 3,
+      test_coverage_ratio_raw: 0.375,
       alsem_new_high_findings: 2,
       alsem_new_test_findings: 1,
       curated_weighted: 7,
@@ -2158,6 +2172,34 @@ Deno.test("A-03b: digest runs with --tests into its own cache file; a digest wit
     assertEquals(r.failed.length, 1);
     assert(r.failed[0]!.error.includes("testCoverage"), r.failed[0]!.error);
   });
+});
+
+Deno.test("A-03b smoke: an unmappable covered stableId fails the execution row naming it", async () => {
+  await withFake(async (f) => {
+    const bad = structuredClone(DIGEST_ONE);
+    bad.testCoverage.covered[0]!.stableId = "ghost-sid";
+    f.override["digest"] = envJson("digest", "1.6.0", [], bad);
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.rows.length, 0);
+    assertEquals(r.failed.length, 1);
+    assert(r.failed[0]!.error.includes("ghost-sid"), r.failed[0]!.error);
+  });
+});
+
+Deno.test("A-03b smoke: the per-arm summary carries the share of executions whose coverage status is partial", async () => {
+  const share = async (status: string) =>
+    await withFake(async (f) => {
+      const d = structuredClone(DIGEST_ONE);
+      d.testCoverage.coverage.status = status;
+      f.override["digest"] = envJson("digest", "1.6.0", [], d);
+      await step(f, [row("e1")], { e1: "h1" });
+      const s = JSON.parse(
+        await Deno.readTextFile(join(f.t.dir, "summary.json")),
+      );
+      return s.per_arm["e1"].test_coverage.partial_status_share;
+    });
+  assertEquals(await share("partial"), 1);
+  assertEquals(await share("complete"), 0);
 });
 
 Deno.test("A-03b: the tree carries the Test app's [Test] procedures; a changed one is scored from the final tree's digest roots", async () => {

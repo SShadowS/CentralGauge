@@ -7,6 +7,7 @@ import {
   type AlsemFinding,
   alsemSummary,
   checkedAch,
+  coverageExtras,
   digestTouches,
   introducedFindings,
   introducedFindingsFp,
@@ -265,6 +266,10 @@ Deno.test("testQualityCounts: no procedure introduced or changed is all zeros; a
 const DIGEST_ENTRIES = [{
   routine: { stableId: "r1", anchor: { file: "ws:Prod/A.al" } },
   effects: [],
+}, {
+  // the covered entry "m" of COVERAGE carries no anchor of its own: it maps through here
+  routine: { stableId: "m", anchor: { file: "ws:Prod/M.al" } },
+  effects: [],
 }];
 const COVERAGE = {
   changedRoutines: 3,
@@ -285,8 +290,18 @@ const COVERAGE = {
   ratio: 0.3333333333333333,
   testProceduresConsidered: 6,
   uncovered: [
-    { display: "A", reason: "no-path", stableId: "a" },
-    { display: "B", reason: "no-path", stableId: "b" },
+    {
+      anchor: { file: "ws:Prod/A.al", line: 3 },
+      display: "A",
+      reason: "no-path",
+      stableId: "a",
+    },
+    {
+      anchor: { file: "ws:Prod/B.al", line: 4 },
+      display: "B",
+      reason: "no-path",
+      stableId: "b",
+    },
   ],
 };
 const digest = (testCoverage?: unknown) => ({
@@ -341,6 +356,162 @@ Deno.test("digestTouches: testCoverage ratio, covered and uncovered counts; abse
     n.test_coverage_ratio,
     n.test_coverage_status,
   ], [0, null, null]);
+});
+
+// A-03b smoke: al-sem excludes only [Test] procedures, so test-app helpers and
+// non-[Test] procedures of test codeunits are in its testCoverage counts.
+const mixedCoverage = () => ({
+  entries: [
+    ...DIGEST_ENTRIES,
+    {
+      routine: { stableId: "p1", anchor: { file: "ws:Prod/P.al" } },
+      effects: [],
+    },
+    {
+      routine: { stableId: "pu", anchor: { file: "ws:Prod/U.al" } },
+      effects: [],
+    },
+    {
+      routine: { stableId: "h1", anchor: { file: "ws:Test/Lib.Codeunit.al" } },
+      effects: [],
+    },
+  ],
+  summary: {},
+  changedRootsDiagnostics: [],
+  testCoverage: {
+    changedRoutines: 5,
+    coverage: { reasons: [], status: "complete" },
+    covered: [
+      { display: "P", reachedFrom: ["t"], stableId: "p1", viaEvent: false },
+      {
+        display: "Helper",
+        reachedFrom: ["t"],
+        stableId: "h1",
+        viaEvent: false,
+      },
+    ] as Record<string, unknown>[],
+    coveredChangedRoutines: 2,
+    ratio: 0.4,
+    uncovered: [
+      // no own anchor: maps through entries (production)
+      { display: "U", reason: "no-path", stableId: "pu" },
+      // a non-[Test] procedure inside a test codeunit
+      {
+        anchor: { file: "ws:Test/T.Codeunit.al", line: 9 },
+        display: "Setup",
+        reason: "no-path",
+        stableId: "tn",
+      },
+      // an interface method has no body
+      {
+        anchor: { file: "ws:Prod/I.Interface.al", line: 2 },
+        display: "Send",
+        reason: "declaration-only",
+        stableId: "pd",
+      },
+    ] as Record<string, unknown>[],
+  },
+});
+
+Deno.test("digestTouches: test coverage counts production routines only (Test/ helpers and non-[Test] test-codeunit procedures are out), al-sem's raw values are kept", () => {
+  const t = digestTouches(mixedCoverage());
+  assertEquals(
+    [
+      t.test_changed_routines,
+      t.test_covered_routines,
+      t.test_uncovered_routines,
+      t.test_coverage_ratio,
+      t.test_declaration_only,
+    ],
+    [2, 1, 1, 0.5, 1],
+  );
+  assertEquals(
+    [
+      t.test_changed_routines_raw,
+      t.test_covered_routines_raw,
+      t.test_uncovered_routines_raw,
+      t.test_coverage_ratio_raw,
+    ],
+    [5, 2, 3, 0.4],
+  );
+});
+
+Deno.test("digestTouches: declaration-only is matched on the reason, not the name, and leaves the denominator; only declaration-only left gives a null ratio", () => {
+  const p = mixedCoverage();
+  p.testCoverage.covered = [];
+  p.testCoverage.coveredChangedRoutines = 0;
+  p.testCoverage.ratio = 0;
+  p.testCoverage.uncovered = [{
+    anchor: { file: "ws:Prod/I.Interface.al", line: 2 },
+    display: "declaration-only",
+    reason: "no-path",
+    stableId: "pd",
+  }, {
+    anchor: { file: "ws:Prod/I.Interface.al", line: 3 },
+    display: "Send",
+    reason: "declaration-only",
+    stableId: "pd2",
+  }];
+  const t = digestTouches(p);
+  assertEquals(
+    [
+      t.test_changed_routines,
+      t.test_uncovered_routines,
+      t.test_declaration_only,
+    ],
+    [1, 1, 1],
+  );
+  p.testCoverage.uncovered = p.testCoverage.uncovered.slice(1);
+  const d = digestTouches(p);
+  assertEquals(
+    [d.test_changed_routines, d.test_coverage_ratio, d.test_declaration_only],
+    [0, null, 1],
+  );
+});
+
+Deno.test("digestTouches: a covered or uncovered stableId that maps to no file throws", () => {
+  const c = mixedCoverage();
+  c.testCoverage.covered[0]!["stableId"] = "ghost";
+  assertThrows(() => digestTouches(c), Error, "ghost");
+  const u = mixedCoverage();
+  u.testCoverage.uncovered[0]!["stableId"] = "ghost2";
+  assertThrows(() => digestTouches(u), Error, "ghost2");
+});
+
+Deno.test("coverageExtras: declaration-only and raw sums; partial-status share among executions with a coverage status", () => {
+  const m = (o: Record<string, number | null>) => o as never;
+  const x = coverageExtras([
+    {
+      metrics: m({
+        test_declaration_only: 1,
+        test_changed_routines_raw: 5,
+        test_covered_routines_raw: 2,
+      }),
+      touches: { test_coverage_status: "partial" },
+    },
+    {
+      metrics: m({
+        test_declaration_only: 0,
+        test_changed_routines_raw: 3,
+        test_covered_routines_raw: 3,
+      }),
+      touches: { test_coverage_status: "complete" },
+    },
+    {
+      metrics: m({
+        test_declaration_only: 0,
+        test_changed_routines_raw: 0,
+        test_covered_routines_raw: 0,
+      }),
+      touches: { test_coverage_status: null },
+    },
+  ]);
+  assertEquals(x, {
+    declaration_only: 1,
+    partial_status_share: 0.5,
+    raw: { changed_routines: 8, covered_routines: 5, ratio: 5 / 8 },
+  });
+  assertEquals(coverageExtras([]).partial_status_share, null);
 });
 
 Deno.test("alsemEnvelope digest with --tests: testCoverage is required and consistent, else fails closed", () => {

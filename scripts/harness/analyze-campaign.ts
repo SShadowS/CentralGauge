@@ -883,6 +883,43 @@ export function pooledCoverage(
   };
 }
 
+/**
+ * What `pooledCoverage` leaves out: declaration-only routines, al-sem's raw
+ * (unfiltered) counts, and the share of executions with a coverage status whose
+ * status is "partial" (tests call dependency code, so the ratio is a floor).
+ */
+export function coverageExtras(
+  rs: {
+    metrics: Pick<
+      AlsemMetrics,
+      | "test_declaration_only"
+      | "test_changed_routines_raw"
+      | "test_covered_routines_raw"
+    >;
+    touches: Pick<DigestTouches, "test_coverage_status">;
+  }[],
+) {
+  const s = (k: keyof typeof rs[number]["metrics"]) =>
+    rs.reduce((a, r) => a + r.metrics[k], 0);
+  const withStatus = rs.filter((r) => r.touches.test_coverage_status !== null);
+  return {
+    declaration_only: s("test_declaration_only"),
+    partial_status_share: share(
+      withStatus.filter((r) => r.touches.test_coverage_status === "partial")
+        .length,
+      withStatus.length,
+    ),
+    raw: {
+      changed_routines: s("test_changed_routines_raw"),
+      covered_routines: s("test_covered_routines_raw"),
+      ratio: share(
+        s("test_covered_routines_raw"),
+        s("test_changed_routines_raw"),
+      ),
+    },
+  };
+}
+
 const routineKey = (m: RoutineMetric) =>
   m.routine_id ?? `${m.object_type}|${m.object_name}|${m.procedure_name}`;
 
@@ -1074,12 +1111,24 @@ export interface DigestTouches {
   unmapped_hunks: number;
   /** Changed files with no routine to map (e.g. an enum or a fields-only table extension). */
   unmatched_files: number;
-  /** digest --tests testCoverage: changed production routines (test code is excluded by al-sem), 0 without a digest. */
+  /**
+   * digest --tests testCoverage restricted to production routines (file not under
+   * ws:Test/), declaration-only ones out of the denominator; 0 without a digest.
+   * al-sem excludes only [Test] procedures, so its own counts (the *_raw fields)
+   * also hold test-app helper codeunits and non-[Test] procedures of test codeunits.
+   */
   test_changed_routines: number;
   test_covered_routines: number;
   test_uncovered_routines: number;
   /** covered / changed; null when no routine changed or there is no digest. */
   test_coverage_ratio: number | null;
+  /** Production uncovered routines with reason "declaration-only" (interface methods, no body): not in the denominator. */
+  test_declaration_only: number;
+  /** al-sem's own testCoverage values, unfiltered. */
+  test_changed_routines_raw: number;
+  test_covered_routines_raw: number;
+  test_uncovered_routines_raw: number;
+  test_coverage_ratio_raw: number | null;
   /** testCoverage.coverage.status ("partial" when tests call dependency code); null without a digest. */
   test_coverage_status: string | null;
 }
@@ -1114,12 +1163,48 @@ export function digestTouches(p: J): DigestTouches {
   const sorted = (s: Set<string>) => [...s].sort();
   // Validated by alsemEnvelope(..., { tests: true }); absent only for "no digest".
   const tc = p["testCoverage"] as J | undefined;
-  const uncovered = (tc?.["uncovered"] as unknown[] | undefined)?.length ?? 0;
+  const fileOf = new Map(
+    entries.map((e) => {
+      const r = e["routine"] as J;
+      return [
+        r["stableId"],
+        String((r["anchor"] as J | undefined)?.["file"] ?? ""),
+      ];
+    }),
+  );
+  // Fail closed: a routine whose file is unknown cannot be split into production / test.
+  const isProd = (c: J): boolean => {
+    const file = (c["anchor"] as J | undefined)?.["file"] ??
+      fileOf.get(c["stableId"]);
+    if (typeof file !== "string" || file === "") {
+      throw new Error(
+        `payload.testCoverage: cannot map stableId ${
+          String(c["stableId"])
+        } to a file`,
+      );
+    }
+    return !file.startsWith(`ws:${TEST_APP}/`);
+  };
+  const rawCovered = (tc?.["covered"] ?? []) as J[];
+  const rawUncovered = (tc?.["uncovered"] ?? []) as J[];
+  const coveredProd = rawCovered.filter(isProd).length;
+  const uncoveredProd = rawUncovered.filter(isProd);
+  const declOnly =
+    uncoveredProd.filter((u) => u["reason"] === "declaration-only")
+      .length;
+  const uncovered = uncoveredProd.length - declOnly;
+  const changed = coveredProd + uncovered;
   return {
-    test_changed_routines: Number(tc?.["changedRoutines"] ?? 0),
-    test_covered_routines: Number(tc?.["coveredChangedRoutines"] ?? 0),
+    test_changed_routines: changed,
+    test_covered_routines: coveredProd,
     test_uncovered_routines: uncovered,
-    test_coverage_ratio: (tc?.["ratio"] as number | null | undefined) ?? null,
+    test_coverage_ratio: changed === 0 ? null : coveredProd / changed,
+    test_declaration_only: declOnly,
+    test_changed_routines_raw: Number(tc?.["changedRoutines"] ?? 0),
+    test_covered_routines_raw: Number(tc?.["coveredChangedRoutines"] ?? 0),
+    test_uncovered_routines_raw: rawUncovered.length,
+    test_coverage_ratio_raw: (tc?.["ratio"] as number | null | undefined) ??
+      null,
     test_coverage_status: ((tc?.["coverage"] as J | undefined)?.["status"] as
       | string
       | undefined) ?? null,
@@ -1200,11 +1285,16 @@ export interface AlsemMetrics {
   test_areequal_literal: number;
   /** AreEqual calls with a literal expected value / all AreEqual calls in the scored procedures. */
   test_areequal_literal_share: number | null;
-  /** digest --tests, changed production routines. */
+  /** digest --tests, changed production routines (declaration-only out of the denominator, see DigestTouches). */
   test_changed_routines: number;
   test_covered_routines: number;
   test_uncovered_routines: number;
   test_coverage_ratio: number | null;
+  test_declaration_only: number;
+  /** al-sem's unfiltered testCoverage values (test-app helpers included). */
+  test_changed_routines_raw: number;
+  test_covered_routines_raw: number;
+  test_coverage_ratio_raw: number | null;
   alsem_new_high_findings: number;
   alsem_new_test_findings: number;
   /** Curated: likely only, critical 5 / high 3 / medium 1, d3 and d9 out (see curatedCounts). */
@@ -1367,6 +1457,10 @@ export function alsemSummary(x: {
     test_covered_routines: x.touches.test_covered_routines,
     test_uncovered_routines: x.touches.test_uncovered_routines,
     test_coverage_ratio: x.touches.test_coverage_ratio,
+    test_declaration_only: x.touches.test_declaration_only,
+    test_changed_routines_raw: x.touches.test_changed_routines_raw,
+    test_covered_routines_raw: x.touches.test_covered_routines_raw,
+    test_coverage_ratio_raw: x.touches.test_coverage_ratio_raw,
     alsem_new_high_findings: sum(
       prod.filter((f) => f.severity === "critical" || f.severity === "high"),
     ),
@@ -1618,7 +1712,8 @@ export interface DoneStamp {
  * bytes, not validation under the current rules, so bump it whenever any
  * validation tightens (a done row of an older epoch is revalidated, never skipped).
  */
-const DERIVATION = 6;
+const DERIVATION = 7;
+// v7 (A-03b smoke): test coverage counts production routines only (al-sem also counts test-app helpers and non-[Test] test-codeunit procedures), declaration-only routines leave the denominator, al-sem's raw values kept as *_raw, an unmappable covered / uncovered stableId fails the row.
 // v6 (A-03b, al-sem 2.0.3): introduced findings by the looseFingerprint rule (+ _fp columns), tree.json holds the [Test] procedures (test_quality), digests run with --tests (digest-tests-<patch>.json) and carry testCoverage.
 // v3: curated finding density (findings carry confidence, rows carry changed_prod_lines).
 // v4: tree.json holds only the fields derived from the raw analyze / ach / fingerprint JSON (touches come from the digest-<patch> file) and is re-derived from them, no tool run, whenever its derive differs; error diagnostics fail a tree.
@@ -2045,6 +2140,7 @@ const NULLABLE_KEYS = [
   "test_asserterror_share",
   "test_areequal_literal_share",
   "test_coverage_ratio",
+  "test_coverage_ratio_raw",
 ] as const;
 
 const METRIC_KEYS: Exclude<keyof AlsemMetrics, typeof NULLABLE_KEYS[number]>[] =
@@ -2062,6 +2158,9 @@ const METRIC_KEYS: Exclude<keyof AlsemMetrics, typeof NULLABLE_KEYS[number]>[] =
     "test_changed_routines",
     "test_covered_routines",
     "test_uncovered_routines",
+    "test_declaration_only",
+    "test_changed_routines_raw",
+    "test_covered_routines_raw",
     "alsem_new_high_findings",
     "alsem_new_test_findings",
     "curated_weighted",
@@ -2406,7 +2505,10 @@ export async function alsemStep(
       NULLABLE_KEYS.map((k) => [k, median(rs.map((r) => r.metrics[k]))]),
     ),
     test_quality: pooledTestQuality(rs.map((r) => r.metrics)),
-    test_coverage: pooledCoverage(rs.map((r) => r.metrics)),
+    test_coverage: {
+      ...pooledCoverage(rs.map((r) => r.metrics)),
+      ...coverageExtras(rs),
+    },
     executions_above_zero: Object.fromEntries(
       METRIC_KEYS.map((k) => [k, rs.filter((r) => r.metrics[k] > 0).length]),
     ),
@@ -2464,8 +2566,14 @@ export async function alsemStep(
         variant: pooledTestQuality(ps.map(([, x]) => x.metrics)),
       },
       test_coverage: {
-        base: pooledCoverage(ps.map(([a]) => a.metrics)),
-        variant: pooledCoverage(ps.map(([, x]) => x.metrics)),
+        base: {
+          ...pooledCoverage(ps.map(([a]) => a.metrics)),
+          ...coverageExtras(ps.map(([a]) => a)),
+        },
+        variant: {
+          ...pooledCoverage(ps.map(([, x]) => x.metrics)),
+          ...coverageExtras(ps.map(([, x]) => x)),
+        },
       },
       variant_higher: Object.fromEntries(
         METRIC_KEYS.map((k) => [
