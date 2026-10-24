@@ -517,15 +517,48 @@ export function checkedAch(text: string): AchReport {
   }
   const num = (x: unknown) => typeof x === "number";
   const str = (x: unknown) => typeof x === "string";
-  const okMetric = (m: unknown) =>
-    isObj(m) && str(m["path"]) && str(m["object_name"]) &&
-    str(m["procedure_name"]) && str(m["access"]) && num(m["line"]) &&
-    num(m["complexity"]) && num(m["line_count"]) && num(m["parameter_count"]);
-  if (!ach["metrics"].every(okMetric)) {
-    throw new Error("al-call-hierarchy: a metrics row is malformed");
+  // Nullable by design: routine_id (some members have none) and fan_in (no call graph).
+  const strOrNull = (x: unknown) => x === null || str(x);
+  const numOrNull = (x: unknown) => x === null || num(x);
+  const badMetric = (m: unknown): string | null => {
+    if (!isObj(m)) return "row";
+    const checks: [string, boolean][] = [
+      ["path", str(m["path"])],
+      ["object_type", str(m["object_type"])],
+      ["object_name", str(m["object_name"])],
+      ["procedure_name", str(m["procedure_name"])],
+      ["access", str(m["access"])],
+      ["line", num(m["line"])],
+      ["complexity", num(m["complexity"])],
+      ["line_count", num(m["line_count"])],
+      ["parameter_count", num(m["parameter_count"])],
+      ["routine_id", strOrNull(m["routine_id"] ?? null)],
+      ["fan_in", numOrNull(m["fan_in"])],
+    ];
+    return checks.find(([, ok]) => !ok)?.[0] ?? null;
+  };
+  for (const m of ach["metrics"]) {
+    const b = badMetric(m);
+    if (b) {
+      throw new Error(`al-call-hierarchy: a metrics row is malformed: ${b}`);
+    }
   }
-  if (!ach["findings"].every(isObj)) {
-    throw new Error("al-call-hierarchy: a finding is malformed");
+  for (const f of ach["findings"]) {
+    if (!isObj(f)) throw new Error("al-call-hierarchy: a finding is malformed");
+    if (f["category"] !== "unused_procedure") continue;
+    // Read by unusedProcedures: "path:line" location, path, procedure.
+    const b = !str(f["path"])
+      ? "path"
+      : !str(f["procedure"])
+      ? "procedure"
+      : !/:\d+$/.test(String(f["location"])) || !str(f["location"])
+      ? "location"
+      : null;
+    if (b) {
+      throw new Error(
+        `al-call-hierarchy: an unused_procedure finding is malformed: ${b}`,
+      );
+    }
   }
   const bad = badTestQuality(ach["test_quality"]);
   if (bad) throw new Error(`al-call-hierarchy: test_quality: ${bad}`);
@@ -1579,11 +1612,17 @@ export interface DoneStamp {
   bind?: Record<string, string>;
 }
 
-/** v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds). */
+/**
+ * v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds).
+ * DERIVATION is also the validation epoch: artifact hashes only prove unchanged
+ * bytes, not validation under the current rules, so bump it whenever any
+ * validation tightens (a done row of an older epoch is revalidated, never skipped).
+ */
 const DERIVATION = 6;
 // v6 (A-03b, al-sem 2.0.3): introduced findings by the looseFingerprint rule (+ _fp columns), tree.json holds the [Test] procedures (test_quality), digests run with --tests (digest-tests-<patch>.json) and carry testCoverage.
 // v3: curated finding density (findings carry confidence, rows carry changed_prod_lines).
 // v4: tree.json holds only the fields derived from the raw analyze / ach / fingerprint JSON (touches come from the digest-<patch> file) and is re-derived from them, no tool run, whenever its derive differs; error diagnostics fail a tree.
+// v6 (A-03b step 0): consumed ach fields validated; diffs bound to both fingerprint hashes.
 // v5: strict envelope / payload validation; every tree.json hit re-validates its raw files; done rows carry the sha256 of the artifacts they were computed from; no legacy cache adoption.
 
 /** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
@@ -2078,6 +2117,10 @@ async function pool<T>(n: number, items: T[], f: (x: T) => Promise<void>) {
 const hasErrorDiagnostic = (ds: AlsemDiagnostic[] | undefined) =>
   errorDiagnostics(ds ?? []).length > 0;
 
+/** Cache name of a diff: start identity + sha256 of the start and final fingerprint.json it was computed from. */
+const diffName = (sid: string, startFp: string, finalFp: string) =>
+  `diff-${sid}-${startFp.slice(0, 16)}-${finalFp.slice(0, 16)}.json`;
+
 /** sha256 of a file, "" when it is absent. */
 const hashOrEmpty = (p: string) => Deno.readFile(p).then(sha256Hex, () => "");
 
@@ -2125,25 +2168,29 @@ export async function alsemStep(
       const sid = (await startOfOnce(r.task)).id;
       const final = join(t.cache, hash);
       const start = join(t.cache, `start-${r.task}-${sid}`);
+      // The raw tool outputs behind both trees: a damaged one is never a done row.
+      const raw: Record<string, string> = Object.fromEntries(
+        await Promise.all(
+          ["analyze", "ach", "fingerprint"].flatMap((n) =>
+            [["start", start], ["final", final]].map(async (
+              [side, dir],
+            ) => [`${side}_${n}`, await hashOrEmpty(join(dir!, `${n}.json`))])
+          ),
+        ),
+      );
       bind = {
         start: await hashOrEmpty(join(start, "tree.json")),
         final: await hashOrEmpty(join(final, "tree.json")),
-        // The raw tool outputs behind both trees: a damaged one is never a done row.
-        ...Object.fromEntries(
-          await Promise.all(
-            ["analyze", "ach", "fingerprint"].flatMap((n) =>
-              [["start", start], ["final", final]].map(async (
-                [side, dir],
-              ) => [`${side}_${n}`, await hashOrEmpty(join(dir!, `${n}.json`))])
-            ),
-          ),
-        ),
+        ...raw,
         digest: r.patch
           ? await hashOrEmpty(
             join(final, await digestFile(r.patch)),
           )
           : "",
-        diff: await hashOrEmpty(join(final, `diff-${sid}.json`)),
+        diff: await hashOrEmpty(join(
+          final,
+          diffName(sid, raw["start_fingerprint"]!, raw["final_fingerprint"]!),
+        )),
       };
     } catch {
       bind = { error: "" };
@@ -2168,8 +2215,17 @@ export async function alsemStep(
         hash,
         r.patch ?? "",
       );
-      // The diff depends on both sides: the start identity and the final tree (this folder).
-      const diffOut = join(t.cache, hash, `diff-${sid}.json`);
+      // The diff depends on both sides: the start identity, the final tree (this folder),
+      // and the exact bytes of both fingerprint files it is computed from (named in the file).
+      const diffOut = join(
+        t.cache,
+        hash,
+        diffName(
+          sid,
+          await hashOrEmpty(s.fingerprint),
+          await hashOrEmpty(f.fingerprint),
+        ),
+      );
       // One creation per diff entry at a time; a concurrent request finds it done.
       await serialized(diffOut, async () => {
         if (await Deno.stat(diffOut).then(() => true, () => false)) return;

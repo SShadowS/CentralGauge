@@ -1863,6 +1863,154 @@ Deno.test("done rows: untouched artifacts keep the row done (skipped, no tool ru
   });
 });
 
+const hex = async (text: string) =>
+  [
+    ...new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)),
+    ),
+  ].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+Deno.test("A-03b step 0 M1: a done row stamped with the pre-fix derive 5, whose cached diff the current validator rejects (shadowed subject id), is not counted and not skipped", async () => {
+  await withFake(async (f) => {
+    const a = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(a.rows.length, 1);
+    const c = join(f.t.cache, "h1");
+    const file = (await Array.fromAsync(Deno.readDir(c))).map((e) => e.name)
+      .find((n) => n.startsWith("diff-"))!;
+    // newStableId is present but invalid and shadows the valid oldStableId.
+    const shadowed = envJson("diff-report", "1.0.0", [], {
+      findings: [{
+        kind: "k",
+        category: "abi",
+        severity: "info",
+        subject: { newStableId: 0, oldStableId: "a:Codeunit:80001#h" },
+      }],
+      summary: { findingsByCategory: { abi: 1 } },
+    });
+    await Deno.writeTextFile(join(c, file), shadowed);
+    // What the pre-fix analyzer would have left: derive 5, bindings of the files as they are.
+    const done = join(f.t.cache, "exec", "e1.json");
+    const j = JSON.parse(await Deno.readTextFile(done));
+    j.stamp.derive = 5;
+    j.stamp.bind.diff = await hex(shadowed);
+    await Deno.writeTextFile(done, JSON.stringify(j));
+    const calls = f.calls.length;
+    const b = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(b.rows.length, 0, "not counted");
+    assertEquals(b.failed.length, 1, "revalidated and failed");
+    assertEquals(f.calls.length, calls, "diff came from the cache, not a tool");
+  });
+});
+
+Deno.test("A-03b step 0 M3: a diff is bound to both fingerprint files it was computed from; a replaced (valid) fingerprint rebuilds the diff and the row follows it", async () => {
+  for (const dir of ["h1", "start-HX-1-S1"]) {
+    await withFake(async (f) => {
+      const a = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals([dir, a.rows[0]!.metrics["abi_changes"]], [dir, 0]);
+      assertEquals(f.count("diff"), 1);
+      // Another valid snapshot, and the diff the tool now reports for it.
+      await Deno.writeTextFile(
+        join(f.t.cache, dir, "fingerprint.json"),
+        envJson("capability-snapshot", "1.1.0", [], { x: 2 }),
+      );
+      f.override["diff"] = envJson("diff-report", "1.0.0", [], {
+        findings: [{
+          kind: "k",
+          category: "abi",
+          severity: "info",
+          subject: { newStableId: "a:Codeunit:70001#h" },
+        }],
+        summary: { findingsByCategory: { abi: 1 } },
+      });
+      const b = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals([dir, b.failed], [dir, []]);
+      assertEquals([dir, f.count("diff")], [dir, 2]);
+      assertEquals([dir, b.rows[0]!.metrics["abi_changes"]], [dir, 1]);
+      // Unchanged fingerprints now: done, no further tool run.
+      const calls = f.calls.length;
+      await step(f, [row("e1")], { e1: "h1" });
+      assertEquals([dir, f.calls.length], [dir, calls]);
+    });
+  }
+});
+
+const achOf = (metrics: unknown[], findings: unknown[]) =>
+  JSON.stringify({
+    metrics,
+    findings,
+    test_quality: {
+      procedures: [],
+      codeunits: [],
+      workspace: {
+        test_procedures: 0,
+        assert_count: 0,
+        assert_count_reachable: 0,
+        zero_assert_procedures: 0,
+        asserterror_procedures: 0,
+        are_equal: { total: 0, literal_expected: 0, expression_expected: 0 },
+      },
+    },
+  });
+const unusedFinding = (location: unknown, o: Record<string, unknown> = {}) => ({
+  category: "unused_procedure",
+  severity: "info",
+  location,
+  procedure: "CGR A.P",
+  path: "Core/src/A.Codeunit.al",
+  ...o,
+});
+
+Deno.test("A-03b step 0 M2: every consumed ach field is validated before coercion, on fresh and on cached output; documented nullable fields stay accepted", async () => {
+  const bad: [string, string][] = [
+    ["fan_in string", achOf([metric("P", 1, 3, 0, { fan_in: "bad" })], [])],
+    [
+      "fan_in missing",
+      achOf([metric("P", 1, 3, 0, { fan_in: undefined })], []),
+    ],
+    [
+      "object_type number",
+      achOf([metric("P", 1, 3, 0, { object_type: 7 })], []),
+    ],
+    ["routine_id number", achOf([metric("P", 1, 3, 0, { routine_id: 7 })], [])],
+    ["unused location not path:line", achOf([], [unusedFinding("A.al:abc")])],
+    ["unused location missing", achOf([], [unusedFinding(undefined)])],
+    ["unused path missing", achOf([], [unusedFinding("A.al:3", { path: 5 })])],
+    [
+      "unused procedure missing",
+      achOf([], [unusedFinding("A.al:3", { procedure: undefined })]),
+    ],
+  ];
+  for (const [what, text] of bad) {
+    // Fresh tool output.
+    await withFake(async (f) => {
+      f.override["ach"] = text;
+      const r = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals([what, r.rows.length], [what, 0]);
+      assertEquals([what, r.failed.length], [what, 1]);
+    });
+    // Cached output: a populated cache whose ach.json was later damaged.
+    await withFake(async (f) => {
+      const first = await step(f, [row("e1")], { e1: "h1" });
+      assertEquals(first.rows.length, 1);
+      await Deno.writeTextFile(join(f.t.cache, "h1", "ach.json"), text);
+      const r = await step(f, [row("e2", "HX-1", PATCH + "+x\n")], {
+        e2: "h1",
+      });
+      assertEquals([what, r.rows.map((x) => x.id)], [what, []]);
+      assertEquals([what, r.failed.length], [what, 1]);
+    });
+  }
+  // The documented nullable cases are still accepted.
+  await withFake(async (f) => {
+    f.override["ach"] = achOf([
+      metric("P", 1, 3, 0, { routine_id: null, fan_in: null }),
+    ], [unusedFinding("A.Codeunit.al:10")]);
+    const r = await step(f, [row("e1")], { e1: "h1" });
+    assertEquals(r.failed, []);
+    assertEquals(r.rows.length, 1);
+  });
+});
+
 Deno.test("startingTree: keyed by rev + refapp commit + content; another rev rebuilds, the same identity does not", async () => {
   const root = await Deno.makeTempDir({ prefix: "ac-start-" });
   try {
