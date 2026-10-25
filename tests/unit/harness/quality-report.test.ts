@@ -1070,6 +1070,63 @@ Deno.test("end to end: missing only on the variant side, per reason", async () =
   });
 });
 
+Deno.test("end to end: missing repeats block 'consistent' (3 tasks x 3 repeats, 1 winning repeat each)", async () => {
+  await withTempDir(async (root) => {
+    const camp = join(root, "camp");
+    await Deno.mkdir(join(camp, "alsem"), { recursive: true });
+    const prs = ["base,variant,task,kind,repeat,base_id,variant_id,outcome"];
+    const ex = ["id,arm,task,repeat,cost_usd,wall_min"];
+    const al = [
+      "id,arm,task,repeat,verdict,excluded,curated_weighted_fp,test_coverage_ratio,test_areequal_literal_share",
+    ];
+    for (const t of ["T1", "T2", "T3"]) {
+      for (const r of [1, 2, 3]) {
+        prs.push(`b,v,${t},fix,${r},b-${t}-${r},v-${t}-${r},both_pass`);
+        ex.push(`b-${t}-${r},b,${t},${r},2,10`, `v-${t}-${r},v,${t},${r},1,8`);
+      }
+      // only repeat 1 has al-sem rows; the variant has fewer findings (wins)
+      al.push(
+        `b-${t}-1,b,${t},1,pass,,5,0.4,0.1`,
+        `v-${t}-1,v,${t},1,pass,,2,0.8,0.3`,
+      );
+    }
+    await Deno.writeTextFile(join(camp, "pairs.csv"), prs.join("\n") + "\n");
+    await Deno.writeTextFile(
+      join(camp, "executions.csv"),
+      ex.join("\n") + "\n",
+    );
+    await Deno.writeTextFile(
+      join(camp, "alsem", "executions.csv"),
+      al.join("\n") + "\n",
+    );
+    const out = join(root, "out");
+    await runReport({ campaign: camp, out, boot: 50 });
+    const r = (await headlineOf(out)).find((x) =>
+      x["metric"] === "curated_weighted_fp"
+    )!;
+    assertEquals(
+      [
+        r["expected_pairs"],
+        r["observed_pairs"],
+        r["expected_tasks"],
+        r["observed_tasks"],
+      ],
+      ["9", "3", "3", "3"],
+    );
+    assertEquals([r["k"], r["m"], r["t"]], ["3", "0", "0"]);
+    assert(!r["wording"]!.includes("consistent"), r["wording"]);
+    assertStringIncludes(r["wording"]!, "task-dependent");
+    assertStringIncludes(
+      r["wording"]!,
+      "incomplete repeat coverage (3 of 9 pairs observed)",
+    );
+    // complete coverage on the same shape still says consistent (cost_usd: all 9 pairs, variant cheaper)
+    const c = (await headlineOf(out)).find((x) => x["metric"] === "cost_usd")!;
+    assertEquals(c["observed_pairs"], "9");
+    assertStringIncludes(c["wording"]!, "consistent in stratum all");
+  });
+});
+
 Deno.test("end to end: two comparisons keep their own missingness", async () => {
   await withTempDir(async (root) => {
     const camp = await mini(root, {
