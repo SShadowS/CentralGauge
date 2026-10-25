@@ -26,6 +26,8 @@ export interface PairRef {
   variant: string;
   task: string;
   repeat: number;
+  baseId?: string | undefined;
+  variantId?: string | undefined;
 }
 export interface PairD {
   task: string;
@@ -291,7 +293,7 @@ export function taskMeans(pds: PairD[]): TaskMean[] {
 
 // ------------------------------------------------------------------ csv
 
-export function parseCsv(text: string): Record<string, string>[] {
+export function csvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -320,6 +322,11 @@ export function parseCsv(text: string): Record<string, string>[] {
     row.push(cell);
     rows.push(row);
   }
+  return rows;
+}
+
+export function parseCsv(text: string): Record<string, string>[] {
+  const rows = csvRows(text);
   const head = rows.shift() ?? [];
   return rows.filter((r) => r.some((x) => x !== "")).map((r) =>
     Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""]))
@@ -389,16 +396,16 @@ export function extraTable(
   text: string,
   declared: Record<string, Dir>,
 ): ValueTable {
-  // header only: parseCsv(first line + a dummy row) keeps the columns of a data-less file
-  const cols = Object.keys(
-    parseCsv(text.replace(/\r\n/g, "\n").split("\n")[0]! + "\nx")[0] ?? {},
-  ).filter((c) => !["arm", "task", "repeat"].includes(c));
-  for (const c of cols) {
-    if (!Object.hasOwn(declared, c)) {
-      throw new Error(
-        `--extra column "${c}" has no --metric ${c}:<higher|lower> declaration`,
-      );
-    }
+  const cols = (csvRows(text)[0] ?? []).filter((c) =>
+    !["arm", "task", "repeat"].includes(c)
+  );
+  const bad = cols.filter((c) => !Object.hasOwn(declared, c));
+  if (bad.length) {
+    throw new Error(
+      `--extra columns without a --metric <name>:<higher|lower> declaration: ${
+        bad.map((c) => JSON.stringify(c)).join(", ")
+      }`,
+    );
   }
   return csvTable(text, declared, false);
 }
@@ -419,6 +426,20 @@ export function testRerunTable(rows: TestRerunInput[]): ValueTable {
     const id = key(r.arm, r.task, r.repeat);
     const rec: Record<string, number> = {};
     // an absent result object drops only its metric; a present unknown value throws
+    const avs: unknown = r.agent_vs_start;
+    const svf: unknown = r.shipped_vs_final;
+    for (const [n, v] of [["agent_vs_start", avs], ["shipped_vs_final", svf]]) {
+      if (
+        v !== undefined && v !== null &&
+        (typeof v !== "object" || Array.isArray(v))
+      ) {
+        throw new Error(
+          `test-rerun ${id}: ${n} must be an object or absent, got ${
+            JSON.stringify(v)
+          }`,
+        );
+      }
+    }
     if (r.agent_vs_start) {
       const o = r.agent_vs_start.outcome;
       if (o === "catches") rec["agent_catches_bug"] = 1;
@@ -442,6 +463,8 @@ export function testRerunTable(rows: TestRerunInput[]): ValueTable {
 }
 
 export interface JudgePairItem {
+  baseline_id?: string;
+  variant_id?: string;
   packet_id?: string;
   task: string;
   repeat: number;
@@ -508,11 +531,51 @@ export function judgeMetrics(
 }
 
 export interface JudgeKey {
+  baseline_id?: string;
+  variant_id?: string;
   A: string;
   B: string;
   a_role: string;
 }
 
+/** Execution-id provenance (Q-01 run 002): verify baseline_id/variant_id where present; true = some item carries none. */ function checkIds(
+  items: JudgePairItem[],
+  pairs: PairRef[],
+  keys: Record<string, JudgeKey> | null,
+): boolean {
+  let unverified = false;
+  for (const it of items) {
+    const pr = pairs.find((p) => p.task === it.task && p.repeat === it.repeat)!;
+    const k =
+      keys && it.packet_id !== undefined && Object.hasOwn(keys, it.packet_id)
+        ? keys[it.packet_id]
+        : undefined;
+    for (
+      const [field, want] of [["baseline_id", pr.baseId], [
+        "variant_id",
+        pr.variantId,
+      ]] as const
+    ) {
+      const iv = it[field];
+      const kv = k?.[field];
+      const where = `judge ${it.task}#${it.repeat} ${field}`;
+      if (iv !== undefined && kv !== undefined && iv !== kv) {
+        throw new Error(
+          `${where}: pairs.json item (${iv}) and key.json (${kv}) disagree`,
+        );
+      }
+      for (const v of [iv, kv]) {
+        if (v !== undefined && v !== want) {
+          throw new Error(
+            `${where}: ${v} does not match campaign pairs.csv (${want})`,
+          );
+        }
+      }
+      if (iv === undefined && kv === undefined) unverified = true;
+    }
+  }
+  return unverified;
+}
 /**
  * Join judge items to the selected campaign pairs on (task, repeat) and check
  * provenance against `<judge>/key/key.json` (packet id -> {A, B, a_role}; A/B
@@ -525,7 +588,7 @@ export function verifyJudge(
   pairs: PairRef[],
   keys: Record<string, JudgeKey> | null,
   allowUnverified: boolean,
-): { unverified: boolean } {
+): { unverified: boolean; idsUnverified: boolean } {
   const known = new Set(pairs.map((p) => `${p.task}\u0000${p.repeat}`));
   const seen = new Set<string>();
   const base = pairs[0]?.base;
@@ -548,7 +611,7 @@ export function verifyJudge(
         "judge: key/key.json is missing, so the arms cannot be verified; pass --judge-unverified to accept",
       );
     }
-    return { unverified: true };
+    return { unverified: true, idsUnverified: checkIds(items, pairs, null) };
   }
   for (const it of items) {
     const k = it.packet_id !== undefined && Object.hasOwn(keys, it.packet_id)
@@ -568,7 +631,7 @@ export function verifyJudge(
       );
     }
   }
-  return { unverified: false };
+  return { unverified: false, idsUnverified: checkIds(items, pairs, keys) };
 }
 
 // ----------------------------------------------------------------- report
@@ -612,6 +675,7 @@ const HEADLINE = [
   "kappa_na",
   "wording",
   "unverified",
+  "ids_unverified",
 ];
 const TASKS = [
   "base",
@@ -651,6 +715,8 @@ export async function runReport(o: RunOptions): Promise<void> {
     variant: r["variant"]!,
     task: r["task"]!,
     repeat: Number(r["repeat"]),
+    baseId: r["base_id"] || undefined,
+    variantId: r["variant_id"] || undefined,
   }));
   const wanted = o.pair?.map((p) => p.split(":") as [string, string]) ??
     [...new Set(all.map((p) => `${p.base}:${p.variant}`))].map((p) =>
@@ -689,7 +755,12 @@ export async function runReport(o: RunOptions): Promise<void> {
   // judge dirs: "base:variant=dir" or a bare dir (needs exactly one pair)
   const judges = new Map<
     string,
-    { unverified: boolean; metrics: Map<string, JudgeMetric> }
+    {
+      unverified: boolean;
+      idsUnverified: boolean;
+      campaignId?: string | undefined;
+      metrics: Map<string, JudgeMetric>;
+    }
   >();
   for (const j of o.judge ?? []) {
     const eq = j.indexOf("=");
@@ -710,8 +781,11 @@ export async function runReport(o: RunOptions): Promise<void> {
     const sp = join(dir, "summary.json");
     const kp = join(dir, "key", "key.json");
     const items = JSON.parse(await Deno.readTextFile(join(dir, "pairs.json")));
+    const sj = (await exists(sp))
+      ? JSON.parse(await Deno.readTextFile(sp))
+      : undefined;
     const [jb, jv] = pk.split(":") as [string, string];
-    const { unverified } = verifyJudge(
+    const { unverified, idsUnverified } = verifyJudge(
       items,
       all.filter((p) => p.base === jb && p.variant === jv),
       (await exists(kp)) ? JSON.parse(await Deno.readTextFile(kp)) : null,
@@ -719,11 +793,11 @@ export async function runReport(o: RunOptions): Promise<void> {
     );
     judges.set(pk, {
       unverified,
+      idsUnverified,
+      campaignId: sj?.campaign_id,
       metrics: judgeMetrics(
         items,
-        (await exists(sp))
-          ? JSON.parse(await Deno.readTextFile(sp))
-          : undefined,
+        sj,
       ),
     });
   }
@@ -757,6 +831,7 @@ export async function runReport(o: RunOptions): Promise<void> {
       low?: boolean;
       na?: boolean;
       unv?: boolean;
+      ids?: boolean;
       axis?: string;
     };
     const ms: M[] = [];
@@ -786,6 +861,7 @@ export async function runReport(o: RunOptions): Promise<void> {
           low: jm.lowAgreement,
           na: jm.kappaNa,
           unv: jg!.unverified,
+          ids: jg!.idsUnverified,
           axis: "judge",
         });
       }
@@ -807,6 +883,7 @@ export async function runReport(o: RunOptions): Promise<void> {
       a: Agg;
       low: boolean;
       unv: boolean;
+      ids: boolean;
       na: boolean;
     };
     const rows: Row[] = [];
@@ -854,6 +931,7 @@ export async function runReport(o: RunOptions): Promise<void> {
           kappa_na: m.na ?? false,
           wording: wording(a, s),
           unverified: m.unv ?? false,
+          ids_unverified: m.ids ?? false,
         };
         head.push(r);
         rows.push({
@@ -863,6 +941,7 @@ export async function runReport(o: RunOptions): Promise<void> {
           a,
           low: m.low ?? false,
           unv: m.unv ?? false,
+          ids: m.ids ?? false,
           na: m.na ?? false,
         });
       }
@@ -902,6 +981,7 @@ export async function runReport(o: RunOptions): Promise<void> {
           x.low ? "low_agreement" : "",
           x.na ? "kappa_na" : "",
           x.unv ? "unverified" : "",
+          x.ids ? "ids_unverified" : "",
         ]
           .filter(Boolean).join(" "),
         wording(a, x.s),
@@ -946,6 +1026,10 @@ export async function runReport(o: RunOptions): Promise<void> {
     "# Solution quality report",
     "",
     `Missing axes: ${missing.length ? missing.join(", ") : "none"}`,
+    "",
+    ...[...judges].filter(([, j]) => j.campaignId !== undefined).map(([p, j]) =>
+      `Judge campaign_id (${p}): ${j.campaignId}`
+    ),
     "",
   ];
   await Deno.writeTextFile(

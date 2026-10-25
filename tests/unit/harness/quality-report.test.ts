@@ -375,7 +375,7 @@ Deno.test("end to end: full fixture, no pooling, header columns", async () => {
     const hText = await Deno.readTextFile(join(out, "headline.csv"));
     assertEquals(
       hText.split("\n")[0],
-      "base,variant,stratum,metric,group,n_tasks,k,m,t,median,mean,ci_lo,ci_hi,sign_p,wilcoxon_w_plus,wilcoxon_n,wilcoxon_p,loto_min,loto_max,loto_flips,low_agreement,kappa_na,wording,unverified",
+      "base,variant,stratum,metric,group,n_tasks,k,m,t,median,mean,ci_lo,ci_hi,sign_p,wilcoxon_w_plus,wilcoxon_n,wilcoxon_p,loto_min,loto_max,loto_flips,low_agreement,kappa_na,wording,unverified,ids_unverified",
     );
     const tText = await Deno.readTextFile(join(out, "tasks.csv"));
     assertEquals(
@@ -748,4 +748,129 @@ Deno.test("end to end: unequal repeats use task-weighted statistics", async () =
     assertAlmostEquals(Number(w["loto_min"]), 2 / 3, 1e-9);
     assertAlmostEquals(Number(w["loto_max"]), 2, 1e-9);
   });
+});
+
+// ------------------------------------------------------- self-check r2
+
+Deno.test("test-rerun: only absent/null is missing; other non-objects throw", () => {
+  const row = (extra: Record<string, unknown>) =>
+    [{ arm: "a", task: "T", repeat: 1, ...extra }] as never;
+  assertEquals(
+    testRerunTable(row({ agent_vs_start: null })).get("a|T|1"),
+    {},
+  );
+  for (const bad of [false, 0, "", [], "x", 5]) {
+    assertThrows(
+      () => testRerunTable(row({ agent_vs_start: bad })),
+      Error,
+      "agent_vs_start",
+    );
+    assertThrows(
+      () => testRerunTable(row({ shipped_vs_final: bad })),
+      Error,
+      "shipped_vs_final",
+    );
+  }
+});
+
+Deno.test("extraTable validates a multiline quoted header", () => {
+  assertThrows(
+    () => extraTable('arm,task,repeat,"sql\ncost",undeclared\na,T,1,5,6\n', {}),
+    Error,
+    "undeclared",
+  );
+});
+
+Deno.test("bootstrap CI regression pins (seeded)", async () => {
+  assertEquals(bootstrapCi(A, 10000, 1), [0.08999999999999997, 1.475]);
+  assertEquals(bootstrapCi(A, 10000, 2), [0.08499999999999996, 1.465]);
+  await withTempDir(async (root) => {
+    const f = await writeFixture(root, true);
+    const out = join(root, "out");
+    await runReport({ campaign: f.camp, out, boot: 200, seed: 1 });
+    const h = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
+    const w = h.find((r) => r["metric"] === "wall_min")!;
+    assertEquals([w["ci_lo"], w["ci_hi"]], ["-1", "2"]);
+  });
+});
+
+async function idsRun(
+  tweak: (
+    items: Record<string, unknown>[],
+    key: Record<string, Record<string, unknown>>,
+  ) => void,
+): Promise<{ err: Error | null; head: Record<string, string>[]; md: string }> {
+  let err: Error | null = null;
+  let head: Record<string, string>[] = [];
+  let md = "";
+  await withTempDir(async (root) => {
+    const f = await writeFixture(root, true);
+    const items = ["T1", "T2", "T3", "T4"].map((t) => ({
+      ...jItem(t),
+    })) as Record<string, unknown>[];
+    const key = JSON.parse(
+      await Deno.readTextFile(join(f.judge!, "key", "key.json")),
+    );
+    tweak(items, key);
+    await writeJson(join(f.judge!, "pairs.json"), items);
+    await writeJson(join(f.judge!, "key", "key.json"), key);
+    await writeJson(join(f.judge!, "summary.json"), {
+      campaign_id: "camp-7",
+      dimensions: {},
+    });
+    const out = join(root, "out");
+    try {
+      await runReport({ campaign: f.camp, out, judge: [f.judge!], boot: 50 });
+      head = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
+      md = await Deno.readTextFile(join(out, "report.md"));
+    } catch (e) {
+      err = e as Error;
+    }
+  });
+  return { err, head, md };
+}
+
+const withIds = (
+  items: Record<string, unknown>[],
+  key: Record<string, Record<string, unknown>>,
+  bad?: { item?: string; key?: string },
+) => {
+  for (const it of items) {
+    const t = it["task"] as string;
+    it["baseline_id"] = bad?.item ?? `b-${t}-1`;
+    it["variant_id"] = `v-${t}-1`;
+    key["p" + t]!["baseline_id"] = bad?.key ?? `b-${t}-1`;
+    key["p" + t]!["variant_id"] = `v-${t}-1`;
+  }
+};
+
+Deno.test("judge execution ids: absent -> ids_unverified, campaign_id recorded", async () => {
+  const r = await idsRun(() => {});
+  assertEquals(r.err, null);
+  const j = r.head.find((x) => x["metric"] === "judge_conventions")!;
+  assertEquals(j["ids_unverified"], "true");
+  assertEquals(
+    r.head.find((x) => x["metric"] === "cost_usd")!["ids_unverified"],
+    "false",
+  );
+  assertStringIncludes(r.md, "camp-7");
+  assertStringIncludes(r.md, "ids_unverified");
+});
+
+Deno.test("judge execution ids: matching ids verify", async () => {
+  const r = await idsRun((i, k) => withIds(i, k));
+  assertEquals(r.err, null);
+  assertEquals(
+    r.head.find((x) => x["metric"] === "judge_conventions")!["ids_unverified"],
+    "false",
+  );
+});
+
+Deno.test("judge execution ids: mismatches throw", async () => {
+  const e1 = await idsRun((i, k) =>
+    withIds(i, k, { item: "b-other-1", key: "b-other-1" })
+  );
+  assert(e1.err && /baseline_id/.test(e1.err.message), String(e1.err));
+  const e2 = await idsRun((i, k) => withIds(i, k, { key: "b-other-1" }));
+  assert(e2.err && /baseline_id/.test(e2.err.message), String(e2.err));
 });
