@@ -1,0 +1,15 @@
+# Tuesday run 2026-10-27 (R-02, owner decision decisions\2026-10-25-tuesday-run.md): the P-02 realistic arm
+# (cc-v2-pilot1-realistic) on image revision 4 with a 45-minute agent limit (P-02: 30). Exploratory only.
+id: cc-v2-tue-realistic
+harness: claude-code
+harness_version: "latest"
+image_revision: "4"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/realistic/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+limits: { timeout_min: 45, max_budget_usd: 5 }

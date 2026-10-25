@@ -1,0 +1,164 @@
+---
+kind: action-skill
+id: al-performance-review
+version: 1
+title: AL performance review
+description: Reviews AL source changes against performance guidance from BCQuality.
+inputs: [pr-diff, file-path, folder-path]
+outputs: [findings-report]
+bc-version: [all]
+technologies: [al]
+countries: [w1]
+application-area: [all]
+---
+
+# AL performance review
+
+Reviews AL source changes against the `performance` knowledge domain in BCQuality and emits a findings report. This is a leaf action skill: it invokes no sub-skills. It is one of the skills composed by `al-code-review`.
+
+An orchestrator invokes this skill with a `pr-diff`, `file-path`, or `folder-path`. The skill produces a single JSON document conforming to the DO output contract.
+
+## Source
+
+Use READ's **Bounded retrieval for review skills** workflow with `-Domain performance`. Consume every catalog page across enabled layers before applying this leaf's Relevance and Worklist; preserve each exact catalog path and open complete bodies only for exact paths selected by the Worklist. If the helper or prepared index is unavailable or invalid, use READ's explicit path-discovery and bounded native-read fallback.
+
+## Relevance
+
+Apply the frontmatter matching rules defined in READ (*Frontmatter matching semantics*) against the task context:
+
+- `bc-version` — the target BC version from the PR branch's `app.json` or the orchestrator-supplied version. If unavailable, the dimension is `unknown`.
+- `technologies` — `[al]`.
+- `countries` — the countries declared in the consuming app's `app.json`. Default to the orchestrator's configured context; if absent, `unknown`.
+- `application-area` — the union of application areas declared by the changed objects. Pass the actual set; do not substitute `[all]`. If the area cannot be determined from the changes, the dimension is `unknown`.
+
+Discard files that are not applicable. Retain conditionally applicable files (any dimension `unknown`) only when the orchestrator's configuration permits them; findings derived from those files MUST have `confidence` no higher than `medium`, AND the finding's `message` MUST name the dimension or dimensions that were unknown.
+
+## Worklist
+
+Narrow the relevant files to the subset that applies to the changes under review. For each relevant file, compute overlap against:
+
+- The changed AL object names and types — especially tables, pages with SourceTable bindings, reports, queries, and codeunits performing record iteration.
+- The changed procedures and triggers, weighted toward those that perform loops, Find/FindSet/FindFirst calls, CalcFields, SetAutoCalcFields, CalcSums, FlowField access, Commit calls, checkpoint helpers, record copying, RecordRef conversion, Modify/Delete calls, or cross-table navigation.
+- Tokens extracted from the diff that relate to data access, hot-path costs, and background scheduling (`key`, `IncludedFields`, `SumIndexFields`, `SetRange`, `SetFilter`, `SetLoadFields`, `SetCurrentKey`, `FindSet`, `FindLast`, `IsEmpty`, `ReadIsolation`, `LockTable`, `Insert`, `ModifyAll`, `DeleteAll`, `Modify`, `Delete`, `Validate`, `Commit`, `checkpoint`, `Copy`, `RecordRef`, `GetTable`, `TextBuilder`, `Dictionary`, `temporary`, `repeat`, `until`, `CalcFields`, `SetAutoCalcFields`, `CalcSums`, `CalcFormula`, `FlowField`, `Query.Open`, `Query.Read`, `Visible`, `Job Queue Entry`, `Job Queue Category Code`, `Confirm`, `RunModal`, `GuiAllowed`, `TryFunction`, `Codeunit.Run`, `HttpClient`, `Status`, `On Hold`, `stop request`, `TaskScheduler.CreateTask`, `TaskScheduler.TaskExists`, `Page.RunModal`, `Report.RunModal`, `Report.Run`, `Xmlport.Run`, `UseRequestPage`, `HeadlinePart`, `Headline RC`, `OnComputeHeadlines`, `OnIsAnyExtensionHeadlineVisible`, `OnSetVisibility`).
+
+A file enters the candidate worklist when its `keywords` intersect the extracted tokens or its topic (derived from the index entry's `path`, `title`, and `description`) matches a changed object type. Read an article's full file — its `## Best Practice` / `## Anti Pattern` bodies — only after it makes the worklist; candidate selection uses the index alone.
+
+Apply these targeted cues even when simple token overlap would rank the article below the worklist cutoff:
+
+- Worklist `design-covering-keys-from-read-pattern.md` for a changed secondary key alongside a filtered reader of its table, and `review-overlapping-keys-before-adding-an-index.md` when added or changed keys have overlapping leading fields. Worklist `justify-low-selectivity-fields-in-key-columns.md` when an added or changed key, or its `IncludedFields`, contains a Boolean, Option, Enum, or status field. A changed key alone is not a finding; read and write workloads determine whether these rules apply.
+- Worklist `preserve-buffered-inserts-by-separating-target-reads.md` when a loop calls `Insert` and interleaves operations on the insert target or `Commit`. Worklist `aggregate-before-persisting-intermediate-results.md` when repeated grouping calculations and persistent intermediate summaries appear in the same processing path. Do not infer either pattern from `Insert` or `CalcSums` alone.
+- Worklist `use-grouped-query-for-distinct-values-and-duplicates.md` when a record loop sets a filter on a second record variable of the same table to the current row's value and calls `Count`, `IsEmpty`, or `FindFirst` only to decide whether that value is duplicated. Do not worklist it for a single uniqueness check on one record (for example in `OnValidate` or before `Insert`), an outer loop bounded to one parent document, a lookup against a different subset than the looped rows, a loop that acts on each row it finds, or a filtered/counted record that is temporary.
+- Worklist `cache-repeated-filtered-results-with-explicit-scope.md` only when the code or workload establishes repeated **complete** lookup keys (for example, querying the same filtered set in multiple passes, or measured key reuse), or shows a cache that omits result-affecting inputs. A single loop over possibly distinct keys does not establish reuse or justify a cache finding. Worklist `avoid-repeating-unchanged-validation.md` for repeated `Validate` of the same field in one path; do not worklist it from a single validation call.
+- Worklist `use-setautocalcfields-for-per-row-flowfields.md` when a record loop calls `CalcFields`, or when every row reads the same FlowField for a comparison, branch, or per-record action. Also worklist `calcsums-instead-of-calcfields-in-loop.md` when the loop accumulates one set total: use `CalcSums` directly only for stored source fields, never directly on FlowFields; a FlowField total requires deriving equivalent source filters from its `CalcFormula`.
+- Worklist `hidden-flowfields-still-calculate-before-bc26-opt-in.md` when a page control directly sources a FlowField and sets `Visible = false` or a visibility expression. Suppress it when the target is known to have BC26's **Calculate only visible FlowFields** feature enabled, or when the FlowField is cheap and intentionally preloaded.
+- Worklist `avoid-commit-inside-loops.md` when `Commit()` is inside a record-iteration body or a checkpoint loop lacks persisted progress that excludes completed work on retry. Do not match a commit after a complete business unit when the same transaction persists a restart-safe watermark/state and errors propagate. Still match a full-tail `FindSet` with periodic commits as unbounded retrieval; restart safety does not make it `TOP X`.
+- Worklist `prefer-modifyall-over-per-row-modify.md` for a constant-assignment `Modify(false)` loop with no validation or per-row semantics. Worklist `triggers-and-media-field-regress-modifyall.md` when table trigger code, related subscribers, security filtering, `Media`/`MediaSet`, or companion fields affect a bulk path. A progress dialog does not generically exempt a loop; accept it only when the equivalent bulk call already falls back to individual operations and semantics are preserved.
+- Worklist `avoid-cloning-records-before-modify-delete-in-loops.md` when an iteration calls `Copy` or `RecordRef.GetTable` before `Modify`/`Delete`, or passes the iterated record without `var` to a helper that writes that record. Do not worklist it from `Modify`, `Delete`, or `RecordRef` alone; exclude a direct write on the iterator, a read-only copy, a temporary record, a different target table, and a `RecordRef` opened and iterated directly.
+- Worklist `use-tryfunction-for-error-catching-not-rollback.md` only when writes occur inside a try method and the code or surrounding flow expects an error to roll them back. A bare try-method call whose Boolean result is ignored belongs exclusively to `error-handling/ignored-tryfunction-return-disables-try-semantics.md`; do not worklist the performance article from that call shape alone.
+- Worklist `boolean-operators-do-not-short-circuit.md` when one `and` or `or` condition combines a guard with an operand that is only safe or meaningful after that guard (a division or `mod` by a value the guard checks for zero, an array or list subscript whose bounds a sibling operand checks, or a field read of a record whose `Get`/`Find`/`IsEmpty` is another operand), or combines a cheap condition with a database call or procedure call that the cheap condition was meant to avoid. Do not worklist it when every operand is an independently safe, cheap in-memory comparison, field test, or enum test.
+- For `LockTable` in a pure read helper, select exactly one owner. Use `do-not-locktable-in-read-only-procedure.md` when the helper needs no stronger isolation and should remove the lock. Use `prefer-readisolation-over-locktable-for-reads.md` instead when the code explicitly requires committed-read semantics and `ReadIsolation` is the replacement. Never emit both findings for the same call.
+- Worklist `job-queue-handlers-must-not-require-ui.md` when a codeunit run by the job queue calls `Confirm`, `Page.Run`, `Page.RunModal`, `Report.Run`, `Report.RunModal`, `Hyperlink`, `File.Upload`, or `File.Download`, or uses `Message` as its only success or failure notification. Exclude optional UI-only behavior guarded by `GuiAllowed`; do not exclude a guard that silently skips a decision required by the operation.
+- Worklist `job-queue-handlers-must-propagate-failures.md` when a codeunit run by the job queue handles a failed `TryFunction`, `Codeunit.Run`, or another Boolean-returning operation with `exit` or normal fall-through, causing the dispatcher to observe success. Exclude intentional partial-success handling that persists or emits an observable aggregate outcome. A bare try-method call whose Boolean result is ignored remains owned exclusively by `error-handling/ignored-tryfunction-return-disables-try-semantics.md`.
+- Worklist `job-queue-external-effects-must-be-idempotent.md` when rerunnable job queue work reads an outbox row, performs a state-changing external request, then updates or deletes local data without sending a stable request ID understood by the external system. Exclude naturally idempotent operations and requests whose body, URI, headers, or business key lets the external service return the existing result instead of repeating the side effect.
+- Worklist `job-queue-on-hold-does-not-stop-running-work.md` when a running job queue handler polls the entry's `Status` or `On Hold` value as a cancellation signal. Exclude application-owned stop requests that are checked before every bounded unit of work, including the first, when completed work and its checkpoint remain consistent and resume logic clears the request.
+- Worklist `job-queue-category-code-serializes-conflicting-jobs.md` when two or more job queue entries in the same company are shown by the changed context to require mutual exclusion but have empty or different Job Queue Category Codes. Do not infer a conflict merely because jobs touch the same tables, and do not recommend a category to coordinate across companies, environments, or workers outside the job queue dispatcher.
+- Worklist `store-scheduled-task-id-to-avoid-duplicate-tasks.md` when `TaskScheduler.CreateTask` runs from initialization, login, setup, or another repeatable path without persisting its returned GUID and checking it with `TaskScheduler.TaskExists` before creating a replacement. Exclude one-shot creation and correctly persisted check-before-create flows; concurrent callers still require serialization around that sequence.
+- Worklist `al-methods-limited-during-write-transactions.md` when `Page.RunModal` follows an `Insert`, `Modify`, or `Delete` in the same trigger or procedure with no intervening `Commit`; or when `Report.RunModal`/`Report.Run` without `false` as its `RequestWindow` argument and without `UseRequestPage(false)` follows one; or when `Xmlport.Run` without `false` as its `RequestWindow` argument and without the `UseRequestPage = false` object property follows one. Do not worklist it from a call that precedes every write, from a report run with its request page suppressed via `UseRequestPage(false)`/`Run(...,false)`/`RunModal(...,false)`, or from an XMLport run with its request page suppressed via the `RequestWindow` argument or the `UseRequestPage` property. A `Codeunit.Run` whose return value is used in that position belongs to `codeunit-run-requires-prior-commit-inside-transaction.md`.
+- A new or changed report object whose usage/name/caption identifies it as a single-record document (invoice, statement, order confirmation) sets or retains `DefaultRenderingLayout = RDLC` — `document-report-word-layout.md`. Do not worklist this from a tabular/list report with heavy aggregation or calculated columns; RDLC/Excel remains the better fit there.
+- Worklist `compute-role-center-headlines-in-the-background.md` when a pageextension of a Base App `Headline RC ...` page, a subscriber to such an extension's own visibility event (`OnSetVisibility` in Microsoft's extensions) or to `OnIsAnyExtensionHeadlineVisible`, or a `HeadlinePart` page's `OnOpenPage` builds headline text by looping over documents or entries (`FindSet` with `repeat ... until Next() = 0`) or by running a query. Exclude the same work in an `OnComputeHeadlines` subscriber on `"RC Headlines Executor"` or in a page background task codeunit, even when it is in the same file; reading a stored result; static text; a setup or availability check; and a FlowField or `CalcSums` aggregate computed once per page instance.
+
+These targeted inclusions and exclusions override generic token overlap. Do not retain an excluded article solely because the diff contains one of its keywords.
+
+Once the candidate worklist is known, resolve layer-precedence conflicts per READ. Drop lower-precedence files whose normative guidance (`## Best Practice` or `## Anti Pattern`) directly contradicts a higher-precedence candidate, and record each dropped file in `suppressed` with `reason: "layer-precedence"`. Files that would have been candidates but are hidden because their layer is disabled in consumer configuration are recorded with `reason: "configuration"`. Files that never became candidates are NOT recorded in `suppressed`.
+
+When the post-conflict worklist is empty because no applicable performance knowledge exists, or because configuration suppressed every candidate, emit `outcome: "no-knowledge"`. When the worklist is empty because no applicable performance knowledge matched the changes, emit `outcome: "completed"` with an empty `findings` array.
+
+## Action
+
+For each worklist entry, evaluate the diff against the file's `## Best Practice` and `## Anti Pattern` sections. Emit findings as follows:
+
+- When the diff contains a clear match for an Anti Pattern, emit a finding with severity `major` or `blocker`, a message summarizing the anti-pattern, `location` pointing to the offending line or range, and a `references` entry pointing to the knowledge file. Use `blocker` only when the knowledge file states the anti-pattern violates a platform-level guarantee (for example, documented query timeouts or transaction size limits). When the file does not make such a claim, the ceiling is `major`.
+- When the diff contains code that contradicts a Best Practice without being a full anti-pattern, emit `minor` with the same reference shape.
+- Applicability alone is not a finding. Emit `info` only for a concrete, non-actionable observation the article explicitly defines; otherwise emit nothing when no violation is present.
+
+Set `confidence` to:
+
+- `high` when the detection is based on an unambiguous pattern match (identifier, syntax, object type).
+- `medium` when detection relies on heuristics or when any frontmatter dimension was `unknown`.
+- `low` when the finding is an advisory derived only from applicability.
+
+After evaluating each worklist entry, also consider whether the diff exhibits a performance defect the agent recognises from its general AL knowledge that no knowledge file in the worklist covers. Such candidates are agent findings within this skill's domain — emit them with `references: []`, an `id` slug prefixed with `agent:`, `confidence` capped at `medium`, `severity` capped at `minor` (agent findings are advisory and non-gating), and a `message` that is self-contained (describing both the issue and a concrete recommendation, since there is no knowledge-file footer for the consumer to fall back on). Hold every candidate to the precision bar in `skills/do.md` (*Agent findings*): emit only a concrete, material performance defect a knowledgeable BC reviewer would agree is wrong — steelman it first and drop anything stylistic, speculative, dependent on code outside the diff, or merely a valid alternative; when in doubt, omit. The scope is strictly performance; defects outside this domain belong to other leaves and MUST NOT be emitted here. Before emitting, check the worklist for a knowledge file that matches the candidate — if one exists, upgrade the candidate to a knowledge-backed finding instead. See `skills/do.md` for the full contract.
+
+For every emitted finding, decide whether the fix is mechanical. A fix is mechanical when it is small, local, and unambiguous from the diff context (for example: delete unreachable lines; replace `Count() > 0` with `not IsEmpty()`; add a missing `ToolTip`, `OptionCaption`, or `DataClassification`; replace a string-concatenated `Error` with a Label-backed call; change an over-broad permission token; or add an obvious `else`/guard branch). For mechanical findings, emit `findings[].suggested-code` with the literal replacement for the source lines indicated by `location`. The payload must be a verbatim replacement — no diff markers, no fences, no commentary — that the consumer can render as a one-click suggestion. When a `.good.al` companion exists and the diff context matches the `.bad.al` shape, adapt the `.good.al` replacement into `suggested-code`.
+
+Omit `suggested-code` only when the appropriate fix depends on context the skill cannot determine, when multiple defensible replacements exist, or when the fix spans non-contiguous code. If a finding is mechanical-looking but you omit `suggested-code`, set `findings[].suggested-code-omission-reason` to a short explanation. See `skills/do.md` for the full contract.
+
+Outcome selection:
+
+- `completed` — the skill evaluated every worklist item; default when the skill finishes normally, including when the resulting `findings` array is empty.
+- `no-knowledge` — no applicable performance knowledge survived Source, Relevance, configuration filtering, and conflict resolution. `findings` is empty.
+- `not-applicable` — the task context lacks an AL dimension (no AL changes in the diff, or `technologies` filter rejected the task).
+- `partial` — a time or token budget was hit before the worklist was exhausted. `summary.coverage` reflects the evaluated subset; `outcome-reason` explains the cause.
+- `failed` — an unrecoverable error occurred. `outcome-reason` is required.
+
+## Output
+
+Output conforms to the DO output contract. Every finding this skill emits MUST set `findings[].domain` to `"Performance"`. A populated example:
+
+```json
+{
+  "skill": { "id": "al-performance-review", "version": 1 },
+  "outcome": "completed",
+  "summary": {
+    "counts": { "blocker": 0, "major": 1, "minor": 1, "info": 0 },
+    "coverage": { "worklist-size": 2, "items-evaluated": 2 }
+  },
+  "findings": [
+    {
+      "id": "microsoft/knowledge/performance/apply-filters-before-iterating.md",
+      "severity": "major",
+      "message": "The Country/Region Code predicate is evaluated inside the loop instead of with SetRange before FindSet, so every row crosses the database boundary.",
+      "location": {
+        "file": "src/Sales/PostingRoutines.Codeunit.al",
+        "line": 140,
+        "range": { "start-line": 140, "end-line": 144 }
+      },
+      "references": [
+        { "path": "microsoft/knowledge/performance/apply-filters-before-iterating.md" }
+      ],
+      "confidence": "high",
+      "domain": "Performance"
+    },
+    {
+      "id": "microsoft/knowledge/performance/use-setloadfields-for-partial-records.md",
+      "severity": "minor",
+      "message": "The loop reads only a small subset of fields from a wide table without SetLoadFields, transferring every column for each row.",
+      "location": {
+        "file": "src/Sales/PostingRoutines.Codeunit.al",
+        "line": 152
+      },
+      "references": [
+        { "path": "microsoft/knowledge/performance/use-setloadfields-for-partial-records.md" }
+      ],
+      "confidence": "high",
+      "domain": "Performance"
+    }
+  ],
+  "suppressed": []
+}
+```
+
+When no applicable performance knowledge is available, the report is:
+
+```json
+{
+  "skill": { "id": "al-performance-review", "version": 1 },
+  "outcome": "no-knowledge",
+  "summary": {
+    "counts": { "blocker": 0, "major": 0, "minor": 0, "info": 0 },
+    "coverage": { "worklist-size": 0, "items-evaluated": 0 }
+  },
+  "findings": [],
+  "suppressed": []
+}
+```

@@ -323,7 +323,7 @@ async function main() {
     resultsDir: join(root, "results", "harness", "probes"),
     containers: [container],
     backendPort: 3210,
-    secretsSource: secretsDir,
+    secretAccounts: [{ label: null, dir: secretsDir }],
     symbolStore: join(root, "results", "harness", "symbols"),
     privateRoot,
     credentialLedger: null,

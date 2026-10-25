@@ -197,16 +197,12 @@ Deno.test({
 
 Deno.test({
   name:
-    "cg-inventory: hooks and plugins have no installer, an unknown instructions file is not installable, an empty component is refused",
+    "cg-inventory: hooks have no installer, an unknown instructions file is not installable, an empty component is refused",
   ignore: NOT_WINDOWS,
   async fn() {
     refused(
       await inventory({ ...FULL, "config/bundle/hooks/settings.json": "{}" }),
       "hooks is staged but this image cannot install it",
-    );
-    refused(
-      await inventory({ ...FULL, "config/bundle/plugins/0/plugin.json": "{}" }),
-      "plugins is staged but this image cannot install it",
     );
     refused(
       await inventory({ ...FULL, "config/bundle/instructions/notes.txt": "x" }),
@@ -222,6 +218,133 @@ Deno.test({
     });
     refused(empty, "agents is staged but empty");
     assert(!empty.rec.installed.includes("agents"));
+  },
+});
+
+/**
+ * R-02: a plugin component, staged as bundle/plugins/<name> and copied by run.ps1 to the
+ * writable ~/cg-plugins/<name> (outside ~/.claude), whose copy must match byte for byte.
+ */
+const PLUGIN: Layout = {
+  "config/bundle/plugins/toyplug/.claude-plugin/marketplace.json": "{}",
+  "config/bundle/plugins/toyplug/skills/toy-review/SKILL.md": "skill\n",
+  "config/bundle/plugins/toyplug/knowledge/a.md": "k\n",
+  "home/cg-plugins/toyplug/.claude-plugin/marketplace.json": "{}",
+  "home/cg-plugins/toyplug/skills/toy-review/SKILL.md": "skill\n",
+  "home/cg-plugins/toyplug/knowledge/a.md": "k\n",
+};
+
+Deno.test({
+  name:
+    "cg-inventory (R-02): a plugin whose copy matches is ok and listed as plugin:<name>",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const r = await inventory({ ...FULL, ...PLUGIN });
+    assertEquals([r.code, r.rec.ok, r.rec.problems], [0, true, []]);
+    assertEquals(r.rec.installed, [
+      "agents",
+      "instructions",
+      "plugin:toyplug",
+      "skills",
+    ]);
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory (R-02): a plugin copy that is missing a file, differs or has an extra file is refused",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    const missing = await inventory({
+      ...FULL,
+      ...without(PLUGIN, "home/cg-plugins/toyplug/knowledge/a.md"),
+    });
+    refused(
+      missing,
+      "plugin:toyplug: knowledge/a.md is staged but not installed",
+    );
+    assert(!missing.rec.installed.includes("plugin:toyplug"));
+    const differs = await inventory({
+      ...FULL,
+      ...PLUGIN,
+      "home/cg-plugins/toyplug/knowledge/a.md": "tampered\n",
+    });
+    refused(
+      differs,
+      "plugin:toyplug: knowledge/a.md differs from the staged copy",
+    );
+    assert(!differs.rec.installed.includes("plugin:toyplug"));
+    refused(
+      await inventory({
+        ...FULL,
+        ...PLUGIN,
+        "home/cg-plugins/toyplug/extra.md": "x",
+      }),
+      "undeclared file in the plugin folder: cg-plugins/toyplug/extra.md",
+    );
+    refused(
+      await inventory({ ...FULL, "home/cg-plugins/other/x.md": "x" }),
+      "undeclared file in the plugin folder: cg-plugins/other/x.md",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory (R-02): a plugin may carry skills and files only; hooks, MCP, LSP, agents, commands, settings and a manifest are refused",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    for (
+      const [entry, file] of [
+        ["hooks", "hooks/hooks.json"],
+        [".mcp.json", ".mcp.json"],
+        [".lsp.json", ".lsp.json"],
+        ["agents", "agents/x.md"],
+        ["commands", "commands/x.md"],
+        ["output-styles", "output-styles/x.md"],
+        ["bin", "bin/x.cmd"],
+        ["settings.json", "settings.json"],
+        [".claude-plugin/plugin.json", ".claude-plugin/plugin.json"],
+      ]
+    ) {
+      refused(
+        await inventory({
+          ...FULL,
+          ...PLUGIN,
+          [`config/bundle/plugins/toyplug/${file}`]: "{}",
+          [`home/cg-plugins/toyplug/${file}`]: "{}",
+        }),
+        `plugin:toyplug: ${entry} is not allowed in a plugin (skills and plain files only)`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "cg-inventory (R-02): plugin folders need a lowercase slug name; a loose file or an empty plugins folder is refused",
+  ignore: NOT_WINDOWS,
+  async fn() {
+    refused(
+      await inventory({
+        ...FULL,
+        "config/bundle/plugins/Bad_Name/skills/x/SKILL.md": "s",
+        "home/cg-plugins/Bad_Name/skills/x/SKILL.md": "s",
+      }),
+      "plugins: Bad_Name is not a lowercase slug",
+    );
+    refused(
+      await inventory({ ...FULL, "config/bundle/plugins/readme.txt": "x" }),
+      "plugins: readme.txt is not a plugin folder",
+    );
+    refused(
+      await inventory({ ...FULL, "config/bundle/plugins": null }),
+      "plugins is staged but empty",
+    );
+    refused(
+      await inventory({ ...FULL, "config/bundle/plugins/toyplug": null }),
+      "plugin:toyplug is staged but empty",
+    );
   },
 });
 

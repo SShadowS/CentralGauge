@@ -301,7 +301,7 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     symbolStore: repo.symbolStore,
     // H-38: the fixture store holds no real package; an empty index of its lock.
     onPrem: await noOnPrem({ store: repo.symbolStore, packages: repo.symbols }),
-    secretsSource,
+    secretAccounts: [{ label: null, dir: secretsSource }],
     secretAcl: { icacls: fakeIcacls, user: ACL_USER },
     driveType: () => Promise.resolve("Fixed"),
     scanReparsePoints: NO_SCAN,

@@ -21,6 +21,14 @@ import { HASH_RULES_VERSION, hashFile, hashJson, listTree } from "./hash.ts";
 import { Sha256Hex } from "./identity.ts";
 import type { HarnessTask } from "./task.ts";
 
+/**
+ * R-02: a plugin component's folder name (the last segment of its path). It is
+ * staged as bundle/plugins/<name>, and Claude Code names a --plugin-dir plugin
+ * without a manifest after its folder (<name>@inline).
+ */
+export const pluginName = (path: string): string =>
+  path.split(/[\\/]/).filter((s) => s !== "").at(-1)!;
+
 const PathComponent = z.strictObject({
   path: z.string(),
   hash: Sha256Hex,

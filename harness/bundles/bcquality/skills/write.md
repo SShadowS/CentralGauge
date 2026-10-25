@@ -1,0 +1,123 @@
+---
+kind: meta-skill
+id: write
+version: 1
+title: New Knowledge — how to author a knowledge file
+---
+
+# WRITE
+
+Anyone — human or agent — adding a knowledge file to BCQuality follows this guide. READ is the format specification; WRITE is the authoring guide. This file does not restate the schema; consult READ for field-by-field semantics.
+
+## Is this a knowledge file?
+
+Before authoring anything, confirm a knowledge file is the right artifact. BCQuality separates *mechanics* from *facts*:
+
+- **Skills** (`*/skills/**`) hold only finder/applier mechanics — how to discover, filter, worklist, and emit findings. See `skills/do.md`.
+- **Knowledge files** (`*/knowledge/**`) hold every Business-Central-specific fact a skill acts on.
+
+A new BC fact is therefore a knowledge file, never a skill edit. In particular, if you arrived here because a review agent flagged something it should not have (a false positive) or missed something it should have caught, the remedy is a knowledge file — apply the [admission test](../docs/contributing.md#what-belongs-here): *would a capable LLM get this wrong without the file?* If you find yourself editing a skill to stop it flagging something, stop and write a knowledge file instead.
+
+### Negative knowledge is first-class
+
+A knowledge file does not have to recommend an action. A **negative clarification** — "pattern X is *not* a defect, because BC behaves as Y" — is a first-class knowledge file, authored exactly like a positive rule:
+
+- **Description** states the BC behaviour that makes the pattern legitimate.
+- **Best Practice** tells the reviewer or agent what *not* to flag, and why.
+- **Anti Pattern** describes the false-positive report itself — the mistaken finding to suppress.
+
+For example, `microsoft/knowledge/error-handling/page-boolean-triggers-default-to-true.md` records that the Boolean page record triggers return `true` by default, so a "missing `exit(true)`" report is not a real defect. It reads as ordinary knowledge; its anti-pattern is the incorrect review comment, not the code.
+
+## Before you start
+
+Read `skills/read.md` first. A file that does not conform to READ will be rejected. WRITE assumes READ is already understood.
+
+## The atomicity rule
+
+One knowledge file covers **one concern**. If two ideas would share a file, split them into two files and cross-reference from the Description. A good test: could an action skill reasonably want to cite one without the other? If yes, they are two concerns.
+
+Symptoms that a file is trying to be two:
+
+- Two Best Practice sections.
+- A Description that uses "and" to join two topics.
+- `keywords` that span two unrelated vocabularies.
+
+## Size
+
+Target under 100 lines. Ideal under 50. Long files almost always mean two concerns; the fix is to split, not to compress.
+
+## Sections
+
+**Description** is the only required section and the one that matters most. It states the concern and why it matters in two to five sentences. It is the primary retrieval target — write it as if a skill is deciding whether to load this file based on this text alone.
+
+**Best Practice** is optional but recommended when the concern has a clear preferred approach. State the approach and the reasoning. Keep it to the *what* and *why*; the *how* (code) belongs in a sample file.
+
+**Anti Pattern** is optional but recommended when the concern has a common wrong approach. State the pattern, the consequence, and the signal a reviewer or agent can use to detect it. Anti Pattern sections are highly actionable for review skills; write them with detection in mind.
+
+Custom `##` sections are permitted when they serve the concern (for example, `## Applies to` for scope caveats or `## See also` for related files). Consumers are not required to understand them, so do not put load-bearing content there.
+
+When adding or changing a platform claim, cite an authoritative public source
+where available. A short `## References` section can link the relevant API,
+property documentation, or public source definition. If no such source is
+available, identify the evidence or policy basis explicitly; do not imply an
+official guarantee. Keep the actual rule and its exceptions in normative
+sections, not only in references. See [sources and examples](../docs/contributing.md#sources-and-examples).
+
+## No fenced code blocks
+
+Knowledge files do not contain code. Samples live as **sibling files** next to the article — `<slug>.good.al`, `<slug>.bad.al`, etc. — in the same knowledge-layer folder. See `skills/read.md` for the full convention. This keeps knowledge files retrieval-friendly and prevents code from drifting out of sync with BC platform changes buried inside prose.
+
+## Choosing frontmatter values
+
+**`bc-version`.** Default to `[all]` when the guidance is universal — a BC language pattern, a property on a long-standing platform type, a CodeCop rule, or a platform behaviour that has not changed across versions. Use an explicit list or range (`[26, 27, 28]`, `[26..28]`) only when the guidance is tied to a version-gated API, a deprecation, or platform behaviour that genuinely differs across versions. When guidance applies to a feature introduced in version N and not expected to be removed, prefer the open-ended range `[N..]` over a closed range so the file keeps matching future versions — reserve a closed upper bound for guidance that genuinely stops applying (for example, a behaviour removed or replaced in a later version). Most knowledge files should be `[all]`; reach for a range only with a concrete reason.
+
+**`domain`.** Pick one. If two fit, the file is probably two concerns. If no existing domain fits, introduce a new one — domains are open. Prefer existing domains when they are a reasonable fit, to keep retrieval predictable.
+
+**`keywords`.** Three to ten, lowercase, kebab-case. Write them as the search terms an engineer or agent would use to find this concern. Include synonyms when a concept has multiple common names (for example, `find-set` and `findset`). Do not duplicate the domain or title as a keyword.
+
+**`technologies`.** List every technology the guidance touches, explicitly. Do not use a sentinel; there is no `[all]` for technologies. If the guidance is truly technology-agnostic, the file probably belongs in a different repository.
+
+**`countries`.** Default to `[w1]` (worldwide). Use ISO country codes only when the guidance is specific to a localization — tax regulations, electronic invoicing formats, country-specific VAT rules. `[w1]` is mutually exclusive with country codes.
+
+**`application-area`.** Default to `[all]`. Restrict only when the guidance is specific to a BC application area — posting routines in Finance, lot tracking in Warehouse Management. `[all]` is mutually exclusive with specific areas.
+
+## File naming
+
+`kebab-case.md`. The name should echo the concern: `filter-before-find.md`, `avoid-implicit-commit.md`, `telemetry-for-failed-posts.md`. Avoid generic names (`performance.md`) and version numbers in the name.
+
+## Choosing a layer
+
+In the shared upstream layers, keep an action skill and the canonical knowledge it acts on in the same layer. The action skill's ownership determines the destination; the author's affiliation does not. Do not use `/community/knowledge/` as a staging area for articles in a domain already owned by a Microsoft-endorsed skill. A cross-layer split is acceptable only as a short-lived migration state while the skill or corpus is being promoted. Custom overrides are intentionally exempt because they extend shared skills from a consumer fork.
+
+- **`/microsoft/knowledge/<domain>/`** — guidance owned by a Microsoft-endorsed action skill. It has been approved as platform-endorsed guidance, whether authored by Microsoft or contributed by the community.
+- **`/community/knowledge/<domain>/`** — knowledge that accompanies a community-owned action skill. Promote the knowledge with the skill when that skill becomes Microsoft-endorsed.
+- **`/custom/knowledge/<domain>/`** — partner or customer overrides. Generally does not appear in the BCQuality repository itself; `/custom/` lives in consumer repositories.
+
+### Writing to `/custom/` — fork precondition
+
+The `/custom/` layer is **empty by default** in the upstream `microsoft/BCQuality` repository — it ships as a template (`README.md` plus `.gitkeep` placeholders) and is meant to be populated only inside a **fork or consumer clone** that an organization controls. Custom content is partner- or customer-specific by definition and is never accepted upstream.
+
+Before authoring or scaffolding any file under `/custom/knowledge/` or `/custom/skills/`, an author — human or agent — MUST confirm the working repository is **not** `microsoft/BCQuality`:
+
+- Check the `origin` remote: `git remote get-url origin`. If it points at `github.com/microsoft/BCQuality`, stop — you are in the upstream repo, not a fork.
+- If you are in the upstream repo, do not write the custom file. Either fork the repository (or clone it into your organization's own repo) and add the custom content there, or — if the guidance is genuinely shareable — use the shared layer that owns the domain, following *Choosing a layer* above. Community is not a staging area for Microsoft-owned domains.
+
+A pull request that adds `/custom/` content to `microsoft/BCQuality` will be **automatically closed** by the `Guard custom layer` workflow. Validate the fork precondition first so authoring effort is not wasted on a PR that cannot be merged.
+
+## Pre-PR checklist
+
+Before opening a pull request:
+
+- Frontmatter has all six required fields with valid values (see READ).
+- The file has a `## Description` section.
+- No fenced code blocks.
+- File is under 100 lines.
+- File covers one concern.
+- Frontmatter `domain` exactly matches the containing domain folder.
+- File is in the correct layer and domain folder.
+- Name is kebab-case and descriptive.
+- Every companion sample has a clickable relative link retaining its backticked filename, and every referenced sample exists.
+- Platform claims link supporting sources where available; policy or empirical guidance is identified as such.
+- Every review-leaf domain has at least one article with both `.good.al` and `.bad.al` companions; the evaluation harness derives positive and clean controls from that convention automatically.
+
+Agents scaffolding new files SHOULD run this checklist programmatically before emitting the file.

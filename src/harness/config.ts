@@ -31,7 +31,27 @@ export const ComponentsSchema = z.strictObject({
   skills: bundlePath,
   agents: bundlePath,
   hooks: bundlePath,
-  plugins: uniqueList(relPath).default([]),
+  // R-02: a plugin is staged and loaded under its folder name (manifest.ts pluginName).
+  plugins: uniqueList(relPath).superRefine((ps, ctx) => {
+    const names = ps.map((p) =>
+      p.split(/[\\/]/).filter((s) => s !== "").at(-1)!
+    );
+    names.forEach((n, i) => {
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(n)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `plugin folder ${n} must be a lowercase slug`,
+          path: [i],
+        });
+      } else if (names.indexOf(n) !== i) {
+        ctx.addIssue({
+          code: "custom",
+          message: `plugin folder ${n}: two plugins share the same folder name`,
+          path: [i],
+        });
+      }
+    });
+  }).default([]),
   mcp: uniqueList(slug).default([]),
   lsp: uniqueList(slug).default([]),
   toolchain: uniqueList(

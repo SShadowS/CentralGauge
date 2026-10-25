@@ -1,7 +1,7 @@
 # Component inventory (Harness v2 spec section 4, feasibility gate 1). run.ps1 calls it after
 # the bundle copies, before any credential is read and before claude starts. It proves every
 # staged component (C:\config\bundle, hashed by the runner in writeConfigDir) is installed byte
-# for byte under ~/.claude, and that nothing undeclared sits in a scope Claude Code reads: the
+# for byte under ~/.claude (a plugin under ~/cg-plugins, R-02), and that nothing undeclared sits in a scope Claude Code reads: the
 # user scope, the workspace (recursively), its ancestors, the managed-settings folder.
 # One JSON line on stdout (UTF-8, no BOM), nothing else; errors go to stderr:
 #   {"type":"cg_inventory","v":1,"ok":true|false,"installed":[...],"problems":[...]}
@@ -86,7 +86,35 @@ if (Test-Path -LiteralPath $bundle) {
     $staged = @(Get-Children $bundle | ForEach-Object { $_.Name } | Sort-Object)
   }
 }
+# R-02: plugin components. bundle\plugins\<name> is copied by run.ps1 to the writable
+# ~/cg-plugins/<name> (outside ~/.claude) and loaded with --plugin-dir. A plugin may carry skills
+# and plain files only: an entry Claude Code would load as hooks, MCP, LSP, agents, commands,
+# output styles, executables, settings or a manifest (which can point anywhere) is refused.
+$pwant = New-Map
+$powner = New-Map
+$pluginDenied = @('hooks', '.mcp.json', '.lsp.json', 'agents', 'commands', 'output-styles', 'bin', 'settings.json')
 foreach ($name in $staged) {
+  if ($name -ceq 'plugins') {
+    $pdir = Join-Path $bundle 'plugins'
+    $kids = @(Get-Children $pdir | Where-Object { -not (Test-Reparse $_) })
+    if ($kids.Count -eq 0) { $problems.Add('plugins is staged but empty'); continue }
+    foreach ($p in @($kids | Sort-Object Name)) {
+      if (-not $p.PSIsContainer) { $problems.Add("plugins: $($p.Name) is not a plugin folder"); continue }
+      if ($p.Name -cnotmatch '^[a-z0-9][a-z0-9-]*$') { $problems.Add("plugins: $($p.Name) is not a lowercase slug"); continue }
+      $id = "plugin:$($p.Name)"
+      $tree = Get-Tree $p.FullName
+      if ($tree.Count -eq 0) { $problems.Add("$id is staged but empty"); continue }
+      $denied = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+      foreach ($k in @($tree.Keys | Sort-Object)) {
+        $first = $k.Split('/')[0]
+        if ($pluginDenied -ccontains $first) { [void]$denied.Add($first) }
+        elseif ($k -ceq '.claude-plugin/plugin.json') { [void]$denied.Add($k) }
+        $pwant["$($p.Name)/$k"] = $tree[$k]; $powner["$($p.Name)/$k"] = $id
+      }
+      foreach ($d in @($denied | Sort-Object)) { $problems.Add("${id}: $d is not allowed in a plugin (skills and plain files only)") }
+    }
+    continue
+  }
   if (@('instructions', 'skills', 'agents') -cnotcontains $name) {
     $problems.Add("$name is staged but this image cannot install it")
     continue
@@ -114,6 +142,19 @@ foreach ($k in @($want.Keys | Sort-Object)) {
 }
 foreach ($k in @($have.Keys | Sort-Object)) {
   if (-not $want.ContainsKey($k)) { $problems.Add("undeclared file in the user scope: .claude/$k") }
+}
+# The same comparison for the plugin copies; anything else under ~/cg-plugins is undeclared.
+$phave = Get-Tree (Join-Path $HomeDir 'cg-plugins')
+foreach ($k in @($pwant.Keys | Sort-Object)) {
+  $rel = $k.Substring($k.IndexOf('/') + 1)
+  if (-not $phave.ContainsKey($k)) {
+    $problems.Add("$($powner[$k]): $rel is staged but not installed"); [void]$broken.Add($powner[$k])
+  } elseif ($phave[$k] -cne $pwant[$k]) {
+    $problems.Add("$($powner[$k]): $rel differs from the staged copy"); [void]$broken.Add($powner[$k])
+  }
+}
+foreach ($k in @($phave.Keys | Sort-Object)) {
+  if (-not $pwant.ContainsKey($k)) { $problems.Add("undeclared file in the plugin folder: cg-plugins/$k") }
 }
 $userConfig = Join-Path $HomeDir '.claude.json'
 if (Test-Path -LiteralPath $userConfig) { $problems.Add("undeclared user config present: $userConfig") }
@@ -152,7 +193,7 @@ if (Test-Path -LiteralPath $settingsPath) {
   }
   if ($lspDeclared.Count -eq 0 -and $env:ENABLE_LSP_TOOL) { $problems.Add('ENABLE_LSP_TOOL is set in an arm without LSP') }
 }
-$installed = @(@($owner.Values) + $lspInstalled | Sort-Object -Unique | Where-Object { -not $broken.Contains($_) })
+$installed = @(@($owner.Values) + @($powner.Values) + $lspInstalled | Sort-Object -Unique | Where-Object { -not $broken.Contains($_) })
 $ok = $problems.Count -eq 0
 $rec = [ordered]@{ type = 'cg_inventory'; v = 1; ok = $ok; installed = @($installed); problems = @($problems) }
 [Console]::Out.WriteLine((ConvertTo-Json -InputObject $rec -Compress -Depth 3))
