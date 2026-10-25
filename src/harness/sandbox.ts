@@ -523,6 +523,8 @@ export interface SandboxSpec {
     ended: (raw: string) => boolean;
     graceMs: number;
     pollMs: number;
+    /** Test seam: the clock the grace is measured on (default performance.now). */
+    now?: () => number;
   };
 }
 
@@ -836,8 +838,9 @@ export async function runSandbox(
   // while it ran restarts the grace). ponytail: whole-file re-read per growth
   // (logs are ~1 MB); tail-parse if multi-MB logs make polls slow.
   const watchStreamEnd = (se: NonNullable<SandboxSpec["streamEnd"]>) => {
+    const now = se.now ?? (() => performance.now());
     let size = -1;
-    let changed = performance.now();
+    let changed = now();
     let ended = false;
     let busy = false;
     /** False when the log changed since the last look (the grace restarts). */
@@ -845,14 +848,14 @@ export async function runSandbox(
       const n = (await Deno.stat(spec.rawLog).catch(() => null))?.size ?? 0;
       if (n === size) return true;
       size = n;
-      changed = performance.now();
+      changed = now();
       ended = se.ended(await Deno.readTextFile(spec.rawLog).catch(() => ""));
       return false;
     };
     const poll = async () => {
       if (
         !await unchanged() || !ended ||
-        performance.now() - changed < se.graceMs || stopping()
+        now() - changed < se.graceMs || stopping()
       ) return;
       // Only this execution's container is ever looked into or stopped.
       const st = await bounded(

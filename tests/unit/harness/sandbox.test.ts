@@ -1563,19 +1563,32 @@ Deno.test({
     "runSandbox (H-08): output after the end resets the grace (a growing log is never stopped early)",
   ...quick,
 }, async () => {
+  // T-07: a virtual clock that only the writer advances, and every step waits
+  // for the watcher's next clock read (one poll), so a slow machine cannot
+  // stretch a 20 ms gap past the grace.
+  let clock = 0;
+  let onRead: (() => void) | undefined;
+  const now = () => {
+    onRead?.();
+    return clock;
+  };
+  const nextPoll = () => new Promise<void>((res) => (onRead = res));
   const d = new FakeDocker();
   d.behavior = async (_c, io) => {
     await io.stdout('{"type":"result"}');
-    // Keeps writing for longer than the grace, then exits by itself.
+    // Keeps writing for longer than the grace (8 x 20 ms > 60 ms), then exits
+    // by itself. A watcher that stopped resetting the grace stops it here.
     for (let i = 0; i < 8; i++) {
-      await new Promise((res) => setTimeout(res, 20));
+      clock += 20;
+      await Promise.race([nextPoll(), io.killed]);
       await io.stdout(`{"type":"system","n":${i}}`);
+      await Promise.race([nextPoll(), io.killed]);
     }
     return 0;
   };
   const r = await runSandbox(
     d,
-    await spec({ timeoutMs: 60_000, streamEnd: ended(60) }),
+    await spec({ timeoutMs: 60_000, streamEnd: { ...ended(60), now } }),
     [],
   );
   assertEquals([r.exitCode, r.lingered, d.kills], [0, undefined, []]);
