@@ -1,0 +1,26 @@
+---
+bc-version: [all]
+domain: performance
+keywords: [modifyall, deleteall, bulk, loop, modify, set-based]
+technologies: [al]
+countries: [w1]
+application-area: [all]
+---
+
+# Use ModifyAll only for equivalent bulk assignments
+
+## Description
+
+`ModifyAll` assigns one value to one field across the filtered set. It does not run the field's `OnValidate` trigger. Its optional `RunTrigger` parameter controls the table `OnModify` trigger, not field validation. Replacing a loop is therefore correct only when direct assignment is semantically equivalent for every row.
+
+## Best Practice
+
+Use `ModifyAll` when the loop directly assigns the same value, does not call `Validate`, needs no per-row calculation, and does not depend on `OnModify` unless the equivalent `RunTrigger` value is supplied. For a data-only update, exclude rows already holding the target value when that filter preserves the business outcome. Do not skip unchanged rows if the original call's per-row effects are required. Check whether table trigger code, related subscribers, security filtering, `Media`/`MediaSet`, or companion fields force row-by-row fallback (see `triggers-and-media-field-regress-modifyall.md`). A visible loop for progress UX is acceptable only when evidence shows the equivalent bulk call already executes as individual operations and the loop preserves trigger and business semantics.
+
+See sample: [`prefer-modifyall-over-per-row-modify.good.al`](prefer-modifyall-over-per-row-modify.good.al).
+
+## Anti Pattern
+
+A loop that only assigns a constant and calls `Modify(false)` on a field with no validation side effects or bulk fallback condition. A progress dialog alone does not exempt this loop. Conversely, replacing `Validate(Field, Value); Modify(true)` with `ModifyAll(Field, Value)` is also an anti-pattern because it silently drops field validation and may drop table-trigger behavior.
+
+See sample: [`prefer-modifyall-over-per-row-modify.bad.al`](prefer-modifyall-over-per-row-modify.bad.al).

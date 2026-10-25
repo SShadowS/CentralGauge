@@ -1,0 +1,206 @@
+---
+kind: meta-skill
+id: read
+version: 1
+title: Schema + Use — how to read a knowledge file
+---
+
+# READ
+
+Read this contract before interpreting knowledge files. Task execution starts
+at [Entry](entry.md); READ is loaded on demand when a dispatched skill needs
+it. It defines knowledge fields, their meaning, and how to reconcile files.
+
+This contract is stable. Changes require a PR approved by both maintainers.
+
+## What a knowledge file is
+
+A knowledge file is a single markdown file that covers **one concern** in Business Central development. It has:
+
+- A YAML frontmatter block with the fields below. All fields are required.
+- A `## Description` section. Required.
+- Optional sections — typically `## Best Practice` and `## Anti Pattern`, but any `##` section is permitted.
+- No fenced code blocks. Sample code lives in **sibling files** next to the article (see [Sample files](#sample-files) below).
+
+A file that violates any of these rules is invalid and MUST be skipped by consumers. Do not attempt to partially parse invalid files.
+
+## Frontmatter schema (v1)
+
+```yaml
+---
+bc-version: [all]                       # or [26, 27, 28], the range [26..28], or the open-ended range [26..]
+domain: performance
+keywords: [query, filtering, partial]
+technologies: [al]
+countries: [w1]
+application-area: [all]
+---
+```
+
+All six fields are required. Missing or empty fields invalidate the file.
+
+### Fields
+
+**`bc-version`** — Array. The Business Central major versions this file applies to. Four forms are accepted:
+
+- Universal sentinel: `[all]` means the guidance applies to every BC version and matches any target.
+- Explicit list: `[26, 27, 28]`.
+- Closed range shorthand: `[26..28]` means every integer from 26 through 28 inclusive.
+- Open-ended range shorthand: `[26..]` means version 26 and every later version, with no upper bound. Use it for guidance tied to a feature introduced in a specific version that is not expected to be removed.
+
+`[all]` is mutually exclusive with explicit versions; do not combine. Consumers MUST expand closed ranges to the full set before comparison; an open-ended range `[N..]` is not enumerable and instead matches any target version greater than or equal to `N`.
+
+**`domain`** — String. A single domain tag that places the file within a broader area of concern. Standard values include `performance`, `security`, `ux`, `telemetry`, `testing`, `api`, `pipelines`, `finance`, `supply-chain`, `manufacturing`, `jobs`. New domains may be introduced by contributors; no closed enumeration is enforced at the schema level. Consumers MUST treat unknown domains as valid.
+
+**`keywords`** — Array of strings. Free-text tags used for retrieval. Between 3 and 10 tags is typical. Tags are lowercase, kebab-case, and describe the concern in the vocabulary an engineer or agent would search for.
+
+**`technologies`** — Array of strings. The technologies the file applies to. Examples: `al`, `javascript`, `powershell`, `kql`, `azure-devops`, `github-actions`. A file that applies across technologies lists all of them explicitly. The sentinel `all` is not permitted for this field.
+
+**`countries`** — Array of strings. ISO 3166-1 alpha-2 country codes (lowercase: `us`, `de`, `dk`) for localization-specific guidance. Use the sentinel `[w1]` for guidance that applies worldwide. `[w1]` is mutually exclusive with country codes; do not combine.
+
+**`application-area`** — Array of strings. The BC application areas the file applies to. Examples: `finance`, `manufacturing`, `jobs`, `warehousing`, `service`. Use the sentinel `[all]` for guidance that applies regardless of application area. `[all]` is mutually exclusive with specific areas.
+
+## Sections
+
+**`## Description`** is required. It states the concern: what the topic is and why it matters. It is the primary retrieval target when a consumer decides whether a file is relevant.
+
+Two further sections are recognized as **normative** — consumers MAY rely on their content for conflict detection and guidance extraction:
+
+- **`## Best Practice`** — the recommended approach.
+- **`## Anti Pattern`** — what to avoid and the reasoning.
+
+Any other `##` section is permitted and is **non-normative**: consumers MUST NOT treat its contents as binding guidance. Non-normative sections (for example `## See also` or `## Applies to`) are for human context; they are ignored by conflict detection and by the filtering rules below. Consumers MUST NOT fail on unknown sections.
+
+## Layer precedence
+
+A knowledge file lives in one of three layers, determined by its path:
+
+- `/microsoft/knowledge/**` — platform-endorsed.
+- `/community/knowledge/**` — community-curated.
+- `/custom/knowledge/**` — partner or customer overrides (typically in a consumer repo, not in BCQuality).
+
+The default consumption model is **additive**: an action skill sees files from every enabled layer and may surface findings from all of them. A consumer MAY be configured to disable a layer; in that case, files in the disabled layer are invisible to the consumer.
+
+When two files give **directly contradictory normative guidance**, the conflict is resolved by layer precedence:
+
+1. `/custom/` wins over `/community/` and `/microsoft/`.
+2. `/community/` wins over `/microsoft/`.
+
+A conflict exists when both of the following are true:
+
+- **Applicability overlaps.** The files' frontmatter filters (`bc-version`, `technologies`, `countries`, `application-area`) have a non-empty intersection under the matching rules below. `domain` is a retrieval aid; it is not part of the applicability test.
+- **Normative guidance contradicts.** Content in the `## Best Practice` or `## Anti Pattern` sections is logically incompatible (one recommends what the other forbids, or vice versa). Non-normative sections are not considered.
+
+Conflict detection is the consumer's responsibility; BCQuality does not enforce conflict-free content. When a consumer suppresses a losing file due to precedence or configuration, it **MUST** record the suppression in its output (see DO) so reviewers can see what was overridden.
+
+## Frontmatter matching semantics
+
+When a consumer filters or matches files against a task context, these rules apply:
+
+- **`bc-version`** — the file matches if its set is `[all]`, or if the target BC version is an element of the file's expanded `bc-version` set. Closed range shorthand (`[26..28]`) MUST be expanded before comparison; an open-ended range (`[26..]`) matches when the target BC version is greater than or equal to its lower bound.
+- **`technologies`** — non-empty intersection between the task's technologies and the file's technologies. There is no sentinel for this field.
+- **`countries`** — the file matches if its set contains `w1`, or if there is a non-empty intersection with the task's countries.
+- **`application-area`** — the file matches if its set contains `all`, or if there is a non-empty intersection with the task's application areas.
+
+A file is **applicable** to a task when all four rules match. Applicability is also the basis for conflict detection above.
+
+### When the task context is partial
+
+A task context may omit one or more dimensions (for example, a skill invoked against a raw file path with no known target BC version). For any omitted dimension:
+
+- If the file's value for that dimension is a universal sentinel (`all` for bc-version, `w1` for countries, `all` for application-area), the rule matches.
+- Otherwise the rule is treated as **unknown**, not as a match and not as a failure.
+
+A file with any `unknown` rule is **conditionally applicable**. A consumer MAY include conditionally applicable files in the worklist; if it does, every finding derived from such a file MUST have `confidence` no higher than `medium` and MUST record the unknown dimensions in the finding's `message`. A consumer MAY be configured to exclude conditionally applicable files entirely.
+
+Consumers MUST NOT silently treat missing context as a match.
+
+## Citing a knowledge file
+
+A consumer that produces output referencing a knowledge file MUST cite it by its repo-relative path (for example, `microsoft/knowledge/performance/apply-filters-before-iterating.md`). Line numbers are not stable references; use the file path only. If a commit SHA is available to the consumer, it SHOULD be included alongside the path.
+
+## Sample files
+
+Knowledge files MUST NOT contain fenced code blocks. When an article needs to show code, it ships the code as one or more **sibling files** next to the article, using this naming convention:
+
+```
+<layer>/knowledge/<domain>/<slug>.md         # the article
+<layer>/knowledge/<domain>/<slug>.good.al    # best-practice demonstration
+<layer>/knowledge/<domain>/<slug>.bad.al     # anti-pattern demonstration
+```
+
+Rules:
+
+- A sample file is identified by the article's slug followed by a `.<kind>.<ext>` suffix. The supported kinds are `good` and `bad`. Additional kinds MAY be introduced by a layer; consumers MUST ignore unknown kinds without failing.
+- The extension matches the technology (`al`, `ps1`, `js`, `kql`, …). A single article MAY carry samples in multiple technologies if the article's frontmatter `technologies` lists them.
+- Articles MAY have a `good` sample only, a `bad` sample only, both, or neither. The article text SHOULD reference each sample it ships with a relative Markdown link whose label retains the backticked filename, like `` [`<slug>.good.al`](<slug>.good.al) ``.
+- Samples are **demonstration-only**. They are not deployed, not compiled as part of a published app, and not derived from the Business Central base application source. Each sample is self-contained and exists purely to make the accompanying article concrete for humans and agents.
+- Layer precedence applies to sample files the same way it applies to articles: a `/custom/knowledge/<domain>/<slug>.good.al` overrides a `/microsoft/knowledge/<domain>/<slug>.good.al` for the same article in the same layer hierarchy.
+
+Consumers that surface sample code to an end user or agent SHOULD cite the sample file by its repo-relative path, in the same format as article citations.
+
+## Retrieval workflow
+
+The standard workflow for finding applicable files:
+
+1. Collect candidates from the knowledge index (`knowledge-index.json`). BCQuality maintains it: Entry's preparation step (see [entry.md](entry.md)) regenerates it over the live, already-filtered clone, so it lists exactly the articles that survived the consumer's layer/allow-deny pruning, each with the frontmatter, `keywords`, `title`, and one-line `description` that steps 2-3 need — candidates are enumerated without opening each file. The index is **discovery metadata only**: it tells you *which* files to open, it does not substitute for them. A finding MUST cite only an article that was opened and read in full; an index row whose file is absent from the clone MUST be discarded *before* ranking or worklisting, and its metadata MUST NOT seed a finding. Absent an index, collect candidates by path (typically by `domain` subfolder, across enabled layers).
+2. Filter by frontmatter using the matching rules above. Files that are not applicable are discarded.
+3. Rank or narrow by `keywords` relevance to the task.
+4. Resolve conflicts via layer precedence.
+
+Steps 1–3 are deterministic; step 4 is applied only when conflicts are detected.
+
+### Bounded retrieval for review skills
+
+Resolve `$root` to the BCQuality root, not the reviewed source. Entry prepares
+the index once before dispatch; that prepared index is the catalog snapshot and
+leaves use it read-only. Catalog retrieval validates the complete index metadata
+and returned paths without reopening or rehashing article bodies. Post-Entry
+body changes therefore take effect only after Entry rebuilds the index; exact
+body retrieval rejects a selected article whose content hash differs from its
+prepared row. In one PowerShell tool session, invoke the helpers with `&` so
+array arguments remain arrays:
+
+```powershell
+& (Join-Path $root 'tools\Search-Knowledge.ps1') -Domain $domain -Technologies @('al')
+& (Join-Path $root 'tools\Get-KnowledgeArticles.ps1') -Paths @($exactPath)
+```
+
+Pass enabled layers and only task dimensions that are actually known. Catalog
+retrieval returns every domain and READ-applicable row: it does not rank,
+sample, apply top-k, deduplicate by basename, or omit rows based on query text.
+Consume every page by passing `continuation.offset` as `-Offset` and
+`continuation.snapshot` as `-Snapshot` with the unchanged request until
+`complete` is `true`. Each page repeats request context, defaults, and totals.
+An omitted applicability field on a row inherits that page's `defaults`; it
+does not mean unknown task context. Preserve every row's exact `path`, `layer`,
+complete `keywords`, `title`, one-line `description`, non-default applicability
+fields, explicit `applicability`, and `unknownDimensions`.
+
+Apply the leaf's existing Relevance and Worklist to the complete catalog union.
+Split the resulting exact paths into stable chunks of at most eight; never pass
+more paths than `-MaxArticles` (whose maximum is eight). Request article bodies
+only by one such chunk. Consume every
+returned `body`, then request `remainingPaths` with
+`continuation.snapshot` as `-Snapshot` until `complete` is `true`, preserving
+the other request settings. Continuation is confined to that chunk. Bodies are
+original strict UTF-8 text with source byte counts and SHA-256 content hashes;
+they are never summarized or truncated. Samples are not loaded unless
+requested explicitly with `-Samples` and exact sibling paths; their sibling
+article must match its prepared hash and contain the exact READ link.
+
+The default serialized response limit is 16,000 bytes including its output
+newline. Never combine pages or bodies into an unbounded prompt. A malformed or
+internally inconsistent prepared index, changed continuation snapshot, selected
+article hash mismatch, invalid continuation, unsafe or missing path, invalid
+UTF-8, broken sample link, oversized path chunk, or row/envelope that cannot fit
+fails explicitly. Entry is the only index preparation point: a leaf does not
+rebuild. If PowerShell, a helper, or a valid prepared index is unavailable,
+discover exact paths across the enabled domain folders and use native bounded
+reads through EOF, validating frontmatter per READ and never treating retrieval
+failure as an empty result.
+
+The helpers' `sha256` and `bytes` fields describe the retrieved file content.
+They are not citation provenance. Optional findings `references[].sha` is the
+BCQuality commit SHA the skill reviewed; omit it when that provenance is not
+available or would misrepresent uncommitted content.

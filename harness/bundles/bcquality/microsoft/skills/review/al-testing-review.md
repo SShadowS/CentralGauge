@@ -1,0 +1,148 @@
+---
+kind: action-skill
+id: al-testing-review
+version: 1
+title: AL testing review
+description: Performs an AL testing review against guidance from BCQuality.
+inputs: [pr-diff, file-path, folder-path]
+outputs: [findings-report]
+bc-version: [all]
+technologies: [al]
+countries: [w1]
+application-area: [all]
+---
+
+# AL testing review
+
+Reviews AL source changes against the `testing` knowledge domain in BCQuality and emits a findings report. This is a leaf action skill: it invokes no sub-skills. It is one of the skills composed by `al-code-review`.
+
+An orchestrator invokes this skill with a `pr-diff`, `file-path`, or `folder-path`. Testing findings are narrow by design — they apply when the review scope contains test codeunits, test runners, test methods, handlers, assertions, fixture construction, or test-library helpers such as `RecordRef`-based uniqueness checks. The skill returns `not-applicable` when none of those apply.
+
+## Source
+
+Use READ's **Bounded retrieval for review skills** workflow with `-Domain testing`. Consume every catalog page across enabled layers before applying this leaf's Relevance and Worklist; preserve each exact catalog path and open complete bodies only for exact paths selected by the Worklist. If the helper or prepared index is unavailable or invalid, use READ's explicit path-discovery and bounded native-read fallback.
+
+## Relevance
+
+Apply the frontmatter matching rules defined in READ (*Frontmatter matching semantics*) against the task context:
+
+- `bc-version` — the target BC version from the PR branch's `app.json` or the orchestrator-supplied version. If unavailable, the dimension is `unknown`.
+- `technologies` — `[al]`.
+- `countries` — the countries declared in the consuming app's `app.json`. Default to the orchestrator's configured context; if absent, `unknown`.
+- `application-area` — the union of application areas declared by the changed objects. Pass the actual set; do not substitute `[all]`. If the area cannot be determined from the changes, the dimension is `unknown`.
+
+Discard files that are not applicable. Retain conditionally applicable files (any dimension `unknown`) only when the orchestrator's configuration permits them; findings derived from those files MUST have `confidence` no higher than `medium`, AND the finding's `message` MUST name the dimension or dimensions that were unknown.
+
+## Worklist
+
+Narrow the relevant files to the subset that applies to the changes under review. For each relevant file, compute overlap against:
+
+- The changed AL object names and types — especially codeunits with `Subtype = Test`, test runner codeunits with `TestIsolation`, test libraries, and codeunits that define UI handlers.
+- The changed methods and attributes, weighted toward `[Test]`, `[TransactionModel(...)]`, `[TestPermissions(...)]`, `[HandlerFunctions(...)]`, handler attributes, `asserterror`, `ExpectedError`, `ExpectedErrorCode`, fixture initialization, and test-library calls.
+- Tokens extracted from the diff that relate to testing (`Subtype = Test`, `Subtype = TestRunner`, `TestIsolation`, `TestPermissions`, `Restrictive`, `NonRestrictive`, `Disabled`, `Permissions Mock`, `Library - Lower Permissions`, `TransactionModel`, `AutoRollback`, `AutoCommit`, `Commit`, `asserterror`, `ExpectedError`, `ExpectedErrorCode`, `HandlerFunctions`, `ConfirmHandler`, `MessageHandler`, `StrMenuHandler`, `ModalPageHandler`, `SendNotificationHandler`, `RecallNotificationHandler`, `Enqueue`, `Dequeue`, `AssertEmpty`, `Initialize`, `IsInitialized`, `OnTestInitialize`, `LibrarySetupStorage`, `Library Assert`, `LibraryVariableStorage`, `LibrarySales`, `LibraryPurchase`, `LibraryERM`, `LibraryInventory`, `LibraryRandom`, `Library - Utility`, `LibraryUtility`, `GenerateGUID`, `GenerateRandomCode`, `RecordRef`, `RecRef.Open`, `IsEmpty`, `TestPage`, `.Visible(`, `.Enabled(`, `.Editable(`, `OpenNew`, `OpenView`, `OpenEdit`, `Init`, `Insert`).
+
+A file enters the candidate worklist when its `keywords` intersect the extracted tokens or its topic (derived from the index entry's `path`, `title`, and `description`) matches a changed object type. Read an article's full file — its `## Best Practice` / `## Anti Pattern` bodies — only after it makes the worklist; candidate selection uses the index alone. When the diff contains no testing-related changes by any of the above signals, return `outcome: "not-applicable"` without evaluating files.
+
+The following targeted checks cover every current `testing` article. Treat each as a candidate-selection cue: when the signal appears in changed code, add the named article to the worklist and evaluate it in Action.
+
+- A method in a `Subtype = Test` codeunit adds or changes `[TransactionModel(...)]`, exercises code that calls `Commit` under `AutoRollback`, defaults broadly to `AutoCommit`, or chooses `None` for a writing test — `transactionmodel-attribute-governs-test-transactions`.
+- A new or changed `[Test]` procedure is added, whether or not it already carries `[FEATURE]`/`[SCENARIO]`/`[GIVEN]`/`[WHEN]`/`[THEN]` tags — `test-feature-scenario-tags`. A procedure with no tags at all, or a generic name like `Test1`, is the anti-pattern signal; presence of the tags is the compliant shape, not the thing to search for.
+- A test codeunit calls `TestPage` methods (`OpenNew`, `OpenView`, `OpenEdit`) alongside `[Test]` procedures in the same codeunit that call business-logic procedures directly with no `TestPage` involved — `ui-test-codeunit-naming`. The anti-pattern signal is both kinds of test mixed into one codeunit (or, on a project using the `_UT` convention, a UI-layer codeunit missing the suffix); a codeunit containing only `TestPage`-driven tests is not itself a violation.
+- A `[GIVEN]`-tagged setup precedes a posting call or report execution and does not visibly set up posting-group/VAT setup records, an explicit date, or (for a report test) both an included and an excluded record — `given-blocks-must-cover-full-precondition-chain`.
+- A test procedure contains more than one `[WHEN]` block, or more than one distinct action not labelled `[GIVEN]`, without the procedure name declaring a flow/defect-then-fix shape — `test-one-when-per-test`.
+- A `BCPT*` scenario codeunit is added and the PerformanceTest app's only other scenario codeunits are copies of Microsoft's shipped BCPT samples (`BCPT Create Customer`, `BCPT Create Item Journal`, `BCPT Post GL Entries`, etc.) with no scenario exercising the extension's own codeunits, FlowFields, or pages — `bcpt-scenarios-must-be-app-specific`.
+- An `AutoCommit` test runs under a `Subtype = TestRunner` codeunit that omits `TestIsolation` or sets it to `Disabled`, leaving committed data between tests — `testisolation-belongs-on-the-test-runner`. Require runner/repository context; a standalone test file cannot prove which runner executes it.
+- A permission-sensitive test uses `TestPermissions = Disabled`, claims to test a restricted user without `"Permissions Mock"`/`"Library - Lower Permissions"`, or declares `[TestPermissions(...)]` without applying that context — `permission-tests-must-lower-the-execution-context`.
+- Test fixture code manually calls `Init`/`Insert`, invents keys or prerequisite records, or bypasses available `LibrarySales`, `LibraryPurchase`, `LibraryERM`, `LibraryInventory`, `LibraryRandom`, or equivalent library codeunits — `use-library-codeunits-for-test-fixtures`.
+- A test codeunit's `Initialize` procedure exits on `IsInitialized` before per-test reset such as `LibraryVariableStorage.Clear`, `LibrarySetupStorage.Restore`, or `LibraryTestInitialize.OnTestInitialize`, or a `[Test]` method in a codeunit using that pattern does not call `Initialize()` first — `reset-per-test-state-before-the-isinitialized-guard`.
+- `asserterror` is added or changed without a following `Assert.ExpectedError`, `Assert.ExpectedErrorCode`, or a purpose-built assertion such as `ExpectedTestFieldError` — `asserterror-needs-expectederror-and-code`. Exclude `asserterror Assert.IsTrue(...)` / `asserterror Assert.IsFalse(...)` only when it is used solely to invert the guarded call's Boolean result (the same condition `use-assert-isfalse-not-asserterror-for-boolean-checks` cues on below, which wins for that shape) — not when the test expects the guarded Boolean-returning call itself to raise an error, which this rule still owns even though it happens to wrap an `Assert.IsTrue`/`IsFalse` call. Also exclude a trailing `asserterror Error(...)` used purely as an end-of-test rollback sentinel after a lazy `Initialize()` fixture already committed — that shape belongs to `commit-shared-test-fixture-inside-lazy-initialize`, which wins for it; the sentinel's own error text is not meant to be asserted against.
+- `asserterror` wraps `Assert.IsTrue(BooleanExpression, ...)` (or the `IsFalse` mirror) solely to invert the boolean result of the guarded call, rather than to assert that call itself raises an error — `use-assert-isfalse-not-asserterror-for-boolean-checks`.
+- A shared/lazy `Initialize()`-style fixture helper creates fixture data without a following `Commit()`, in a test method whose body later forces its own rollback (for example `asserterror Error(...)` used for end-of-test cleanup) — `commit-shared-test-fixture-inside-lazy-initialize`. The presence of `Commit()` after the fixture is the compliant shape, not the signal to look for; the missing-`Commit()` shape combined with a later deliberate rollback is the anti-pattern. Require runner/repository context for the `TestIsolation` value: a standalone test file cannot prove which runner executes it, and under `Function`-level isolation this whole pattern is moot regardless of `Commit()` — do not raise the finding when the executing runner's `TestIsolation` is known to be `Function`.
+- Changed code subscribes to `OnAfterRemoveTableRelation`, calls `RemoveTableRelation`, or references `Codeunit "Table Relation Test"`/134926 — `table-relation-test-exclude-known-invalid-relations-via-event`.
+- Test fixture code assigns a hardcoded literal to a primary-key field or a field the test relies on as a unique lookup identifier, hand-builds a "unique" value for such a field (string concatenation, a counter, `Format(CurrentDateTime)`), or truncates `LibraryUtility.GenerateGUID()`'s result with `CopyStr` for such a field shorter than 10 characters — `use-generateguid-for-unique-test-fixture-values`. Calling `GenerateGUID()` untruncated into a full-length field, `GenerateRandomCodeWithLength` for a shorter field needing real verified uniqueness, or `GenerateRandomCode20` specifically for a `Code[20]` field, is the compliant shape, not the signal to flag. `GenerateRandomCode20` is not a substitute for `GenerateRandomCodeWithLength` on a shorter field — it truncates `GenerateGUID()`'s sequential value down to the field's length by keeping the *leftmost* characters, which change the slowest, so retries against a short field can churn through the same truncated prefix far longer than `GenerateRandomCodeWithLength`'s equivalent. A hardcoded or deterministic value in an ordinary descriptive field is not this anti-pattern — that field carries no uniqueness constraint. Do not claim `GenerateRandomCode` (without `WithLength`/`20`) or `GenerateRandomXMLText` verify uniqueness against the real table, or that `GenerateRandomCode` is collision-free even within one test run for a short field — none of that is true.
+- Changed code calls `RecordRef.Open(<table>, true[, ...])` with a literal `true` and then, on that same `RecordRef` with no `Insert` into it, uses `IsEmpty`, `Find`, `FindFirst`, `FindLast`, `FindSet`, `Next`, `Get`, or `Count` to decide whether a value already exists in the table (typically a generate-until-unused loop ending `until RecRef.IsEmpty()`) — `recordref-open-temp-parameter-defeats-real-table-checks`. A temporary open used only as a validation sandbox (`Insert` then `Validate`), to parse a view via `SetView`/`GetFilter`, or to read metadata such as `SystemIdNo` is not this anti-pattern; neither is a non-literal `Temp` argument. A call to `LibraryUtility.GenerateRandomCode` itself is owned by `use-generateguid-for-unique-test-fixture-values`, not this cue.
+- A test asserts against a `TestPage` field's `.Visible()` or `.Enabled()` — `use-testpage-visible-enabled-to-verify-field-ui-state`. When the assertion is against `.Editable()`, or the page is opened with `OpenEdit()` specifically to check editability — `use-testpage-editable-to-verify-field-editability`.
+- A test path raises UI and `[HandlerFunctions(...)]` does not match the invoked handlers, or the test has no meaningful evidence of the UI result (for example, it treats a Boolean set before the action as proof of success) — `ui-handlers-in-tests`. A capture/reset/assert-after-`RunModal` pattern is valid. Enqueue/dequeue and `AssertEmpty` are required only when order, count, text, replies, or a scripted sequence is part of the contract. Only nonoptional handlers have to execute: a listed handler declared `[SendNotificationHandler(true)]` or `[RecallNotificationHandler(true)]` is optional by design, so do not treat it as unmatched when the run never raises the notification.
+- A test's `[GIVEN]`/setup looks up a hardcoded code/number/name assumed to already exist instead of creating it, leaves a mandatory field on a created record empty, uses a value that doesn't satisfy the scenario's own explicit length/format requirement (for example a truncation test whose value never exceeds the field), or a scenario-defining value (amount, quantity, percentage, date, threshold, rounding precision) is generated/randomized instead of an explicit chosen value — `test-data-must-be-random-and-complete`. Generating incidental fixture values (identifiers, names, descriptions) via the standard library codeunits is the compliant shape, not the signal to flag, and neither is a short-but-valid value in an otherwise-unremarkable field.
+
+Once the candidate worklist is known, resolve layer-precedence conflicts per READ. Drop lower-precedence files whose normative guidance (`## Best Practice` or `## Anti Pattern`) directly contradicts a higher-precedence candidate, and record each dropped file in `suppressed` with `reason: "layer-precedence"`. Files that would have been candidates but are hidden because their layer is disabled in consumer configuration are recorded with `reason: "configuration"`. Files that never became candidates are NOT recorded in `suppressed`.
+
+When the post-conflict worklist is empty because no applicable testing knowledge exists, or because configuration suppressed every candidate, emit `outcome: "no-knowledge"`. When the worklist is empty because no applicable testing knowledge matched the changes, emit `outcome: "completed"` with an empty `findings` array.
+
+## Action
+
+For each worklist entry, evaluate the diff against the file's `## Best Practice` and `## Anti Pattern` sections. Emit findings as follows:
+
+- When the diff contains a clear match for an Anti Pattern, emit a finding with severity `major` or `blocker`, a message summarizing the anti-pattern, `location` pointing to the offending line or range, and a `references` entry pointing to the knowledge file. Use `blocker` only when the test can pass while verifying the wrong behavior or can leave committed data that contaminates later tests; otherwise the ceiling is `major`.
+- When the diff contains code that contradicts a Best Practice without being a full anti-pattern, emit `minor` with the same reference shape.
+- Applicability alone is not a finding. Emit `info` only for a concrete, non-actionable observation the article explicitly defines; otherwise emit nothing when no violation is present.
+
+For `ui-handlers-in-tests`, use `major` when missing or incorrectly listed handlers make the test fail at runtime. Use `minor` when the test executes but lacks a meaningful semantic postcondition, including a pre-set Boolean used as proof. Do not escalate solely because a handler does not use queue storage or asserts inside the handler.
+
+Set `confidence` to:
+
+- `high` when the detection is based on an unambiguous pattern match (attribute, handler declaration, assertion sequence, or fixture call).
+- `medium` when detection relies on heuristics or when any frontmatter dimension was `unknown`.
+- `low` when the finding is an advisory derived only from applicability.
+
+After evaluating each worklist entry, also consider whether the diff exhibits a testing defect the agent recognises from its general AL knowledge that no knowledge file in the worklist covers. Such candidates are agent findings within this skill's domain — emit them with `references: []`, an `id` slug prefixed with `agent:`, `confidence` capped at `medium`, `severity` capped at `minor` (agent findings are advisory and non-gating), and a `message` that is self-contained (describing both the issue and a concrete recommendation, since there is no knowledge-file footer for the consumer to fall back on). Hold every candidate to the precision bar in `skills/do.md` (*Agent findings*): emit only a concrete, material testing defect a knowledgeable BC reviewer would agree is wrong — steelman it first and drop anything stylistic, speculative, dependent on code outside the diff, or merely a valid alternative; when in doubt, omit. The scope is strictly AL testing; defects outside this domain belong to other leaves and MUST NOT be emitted here. Before emitting, check the worklist for a knowledge file that matches the candidate — if one exists, upgrade the candidate to a knowledge-backed finding instead. See `skills/do.md` for the full contract.
+
+For every emitted finding, decide whether the fix is mechanical. A fix is mechanical when it is small, local, and unambiguous from the diff context (for example: add the matching `ExpectedError` assertion after `asserterror`; add or remove a handler name in `HandlerFunctions`, except that a listed optional notification handler must never be proposed for removal; add `LibraryVariableStorage.Clear` or `AssertEmpty` when queue/LVS intentionally verifies interaction order, count, text, replies, or a scripted sequence; or replace hand-rolled fixture creation with an evident library call). For mechanical findings, emit `findings[].suggested-code` with the literal replacement for the source lines indicated by `location`. The payload must be a verbatim replacement — no diff markers, no fences, no commentary — that the consumer can render as a one-click suggestion. When a `.good.al` companion exists and the diff context matches the `.bad.al` shape, adapt the `.good.al` replacement into `suggested-code`.
+
+Omit `suggested-code` only when the appropriate fix depends on context the skill cannot determine, when multiple defensible replacements exist, or when the fix spans non-contiguous code. If a finding is mechanical-looking but you omit `suggested-code`, set `findings[].suggested-code-omission-reason` to a short explanation. See `skills/do.md` for the full contract.
+
+Outcome selection:
+
+- `completed` — the skill evaluated every worklist item.
+- `no-knowledge` — no applicable testing knowledge survived filtering.
+- `not-applicable` — the diff touches no test codeunit, runner, method, handler, assertion, or fixture surface.
+- `partial` — a budget was hit before the worklist was exhausted.
+- `failed` — an unrecoverable error occurred.
+
+## Output
+
+Output conforms to the DO output contract. Every finding this skill emits MUST set `findings[].domain` to `"Testing"`. A populated example:
+
+```json
+{
+  "skill": { "id": "al-testing-review", "version": 1 },
+  "outcome": "completed",
+  "summary": {
+    "counts": { "blocker": 0, "major": 1, "minor": 0, "info": 0 },
+    "coverage": { "worklist-size": 1, "items-evaluated": 1 }
+  },
+  "findings": [
+    {
+      "id": "microsoft/knowledge/testing/asserterror-needs-expectederror-and-code.md",
+      "severity": "major",
+      "message": "The negative test uses asserterror without checking the resulting message or error code, so any unrelated setup or permission error can make the test pass.",
+      "location": {
+        "file": "test/SalesPostingTests.Codeunit.al",
+        "line": 42
+      },
+      "references": [
+        { "path": "microsoft/knowledge/testing/asserterror-needs-expectederror-and-code.md" }
+      ],
+      "confidence": "high",
+      "domain": "Testing",
+      "suggested-code": "asserterror PostInvalidOrder();\nAssert.ExpectedError(ExpectedPostingErr);"
+    }
+  ],
+  "suppressed": []
+}
+```
+
+The empty-corpus case produces:
+
+```json
+{
+  "skill": { "id": "al-testing-review", "version": 1 },
+  "outcome": "no-knowledge",
+  "summary": {
+    "counts": { "blocker": 0, "major": 0, "minor": 0, "info": 0 },
+    "coverage": { "worklist-size": 0, "items-evaluated": 0 }
+  },
+  "findings": [],
+  "suppressed": []
+}
+```

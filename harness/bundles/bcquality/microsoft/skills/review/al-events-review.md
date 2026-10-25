@@ -1,0 +1,161 @@
+---
+kind: action-skill
+id: al-events-review
+version: 1
+title: AL events review
+description: Reviews AL source changes against events-and-subscribers guidance from BCQuality.
+inputs: [pr-diff, file-path, folder-path]
+outputs: [findings-report]
+bc-version: [all]
+technologies: [al]
+countries: [w1]
+application-area: [all]
+---
+
+# AL events review
+
+Reviews AL source changes against the `events` knowledge domain in BCQuality and emits a findings report. This is a leaf action skill: it invokes no sub-skills. It is one of the skills composed by `al-code-review`.
+
+An orchestrator invokes this skill with a `pr-diff`, `file-path`, or `folder-path`. The skill produces a single JSON document conforming to the DO output contract.
+
+## Source
+
+Use READ's **Bounded retrieval for review skills** workflow with `-Domain events`. Consume every catalog page across enabled layers before applying this leaf's Relevance and Worklist; preserve each exact catalog path and open complete bodies only for exact paths selected by the Worklist. If the helper or prepared index is unavailable or invalid, use READ's explicit path-discovery and bounded native-read fallback.
+
+## Relevance
+
+Apply the frontmatter matching rules defined in READ (*Frontmatter matching semantics*) against the task context:
+
+- `bc-version` — the target BC version from the PR branch's `app.json` or the orchestrator-supplied version. If unavailable, the dimension is `unknown`.
+- `technologies` — `[al]`.
+- `countries` — the countries declared in the consuming app's `app.json`. Default to the orchestrator's configured context; if absent, `unknown`.
+- `application-area` — the union of application areas declared by the changed objects. Pass the actual set; do not substitute `[all]`. If the area cannot be determined from the changes, the dimension is `unknown`.
+
+Discard files that are not applicable. Retain conditionally applicable files (any dimension `unknown`) only when the orchestrator's configuration permits them; findings derived from those files MUST have `confidence` no higher than `medium`, AND the finding's `message` MUST name the dimension or dimensions that were unknown.
+
+## Worklist
+
+Narrow the relevant files to the subset that applies to the changes under review. For each relevant file, compute overlap against:
+
+- The changed AL object names and types — especially codeunits that publish events or host event subscribers, posting/release/validation routines that should expose extension points, and test codeunits that bind subscribers.
+- The changed procedures and triggers, weighted toward event publisher methods, methods carrying the `[EventSubscriber(...)]` attribute, routines that raise `OnBefore`/`OnAfter` events, and any procedure that calls `BindSubscription`/`UnbindSubscription`.
+- Tokens extracted from the diff that relate to events and the publish/subscribe model (`IntegrationEvent`, `BusinessEvent`, `InternalEvent`, `EventSubscriber`, `IsHandled`, `BindSubscription`, `UnbindSubscription`, `EventSubscriberInstance`, `OnBefore`, `OnAfter`, `Manual`, `IncludeSender`, `GlobalVarAccess`, `Isolated`, `local`, `internal`, `Sender`, `this`, `RecordRef`, `xRec`, `temporary`, `Temp`, `repeat`, `ChangeCompany`, `StartSession`, `RunTrigger`, `GetDatabaseTableTriggerSetup`, `OnAfterGetDatabaseTableTriggerSetup`, `Commit`, `GlobalTriggerManagement`, `Global Triggers`, `OnDatabaseInsert`, `OnDatabaseModify`, `OnDatabaseDelete`, `OnDatabaseRename`).
+
+A file enters the candidate worklist when its `keywords` intersect the extracted tokens or its topic (derived from the index entry's `path`, `title`, and `description`) matches a changed object type. Read an article's full file — its `## Best Practice` / `## Anti Pattern` bodies — only after it makes the worklist; candidate selection uses the index alone.
+
+Once the candidate worklist is known, resolve layer-precedence conflicts per READ. Drop lower-precedence files whose normative guidance (`## Best Practice` or `## Anti Pattern`) directly contradicts a higher-precedence candidate, and record each dropped file in `suppressed` with `reason: "layer-precedence"`. Files that would have been candidates but are hidden because their layer is disabled in consumer configuration are recorded with `reason: "configuration"`. Files that never became candidates are NOT recorded in `suppressed`.
+
+When the post-conflict worklist is empty because no applicable events knowledge exists, or because configuration suppressed every candidate, emit `outcome: "no-knowledge"`. When the worklist is empty because no applicable events knowledge matched the changes, emit `outcome: "completed"` with an empty `findings` array.
+
+### Event-design checks
+
+The following targeted checks map diff signals to specific `events` articles. Treat each as a candidate-selection cue: when the signal appears in the changed code, add the named article to the worklist and evaluate it in Action.
+
+- An `IsHandled` value that can carry over as `true` (reused after an earlier raise, re-entered on a later loop iteration, input/global/field, or otherwise seeded) is passed to a publisher without a reset — `reset-ishandled-only-when-the-value-can-carry-over`. Do not match one non-looping raise using a fresh local Boolean, or a later raise reached only after a semantically valid `if IsHandled then exit;` proves the value is false.
+- `if IsHandled then exit;` in a routine that also raises a paired `OnAfter…` event later, so the after-event is skipped whenever the call is handled — `preserve-onafter-execution-when-ishandled-skips-the-body`.
+- Any parameter added to a public Business/Integration event procedure, regardless of position; do not flag additions or reordering on `local`/`internal` publishers merely because a new parameter was not appended — `add-new-event-parameters-at-the-end`.
+- A shipped Business/Integration event renamed or removed, or an existing parameter renamed, removed, retyped, or changed to/from `var`, based on the mistaken assumption that `local` or `internal` prevents dependent subscription; parameter order alone is not a subscriber-contract violation — `treat-local-and-internal-events-as-subscriber-contracts`.
+- Any change to `IncludeSender` or `GlobalVarAccess` on a shipped event at any target version, or to `Isolated` on BC20/runtime 9.0 or later, including a change intended to modernize the publisher — `do-not-change-shipped-event-attribute-flags`.
+- Publisher names that do not encode firing position (`OnBefore`/`OnAfter<Routine>` at the boundaries, `On<Routine>OnBefore`/`OnAfter<Context>` mid-routine) — `name-events-by-publisher-position`.
+- Two consecutive `OnBefore`/`OnAfter` raises with no logic between them, or a near-duplicate event differing only by an extra parameter — `prefer-reusing-or-extending-existing-events`.
+- An event raised between `repeat` and `until` inside a record loop — `do-not-publish-events-inside-loops`.
+- A `temporary` record event parameter whose name does not start with `Temp` — `prefix-temporary-record-event-parameters-with-temp`.
+- Abbreviated event parameter names (`SalesHdr`, `DocNo`, `Amt`) instead of full table names and spelled-out values — `name-event-parameters-without-abbreviations`.
+- `[IntegrationEvent(true, …)]` (`IncludeSender`) on a newly added codeunit event used only to expose the publisher, where `this` could be passed as a typed `Sender` parameter (Business Central 2024 release wave 2 and later) — `prefer-this-over-includesender-in-codeunit-events`.
+- A `RecordRef` event parameter, or a passed-through `xRec`, where a concrete typed record fits — `avoid-loosely-typed-event-parameters`.
+- A `var IsHandled` added to a pre-existing event rather than introduced through a new `OnBefore` publisher — `do-not-add-ishandled-to-an-existing-event`.
+- An `if IsHandled then exit;` whose skipped body performs posting, ledger-entry creation, number-series consumption, or integrity/permission validation — `do-not-bypass-critical-operations-with-ishandled`.
+- A record variable that had `ChangeCompany(<name>)` called on it and is later used with `Insert`, `Modify`, `Delete`, or `Validate`, where the table is not owned by the extension, has triggers that read company data, or has trigger-event subscribers that do not exit on `RunTrigger = false` — `changecompany-runs-triggers-in-the-calling-company`. Do not match a read-only use after `ChangeCompany`, a write with `RunTrigger = false` into an extension-owned table whose triggers do not read company data and whose trigger-event subscribers exit on `RunTrigger = false`, or the parameterless `ChangeCompany()` reset.
+- A subscriber to `GetDatabaseTableTriggerSetup` (`Global Triggers`) or `OnAfterGetDatabaseTableTriggerSetup` (`GlobalTriggerManagement`) that assigns one of its `var` flags (`OnDatabaseInsert`, `OnDatabaseModify`, `OnDatabaseDelete`, `OnDatabaseRename`) a literal `false` or a lookup/Boolean expression that does not `or` in the flag's current value, or that calls `Clear` on one — `database-trigger-setup-flags-may-only-be-set-to-true`. Do not match `Flag := true` under a condition, `Flag := Flag or <condition>`, or `if not Flag then Flag := false;`, none of which can clear a flag. Do not match code that runs only in demo-data generation or test-library sessions (for example the base application's demo data tool or a test library's backup/restore subscriber), where clearing other features' flags is accepted.
+- An event declared with `Isolated = true` (BC20/runtime 9.0 or later) is raised after uncommitted `Insert`/`Modify`/`Delete` calls in the same transaction, or a `Commit()` is inserted immediately before the raise inside a posting, release, or other all-or-nothing routine to obtain isolation — `isolated-events-are-isolated-only-outside-a-write-transaction`. Do not match an isolated event raised from a procedure that has written nothing, or a normal event.
+- A newly designed event declared with `Isolated = true` carries `var IsHandled`, a `var` result, or a `var` record that the publisher reads afterwards to decide its behaviour — `isolated-event-rollback-does-not-undo-var-parameters`. Changing `Isolated` on a shipped event belongs to `do-not-change-shipped-event-attribute-flags` instead.
+
+## Action
+
+For each worklist entry, evaluate the diff against the file's `## Best Practice` and `## Anti Pattern` sections. Emit findings as follows:
+
+- When the diff contains a clear match for an Anti Pattern, emit a finding with severity `major` or `blocker`, a message summarizing the anti-pattern, `location` pointing to the offending line or range, and a `references` entry pointing to the knowledge file. Use `blocker` only when the knowledge file states the anti-pattern violates a platform-level guarantee. When the file does not make such a claim, the ceiling is `major`.
+- When the diff contains code that contradicts a Best Practice without being a full anti-pattern, emit `minor` with the same reference shape.
+- Applicability alone is not a finding. Emit `info` only for a concrete, non-actionable observation the article explicitly defines; otherwise emit nothing when no violation is present.
+
+Set `confidence` to:
+
+- `high` when the detection is based on an unambiguous pattern match (identifier, syntax, object type).
+- `medium` when detection relies on heuristics or when any frontmatter dimension was `unknown`.
+- `low` when the finding is an advisory derived only from applicability.
+
+After evaluating each worklist entry, also consider whether the diff exhibits an events defect the agent recognises from its general AL knowledge that no knowledge file in the worklist covers. Such candidates are agent findings within this skill's domain — emit them with `references: []`, an `id` slug prefixed with `agent:`, `confidence` capped at `medium`, `severity` capped at `minor` (agent findings are advisory and non-gating), and a `message` that is self-contained (describing both the issue and a concrete recommendation, since there is no knowledge-file footer for the consumer to fall back on). Hold every candidate to the precision bar in `skills/do.md` (*Agent findings*): emit only a concrete, material events defect a knowledgeable BC reviewer would agree is wrong — steelman it first and drop anything stylistic, speculative, dependent on code outside the diff, or merely a valid alternative; when in doubt, omit. The scope is strictly events and subscribers; defects outside this domain belong to other leaves and MUST NOT be emitted here. Before emitting, check the worklist for a knowledge file that matches the candidate — if one exists, upgrade the candidate to a knowledge-backed finding instead. See `skills/do.md` for the full contract.
+
+For every emitted finding, decide whether the fix is mechanical. A fix is mechanical when it is small, local, and unambiguous from the diff context (for example: empty out a non-empty `[IntegrationEvent]` publisher body; add the missing `if IsHandled then exit;` guard after an `OnBefore` raise; add a matching `UnbindSubscription` for a leaked `BindSubscription`; set `EventSubscriberInstance = Manual;` on a codeunit that must be scoped). For mechanical findings, emit `findings[].suggested-code` with the literal replacement for the source lines indicated by `location`. The payload must be a verbatim replacement — no diff markers, no fences, no commentary — that the consumer can render as a one-click suggestion. When a `.good.al` companion exists and the diff context matches the `.bad.al` shape, adapt the `.good.al` replacement into `suggested-code`.
+
+Omit `suggested-code` only when the appropriate fix depends on context the skill cannot determine, when multiple defensible replacements exist, or when the fix spans non-contiguous code. If a finding is mechanical-looking but you omit `suggested-code`, set `findings[].suggested-code-omission-reason` to a short explanation. See `skills/do.md` for the full contract.
+
+Outcome selection:
+
+- `completed` — the skill evaluated every worklist item; default when the skill finishes normally, including when the resulting `findings` array is empty.
+- `no-knowledge` — no applicable events knowledge survived Source, Relevance, configuration filtering, and conflict resolution. `findings` is empty.
+- `not-applicable` — the task context lacks an AL dimension (no AL changes in the diff, or `technologies` filter rejected the task).
+- `partial` — a time or token budget was hit before the worklist was exhausted. `summary.coverage` reflects the evaluated subset; `outcome-reason` explains the cause.
+- `failed` — an unrecoverable error occurred. `outcome-reason` is required.
+
+## Output
+
+Output conforms to the DO output contract. Every finding this skill emits MUST set `findings[].domain` to `"Events"`. A populated example:
+
+```json
+{
+  "skill": { "id": "al-events-review", "version": 1 },
+  "outcome": "completed",
+  "summary": {
+    "counts": { "blocker": 0, "major": 1, "minor": 1, "info": 0 },
+    "coverage": { "worklist-size": 2, "items-evaluated": 2 }
+  },
+  "findings": [
+    {
+      "id": "microsoft/knowledge/events/publish-thin-onbefore-onafter-integration-events.md",
+      "severity": "major",
+      "message": "Business logic is placed inside an [IntegrationEvent] publisher body, so the event mutates state on every raise instead of being a thin hook. Move the logic into the calling routine and leave the publisher body empty.",
+      "location": {
+        "file": "src/Sales/ReservationMgt.Codeunit.al",
+        "line": 64,
+        "range": { "start-line": 61, "end-line": 67 }
+      },
+      "references": [
+        { "path": "microsoft/knowledge/events/publish-thin-onbefore-onafter-integration-events.md" }
+      ],
+      "confidence": "high",
+      "domain": "Events"
+    },
+    {
+      "id": "microsoft/knowledge/events/use-ishandled-to-make-base-behaviour-overridable.md",
+      "severity": "minor",
+      "message": "An OnBefore event is raised with a var IsHandled parameter, but the routine never guards with 'if IsHandled then exit;', so the default logic still runs after a subscriber handled the call.",
+      "location": {
+        "file": "src/Sales/ReservationMgt.Codeunit.al",
+        "line": 41
+      },
+      "references": [
+        { "path": "microsoft/knowledge/events/use-ishandled-to-make-base-behaviour-overridable.md" }
+      ],
+      "confidence": "high",
+      "domain": "Events"
+    }
+  ],
+  "suppressed": []
+}
+```
+
+When no applicable events knowledge is available, the report is:
+
+```json
+{
+  "skill": { "id": "al-events-review", "version": 1 },
+  "outcome": "no-knowledge",
+  "summary": {
+    "counts": { "blocker": 0, "major": 0, "minor": 0, "info": 0 },
+    "coverage": { "worklist-size": 0, "items-evaluated": 0 }
+  },
+  "findings": [],
+  "suppressed": []
+}
+```

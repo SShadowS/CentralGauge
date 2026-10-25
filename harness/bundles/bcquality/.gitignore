@@ -1,0 +1,29 @@
+# Environment
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.pytest_cache/
+
+# Editors
+.vs/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if scripts ever need it)
+node_modules/
+
+# Build artifacts
+*.log
+
+# Runtime artifact: the knowledge index is rebuilt over each consumer's
+# pruned clone by Entry's preparation step; it is never committed.
+/knowledge-index.json

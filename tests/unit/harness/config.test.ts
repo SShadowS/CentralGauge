@@ -227,6 +227,29 @@ Deno.test("ComponentsSchema: duplicate list entries are refused", () => {
   }
 });
 
+Deno.test("ComponentsSchema (R-02): a plugin's folder name is a lowercase slug and unique across the arm's plugins", () => {
+  for (
+    const ok of [["bundles/bcquality"], ["bundles/a", "other/b-2"]]
+  ) {
+    assertEquals(
+      ComponentsSchema.safeParse({ plugins: ok }).success,
+      true,
+      JSON.stringify(ok),
+    );
+  }
+  for (
+    const [bad, why] of [
+      [["bundles/BCQuality"], "lowercase slug"],
+      [["bundles/bc_quality"], "lowercase slug"],
+      [["bundles/a", "other/a"], "same folder name"],
+    ] as const
+  ) {
+    const r = ComponentsSchema.safeParse({ plugins: bad });
+    assertEquals(r.success, false, JSON.stringify(bad));
+    assertStringIncludes(JSON.stringify(r.error!.issues), why);
+  }
+});
+
 Deno.test("HarnessConfigSchema: image_revision is optional and digits only (H-01)", () => {
   const base = {
     id: "cc",

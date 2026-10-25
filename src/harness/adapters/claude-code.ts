@@ -16,6 +16,7 @@
 import { basename } from "@std/path";
 import type { HarnessAdapter, ParsedRun, ParseInput } from "../adapter.ts";
 import type { ResolvedManifest } from "../manifest.ts";
+import { pluginName } from "../manifest.ts";
 import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
@@ -1294,6 +1295,7 @@ function componentInventory(
   const declared = [
     ...INSTALLABLE.filter((k) => manifest[k] !== null),
     ...manifest.lsp.map((s) => `lsp:${s.name}`),
+    ...manifest.plugins.map((p) => `plugin:${pluginName(p.path)}`),
   ].sort();
   let installed: string[] = [];
   const recs = lines.filter((x) => x.rec.type === "cg_inventory");
@@ -1446,6 +1448,17 @@ function initInventory(
       ),
     ],
   };
+  // R-02: each declared plugin, its folder name and the skills it ships
+  // (skills/<dir>/SKILL.md, listed by system/init as <name>:<dir>).
+  const plugins = manifest.plugins.map((p) => {
+    const name = pluginName(p.path);
+    const skills = p.files.flatMap((f) => {
+      const m = /^skills\/([^/]+)\/SKILL\.md$/.exec(f.path);
+      return m ? [`${name}:${m[1]}`] : [];
+    });
+    return { path: p.path, name, skills };
+  });
+  const pluginSkills = plugins.flatMap((p) => p.skills);
   for (
     const [component, kind] of [["agents", "agent"], [
       "skills",
@@ -1454,7 +1467,10 @@ function initInventory(
   ) {
     const seen = i[component] as string[];
     for (const n of seen) {
-      if (!builtin[component].includes(n) && !want[component].includes(n)) {
+      if (
+        !builtin[component].includes(n) && !want[component].includes(n) &&
+        !(component === "skills" && pluginSkills.includes(n))
+      ) {
         problems.push(`unrequested ${kind} loaded: ${n}`);
       }
     }
@@ -1469,11 +1485,22 @@ function initInventory(
         "installed (cg_inventory) and listed by system/init";
     }
   }
-  // One allow-list: built-in plugins plus each declared LSP component's plugin.
+  // One allow-list: built-in plugins, each declared LSP component's plugin and
+  // each declared plugin component (R-02: <name>@inline from ~/cg-plugins/<name>).
   const lspSeen = new Set<string>();
+  const pluginSeen = new Set<string>();
   for (const p of (i["plugins"] as unknown[]).map(obj)) {
     const src = typeof p["source"] === "string" ? p["source"] : null;
     if (src !== null && builtin.plugins.includes(src)) continue;
+    const own = plugins.find((d) =>
+      p["name"] === d.name && src === `${d.name}@inline` &&
+      typeof p["path"] === "string" &&
+      p["path"].endsWith(`\\cg-plugins\\${d.name}`)
+    );
+    if (own) {
+      pluginSeen.add(own.name);
+      continue;
+    }
     const decl = manifest.lsp.find((s) =>
       Object.hasOwn(LSP_PLUGINS, s.name) && pluginIs(p, LSP_PLUGINS[s.name]!)
     );
@@ -1506,6 +1533,26 @@ function initInventory(
           lspTool ? "present" : "absent"
         })`,
       );
+    }
+  }
+  // R-02: a plugin loads when cg_inventory installed it and system/init lists it with every skill.
+  const skillsSeen = i["skills"] as string[];
+  for (const p of plugins) {
+    const why = [
+      ...(installed.includes(`plugin:${p.name}`)
+        ? []
+        : ["not installed by cg_inventory"]),
+      ...(pluginSeen.has(p.name) ? [] : ["plugin absent from system/init"]),
+      ...(p.skills.every((s) => skillsSeen.includes(s))
+        ? []
+        : ["skills missing from system/init"]),
+    ];
+    if (why.length === 0) {
+      loaded.push(`plugin:${p.path}`);
+      evidence[`plugin:${p.path}`] =
+        "installed (cg_inventory); plugin and its skills listed by system/init";
+    } else {
+      problems.push(`plugin:${p.name} not loaded (${why.join(", ")})`);
     }
   }
   if (manifest.instructions !== null && installed.includes("instructions")) {
@@ -1550,7 +1597,13 @@ function initInventory(
     ]] as const
   ) {
     const seen = i[component] as string[];
-    for (const n of [...builtin[component], ...want[component]]) {
+    for (
+      const n of [
+        ...builtin[component],
+        ...want[component],
+        ...(component === "skills" ? pluginSkills : []),
+      ]
+    ) {
       if (!seen.includes(n)) problems.push(`missing ${kind} ${n}`);
     }
   }

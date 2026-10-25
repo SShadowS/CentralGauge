@@ -1,0 +1,122 @@
+---
+kind: action-skill
+id: al-privacy-review
+version: 1
+title: AL privacy review
+description: Reviews AL source changes against privacy and data-classification guidance from BCQuality.
+inputs: [pr-diff, file-path, folder-path]
+outputs: [findings-report]
+bc-version: [all]
+technologies: [al]
+countries: [w1]
+application-area: [all]
+---
+
+# AL privacy review
+
+Reviews AL source changes against the `privacy` knowledge domain in BCQuality and emits a findings report. This is a leaf action skill: it invokes no sub-skills. It is one of the skills composed by `al-code-review`.
+
+An orchestrator invokes this skill with a `pr-diff`, `file-path`, or `folder-path`. The skill produces a single JSON document conforming to the DO output contract.
+
+## Source
+
+Use READ's **Bounded retrieval for review skills** workflow with `-Domain privacy`. Consume every catalog page across enabled layers before applying this leaf's Relevance and Worklist; preserve each exact catalog path and open complete bodies only for exact paths selected by the Worklist. If the helper or prepared index is unavailable or invalid, use READ's explicit path-discovery and bounded native-read fallback.
+
+## Relevance
+
+Apply the frontmatter matching rules defined in READ (*Frontmatter matching semantics*) against the task context:
+
+- `bc-version` — the target BC version from the PR branch's `app.json` or the orchestrator-supplied version. If unavailable, the dimension is `unknown`.
+- `technologies` — `[al]`.
+- `countries` — the countries declared in the consuming app's `app.json`. Default to the orchestrator's configured context; if absent, `unknown`.
+- `application-area` — the union of application areas declared by the changed objects. Pass the actual set; do not substitute `[all]`. If the area cannot be determined from the changes, the dimension is `unknown`.
+
+Discard files that are not applicable. Retain conditionally applicable files (any dimension `unknown`) only when the orchestrator's configuration permits them; findings derived from those files MUST have `confidence` no higher than `medium`, AND the finding's `message` MUST name the dimension or dimensions that were unknown.
+
+## Worklist
+
+Narrow the relevant files to the subset that applies to the changes under review. Exclude test codeunits, test libraries, test helper code, files under test/Test/Tests paths, and objects with `Subtype = Test`; test data is synthetic and does not ship to customers. For each relevant file, compute overlap against:
+
+- The changed AL object names and types — especially tables and tableextensions (for `DataClassification` on fields), codeunits that call `Error`, `Session.LogMessage`, or `FeatureTelemetry`, codeunits performing outgoing HTTP requests with customer data, migration codeunits, objects reading or writing `IsolatedStorage`, and install/upgrade codeunits or new tables relevant to retention policies.
+- The changed procedures and triggers, weighted toward those that call `Error`, construct `ErrorInfo`, call `Session.LogMessage`, `StrSubstNo`, `GetLastErrorText`/`GetLastErrorCallStack`, `FeatureTelemetry.LogUsage`/`LogUptake`/`LogError`, `HttpClient.Post`/`Get`, `IsolatedStorage.Set`/`SetEncrypted`/`Get`, or `PrivacyNotice.GetPrivacyNoticeApprovalState`.
+- Tokens extracted from the diff that relate to privacy (`DataClassification`, `CustomerContent`, `EndUserIdentifiableInformation`, `EndUserPseudonymousIdentifiers`, `SystemMetadata`, `ToBeClassified`, `PrivacyNotice`, `ErrorInfo`, `GetLastErrorText`, `GetLastErrorCallStack`, `TelemetryScope`, `FeatureTelemetry`, `CustomDimensions`, `LogUsage`, `LogUptake`, `LogError`, `ErrorText`, `ErrorCallStack`, `alErrorText`, `alErrorCallStack`, `HybridSL`, `HybridGP`, `HybridBC`).
+- Treat `ErrorInfo.Message`, `ErrorInfo.DataClassification`, `ErrorInfo.ErrorType`, and `ErrorInfo.DetailedMessage` as qualified member signals: accept a call or assignment only when symbol resolution proves that its receiver expression or variable has type `ErrorInfo`. Normalize those accesses to `errorinfo-message`, `errorinfo-dataclassification`, `errorinfo-errortype`, and `errorinfo-detailedmessage` retrieval tokens. Bare `Message` or `DataClassification` tokens MUST NOT trigger this article; do not emit the qualified tokens for `Message(...)` dialog calls, table or table-field `DataClassification` properties, or similarly named members on other types. Resolve the receiver's declaration from the containing object when it is outside the changed hunk.
+- Worklist ErrorInfo privacy guidance only from those typed `ErrorInfo` member tokens or from construction of an `ErrorInfo` value. For every `FeatureTelemetry.LogError`, inspect the dedicated error text and call-stack arguments in addition to explicit custom dimensions.
+- Retention-policy signals. Emit `addallowedtable` for any call to `Codeunit "Reten. Pol. Allowed Tables".AddAllowedTable`, `retention-policy-setup` for any use of `Record "Retention Policy Setup"`, and `retention-policy` for either. Emit `append-only-table` for an extension-owned table (never a tableextension) that the diff adds, or into which the diff adds a new `Insert` path, when the table also passes this bounded check: search the app's `.al` files for the table's object name once each for `AddAllowedTable`, `Delete`, and `DeleteAll`, and emit the token only when none of the three matches. This is a text search per candidate table — do not read or resolve the rest of the app. Emit `deleteall` when the diff adds a `DeleteAll` on an extension-owned table filtered by a date or datetime field inside a job queue codeunit or other scheduled cleanup and the table has no `AddAllowedTable` call.
+
+Route retention-policy guidance deterministically:
+
+- `register-owned-log-tables-for-retention-policies.md` is worklisted by `append-only-table` or `deleteall`, or when an `AddAllowedTable` routine is reached only from an install codeunit, or is guarded by an upgrade tag with no `OnRefreshAllowedTables` subscriber that bypasses the tag. Do not use the table's name as the trigger: an append-only table is a candidate whatever it is called ("Incoming Data" as much as "Activity Log"). A name ending in `Log`, `Entry`, `Archive`, `History`, or `Buffer`, an `AutoIncrement` integer primary key, or inserts from event subscribers, job queue codeunits, or API/web-service handlers raise confidence to `medium`; without any of these the finding stays `low`. Findings from `append-only-table` are advisory (`minor`) because table volume cannot be observed from source.
+- `ship-a-default-retention-policy-setup.md` is worklisted by `addallowedtable` or `retention-policy-setup`, but registration without a `Retention Policy Setup` is valid and MUST NOT produce a finding. Report only a false claim: a `Message`, notification, label, page `AboutText`/`InstructionalText`, or setup text in the diff stating that the registered table's data is now cleaned up or deleted automatically when no enabled `Retention Policy Setup` is created for it.
+
+A file enters the candidate worklist when its `keywords` intersect the extracted tokens or its topic (derived from the index entry's `path`, `title`, and `description`) matches a changed object type. Apply the topic-specific gates above after this overlap check; in particular, bare `Message` and `DataClassification` tokens cannot admit ErrorInfo guidance. Read an article's full file — its `## Best Practice` / `## Anti Pattern` bodies — only after it makes the worklist; candidate selection uses the index alone.
+
+Apply API ownership before fuzzy ranking:
+
+- A `Session.LogMessage` message built with `StrSubstNo` or concatenation from customer, employee, filename, document, or other identifying values belongs to `no-pii-in-telemetry-message-string.md`.
+- `avoid-strsubstno-prebuild-before-error.md` applies only when `StrSubstNo` or concatenation supplies the first argument to `Error(...)`. Never apply it to `Session.LogMessage`, `FeatureTelemetry`, or another telemetry API.
+
+Once the candidate worklist is known, resolve layer-precedence conflicts per READ. Drop lower-precedence files whose normative guidance (`## Best Practice` or `## Anti Pattern`) directly contradicts a higher-precedence candidate, and record each dropped file in `suppressed` with `reason: "layer-precedence"`. Files that would have been candidates but are hidden because their layer is disabled in consumer configuration are recorded with `reason: "configuration"`. Files that never became candidates are NOT recorded in `suppressed`.
+
+When the post-conflict worklist is empty because no applicable privacy knowledge exists, or because configuration suppressed every candidate, emit `outcome: "no-knowledge"`. When the worklist is empty because no applicable privacy knowledge matched the changes, emit `outcome: "completed"` with an empty `findings` array.
+
+## Action
+
+For each worklist entry, evaluate the diff against the file's `## Best Practice` and `## Anti Pattern` sections. Emit findings as follows:
+
+- When the diff contains a clear match for an Anti Pattern, emit a finding with severity `major` or `blocker`, a message summarizing the anti-pattern, `location` pointing to the offending line or range, and a `references` entry pointing to the knowledge file. Use `blocker` only when the knowledge file states the anti-pattern violates a platform-level guarantee (for example, documented telemetry-classification rules or GDPR-adjacent data-handling requirements). When the file does not make such a claim, the ceiling is `major`.
+- When the diff contains code that contradicts a Best Practice without being a full anti-pattern, emit `minor` with the same reference shape.
+- Applicability alone is not a finding. Emit `info` only for a concrete, non-actionable observation the article explicitly defines; otherwise emit nothing when no violation is present.
+
+Set `confidence` to:
+
+- `high` when the detection is based on an unambiguous pattern match (identifier, syntax, object type).
+- `medium` when detection relies on heuristics or when any frontmatter dimension was `unknown`.
+- `low` when the finding is an advisory derived only from applicability.
+
+This leaf emits only knowledge-backed privacy findings. Do NOT emit reference-less `agent:` findings in this domain: online evaluation shows the privacy agent-finding channel yields almost no accepted findings and a high volume of dismissed noise, so a privacy concern that no worklist knowledge file covers is omitted here rather than emitted with `references: []`. When you spot a material privacy defect no article covers, the durable fix is to add a knowledge article in BCQuality (per the online-eval self-improvement loop) so this leaf can cite it — not a one-off reference-less finding. Before treating a candidate as uncovered, check the worklist for a knowledge file that matches it; if one exists, emit it as a knowledge-backed finding. See `skills/do.md` for the full contract.
+
+For every emitted finding, decide whether the fix is mechanical. A fix is mechanical when it is small, local, and unambiguous from the diff context (for example: delete unreachable lines; replace `Count() > 0` with `not IsEmpty()`; add a missing `ToolTip`, `OptionCaption`, or `DataClassification`; replace a string-concatenated `Error` with a Label-backed call; change an over-broad permission token; or add an obvious `else`/guard branch). For mechanical findings, emit `findings[].suggested-code` with the literal replacement for the source lines indicated by `location`. The payload must be a verbatim replacement — no diff markers, no fences, no commentary — that the consumer can render as a one-click suggestion. When a `.good.al` companion exists and the diff context matches the `.bad.al` shape, adapt the `.good.al` replacement into `suggested-code`.
+
+Omit `suggested-code` only when the appropriate fix depends on context the skill cannot determine, when multiple defensible replacements exist, or when the fix spans non-contiguous code. If a finding is mechanical-looking but you omit `suggested-code`, set `findings[].suggested-code-omission-reason` to a short explanation. See `skills/do.md` for the full contract.
+
+Outcome selection:
+
+- `completed` — the skill evaluated every worklist item; default when the skill finishes normally, including when the resulting `findings` array is empty.
+- `no-knowledge` — no applicable privacy knowledge survived Source, Relevance, configuration filtering, and conflict resolution. `findings` is empty.
+- `not-applicable` — the task context lacks an AL dimension (no AL changes in the diff, or `technologies` filter rejected the task).
+- `partial` — a time or token budget was hit before the worklist was exhausted. `summary.coverage` reflects the evaluated subset; `outcome-reason` explains the cause.
+- `failed` — an unrecoverable error occurred. `outcome-reason` is required.
+
+## Output
+
+Output conforms to the DO output contract. Every finding this skill emits MUST set `findings[].domain` to `"Privacy"`. A populated example:
+
+```json
+{
+  "skill": { "id": "al-privacy-review", "version": 1 },
+  "outcome": "completed",
+  "summary": {
+    "counts": { "blocker": 0, "major": 1, "minor": 0, "info": 0 },
+    "coverage": { "worklist-size": 1, "items-evaluated": 1 }
+  },
+  "findings": [
+    {
+      "id": "microsoft/knowledge/privacy/data-classification-required-on-pii-fields.md",
+      "severity": "major",
+      "message": "The new Customer E-Mail table field has no DataClassification property, leaving personal data unclassified.",
+      "location": {
+        "file": "src/Sales/Customer.TableExt.al",
+        "line": 64,
+        "range": { "start-line": 60, "end-line": 64 }
+      },
+      "references": [
+        { "path": "microsoft/knowledge/privacy/data-classification-required-on-pii-fields.md" }
+      ],
+      "confidence": "high",
+      "domain": "Privacy"
+    }
+  ],
+  "suppressed": []
+}
+```
