@@ -74,8 +74,20 @@ if (Test-Path 'C:\config\bundle\skills') {
 if (Test-Path 'C:\config\bundle\agents') {
   Copy-Item 'C:\config\bundle\agents' "$userHome\.claude\agents" -Recurse -Force
 }
+# R-02: plugin components (components.plugins), staged as bundle\plugins\<name>. Each is copied to
+# a writable folder outside ~/.claude (a plugin may write into its own tree: BCQuality builds its
+# knowledge index there) and loaded with --plugin-dir, after the LSP plugin when both are declared.
+# cg-inventory.ps1 proves each copy byte for byte.
+$pluginRoot = "$userHome\cg-plugins"
+if (Test-Path 'C:\config\bundle\plugins') {
+  New-Item -ItemType Directory -Force -Path $pluginRoot | Out-Null
+  foreach ($p in @(Get-ChildItem 'C:\config\bundle\plugins' -Directory -Force | Sort-Object Name)) {
+    Copy-Item -LiteralPath $p.FullName -Destination "$pluginRoot\$($p.Name)" -Recurse -Force
+    $pluginArgs += @('--plugin-dir', "$pluginRoot\$($p.Name)")
+  }
+}
 # Spec v2 gate 1: prove the components before any credential is read or claude starts. Hooks
-# and plugins have no installer in this image, so a staged one is refused here (exit 5).
+# have no installer in this image, so a staged one is refused here (exit 5).
 & 'C:\cg-inventory.ps1'
 if ($LASTEXITCODE -ne 0) { exit 5 }
 # The runner writes C:\cg-secrets\ready after the secret files (M1-33 A3); in an
