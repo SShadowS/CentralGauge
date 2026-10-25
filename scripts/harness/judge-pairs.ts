@@ -39,16 +39,40 @@ export function formatText(s: string): string {
   ).split("\n").map((l) => l.trimEnd()).join("\n");
 }
 
-/** Baseline is side A when the first byte of the hash is even. */
-export async function assignSides(
+export interface PairKey {
+  task: string;
+  repeat: number;
+  baseline: string;
+  variant: string;
+}
+export const pairKey = (p: PairKey) =>
+  `${p.task}|${p.repeat}|${p.baseline}|${p.variant}`;
+
+/**
+ * Balanced A/B within each task: its pairs sorted by a seeded hash, then
+ * baseline-is-A alternates down the list from a seeded start. Counts differ by
+ * at most one per task.
+ */
+export async function assignBalanced(
   seed: string,
-  task: string,
-  repeat: number,
-  baseline: string,
-  variant: string,
-): Promise<boolean> {
-  const h = await sha256(`${seed}|${task}|${repeat}|${baseline}|${variant}`);
-  return parseInt(h.slice(0, 2), 16) % 2 === 0;
+  pairs: PairKey[],
+): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
+  const byTask = new Map<string, PairKey[]>();
+  for (const p of pairs) byTask.set(p.task, [...byTask.get(p.task) ?? [], p]);
+  for (const [task, list] of byTask) {
+    const hashed = await Promise.all(list.map(async (p) => ({
+      p,
+      h: await sha256(
+        `${seed}|${p.task}|${p.repeat}|${p.baseline}|${p.variant}`,
+      ),
+    })));
+    hashed.sort((x, y) => x.h.localeCompare(y.h));
+    const start = parseInt((await sha256(`${seed}|${task}`)).slice(0, 2), 16) %
+        2 === 0;
+    hashed.forEach(({ p }, k) => out.set(pairKey(p), (k % 2 === 0) === start));
+  }
+  return out;
 }
 
 export function extractRubric(text: string): string {
@@ -180,11 +204,14 @@ function termRegex(terms: string[]): RegExp | null {
 }
 
 /**
- * Arm names go everywhere; `terms` only inside AL comments (line and block) of diff
- * content lines (block comments may span lines; a double slash inside a quoted string is code).
+ * Redacts one complete AL source with a small tokenizer, so state never leaks
+ * between old and new text or between hunks. Tokens: 'strings' ('' escapes),
+ * "identifiers" ("" escapes), `//` line comments, block comments (multi-line)
+ * and code. Arm names go everywhere; `terms` only inside comment tokens. Only
+ * matched words are replaced, so line count and newlines never change.
  */
-export function redactSide(
-  side: string,
+export function redactSource(
+  src: string,
   arms: string[],
   terms: string[],
 ): { text: string; count: number } {
@@ -193,44 +220,54 @@ export function redactSide(
     re ? s.replace(re, () => (count++, "[redacted]")) : s;
   const armR = sub(termRegex(arms));
   const termR = sub(termRegex(terms));
-  let inBlock = false;
-  const lines = side.split("\n").map((raw) => {
-    const line = armR(raw);
-    if (/^(---|\+\+\+) (a\/|b\/|\/dev\/null)/.test(line)) {
-      inBlock = false;
-      return line;
+  const s = armR(src);
+  let out = "";
+  let i = 0;
+  const quoted = (q: string) => {
+    let j = i + 1;
+    while (j < s.length && s[j] !== "\n") {
+      if (s[j] === q) {
+        if (s[j + 1] === q) j += 2;
+        else {
+          j++;
+          break;
+        }
+      } else j++;
     }
-    if (line.startsWith("@@") || !/^[ +-]/.test(line)) return line;
-    const body = line.slice(1);
-    let res = line[0]!;
-    let i = 0;
-    while (i < body.length) {
-      if (inBlock) {
-        const end = body.indexOf("*/", i);
-        const stop = end < 0 ? body.length : end + 2;
-        res += termR(body.slice(i, stop));
-        i = stop;
-        if (end >= 0) inBlock = false;
-      } else if (body[i] === "'") {
-        const j = body.indexOf("'", i + 1);
-        const stop = j < 0 ? body.length : j + 1;
-        res += body.slice(i, stop);
-        i = stop;
-      } else if (body.startsWith("//", i)) {
-        res += termR(body.slice(i));
-        i = body.length;
-      } else if (body.startsWith("/*", i)) {
-        res += "/*";
-        i += 2;
-        inBlock = true;
-      } else {
-        res += body[i];
-        i++;
-      }
+    out += s.slice(i, j);
+    i = j;
+  };
+  while (i < s.length) {
+    const c = s[i]!;
+    if (c === "'" || c === '"') quoted(c);
+    else if (s.startsWith("//", i)) {
+      const e = s.indexOf("\n", i);
+      const j = e < 0 ? s.length : e;
+      out += termR(s.slice(i, j));
+      i = j;
+    } else if (s.startsWith("/*", i)) {
+      const e = s.indexOf("*/", i + 2);
+      const j = e < 0 ? s.length : e + 2;
+      out += termR(s.slice(i, j));
+      i = j;
+    } else {
+      out += c;
+      i++;
     }
-    return res;
-  });
-  return { text: lines.join("\n"), count };
+  }
+  return { text: out, count };
+}
+
+/** Path segments: arm names and terms alike (a file name can identify an arm). */
+export function redactPath(
+  rel: string,
+  arms: string[],
+  terms: string[],
+): { text: string; count: number } {
+  let count = 0;
+  const re = termRegex([...arms, ...terms]);
+  const text = re ? rel.replace(re, () => (count++, "[redacted]")) : rel;
+  return { text, count };
 }
 
 // ----------------------------------------------------------------- diffs
@@ -305,12 +342,18 @@ async function fileDiff(
   }${i < 0 ? "\n" : patch.slice(i)}`;
 }
 
-/** One side: production app diffs, then Test app diffs; blocks in a seeded shuffled order. */
+/**
+ * One side: production app diffs, then Test app diffs; blocks in a seeded
+ * shuffled order. Every old and new source is redacted whole (redactSource)
+ * before it is diffed; header paths are redacted per segment. `count` is the
+ * net number of redactions the side's final text carries.
+ */
 export async function buildSide(
   startDir: string,
   finalDir: string,
   shuffleKey: string,
-): Promise<string> {
+  red: { arms: string[]; terms: string[] } = { arms: [], terms: [] },
+): Promise<{ text: string; count: number }> {
   const apps = new Set<string>();
   for await (const e of Deno.readDir(startDir)) {
     if (e.isDirectory && !e.name.startsWith(".")) apps.add(e.name);
@@ -322,11 +365,15 @@ export async function buildSide(
     ]),
   ];
   const ranked = await Promise.all(
-    rels.map(async (r) => ({
-      r,
-      test: r.split("/")[0] === TEST_APP,
-      h: await sha256(`${shuffleKey}|${r}`),
-    })),
+    rels.map(async (r) => {
+      const shown = redactPath(r, red.arms, red.terms);
+      return {
+        r,
+        shown,
+        test: r.split("/")[0] === TEST_APP,
+        h: await sha256(`${shuffleKey}|${shown.text}`),
+      };
+    }),
   );
   ranked.sort((x, y) =>
     Number(x.test) - Number(y.test) || x.h.localeCompare(y.h)
@@ -334,13 +381,22 @@ export async function buildSide(
   const scratch = await Deno.makeTempDir();
   try {
     const blocks: string[] = [];
-    for (const { r } of ranked) {
-      const a = await readFormatted(startDir, r);
-      const b = await readFormatted(finalDir, r);
-      if (a === b) continue;
-      blocks.push(await fileDiff(scratch, r, a, b));
+    let count = 0;
+    for (const { r, shown } of ranked) {
+      const a0 = await readFormatted(startDir, r);
+      const b0 = await readFormatted(finalDir, r);
+      const a = a0 === null ? null : redactSource(a0, red.arms, red.terms);
+      const b = b0 === null ? null : redactSource(b0, red.arms, red.terms);
+      if ((a?.text ?? null) === (b?.text ?? null)) continue;
+      count += shown.count + Math.max(0, (b?.count ?? 0) - (a?.count ?? 0));
+      blocks.push(
+        await fileDiff(scratch, shown.text, a?.text ?? null, b?.text ?? null),
+      );
     }
-    return blocks.length ? blocks.join("\n") : "(no changes)\n";
+    return {
+      text: blocks.length ? blocks.join("\n") : "(no changes)\n",
+      count,
+    };
   } finally {
     await Deno.remove(scratch, { recursive: true }).catch(() => {});
   }
@@ -352,6 +408,9 @@ export interface Key {
   A: string;
   B: string;
   a_role: "baseline" | "variant";
+  /** Execution record ids (provenance for later joins); never in a packet. */
+  baseline_id?: string;
+  variant_id?: string;
 }
 export interface Packet {
   id: string;
@@ -379,29 +438,20 @@ export interface PacketInput {
   rubric: string;
   /** Tooling words and manifest names: redacted inside AL comments only. */
   terms: string[];
+  /** Side assignment from assignBalanced. */
+  baselineIsA: boolean;
+  baselineId?: string;
+  variantId?: string;
   /** Arm and config names: redacted everywhere. */
   arms: string[];
 }
 
 export async function buildPacket(i: PacketInput): Promise<Packet> {
   const shuffle = `${i.seed}|${i.task}|${i.repeat}`;
-  const base = redactSide(
-    await buildSide(i.startDir, i.baseFinal, shuffle),
-    i.arms,
-    i.terms,
-  );
-  const vari = redactSide(
-    await buildSide(i.startDir, i.varFinal, shuffle),
-    i.arms,
-    i.terms,
-  );
-  const aBase = await assignSides(
-    i.seed,
-    i.task,
-    i.repeat,
-    i.baseline,
-    i.variant,
-  );
+  const red = { arms: i.arms, terms: i.terms };
+  const base = await buildSide(i.startDir, i.baseFinal, shuffle, red);
+  const vari = await buildSide(i.startDir, i.varFinal, shuffle, red);
+  const aBase = i.baselineIsA;
   const [a, b] = aBase ? [base.text, vari.text] : [vari.text, base.text];
   const text = fillTemplate(i.template, i.rubric, i.taskPrompt, a, b);
   const sha = await sha256(text);
@@ -415,9 +465,13 @@ export async function buildPacket(i: PacketInput): Promise<Packet> {
     swappedText: fillTemplate(i.template, i.rubric, i.taskPrompt, b, a),
     task: i.task,
     repeat: i.repeat,
-    key: aBase
-      ? { A: i.baseline, B: i.variant, a_role: "baseline" }
-      : { A: i.variant, B: i.baseline, a_role: "variant" },
+    key: {
+      ...(aBase
+        ? { A: i.baseline, B: i.variant, a_role: "baseline" as const }
+        : { A: i.variant, B: i.baseline, a_role: "variant" as const }),
+      ...(i.baselineId ? { baseline_id: i.baselineId } : {}),
+      ...(i.variantId ? { variant_id: i.variantId } : {}),
+    },
     redactions: { baseline: base.count, variant: vari.count },
   };
 }
@@ -453,11 +507,20 @@ export type Verdicts = Record<
   { verdict: Verdict; reason: string; cite: string }
 >;
 
-const CITE = /^(none|[AB]:[^:]+(:-?\d+)?)$/;
+const CITE = /^([AB]):([^:]+)(?::(-?\d+))?$/;
+function validCite(c: string): boolean {
+  if (c === "none") return true;
+  const m = CITE.exec(c);
+  return m !== null && m[2]!.trim() !== "" &&
+    (m[3] === undefined || Number(m[3]) !== 0);
+}
 const Entry = z.strictObject({
   verdict: z.enum(["A", "B", "tie"]),
-  reason: z.string().refine((s) => s.trim() !== ""),
-  cite: z.string().regex(CITE),
+  reason: z.string().refine((s) => s.trim() !== "" && !/[\r\n]/.test(s)),
+  cite: z.string().refine(
+    validCite,
+    "cite: none, or <A|B>:<path>[:<nonzero line>]",
+  ),
 }).refine((e) => (e.verdict === "tie") === (e.cite === "none"), {
   message: "a tie cites none, a side verdict cites a place",
 });
@@ -599,6 +662,29 @@ export function estimate(packets: Packet[], judges: Judge[]): Estimate {
   return { packets: packets.length, calls, usd };
 }
 
+/** The fixed system prompt of every judge call; part of every cache key. */
+export const JUDGE_SYSTEM =
+  "You are a code reviewer. Answer only with the JSON object the user message asks for.";
+
+/**
+ * Cache file name from the full request: system prompt, request prompt (for a
+ * guess: packet plus suffix), judge identity and position.
+ */
+export async function cacheName(
+  prompt: string,
+  jkey: string,
+  pos: string,
+  system: string = JUDGE_SYSTEM,
+): Promise<string> {
+  return `${await sha256(`${system}\0${prompt}`)}-${jkey}-${pos}.json`;
+}
+
+export function formatEstimate(e: Estimate, skipped: number): string {
+  return `${e.packets} packets, ${e.calls} calls, estimated cost $${
+    e.usd.toFixed(2)
+  } (estimate: excludes cache savings and retries; fixed 1500 output tokens per call; ${skipped} skipped)`;
+}
+
 export async function judgePackets(a: {
   packets: Packet[];
   judges: Judge[];
@@ -607,12 +693,17 @@ export async function judgePackets(a: {
   rubric: string;
   client: JudgeClient;
   dryRun?: boolean;
+  guessSuffix?: string;
 }): Promise<{ cells: Cells; estimate: Estimate }> {
+  const suffix = a.guessSuffix ?? GUESS_SUFFIX;
   const est = estimate(a.packets, a.judges);
   const cells: Cells = {};
   if (a.dryRun) return { cells, estimate: est };
-  const promptSha = await sha256(a.template + a.rubric);
   const dir = join(a.out, "cache");
+  // One record per cell of this run (call made or cache hit), apart from cache/.
+  const log = join(a.out, "cells.jsonl");
+  await Deno.mkdir(a.out, { recursive: true });
+  await Deno.writeTextFile(log, "");
   for (const j of a.judges) {
     const mine: Record<string, Cell> = cells[j.id] = {};
     const jkey =
@@ -622,24 +713,36 @@ export async function judgePackets(a: {
       );
     for (const p of a.packets) {
       const cell: Cell = mine[p.id] = {};
-      const path = (pos: string) =>
-        join(dir, `${p.sha}-${promptSha}-${jkey}-${pos}.json`);
-      const run = async <T extends { status: string }>(
+      const run = async <T extends { status: string; attempts: number }>(
         pos: string,
         prompt: string,
         parse: (t: string) => unknown,
         shape: (v: never, attempts: number) => T,
       ): Promise<T> => {
-        const hit = await readCache<T>(path(pos));
+        const path = join(dir, await cacheName(prompt, jkey, pos));
+        const record = (status: string, attempts: number, error?: string) =>
+          Deno.writeTextFile(
+            log,
+            JSON.stringify({
+              packet_id: p.id,
+              judge: j.id,
+              position: pos,
+              status,
+              attempts,
+              ...(error === undefined ? {} : { error }),
+            }) + "\n",
+            { append: true },
+          );
+        const hit = await readCache<T>(path);
         if (hit) {
           const ok = (pos === "guess" ? OkGuess : OkVerdict).safeParse(hit);
-          if (!ok.success) {
-            throw new Error(`cache payload invalid: ${path(pos)}`);
-          }
+          if (!ok.success) throw new Error(`cache payload invalid: ${path}`);
+          await record("cached", ok.data.attempts);
           return ok.data as unknown as T;
         }
         const r = await callStrict(a.client, j, prompt, parse);
         if (!r.ok) {
+          await record("failed", r.attempts, r.error);
           return {
             status: "failed",
             error: r.error,
@@ -648,10 +751,8 @@ export async function judgePackets(a: {
         }
         const res = shape(r.value as never, r.attempts);
         await Deno.mkdir(dir, { recursive: true });
-        await Deno.writeTextFile(
-          path(pos),
-          JSON.stringify({ schema: 1, ...res }),
-        );
+        await Deno.writeTextFile(path, JSON.stringify({ schema: 1, ...res }));
+        await record("ok", r.attempts);
         return res;
       };
       const verdictShape = (verdicts: Verdicts, attempts: number) =>
@@ -670,7 +771,7 @@ export async function judgePackets(a: {
       );
       cell.guess = await run(
         "guess",
-        `${p.text}\n\n${GUESS_SUFFIX}`,
+        `${p.text}\n\n${suffix}`,
         parseGuess,
         ((guess: "A" | "B", attempts: number) => ({
           status: "ok",
@@ -698,7 +799,15 @@ export function cohenKappa(pairs: [string, string][]): number | null {
     pe += pairs.filter(([x]) => x === c).length / n *
       (pairs.filter(([, y]) => y === c).length / n);
   }
-  return pe === 1 ? (po === 1 ? 1 : null) : (po - pe) / (1 - pe);
+  // pe == 1 (both judges constant on one category): kappa is undefined, never "perfect".
+  return pe === 1 ? null : (po - pe) / (1 - pe);
+}
+
+/** Observed agreement po, reported next to kappa (which is undefined when pe == 1). */
+export function agreementRate(pairs: [string, string][]): number | null {
+  return pairs.length
+    ? pairs.filter(([x, y]) => x === y).length / pairs.length
+    : null;
 }
 
 function toArm(
@@ -718,6 +827,8 @@ export interface PairMeta {
   repeat: number;
   key: Key;
   redactions?: { baseline: number; variant: number };
+  baseline_id?: string | undefined;
+  variant_id?: string | undefined;
 }
 
 export function aggregate(
@@ -725,6 +836,7 @@ export function aggregate(
   cells: Cells,
   judgeIds: string[],
   skipped: unknown[],
+  campaignId?: string,
 ) {
   type Combo = { orig: ArmSpace; swapped: ArmSpace; combined: ArmSpace };
   const pairs = metas.map((m) => {
@@ -767,6 +879,8 @@ export function aggregate(
       task: m.task,
       repeat: m.repeat,
       packet_id: m.id,
+      baseline_id: m.baseline_id ?? null,
+      variant_id: m.variant_id ?? null,
       redactions: m.redactions ?? { baseline: 0, variant: 0 },
       dimensions,
     };
@@ -775,6 +889,7 @@ export function aggregate(
   const dims = {} as Record<Dimension, {
     counts: Record<ArmSpace, number>;
     kappa: Record<string, number | null>;
+    agreement: Record<string, number | null>;
     swap_consistency: Record<string, number | null>;
   }>;
   for (const d of DIMENSIONS) {
@@ -784,6 +899,7 @@ export function aggregate(
     >;
     for (const p of pairs) counts[p.dimensions[d].across]++;
     const kappa: Record<string, number | null> = {};
+    const agreement: Record<string, number | null> = {};
     for (let i = 0; i < judgeIds.length; i++) {
       for (let k = i + 1; k < judgeIds.length; k++) {
         const x = judgeIds[i]!;
@@ -795,6 +911,7 @@ export function aggregate(
           if (a !== "missing" && b !== "missing") both.push([a, b]);
         }
         kappa[`${x}|${y}`] = cohenKappa(both);
+        agreement[`${x}|${y}`] = agreementRate(both);
       }
     }
     const swap_consistency: Record<string, number | null> = {};
@@ -806,7 +923,7 @@ export function aggregate(
         ? valid.filter((c) => c.orig === c.swapped).length / valid.length
         : null;
     }
-    dims[d] = { counts, kappa, swap_consistency };
+    dims[d] = { counts, kappa, agreement, swap_consistency };
   }
 
   const guess_accuracy: Record<string, { correct: number; answered: number }> =
@@ -833,6 +950,7 @@ export function aggregate(
   return {
     pairs,
     summary: {
+      campaign_id: campaignId ?? null,
       pairs: pairs.length,
       redaction_one_sided_share: pairs.length
         ? pairs.filter((p) =>
@@ -886,7 +1004,7 @@ export function resolveCommand(
   os: string = Deno.build.os,
   pathVar: string = Deno.env.get("PATH") ?? "",
 ): string {
-  if (os !== "windows" || /\.[^\/]+$/.test(cmd)) return cmd;
+  if (os !== "windows" || /\.[^\\/]+$/.test(cmd)) return cmd;
   for (const dir of pathVar.split(";").filter((d) => d !== "")) {
     for (const ext of [".exe", ".cmd"]) {
       const p = join(dir, cmd + ext);
@@ -898,72 +1016,147 @@ export function resolveCommand(
   return cmd;
 }
 
-/** Same flags as pi-mcp's buildPiArgs, minus the tools: the judge sees only the packet. */
-export function makePiClient(config: JudgeConfig): JudgeClient {
+/**
+ * pi argv for a judge call: no tools, extensions, MCP, skills, templates or
+ * context files, and an explicit system prompt. The prompt goes on stdin.
+ */
+export function piArgs(
+  req: { provider: string; model: string; thinking: string },
+): string[] {
+  return [
+    "-p",
+    "--no-session",
+    "--no-tools",
+    "--no-extensions",
+    "--no-mcp",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files",
+    "--system-prompt",
+    JUDGE_SYSTEM,
+    "--provider",
+    req.provider,
+    "--model",
+    req.model,
+    "--thinking",
+    req.thinking,
+  ];
+}
+
+export interface PiRun {
+  command: string;
+  args: string[];
+  cwd: string;
+  stdin: string;
+}
+export type PiRunner = (r: PiRun) => Promise<
+  { success: boolean; code: number; stdout: string; stderr: string }
+>;
+
+/**
+ * A user or project SYSTEM.md / APPEND_SYSTEM.md would change the judge's
+ * instructions behind the cache's back: refuse. stat only, nothing is read.
+ */
+export function assertNoSystemOverrides(agentDir: string, cwd: string): void {
+  for (const dir of [agentDir, join(cwd, ".pi")]) {
+    for (const name of ["SYSTEM.md", "APPEND_SYSTEM.md"]) {
+      const p = join(dir, name);
+      let found = true;
+      try {
+        Deno.statSync(p);
+      } catch {
+        found = false;
+      }
+      if (found) {
+        throw new Error(
+          `refusing to run the judge: ${p} would override its system prompt`,
+        );
+      }
+    }
+  }
+}
+
+function defaultAgentDir(): string {
+  return Deno.env.get("PI_CODING_AGENT_DIR") ??
+    join(
+      Deno.env.get("USERPROFILE") ?? Deno.env.get("HOME") ?? ".",
+      ".pi",
+      "agent",
+    );
+}
+
+/** The real spawn: 20-minute timeout with tree kill, prompt on stdin. */
+export const spawnPi: PiRunner = async (r) => {
+  const child = new Deno.Command(r.command, {
+    args: r.args,
+    cwd: r.cwd,
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  let timedOut = false;
+  const kill = async () => {
+    if (Deno.build.os === "windows") {
+      await new Deno.Command("taskkill", {
+        args: ["/PID", String(child.pid), "/T", "/F"],
+        stdout: "null",
+        stderr: "null",
+      }).output().catch(() => {});
+    } else {
+      try {
+        child.kill("SIGKILL");
+      } catch { /* already gone */ }
+    }
+  };
+  const timer = setTimeout(async () => {
+    timedOut = true;
+    await kill();
+  }, 20 * 60_000);
+  try {
+    // Prompt on stdin: the Windows pi.cmd shim truncates argv at the first newline.
+    try {
+      const w = child.stdin.getWriter();
+      await w.write(enc.encode(r.stdin));
+      await w.close();
+    } catch (e) {
+      // Never leave the process tree running behind a failed write.
+      await kill();
+      await child.output().catch(() => {});
+      throw e;
+    }
+    const o = await child.output();
+    if (timedOut) throw new Error("pi timed out after 20 min");
+    const dec = new TextDecoder();
+    return {
+      success: o.success,
+      code: o.code,
+      stdout: dec.decode(o.stdout),
+      stderr: dec.decode(o.stderr),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+export function makePiClient(
+  config: JudgeConfig,
+  o: { run?: PiRunner; agentDir?: string } = {},
+): JudgeClient {
+  const run = o.run ?? spawnPi;
   return async (req) => {
     const cwd = await Deno.makeTempDir();
     try {
-      const child = new Deno.Command(resolveCommand(config.pi_command), {
-        args: [
-          "-p",
-          "--no-session",
-          "--no-tools",
-          "--no-skills",
-          "--no-prompt-templates",
-          "--no-context-files",
-          "--provider",
-          req.provider,
-          "--model",
-          req.model,
-          "--thinking",
-          req.thinking,
-        ],
+      assertNoSystemOverrides(o.agentDir ?? defaultAgentDir(), cwd);
+      const r = await run({
+        command: resolveCommand(config.pi_command),
+        args: piArgs(req),
         cwd,
-        stdin: "piped",
-        stdout: "piped",
-        stderr: "piped",
-      }).spawn();
-      let timedOut = false;
-      const kill = async () => {
-        if (Deno.build.os === "windows") {
-          await new Deno.Command("taskkill", {
-            args: ["/PID", String(child.pid), "/T", "/F"],
-            stdout: "null",
-            stderr: "null",
-          }).output().catch(() => {});
-        } else {
-          try {
-            child.kill("SIGKILL");
-          } catch { /* already gone */ }
-        }
-      };
-      const timer = setTimeout(async () => {
-        timedOut = true;
-        await kill();
-      }, 20 * 60_000);
-      try {
-        // Prompt on stdin: the Windows pi.cmd shim truncates argv at the first newline.
-        try {
-          const w = child.stdin.getWriter();
-          await w.write(enc.encode(req.prompt));
-          await w.close();
-        } catch (e) {
-          // Never leave the process tree running behind a failed write.
-          await kill();
-          await child.output().catch(() => {});
-          throw e;
-        }
-        const o = await child.output();
-        if (timedOut) throw new Error("pi timed out after 20 min");
-        if (!o.success) {
-          throw new Error(
-            `pi exited ${o.code}: ${new TextDecoder().decode(o.stderr).trim()}`,
-          );
-        }
-        return new TextDecoder().decode(o.stdout);
-      } finally {
-        clearTimeout(timer);
+        stdin: req.prompt,
+      });
+      if (!r.success) {
+        throw new Error(`pi exited ${r.code}: ${r.stderr.trim()}`);
       }
+      return r.stdout;
     } finally {
       await Deno.remove(cwd, { recursive: true }).catch(() => {});
     }
@@ -983,6 +1176,8 @@ export interface PairRef {
   variant: string;
   baseFinal: string;
   varFinal: string;
+  baselineId: string;
+  variantId: string;
 }
 
 export async function loadPairs(o: {
@@ -1060,6 +1255,8 @@ export async function loadPairs(o: {
         repeat,
         baseline: b,
         variant: v,
+        baselineId: e["id"] as string,
+        variantId: other["id"] as string,
         baseFinal: join(o.results, "workspaces", e["workspace_hash"] as string),
         varFinal: join(
           o.results,
@@ -1129,6 +1326,7 @@ async function main() {
       const starts = new Map<string, Promise<string>>();
       const prompts = new Map<string, Promise<string>>();
       const packets: Packet[] = [];
+      const sides = await assignBalanced(o.seed, loaded.pairs);
       for (const p of loaded.pairs) {
         if (!starts.has(p.task)) {
           starts.set(
@@ -1160,6 +1358,9 @@ async function main() {
             repeat: p.repeat,
             baseline: p.baseline,
             variant: p.variant,
+            baselineIsA: sides.get(pairKey(p))!,
+            baselineId: p.baselineId,
+            variantId: p.variantId,
             taskPrompt: await prompts.get(p.task)!,
             startDir: await starts.get(p.task)!,
             baseFinal: p.baseFinal,
@@ -1183,11 +1384,9 @@ async function main() {
         dryRun: !!o.dryRun,
       });
       console.log(
-        `${
-          colors.cyan("[Packets]")
-        } ${packets.length}  calls ${r.estimate.calls}  est. cost $${
-          r.estimate.usd.toFixed(2)
-        } (${loaded.skipped.length} skipped)`,
+        `${colors.cyan("[Packets]")} ${
+          formatEstimate(r.estimate, loaded.skipped.length)
+        }`,
       );
       if (o.dryRun) return;
       const ids = judges.map((j) => j.id);
@@ -1197,8 +1396,10 @@ async function main() {
         repeat: p.repeat,
         key: p.key,
         redactions: p.redactions,
+        baseline_id: p.key.baseline_id,
+        variant_id: p.key.variant_id,
       }));
-      const agg = aggregate(metas, r.cells, ids, loaded.skipped);
+      const agg = aggregate(metas, r.cells, ids, loaded.skipped, o.campaign);
       await Deno.writeTextFile(
         join(o.out, "pairs.json"),
         JSON.stringify(agg.pairs, null, 2) + "\n",

@@ -2,36 +2,41 @@ import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import {
   aggregate,
-  assignSides,
+  assignBalanced,
   buildPacket,
+  cacheName,
   cohenKappa,
   extractRubric,
   fillTemplate,
+  formatEstimate,
   GUESS_SUFFIX,
+  JUDGE_SYSTEM,
   type JudgeClient,
   judgePackets,
   type JudgeResult,
   loadPairs,
+  makePiClient,
   manifestTerms,
+  pairKey,
   parseGuess,
   parseVerdict,
-  redactSide,
+  redactSource,
   resolveCommand,
   writePackets,
 } from "../../../scripts/harness/judge-pairs.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
-Deno.test("redactSide: terms match whole words only, never inside a word", () => {
-  const side = [
-    "+++ b/Core/src/X.Codeunit.al",
-    "+    // despite the pi skill, picks up the arm-x value",
+Deno.test("redactSource: terms match whole words only, inside comments; arm names anywhere", () => {
+  const src = [
+    "codeunit 50100 X // despite the pi skill, picks up the arm-x value",
+    "{ var arm-x: Integer; piano: Integer; }",
   ].join("\n");
-  const r = redactSide(side, ["arm-x"], ["pi", "skill"]);
-  assertEquals(
-    r.text.split("\n")[1],
-    "+    // despite the [redacted] [redacted], picks up the [redacted] value",
-  );
-  assertEquals(r.count, 3);
+  const r = redactSource(src, ["arm-x"], ["pi", "skill"]);
+  assertEquals(r.text.split("\n"), [
+    "codeunit 50100 X // despite the [redacted] [redacted], picks up the [redacted] value",
+    "{ var [redacted]: Integer; piano: Integer; }",
+  ]);
+  assertEquals(r.count, 4);
 });
 
 const DIMS = [
@@ -113,6 +118,7 @@ Deno.test("blinding: arm, skill, tool names and out-of-app files never reach the
     task: "HX-001",
     repeat: 1,
     baseline: "plainarm",
+    baselineIsA: false,
     variant: "ArmRealistic",
     taskPrompt: "Do the thing.",
     startDir: f.start,
@@ -165,6 +171,7 @@ Deno.test("both sides share one formatter: a CRLF/tab-only difference yields no 
     task: "T",
     repeat: 1,
     baseline: "a",
+    baselineIsA: true,
     variant: "b",
     taskPrompt: "p",
     startDir: join(root, "s"),
@@ -178,14 +185,24 @@ Deno.test("both sides share one formatter: a CRLF/tab-only difference yields no 
   assert(!p.text.includes("@@"));
 });
 
-Deno.test("assignSides: deterministic per seed and key; not constant", async () => {
-  const a = await assignSides("s", "T", 1, "b", "v");
-  assertEquals(a, await assignSides("s", "T", 1, "b", "v"));
-  const seen = new Set<boolean>();
-  for (let r = 1; r < 30; r++) {
-    seen.add(await assignSides("s", "T", r, "b", "v"));
-  }
-  assertEquals(seen.size, 2);
+Deno.test("assignBalanced: per task, baseline-is-A alternates, so counts differ by at most one", async () => {
+  const mk = (task: string, n: number) =>
+    Array.from({ length: n }, (_, r) => ({
+      task,
+      repeat: r + 1,
+      baseline: "b",
+      variant: "v",
+    }));
+  const pairs = [...mk("T6", 6), ...mk("T5", 5), ...mk("T1", 1)];
+  const m = await assignBalanced("s", pairs);
+  const count = (t: string) => {
+    const xs = pairs.filter((p) => p.task === t).map((p) => m.get(pairKey(p))!);
+    return xs.filter(Boolean).length;
+  };
+  assertEquals(count("T6"), 3);
+  assert([2, 3].includes(count("T5")));
+  assertEquals(m.size, 12);
+  assertEquals(m, await assignBalanced("s", pairs));
 });
 
 Deno.test("fillTemplate and extractRubric fail closed", () => {
@@ -565,6 +582,7 @@ Deno.test("redaction: arm names everywhere; tooling words only inside AL comment
     task: "T",
     repeat: 1,
     baseline: "plainarm",
+    baselineIsA: true,
     variant: "v",
     taskPrompt: "p",
     startDir: start,
@@ -603,6 +621,7 @@ Deno.test("packet ids: identical diffs of two pairs stay distinct in files and k
       task: "HX-001",
       repeat,
       baseline: "a",
+      baselineIsA: true,
       variant: "b",
       taskPrompt: "p",
       startDir: f.start,
@@ -614,7 +633,15 @@ Deno.test("packet ids: identical diffs of two pairs stay distinct in files and k
       arms: [],
     });
   const [p1, p2] = [await mk(1), await mk(2)];
-  assertEquals(p1.sha === p2.sha || p1.text !== p2.text, true);
+  assertEquals(p1.text, p2.text);
+  assertEquals(p1.sha, p2.sha);
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(p1.text)),
+  );
+  assertEquals(
+    p1.sha,
+    [...digest].map((b) => b.toString(16).padStart(2, "0")).join(""),
+  );
   assert(p1.id !== p2.id);
   const out = await testTempDir();
   await writePackets(out, [p1, p2]);
@@ -749,4 +776,340 @@ Deno.test("loadPairs: --pair needs exactly one colon; an orphan variant executio
     arm: "real",
     reason: "no baseline partner",
   }]);
+});
+
+// ---- run 002 ----
+
+async function packetOf(
+  files: {
+    start: Record<string, string>;
+    base: Record<string, string>;
+    vari: Record<string, string>;
+  },
+  arms = ["plainarm"],
+  terms = ["skill", "cursor"],
+) {
+  const root = await testTempDir();
+  const sets = [["s", files.start], ["b", files.base], [
+    "v",
+    files.vari,
+  ]] as const;
+  for (const [dir, m] of sets) {
+    for (const [rel, text] of Object.entries(m)) {
+      await write(join(root, dir), rel, text);
+    }
+  }
+  return await buildPacket({
+    seed: "s",
+    task: "T",
+    repeat: 1,
+    baseline: "plainarm",
+    variant: "v",
+    baselineIsA: true,
+    taskPrompt: "p",
+    startDir: join(root, "s"),
+    baseFinal: join(root, "b"),
+    varFinal: join(root, "v"),
+    template: TEMPLATE,
+    rubric: "R",
+    terms,
+    arms,
+  });
+}
+
+Deno.test("redaction: a block comment opened far before the hunk still scopes the added line", async () => {
+  const filler = Array.from({ length: 38 }, (_, i) => `    filler ${i}`);
+  const body = (mid: string) =>
+    [
+      "codeunit 1 F {",
+      "    /* long note",
+      ...filler,
+      mid,
+      "    */",
+      "    procedure P() begin end;",
+      "}",
+      "",
+    ].join("\n");
+  const f = "Core/src/F.al";
+  const p = await packetOf({
+    start: { [f]: body("    plain line") },
+    base: { [f]: body("    plain line") },
+    vari: { [f]: body("    tweaked, per the skill") },
+  });
+  assert(p.text.includes("+    tweaked, per the [redacted]"), p.text);
+  assert(!/per the skill/.test(p.text));
+  assert(p.redactions.variant >= 1);
+  assertEquals(p.redactions.baseline, 0);
+});
+
+Deno.test("redaction: a deleted block-comment opener does not turn added code into a comment", async () => {
+  const f = "Core/src/F.al";
+  const old = "codeunit 1 F {\n    /* legacy\n    old := 1;\n    */\n}\n";
+  const p = await packetOf({
+    start: { [f]: old },
+    base: { [f]: old },
+    vari: { [f]: "codeunit 1 F {\n    newCode := Skill.Get();\n}\n" },
+  });
+  assert(p.text.includes("+    newCode := Skill.Get();"), p.text);
+  assert(p.text.includes("-    /* legacy"));
+});
+
+Deno.test("redaction: terms inside quoted identifiers and strings are code; a trailing comment is not", async () => {
+  const f = "Core/src/F.al";
+  const p = await packetOf({
+    start: { [f]: "codeunit 1 F {\n}\n" },
+    base: { [f]: "codeunit 1 F {\n}\n" },
+    vari: {
+      [f]:
+        "codeunit 1 F {\n    var \"Skill Level\": Integer;\n    t := 'it''s a skill'; // the skill\n}\n",
+    },
+  });
+  assert(p.text.includes('"Skill Level"'), p.text);
+  assert(p.text.includes("'it''s a skill';"), p.text);
+  assert(p.text.includes("; // the [redacted]"), p.text);
+});
+
+Deno.test("redaction: a term in a file name is redacted in both header lines", async () => {
+  const start = "codeunit 1 F {\n}\n";
+  const f = "Core/src/cursor.Codeunit.al";
+  const p = await packetOf({
+    start: { [f]: start },
+    base: { [f]: start },
+    vari: { [f]: "codeunit 1 F {\n    x := 1;\n}\n" },
+  });
+  assert(p.text.includes("--- a/Core/src/[redacted].Codeunit.al"), p.text);
+  assert(p.text.includes("+++ b/Core/src/[redacted].Codeunit.al"), p.text);
+  assert(!/cursor/i.test(p.text));
+  assert(p.redactions.variant >= 1);
+});
+
+Deno.test("cohenKappa: zero denominator is null, not perfect agreement", () => {
+  assertEquals(cohenKappa(Array(4).fill(["tie", "tie"])), null);
+  assertEquals(cohenKappa(Array(3).fill(["variant", "variant"])), null);
+  const none = cohenKappa([["a", "a"], ["a", "b"], ["b", "b"], ["b", "a"]])!;
+  assert(Math.abs(none) < 1e-9);
+});
+
+Deno.test("aggregate: kappa null for all-tie judges, observed agreement reported separately", () => {
+  const meta = [1, 2, 3].map((n) => ({
+    id: `p${n}`,
+    task: "T",
+    repeat: n,
+    key: { A: "b", B: "v", a_role: "baseline" as const },
+  }));
+  const tie = Object.fromEntries(
+    meta.map((m) => [m.id, { orig: ok("tie"), swapped: ok("tie") }]),
+  );
+  const { summary } = aggregate(meta, { j1: tie, j2: tie }, ["j1", "j2"], []);
+  const d = summary.dimensions.readability!;
+  assertEquals(d.kappa["j1|j2"], null);
+  assertEquals(d.agreement["j1|j2"], 1);
+});
+
+Deno.test("parseVerdict: single-line reasons, non-blank cite paths, no zero line numbers", () => {
+  const bad = (conventions: Record<string, unknown>) =>
+    assertThrows(() => parseVerdict(verdictJson("A", { conventions })));
+  bad({ verdict: "A", reason: "two\nlines", cite: "A:x.al:1" });
+  bad({ verdict: "A", reason: "two\rlines", cite: "A:x.al:1" });
+  bad({ verdict: "A", reason: "   ", cite: "A:x.al:1" });
+  bad({ verdict: "A", reason: "r", cite: "A: :0" });
+  bad({ verdict: "A", reason: "r", cite: "A: " });
+  bad({ verdict: "A", reason: "r", cite: "B:x.al:0" });
+  bad({ verdict: "A", reason: "r", cite: "B:x.al:-0" });
+  const okCite = (cite: string) =>
+    parseVerdict(
+      verdictJson("A", { conventions: { verdict: "A", reason: "r", cite } }),
+    );
+  okCite("B:x.al");
+  okCite("B:x.al:-3");
+});
+
+Deno.test("judgePackets: every cell is recorded durably in cells.jsonl, failures with error and attempts", async () => {
+  const out = await testTempDir();
+  const bad: JudgeClient = () => Promise.resolve("nope");
+  await judgePackets({
+    packets: [packetStub("zz")],
+    judges: JUDGES,
+    out,
+    template: TEMPLATE,
+    rubric: "R",
+    client: bad,
+  });
+  const read = async () =>
+    (await Deno.readTextFile(join(out, "cells.jsonl"))).trim().split("\n").map(
+      (l) => JSON.parse(l),
+    );
+  const recs = await read();
+  assertEquals(recs.length, 3);
+  const orig = recs.find((r) => r.position === "orig")!;
+  assertEquals(orig.status, "failed");
+  assertEquals(orig.attempts, 3);
+  assertEquals(orig.packet_id, "zz");
+  assertEquals(orig.judge, "j");
+  assert(String(orig.error).length > 0);
+  const good: JudgeClient = (req) =>
+    Promise.resolve(
+      req.prompt.endsWith(GUESS_SUFFIX) ? '{"guess":"A"}' : verdictJson("A"),
+    );
+  const args = {
+    packets: [packetStub("zz")],
+    judges: JUDGES,
+    out,
+    template: TEMPLATE,
+    rubric: "R",
+    client: good,
+  };
+  await judgePackets(args);
+  assertEquals((await read()).map((r) => r.status), ["ok", "ok", "ok"]);
+  await judgePackets(args);
+  assertEquals((await read()).map((r) => r.status), [
+    "cached",
+    "cached",
+    "cached",
+  ]);
+});
+
+Deno.test("cacheName: the key covers the whole request prompt and the system prompt; a changed guess suffix re-asks", async () => {
+  const a = await cacheName("p", "jk", "orig");
+  assert(a !== await cacheName("p2", "jk", "orig"));
+  assert(a !== await cacheName("p", "jk", "orig", "other system"));
+  assert(a !== await cacheName("p", "jk", "swapped"));
+  const out = await testTempDir();
+  let calls = 0;
+  const client: JudgeClient = (req) => {
+    calls++;
+    return Promise.resolve(
+      req.prompt.includes(`{"guess"`) ? '{"guess":"A"}' : verdictJson("A"),
+    );
+  };
+  const args = {
+    packets: [packetStub("kk")],
+    judges: JUDGES,
+    out,
+    template: TEMPLATE,
+    rubric: "R",
+    client,
+  };
+  await judgePackets(args);
+  assertEquals(calls, 3);
+  await judgePackets({
+    ...args,
+    guessSuffix: 'Who used more tooling? Answer {"guess":"A|B"}',
+  });
+  assertEquals(calls, 4);
+});
+
+Deno.test("pi client: isolated argv, empty cwd, prompt on stdin; refuses a SYSTEM.md in the agent dir", async () => {
+  const config = { backend: "pi" as const, pi_command: "pi", judges: JUDGES };
+  const agentDir = await testTempDir();
+  const seen: {
+    command: string;
+    args: string[];
+    cwd: string;
+    stdin: string;
+    empty: boolean;
+  }[] = [];
+  const run = async (
+    r: { command: string; args: string[]; cwd: string; stdin: string },
+  ) => {
+    let empty = true;
+    for await (const _ of Deno.readDir(r.cwd)) empty = false;
+    seen.push({ ...r, empty });
+    return { success: true, code: 0, stdout: "out", stderr: "" };
+  };
+  const client = makePiClient(config, { run, agentDir });
+  const req = {
+    provider: "openai-codex",
+    model: "m1",
+    thinking: "high",
+    prompt: "line1\nline2",
+  };
+  assertEquals(await client(req), "out");
+  assertEquals(seen[0]!.args, [
+    "-p",
+    "--no-session",
+    "--no-tools",
+    "--no-extensions",
+    "--no-mcp",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files",
+    "--system-prompt",
+    JUDGE_SYSTEM,
+    "--provider",
+    "openai-codex",
+    "--model",
+    "m1",
+    "--thinking",
+    "high",
+  ]);
+  assertEquals(seen[0]!.stdin, "line1\nline2");
+  assert(seen[0]!.empty);
+  for (const name of ["SYSTEM.md", "APPEND_SYSTEM.md"]) {
+    await Deno.writeTextFile(join(agentDir, name), "x");
+    await assertRejects(() => client(req), Error, name);
+    await Deno.remove(join(agentDir, name));
+  }
+  assertEquals(seen.length, 1, "no spawn after a refusal");
+});
+
+Deno.test("formatEstimate: labels the cost as an estimate without cache savings or retries", () => {
+  const s = formatEstimate({ packets: 2, calls: 10, usd: 1.234 }, 3);
+  assert(/estimate/i.test(s));
+  assert(/cache/i.test(s) && /retries/i.test(s));
+  assert(s.includes("$1.23"));
+});
+
+Deno.test("provenance: execution ids reach key.json, pairs.json and summary.json, never the packet", async () => {
+  const results = await campaignFixture([
+    { id: "exec-base-1", arm: "plain", workspace_hash: "h1", manifest: {} },
+    { id: "exec-var-1", arm: "real", workspace_hash: "h2", manifest: {} },
+  ]);
+  const r = await loadPairs({ results, campaign: "c1", pair: [], task: [] });
+  assertEquals(r.pairs[0]!.baselineId, "exec-base-1");
+  assertEquals(r.pairs[0]!.variantId, "exec-var-1");
+  const f = await fixture();
+  const p = await buildPacket({
+    seed: "s",
+    task: "HX-001",
+    repeat: 1,
+    baseline: "plain",
+    variant: "real",
+    baselineIsA: true,
+    baselineId: "exec-base-1",
+    variantId: "exec-var-1",
+    taskPrompt: "p",
+    startDir: f.start,
+    baseFinal: f.base,
+    varFinal: f.vari,
+    template: TEMPLATE,
+    rubric: "R",
+    terms: [],
+    arms: [],
+  });
+  assert(
+    !p.text.includes("exec-base-1") && !p.swappedText.includes("exec-var-1"),
+  );
+  const out = await testTempDir();
+  await writePackets(out, [p]);
+  const key = JSON.parse(await Deno.readTextFile(join(out, "key", "key.json")));
+  assertEquals(key[p.id].baseline_id, "exec-base-1");
+  assertEquals(key[p.id].variant_id, "exec-var-1");
+  const { pairs, summary } = aggregate(
+    [{
+      id: p.id,
+      task: p.task,
+      repeat: p.repeat,
+      key: p.key,
+      baseline_id: "exec-base-1",
+      variant_id: "exec-var-1",
+    }],
+    {},
+    [],
+    [],
+    "camp-1",
+  );
+  assertEquals(pairs[0]!.baseline_id, "exec-base-1");
+  assertEquals(pairs[0]!.variant_id, "exec-var-1");
+  assertEquals(summary.campaign_id, "camp-1");
 });
