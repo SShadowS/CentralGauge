@@ -600,6 +600,26 @@ Deno.test("selectAgentTests: reformatting between attributes or an attribute nam
   assertEquals(await selectRaw(a, b), []);
 });
 
+Deno.test("selectAgentTests: attribute whitespace is insignificant outside strings and significant inside them", async () => {
+  const h = (a: string) => attrCu(`    ${a}\n    [Test]\n    `);
+  // run-002 self-check: spacing inside the parentheses is a pure reformat
+  assertEquals(
+    await selectRaw(
+      h("[HandlerFunctions('H')]"),
+      h("[HandlerFunctions( 'H' )]"),
+    ),
+    [],
+  );
+  // a handler named 'H  One' is not 'H One'
+  assertEquals(
+    await selectRaw(
+      h("[HandlerFunctions('H  One')]"),
+      h("[HandlerFunctions('H One')]"),
+    ),
+    TEST_A,
+  );
+});
+
 const REGION_HELPER = (testBody: string, helper: string) =>
   `codeunit 50100 "T"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure TestA()\n    begin\n${testBody}    end;\n\n    procedure Helper()\n    begin\n        ${helper}\n    end;\n}\n`;
 const CASE_REGION =
@@ -623,6 +643,12 @@ Deno.test("selectAgentTests: adding or removing only a #region line inside a tes
   );
   assertEquals(await selectRaw(plain, region), []);
   assertEquals(await selectRaw(region, plain), []);
+  // run-002 self-check: a quoted region label is directive text too
+  const quoted = REGION_HELPER(
+    "        #region 'Setup'\n        x := 1;\n        #endregion\n",
+    "y := 1;",
+  );
+  assertEquals(await selectRaw(plain, quoted), []);
 });
 
 // ---------------------------------------------------------------- aggregation
@@ -972,6 +998,6 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 6", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 6);
+Deno.test("TEST_RERUN_DERIVATION is 7", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 7);
 });

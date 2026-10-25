@@ -50,8 +50,10 @@ import {
  * recorded identity is checked on reuse; a test's attributes are part of its change
  * fingerprint; preprocessor directive lines are blanked for structure and left out of the
  * comparison.
+ * 7: attribute whitespace is dropped only outside '...' strings; whole directive lines
+ * (quoted labels included) are blanked in the comparison text.
  */
-export const TEST_RERUN_DERIVATION = 6;
+export const TEST_RERUN_DERIVATION = 7;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -460,6 +462,18 @@ function codeunitSpans(blanked: string): Map<number, [number, number]> {
  * which normalizeAlBody strips of comments), and each procedure belongs to the
  * codeunit declaration that encloses it.
  */
+/** An attribute with whitespace dropped outside '...' strings (kept inside: 'H  One' is not 'H One') and its name lowercased. */
+function normAttr(a: string): string {
+  let out = "";
+  let inStr = false;
+  for (const ch of a) {
+    if (ch === "'") inStr = !inStr; // a doubled '' toggles twice
+    if (!inStr && /\s/.test(ch)) continue;
+    out += ch;
+  }
+  return out.replace(/^[^(\]]*/, (n) => n.toLowerCase());
+}
+
 async function testBodies(
   dir: string,
 ): Promise<Map<string, { name: string; body: string }>> {
@@ -469,11 +483,9 @@ async function testBodies(
     // Directive lines (`#region Case checks`) are blanked for structure, so a label
     // cannot open a `case`, and left out of the comparison text.
     const masked = stripAlNoise(raw, { directives: true });
-    const plain = stripAlNoise(raw);
-    const src = raw.replace(
-      /[^\n]/g,
-      (ch, i: number) => plain[i] !== masked[i] ? " " : ch,
-    );
+    // A directive is a whole line starting with `#` (labels and quotes included);
+    // AL strings cannot span lines, so blanking the line keeps every offset.
+    const src = raw.replace(/^[ \t]*#[^\n]*/gm, (l) => " ".repeat(l.length));
     // Quoted identifiers blanked too: "End Date" must not close a block.
     const blanked = masked.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
     const span = codeunitSpans(blanked).get(c.codeunit);
@@ -492,11 +504,10 @@ async function testBodies(
       const name = m[2] !== undefined ? rSlice.slice(from1, to1) : m[3]!;
       const from = m.index! + m[0].length;
       // Each attribute from the raw text at its structural offsets (string arguments
-      // kept): whitespace collapsed, name case-insensitive, order-insensitive.
+      // kept): name case-insensitive, order-insensitive, see normAttr for whitespace.
       const [a0] = m.indices![1]!;
       const attrs = [...m[1]!.matchAll(/\[[^\]]*\]/g)].map((a) =>
-        rSlice.slice(a0 + a.index!, a0 + a.index! + a[0].length)
-          .replace(/\s+/g, " ").replace(/^[^(\]]*/, (n) => n.toLowerCase())
+        normAttr(rSlice.slice(a0 + a.index!, a0 + a.index! + a[0].length))
       ).sort();
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,
