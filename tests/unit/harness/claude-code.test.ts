@@ -4774,13 +4774,14 @@ Deno.test("qualification (R-01): the 2.1.310 stub captures (LSP, web-on) reparse
       tag,
     );
     assertEquals(r.unobservable, [], tag);
-    // Cost reconciles exactly (gate 3).
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
     assertAlmostEquals(
       r.telemetry.cost_usd!,
-      r.telemetry.reported_cost_usd!,
+      (90 * 2 + 45 * 10) / 1e6,
       1e-12,
       tag,
     );
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12, tag);
     assertEquals(r.termination, "completed", tag);
     const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
       .split("\n").map((l) => JSON.parse(l));
