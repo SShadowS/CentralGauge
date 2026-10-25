@@ -1059,6 +1059,8 @@ export async function harnessImagesBuild(
   o: {
     root: string;
     version?: string;
+    /** R-01: build claude-code at exactly this release instead of npm latest. */
+    claudeCodeVersion?: string;
     revision?: string;
     /** H-03: the claude-code publication reservation (default {@link publicationLockDir}). */
     publishLockDir?: string;
@@ -1069,6 +1071,11 @@ export async function harnessImagesBuild(
   /** The GitHub API and npm registry calls that resolve the newest releases (tests inject them). */
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageFacts> {
+  if (o.claudeCodeVersion !== undefined && harness !== "claude-code") {
+    throw new ConfigurationError(
+      `--claude-code-version applies only to the claude-code harness, not ${harness}`,
+    );
+  }
   const images = join(o.root, "harness", "images");
   // A tag names one image for good (frozen records resolve through it): an
   // existing tag is never rebuilt over, and there is no override.
@@ -1209,12 +1216,14 @@ export async function harnessImagesBuild(
   }
   // H-03: resolved once, before the build; install-claude-code.ps1 verifies
   // both archives against these integrities and the labels record them.
-  const ccRel = cc ? await resolveClaudeCode(fetchFn) : null;
+  const ccRel = cc
+    ? await resolveClaudeCode(fetchFn, o.claudeCodeVersion)
+    : null;
   if (ccRel) {
     console.log(
-      `${
-        colors.green("[OK]")
-      } Claude Code ${ccRel.version} (npm latest): ${CLAUDE_CODE_PACKAGE} ${ccRel.main.integrity} + ${CLAUDE_CODE_PACKAGE}-win32-x64 ${ccRel.win32_x64.integrity}`,
+      `${colors.green("[OK]")} Claude Code ${ccRel.version} (${
+        ccRel.track === "npm-pinned" ? "npm pinned" : "npm latest"
+      }): ${CLAUDE_CODE_PACKAGE} ${ccRel.main.integrity} + ${CLAUDE_CODE_PACKAGE}-win32-x64 ${ccRel.win32_x64.integrity}`,
     );
     if (!Object.hasOwn(BUILTIN_INVENTORY, ccRel.version)) {
       console.warn(
@@ -3601,6 +3610,10 @@ export function registerHarnessCommand(
         "Harness version (image tag and label); claude-code resolves the newest release instead (H-03)",
       )
       .option(
+        "--claude-code-version <version:string>",
+        "claude-code only: build exactly this Claude Code release (labelled npm-pinned) instead of npm latest",
+      )
+      .option(
         "--revision <n:string>",
         "Image revision: tag <version>-r<n> and label centralgauge.harness.revision (configs name it as image_revision)",
       )
@@ -3609,6 +3622,9 @@ export function registerHarnessCommand(
           void await harnessImagesBuild(harness, {
             root: Deno.cwd(),
             ...(opts.version ? { version: opts.version } : {}),
+            ...(opts.claudeCodeVersion !== undefined
+              ? { claudeCodeVersion: opts.claudeCodeVersion }
+              : {}),
             ...(opts.revision !== undefined ? { revision: opts.revision } : {}),
           })
         )

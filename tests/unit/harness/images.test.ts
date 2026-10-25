@@ -51,6 +51,7 @@ import {
   ccFetch,
   ccLabels,
   ccMainDoc,
+  ccPinnedUrl,
   ccResolvedJson,
   ccWinDoc,
   ccWinUrl,
@@ -1477,7 +1478,7 @@ Deno.test("H-03 golden: the v1 cc-sonnet configs resolve to the manifest hashes 
 Deno.test("resolveClaudeCode (H-03): the registry's latest document and the platform document, verified; build args and labels", async () => {
   const calls: { url: string; init?: RequestInit | undefined }[] = [];
   const r = await resolveClaudeCode(ccFetch({ calls }));
-  assertEquals(r, CC_REL);
+  assertEquals(r, { ...CC_REL, track: "npm-latest" });
   assertEquals(calls.map((c) => c.url), [CC_MAIN_URL, ccWinUrl()]);
   for (const c of calls) assertEquals(c.init?.redirect, "error");
   const args = claudeCodeArgs(r);
@@ -1575,6 +1576,79 @@ Deno.test("resolveClaudeCode (H-03): fails closed on transport, status and every
     () => resolveClaudeCode(() => Promise.reject(new TypeError("offline"))),
     ConfigurationError,
     "offline",
+  );
+});
+
+Deno.test("resolveClaudeCode (R-01): a pinned version fetches that version's document, not latest, and is labelled npm-pinned", async () => {
+  const calls: { url: string }[] = [];
+  const r = await resolveClaudeCode(
+    ccFetch({ version: "2.1.310", calls }),
+    "2.1.310",
+  );
+  assertEquals(calls.map((c) => c.url), [
+    ccPinnedUrl("2.1.310"),
+    ccWinUrl("2.1.310"),
+  ]);
+  assertEquals(r.version, "2.1.310");
+  assertEquals(r.track, "npm-pinned");
+  assertEquals((await resolveClaudeCode(ccFetch())).track, "npm-latest");
+  const args = claudeCodeArgs(r);
+  assertEquals(
+    args[args.indexOf("centralgauge.harness.track=npm-pinned") - 1],
+    "--label",
+  );
+  assertEquals(
+    args[args.indexOf("centralgauge.harness.track=npm-latest") - 1],
+    undefined,
+  );
+});
+
+Deno.test("resolveClaudeCode (R-01): a pinned document of another version fails closed; a malformed version is refused before any fetch", async () => {
+  const calls: { url: string }[] = [];
+  const err = await assertRejects(
+    () =>
+      resolveClaudeCode(
+        ccFetch({ calls, version: "2.1.310", main: ccMainDoc("2.1.311") }),
+        "2.1.310",
+      ),
+    ConfigurationError,
+  );
+  assertStringIncludes(err.message, "pinned");
+  assertStringIncludes(err.message, "2.1.311");
+  for (const bad of ["latest", "2.1", "2.1.310-beta.1", "^2.1.310", ""]) {
+    const c: { url: string }[] = [];
+    await assertRejects(
+      () => resolveClaudeCode(ccFetch({ calls: c }), bad),
+      ConfigurationError,
+      "version",
+    );
+    assertEquals(c.length, 0, `fetched for "${bad}"`);
+  }
+});
+
+Deno.test("imageFacts (R-01): track npm-pinned is accepted and returned; another word is still refused", async () => {
+  const d = new FakeDocker();
+  d.addImage(
+    "pin",
+    CC_ID,
+    ccImageLabels(ccLabels(CC_REL, "npm-pinned")),
+  );
+  d.shipFile(CC_ID, CLAUDE_CODE_RESOLVED, ccResolvedJson());
+  assertEquals(
+    (await imageFacts(d, "pin", "HOST1")).package?.track,
+    "npm-pinned",
+  );
+  const id = `sha256:${"d".repeat(64)}`;
+  d.addImage(
+    "odd",
+    id,
+    ccImageLabels({ "centralgauge.harness.track": "pinned" }),
+  );
+  d.shipFile(id, CLAUDE_CODE_RESOLVED, ccResolvedJson());
+  await assertRejects(
+    () => imageFacts(d, "odd", null),
+    ConfigurationError,
+    "npm-latest",
   );
 });
 

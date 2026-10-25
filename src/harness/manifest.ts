@@ -55,7 +55,7 @@ export const SRI_SHA512 = /^sha512-[A-Za-z0-9+/]{86}==$/;
 export const ClaudePackageSchema = z.strictObject({
   name: z.literal("@anthropic-ai/claude-code"),
   version: z.string().regex(SEMVER),
-  track: z.literal("npm-latest"),
+  track: z.enum(["npm-latest", "npm-pinned"]),
   integrity: z.strictObject({
     main: z.string().regex(SRI_SHA512),
     win32_x64: z.string().regex(SRI_SHA512),

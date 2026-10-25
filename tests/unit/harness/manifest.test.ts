@@ -640,6 +640,7 @@ Deno.test("ResolvedManifestSchema (H-03): image.package is strict and names exac
       image: { ...GOLDEN.image, package: p },
     }).success;
   assertEquals(ok("2.1.296", pkg), true);
+  assertEquals(ok("2.1.296", { ...pkg, track: "npm-pinned" }), true);
   for (
     const [name, version, p] of [
       ["other version", "2.1.295", pkg],
