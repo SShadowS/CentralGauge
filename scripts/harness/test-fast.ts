@@ -72,6 +72,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}integrity.test.ts`]: c(true, 0),
   [`${H}inventory-lsp.test.ts`]: c(true, 3),
   [`${H}inventory.test.ts`]: c(true, 17),
+  [`${H}judge-pairs.test.ts`]: c(true, 1),
   [`${H}judge-queue.test.ts`]: c(true, 26),
   [`${H}judgment-report.test.ts`]: c(true, 1),
   [`${H}lineage.test.ts`]: c(true, 0),
