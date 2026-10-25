@@ -857,6 +857,11 @@ export async function runCampaign(
   const bcOverride =
     (env.deploy?.bcEgress ?? (env as PlanEnv).bcEgress)?.override ||
     undefined;
+  // R-02: the ordered labels the campaign pins (null: one unlabelled account).
+  const labels = (env.secretAccounts ?? []).map((a) => a.label);
+  const accountLabels = labels.some((l) => l !== null)
+    ? labels.filter((l): l is string => l !== null)
+    : null;
   if (override !== undefined) {
     if (override.trim() === "") {
       throw new ConfigurationError(
@@ -1067,6 +1072,7 @@ export async function runCampaign(
         : {}),
       ...(calibrationWaived ? { calibration_waived: true } : {}),
       ...(bcOverride ? { bc_egress_override: { reason: bcOverride } } : {}),
+      ...(accountLabels ? { accounts: accountLabels } : {}),
     });
     // The checks a resume runs, before any record or execution (dry run too).
     await validateCampaignRecords({
@@ -1094,6 +1100,19 @@ export async function runCampaign(
         c.bc_egress_override
           ? `campaign ${c.id} was created under --unverified-bc-egress-ok (${c.bc_egress_override.reason}): resume it with the flag and that reason`
           : `campaign ${c.id} was created without --unverified-bc-egress-ok: resume it without the flag`,
+      );
+    }
+    // R-02: and its ordered account labels, so no block changes account.
+    const pinned = c.accounts ?? null;
+    if (JSON.stringify(pinned) !== JSON.stringify(accountLabels)) {
+      throw new ConfigurationError(
+        `campaign ${c.id} was created with accounts ${
+          pinned ? `[${pinned.join(", ")}]` : "(one unlabelled --secrets-dir)"
+        }, this run has accounts ${
+          accountLabels
+            ? `[${accountLabels.join(", ")}]`
+            : "(one unlabelled --secrets-dir)"
+        }: resume it with the same --secrets-dir labels in the same order`,
       );
     }
     // H-13b: and its calibration waiver state.

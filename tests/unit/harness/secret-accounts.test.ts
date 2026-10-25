@@ -4,13 +4,19 @@ import { parseSecretsDirs } from "../../../cli/commands/harness-command.ts";
 import {
   checkAccountsSecrets,
   pickAccount,
+  recoverInterrupted,
   runCell,
   type SecretAccount,
 } from "../../../src/harness/execution.ts";
-import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
+import {
+  ConfigurationError,
+  ContainerError,
+  ValidationError,
+} from "../../../src/errors.ts";
 import { ExecutionRecordSchema } from "../../../src/harness/records.ts";
+import { loadTask } from "../../../src/harness/task.ts";
 import { tempDir } from "./temp-dirs.ts";
-import { cellFor, makeEnv } from "./runtime-fixture.ts";
+import { ccBehavior, cellFor, makeEnv } from "./runtime-fixture.ts";
 
 const abs = (p: string) => resolve(Deno.cwd(), p);
 
@@ -101,4 +107,52 @@ Deno.test("execution record carries account for a labelled run and omits it unla
   const [lab] = (await runCell(u.env, await cellFor(u))).executions;
   assertEquals(lab!.account, "maxpriv2");
   ExecutionRecordSchema.parse(lab);
+});
+
+Deno.test("R-02 run 002: recovery records the interrupted attempt's own account, whatever command recovers", async () => {
+  for (
+    const recoverWith of [
+      null, // an unlabelled command, e.g. judge-fixture
+      "other", // a command with another label at index 0
+    ]
+  ) {
+    await using t = await makeEnv();
+    const cell = await cellFor(t);
+    t.docker.behavior = async (call, io) => {
+      t.docker.lingering.add(call.name);
+      return await ccBehavior(join(t.repo.tasksDir, "HX-001"), "correct")(
+        call,
+        io,
+      );
+    };
+    const dir = t.env.secretAccounts[0]!.dir;
+    await assertRejects(
+      () =>
+        runCell({ ...t.env, secretAccounts: [{ label: "work", dir }] }, cell),
+      ContainerError,
+      "termination not confirmed",
+    );
+    t.docker.lingering.clear();
+    const [e] = await recoverInterrupted(
+      { ...t.env, secretAccounts: [{ label: recoverWith, dir }] },
+      loadTask,
+    );
+    assertEquals(e!.account, "work", `recovered by ${recoverWith}`);
+  }
+});
+
+Deno.test("R-02 run 002: a real cell checks every supplied account dir before anything runs", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  t.env.secretAccounts = [
+    { label: "work", dir: t.env.secretAccounts[0]!.dir },
+    { label: "private", dir: await tempDir() },
+  ];
+  await assertRejects(
+    () => runCell(t.env, cell),
+    ConfigurationError,
+    "claude-oauth-token",
+  );
+  assertEquals(t.docker.runs.length, 0);
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
 });

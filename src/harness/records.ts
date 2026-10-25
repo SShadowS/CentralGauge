@@ -517,6 +517,15 @@ export const CampaignRecordSchema = z.strictObject({
    * egress under the owner's --unverified-bc-egress-ok; a resume must match it.
    */
   bc_egress_override: z.strictObject({ reason: z.string().min(1) }).optional(),
+  /**
+   * R-02: the ordered account labels (`--secrets-dir label=dir`) the campaign was
+   * created with; a cell's account is accounts[block % n], so a resume must pass
+   * the same list in the same order. Absent: one unlabelled account. Not hashed.
+   */
+  accounts: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]*$/)).min(1).refine(
+    (xs) => new Set(xs).size === xs.length,
+    "duplicate account label",
+  ).optional(),
 }).superRefine((c, ctx) => {
   waiverNeedsOverride(c, ctx);
   const issue = (message: string, path: (string | number)[]) =>

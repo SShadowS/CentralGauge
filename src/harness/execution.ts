@@ -470,6 +470,8 @@ interface Intent {
   egress_override?: EgressOverride;
   /** H-13b: likewise its calibration waiver. */
   calibration_waived?: true;
+  /** R-02: the account label the attempt ran under; recovery copies it, never re-derives it. */
+  account?: string;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -1737,6 +1739,11 @@ export async function runExecution(
     env.secretAccounts,
     cell.block.index,
   );
+  // Every supplied account dir, not only the picked one, before anything runs
+  // (a campaign checks at its start too; `harness cell` reaches only this).
+  if (!stub) {
+    await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
+  }
   await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
@@ -1794,6 +1801,7 @@ export async function runExecution(
       }
       : {}),
     ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
+    ...(account?.label ? { account: account.label } : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -3927,10 +3935,8 @@ export async function recoverInterrupted(
         secrets,
         mode: intent.mode ?? "normal",
         stub: intent.stub ?? null,
-        // The same deterministic pick the interrupted attempt made.
-        account: intent.stub
-          ? null
-          : pickAccount(own.secretAccounts, cell.block.index).label,
+        // R-02: the label the attempt recorded in its intent, whatever command recovers.
+        account: intent.account ?? null,
       });
     }
     hold();

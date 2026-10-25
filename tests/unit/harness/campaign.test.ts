@@ -275,6 +275,43 @@ Deno.test("dry run labels each block with its account", async () => {
   assert(plan[1]!.endsWith(" [maxpriv2]"), plan.join("\n"));
 });
 
+Deno.test("R-02 run 002: the campaign pins its ordered account labels; a resume with another order, other labels or none is refused", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  const dir = t.env.secretAccounts[0]!.dir;
+  const as = (...labels: (string | null)[]) =>
+    labels.map((label) => ({ label, dir }));
+  t.env.secretAccounts = as("work", "maxpriv2");
+  const s = await runCampaign(t.env, "contract", opts(), io());
+  const [c] = await t.env.store.campaigns("contract");
+  assertEquals(c!.accounts, ["work", "maxpriv2"]);
+  for (const other of [as("maxpriv2", "work"), as("work"), as(null)]) {
+    t.env.secretAccounts = other;
+    await assertRejects(
+      () => runCampaign(t.env, "contract", opts(), io()),
+      ConfigurationError,
+      "accounts",
+    );
+  }
+  t.env.secretAccounts = as("work", "maxpriv2");
+  const again = await runCampaign(t.env, "contract", opts(), io());
+  assertEquals([again.campaignId, again.ran], [s.campaignId, 0]);
+});
+
+Deno.test("R-02 run 002: an unlabelled campaign records no accounts and refuses a labelled resume", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  await runCampaign(t.env, "contract", opts(), io());
+  const [c] = await t.env.store.campaigns("contract");
+  assert(!("accounts" in c!));
+  t.env.secretAccounts = [{ label: "work", dir: t.env.secretAccounts[0]!.dir }];
+  await assertRejects(
+    () => runCampaign(t.env, "contract", opts(), io()),
+    ConfigurationError,
+    "accounts",
+  );
+});
+
 Deno.test("a second account dir lacking a required secret is refused at run start, before any cell", async () => {
   await using t = await makeEnv();
   t.env.supervised = false;
