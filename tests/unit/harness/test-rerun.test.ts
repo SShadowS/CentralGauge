@@ -179,6 +179,32 @@ Deno.test("selectAgentTests: new procedure, changed body; unchanged and whitespa
   ]);
 });
 
+Deno.test("selectAgentTests: a body ends at its own end;, a global var section after a procedure is not part of it", async () => {
+  const w = await world(START, {
+    e1: START.replace(
+      /\}\n$/,
+      "\n    var\n        Counter: Integer;\n}\n",
+    ),
+    e2: START.replace("Assert.AreEqual(1, 1", "Assert.AreEqual(1, 2"),
+    e3: cu({
+      TestA:
+        "if true then begin x := 1; end else begin x := 2; end; case x of 1: y := 1; end;",
+    }).replace(
+      /\}\n$/,
+      "\n    var\n        Counter: Integer;\n}\n",
+    ),
+  });
+  const sel = (h: string) =>
+    selectAgentTests(
+      join(w.root, "start", "Test"),
+      join(w.results, "workspaces", h, "Test"),
+    );
+  assertEquals(await sel("H-e1"), []); // global var added after TestA
+  assertEquals(await sel("H-e2"), [{ codeunit: 50100, procedure: "TestA" }]);
+  // nested begin/end and case..end inside the body: still one body
+  assertEquals(await sel("H-e3"), [{ codeunit: 50100, procedure: "TestA" }]);
+});
+
 Deno.test("editedShippedTests: changed or deleted counts; CRLF-only change and added files do not", async () => {
   const w = await world(START, { e1: START });
   const s = join(w.root, "start", "Test");

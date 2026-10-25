@@ -30,12 +30,17 @@ import {
 import { isTaskBuildArtifact } from "../../src/harness/hash.ts";
 import {
   normalizeAlBody,
+  stripAlNoise,
   TEST_APP,
   testCodeunits,
 } from "../../src/harness/verdict-workspace.ts";
 
-/** Bump when a row is computed differently from the same runner output, or validation tightens. */
-export const TEST_RERUN_DERIVATION = 1;
+/**
+ * Bump when a row is computed differently from the same runner output, or validation tightens.
+ * 1: phase A. 2: a test body ends at its own closing end; (a global var section after a
+ * procedure was part of its body, so cached selections differ).
+ */
+export const TEST_RERUN_DERIVATION = 2;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -68,6 +73,8 @@ export interface RunnerResult {
 
 export interface TestRerunRequest {
   executionId: string;
+  /** The task's start tree: the app graph baseline of both runs. */
+  start: string;
   /** Tree directory (`<dir>/<app>/...`) that supplies the production apps. */
   production: string;
   /** Tree directory whose `Test` app is published. */
@@ -79,6 +86,8 @@ export interface TestRerunRunner {
   /** Runner identity: names the cache folder (harness commit + oracle runner). */
   id: string;
   run(req: TestRerunRequest): Promise<RunnerResult>;
+  /** Releases the environment the runner opened (bench lock, leases). */
+  close?(): Promise<void>;
 }
 
 // ---------------------------------------------------------------- row types
@@ -334,15 +343,30 @@ export function validateTestRerunRow(x: unknown): TestRerunRow {
 
 const TEST_PROC =
   /\[\s*Test\s*\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/gi;
-const PROC_START =
-  /^[ \t]*(?:\[[^\n]*\][ \t]*\n[ \t]*)*(?:(?:local\s+|internal\s+|protected\s+)?(?:procedure|trigger)\b|codeunit\s+\d+)/gim;
+const BLOCK_WORD = /\b(begin|case|end)\b/gi;
+
+/**
+ * Offset just after the `end` that closes the procedure whose parameter list
+ * starts at `from` (begin/case open a block, end closes one), in comment- and
+ * string-stripped text. A procedure without a closing end runs to the end.
+ */
+function procedureEnd(stripped: string, from: number): number {
+  let depth = 0;
+  BLOCK_WORD.lastIndex = from;
+  for (let m; (m = BLOCK_WORD.exec(stripped));) {
+    if (m[1]!.toLowerCase() === "end") {
+      if (--depth === 0) return m.index + m[0].length;
+    } else depth++;
+  }
+  return stripped.length;
+}
 
 /**
  * `codeunit|procedure` (lowercase) -> display name + normalized body, for every
  * [Test] procedure of the Test app. A body runs from the parameter list to the
- * next procedure / trigger header (ponytail: a global var section between two
- * procedures belongs to the earlier body; two codeunits in one file with the
- * same procedure name collide).
+ * procedure's own closing `end;`, so a global var section or anything else
+ * between procedures is not part of it (ponytail: two codeunits in one file
+ * with the same procedure name collide).
  */
 async function testBodies(
   dir: string,
@@ -350,15 +374,17 @@ async function testBodies(
   const out = new Map<string, { name: string; body: string }>();
   for (const c of await testCodeunits(dir)) {
     const src = await Deno.readTextFile(join(dir, c.file));
-    const starts = [...src.matchAll(PROC_START)].map((m) => m.index!);
+    // Quoted identifiers blanked too: "End Date" must not close a block.
+    const stripped = stripAlNoise(src).replace(
+      /"[^"\n]*"/g,
+      (q) => " ".repeat(q.length),
+    );
     for (const m of src.matchAll(TEST_PROC)) {
       const name = m[1] ?? m[2]!;
       const from = m.index! + m[0].length;
-      const to = starts.find((s) => s >= from) ?? src.length;
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,
-        // The last procedure of a codeunit runs into its closing brace.
-        body: normalizeAlBody(src.slice(from, to)).replace(/(?: \})+$/, ""),
+        body: normalizeAlBody(src.slice(from, procedureEnd(stripped, from))),
       });
     }
   }
@@ -567,15 +593,6 @@ export function testRerunPair(base: TestRerunRow[], variant: TestRerunRow[]) {
   };
 }
 
-// ---------------------------------------------------------------- runner factory
-
-/** Phase B: the adapter over buildVerdictWorkspace + prepareApps + lane.exclusive(deployAndTest). */
-export function productionRunner(): Promise<TestRerunRunner> {
-  return Promise.reject(
-    new Error("production runner not implemented (phase B)"),
-  );
-}
-
 // ---------------------------------------------------------------- step
 
 export async function testRerunStep(o: {
@@ -667,6 +684,7 @@ export async function testRerunStep(o: {
         ? validateRunnerResult(
           await o.runner.run({
             executionId: r.id,
+            start: x.start.dir,
             production: x.start.dir,
             test: x.finalDir,
             specs,
@@ -676,6 +694,7 @@ export async function testRerunStep(o: {
       const shippedRun = validateRunnerResult(
         await o.runner.run({
           executionId: r.id,
+          start: x.start.dir,
           production: x.finalDir,
           test: x.start.dir,
           specs: [...new Set(x.shipped.map((p) => p.codeunit))].map((

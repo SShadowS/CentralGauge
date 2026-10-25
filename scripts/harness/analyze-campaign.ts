@@ -2983,20 +2983,27 @@ async function main() {
       "symbols",
       "alsem-jobs",
       "only",
+      "containers",
+      "coord-lease",
+      "private-dir",
+      "lineage",
     ],
     boolean: ["test-rerun"],
-    collect: ["pair"],
+    collect: ["pair", "coord-lease"],
     default: { repo: ".", "alsem-jobs": "3" },
   });
   const campaignId = String(args._[0] ?? "");
   if (
     !campaignId || !args.results || !args.rev || !args.out ||
-    (args.alsem && (!args.ach || !args.symbols))
+    (args.alsem && (!args.ach || !args.symbols)) ||
+    (args["test-rerun"] &&
+      (!args.containers || !args.symbols || !args.lineage))
   ) {
     console.error(
       "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .] [--only <id or id prefix>,...]\n" +
         "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]\n" +
-        "  [--test-rerun]  Q-04: agent tests vs the start tree, shipped tests vs the final tree (container runs; needs the production runner, phase B)",
+        "  [--test-rerun --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--coord-lease <container>=<token> ...] [--private-dir <dir>]]\n" +
+        "      Q-04: agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.",
     );
     Deno.exit(2);
   }
@@ -3443,20 +3450,45 @@ async function main() {
 
   if (args["test-rerun"]) {
     // Dynamic import: test-rerun.ts imports this module's helpers.
-    const { testRerunStep, productionRunner } = await import(
-      "./test-rerun.ts"
-    );
-    await testRerunStep({
-      runner: await productionRunner(),
-      rows,
-      results,
-      hashOf,
-      startOf,
-      pairs,
-      jobs: 1, // container runs are serialized by the lane anyway
-      dir: join(out, "test-rerun"),
-      rev: args.rev,
+    const { testRerunStep } = await import("./test-rerun.ts");
+    const { productionRunner } = await import("./test-rerun-runner.ts");
+    const dir = join(out, "test-rerun");
+    const local = Deno.env.get("LOCALAPPDATA");
+    const privateRoot = args["private-dir"]
+      ? resolve(args["private-dir"])
+      : local
+      ? join(local, "centralgauge", "harness")
+      : null;
+    if (!privateRoot) {
+      throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
+    }
+    // Opens the harness environment: bench lock, private-root lock, coord lease check.
+    const runner = await productionRunner({
+      repoRoot: resolve(repo),
+      resultsDir: join(dir, "env"),
+      containers: args.containers!.split(",").map((c) => c.trim()).filter(
+        Boolean,
+      ),
+      coordLeases: args["coord-lease"] as string[],
+      symbolStore: resolve(args.symbols!),
+      privateRoot,
+      lineage: args.lineage ? resolve(args.lineage) : null,
     });
+    try {
+      await testRerunStep({
+        runner,
+        rows,
+        results,
+        hashOf,
+        startOf,
+        pairs,
+        jobs: 1, // container runs are serialized by the lane anyway
+        dir,
+        rev: args.rev,
+      });
+    } finally {
+      await runner.close?.();
+    }
   }
 }
 
