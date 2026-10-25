@@ -69,8 +69,8 @@ const byPrice = (s: Seen) => {
 };
 
 const proc = (procedure_name: string) => ({
-  path: "Test/Shipped.al",
-  line: 1,
+  path: TEST_FILE,
+  line: 6, // `procedure ShippedPasses()` in SHIPPED_TEST (PriceIsTen is new: never read)
   object_stable_id: "app-1/Codeunit/80010",
   procedure_name,
   routine_id: `r:${procedure_name}`,

@@ -8,6 +8,7 @@ import {
 } from "../../../scripts/harness/analyze-campaign.ts";
 import {
   editedShippedTests,
+  evidenceAttrs,
   type RunnerEnv,
   type RunnerResult,
   type RunnerRow,
@@ -201,6 +202,39 @@ async function textEvidence(w: World, rows: Row[]) {
   return m;
 }
 
+/**
+ * The shorthand tp() puts every procedure on line 1; give the ones of Test/T.al the line
+ * of their `procedure` keyword, as the tools report it. Explicit lines (> 1) are kept.
+ */
+async function withLines(w: World, ev: Map<string, AlsemEvidence>) {
+  const lineOf = async (file: string, name: string) => {
+    const lines = (await Deno.readTextFile(file).catch(() => "")).split("\n");
+    const i = lines.findIndex((l) =>
+      new RegExp(`procedure\\s+${name}\\s*\\(`, "i").test(l)
+    );
+    return i < 0 ? 1 : i + 1;
+  };
+  const fix = (dir: string) => (ps: TestProc[]) =>
+    Promise.all(
+      ps.map(async (p) =>
+        p.line === 1 && p.path === "Test/T.al"
+          ? { ...p, line: await lineOf(join(dir, p.path), p.procedure_name) }
+          : p
+      ),
+    );
+  const out = new Map<string, AlsemEvidence>();
+  for (const [id, e] of ev) {
+    out.set(id, {
+      ...e,
+      start: await fix(join(w.root, "start"))(e.start),
+      final: await fix(join(w.results, "workspaces", w.hashOf.get(id) ?? ""))(
+        e.final,
+      ),
+    });
+  }
+  return out;
+}
+
 async function run(w: World, runner: TestRerunRunner, o: {
   derivation?: number;
   startId?: string;
@@ -210,7 +244,10 @@ async function run(w: World, runner: TestRerunRunner, o: {
 } = {}) {
   const rows = o.rows ?? w.rows;
   return testRerunStep({
-    alsemEvidence: o.evidence ?? await textEvidence(w, rows),
+    alsemEvidence: await withLines(
+      w,
+      o.evidence ?? await textEvidence(w, rows),
+    ),
     alsemBuild: o.build ?? BUILD,
     runner,
     rows: o.rows ?? w.rows,
@@ -1078,8 +1115,8 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 9", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 9);
+Deno.test("TEST_RERUN_DERIVATION is 10", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 10);
 });
 
 // ---------------------------------------------------------------- tool-based selection (Q-04b)
@@ -1156,18 +1193,19 @@ Deno.test("selectFromEvidence: an attribute fingerprint change selects only a pr
     final: [tp("Kept"), tp("Same"), tp("Fresh")],
     changed: [],
   };
+  // keyed by the tool key (routine_id), as the tools pair start and final
   const attrs = {
     start: new Map([
-      ["50100|kept", "[Test]"],
-      ["50100|same", "[Test]"],
-      ["50100|fresh", "[Test]"], // the tools do not list Fresh in start
-      ["50100|textonly", "[Test]"],
+      ["r:Kept", "[Test]"],
+      ["r:Same", "[Test]"],
+      ["r:Fresh", "[Test]"], // the tools do not list Fresh in start
+      ["r:TextOnly", "[Test]"],
     ]),
     final: new Map([
-      ["50100|kept", "[Test][Handler('H')]"],
-      ["50100|same", "[Test]"],
-      ["50100|fresh", "[Test][Handler('H')]"],
-      ["50100|textonly", "[Test][Handler('H')]"], // the tools do not list it at all
+      ["r:Kept", "[Test][Handler('H')]"],
+      ["r:Same", "[Test]"],
+      ["r:Fresh", "[Test][Handler('H')]"],
+      ["r:TextOnly", "[Test][Handler('H')]"], // the tools do not list it at all
     ]),
   };
   assertEquals(selectFromEvidence(ev, attrs), [
@@ -1184,7 +1222,7 @@ Deno.test("step: the tools pick the procedures; identical text with a changed di
   const m = mock("r1", () => result([fail("TestA")]), GOOD_SHIPPED);
   const ev = new Map([
     ["e1", evidence(["TestA"], ["TestA"], ["TestA"])],
-    ["e2", evidence(["TestA", "TestB"], ["TestA", "TestB"])],
+    ["e2", evidence(["TestA"], ["TestA"])], // TestB is in the text only
   ]);
   const out = await run(w, m.runner, { evidence: ev });
   assertEquals(out.failed, []);
@@ -1215,6 +1253,85 @@ Deno.test("step: an attribute-only edit of an unchanged-body procedure is select
   const ev = new Map([["e1", evidence(["TestA"], ["TestA"])]]); // digest: nothing changed
   const out = await run(w, m.runner, { evidence: ev });
   assertEquals(out.done[0]!.agent_vs_start.selected, TEST_A);
+});
+
+// Explicit tool evidence: the same routine in both trees, digest changed = [], so only the
+// attribute check can select TestA. Lines are those of the `procedure` keyword.
+const procLine = (text: string) =>
+  text.split("\n").findIndex((l) => /procedure\s+TestA\s*\(/.test(l)) + 1;
+const explicitEv = (
+  start: string,
+  final: string,
+  path = "Test/T.al",
+): Map<string, AlsemEvidence> =>
+  new Map([["e1", {
+    build: BUILD,
+    start: [tp("TestA", { path, line: procLine(start) })],
+    final: [tp("TestA", { path, line: procLine(final) })],
+    changed: [],
+  }]]);
+const attrHead = (a: string) => `    ${a}\n    [Test]\n    `;
+
+async function attrStep(start: string, final: string) {
+  const w = await world(start, { e1: final });
+  const m = mock("r1", () => result([pass("TestA")]), GOOD_SHIPPED);
+  return await run(w, m.runner, { evidence: explicitEv(start, final) });
+}
+
+Deno.test("step: a quote inside an attribute comment does not hide a handler-name edit", async () => {
+  const out = await attrStep(
+    attrCu(attrHead("[HandlerFunctions(/* ' */ 'H  One')]")),
+    attrCu(attrHead("[HandlerFunctions(/* ' */ 'H One')]")),
+  );
+  assertEquals(out.failed, []);
+  assertEquals(out.done[0]!.agent_vs_start.selected, TEST_A);
+});
+
+Deno.test("step: a comment-only edit inside an attribute does not select", async () => {
+  const out = await attrStep(
+    attrCu(attrHead("[HandlerFunctions(/* old */ 'H')]")),
+    attrCu(attrHead("[HandlerFunctions(/* new */ 'H')]")),
+  );
+  assertEquals(out.failed, []);
+  assertEquals(out.done[0]!.agent_vs_start.selected, []);
+});
+
+Deno.test("selection: an attribute edit is found in a codeunit wrapped in a `#region {` the old scanner missed", async () => {
+  const wrap = (s: string) => `#region {\n${s}#endregion\n`;
+  const start = wrap(attrCu(attrHead("[HandlerFunctions('H1')]")));
+  const final = wrap(attrCu(attrHead("[HandlerFunctions('H2')]")));
+  const w = await world(start, { e1: final });
+  const ev = explicitEv(start, final).get("e1")!;
+  const attrs = await evidenceAttrs(
+    ev,
+    join(w.root, "start"),
+    join(w.results, "workspaces", "H-e1"),
+  );
+  assertEquals(selectFromEvidence(ev, attrs), TEST_A);
+});
+
+Deno.test("step: a tool-listed procedure whose file or procedure line is missing fails the execution, never 'unchanged'", async () => {
+  const text = attrCu(attrHead("[HandlerFunctions('H1')]"));
+  for (
+    const [label, ev] of [
+      ["missing file", explicitEv(text, text, "Test/Missing.al")],
+      [
+        "line without a procedure keyword",
+        new Map([["e1", {
+          build: BUILD,
+          start: [tp("TestA", { line: 2 })],
+          final: [tp("TestA", { line: 2 })],
+          changed: [],
+        }]]),
+      ],
+    ] as const
+  ) {
+    const w = await world(text, { e1: text });
+    const m = mock("r1", () => result([pass("TestA")]), GOOD_SHIPPED);
+    const out = await run(w, m.runner, { evidence: ev });
+    assertEquals(out.failed.map((f) => f.id), ["e1"], label);
+    assertEquals(out.done, [], label);
+  }
 });
 
 Deno.test("step: an execution without al-sem evidence is failed, the runner is not called, nothing is written", async () => {

@@ -62,8 +62,12 @@ import {
  * test_quality of both trees + the digest's changed roots, as the A-03b selection), not
  * from AL text; the attribute fingerprint is a narrow check on the tool-listed set; the
  * stamp binds the al-sem build and the evidence used.
+ * 10: the narrow attribute check locates attributes from the tool's own path and
+ * `procedure` line (inline text plus the attribute / blank / comment / directive lines
+ * directly above), not via the codeunit scanner, and lexes them with comments dropped and
+ * strings kept; a missing file or line fails the execution.
  */
-export const TEST_RERUN_DERIVATION = 9;
+export const TEST_RERUN_DERIVATION = 10;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -562,11 +566,104 @@ export async function selectAgentTests(
   );
 }
 
-/** `codeunit|procedure` (lowercase) -> normalized attribute list of every [Test] procedure of a Test app. */
-export async function testAttrs(dir: string): Promise<Map<string, string>> {
-  return new Map(
-    [...await testBodies(dir)].map(([k, v]) => [k, v.attrs] as const),
+/**
+ * The top-level `[...]` attribute groups of `text`, normalized and sorted: `'...'` strings
+ * kept verbatim (`''` is an escaped quote), `//` and `/* *\/` comments and whitespace
+ * outside strings dropped, the group name lowercased. A comment is recognised only outside
+ * a string, so an apostrophe in a comment opens nothing. Directive lines are the caller's.
+ */
+export function attrFingerprint(text: string): string {
+  const groups: string[] = [];
+  let cur = "";
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "'") {
+      let j = i + 1;
+      for (; j < text.length; j++) {
+        if (text[j] !== "'") continue;
+        if (text[j + 1] === "'") j++;
+        else break;
+      }
+      if (depth > 0) cur += text.slice(i, j + 1);
+      i = j;
+    } else if (text.startsWith("//", i)) {
+      const nl = text.indexOf("\n", i);
+      i = nl < 0 ? text.length : nl;
+    } else if (text.startsWith("/*", i)) {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 1;
+    } else if (/\s/.test(ch)) continue;
+    else if (ch === "[") {
+      if (depth++ > 0) cur += ch;
+    } else if (ch === "]" && depth > 0) {
+      if (--depth > 0) cur += ch;
+      else {
+        groups.push(
+          `[${cur.replace(/^[^(]*/, (n) => n.toLowerCase())}]`,
+        );
+        cur = "";
+      }
+    } else if (depth > 0) cur += ch;
+  }
+  return groups.sort().join("");
+}
+
+/**
+ * The attribute fingerprint of the procedure whose `procedure` keyword is on the tool's
+ * `line` of `file`: the text before the keyword on that line plus the contiguous lines
+ * directly above that are attributes, blank, comments or `#` directives. Throws when the
+ * file or line is missing or the line has no `procedure` keyword (never "unchanged").
+ */
+function procAttrFingerprint(file: string, lines: string[], line: number) {
+  const head = lines[line - 1];
+  const at = head === undefined ? -1 : head.search(/\bprocedure\b/i);
+  if (at < 0) {
+    throw new Error(`no procedure keyword at ${file}:${line}`);
+  }
+  const block: string[] = [head!.slice(0, at)];
+  for (let i = line - 2; i >= 0; i--) {
+    const t = lines[i]!.trim();
+    if (t.startsWith("#")) continue;
+    if (t && !/^(\[|\/\/|\/\*)/.test(t)) break;
+    block.unshift(lines[i]!);
+  }
+  return attrFingerprint(block.join("\n"));
+}
+
+/**
+ * Attribute fingerprints of the Test-app procedures the tools list in BOTH trees, keyed by
+ * the tool key (routine_id ?? path:line) so start and final pair as newOrChangedTestProcs
+ * pairs them. Located from the tool's own `path` (tree-relative) and `line`.
+ */
+export async function evidenceAttrs(
+  ev: AlsemEvidence,
+  startRoot: string,
+  finalRoot: string,
+): Promise<{ start: Map<string, string>; final: Map<string, string> }> {
+  const both = new Set(
+    ev.start.filter(inTestApp).map(testProcKey),
   );
+  const read = async (root: string, ps: AlsemEvidence["start"]) => {
+    const files = new Map<string, string[]>();
+    const out = new Map<string, string>();
+    for (const p of ps.filter(inTestApp)) {
+      const k = testProcKey(p);
+      if (!both.has(k)) continue;
+      const file = join(root, ...p.path.split("/"));
+      if (!files.has(file)) {
+        files.set(file, (await Deno.readTextFile(file)).split(/\r?\n/));
+      }
+      out.set(k, procAttrFingerprint(file, files.get(file)!, p.line));
+    }
+    return out;
+  };
+  const finalKeys = new Set(ev.final.filter(inTestApp).map(testProcKey));
+  for (const k of both) if (!finalKeys.has(k)) both.delete(k);
+  return {
+    start: await read(startRoot, ev.start),
+    final: await read(finalRoot, ev.final),
+  };
 }
 
 /**
@@ -574,8 +671,8 @@ export async function testAttrs(dir: string): Promise<Map<string, string>> {
  * final Test app that is new or changed (newOrChangedTestProcs: routine_id, the
  * digest's changed roots) is selected as (codeunit number, procedure name). The tools
  * expose no attributes, so a narrow text check is added: a procedure the tools list in
- * both trees (same key) whose attribute fingerprint (`attrs`, by codeunit|name) differs.
- * The text never discovers procedures and never decides body changes.
+ * both trees (same tool key) whose attribute fingerprint (`attrs`, by tool key, from
+ * evidenceAttrs) differs. The text never discovers procedures and never decides body changes.
  */
 export function selectFromEvidence(
   ev: AlsemEvidence,
@@ -592,11 +689,12 @@ export function selectFromEvidence(
     const m = /^[^/]+\/Codeunit\/(\d+)$/.exec(p.object_stable_id);
     const cu = m ? Number(m[1]) : null;
     const k = cu === null ? "" : `${cu}|${p.procedure_name.toLowerCase()}`;
+    const tk = testProcKey(p);
     if (
       !picked.has(p) &&
-      !(inStart.has(testProcKey(p)) && cu !== null &&
-        attrs.start.has(k) && attrs.final.has(k) &&
-        attrs.start.get(k) !== attrs.final.get(k))
+      !(inStart.has(tk) && cu !== null &&
+        attrs.start.has(tk) && attrs.final.has(tk) &&
+        attrs.start.get(tk) !== attrs.final.get(tk))
     ) continue;
     if (cu === null) {
       throw new Error(
@@ -883,10 +981,7 @@ export async function testRerunStep(o: {
       throw new Error("no al-sem evidence of the same build");
     }
     const selected = ev
-      ? selectFromEvidence(ev, {
-        start: await testAttrs(sTest),
-        final: await testAttrs(fTest),
-      })
+      ? selectFromEvidence(ev, await evidenceAttrs(ev, start.dir, finalDir))
       : [];
     // The evidence fields the selection reads (not the assert counts), bound with the build.
     const proj = (ps: AlsemEvidence["start"]) =>
