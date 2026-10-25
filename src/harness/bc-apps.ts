@@ -10,6 +10,7 @@ import {
   BENCHMARK_APP_ID_RANGE,
   HARNESS_ORACLE_RANGE,
   HARNESS_TEST_APP_RANGE,
+  SQL_MEASURE_APP_ID_RANGE,
 } from "../constants.ts";
 import type {
   HarnessInstalledApp,
@@ -193,6 +194,8 @@ const HARNESS_BANDS = [
   BENCHMARK_APP_ID_RANGE,
   HARNESS_TEST_APP_RANGE,
   HARNESS_ORACLE_RANGE,
+  // Q-06: only a measured deployment passes the measure app's root.
+  SQL_MEASURE_APP_ID_RANGE,
 ];
 
 const exactName = (name: string) =>

@@ -3513,3 +3513,218 @@ Deno.test("H-41 Q10: a container registered with the health monitor and added to
     );
   }
 });
+
+// ---- Q-06: the measure app is a measurement-scoped deployment resource ----
+
+const MEASURE_ID = "c0a8f1d2-7e3b-4a90-9c11-c0ffee000560";
+/** The real app.json: its id is trusted for removal from this root only. */
+const MEASURE_ROOT = new URL("../../../infra/cg-sql-measure", import.meta.url);
+
+/** A fake measure package (FakeBc reads packages as FakeApp JSON). */
+async function measureResource(builds: string[]) {
+  const { fromFileUrl } = await import("@std/path");
+  const dir = await tmp();
+  const file = join(dir, "CentralGauge_CG SQL Measure_1.0.0.0.app");
+  await Deno.writeTextFile(
+    file,
+    JSON.stringify({
+      id: MEASURE_ID,
+      name: "CG SQL Measure",
+      version: "1.0.0.0",
+      folder: "measure",
+      source: "",
+    }),
+  );
+  const sha256 = await hashFile(dir, file);
+  return {
+    file,
+    resource: {
+      id: MEASURE_ID,
+      root: fromFileUrl(MEASURE_ROOT),
+      app: (container: string) => {
+        builds.push(container);
+        return Promise.resolve({
+          id: MEASURE_ID,
+          name: "CG SQL Measure",
+          publisher: "CentralGauge",
+          version: "1.0.0.0",
+          stamp: sha256,
+          file,
+          role: "prereq" as const,
+          depends: [],
+          sha256,
+        });
+      },
+    },
+  };
+}
+
+/**
+ * A golden reset (the container back to its baseline: nothing of ours) plus a
+ * verifyClean that compares the live inventory with that baseline, as
+ * verify-clean.ps1 does; every step goes to `events` in order.
+ */
+function goldenFake(bc: FakeBc, events: string[]) {
+  const sync = bc.syncHarnessApps.bind(bc);
+  bc.syncHarnessApps = async (c, plan) => {
+    const r = await sync(c, plan);
+    events.push(
+      plan.publish.length > 0
+        ? `publish ${plan.publish.map((f) => basename(f)).join(",")}`
+        : `cleanup ${plan.removeIds.join(",")}`,
+    );
+    return r;
+  };
+  const run = bc.runHarnessTests.bind(bc);
+  bc.runHarnessTests = (c, cu) => {
+    events.push(`test ${cu}`);
+    return run(c, cu);
+  };
+  const mechanism: ResetMechanism = {
+    id: "fake",
+    policyVersion: 1,
+    reset: (c) => {
+      bc.state(c).clear();
+      events.push("reset");
+      return OK_RESET.reset(c);
+    },
+    verifyClean: (c) => {
+      const extra = [...bc.state(c).values()].map((a) => `+ ${a.name}`);
+      events.push(`verify ${extra.length === 0 ? "clean" : extra.join(",")}`);
+      return Promise.resolve({
+        container: c,
+        ok: extra.length === 0,
+        diff: extra,
+        error: extra.length === 0 ? null : `${extra.length} extra`,
+      });
+    },
+  };
+  return mechanism;
+}
+
+Deno.test("Q-06 measured deployAndTest: reset, then the measure app is published with the candidates, then tests, then it is removed in cleanup before the inventory check: clean", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const events: string[] = [];
+  const reset = goldenFake(bc, events);
+  const builds: string[] = [];
+  const m = await measureResource(builds);
+  const ledgerRoot = await tmp();
+  const all = p.wanted.map((w) => w.id).reverse();
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: all,
+    ctx: {
+      ledgerRoot,
+      trustedRoots: [p.pristine],
+      reset,
+      measure: m.resource,
+    },
+  });
+  assertEquals(builds, ["C1"]);
+  assertEquals(events.length, 5);
+  assertEquals(events[0], "reset");
+  // published inside the measured deployment, after the reset, last
+  assert(events[1]!.startsWith("publish "));
+  assert(events[1]!.endsWith(`,${basename(m.file)}`));
+  assertEquals(events[2], "test 80010");
+  // removed first in the cleanup, then the deployment's own ids
+  assertEquals(events[3], `cleanup ${[MEASURE_ID, ...all].join(",")}`);
+  assertEquals(events[4], "verify clean");
+  assertEquals(out.cleanupError, null);
+  assertEquals(out.verify?.ok, true);
+  // the ledger recorded it after the publish and dropped it with the cleanup
+  assertEquals(MEASURE_ID in await loadLedger(ledgerRoot, "C1"), false);
+});
+
+Deno.test("Q-06 measured deployAndTest: the ledger records the measure app between publish and cleanup", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const ledgerRoot = await tmp();
+  const seen: boolean[] = [];
+  const m = await measureResource([]);
+  const run = bc.runHarnessTests.bind(bc);
+  bc.runHarnessTests = async (c, cu) => {
+    seen.push(MEASURE_ID in await loadLedger(ledgerRoot, c));
+    return run(c, cu);
+  };
+  await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: p.wanted.map((w) => w.id).reverse(),
+    ctx: {
+      ledgerRoot,
+      trustedRoots: [p.pristine],
+      reset: goldenFake(bc, []),
+      measure: m.resource,
+    },
+  });
+  assertEquals(seen, [true]);
+});
+
+Deno.test("Q-06 an ordinary (non-measured) deployAndTest is unchanged: no measure app published, removed or trusted", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const events: string[] = [];
+  const all = p.wanted.map((w) => w.id).reverse();
+  const allows: string[][] = [];
+  const sync = bc.syncHarnessApps.bind(bc);
+  bc.syncHarnessApps = (c, plan) => {
+    allows.push([...plan.allow.keys()]);
+    return sync(c, plan);
+  };
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: all,
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: goldenFake(bc, events),
+    },
+  });
+  assertEquals(events, [
+    "reset",
+    `publish ${p.wanted.map((w) => basename(w.file)).join(",")}`,
+    "test 80010",
+    `cleanup ${all.join(",")}`,
+    "verify clean",
+  ]);
+  assertEquals(out.verify?.ok, true);
+  assert(allows.every((a) => !a.includes(MEASURE_ID)));
+});
+
+Deno.test("Q-06 a measured deployment whose tests throw still removes the measure app before the inventory check", async () => {
+  const bc = new FakeBc(() => {
+    throw new ContainerError("soap down", "C1", "test");
+  });
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const events: string[] = [];
+  const all = p.wanted.map((w) => w.id).reverse();
+  const ledgerRoot = await tmp();
+  const m = await measureResource([]);
+  await assertRejects(() =>
+    deployAndTest(bc, "C1", {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: null, target: "candidate" }],
+      cleanupIds: all,
+      ctx: {
+        ledgerRoot,
+        trustedRoots: [p.pristine],
+        reset: goldenFake(bc, events),
+        measure: m.resource,
+      },
+    })
+  );
+  assertEquals(events.slice(-2), [
+    `cleanup ${[MEASURE_ID, ...all].join(",")}`,
+    "verify clean",
+  ]);
+});

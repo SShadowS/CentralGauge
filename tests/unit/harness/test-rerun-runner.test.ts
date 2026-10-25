@@ -3,8 +3,9 @@
  * prepareApps + lane.exclusive(deployAndTest), against FakeBc (no container).
  */
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { fromFileUrl, join } from "@std/path";
 import { BcLane } from "../../../src/harness/bc-lane.ts";
+import { hashFile } from "../../../src/harness/hash.ts";
 import { safeCopyTree } from "../../../src/harness/fsutil.ts";
 import { resolveRefapp } from "../../../src/harness/identity.ts";
 import { stageRefappTask } from "../../../src/harness/staging.ts";
@@ -80,7 +81,11 @@ const proc = (procedure_name: string) => ({
   are_equal: { total: 0, literal_expected: 0, expression_expected: 0 },
 });
 
-async function world(bc: FakeBc, commit: string | null = "c0ffee") {
+async function world(
+  bc: FakeBc,
+  commit: string | null = "c0ffee",
+  opts: Parameters<typeof envRunner>[2] = {},
+) {
   const repo = await makeRefappRepo();
   const task = await loadTask(join(repo.tasksDir, "HX-001"));
   const start = (await stageRefappTask({
@@ -103,6 +108,7 @@ async function world(bc: FakeBc, commit: string | null = "c0ffee") {
   const runner = await envRunner(
     env,
     await Deno.realPath(await testTempDir()),
+    opts,
   );
   /** A final tree: a copy of the start tree with these files replaced. */
   const finalTree = async (edits: Record<string, string>, hash = "H1") => {
@@ -189,6 +195,60 @@ Deno.test("agent run: start production + final Test; only the selected procedure
   const run = f.seen.at(-1)!;
   assert(run.rental.includes("exit(11)"), "start production");
   assert(run.test.includes("'agent'"), "agent's Test app");
+});
+
+Deno.test("Q-06 a measured rerun deploys the measure app with the apps and removes it first in the cleanup; an unmeasured rerun never touches it", async () => {
+  const MEASURE_ID = "c0a8f1d2-7e3b-4a90-9c11-c0ffee000560";
+  const dir = await Deno.realPath(await testTempDir());
+  const file = join(dir, "CentralGauge_CG SQL Measure_1.0.1.0.app");
+  await Deno.writeTextFile(
+    file,
+    JSON.stringify({
+      id: MEASURE_ID,
+      name: "CG SQL Measure",
+      version: "1.0.1.0",
+      folder: "measure",
+      source: "",
+    }),
+  );
+  const sha256 = await hashFile(dir, file);
+  const measure = {
+    id: MEASURE_ID,
+    root: fromFileUrl(
+      new URL("../../../infra/cg-sql-measure", import.meta.url),
+    ),
+    app: () =>
+      Promise.resolve({
+        id: MEASURE_ID,
+        name: "CG SQL Measure",
+        publisher: "CentralGauge",
+        version: "1.0.1.0",
+        stamp: sha256,
+        file,
+        role: "prereq" as const,
+        depends: [],
+        sha256,
+      }),
+  };
+  for (const measured of [true, false]) {
+    const f = fake(byPrice);
+    await using w = await world(f.bc, "c0ffee", measured ? { measure } : {});
+    const finalDir = await w.finalTree({
+      [TEST_FILE]: SHIPPED_TEST(AGENT_TEST),
+    });
+    await w.runner.run(agentReq(w, finalDir));
+    const publish = f.bc.syncs.find((s) => s.publish.length > 0)!;
+    const cleanup = f.bc.syncs.at(-1)!;
+    assertEquals(publish.publish.includes(file), measured);
+    assertEquals(cleanup.publish, []);
+    assertEquals(cleanup.removeIds[0] === MEASURE_ID, measured);
+    assertEquals(cleanup.removeIds.includes(MEASURE_ID), measured);
+    // gone after the cleanup
+    assertEquals(
+      [...f.bc.state("C1").values()].some((a) => a.id === MEASURE_ID),
+      false,
+    );
+  }
 });
 
 Deno.test("agent run: a selected procedure that passes is a pass even when a sibling fails", async () => {
