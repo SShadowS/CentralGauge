@@ -651,6 +651,16 @@ Deno.test("selectAgentTests: adding or removing only a #region line inside a tes
   assertEquals(await selectRaw(plain, quoted), []);
 });
 
+Deno.test("selectAgentTests: a #-line inside a block comment is comment text, so its */ survives and a later change is seen", async () => {
+  // run-002 self-check r2 counterexample
+  const t = (n: number) =>
+    REGION_HELPER(
+      `        /*\n        #region documentation */\n        Assert.AreEqual(1, ${n}, 'check');\n`,
+      "y := 1;",
+    );
+  assertEquals(await selectRaw(t(1), t(2)), TEST_A);
+});
+
 // ---------------------------------------------------------------- aggregation
 
 const agg = (
@@ -998,6 +1008,6 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 7", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 7);
+Deno.test("TEST_RERUN_DERIVATION is 8", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 8);
 });

@@ -52,8 +52,10 @@ import {
  * comparison.
  * 7: attribute whitespace is dropped only outside '...' strings; whole directive lines
  * (quoted labels included) are blanked in the comparison text.
+ * 8: only lines the lexer reads as directives are blanked (a `#` line inside a block
+ * comment is comment text).
  */
-export const TEST_RERUN_DERIVATION = 7;
+export const TEST_RERUN_DERIVATION = 8;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -483,9 +485,18 @@ async function testBodies(
     // Directive lines (`#region Case checks`) are blanked for structure, so a label
     // cannot open a `case`, and left out of the comparison text.
     const masked = stripAlNoise(raw, { directives: true });
-    // A directive is a whole line starting with `#` (labels and quotes included);
-    // AL strings cannot span lines, so blanking the line keeps every offset.
-    const src = raw.replace(/^[ \t]*#[^\n]*/gm, (l) => " ".repeat(l.length));
+    // A line the lexer reads as a directive (blanked with directives: true, kept
+    // without) is blanked whole, quoted labels included; a `#` line inside a block
+    // comment is comment text and stays, so its `*/` survives. Offsets are kept.
+    const plain = stripAlNoise(raw);
+    let at = 0;
+    const src = raw.split("\n").map((line) => {
+      const from = at;
+      at += line.length + 1;
+      return plain.slice(from, at - 1) !== masked.slice(from, at - 1)
+        ? " ".repeat(line.length)
+        : line;
+    }).join("\n");
     // Quoted identifiers blanked too: "End Date" must not close a block.
     const blanked = masked.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
     const span = codeunitSpans(blanked).get(c.codeunit);
