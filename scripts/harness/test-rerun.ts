@@ -16,14 +16,18 @@
  */
 import { join } from "@std/path";
 import {
+  type AlsemEvidence,
   alsemExclusion,
   csv,
   type DoneStamp,
+  inTestApp,
+  newOrChangedTestProcs,
   pool,
   readDone,
   type Row,
   sha256Hex,
   type StartTree,
+  testProcKey,
   writeAtomic,
   writeDone,
 } from "./analyze-campaign.ts";
@@ -54,8 +58,25 @@ import {
  * (quoted labels included) are blanked in the comparison text.
  * 8: only lines the lexer reads as directives are blanked (a `#` line inside a block
  * comment is comment text).
+ * 9: the agent's tests are chosen from the al-sem evidence of the same build (ach
+ * test_quality of both trees + the digest's changed roots, as the A-03b selection), not
+ * from AL text; the attribute fingerprint is a narrow check on the tool-listed set; the
+ * stamp binds the al-sem build and the evidence used.
+ * 10: the narrow attribute check locates attributes from the tool's own path and
+ * `procedure` line (inline text plus the attribute / blank / comment / directive lines
+ * directly above), not via the codeunit scanner, and lexes them with comments dropped and
+ * strings kept; a missing file or line fails the execution.
+ * 11: the attribute block is collected lexically: the `procedure` keyword is found in the
+ * masked text (comments, strings, directive lines blank) on the tool's line, then complete
+ * `[...]` groups before it are bracket-matched across lines and comments, each fingerprinted
+ * from its raw span. The shipped expectations and the codeunit requests come from the tools'
+ * start-tree Test procedures for every task kind (evidence required for every execution; the
+ * text codeunit scanner no longer decides the shipped suite). al-sem's own DERIVATION is part
+ * of the evidence binding.
+ * 12 (Q-04c): directive spans are recorded in one lexer pass and only those are blanked (a
+ * region label holding a comment opener no longer desyncs two passes and blanks real lines).
  */
-export const TEST_RERUN_DERIVATION = 8;
+export const TEST_RERUN_DERIVATION = 12;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -478,25 +499,17 @@ function normAttr(a: string): string {
 
 async function testBodies(
   dir: string,
-): Promise<Map<string, { name: string; body: string }>> {
-  const out = new Map<string, { name: string; body: string }>();
+): Promise<Map<string, { name: string; attrs: string; body: string }>> {
+  const out = new Map<
+    string,
+    { name: string; attrs: string; body: string }
+  >();
   for (const c of await testCodeunits(dir)) {
     const raw = await Deno.readTextFile(join(dir, c.file));
     // Directive lines (`#region Case checks`) are blanked for structure, so a label
     // cannot open a `case`, and left out of the comparison text.
     const masked = stripAlNoise(raw, { directives: true });
-    // A line the lexer reads as a directive (blanked with directives: true, kept
-    // without) is blanked whole, quoted labels included; a `#` line inside a block
-    // comment is comment text and stays, so its `*/` survives. Offsets are kept.
-    const plain = stripAlNoise(raw);
-    let at = 0;
-    const src = raw.split("\n").map((line) => {
-      const from = at;
-      at += line.length + 1;
-      return plain.slice(from, at - 1) !== masked.slice(from, at - 1)
-        ? " ".repeat(line.length)
-        : line;
-    }).join("\n");
+    const src = withoutDirectiveLines(raw);
     // Quoted identifiers blanked too: "End Date" must not close a block.
     const blanked = masked.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
     const span = codeunitSpans(blanked).get(c.codeunit);
@@ -522,8 +535,10 @@ async function testBodies(
       ).sort();
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,
-        body: attrs.join("") + "\0" +
-          normalizeAlBody(rSlice.slice(from, procedureEnd(bSlice, from))),
+        attrs: attrs.join(""),
+        body: normalizeAlBody(
+          rSlice.slice(from, procedureEnd(bSlice, from)),
+        ),
       });
     }
   }
@@ -539,10 +554,276 @@ export async function selectAgentTests(
     testBodies(startTestDir),
     testBodies(finalTestDir),
   ]);
-  return [...f].filter(([k, v]) => s.get(k)?.body !== v.body).map(([k, v]) => ({
+  const fp = (v: { attrs: string; body: string } | undefined) =>
+    v && v.attrs + "\0" + v.body;
+  return [...f].filter(([k, v]) => fp(s.get(k)) !== fp(v)).map(([k, v]) => ({
     codeunit: Number(k.split("|")[0]),
     procedure: v.name,
   })).sort((a, b) =>
+    a.codeunit - b.codeunit || a.procedure.localeCompare(b.procedure)
+  );
+}
+
+/**
+ * The top-level `[...]` attribute groups of `text`, normalized and sorted: `'...'` strings
+ * kept verbatim (`''` is an escaped quote), `//` and `/* *\/` comments and whitespace
+ * outside strings dropped, the group name lowercased. A comment is recognised only outside
+ * a string, so an apostrophe in a comment opens nothing. Directive lines are the caller's.
+ */
+export function attrFingerprint(text: string): string {
+  const groups: string[] = [];
+  let cur = "";
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "'") {
+      let j = i + 1;
+      for (; j < text.length; j++) {
+        if (text[j] !== "'") continue;
+        if (text[j + 1] === "'") j++;
+        else break;
+      }
+      if (depth > 0) cur += text.slice(i, j + 1);
+      i = j;
+    } else if (text.startsWith("//", i)) {
+      const nl = text.indexOf("\n", i);
+      i = nl < 0 ? text.length : nl;
+    } else if (text.startsWith("/*", i)) {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 1;
+    } else if (/\s/.test(ch)) continue;
+    else if (ch === "[") {
+      if (depth++ > 0) cur += ch;
+    } else if (ch === "]" && depth > 0) {
+      if (--depth > 0) cur += ch;
+      else {
+        groups.push(
+          `[${cur.replace(/^[^(]*/, (n) => n.toLowerCase())}]`,
+        );
+        cur = "";
+      }
+    } else if (depth > 0) cur += ch;
+  }
+  return groups.sort().join("");
+}
+
+// `raw` with every directive line blanked whole (comments and strings kept); offsets kept.
+// The directive spans are recorded in ONE pass with stripAlNoise's own rules (a `#` line in
+// code position is a directive; comments and strings are skipped), so a directive's label is
+// never lexed: `#region Documentation for /* comments` opens no block comment, and a `#`
+// line inside a block comment is comment text, so the comment's closing `*/` survives.
+const DIRECTIVE = /[ \t]*#/y;
+function withoutDirectiveLines(raw: string): string {
+  const n = raw.length;
+  const spans: [number, number][] = [];
+  const eol = (from: number) => {
+    const e = raw.indexOf("\n", from);
+    return e === -1 ? n : e;
+  };
+  let i = 0;
+  while (i < n) {
+    const c = raw[i]!;
+    const d = raw[i + 1];
+    DIRECTIVE.lastIndex = i;
+    if ((i === 0 || raw[i - 1] === "\n") && DIRECTIVE.test(raw)) {
+      spans.push([i, i = eol(i)]);
+    } else if (c === "/" && d === "/") i = eol(i);
+    else if (c === "/" && d === "*") {
+      const e = raw.indexOf("*/", i + 2);
+      i = e === -1 ? n : e + 2;
+    } else if (c === "'") {
+      // AL strings never span lines; '' is an escaped quote
+      let j = i + 1;
+      while (j < n && raw[j] !== "\n") {
+        if (raw[j] === "'" && raw[j + 1] === "'") j += 2;
+        else if (raw[j] === "'") {
+          j++;
+          break;
+        } else j++;
+      }
+      i = j;
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < n && raw[j] !== '"' && raw[j] !== "\n") j++;
+      i = raw[j] === '"' ? j + 1 : j;
+    } else i++;
+  }
+  let out = raw;
+  for (const [a, b] of spans) {
+    out = out.slice(0, a) + " ".repeat(b - a) + out.slice(b);
+  }
+  return out;
+}
+
+/** One Test file lexed once: the raw text, the masked copy (same offsets) and the raw text without directive lines. */
+interface Lexed {
+  raw: string;
+  /** Comments, string contents, quoted identifiers and directive lines blanked; `[ ] ( )` kept. */
+  masked: string;
+  clean: string;
+}
+
+const lexAl = (raw: string): Lexed => ({
+  raw,
+  masked: stripAlNoise(raw, { directives: true }).replace(
+    /"[^"\n]*"/g,
+    (q) => " ".repeat(q.length),
+  ),
+  clean: withoutDirectiveLines(raw),
+});
+
+/**
+ * The attribute fingerprint of the procedure whose `procedure` keyword is on the tool's
+ * `line`: the keyword is found in the masked text within that line (a comment or string
+ * holding the word is blank there), then the complete `[...]` groups before it, past an
+ * optional `local`/`internal`/`protected` modifier, are collected by bracket matching in the
+ * masked text (nesting and any number of lines; comments and directive lines are blank), up
+ * to the first non-blank character that does not end a group. Each group is fingerprinted
+ * from its raw span. Throws when the line or keyword is missing or a group is unbalanced
+ * (never "unchanged").
+ */
+function procAttrFingerprint(file: string, lx: Lexed, line: number) {
+  let from = 0;
+  for (let i = 1; i < line && from >= 0; i++) {
+    const nl = lx.raw.indexOf("\n", from);
+    from = nl < 0 ? -1 : nl + 1;
+  }
+  const to = from < 0 ? -1 : lx.raw.indexOf("\n", from);
+  const m = from < 0 || line < 1
+    ? null
+    : /\bprocedure\b/i.exec(lx.masked.slice(from, to < 0 ? undefined : to));
+  if (!m) throw new Error(`no procedure keyword at ${file}:${line}`);
+  let p = from + m.index;
+  const blank = () => {
+    while (p > 0 && /\s/.test(lx.masked[p - 1]!)) p--;
+  };
+  blank();
+  const mod = /(?<![A-Za-z0-9_])(?:local|internal|protected)$/i.exec(
+    lx.masked.slice(Math.max(0, p - 20), p),
+  );
+  if (mod) {
+    p -= mod[0].length;
+    blank();
+  }
+  const groups: string[] = [];
+  while (p > 0 && lx.masked[p - 1] === "]") {
+    let depth = 0;
+    let q = p - 1;
+    for (; q >= 0; q--) {
+      const c = lx.masked[q];
+      if (c === "]") depth++;
+      else if (c === "[" && --depth === 0) break;
+    }
+    if (q < 0) throw new Error(`unbalanced attribute before ${file}:${line}`);
+    groups.push(attrFingerprint(lx.clean.slice(q, p)));
+    p = q;
+    blank();
+  }
+  return groups.sort().join("");
+}
+
+/**
+ * Attribute fingerprints of the Test-app procedures the tools list in BOTH trees, keyed by
+ * the tool key (routine_id ?? path:line) so start and final pair as newOrChangedTestProcs
+ * pairs them. Located from the tool's own `path` (tree-relative) and `line`.
+ */
+export async function evidenceAttrs(
+  ev: AlsemEvidence,
+  startRoot: string,
+  finalRoot: string,
+): Promise<{ start: Map<string, string>; final: Map<string, string> }> {
+  const both = new Set(
+    ev.start.filter(inTestApp).map(testProcKey),
+  );
+  const read = async (root: string, ps: AlsemEvidence["start"]) => {
+    const files = new Map<string, Lexed>();
+    const out = new Map<string, string>();
+    for (const p of ps.filter(inTestApp)) {
+      const k = testProcKey(p);
+      if (!both.has(k)) continue;
+      const file = join(root, ...p.path.split("/"));
+      if (!files.has(file)) {
+        files.set(file, lexAl(await Deno.readTextFile(file)));
+      }
+      out.set(k, procAttrFingerprint(file, files.get(file)!, p.line));
+    }
+    return out;
+  };
+  const finalKeys = new Set(ev.final.filter(inTestApp).map(testProcKey));
+  for (const k of both) if (!finalKeys.has(k)) both.delete(k);
+  return {
+    start: await read(startRoot, ev.start),
+    final: await read(finalRoot, ev.final),
+  };
+}
+
+/** The codeunit number of a tool-listed procedure's object (`<app>/Codeunit/<id>`), else null. */
+function codeunitOf(p: AlsemEvidence["start"][number]): number | null {
+  const m = /^[^/]+\/Codeunit\/(\d+)$/.exec(p.object_stable_id);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Every Test-app procedure the tools list in a tree as (codeunit, procedure), deduplicated,
+ * sorted. The shipped suite is exactly the start tree's list: expectations and codeunit
+ * requests alike, so no text scanner can drop a codeunit. A procedure outside a Codeunit fails.
+ */
+export function evidenceProcs(ps: AlsemEvidence["start"]): Selected[] {
+  const out = new Map<string, Selected>();
+  for (const p of ps.filter(inTestApp)) {
+    const cu = codeunitOf(p);
+    if (cu === null) {
+      throw new Error(
+        `test procedure ${p.procedure_name} is not in a Codeunit: ${p.object_stable_id}`,
+      );
+    }
+    out.set(keyOf(cu, p.procedure_name), {
+      codeunit: cu,
+      procedure: p.procedure_name,
+    });
+  }
+  return [...out.values()].sort((a, b) =>
+    a.codeunit - b.codeunit || a.procedure.localeCompare(b.procedure)
+  );
+}
+
+/**
+ * Q-04b: the agent's tests chosen by the tools. Every procedure ach lists in the
+ * final Test app that is new or changed (newOrChangedTestProcs: routine_id, the
+ * digest's changed roots) is selected as (codeunit number, procedure name). The tools
+ * expose no attributes, so a narrow text check is added: a procedure the tools list in
+ * both trees (same tool key) whose attribute fingerprint (`attrs`, by tool key, from
+ * evidenceAttrs) differs. The text never discovers procedures and never decides body changes.
+ */
+export function selectFromEvidence(
+  ev: AlsemEvidence,
+  attrs: { start: Map<string, string>; final: Map<string, string> },
+): Selected[] {
+  const picked = new Set(newOrChangedTestProcs(
+    ev.start,
+    ev.final,
+    new Set(ev.changed),
+  ));
+  const inStart = new Set(ev.start.filter(inTestApp).map(testProcKey));
+  const out = new Map<string, Selected>();
+  for (const p of ev.final.filter(inTestApp)) {
+    const cu = codeunitOf(p);
+    const k = cu === null ? "" : keyOf(cu, p.procedure_name);
+    const tk = testProcKey(p);
+    if (
+      !picked.has(p) &&
+      !(inStart.has(tk) && cu !== null &&
+        attrs.start.has(tk) && attrs.final.has(tk) &&
+        attrs.start.get(tk) !== attrs.final.get(tk))
+    ) continue;
+    if (cu === null) {
+      throw new Error(
+        `selected test procedure ${p.procedure_name} is not in a Codeunit: ${p.object_stable_id}`,
+      );
+    }
+    out.set(k, { codeunit: cu, procedure: p.procedure_name });
+  }
+  return [...out.values()].sort((a, b) =>
     a.codeunit - b.codeunit || a.procedure.localeCompare(b.procedure)
   );
 }
@@ -767,6 +1048,10 @@ export async function testRerunStep(o: {
   dir: string;
   rev: string;
   derivation?: number | undefined;
+  /** Per execution id: the al-sem evidence of `alsemBuild` (only executions with a done, valid al-sem row). */
+  alsemEvidence: Map<string, AlsemEvidence>;
+  /** Identity of the al-sem build of this invocation (both tool sha256). */
+  alsemBuild: string;
 }): Promise<{
   failed: { id: string; error: string }[];
   done: TestRerunDone[];
@@ -810,12 +1095,32 @@ export async function testRerunStep(o: {
     const finalDir = join(o.results, "workspaces", hash);
     const sTest = join(start.dir, TEST_APP);
     const fTest = join(finalDir, TEST_APP);
+    // Every kind needs the al-sem evidence of this very build: the agent's tests (bugfix) and
+    // the shipped suite (all kinds) come from it, never from text.
+    const ev = o.alsemEvidence.get(r.id);
+    if (!ev || ev.build !== o.alsemBuild) {
+      throw new Error("no al-sem evidence of the same build");
+    }
     const selected = r.kind === "bugfix"
-      ? await selectAgentTests(sTest, fTest)
+      ? selectFromEvidence(ev, await evidenceAttrs(ev, start.dir, finalDir))
       : [];
-    const shipped = (await testCodeunits(sTest)).flatMap((c) =>
-      c.procedures.map((procedure) => ({ codeunit: c.codeunit, procedure }))
-    );
+    // The evidence fields the selection reads (not the assert counts), bound with the build.
+    const proj = (ps: AlsemEvidence["start"]) =>
+      ps.map((p) => [
+        p.path,
+        p.line,
+        p.object_stable_id,
+        p.procedure_name,
+        p.routine_id,
+      ]);
+    const evidenceBind = await sha256Hex(JSON.stringify([
+      ev.build,
+      ev.derivation,
+      proj(ev.start),
+      proj(ev.final),
+      [...ev.changed].sort(),
+    ]));
+    const shipped = evidenceProcs(ev.start);
     const edited = await editedShippedTests(sTest, fTest);
     const stamp: DoneStamp = {
       build: o.runner.id,
@@ -832,6 +1137,7 @@ export async function testRerunStep(o: {
             shipped,
             edited,
             envHash,
+            evidenceBind,
           ]),
         ),
       },
