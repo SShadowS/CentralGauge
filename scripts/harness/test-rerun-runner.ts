@@ -17,11 +17,16 @@ import {
 } from "../../src/harness/bc-lane.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import { safeCopyTree } from "../../src/harness/fsutil.ts";
-import { hashFile, hashTree } from "../../src/harness/hash.ts";
+import {
+  hashFile,
+  hashTree,
+  isTaskBuildArtifact,
+} from "../../src/harness/hash.ts";
 import { readAppGraph, type StagedApp } from "../../src/harness/staging.ts";
 import { currentScorerFingerprint } from "../../src/harness/verdict.ts";
 import {
   buildVerdictWorkspace,
+  isSourceFile,
   TEST_APP,
 } from "../../src/harness/verdict-workspace.ts";
 import type {
@@ -57,6 +62,29 @@ async function withoutShippedTests(start: string, dst: string) {
     await Deno.remove(join(out, TEST_APP, e.name), { recursive: true });
   }
   return out;
+}
+
+/**
+ * Replace the built workspace's Test sources with a verbatim copy of the agent's
+ * (the same source filter as buildVerdictWorkspace); the workspace's merged
+ * app.json stays.
+ */
+async function restoreAgentTest(agent: string, built: string, scratch: string) {
+  const copy = await safeCopyTree(join(agent, TEST_APP), scratch, {
+    skip: (rel, isDir) =>
+      isTaskBuildArtifact(rel) ||
+      (!isDir && !isSourceFile(rel.split("/").pop()!)) ||
+      rel.split("/").some((s) => s.startsWith(".")),
+  });
+  const test = join(built, TEST_APP);
+  for await (const e of Deno.readDir(test)) {
+    if (e.name.toLowerCase() === "app.json") continue;
+    await Deno.remove(join(test, e.name), { recursive: true });
+  }
+  for await (const e of Deno.readDir(copy.dst)) {
+    if (e.name.toLowerCase() === "app.json") continue;
+    await Deno.rename(join(copy.dst, e.name), join(test, e.name));
+  }
 }
 
 /** App name -> sha256 of the published package (or `src:` + source tree hash when none was built), and the Test app's. */
@@ -120,13 +148,22 @@ export async function envRunner(
       if (vw.violations.length > 0) {
         throw new Error(`workspace violations: ${vw.violations.join("; ")}`);
       }
+      // The policy checks above ran; the credit rules may still have rewritten or
+      // dropped agent procedures (a Variant user). The agent's Test sources are
+      // published as written; the shipped run (rawTest) is never rewritten.
+      if (!shipped) {
+        await restoreAgentTest(req.test, vw.dir, join(work, "asis"));
+      }
       // A crashed build throws inside prepareApps (throwIfCrashed): infra, never a result.
       const prep = await prepareApps(env.lane, {
         pristine,
         pristineApps: await readAppGraph(pristine),
         candidateDir: vw.dir,
         candidateApps: vw.apps,
-        changed: vw.changed,
+        // the verbatim Test folder may differ from what the workspace hashed
+        changed: !shipped && !vw.changed.includes(TEST_APP)
+          ? [...vw.changed, TEST_APP]
+          : vw.changed,
         workDir: join(work, "apps"),
         lock,
         versionPlan: "judge",
@@ -214,10 +251,12 @@ export async function envRunner(
   }
 
   return {
-    // No commit, no sharing: an uncommitted harness never reuses a cache.
-    id: `${env.harnessCommit ?? `uncommitted-${crypto.randomUUID()}`}-${
-      (await currentScorerFingerprint()).slice(0, 16)
-    }`,
+    // No commit (or `<HEAD>+dirty`), no sharing: an uncommitted harness never reuses a cache.
+    id: `${
+      env.harnessCommit && !env.harnessCommit.endsWith("+dirty")
+        ? env.harnessCommit
+        : `uncommitted-${crypto.randomUUID()}`
+    }-${(await currentScorerFingerprint()).slice(0, 16)}`,
     run,
   };
 }

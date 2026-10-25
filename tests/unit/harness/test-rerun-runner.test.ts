@@ -68,7 +68,7 @@ const byPrice = (s: Seen) => {
   );
 };
 
-async function world(bc: FakeBc) {
+async function world(bc: FakeBc, commit: string | null = "c0ffee") {
   const repo = await makeRefappRepo();
   const task = await loadTask(join(repo.tasksDir, "HX-001"));
   const start = (await stageRefappTask({
@@ -86,7 +86,7 @@ async function world(bc: FakeBc) {
     symbolStore: repo.symbolStore,
     onPrem: await noOnPrem({ store: repo.symbolStore, packages: repo.symbols }),
     deploy: { ledgerRoot: join(results, "bc-ledger"), reset: OK_RESET },
-    harnessCommit: "c0ffee",
+    harnessCommit: commit,
   };
   const runner = await envRunner(
     env,
@@ -255,6 +255,46 @@ Deno.test("runner id: harness commit plus the oracle runner identity", async () 
   await using w = await world(fake(byPrice).bc);
   assert(w.runner.id.startsWith("c0ffee-"), w.runner.id);
   assert(w.runner.id.length > "c0ffee-".length);
+});
+
+Deno.test("runner id: a dirty or missing harness commit gets a private id, never shared", async () => {
+  const bc = fake(byPrice).bc;
+  await using a = await world(bc, "c0ffee+dirty");
+  await using b = await world(bc, "c0ffee+dirty");
+  await using c = await world(bc, null);
+  for (const r of [a.runner, b.runner, c.runner]) {
+    assert(r.id.startsWith("uncommitted-"), r.id);
+  }
+  assert(a.runner.id !== b.runner.id);
+});
+
+const VARIANT_TEST =
+  `\n    [Test]\n    procedure PriceIsTen()\n    var\n        V: Variant;\n    begin\n        V := 10;\n        Assert.AreEqual(10, V, 'variant');\n    end;\n`;
+
+Deno.test("agent run: the agent's Test app is published as written (a procedure using Variant is deployed and scored)", async () => {
+  const f = fake(byPrice);
+  await using w = await world(f.bc);
+  const finalDir = await w.finalTree({
+    [TEST_FILE]: SHIPPED_TEST(VARIANT_TEST),
+  });
+  const r = await w.runner.run(agentReq(w, finalDir));
+  assert(r.compile.ok, r.compile.diagnostics.join());
+  assert(f.seen.at(-1)!.test.includes("V: Variant"), "deployed Variant test");
+  assertEquals(r.rows.map((x) => [x.procedure, x.outcome]), [[
+    "PriceIsTen",
+    "fail",
+  ]]);
+});
+
+Deno.test("shipped run: the start Test app is deployed verbatim (a shipped Variant test included)", async () => {
+  const f = fake(byPrice);
+  await using w = await world(f.bc);
+  const src = SHIPPED_TEST(VARIANT_TEST);
+  await write(w.start, TEST_FILE, src);
+  const finalDir = await w.finalTree({ [RENTAL_FILE]: rental("exit(10);") });
+  const r = await w.runner.run(shippedReq(w, finalDir));
+  assert(r.compile.ok, r.compile.diagnostics.join());
+  assert(f.seen.at(-1)!.test.includes("V: Variant"), "deployed Variant test");
 });
 
 Deno.test("a lane fault: run rejects and the step lists the execution as failed, no row written", async () => {

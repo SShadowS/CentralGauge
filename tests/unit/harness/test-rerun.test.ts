@@ -592,3 +592,145 @@ Deno.test("step: a runner that rejects is listed as failed, not thrown", async (
   assertEquals(out.failed.length, 1);
   assertEquals(out.failed[0]!.error, "production runner not implemented");
 });
+
+// ---------------------------------------------------------------- Q-04 self-check r1
+
+const nrInfra: RunnerRow = {
+  codeunit: 50100,
+  procedure: "(1 results missing)",
+  outcome: "not_run",
+  failure: "infra",
+  message: "missing",
+};
+
+Deno.test("fail closed: an extra not_run/infra row next to a passing expected test is an error (shipped run)", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock(
+    "r1",
+    () => result([fail("TestB")]),
+    () => result([pass("TestA"), nrInfra]),
+  );
+  const out = await run(w, m.runner);
+  assertEquals(out.failed.length, 1);
+  assertEquals(out.done, []);
+});
+
+Deno.test("fail closed: duplicate keys [TestA infra, TestA pass] are an error", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock(
+    "r1",
+    () => result([fail("TestB")]),
+    () => result([fail("TestA", "infra"), pass("TestA")]),
+  );
+  assertEquals((await run(w, m.runner)).failed.length, 1);
+});
+
+Deno.test("agent run: extra pass/fail rows for non-selected procedures are ignored, an extra infra row is an error", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const ok = mock(
+    "r1",
+    () => result([fail("TestB"), pass("TestA")]),
+    GOOD_SHIPPED,
+  );
+  const o1 = await run(w, ok.runner);
+  assertEquals(o1.failed, []);
+  assertEquals(o1.done[0]!.agent_vs_start.procedures.length, 1);
+  const bad = mock(
+    "r2",
+    () => result([fail("TestB"), nrInfra]),
+    GOOD_SHIPPED,
+  );
+  assertEquals((await run(w, bad.runner)).failed.length, 1);
+});
+
+Deno.test("shipped run: an extra row outside the expected set is an error", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock(
+    "r1",
+    () => result([fail("TestB")]),
+    () => result([pass("TestA"), pass("Stray")]),
+  );
+  assertEquals((await run(w, m.runner)).failed.length, 1);
+});
+
+Deno.test("cached rows must justify their status: procedures that do not support it are rejected and recomputed", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  const good = (await run(w, m.runner)).done[0]!;
+  // deno-lint-ignore no-explicit-any
+  const bad = (f: (r: any) => void) => {
+    const c = JSON.parse(JSON.stringify(good));
+    f(c);
+    assertThrows(() => validateTestRerunRow(c));
+  };
+  bad((c) => c.shipped_vs_final.procedures = []); // pass with no evidence
+  bad((c) => c.shipped_vs_final.procedures[0].outcome = "fail"); // pass with a fail
+  bad((c) => {
+    c.shipped_vs_final.status = "fail"; // fail with only passes
+    c.shipped_vs_final.shipped_pass = false;
+  });
+  bad((c) => {
+    c.shipped_vs_final.status = "compile_fail"; // compile_fail with procedures
+    c.shipped_vs_final.shipped_pass = false;
+  });
+  bad((c) => c.agent_vs_start.procedures[0].outcome = "pass"); // catches, no fail
+  bad((c) => c.agent_vs_start.procedures[0].procedure = "Other"); // keys differ
+  bad((c) => c.agent_vs_start.procedures = []); // catches, none
+  bad((c) => {
+    c.agent_vs_start.outcome = "no_tests"; // no_tests with selected
+  });
+  bad((c) => {
+    c.agent_vs_start.outcome = "not_applicable"; // compile with procedures
+    c.agent_vs_start.reason = "compile";
+  });
+  bad((c) => {
+    c.agent_vs_start.outcome = "misses"; // misses with a fail
+  });
+  // on disk: a shipped pass with procedures [] is recomputed, not read
+  const file = join(w.root, "out", "cache", "r1", "exec", "e1.json");
+  const doc = JSON.parse(await Deno.readTextFile(file));
+  doc.row.shipped_vs_final.procedures = [];
+  await Deno.writeTextFile(file, JSON.stringify(doc));
+  const before = m.calls.length;
+  const again = await run(w, m.runner);
+  assert(m.calls.length > before);
+  assertEquals(again.done[0]!.shipped_vs_final.procedures.length, 1);
+});
+
+Deno.test("selectAgentTests: two codeunits in one file each own their procedures", async () => {
+  const body = (x: string) => cu({ P: x }, 80010) + cu({ P: "x := 1;" }, 80011);
+  const w = await world(body("x := 1;"), { e1: body("x := 2;") });
+  const sel = await selectAgentTests(
+    join(w.root, "start", "Test"),
+    join(w.results, "workspaces", "H-e1", "Test"),
+  );
+  assertEquals(sel, [{ codeunit: 80010, procedure: "P" }]);
+});
+
+Deno.test("selectAgentTests: matches on comment-stripped source", async () => {
+  // [Test] followed by a line comment is still a test
+  const w = await world(START, {
+    e1: START.replace(
+      /\}\n$/,
+      "\n    [Test] // regression coverage\n    procedure NewRegression()\n    begin\n        x := 10;\n    end;\n}\n",
+    ),
+    // a block-commented duplicate declaration must not override the real body
+    e2: START.replace(
+      /\}\n$/,
+      "\n    /*\n    [Test]\n    procedure TestA()\n    begin\n        x := 99;\n    end;\n    */\n}\n",
+    ),
+  });
+  const sel = (h: string) =>
+    selectAgentTests(
+      join(w.root, "start", "Test"),
+      join(w.results, "workspaces", h, "Test"),
+    );
+  assertEquals(await sel("H-e1"), [
+    { codeunit: 50100, procedure: "NewRegression" },
+  ]);
+  assertEquals(await sel("H-e2"), []);
+});
+
+Deno.test("TEST_RERUN_DERIVATION is 3", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 3);
+});

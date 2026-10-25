@@ -39,8 +39,10 @@ import {
  * Bump when a row is computed differently from the same runner output, or validation tightens.
  * 1: phase A. 2: a test body ends at its own closing end; (a global var section after a
  * procedure was part of its body, so cached selections differ).
+ * 3: selection per enclosing codeunit on comment-stripped source; runner rows fail closed on
+ * any infra / not_run / duplicate row; cached rows must be justified by their procedures.
  */
-export const TEST_RERUN_DERIVATION = 2;
+export const TEST_RERUN_DERIVATION = 3;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -280,11 +282,30 @@ export function validateTestRerunRow(x: unknown): TestRerunRow {
     );
   }
   const failed = procedures.some((p) => p.outcome === "fail");
-  if (outcome === "catches" && !failed) {
-    throw new Error("agent_vs_start: catches without a failing procedure");
-  }
-  if (outcome === "misses" && (failed || procedures.length === 0)) {
-    throw new Error("agent_vs_start: misses needs passing procedures only");
+  const keys = (xs: Selected[]) =>
+    xs.map((x) => keyOf(x.codeunit, x.procedure)).sort();
+  const same = (a: Selected[], b: Selected[]) =>
+    JSON.stringify(keys(a)) === JSON.stringify(keys(b));
+  if (outcome === "catches" || outcome === "misses") {
+    if (procedures.length === 0 || !same(selected, procedures)) {
+      throw new Error(
+        `agent_vs_start: ${outcome} procedures differ from selected`,
+      );
+    }
+    if (outcome === "catches" && !failed) {
+      throw new Error("agent_vs_start: catches without a failing procedure");
+    }
+    if (outcome === "misses" && failed) {
+      throw new Error("agent_vs_start: misses needs passing procedures only");
+    }
+  } else if (procedures.length > 0) {
+    throw new Error(`agent_vs_start: ${outcome} with procedure results`);
+  } else if (
+    (outcome === "no_tests" ||
+      (outcome === "not_applicable" && agent.reason !== "compile")) &&
+    selected.length > 0
+  ) {
+    throw new Error(`agent_vs_start: ${outcome} with selected procedures`);
   }
   const s = obj(o["shipped_vs_final"], "shipped_vs_final");
   const status = oneOf(
@@ -309,6 +330,17 @@ export function validateTestRerunRow(x: unknown): TestRerunRow {
       "shipped_fail_after_edit",
     ),
   };
+  if (new Set(keys(sprocs)).size !== sprocs.length) {
+    throw new Error("shipped_vs_final: duplicate procedure results");
+  }
+  const sfail = sprocs.some((p) => p.outcome === "fail");
+  if (
+    (status === "pass" && (sprocs.length === 0 || sfail)) ||
+    (status === "fail" && !sfail) ||
+    (status === "compile_fail" && sprocs.length > 0)
+  ) {
+    throw new Error(`shipped_vs_final: procedures do not justify ${status}`);
+  }
   if (shipped.shipped_pass !== (status === "pass")) {
     throw new Error("shipped_vs_final: shipped_pass disagrees with status");
   }
@@ -361,12 +393,18 @@ function procedureEnd(stripped: string, from: number): number {
   return stripped.length;
 }
 
+/** An object declaration at a line start, in stripped text: kind and optional id. */
+const OBJECT_DECL =
+  /(?:^|\n)[ \t]*(codeunit|table|tableextension|page|pageextension|pagecustomization|report|reportextension|query|xmlport|enum|enumextension|interface|controladdin|permissionset|permissionsetextension|entitlement|profile|dotnet)\b[ \t]*(\d+)?/gi;
+
 /**
  * `codeunit|procedure` (lowercase) -> display name + normalized body, for every
  * [Test] procedure of the Test app. A body runs from the parameter list to the
  * procedure's own closing `end;`, so a global var section or anything else
- * between procedures is not part of it (ponytail: two codeunits in one file
- * with the same procedure name collide).
+ * between procedures is not part of it. Declarations are found on comment- and
+ * string-stripped text (same offsets as the raw text, so the body is the raw span,
+ * which normalizeAlBody strips of comments), and each procedure belongs to the
+ * codeunit declaration that encloses it.
  */
 async function testBodies(
   dir: string,
@@ -374,17 +412,29 @@ async function testBodies(
   const out = new Map<string, { name: string; body: string }>();
   for (const c of await testCodeunits(dir)) {
     const src = await Deno.readTextFile(join(dir, c.file));
+    const masked = stripAlNoise(src);
     // Quoted identifiers blanked too: "End Date" must not close a block.
-    const stripped = stripAlNoise(src).replace(
-      /"[^"\n]*"/g,
-      (q) => " ".repeat(q.length),
+    const blanked = masked.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
+    const decls = [...masked.matchAll(OBJECT_DECL)].map((d) => ({
+      at: d.index! + d[0].search(/\S/),
+      kind: d[1]!.toLowerCase(),
+      id: d[2] === undefined ? null : Number(d[2]),
+    }));
+    const i = decls.findIndex((d) =>
+      d.kind === "codeunit" && d.id === c.codeunit
     );
-    for (const m of src.matchAll(TEST_PROC)) {
+    if (i < 0) continue;
+    const start = decls[i]!.at;
+    const end = decls[i + 1]?.at ?? src.length;
+    const mSlice = masked.slice(start, end);
+    const bSlice = blanked.slice(start, end);
+    const rSlice = src.slice(start, end);
+    for (const m of mSlice.matchAll(TEST_PROC)) {
       const name = m[1] ?? m[2]!;
       const from = m.index! + m[0].length;
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,
-        body: normalizeAlBody(src.slice(from, procedureEnd(stripped, from))),
+        body: normalizeAlBody(rSlice.slice(from, procedureEnd(bSlice, from))),
       });
     }
   }
@@ -450,19 +500,24 @@ const MESSAGE_MAX = 2000;
 const keyOf = (codeunit: number, procedure: string) =>
   `${codeunit}|${procedure.toLowerCase()}`;
 
-/** The result row of every wanted procedure; anything but a clean pass / fail throws. */
+/**
+ * The result row of every wanted procedure; anything but a clean pass / fail throws.
+ * Every row of the result is checked, wanted or not: a not_run / infra / compile row
+ * or a duplicate key fails the run. `exact`: a row outside `wanted` fails too (the
+ * shipped run); otherwise extra pass / fail rows are ignored (the agent run).
+ */
 function scored(
   wanted: Selected[],
   res: RunnerResult,
   what: string,
+  exact: boolean,
 ): ProcResult[] {
-  const byKey = new Map(
-    res.rows.map((r) => [keyOf(r.codeunit, r.procedure), r]),
-  );
-  return wanted.map((w) => {
-    const r = byKey.get(keyOf(w.codeunit, w.procedure));
-    const name = `${what} ${w.codeunit}.${w.procedure}`;
-    if (!r) throw new Error(`${name}: missing from the runner result`);
+  const byKey = new Map<string, RunnerRow>();
+  for (const r of res.rows) {
+    const k = keyOf(r.codeunit, r.procedure);
+    const name = `${what} ${r.codeunit}.${r.procedure}`;
+    if (byKey.has(k)) throw new Error(`${name}: duplicate row`);
+    byKey.set(k, r);
     if (r.outcome === "not_run") throw new Error(`${name}: not_run`);
     if (r.failure === "infra" || r.failure === "compile") {
       throw new Error(`${name}: ${r.failure} failure (${r.message ?? ""})`);
@@ -472,10 +527,25 @@ function scored(
         `${name}: outcome ${r.outcome} with failure ${r.failure}`,
       );
     }
+  }
+  if (exact) {
+    const want = new Set(wanted.map((w) => keyOf(w.codeunit, w.procedure)));
+    for (const [k, r] of byKey) {
+      if (!want.has(k)) {
+        throw new Error(
+          `${what} ${r.codeunit}.${r.procedure}: not an expected procedure`,
+        );
+      }
+    }
+  }
+  return wanted.map((w) => {
+    const r = byKey.get(keyOf(w.codeunit, w.procedure));
+    const name = `${what} ${w.codeunit}.${w.procedure}`;
+    if (!r) throw new Error(`${name}: missing from the runner result`);
     return {
       codeunit: r.codeunit,
       procedure: r.procedure,
-      outcome: r.outcome,
+      outcome: r.outcome as ProcResult["outcome"],
       failure: r.failure as ProcResult["failure"],
       message: r.message === null ? null : r.message.slice(0, MESSAGE_MAX),
     };
@@ -506,7 +576,7 @@ export function classifyAgentVsStart(
       diagnostics: x.result.compile.diagnostics,
     };
   }
-  const procedures = scored(x.selected, x.result, "agent run");
+  const procedures = scored(x.selected, x.result, "agent run", false);
   return {
     outcome: procedures.some((p) => p.outcome === "fail")
       ? "catches"
@@ -530,7 +600,7 @@ export function classifyShippedVsFinal(
   if (x.expected.length === 0) {
     throw new Error("shipped run: no test procedures");
   }
-  const procedures = scored(x.expected, x.result, "shipped run");
+  const procedures = scored(x.expected, x.result, "shipped run", true);
   return done(
     procedures.every((p) => p.outcome === "pass") ? "pass" : "fail",
     procedures,
