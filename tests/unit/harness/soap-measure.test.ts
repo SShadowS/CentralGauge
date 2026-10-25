@@ -224,6 +224,25 @@ Deno.test("measure app AL: the store records only while the runner has it on, an
   );
 });
 
+Deno.test("measure app AL: every file declares a namespace first, so its using directives apply (AL0789 ignores them otherwise)", async () => {
+  const dir = new URL("../../../infra/cg-sql-measure/src/", import.meta.url);
+  let files = 0;
+  for await (const e of Deno.readDir(dir)) {
+    if (!e.name.endsWith(".al")) continue;
+    files++;
+    const text = (await Deno.readTextFile(new URL(e.name, dir))).replace(
+      /\r/g,
+      "",
+    );
+    assertEquals(
+      /^namespace [\w.]+;\n/.test(text),
+      true,
+      `${e.name}: first line is a namespace declaration`,
+    );
+  }
+  assertEquals(files >= 4, true);
+});
+
 Deno.test("provider.runHarnessTests: measure is refused when the SOAP path is off", async () => {
   const prev = Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER");
   Deno.env.set("CENTRALGAUGE_SOAP_TEST_RUNNER", "0");

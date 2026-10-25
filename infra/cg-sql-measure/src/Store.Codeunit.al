@@ -1,3 +1,5 @@
+namespace CentralGauge.SqlMeasure;
+
 using System.TestTools.TestRunner;
 
 /// <summary>
