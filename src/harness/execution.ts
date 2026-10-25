@@ -200,7 +200,8 @@ export interface HarnessEnv {
    * (admitOnPrem); every judge input carries it.
    */
   onPrem: OnPremIndex;
-  secretsSource: string;
+  /** Operator secrets directories, one per Claude account (`--secrets-dir [label=]dir`); at least one. */
+  secretAccounts: SecretAccount[];
   /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
   secretAcl?: { icacls: IcaclsRunner; user: string };
   /** Drive type of the private root ("Fixed" is the only local type accepted); tests inject it. */
@@ -806,6 +807,32 @@ async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
   }
 }
 
+/** One operator secrets directory; the label (null when the run has a single unlabelled account) is all that is ever recorded. */
+export interface SecretAccount {
+  label: string | null;
+  dir: string;
+}
+
+/**
+ * The account a cell uses: its campaign block index modulo the account count.
+ * Every arm of a block shares one account, blocks alternate, and a retry or a
+ * resume of a cell always gets the same account.
+ */
+export function pickAccount(
+  accounts: readonly SecretAccount[],
+  blockIndex: number,
+): SecretAccount {
+  return accounts[blockIndex % accounts.length]!;
+}
+
+/** Run-start check: every account dir holds every required secret file. */
+export async function checkAccountsSecrets(
+  accounts: readonly SecretAccount[],
+  files: readonly string[],
+): Promise<void> {
+  for (const a of accounts) await checkOperatorSecrets(a.dir, files);
+}
+
 /** Operator secret files as the adapter declares them: present and long enough (preflight, nothing released). */
 async function checkOperatorSecrets(
   source: string,
@@ -1227,6 +1254,8 @@ interface DraftInput {
   preStart?: boolean;
   /** H-16: the sandbox is confirmed gone but a backend request did not drain: harness_crash with this infra reason. */
   undrained?: string | null;
+  /** The Claude account label of the cell (absent: unlabelled or stub). */
+  account?: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -1454,6 +1483,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ...(f.at.usageResetIgnored
       ? { usage_reset_ignored: f.at.usageResetIgnored }
       : {}),
+    ...(f.account ? { account: f.account } : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -1702,6 +1732,11 @@ export async function runExecution(
       image_override: stubProvider.imageOverride ?? null,
     }
     : null;
+  // A stub cell releases no real credential: dummy secrets, no account label.
+  const account = stub ? null : pickAccount(
+    env.secretAccounts,
+    cell.block.index,
+  );
   await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
@@ -1874,9 +1909,9 @@ export async function runExecution(
       manifest.limits.timeout_min,
     );
     // A stub cell releases no credential: every credential file is a dummy.
-    const secretsSource = stub
-      ? await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles)
-      : env.secretsSource;
+    const secretsSource = account
+      ? account.dir
+      : await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles);
     await checkOperatorSecrets(secretsSource, adapter.secretFiles);
     // Predictable egress checks come before the grant and the reservation.
     let hosts: string[] = [];
@@ -2401,6 +2436,7 @@ export async function runExecution(
     egressStop,
     preStart: inventoryRefused !== null || notLive !== null,
     undrained,
+    account: account?.label ?? null,
   });
   holdNamespace(env, nothingPublished);
   await publishDraft(
@@ -3891,6 +3927,10 @@ export async function recoverInterrupted(
         secrets,
         mode: intent.mode ?? "normal",
         stub: intent.stub ?? null,
+        // The same deterministic pick the interrupted attempt made.
+        account: intent.stub
+          ? null
+          : pickAccount(own.secretAccounts, cell.block.index).label,
       });
     }
     hold();

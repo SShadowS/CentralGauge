@@ -132,7 +132,7 @@ class World implements AsyncDisposable {
       repoRoot,
       resultsDir: this.t.env.resultsRoot,
       privateRoot,
-      secretsSource: this.t.env.secretsSource,
+      secretsSource: this.t.env.secretAccounts[0]!.dir,
       symbolStore: this.t.repo.symbolStore,
       quarantineDir: this.quarantineDir,
       coordRoot: this.coordRoot,

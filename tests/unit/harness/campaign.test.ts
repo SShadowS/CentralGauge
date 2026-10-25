@@ -253,6 +253,58 @@ Deno.test("an unconfirmed sandbox termination stops the campaign with the intent
   );
 });
 
+Deno.test("dry run labels each block with its account", async () => {
+  const t = await mockEnv();
+  await experiment(
+    t,
+    "contract",
+    "mock-positive",
+    ["mock-naive-a"],
+    "[settings]",
+    2,
+  );
+  t.env.secretAccounts = [
+    { label: "work", dir: t.env.secretAccounts[0]!.dir },
+    { label: "maxpriv2", dir: t.env.secretAccounts[0]!.dir },
+  ];
+  const out = io();
+  await runCampaign(t.env, "contract", opts({ dryRun: true }), out);
+  const plan = out.lines.filter((l) => /^HX-\d+#\d+: /.test(l));
+  assertEquals(plan.length, 2);
+  assert(plan[0]!.endsWith(" [work]"), plan.join("\n"));
+  assert(plan[1]!.endsWith(" [maxpriv2]"), plan.join("\n"));
+});
+
+Deno.test("a second account dir lacking a required secret is refused at run start, before any cell", async () => {
+  await using t = await makeEnv();
+  t.env.supervised = false;
+  await write(
+    t.harnessRoot,
+    "configs/cc-sonnet-effort.yml",
+    `id: cc-sonnet-effort
+harness: claude-code
+harness_version: "2.1.282"
+models: { main: anthropic/claude-sonnet-5 }
+settings: { effort: high }
+components: { instructions: bundles/env/instructions }
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  await experiment(t, "cc", "cc-sonnet-plain", ["cc-sonnet-effort"]);
+  enforce(t);
+  t.env.secretAccounts = [
+    t.env.secretAccounts[0]!,
+    { label: "second", dir: await testTempDir() },
+  ];
+  await assertRejects(
+    () => runCampaign(t.env, "cc", opts(), io()),
+    ConfigurationError,
+    "claude-oauth-token",
+  );
+  assertEquals(t.docker.runs.length, 0);
+  assertEquals(await t.env.store.campaigns("cc"), []);
+});
+
 Deno.test("a credential-bearing arm is refused without egress enforcement; with it, the campaign runs unattended", async () => {
   await using t = await makeEnv();
   t.env.supervised = false;

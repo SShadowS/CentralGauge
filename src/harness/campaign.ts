@@ -30,8 +30,10 @@ import { PROXY_ISOLATION } from "./egress-proxy.ts";
 import { estimateArms, renderEstimate } from "./estimate.ts";
 import { loadExperiment } from "./config.ts";
 import {
+  checkAccountsSecrets,
   judgeDeferred,
   judgmentOwed,
+  pickAccount,
   recoverInterrupted,
   runCell,
 } from "./execution.ts";
@@ -403,7 +405,7 @@ export type PlanEnv =
   >
   & Pick<
     Partial<HarnessEnv>,
-    "now" | "proxyIsolation" | "unverifiedEgressReason"
+    "now" | "proxyIsolation" | "unverifiedEgressReason" | "secretAccounts"
   >
   & {
     /**
@@ -878,6 +880,15 @@ export async function runCampaign(
       } carry provider credentials: a campaign runs unattended and needs verified egress enforcement (authorized marker); use harness cell --supervised for a watched run`,
     );
   }
+  // Every account dir holds every secret the arms need, before any cell.
+  if (!o.dryRun) {
+    for (const c of configs) {
+      await checkAccountsSecrets(
+        env.secretAccounts,
+        adapterFor(c.harness).secretFiles,
+      );
+    }
+  }
   let runEnv: HarnessEnv = { ...env, supervised: false };
   // H-15: the executions recorded before this invocation, taken before
   // recovery publishes any; only their resets are ignored, so a limit
@@ -1143,7 +1154,14 @@ export async function runCampaign(
   }
   if (o.dryRun) {
     for (const b of blocks) {
-      io.log(`${b.task_id}#${b.repeat}: ${b.order.join(" -> ")}`);
+      const label = env.secretAccounts?.length
+        ? pickAccount(env.secretAccounts, b.index).label
+        : null;
+      io.log(
+        `${b.task_id}#${b.repeat}: ${b.order.join(" -> ")}${
+          label ? ` [${label}]` : ""
+        }`,
+      );
     }
     for (const line of await dryRunEstimate(env.store, c, data, blocks)) {
       io.log(line);

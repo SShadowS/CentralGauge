@@ -235,6 +235,8 @@ export const ExecutionRecordSchema = z.strictObject({
     reason: z.string().min(1),
     reset_at: Iso,
   }).optional(),
+  /** Claude account label the cell ran under (`--secrets-dir label=dir`); absent when unlabelled or stub. */
+  account: z.string().min(1).optional(),
 }).superRefine((e, ctx) => {
   waiverNeedsOverride(e, ctx);
   if (e.usage_reset_ignored && e.run_kind !== "auto_retry") {
