@@ -7,29 +7,30 @@ How they run: `--sql-cost` places a task's scenario sources as the only sources 
 test-rerun path: the start tree's Test app.json, which depends on every production app) over the execution's
 final production apps. It runs them with the measuring runner, which counts SQL statements per [Test] method.
 
-Each scenario is two or more methods, run in declaration order:
-- a setup method builds the data;
-- each following method makes one measured call.
+Every method is self-contained. It clears and builds its own data under its own key tag, so no method sees another
+method's data. The result therefore depends neither on the runner's isolation level nor on method order.
 
-The runner (Test Runner - Isol. Codeunit) rolls back after the codeunit, not after each method, so the setup data
-is there for the call methods. A call method's count is the call plus the constant per-method overhead.
+- 130450 "Test Runner - Isol. Codeunit" is `TestIsolation = Codeunit` (BC 28.4 symbols).
+- CG WS Test Runner switches to 130451 (Disabled) only for a codeunit that sets `RequiredTestIsolation = Disabled`.
+
+The `SetupOnly` method runs the setup alone. Every other method runs the same setup plus one call. A call's cost is
+`method - SetupOnly` within the same execution. The `Setup` name prefix marks that baseline.
 
 Rules (owner/orchestrator 2026-10-25):
 
 - Never under `tasks/` or `tests/al/`, never in a task summary, never scored. A scenario only measures.
 - Only the task's tables and public API. About 100 records inside the set the required procedure walks.
 - Success only is asserted (the call completes). Never the shape of the implementation.
-- A scenario that fails or does not compile on an agent's solution is recorded as `scenario_failed`, with its
+- A scenario that fails or does not compile on an agent's solution is recorded as `scenario_failed` with its
   error. It never changes a verdict or a pass rate.
-- Validation (on a container, after 10-27):
+- Validation, on a container after 10-27:
   - each scenario passes on the task's reference solution;
-  - its statement counts on the reference are recorded as the task's baseline;
-  - the same run confirms that setup data survives into the call methods.
+  - its net statement counts on the reference are recorded as the task's baseline.
 
-| Task | Codeunit | Methods (in order) |
+| Task | Codeunit | Methods |
 | --- | --- | --- |
-| HX-022 | 84980 | `Setup100Linked` (one vehicle, 100 linked records over 6 tables), `ChangeVehicleNo100` |
-| HX-038 | 84981 | `Setup100DueLines` (one lease, 100 due schedule lines), `Propose100`, `Invoice100` |
+| HX-022 | 84980 | `SetupOnly` (one vehicle, 100 linked records over 6 tables), `ChangeVehicleNo100` |
+| HX-038 | 84981 | `SetupOnly` (one lease, 100 due schedule lines), `Propose100`, `Invoice100` |
 
 The ids are inside the refapp Test app range (80000-84999). The scenario sources replace every Test source in that
 run, so they cannot collide with agent or shipped tests.

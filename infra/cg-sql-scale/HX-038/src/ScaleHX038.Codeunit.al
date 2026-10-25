@@ -3,29 +3,25 @@
 /// One lease with a 100-month schedule, every line due up to the run date.
 ///
 /// Placed as the only source of the Test app (the Q-04 test-rerun path) and run with
-/// `--sql-cost`, which counts SQL statements per [Test] method. Three methods, run in this
-/// order: Setup100DueLines builds the lease, Propose100 fills the temporary buffer with the
-/// 100 lines, Invoice100 creates the 100 invoice lines. The runner rolls back after the
-/// codeunit, not after each method, so the lease of the first method is there for the others.
-/// Success only is asserted: both calls complete without an error. Nothing about how the
-/// solution builds the lines is checked.
+/// `--sql-cost`, which counts SQL statements per [Test] method. Every method is self-contained:
+/// it builds its own vehicle and lease under its own key tag (S, P, I), and starts by clearing
+/// its own keys only. So no method sees another method's data, and the result depends neither on
+/// the runner's isolation level nor on method order.
+/// SetupOnly measures the setup alone; Propose100 and Invoice100 each measure the same setup plus
+/// one call. A call's cost is the difference, taken per execution (the "Setup" name prefix marks
+/// the baseline method).
+/// Success only is asserted: the calls complete without an error. Nothing about how the solution
+/// builds the lines is checked.
 /// </summary>
 codeunit 84981 "CG Scale HX-038"
 {
     Subtype = Test;
     TestPermissions = Disabled;
 
-    var
-        LeaseNoTok: Label 'CGSQL-L38', Locked = true;
-        VehicleNoTok: Label 'CGSQL-V38', Locked = true;
-        // The 100th line is due 99 months after the 2027-03-01 start.
-        UpToDate: Date;
-
     [Test]
-    procedure Setup100DueLines()
+    procedure SetupOnly()
     begin
-        InitRun();
-        NewLease(LeaseNoTok, VehicleNoTok, 100);
+        Setup100DueLines('S');
     end;
 
     [Test]
@@ -34,8 +30,8 @@ codeunit 84981 "CG Scale HX-038"
         InvoiceBuffer: Record "CGR Lease Invoice Line" temporary;
         LeaseInvoicing: Codeunit "CGR Lease Invoicing";
     begin
-        UpToDate := 20351231D;
-        LeaseInvoicing.ProposeInvoiceLines(LeaseNoTok, UpToDate, InvoiceBuffer);
+        Setup100DueLines('P');
+        LeaseInvoicing.ProposeInvoiceLines(LeaseNo('P'), LastDueDate(), InvoiceBuffer);
     end;
 
     [Test]
@@ -43,8 +39,30 @@ codeunit 84981 "CG Scale HX-038"
     var
         LeaseInvoicing: Codeunit "CGR Lease Invoicing";
     begin
-        UpToDate := 20351231D;
-        LeaseInvoicing.InvoiceDueLines(LeaseNoTok, UpToDate);
+        Setup100DueLines('I');
+        LeaseInvoicing.InvoiceDueLines(LeaseNo('I'), LastDueDate());
+    end;
+
+    local procedure LeaseNo(Tag: Text[1]): Code[20]
+    begin
+        exit(CopyStr('CGSQL-L38' + Tag, 1, 20));
+    end;
+
+    local procedure VehicleNo(Tag: Text[1]): Code[20]
+    begin
+        exit(CopyStr('CGSQL-V38' + Tag, 1, 20));
+    end;
+
+    /// <summary>The 100th line is due 99 months after the 2027-03-01 start.</summary>
+    local procedure LastDueDate(): Date
+    begin
+        exit(20351231D);
+    end;
+
+    local procedure Setup100DueLines(Tag: Text[1])
+    begin
+        InitRun();
+        NewLease(LeaseNo(Tag), VehicleNo(Tag), 100);
     end;
 
     local procedure InitRun()
@@ -60,7 +78,7 @@ codeunit 84981 "CG Scale HX-038"
         SessionContext.Reset();
     end;
 
-    local procedure NewLease(LeaseNo: Code[20]; VehicleNo: Code[20]; Months: Integer)
+    local procedure NewLease(ContractNo: Code[20]; VehNo: Code[20]; Months: Integer)
     var
         Vehicle: Record "CGR Vehicle";
         LeaseContract: Record "CGR Lease Contract";
@@ -68,27 +86,28 @@ codeunit 84981 "CG Scale HX-038"
         InvoiceLine: Record "CGR Lease Invoice Line";
         LeaseMgt: Codeunit "CGR Lease Mgt";
     begin
-        ScheduleLine.SetRange("Contract No.", LeaseNo);
+        ScheduleLine.SetRange("Contract No.", ContractNo);
         ScheduleLine.DeleteAll();
-        InvoiceLine.SetRange("Contract No.", LeaseNo);
+        InvoiceLine.SetRange("Contract No.", ContractNo);
         InvoiceLine.DeleteAll();
-        if LeaseContract.Get(LeaseNo) then
-            LeaseContract.Delete();
-        if not Vehicle.Get(VehicleNo) then begin
-            Vehicle.Init();
-            Vehicle."No." := VehicleNo;
-            Vehicle.Mileage := 1000;
-            Vehicle."Daily Rate" := 40;
-            Vehicle.Insert();
-        end;
+        LeaseContract.SetRange("No.", ContractNo);
+        LeaseContract.DeleteAll();
+        Vehicle.SetRange("No.", VehNo);
+        Vehicle.DeleteAll();
+
+        Vehicle.Init();
+        Vehicle."No." := VehNo;
+        Vehicle.Mileage := 1000;
+        Vehicle."Daily Rate" := 40;
+        Vehicle.Insert();
         LeaseContract.Init();
-        LeaseContract."No." := LeaseNo;
-        LeaseContract."Vehicle No." := VehicleNo;
+        LeaseContract."No." := ContractNo;
+        LeaseContract."Vehicle No." := VehNo;
         LeaseContract."Customer Name" := 'CGSQL Customer';
         LeaseContract."Start Date" := 20270301D;
         LeaseContract.Months := Months;
         LeaseContract."Base Rate" := 100;
         LeaseContract.Insert();
-        LeaseMgt.CreateSchedule(LeaseNo);
+        LeaseMgt.CreateSchedule(ContractNo);
     end;
 }

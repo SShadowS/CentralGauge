@@ -5,10 +5,13 @@
 /// 20 outbox entries (10 sent) and 10 damage entries.
 ///
 /// Placed as the only source of the Test app (the Q-04 test-rerun path) and run with
-/// `--sql-cost`, which counts SQL statements per [Test] method. Two methods, run in this order:
-/// Setup100Linked builds the data, ChangeVehicleNo100 makes the one call, so its count is the
-/// call plus the constant per-method overhead. The runner rolls back after the codeunit, not
-/// after each method, so the data of the first method is there for the second.
+/// `--sql-cost`, which counts SQL statements per [Test] method. Every method is self-contained:
+/// it builds its own data under its own key tag (S for SetupOnly, C for the call), and starts by
+/// clearing its own keys only. So no method sees another method's data, and the result depends
+/// neither on the runner's isolation level nor on method order.
+/// SetupOnly measures the setup alone; ChangeVehicleNo100 measures the same setup plus the one
+/// call. The call's cost is the difference, taken per execution (the "Setup" name prefix marks
+/// the baseline method).
 /// Success only is asserted: the call completes and the vehicle exists under the new number.
 /// Nothing about how the solution does it is checked.
 /// </summary>
@@ -17,21 +20,10 @@ codeunit 84980 "CG Scale HX-022"
     Subtype = Test;
     TestPermissions = Disabled;
 
-    var
-        OldNoTok: Label 'CGSQL-O', Locked = true;
-        NewNoTok: Label 'CGSQL-N', Locked = true;
-
     [Test]
-    procedure Setup100Linked()
+    procedure SetupOnly()
     begin
-        InitRun();
-        ClearVehicle(NewNoTok);
-        NewVehicle(OldNoTok);
-        AddRentals(OldNoTok, 15);
-        AddLeases(OldNoTok, 10);
-        AddOutbox(OldNoTok, 20);
-        // Last: open damages block the vehicle, which the setup above must not meet.
-        AddDamages(OldNoTok, 10);
+        Setup100Linked('S');
     end;
 
     [Test]
@@ -40,11 +32,37 @@ codeunit 84980 "CG Scale HX-022"
         Vehicle: Record "CGR Vehicle";
         FleetMgt: Codeunit "CGR Fleet Mgt";
     begin
-        if not Vehicle.Get(OldNoTok) then
-            Error('Scenario: Setup100Linked did not leave vehicle %1', OldNoTok);
-        FleetMgt.ChangeVehicleNo(OldNoTok, NewNoTok);
-        if not Vehicle.Get(NewNoTok) then
-            Error('Scenario: vehicle %1 does not exist after ChangeVehicleNo', NewNoTok);
+        Setup100Linked('C');
+        FleetMgt.ChangeVehicleNo(OldNo('C'), NewNo('C'));
+        if not Vehicle.Get(NewNo('C')) then
+            Error('Scenario: vehicle %1 does not exist after ChangeVehicleNo', NewNo('C'));
+    end;
+
+    local procedure OldNo(Tag: Text[1]): Code[20]
+    begin
+        exit(CopyStr('CGSQL-O' + Tag, 1, 20));
+    end;
+
+    local procedure NewNo(Tag: Text[1]): Code[20]
+    begin
+        exit(CopyStr('CGSQL-N' + Tag, 1, 20));
+    end;
+
+    local procedure KeyOf(Prefix: Text; Tag: Text[1]; I: Integer): Code[20]
+    begin
+        exit(CopyStr(StrSubstNo('CGSQL-%1%2-%3', Prefix, Tag, I), 1, 20));
+    end;
+
+    local procedure Setup100Linked(Tag: Text[1])
+    begin
+        InitRun();
+        ClearVehicle(NewNo(Tag));
+        NewVehicle(OldNo(Tag));
+        AddRentals(OldNo(Tag), Tag, 15);
+        AddLeases(OldNo(Tag), Tag, 10);
+        AddOutbox(OldNo(Tag), 20);
+        // Last: open damages block the vehicle, which the setup above must not meet.
+        AddDamages(OldNo(Tag), 10);
     end;
 
     local procedure InitRun()
@@ -104,7 +122,7 @@ codeunit 84980 "CG Scale HX-022"
         Vehicle.Insert();
     end;
 
-    local procedure AddRentals(VehicleNo: Code[20]; N: Integer)
+    local procedure AddRentals(VehicleNo: Code[20]; Tag: Text[1]; N: Integer)
     var
         Contract: Record "CGR Rental Contract";
         LedgerEntry: Record "CGR Rental Ledger Entry";
@@ -112,9 +130,7 @@ codeunit 84980 "CG Scale HX-022"
     begin
         for I := 1 to N do begin
             Contract.Init();
-            Contract."No." := CopyStr(StrSubstNo('CGSQL-C%1', I), 1, MaxStrLen(Contract."No."));
-            if Contract.Get(Contract."No.") then
-                Contract.Delete();
+            Contract."No." := KeyOf('C', Tag, I);
             Contract."Vehicle No." := VehicleNo;
             Contract."Customer Name" := 'CGSQL Customer';
             Contract."Start Date" := 20270301D;
@@ -132,24 +148,16 @@ codeunit 84980 "CG Scale HX-022"
     end;
 
     /// <summary>Each lease has a 3-month schedule, all 3 lines invoiced: 1 lease + 3 invoice lines per lease.</summary>
-    local procedure AddLeases(VehicleNo: Code[20]; N: Integer)
+    local procedure AddLeases(VehicleNo: Code[20]; Tag: Text[1]; N: Integer)
     var
         LeaseContract: Record "CGR Lease Contract";
-        ScheduleLine: Record "CGR Lease Schedule Line";
-        InvoiceLine: Record "CGR Lease Invoice Line";
         LeaseMgt: Codeunit "CGR Lease Mgt";
         LeaseInvoicing: Codeunit "CGR Lease Invoicing";
         LeaseNo: Code[20];
         I: Integer;
     begin
         for I := 1 to N do begin
-            LeaseNo := CopyStr(StrSubstNo('CGSQL-L%1', I), 1, MaxStrLen(LeaseNo));
-            ScheduleLine.SetRange("Contract No.", LeaseNo);
-            ScheduleLine.DeleteAll();
-            InvoiceLine.SetRange("Contract No.", LeaseNo);
-            InvoiceLine.DeleteAll();
-            if LeaseContract.Get(LeaseNo) then
-                LeaseContract.Delete();
+            LeaseNo := KeyOf('L', Tag, I);
             LeaseContract.Init();
             LeaseContract."No." := LeaseNo;
             LeaseContract."Vehicle No." := VehicleNo;
