@@ -1198,8 +1198,8 @@ export const BUILTIN_INVENTORY: Readonly<
   // disallows it, DISALLOWED_TOOLS, so it is hidden from here on and carried
   // unobserved like the six); capabilities interrupt_requeue_taken_v1 and
   // lifecycle_wakeup_source_v1 added (13; this adapter reads none). al-lsp
-  // v1.18.11 unchanged. The qualification is pending the reproof cells with
-  // Monitor hidden.
+  // v1.18.11 unchanged. Qualified by the R-01 stub cells, including the
+  // reproof with Monitor hidden.
   "2.1.310": {
     agents: [
       "claude",
@@ -1259,7 +1259,7 @@ export const BUILTIN_INVENTORY: Readonly<
       "Write",
     ],
     qualified:
-      "R-01 stub cells on image sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2 (plain 6cbdc5e3-6188-492d-ae8e-2c22ec7dbe00, c242df07-d446-4e8c-9690-6adf9e9aba78; LSP 6ce590dc-ef86-4693-9469-b4af080ca17d; web 784b6b0b-9cd8-43ee-87e7-eaa1b20f2089, b1fdf6dd-af49-4e0e-b226-b855ebd7ee4d; reproof pending; review H:\\cg-coord\\tasks\\R-01\\infra-qualify-2.1.310.md)",
+      "R-01 stub cells on image sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2 (capture plain 6cbdc5e3-6188-492d-ae8e-2c22ec7dbe00, c242df07-d446-4e8c-9690-6adf9e9aba78; LSP 6ce590dc-ef86-4693-9469-b4af080ca17d; web 784b6b0b-9cd8-43ee-87e7-eaa1b20f2089, b1fdf6dd-af49-4e0e-b226-b855ebd7ee4d; reproof with Monitor disallowed: plain 5fe02ad4-0351-4447-8a0d-79411164f934, 133a0ba8-cbff-46fa-aabf-1e96a7733929; LSP b4a326ca-1080-4f7a-8ae1-97d79d834a33, e620333e-e6c8-4495-8c51-15a3288fec25; web 4d78fb22-7174-4be3-8b14-464021fb513d, 2eaa5eaf-bbd5-40f1-8242-4966430aea68; review H:\\cg-coord\\tasks\\R-01\\infra-qualify-2.1.310.md)",
   },
 };
 

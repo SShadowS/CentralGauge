@@ -4659,14 +4659,24 @@ Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-0
   }
 });
 
-Deno.test("R-01: BUILTIN_INVENTORY 2.1.310 is 2.1.302 plus Monitor (a hidden tool); dev use qualified, the qualification still a placeholder", () => {
+Deno.test("R-01: BUILTIN_INVENTORY 2.1.310 is 2.1.302 plus Monitor (a hidden tool); dev use qualified, the qualification records the reproof", () => {
   const a = BUILTIN_INVENTORY["2.1.302"]!;
   const b = BUILTIN_INVENTORY["2.1.310"]!;
   assertEquals(b.agents, a.agents);
   assertEquals(b.skills, a.skills);
   assertEquals(b.plugins, a.plugins);
   assertEquals([...b.tools].sort(), [...a.tools, "Monitor"].sort());
-  assertStringIncludes(b.qualified, "reproof pending");
+  assertStringIncludes(b.qualified, "reproof with Monitor disallowed");
+  for (
+    const id of [
+      "5fe02ad4-0351-4447-8a0d-79411164f934",
+      "133a0ba8-cbff-46fa-aabf-1e96a7733929",
+      "b4a326ca-1080-4f7a-8ae1-97d79d834a33",
+      "e620333e-e6c8-4495-8c51-15a3288fec25",
+      "4d78fb22-7174-4be3-8b14-464021fb513d",
+      "2eaa5eaf-bbd5-40f1-8242-4966430aea68",
+    ]
+  ) assertStringIncludes(b.qualified, id);
   assertStringIncludes(
     b.qualified,
     "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2",
@@ -4721,4 +4731,72 @@ Deno.test("R-01: a 2.1.310 init listing Monitor while the arm disallows it is re
     await problems(as310(hidden), R01_EIGHT),
     ["missing tool Monitor"],
   );
+});
+
+// ---- R-01: Claude Code 2.1.310 dev qualification (level 1, track-latest) ----
+// The raw.jsonl of R-01 reproof stub cells (Monitor disallowed) on image
+// sha256:3b0327e66b26...: b4a326ca (LSP arm) and 4d78fb22 (web-on arm),
+// byte-exact except the CRLF line endings stored as LF.
+const STUB_310 = {
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.310-lsp.jsonl",
+  web: "tests/fixtures/harness/claude-code/stub-2.1.310-web.jsonl",
+};
+const arm310 = (lsp: boolean) => {
+  const a = arm302(lsp);
+  return {
+    ...a,
+    harness_version: "2.1.310",
+    settings: {
+      ...a.settings,
+      native: {
+        ...a.settings.native,
+        disallowed_tools: lsp ? R01_DEFAULT : R01_WEB,
+      },
+    },
+  };
+};
+
+Deno.test("qualification (R-01): the 2.1.310 stub captures (LSP, web-on) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_310.lsp : STUB_310.web);
+    const { r, dir } = await parse(text, 0, arm310(lsp));
+    const tag = lsp ? "lsp" : "web";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.310");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    // Cost reconciles exactly (gate 3).
+    assertAlmostEquals(
+      r.telemetry.cost_usd!,
+      r.telemetry.reported_cost_usd!,
+      1e-12,
+      tag,
+    );
+    assertEquals(r.termination, "completed", tag);
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    const init = JSON.parse(text.split("\n")[1]!);
+    assert(!init.tools.includes("Monitor"), tag);
+  }
+  // A 2.1.310 init that drops a builtin agent is still caught.
+  const text = await Deno.readTextFile(STUB_310.lsp);
+  const init = text.split("\n")[1]!;
+  const { r } = await parse(
+    text.replace(init, init.replace('"statusline-setup"', '"other-agent"')),
+    0,
+    arm310(true),
+  );
+  assert(r.inventoryProblems!.length > 0, "a changed builtin list is refused");
 });
