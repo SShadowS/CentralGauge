@@ -3039,6 +3039,7 @@ async function main() {
       "private-dir",
       "lineage",
       "sql-cost-task",
+      "sql-cost-scenarios",
     ],
     boolean: ["test-rerun", "sql-cost", "no-sql-cost-scenarios"],
     collect: ["pair", "coord-lease", "sql-cost-task"],
@@ -3062,7 +3063,7 @@ async function main() {
         "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]\n" +
         "  [--test-rerun --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--coord-lease <container>=<token> ...] [--private-dir <dir>]]\n" +
         "      Q-04: requires --alsem in the same invocation (test selection from its evidence); agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.\n" +
-        "  [--sql-cost --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--sql-cost-task <HX-nnn> ...] [--no-sql-cost-scenarios] [--coord-lease ...] [--private-dir <dir>]]\n" +
+        "  [--sql-cost --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--sql-cost-task <HX-nnn> ...] [--sql-cost-scenarios <dir> | --no-sql-cost-scenarios] [--coord-lease ...] [--private-dir <dir>]]\n" +
         "      Q-06: opt-in. Re-judges each execution with SQL measurement on (the judgment is discarded) and writes <out>/sql-cost/. Per task and arm only; fails closed.",
     );
     Deno.exit(2);
@@ -3558,9 +3559,15 @@ async function main() {
 
   if (args["sql-cost"]) {
     // Dynamic import: sql-cost.ts imports this module's helpers.
-    const { sqlCostStep } = await import("./sql-cost.ts");
+    const { scenarioRootOf, sqlCostStep } = await import("./sql-cost.ts");
     const { productionRunner } = await import("./sql-cost-runner.ts");
     const dir = join(out, "sql-cost");
+    // Before the environment opens: a bad override is refused up front.
+    const scenarioRoot = await scenarioRootOf({
+      off: args["no-sql-cost-scenarios"],
+      dir: args["sql-cost-scenarios"],
+      repo: resolve(repo),
+    });
     const local = Deno.env.get("LOCALAPPDATA");
     const privateRoot = args["private-dir"]
       ? resolve(args["private-dir"])
@@ -3596,10 +3603,8 @@ async function main() {
         dir,
         rev: args.rev,
         tasks: args["sql-cost-task"] as string[],
-        // Scale scenarios run for a task that has infra/cg-sql-scale/<task>/src.
-        scenarioRoot: args["no-sql-cost-scenarios"]
-          ? undefined
-          : join(resolve(repo), "infra", "cg-sql-scale"),
+        // Scale scenarios run for a task that has <root>/<task>/src.
+        scenarioRoot,
       });
     } finally {
       await runner.close?.();

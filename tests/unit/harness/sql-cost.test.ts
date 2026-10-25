@@ -1,10 +1,11 @@
 /** Q-06: the sql-cost step logic (fail closed, aggregation, cache, outputs, scenarios), with a mocked runner. */
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import type { Row } from "../../../scripts/harness/analyze-campaign.ts";
 import {
   median,
   type ScenarioRequest,
+  scenarioRootOf,
   type SqlCostCall,
   type SqlCostRequest,
   sqlCostRows,
@@ -453,6 +454,50 @@ Deno.test("sqlCostStep: a scenario infra throw is listed, not cached, and the or
   } finally {
     await Deno.remove(dir, { recursive: true });
     await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("scenarioRootOf: default infra/cg-sql-scale, --sql-cost-scenarios overrides, --no-sql-cost-scenarios turns the phase off", async () => {
+  const repo = await Deno.makeTempDir();
+  const other = await Deno.makeTempDir();
+  try {
+    assertEquals(
+      await scenarioRootOf({ off: false, repo }),
+      join(repo, "infra", "cg-sql-scale"),
+    );
+    assertEquals(await scenarioRootOf({ off: false, dir: other, repo }), other);
+    assertEquals(await scenarioRootOf({ off: true, repo }), undefined);
+    // both, or an override that is no directory: refused, never silently none
+    await assertRejects(
+      () => scenarioRootOf({ off: true, dir: other, repo }),
+      Error,
+      "--no-sql-cost-scenarios",
+    );
+    await assertRejects(
+      () => scenarioRootOf({ off: false, dir: join(other, "nope"), repo }),
+      Error,
+      "--sql-cost-scenarios",
+    );
+  } finally {
+    await Deno.remove(repo, { recursive: true });
+    await Deno.remove(other, { recursive: true });
+  }
+});
+
+Deno.test("sqlCostStep: an override root with the same sources reuses the cache (the key is the sources' sha, not the path)", async () => {
+  const dir = await Deno.makeTempDir();
+  const a = await scenarioRoot("one");
+  const b = await scenarioRoot("one");
+  try {
+    const { runner, seen, scenarios } = mockRunner();
+    const one = [exec("e1")];
+    await step(dir, runner, { scenarioRoot: a }, one);
+    await step(dir, runner, { scenarioRoot: b }, one);
+    assertEquals([seen.length, scenarios.length], [1, 1]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+    await Deno.remove(a, { recursive: true });
+    await Deno.remove(b, { recursive: true });
   }
 });
 

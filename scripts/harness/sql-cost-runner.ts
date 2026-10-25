@@ -6,9 +6,17 @@
  * environment (`openHarnessEnv`: bench lock, private-root lock, coord lease
  * check) and closes it at the end of the step.
  */
-import { join } from "@std/path";
-import type { BcLane, HarnessBc } from "../../src/harness/bc-lane.ts";
+import { dirname, fromFileUrl, join } from "@std/path";
+import type { WantedApp } from "../../src/harness/bc-apps.ts";
+import type {
+  BcLane,
+  HarnessBc,
+  MeasureResource,
+  TestRow,
+} from "../../src/harness/bc-lane.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
+import { hashFile } from "../../src/harness/hash.ts";
+import { readAppJson } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import { currentScorerFingerprint, judge } from "../../src/harness/verdict.ts";
 import { TEST_APP } from "../../src/harness/verdict-workspace.ts";
@@ -36,14 +44,16 @@ export type SqlCostEnv = Pick<
 >;
 
 /**
- * `bc` with `runHarnessTests` measuring. Each successful run is recorded by
- * codeunit in `sink`, the LAST run of a codeunit winning (an infra retry reruns
- * a codeunit on another container; the oracle codeunits run once, in G). A
- * result without measurements throws: never numbers-less.
+ * `bc` with `runHarnessTests` measuring. Every run that returns is appended to
+ * `sink`, in order: an infra retry or a control rerun runs a codeunit again,
+ * and which run is authoritative is decided against the judgment afterwards
+ * (authoritativeCalls), never here. The raw rows map a result as bc-lane's
+ * runTests does (no error text: not_run). A result without measurements
+ * throws: never numbers-less.
  */
 export function measuringBc(
   bc: HarnessBc,
-  sink: Map<number, SqlCostCall>,
+  sink: SqlCostCall[],
 ): HarnessBc {
   return {
     compileProject: (c, p) => bc.compileProject(c, p),
@@ -52,6 +62,12 @@ export function measuringBc(
     listHarnessApps: (c) => bc.listHarnessApps(c),
     syncHarnessApps: (c, p) => bc.syncHarnessApps(c, p),
     setHttpClientAllowed: (c, id, a) => bc.setHttpClientAllowed(c, id, a),
+    ...(bc.buildSqlMeasureApp
+      ? {
+        buildSqlMeasureApp: (c: string, w: string) =>
+          bc.buildSqlMeasureApp!(c, w),
+      }
+      : {}),
     async runHarnessTests(container, codeunit) {
       const r = await bc.runHarnessTests(container, codeunit, {
         measure: true,
@@ -59,16 +75,206 @@ export function measuringBc(
       if (!r.measurements) {
         throw new Error(`run of ${codeunit} returned no measurements`);
       }
-      sink.set(codeunit, {
+      sink.push({
         codeunit,
         container,
         rows: r.results.map((t) => ({
           procedure: t.name,
-          outcome: t.passed ? "pass" : "fail",
+          outcome: t.passed
+            ? "pass"
+            : t.error === undefined
+            ? "not_run"
+            : "fail",
         })),
         measurements: r.measurements,
       });
       return r;
+    },
+  };
+}
+
+/** The judgment's rows authoritativeCalls reads (JudgmentRecord.scorers). */
+type JudgedScorer = { name: string; tests: readonly TestRow[] };
+
+const keyOf = (codeunit: number, procedure: string) =>
+  `${codeunit}|${procedure.toLowerCase()}`;
+
+/**
+ * Q-06 fail closed: the measured calls that are the judgment's own runs, with
+ * the judgment's rows. Throws (no numbers) when:
+ * - any scorer row is not a pass or a fail (infra, not_run: a missing or
+ *   skipped procedure, error);
+ * - the task declares no fail_to_pass oracle, or the fail_to_pass rows are not
+ *   exactly the task-declared procedures, one row each;
+ * - a judged codeunit has no single authoritative run: for G's codeunits
+ *   (pass_to_pass and fail_to_pass) the run on the container of the last G
+ *   deployment (the attempt that returned; earlier attempts were infra
+ *   retries), for every other codeunit its only run;
+ * - a declared oracle procedure lacks exactly one measurement in that run, or
+ *   the measurement's success disagrees with the judgment's outcome.
+ */
+export function authoritativeCalls(
+  /** The loaded task.yml (HarnessTask): its declared suites. */
+  task: {
+    pass_to_pass: readonly { codeunit: number }[];
+    fail_to_pass:
+      | {
+        tests: readonly { codeunit: number; procedures: readonly string[] }[];
+      }
+      | null;
+  },
+  judgment: { scorers: readonly JudgedScorer[] },
+  deployments: readonly { hold: string; container: string }[],
+  calls: readonly SqlCostCall[],
+): { oracle_codeunits: number[]; calls: SqlCostCall[] } {
+  if (!task.fail_to_pass) throw new Error("task has no fail_to_pass oracle");
+  for (const s of judgment.scorers) {
+    for (const t of s.tests) {
+      if (t.outcome !== "pass" && t.outcome !== "fail") {
+        throw new Error(
+          `${s.name} ${t.codeunit} ${t.procedure} is ${t.outcome} (${t.failure})`,
+        );
+      }
+    }
+  }
+  const expected = new Set(
+    task.fail_to_pass.tests.flatMap((x) =>
+      x.procedures.map((p) => keyOf(x.codeunit, p))
+    ),
+  );
+  const f2p = judgment.scorers.find((s) => s.name === "fail_to_pass")?.tests ??
+    [];
+  const seen = new Map<string, number>();
+  for (const t of f2p) {
+    const k = keyOf(t.codeunit, t.procedure);
+    if (!expected.has(k)) {
+      throw new Error(
+        `fail_to_pass row ${t.codeunit} ${t.procedure} is not declared by the task`,
+      );
+    }
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  for (const x of task.fail_to_pass.tests) {
+    for (const p of x.procedures) {
+      const n = seen.get(keyOf(x.codeunit, p)) ?? 0;
+      if (n !== 1) {
+        throw new Error(
+          `oracle ${x.codeunit} ${p} has ${n} fail_to_pass rows, not 1`,
+        );
+      }
+    }
+  }
+  const inG = new Set([
+    ...task.pass_to_pass.map((x) => x.codeunit),
+    ...task.fail_to_pass.tests.map((x) => x.codeunit),
+  ]);
+  const lastG = deployments.filter((d) => d.hold === "G").at(-1)?.container;
+  if (lastG === undefined) throw new Error("the judgment has no G deployment");
+  // Judged rows by codeunit, in the judgment's order.
+  const rowsOf = new Map<number, TestRow[]>();
+  for (const s of judgment.scorers) {
+    for (const t of s.tests) {
+      rowsOf.set(t.codeunit, [...rowsOf.get(t.codeunit) ?? [], t]);
+    }
+  }
+  const out: SqlCostCall[] = [];
+  for (const [codeunit, rows] of rowsOf) {
+    const runs = calls.filter((c) =>
+      c.codeunit === codeunit && (!inG.has(codeunit) || c.container === lastG)
+    );
+    if (runs.length !== 1) {
+      throw new Error(
+        `codeunit ${codeunit} has ${runs.length} measured runs${
+          inG.has(codeunit) ? ` on ${lastG} (the final G deployment)` : ""
+        }: the authoritative run cannot be decided`,
+      );
+    }
+    const run = runs[0]!;
+    for (const t of rows) {
+      if (!expected.has(keyOf(t.codeunit, t.procedure))) continue;
+      const mine = run.measurements.filter((m) =>
+        keyOf(m.codeunit, m.procedure) === keyOf(t.codeunit, t.procedure)
+      );
+      if (mine.length !== 1) {
+        throw new Error(
+          `oracle ${t.codeunit} ${t.procedure} has ${mine.length} measurements, not 1`,
+        );
+      }
+      if (mine[0]!.success !== (t.outcome === "pass")) {
+        throw new Error(
+          `oracle ${t.codeunit} ${t.procedure}: measured success ${
+            mine[0]!.success
+          } disagrees with the judgment's ${t.outcome}`,
+        );
+      }
+    }
+    out.push({
+      codeunit,
+      container: run.container,
+      rows: rows.map((t) => ({
+        procedure: t.procedure,
+        outcome: t.outcome as "pass" | "fail",
+      })),
+      measurements: run.measurements,
+    });
+  }
+  return {
+    oracle_codeunits: [
+      ...new Set(task.fail_to_pass.tests.map((x) => x.codeunit)),
+    ],
+    calls: out,
+  };
+}
+
+/**
+ * Q-06: the measure app as a deployment resource of the measured judgment and
+ * of scenario reruns (deployAndTest's `measure`): built once per container
+ * (bc.buildSqlMeasureApp: the pinned harness staged into its symbols), then
+ * published, ledgered, trusted for removal and removed by every deployment
+ * like the other harness apps.
+ */
+export async function measureResource(
+  bc: HarnessBc,
+  work: string,
+): Promise<MeasureResource> {
+  const root = fromFileUrl(
+    new URL("../../infra/cg-sql-measure", import.meta.url),
+  );
+  const aj = await readAppJson(join(root, "app.json"));
+  const built = new Map<string, Promise<WantedApp>>();
+  const build = async (container: string): Promise<WantedApp> => {
+    if (!bc.buildSqlMeasureApp) {
+      throw new Error("this bc cannot build the measure app");
+    }
+    const file = await bc.buildSqlMeasureApp(
+      container,
+      join(work, `measure-${container}`),
+    );
+    const sha256 = await hashFile(dirname(file), file);
+    return {
+      id: aj.id.toLowerCase(),
+      name: aj.name,
+      publisher: aj.publisher,
+      version: aj.version,
+      stamp: sha256,
+      file,
+      role: "prereq",
+      depends: [],
+      sha256,
+    };
+  };
+  return {
+    id: aj.id.toLowerCase(),
+    root,
+    app(container) {
+      let p = built.get(container);
+      if (!p) {
+        p = build(container);
+        built.set(container, p);
+        // A failed build is retried by the next deployment.
+        p.catch(() => built.delete(container));
+      }
+      return p;
     },
   };
 }
@@ -133,6 +339,11 @@ export async function envRunner(
       /\?[^|]*/,
       "",
     );
+  // Built from the unwrapped bc, once per container for the whole step.
+  const measure = await measureResource(
+    env.lane.bc,
+    join(workRoot, "measure-app"),
+  );
 
   async function run(req: SqlCostRequest): Promise<SqlCostRunnerResult> {
     const workDir = join(workRoot, crypto.randomUUID().slice(0, 8));
@@ -144,9 +355,10 @@ export async function envRunner(
         req.executionId,
         req.judgmentId,
       );
-      const calls = new Map<number, SqlCostCall>();
-      // The same inputs computeIn builds; the output is read and dropped.
-      const { judgment } = await withBc(
+      const calls: SqlCostCall[] = [];
+      // The same inputs computeIn builds, plus the measure app as a resource
+      // of every deployment; the output is read and dropped.
+      const { judgment, log } = await withBc(
         env.lane,
         measuringBc(env.lane.bc, calls),
         () =>
@@ -161,23 +373,27 @@ export async function envRunner(
             workDir,
             lock: { store: env.symbolStore, packages: env.symbols },
             onPrem: env.onPrem,
-            deploy: env.deploy,
+            deploy: { ...env.deploy, measure },
             harnessCommit: env.harnessCommit,
             ...(env.buildCache ? { buildCache: env.buildCache } : {}),
           }),
       );
-      // The oracle is what scoreChange runs as fail_to_pass.
-      const oracle = judgment.scorers.find((s) => s.name === "fail_to_pass");
       const container = judgment.verdict_container;
       if (!container) {
         throw new Error("the measured judgment ran on no container");
       }
+      // Fail closed: only the judgment's own runs, joined against the task's
+      // declared oracle (the rows are the judgment's, never the raw SOAP flags).
+      const { oracle_codeunits, calls: authoritative } = authoritativeCalls(
+        at.task.task,
+        judgment,
+        log.deployments ?? [],
+        calls,
+      );
       return {
         verdict: judgment.verdict,
-        oracle_codeunits: [
-          ...new Set((oracle?.tests ?? []).map((t) => t.codeunit)),
-        ],
-        calls: [...calls.values()],
+        oracle_codeunits,
+        calls: authoritative,
         identity: { container, bc_version: await bcVersion(container) },
       };
     } finally {
@@ -203,8 +419,8 @@ export async function envRunner(
       for (const f of req.files) {
         await Deno.writeTextFile(join(test, TEST_APP, f.name), f.text);
       }
-      const calls = new Map<number, SqlCostCall>();
-      const rerun = await rerunRunner(env, join(dir, "rerun"));
+      const calls: SqlCostCall[] = [];
+      const rerun = await rerunRunner(env, join(dir, "rerun"), { measure });
       const r = await withBc(
         env.lane,
         measuringBc(env.lane.bc, calls),
@@ -220,7 +436,11 @@ export async function envRunner(
       return {
         compile: r.compile,
         rows: r.rows,
-        measurements: [...calls.values()].flatMap((c) => c.measurements),
+        // Only the held run's container: an infra-retried attempt elsewhere is
+        // not authoritative; a codeunit run twice there duplicates its
+        // measurements, which scenarioRecord treats as unmeasured.
+        measurements: calls.filter((c) => c.container === r.identity.container)
+          .flatMap((c) => c.measurements),
         identity: {
           container: r.identity.container,
           bc_version: r.identity.bc_version,

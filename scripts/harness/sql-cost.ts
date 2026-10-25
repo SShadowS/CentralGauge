@@ -20,7 +20,7 @@
  * framework overhead per test, so they compare solutions of one task; they are
  * never totalled across tasks.
  */
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import {
   csv,
   type DoneStamp,
@@ -56,7 +56,7 @@ export const SQL_COST_DERIVATION = 2;
 export interface SqlCostCall {
   codeunit: number;
   container: string;
-  /** One per test the TestResult listed. */
+  /** The measured judgment's rows for this codeunit (authoritativeCalls), never raw SOAP flags. */
   rows: {
     procedure: string;
     outcome: "pass" | "fail" | "not_run" | "infra";
@@ -67,9 +67,9 @@ export interface SqlCostCall {
 export interface SqlCostRunnerResult {
   /** Verdict of the measured (discarded) judgment. */
   verdict: string | null;
-  /** Codeunits the judgment ran as fail_to_pass: the oracle. */
+  /** The task's declared fail_to_pass codeunits: the oracle. */
   oracle_codeunits: number[];
-  /** The last measured run of each codeunit. */
+  /** The authoritative run of each judged codeunit (one each). */
   calls: SqlCostCall[];
   identity: { container: string; bc_version: string };
 }
@@ -379,6 +379,33 @@ function flatRows(
 }
 
 // ---------------------------------------------------------------- step
+
+/**
+ * The scale scenario root: `<repo>/infra/cg-sql-scale` by default,
+ * `--sql-cost-scenarios <dir>` instead, none with `--no-sql-cost-scenarios`.
+ * Both flags, or an override that is not a directory, are refused (never a
+ * silent run without scenarios). The cache keys on the sources' sha, not on
+ * this path.
+ */
+export async function scenarioRootOf(o: {
+  off: boolean;
+  dir?: string | undefined;
+  repo: string;
+}): Promise<string | undefined> {
+  if (o.off && o.dir) {
+    throw new Error(
+      "--sql-cost-scenarios and --no-sql-cost-scenarios exclude each other",
+    );
+  }
+  if (o.off) return undefined;
+  if (!o.dir) return join(o.repo, "infra", "cg-sql-scale");
+  const dir = resolve(o.dir);
+  const st = await Deno.stat(dir).catch(() => null);
+  if (!st?.isDirectory) {
+    throw new Error(`--sql-cost-scenarios ${dir} is not a directory`);
+  }
+  return dir;
+}
 
 export async function sqlCostStep(o: {
   runner: SqlCostRunner;
