@@ -269,13 +269,18 @@ const f = (x: number | null, d = 4) => x === null ? "" : String(+x.toFixed(d));
 export interface CohortSize {
   observedTasks: number;
   expectedTasks: number;
+  /** Applicable pairs (not_applicable removed); a task counts as observed after one repeat. */
+  observedPairs?: number;
+  expectedPairs?: number;
 }
 
 /**
  * The generated sentence. "consistent" only when the effect holds across the
  * observed tasks (>= 3 non-tied, one direction, no LOTO flip) AND the cohort is
- * complete (every expected task observed). An incomplete cohort is always
- * flagged. The median difference is the raw, descriptive one.
+ * complete: every expected task AND every expected applicable pair observed (a
+ * task counts as observed after one repeat, so task counts alone are not
+ * enough). Otherwise "task-dependent", with each incompleteness flagged. The
+ * median difference is the raw, descriptive one.
  */
 export function wording(
   a: Agg,
@@ -292,11 +297,19 @@ export function wording(
   const holds = a.k + a.m >= 3 && (a.k === 0 || a.m === 0) && !a.loto.flips;
   const incomplete = cohort !== undefined &&
     cohort.observedTasks !== cohort.expectedTasks;
-  const tail = incomplete
-    ? `; incomplete cohort (${cohort.observedTasks} of ${cohort.expectedTasks} tasks observed)`
-    : "";
-  if (holds && !incomplete) return `${base}; consistent in stratum ${stratum}`;
-  return `${base}${holds ? "" : "; task-dependent"}${tail}`;
+  const repeatsMissing = cohort?.expectedPairs !== undefined &&
+    cohort.observedPairs !== cohort.expectedPairs;
+  const tail =
+    (incomplete
+      ? `; incomplete cohort (${cohort.observedTasks} of ${cohort.expectedTasks} tasks observed)`
+      : "") +
+    (repeatsMissing
+      ? `; incomplete repeat coverage (${cohort.observedPairs} of ${cohort.expectedPairs} pairs observed)`
+      : "");
+  if (holds && !incomplete && !repeatsMissing) {
+    return `${base}; consistent in stratum ${stratum}`;
+  }
+  return `${base}; task-dependent${tail}`;
 }
 
 // ------------------------------------------------------------------ pairs
@@ -1239,6 +1252,8 @@ export async function runReport(o: RunOptions): Promise<void> {
             wording: wording(agg, s, {
               observedTasks: cs.observedTasks,
               expectedTasks: cs.expectedTasks,
+              observedPairs: cs.observedPairs,
+              expectedPairs: cs.expectedPairs,
             }),
           });
         }
