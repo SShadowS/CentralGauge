@@ -334,6 +334,14 @@ function checkTestCoverage(tc: unknown): string | null {
     if (tc[k] !== undefined && !(Array.isArray(tc[k]) && tc[k].every(isObj))) {
       return `payload.testCoverage.${k}`;
     }
+    const s = (x: unknown) => typeof x === "string" && x !== "";
+    for (const it of (tc[k] ?? []) as J[]) {
+      const a = it["anchor"];
+      if (
+        !s(it["stableId"]) || (k === "uncovered" && !s(it["reason"])) ||
+        (a !== undefined && !(isObj(a) && typeof a["file"] === "string"))
+      ) return `payload.testCoverage.${k}[]`;
+    }
   }
   const changed = tc["changedRoutines"];
   const covered = tc["coveredChangedRoutines"];
@@ -419,9 +427,9 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
             ? "payload.entries[].unresolved"
             : !str(r["stableId"])
             ? "payload.entries[].routine.stableId"
-            : anchor !== undefined && !isObj(anchor)
+            : !isObj(anchor)
             ? "payload.entries[].routine.anchor"
-            : isObj(anchor) && typeof anchor["file"] !== "string"
+            : !str(anchor["file"])
             ? "payload.entries[].routine.anchor.file"
             : fx !== undefined && !Array.isArray(fx)
             ? "payload.entries[].effects"
@@ -1767,7 +1775,8 @@ export interface DoneStamp {
  * bytes, not validation under the current rules, so bump it whenever any
  * validation tightens (a done row of an older epoch is revalidated, never skipped).
  */
-export const DERIVATION = 9;
+export const DERIVATION = 10;
+// v10 (A-03b Sol self-check r2): validation tightened, nothing recomputed. Every digest entry needs routine.anchor as an object with a non-empty string file (an absent location no longer counts as production); testCoverage covered + uncovered items need a non-empty stableId, uncovered items a non-empty reason, and an anchor when present must be an object with a string file. Done rows of epoch 9 are revalidated.
 // v9 (A-03b Sol self-check r1): validation tightened, nothing recomputed. testCoverage covered + uncovered lists must sum to changedRoutines; digest routine.anchor.file, effect detail.boundary and detail.resourceDisplay must be strings when present; test_quality procedure counts must be nonnegative integers with are_equal.literal_expected + expression_expected == total, assert_count_reachable >= assert_count and zero_assert == (assert_count_reachable == 0). Done rows of epoch 8 are revalidated.
 // v8 (A-03b, al-sem 2.1.0-rc.4): the digest is cross-app. (a) A digest effect can be a dependency boundary group (detail.boundary): digestTouches leaves it out of tables_written / tables_read / events_published / commits (those stay workspace-code effects, comparable with 2.0.3) and counts the production ones in dependency_effect_groups. (b) summary.totalUnresolved now includes dependency routines' unresolved calls, which land on the Test app's entries: unresolved is the sum of entries[].unresolved lengths over production entries, unresolved_raw keeps totalUnresolved, a non-array entries[].unresolved fails the digest. looseFingerprint values change per detector in 2.1 (#252) with no consumer change: the cache path and done rows are keyed by the binaries' sha256, so 2.0.3 artifacts are never reused.
 // v7 (A-03b smoke): test coverage counts production routines only (al-sem also counts test-app helpers and non-[Test] test-codeunit procedures), declaration-only routines leave the denominator, al-sem's raw values kept as *_raw, an unmappable covered / uncovered stableId fails the row.

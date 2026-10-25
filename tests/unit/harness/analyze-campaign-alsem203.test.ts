@@ -573,11 +573,14 @@ Deno.test("alsemEnvelope digest: anchor.file and effect detail.boundary / resour
     "anchor.file as a number",
   );
   reject(
-    withEntry({ stableId: "r" }, [{ type: "COMMIT", detail: { boundary: 7 } }]),
+    withEntry({ stableId: "r", anchor: { file: "ws:Prod/A.al" } }, [{
+      type: "COMMIT",
+      detail: { boundary: 7 },
+    }]),
     "boundary as a number",
   );
   reject(
-    withEntry({ stableId: "r" }, [
+    withEntry({ stableId: "r", anchor: { file: "ws:Prod/A.al" } }, [
       { type: "DB_MODIFY", detail: { resourceDisplay: 7 } },
     ]),
     "resourceDisplay as a number",
@@ -588,6 +591,109 @@ Deno.test("alsemEnvelope digest: anchor.file and effect detail.boundary / resour
     { type: "COMMIT" },
   ]);
   assertEquals(alsemEnvelope(env(ok), "digest").kind, "digest");
+});
+
+Deno.test("alsemEnvelope digest: every entry needs routine.anchor as an object with a non-empty file", () => {
+  const withRoutine = (routine: unknown) => ({
+    entries: [{ routine, effects: [] }],
+    summary: {},
+    changedRootsDiagnostics: [],
+  });
+  assertThrows(
+    () => alsemEnvelope(env(withRoutine({ stableId: "r" })), "digest"),
+    Error,
+    "payload.entries[].routine.anchor",
+  );
+  assertThrows(
+    () =>
+      alsemEnvelope(
+        env(withRoutine({ stableId: "r", anchor: "ws:Prod/A.al" })),
+        "digest",
+      ),
+    Error,
+    "payload.entries[].routine.anchor",
+  );
+  assertThrows(
+    () =>
+      alsemEnvelope(
+        env(withRoutine({ stableId: "r", anchor: { file: "" } })),
+        "digest",
+      ),
+    Error,
+    "payload.entries[].routine.anchor.file",
+  );
+  assertThrows(
+    () =>
+      alsemEnvelope(env(withRoutine({ stableId: "r", anchor: {} })), "digest"),
+    Error,
+    "payload.entries[].routine.anchor.file",
+  );
+});
+
+Deno.test("alsemEnvelope digest with --tests: testCoverage items need stableId, uncovered a reason, anchor an object with a string file", () => {
+  const run = (mutate: (p: ReturnType<typeof mixedCoverage>) => void) => {
+    const p = mixedCoverage();
+    mutate(p);
+    return () => alsemEnvelope(env(p), "digest", { tests: true });
+  };
+  assertEquals(run(() => {})().kind, "digest");
+  // Sol's counterexample: a numeric reason would silently move the routine out of declaration-only.
+  assertThrows(
+    run((p) => {
+      p.testCoverage.uncovered[2]!["reason"] = 7;
+    }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertThrows(
+    run((p) => {
+      delete p.testCoverage.uncovered[0]!["reason"];
+    }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertThrows(
+    run((p) => {
+      p.testCoverage.uncovered[0]!["reason"] = "";
+    }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertThrows(
+    run((p) => {
+      delete p.testCoverage.covered[0]!["stableId"];
+    }),
+    Error,
+    "payload.testCoverage.covered[]",
+  );
+  assertThrows(
+    run((p) => {
+      p.testCoverage.uncovered[0]!["stableId"] = "";
+    }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertThrows(
+    run((p) => {
+      p.testCoverage.uncovered[1]!["anchor"] = "ws:Test/T.Codeunit.al";
+    }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertThrows(
+    run((p) => {
+      p.testCoverage.uncovered[1]!["anchor"] = { file: 3 };
+    }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertThrows(
+    run((p) => {
+      p.testCoverage.covered[0]!["anchor"] = { line: 1 };
+    }),
+    Error,
+    "payload.testCoverage.covered[]",
+  );
 });
 
 Deno.test("checkedAch: test_quality counts are nonnegative integers with consistent are_equal and zero_assert", () => {
