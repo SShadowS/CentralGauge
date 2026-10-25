@@ -73,8 +73,10 @@ import {
  * start-tree Test procedures for every task kind (evidence required for every execution; the
  * text codeunit scanner no longer decides the shipped suite). al-sem's own DERIVATION is part
  * of the evidence binding.
+ * 12 (Q-04c): directive spans are recorded in one lexer pass and only those are blanked (a
+ * region label holding a comment opener no longer desyncs two passes and blanks real lines).
  */
-export const TEST_RERUN_DERIVATION = 11;
+export const TEST_RERUN_DERIVATION = 12;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -605,20 +607,52 @@ export function attrFingerprint(text: string): string {
   return groups.sort().join("");
 }
 
-/** `raw` with every line the lexer reads as a directive blanked whole (comments and strings kept); offsets kept. */
+// `raw` with every directive line blanked whole (comments and strings kept); offsets kept.
+// The directive spans are recorded in ONE pass with stripAlNoise's own rules (a `#` line in
+// code position is a directive; comments and strings are skipped), so a directive's label is
+// never lexed: `#region Documentation for /* comments` opens no block comment, and a `#`
+// line inside a block comment is comment text, so the comment's closing `*/` survives.
+const DIRECTIVE = /[ \t]*#/y;
 function withoutDirectiveLines(raw: string): string {
-  const masked = stripAlNoise(raw, { directives: true });
-  // Without directives: true a directive line survives, so a line differing between the two
-  // is one; a `#` line inside a block comment is comment text and stays, so its `*/` survives.
-  const plain = stripAlNoise(raw);
-  let at = 0;
-  return raw.split("\n").map((line) => {
-    const from = at;
-    at += line.length + 1;
-    return plain.slice(from, at - 1) !== masked.slice(from, at - 1)
-      ? " ".repeat(line.length)
-      : line;
-  }).join("\n");
+  const n = raw.length;
+  const spans: [number, number][] = [];
+  const eol = (from: number) => {
+    const e = raw.indexOf("\n", from);
+    return e === -1 ? n : e;
+  };
+  let i = 0;
+  while (i < n) {
+    const c = raw[i]!;
+    const d = raw[i + 1];
+    DIRECTIVE.lastIndex = i;
+    if ((i === 0 || raw[i - 1] === "\n") && DIRECTIVE.test(raw)) {
+      spans.push([i, i = eol(i)]);
+    } else if (c === "/" && d === "/") i = eol(i);
+    else if (c === "/" && d === "*") {
+      const e = raw.indexOf("*/", i + 2);
+      i = e === -1 ? n : e + 2;
+    } else if (c === "'") {
+      // AL strings never span lines; '' is an escaped quote
+      let j = i + 1;
+      while (j < n && raw[j] !== "\n") {
+        if (raw[j] === "'" && raw[j + 1] === "'") j += 2;
+        else if (raw[j] === "'") {
+          j++;
+          break;
+        } else j++;
+      }
+      i = j;
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < n && raw[j] !== '"' && raw[j] !== "\n") j++;
+      i = raw[j] === '"' ? j + 1 : j;
+    } else i++;
+  }
+  let out = raw;
+  for (const [a, b] of spans) {
+    out = out.slice(0, a) + " ".repeat(b - a) + out.slice(b);
+  }
+  return out;
 }
 
 /** One Test file lexed once: the raw text, the masked copy (same offsets) and the raw text without directive lines. */
