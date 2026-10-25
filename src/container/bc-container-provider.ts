@@ -19,6 +19,7 @@ import type {
   ContainerStatus,
   HarnessInstalledApp,
   HarnessSyncResult,
+  MeasuredTestResult,
   TestResult,
 } from "./types.ts";
 import { ensureDir } from "@std/fs";
@@ -78,6 +79,7 @@ import {
   resolveSoapTimeoutMs,
   runTestsViaSoap,
   setHttpClientAllowedViaSoap,
+  SQL_MEASURE_APP_VERSION,
 } from "./soap-test-client.ts";
 import { compilerCacheKey } from "./compiler-cache-key.ts";
 import { dockerContextEnv } from "./docker-context.ts";
@@ -372,6 +374,12 @@ export class BcContainerProvider implements ContainerProvider {
   // Bump HARNESS_APP_VERSION (and infra/cg-test-harness/app.json) to force
   // redeployment after changing the harness source.
   private static readonly HARNESS_APP_VERSION = "1.0.2.0";
+  // Q-06: the opt-in SQL measurement app. Bump SQL_MEASURE_APP_VERSION (and
+  // infra/cg-sql-measure/app.json) after changing its source; the same value
+  // is the measurement version the sql-cost cache keys on.
+  private static readonly SQL_MEASURE_APP_DIR = "infra/cg-sql-measure";
+  private static readonly SQL_MEASURE_APP_NAME = "CG SQL Measure";
+  private static readonly SQL_MEASURE_APP_VERSION = SQL_MEASURE_APP_VERSION;
 
   // Per-container session slots. Each slot owns its own lock + session ref +
   // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`
@@ -1541,16 +1549,43 @@ ${script}
    *      missing or its probe failed), so it stays serial on the path that
    *      has been proven; see the per-container try/catch below.
    */
-  async ensureTestHarness(containerNames: string[]): Promise<void> {
+  ensureTestHarness(containerNames: string[]): Promise<void> {
+    return this.ensureHarnessApp(containerNames, {
+      dir: BcContainerProvider.HARNESS_APP_DIR,
+      name: BcContainerProvider.HARNESS_APP_NAME,
+      version: BcContainerProvider.HARNESS_APP_VERSION,
+      label: "Test harness",
+    });
+  }
+
+  /**
+   * Q-06: ensure the opt-in `CG SQL Measure` app (infra/cg-sql-measure) is
+   * published. Called only when measuring; it depends on CG Test Harness, so
+   * that is ensured first. Its own version constant gates redeployment.
+   */
+  async ensureSqlMeasure(containerNames: string[]): Promise<void> {
+    await this.ensureTestHarness(containerNames);
+    await this.ensureHarnessApp(containerNames, {
+      dir: BcContainerProvider.SQL_MEASURE_APP_DIR,
+      name: BcContainerProvider.SQL_MEASURE_APP_NAME,
+      version: BcContainerProvider.SQL_MEASURE_APP_VERSION,
+      label: "SQL measure app",
+    });
+  }
+
+  private async ensureHarnessApp(
+    containerNames: string[],
+    app: { dir: string; name: string; version: string; label: string },
+  ): Promise<void> {
     if (!this.isWindows()) return;
 
     const probeScript = (name: string) => `
       ${bcchImport()}
       $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
-        $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
-        $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
+        $_.Name -eq "${app.name}" -and
+        $_.Version -eq "${app.version}"
       }
-      if ($a) { Write-Output "HARNESS_PRESENT" } else { Write-Output "HARNESS_ABSENT" }
+      if ($a) { Write-Output "APP_PRESENT" } else { Write-Output "APP_ABSENT" }
     `;
     // Promise.allSettled (not Promise.all): one container's probe throwing
     // must not prevent the others from being probed, and must not reject
@@ -1569,14 +1604,14 @@ ${script}
       const probe = probeResults[i]!;
       if (
         probe.status === "fulfilled" &&
-        probe.value.output.includes("HARNESS_PRESENT")
+        probe.value.output.includes("APP_PRESENT")
       ) {
-        log.info(`Test harness already published on ${name}`);
+        log.info(`${app.label} already published on ${name}`);
         return;
       }
       if (probe.status === "rejected") {
         log.warn(
-          `Test harness presence probe failed for ${name}; attempting publish`,
+          `${app.label} presence probe failed for ${name}; attempting publish`,
           {
             error: probe.reason instanceof Error
               ? probe.reason.message
@@ -1596,7 +1631,7 @@ ${script}
         // ../../ reaches the repo root.
         const projectDir = fromFileUrl(
           new URL(
-            `../../${BcContainerProvider.HARNESS_APP_DIR}`,
+            `../../${app.dir}`,
             import.meta.url,
           ),
         );
@@ -1616,29 +1651,29 @@ ${script}
           # Publishing over a different installed version makes the ForceSync
           # publish+install conflict (tenant left OperationalWithSyncPending).
           # The harness is schemaless, so the unpublish is clean.
-          $old = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" })
+          $old = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Name -eq "${app.name}" })
           foreach ($o in $old) {
             Unpublish-BcContainerApp -containerName "${name}" -appName $o.Name -publisher $o.Publisher -version $o.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
           }
           Publish-BcContainerApp -containerName "${name}" -appFile $app \`
             -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
-          Write-Output "HARNESS_PUBLISHED:$app"
+          Write-Output "APP_PUBLISHED:$app"
         `);
-        if (!result.output.includes("HARNESS_PUBLISHED:")) {
+        if (!result.output.includes("APP_PUBLISHED:")) {
           // The surrounding catch logs this non-fatally; include the output
           // tail in the message so compile/publish failures are visible
           // without --debug.
           throw new Error(
-            `Failed to compile/publish CG Test Harness on ${name}:\n${
+            `Failed to compile/publish ${app.label} on ${name}:\n${
               result.output.slice(-2000)
             }`,
           );
         }
-        log.info(`Test harness published on ${name}`);
+        log.info(`${app.label} published on ${name}`);
       } catch (e) {
         // Non-fatal: runTests() falls back to the legacy path when the harness
         // is unavailable, so a deploy failure must not abort the bench.
-        log.warn(`ensureTestHarness failed for ${name}; SOAP path disabled`, {
+        log.warn(`ensureHarnessApp failed for ${name}; SOAP path disabled`, {
           error: e instanceof Error ? e.message : String(e),
         });
       }
@@ -2251,11 +2286,28 @@ ${script}
   }
 
   /** Harness Bench: one test codeunit through the SOAP runner. */
-  runHarnessTests(
+  async runHarnessTests(
     containerName: string,
     codeunit: number,
-  ): Promise<TestResult> {
-    return runTestsViaSoap(this.soapConfigFor(containerName), codeunit, "");
+    opts?: { measure?: boolean },
+  ): Promise<MeasuredTestResult> {
+    const measure = opts?.measure === true;
+    if (measure) {
+      // The legacy client-session path has no measuring service: never
+      // return a result without numbers.
+      if (!this.soapTestRunnerEnabled()) {
+        throw new Error(
+          "measure needs the SOAP test runner (CENTRALGAUGE_SOAP_TEST_RUNNER=0 disables it); the legacy path cannot measure",
+        );
+      }
+      await this.ensureSqlMeasure([containerName]);
+    }
+    return runTestsViaSoap(
+      this.soapConfigFor(containerName),
+      codeunit,
+      "",
+      measure,
+    );
   }
 
   /** Harness Bench H-35 S3 L2a: an extension's Allow HttpClient Requests, read back. */

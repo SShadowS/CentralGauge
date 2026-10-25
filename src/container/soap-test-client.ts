@@ -13,6 +13,8 @@
 
 import type {
   ContainerCredentials,
+  MeasuredTestResult,
+  SqlMeasurement,
   TestCaseResult,
   TestResult,
 } from "./types.ts";
@@ -88,15 +90,26 @@ interface HarnessJson {
   }>;
 }
 
-/** Build the SOAP envelope for `CG WS Test Runner.RunTests`. */
+/**
+ * Q-06: version of the opt-in CG SQL Measure app (infra/cg-sql-measure). Gates
+ * its redeployment and is part of the sql-cost cache key. Keep equal to its app.json.
+ */
+export const SQL_MEASURE_APP_VERSION = "1.0.0.0";
+
+/** Q-06: the opt-in measuring service (CG SQL Measure app). */
+const MEASURE_SERVICE = "CGSqlMeasure";
+const measureNs = `urn:microsoft-dynamics-schemas/codeunit/${MEASURE_SERVICE}`;
+
+/** Build the SOAP envelope for `CG WS Test Runner.RunTests` (`measure`: `CG SQL Measure Runner.RunTests`). */
 export function buildRunTestsEnvelope(
   extensionId: string,
   testCodeunitId: number,
+  measure = false,
 ): string {
   // `extensionId` is a GUID (or empty) and `testCodeunitId` an integer, so no
   // XML escaping is needed; the harness ignores extensionId when testCodeunitId > 0.
   return `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ` +
-    `xmlns:t="${SOAP_NS}"><soap:Body><t:RunTests>` +
+    `xmlns:t="${measure ? measureNs : SOAP_NS}"><soap:Body><t:RunTests>` +
     `<t:extensionId>${extensionId}</t:extensionId>` +
     `<t:testCodeunitId>${testCodeunitId}</t:testCodeunitId>` +
     `</t:RunTests></soap:Body></soap:Envelope>`;
@@ -145,7 +158,66 @@ export function buildSetHttpClientAllowedEnvelope(
 
 /** Parse a SOAP response from `RunTests` into a `TestResult`. Throws on SOAP faults. */
 export function parseRunTestsResponse(soapXml: string): TestResult {
-  const decoded = parseReturnValue(soapXml);
+  return harnessJsonToResult(parseReturnValue(soapXml));
+}
+
+/**
+ * Q-06: parse a `CGSqlMeasure` response: `{results, measurements}`. `results`
+ * is the harness JSON, parsed by the same function as the normal path.
+ */
+export function parseMeasureResponse(
+  soapXml: string,
+): { results: TestResult; measurements: SqlMeasurement[] } {
+  const outer = JSON.parse(parseReturnValue(soapXml)) as {
+    results?: unknown;
+    measurements?: unknown;
+  };
+  if (
+    typeof outer.results !== "object" || outer.results === null ||
+    !Array.isArray(outer.measurements)
+  ) {
+    throw new Error("measure response lacks results or measurements");
+  }
+  const num = (v: unknown, what: string): number => {
+    if (typeof v !== "number" || !Number.isFinite(v)) {
+      throw new Error(`measurement ${what} is not a number`);
+    }
+    return v;
+  };
+  const measurements = outer.measurements.map((m: {
+    codeunitId?: unknown;
+    functionName?: unknown;
+    statements?: unknown;
+    ms?: unknown;
+    isSuccess?: unknown;
+    segment?: unknown;
+  }): SqlMeasurement => {
+    if (
+      typeof m.functionName !== "string" || typeof m.isSuccess !== "boolean"
+    ) {
+      throw new Error("measurement lacks functionName or isSuccess");
+    }
+    const segment = m.segment ?? null;
+    if (segment !== null && typeof segment !== "string") {
+      throw new Error("measurement segment is not a string");
+    }
+    return {
+      codeunit: num(m.codeunitId, "codeunitId"),
+      procedure: m.functionName,
+      statements: num(m.statements, "statements"),
+      ms: num(m.ms, "ms"),
+      success: m.isSuccess,
+      segment,
+    };
+  });
+  return {
+    results: harnessJsonToResult(JSON.stringify(outer.results)),
+    measurements,
+  };
+}
+
+/** The harness JSON text onto the shared `TestResult` (one parser for both paths). */
+function harnessJsonToResult(decoded: string): TestResult {
   const json = JSON.parse(decoded) as HarnessJson;
   if (json.error) {
     throw new Error(`harness error: ${json.error}`);
@@ -198,9 +270,14 @@ export function parseRunTestsResponse(soapXml: string): TestResult {
 }
 
 /** Build the harness web-service URL for a container. */
-export function buildHarnessUrl(config: SoapTestRunnerConfig): string {
+export function buildHarnessUrl(
+  config: SoapTestRunnerConfig,
+  measure = false,
+): string {
   const company = encodeURIComponent(config.company);
-  return `http://${config.host}:${config.port}/BC/ws/${company}/Codeunit/CGTestRunner` +
+  return `http://${config.host}:${config.port}/BC/ws/${company}/Codeunit/${
+    measure ? MEASURE_SERVICE : "CGTestRunner"
+  }` +
     `?tenant=${encodeURIComponent(config.tenant)}`;
 }
 
@@ -213,14 +290,17 @@ export async function runTestsViaSoap(
   config: SoapTestRunnerConfig,
   testCodeunitId: number,
   extensionId = "",
-): Promise<TestResult> {
-  return parseRunTestsResponse(
-    await postHarness(
-      config,
-      "RunTests",
-      buildRunTestsEnvelope(extensionId, testCodeunitId),
-    ),
+  measure = false,
+): Promise<MeasuredTestResult> {
+  const text = await postHarness(
+    config,
+    "RunTests",
+    buildRunTestsEnvelope(extensionId, testCodeunitId, measure),
+    measure,
   );
+  if (!measure) return parseRunTestsResponse(text);
+  const { results, measurements } = parseMeasureResponse(text);
+  return { ...results, measurements };
 }
 
 /**
@@ -254,8 +334,9 @@ async function postHarness(
   config: SoapTestRunnerConfig,
   action: string,
   body: string,
+  measure = false,
 ): Promise<string> {
-  const url = buildHarnessUrl(config);
+  const url = buildHarnessUrl(config, measure);
   const auth = btoa(
     `${config.credentials.username}:${config.credentials.password}`,
   );
@@ -266,7 +347,7 @@ async function postHarness(
       method: "POST",
       headers: {
         "Content-Type": "text/xml; charset=utf-8",
-        "SOAPAction": `${SOAP_NS}:${action}`,
+        "SOAPAction": `${measure ? measureNs : SOAP_NS}:${action}`,
         "Authorization": `Basic ${auth}`,
       },
       body,

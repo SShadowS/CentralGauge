@@ -14,6 +14,7 @@ import type {
   CompilationResult,
   HarnessInstalledApp,
   HarnessSyncResult,
+  MeasuredTestResult,
   TestResult,
 } from "../container/types.ts";
 import type { ContainerOutcome } from "../health/types.ts";
@@ -85,7 +86,12 @@ export interface HarnessBc {
       clean?: { id: string; name: string }[];
     },
   ): Promise<HarnessSyncResult>;
-  runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
+  /** Q-06: `measure` also returns per-test SQL measurements (opt-in; throws where it cannot). */
+  runHarnessTests(
+    container: string,
+    codeunit: number,
+    opts?: { measure?: boolean },
+  ): Promise<MeasuredTestResult>;
   /**
    * H-35 S3 L2a: set the extension's Allow HttpClient Requests through the
    * runner app (CG Test Harness >= 1.0.2.0) and return the stored value as

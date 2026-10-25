@@ -38,6 +38,10 @@ Deno.test("unitOf classifies by compilation unit", async (t) => {
       "app:cg-test-harness",
     );
     assertEquals(
+      unitOf("infra/cg-sql-measure/src/Store.Codeunit.al"),
+      "app:cg-sql-measure",
+    );
+    assertEquals(
       unitOf("spikes/xrec/src/SpikeLogger.Codeunit.al"),
       "spike:xrec",
     );
