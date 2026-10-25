@@ -121,6 +121,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}skills-bundle.test.ts`]: c(true, 0),
   [`${H}soap-measure.test.ts`]: c(true, 0),
   [`${H}sql-cost-runner.test.ts`]: c(true, 0),
+  [`${H}sql-cost-scenario.test.ts`]: c(true, 0),
   [`${H}sql-cost.test.ts`]: c(true, 0),
   [`${H}staging.test.ts`]: c(true, 8),
   [`${H}stats.test.ts`]: c(true, 1),

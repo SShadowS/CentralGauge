@@ -11,8 +11,12 @@ import type { BcLane, HarnessBc } from "../../src/harness/bc-lane.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import { currentScorerFingerprint, judge } from "../../src/harness/verdict.ts";
+import { TEST_APP } from "../../src/harness/verdict-workspace.ts";
 import { sha256Hex } from "./analyze-campaign.ts";
+import type { ScenarioRunResult } from "./sql-cost-scenario.ts";
+import { envRunner as rerunRunner } from "./test-rerun-runner.ts";
 import type {
+  ScenarioRequest,
   SqlCostCall,
   SqlCostRequest,
   SqlCostRunner,
@@ -181,6 +185,52 @@ export async function envRunner(
     }
   }
 
+  /**
+   * Phase 2: the scenario sources are the only sources of the Test app (a
+   * synthetic test tree: the start tree's Test app.json plus the .al files), run
+   * through the Q-04 test-rerun runner over the execution's final production
+   * apps, with the same measuring bc swap as the judge run.
+   */
+  async function scenario(req: ScenarioRequest): Promise<ScenarioRunResult> {
+    const dir = join(workRoot, `scenario-${crypto.randomUUID().slice(0, 8)}`);
+    const test = join(dir, "test");
+    try {
+      await Deno.mkdir(join(test, TEST_APP), { recursive: true });
+      await Deno.copyFile(
+        join(req.start, TEST_APP, "app.json"),
+        join(test, TEST_APP, "app.json"),
+      );
+      for (const f of req.files) {
+        await Deno.writeTextFile(join(test, TEST_APP, f.name), f.text);
+      }
+      const calls = new Map<number, SqlCostCall>();
+      const rerun = await rerunRunner(env, join(dir, "rerun"));
+      const r = await withBc(
+        env.lane,
+        measuringBc(env.lane.bc, calls),
+        () =>
+          rerun.run({
+            executionId: req.executionId,
+            start: req.start,
+            production: req.production,
+            test,
+            specs: req.specs,
+          }),
+      );
+      return {
+        compile: r.compile,
+        rows: r.rows,
+        measurements: [...calls.values()].flatMap((c) => c.measurements),
+        identity: {
+          container: r.identity.container,
+          bc_version: r.identity.bc_version,
+        },
+      };
+    } finally {
+      await Deno.remove(dir, { recursive: true }).catch(() => {});
+    }
+  }
+
   return {
     // No commit (or `<HEAD>+dirty`), no sharing: an uncommitted harness never reuses a cache.
     id: `${
@@ -202,6 +252,7 @@ export async function envRunner(
       ),
     }),
     run,
+    scenario,
   };
 }
 

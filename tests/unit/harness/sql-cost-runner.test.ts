@@ -36,7 +36,6 @@ function fakeBc(
               statements: codeunit,
               ms: 1,
               success: true,
-              segment: null,
             }],
           }
           : {}),

@@ -1,19 +1,24 @@
 /**
- * Q-06: SQL cost per [Test] on the oracle run.
+ * Q-06: SQL cost per test on the oracle run, plus scale scenarios.
  *
  * Re-judges each execution (the real judge, on the harness lane) with the SOAP
  * runner switched to the CG SQL Measure service, and records statements and ms
  * per test. The judgment and its log are discarded: nothing is written or
- * published. The container work is behind the injected `SqlCostRunner`
+ * published. Phase 2: for a task with scale scenarios (sql-cost-scenario.ts)
+ * the scenario codeunits are then run over the execution's final production
+ * apps and measured the same way; their outcome never touches the oracle part
+ * or a verdict. The container work is behind the injected `SqlCostRunner`
  * (sql-cost-runner.ts); this module is pure logic, validation, the
  * per-execution cache, the aggregation and the outputs.
  *
- * Fail closed: an execution is listed under `failed`, with no numbers, when the
- * measured verdict differs from the verdict of the judgment the report selects,
- * when any test row lacks a measurement, when any row is infra or not_run, or
- * when an oracle codeunit never ran. The numbers include a constant framework
- * overhead per test, so they compare solutions of one task; they are never
- * totalled across tasks.
+ * Fail closed. The oracle part of an execution is listed under `failed`, with no
+ * numbers, when the measured verdict differs from the verdict of the judgment
+ * the report selects, when any test row lacks a measurement, when any row is
+ * infra or not_run, or when an oracle codeunit never ran. A scenario that does
+ * not compile, fails, or lacks a measurement is recorded (`scenario_failed`,
+ * `scenario_unmeasured`) without numbers. The numbers include a constant
+ * framework overhead per test, so they compare solutions of one task; they are
+ * never totalled across tasks.
  */
 import { join } from "@std/path";
 import {
@@ -28,11 +33,22 @@ import {
   writeDone,
 } from "./analyze-campaign.ts";
 import type { RunnerEnv } from "./test-rerun.ts";
+import {
+  parseScenarioSpecs,
+  readScenarioFiles,
+  type ScenarioFile,
+  type ScenarioRecord,
+  scenarioRecord,
+  type ScenarioRunResult,
+  scenarioSha,
+  type ScenarioSpec,
+  validScenarioRecord,
+} from "./sql-cost-scenario.ts";
 import type { SqlMeasurement } from "../../src/container/types.ts";
 import { SQL_MEASURE_APP_VERSION } from "../../src/container/soap-test-client.ts";
 
 /** Bump when a row is computed differently from the same runner output, or validation tightens. */
-export const SQL_COST_DERIVATION = 1;
+export const SQL_COST_DERIVATION = 2;
 
 // ---------------------------------------------------------------- runner contract
 
@@ -68,15 +84,28 @@ export interface SqlCostRequest {
   artifact: string;
 }
 
+export interface ScenarioRequest {
+  executionId: string;
+  task: string;
+  /** The task's start tree. */
+  start: string;
+  /** The frozen workspace: supplies the production apps. */
+  production: string;
+  files: ScenarioFile[];
+  specs: ScenarioSpec[];
+}
+
 export interface SqlCostRunner {
   /** Names the cache folder (harness commit + scorer). */
   id: string;
   env(): Promise<RunnerEnv>;
   run(req: SqlCostRequest): Promise<SqlCostRunnerResult>;
+  /** Phase 2: absent = this runner cannot run scenarios. */
+  scenario?(req: ScenarioRequest): Promise<ScenarioRunResult>;
   close?(): Promise<void>;
 }
 
-// ---------------------------------------------------------------- rows
+// ---------------------------------------------------------------- oracle rows
 
 export interface SqlCostRow {
   id: string;
@@ -87,8 +116,6 @@ export interface SqlCostRow {
   procedure: string;
   oracle: boolean;
   outcome: "pass" | "fail";
-  /** null = the whole test method. */
-  segment: string | null;
   statements: number;
   ms: number;
 }
@@ -133,32 +160,23 @@ export function sqlCostRows(
       const mine = c.measurements.filter((m) =>
         key(m.codeunit, m.procedure) === key(c.codeunit, r.procedure)
       );
-      if (mine.filter((m) => m.segment === null).length !== 1) {
+      if (mine.length !== 1) {
         throw new Error(
-          `${c.codeunit} ${r.procedure} lacks exactly one whole-test measurement`,
+          `${c.codeunit} ${r.procedure} lacks exactly one measurement`,
         );
       }
-      // The whole-test row first, its segments after it.
-      for (
-        const m of [
-          ...mine.filter((m) => m.segment === null),
-          ...mine.filter((m) => m.segment !== null),
-        ]
-      ) {
-        out.push({
-          id: e.id,
-          task: e.task,
-          arm: e.arm,
-          repeat: e.repeat,
-          codeunit: c.codeunit,
-          procedure: r.procedure,
-          oracle: oracle.has(c.codeunit),
-          outcome: r.outcome as "pass" | "fail",
-          segment: m.segment,
-          statements: m.statements,
-          ms: m.ms,
-        });
-      }
+      out.push({
+        id: e.id,
+        task: e.task,
+        arm: e.arm,
+        repeat: e.repeat,
+        codeunit: c.codeunit,
+        procedure: r.procedure,
+        oracle: oracle.has(c.codeunit),
+        outcome: r.outcome as "pass" | "fail",
+        statements: mine[0]!.statements,
+        ms: mine[0]!.ms,
+      });
     }
   }
   return out;
@@ -173,7 +191,6 @@ function validRows(x: unknown): x is SqlCostRow[] {
       Number.isInteger(r.codeunit) && typeof r.procedure === "string" &&
       typeof r.oracle === "boolean" &&
       (r.outcome === "pass" || r.outcome === "fail") &&
-      (r.segment === null || typeof r.segment === "string") &&
       Number.isFinite(r.statements) && Number.isFinite(r.ms)
     );
 }
@@ -186,11 +203,10 @@ export function median(xs: number[]): number {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
-const spread = (xs: number[]) => ({
-  median: median(xs),
-  min: Math.min(...xs),
-  max: Math.max(...xs),
-});
+const spread = (xs: number[]) =>
+  xs.length === 0
+    ? null
+    : { median: median(xs), min: Math.min(...xs), max: Math.max(...xs) };
 
 const stat = (xs: { statements: number; ms: number }[]) => ({
   n: xs.length,
@@ -199,55 +215,146 @@ const stat = (xs: { statements: number; ms: number }[]) => ({
 });
 
 type Stat = ReturnType<typeof stat>;
-export type SqlCostSummary = Record<
-  string,
-  Record<string, { procedures: Record<string, Stat>; execution_sum: Stat }>
->;
+
+/** One execution's scenario record, with its identity. */
+export type ScenarioEntry = ScenarioRecord & {
+  id: string;
+  task: string;
+  arm: string;
+  repeat: number;
+};
+
+export interface SqlCostCell {
+  /** Oracle procedures, by `codeunit.procedure`. */
+  procedures: Record<string, Stat>;
+  execution_sum: Stat;
+  /** Present when a scenario ran for this task and arm. */
+  scenario?: {
+    executions_ok: number;
+    scenario_failed: number;
+    scenario_unmeasured: number;
+    methods: Record<string, Stat & { setup: boolean }>;
+  };
+}
+export type SqlCostSummary = Record<string, Record<string, SqlCostCell>>;
 
 /**
- * Per task and arm, oracle rows only: per procedure (a segment is its own key,
- * `codeunit.procedure#segment`) the n and median/min/max of statements and ms
- * across repeats; and the same over the per-execution sum of the oracle
- * whole-test rows. Never a total across tasks or across a task's arms.
+ * Per task and arm. Oracle rows only: per procedure the n and median/min/max of
+ * statements and ms across repeats, and the same over the per-execution sum of
+ * the oracle rows. Scenario methods: the same, over executions whose scenario
+ * passed and was measured; failed and unmeasured scenarios are only counted.
+ * Never a total across tasks or across a task's arms.
  */
-export function sqlCostSummary(rows: SqlCostRow[]): SqlCostSummary {
+export function sqlCostSummary(
+  rows: SqlCostRow[],
+  scenarios: ScenarioEntry[] = [],
+): SqlCostSummary {
   const out: SqlCostSummary = {};
   const oracle = rows.filter((r) => r.oracle);
-  for (const task of [...new Set(oracle.map((r) => r.task))].sort()) {
-    out[task] = {};
-    const ofTask = oracle.filter((r) => r.task === task);
-    for (const arm of [...new Set(ofTask.map((r) => r.arm))].sort()) {
-      const rs = ofTask.filter((r) => r.arm === arm);
-      const procedures: Record<string, Stat> = {};
-      const names = [
-        ...new Set(
-          rs.map((r) =>
-            `${r.codeunit}.${r.procedure}${
-              r.segment === null ? "" : `#${r.segment}`
-            }`
-          ),
-        ),
-      ].sort();
-      for (const name of names) {
-        procedures[name] = stat(
-          rs.filter((r) =>
-            `${r.codeunit}.${r.procedure}${
-              r.segment === null ? "" : `#${r.segment}`
-            }` === name
-          ),
-        );
-      }
-      const sums = new Map<string, { statements: number; ms: number }>();
-      for (const r of rs.filter((r) => r.segment === null)) {
-        const s = sums.get(r.id) ?? { statements: 0, ms: 0 };
-        s.statements += r.statements;
-        s.ms += r.ms;
-        sums.set(r.id, s);
-      }
-      out[task]![arm] = { procedures, execution_sum: stat([...sums.values()]) };
+  const cells = new Set([
+    ...oracle.map((r) => `${r.task}\0${r.arm}`),
+    ...scenarios.map((s) => `${s.task}\0${s.arm}`),
+  ]);
+  for (const cell of [...cells].sort()) {
+    const [task, arm] = cell.split("\0") as [string, string];
+    const rs = oracle.filter((r) => r.task === task && r.arm === arm);
+    const procedures: Record<string, Stat> = {};
+    const name = (r: SqlCostRow) => `${r.codeunit}.${r.procedure}`;
+    for (const n of [...new Set(rs.map(name))].sort()) {
+      procedures[n] = stat(rs.filter((r) => name(r) === n));
     }
+    const sums = new Map<string, { statements: number; ms: number }>();
+    for (const r of rs) {
+      const s = sums.get(r.id) ?? { statements: 0, ms: 0 };
+      s.statements += r.statements;
+      s.ms += r.ms;
+      sums.set(r.id, s);
+    }
+    const c: SqlCostCell = {
+      procedures,
+      execution_sum: stat([...sums.values()]),
+    };
+    const ss = scenarios.filter((s) => s.task === task && s.arm === arm);
+    if (ss.length > 0) {
+      const ok = ss.filter((s) => s.status === "ok");
+      const methods: Record<string, Stat & { setup: boolean }> = {};
+      const all = ok.flatMap((s) => s.rows);
+      const mname = (r: { codeunit: number; procedure: string }) =>
+        `${r.codeunit}.${r.procedure}`;
+      for (const n of [...new Set(all.map(mname))].sort()) {
+        const mine = all.filter((r) => mname(r) === n);
+        methods[n] = { ...stat(mine), setup: mine[0]!.setup };
+      }
+      c.scenario = {
+        executions_ok: ok.length,
+        scenario_failed: ss.filter((s) =>
+          s.status === "scenario_failed"
+        ).length,
+        scenario_unmeasured: ss.filter((s) =>
+          s.status === "scenario_unmeasured"
+        ).length,
+        methods,
+      };
+    }
+    (out[task] ??= {})[arm] = c;
   }
   return out;
+}
+
+// ---------------------------------------------------------------- outputs
+
+/** One output row (executions.json and executions.csv): an oracle test or a scenario method / outcome. */
+function flatRows(
+  rows: SqlCostRow[],
+  scenarios: ScenarioEntry[],
+): Record<string, string | number | boolean>[] {
+  const base = (
+    e: { id: string; task: string; arm: string; repeat: number },
+  ) => ({ id: e.id, task: e.task, arm: e.arm, repeat: e.repeat });
+  return [
+    ...rows.map((r) => ({
+      ...base(r),
+      kind: "oracle",
+      codeunit: r.codeunit,
+      procedure: r.procedure,
+      oracle: r.oracle ? "oracle" : "other",
+      setup: false,
+      outcome: r.outcome,
+      scenario_outcome: "",
+      error: "",
+      statements: r.statements,
+      ms: r.ms,
+    })),
+    ...scenarios.flatMap((s): Record<string, string | number | boolean>[] =>
+      s.status === "ok"
+        ? s.rows.map((r) => ({
+          ...base(s),
+          kind: "scenario",
+          codeunit: r.codeunit,
+          procedure: r.procedure,
+          oracle: "",
+          setup: r.setup,
+          outcome: "pass",
+          scenario_outcome: "ok",
+          error: "",
+          statements: r.statements,
+          ms: r.ms,
+        }))
+        : [{
+          ...base(s),
+          kind: "scenario",
+          codeunit: "",
+          procedure: "",
+          oracle: "",
+          setup: false,
+          outcome: "",
+          scenario_outcome: s.status,
+          error: s.error ?? "",
+          statements: "",
+          ms: "",
+        }]
+    ),
+  ];
 }
 
 // ---------------------------------------------------------------- step
@@ -265,9 +372,15 @@ export async function sqlCostStep(o: {
   rev: string;
   /** Only these tasks (`--sql-cost-task`); none = all. */
   tasks?: string[] | undefined;
+  /** `infra/cg-sql-scale`: scale scenarios on a task that has `<task>/src`; absent = phase off. */
+  scenarioRoot?: string | undefined;
   /** Test seam: the measurement app version the cache keys on. */
   measureVersion?: string | undefined;
-}): Promise<{ failed: { id: string; error: string }[]; rows: SqlCostRow[] }> {
+}): Promise<{
+  failed: { id: string; part: "oracle" | "scenario"; error: string }[];
+  rows: SqlCostRow[];
+  scenarios: ScenarioEntry[];
+}> {
   const version = o.measureVersion ?? SQL_MEASURE_APP_VERSION;
   const execDir = join(
     o.dir,
@@ -288,42 +401,124 @@ export async function sqlCostStep(o: {
     o.hashOf.has(r.id) && r.kind !== "test-authoring" &&
     (!o.tasks?.length || o.tasks.includes(r.task))
   );
-  const stampOf = async (r: Row, start: StartTree): Promise<DoneStamp> => ({
+  const inputs = (r: Row, start: StartTree) => [
+    start.id,
+    o.hashOf.get(r.id),
+    r.verdict,
+    r.judgment_id,
+    envHash,
+    version,
+  ];
+  const stampOf = async (
+    r: Row,
+    start: StartTree,
+    extra: unknown[] = [],
+  ): Promise<DoneStamp> => ({
     build: o.runner.id,
     rev: o.rev,
     hash: o.hashOf.get(r.id)!,
     derive: SQL_COST_DERIVATION,
     bind: {
-      inputs: await sha256Hex(
-        JSON.stringify([
-          start.id,
-          o.hashOf.get(r.id),
-          r.verdict,
-          r.judgment_id,
-          envHash,
-          version,
-        ]),
-      ),
+      inputs: await sha256Hex(JSON.stringify([...inputs(r, start), ...extra])),
     },
   });
+  // The scenario sources of each task, read once.
+  const scenarioOf = new Map<
+    string,
+    Promise<
+      { files: ScenarioFile[]; specs: ScenarioSpec[]; sha: string } | null
+    >
+  >();
+  const scenarioFor = (task: string) => {
+    if (!o.scenarioRoot) return Promise.resolve(null);
+    if (!scenarioOf.has(task)) {
+      scenarioOf.set(
+        task,
+        readScenarioFiles(o.scenarioRoot, task).then(async (files) =>
+          files.length === 0 ? null : {
+            files,
+            specs: parseScenarioSpecs(files),
+            sha: await scenarioSha(files),
+          }
+        ),
+      );
+    }
+    return scenarioOf.get(task)!;
+  };
   const stamps = new Map<string, DoneStamp>();
-  const failed: { id: string; error: string }[] = [];
+  const scenarioStamps = new Map<string, DoneStamp>();
+  const failed: { id: string; part: "oracle" | "scenario"; error: string }[] =
+    [];
+  const fail = (id: string, part: "oracle" | "scenario", err: unknown) => {
+    const error = (err as Error).message;
+    failed.push({ id, part, error });
+    console.error(`[WARN] sql-cost ${id} (${part}): ${error}`);
+  };
   await pool(o.jobs, todo, async (r) => {
+    const start = await o.startOf(r.task).catch((err) => {
+      fail(r.id, "oracle", err);
+      return null;
+    });
+    if (!start) return;
+    // Part 1: the judge-measured oracle run.
+    let oracleOk = false;
     try {
-      const start = await o.startOf(r.task);
       const stamp = await stampOf(r, start);
       stamps.set(r.id, stamp);
-      if (validRows(await readDone<unknown>(execDir, r.id, stamp))) return;
-      const res = await o.runner.run({
+      if (validRows(await readDone<unknown>(execDir, r.id, stamp))) {
+        oracleOk = true;
+      } else {
+        const res = await o.runner.run({
+          executionId: r.id,
+          task: r.task,
+          workspaceHash: o.hashOf.get(r.id)!,
+          judgmentId: r.judgment_id,
+          start: start.dir,
+          artifact: join(o.results, "workspaces", o.hashOf.get(r.id)!),
+        });
+        const rows = sqlCostRows(r, res);
+        if (
+          !containers.some((c) =>
+            c.name === res.identity.container &&
+            c.bc_version === res.identity.bc_version
+          )
+        ) {
+          throw new Error(
+            `runner identity ${res.identity.container} (${res.identity.bc_version}) is not in its own env()`,
+          );
+        }
+        // Written last and atomically: only a complete, valid result marks it done.
+        await writeDone(execDir, r.id, stamp, rows);
+        oracleOk = true;
+      }
+    } catch (err) {
+      fail(r.id, "oracle", err);
+    }
+    // Part 2: the task's scale scenario, after a measured oracle run; its outcome
+    // is recorded on its own and never reaches the oracle part or the verdict.
+    if (!oracleOk) return;
+    try {
+      const sc = await scenarioFor(r.task);
+      if (!sc) return;
+      const stamp = await stampOf(r, start, ["scenario", sc.sha]);
+      scenarioStamps.set(r.id, stamp);
+      const sid = `${r.id}.scenario`;
+      if (validScenarioRecord(await readDone<unknown>(execDir, sid, stamp))) {
+        return;
+      }
+      if (!o.runner.scenario) {
+        throw new Error("this runner cannot run scenarios");
+      }
+      const res = await o.runner.scenario({
         executionId: r.id,
         task: r.task,
-        workspaceHash: o.hashOf.get(r.id)!,
-        judgmentId: r.judgment_id,
         start: start.dir,
-        artifact: join(o.results, "workspaces", o.hashOf.get(r.id)!),
+        production: join(o.results, "workspaces", o.hashOf.get(r.id)!),
+        files: sc.files,
+        specs: sc.specs,
       });
-      const rows = sqlCostRows(r, res);
       if (
+        res.compile.ok &&
         !containers.some((c) =>
           c.name === res.identity.container &&
           c.bc_version === res.identity.bc_version
@@ -333,61 +528,64 @@ export async function sqlCostStep(o: {
           `runner identity ${res.identity.container} (${res.identity.bc_version}) is not in its own env()`,
         );
       }
-      // Written last and atomically: only a complete, valid result marks it done.
-      await writeDone(execDir, r.id, stamp, rows);
+      await writeDone(execDir, sid, stamp, scenarioRecord(sc.specs, res));
     } catch (err) {
-      const error = (err as Error).message;
-      failed.push({ id: r.id, error });
-      console.error(`[WARN] sql-cost ${r.id}: ${error}`);
+      fail(r.id, "scenario", err);
     }
   });
   const all: SqlCostRow[] = [];
+  const scenarios: ScenarioEntry[] = [];
+  const byId = new Map(todo.map((r) => [r.id, r]));
   for (const id of [...stamps.keys()].sort()) {
     const prior = await readDone<unknown>(execDir, id, stamps.get(id)!);
-    if (validRows(prior)) all.push(...prior);
-    else if (!failed.some((f) => f.id === id)) {
-      failed.push({ id, error: "row not readable after the run" });
+    if (!validRows(prior)) {
+      if (!failed.some((f) => f.id === id && f.part === "oracle")) {
+        failed.push({
+          id,
+          part: "oracle",
+          error: "row not readable after the run",
+        });
+      }
+      continue;
+    }
+    all.push(...prior);
+    const stamp = scenarioStamps.get(id);
+    if (!stamp) continue;
+    const sc = await readDone<unknown>(execDir, `${id}.scenario`, stamp);
+    if (validScenarioRecord(sc)) {
+      const r = byId.get(id)!;
+      scenarios.push({ ...sc, id, task: r.task, arm: r.arm, repeat: r.repeat });
+    } else if (!failed.some((f) => f.id === id && f.part === "scenario")) {
+      failed.push({
+        id,
+        part: "scenario",
+        error: "row not readable after the run",
+      });
     }
   }
   await Deno.mkdir(o.dir, { recursive: true });
+  const flat = flatRows(all, scenarios);
   await writeAtomic(
     join(o.dir, "executions.json"),
-    JSON.stringify(all, null, 1),
+    JSON.stringify(flat, null, 1),
   );
-  await writeAtomic(
-    join(o.dir, "executions.csv"),
-    csv(all.map((r) => ({
-      id: r.id,
-      task: r.task,
-      arm: r.arm,
-      repeat: r.repeat,
-      codeunit: r.codeunit,
-      procedure: r.procedure,
-      segment: r.segment ?? "",
-      oracle: r.oracle ? "oracle" : "other",
-      outcome: r.outcome,
-      statements: r.statements,
-      ms: r.ms,
-    }))),
-  );
+  await writeAtomic(join(o.dir, "executions.csv"), csv(flat));
   await writeAtomic(
     join(o.dir, "summary.json"),
     JSON.stringify(
       {
         note:
-          "Oracle rows only. Per task and arm, never totalled across tasks. Numbers include a constant framework overhead per test.",
+          "Oracle rows and scenario methods, per task and arm, never totalled across tasks. Numbers include a constant framework overhead per test. Scenario outcomes never affect a verdict.",
         measure_app_version: version,
         failed,
-        tasks: sqlCostSummary(all),
+        tasks: sqlCostSummary(all, scenarios),
       },
       null,
       1,
     ),
   );
   console.error(
-    `[OK] sql-cost: ${
-      todo.length - failed.length
-    } of ${todo.length} executions (${failed.length} failed) -> ${o.dir}`,
+    `[OK] sql-cost: ${todo.length} executions, ${failed.length} failed parts, ${scenarios.length} scenarios -> ${o.dir}`,
   );
-  return { failed, rows: all };
+  return { failed, rows: all, scenarios };
 }

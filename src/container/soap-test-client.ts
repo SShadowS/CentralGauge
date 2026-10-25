@@ -190,16 +190,11 @@ export function parseMeasureResponse(
     statements?: unknown;
     ms?: unknown;
     isSuccess?: unknown;
-    segment?: unknown;
   }): SqlMeasurement => {
     if (
       typeof m.functionName !== "string" || typeof m.isSuccess !== "boolean"
     ) {
       throw new Error("measurement lacks functionName or isSuccess");
-    }
-    const segment = m.segment ?? null;
-    if (segment !== null && typeof segment !== "string") {
-      throw new Error("measurement segment is not a string");
     }
     return {
       codeunit: num(m.codeunitId, "codeunitId"),
@@ -207,7 +202,6 @@ export function parseMeasureResponse(
       statements: num(m.statements, "statements"),
       ms: num(m.ms, "ms"),
       success: m.isSuccess,
-      segment,
     };
   });
   return {

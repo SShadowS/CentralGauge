@@ -230,15 +230,24 @@ the starting tree (`<out>\.start\<task>`) has no finding of that detector in tha
 
 ### SQL cost per test (`--sql-cost`, opt-in)
 
-`--sql-cost --containers <a,b> --symbols <store> --lineage <lineage> [--sql-cost-task HX-nnn ...]`
+`--sql-cost --containers <a,b> --symbols <store> --lineage <lineage> [--sql-cost-task HX-nnn ...] [--no-sql-cost-scenarios]`
 re-runs the oracle on the final tree with the CG SQL Measure app (`infra/cg-sql-measure`), the
 real judge on the harness lane. It takes the bench lock like `--test-rerun`. The judgment it
 makes is discarded, never written. Output: `<out>\sql-cost\executions.{json,csv}` (one row per
-execution x test x segment, with an `oracle` flag) and `summary.json`.
+execution x test, with `kind` oracle or scenario, an `oracle` flag, `setup`, `scenario_outcome`
+and `error` columns) and `summary.json`.
 
-- Oracle-run measurement only: the summary uses the `fail_to_pass` codeunits, per task and per
-  arm, median/min/max across repeats. There are no totals across tasks. Segment rows (a scale
-  scenario's `BeginSegment`/`EndSegment`) are their own keys, never added to the test's row.
+- Oracle-run measurement: the summary uses the `fail_to_pass` codeunits, per task and per
+  arm, median/min/max across repeats. There are no totals across tasks.
+- Scale scenarios (on by default for a task with `infra/cg-sql-scale/<task>/src/`, read from
+  the working tree): after a measured oracle run the scenario codeunits are the only sources of
+  the Test app over the execution's final production apps, run through the test-rerun runner
+  with the same measuring swap. Methods run in declaration order; a `Setup...` method builds the
+  data (flagged `setup`), the others are one measured call each. A scenario compile error or
+  failed row is `scenario_failed`, a passing row without a measurement `scenario_unmeasured`
+  (no numbers). Neither changes a verdict, a pass rate or the oracle rows. The summary has
+  per-method n and median/min/max over passing scenarios only, and the failed and unmeasured
+  counts per task and arm. Scenario sources are in the cache key.
 - The numbers include a constant framework overhead per test (the same for every solution).
   Compare solutions of one task; do not read them as the cost of the code alone.
 - Fails closed: an execution is listed under `failed`, with no numbers, when the measured verdict

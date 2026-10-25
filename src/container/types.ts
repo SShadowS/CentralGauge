@@ -62,7 +62,7 @@ export interface TestResult {
 }
 
 /**
- * Q-06: the SQL cost of one [Test] method (or one named segment inside it),
+ * Q-06: the SQL cost of one [Test] method,
  * as the CG SQL Measure app records it. Includes a constant framework
  * overhead per method.
  */
@@ -72,8 +72,6 @@ export interface SqlMeasurement {
   statements: number;
   ms: number;
   success: boolean;
-  /** null = the whole test method. */
-  segment: string | null;
 }
 
 /** A TestResult from the measuring web service: the normal result plus the measurements. */

@@ -45,7 +45,6 @@ const measurement = {
   statements: 7,
   ms: 31,
   isSuccess: true,
-  segment: null,
 };
 
 const soap = (json: unknown) =>
@@ -69,9 +68,8 @@ Deno.test("measure endpoint and envelope differ from the normal ones", () => {
 });
 
 Deno.test("parseMeasureResponse: results equal the normal parse, measurements kept", () => {
-  const seg = { ...measurement, statements: 3, segment: "Rename" };
   const r = parseMeasureResponse(
-    soap({ results, measurements: [measurement, seg] }),
+    soap({ results, measurements: [measurement] }),
   );
   const normal = parseRunTestsResponse(soap(results));
   assertEquals(r.results, normal);
@@ -82,15 +80,6 @@ Deno.test("parseMeasureResponse: results equal the normal parse, measurements ke
       statements: 7,
       ms: 31,
       success: true,
-      segment: null,
-    },
-    {
-      codeunit: 85001,
-      procedure: "TestA",
-      statements: 3,
-      ms: 31,
-      success: true,
-      segment: "Rename",
     },
   ]);
 });
