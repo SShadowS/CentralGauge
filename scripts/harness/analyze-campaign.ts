@@ -343,6 +343,16 @@ function checkTestCoverage(tc: unknown): string | null {
       ) return `payload.testCoverage.${k}[]`;
     }
   }
+  const ids = (k: string) =>
+    ((tc[k] ?? []) as J[]).map((it) => it["stableId"] as string);
+  const cov = ids("covered");
+  const unc = ids("uncovered");
+  if (new Set(cov).size !== cov.length || unc.some((id) => cov.includes(id))) {
+    return "payload.testCoverage.covered[]";
+  }
+  if (new Set(unc).size !== unc.length) {
+    return "payload.testCoverage.uncovered[]";
+  }
   const changed = tc["changedRoutines"];
   const covered = tc["coveredChangedRoutines"];
   const ratio = tc["ratio"];
@@ -404,7 +414,8 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
           ["rootsRequested", "rootsResolved", "totalUnresolved"],
           (k) =>
             (p["summary"] as J)[k] === undefined ||
-              typeof (p["summary"] as J)[k] === "number"
+              (Number.isInteger((p["summary"] as J)[k]) &&
+                ((p["summary"] as J)[k] as number) >= 0)
               ? null
               : `payload.summary.${k}`,
         ) ??
@@ -441,10 +452,15 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
                   !(x["detail"] === undefined || isObj(x["detail"]))
                 ) return "payload.entries[].effects[]";
                 const d = x["detail"];
-                return isObj(d) &&
+                const t = x["type"] as string;
+                const needsName =
+                  (t.startsWith("DB_") || t === "EVENT_PUBLISH") &&
+                  !(isObj(d) && d["boundary"] !== undefined);
+                return (isObj(d) &&
                     ["boundary", "resourceDisplay"].some((k) =>
                       d[k] !== undefined && typeof d[k] !== "string"
-                    )
+                    )) ||
+                    (needsName && !(isObj(d) && str(d["resourceDisplay"])))
                   ? "payload.entries[].effects[].detail"
                   : null;
               },
@@ -1775,7 +1791,8 @@ export interface DoneStamp {
  * bytes, not validation under the current rules, so bump it whenever any
  * validation tightens (a done row of an older epoch is revalidated, never skipped).
  */
-export const DERIVATION = 10;
+export const DERIVATION = 11;
+// v11 (A-03b Sol self-check r3): validation tightened, nothing recomputed. testCoverage stableIds are unique within covered and within uncovered and the two lists are disjoint; a non-boundary DB_* or EVENT_PUBLISH digest effect needs detail.resourceDisplay as a non-empty string (no invented empty-named table or event); present digest summary rootsRequested / rootsResolved / totalUnresolved are nonnegative integers.
 // v10 (A-03b Sol self-check r2): validation tightened, nothing recomputed. Every digest entry needs routine.anchor as an object with a non-empty string file (an absent location no longer counts as production); testCoverage covered + uncovered items need a non-empty stableId, uncovered items a non-empty reason, and an anchor when present must be an object with a string file. Done rows of epoch 9 are revalidated.
 // v9 (A-03b Sol self-check r1): validation tightened, nothing recomputed. testCoverage covered + uncovered lists must sum to changedRoutines; digest routine.anchor.file, effect detail.boundary and detail.resourceDisplay must be strings when present; test_quality procedure counts must be nonnegative integers with are_equal.literal_expected + expression_expected == total, assert_count_reachable >= assert_count and zero_assert == (assert_count_reachable == 0). Done rows of epoch 8 are revalidated.
 // v8 (A-03b, al-sem 2.1.0-rc.4): the digest is cross-app. (a) A digest effect can be a dependency boundary group (detail.boundary): digestTouches leaves it out of tables_written / tables_read / events_published / commits (those stay workspace-code effects, comparable with 2.0.3) and counts the production ones in dependency_effect_groups. (b) summary.totalUnresolved now includes dependency routines' unresolved calls, which land on the Test app's entries: unresolved is the sum of entries[].unresolved lengths over production entries, unresolved_raw keeps totalUnresolved, a non-array entries[].unresolved fails the digest. looseFingerprint values change per detector in 2.1 (#252) with no consumer change: the cache path and done rows are keyed by the binaries' sha256, so 2.0.3 artifacts are never reused.

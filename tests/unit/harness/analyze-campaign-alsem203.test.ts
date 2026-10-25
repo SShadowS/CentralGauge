@@ -950,3 +950,131 @@ Deno.test("pooledTestQuality / pooledCoverage: sums over executions, shares from
   });
   assertEquals(pooledCoverage([]).ratio, null);
 });
+
+Deno.test("alsemEnvelope digest with --tests: testCoverage stableIds are unique per list and covered/uncovered are disjoint", () => {
+  const run = (mutate: (p: ReturnType<typeof mixedCoverage>) => void) => {
+    const p = mixedCoverage();
+    mutate(p);
+    return () => alsemEnvelope(env(p), "digest", { tests: true });
+  };
+  // Sol's counterexample: the same routine both covered and uncovered.
+  const clash = () => ({
+    entries: [{
+      routine: { stableId: "r", anchor: { file: "ws:Prod/A.al" } },
+      effects: [],
+    }],
+    summary: {},
+    changedRootsDiagnostics: [],
+    testCoverage: {
+      changedRoutines: 2,
+      coveredChangedRoutines: 1,
+      ratio: 0.5,
+      coverage: { status: "partial" },
+      covered: [{ stableId: "r" }],
+      uncovered: [{ stableId: "r", reason: "no-path" }],
+    },
+  });
+  assertThrows(
+    () => alsemEnvelope(env(clash()), "digest", { tests: true }),
+    Error,
+    "payload.testCoverage.covered[]",
+  );
+  const dupCovered = clash();
+  dupCovered.testCoverage.covered = [{ stableId: "r" }, { stableId: "r" }];
+  dupCovered.testCoverage.coveredChangedRoutines = 2;
+  dupCovered.testCoverage.ratio = 1;
+  dupCovered.testCoverage.changedRoutines = 2;
+  (dupCovered.testCoverage as Record<string, unknown>)["uncovered"] = [];
+  assertThrows(
+    () => alsemEnvelope(env(dupCovered), "digest", { tests: true }),
+    Error,
+    "payload.testCoverage.covered[]",
+  );
+  const dupUncovered = clash();
+  dupUncovered.testCoverage.covered = [];
+  dupUncovered.testCoverage.coveredChangedRoutines = 0;
+  dupUncovered.testCoverage.ratio = 0;
+  dupUncovered.testCoverage.uncovered = [
+    { stableId: "r", reason: "no-path" },
+    { stableId: "r", reason: "no-path" },
+  ];
+  assertThrows(
+    () => alsemEnvelope(env(dupUncovered), "digest", { tests: true }),
+    Error,
+    "payload.testCoverage.uncovered[]",
+  );
+  assertEquals(run(() => {})().kind, "digest");
+});
+
+Deno.test("alsemEnvelope digest: DB_* and EVENT_PUBLISH effects need a non-empty resourceDisplay unless boundary groups", () => {
+  const withFx = (effects: unknown[]) => ({
+    entries: [{
+      routine: { stableId: "r", anchor: { file: "ws:Prod/A.al" } },
+      effects,
+    }],
+    summary: {},
+    changedRootsDiagnostics: [],
+  });
+  const path = "payload.entries[].effects[].detail";
+  for (
+    const bad of [
+      { type: "DB_MODIFY", detail: {} },
+      { type: "DB_MODIFY", detail: { resourceDisplay: "" } },
+      { type: "EVENT_PUBLISH" },
+      { type: "DB_READ" },
+    ]
+  ) {
+    assertThrows(
+      () => alsemEnvelope(env(withFx([bad])), "digest"),
+      Error,
+      path,
+      JSON.stringify(bad),
+    );
+  }
+  for (
+    const ok of [
+      { type: "COMMIT" },
+      { type: "ERROR_THROW" },
+      { type: "UI_ERROR" },
+      { type: "DB_MODIFY", detail: { resourceDisplay: "Customer" } },
+      {
+        type: "DB_MODIFY",
+        detail: { boundary: "App.R", resourceCount: "0", resources: "" },
+      },
+    ]
+  ) {
+    assertEquals(
+      alsemEnvelope(env(withFx([ok])), "digest").kind,
+      "digest",
+      JSON.stringify(ok),
+    );
+  }
+});
+
+Deno.test("alsemEnvelope digest: summary counts are finite nonnegative integers", () => {
+  for (const k of ["rootsRequested", "rootsResolved", "totalUnresolved"]) {
+    for (const v of [-1, 1.5, Infinity]) {
+      assertThrows(
+        () =>
+          alsemEnvelope(
+            env({
+              entries: [],
+              summary: { [k]: v },
+              changedRootsDiagnostics: [],
+            }),
+            "digest",
+          ),
+        Error,
+        `payload.summary.${k}`,
+        `${k}=${v}`,
+      );
+    }
+    assertEquals(
+      alsemEnvelope(
+        env({ entries: [], summary: { [k]: 0 }, changedRootsDiagnostics: [] }),
+        "digest",
+      ).kind,
+      "digest",
+    );
+  }
+});

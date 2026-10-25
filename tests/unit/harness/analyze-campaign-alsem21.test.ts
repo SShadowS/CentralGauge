@@ -96,12 +96,12 @@ Deno.test("alsemEnvelope: a digest entry with a non-array unresolved fails namin
   assertEquals(alsemEnvelope(env(ok), "digest").kind, "digest");
 });
 
-Deno.test("DERIVATION is 10: a done row written with derive 9 is not done", async () => {
-  assertEquals(DERIVATION, 10);
+Deno.test("DERIVATION is 11: a done row written with derive 10 is not done", async () => {
+  assertEquals(DERIVATION, 11);
   const dir = await Deno.makeTempDir();
   try {
     const stamp = { build: "b", rev: "r", hash: "h" };
-    await writeDone(dir, "e1", { ...stamp, derive: 9 }, { id: "e1" });
+    await writeDone(dir, "e1", { ...stamp, derive: 10 }, { id: "e1" });
     assertEquals(
       await readDone(dir, "e1", { ...stamp, derive: DERIVATION }),
       null,
