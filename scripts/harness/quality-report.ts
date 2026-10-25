@@ -154,12 +154,29 @@ export function wilcoxon(
   return { wPlus, n, p: Math.min(1, erfc(z / Math.SQRT2)) };
 }
 
+/**
+ * 95% CI endpoints from the sorted bootstrap means. Convention (pinned by a
+ * test): 0-based order statistics floor(0.025*B) and ceil(0.975*B)-1, in
+ * integer arithmetic. For B = 10000 these are indices 250 and 9749 (the 251st
+ * and 9750th ordered means); no interpolation.
+ */
+export function percentileCi(sorted: number[]): [number, number] {
+  const b = sorted.length;
+  return [
+    sorted[Math.floor(b * 25 / 1000)]!,
+    sorted[Math.ceil(b * 975 / 1000) - 1]!,
+  ];
+}
+
 /** Percentile 95% CI of the mean of `xs` resampled with replacement. */
 export function bootstrapCi(
   xs: number[],
   boot: number,
   seed: number,
 ): [number, number] | null {
+  if (!Number.isInteger(boot) || boot < 1) {
+    throw new Error(`boot must be a positive finite integer, got ${boot}`);
+  }
   if (xs.length === 0) return null;
   const rnd = mulberry32(seed);
   const n = xs.length;
@@ -170,10 +187,7 @@ export function bootstrapCi(
     ms.push(s / n);
   }
   ms.sort((a, b) => a - b);
-  return [
-    ms[Math.floor(0.025 * boot)]!,
-    ms[Math.min(boot - 1, Math.ceil(0.975 * boot) - 1)]!,
-  ];
+  return percentileCi(ms);
 }
 
 /** Leave-one-task-out means of the task means; flips = sign of mean or of k-m changes. */
@@ -375,12 +389,12 @@ export function extraTable(
   text: string,
   declared: Record<string, Dir>,
 ): ValueTable {
-  const rows = parseCsv(text);
-  const cols = Object.keys(rows[0] ?? {}).filter((c) =>
-    !["arm", "task", "repeat"].includes(c)
-  );
+  // header only: parseCsv(first line + a dummy row) keeps the columns of a data-less file
+  const cols = Object.keys(
+    parseCsv(text.replace(/\r\n/g, "\n").split("\n")[0]! + "\nx")[0] ?? {},
+  ).filter((c) => !["arm", "task", "repeat"].includes(c));
   for (const c of cols) {
-    if (!(c in declared)) {
+    if (!Object.hasOwn(declared, c)) {
       throw new Error(
         `--extra column "${c}" has no --metric ${c}:<higher|lower> declaration`,
       );
@@ -403,20 +417,25 @@ export function testRerunTable(rows: TestRerunInput[]): ValueTable {
   for (const r of rows) {
     if (r.excluded) continue;
     const id = key(r.arm, r.task, r.repeat);
-    const o = r.agent_vs_start?.outcome;
-    const s = r.shipped_vs_final?.status;
     const rec: Record<string, number> = {};
-    if (o === "catches") rec["agent_catches_bug"] = 1;
-    else if (o === "misses" || o === "no_tests") rec["agent_catches_bug"] = 0;
-    else if (o !== "not_applicable") {
-      throw new Error(
-        `test-rerun ${id}: unknown agent_vs_start.outcome "${o}"`,
-      );
+    // an absent result object drops only its metric; a present unknown value throws
+    if (r.agent_vs_start) {
+      const o = r.agent_vs_start.outcome;
+      if (o === "catches") rec["agent_catches_bug"] = 1;
+      else if (o === "misses" || o === "no_tests") rec["agent_catches_bug"] = 0;
+      else if (o !== "not_applicable") {
+        throw new Error(
+          `test-rerun ${id}: unknown agent_vs_start.outcome "${o}"`,
+        );
+      }
     }
-    if (s === "pass") rec["shipped_suite_pass"] = 1;
-    else if (s === "fail" || s === "compile_fail") {
-      rec["shipped_suite_pass"] = 0;
-    } else throw new Error(`test-rerun ${id}: unknown shipped status "${s}"`);
+    if (r.shipped_vs_final) {
+      const s = r.shipped_vs_final.status;
+      if (s === "pass") rec["shipped_suite_pass"] = 1;
+      else if (s === "fail" || s === "compile_fail") {
+        rec["shipped_suite_pass"] = 0;
+      } else throw new Error(`test-rerun ${id}: unknown shipped status "${s}"`);
+    }
     t.set(id, rec);
   }
   return t;
@@ -429,6 +448,29 @@ export interface JudgePairItem {
   dimensions: Record<string, { across: string }>;
 }
 
+const JUDGE_SIGN = new Map<string, number | null>([
+  ["variant", 1],
+  ["baseline", -1],
+  ["tie", 0],
+  ["missing", null],
+]);
+
+/** kappa: null, a finite number, or an object of those (one per judge pair). */
+function kappaLeaves(kap: unknown, where: string): (number | null)[] {
+  const leaf = (x: unknown): number | null => {
+    if (x === null) return null;
+    if (typeof x === "number" && Number.isFinite(x)) return x;
+    throw new Error(`${where}: kappa leaf must be a finite number or null`);
+  };
+  if (kap !== null && typeof kap === "object") {
+    if (Array.isArray(kap)) {
+      throw new Error(`${where}: kappa must not be an array`);
+    }
+    return Object.values(kap).map(leaf);
+  }
+  return [leaf(kap)];
+}
+
 export function judgeMetrics(
   items: JudgePairItem[],
   summary?: {
@@ -436,15 +478,9 @@ export function judgeMetrics(
   },
 ): Map<string, JudgeMetric> {
   const out = new Map<string, JudgeMetric>();
-  const SIGN: Record<string, number | null> = {
-    variant: 1,
-    baseline: -1,
-    tie: 0,
-    missing: null,
-  };
   for (const it of items) {
     for (const [dim, v] of Object.entries(it.dimensions)) {
-      const s = SIGN[v.across];
+      const s = JUDGE_SIGN.get(v.across);
       if (s === undefined) {
         throw new Error(
           `judge ${it.task}#${it.repeat} ${dim}: unknown across value "${v.across}"`,
@@ -457,19 +493,82 @@ export function judgeMetrics(
       if (s !== null) m.signs.push({ task: it.task, repeat: it.repeat, d: s });
     }
   }
+  const dims = summary?.dimensions;
   for (const [name, m] of out) {
-    const kap = summary?.dimensions?.[name.slice(6)]?.kappa;
-    const vals = kap && typeof kap === "object"
-      ? Object.values(kap)
-      : kap === undefined
-      ? []
-      : [kap];
-    for (const x of vals) {
+    const dim = name.slice(6);
+    if (!dims || !Object.hasOwn(dims, dim)) continue;
+    const kap = dims[dim]!.kappa;
+    if (kap === undefined) continue;
+    for (const x of kappaLeaves(kap, `judge summary ${dim}`)) {
       if (x === null) m.kappaNa = true;
-      else if (typeof x === "number" && x < 0.4) m.lowAgreement = true;
+      else if (x < 0.4) m.lowAgreement = true;
     }
   }
   return out;
+}
+
+export interface JudgeKey {
+  A: string;
+  B: string;
+  a_role: string;
+}
+
+/**
+ * Join judge items to the selected campaign pairs on (task, repeat) and check
+ * provenance against `<judge>/key/key.json` (packet id -> {A, B, a_role}; A/B
+ * are the arm names the judge run was given). Throws on an unmatched item, a
+ * duplicate (task, repeat), a missing/mismatched key. Without a key it throws
+ * unless `allowUnverified`; returns whether the result is unverified.
+ */
+export function verifyJudge(
+  items: JudgePairItem[],
+  pairs: PairRef[],
+  keys: Record<string, JudgeKey> | null,
+  allowUnverified: boolean,
+): { unverified: boolean } {
+  const known = new Set(pairs.map((p) => `${p.task}\u0000${p.repeat}`));
+  const seen = new Set<string>();
+  const base = pairs[0]?.base;
+  const variant = pairs[0]?.variant;
+  for (const it of items) {
+    const id = `${it.task}\u0000${it.repeat}`;
+    if (!known.has(id)) {
+      throw new Error(
+        `judge item ${it.task}#${it.repeat} matches no campaign pair of ${base}:${variant}`,
+      );
+    }
+    if (seen.has(id)) {
+      throw new Error(`judge: duplicate pair ${it.task}#${it.repeat}`);
+    }
+    seen.add(id);
+  }
+  if (keys === null) {
+    if (!allowUnverified) {
+      throw new Error(
+        "judge: key/key.json is missing, so the arms cannot be verified; pass --judge-unverified to accept",
+      );
+    }
+    return { unverified: true };
+  }
+  for (const it of items) {
+    const k = it.packet_id !== undefined && Object.hasOwn(keys, it.packet_id)
+      ? keys[it.packet_id]
+      : undefined;
+    const where =
+      `judge key for ${it.task}#${it.repeat} (packet ${it.packet_id})`;
+    if (!k) throw new Error(`${where}: no entry in key.json`);
+    const ok = k.a_role === "baseline"
+      ? k.A === base && k.B === variant
+      : k.a_role === "variant"
+      ? k.A === variant && k.B === base
+      : false;
+    if (!ok) {
+      throw new Error(
+        `${where}: key {A:${k.A}, B:${k.B}, a_role:${k.a_role}} does not match pair ${base}:${variant}`,
+      );
+    }
+  }
+  return { unverified: false };
 }
 
 // ----------------------------------------------------------------- report
@@ -483,6 +582,7 @@ export interface RunOptions {
   extra?: string[] | undefined;
   metric?: string[] | undefined;
   strata?: string | undefined;
+  judgeUnverified?: boolean | undefined;
   boot?: number;
   seed?: number;
 }
@@ -511,6 +611,7 @@ const HEADLINE = [
   "low_agreement",
   "kappa_na",
   "wording",
+  "unverified",
 ];
 const TASKS = [
   "base",
@@ -559,19 +660,18 @@ export async function runReport(o: RunOptions): Promise<void> {
   const context = contextTable(
     await Deno.readTextFile(join(o.campaign, "executions.csv")),
   );
-  const missing: string[] = [];
+  // axes with at least one matched metric value; "Missing axes" is the rest
+  const present = new Set<string>();
   const alsemPath = join(o.campaign, "alsem", "executions.csv");
   const alsem = (await exists(alsemPath))
     ? alsemTable(await Deno.readTextFile(alsemPath))
     : null;
-  if (!alsem || alsem.size === 0) missing.push("alsem");
   const trDir = o.testRerun ?? join(o.campaign, "test-rerun");
   const trPath = join(trDir, "executions.json");
   const rerun = (await exists(trPath))
     ? testRerunTable(JSON.parse(await Deno.readTextFile(trPath)))
     : null;
-  if (!rerun || rerun.size === 0) missing.push("test-rerun");
-  const declared: Record<string, Dir> = {};
+  const declared: Record<string, Dir> = Object.create(null);
   for (const d of o.metric ?? []) {
     const [n, dir] = d.split(":");
     if (!n || (dir !== "higher" && dir !== "lower")) {
@@ -585,10 +685,12 @@ export async function runReport(o: RunOptions): Promise<void> {
       extra.set(k, { ...extra.get(k), ...v });
     }
   }
-  if (extra.size === 0) missing.push("extra");
 
   // judge dirs: "base:variant=dir" or a bare dir (needs exactly one pair)
-  const judges = new Map<string, Map<string, JudgeMetric>>();
+  const judges = new Map<
+    string,
+    { unverified: boolean; metrics: Map<string, JudgeMetric> }
+  >();
   for (const j of o.judge ?? []) {
     const eq = j.indexOf("=");
     let pk: string;
@@ -606,21 +708,36 @@ export async function runReport(o: RunOptions): Promise<void> {
       dir = j;
     }
     const sp = join(dir, "summary.json");
-    judges.set(
-      pk,
-      judgeMetrics(
-        JSON.parse(await Deno.readTextFile(join(dir, "pairs.json"))),
+    const kp = join(dir, "key", "key.json");
+    const items = JSON.parse(await Deno.readTextFile(join(dir, "pairs.json")));
+    const [jb, jv] = pk.split(":") as [string, string];
+    const { unverified } = verifyJudge(
+      items,
+      all.filter((p) => p.base === jb && p.variant === jv),
+      (await exists(kp)) ? JSON.parse(await Deno.readTextFile(kp)) : null,
+      o.judgeUnverified ?? false,
+    );
+    judges.set(pk, {
+      unverified,
+      metrics: judgeMetrics(
+        items,
         (await exists(sp))
           ? JSON.parse(await Deno.readTextFile(sp))
           : undefined,
       ),
-    );
+    });
   }
-  if (judges.size === 0) missing.push("judge");
 
   const strataMap = new Map<string, string>();
   if (o.strata) {
     for (const r of parseCsv(await Deno.readTextFile(o.strata))) {
+      if (r["stratum"] === "all") {
+        throw new Error(
+          `--strata: the stratum name "all" is reserved for the overall scope (task ${
+            r["task"]
+          })`,
+        );
+      }
       strataMap.set(r["task"]!, r["stratum"]!);
     }
   }
@@ -629,8 +746,7 @@ export async function runReport(o: RunOptions): Promise<void> {
 
   const head: Record<string, unknown>[] = [];
   const taskRows: Record<string, unknown>[] = [];
-  const md: string[] = ["# Solution quality report", ""];
-  md.push(`Missing axes: ${missing.length ? missing.join(", ") : "none"}`, "");
+  const md: string[] = [];
 
   for (const [base, variant] of wanted) {
     const pairs = all.filter((p) => p.base === base && p.variant === variant);
@@ -640,23 +756,27 @@ export async function runReport(o: RunOptions): Promise<void> {
       tm: TaskMean[];
       low?: boolean;
       na?: boolean;
+      unv?: boolean;
+      axis?: string;
     };
     const ms: M[] = [];
     const fromTable = (
       t: ValueTable | null,
       metrics: Record<string, Dir>,
       group: M["group"],
+      axis?: string,
     ) => {
       if (!t) return;
       for (const [name, dir] of Object.entries(metrics)) {
         const tm = taskMeans(pairDiffs(pairs, t, name, dir === "higher"));
-        if (tm.length) ms.push({ name, group, tm });
+        if (tm.length) ms.push({ name, group, tm, ...(axis ? { axis } : {}) });
       }
     };
-    fromTable(alsem, ALSEM_METRICS, "quality");
-    fromTable(rerun, TESTRERUN_METRICS, "quality");
-    fromTable(extra, declared, "quality");
-    for (const [name, jm] of judges.get(`${base}:${variant}`) ?? []) {
+    fromTable(alsem, ALSEM_METRICS, "quality", "alsem");
+    fromTable(rerun, TESTRERUN_METRICS, "quality", "test-rerun");
+    fromTable(extra, declared, "quality", "extra");
+    const jg = judges.get(`${base}:${variant}`);
+    for (const [name, jm] of jg?.metrics ?? []) {
       const tm = taskMeans(jm.signs);
       if (tm.length) {
         ms.push({
@@ -665,10 +785,13 @@ export async function runReport(o: RunOptions): Promise<void> {
           tm,
           low: jm.lowAgreement,
           na: jm.kappaNa,
+          unv: jg!.unverified,
+          axis: "judge",
         });
       }
     }
     fromTable(context, CONTEXT_METRICS, "context");
+    for (const m of ms) if (m.axis) present.add(m.axis);
 
     const strata = [
       "all",
@@ -683,6 +806,7 @@ export async function runReport(o: RunOptions): Promise<void> {
       metric: string;
       a: Agg;
       low: boolean;
+      unv: boolean;
       na: boolean;
     };
     const rows: Row[] = [];
@@ -729,6 +853,7 @@ export async function runReport(o: RunOptions): Promise<void> {
           low_agreement: m.low ?? false,
           kappa_na: m.na ?? false,
           wording: wording(a, s),
+          unverified: m.unv ?? false,
         };
         head.push(r);
         rows.push({
@@ -737,6 +862,7 @@ export async function runReport(o: RunOptions): Promise<void> {
           metric: m.name,
           a,
           low: m.low ?? false,
+          unv: m.unv ?? false,
           na: m.na ?? false,
         });
       }
@@ -772,7 +898,11 @@ export async function runReport(o: RunOptions): Promise<void> {
         f(a.wilcoxon.p),
         `[${f(a.loto.min)}, ${f(a.loto.max)}]`,
         a.loto.flips,
-        [x.low ? "low_agreement" : "", x.na ? "kappa_na" : ""]
+        [
+          x.low ? "low_agreement" : "",
+          x.na ? "kappa_na" : "",
+          x.unv ? "unverified" : "",
+        ]
           .filter(Boolean).join(" "),
         wording(a, x.s),
       ];
@@ -809,7 +939,19 @@ export async function runReport(o: RunOptions): Promise<void> {
   }
 
   await Deno.mkdir(o.out, { recursive: true });
-  await Deno.writeTextFile(join(o.out, "report.md"), md.join("\n") + "\n");
+  const missing = ["alsem", "test-rerun", "judge", "extra"].filter((a) =>
+    !present.has(a)
+  );
+  const lead = [
+    "# Solution quality report",
+    "",
+    `Missing axes: ${missing.length ? missing.join(", ") : "none"}`,
+    "",
+  ];
+  await Deno.writeTextFile(
+    join(o.out, "report.md"),
+    [...lead, ...md].join("\n") + "\n",
+  );
   await Deno.writeTextFile(
     join(o.out, "headline.csv"),
     csvText(head, HEADLINE),
@@ -838,6 +980,10 @@ if (import.meta.main) {
     .option("--metric <m:string>", "name:higher|lower for --extra columns", {
       collect: true,
     })
+    .option(
+      "--judge-unverified",
+      "accept a judge dir without key/key.json (metrics marked unverified)",
+    )
     .option("--strata <csv:string>", "task,stratum csv")
     .option("--boot <n:number>", "bootstrap resamples", { default: 10000 })
     .option("--seed <n:number>", "bootstrap seed", { default: 1 })
@@ -851,6 +997,7 @@ if (import.meta.main) {
     extra: options.extra,
     metric: options.metric,
     strata: options.strata,
+    judgeUnverified: options.judgeUnverified,
     boot: options.boot,
     seed: options.seed,
   });

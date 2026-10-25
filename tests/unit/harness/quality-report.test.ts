@@ -10,16 +10,20 @@ import { join } from "@std/path";
 import { withTempDir } from "../../utils/temp-dir.ts";
 import {
   aggregate,
+  ALSEM_METRICS,
   alsemTable,
   bootstrapCi,
+  CONTEXT_METRICS,
   extraTable,
   judgeMetrics,
   loto,
   pairDiffs,
   parseCsv,
+  percentileCi,
   runReport,
   signTest,
   taskMeans,
+  TESTRERUN_METRICS,
   testRerunTable,
   wilcoxon,
   wording,
@@ -299,7 +303,17 @@ async function writeFixture(root: string, withAxes: boolean) {
     JSON.stringify(rr),
   );
   const judge = join(root, "judge");
-  await Deno.mkdir(judge);
+  await Deno.mkdir(join(judge, "key"), { recursive: true });
+  await Deno.writeTextFile(
+    join(judge, "key", "key.json"),
+    JSON.stringify(
+      Object.fromEntries(
+        tasks.map((
+          t,
+        ) => ["p" + t, { A: "plain", B: "skill", a_role: "baseline" }]),
+      ),
+    ),
+  );
   await Deno.writeTextFile(
     join(judge, "pairs.json"),
     JSON.stringify(
@@ -361,7 +375,7 @@ Deno.test("end to end: full fixture, no pooling, header columns", async () => {
     const hText = await Deno.readTextFile(join(out, "headline.csv"));
     assertEquals(
       hText.split("\n")[0],
-      "base,variant,stratum,metric,group,n_tasks,k,m,t,median,mean,ci_lo,ci_hi,sign_p,wilcoxon_w_plus,wilcoxon_n,wilcoxon_p,loto_min,loto_max,loto_flips,low_agreement,kappa_na,wording",
+      "base,variant,stratum,metric,group,n_tasks,k,m,t,median,mean,ci_lo,ci_hi,sign_p,wilcoxon_w_plus,wilcoxon_n,wilcoxon_p,loto_min,loto_max,loto_flips,low_agreement,kappa_na,wording,unverified",
     );
     const tText = await Deno.readTextFile(join(out, "tasks.csv"));
     assertEquals(
@@ -396,5 +410,342 @@ Deno.test("end to end: full fixture, no pooling, header columns", async () => {
     // wall_min is worse for the variant on T4 only
     const wall = get("all", "wall_min");
     assertEquals([wall["k"], wall["m"]], ["3", "1"]);
+  });
+});
+
+// ------------------------------------------------- self-check r1 regressions
+
+const C = [
+  -1.5,
+  -0.5,
+  -0.5,
+  1.5,
+  3.0,
+  -3.5,
+  -2.5,
+  -1.5,
+  0.5,
+  1.0,
+  1.5,
+  -2.5,
+  3.5,
+  -2.5,
+  2.0,
+  -0.5,
+  0.5,
+  -1.5,
+  2.5,
+  4.0,
+  2.5,
+  -1.5,
+  -0.5,
+  -0.5,
+  2.0,
+  2.5,
+  -3.5,
+  -2.5,
+  -1.5,
+  1.0,
+  0.5,
+];
+const D = [
+  -0.83,
+  0.54,
+  1.91,
+  -1.72,
+  -0.35,
+  1.02,
+  2.39,
+  -1.24,
+  0.13,
+  1.5,
+  -2.13,
+  -0.76,
+  0.61,
+  1.98,
+  -1.65,
+  -0.28,
+  1.09,
+  2.46,
+  -1.17,
+  0.2,
+  1.57,
+  -2.06,
+  -0.69,
+  0.68,
+  2.05,
+  -1.58,
+  -0.21,
+  1.16,
+  2.53,
+  -1.1,
+];
+
+Deno.test("wilcoxon n = 31 normal path with ties (scipy known answer)", () => {
+  const w = wilcoxon(C);
+  assertEquals([w.wPlus, w.n], [253.5, 31]);
+  assertAlmostEquals(w.p, 0.921566033427682, 1e-6);
+});
+
+Deno.test("wilcoxon n = 30 boundary stays exact (scipy known answer)", () => {
+  const w = wilcoxon(D);
+  assertEquals([w.wPlus, w.n], [260, 30]);
+  assertAlmostEquals(w.p, 0.583757072687149, 1e-9);
+});
+
+Deno.test("percentileCi pins the order statistics", () => {
+  const s = Array.from({ length: 10000 }, (_, i) => i);
+  assertEquals(percentileCi(s), [250, 9749]);
+  const h = Array.from({ length: 100 }, (_, i) => i);
+  assertEquals(percentileCi(h), [2, 97]);
+});
+
+Deno.test("bootstrapCi rejects invalid boot counts", () => {
+  for (const b of [0, -5, 1.5, NaN, Infinity]) {
+    assertThrows(() => bootstrapCi([1, 2], b, 1), Error, "boot");
+    assertThrows(() => bootstrapCi([], b, 1), Error, "boot");
+  }
+});
+
+Deno.test("built-in metric directions", () => {
+  assertEquals({ ...ALSEM_METRICS }, {
+    curated_weighted_fp: "lower",
+    alsem_new_findings_fp: "lower",
+    alsem_new_high_findings: "lower",
+    new_unused: "lower",
+    test_coverage_ratio: "higher",
+    test_assert_reachable_mean: "higher",
+    test_zero_assert_share: "lower",
+    test_areequal_literal_share: "lower",
+  });
+  assertEquals({ ...TESTRERUN_METRICS }, {
+    agent_catches_bug: "higher",
+    shipped_suite_pass: "higher",
+  });
+  assertEquals({ ...CONTEXT_METRICS }, {
+    cost_usd: "lower",
+    wall_min: "lower",
+  });
+});
+
+Deno.test("fail closed: inherited names are not enum values or declarations", () => {
+  const item = (across: string) => ({
+    task: "T",
+    repeat: 1,
+    dimensions: { d: { across } },
+  });
+  for (const v of ["constructor", "toString", "__proto__"]) {
+    assertThrows(() => judgeMetrics([item(v)]), Error, v);
+  }
+  assertThrows(
+    () => extraTable("arm,task,repeat,constructor\na,T,1,5\n", {}),
+    Error,
+    "constructor",
+  );
+  assertThrows(
+    () => extraTable("arm,task,repeat,toString\n", {}),
+    Error,
+    "toString",
+  );
+});
+
+Deno.test("fail closed: kappa leaves are finite numbers or null", () => {
+  const it = [{ task: "T", repeat: 1, dimensions: { d: { across: "tie" } } }];
+  const bads: unknown[] = [
+    { "a|b": "0.3" },
+    "0.3",
+    [0.3],
+    { "a|b": [1] },
+    { "a|b": NaN },
+  ];
+  for (const bad of bads) {
+    assertThrows(
+      () => judgeMetrics(it, { dimensions: { d: { kappa: bad } } }),
+      Error,
+      "kappa",
+    );
+  }
+  assertEquals(
+    judgeMetrics(it, { dimensions: { d: { kappa: 0.9 } } }).get("judge_d")!
+      .lowAgreement,
+    false,
+  );
+});
+
+Deno.test("test-rerun partial rows: absent result only drops that metric", () => {
+  const t = testRerunTable([
+    { arm: "a", task: "T", repeat: 1, shipped_vs_final: { status: "pass" } },
+    { arm: "a", task: "U", repeat: 1, agent_vs_start: { outcome: "catches" } },
+  ]);
+  assertEquals(t.get("a|T|1"), { shipped_suite_pass: 1 });
+  assertEquals(t.get("a|U|1"), { agent_catches_bug: 1 });
+  assertThrows(
+    () =>
+      testRerunTable([{
+        arm: "a",
+        task: "T",
+        repeat: 1,
+        agent_vs_start: { outcome: "weird" },
+      }]),
+    Error,
+    "weird",
+  );
+  assertThrows(
+    () =>
+      testRerunTable([{
+        arm: "a",
+        task: "T",
+        repeat: 1,
+        shipped_vs_final: { status: "odd" },
+      }]),
+    Error,
+    "odd",
+  );
+});
+
+async function judgeRun(
+  mutate: (judge: string) => Promise<void>,
+  extraOpts: { judgeUnverified?: boolean } = {},
+): Promise<Error | null> {
+  let err: Error | null = null;
+  await withTempDir(async (root) => {
+    const f = await writeFixture(root, true);
+    await mutate(f.judge!);
+    try {
+      await runReport({
+        campaign: f.camp,
+        out: join(root, "out"),
+        judge: [f.judge!],
+        boot: 50,
+        ...extraOpts,
+      });
+    } catch (e) {
+      err = e as Error;
+    }
+  });
+  return err;
+}
+
+const writeJson = (p: string, v: unknown) =>
+  Deno.writeTextFile(p, JSON.stringify(v));
+const jItem = (task: string, repeat = 1) => ({
+  task,
+  repeat,
+  packet_id: "p" + task,
+  dimensions: { conventions: { across: "variant" } },
+});
+
+Deno.test("judge join: unmatched task and duplicate pair throw", async () => {
+  const e1 = await judgeRun((j) =>
+    writeJson(join(j, "pairs.json"), [jItem("T1"), jItem("ZZ")])
+  );
+  assert(e1 && /ZZ/.test(e1.message), String(e1));
+  const e2 = await judgeRun((j) =>
+    writeJson(join(j, "pairs.json"), [jItem("T1"), jItem("T1")])
+  );
+  assert(e2 && /duplicate/i.test(e2.message), String(e2));
+});
+
+Deno.test("judge provenance: wrong campaign key and swapped arms throw", async () => {
+  const keyed = (k: unknown) => (j: string) =>
+    writeJson(join(j, "key", "key.json"), k);
+  const all = (A: string, B: string, a_role: string) =>
+    Object.fromEntries(
+      ["T1", "T2", "T3", "T4"].map((t) => ["p" + t, { A, B, a_role }]),
+    );
+  const e1 = await judgeRun(keyed(all("other", "skill", "baseline")));
+  assert(e1 && /key/i.test(e1.message), String(e1));
+  const e2 = await judgeRun(keyed(all("skill", "plain", "baseline")));
+  assert(e2 && /key/i.test(e2.message), String(e2));
+  const e3 = await judgeRun(keyed({}));
+  assert(e3 && /key/i.test(e3.message), String(e3));
+  // a consistent swapped layout (A = variant, a_role variant) is valid
+  assertEquals(await judgeRun(keyed(all("skill", "plain", "variant"))), null);
+});
+
+Deno.test("judge provenance: missing key.json needs --judge-unverified", async () => {
+  const rm = (j: string) => Deno.remove(join(j, "key"), { recursive: true });
+  const e = await judgeRun(rm);
+  assert(e && /judge-unverified/.test(e.message), String(e));
+  await withTempDir(async (root) => {
+    const f = await writeFixture(root, true);
+    await rm(f.judge!);
+    const out = join(root, "out");
+    await runReport({
+      campaign: f.camp,
+      out,
+      judge: [f.judge!],
+      judgeUnverified: true,
+      boot: 50,
+    });
+    const h = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
+    const j = h.find((r) => r["metric"] === "judge_conventions")!;
+    assertEquals(j["unverified"], "true");
+    assertEquals(
+      h.find((r) => r["metric"] === "cost_usd")!["unverified"],
+      "false",
+    );
+  });
+});
+
+Deno.test("strata map may not use the reserved name all", async () => {
+  await withTempDir(async (root) => {
+    const f = await writeFixture(root, false);
+    const s = join(f.camp, "s.csv");
+    await Deno.writeTextFile(s, "task,stratum\nT1,all\nT2,x\n");
+    let err: Error | null = null;
+    try {
+      await runReport({ campaign: f.camp, out: join(root, "out"), strata: s });
+    } catch (e) {
+      err = e as Error;
+    }
+    assert(err && /reserved/i.test(err.message), String(err));
+  });
+});
+
+Deno.test("Missing axes uses effective matched availability", async () => {
+  const missingLine = async (mutate: (j: string) => Promise<void>) => {
+    let line = "";
+    await withTempDir(async (root) => {
+      const f = await writeFixture(root, true);
+      await mutate(f.judge!);
+      const out = join(root, "out");
+      await runReport({ campaign: f.camp, out, judge: [f.judge!], boot: 50 });
+      line = (await Deno.readTextFile(join(out, "report.md")))
+        .split("\n").find((l) => l.startsWith("Missing axes"))!;
+    });
+    return line;
+  };
+  assertStringIncludes(
+    await missingLine((j) => writeJson(join(j, "pairs.json"), [])),
+    "judge",
+  );
+  assertStringIncludes(
+    await missingLine((j) =>
+      writeJson(join(j, "pairs.json"), [{
+        ...jItem("T1"),
+        dimensions: { conventions: { across: "missing" } },
+      }])
+    ),
+    "judge",
+  );
+  assertStringIncludes(
+    await missingLine(() => Promise.resolve()),
+    "Missing axes: extra",
+  );
+});
+
+Deno.test("end to end: unequal repeats use task-weighted statistics", async () => {
+  await withTempDir(async (root) => {
+    const f = await writeFixture(root, true);
+    const out = join(root, "out");
+    await runReport({ campaign: f.camp, out, boot: 200, seed: 1 });
+    const h = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
+    const w = h.find((r) => r["metric"] === "wall_min")!;
+    // T1 (3 repeats) 2, T2 2, T3 2, T4 -2: task mean 1 (pooled would be 4/3)
+    assertAlmostEquals(Number(w["mean"]), 1, 1e-9);
+    assertAlmostEquals(Number(w["median"]), 2, 1e-9);
+    assertAlmostEquals(Number(w["loto_min"]), 2 / 3, 1e-9);
+    assertAlmostEquals(Number(w["loto_max"]), 2, 1e-9);
   });
 });
