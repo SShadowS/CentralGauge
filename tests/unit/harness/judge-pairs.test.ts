@@ -9,7 +9,8 @@ import {
   extractRubric,
   fillTemplate,
   formatEstimate,
-  GUESS_SUFFIX,
+  GUESS_QUESTION,
+  guessPrompt,
   JUDGE_SYSTEM,
   type JudgeClient,
   judgePackets,
@@ -129,7 +130,7 @@ Deno.test("blinding: arm, skill, tool names and out-of-app files never reach the
     terms: mt.terms,
     arms: mt.arms,
   });
-  for (const t of [p.text, p.swappedText]) {
+  for (const t of [p.text, p.swappedText, p.guessText]) {
     assert(
       !/claude|anthropic|subagent|realistic|plainarm|helper-agent|ARMLEAK|Scratch|al-tools/i
         .test(t),
@@ -412,6 +413,7 @@ function packetStub(id: string) {
     sha: id.padEnd(64, "0"),
     text: `packet ${id}`,
     swappedText: `swapped ${id}`,
+    guessText: `guess ${id}\n\n${GUESS_QUESTION}`,
     task: "T",
     repeat: 1,
     key: { A: "b", B: "v", a_role: "baseline" as const },
@@ -433,7 +435,7 @@ Deno.test("judgePackets: cache hit spends zero calls on rerun; guess calls inclu
   const client: JudgeClient = (req) => {
     calls++;
     return Promise.resolve(
-      req.prompt.endsWith(GUESS_SUFFIX) ? '{"guess":"B"}' : verdictJson("A"),
+      req.prompt.endsWith(GUESS_QUESTION) ? '{"guess":"B"}' : verdictJson("A"),
     );
   };
   const args = {
@@ -457,7 +459,7 @@ Deno.test("judgePackets: schema mismatch or unreadable cache throws", async () =
   const out = await testTempDir();
   const client: JudgeClient = (req) =>
     Promise.resolve(
-      req.prompt.endsWith(GUESS_SUFFIX) ? '{"guess":"A"}' : verdictJson("A"),
+      req.prompt.endsWith(GUESS_QUESTION) ? '{"guess":"A"}' : verdictJson("A"),
     );
   const args = {
     packets: [packetStub("bb")],
@@ -506,7 +508,7 @@ Deno.test("judgePackets: garbage 3x records a failure (not cached); success on r
   const out2 = await testTempDir();
   let k = 0;
   const flaky: JudgeClient = (req) => {
-    if (req.prompt.endsWith(GUESS_SUFFIX)) {
+    if (req.prompt.endsWith(GUESS_QUESTION)) {
       return Promise.resolve('{"guess":"A"}');
     }
     k++;
@@ -676,7 +678,7 @@ Deno.test("judgePackets: judges sharing a model but not thinking get separate ca
   const client: JudgeClient = (req) => {
     calls++;
     return Promise.resolve(
-      req.prompt.endsWith(GUESS_SUFFIX) ? '{"guess":"A"}' : verdictJson("A"),
+      req.prompt.endsWith(GUESS_QUESTION) ? '{"guess":"A"}' : verdictJson("A"),
     );
   };
   const judges = [
@@ -701,7 +703,7 @@ Deno.test("judgePackets: a cached payload that fails the schema throws", async (
   const out = await testTempDir();
   const client: JudgeClient = (req) =>
     Promise.resolve(
-      req.prompt.endsWith(GUESS_SUFFIX) ? '{"guess":"A"}' : verdictJson("A"),
+      req.prompt.endsWith(GUESS_QUESTION) ? '{"guess":"A"}' : verdictJson("A"),
     );
   const args = {
     packets: [packetStub("hh")],
@@ -949,7 +951,7 @@ Deno.test("judgePackets: every cell is recorded durably in cells.jsonl, failures
   assert(String(orig.error).length > 0);
   const good: JudgeClient = (req) =>
     Promise.resolve(
-      req.prompt.endsWith(GUESS_SUFFIX) ? '{"guess":"A"}' : verdictJson("A"),
+      req.prompt.endsWith(GUESS_QUESTION) ? '{"guess":"A"}' : verdictJson("A"),
     );
   const args = {
     packets: [packetStub("zz")],
@@ -969,7 +971,81 @@ Deno.test("judgePackets: every cell is recorded durably in cells.jsonl, failures
   ]);
 });
 
-Deno.test("cacheName: the key covers the whole request prompt and the system prompt; a changed guess suffix re-asks", async () => {
+Deno.test("guessPrompt: task and both sides in A/B order, then the question; no rubric, no verdict format", () => {
+  const g = guessPrompt("TASK BODY", "SIDE-A BODY", "SIDE-B BODY");
+  const at = (s: string) => {
+    const i = g.indexOf(s);
+    assert(i >= 0, s);
+    return i;
+  };
+  assert(at("TASK BODY") < at("SIDE-A BODY"));
+  assert(at("SIDE-A BODY") < at("SIDE-B BODY"));
+  assert(g.endsWith(GUESS_QUESTION));
+  assert(
+    !/rubric|correctness_risk|conventions|minimality|test_value|readability|verdict|tie/i
+      .test(g),
+    g,
+  );
+});
+
+Deno.test("buildPacket: guessText is the guess prompt over the orig A/B sides, with no template, rubric or verdict format", async () => {
+  const f = await fixture();
+  const mt = manifestTerms(["plainarm", "ArmRealistic"], manifests);
+  const template =
+    'RUBRIC: {{RUBRIC}}\nTASK: {{TASK_PROMPT}}\nA: {{SIDE_A}}\nB: {{SIDE_B}}\nFORMAT: {"correctness_risk": {"verdict": "A|B|tie"}}';
+  const p = await buildPacket({
+    seed: "s",
+    task: "HX-001",
+    repeat: 1,
+    baseline: "plainarm",
+    baselineIsA: true,
+    variant: "ArmRealistic",
+    taskPrompt: "Do the thing.",
+    startDir: f.start,
+    baseFinal: f.base,
+    varFinal: f.vari,
+    template,
+    rubric: "RUBRIC BODY",
+    terms: mt.terms,
+    arms: mt.arms,
+  });
+  const sideA = p.text.slice(
+    p.text.indexOf("A: ") + 3,
+    p.text.indexOf("\nB: "),
+  );
+  const sideB = p.text.slice(
+    p.text.indexOf("\nB: ") + 4,
+    p.text.indexOf("\nFORMAT: "),
+  );
+  assertEquals(p.guessText, guessPrompt("Do the thing.", sideA, sideB));
+  assert(!p.guessText.includes("RUBRIC"));
+  assert(!p.guessText.includes("FORMAT"));
+  assert(!p.guessText.includes("correctness_risk"));
+});
+
+Deno.test("judgePackets: the guess call sends exactly the packet's guessText", async () => {
+  const out = await testTempDir();
+  const guessPrompts: string[] = [];
+  const client: JudgeClient = (req) => {
+    if (req.prompt.endsWith(GUESS_QUESTION)) {
+      guessPrompts.push(req.prompt);
+      return Promise.resolve('{"guess":"A"}');
+    }
+    return Promise.resolve(verdictJson("A"));
+  };
+  const p = packetStub("gp");
+  await judgePackets({
+    packets: [p],
+    judges: JUDGES,
+    out,
+    template: TEMPLATE,
+    rubric: "R",
+    client,
+  });
+  assertEquals(guessPrompts, [p.guessText]);
+});
+
+Deno.test("cacheName: the key covers the whole request prompt and the system prompt; a changed guess prompt re-asks", async () => {
   const a = await cacheName("p", "jk", "orig");
   assert(a !== await cacheName("p2", "jk", "orig"));
   assert(a !== await cacheName("p", "jk", "orig", "other system"));
@@ -994,7 +1070,10 @@ Deno.test("cacheName: the key covers the whole request prompt and the system pro
   assertEquals(calls, 3);
   await judgePackets({
     ...args,
-    guessSuffix: 'Who used more tooling? Answer {"guess":"A|B"}',
+    packets: [{
+      ...packetStub("kk"),
+      guessText: 'Who used more tooling? Answer {"guess":"A|B"}',
+    }],
   });
   assertEquals(calls, 4);
 });
