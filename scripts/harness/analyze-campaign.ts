@@ -276,7 +276,7 @@ export interface Row {
 
 // ---------------------------------------------------------------- al-sem (A-03)
 
-/** The al-sem 2.0.1 output contract: schemaVersion per envelope kind. */
+/** The al-sem output contract: schemaVersion per envelope kind. 2.0.3 and 2.1.0-rc.4 emit the same versions as 2.0.2 (their additions are payload fields), so a new version stays unknown and fails. */
 const ALSEM_SCHEMAS: Record<string, string[]> = {
   "analyze-report": ["1.0.0"],
   "diff-report": ["1.0.0"],
@@ -310,8 +310,72 @@ const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 const isObj = (x: unknown): x is J =>
   typeof x === "object" && x !== null && !Array.isArray(x);
 
-/** Payload fields the runner reads, per envelope kind (2.0.2 shapes). */
-function checkPayload(kind: string, p: J): string | null {
+const isNum = (x: unknown): x is number =>
+  typeof x === "number" && Number.isFinite(x);
+
+/**
+ * `digest --diff --tests` payload.testCoverage (2.0.3). `covered` and
+ * `uncovered` are left out of the JSON when empty. Null when valid, else the
+ * name of the first bad field. The ratio is covered / changed (null with no
+ * changed routine) and `covered` lists exactly the covered routines.
+ */
+function checkTestCoverage(tc: unknown): string | null {
+  if (!isObj(tc)) return "payload.testCoverage";
+  if (!isNum(tc["changedRoutines"])) {
+    return "payload.testCoverage.changedRoutines";
+  }
+  if (!isNum(tc["coveredChangedRoutines"])) {
+    return "payload.testCoverage.coveredChangedRoutines";
+  }
+  if (!isObj(tc["coverage"]) || typeof tc["coverage"]["status"] !== "string") {
+    return "payload.testCoverage.coverage.status";
+  }
+  for (const k of ["covered", "uncovered"]) {
+    if (tc[k] !== undefined && !(Array.isArray(tc[k]) && tc[k].every(isObj))) {
+      return `payload.testCoverage.${k}`;
+    }
+    const s = (x: unknown) => typeof x === "string" && x !== "";
+    for (const it of (tc[k] ?? []) as J[]) {
+      const a = it["anchor"];
+      if (
+        !s(it["stableId"]) || (k === "uncovered" && !s(it["reason"])) ||
+        (a !== undefined && !(isObj(a) && typeof a["file"] === "string"))
+      ) return `payload.testCoverage.${k}[]`;
+    }
+  }
+  const ids = (k: string) =>
+    ((tc[k] ?? []) as J[]).map((it) => it["stableId"] as string);
+  const cov = ids("covered");
+  const unc = ids("uncovered");
+  if (new Set(cov).size !== cov.length || unc.some((id) => cov.includes(id))) {
+    return "payload.testCoverage.covered[]";
+  }
+  if (new Set(unc).size !== unc.length) {
+    return "payload.testCoverage.uncovered[]";
+  }
+  const changed = tc["changedRoutines"];
+  const covered = tc["coveredChangedRoutines"];
+  const ratio = tc["ratio"];
+  if (
+    ratio !== null &&
+    !(isNum(ratio) && changed > 0 && Math.abs(ratio - covered / changed) < 1e-9)
+  ) return "payload.testCoverage.ratio";
+  if (ratio === null && changed !== 0) return "payload.testCoverage.ratio";
+  if (
+    covered > changed ||
+    ((tc["covered"] as unknown[] | undefined)?.length ?? 0) !== covered
+  ) {
+    return "payload.testCoverage.covered";
+  }
+  const n = (k: string) => (tc[k] as unknown[] | undefined)?.length ?? 0;
+  if (n("covered") + n("uncovered") !== changed) {
+    return "payload.testCoverage.uncovered";
+  }
+  return null;
+}
+
+/** Payload fields the runner reads, per envelope kind. `tests`: the digest was run with --tests. */
+function checkPayload(kind: string, p: J, tests: boolean): string | null {
   const arr = (k: string) => Array.isArray(p[k]) ? null : `payload.${k}`;
   const obj = (k: string) => isObj(p[k]) ? null : `payload.${k}`;
   const str = (x: unknown) => typeof x === "string" && x !== "";
@@ -339,6 +403,8 @@ function checkPayload(kind: string, p: J): string | null {
           ? "payload.findings[].primaryLocation.file"
           : !str(f["fingerprint"])
           ? "payload.findings[].fingerprint"
+          : !str(f["looseFingerprint"])
+          ? "payload.findings[].looseFingerprint"
           : null;
       });
     case "digest":
@@ -348,7 +414,8 @@ function checkPayload(kind: string, p: J): string | null {
           ["rootsRequested", "rootsResolved", "totalUnresolved"],
           (k) =>
             (p["summary"] as J)[k] === undefined ||
-              typeof (p["summary"] as J)[k] === "number"
+              (Number.isInteger((p["summary"] as J)[k]) &&
+                ((p["summary"] as J)[k] as number) >= 0)
               ? null
               : `payload.summary.${k}`,
         ) ??
@@ -366,18 +433,40 @@ function checkPayload(kind: string, p: J): string | null {
           const r = e["routine"];
           const anchor = r["anchor"];
           const fx = e["effects"];
-          return !str(r["stableId"])
+          return e["unresolved"] !== undefined &&
+              !Array.isArray(e["unresolved"])
+            ? "payload.entries[].unresolved"
+            : !str(r["stableId"])
             ? "payload.entries[].routine.stableId"
-            : anchor !== undefined && !isObj(anchor)
+            : !isObj(anchor)
             ? "payload.entries[].routine.anchor"
+            : !str(anchor["file"])
+            ? "payload.entries[].routine.anchor.file"
             : fx !== undefined && !Array.isArray(fx)
             ? "payload.entries[].effects"
-            : first((fx ?? []) as unknown[], (x) =>
-              isObj(x) && str(x["type"]) &&
-                (x["detail"] === undefined || isObj(x["detail"]))
-                ? null
-                : "payload.entries[].effects[]");
-        });
+            : first(
+              (fx ?? []) as unknown[],
+              (x) => {
+                if (
+                  !isObj(x) || !str(x["type"]) ||
+                  !(x["detail"] === undefined || isObj(x["detail"]))
+                ) return "payload.entries[].effects[]";
+                const d = x["detail"];
+                const t = x["type"] as string;
+                const needsName =
+                  (t.startsWith("DB_") || t === "EVENT_PUBLISH") &&
+                  !(isObj(d) && d["boundary"] !== undefined);
+                return (isObj(d) &&
+                    ["boundary", "resourceDisplay"].some((k) =>
+                      d[k] !== undefined && typeof d[k] !== "string"
+                    )) ||
+                    (needsName && !(isObj(d) && str(d["resourceDisplay"])))
+                  ? "payload.entries[].effects[].detail"
+                  : null;
+              },
+            );
+        }) ??
+        (tests ? checkTestCoverage(p["testCoverage"]) : null);
     case "diff-report": {
       const cats = isObj(p["summary"])
         ? (p["summary"] as J)["findingsByCategory"]
@@ -418,7 +507,11 @@ function checkPayload(kind: string, p: J): string | null {
  * present with its type (never coerced or defaulted), the kind and schemaVersion
  * must be the expected ones, and the payload must have the fields the runner reads.
  */
-export function alsemEnvelope(doc: unknown, kind: string): AlsemEnvelope {
+export function alsemEnvelope(
+  doc: unknown,
+  kind: string,
+  opts: { tests?: boolean } = {},
+): AlsemEnvelope {
   if (!isObj(doc)) throw new Error(`al-sem ${kind}: output is not an object`);
   const d = doc;
   if (d["kind"] !== kind) {
@@ -441,7 +534,7 @@ export function alsemEnvelope(doc: unknown, kind: string): AlsemEnvelope {
     ? "diagnostics"
     : !isObj(d["payload"])
     ? "payload"
-    : checkPayload(kind, d["payload"]);
+    : checkPayload(kind, d["payload"], opts.tests === true);
   if (bad) throw new Error(`al-sem ${kind}: missing or malformed ${bad}`);
   return {
     alsemVersion: d["alsemVersion"] as string,
@@ -468,17 +561,102 @@ export function checkedAch(text: string): AchReport {
   }
   const num = (x: unknown) => typeof x === "number";
   const str = (x: unknown) => typeof x === "string";
-  const okMetric = (m: unknown) =>
-    isObj(m) && str(m["path"]) && str(m["object_name"]) &&
-    str(m["procedure_name"]) && str(m["access"]) && num(m["line"]) &&
-    num(m["complexity"]) && num(m["line_count"]) && num(m["parameter_count"]);
-  if (!ach["metrics"].every(okMetric)) {
-    throw new Error("al-call-hierarchy: a metrics row is malformed");
+  // Nullable by design: routine_id (some members have none) and fan_in (no call graph).
+  const strOrNull = (x: unknown) => x === null || str(x);
+  const numOrNull = (x: unknown) => x === null || num(x);
+  const badMetric = (m: unknown): string | null => {
+    if (!isObj(m)) return "row";
+    const checks: [string, boolean][] = [
+      ["path", str(m["path"])],
+      ["object_type", str(m["object_type"])],
+      ["object_name", str(m["object_name"])],
+      ["procedure_name", str(m["procedure_name"])],
+      ["access", str(m["access"])],
+      ["line", num(m["line"])],
+      ["complexity", num(m["complexity"])],
+      ["line_count", num(m["line_count"])],
+      ["parameter_count", num(m["parameter_count"])],
+      ["routine_id", strOrNull(m["routine_id"] ?? null)],
+      ["fan_in", numOrNull(m["fan_in"])],
+    ];
+    return checks.find(([, ok]) => !ok)?.[0] ?? null;
+  };
+  for (const m of ach["metrics"]) {
+    const b = badMetric(m);
+    if (b) {
+      throw new Error(`al-call-hierarchy: a metrics row is malformed: ${b}`);
+    }
   }
-  if (!ach["findings"].every(isObj)) {
-    throw new Error("al-call-hierarchy: a finding is malformed");
+  for (const f of ach["findings"]) {
+    if (!isObj(f)) throw new Error("al-call-hierarchy: a finding is malformed");
+    if (f["category"] !== "unused_procedure") continue;
+    // Read by unusedProcedures: "path:line" location, path, procedure.
+    const b = !str(f["path"])
+      ? "path"
+      : !str(f["procedure"])
+      ? "procedure"
+      : !/:\d+$/.test(String(f["location"])) || !str(f["location"])
+      ? "location"
+      : null;
+    if (b) {
+      throw new Error(
+        `al-call-hierarchy: an unused_procedure finding is malformed: ${b}`,
+      );
+    }
   }
+  const bad = badTestQuality(ach["test_quality"]);
+  if (bad) throw new Error(`al-call-hierarchy: test_quality: ${bad}`);
   return ach as unknown as AchReport;
+}
+
+/** `test_quality` of `al-call-hierarchy --analyze` (2.0.3): null when valid, else what is wrong. */
+function badTestQuality(tq: unknown): string | null {
+  if (!isObj(tq)) return "missing (an output older than 2.0.3?)";
+  if (!Array.isArray(tq["procedures"])) return "procedures is not an array";
+  const eq = (x: unknown) =>
+    isObj(x) && isNum(x["total"]) && isNum(x["literal_expected"]) &&
+    isNum(x["expression_expected"]);
+  for (const p of tq["procedures"]) {
+    const ok = isObj(p) && typeof p["path"] === "string" && isNum(p["line"]) &&
+      typeof p["object_stable_id"] === "string" &&
+      typeof p["procedure_name"] === "string" &&
+      (p["routine_id"] === null || p["routine_id"] === undefined ||
+        typeof p["routine_id"] === "string") &&
+      isNum(p["assert_count"]) && isNum(p["assert_count_reachable"]) &&
+      typeof p["zero_assert"] === "boolean" &&
+      typeof p["has_asserterror"] === "boolean" && eq(p["are_equal"]);
+    if (!ok) return "a procedure row is malformed";
+    const ae = p["are_equal"] as J;
+    const counts: [string, unknown][] = [
+      ["assert_count", p["assert_count"]],
+      ["assert_count_reachable", p["assert_count_reachable"]],
+      ["are_equal.total", ae["total"]],
+      ["are_equal.literal_expected", ae["literal_expected"]],
+      ["are_equal.expression_expected", ae["expression_expected"]],
+    ];
+    const badCount = counts.find(([, v]) =>
+      !Number.isInteger(v) || (v as number) < 0
+    );
+    if (badCount) return `${badCount[0]} is not a nonnegative integer`;
+    if (
+      (ae["literal_expected"] as number) +
+          (ae["expression_expected"] as number) !== ae["total"]
+    ) return "are_equal.literal_expected + expression_expected != total";
+    if (
+      (p["assert_count_reachable"] as number) < (p["assert_count"] as number)
+    ) return "assert_count_reachable < assert_count";
+    if (p["zero_assert"] !== (p["assert_count_reachable"] === 0)) {
+      return "zero_assert disagrees with assert_count_reachable";
+    }
+  }
+  const ws = tq["workspace"];
+  const procs = tq["procedures"] as TestProc[];
+  if (
+    !isObj(ws) || ws["test_procedures"] !== procs.length ||
+    ws["assert_count_reachable"] !==
+      procs.reduce((s, p) => s + p.assert_count_reachable, 0)
+  ) return "workspace totals disagree with the procedures";
+  return null;
 }
 
 /** A failed spawn; exit 4 is `--require-dependencies` refusing an incomplete dependency closure. */
@@ -507,6 +685,8 @@ export interface AlsemFinding {
   line: number;
   app: string;
   fingerprint: string;
+  /** 2.0.3: stable when the finding moves to another routine; not unique. */
+  looseFingerprint: string;
 }
 
 /** `alsem analyze` payload findings, located by workspace-relative file. */
@@ -524,16 +704,65 @@ export function alsemFindings(payload: J): AlsemFinding[] {
       line: (loc["line"] as number | undefined) ?? 0,
       app: file.split("/")[0]!,
       fingerprint: f["fingerprint"] as string,
+      looseFingerprint: f["looseFingerprint"] as string,
     };
   });
 }
 
 /**
- * Findings the agent introduced: final minus start, matched by al-sem's
- * fingerprint (stable across line shifts), as a multiset. One row per
- * fingerprint: its first surplus final instance and how many surplus there are.
+ * Findings the agent introduced under the 2.0.3 looseFingerprint rule: per
+ * looseFingerprint k, new = max(0, after(k) - before(k)), summed (the key is
+ * not unique and a finding that moved to another routine keeps it). The new
+ * ones are named by pairing start with final on both keys first, then on
+ * looseFingerprint; the unpaired finals are the new findings. One row per
+ * fingerprint: its first unpaired final instance and how many there are.
+ * Valid only for runs of the same scope, filters and dependencies.
  */
 export function introducedFindings(
+  start: AlsemFinding[],
+  final: AlsemFinding[],
+): (AlsemFinding & { count: number })[] {
+  const both = (f: AlsemFinding) => `${f.fingerprint}\0${f.looseFingerprint}`;
+  const left = new Map<string, number>();
+  const bothBudget = new Map<string, number>();
+  for (const f of start) {
+    bothBudget.set(both(f), (bothBudget.get(both(f)) ?? 0) + 1);
+  }
+  const unpaired: AlsemFinding[] = [];
+  for (const f of final) {
+    const n = bothBudget.get(both(f)) ?? 0;
+    if (n > 0) bothBudget.set(both(f), n - 1);
+    else unpaired.push(f);
+  }
+  // Start findings not paired on both keys are the budget of the second phase.
+  for (const f of start) {
+    const n = bothBudget.get(both(f)) ?? 0;
+    if (n > 0) {
+      bothBudget.set(both(f), n - 1);
+      left.set(f.looseFingerprint, (left.get(f.looseFingerprint) ?? 0) + 1);
+    }
+  }
+  const out = new Map<string, AlsemFinding & { count: number }>();
+  for (const f of unpaired) {
+    const n = left.get(f.looseFingerprint) ?? 0;
+    if (n > 0) {
+      left.set(f.looseFingerprint, n - 1);
+      continue;
+    }
+    const row = out.get(f.fingerprint);
+    if (row) row.count++;
+    else out.set(f.fingerprint, { ...f, count: 1 });
+  }
+  return [...out.values()];
+}
+
+/**
+ * A-03's count, kept as the secondary `_fp` columns: final minus start matched
+ * by al-sem's fingerprint (stable across line shifts, but not across a move to
+ * another routine, which therefore counts as introduced), as a multiset. One
+ * row per fingerprint: its first surplus final instance and how many surplus there are.
+ */
+export function introducedFindingsFp(
   start: AlsemFinding[],
   final: AlsemFinding[],
 ): (AlsemFinding & { count: number })[] {
@@ -573,9 +802,188 @@ export interface RoutineMetric {
   fan_out: number | null;
 }
 
+/** One [Test] procedure of `al-call-hierarchy --analyze` `test_quality.procedures` (2.0.3), the fields the runner reads. */
+export interface TestProc {
+  /** Workspace-relative POSIX path. */
+  path: string;
+  line: number;
+  /** `<appId>/Codeunit/N`. */
+  object_stable_id: string;
+  procedure_name: string;
+  /** = digest routine.stableId; null when al-sem has none. */
+  routine_id: string | null;
+  /** Asserts in the procedure and in the same-app helpers it calls. */
+  assert_count_reachable: number;
+  /** No reachable assert. */
+  zero_assert: boolean;
+  has_asserterror: boolean;
+  are_equal: {
+    total: number;
+    literal_expected: number;
+    expression_expected: number;
+  };
+}
+
 export interface AchReport {
   metrics: RoutineMetric[];
   findings: J[];
+  test_quality: { procedures: TestProc[] };
+}
+
+/** The runner's slice of every `test_quality` procedure (the whole block is validated by checkedAch). */
+export function testProcedures(ach: AchReport): TestProc[] {
+  return ach.test_quality.procedures.map((p) => ({
+    path: p.path,
+    line: p.line,
+    object_stable_id: p.object_stable_id,
+    procedure_name: p.procedure_name,
+    routine_id: p.routine_id ?? null,
+    assert_count_reachable: p.assert_count_reachable,
+    zero_assert: p.zero_assert,
+    has_asserterror: p.has_asserterror,
+    are_equal: {
+      total: p.are_equal.total,
+      literal_expected: p.are_equal.literal_expected,
+      expression_expected: p.are_equal.expression_expected,
+    },
+  }));
+}
+
+/** Counts over the Test app's [Test] procedures introduced or changed by an execution. */
+export interface TestQualityCounts {
+  /** Procedures in final and not in start. */
+  new_test_procs: number;
+  /** Introduced or changed (the digest named them a changed root). */
+  scored: number;
+  assert_reachable: number;
+  zero_assert: number;
+  asserterror: number;
+  areequal_total: number;
+  areequal_literal: number;
+}
+
+/**
+ * Introduced or changed [Test] procedures, final vs start, Test app only.
+ * Joined by routine_id, else (path, line); `changed` holds the digest's changed
+ * root stableIds (a procedure the patch touched keeps its routine_id, its
+ * body is not part of it).
+ */
+export function testQualityCounts(
+  start: TestProc[],
+  final: TestProc[],
+  changed: Set<string>,
+): TestQualityCounts {
+  const inTest = (p: TestProc) => p.path.split("/")[0] === TEST_APP;
+  const key = (p: TestProc) => p.routine_id ?? `${p.path}:${p.line}`;
+  const before = new Set(start.filter(inTest).map(key));
+  const c: TestQualityCounts = {
+    new_test_procs: 0,
+    scored: 0,
+    assert_reachable: 0,
+    zero_assert: 0,
+    asserterror: 0,
+    areequal_total: 0,
+    areequal_literal: 0,
+  };
+  for (const p of final.filter(inTest)) {
+    const isNew = !before.has(key(p));
+    if (isNew) c.new_test_procs++;
+    if (!isNew && !(p.routine_id !== null && changed.has(p.routine_id))) {
+      continue;
+    }
+    c.scored++;
+    c.assert_reachable += p.assert_count_reachable;
+    if (p.zero_assert) c.zero_assert++;
+    if (p.has_asserterror) c.asserterror++;
+    c.areequal_total += p.are_equal.total;
+    c.areequal_literal += p.are_equal.literal_expected;
+  }
+  return c;
+}
+
+const share = (n: number, d: number) => d === 0 ? null : n / d;
+
+/** Test quality pooled over executions: shares from the summed counts, null when the denominator is 0. */
+export function pooledTestQuality(
+  ms: Pick<
+    AlsemMetrics,
+    | "new_test_procs"
+    | "test_procs_scored"
+    | "test_assert_reachable_sum"
+    | "test_zero_assert_procs"
+    | "test_asserterror_procs"
+    | "test_areequal_total"
+    | "test_areequal_literal"
+  >[],
+) {
+  const s = (k: keyof typeof ms[number]) => ms.reduce((a, m) => a + m[k], 0);
+  const scored = s("test_procs_scored");
+  return {
+    new_test_procs: s("new_test_procs"),
+    procs_scored: scored,
+    assert_reachable_mean: share(s("test_assert_reachable_sum"), scored),
+    zero_assert_share: share(s("test_zero_assert_procs"), scored),
+    asserterror_share: share(s("test_asserterror_procs"), scored),
+    areequal_literal_share: share(
+      s("test_areequal_literal"),
+      s("test_areequal_total"),
+    ),
+  };
+}
+
+/** Test coverage of the changed production routines pooled over executions. */
+export function pooledCoverage(
+  ms: Pick<
+    AlsemMetrics,
+    | "test_changed_routines"
+    | "test_covered_routines"
+    | "test_uncovered_routines"
+  >[],
+) {
+  const s = (k: keyof typeof ms[number]) => ms.reduce((a, m) => a + m[k], 0);
+  return {
+    changed_routines: s("test_changed_routines"),
+    covered_routines: s("test_covered_routines"),
+    uncovered_routines: s("test_uncovered_routines"),
+    ratio: share(s("test_covered_routines"), s("test_changed_routines")),
+  };
+}
+
+/**
+ * What `pooledCoverage` leaves out: declaration-only routines, al-sem's raw
+ * (unfiltered) counts, and the share of executions with a coverage status whose
+ * status is "partial" (tests call dependency code, so the ratio is a floor).
+ */
+export function coverageExtras(
+  rs: {
+    metrics: Pick<
+      AlsemMetrics,
+      | "test_declaration_only"
+      | "test_changed_routines_raw"
+      | "test_covered_routines_raw"
+    >;
+    touches: Pick<DigestTouches, "test_coverage_status">;
+  }[],
+) {
+  const s = (k: keyof typeof rs[number]["metrics"]) =>
+    rs.reduce((a, r) => a + r.metrics[k], 0);
+  const withStatus = rs.filter((r) => r.touches.test_coverage_status !== null);
+  return {
+    declaration_only: s("test_declaration_only"),
+    partial_status_share: share(
+      withStatus.filter((r) => r.touches.test_coverage_status === "partial")
+        .length,
+      withStatus.length,
+    ),
+    raw: {
+      changed_routines: s("test_changed_routines_raw"),
+      covered_routines: s("test_covered_routines_raw"),
+      ratio: share(
+        s("test_covered_routines_raw"),
+        s("test_changed_routines_raw"),
+      ),
+    },
+  };
 }
 
 const routineKey = (m: RoutineMetric) =>
@@ -652,7 +1060,9 @@ export interface UnusedProc {
 }
 
 /** al-call-hierarchy `unused_procedure` findings, joined to their metrics row by path + line. */
-export function unusedProcedures(ach: AchReport): UnusedProc[] {
+export function unusedProcedures(
+  ach: Pick<AchReport, "metrics" | "findings">,
+): UnusedProc[] {
   const at = new Map(ach.metrics.map((m) => [`${m.path}:${m.line}`, m]));
   return ach.findings.filter((f) => f["category"] === "unused_procedure").map(
     (f) => {
@@ -762,11 +1172,36 @@ export interface DigestTouches {
   tables_read: string[];
   events_published: string[];
   commits: number;
+  /** Sum of entries[].unresolved lengths over production entries (rc.4 puts dependency routines' unresolved calls on the Test app's entries). */
   unresolved: number;
+  /** summary.totalUnresolved as al-sem reports it. */
+  unresolved_raw: number;
+  /** Dependency boundary-group effects (detail.boundary) on production entries; not in tables / events / commits. */
+  dependency_effect_groups: number;
   /** Diff hunks al-sem could not map to a routine. */
   unmapped_hunks: number;
   /** Changed files with no routine to map (e.g. an enum or a fields-only table extension). */
   unmatched_files: number;
+  /**
+   * digest --tests testCoverage restricted to production routines (file not under
+   * ws:Test/), declaration-only ones out of the denominator; 0 without a digest.
+   * al-sem excludes only [Test] procedures, so its own counts (the *_raw fields)
+   * also hold test-app helper codeunits and non-[Test] procedures of test codeunits.
+   */
+  test_changed_routines: number;
+  test_covered_routines: number;
+  test_uncovered_routines: number;
+  /** covered / changed; null when no routine changed or there is no digest. */
+  test_coverage_ratio: number | null;
+  /** Production uncovered routines with reason "declaration-only" (interface methods, no body): not in the denominator. */
+  test_declaration_only: number;
+  /** al-sem's own testCoverage values, unfiltered. */
+  test_changed_routines_raw: number;
+  test_covered_routines_raw: number;
+  test_uncovered_routines_raw: number;
+  test_coverage_ratio_raw: number | null;
+  /** testCoverage.coverage.status ("partial" when tests call dependency code); null without a digest. */
+  test_coverage_status: string | null;
 }
 
 const WRITES = new Set(["DB_INSERT", "DB_MODIFY", "DB_DELETE", "DB_RENAME"]);
@@ -781,15 +1216,21 @@ export function digestTouches(p: J): DigestTouches {
   const events = new Set<string>();
   let commits = 0;
   let prod = 0;
+  let unresolved = 0;
+  let depGroups = 0;
   for (const e of entries) {
     const anchor = ((e["routine"] as J)["anchor"] ?? {}) as J;
     if (String(anchor["file"] ?? "").startsWith(`ws:${TEST_APP}/`)) continue;
     prod++;
+    unresolved += ((e["unresolved"] ?? []) as unknown[]).length;
     for (const x of (e["effects"] ?? []) as J[]) {
       const t = x["type"] as string;
-      const what = String(
-        (x["detail"] as J | undefined)?.["resourceDisplay"] ?? "",
-      );
+      const detail = x["detail"] as J | undefined;
+      if (typeof detail?.["boundary"] === "string") {
+        depGroups++;
+        continue;
+      }
+      const what = String(detail?.["resourceDisplay"] ?? "");
       if (WRITES.has(t)) written.add(what);
       else if (t.startsWith("DB_")) read.add(what);
       else if (t === "EVENT_PUBLISH") events.add(what);
@@ -797,7 +1238,53 @@ export function digestTouches(p: J): DigestTouches {
     }
   }
   const sorted = (s: Set<string>) => [...s].sort();
+  // Validated by alsemEnvelope(..., { tests: true }); absent only for "no digest".
+  const tc = p["testCoverage"] as J | undefined;
+  const fileOf = new Map(
+    entries.map((e) => {
+      const r = e["routine"] as J;
+      return [
+        r["stableId"],
+        String((r["anchor"] as J | undefined)?.["file"] ?? ""),
+      ];
+    }),
+  );
+  // Fail closed: a routine whose file is unknown cannot be split into production / test.
+  const isProd = (c: J): boolean => {
+    const file = (c["anchor"] as J | undefined)?.["file"] ??
+      fileOf.get(c["stableId"]);
+    if (typeof file !== "string" || file === "") {
+      throw new Error(
+        `payload.testCoverage: cannot map stableId ${
+          String(c["stableId"])
+        } to a file`,
+      );
+    }
+    return !file.startsWith(`ws:${TEST_APP}/`);
+  };
+  const rawCovered = (tc?.["covered"] ?? []) as J[];
+  const rawUncovered = (tc?.["uncovered"] ?? []) as J[];
+  const coveredProd = rawCovered.filter(isProd).length;
+  const uncoveredProd = rawUncovered.filter(isProd);
+  const declOnly =
+    uncoveredProd.filter((u) => u["reason"] === "declaration-only")
+      .length;
+  const uncovered = uncoveredProd.length - declOnly;
+  const changed = coveredProd + uncovered;
   return {
+    test_changed_routines: changed,
+    test_covered_routines: coveredProd,
+    test_uncovered_routines: uncovered,
+    test_coverage_ratio: changed === 0 ? null : coveredProd / changed,
+    test_declaration_only: declOnly,
+    test_changed_routines_raw: Number(tc?.["changedRoutines"] ?? 0),
+    test_covered_routines_raw: Number(tc?.["coveredChangedRoutines"] ?? 0),
+    test_uncovered_routines_raw: rawUncovered.length,
+    test_coverage_ratio_raw: (tc?.["ratio"] as number | null | undefined) ??
+      null,
+    test_coverage_status: ((tc?.["coverage"] as J | undefined)?.["status"] as
+      | string
+      | undefined) ?? null,
     roots: entries.length,
     production_roots: prod,
     roots_requested: Number(sum["rootsRequested"] ?? 0),
@@ -808,7 +1295,9 @@ export function digestTouches(p: J): DigestTouches {
     tables_read: sorted(read).filter((t) => !written.has(t)),
     events_published: sorted(events),
     commits,
-    unresolved: Number(sum["totalUnresolved"] ?? 0),
+    unresolved,
+    unresolved_raw: Number(sum["totalUnresolved"] ?? 0),
+    dependency_effect_groups: depGroups,
     unmapped_hunks: diags.filter((d) => d["kind"] === "hunk-outside-routines")
       .length,
     unmatched_files: diags.filter((d) => d["kind"] === "diff-file-unmatched")
@@ -854,7 +1343,37 @@ export function mergedAppJson(apps: J[]): J {
 }
 
 export interface AlsemMetrics {
+  /** looseFingerprint rule (2.0.3): sum over keys of max(0, after - before). */
   alsem_new_findings: number;
+  /** A-03's fingerprint rule, kept for comparison: a finding moved to another routine counts as new. */
+  alsem_new_findings_fp: number;
+  /** curated_weighted / curated_density under the fingerprint rule. */
+  curated_weighted_fp: number;
+  curated_density_fp: number | null;
+  /** [Test] procedures (Test app) in final and not in start. */
+  new_test_procs: number;
+  /** Introduced or changed [Test] procedures: the denominator of the test-quality columns. */
+  test_procs_scored: number;
+  test_assert_reachable_sum: number;
+  test_assert_reachable_mean: number | null;
+  test_zero_assert_procs: number;
+  test_zero_assert_share: number | null;
+  test_asserterror_procs: number;
+  test_asserterror_share: number | null;
+  test_areequal_total: number;
+  test_areequal_literal: number;
+  /** AreEqual calls with a literal expected value / all AreEqual calls in the scored procedures. */
+  test_areequal_literal_share: number | null;
+  /** digest --tests, changed production routines (declaration-only out of the denominator, see DigestTouches). */
+  test_changed_routines: number;
+  test_covered_routines: number;
+  test_uncovered_routines: number;
+  test_coverage_ratio: number | null;
+  test_declaration_only: number;
+  /** al-sem's unfiltered testCoverage values (test-app helpers included). */
+  test_changed_routines_raw: number;
+  test_covered_routines_raw: number;
+  test_coverage_ratio_raw: number | null;
   alsem_new_high_findings: number;
   alsem_new_test_findings: number;
   /** Curated: likely only, critical 5 / high 3 / medium 1, d3 and d9 out (see curatedCounts). */
@@ -976,6 +1495,9 @@ export function withinTaskRanks(
 /** One execution's al-sem metrics; production code (not the Test app) only. */
 export function alsemSummary(x: {
   introduced: (AlsemFinding & { count: number })[];
+  /** The fingerprint rule's introduced findings (introducedFindingsFp). */
+  introduced_fp: (AlsemFinding & { count: number })[];
+  testQuality: TestQualityCounts;
   deltas: RoutineDelta[];
   unused: UnusedProc[];
   blast: Blast;
@@ -985,6 +1507,8 @@ export function alsemSummary(x: {
 }): AlsemMetrics {
   const prod = x.introduced.filter((f) => f.app !== TEST_APP);
   const cur = curatedCounts(x.introduced);
+  const curFp = curatedCounts(x.introduced_fp);
+  const q = x.testQuality;
   const lines = x.changed_prod_lines ?? 0;
   const sum = (fs: { count: number }[]) => fs.reduce((s, f) => s + f.count, 0);
   const d = x.deltas.filter((r) => r.app !== TEST_APP);
@@ -992,6 +1516,30 @@ export function alsemSummary(x: {
   const unused = x.unused.filter((u) => u.app !== TEST_APP);
   return {
     alsem_new_findings: sum(prod),
+    alsem_new_findings_fp: sum(
+      x.introduced_fp.filter((f) => f.app !== TEST_APP),
+    ),
+    curated_weighted_fp: curFp.weighted,
+    curated_density_fp: curatedDensity(curFp.weighted, lines),
+    new_test_procs: q.new_test_procs,
+    test_procs_scored: q.scored,
+    test_assert_reachable_sum: q.assert_reachable,
+    test_assert_reachable_mean: share(q.assert_reachable, q.scored),
+    test_zero_assert_procs: q.zero_assert,
+    test_zero_assert_share: share(q.zero_assert, q.scored),
+    test_asserterror_procs: q.asserterror,
+    test_asserterror_share: share(q.asserterror, q.scored),
+    test_areequal_total: q.areequal_total,
+    test_areequal_literal: q.areequal_literal,
+    test_areequal_literal_share: share(q.areequal_literal, q.areequal_total),
+    test_changed_routines: x.touches.test_changed_routines,
+    test_covered_routines: x.touches.test_covered_routines,
+    test_uncovered_routines: x.touches.test_uncovered_routines,
+    test_coverage_ratio: x.touches.test_coverage_ratio,
+    test_declaration_only: x.touches.test_declaration_only,
+    test_changed_routines_raw: x.touches.test_changed_routines_raw,
+    test_covered_routines_raw: x.touches.test_covered_routines_raw,
+    test_coverage_ratio_raw: x.touches.test_coverage_ratio_raw,
     alsem_new_high_findings: sum(
       prod.filter((f) => f.severity === "critical" || f.severity === "high"),
     ),
@@ -1237,10 +1785,22 @@ export interface DoneStamp {
   bind?: Record<string, string>;
 }
 
-/** v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds). */
-const DERIVATION = 5;
+/**
+ * v2: blastRadius attributes a subject by normalizedStableId too (al-sem 2.0.2 removal kinds).
+ * DERIVATION is also the validation epoch: artifact hashes only prove unchanged
+ * bytes, not validation under the current rules, so bump it whenever any
+ * validation tightens (a done row of an older epoch is revalidated, never skipped).
+ */
+export const DERIVATION = 11;
+// v11 (A-03b Sol self-check r3): validation tightened, nothing recomputed. testCoverage stableIds are unique within covered and within uncovered and the two lists are disjoint; a non-boundary DB_* or EVENT_PUBLISH digest effect needs detail.resourceDisplay as a non-empty string (no invented empty-named table or event); present digest summary rootsRequested / rootsResolved / totalUnresolved are nonnegative integers.
+// v10 (A-03b Sol self-check r2): validation tightened, nothing recomputed. Every digest entry needs routine.anchor as an object with a non-empty string file (an absent location no longer counts as production); testCoverage covered + uncovered items need a non-empty stableId, uncovered items a non-empty reason, and an anchor when present must be an object with a string file. Done rows of epoch 9 are revalidated.
+// v9 (A-03b Sol self-check r1): validation tightened, nothing recomputed. testCoverage covered + uncovered lists must sum to changedRoutines; digest routine.anchor.file, effect detail.boundary and detail.resourceDisplay must be strings when present; test_quality procedure counts must be nonnegative integers with are_equal.literal_expected + expression_expected == total, assert_count_reachable >= assert_count and zero_assert == (assert_count_reachable == 0). Done rows of epoch 8 are revalidated.
+// v8 (A-03b, al-sem 2.1.0-rc.4): the digest is cross-app. (a) A digest effect can be a dependency boundary group (detail.boundary): digestTouches leaves it out of tables_written / tables_read / events_published / commits (those stay workspace-code effects, comparable with 2.0.3) and counts the production ones in dependency_effect_groups. (b) summary.totalUnresolved now includes dependency routines' unresolved calls, which land on the Test app's entries: unresolved is the sum of entries[].unresolved lengths over production entries, unresolved_raw keeps totalUnresolved, a non-array entries[].unresolved fails the digest. looseFingerprint values change per detector in 2.1 (#252) with no consumer change: the cache path and done rows are keyed by the binaries' sha256, so 2.0.3 artifacts are never reused.
+// v7 (A-03b smoke): test coverage counts production routines only (al-sem also counts test-app helpers and non-[Test] test-codeunit procedures), declaration-only routines leave the denominator, al-sem's raw values kept as *_raw, an unmappable covered / uncovered stableId fails the row.
+// v6 (A-03b, al-sem 2.0.3): introduced findings by the looseFingerprint rule (+ _fp columns), tree.json holds the [Test] procedures (test_quality), digests run with --tests (digest-tests-<patch>.json) and carry testCoverage.
 // v3: curated finding density (findings carry confidence, rows carry changed_prod_lines).
 // v4: tree.json holds only the fields derived from the raw analyze / ach / fingerprint JSON (touches come from the digest-<patch> file) and is re-derived from them, no tool run, whenever its derive differs; error diagnostics fail a tree.
+// v6 (A-03b step 0): consumed ach fields validated; diffs bound to both fingerprint hashes.
 // v5: strict envelope / payload validation; every tree.json hit re-validates its raw files; done rows carry the sha256 of the artifacts they were computed from; no legacy cache adoption.
 
 /** Temp file in the same folder, then rename: a killed run leaves a `.tmp-` file, never a half-written target. */
@@ -1313,6 +1873,8 @@ interface AlsemTree {
   findings: AlsemFinding[];
   metrics: RoutineMetric[];
   unused: UnusedProc[];
+  /** Every [Test] procedure of the tree (ach test_quality). */
+  testProcs: TestProc[];
   testRanges: [number, number][];
   fingerprint: string;
   touches: DigestTouches;
@@ -1386,14 +1948,19 @@ async function mergedWorkspace(src: string, dst: string, t: AlsemTools) {
 }
 
 /** A parsed al-sem envelope; throws on bad JSON, another kind / schemaVersion, or any error-level diagnostic (fail closed). */
-function checkedEnvelope(command: string, text: string, kind: string) {
+function checkedEnvelope(
+  command: string,
+  text: string,
+  kind: string,
+  tests = false,
+) {
   let doc: unknown;
   try {
     doc = JSON.parse(text);
   } catch {
     throw new Error(`al-sem ${command}: output is not JSON`);
   }
-  const e = alsemEnvelope(doc, kind);
+  const e = alsemEnvelope(doc, kind, { tests });
   const diagnostics: TaggedDiagnostic[] = e.diagnostics.map((d) => ({
     ...d,
     command,
@@ -1439,6 +2006,7 @@ function deriveBase(
     findings: alsemFindings(a.payload),
     metrics: ach.metrics,
     unused: unusedProcedures(ach),
+    testProcs: testProcedures(ach),
     testRanges,
     versions: { analyze: a.version, fingerprint: fp.version },
     diagnostics: [...a.diagnostics, ...fp.diagnostics],
@@ -1454,9 +2022,15 @@ function serialized<T>(key: string, f: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/** Names the digest of a patch: `digest-<id>.json`. */
+/**
+ * Names the digest of a patch: `digest-tests-<id>.json`. Always run with
+ * --tests, which only adds payload.testCoverage; the name keeps an entry made
+ * without the flag from ever being read as one made with it.
+ */
 const digestId = async (patch: string) =>
   (await sha256Hex(digestPatch(patch))).slice(0, 12);
+const digestFile = async (patch: string) =>
+  `digest-tests-${await digestId(patch)}.json`;
 
 /**
  * Analyze, metrics and fingerprint for one tree (and the digest of `patch`),
@@ -1509,7 +2083,7 @@ async function alsemTreeOnce(
     | null = null;
   if (patch) {
     const text = digestPatch(patch);
-    const file = p(`digest-${await digestId(patch)}.json`);
+    const file = p(await digestFile(patch));
     dp = { text, file, out: await Deno.readTextFile(file).catch(() => null) };
   }
   if (!base || (dp && dp.out === null)) {
@@ -1568,8 +2142,9 @@ async function alsemTreeOnce(
           "--format",
           "json",
           "--deterministic",
+          "--tests",
         ]);
-        checkedEnvelope("digest", digest, "digest");
+        checkedEnvelope("digest", digest, "digest", true);
         await writeAtomic(dp.file, digest);
         dp.out = digest;
       }
@@ -1579,7 +2154,7 @@ async function alsemTreeOnce(
     }
   }
   const { derive: _, ...tree } = base!;
-  const dg = dp ? checkedEnvelope("digest", dp.out!, "digest") : null;
+  const dg = dp ? checkedEnvelope("digest", dp.out!, "digest", true) : null;
   return {
     ...tree,
     fingerprint: p("fingerprint.json"),
@@ -1629,6 +2204,8 @@ interface AlsemRow {
   verdict: string | null;
   metrics: AlsemMetrics;
   introduced: (AlsemFinding & { count: number })[];
+  introduced_fp: (AlsemFinding & { count: number })[];
+  test_quality: TestQualityCounts;
   deltas: RoutineDelta[];
   unused: UnusedProc[];
   blast: Blast;
@@ -1637,31 +2214,59 @@ interface AlsemRow {
   diagnostics: (TaggedDiagnostic & { tree: string })[];
 }
 
-const METRIC_KEYS: Exclude<keyof AlsemMetrics, "curated_density">[] = [
-  "alsem_new_findings",
-  "alsem_new_high_findings",
-  "alsem_new_test_findings",
-  "curated_weighted",
-  "changed_prod_lines",
-  "alsem_d3_introduced",
-  "alsem_d9_introduced",
-  "complexity_delta",
-  "lines_delta",
-  "fan_in_delta",
-  "max_routine_complexity",
-  "routines_added",
-  "routines_changed",
-  "new_unused",
-  "new_unused_public",
-  "abi_changes",
-  "abi_signature_changes",
-  "schema_changes",
-  "event_changes",
-  "permission_changes",
-  "tables_written",
-  "events_published",
-  "unmapped_hunks",
-];
+/** Metrics that are null when their denominator is 0; aggregated over the non-null values only. */
+const NULLABLE_KEYS = [
+  "curated_density",
+  "curated_density_fp",
+  "test_assert_reachable_mean",
+  "test_zero_assert_share",
+  "test_asserterror_share",
+  "test_areequal_literal_share",
+  "test_coverage_ratio",
+  "test_coverage_ratio_raw",
+] as const;
+
+const METRIC_KEYS: Exclude<keyof AlsemMetrics, typeof NULLABLE_KEYS[number]>[] =
+  [
+    "alsem_new_findings",
+    "alsem_new_findings_fp",
+    "curated_weighted_fp",
+    "new_test_procs",
+    "test_procs_scored",
+    "test_assert_reachable_sum",
+    "test_zero_assert_procs",
+    "test_asserterror_procs",
+    "test_areequal_total",
+    "test_areequal_literal",
+    "test_changed_routines",
+    "test_covered_routines",
+    "test_uncovered_routines",
+    "test_declaration_only",
+    "test_changed_routines_raw",
+    "test_covered_routines_raw",
+    "alsem_new_high_findings",
+    "alsem_new_test_findings",
+    "curated_weighted",
+    "changed_prod_lines",
+    "alsem_d3_introduced",
+    "alsem_d9_introduced",
+    "complexity_delta",
+    "lines_delta",
+    "fan_in_delta",
+    "max_routine_complexity",
+    "routines_added",
+    "routines_changed",
+    "new_unused",
+    "new_unused_public",
+    "abi_changes",
+    "abi_signature_changes",
+    "schema_changes",
+    "event_changes",
+    "permission_changes",
+    "tables_written",
+    "events_published",
+    "unmapped_hunks",
+  ];
 
 /** The version tools.json recorded for this very binary (same sha256), or null: no `alsem --version` run needed. */
 export function pinnedAlsemVersion(prev: unknown, sha: string): string | null {
@@ -1693,6 +2298,10 @@ async function pool<T>(n: number, items: T[], f: (x: T) => Promise<void>) {
 
 const hasErrorDiagnostic = (ds: AlsemDiagnostic[] | undefined) =>
   errorDiagnostics(ds ?? []).length > 0;
+
+/** Cache name of a diff: start identity + sha256 of the start and final fingerprint.json it was computed from. */
+const diffName = (sid: string, startFp: string, finalFp: string) =>
+  `diff-${sid}-${startFp.slice(0, 16)}-${finalFp.slice(0, 16)}.json`;
 
 /** sha256 of a file, "" when it is absent. */
 const hashOrEmpty = (p: string) => Deno.readFile(p).then(sha256Hex, () => "");
@@ -1741,25 +2350,29 @@ export async function alsemStep(
       const sid = (await startOfOnce(r.task)).id;
       const final = join(t.cache, hash);
       const start = join(t.cache, `start-${r.task}-${sid}`);
+      // The raw tool outputs behind both trees: a damaged one is never a done row.
+      const raw: Record<string, string> = Object.fromEntries(
+        await Promise.all(
+          ["analyze", "ach", "fingerprint"].flatMap((n) =>
+            [["start", start], ["final", final]].map(async (
+              [side, dir],
+            ) => [`${side}_${n}`, await hashOrEmpty(join(dir!, `${n}.json`))])
+          ),
+        ),
+      );
       bind = {
         start: await hashOrEmpty(join(start, "tree.json")),
         final: await hashOrEmpty(join(final, "tree.json")),
-        // The raw tool outputs behind both trees: a damaged one is never a done row.
-        ...Object.fromEntries(
-          await Promise.all(
-            ["analyze", "ach", "fingerprint"].flatMap((n) =>
-              [["start", start], ["final", final]].map(async (
-                [side, dir],
-              ) => [`${side}_${n}`, await hashOrEmpty(join(dir!, `${n}.json`))])
-            ),
-          ),
-        ),
+        ...raw,
         digest: r.patch
           ? await hashOrEmpty(
-            join(final, `digest-${await digestId(r.patch)}.json`),
+            join(final, await digestFile(r.patch)),
           )
           : "",
-        diff: await hashOrEmpty(join(final, `diff-${sid}.json`)),
+        diff: await hashOrEmpty(join(
+          final,
+          diffName(sid, raw["start_fingerprint"]!, raw["final_fingerprint"]!),
+        )),
       };
     } catch {
       bind = { error: "" };
@@ -1784,8 +2397,17 @@ export async function alsemStep(
         hash,
         r.patch ?? "",
       );
-      // The diff depends on both sides: the start identity and the final tree (this folder).
-      const diffOut = join(t.cache, hash, `diff-${sid}.json`);
+      // The diff depends on both sides: the start identity, the final tree (this folder),
+      // and the exact bytes of both fingerprint files it is computed from (named in the file).
+      const diffOut = join(
+        t.cache,
+        hash,
+        diffName(
+          sid,
+          await hashOrEmpty(s.fingerprint),
+          await hashOrEmpty(f.fingerprint),
+        ),
+      );
       // One creation per diff entry at a time; a concurrent request finds it done.
       await serialized(diffOut, async () => {
         if (await Deno.stat(diffOut).then(() => true, () => false)) return;
@@ -1805,7 +2427,13 @@ export async function alsemStep(
       const diffRaw = await Deno.readTextFile(diffOut);
       const diff = { ...checkedEnvelope("diff", diffRaw, "diff-report").e };
       const introduced = introducedFindings(s.findings, f.findings);
+      const introduced_fp = introducedFindingsFp(s.findings, f.findings);
       const touches = f.touches;
+      const testQuality = testQualityCounts(
+        s.testProcs,
+        f.testProcs,
+        new Set(touches.changed_routines),
+      );
       const deltas = routineDeltas(
         s.metrics,
         f.metrics,
@@ -1821,6 +2449,8 @@ export async function alsemStep(
         verdict: r.verdict,
         metrics: alsemSummary({
           introduced,
+          introduced_fp,
+          testQuality,
           deltas,
           unused,
           blast,
@@ -1828,6 +2458,8 @@ export async function alsemStep(
           changed_prod_lines: changedProdLines(r.patch ?? ""),
         }),
         introduced,
+        introduced_fp,
+        test_quality: testQuality,
         deltas,
         unused,
         blast,
@@ -1944,10 +2576,22 @@ export async function alsemStep(
   const agg = (rs: AlsemRow[]) => ({
     executions: rs.length,
     curated_density: densityStats(rs.map((r) => r.metrics.curated_density)),
+    curated_density_fp: densityStats(
+      rs.map((r) => r.metrics.curated_density_fp),
+    ),
     within_task_rank: rankStats(rs),
     median: Object.fromEntries(
       METRIC_KEYS.map((k) => [k, median(rs.map((r) => r.metrics[k]))]),
     ),
+    /** Median over the executions where the metric is defined (the others are null, not 0). */
+    median_nullable: Object.fromEntries(
+      NULLABLE_KEYS.map((k) => [k, median(rs.map((r) => r.metrics[k]))]),
+    ),
+    test_quality: pooledTestQuality(rs.map((r) => r.metrics)),
+    test_coverage: {
+      ...pooledCoverage(rs.map((r) => r.metrics)),
+      ...coverageExtras(rs),
+    },
     executions_above_zero: Object.fromEntries(
       METRIC_KEYS.map((k) => [k, rs.filter((r) => r.metrics[k] > 0).length]),
     ),
@@ -1990,6 +2634,30 @@ export async function alsemStep(
           median(ps.map(([a, x]) => x.metrics[k] - a.metrics[k])),
         ]),
       ),
+      /** Variant minus base over the pairs where both sides have the metric. */
+      median_diff_nullable: Object.fromEntries(
+        NULLABLE_KEYS.map((k) => [
+          k,
+          median(ps.map(([a, x]) => {
+            const [p, q] = [a.metrics[k], x.metrics[k]];
+            return p === null || q === null ? null : q - p;
+          })),
+        ]),
+      ),
+      test_quality: {
+        base: pooledTestQuality(ps.map(([a]) => a.metrics)),
+        variant: pooledTestQuality(ps.map(([, x]) => x.metrics)),
+      },
+      test_coverage: {
+        base: {
+          ...pooledCoverage(ps.map(([a]) => a.metrics)),
+          ...coverageExtras(ps.map(([a]) => a)),
+        },
+        variant: {
+          ...pooledCoverage(ps.map(([, x]) => x.metrics)),
+          ...coverageExtras(ps.map(([, x]) => x)),
+        },
+      },
       variant_higher: Object.fromEntries(
         METRIC_KEYS.map((k) => [
           k,
