@@ -1,12 +1,18 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import { join } from "@std/path";
-import type { Row } from "../../../scripts/harness/analyze-campaign.ts";
+import {
+  type AlsemEvidence,
+  newOrChangedTestProcs,
+  type Row,
+  type TestProc,
+} from "../../../scripts/harness/analyze-campaign.ts";
 import {
   editedShippedTests,
   type RunnerEnv,
   type RunnerResult,
   type RunnerRow,
   selectAgentTests,
+  selectFromEvidence,
   TEST_RERUN_DERIVATION,
   testRerunAgg,
   testRerunPair,
@@ -136,12 +142,76 @@ const START = cu({ TestA: "Assert.AreEqual(1, 1, 'a');" });
 const GOOD_SHIPPED = (r: TestRerunRequest) =>
   result(r.specs.flatMap((s) => s.codeunit === 50100 ? [pass("TestA")] : []));
 
-function run(w: World, runner: TestRerunRunner, o: {
+const BUILD = "alsem-1-ach-1";
+
+/** A `test_quality` procedure of codeunit `cu`; routine_id defaults to `r:<name>`. */
+const tp = (name: string, o: {
+  id?: string | null;
+  cu?: number | string;
+  path?: string;
+  line?: number;
+} = {}): TestProc => ({
+  path: o.path ?? "Test/T.al",
+  line: o.line ?? 1,
+  object_stable_id: typeof o.cu === "string"
+    ? o.cu
+    : `app-1/Codeunit/${o.cu ?? 50100}`,
+  procedure_name: name,
+  routine_id: o.id === undefined ? `r:${name}` : o.id,
+  assert_count_reachable: 0,
+  zero_assert: false,
+  has_asserterror: false,
+  are_equal: { total: 0, literal_expected: 0, expression_expected: 0 },
+});
+const evidence = (
+  start: string[],
+  final: string[],
+  changed: string[] = [],
+  build = BUILD,
+): AlsemEvidence => ({
+  build,
+  start: start.map((n) => tp(n)),
+  final: final.map((n) => tp(n)),
+  changed: changed.map((n) => `r:${n}`),
+});
+const namesOf = async (p: string) =>
+  [...(await Deno.readTextFile(p)).matchAll(/procedure (\w+)\(/g)].map((m) =>
+    m[1]!
+  );
+
+/**
+ * Evidence for the fixtures of `w` as the tools would report it: every procedure of
+ * the start and of each final file; the changed set is what the reference text
+ * comparison (selectAgentTests) calls new or changed.
+ */
+async function textEvidence(w: World, rows: Row[]) {
+  const m = new Map<string, AlsemEvidence>();
+  const sTest = join(w.root, "start", "Test");
+  for (const r of rows) {
+    const fTest = join(w.results, "workspaces", w.hashOf.get(r.id)!, "Test");
+    m.set(
+      r.id,
+      evidence(
+        await namesOf(join(sTest, "T.al")),
+        await namesOf(join(fTest, "T.al")),
+        (await selectAgentTests(sTest, fTest)).map((s) => s.procedure),
+      ),
+    );
+  }
+  return m;
+}
+
+async function run(w: World, runner: TestRerunRunner, o: {
   derivation?: number;
   startId?: string;
   rows?: Row[];
+  evidence?: Map<string, AlsemEvidence>;
+  build?: string;
 } = {}) {
+  const rows = o.rows ?? w.rows;
   return testRerunStep({
+    alsemEvidence: o.evidence ?? await textEvidence(w, rows),
+    alsemBuild: o.build ?? BUILD,
     runner,
     rows: o.rows ?? w.rows,
     results: w.results,
@@ -1008,6 +1078,243 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 8", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 8);
+Deno.test("TEST_RERUN_DERIVATION is 9", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 9);
+});
+
+// ---------------------------------------------------------------- tool-based selection (Q-04b)
+
+Deno.test("newOrChangedTestProcs: new by routine_id, changed via the digest set, unchanged not, non-Test-app procs ignored, null routine_id keys by path:line", () => {
+  const start = [
+    tp("Same"),
+    tp("Edited"),
+    tp("Loose", { id: null, line: 10 }),
+    tp("Prod", { path: "Core/P.al" }),
+  ];
+  const final = [
+    tp("Same"),
+    tp("Edited"),
+    tp("Added"),
+    tp("Loose", { id: null, line: 10 }), // same path:line: not new
+    tp("MovedLoose", { id: null, line: 20 }), // new: no routine_id, other line
+    tp("ProdNew", { path: "Core/Q.al" }), // not the Test app
+    tp("Prod", { path: "Core/P.al" }),
+  ];
+  const got = newOrChangedTestProcs(start, final, new Set(["r:Edited"])).map(
+    (p) => p.procedure_name,
+  );
+  assertEquals(got, ["Edited", "Added", "MovedLoose"]);
+  // a null routine_id is never "changed", even when the set holds a lookalike
+  assertEquals(
+    newOrChangedTestProcs(
+      [tp("L", { id: null })],
+      [tp("L", { id: null })],
+      new Set(["null"]),
+    ),
+    [],
+  );
+});
+
+const noAttrs = {
+  start: new Map<string, string>(),
+  final: new Map<string, string>(),
+};
+
+Deno.test("selectFromEvidence: (codeunit, procedure) from the object id; two codeunits; sorted", () => {
+  const ev: AlsemEvidence = {
+    build: BUILD,
+    start: [tp("A"), tp("B", { cu: 50101 })],
+    final: [tp("A"), tp("B", { cu: 50101 }), tp("N", { cu: 50101 }), tp("M")],
+    changed: ["r:B"],
+  };
+  assertEquals(selectFromEvidence(ev, noAttrs), [
+    { codeunit: 50100, procedure: "M" },
+    { codeunit: 50101, procedure: "B" },
+    { codeunit: 50101, procedure: "N" },
+  ]);
+});
+
+Deno.test("selectFromEvidence: a selected procedure outside a Codeunit fails closed", () => {
+  const ev: AlsemEvidence = {
+    build: BUILD,
+    start: [],
+    final: [tp("X", { cu: "app-1/Page/50100" })],
+    changed: [],
+  };
+  assertThrows(() => selectFromEvidence(ev, noAttrs), Error, "Codeunit");
+  // an unselected one outside a Codeunit is not an error
+  assertEquals(
+    selectFromEvidence({ ...ev, start: ev.final }, noAttrs),
+    [],
+  );
+});
+
+Deno.test("selectFromEvidence: an attribute fingerprint change selects only a procedure the tools list in start and final", () => {
+  const ev: AlsemEvidence = {
+    build: BUILD,
+    start: [tp("Kept"), tp("Same"), tp("Gone")],
+    final: [tp("Kept"), tp("Same"), tp("Fresh")],
+    changed: [],
+  };
+  const attrs = {
+    start: new Map([
+      ["50100|kept", "[Test]"],
+      ["50100|same", "[Test]"],
+      ["50100|fresh", "[Test]"], // the tools do not list Fresh in start
+      ["50100|textonly", "[Test]"],
+    ]),
+    final: new Map([
+      ["50100|kept", "[Test][Handler('H')]"],
+      ["50100|same", "[Test]"],
+      ["50100|fresh", "[Test][Handler('H')]"],
+      ["50100|textonly", "[Test][Handler('H')]"], // the tools do not list it at all
+    ]),
+  };
+  assertEquals(selectFromEvidence(ev, attrs), [
+    { codeunit: 50100, procedure: "Fresh" }, // new by the tools
+    { codeunit: 50100, procedure: "Kept" }, // attribute-only edit
+  ]);
+});
+
+Deno.test("step: the tools pick the procedures; identical text with a changed digest root is selected, a changed text without one is not", async () => {
+  const w = await world(START, {
+    e1: START, // text identical, the digest says TestA changed
+    e2: NEW_B, // text differs, the tools list nothing new
+  });
+  const m = mock("r1", () => result([fail("TestA")]), GOOD_SHIPPED);
+  const ev = new Map([
+    ["e1", evidence(["TestA"], ["TestA"], ["TestA"])],
+    ["e2", evidence(["TestA", "TestB"], ["TestA", "TestB"])],
+  ]);
+  const out = await run(w, m.runner, { evidence: ev });
+  assertEquals(out.failed, []);
+  const by = Object.fromEntries(out.done.map((d) => [d.id, d]));
+  assertEquals(by["e1"]!.agent_vs_start.selected, [
+    { codeunit: 50100, procedure: "TestA" },
+  ]);
+  assertEquals(by["e1"]!.agent_vs_start.outcome, "catches");
+  assertEquals(by["e2"]!.agent_vs_start.outcome, "no_tests");
+});
+
+Deno.test("step: a procedure the tools call new is selected although the text parser would not see it", async () => {
+  const w = await world(START, { e1: START });
+  const m = mock("r1", () => result([pass("TestZ")]), GOOD_SHIPPED);
+  const ev = new Map([["e1", evidence(["TestA"], ["TestA", "TestZ"])]]);
+  const out = await run(w, m.runner, { evidence: ev });
+  assertEquals(out.done[0]!.agent_vs_start.selected, [
+    { codeunit: 50100, procedure: "TestZ" },
+  ]);
+});
+
+Deno.test("step: an attribute-only edit of an unchanged-body procedure is selected (narrow text check on the tool-listed set)", async () => {
+  const w = await world(
+    attrCu("    [Test]\n    [HandlerFunctions('H1')]\n    "),
+    { e1: attrCu("    [Test]\n    [HandlerFunctions('H2')]\n    ") },
+  );
+  const m = mock("r1", () => result([pass("TestA")]), GOOD_SHIPPED);
+  const ev = new Map([["e1", evidence(["TestA"], ["TestA"])]]); // digest: nothing changed
+  const out = await run(w, m.runner, { evidence: ev });
+  assertEquals(out.done[0]!.agent_vs_start.selected, TEST_A);
+});
+
+Deno.test("step: an execution without al-sem evidence is failed, the runner is not called, nothing is written", async () => {
+  const w = await world(START, { e1: NEW_B, e2: NEW_B });
+  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  const ev = new Map([["e2", evidence(["TestA"], ["TestA", "TestB"])]]);
+  const out = await run(w, m.runner, { evidence: ev });
+  assertEquals(out.failed.length, 1);
+  assertEquals(out.failed[0]!.id, "e1");
+  assertEquals(
+    out.failed[0]!.error,
+    "no al-sem evidence of the same build",
+  );
+  assertEquals(out.done.map((d) => d.id), ["e2"]);
+  assert(m.calls.every((c) => c.executionId === "e2"));
+});
+
+Deno.test("step: evidence of another al-sem build is failed like missing evidence", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  const ev = new Map([[
+    "e1",
+    evidence(["TestA"], ["TestA", "TestB"], [], "alsem-OTHER"),
+  ]]);
+  const out = await run(w, m.runner, { evidence: ev });
+  assertEquals(out.failed.map((f) => f.id), ["e1"]);
+  assertEquals(out.failed[0]!.error, "no al-sem evidence of the same build");
+  assertEquals(m.calls.length, 0);
+  assertEquals(out.done, []);
+});
+
+Deno.test("step: a non-bugfix execution needs no al-sem evidence", async () => {
+  const w = await world(START, { e1: NEW_B }, "feature");
+  const m = mock("r1", () => result([]), GOOD_SHIPPED);
+  const out = await run(w, m.runner, { evidence: new Map() });
+  assertEquals(out.failed, []);
+  assertEquals(out.done[0]!.agent_vs_start.outcome, "not_applicable");
+});
+
+Deno.test("cache: other evidence (changed set, another al-sem build) recomputes, the same evidence is reused", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  const base = () => new Map([["e1", evidence(["TestA"], ["TestA", "TestB"])]]);
+  await run(w, m.runner, { evidence: base() });
+  const n = m.calls.length;
+  assertEquals((await run(w, m.runner, { evidence: base() })).skipped, 1);
+  assertEquals(m.calls.length, n);
+  // the same selection, another digest changed set
+  const other = new Map([[
+    "e1",
+    evidence(["TestA"], ["TestA", "TestB"], ["TestA"]),
+  ]]);
+  assertEquals((await run(w, m.runner, { evidence: other })).skipped, 0);
+  // the same evidence content, another al-sem build
+  const m2 = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  await run(w, m2.runner, { evidence: base() });
+  const b = new Map([[
+    "e1",
+    evidence(["TestA"], ["TestA", "TestB"], [], "B2"),
+  ]]);
+  const again = await run(w, m2.runner, { evidence: b, build: "B2" });
+  assertEquals(again.skipped, 0);
+});
+
+Deno.test("analyze-campaign CLI: --test-rerun without --alsem is rejected with a clear message", async () => {
+  const p = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-all",
+      join(
+        import.meta.dirname!,
+        "..",
+        "..",
+        "..",
+        "scripts",
+        "harness",
+        "analyze-campaign.ts",
+      ),
+      "c1",
+      "--results",
+      "r",
+      "--rev",
+      "x",
+      "--out",
+      "o",
+      "--test-rerun",
+      "--containers",
+      "Cronus28",
+      "--symbols",
+      "s",
+      "--lineage",
+      "l",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(p.code, 2);
+  assert(
+    new TextDecoder().decode(p.stderr).includes(
+      "--test-rerun requires --alsem",
+    ),
+  );
 });

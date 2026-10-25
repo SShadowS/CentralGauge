@@ -16,14 +16,18 @@
  */
 import { join } from "@std/path";
 import {
+  type AlsemEvidence,
   alsemExclusion,
   csv,
   type DoneStamp,
+  inTestApp,
+  newOrChangedTestProcs,
   pool,
   readDone,
   type Row,
   sha256Hex,
   type StartTree,
+  testProcKey,
   writeAtomic,
   writeDone,
 } from "./analyze-campaign.ts";
@@ -54,8 +58,12 @@ import {
  * (quoted labels included) are blanked in the comparison text.
  * 8: only lines the lexer reads as directives are blanked (a `#` line inside a block
  * comment is comment text).
+ * 9: the agent's tests are chosen from the al-sem evidence of the same build (ach
+ * test_quality of both trees + the digest's changed roots, as the A-03b selection), not
+ * from AL text; the attribute fingerprint is a narrow check on the tool-listed set; the
+ * stamp binds the al-sem build and the evidence used.
  */
-export const TEST_RERUN_DERIVATION = 8;
+export const TEST_RERUN_DERIVATION = 9;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -478,8 +486,11 @@ function normAttr(a: string): string {
 
 async function testBodies(
   dir: string,
-): Promise<Map<string, { name: string; body: string }>> {
-  const out = new Map<string, { name: string; body: string }>();
+): Promise<Map<string, { name: string; attrs: string; body: string }>> {
+  const out = new Map<
+    string,
+    { name: string; attrs: string; body: string }
+  >();
   for (const c of await testCodeunits(dir)) {
     const raw = await Deno.readTextFile(join(dir, c.file));
     // Directive lines (`#region Case checks`) are blanked for structure, so a label
@@ -522,8 +533,10 @@ async function testBodies(
       ).sort();
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,
-        body: attrs.join("") + "\0" +
-          normalizeAlBody(rSlice.slice(from, procedureEnd(bSlice, from))),
+        attrs: attrs.join(""),
+        body: normalizeAlBody(
+          rSlice.slice(from, procedureEnd(bSlice, from)),
+        ),
       });
     }
   }
@@ -539,10 +552,60 @@ export async function selectAgentTests(
     testBodies(startTestDir),
     testBodies(finalTestDir),
   ]);
-  return [...f].filter(([k, v]) => s.get(k)?.body !== v.body).map(([k, v]) => ({
+  const fp = (v: { attrs: string; body: string } | undefined) =>
+    v && v.attrs + "\0" + v.body;
+  return [...f].filter(([k, v]) => fp(s.get(k)) !== fp(v)).map(([k, v]) => ({
     codeunit: Number(k.split("|")[0]),
     procedure: v.name,
   })).sort((a, b) =>
+    a.codeunit - b.codeunit || a.procedure.localeCompare(b.procedure)
+  );
+}
+
+/** `codeunit|procedure` (lowercase) -> normalized attribute list of every [Test] procedure of a Test app. */
+export async function testAttrs(dir: string): Promise<Map<string, string>> {
+  return new Map(
+    [...await testBodies(dir)].map(([k, v]) => [k, v.attrs] as const),
+  );
+}
+
+/**
+ * Q-04b: the agent's tests chosen by the tools. Every procedure ach lists in the
+ * final Test app that is new or changed (newOrChangedTestProcs: routine_id, the
+ * digest's changed roots) is selected as (codeunit number, procedure name). The tools
+ * expose no attributes, so a narrow text check is added: a procedure the tools list in
+ * both trees (same key) whose attribute fingerprint (`attrs`, by codeunit|name) differs.
+ * The text never discovers procedures and never decides body changes.
+ */
+export function selectFromEvidence(
+  ev: AlsemEvidence,
+  attrs: { start: Map<string, string>; final: Map<string, string> },
+): Selected[] {
+  const picked = new Set(newOrChangedTestProcs(
+    ev.start,
+    ev.final,
+    new Set(ev.changed),
+  ));
+  const inStart = new Set(ev.start.filter(inTestApp).map(testProcKey));
+  const out = new Map<string, Selected>();
+  for (const p of ev.final.filter(inTestApp)) {
+    const m = /^[^/]+\/Codeunit\/(\d+)$/.exec(p.object_stable_id);
+    const cu = m ? Number(m[1]) : null;
+    const k = cu === null ? "" : `${cu}|${p.procedure_name.toLowerCase()}`;
+    if (
+      !picked.has(p) &&
+      !(inStart.has(testProcKey(p)) && cu !== null &&
+        attrs.start.has(k) && attrs.final.has(k) &&
+        attrs.start.get(k) !== attrs.final.get(k))
+    ) continue;
+    if (cu === null) {
+      throw new Error(
+        `selected test procedure ${p.procedure_name} is not in a Codeunit: ${p.object_stable_id}`,
+      );
+    }
+    out.set(k, { codeunit: cu, procedure: p.procedure_name });
+  }
+  return [...out.values()].sort((a, b) =>
     a.codeunit - b.codeunit || a.procedure.localeCompare(b.procedure)
   );
 }
@@ -767,6 +830,10 @@ export async function testRerunStep(o: {
   dir: string;
   rev: string;
   derivation?: number | undefined;
+  /** Per execution id: the al-sem evidence of `alsemBuild` (only executions with a done, valid al-sem row). */
+  alsemEvidence: Map<string, AlsemEvidence>;
+  /** Identity of the al-sem build of this invocation (both tool sha256). */
+  alsemBuild: string;
 }): Promise<{
   failed: { id: string; error: string }[];
   done: TestRerunDone[];
@@ -810,9 +877,34 @@ export async function testRerunStep(o: {
     const finalDir = join(o.results, "workspaces", hash);
     const sTest = join(start.dir, TEST_APP);
     const fTest = join(finalDir, TEST_APP);
-    const selected = r.kind === "bugfix"
-      ? await selectAgentTests(sTest, fTest)
+    // Bugfix selection comes from the al-sem evidence of this very build, never from text.
+    const ev = r.kind === "bugfix" ? o.alsemEvidence.get(r.id) : undefined;
+    if (r.kind === "bugfix" && (!ev || ev.build !== o.alsemBuild)) {
+      throw new Error("no al-sem evidence of the same build");
+    }
+    const selected = ev
+      ? selectFromEvidence(ev, {
+        start: await testAttrs(sTest),
+        final: await testAttrs(fTest),
+      })
       : [];
+    // The evidence fields the selection reads (not the assert counts), bound with the build.
+    const proj = (ps: AlsemEvidence["start"]) =>
+      ps.map((p) => [
+        p.path,
+        p.line,
+        p.object_stable_id,
+        p.procedure_name,
+        p.routine_id,
+      ]);
+    const evidenceBind = ev
+      ? await sha256Hex(JSON.stringify([
+        ev.build,
+        proj(ev.start),
+        proj(ev.final),
+        [...ev.changed].sort(),
+      ]))
+      : "";
     const shipped = (await testCodeunits(sTest)).flatMap((c) =>
       c.procedures.map((procedure) => ({ codeunit: c.codeunit, procedure }))
     );
@@ -832,6 +924,7 @@ export async function testRerunStep(o: {
             shipped,
             edited,
             envHash,
+            evidenceBind,
           ]),
         ),
       },

@@ -873,9 +873,7 @@ export function testQualityCounts(
   final: TestProc[],
   changed: Set<string>,
 ): TestQualityCounts {
-  const inTest = (p: TestProc) => p.path.split("/")[0] === TEST_APP;
-  const key = (p: TestProc) => p.routine_id ?? `${p.path}:${p.line}`;
-  const before = new Set(start.filter(inTest).map(key));
+  const before = new Set(start.filter(inTestApp).map(testProcKey));
   const c: TestQualityCounts = {
     new_test_procs: 0,
     scored: 0,
@@ -885,12 +883,8 @@ export function testQualityCounts(
     areequal_total: 0,
     areequal_literal: 0,
   };
-  for (const p of final.filter(inTest)) {
-    const isNew = !before.has(key(p));
-    if (isNew) c.new_test_procs++;
-    if (!isNew && !(p.routine_id !== null && changed.has(p.routine_id))) {
-      continue;
-    }
+  for (const p of newOrChangedTestProcs(start, final, changed)) {
+    if (!before.has(testProcKey(p))) c.new_test_procs++;
     c.scored++;
     c.assert_reachable += p.assert_count_reachable;
     if (p.zero_assert) c.zero_assert++;
@@ -899,6 +893,38 @@ export function testQualityCounts(
     c.areequal_literal += p.are_equal.literal_expected;
   }
   return c;
+}
+
+/** What the al-sem step hands the test-rerun step per execution: the evidence of one al-sem build. */
+export interface AlsemEvidence {
+  /** `<alsem sha256>-<ach sha256>` of the tools that produced it. */
+  build: string;
+  start: TestProc[];
+  final: TestProc[];
+  /** Digest changed-root stableIds. */
+  changed: string[];
+}
+
+export const inTestApp = (p: TestProc) => p.path.split("/")[0] === TEST_APP;
+export const testProcKey = (p: TestProc) =>
+  p.routine_id ?? `${p.path}:${p.line}`;
+
+/**
+ * The Test app's [Test] procedures the execution introduced or changed, final vs
+ * start. Joined by routine_id, else (path, line): new = key absent from the start,
+ * changed = routine_id among the digest's changed roots. Shared by the A-03b
+ * test_quality counts and the Q-04b test-rerun selection.
+ */
+export function newOrChangedTestProcs(
+  start: TestProc[],
+  final: TestProc[],
+  changed: Set<string>,
+): TestProc[] {
+  const before = new Set(start.filter(inTestApp).map(testProcKey));
+  return final.filter(inTestApp).filter((p) =>
+    !before.has(testProcKey(p)) ||
+    (p.routine_id !== null && changed.has(p.routine_id))
+  );
 }
 
 const share = (n: number, d: number) => d === 0 ? null : n / d;
@@ -2320,7 +2346,7 @@ export async function alsemStep(
   startOf: (task: string) => Promise<StartTree>,
   pairs: [string, string][],
   jobs: number,
-) {
+): Promise<Map<string, AlsemEvidence>> {
   // The start tree's al-sem entry is keyed by its baseline identity (rev, refapp commit, content).
   const startInfo = new Map<string, Promise<StartTree>>();
   const startOfOnce = (task: string) => {
@@ -2513,6 +2539,27 @@ export async function alsemStep(
     verdict: byId.get(x.id)!.verdict,
     excluded: alsemExclusion(byId.get(x.id)!.termination),
   }));
+  // Q-04b: the [Test] procedures of both trees and the digest's changed roots, per execution
+  // whose row is done and valid for THIS build (trees come from the same cache, no tool run).
+  const evidence = new Map<string, AlsemEvidence>();
+  for (const r of all) {
+    try {
+      const src = byId.get(r.id)!;
+      const h = hashOf.get(r.id)!;
+      const [s, f] = await Promise.all([
+        startTree(src.task),
+        alsemTree(t, join(results, "workspaces", h), h, src.patch ?? ""),
+      ]);
+      evidence.set(r.id, {
+        build: t.build,
+        start: s.tree.testProcs,
+        final: f.testProcs,
+        changed: [...f.touches.changed_routines],
+      });
+    } catch (err) {
+      console.error(`[WARN] alsem evidence ${r.id}: ${(err as Error).message}`);
+    }
+  }
   const excluded = all.filter((r) => r.excluded);
   const out = all.filter((r) => !r.excluded); // aggregates read this
   // Rank among all executions of the task (every arm), lower density first; excluded rows stay unranked.
@@ -2727,6 +2774,7 @@ export async function alsemStep(
   console.error(
     `[OK] alsem: ${out.length} of ${todo.length} executions -> ${t.dir}`,
   );
+  return evidence;
 }
 
 const classifyRow = (b: Row) =>
@@ -2993,6 +3041,12 @@ async function main() {
     default: { repo: ".", "alsem-jobs": "3" },
   });
   const campaignId = String(args._[0] ?? "");
+  if (args["test-rerun"] && !args.alsem) {
+    console.error(
+      "--test-rerun requires --alsem (with --ach and --symbols) in the same invocation: the test selection comes from the al-sem evidence of this run, there is no text-parsing fallback",
+    );
+    Deno.exit(2);
+  }
   if (
     !campaignId || !args.results || !args.rev || !args.out ||
     (args.alsem && (!args.ach || !args.symbols)) ||
@@ -3003,7 +3057,7 @@ async function main() {
       "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .] [--only <id or id prefix>,...]\n" +
         "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]\n" +
         "  [--test-rerun --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--coord-lease <container>=<token> ...] [--private-dir <dir>]]\n" +
-        "      Q-04: agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.",
+        "      Q-04: requires --alsem in the same invocation (test selection from its evidence); agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.",
     );
     Deno.exit(2);
   }
@@ -3372,6 +3426,8 @@ async function main() {
     `[OK] ${rows.length} executions, ${pairRows.length} pairs, ${lossRows.length} losses -> ${out}`,
   );
 
+  let alsemEvidence = new Map<string, AlsemEvidence>();
+  let alsemBuild = "";
   if (args.alsem) {
     const dir = join(out, "alsem");
     await Deno.mkdir(dir, { recursive: true });
@@ -3437,7 +3493,8 @@ async function main() {
         1,
       ),
     );
-    await alsemStep(
+    alsemBuild = t.build;
+    alsemEvidence = await alsemStep(
       t,
       rows,
       results,
@@ -3485,6 +3542,8 @@ async function main() {
         jobs: 1, // container runs are serialized by the lane anyway
         dir,
         rev: args.rev,
+        alsemEvidence,
+        alsemBuild,
       });
     } finally {
       await runner.close?.();

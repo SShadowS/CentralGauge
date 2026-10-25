@@ -68,6 +68,18 @@ const byPrice = (s: Seen) => {
   );
 };
 
+const proc = (procedure_name: string) => ({
+  path: "Test/Shipped.al",
+  line: 1,
+  object_stable_id: "app-1/Codeunit/80010",
+  procedure_name,
+  routine_id: `r:${procedure_name}`,
+  assert_count_reachable: 1,
+  zero_assert: false,
+  has_asserterror: false,
+  are_equal: { total: 0, literal_expected: 0, expression_expected: 0 },
+});
+
 async function world(bc: FakeBc, commit: string | null = "c0ffee") {
   const repo = await makeRefappRepo();
   const task = await loadTask(join(repo.tasksDir, "HX-001"));
@@ -121,6 +133,14 @@ async function world(bc: FakeBc, commit: string | null = "c0ffee") {
       jobs: 1,
       dir: join(results, "..", `out-${crypto.randomUUID().slice(0, 6)}`),
       rev: "R1",
+      // the tools' view of the fixture: PriceIsTen is new in the agent's Test app
+      alsemBuild: "B1",
+      alsemEvidence: new Map([["e1", {
+        build: "B1",
+        start: [proc("ShippedPasses")],
+        final: [proc("ShippedPasses"), proc("PriceIsTen")],
+        changed: [],
+      }]]),
     });
   return {
     start,
