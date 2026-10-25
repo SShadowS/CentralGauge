@@ -208,6 +208,10 @@ export function authoritativeCalls(
         );
       }
     }
+    // SOAP runs the whole codeunit; keep only the measurements of the
+    // judgment's rows (an unselected sibling has no row). Duplicates of a row
+    // stay, so sqlCostRows still rejects them.
+    const rowKeys = new Set(rows.map((t) => keyOf(t.codeunit, t.procedure)));
     out.push({
       codeunit,
       container: run.container,
@@ -215,7 +219,9 @@ export function authoritativeCalls(
         procedure: t.procedure,
         outcome: t.outcome as "pass" | "fail",
       })),
-      measurements: run.measurements,
+      measurements: run.measurements.filter((m) =>
+        rowKeys.has(keyOf(m.codeunit, m.procedure))
+      ),
     });
   }
   return {

@@ -608,3 +608,24 @@ Deno.test("envRunner: an oracle fail is measured as fail (the judgment's row, no
     "fail",
   );
 });
+
+Deno.test("envRunner regression: an unselected sibling in a scored codeunit is measured by SOAP but has no judgment row; its measurement is dropped, the selected procedure keeps its numbers", async () => {
+  // SOAP runs the whole codeunit (HX-022: 2 of the 9 tests in 80010 are
+  // selected), so the measurements include procedures the judgment never scored
+  await using w = await world(
+    (rental) => ({
+      FixWorks: rental.includes("exit(10)") ? true : "Assert.AreEqual failed.",
+      UnselectedSibling: "Assert.IsTrue failed.",
+    }),
+    () => true,
+  );
+  const res = await w.runner.run(await w.request("correct"));
+  assertEquals(res.verdict, "pass");
+  const oracle = res.calls.find((c) => c.codeunit === 85000)!;
+  assertEquals(oracle.rows, [{ procedure: "FixWorks", outcome: "pass" }]);
+  assertEquals(oracle.measurements.map((m) => m.procedure), ["FixWorks"]);
+  assertEquals(
+    sqlCostRows(row("pass"), res).map((x) => [x.codeunit, x.procedure]),
+    [[80010, "ShippedPasses"], [85000, "FixWorks"]],
+  );
+});
