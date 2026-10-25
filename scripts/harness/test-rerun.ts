@@ -44,8 +44,10 @@ import {
  * 4: codeunits are attributed by brace-depth-0 declarations on stripped text (same-line
  * headers, split headers, Codeunit.Run(...) calls); cached rows are reused only when their
  * procedure keys and outcome class match the current expectation.
+ * 5: [Test] declarations are matched with quoted-identifier contents masked, so a quoted
+ * name cannot pose as a declaration.
  */
-export const TEST_RERUN_DERIVATION = 4;
+export const TEST_RERUN_DERIVATION = 5;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -376,8 +378,11 @@ export function validateTestRerunRow(x: unknown): TestRerunRow {
 
 // ---------------------------------------------------------------- selection
 
+// Matched on text whose quoted-identifier contents are masked (quotes kept), so a
+// quoted name cannot pose as a declaration; a quoted procedure name is read from
+// the raw text at the group's offsets (the `d` flag).
 const TEST_PROC =
-  /\[\s*Test\s*\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/gi;
+  /\[\s*Test\s*\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/dgi;
 const BLOCK_WORD = /\b(begin|case|end)\b/gi;
 
 /**
@@ -450,11 +455,16 @@ async function testBodies(
     const span = codeunitSpans(blanked).get(c.codeunit);
     if (!span) continue;
     const [start, end] = span;
-    const mSlice = masked.slice(start, end);
+    // Quoted identifiers keep their quotes but not their contents.
+    const qSlice = masked.slice(start, end).replace(
+      /"[^"\n]*"/g,
+      (q) => `"${"x".repeat(q.length - 2)}"`,
+    );
     const bSlice = blanked.slice(start, end);
     const rSlice = src.slice(start, end);
-    for (const m of mSlice.matchAll(TEST_PROC)) {
-      const name = m[1] ?? m[2]!;
+    for (const m of qSlice.matchAll(TEST_PROC)) {
+      const [from1, to1] = m.indices![1] ?? [0, 0];
+      const name = m[1] !== undefined ? rSlice.slice(from1, to1) : m[2]!;
       const from = m.index! + m[0].length;
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,

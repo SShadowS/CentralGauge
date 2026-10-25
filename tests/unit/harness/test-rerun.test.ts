@@ -765,6 +765,25 @@ Deno.test("selectAgentTests: a header split over lines is attributed to its id",
   assertEquals(await selOf(w, "H-e1"), [{ codeunit: 80010, procedure: "P" }]);
 });
 
+Deno.test("selectAgentTests: a quoted identifier cannot pose as a [Test] declaration; quoted procedure names still match", async () => {
+  // sol-r3: only Helper changes, plus a global whose quoted name looks like a declaration
+  const src = (helper: string, extra: string) =>
+    `codeunit 80010 Tests\n{\n    Subtype = Test;\n\n    [Test]\n    procedure TestA()\n    begin\n        Helper();\n    end;\n\n    local procedure Helper()\n    begin\n        ${helper}\n    end;\n${extra}}\n`;
+  const quoted =
+    `\n    [Test]\n    procedure "My Test"()\n    begin\n        x := 2;\n    end;\n`;
+  const w = await world(src("", ""), {
+    e1: src(
+      "Error('boom');",
+      `\n    var\n        "[Test] procedure TestA(": Integer;\n`,
+    ),
+    e2: src("", quoted),
+  });
+  assertEquals(await selOf(w, "H-e1"), []);
+  assertEquals(await selOf(w, "H-e2"), [
+    { codeunit: 80010, procedure: "My Test" },
+  ]);
+});
+
 // deno-lint-ignore no-explicit-any
 async function tamper(w: World, runner: string, f: (row: any) => void) {
   const file = join(w.root, "out", "cache", runner, "exec", "e1.json");
@@ -809,6 +828,6 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 4", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 4);
+Deno.test("TEST_RERUN_DERIVATION is 5", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 5);
 });
