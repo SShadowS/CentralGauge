@@ -857,6 +857,20 @@ Deno.test("judge execution ids: absent -> ids_unverified, campaign_id recorded",
   assertStringIncludes(r.md, "ids_unverified");
 });
 
+Deno.test("judge execution ids: null (Q-01 run 002 writes `?? null`) -> ids_unverified, no throw", async () => {
+  const r = await idsRun((items) => {
+    for (const it of items) {
+      it["baseline_id"] = null;
+      it["variant_id"] = null;
+    }
+  });
+  assertEquals(r.err, null);
+  assertEquals(
+    r.head.find((x) => x["metric"] === "judge_conventions")!["ids_unverified"],
+    "true",
+  );
+});
+
 Deno.test("judge execution ids: matching ids verify", async () => {
   const r = await idsRun((i, k) => withIds(i, k));
   assertEquals(r.err, null);

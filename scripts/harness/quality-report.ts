@@ -556,8 +556,9 @@ export interface JudgeKey {
         pr.variantId,
       ]] as const
     ) {
-      const iv = it[field];
-      const kv = k?.[field];
+      // Q-01 writes `null` for an unknown id: treat it as absent, like a missing field
+      const iv = it[field] ?? undefined;
+      const kv = k?.[field] ?? undefined;
       const where = `judge ${it.task}#${it.repeat} ${field}`;
       if (iv !== undefined && kv !== undefined && iv !== kv) {
         throw new Error(
