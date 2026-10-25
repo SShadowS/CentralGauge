@@ -137,6 +137,7 @@ async function world(bc: FakeBc, commit: string | null = "c0ffee") {
       alsemBuild: "B1",
       alsemEvidence: new Map([["e1", {
         build: "B1",
+        derivation: 1,
         start: [proc("ShippedPasses")],
         final: [proc("ShippedPasses"), proc("PriceIsTen")],
         changed: [],

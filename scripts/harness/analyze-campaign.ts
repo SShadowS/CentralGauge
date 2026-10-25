@@ -899,6 +899,8 @@ export function testQualityCounts(
 export interface AlsemEvidence {
   /** `<alsem sha256>-<ach sha256>` of the tools that produced it. */
   build: string;
+  /** al-sem's own DERIVATION epoch: bumped when its rows are computed differently from the same tool output. */
+  derivation: number;
   start: TestProc[];
   final: TestProc[];
   /** Digest changed-root stableIds. */
@@ -2552,6 +2554,7 @@ export async function alsemStep(
       ]);
       evidence.set(r.id, {
         build: t.build,
+        derivation: DERIVATION,
         start: s.tree.testProcs,
         final: f.testProcs,
         changed: [...f.touches.changed_routines],

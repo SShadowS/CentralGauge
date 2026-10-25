@@ -169,35 +169,62 @@ const evidence = (
   final: string[],
   changed: string[] = [],
   build = BUILD,
+  derivation = 1,
 ): AlsemEvidence => ({
   build,
+  derivation,
   start: start.map((n) => tp(n)),
   final: final.map((n) => tp(n)),
   changed: changed.map((n) => `r:${n}`),
 });
-const namesOf = async (p: string) =>
-  [...(await Deno.readTextFile(p)).matchAll(/procedure (\w+)\(/g)].map((m) =>
-    m[1]!
-  );
 
 /**
- * Evidence for the fixtures of `w` as the tools would report it: every procedure of
- * the start and of each final file; the changed set is what the reference text
- * comparison (selectAgentTests) calls new or changed.
+ * The [Test] procedures of every .al file of a Test app, as the tools list them
+ * (path, line of the `procedure` keyword, codeunit from the nearest header above).
+ * A fixture simulation of ach's test_quality, not a selector: it decides nothing.
  */
-async function textEvidence(w: World, rows: Row[]) {
+async function listProcs(testDir: string): Promise<TestProc[]> {
+  const out: TestProc[] = [];
+  const files = (await Array.fromAsync(Deno.readDir(testDir))).filter((e) =>
+    e.isFile && e.name.endsWith(".al")
+  ).map((e) => e.name).sort();
+  for (const f of files) {
+    const text = await Deno.readTextFile(join(testDir, f));
+    const heads = [...text.matchAll(/\bcodeunit\s+(\d+)/g)];
+    for (
+      const m of text.matchAll(
+        /\[Test\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+)?procedure\s+(\w+)\s*\(/g,
+      )
+    ) {
+      const at = m.index! + m[0].lastIndexOf("procedure");
+      const cuId = Number(heads.filter((h) => h.index! < at).at(-1)![1]);
+      out.push(tp(m[1]!, {
+        cu: cuId,
+        path: `Test/${f}`,
+        line: text.slice(0, at).split("\n").length,
+      }));
+    }
+  }
+  return out;
+}
+
+/**
+ * Evidence for the fixtures of `w` built directly: every [Test] procedure of the start
+ * and of each final Test app (new files included); the digest's changed set is given
+ * explicitly (procedure names), never derived from the text.
+ */
+async function listEvidence(w: World, rows: Row[], changed: string[] = []) {
   const m = new Map<string, AlsemEvidence>();
-  const sTest = join(w.root, "start", "Test");
   for (const r of rows) {
-    const fTest = join(w.results, "workspaces", w.hashOf.get(r.id)!, "Test");
-    m.set(
-      r.id,
-      evidence(
-        await namesOf(join(sTest, "T.al")),
-        await namesOf(join(fTest, "T.al")),
-        (await selectAgentTests(sTest, fTest)).map((s) => s.procedure),
+    m.set(r.id, {
+      build: BUILD,
+      derivation: 1,
+      start: await listProcs(join(w.root, "start", "Test")),
+      final: await listProcs(
+        join(w.results, "workspaces", w.hashOf.get(r.id)!, "Test"),
       ),
-    );
+      changed: changed.map((n) => `r:${n}`),
+    });
   }
   return m;
 }
@@ -241,12 +268,14 @@ async function run(w: World, runner: TestRerunRunner, o: {
   rows?: Row[];
   evidence?: Map<string, AlsemEvidence>;
   build?: string;
+  /** Default evidence only: the digest's changed procedure names (explicit, never derived). */
+  changed?: string[];
 } = {}) {
   const rows = o.rows ?? w.rows;
   return testRerunStep({
     alsemEvidence: await withLines(
       w,
-      o.evidence ?? await textEvidence(w, rows),
+      o.evidence ?? await listEvidence(w, rows, o.changed),
     ),
     alsemBuild: o.build ?? BUILD,
     runner,
@@ -421,7 +450,7 @@ Deno.test("shipped fail after a test edit: the agent edited a shipped test and t
     () => result([pass("TestA")]),
     () => result([fail("TestA")]),
   );
-  const r = (await run(w, m.runner)).done[0]!;
+  const r = (await run(w, m.runner, { changed: ["TestA"] })).done[0]!;
   assertEquals(r.shipped_vs_final.status, "fail");
   assertEquals(r.shipped_vs_final.shipped_pass, false);
   assertEquals(r.shipped_vs_final.edited_shipped_tests, true);
@@ -1089,14 +1118,14 @@ Deno.test("cache: a self-consistent cached shipped pass missing a current shippe
       ),
     );
   const m = mock("r1", () => result([fail("TestA")]), both);
-  await run(w, m.runner);
+  await run(w, m.runner, { changed: ["TestA"] });
   await tamper(w, "r1", (row) => {
     row.shipped_vs_final.procedures = row.shipped_vs_final.procedures.filter((
       p: { procedure: string },
     ) => p.procedure === "TestA");
   });
   const before = m.calls.length;
-  const again = await run(w, m.runner);
+  const again = await run(w, m.runner, { changed: ["TestA"] });
   assert(m.calls.length > before);
   assertEquals(again.skipped, 0);
   assertEquals(again.done[0]!.shipped_vs_final.procedures.length, 2);
@@ -1115,8 +1144,8 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 10", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 10);
+Deno.test("TEST_RERUN_DERIVATION is 11", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 11);
 });
 
 // ---------------------------------------------------------------- tool-based selection (Q-04b)
@@ -1160,6 +1189,7 @@ const noAttrs = {
 Deno.test("selectFromEvidence: (codeunit, procedure) from the object id; two codeunits; sorted", () => {
   const ev: AlsemEvidence = {
     build: BUILD,
+    derivation: 1,
     start: [tp("A"), tp("B", { cu: 50101 })],
     final: [tp("A"), tp("B", { cu: 50101 }), tp("N", { cu: 50101 }), tp("M")],
     changed: ["r:B"],
@@ -1174,6 +1204,7 @@ Deno.test("selectFromEvidence: (codeunit, procedure) from the object id; two cod
 Deno.test("selectFromEvidence: a selected procedure outside a Codeunit fails closed", () => {
   const ev: AlsemEvidence = {
     build: BUILD,
+    derivation: 1,
     start: [],
     final: [tp("X", { cu: "app-1/Page/50100" })],
     changed: [],
@@ -1189,6 +1220,7 @@ Deno.test("selectFromEvidence: a selected procedure outside a Codeunit fails clo
 Deno.test("selectFromEvidence: an attribute fingerprint change selects only a procedure the tools list in start and final", () => {
   const ev: AlsemEvidence = {
     build: BUILD,
+    derivation: 1,
     start: [tp("Kept"), tp("Same"), tp("Gone")],
     final: [tp("Kept"), tp("Same"), tp("Fresh")],
     changed: [],
@@ -1263,12 +1295,14 @@ const explicitEv = (
   start: string,
   final: string,
   path = "Test/T.al",
+  changed: string[] = [],
 ): Map<string, AlsemEvidence> =>
   new Map([["e1", {
     build: BUILD,
+    derivation: 1,
     start: [tp("TestA", { path, line: procLine(start) })],
     final: [tp("TestA", { path, line: procLine(final) })],
-    changed: [],
+    changed: changed.map((n) => `r:${n}`),
   }]]);
 const attrHead = (a: string) => `    ${a}\n    [Test]\n    `;
 
@@ -1296,6 +1330,280 @@ Deno.test("step: a comment-only edit inside an attribute does not select", async
   assertEquals(out.done[0]!.agent_vs_start.selected, []);
 });
 
+/**
+ * The step's selection for TestA on explicit tool evidence: TestA in both trees at its
+ * `procedure` line, the digest's changed roots as given (default none).
+ */
+async function selectedVia(
+  start: string,
+  final: string,
+  changed: string[] = [],
+) {
+  const w = await world(start, { e1: final });
+  const m = mock("r1", () => result([pass("TestA")]), GOOD_SHIPPED);
+  const out = await run(w, m.runner, {
+    evidence: explicitEv(start, final, "Test/T.al", changed),
+  });
+  assertEquals(out.failed, []);
+  return out.done[0]!.agent_vs_start.selected;
+}
+
+Deno.test("step: a multiline attribute edit selects, a pure reformat of it does not (digest changed = [])", async () => {
+  const h = (first: string) =>
+    `    [Test]\n    [HandlerFunctions(\n        '${first}',\n        'X')]\n    `;
+  assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H2"))), TEST_A);
+  assertEquals(
+    await selectedVia(
+      attrCu(h("H1")),
+      attrCu("    [Test]\n    [HandlerFunctions('H1','X')]\n    "),
+    ),
+    [],
+  );
+});
+
+Deno.test("step: a multiline /* */ comment between two attributes does not hide the attribute above it", async () => {
+  const h = (arg: string, note: string) =>
+    `    [HandlerFunctions('${arg}')]\n    /* ${note}\n       and more */\n    [Test]\n    `;
+  assertEquals(
+    await selectedVia(attrCu(h("H1", "n")), attrCu(h("H2", "n"))),
+    TEST_A,
+  );
+  assertEquals(
+    await selectedVia(attrCu(h("H1", "old")), attrCu(h("H1", "new"))),
+    [],
+  );
+});
+
+Deno.test("step: the word `procedure` in a comment on the attribute or procedure line does not truncate the attributes", async () => {
+  const sameLine = (arg: string, note: string) =>
+    `    /* the ${note} */ [HandlerFunctions('${arg}')] [Test] `;
+  assertEquals(
+    await selectedVia(
+      attrCu(sameLine("H1", "procedure")),
+      attrCu(sameLine("H2", "procedure")),
+    ),
+    TEST_A,
+  );
+  assertEquals(
+    await selectedVia(
+      attrCu(sameLine("H1", "procedure")),
+      attrCu(sameLine("H1", "routine")),
+    ),
+    [],
+  );
+  const above = (arg: string, note: string) =>
+    `    [HandlerFunctions('${arg}')] // the ${note} handler\n    [Test]\n    `;
+  assertEquals(
+    await selectedVia(
+      attrCu(above("H1", "procedure")),
+      attrCu(above("H2", "procedure")),
+    ),
+    TEST_A,
+  );
+  assertEquals(
+    await selectedVia(
+      attrCu(above("H1", "procedure")),
+      attrCu(above("H1", "routine")),
+    ),
+    [],
+  );
+});
+
+Deno.test("step: a string argument holding `]` or `procedure` is part of the attribute, not its end or the keyword", async () => {
+  const h = (arg: string) =>
+    `    [HandlerFunctions('${arg} ] procedure')] [Test] `;
+  assertEquals(
+    await selectedVia(attrCu(h("H1")), attrCu(h("H2"))),
+    TEST_A,
+  );
+  assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H1"))), []);
+  const own = (arg: string) =>
+    `    [Test]\n    [HandlerFunctions('a]b ${arg} procedure')]\n    `;
+  assertEquals(
+    await selectedVia(attrCu(own("H1")), attrCu(own("H2"))),
+    TEST_A,
+  );
+});
+
+Deno.test("step: the keyword is searched on the tool's line only; a line holding it only in a comment fails the execution", async () => {
+  const text =
+    `codeunit 50100 "T"\n{\n    Subtype = Test;\n\n    [Test]\n    // procedure TestA()\n    begin\n    end;\n}\n`;
+  const w = await world(text, { e1: text });
+  const m = mock("r1", () => result([pass("TestA")]), GOOD_SHIPPED);
+  const ev = new Map([["e1", {
+    ...evidence(["TestA"], ["TestA"]),
+    start: [tp("TestA", { line: 6 })],
+    final: [tp("TestA", { line: 6 })],
+  }]]);
+  const out = await run(w, m.runner, { evidence: ev });
+  assertEquals(out.failed.map((f) => f.id), ["e1"]);
+  assertEquals(m.calls.length, 0);
+});
+
+Deno.test("step: attribute edit matrix on the production path (position, case, whitespace)", async () => {
+  const heads: ((a: string) => string)[] = [
+    (a) => `    ${a}\n    [Test]\n    `,
+    (a) => `    [Test]\n    ${a}\n    `,
+    (a) => `    ${a} [Test] `,
+    (a) => `    [Test] ${a} `,
+    (a) => `    [Test]\n    ${a}\n    local `,
+  ];
+  const pairs = [
+    ["[HandlerFunctions('OldHandler')]", "[HandlerFunctions('NewHandler')]"],
+    [
+      "[TestPermissions(TestPermissions::Disabled)]",
+      "[TestPermissions(TestPermissions::Restrictive)]",
+    ],
+  ] as const;
+  for (const [oldA, newA] of pairs) {
+    for (const [i, head] of heads.entries()) {
+      assertEquals(
+        await selectedVia(attrCu(head(oldA)), attrCu(head(newA))),
+        TEST_A,
+        `${newA} head ${i}`,
+      );
+    }
+  }
+  // reformatting between attributes or a name's case does not select
+  assertEquals(
+    await selectedVia(
+      attrCu(
+        "    [Test]\n    [HandlerFunctions('H')]\n    [TestPermissions(TestPermissions::Disabled)]\n    ",
+      ),
+      attrCu(
+        "    [handlerfunctions('H')]   [Test]\n\n\n    [TESTPERMISSIONS(TestPermissions::Disabled)] ",
+      ),
+    ),
+    [],
+  );
+  // whitespace: insignificant outside strings, significant inside them
+  const h = (a: string) => attrCu(`    ${a}\n    [Test]\n    `);
+  assertEquals(
+    await selectedVia(
+      h("[HandlerFunctions('H')]"),
+      h("[HandlerFunctions( 'H' )]"),
+    ),
+    [],
+  );
+  assertEquals(
+    await selectedVia(
+      h("[HandlerFunctions('H  One')]"),
+      h("[HandlerFunctions('H One')]"),
+    ),
+    TEST_A,
+  );
+});
+
+Deno.test("step: directive lines between the attributes are blanked for the walk and left out of the fingerprint", async () => {
+  const h = (arg: string, label: string) =>
+    `    [HandlerFunctions('${arg}')]\n    #region ${label}\n    [Test]\n    #endregion\n    `;
+  assertEquals(
+    await selectedVia(
+      attrCu(h("H1", "Case [checks] 'x")),
+      attrCu(h("H2", "Case [checks] 'x")),
+    ),
+    TEST_A,
+  );
+  // a directive-only edit (brackets, quote and all) selects nothing and fails nothing
+  assertEquals(
+    await selectedVia(
+      attrCu(h("H1", "Case [checks] 'x")),
+      attrCu(h("H1", "Other ]")),
+    ),
+    [],
+  );
+  // a quoted region label is directive text too
+  assertEquals(
+    await selectedVia(attrCu(h("H1", "Setup")), attrCu(h("H1", "'Setup'"))),
+    [],
+  );
+});
+
+Deno.test("step: a #-line inside a block comment is comment text, so its */ survives and the attribute above is still found", async () => {
+  const h = (arg: string) =>
+    `    [HandlerFunctions('${arg}')]\n    /*\n    #region documentation */\n    [Test]\n    `;
+  assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H2"))), TEST_A);
+  assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H1"))), []);
+});
+
+Deno.test("step: #region lines in a test body or a changed helper select nothing when the digest lists no changed root", async () => {
+  const plain = REGION_HELPER("        x := 1;\n", "y := 1;");
+  const region = REGION_HELPER(
+    "        #region Setup\n        x := 1;\n        #endregion\n",
+    "y := 1;",
+  );
+  assertEquals(await selectedVia(plain, region), []);
+  assertEquals(await selectedVia(region, plain), []);
+  assertEquals(
+    await selectedVia(
+      REGION_HELPER(CASE_REGION, "y := 1;"),
+      REGION_HELPER(CASE_REGION, "y := 2;"),
+    ),
+    [],
+  );
+});
+
+Deno.test("shipped completeness: expectations and codeunit requests come from the tools' start-tree procedures, also for a codeunit the text scanner misses", async () => {
+  // 50101 is wrapped as in `#region {`: the old text scanner does not see it
+  const wrapped = cu({ TestA: "x := 1;" }) +
+    `#region {\n${cu({ TestB: "x := 1;" }, 50101)}#endregion\n`;
+  const w = await world(wrapped, { e1: wrapped });
+  const m = mock(
+    "r1",
+    () => result([]),
+    (r) =>
+      result(
+        r.specs.flatMap((s) =>
+          s.codeunit === 50100
+            ? [pass("TestA")]
+            : s.codeunit === 50101
+            ? [fail("TestB", "assertion", 50101)]
+            : []
+        ),
+      ),
+  );
+  const out = await run(w, m.runner);
+  assertEquals(out.failed, []);
+  const ship = m.calls.find((c) => c.specs.some((s) => s.procedures === null))!;
+  assertEquals(ship.specs, [
+    { codeunit: 50100, procedures: null },
+    { codeunit: 50101, procedures: null },
+  ]);
+  const r = out.done[0]!;
+  assertEquals(r.shipped_vs_final.status, "fail");
+  assertEquals(
+    r.shipped_vs_final.procedures.map((p) => `${p.codeunit}.${p.procedure}`),
+    ["50100.TestA", "50101.TestB"],
+  );
+});
+
+Deno.test("shipped completeness: a runner row for a procedure the tools do not list is an error", async () => {
+  const w = await world(START, { e1: START });
+  const m = mock(
+    "r1",
+    () => result([]),
+    () => result([pass("TestA"), pass("Stray")]),
+  );
+  assertEquals((await run(w, m.runner)).failed.map((f) => f.id), ["e1"]);
+});
+
+Deno.test("cache: an al-sem DERIVATION epoch change with identical projected evidence recomputes", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  const base = (derivation: number) =>
+    new Map([[
+      "e1",
+      evidence(["TestA"], ["TestA", "TestB"], [], BUILD, derivation),
+    ]]);
+  await run(w, m.runner, { evidence: base(1) });
+  const n = m.calls.length;
+  assertEquals((await run(w, m.runner, { evidence: base(1) })).skipped, 1);
+  assertEquals(m.calls.length, n);
+  const again = await run(w, m.runner, { evidence: base(2) });
+  assertEquals(again.skipped, 0);
+  assert(m.calls.length > n, "the runner was not called after an epoch change");
+});
+
 Deno.test("selection: an attribute edit is found in a codeunit wrapped in a `#region {` the old scanner missed", async () => {
   const wrap = (s: string) => `#region {\n${s}#endregion\n`;
   const start = wrap(attrCu(attrHead("[HandlerFunctions('H1')]")));
@@ -1319,6 +1627,7 @@ Deno.test("step: a tool-listed procedure whose file or procedure line is missing
         "line without a procedure keyword",
         new Map([["e1", {
           build: BUILD,
+          derivation: 1,
           start: [tp("TestA", { line: 2 })],
           final: [tp("TestA", { line: 2 })],
           changed: [],
@@ -1363,12 +1672,35 @@ Deno.test("step: evidence of another al-sem build is failed like missing evidenc
   assertEquals(out.done, []);
 });
 
-Deno.test("step: a non-bugfix execution needs no al-sem evidence", async () => {
+Deno.test("step: every kind needs al-sem evidence of the same build (the shipped expectations come from it); the runner is not called without it", async () => {
+  for (const kind of ["feature", "refactor", "bugfix"]) {
+    const w = await world(START, { e1: NEW_B }, kind);
+    const m = mock("r1", () => result([]), GOOD_SHIPPED);
+    const none = await run(w, m.runner, { evidence: new Map() });
+    assertEquals(none.failed.map((f) => f.id), ["e1"], kind);
+    assertEquals(none.failed[0]!.error, "no al-sem evidence of the same build");
+    assertEquals(none.done, [], kind);
+    assertEquals(m.calls.length, 0, kind);
+    const foreign = await run(w, m.runner, {
+      evidence: new Map([[
+        "e1",
+        evidence(["TestA"], ["TestA", "TestB"], [], "alsem-OTHER"),
+      ]]),
+    });
+    assertEquals(foreign.failed.map((f) => f.id), ["e1"], kind);
+    assertEquals(m.calls.length, 0, kind);
+  }
+});
+
+Deno.test("step: a non-bugfix execution runs the shipped suite listed by the tools and is not_applicable for the agent run", async () => {
   const w = await world(START, { e1: NEW_B }, "feature");
   const m = mock("r1", () => result([]), GOOD_SHIPPED);
-  const out = await run(w, m.runner, { evidence: new Map() });
+  const out = await run(w, m.runner);
   assertEquals(out.failed, []);
   assertEquals(out.done[0]!.agent_vs_start.outcome, "not_applicable");
+  assertEquals(out.done[0]!.shipped_vs_final.status, "pass");
+  assertEquals(m.calls.length, 1);
+  assertEquals(m.calls[0]!.specs, [{ codeunit: 50100, procedures: null }]);
 });
 
 Deno.test("cache: other evidence (changed set, another al-sem build) recomputes, the same evidence is reused", async () => {
