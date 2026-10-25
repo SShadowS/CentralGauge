@@ -821,7 +821,7 @@ Deno.test("validateCampaignRecords: a campaign on a development image revision i
 });
 
 Deno.test("validateCampaignRecords (H-07): a pre-H-07 cc-vs-pi campaign (six disallowed tools) stays valid; a web arm under vary [harness] is refused", async () => {
-  const six = claudeCodeHarnessNative(true).disallowed_tools;
+  const six = claudeCodeHarnessNative(true, true).disallowed_tools;
   const asClaude = (f: (m: ResolvedManifest) => ResolvedManifest) =>
   (
     m: ResolvedManifest,
@@ -847,14 +847,80 @@ Deno.test("validateCampaignRecords (H-07): a pre-H-07 cc-vs-pi campaign (six dis
   assertStringIncludes(p[0]!, ": settings");
 });
 
+Deno.test("validateCampaignRecords (R-01): cc-vs-pi stays valid with each recorded default list (pre-H-07 six, H-07 eight, R-01 nine with Monitor); a tampered list is refused", async () => {
+  const six = [
+    "CronCreate",
+    "CronDelete",
+    "ListAgents",
+    "RemoteTrigger",
+    "ScheduleWakeup",
+    "SendMessage",
+  ];
+  const eight = [...six, "WebFetch", "WebSearch"].sort();
+  const nine = [...eight, "Monitor"].sort();
+  const withList = (list: string[]) => (m: ResolvedManifest) =>
+    m.harness === "claude-code"
+      ? native(m, (n) => ({ ...n, disallowed_tools: list }))
+      : m;
+  // cc-sonnet-plain is the cc arm and the baseline, so `true` edits it. It is
+  // a frozen v1 arm: resolved today it still records the six.
+  assertEquals(await ccVsPi(), []);
+  for (const list of [six, eight, nine]) {
+    assertEquals(
+      await ccVsPi(withList(list), undefined, true),
+      [],
+      JSON.stringify(list),
+    );
+  }
+  for (
+    const bad of [
+      [...six, "Monitor"].sort(), // six + Monitor, web tools not blocked
+      six.slice(1),
+      eight.filter((t) => t !== "WebFetch"),
+      nine.filter((t) => t !== "ScheduleWakeup"),
+    ]
+  ) {
+    const p = await ccVsPi(withList(bad), undefined, true);
+    assertEquals(p.length, 1, JSON.stringify(bad));
+    assertStringIncludes(p[0]!, ": settings");
+  }
+  // Two claude-code arms of different eras (H-07 eight, R-01 nine) differ in
+  // settings, even under vary [harness].
+  const arm = (id: string, disallowed: string[]) =>
+    manifest(id, {
+      harness: "claude-code",
+      settings: { requested: {}, native: { disallowed_tools: disallowed } },
+    });
+  const derive = { "claude-code": claudeCodeDerivedNative };
+  await assertVaryHolds(
+    arm("r01", nine),
+    arm("r01", nine),
+    ["harness"],
+    derive,
+  );
+  await assertRejects(
+    () =>
+      assertVaryHolds(arm("h07", eight), arm("r01", nine), ["harness"], derive),
+    ConfigurationError,
+    "settings",
+  );
+});
+
 Deno.test("assertVaryHolds (H-07 review): two claude-code arms with six vs eight disallowed tools differ in settings, even under vary [harness]", async () => {
   const arm = (id: string, disallowed: string[]) =>
     manifest(id, {
       harness: "claude-code",
       settings: { requested: {}, native: { disallowed_tools: disallowed } },
     });
-  const six = arm("legacy", claudeCodeHarnessNative(true).disallowed_tools);
-  const eight = arm("now", claudeCodeHarnessNative().disallowed_tools);
+  // The lists recorded before R-01 (no Monitor).
+  const six = arm(
+    "legacy",
+    claudeCodeHarnessNative(true, true).disallowed_tools,
+  );
+  const eight = arm(
+    "now",
+    claudeCodeHarnessNative(false, true).disallowed_tools,
+  );
   const derive = { "claude-code": claudeCodeDerivedNative };
   await assertRejects(
     () => assertVaryHolds(six, eight, ["harness"], derive),

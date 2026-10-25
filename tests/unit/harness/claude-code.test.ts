@@ -1249,17 +1249,18 @@ Deno.test("claude-code settings: session-control tools present in 2.1.282 are di
     limits: { timeout_min: 30, max_budget_usd: 5 },
   });
   const native = claudeCodeAdapter.nativeSettings(cfg, catalog);
-  // H-07: the default arm also blocks the web tools; a web arm only those six.
+  // H-07: the default arm also blocks the web tools; a web arm only those six
+  // and, since R-01, Monitor (listed from 2.1.310).
   assertEquals(
     native["disallowed_tools"],
-    [...expected, "WebFetch", "WebSearch"].sort(),
+    [...expected, "Monitor", "WebFetch", "WebSearch"].sort(),
   );
   assertEquals(
     claudeCodeAdapter.nativeSettings({
       ...cfg,
       settings: { ...cfg.settings, web_tools: true },
     }, catalog)["disallowed_tools"],
-    expected,
+    [...expected, "Monitor"].sort(),
   );
   assertEquals(native["thinking"], "high");
   // An arm cannot re-enable them by setting the key itself.
@@ -3301,7 +3302,7 @@ const arm296 = (lsp: boolean) => ({
     native: {
       api_models: { main: "claude-sonnet-5" },
       // Captured before H-07: the six session tools only, web tools allowed.
-      ...claudeCodeHarnessNative(true),
+      ...claudeCodeHarnessNative(true, true),
       ...(lsp ? { lsp: ["al"] } : {}),
     },
   },
@@ -3372,23 +3373,25 @@ const webCfg = (settings: Record<string, unknown>) =>
 Deno.test("web tools (H-07): blocked by default; settings.web_tools: true allows them; the flag is part of the manifest hash", async () => {
   const native = (s: Record<string, unknown>) =>
     claudeCodeAdapter.nativeSettings(webCfg(s), WEB_CATALOG);
-  const SIX = [
+  // The six session tools, plus Monitor since R-01.
+  const SEVEN = [
     "CronCreate",
     "CronDelete",
     "ListAgents",
+    "Monitor",
     "RemoteTrigger",
     "ScheduleWakeup",
     "SendMessage",
   ];
   assertEquals(
     native({})["disallowed_tools"],
-    [...SIX, "WebFetch", "WebSearch"].sort(),
+    [...SEVEN, "WebFetch", "WebSearch"].sort(),
   );
   assertEquals(
     claudeCodeHarnessNative()["disallowed_tools"],
     native({})["disallowed_tools"],
   );
-  assertEquals(native({ web_tools: true })["disallowed_tools"], SIX);
+  assertEquals(native({ web_tools: true })["disallowed_tools"], SEVEN);
   // One encoding: the flag itself is not copied, and only true is accepted
   // (an explicit false would hash, via settings.requested, unlike absent).
   assertEquals(native({ web_tools: true })["web_tools"], undefined);
@@ -3419,7 +3422,8 @@ const webArm = (lsp: boolean, web: boolean) => ({
     requested: web ? { web_tools: true } : {},
     native: {
       api_models: { main: "claude-sonnet-5" },
-      ...claudeCodeHarnessNative(web),
+      // Recorded before R-01: no Monitor.
+      ...claudeCodeHarnessNative(web, true),
       ...(lsp ? { lsp: ["al"] } : {}),
     },
   },
@@ -3656,8 +3660,9 @@ Deno.test("web tools (H-07 review): the stored-manifest derivation keeps pre-H-0
         native: { disallowed_tools: disallowed },
       },
     });
-  const SIX = claudeCodeHarnessNative(true).disallowed_tools;
-  const EIGHT = claudeCodeHarnessNative().disallowed_tools;
+  // The lists recorded before R-01 (no Monitor).
+  const SIX = claudeCodeHarnessNative(true, true).disallowed_tools;
+  const EIGHT = claudeCodeHarnessNative(false, true).disallowed_tools;
   // A pre-H-07 manifest: six tools, no web_tools request.
   assertEquals(claudeCodeDerivedNative(m({}, SIX)).disallowed_tools, SIX);
   assertEquals(claudeCodeDerivedNative(m({}, EIGHT)).disallowed_tools, EIGHT);
@@ -3854,7 +3859,7 @@ Deno.test("web tools (H-07): v1 arms (image_revision 2) are frozen: they keep th
     });
   assertEquals(
     claudeCodeAdapter.nativeSettings(v1({}), WEB_CATALOG)["disallowed_tools"],
-    claudeCodeHarnessNative(true).disallowed_tools,
+    claudeCodeHarnessNative(true, true).disallowed_tools,
   );
   for (const web_tools of [true, false]) {
     assertThrows(
@@ -4577,4 +4582,79 @@ Deno.test("additional directories (H-20): the refusal covers every same-session 
   const got = await problems(text.replace(init, unknown));
   assertStringIncludes(got, "no qualified built-in inventory");
   assertStringIncludes(got, "additional_directories");
+});
+
+// ---- R-01: Monitor disallowed (decisions 2026-10-25-tuesday-run), Claude Code 2.1.310 ----
+// The recorded lists, literal: M1-32b's six (pre-H-07 manifests, H-07 web
+// arms, v1), H-07's default eight, and R-01's lists with Monitor.
+const R01_SIX = [
+  "CronCreate",
+  "CronDelete",
+  "ListAgents",
+  "RemoteTrigger",
+  "ScheduleWakeup",
+  "SendMessage",
+];
+const R01_EIGHT = [...R01_SIX, "WebFetch", "WebSearch"].sort();
+const R01_WEB = [...R01_SIX, "Monitor"].sort();
+const R01_DEFAULT = [...R01_WEB, "WebFetch", "WebSearch"].sort();
+
+Deno.test("R-01: new manifests disallow Monitor (default and web arm); v1 arms keep the six they ran with", () => {
+  const native = (s: Record<string, unknown>) =>
+    claudeCodeAdapter.nativeSettings(webCfg(s), WEB_CATALOG)[
+      "disallowed_tools"
+    ];
+  assertEquals(native({}), R01_DEFAULT);
+  assertEquals(native({ web_tools: true }), R01_WEB);
+  assertEquals(claudeCodeHarnessNative().disallowed_tools, R01_DEFAULT);
+  assertEquals(claudeCodeHarnessNative(true).disallowed_tools, R01_WEB);
+  const v1 = HarnessConfigSchema.parse({
+    id: "cc-v1",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "2",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: {},
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(v1, WEB_CATALOG)["disallowed_tools"],
+    R01_SIX,
+  );
+});
+
+Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-01 default to itself, a new manifest to the Monitor list, and nothing else", () => {
+  const m = (requested: object, disallowed: unknown) =>
+    manifest("cc", {
+      settings: {
+        requested: requested as Record<string, unknown>,
+        native: { disallowed_tools: disallowed },
+      },
+    });
+  const derive = (requested: object, disallowed: unknown) =>
+    claudeCodeDerivedNative(m(requested, disallowed)).disallowed_tools;
+  // History: pre-H-07 (six, no web_tools request) and the H-07 default (eight).
+  assertEquals(derive({}, R01_SIX), R01_SIX);
+  assertEquals(derive({}, R01_EIGHT), R01_EIGHT);
+  // An H-07 web arm stays a settings difference (as before R-01).
+  assertEquals(derive({ web_tools: true }, R01_SIX), R01_EIGHT);
+  // New: the R-01 default; an R-01 web arm stays a settings difference.
+  assertEquals(derive({}, R01_DEFAULT), R01_DEFAULT);
+  assertEquals(derive({ web_tools: true }, R01_WEB), R01_DEFAULT);
+  // Tampered lists never re-derive to themselves.
+  for (
+    const [requested, bad] of [
+      [{}, R01_WEB], // six + Monitor without the web tools, non-web arm
+      [{}, R01_SIX.slice(1)], // the six missing one tool
+      [{}, R01_EIGHT.filter((t) => t !== "WebSearch")],
+      [{}, R01_DEFAULT.filter((t) => t !== "SendMessage")],
+      [{}, [...R01_EIGHT, "Bash"].sort()],
+      [{}, "Monitor"],
+    ] as const
+  ) {
+    assert(
+      JSON.stringify(derive(requested, bad)) !== JSON.stringify(bad),
+      JSON.stringify(bad),
+    );
+  }
 });

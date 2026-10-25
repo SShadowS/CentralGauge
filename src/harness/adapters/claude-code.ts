@@ -2218,13 +2218,27 @@ export function parseClaudeStream(
 
 /**
  * Session-control and cross-session tools a benchmark cell has no use for
- * (M1-32b), sorted: those of ScheduleWakeup, ListAgents, SendMessage, Monitor,
- * CronCreate, CronDelete and RemoteTrigger that 2.1.282's system/init lists
- * (Monitor is not listed). Background Task/Agent use stays allowed. Passed as
- * --disallowedTools by run.ps1 and recorded in settings.native, so they are
- * identity inputs.
+ * (M1-32b), sorted: ScheduleWakeup, ListAgents, SendMessage, Monitor,
+ * CronCreate, CronDelete and RemoteTrigger, each once a system/init lists it.
+ * 2.1.282 lists all but Monitor (PRE_R01_TOOLS); 2.1.310 lists Monitor too,
+ * so R-01 (decisions 2026-10-25-tuesday-run) disallows it. Background
+ * Task/Agent use stays allowed. Passed as --disallowedTools by run.ps1 and
+ * recorded in settings.native, so they are identity inputs.
  */
 const DISALLOWED_TOOLS = [
+  "CronCreate",
+  "CronDelete",
+  "ListAgents",
+  "Monitor",
+  "RemoteTrigger",
+  "ScheduleWakeup",
+  "SendMessage",
+] as const;
+/**
+ * The list before R-01 (no Monitor): what frozen v1 arms run with and every
+ * manifest recorded before R-01 carries. Never changes.
+ */
+const PRE_R01_TOOLS = [
   "CronCreate",
   "CronDelete",
   "ListAgents",
@@ -2240,27 +2254,35 @@ const WEB_TOOLS = ["WebFetch", "WebSearch"] as const;
 
 /**
  * Native settings this adapter derives from its harness alone (M5-01a): the
- * default arm, web tools blocked; `webTools` is a web arm's list.
+ * default arm, web tools blocked; `webTools` is a web arm's list. `preR01`
+ * gives the list without Monitor (v1 arms; stored pre-R-01 manifests).
  */
 export const claudeCodeHarnessNative = (
   webTools = false,
-): { disallowed_tools: string[] } => ({
-  disallowed_tools: webTools
-    ? [...DISALLOWED_TOOLS]
-    : [...DISALLOWED_TOOLS, ...WEB_TOOLS].sort(),
-});
+  preR01 = false,
+): { disallowed_tools: string[] } => {
+  const tools = preR01 ? PRE_R01_TOOLS : DISALLOWED_TOOLS;
+  return {
+    disallowed_tools: webTools ? [...tools] : [...tools, ...WEB_TOOLS].sort(),
+  };
+};
 
 /**
  * The M5-01a derivation for a stored manifest (integrity, vary [harness]): the
- * default list, except a pre-H-07 manifest, which recorded the six session
- * tools and no web_tools request (code since H-07 never writes that pair; a
- * web arm requests web_tools and so stays a settings difference).
+ * default list of the manifest's era. A recorded list without Monitor was
+ * written before R-01 and derives the pre-R-01 default (the six session tools
+ * plus the web tools); a list with Monitor derives today's. Either way a
+ * pre-H-07 manifest, which recorded the six session tools and no web_tools
+ * request, derives those six (code since H-07 never writes that pair; a web
+ * arm requests web_tools and so stays a settings difference). Any other
+ * recorded list differs from its derivation.
  */
 export const claudeCodeDerivedNative = (m: ResolvedManifest) => {
   const listed = m.settings.native["disallowed_tools"];
+  const preR01 = !(Array.isArray(listed) && listed.includes("Monitor"));
   const legacy = !Object.hasOwn(m.settings.requested, "web_tools") &&
-    JSON.stringify(listed) === JSON.stringify(DISALLOWED_TOOLS);
-  return claudeCodeHarnessNative(legacy);
+    JSON.stringify(listed) === JSON.stringify(PRE_R01_TOOLS);
+  return claudeCodeHarnessNative(legacy, preR01);
 };
 
 export const claudeCodeAdapter: HarnessAdapter = {
@@ -2308,7 +2330,8 @@ export const claudeCodeAdapter: HarnessAdapter = {
     // explicit false would hash (settings.requested) unlike the equal default.
     const { web_tools, ...settings } = config.settings;
     // v1 is frozen (data freeze 2026-09-29): its image_revision "2" arms keep
-    // the six-tool list they ran with, so their identity never changes.
+    // the six-tool list they ran with (no Monitor, R-01), so their identity
+    // never changes.
     const v1 = config.image_revision === "2";
     if (v1 && web_tools !== undefined) {
       throw new ConfigurationError(
@@ -2324,7 +2347,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
     return {
       ...settings,
       api_models,
-      ...claudeCodeHarnessNative(web_tools === true || v1),
+      ...claudeCodeHarnessNative(web_tools === true || v1, v1),
       ...(config.components.mcp.length > 0
         ? { mcp: [...config.components.mcp].sort() }
         : {}),
