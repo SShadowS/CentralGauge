@@ -1739,11 +1739,6 @@ export async function runExecution(
     env.secretAccounts,
     cell.block.index,
   );
-  // Every supplied account dir, not only the picked one, before anything runs
-  // (a campaign checks at its start too; `harness cell` reaches only this).
-  if (!stub) {
-    await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
-  }
   await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
@@ -1920,7 +1915,12 @@ export async function runExecution(
     const secretsSource = account
       ? account.dir
       : await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles);
-    await checkOperatorSecrets(secretsSource, adapter.secretFiles);
+    // R-02: a real cell checks every supplied account dir, not only its own (a
+    // campaign checks at its start too; `harness cell` reaches only this).
+    // Like any missing secret, a failure is this cell's setup_failed.
+    if (account) {
+      await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
+    } else await checkOperatorSecrets(secretsSource, adapter.secretFiles);
     // Predictable egress checks come before the grant and the reservation.
     let hosts: string[] = [];
     let expect: Record<string, boolean> = {};

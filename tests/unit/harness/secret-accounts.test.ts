@@ -19,6 +19,7 @@ import { tempDir } from "./temp-dirs.ts";
 import { ccBehavior, cellFor, makeEnv } from "./runtime-fixture.ts";
 
 const abs = (p: string) => resolve(Deno.cwd(), p);
+const exists = (p: string) => Deno.stat(p).then(() => true, () => false);
 
 Deno.test("parseSecretsDirs: one plain dir is one unlabelled account", () => {
   assertEquals(parseSecretsDirs(["sec"]), [{ label: null, dir: abs("sec") }]);
@@ -144,15 +145,14 @@ Deno.test("R-02 run 002: recovery records the interrupted attempt's own account,
 Deno.test("R-02 run 002: a real cell checks every supplied account dir before anything runs", async () => {
   await using t = await makeEnv();
   const cell = await cellFor(t);
+  // The cell's own account (block 0: work) is complete; only the other dir lacks the token.
   t.env.secretAccounts = [
     { label: "work", dir: t.env.secretAccounts[0]!.dir },
     { label: "private", dir: await tempDir() },
   ];
-  await assertRejects(
-    () => runCell(t.env, cell),
-    ConfigurationError,
-    "claude-oauth-token",
-  );
+  // Like any missing operator secret: this cell's setup_failed, nothing run or reserved.
+  const e = (await runCell(t.env, cell)).executions[0]!;
+  assertEquals(e.termination, "setup_failed");
   assertEquals(t.docker.runs.length, 0);
-  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assert(!await exists(t.env.credentialLedger!), "no slot reserved");
 });
