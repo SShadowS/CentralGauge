@@ -7,6 +7,15 @@ import {
   assertThrows,
 } from "@std/assert";
 import { join } from "@std/path";
+import {
+  aggregate as judgeAggregate,
+  type Cells,
+  DIMENSIONS,
+  type Key,
+  type PairMeta,
+  type Verdict,
+  type Verdicts,
+} from "../../../scripts/harness/judge-pairs.ts";
 import { withTempDir } from "../../utils/temp-dir.ts";
 import {
   aggregate,
@@ -1244,5 +1253,132 @@ Deno.test("fail closed: identity, repeats, duplicates, CSV structure", async () 
     );
     const e6 = await run(camp);
     assert(e6 && /columns/.test(e6.message), String(e6));
+  });
+});
+
+// ------------------------------------------- contract: real Q-01 aggregate
+
+Deno.test("contract: quality-report reads the real judge-pairs aggregate output", async () => {
+  const tasks = ["T1", "T2", "T3"];
+  const reps = [1, 2];
+  // [task, repeat, a_role, j1 outcome, j2 outcome] for correctness_risk
+  const plan: [string, number, "baseline" | "variant", string, string][] = [
+    ["T1", 1, "baseline", "variant", "variant"],
+    ["T1", 2, "variant", "variant", "variant"],
+    ["T2", 1, "baseline", "baseline", "baseline"],
+    ["T2", 2, "variant", "variant", "tie"],
+    ["T3", 1, "baseline", "tie", "tie"],
+    ["T3", 2, "variant", "variant", "variant"],
+  ];
+  const verdictFor = (
+    role: "baseline" | "variant",
+    want: string,
+  ): [Verdict, Verdict] => {
+    if (want === "tie") return ["tie", "tie"];
+    const aIsWanted = role === want; // position A holds the wanted arm in "orig"
+    return aIsWanted ? ["A", "B"] : ["B", "A"];
+  };
+  const metas: PairMeta[] = [];
+  const cells: Cells = { j1: {}, j2: {} };
+  const key: Record<string, Key> = {};
+  plan.forEach(([task, repeat, role, o1, o2], i) => {
+    const id = `pk${i}`;
+    const k: Key = {
+      A: role === "baseline" ? "plain" : "skill",
+      B: role === "baseline" ? "skill" : "plain",
+      a_role: role,
+    };
+    // pair 2 (T2 r1) has unknown ids: null in pairs.json, absent in key.json
+    if (i !== 2) {
+      k.baseline_id = `b-${task}-${repeat}`;
+      k.variant_id = `v-${task}-${repeat}`;
+    }
+    key[id] = k;
+    metas.push({
+      id,
+      task,
+      repeat,
+      key: k,
+      ...(i !== 2
+        ? { baseline_id: k.baseline_id, variant_id: k.variant_id }
+        : {}),
+    });
+    for (const [j, outcome] of [["j1", o1], ["j2", o2]] as const) {
+      const [orig, swapped] = verdictFor(role, outcome);
+      const [co, cs] = verdictFor(role, "tie"); // all-tie dimension
+      const [vo, vs] = verdictFor(role, "variant");
+      const mk = (pos: "orig" | "swapped"): Verdicts => {
+        const dim = (v: Verdict) => ({ verdict: v, reason: "r", cite: "none" });
+        return Object.fromEntries(
+          DIMENSIONS.map((d) => [
+            d,
+            d === "correctness_risk"
+              ? dim(pos === "orig" ? orig : swapped)
+              : d === "conventions"
+              ? dim(pos === "orig" ? co : cs)
+              : dim(pos === "orig" ? vo : vs),
+          ]),
+        ) as Verdicts;
+      };
+      cells[j]![id] = {
+        orig: { status: "ok", verdicts: mk("orig"), attempts: 1 },
+        swapped: { status: "ok", verdicts: mk("swapped"), attempts: 1 },
+      };
+    }
+  });
+  const agg = judgeAggregate(metas, cells, ["j1", "j2"], [], "camp-xyz");
+
+  await withTempDir(async (root) => {
+    const camp = join(root, "camp");
+    await Deno.mkdir(camp, { recursive: true });
+    const prs = ["base,variant,task,kind,repeat,base_id,variant_id,outcome"];
+    const ex = ["id,arm,task,repeat,cost_usd,wall_min"];
+    for (const t of tasks) {
+      for (const r of reps) {
+        prs.push(`plain,skill,${t},fix,${r},b-${t}-${r},v-${t}-${r},both_pass`);
+        ex.push(`b-${t}-${r},plain,${t},${r},2,10`);
+        ex.push(`v-${t}-${r},skill,${t},${r},1,8`);
+      }
+    }
+    await Deno.writeTextFile(join(camp, "pairs.csv"), prs.join("\n") + "\n");
+    await Deno.writeTextFile(
+      join(camp, "executions.csv"),
+      ex.join("\n") + "\n",
+    );
+    // exactly what judge-pairs.ts main writes
+    const judge = join(root, "judge");
+    await Deno.mkdir(join(judge, "key"), { recursive: true });
+    await Deno.writeTextFile(
+      join(judge, "key", "key.json"),
+      JSON.stringify(key, null, 2) + "\n",
+    );
+    await Deno.writeTextFile(
+      join(judge, "pairs.json"),
+      JSON.stringify(agg.pairs, null, 2) + "\n",
+    );
+    await Deno.writeTextFile(
+      join(judge, "summary.json"),
+      JSON.stringify(agg.summary, null, 2) + "\n",
+    );
+    const out = join(root, "out");
+    await runReport({ campaign: camp, out, judge: [judge], boot: 50 });
+    const h = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
+    const row = (m: string) =>
+      h.find((r) => r["metric"] === m && r["stratum"] === "all")!;
+    const cr = row("judge_correctness_risk");
+    assertEquals([cr["k"], cr["m"], cr["t"]], ["2", "1", "0"]);
+    assertEquals(cr["kappa_na"], "false");
+    assertEquals(cr["unverified"], "false");
+    assertEquals(cr["ids_unverified"], "true");
+    assertEquals(cr["observed_pairs"], "6");
+    const cv = row("judge_conventions");
+    assertEquals([cv["k"], cv["m"], cv["t"]], ["0", "0", "3"]);
+    assertEquals(cv["kappa_na"], "true");
+    assertEquals(cv["low_agreement"], "false");
+    assert(row("judge_readability")["kappa_na"] === "true");
+    assertStringIncludes(
+      await Deno.readTextFile(join(out, "report.md")),
+      "camp-xyz",
+    );
   });
 });
