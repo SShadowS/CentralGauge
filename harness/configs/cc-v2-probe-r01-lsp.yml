@@ -1,0 +1,12 @@
+# R-01 qualification config for Claude Code 2.1.310 on image revision 4 (developmental). Never part of an experiment.
+id: cc-v2-probe-r01-lsp
+harness: claude-code
+harness_version: "latest"
+image_revision: "4"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/env/instructions
+  lsp: [al]
+limits: { timeout_min: 30, max_budget_usd: 5 }
