@@ -228,6 +228,23 @@ the final workspace file at the line (`<results>\workspaces\<hash>\<file>`), and
 the starting tree (`<out>\.start\<task>`) has no finding of that detector in that routine
 (`<out>\alsem\cache\start-<task>\analyze.json`).
 
+### SQL cost per test (`--sql-cost`, opt-in)
+
+`--sql-cost --containers <a,b> --symbols <store> --lineage <lineage> [--sql-cost-task HX-nnn ...]`
+re-runs the oracle on the final tree with the CG SQL Measure app (`infra/cg-sql-measure`), the
+real judge on the harness lane. It takes the bench lock like `--test-rerun`. The judgment it
+makes is discarded, never written. Output: `<out>\sql-cost\executions.{json,csv}` (one row per
+execution x test x segment, with an `oracle` flag) and `summary.json`.
+
+- Oracle-run measurement only: the summary uses the `fail_to_pass` codeunits, per task and per
+  arm, median/min/max across repeats. There are no totals across tasks. Segment rows (a scale
+  scenario's `BeginSegment`/`EndSegment`) are their own keys, never added to the test's row.
+- The numbers include a constant framework overhead per test (the same for every solution).
+  Compare solutions of one task; do not read them as the cost of the code alone.
+- Fails closed: an execution is listed under `failed`, with no numbers, when the measured verdict
+  differs from the selected judgment's, a test row lacks a measurement, a row is infra or
+  not_run, or an oracle codeunit did not run. `test-authoring` tasks have no oracle and are skipped.
+
 ## 3. Blind structural comparison (exploratory only)
 
 Write this rubric to `<out>\quality\rubric.md` verbatim, before building any packet:

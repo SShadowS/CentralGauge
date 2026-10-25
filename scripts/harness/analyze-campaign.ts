@@ -3038,9 +3038,10 @@ async function main() {
       "coord-lease",
       "private-dir",
       "lineage",
+      "sql-cost-task",
     ],
-    boolean: ["test-rerun"],
-    collect: ["pair", "coord-lease"],
+    boolean: ["test-rerun", "sql-cost"],
+    collect: ["pair", "coord-lease", "sql-cost-task"],
     default: { repo: ".", "alsem-jobs": "3" },
   });
   const campaignId = String(args._[0] ?? "");
@@ -3053,14 +3054,16 @@ async function main() {
   if (
     !campaignId || !args.results || !args.rev || !args.out ||
     (args.alsem && (!args.ach || !args.symbols)) ||
-    (args["test-rerun"] &&
+    ((args["test-rerun"] || args["sql-cost"]) &&
       (!args.containers || !args.symbols || !args.lineage))
   ) {
     console.error(
       "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .] [--only <id or id prefix>,...]\n" +
         "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]\n" +
         "  [--test-rerun --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--coord-lease <container>=<token> ...] [--private-dir <dir>]]\n" +
-        "      Q-04: requires --alsem in the same invocation (test selection from its evidence); agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.",
+        "      Q-04: requires --alsem in the same invocation (test selection from its evidence); agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.\n" +
+        "  [--sql-cost --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--sql-cost-task <HX-nnn> ...] [--coord-lease ...] [--private-dir <dir>]]\n" +
+        "      Q-06: opt-in. Re-judges each execution with SQL measurement on (the judgment is discarded) and writes <out>/sql-cost/. Per task and arm only; fails closed.",
     );
     Deno.exit(2);
   }
@@ -3547,6 +3550,52 @@ async function main() {
         rev: args.rev,
         alsemEvidence,
         alsemBuild,
+      });
+    } finally {
+      await runner.close?.();
+    }
+  }
+
+  if (args["sql-cost"]) {
+    // Dynamic import: sql-cost.ts imports this module's helpers.
+    const { sqlCostStep } = await import("./sql-cost.ts");
+    const { productionRunner } = await import("./sql-cost-runner.ts");
+    const dir = join(out, "sql-cost");
+    const local = Deno.env.get("LOCALAPPDATA");
+    const privateRoot = args["private-dir"]
+      ? resolve(args["private-dir"])
+      : local
+      ? join(local, "centralgauge", "harness")
+      : null;
+    if (!privateRoot) {
+      throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
+    }
+    const runner = await productionRunner({
+      repoRoot: resolve(repo),
+      resultsDir: join(dir, "env"),
+      containers: args.containers!.split(",").map((c) => c.trim()).filter(
+        Boolean,
+      ),
+      coordLeases: args["coord-lease"] as string[],
+      symbolStore: resolve(args.symbols!),
+      privateRoot,
+      lineage: args.lineage ? resolve(args.lineage) : null,
+      repo: resolve(repo),
+      rev: args.rev,
+      results: resolve(results),
+      taskCache: join(cache, "tasks"),
+    });
+    try {
+      await sqlCostStep({
+        runner,
+        rows,
+        results,
+        hashOf,
+        startOf,
+        jobs: 1, // the runner swaps the lane's bc: one execution at a time
+        dir,
+        rev: args.rev,
+        tasks: args["sql-cost-task"] as string[],
       });
     } finally {
       await runner.close?.();
