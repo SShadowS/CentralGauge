@@ -308,7 +308,7 @@ export async function productionRunner(
     containers: o.containers,
     backendPort: 3210,
     // The backend is never asked for a grant here; no provider credential is read.
-    secretsSource: join(o.privateRoot, "no-secrets"),
+    secretAccounts: [{ label: null, dir: join(o.privateRoot, "no-secrets") }],
     symbolStore: o.symbolStore,
     privateRoot: o.privateRoot,
     credentialLedger: null,
