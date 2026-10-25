@@ -387,6 +387,18 @@ Deno.test("fail closed: a selected procedure missing from the result is an error
   assertEquals(out.done, []);
 });
 
+Deno.test("fail closed: a runner identity outside its own env() fails the execution (never a silently dropped row)", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const elsewhere = (r: TestRerunRequest): RunnerResult => ({
+    ...GOOD_SHIPPED(r),
+    identity: { ...IDENT, container: "Cronus99" },
+  });
+  const m = mock("r1", () => result([fail("TestB")]), elsewhere);
+  const out = await run(w, m.runner);
+  assertEquals(out.failed.map((f) => f.id), ["e1"]);
+  assertEquals(out.done, []);
+});
+
 Deno.test("fail closed: a shipped procedure missing from the result is an error", async () => {
   const w = await world(START, { e1: NEW_B });
   const m = mock("r1", () => result([fail("TestB")]), () => result([]));

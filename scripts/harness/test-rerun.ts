@@ -917,6 +917,13 @@ export async function testRerunStep(o: {
         },
       };
       validateTestRerunRow(row);
+      for (const i of [agentRun?.identity, shippedRun.identity]) {
+        if (i && !inEnv(i)) {
+          throw new Error(
+            `runner identity ${i.container} (${i.bc_version}) is not in its own env()`,
+          );
+        }
+      }
       // Written last and atomically: only a complete, valid row marks the execution done.
       await writeDone(execDir, r.id, x.stamp, row);
     } catch (err) {
@@ -929,7 +936,13 @@ export async function testRerunStep(o: {
   const all: TestRerunDone[] = [];
   for (const id of [...stamps.keys()].sort()) {
     const row = await readPrior(id, stamps.get(id)!);
-    if (!row) continue;
+    if (!row) {
+      // fail closed: a row that cannot be read back is listed, never silently dropped
+      if (!failed.some((f) => f.id === id)) {
+        failed.push({ id, error: "row not readable after the run" });
+      }
+      continue;
+    }
     const src = byId.get(id)!;
     all.push({
       ...row,
