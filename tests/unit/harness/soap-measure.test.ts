@@ -13,6 +13,7 @@ import {
   runTestsViaSoap,
 } from "../../../src/container/soap-test-client.ts";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
+import { buildSqlMeasureCompileScript } from "../../../src/container/bc-script-builders.ts";
 
 const config = {
   host: "Cronus28",
@@ -146,6 +147,81 @@ Deno.test("runTestsViaSoap: measure posts to CGSqlMeasure and returns both parts
   } finally {
     s.restore();
   }
+});
+
+Deno.test("measure app build: from a cold symbol cache the pinned harness package is built and staged into the measure compile's symbols folder before that compile", () => {
+  // A fresh work folder: an empty symbols folder, and a compiler folder whose
+  // symbols are the artifact apps only (no CG Test Harness).
+  const s = buildSqlMeasureCompileScript({
+    compilerFolder: "C:\\cache\\Cronus28",
+    harnessProject: "U:\\repo\\infra\\cg-test-harness",
+    measureProject: "U:\\repo\\infra\\cg-sql-measure",
+    work: "H:\\work\\m1",
+  });
+  const harnessCompile = s.indexOf(
+    "-appProjectFolder 'U:\\repo\\infra\\cg-test-harness'",
+  );
+  const stage = s.indexOf(
+    "Copy-Item -LiteralPath $cgHarness -Destination $cgSymbols",
+  );
+  const measureCompile = s.indexOf(
+    "-appProjectFolder 'U:\\repo\\infra\\cg-sql-measure'",
+  );
+  assertEquals(harnessCompile > 0, true, "the harness is compiled");
+  assertEquals(stage > harnessCompile, true, "then staged");
+  assertEquals(measureCompile > stage, true, "before the measure compile");
+  // the measure compile reads exactly the staged folder, never the project's .alpackages
+  assertStringIncludes(s, "$cgSymbols = 'H:\\work\\m1\\symbols'");
+  assertStringIncludes(
+    s.slice(measureCompile),
+    "-appSymbolsFolder $cgSymbols",
+  );
+  assertEquals(s.includes(".alpackages"), false);
+  // a fresh, emptied symbols folder: nothing stale satisfies the dependency
+  assertStringIncludes(s, "Remove-Item -LiteralPath $cgSymbols -Recurse");
+  // the staged package is checked to exist before the compile uses it
+  assertStringIncludes(s, "MEASURE_HARNESS_STAGED:");
+  assertStringIncludes(s, "MEASURE_BUILT:");
+  // escaping: a quote in a path cannot break out of the PS string
+  const q = buildSqlMeasureCompileScript({
+    compilerFolder: "C:\\c",
+    harnessProject: "U:\\a'b\\h",
+    measureProject: "U:\\m",
+    work: "H:\\w",
+  });
+  assertStringIncludes(q, "'U:\\a''b\\h'");
+});
+
+Deno.test("measure app AL: the store records only while the runner has it on, and the runner switches it off after the run, a failed run included", async () => {
+  const src = (f: string) =>
+    Deno.readTextFile(
+      new URL(`../../../infra/cg-sql-measure/src/${f}`, import.meta.url),
+    );
+  const store = await src("Store.Codeunit.al");
+  // the event signatures stay exactly as they are
+  for (
+    const sig of [
+      'local procedure OnBeforeTestMethodRun(var CurrentTestMethodLine: Record "Test Method Line"; CodeunitID: Integer; CodeunitName: Text[30]; FunctionName: Text[128]; FunctionTestPermissions: TestPermissions; var Skip: Boolean)',
+      'local procedure OnAfterTestMethodRun(var CurrentTestMethodLine: Record "Test Method Line"; CodeunitID: Integer; CodeunitName: Text[30]; FunctionName: Text[128]; FunctionTestPermissions: TestPermissions; IsSuccess: Boolean)',
+    ]
+  ) {
+    const at = store.indexOf(sig);
+    assertEquals(at > 0, true, sig);
+    // the first statement of each subscriber is the gate
+    const body = store.slice(at).split("begin")[1]!;
+    assertEquals(body.trimStart().startsWith("if not Active then"), true);
+  }
+  const runner = (await src("Runner.Codeunit.al")).replace(/\r/g, "");
+  const on = runner.indexOf("Store.SetActive(true);");
+  const run = runner.indexOf("Ok := HarnessRun.Run();");
+  const off = runner.indexOf("Store.SetActive(false);");
+  const raise = runner.indexOf("if not Ok then");
+  assertEquals(on > 0 && on < run && run < off && off < raise, true);
+  // the harness call itself is inside the Codeunit.Run target
+  assertStringIncludes(
+    await src("HarnessRun.Codeunit.al"),
+    "RunResult := Harness.RunTests(RunExtensionId, RunTestCodeunitId);",
+  );
 });
 
 Deno.test("provider.runHarnessTests: measure is refused when the SOAP path is off", async () => {

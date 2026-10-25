@@ -16,6 +16,17 @@ codeunit 50560 "CG SQL Measure Store"
         Entries: JsonArray;
         MethodStatements: Integer;
         MethodStart: DateTime;
+        Active: Boolean;
+
+    /// <summary>
+    /// Turn recording on or off. Only the measuring runner sets it, around its
+    /// one harness run; while it is off the subscribers record nothing, so an
+    /// ordinary run never feeds the store.
+    /// </summary>
+    procedure SetActive(Value: Boolean)
+    begin
+        Active := Value;
+    end;
 
     /// <summary>Forget every entry (called before a measured run).</summary>
     procedure ClearEntries()
@@ -34,6 +45,8 @@ codeunit 50560 "CG SQL Measure Store"
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Test Runner - Mgt", 'OnBeforeTestMethodRun', '', false, false)]
     local procedure OnBeforeTestMethodRun(var CurrentTestMethodLine: Record "Test Method Line"; CodeunitID: Integer; CodeunitName: Text[30]; FunctionName: Text[128]; FunctionTestPermissions: TestPermissions; var Skip: Boolean)
     begin
+        if not Active then
+            exit;
         MethodStatements := SessionInformation.SqlStatementsExecuted;
         MethodStart := CurrentDateTime();
     end;
@@ -43,6 +56,8 @@ codeunit 50560 "CG SQL Measure Store"
     var
         Entry: JsonObject;
     begin
+        if not Active then
+            exit;
         Entry.Add('codeunitId', CodeunitID);
         Entry.Add('functionName', FunctionName);
         Entry.Add('statements', SessionInformation.SqlStatementsExecuted - MethodStatements);

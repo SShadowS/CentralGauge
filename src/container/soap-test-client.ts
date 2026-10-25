@@ -91,10 +91,11 @@ interface HarnessJson {
 }
 
 /**
- * Q-06: version of the opt-in CG SQL Measure app (infra/cg-sql-measure). Gates
- * its redeployment and is part of the sql-cost cache key. Keep equal to its app.json.
+ * Q-06: version of the opt-in CG SQL Measure app (infra/cg-sql-measure). The
+ * build checks it against the app.json, and it is part of the sql-cost cache
+ * key. Keep equal to its app.json.
  */
-export const SQL_MEASURE_APP_VERSION = "1.0.0.0";
+export const SQL_MEASURE_APP_VERSION = "1.0.1.0";
 
 /** Q-06: the opt-in measuring service (CG SQL Measure app). */
 const MEASURE_SERVICE = "CGSqlMeasure";
