@@ -276,13 +276,31 @@ export interface Row {
 
 // ---------------------------------------------------------------- al-sem (A-03)
 
-/** The al-sem output contract: schemaVersion per envelope kind. 2.0.3 and 2.1.0-rc.4 emit the same versions as 2.0.2 (their additions are payload fields), so a new version stays unknown and fails. */
+/**
+ * The al-sem output contract: schemaVersion per envelope kind. 2.0.3 and 2.1.0-rc.4 emit the same
+ * versions as 2.0.2 (their additions are payload fields). 2.1.1 emits digest 1.7.0 (Q-08): its one
+ * addition, the changed-roots kind diff-file-ambiguous, is refused by CHANGED_ROOTS_KINDS. Any other
+ * new version stays unknown and fails.
+ */
 const ALSEM_SCHEMAS: Record<string, string[]> = {
   "analyze-report": ["1.0.0"],
   "diff-report": ["1.0.0"],
-  digest: ["1.6.0"],
+  digest: ["1.6.0", "1.7.0"],
   "capability-snapshot": ["1.1.0"],
 };
+
+/**
+ * Q-08: the digest's changedRootsDiagnostics kinds the step accounts for (the only ones in the 451
+ * rc.4 digests of P-02 and M8-16a): an unmatched file and an outside hunk are counted in touches, a
+ * deleted file has no routine left. al-sem calls the kinds an open set; any other kind can mean
+ * changed routines that gave no root (diff-file-ambiguous, 1.7.0; diff-parse-error), so it fails
+ * closed rather than under-report changed_routines.
+ */
+const CHANGED_ROOTS_KINDS = [
+  "diff-file-deleted",
+  "diff-file-unmatched",
+  "hunk-outside-routines",
+];
 
 /** Error-level diagnostics of an al-sem envelope: the analysis is incomplete, so the tree / execution fails (never a zero-findings row). */
 export function errorDiagnostics(
@@ -422,10 +440,17 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
         first(
           p["changedRootsDiagnostics"] as unknown[],
           (d) =>
-            isObj(d) && str(d["kind"])
-              ? null
-              : "payload.changedRootsDiagnostics[].kind",
+            !isObj(d) || !str(d["kind"])
+              ? "payload.changedRootsDiagnostics[].kind"
+              : !CHANGED_ROOTS_KINDS.includes(d["kind"] as string)
+              ? `payload.changedRootsDiagnostics[].kind ${d["kind"]}`
+              : null,
         ) ??
+        // Q-08: table reads are opt-in (--include-reads, 2.1.1), which the runner never passes;
+        // with them tables_read would change meaning, so a reads document fails closed.
+        (p["includeReads"] !== undefined && p["includeReads"] !== false
+          ? "payload.includeReads"
+          : null) ??
         first(p["entries"] as unknown[], (e) => {
           if (!isObj(e) || !isObj(e["routine"])) {
             return "payload.entries[].routine";
@@ -462,6 +487,9 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
                     )) ||
                     (needsName && !(isObj(d) && str(d["resourceDisplay"])))
                   ? "payload.entries[].effects[].detail"
+                  // Q-08: a read exists only under --include-reads (refused above).
+                  : t === "DB_READ"
+                  ? "payload.entries[].effects[].type DB_READ"
                   : null;
               },
             );
@@ -1821,7 +1849,8 @@ export interface DoneStamp {
  * bytes, not validation under the current rules, so bump it whenever any
  * validation tightens (a done row of an older epoch is revalidated, never skipped).
  */
-export const DERIVATION = 11;
+export const DERIVATION = 12;
+// v12 (Q-08, al-sem 2.1.1): digest schemaVersion 1.7.0 accepted beside 1.6.0; validation tightened, no consumed meaning changed. A changedRootsDiagnostics kind other than diff-file-deleted / diff-file-unmatched / hunk-outside-routines (1.7.0's diff-file-ambiguous included) fails the digest, and so does payload.includeReads or a DB_READ effect (--include-reads, which the runner never passes), so tables_read keeps its rc.4 meaning. No P-02 or M8-16a rc.4 digest holds any of these.
 // v11 (A-03b Sol self-check r3): validation tightened, nothing recomputed. testCoverage stableIds are unique within covered and within uncovered and the two lists are disjoint; a non-boundary DB_* or EVENT_PUBLISH digest effect needs detail.resourceDisplay as a non-empty string (no invented empty-named table or event); present digest summary rootsRequested / rootsResolved / totalUnresolved are nonnegative integers.
 // v10 (A-03b Sol self-check r2): validation tightened, nothing recomputed. Every digest entry needs routine.anchor as an object with a non-empty string file (an absent location no longer counts as production); testCoverage covered + uncovered items need a non-empty stableId, uncovered items a non-empty reason, and an anchor when present must be an object with a string file. Done rows of epoch 9 are revalidated.
 // v9 (A-03b Sol self-check r1): validation tightened, nothing recomputed. testCoverage covered + uncovered lists must sum to changedRoutines; digest routine.anchor.file, effect detail.boundary and detail.resourceDisplay must be strings when present; test_quality procedure counts must be nonnegative integers with are_equal.literal_expected + expression_expected == total, assert_count_reachable >= assert_count and zero_assert == (assert_count_reachable == 0). Done rows of epoch 8 are revalidated.
