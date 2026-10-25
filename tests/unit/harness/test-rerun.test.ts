@@ -1144,8 +1144,8 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 11", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 11);
+Deno.test("TEST_RERUN_DERIVATION is 12", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 12);
 });
 
 // ---------------------------------------------------------------- tool-based selection (Q-04b)
@@ -1522,6 +1522,14 @@ Deno.test("step: directive lines between the attributes are blanked for the walk
 Deno.test("step: a #-line inside a block comment is comment text, so its */ survives and the attribute above is still found", async () => {
   const h = (arg: string) =>
     `    [HandlerFunctions('${arg}')]\n    /*\n    #region documentation */\n    [Test]\n    `;
+  assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H2"))), TEST_A);
+  assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H1"))), []);
+});
+
+Deno.test("step: a region label holding /* is directive text, not a comment opener, so the attributes below it are still fingerprinted", async () => {
+  // Q-04c (reviews\Q-04b-001\review-orch-sol-r2.md): the label desynced two lexer passes
+  const h = (arg: string) =>
+    `    #region Documentation for /* comments\n    [HandlerFunctions('${arg}')]\n    [Test]\n    `;
   assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H2"))), TEST_A);
   assertEquals(await selectedVia(attrCu(h("H1")), attrCu(h("H1"))), []);
 });
