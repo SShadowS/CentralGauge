@@ -344,6 +344,20 @@ print(dict(pref)); [print(r, {c: (round(st.mean(v), 2), len(v)) for c, v in sc[r
 EOF
 ```
 
+### Pairwise judge (judge-pairs.ts)
+
+The scripted form of the same idea: blinded packets, A/B by seeded hash, both positions, several judge
+models via pi, strict JSON verdicts, cache, kappa and an arm-guess check. Rubric and prompt are inputs
+(Q-02). Start with `--dry-run` and read two packets for leaks.
+
+```bash
+deno run --allow-all scripts/harness/judge-pairs.ts --results <dir> --campaign <id> --repo <refapp repo> \
+  --rev <rev> --out <dir> --config <judges.json> --prompt <judge-prompt.md> --rubric <rubric.md> \
+  [--pair base:variant ...] [--task <id> ...] [--seed <s>] [--dry-run]
+```
+
+Outputs in `<out>`: `packets/`, `key/key.json` (never show the judge), `pairs.json`, `summary.json`, `pairs.csv`.
+
 ## 4. Read the data
 
 - `summary.json`: per arm pass counts, terminations, medians (wall, cost, tokens, tool calls,
