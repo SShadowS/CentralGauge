@@ -2982,6 +2982,34 @@ Deno.test("run.ps1 LSP (M10): the declared LSP adds --plugin-dir and the tool; o
   assert(at("$claudeArgs += $pluginArgs") > inv);
 });
 
+Deno.test("run.ps1 plugins (R-02): each staged plugin is copied to ~/cg-plugins/<name> and added with --plugin-dir after the LSP, all before the inventory", async () => {
+  const run = await Deno.readTextFile("harness/images/claude-code/run.ps1");
+  const code = run.split(/\r?\n/).map((l) => l.trim()).filter((l) =>
+    l !== "" && !l.startsWith("#")
+  );
+  const at = (s: string) => {
+    const i = code.findIndex((l) => l.includes(s));
+    assert(i >= 0, `run.ps1 lacks: ${s}`);
+    return i;
+  };
+  const lsp = at(
+    "$pluginArgs = @('--plugin-dir', 'C:\\cg-lsp\\al-language-server-go-windows')",
+  );
+  const root = at('$pluginRoot = "$userHome\\cg-plugins"');
+  at(
+    "foreach ($p in @(Get-ChildItem 'C:\\config\\bundle\\plugins' -Directory -Force | Sort-Object Name)) {",
+  );
+  const copy = at(
+    'Copy-Item -LiteralPath $p.FullName -Destination "$pluginRoot\\$($p.Name)" -Recurse -Force',
+  );
+  // += keeps the LSP plugin: an arm may declare both.
+  const add = at(
+    "$pluginArgs += @('--plugin-dir', \"$pluginRoot\\$($p.Name)\")",
+  );
+  const inv = at("& 'C:\\cg-inventory.ps1'");
+  assert(lsp < root && root < copy && copy < add && add < inv);
+});
+
 // ---- H-03: every init names the resolved version; two qualification levels ----
 
 Deno.test("inventory (H-03): on r3+ every same-session init must name the manifest's resolved version; frozen v1 keeps first-init-only", async () => {
