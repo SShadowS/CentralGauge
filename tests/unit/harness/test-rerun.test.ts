@@ -3,6 +3,7 @@ import { join } from "@std/path";
 import type { Row } from "../../../scripts/harness/analyze-campaign.ts";
 import {
   editedShippedTests,
+  type RunnerEnv,
   type RunnerResult,
   type RunnerRow,
   selectAgentTests,
@@ -31,6 +32,10 @@ const IDENT = {
   test_app: "b".repeat(64),
   container: "Cronus28",
   bc_version: "28.0",
+};
+const ENV: RunnerEnv = {
+  containers: [{ name: "Cronus28", bc_version: "28.0" }],
+  symbols: "sym-1",
 };
 const pass = (procedure: string, codeunit = 50100): RunnerRow => ({
   codeunit,
@@ -61,10 +66,12 @@ function mock(
   id: string,
   agent: (r: TestRerunRequest) => RunnerResult,
   shipped: (r: TestRerunRequest) => RunnerResult,
+  env: RunnerEnv = ENV,
 ) {
   const calls: TestRerunRequest[] = [];
   const runner: TestRerunRunner = {
     id,
+    env: () => Promise.resolve(env),
     run: (req) => {
       calls.push(req);
       return Promise.resolve(
@@ -482,6 +489,130 @@ Deno.test("cache: a changed workspace hash, start id, runner id or derivation re
   assertEquals(m.calls.length, n);
 });
 
+Deno.test("cache: the same sources recompute under a different container, BC version or symbol lock; unchanged env is reused", async () => {
+  const variants: [string, RunnerEnv][] = [
+    ["container name", {
+      ...ENV,
+      containers: [{ name: "Cronus29", bc_version: "28.0" }],
+    }],
+    ["bc version", {
+      ...ENV,
+      containers: [{ name: "Cronus28", bc_version: "28.1" }],
+    }],
+    ["symbols", { ...ENV, symbols: "sym-2" }],
+  ];
+  for (const [what, env] of variants) {
+    const w = await world(START, { e1: NEW_B });
+    const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+    await run(w, m.runner);
+    const n = m.calls.length;
+    await run(w, m.runner); // same env: reused
+    assertEquals(m.calls.length, n, `unchanged env recomputed (${what})`);
+    const m2 = mock(
+      "r1",
+      () => result([fail("TestB")]),
+      GOOD_SHIPPED,
+      env,
+    );
+    const out = await run(w, m2.runner);
+    assert(m2.calls.length > 0, `${what}: the runner was not called`);
+    assertEquals(out.skipped, 0, what);
+  }
+});
+
+Deno.test("cache: a cached row whose recorded container is not among the current ones is not reused", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const elsewhere = (rows: RunnerRow[]): RunnerResult => ({
+    ...result(rows),
+    identity: { ...IDENT, container: "Cronus99" },
+  });
+  const m = mock("r1", () => elsewhere([fail("TestB")]), (r) => {
+    const s = GOOD_SHIPPED(r);
+    return { ...s, identity: { ...IDENT, container: "Cronus99" } };
+  });
+  await run(w, m.runner);
+  const n = m.calls.length;
+  const out = await run(w, m.runner);
+  assert(m.calls.length > n);
+  assertEquals(out.skipped, 0);
+});
+
+// ---------------------------------------------------------------- attributes and directives
+
+/** Select over a start and a final Test file given as raw text. */
+async function selectRaw(start: string, final: string) {
+  const w = await world(start, { e1: final });
+  return await selectAgentTests(
+    join(w.root, "start", "Test"),
+    join(w.results, "workspaces", "H-e1", "Test"),
+  );
+}
+const TEST_A = [{ codeunit: 50100, procedure: "TestA" }];
+/** One [Test] procedure; `head` is everything from the first attribute to `procedure`. */
+const attrCu = (head: string, body = "x := 1;") =>
+  `codeunit 50100 "T"\n{\n    Subtype = Test;\n\n${head}procedure TestA()\n    begin\n        ${body}\n    end;\n}\n`;
+
+Deno.test("selectAgentTests: an attribute-only edit selects the test, before or after [Test], inline or on its own line", async () => {
+  const heads: ((a: string) => string)[] = [
+    (a) => `    ${a}\n    [Test]\n    `, // before, own line
+    (a) => `    [Test]\n    ${a}\n    `, // after, own line
+    (a) => `    ${a} [Test] `, // before, same line
+    (a) => `    [Test] ${a} `, // after, same line
+    (a) => `    [Test]\n    ${a}\n    local `, // before a modifier
+  ];
+  const pairs = [
+    ["[HandlerFunctions('OldHandler')]", "[HandlerFunctions('NewHandler')]"],
+    [
+      "[TestPermissions(TestPermissions::Disabled)]",
+      "[TestPermissions(TestPermissions::Restrictive)]",
+    ],
+  ] as const;
+  for (const [oldA, newA] of pairs) {
+    for (const [i, head] of heads.entries()) {
+      assertEquals(
+        await selectRaw(attrCu(head(oldA)), attrCu(head(newA))),
+        TEST_A,
+        `${newA} head ${i}`,
+      );
+    }
+  }
+});
+
+Deno.test("selectAgentTests: reformatting between attributes or an attribute name's case does not select", async () => {
+  const a = attrCu(
+    "    [Test]\n    [HandlerFunctions('H')]\n    [TestPermissions(TestPermissions::Disabled)]\n    ",
+  );
+  const b = attrCu(
+    "    [handlerfunctions('H')]   [Test]\n\n\n    [TESTPERMISSIONS(TestPermissions::Disabled)] ",
+  );
+  assertEquals(await selectRaw(a, b), []);
+});
+
+const REGION_HELPER = (testBody: string, helper: string) =>
+  `codeunit 50100 "T"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure TestA()\n    begin\n${testBody}    end;\n\n    procedure Helper()\n    begin\n        ${helper}\n    end;\n}\n`;
+const CASE_REGION =
+  "        #region Case checks\n        x := 1;\n        #endregion\n";
+
+Deno.test("selectAgentTests: #region Case checks in an unchanged test does not open a case; a changed helper selects nothing", async () => {
+  assertEquals(
+    await selectRaw(
+      REGION_HELPER(CASE_REGION, "y := 1;"),
+      REGION_HELPER(CASE_REGION, "y := 2;"),
+    ),
+    [],
+  );
+});
+
+Deno.test("selectAgentTests: adding or removing only a #region line inside a test does not select it", async () => {
+  const plain = REGION_HELPER("        x := 1;\n", "y := 1;");
+  const region = REGION_HELPER(
+    "        #region Setup\n        x := 1;\n        #endregion\n",
+    "y := 1;",
+  );
+  assertEquals(await selectRaw(plain, region), []);
+  assertEquals(await selectRaw(region, plain), []);
+});
+
 // ---------------------------------------------------------------- aggregation
 
 const agg = (
@@ -586,6 +717,7 @@ Deno.test("step: a runner that rejects is listed as failed, not thrown", async (
   const w = await world(START, { e1: NEW_B });
   const runner: TestRerunRunner = {
     id: "r1",
+    env: () => Promise.resolve(ENV),
     run: () => Promise.reject(new Error("production runner not implemented")),
   };
   const out = await run(w, runner);
@@ -828,6 +960,6 @@ Deno.test("cache: a cached agent no_tests with selected [] is recomputed when th
   assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 5", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 5);
+Deno.test("TEST_RERUN_DERIVATION is 6", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 6);
 });

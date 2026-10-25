@@ -46,8 +46,12 @@ import {
  * procedure keys and outcome class match the current expectation.
  * 5: [Test] declarations are matched with quoted-identifier contents masked, so a quoted
  * name cannot pose as a declaration.
+ * 6: the cache is bound to the environment (containers + BC build + symbol lock) and the
+ * recorded identity is checked on reuse; a test's attributes are part of its change
+ * fingerprint; preprocessor directive lines are blanked for structure and left out of the
+ * comparison.
  */
-export const TEST_RERUN_DERIVATION = 5;
+export const TEST_RERUN_DERIVATION = 6;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -78,6 +82,12 @@ export interface RunnerResult {
   rows: RunnerRow[];
 }
 
+export interface RunnerEnv {
+  containers: { name: string; bc_version: string }[];
+  /** sha256 of the symbol lock (the locked package list and hashes compiled against). */
+  symbols: string;
+}
+
 export interface TestRerunRequest {
   executionId: string;
   /** The task's start tree: the app graph baseline of both runs. */
@@ -92,6 +102,11 @@ export interface TestRerunRequest {
 export interface TestRerunRunner {
   /** Runner identity: names the cache folder (harness commit + oracle runner). */
   id: string;
+  /**
+   * The environment a run would execute in, asked BEFORE any run: the admitted
+   * containers with their BC build (`bc_version`) and a sha256 of the symbol lock.
+   */
+  env(): Promise<RunnerEnv>;
   run(req: TestRerunRequest): Promise<RunnerResult>;
   /** Releases the environment the runner opened (bench lock, leases). */
   close?(): Promise<void>;
@@ -381,8 +396,10 @@ export function validateTestRerunRow(x: unknown): TestRerunRow {
 // Matched on text whose quoted-identifier contents are masked (quotes kept), so a
 // quoted name cannot pose as a declaration; a quoted procedure name is read from
 // the raw text at the group's offsets (the `d` flag).
-const TEST_PROC =
-  /\[\s*Test\s*\]\s*(?:\[[^\]]*\]\s*)*(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/dgi;
+// Group 1 is the run of attributes right before `procedure` (before and after [Test]).
+const PROC_ATTRS =
+  /((?:\[[^\]]*\]\s*)+)(?:local\s+|internal\s+)?procedure\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\(/dgi;
+const IS_TEST_ATTR = /\[\s*Test\s*\]/i;
 const BLOCK_WORD = /\b(begin|case|end)\b/gi;
 
 /**
@@ -448,8 +465,15 @@ async function testBodies(
 ): Promise<Map<string, { name: string; body: string }>> {
   const out = new Map<string, { name: string; body: string }>();
   for (const c of await testCodeunits(dir)) {
-    const src = await Deno.readTextFile(join(dir, c.file));
-    const masked = stripAlNoise(src);
+    const raw = await Deno.readTextFile(join(dir, c.file));
+    // Directive lines (`#region Case checks`) are blanked for structure, so a label
+    // cannot open a `case`, and left out of the comparison text.
+    const masked = stripAlNoise(raw, { directives: true });
+    const plain = stripAlNoise(raw);
+    const src = raw.replace(
+      /[^\n]/g,
+      (ch, i: number) => plain[i] !== masked[i] ? " " : ch,
+    );
     // Quoted identifiers blanked too: "End Date" must not close a block.
     const blanked = masked.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
     const span = codeunitSpans(blanked).get(c.codeunit);
@@ -462,13 +486,22 @@ async function testBodies(
     );
     const bSlice = blanked.slice(start, end);
     const rSlice = src.slice(start, end);
-    for (const m of qSlice.matchAll(TEST_PROC)) {
-      const [from1, to1] = m.indices![1] ?? [0, 0];
-      const name = m[1] !== undefined ? rSlice.slice(from1, to1) : m[2]!;
+    for (const m of qSlice.matchAll(PROC_ATTRS)) {
+      if (!IS_TEST_ATTR.test(m[1]!)) continue;
+      const [from1, to1] = m.indices![2] ?? [0, 0];
+      const name = m[2] !== undefined ? rSlice.slice(from1, to1) : m[3]!;
       const from = m.index! + m[0].length;
+      // Each attribute from the raw text at its structural offsets (string arguments
+      // kept): whitespace collapsed, name case-insensitive, order-insensitive.
+      const [a0] = m.indices![1]!;
+      const attrs = [...m[1]!.matchAll(/\[[^\]]*\]/g)].map((a) =>
+        rSlice.slice(a0 + a.index!, a0 + a.index! + a[0].length)
+          .replace(/\s+/g, " ").replace(/^[^(\]]*/, (n) => n.toLowerCase())
+      ).sort();
       out.set(`${c.codeunit}|${name.toLowerCase()}`, {
         name,
-        body: normalizeAlBody(rSlice.slice(from, procedureEnd(bSlice, from))),
+        body: attrs.join("") + "\0" +
+          normalizeAlBody(rSlice.slice(from, procedureEnd(bSlice, from))),
       });
     }
   }
@@ -725,6 +758,23 @@ export async function testRerunStep(o: {
     "exec",
   );
   await Deno.mkdir(execDir, { recursive: true });
+  /**
+   * The environment a run would execute in, asked once before any lookup. App package
+   * identity is not compiled before the lookup: the packages are a function of the
+   * sources (start id, workspace hash: bound below), the compiler (the BC build) and
+   * the symbol lock, and the last two are bound here.
+   */
+  const env = await o.runner.env();
+  const containers = [...env.containers].sort((a, b) =>
+    a.name.localeCompare(b.name) || a.bc_version.localeCompare(b.bc_version)
+  );
+  const envHash = await sha256Hex(
+    JSON.stringify({ symbols: env.symbols, containers }),
+  );
+  const inEnv = (i: RunnerIdentity) =>
+    containers.some((c) =>
+      c.name === i.container && c.bc_version === i.bc_version
+    );
   const todo = o.rows.filter((r) => o.hashOf.has(r.id));
   const starts = new Map<string, Promise<StartTree>>();
   const startOnce = (task: string) => {
@@ -752,7 +802,15 @@ export async function testRerunStep(o: {
       derive,
       bind: {
         inputs: await sha256Hex(
-          JSON.stringify([start.id, hash, r.kind, selected, shipped, edited]),
+          JSON.stringify([
+            start.id,
+            hash,
+            r.kind,
+            selected,
+            shipped,
+            edited,
+            envHash,
+          ]),
         ),
       },
     };
@@ -783,6 +841,12 @@ export async function testRerunStep(o: {
         : a.outcome !== "no_tests" &&
           (a.outcome !== "not_applicable" || a.reason === "compile") &&
           sameKeys(a.selected, x.selected);
+      // the recorded container and BC build must still be a current one
+      const recorded = [
+        row.identity.agent_vs_start,
+        row.identity.shipped_vs_final,
+      ];
+      if (recorded.some((i) => i !== null && !inEnv(i))) return null;
       if (
         row.kind !== x.kind || !agentOk ||
         (s.status !== "compile_fail" && !sameKeys(s.procedures, x.shipped))

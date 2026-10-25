@@ -22,6 +22,7 @@ import {
   hashTree,
   isTaskBuildArtifact,
 } from "../../src/harness/hash.ts";
+import { sha256Hex } from "./analyze-campaign.ts";
 import { readAppGraph, type StagedApp } from "../../src/harness/staging.ts";
 import { currentScorerFingerprint } from "../../src/harness/verdict.ts";
 import {
@@ -257,6 +258,21 @@ export async function envRunner(
         ? env.harnessCommit
         : `uncommitted-${crypto.randomUUID()}`
     }-${(await currentScorerFingerprint()).slice(0, 16)}`,
+    // bc_version: the lane's compiler identity per container (the same value a run
+    // records in its identity); symbols: sha256 of the locked package list.
+    env: async () => ({
+      containers: await Promise.all(
+        env.lane.containers.map(async (name) => ({
+          name,
+          bc_version: await bcVersion(name),
+        })),
+      ),
+      symbols: await sha256Hex(
+        JSON.stringify(
+          [...env.symbols].sort((a, b) => a.app_id.localeCompare(b.app_id)),
+        ),
+      ),
+    }),
     run,
   };
 }

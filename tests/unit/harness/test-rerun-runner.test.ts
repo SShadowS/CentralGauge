@@ -268,6 +268,19 @@ Deno.test("runner id: a dirty or missing harness commit gets a private id, never
   assert(a.runner.id !== b.runner.id);
 });
 
+Deno.test("env(): the lane containers with their BC build (query stripped) and a sha256 of the symbol lock", async () => {
+  const f = fake(byPrice);
+  f.bc.compilerId = "fake-artifact?sv=secret|bccontainerhelper 6.1.14";
+  await using w = await world(f.bc);
+  const e = await w.runner.env();
+  assertEquals(e.containers, [{
+    name: "C1",
+    bc_version: "fake-artifact|bccontainerhelper 6.1.14",
+  }]);
+  assert(/^[0-9a-f]{64}$/.test(e.symbols), e.symbols);
+  assertEquals(await w.runner.env(), e);
+});
+
 const VARIANT_TEST =
   `\n    [Test]\n    procedure PriceIsTen()\n    var\n        V: Variant;\n    begin\n        V := 10;\n        Assert.AreEqual(10, V, 'variant');\n    end;\n`;
 
