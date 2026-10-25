@@ -3176,7 +3176,7 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
   // 2.1.296 was the refused version here until its H-03 qualification entry.
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302)",
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302, 2.1.310)",
   );
   // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
   for (const revision of [undefined, "2"]) {
@@ -3937,7 +3937,7 @@ Deno.test("qualification (H-11): 2.1.300 is qualified for dev use; an unknown ve
   );
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302)",
+    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302, 2.1.310)",
   );
 });
 
@@ -4657,4 +4657,68 @@ Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-0
       JSON.stringify(bad),
     );
   }
+});
+
+Deno.test("R-01: BUILTIN_INVENTORY 2.1.310 is 2.1.302 plus Monitor (a hidden tool); dev use qualified, the qualification still a placeholder", () => {
+  const a = BUILTIN_INVENTORY["2.1.302"]!;
+  const b = BUILTIN_INVENTORY["2.1.310"]!;
+  assertEquals(b.agents, a.agents);
+  assertEquals(b.skills, a.skills);
+  assertEquals(b.plugins, a.plugins);
+  assertEquals([...b.tools].sort(), [...a.tools, "Monitor"].sort());
+  assertStringIncludes(b.qualified, "reproof pending");
+  assertStringIncludes(
+    b.qualified,
+    "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2",
+  );
+  assertEquals(
+    unqualifiedClaudeCode(
+      manifest("cc", V2({ harness_version: "2.1.310" })),
+      "dev",
+    ),
+    null,
+  );
+  assertStringIncludes(
+    unqualifiedClaudeCode(
+      manifest("cc", V2({ harness_version: "2.1.999" })),
+      "dev",
+    )!,
+    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302, 2.1.310)",
+  );
+});
+
+Deno.test("R-01: a 2.1.310 init listing Monitor while the arm disallows it is refused; hidden, it is clean", async () => {
+  const text = await Deno.readTextFile(STUB_302.lsp);
+  const line = text.split("\n")[1]!;
+  const rec = JSON.parse(line);
+  const as310 = (tools: string[]) =>
+    text.replace(
+      line,
+      JSON.stringify({ ...rec, claude_code_version: "2.1.310", tools }),
+    );
+  const arm = (disallowed: string[]) => {
+    const a = arm302(true);
+    return {
+      ...a,
+      harness_version: "2.1.310",
+      settings: {
+        ...a.settings,
+        native: { ...a.settings.native, disallowed_tools: disallowed },
+      },
+    };
+  };
+  const problems = async (t: string, disallowed: string[]) =>
+    (await parse(t, 0, arm(disallowed))).r.inventoryProblems!;
+  const hidden: string[] = rec.tools;
+  assert(!hidden.includes("Monitor"));
+  assertEquals(await problems(as310(hidden), R01_DEFAULT), []);
+  assertEquals(
+    await problems(as310([...hidden, "Monitor"]), R01_DEFAULT),
+    ["unexpected tool Monitor"],
+  );
+  // An arm that does not disallow it expects Monitor listed.
+  assertEquals(
+    await problems(as310(hidden), R01_EIGHT),
+    ["missing tool Monitor"],
+  );
 });

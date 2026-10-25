@@ -1192,6 +1192,75 @@ export const BUILTIN_INVENTORY: Readonly<
     qualified:
       "H-20 stub cells on image sha256:f1b97481fbdf6f0450f2865036f5e369738465f2097b29dd951bc2d46063f742 (plain 8d9f653f-194c-41e6-8d3f-916fbf544369, adcdcfde-08eb-45a4-80c0-e68ee832d534; LSP 5b981278-b4d1-4fd3-9311-5aaa7c2904df, d831e03e-cf65-4a32-8981-2b7986a5e39d; web 3d29ebaf-ed2c-46ee-b87a-7fe67a17a800, 6812da89-d390-4095-9396-f0d5691d85b8; review H:\\cg-coord\\tasks\\H-20\\infra-qualify-2.1.302.md)",
   },
+  // R-01 dev qualification (image r4, the Tuesday run). Against 2.1.302:
+  // agents, skills, plugins, slash commands (45), MCP servers and init keys
+  // unchanged. Observed differences: tool Monitor added in every arm (R-01
+  // disallows it, DISALLOWED_TOOLS, so it is hidden from here on and carried
+  // unobserved like the six); capabilities interrupt_requeue_taken_v1 and
+  // lifecycle_wakeup_source_v1 added (13; this adapter reads none). al-lsp
+  // v1.18.11 unchanged. The qualification is pending the reproof cells with
+  // Monitor hidden.
+  "2.1.310": {
+    agents: [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup",
+    ],
+    skills: [
+      "deep-research",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "schedule",
+      "claude-api",
+      "workflow-authoring",
+      "run",
+      "run-skill-generator",
+      "plugin-authoring",
+    ],
+    plugins: [
+      "cc-plugin-agents-md@builtin",
+      "cc-plugin-plugin-authoring@builtin",
+    ],
+    tools: [
+      "Task",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListAgents",
+      "Monitor",
+      "NotebookEdit",
+      "Read",
+      "RemoteTrigger",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Skill",
+      "TaskStop",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Workflow",
+      "Write",
+    ],
+    qualified:
+      "R-01 stub cells on image sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2 (plain 6cbdc5e3-6188-492d-ae8e-2c22ec7dbe00, c242df07-d446-4e8c-9690-6adf9e9aba78; LSP 6ce590dc-ef86-4693-9469-b4af080ca17d; web 784b6b0b-9cd8-43ee-87e7-eaa1b20f2089, b1fdf6dd-af49-4e0e-b226-b855ebd7ee4d; reproof pending; review H:\\cg-coord\\tasks\\R-01\\infra-qualify-2.1.310.md)",
+  },
 };
 
 /**
