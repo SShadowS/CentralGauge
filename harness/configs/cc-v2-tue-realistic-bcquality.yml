@@ -1,0 +1,17 @@
+# Tuesday run 2026-10-27 (R-02): cc-v2-tue-realistic plus BCQuality, nothing else. BCQuality is the
+# Claude Code plugin from github.com/microsoft/BCQuality, vendored at commit a4593a1b (2026-10-20,
+# plugin 1.9.0) in bundles/bcquality and loaded with --plugin-dir (H:\cg-coord\analysis\R\bcquality.md).
+id: cc-v2-tue-realistic-bcquality
+harness: claude-code
+harness_version: "latest"
+image_revision: "4"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/realistic/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+  plugins: [bundles/bcquality]
+limits: { timeout_min: 45, max_budget_usd: 5 }

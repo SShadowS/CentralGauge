@@ -12,3 +12,5 @@ infra/harness-reset/lineages/*.inventory.txt -text
 # Same for the content-root sidecar (content_root.sha256) and the fs survey (fs.survey.sha256) (H-35 S3)
 infra/harness-reset/lineages/*.content.txt -text
 infra/harness-reset/lineages/*.survey.json -text
+# Vendored BCQuality release tree (R-02): byte-exact as upstream git archive, never converted
+harness/bundles/bcquality/** -text

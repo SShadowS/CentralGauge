@@ -77,7 +77,7 @@ import { hashFile, hashJson, hashTree } from "./hash.ts";
 import { imageFacts, installedFacts } from "./images.ts";
 import { taskSetIdentity } from "./identity.ts";
 import { storeOraclePreimage } from "./task-oracle.ts";
-import { forTask } from "./manifest.ts";
+import { forTask, pluginName } from "./manifest.ts";
 import {
   type EgressOverride,
   ExecutionRecordSchema,
@@ -918,7 +918,8 @@ export async function writeConfigDir(
     const c = m[k];
     if (c !== null) parts.push([k, c]);
   }
-  m.plugins.forEach((p, i) => parts.push([`plugins/${i}`, p]));
+  // R-02: under its folder name, which run.ps1 and system/init use (<name>@inline).
+  m.plugins.forEach((p) => parts.push([`plugins/${pluginName(p.path)}`, p]));
   for (const [name, c] of parts) {
     const src = join(harnessRoot, c.path);
     const dst = join(dir, "bundle", ...name.split("/"));

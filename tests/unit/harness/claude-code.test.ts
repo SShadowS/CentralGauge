@@ -3010,6 +3010,112 @@ Deno.test("run.ps1 plugins (R-02): each staged plugin is copied to ~/cg-plugins/
   assert(lsp < root && root < copy && copy < add && add < inv);
 });
 
+// ---- R-02: a declared plugin component (components.plugins, loaded with --plugin-dir) ----
+
+const PLUG = comp("bundles/toyplug", [
+  ".claude-plugin/marketplace.json",
+  "knowledge/a.md",
+  "skills/entry.md",
+  "skills/toy-plan/SKILL.md",
+  "skills/toy-review/SKILL.md",
+]);
+const PLUG_ENTRY = {
+  name: "toyplug",
+  path: "C:\\Users\\ContainerUser\\cg-plugins\\toyplug",
+  source: "toyplug@inline",
+};
+const PLUG_SKILLS = ["toyplug:toy-plan", "toyplug:toy-review"];
+const plugInit = (over: Record<string, unknown> = {}) =>
+  v2Init({
+    plugins: [...BUILTIN_PLUGINS, PLUG_ENTRY],
+    skills: [...B.skills, "al-compile", ...PLUG_SKILLS],
+    ...over,
+  });
+const plugInv = () =>
+  invLine({
+    installed: ["agents", "instructions", "plugin:toyplug", "skills"],
+  });
+
+Deno.test("inventory (R-02): a declared plugin installed by cg_inventory and listed by system/init with its skills loads as plugin:<path>", async () => {
+  const r = await v2([plugInv(), plugInit(), v2Result()], { plugins: [PLUG] });
+  assertEquals(r.inventoryProblems, []);
+  assertEquals([...r.observed.loaded_components!].sort(), [
+    "agents",
+    "instructions",
+    "plugin:bundles/toyplug",
+    "skills",
+  ]);
+  assertEquals(
+    observedMismatch(
+      manifest("cc", V2({ plugins: [PLUG] })),
+      r.observed,
+      r.unobservable,
+    ).mismatch,
+    null,
+  );
+  const evidence =
+    (r.telemetry.raw_usage as { component_evidence: Record<string, string> })
+      .component_evidence;
+  assertStringIncludes(
+    evidence["plugin:bundles/toyplug"]!,
+    "installed (cg_inventory); plugin and its skills listed by system/init",
+  );
+});
+
+Deno.test("inventory (R-02): a declared plugin must be installed, listed under its own name, source and folder, and bring every skill", async () => {
+  const over = { plugins: [PLUG] };
+  assertStringIncludes(
+    await problemsOf([invLine(), plugInit(), v2Result()], over),
+    "but the arm declares [agents, instructions, plugin:toyplug, skills]",
+  );
+  const absent = await v2([
+    plugInv(),
+    plugInit({ plugins: BUILTIN_PLUGINS }),
+    v2Result(),
+  ], over);
+  assertStringIncludes(
+    absent.inventoryProblems!.join("\n"),
+    "plugin:toyplug not loaded (plugin absent from system/init)",
+  );
+  assert(
+    !absent.observed.loaded_components!.includes("plugin:bundles/toyplug"),
+  );
+  for (
+    const other of [
+      { ...PLUG_ENTRY, source: "toyplug@market" },
+      { ...PLUG_ENTRY, name: "toyplug2" },
+      { ...PLUG_ENTRY, path: "C:\\elsewhere\\toyplug" },
+    ]
+  ) {
+    assertStringIncludes(
+      await problemsOf([
+        plugInv(),
+        plugInit({ plugins: [...BUILTIN_PLUGINS, other] }),
+        v2Result(),
+      ], over),
+      "unrequested plugin loaded",
+    );
+  }
+  const noSkill = await v2([
+    plugInv(),
+    plugInit({ skills: [...B.skills, "al-compile", "toyplug:toy-plan"] }),
+    v2Result(),
+  ], over);
+  assertStringIncludes(
+    noSkill.inventoryProblems!.join("\n"),
+    "missing skill toyplug:toy-review",
+  );
+  assert(
+    !noSkill.observed.loaded_components!.includes("plugin:bundles/toyplug"),
+  );
+});
+
+Deno.test("inventory (R-02): an arm without the plugin refuses its init entry and its skills", async () => {
+  const p = await problemsOf([invLine(), plugInit(), v2Result()]);
+  assertStringIncludes(p, "unrequested plugin loaded: toyplug@inline");
+  assertStringIncludes(p, "unrequested skill loaded: toyplug:toy-review");
+});
+
 // ---- H-03: every init names the resolved version; two qualification levels ----
 
 Deno.test("inventory (H-03): on r3+ every same-session init must name the manifest's resolved version; frozen v1 keeps first-init-only", async () => {
