@@ -276,7 +276,7 @@ export interface Row {
 
 // ---------------------------------------------------------------- al-sem (A-03)
 
-/** The al-sem output contract: schemaVersion per envelope kind. 2.0.3 emits the same versions as 2.0.2 (its additions are payload fields), so a new version stays unknown and fails. */
+/** The al-sem output contract: schemaVersion per envelope kind. 2.0.3 and 2.1.0-rc.4 emit the same versions as 2.0.2 (their additions are payload fields), so a new version stays unknown and fails. */
 const ALSEM_SCHEMAS: Record<string, string[]> = {
   "analyze-report": ["1.0.0"],
   "diff-report": ["1.0.0"],
@@ -410,17 +410,23 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
           const r = e["routine"];
           const anchor = r["anchor"];
           const fx = e["effects"];
-          return !str(r["stableId"])
+          return e["unresolved"] !== undefined &&
+              !Array.isArray(e["unresolved"])
+            ? "payload.entries[].unresolved"
+            : !str(r["stableId"])
             ? "payload.entries[].routine.stableId"
             : anchor !== undefined && !isObj(anchor)
             ? "payload.entries[].routine.anchor"
             : fx !== undefined && !Array.isArray(fx)
             ? "payload.entries[].effects"
-            : first((fx ?? []) as unknown[], (x) =>
-              isObj(x) && str(x["type"]) &&
-                (x["detail"] === undefined || isObj(x["detail"]))
-                ? null
-                : "payload.entries[].effects[]");
+            : first(
+              (fx ?? []) as unknown[],
+              (x) =>
+                isObj(x) && str(x["type"]) &&
+                  (x["detail"] === undefined || isObj(x["detail"]))
+                  ? null
+                  : "payload.entries[].effects[]",
+            );
         }) ??
         (tests ? checkTestCoverage(p["testCoverage"]) : null);
     case "diff-report": {
@@ -1106,7 +1112,12 @@ export interface DigestTouches {
   tables_read: string[];
   events_published: string[];
   commits: number;
+  /** Sum of entries[].unresolved lengths over production entries (rc.4 puts dependency routines' unresolved calls on the Test app's entries). */
   unresolved: number;
+  /** summary.totalUnresolved as al-sem reports it. */
+  unresolved_raw: number;
+  /** Dependency boundary-group effects (detail.boundary) on production entries; not in tables / events / commits. */
+  dependency_effect_groups: number;
   /** Diff hunks al-sem could not map to a routine. */
   unmapped_hunks: number;
   /** Changed files with no routine to map (e.g. an enum or a fields-only table extension). */
@@ -1145,15 +1156,21 @@ export function digestTouches(p: J): DigestTouches {
   const events = new Set<string>();
   let commits = 0;
   let prod = 0;
+  let unresolved = 0;
+  let depGroups = 0;
   for (const e of entries) {
     const anchor = ((e["routine"] as J)["anchor"] ?? {}) as J;
     if (String(anchor["file"] ?? "").startsWith(`ws:${TEST_APP}/`)) continue;
     prod++;
+    unresolved += ((e["unresolved"] ?? []) as unknown[]).length;
     for (const x of (e["effects"] ?? []) as J[]) {
       const t = x["type"] as string;
-      const what = String(
-        (x["detail"] as J | undefined)?.["resourceDisplay"] ?? "",
-      );
+      const detail = x["detail"] as J | undefined;
+      if (typeof detail?.["boundary"] === "string") {
+        depGroups++;
+        continue;
+      }
+      const what = String(detail?.["resourceDisplay"] ?? "");
       if (WRITES.has(t)) written.add(what);
       else if (t.startsWith("DB_")) read.add(what);
       else if (t === "EVENT_PUBLISH") events.add(what);
@@ -1218,7 +1235,9 @@ export function digestTouches(p: J): DigestTouches {
     tables_read: sorted(read).filter((t) => !written.has(t)),
     events_published: sorted(events),
     commits,
-    unresolved: Number(sum["totalUnresolved"] ?? 0),
+    unresolved,
+    unresolved_raw: Number(sum["totalUnresolved"] ?? 0),
+    dependency_effect_groups: depGroups,
     unmapped_hunks: diags.filter((d) => d["kind"] === "hunk-outside-routines")
       .length,
     unmatched_files: diags.filter((d) => d["kind"] === "diff-file-unmatched")
@@ -1712,7 +1731,8 @@ export interface DoneStamp {
  * bytes, not validation under the current rules, so bump it whenever any
  * validation tightens (a done row of an older epoch is revalidated, never skipped).
  */
-const DERIVATION = 7;
+export const DERIVATION = 8;
+// v8 (A-03b, al-sem 2.1.0-rc.4): the digest is cross-app. (a) A digest effect can be a dependency boundary group (detail.boundary): digestTouches leaves it out of tables_written / tables_read / events_published / commits (those stay workspace-code effects, comparable with 2.0.3) and counts the production ones in dependency_effect_groups. (b) summary.totalUnresolved now includes dependency routines' unresolved calls, which land on the Test app's entries: unresolved is the sum of entries[].unresolved lengths over production entries, unresolved_raw keeps totalUnresolved, a non-array entries[].unresolved fails the digest. looseFingerprint values change per detector in 2.1 (#252) with no consumer change: the cache path and done rows are keyed by the binaries' sha256, so 2.0.3 artifacts are never reused.
 // v7 (A-03b smoke): test coverage counts production routines only (al-sem also counts test-app helpers and non-[Test] test-codeunit procedures), declaration-only routines leave the denominator, al-sem's raw values kept as *_raw, an unmappable covered / uncovered stableId fails the row.
 // v6 (A-03b, al-sem 2.0.3): introduced findings by the looseFingerprint rule (+ _fp columns), tree.json holds the [Test] procedures (test_quality), digests run with --tests (digest-tests-<patch>.json) and carry testCoverage.
 // v3: curated finding density (findings carry confidence, rows carry changed_prod_lines).
