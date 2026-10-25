@@ -11,6 +11,7 @@ import {
   CLOUD_POLICY,
   deployAndTest,
   isCascadeDiagnostic,
+  type MeasureResource,
   prepareApps,
   type Prepared,
   type TestSpec,
@@ -117,6 +118,8 @@ async function identityOf(
 export async function envRunner(
   env: RerunEnv,
   workRoot: string,
+  /** Q-06: a measured rerun deploys the measure app (deployAndTest's `measure`). */
+  opts: { measure?: MeasureResource } = {},
 ): Promise<TestRerunRunner> {
   await Deno.mkdir(workRoot, { recursive: true });
   const symbolIds = new Set(env.symbols.map((s) => s.app_id.toLowerCase()));
@@ -212,6 +215,7 @@ export async function envRunner(
               ledgerRoot: env.deploy.ledgerRoot,
               trustedRoots: [req.start],
               reset: env.deploy.reset,
+              ...(opts.measure ? { measure: opts.measure } : {}),
             },
           }),
       );

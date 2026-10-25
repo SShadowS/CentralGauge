@@ -61,6 +61,24 @@ export interface TestResult {
   syntheticNoTestsRan?: boolean;
 }
 
+/**
+ * Q-06: the SQL cost of one [Test] method,
+ * as the CG SQL Measure app records it. Includes a constant framework
+ * overhead per method.
+ */
+export interface SqlMeasurement {
+  codeunit: number;
+  procedure: string;
+  statements: number;
+  ms: number;
+  success: boolean;
+}
+
+/** A TestResult from the measuring web service: the normal result plus the measurements. */
+export type MeasuredTestResult = TestResult & {
+  measurements?: SqlMeasurement[];
+};
+
 export interface TestCaseResult {
   name: string;
   passed: boolean;

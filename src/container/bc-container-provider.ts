@@ -19,6 +19,7 @@ import type {
   ContainerStatus,
   HarnessInstalledApp,
   HarnessSyncResult,
+  MeasuredTestResult,
   TestResult,
 } from "./types.ts";
 import { ensureDir } from "@std/fs";
@@ -70,6 +71,7 @@ import {
   buildListHarnessAppsScript,
   buildPrepareCandidateScript,
   buildPrereqCleanupScript,
+  buildSqlMeasureCompileScript,
   buildSyncHarnessAppsScript,
   buildTestScript,
   escapeForPS,
@@ -78,6 +80,7 @@ import {
   resolveSoapTimeoutMs,
   runTestsViaSoap,
   setHttpClientAllowedViaSoap,
+  SQL_MEASURE_APP_VERSION,
 } from "./soap-test-client.ts";
 import { compilerCacheKey } from "./compiler-cache-key.ts";
 import { dockerContextEnv } from "./docker-context.ts";
@@ -372,6 +375,13 @@ export class BcContainerProvider implements ContainerProvider {
   // Bump HARNESS_APP_VERSION (and infra/cg-test-harness/app.json) to force
   // redeployment after changing the harness source.
   private static readonly HARNESS_APP_VERSION = "1.0.2.0";
+  // Q-06: the opt-in SQL measurement app, built by buildSqlMeasureApp and
+  // deployed only inside a measured deployment. Bump SQL_MEASURE_APP_VERSION
+  // (and infra/cg-sql-measure/app.json) after changing its source; the same
+  // value is the measurement version the sql-cost cache keys on.
+  private static readonly SQL_MEASURE_APP_DIR = "infra/cg-sql-measure";
+  private static readonly SQL_MEASURE_APP_NAME = "CG SQL Measure";
+  private static readonly SQL_MEASURE_APP_VERSION = SQL_MEASURE_APP_VERSION;
 
   // Per-container session slots. Each slot owns its own lock + session ref +
   // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`
@@ -1646,6 +1656,63 @@ ${script}
   }
 
   /**
+   * Q-06: build the CG SQL Measure package host-side against this container's
+   * compiler folder, every time (no presence probe), with the pinned CG Test
+   * Harness built from source and staged into the compile's symbols folder
+   * (buildSqlMeasureCompileScript). Publishes nothing: a measured deployment
+   * publishes and removes the package (deployAndTest's `measure`). Returns the
+   * package path under `work`.
+   */
+  async buildSqlMeasureApp(
+    containerName: string,
+    work: string,
+  ): Promise<string> {
+    const dirOf = (d: string) =>
+      fromFileUrl(new URL(`../../${d}`, import.meta.url));
+    const harnessProject = dirOf(BcContainerProvider.HARNESS_APP_DIR);
+    const measureProject = dirOf(BcContainerProvider.SQL_MEASURE_APP_DIR);
+    // The sources must be the pinned versions this provider gates on.
+    for (
+      const [dir, name, version] of [
+        [
+          harnessProject,
+          BcContainerProvider.HARNESS_APP_NAME,
+          BcContainerProvider.HARNESS_APP_VERSION,
+        ],
+        [
+          measureProject,
+          BcContainerProvider.SQL_MEASURE_APP_NAME,
+          BcContainerProvider.SQL_MEASURE_APP_VERSION,
+        ],
+      ] as const
+    ) {
+      const aj = JSON.parse(
+        await Deno.readTextFile(`${dir}\\app.json`),
+      ) as { name?: string; version?: string };
+      if (aj.name !== name || aj.version !== version) {
+        throw new Error(
+          `${dir}\\app.json is ${aj.name} ${aj.version}, expected ${name} ${version}`,
+        );
+      }
+    }
+    const result = await this.executePowerShell(buildSqlMeasureCompileScript({
+      compilerFolder: await this.getOrCreateCompilerFolder(containerName),
+      harnessProject,
+      measureProject,
+      work,
+    }));
+    const built = /MEASURE_BUILT:(.+\.app)\s*$/m.exec(result.output)?.[1];
+    if (!result.output.includes("MEASURE_HARNESS_STAGED:") || !built) {
+      throw new Error(
+        `Failed to build CG SQL Measure for ${containerName}:\n${
+          result.output.slice(-2000)
+        }`,
+      );
+    }
+    return built.trim();
+  }
+
+  /**
    * Build a compilation result from PowerShell output
    */
   private buildCompilationResult(
@@ -2254,8 +2321,26 @@ ${script}
   runHarnessTests(
     containerName: string,
     codeunit: number,
-  ): Promise<TestResult> {
-    return runTestsViaSoap(this.soapConfigFor(containerName), codeunit, "");
+    opts?: { measure?: boolean },
+  ): Promise<MeasuredTestResult> {
+    const measure = opts?.measure === true;
+    // The legacy client-session path has no measuring service: never return
+    // a result without numbers. The measure app is not published here: the
+    // measured deployment published it (deployAndTest's `measure`); absent,
+    // the call faults.
+    if (measure && !this.soapTestRunnerEnabled()) {
+      return Promise.reject(
+        new Error(
+          "measure needs the SOAP test runner (CENTRALGAUGE_SOAP_TEST_RUNNER=0 disables it); the legacy path cannot measure",
+        ),
+      );
+    }
+    return runTestsViaSoap(
+      this.soapConfigFor(containerName),
+      codeunit,
+      "",
+      measure,
+    );
   }
 
   /** Harness Bench H-35 S3 L2a: an extension's Allow HttpClient Requests, read back. */

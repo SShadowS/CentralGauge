@@ -938,3 +938,56 @@ ${buildHarnessCleanBlock()}
       Write-Output "SYNC_DONE"
     `;
 }
+
+/**
+ * Q-06: host-side build of the CG SQL Measure package. Its CG Test Harness
+ * dependency is not in the compiler folder's symbols (artifact apps only), and
+ * a harness published in BC supplies no host-side symbols, so every build first
+ * compiles the pinned harness from its source and stages that package into a
+ * fresh, emptied symbols folder, which the measure compile then reads. Every
+ * path is under `work` (nothing written into the repo). Nothing is published.
+ *
+ * Markers: MEASURE_HARNESS_STAGED:<file>, MEASURE_BUILT:<file>.
+ */
+export function buildSqlMeasureCompileScript(o: {
+  compilerFolder: string;
+  harnessProject: string;
+  measureProject: string;
+  work: string;
+}): string {
+  const q = (s: string) => `'${escapeForPS(s)}'`;
+  return `
+      ${bcchImport()}
+      ${bcchConfigInit()}
+      $ErrorActionPreference = 'Stop'
+      $cgHarnessOut = ${q(`${o.work}\\harness`)}
+      $cgHarnessSymbols = ${q(`${o.work}\\harness-symbols`)}
+      $cgSymbols = ${q(`${o.work}\\symbols`)}
+      $cgMeasureOut = ${q(`${o.work}\\measure`)}
+      foreach ($d in @($cgHarnessOut, $cgHarnessSymbols, $cgMeasureOut)) {
+        if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+      }
+      if (Test-Path -LiteralPath $cgSymbols) { Remove-Item -LiteralPath $cgSymbols -Recurse -Force }
+      New-Item -ItemType Directory -Path $cgSymbols -Force | Out-Null
+      $cgHarness = Compile-AppWithBcCompilerFolder -compilerFolder ${
+    q(o.compilerFolder)
+  } \`
+        -appProjectFolder ${
+    q(o.harnessProject)
+  } -appOutputFolder $cgHarnessOut -appSymbolsFolder $cgHarnessSymbols -ErrorAction Stop
+      if (-not $cgHarness -or -not (Test-Path -LiteralPath $cgHarness)) { throw 'CG Test Harness did not build' }
+      Copy-Item -LiteralPath $cgHarness -Destination $cgSymbols -Force
+      $cgStaged = Join-Path $cgSymbols (Split-Path -Leaf $cgHarness)
+      if (-not (Test-Path -LiteralPath $cgStaged)) { throw "CG Test Harness not staged in $cgSymbols" }
+      Write-Output "MEASURE_HARNESS_STAGED:$cgStaged"
+      $cgApp = Compile-AppWithBcCompilerFolder -compilerFolder ${
+    q(o.compilerFolder)
+  } \`
+        -appProjectFolder ${
+    q(o.measureProject)
+  } -appOutputFolder $cgMeasureOut -appSymbolsFolder $cgSymbols -ErrorAction Stop
+      if (-not $cgApp -or -not (Test-Path -LiteralPath $cgApp)) { throw 'CG SQL Measure did not build' }
+      Write-Output "MEASURE_BUILT:$cgApp"
+    `;
+}

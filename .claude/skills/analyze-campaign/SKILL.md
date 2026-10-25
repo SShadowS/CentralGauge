@@ -228,6 +228,43 @@ the final workspace file at the line (`<results>\workspaces\<hash>\<file>`), and
 the starting tree (`<out>\.start\<task>`) has no finding of that detector in that routine
 (`<out>\alsem\cache\start-<task>\analyze.json`).
 
+### SQL cost per test (`--sql-cost`, opt-in)
+
+`--sql-cost --containers <a,b> --symbols <store> --lineage <lineage> [--sql-cost-task HX-nnn ...] [--sql-cost-scenarios <dir> | --no-sql-cost-scenarios]`
+re-runs the oracle on the final tree with the CG SQL Measure app (`infra/cg-sql-measure`), the
+real judge on the harness lane. It takes the bench lock like `--test-rerun`. The judgment it
+makes is discarded, never written. The measure app is built per container (with the pinned CG
+Test Harness staged into its symbols) and is a resource of each measured deployment: published
+after the reset with the candidates, removed first in the cleanup, before the inventory check.
+It records only during a measured run. Output: `<out>\sql-cost\executions.{json,csv}` (one row per
+execution x test, with `kind` oracle or scenario, an `oracle` flag, `setup`, `scenario_outcome`
+and `error` columns) and `summary.json`.
+
+- Oracle-run measurement: the summary uses the `fail_to_pass` codeunits, per task and per
+  arm, median/min/max across repeats. There are no totals across tasks.
+- Scale scenarios (on by default for a task with `infra/cg-sql-scale/<task>/src/`, read from
+  the working tree; `--sql-cost-scenarios <dir>` reads `<dir>/<task>/src/` instead): after a measured oracle run the scenario codeunits are the only sources of
+  the Test app over the execution's final production apps, run through the test-rerun runner
+  with the same measuring swap. Every method is self-contained and order does not matter. A
+  `Setup...` method (`SetupOnly`: the setup alone) is the baseline, flagged `setup` and listed
+  raw; every other method is setup plus one call, and its net is `method - SetupOnly` within the
+  same execution. The summary has, per task, arm and method, n and median/min/max of the raw and
+  of the net values, over passing scenarios only, plus the `scenario_failed` and
+  `scenario_unmeasured` counts. A scenario compile error or failed row is `scenario_failed`; a
+  passing row without a measurement, or a missing, failed or unmeasured `SetupOnly`, is
+  `scenario_unmeasured` (no numbers). Neither changes a verdict, a pass rate or the oracle rows.
+  Scenario sources are in the cache key.
+- The numbers include a constant framework overhead per test (the same for every solution).
+  Compare solutions of one task; do not read them as the cost of the code alone.
+- Fails closed: an execution is listed under `failed`, with no numbers, when the measured verdict
+  differs from the selected judgment's, any scorer row of the measured judgment is infra,
+  not_run (a missing or skipped procedure) or error, the `fail_to_pass` rows are not exactly the
+  task.yml's declared oracle procedures, a declared procedure lacks exactly one measurement (or
+  its measured success disagrees with the row), or a codeunit's authoritative run cannot be
+  decided (G's codeunits: the run on the last G deployment's container; others: their only run).
+  Rows are the judgment's, never the raw SOAP results. `test-authoring` tasks have no oracle and
+  are skipped.
+
 ## 3. Blind structural comparison (exploratory only)
 
 Write this rubric to `<out>\quality\rubric.md` verbatim, before building any packet:

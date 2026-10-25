@@ -251,6 +251,18 @@ export const HARNESS_APP_ID_RANGE = {
 } as const;
 
 /**
+ * Q-06: the opt-in CG SQL Measure app (`infra/cg-sql-measure`), inside the
+ * harness range. A measured deployment publishes and removes it like any other
+ * trusted harness app: its app.json under a trusted root, in this band, makes
+ * its id removable (trustedHarnessAppIds). CG Test Harness (the whole 50500
+ * range) is never inside it, so it never becomes removable.
+ */
+export const SQL_MEASURE_APP_ID_RANGE = {
+  start: 50560,
+  end: 50569,
+} as const;
+
+/**
  * ID range for tracked spike apps under `spikes/`.
  * Range: 90000-90099
  *

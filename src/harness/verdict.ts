@@ -258,7 +258,7 @@ export interface JudgeInput {
   onPrem: OnPremIndex;
   /** The removal allowlist's trusted roots (pristine, oracle) are set by judge, never by the caller. */
   /** H-35 S3: `reset` is required: no judge deployment without a reset. */
-  deploy: Pick<DeployContext, "ledgerRoot"> & {
+  deploy: Pick<DeployContext, "ledgerRoot" | "measure"> & {
     reset: ResetMechanism;
     /** H-35 S3 L2b: the admitted NST egress state, recorded in the log. */
     bcEgress?: BcEgressRecord | null;
@@ -1805,6 +1805,8 @@ export async function judge(
       : [i.pristine],
     // H-35 S3: every judge deployment is preceded by a reset.
     reset: i.deploy.reset,
+    // Q-06: only the sql-cost step's discarded re-judgment measures.
+    ...(i.deploy.measure ? { measure: i.deploy.measure } : {}),
     onReset: (r) => log.resets!.push(r),
     onVerify: (v) => log.verifies!.push(v),
     onFsCheck: (f) => log.fs_checks!.push(f),

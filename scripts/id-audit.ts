@@ -135,6 +135,7 @@ export function unitOf(file: string): string {
   if (spike) return `spike:${spike[1]}`;
 
   if (file.startsWith("infra/cg-test-harness/")) return "app:cg-test-harness";
+  if (file.startsWith("infra/cg-sql-measure/")) return "app:cg-sql-measure";
 
   const refapp = /^harness-tasks\/refapp\/([^/]+)\//.exec(file);
   if (refapp) return `refapp:${refapp[1]}`;
@@ -209,7 +210,7 @@ function bandOf(unit: string): Band | null {
   if (unit.startsWith("spike:")) {
     return { label: "spike", ...SPIKE_APP_ID_RANGE };
   }
-  if (unit === "app:cg-test-harness") {
+  if (unit === "app:cg-test-harness" || unit === "app:cg-sql-measure") {
     return { label: "harness", ...HARNESS_APP_ID_RANGE };
   }
   const refappBand = { label: "refapp", ...BENCHMARK_APP_ID_RANGE };

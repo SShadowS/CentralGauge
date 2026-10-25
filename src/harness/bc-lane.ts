@@ -14,6 +14,7 @@ import type {
   CompilationResult,
   HarnessInstalledApp,
   HarnessSyncResult,
+  MeasuredTestResult,
   TestResult,
 } from "../container/types.ts";
 import type { ContainerOutcome } from "../health/types.ts";
@@ -85,7 +86,12 @@ export interface HarnessBc {
       clean?: { id: string; name: string }[];
     },
   ): Promise<HarnessSyncResult>;
-  runHarnessTests(container: string, codeunit: number): Promise<TestResult>;
+  /** Q-06: `measure` also returns per-test SQL measurements (opt-in; throws where it cannot). */
+  runHarnessTests(
+    container: string,
+    codeunit: number,
+    opts?: { measure?: boolean },
+  ): Promise<MeasuredTestResult>;
   /**
    * H-35 S3 L2a: set the extension's Allow HttpClient Requests through the
    * runner app (CG Test Harness >= 1.0.2.0) and return the stored value as
@@ -101,6 +107,11 @@ export interface HarnessBc {
    * it records none. Host-side (reads the package file), never a container.
    */
   packageTarget(file: string): Promise<string | null>;
+  /**
+   * Q-06: build the CG SQL Measure package for this container under `work`
+   * (host-side, nothing published); its path. Absent: cannot measure.
+   */
+  buildSqlMeasureApp?(container: string, work: string): Promise<string>;
 }
 
 /**
@@ -1976,6 +1987,22 @@ export interface DeployContext {
    * its reset), whatever the attempt's outcome: the deployment record.
    */
   onDeploy?: (container: string) => void | Promise<void>;
+  /**
+   * Q-06: a measured deployment only (absent: unchanged). deployAndTest
+   * publishes the measure app with the wanted apps, after the reset (so the
+   * ledger records it), trusts `root` (its app.json) for its removal, and
+   * removes it first in the cleanup, before the inventory check.
+   */
+  measure?: MeasureResource;
+}
+
+/** Q-06: the CG SQL Measure app as a measurement-scoped deployment resource. */
+export interface MeasureResource {
+  id: string;
+  /** Trusted root holding its app.json (CentralGauge, SQL measure band). */
+  root: string;
+  /** Its package for this container (with sha256): built on demand. */
+  app(container: string): Promise<WantedApp>;
 }
 
 export interface Deployed {
@@ -2135,14 +2162,20 @@ export async function deployAndTest(
     ctx: DeployContext;
   },
 ): Promise<DeployTestResult> {
+  // Q-06: a measured deployment also owns the measure app (removed first).
+  const measure = i.ctx.measure;
+  const ctx: DeployContext = measure
+    ? { ...i.ctx, trustedRoots: [...i.ctx.trustedRoots, measure.root] }
+    : i.ctx;
+  const cleanupIds = measure ? [measure.id, ...i.cleanupIds] : i.cleanupIds;
   const cleanup = async (): Promise<string | null> => {
-    if (i.cleanupIds.length === 0) return null;
+    if (cleanupIds.length === 0) return null;
     try {
       const s = await bc.syncHarnessApps(container, {
-        removeIds: i.cleanupIds,
+        removeIds: cleanupIds,
         publish: [],
         allow: await trustedHarnessAppIds(
-          i.ctx.trustedRoots,
+          ctx.trustedRoots,
           await loadLedger(i.ctx.ledgerRoot, container),
         ),
       });
@@ -2153,7 +2186,7 @@ export async function deployAndTest(
         container,
         invalidate(await loadLedger(i.ctx.ledgerRoot, container), [
           ...s.removed,
-          ...i.cleanupIds,
+          ...cleanupIds,
         ]),
       );
       return null;
@@ -2261,7 +2294,10 @@ export async function deployAndTest(
   >;
   await i.ctx.onDeploy?.(container);
   try {
-    const deployed = await deploy(bc, container, i.wanted, i.ctx);
+    const wanted = measure
+      ? [...i.wanted, await measure.app(container)]
+      : i.wanted;
+    const deployed = await deploy(bc, container, wanted, ctx);
     r = deployed.candidateFailure
       ? {
         deployed,
