@@ -1564,12 +1564,14 @@ Deno.test({
   ...quick,
 }, async () => {
   // T-07: a virtual clock that only the writer advances, and every step waits
-  // for the watcher's next clock read (one poll), so a slow machine cannot
-  // stretch a 20 ms gap past the grace.
+  // for the watcher's next clock read (a poll looking at the log), so a slow
+  // machine cannot stretch a 20 ms gap past the grace.
   let clock = 0;
   let onRead: (() => void) | undefined;
   const now = () => {
-    onRead?.();
+    const r = onRead;
+    onRead = undefined;
+    r?.();
     return clock;
   };
   const nextPoll = () => new Promise<void>((res) => (onRead = res));
