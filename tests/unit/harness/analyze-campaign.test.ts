@@ -474,12 +474,7 @@ Deno.test("alsemEnvelope: strict, a required field that is missing or mistyped i
     // the finding from the self-check: no severity
     [
       "finding without severity",
-      withFinding({
-        detector: "d1",
-        confidence: { level: "likely" },
-        primaryLocation: { file: "ws:Core/A.al" },
-        fingerprint: "fp1",
-      }),
+      withFinding((({ severity: _, ...f }) => f)(GOOD_F)),
     ],
     [
       "finding with unknown severity",
