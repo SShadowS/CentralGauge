@@ -13,6 +13,8 @@ import {
   ALSEM_METRICS,
   alsemTable,
   bootstrapCi,
+  cohortStats,
+  collectPairs,
   CONTEXT_METRICS,
   extraTable,
   judgeMetrics,
@@ -71,7 +73,7 @@ Deno.test("aggregate A: k/m/t, median, mean, tie at exact zero", () => {
     { task: "T", repeat: 1, d: 1 },
     { task: "T", repeat: 2, d: -1 },
   ]);
-  assertEquals(aggregate(tm.map((x) => x.mean)).t, 1);
+  assertEquals(aggregate(tm.map((x) => x.score)).t, 1);
 });
 
 Deno.test("loto A: ten means, range, no flip", () => {
@@ -375,12 +377,12 @@ Deno.test("end to end: full fixture, no pooling, header columns", async () => {
     const hText = await Deno.readTextFile(join(out, "headline.csv"));
     assertEquals(
       hText.split("\n")[0],
-      "base,variant,stratum,metric,group,n_tasks,k,m,t,median,mean,ci_lo,ci_hi,sign_p,wilcoxon_w_plus,wilcoxon_n,wilcoxon_p,loto_min,loto_max,loto_flips,low_agreement,kappa_na,wording,unverified,ids_unverified",
+      "base,variant,stratum,metric,group,status,expected_pairs,observed_pairs,na_pairs,expected_tasks,observed_tasks,missing_base_no_row,missing_base_excluded,missing_base_empty,missing_base_judge_missing,missing_variant_no_row,missing_variant_excluded,missing_variant_empty,missing_variant_judge_missing,n_tasks,k,m,t,median,mean,median_raw,mean_raw,ci_lo,ci_hi,sign_p,wilcoxon_w_plus,wilcoxon_n,wilcoxon_p,loto_min,loto_max,loto_flips,low_agreement,kappa_na,wording,unverified,ids_unverified",
     );
     const tText = await Deno.readTextFile(join(out, "tasks.csv"));
     assertEquals(
       tText.split("\n")[0],
-      "base,variant,metric,task,stratum,n_pairs,task_mean,task_sign",
+      "base,variant,metric,task,stratum,n_pairs,task_score,task_raw_mean,task_sign",
     );
     assert((await Deno.readTextFile(join(out, "report.md"))).length > 0);
     const tasks = parseCsv(tText);
@@ -507,25 +509,52 @@ Deno.test("bootstrapCi rejects invalid boot counts", () => {
   }
 });
 
-Deno.test("built-in metric directions", () => {
-  assertEquals({ ...ALSEM_METRICS }, {
-    curated_weighted_fp: "lower",
-    alsem_new_findings_fp: "lower",
-    alsem_new_high_findings: "lower",
-    new_unused: "lower",
-    test_coverage_ratio: "higher",
-    test_assert_reachable_mean: "higher",
-    test_zero_assert_share: "lower",
-    test_areequal_literal_share: "lower",
-  });
-  assertEquals({ ...TESTRERUN_METRICS }, {
-    agent_catches_bug: "higher",
-    shipped_suite_pass: "higher",
-  });
-  assertEquals({ ...CONTEXT_METRICS }, {
-    cost_usd: "lower",
-    wall_min: "lower",
-  });
+Deno.test("semantic direction: the better arm gives sign +1 for every directional metric", () => {
+  // [metric, base value, variant value] where the variant is the better arm
+  const better: [string, number, number][] = [
+    ["curated_weighted_fp", 5, 2],
+    ["alsem_new_findings_fp", 3, 1],
+    ["alsem_new_high_findings", 2, 0],
+    ["new_unused", 4, 1],
+    ["test_coverage_ratio", 0.4, 0.8],
+    ["test_assert_reachable_mean", 1, 3],
+    ["test_zero_assert_share", 0.5, 0.1],
+    ["agent_catches_bug", 0, 1],
+    ["shipped_suite_pass", 0, 1],
+    ["cost_usd", 3, 1],
+    ["wall_min", 20, 10],
+  ];
+  const pairs = [{ base: "b", variant: "v", task: "T", repeat: 1 }];
+  for (const [metric, b, v] of better) {
+    const dir = metric in ALSEM_METRICS
+      ? ALSEM_METRICS[metric]!
+      : metric in TESTRERUN_METRICS
+      ? TESTRERUN_METRICS[metric]!
+      : CONTEXT_METRICS[metric]!;
+    const table = new Map([
+      ["b|T|1", { [metric]: b }],
+      ["v|T|1", { [metric]: v }],
+    ]);
+    const o = collectPairs(pairs, table, metric, dir);
+    assertEquals(
+      taskMeans(
+        o.flatMap((x) =>
+          x.d === undefined ? [] : [{ task: x.task, repeat: x.repeat, d: x.d }]
+        ),
+      )[0]!.score,
+      1,
+      metric,
+    );
+    // and the reverse is -1
+    const rev = new Map([
+      ["b|T|1", { [metric]: v }],
+      ["v|T|1", { [metric]: b }],
+    ]);
+    const r = collectPairs(pairs, rev, metric, dir);
+    assertEquals(Math.sign(r[0]!.d!), -1, metric);
+  }
+  // the literal-expected share has no direction
+  assertEquals(ALSEM_METRICS["test_areequal_literal_share"], null);
 });
 
 Deno.test("fail closed: inherited names are not enum values or declarations", () => {
@@ -742,11 +771,14 @@ Deno.test("end to end: unequal repeats use task-weighted statistics", async () =
     await runReport({ campaign: f.camp, out, boot: 200, seed: 1 });
     const h = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
     const w = h.find((r) => r["metric"] === "wall_min")!;
-    // T1 (3 repeats) 2, T2 2, T3 2, T4 -2: task mean 1 (pooled would be 4/3)
-    assertAlmostEquals(Number(w["mean"]), 1, 1e-9);
-    assertAlmostEquals(Number(w["median"]), 2, 1e-9);
-    assertAlmostEquals(Number(w["loto_min"]), 2 / 3, 1e-9);
-    assertAlmostEquals(Number(w["loto_max"]), 2, 1e-9);
+    // task raw means 2, 2, 2, -2 -> mean_raw 1 (pooled would be 4/3); the
+    // inferential score is the mean of pair signs: 1, 1, 1, -1
+    assertAlmostEquals(Number(w["mean_raw"]), 1, 1e-9);
+    assertAlmostEquals(Number(w["median_raw"]), 2, 1e-9);
+    assertAlmostEquals(Number(w["mean"]), 0.5, 1e-9);
+    assertAlmostEquals(Number(w["median"]), 1, 1e-9);
+    assertAlmostEquals(Number(w["loto_min"]), 1 / 3, 1e-9);
+    assertAlmostEquals(Number(w["loto_max"]), 1, 1e-9);
   });
 });
 
@@ -790,7 +822,7 @@ Deno.test("bootstrap CI regression pins (seeded)", async () => {
     await runReport({ campaign: f.camp, out, boot: 200, seed: 1 });
     const h = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
     const w = h.find((r) => r["metric"] === "wall_min")!;
-    assertEquals([w["ci_lo"], w["ci_hi"]], ["-1", "2"]);
+    assertEquals([w["ci_lo"], w["ci_hi"]], ["-0.5", "1"]);
   });
 });
 
@@ -887,4 +919,330 @@ Deno.test("judge execution ids: mismatches throw", async () => {
   assert(e1.err && /baseline_id/.test(e1.err.message), String(e1.err));
   const e2 = await idsRun((i, k) => withIds(i, k, { key: "b-other-1" }));
   assert(e2.err && /baseline_id/.test(e2.err.message), String(e2.err));
+});
+
+// ------------------------------------------------------------- run 002
+
+Deno.test("sign-based task score: pair d [+1,+1,-100] is a win, not a loss", () => {
+  const tm = taskMeans(
+    [1, 1, -100].map((d, i) => ({ task: "T", repeat: i + 1, d })),
+  );
+  assertEquals(tm.length, 1);
+  assertAlmostEquals(tm[0]!.score, 1 / 3, 1e-12);
+  assertAlmostEquals(tm[0]!.rawMean, -98 / 3, 1e-9);
+  assertEquals(aggregate([tm[0]!.score]).k, 1);
+});
+
+const pairsN = (n: number, variant = "v") =>
+  Array.from({ length: n }, (_, i) => ({
+    base: "b",
+    variant,
+    task: `T${i}`,
+    repeat: 1,
+  }));
+
+Deno.test("cohortStats: expected/observed/na/missing by side and reason", () => {
+  const pairs = pairsN(6);
+  const table = Object.assign(
+    new Map<string, Record<string, number>>([
+      ["b|T0|1", { x: 1 }],
+      ["v|T0|1", { x: 2 }], // observed
+      ["b|T1|1", { x: 1 }], // variant: no row
+      ["b|T2|1", { x: 1 }],
+      ["v|T2|1", {}], // variant: empty
+      ["b|T3|1", {}],
+      ["v|T3|1", { x: 1 }], // base: empty
+    ]),
+    {
+      excluded: new Set(["b|T4|1"]), // base excluded, variant no row
+      na: new Map([["v|T5|1", new Set(["x"])]]),
+    },
+  );
+  const c = cohortStats(collectPairs(pairs, table, "x", "higher"));
+  assertEquals(c.expectedPairs, 5);
+  assertEquals(c.naPairs, 1);
+  assertEquals(c.observedPairs, 1);
+  assertEquals([c.expectedTasks, c.observedTasks], [5, 1]);
+  assertEquals(c.missing["variant_no_row"], 2);
+  assertEquals(c.missing["variant_empty"], 1);
+  assertEquals(c.missing["base_empty"], 1);
+  assertEquals(c.missing["base_excluded"], 1);
+  assertEquals(c.missing["base_no_row"], 0);
+});
+
+Deno.test("wording: 3 winning tasks of 22 expected is never consistent", () => {
+  const a = aggregate([1, 1, 1]);
+  const s = wording(a, "all", { observedTasks: 3, expectedTasks: 22 });
+  assert(!s.includes("consistent"), s);
+  assertStringIncludes(s, "incomplete cohort (3 of 22 tasks observed)");
+  assertStringIncludes(
+    wording(a, "all", { observedTasks: 3, expectedTasks: 3 }),
+    "consistent in stratum all",
+  );
+});
+
+async function mini(
+  root: string,
+  o: {
+    variants?: string[];
+    tasks: string[];
+    alsem?: string[];
+    alsemHeader?: string;
+    pairsHeader?: string;
+  },
+) {
+  const camp = join(root, "camp");
+  await Deno.mkdir(join(camp, "alsem"), { recursive: true });
+  const variants = o.variants ?? ["v"];
+  const prs = [
+    o.pairsHeader ??
+      "base,variant,task,kind,repeat,base_id,variant_id,outcome",
+  ];
+  const ex = ["id,arm,task,repeat,cost_usd,wall_min"];
+  for (const t of o.tasks) {
+    ex.push(`b-${t},b,${t},1,2,10`);
+    for (const v of variants) {
+      prs.push(`b,${v},${t},fix,1,b-${t},${v}-${t},both_pass`);
+      ex.push(`${v}-${t},${v},${t},1,1,8`);
+    }
+  }
+  await Deno.writeTextFile(join(camp, "pairs.csv"), prs.join("\n") + "\n");
+  await Deno.writeTextFile(join(camp, "executions.csv"), ex.join("\n") + "\n");
+  if (o.alsem) {
+    await Deno.writeTextFile(
+      join(camp, "alsem", "executions.csv"),
+      [
+        o.alsemHeader ??
+          "id,arm,task,repeat,verdict,excluded,curated_weighted_fp,test_coverage_ratio,test_areequal_literal_share",
+        ...o.alsem,
+      ].join("\n") + "\n",
+    );
+  }
+  return camp;
+}
+
+const headlineOf = async (out: string) =>
+  parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
+
+Deno.test("end to end: missing only on the variant side, per reason", async () => {
+  await withTempDir(async (root) => {
+    const camp = await mini(root, {
+      tasks: ["T1", "T2", "T3"],
+      alsem: [
+        "1,b,T1,1,pass,,5,0.4,0.1",
+        "2,v,T1,1,pass,,2,0.8,0.3",
+        "1,b,T2,1,pass,,5,0.4,0.1",
+        "2,v,T2,1,pass,infra,2,0.8,0.3",
+        "1,b,T3,1,pass,,5,0.4,0.1",
+      ],
+    });
+    const out = join(root, "out");
+    await runReport({ campaign: camp, out, boot: 50 });
+    const r = (await headlineOf(out)).find((x) =>
+      x["metric"] === "curated_weighted_fp"
+    )!;
+    assertEquals(
+      [
+        r["expected_pairs"],
+        r["observed_pairs"],
+        r["expected_tasks"],
+        r["observed_tasks"],
+      ],
+      ["3", "1", "3", "1"],
+    );
+    assertEquals(r["missing_variant_excluded"], "1");
+    assertEquals(r["missing_variant_no_row"], "1");
+    assertEquals(r["missing_base_no_row"], "0");
+    assert(!r["wording"]!.includes("consistent"), r["wording"]);
+    assertStringIncludes(
+      r["wording"]!,
+      "incomplete cohort (1 of 3 tasks observed)",
+    );
+  });
+});
+
+Deno.test("end to end: two comparisons keep their own missingness", async () => {
+  await withTempDir(async (root) => {
+    const camp = await mini(root, {
+      variants: ["v", "w"],
+      tasks: ["T1", "T2"],
+      alsem: [
+        "1,b,T1,1,pass,,5,,",
+        "1,b,T2,1,pass,,5,,",
+        "2,v,T1,1,pass,,2,,",
+        "2,v,T2,1,pass,,2,,",
+        "3,w,T1,1,pass,,2,,",
+      ],
+    });
+    const out = join(root, "out");
+    await runReport({ campaign: camp, out, boot: 50 });
+    const h = await headlineOf(out);
+    const row = (v: string) =>
+      h.find((x) =>
+        x["variant"] === v && x["metric"] === "curated_weighted_fp"
+      )!;
+    assertEquals([row("v")["observed_pairs"], row("v")["expected_pairs"]], [
+      "2",
+      "2",
+    ]);
+    assertEquals([row("w")["observed_pairs"], row("w")["expected_pairs"]], [
+      "1",
+      "2",
+    ]);
+    assertEquals(row("w")["missing_variant_no_row"], "1");
+    assertEquals(row("v")["missing_variant_no_row"], "0");
+  });
+});
+
+Deno.test("end to end: a metric missing while a sibling of the axis is present", async () => {
+  await withTempDir(async (root) => {
+    const camp = await mini(root, {
+      tasks: ["T1", "T2"],
+      alsem: [
+        "1,b,T1,1,pass,,5,,",
+        "2,v,T1,1,pass,,2,,",
+        "1,b,T2,1,pass,,5,,",
+        "2,v,T2,1,pass,,2,,",
+      ],
+    });
+    const out = join(root, "out");
+    await runReport({ campaign: camp, out, boot: 50 });
+    const h = await headlineOf(out);
+    assertEquals(
+      h.find((x) => x["metric"] === "curated_weighted_fp")!["status"],
+      "ok",
+    );
+    const gone = h.find((x) => x["metric"] === "test_coverage_ratio")!;
+    assertEquals(gone["status"], "unavailable");
+    assertEquals(gone["observed_pairs"], "0");
+    assertEquals(gone["missing_base_empty"], "2");
+    assertEquals(gone["missing_variant_empty"], "2");
+    assertEquals(gone["k"], "");
+  });
+});
+
+Deno.test("end to end: test_areequal_literal_share is descriptive, no direction", async () => {
+  await withTempDir(async (root) => {
+    const camp = await mini(root, {
+      tasks: ["T1", "T2"],
+      alsem: [
+        "1,b,T1,1,pass,,5,0.4,0.2",
+        "2,v,T1,1,pass,,2,0.8,0.5",
+        "1,b,T2,1,pass,,5,0.4,0.2",
+        "2,v,T2,1,pass,,2,0.8,0.6",
+      ],
+    });
+    const out = join(root, "out");
+    await runReport({ campaign: camp, out, boot: 50 });
+    const r = (await headlineOf(out)).find((x) =>
+      x["metric"] === "test_areequal_literal_share"
+    )!;
+    assertEquals(r["group"], "descriptive");
+    assertAlmostEquals(Number(r["mean_raw"]), 0.35, 1e-9);
+    assertAlmostEquals(Number(r["median_raw"]), 0.35, 1e-9);
+    for (
+      const c of [
+        "k",
+        "m",
+        "t",
+        "sign_p",
+        "wilcoxon_p",
+        "ci_lo",
+        "mean",
+        "median",
+      ]
+    ) {
+      assertEquals(r[c], "", c);
+    }
+    assert(!/better|worse/i.test(r["wording"]!), r["wording"]);
+    const md = await Deno.readTextFile(join(out, "report.md"));
+    const sec = md.split("### Descriptive")[1]!.split("###")[0]!;
+    assertStringIncludes(sec, "test_areequal_literal_share");
+    assert(!/better|worse/i.test(sec), sec);
+    const t = parseCsv(await Deno.readTextFile(join(out, "tasks.csv")))
+      .filter((x) => x["metric"] === "test_areequal_literal_share");
+    assertEquals(t[0]!["task_sign"], "");
+    assertEquals(t[0]!["task_score"], "");
+  });
+});
+
+Deno.test("fail closed: identity, repeats, duplicates, CSV structure", async () => {
+  assertThrows(() => testRerunTable([{}] as never), Error, "arm");
+  assertThrows(
+    () => testRerunTable([{ arm: "a", task: "T", repeat: 1.5 }]),
+    Error,
+    "repeat",
+  );
+  assertThrows(
+    () =>
+      testRerunTable([
+        { arm: "a", task: "T", repeat: 1 },
+        { arm: "a", task: "T", repeat: 1, excluded: "x" },
+      ]),
+    Error,
+    "duplicate",
+  );
+  const H = "id,arm,task,repeat,verdict,excluded,curated_weighted_fp";
+  assertThrows(() => alsemTable(`${H}\n1,a,T,x,pass,,3\n`), Error, "repeat");
+  assertThrows(
+    () => alsemTable(`${H}\n1,a,T,1,pass,,3\n2,a,T,1,pass,,4\n`),
+    Error,
+    "duplicate",
+  );
+  assertThrows(() => alsemTable(`${H}\n1,a,T,1,pass\n`), Error, "columns");
+  assertThrows(() => alsemTable("id,task,repeat\n1,T,1\n"), Error, "arm");
+  assertThrows(() => alsemTable(""), Error, "arm");
+  await withTempDir(async (root) => {
+    const run = (camp: string) =>
+      runReport({ campaign: camp, out: join(root, "o"), boot: 50 }).then(
+        () => null,
+        (e) => e as Error,
+      );
+    const reset = () => Deno.remove(join(root, "camp"), { recursive: true });
+    const PH = "base,variant,task,kind,repeat,base_id,variant_id,outcome\n";
+    let camp = await mini(root, {
+      tasks: ["T1"],
+      alsem: ["1,verdictless,5"],
+      alsemHeader: "id,verdict,curated_weighted_fp",
+    });
+    const e1 = await run(camp);
+    assert(e1 && /arm/.test(e1.message), String(e1));
+    await reset();
+    camp = await mini(root, {
+      tasks: ["T1"],
+      pairsHeader: "base,variant,task,kind,repeat,variant_id,outcome",
+    });
+    const e2 = await run(camp);
+    assert(e2 && /base_id/.test(e2.message), String(e2));
+    await reset();
+    camp = await mini(root, { tasks: ["T1"] });
+    await Deno.writeTextFile(
+      join(camp, "pairs.csv"),
+      PH + "b,v,T1,fix,1,b-T1,v-T1,x\nb,v,T1,fix,1,b-T1,v-T1,x\n",
+    );
+    const e3 = await run(camp);
+    assert(e3 && /duplicate/i.test(e3.message), String(e3));
+    await Deno.writeTextFile(
+      join(camp, "pairs.csv"),
+      PH + "b,v,T1,fix,1.5,b-T1,v-T1,x\n",
+    );
+    const e4 = await run(camp);
+    assert(e4 && /repeat/.test(e4.message), String(e4));
+    await Deno.writeTextFile(
+      join(camp, "pairs.csv"),
+      PH + "b,v,T1,fix,1,b-T1,v-T1,x\n",
+    );
+    await Deno.writeTextFile(
+      join(camp, "executions.csv"),
+      "id,arm,task,repeat,cost_usd\nx,b,T1,1,2\nx2,b,T1,1,3\n",
+    );
+    const e5 = await run(camp);
+    assert(e5 && /duplicate/i.test(e5.message), String(e5));
+    await Deno.writeTextFile(
+      join(camp, "executions.csv"),
+      "id,arm,task,repeat,cost_usd\nx,b,T1,1\n",
+    );
+    const e6 = await run(camp);
+    assert(e6 && /columns/.test(e6.message), String(e6));
+  });
 });

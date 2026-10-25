@@ -36,13 +36,24 @@ export interface PairD {
 }
 export interface TaskMean {
   task: string;
-  mean: number;
+  /** Inferential score: mean over the task's pairs of sign(d). */
+  score: number;
+  /** Descriptive: mean over the task's pairs of the raw oriented difference d. */
+  rawMean: number;
   nPairs: number;
 }
-/** `arm|task|repeat` -> metric -> value (missing metric = missing value). */
-export type ValueTable = Map<string, Record<string, number>>;
+/**
+ * `arm|task|repeat` -> metric -> value. A row present without a metric = that
+ * metric is empty. `excluded` rows are not in the map; `na` marks structurally
+ * not-applicable (row key -> metrics).
+ */
+export type ValueTable =
+  & Map<string, Record<string, number>>
+  & { excluded?: Set<string>; na?: Map<string, Set<string>> };
 export interface JudgeMetric {
   signs: PairD[];
+  /** task\u0000repeat of pairs whose verdict is "missing". */
+  missingKeys: Set<string>;
   lowAgreement: boolean;
   kappaNa: boolean;
 }
@@ -51,8 +62,12 @@ export interface Agg {
   k: number;
   m: number;
   t: number;
+  /** median / mean of the task scores (inferential). */
   median: number;
   mean: number;
+  /** median / mean of the task raw means (descriptive, metric units). */
+  medianRaw: number | null;
+  meanRaw: number | null;
   ci: [number, number] | null;
   signP: number;
   wilcoxon: { wPlus: number; n: number; p: number };
@@ -223,10 +238,13 @@ const median = (xs: number[]) => {
   return v.length % 2 ? v[h]! : (v[h - 1]! + v[h]!) / 2;
 };
 
-/** Across-task statistics on a list of task means. */
+/**
+ * Across-task statistics on a list of task scores. `opts.raw` = the matching
+ * task raw means (descriptive only; no inference uses them).
+ */
 export function aggregate(
   xs: number[],
-  opts: { boot?: number; seed?: number } = {},
+  opts: { boot?: number; seed?: number; raw?: number[] } = {},
 ): Agg {
   const k = xs.filter((x) => x > 0).length;
   const m = xs.filter((x) => x < 0).length;
@@ -237,6 +255,8 @@ export function aggregate(
     t: xs.length - k - m,
     median: median(xs),
     mean: mean(xs),
+    medianRaw: opts.raw && opts.raw.length ? median(opts.raw) : null,
+    meanRaw: opts.raw && opts.raw.length ? mean(opts.raw) : null,
     ci: bootstrapCi(xs, opts.boot ?? 10000, opts.seed ?? 1),
     signP: signTest(k, m),
     wilcoxon: wilcoxon(xs),
@@ -246,17 +266,37 @@ export function aggregate(
 
 const f = (x: number | null, d = 4) => x === null ? "" : String(+x.toFixed(d));
 
-/** The generated sentence; "consistent" only when the effect holds across tasks. */
-export function wording(a: Agg, stratum: string): string {
+export interface CohortSize {
+  observedTasks: number;
+  expectedTasks: number;
+}
+
+/**
+ * The generated sentence. "consistent" only when the effect holds across the
+ * observed tasks (>= 3 non-tied, one direction, no LOTO flip) AND the cohort is
+ * complete (every expected task observed). An incomplete cohort is always
+ * flagged. The median difference is the raw, descriptive one.
+ */
+export function wording(
+  a: Agg,
+  stratum: string,
+  cohort?: CohortSize,
+): string {
   const base =
     `variant better on ${a.k} tasks, worse on ${a.m}, tied on ${a.t} ` +
-    `(median within-task difference ${f(a.median)}, LOTO range [${
-      f(a.loto.min)
-    }, ${f(a.loto.max)}])`;
+    `(median within-task difference ${
+      f(a.medianRaw ?? a.median)
+    } [descriptive], LOTO range [${f(a.loto.min)}, ${
+      f(a.loto.max)
+    }] of the task score)`;
   const holds = a.k + a.m >= 3 && (a.k === 0 || a.m === 0) && !a.loto.flips;
-  return holds
-    ? `${base}; consistent in stratum ${stratum}`
-    : `${base}; task-dependent`;
+  const incomplete = cohort !== undefined &&
+    cohort.observedTasks !== cohort.expectedTasks;
+  const tail = incomplete
+    ? `; incomplete cohort (${cohort.observedTasks} of ${cohort.expectedTasks} tasks observed)`
+    : "";
+  if (holds && !incomplete) return `${base}; consistent in stratum ${stratum}`;
+  return `${base}${holds ? "" : "; task-dependent"}${tail}`;
 }
 
 // ------------------------------------------------------------------ pairs
@@ -275,20 +315,131 @@ export function pairDiffs(
     out.push({
       task: p.task,
       repeat: p.repeat,
-      d: (v - b) * (higherBetter ? 1 : -1),
+      d: (v - b) * (higherBetter ? 1 : -1) + 0,
     });
   }
   return out;
 }
 
+/** Per task: score = mean of sign(d) over its pairs; rawMean = mean of d (descriptive). */
 export function taskMeans(pds: PairD[]): TaskMean[] {
   const by = new Map<string, number[]>();
   for (const p of pds) by.set(p.task, [...(by.get(p.task) ?? []), p.d]);
   return [...by].map(([task, ds]) => ({
     task,
-    mean: mean(ds),
+    score: mean(ds.map((d) => Math.sign(d) + 0)),
+    rawMean: mean(ds),
     nPairs: ds.length,
   }));
+}
+
+/** One selected campaign pair seen through one metric. */
+export interface PairOutcome {
+  task: string;
+  repeat: number;
+  /** Oriented raw difference (variant better > 0); unoriented for descriptive metrics. */
+  d?: number;
+  /** Structurally not applicable: removed from the expected pairs. */
+  na?: boolean;
+  /** Reasons, `<side>_<reason>`: no_row | excluded | empty | judge_missing. */
+  miss: string[];
+}
+
+/** dir = null: descriptive metric, d = variant - base without orientation. */
+export function collectPairs(
+  pairs: PairRef[],
+  table: ValueTable,
+  metric: string,
+  dir: Dir | null,
+): PairOutcome[] {
+  return pairs.map((p) => {
+    const bk = key(p.base, p.task, p.repeat);
+    const vk = key(p.variant, p.task, p.repeat);
+    const o: PairOutcome = { task: p.task, repeat: p.repeat, miss: [] };
+    if (table.na?.get(bk)?.has(metric) || table.na?.get(vk)?.has(metric)) {
+      o.na = true;
+      return o;
+    }
+    const side = (name: string, k: string): number | undefined => {
+      const row = table.get(k);
+      if (row === undefined) {
+        o.miss.push(
+          `${name}_${table.excluded?.has(k) ? "excluded" : "no_row"}`,
+        );
+        return undefined;
+      }
+      const v = row[metric];
+      if (v === undefined) o.miss.push(`${name}_empty`);
+      return v;
+    };
+    const b = side("base", bk);
+    const v = side("variant", vk);
+    if (b !== undefined && v !== undefined) {
+      o.d = (v - b) * (dir === "lower" ? -1 : 1) + 0;
+    }
+    return o;
+  });
+}
+
+/** Judge verdicts are pair-level: an absent item or a "missing" verdict hits both sides. */
+export function collectJudge(
+  pairs: PairRef[],
+  jm: JudgeMetric,
+): PairOutcome[] {
+  const signs = new Map(
+    jm.signs.map((s) => [`${s.task}\u0000${s.repeat}`, s.d]),
+  );
+  return pairs.map((p) => {
+    const id = `${p.task}\u0000${p.repeat}`;
+    const o: PairOutcome = { task: p.task, repeat: p.repeat, miss: [] };
+    const d = signs.get(id);
+    if (d !== undefined) o.d = d;
+    else {
+      const why = jm.missingKeys.has(id) ? "judge_missing" : "no_row";
+      o.miss.push(`base_${why}`, `variant_${why}`);
+    }
+    return o;
+  });
+}
+
+export const MISSING_KEYS = [
+  "base_no_row",
+  "base_excluded",
+  "base_empty",
+  "base_judge_missing",
+  "variant_no_row",
+  "variant_excluded",
+  "variant_empty",
+  "variant_judge_missing",
+];
+
+export function cohortStats(outcomes: PairOutcome[]) {
+  const missing: Record<string, number> = {};
+  for (const k of MISSING_KEYS) missing[k] = 0;
+  const expectedTasks = new Set<string>();
+  const observedTasks = new Set<string>();
+  let na = 0;
+  let observed = 0;
+  for (const o of outcomes) {
+    if (o.na) {
+      na++;
+      continue;
+    }
+    expectedTasks.add(o.task);
+    if (o.d !== undefined) {
+      observed++;
+      observedTasks.add(o.task);
+    }
+    for (const m of o.miss) missing[m] = (missing[m] ?? 0) + 1;
+  }
+  return {
+    expectedPairs: outcomes.length - na,
+    observedPairs: observed,
+    naPairs: na,
+    expectedTasks: expectedTasks.size,
+    observedTasks: observedTasks.size,
+    missing,
+  };
 }
 
 // ------------------------------------------------------------------ csv
@@ -325,12 +476,49 @@ export function csvRows(text: string): string[][] {
   return rows;
 }
 
-export function parseCsv(text: string): Record<string, string>[] {
+/**
+ * Strict CSV: every `required` header must exist, header names are unique, and
+ * every data row has exactly as many columns as the header (a blank line is skipped).
+ */
+export function parseCsv(
+  text: string,
+  required: string[] = [],
+  what = "csv",
+): Record<string, string>[] {
   const rows = csvRows(text);
   const head = rows.shift() ?? [];
-  return rows.filter((r) => r.some((x) => x !== "")).map((r) =>
-    Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""]))
-  );
+  for (const r of required) {
+    if (!head.includes(r)) {
+      throw new Error(`${what}: missing required column "${r}"`);
+    }
+  }
+  if (new Set(head).size !== head.length) {
+    throw new Error(`${what}: duplicate column names in the header`);
+  }
+  const out: Record<string, string>[] = [];
+  rows.forEach((r, i) => {
+    if (r.length === 1 && r[0] === "") return;
+    if (r.length !== head.length) {
+      throw new Error(
+        `${what}: row ${
+          i + 2
+        } has ${r.length} columns, the header has ${head.length}`,
+      );
+    }
+    out.push(Object.fromEntries(head.map((h, j) => [h, r[j]!])));
+  });
+  return out;
+}
+
+/** A repeat index: a finite integer written as such. */
+export function repeatOf(s: string | number, what: string): number {
+  const n = typeof s === "number" ? s : s.trim() === "" ? NaN : Number(s);
+  if (!Number.isInteger(n)) {
+    throw new Error(
+      `${what}: repeat must be a finite integer, got ${JSON.stringify(s)}`,
+    );
+  }
+  return n;
 }
 
 function csvText(rows: Record<string, unknown>[], header: string[]): string {
@@ -346,7 +534,8 @@ function csvText(rows: Record<string, unknown>[], header: string[]): string {
 
 // --------------------------------------------------------------- adapters
 
-export const ALSEM_METRICS: Record<string, Dir> = {
+/** null = descriptive (no quality direction is claimed). */
+export const ALSEM_METRICS: Record<string, Dir | null> = {
   curated_weighted_fp: "lower",
   alsem_new_findings_fp: "lower",
   alsem_new_high_findings: "lower",
@@ -354,7 +543,8 @@ export const ALSEM_METRICS: Record<string, Dir> = {
   test_coverage_ratio: "higher",
   test_assert_reachable_mean: "higher",
   test_zero_assert_share: "lower",
-  test_areequal_literal_share: "lower",
+  // literal expected args / AreEqual calls: not a defect rate, no justified direction
+  test_areequal_literal_share: null,
 };
 export const TESTRERUN_METRICS: Record<string, Dir> = {
   agent_catches_bug: "higher",
@@ -371,26 +561,52 @@ function num(s: string, what: string): number {
   return x;
 }
 
+function mkTable(): ValueTable {
+  return Object.assign(new Map<string, Record<string, number>>(), {
+    excluded: new Set<string>(),
+    na: new Map<string, Set<string>>(),
+  });
+}
+
 function csvTable(
   text: string,
-  metrics: Record<string, Dir>,
+  metrics: Record<string, Dir | null>,
   skipExcluded: boolean,
+  required: string[],
+  what: string,
 ): ValueTable {
-  const t: ValueTable = new Map();
-  for (const r of parseCsv(text)) {
-    if (skipExcluded && (r["excluded"] ?? "") !== "") continue;
+  const t = mkTable();
+  const seen = new Set<string>();
+  for (
+    const r of parseCsv(text, ["arm", "task", "repeat", ...required], what)
+  ) {
+    for (const c of ["arm", "task"]) {
+      if ((r[c] ?? "") === "") throw new Error(`${what}: empty ${c}`);
+    }
+    const id = key(
+      r["arm"]!,
+      r["task"]!,
+      repeatOf(r["repeat"]!, `${what} ${r["arm"]}|${r["task"]}`),
+    );
+    if (seen.has(id)) throw new Error(`${what}: duplicate cell ${id}`);
+    seen.add(id);
+    if (skipExcluded && (r["excluded"] ?? "") !== "") {
+      t.excluded!.add(id);
+      continue;
+    }
     const rec: Record<string, number> = {};
     for (const m of Object.keys(metrics)) {
       if (r[m] !== undefined && r[m] !== "") rec[m] = num(r[m], m);
     }
-    t.set(key(r["arm"]!, r["task"]!, r["repeat"]!), rec);
+    t.set(id, rec);
   }
   return t;
 }
 
-export const alsemTable = (text: string) => csvTable(text, ALSEM_METRICS, true);
+export const alsemTable = (text: string) =>
+  csvTable(text, ALSEM_METRICS, true, [], "alsem/executions.csv");
 export const contextTable = (text: string) =>
-  csvTable(text, CONTEXT_METRICS, false);
+  csvTable(text, CONTEXT_METRICS, false, ["id"], "executions.csv");
 
 export function extraTable(
   text: string,
@@ -407,7 +623,7 @@ export function extraTable(
       }`,
     );
   }
-  return csvTable(text, declared, false);
+  return csvTable(text, declared, false, [], "--extra csv");
 }
 
 export interface TestRerunInput {
@@ -420,12 +636,38 @@ export interface TestRerunInput {
 }
 
 export function testRerunTable(rows: TestRerunInput[]): ValueTable {
-  const t: ValueTable = new Map();
-  for (const r of rows) {
-    if (r.excluded) continue;
-    const id = key(r.arm, r.task, r.repeat);
+  if (!Array.isArray(rows)) {
+    throw new Error("test-rerun: expected an array of rows");
+  }
+  const t = mkTable();
+  const seen = new Set<string>();
+  rows.forEach((r, i) => {
+    const w = `test-rerun row ${i}`;
+    if (r === null || typeof r !== "object") {
+      throw new Error(`${w}: not an object`);
+    }
+    for (const c of ["arm", "task"] as const) {
+      if (typeof r[c] !== "string" || r[c] === "") {
+        throw new Error(`${w}: ${c} must be a non-empty string`);
+      }
+    }
+    if (typeof r.repeat !== "number") {
+      throw new Error(
+        `${w}: repeat must be a finite integer, got ${
+          JSON.stringify(r.repeat)
+        }`,
+      );
+    }
+    const id = key(r.arm, r.task, repeatOf(r.repeat, w));
+    if (seen.has(id)) throw new Error(`test-rerun: duplicate cell ${id}`);
+    seen.add(id);
+    if (r.excluded) {
+      t.excluded!.add(id);
+      return;
+    }
     const rec: Record<string, number> = {};
-    // an absent result object drops only its metric; a present unknown value throws
+    const na = new Set<string>();
+    // an absent/null result object drops only its metric; any other non-object or unknown value throws
     const avs: unknown = r.agent_vs_start;
     const svf: unknown = r.shipped_vs_final;
     for (const [n, v] of [["agent_vs_start", avs], ["shipped_vs_final", svf]]) {
@@ -444,7 +686,8 @@ export function testRerunTable(rows: TestRerunInput[]): ValueTable {
       const o = r.agent_vs_start.outcome;
       if (o === "catches") rec["agent_catches_bug"] = 1;
       else if (o === "misses" || o === "no_tests") rec["agent_catches_bug"] = 0;
-      else if (o !== "not_applicable") {
+      else if (o === "not_applicable") na.add("agent_catches_bug");
+      else {
         throw new Error(
           `test-rerun ${id}: unknown agent_vs_start.outcome "${o}"`,
         );
@@ -458,7 +701,8 @@ export function testRerunTable(rows: TestRerunInput[]): ValueTable {
       } else throw new Error(`test-rerun ${id}: unknown shipped status "${s}"`);
     }
     t.set(id, rec);
-  }
+    if (na.size) t.na!.set(id, na);
+  });
   return t;
 }
 
@@ -502,6 +746,10 @@ export function judgeMetrics(
 ): Map<string, JudgeMetric> {
   const out = new Map<string, JudgeMetric>();
   for (const it of items) {
+    if (typeof it.task !== "string" || it.task === "") {
+      throw new Error("judge item: task must be a non-empty string");
+    }
+    repeatOf(it.repeat, `judge item ${it.task}`);
     for (const [dim, v] of Object.entries(it.dimensions)) {
       const s = JUDGE_SIGN.get(v.across);
       if (s === undefined) {
@@ -511,9 +759,15 @@ export function judgeMetrics(
       }
       const name = `judge_${dim}`;
       const m = out.get(name) ??
-        { signs: [], lowAgreement: false, kappaNa: false };
+        {
+          signs: [],
+          missingKeys: new Set<string>(),
+          lowAgreement: false,
+          kappaNa: false,
+        };
       out.set(name, m);
       if (s !== null) m.signs.push({ task: it.task, repeat: it.repeat, d: s });
+      else m.missingKeys.add(`${it.task}\u0000${it.repeat}`);
     }
   }
   const dims = summary?.dimensions;
@@ -590,6 +844,13 @@ export function verifyJudge(
   keys: Record<string, JudgeKey> | null,
   allowUnverified: boolean,
 ): { unverified: boolean; idsUnverified: boolean } {
+  for (const it of items) {
+    if (typeof it.packet_id !== "string" || it.packet_id === "") {
+      throw new Error(
+        `judge item ${it.task}#${it.repeat}: packet_id is required`,
+      );
+    }
+  }
   const known = new Set(pairs.map((p) => `${p.task}\u0000${p.repeat}`));
   const seen = new Set<string>();
   const base = pairs[0]?.base;
@@ -657,12 +918,21 @@ const HEADLINE = [
   "stratum",
   "metric",
   "group",
+  "status",
+  "expected_pairs",
+  "observed_pairs",
+  "na_pairs",
+  "expected_tasks",
+  "observed_tasks",
+  ...MISSING_KEYS.map((k) => `missing_${k}`),
   "n_tasks",
   "k",
   "m",
   "t",
   "median",
   "mean",
+  "median_raw",
+  "mean_raw",
   "ci_lo",
   "ci_hi",
   "sign_p",
@@ -685,7 +955,8 @@ const TASKS = [
   "task",
   "stratum",
   "n_pairs",
-  "task_mean",
+  "task_score",
+  "task_raw_mean",
   "task_sign",
 ];
 
@@ -705,29 +976,71 @@ function mdTable(head: string[], rows: unknown[][]): string {
   );
 }
 
+/** One metric of one comparison, before the per-stratum split. */
+interface Spec {
+  name: string;
+  group: "quality" | "context" | "descriptive";
+  axis?: string;
+  outcomes: PairOutcome[];
+  low?: boolean;
+  na?: boolean;
+  unv?: boolean;
+  ids?: boolean;
+}
+/** One report row: a Spec restricted to one stratum. */
+interface Row {
+  s: string;
+  spec: Spec;
+  cs: ReturnType<typeof cohortStats>;
+  tms: TaskMean[];
+  agg: Agg | null;
+  status: "ok" | "unavailable" | "descriptive";
+  wording: string;
+}
+
 export async function runReport(o: RunOptions): Promise<void> {
   const boot = o.boot ?? 10000;
   const seed = o.seed ?? 1;
   const pairRows = parseCsv(
     await Deno.readTextFile(join(o.campaign, "pairs.csv")),
+    ["base", "variant", "task", "repeat", "base_id", "variant_id"],
+    "pairs.csv",
   );
-  const all: PairRef[] = pairRows.map((r) => ({
-    base: r["base"]!,
-    variant: r["variant"]!,
-    task: r["task"]!,
-    repeat: Number(r["repeat"]),
-    baseId: r["base_id"] || undefined,
-    variantId: r["variant_id"] || undefined,
-  }));
+  const seenPair = new Set<string>();
+  const all: PairRef[] = pairRows.map((r) => {
+    for (const c of ["base", "variant", "task"]) {
+      if ((r[c] ?? "") === "") throw new Error(`pairs.csv: empty ${c}`);
+    }
+    const repeat = repeatOf(
+      r["repeat"]!,
+      `pairs.csv ${r["base"]}:${r["variant"]} ${r["task"]}`,
+    );
+    const id = `${r["base"]}|${r["variant"]}|${r["task"]}|${repeat}`;
+    if (seenPair.has(id)) throw new Error(`pairs.csv: duplicate pair ${id}`);
+    seenPair.add(id);
+    return {
+      base: r["base"]!,
+      variant: r["variant"]!,
+      task: r["task"]!,
+      repeat,
+      baseId: r["base_id"] || undefined,
+      variantId: r["variant_id"] || undefined,
+    };
+  });
   const wanted = o.pair?.map((p) => p.split(":") as [string, string]) ??
     [...new Set(all.map((p) => `${p.base}:${p.variant}`))].map((p) =>
       p.split(":") as [string, string]
     );
+  for (const [b, v] of wanted) {
+    if (!all.some((p) => p.base === b && p.variant === v)) {
+      throw new Error(`--pair ${b}:${v}: no such pair in pairs.csv`);
+    }
+  }
 
   const context = contextTable(
     await Deno.readTextFile(join(o.campaign, "executions.csv")),
   );
-  // axes with at least one matched metric value; "Missing axes" is the rest
+  // axes with at least one observed pair in some comparison; "Missing axes" is the rest
   const present = new Set<string>();
   const alsemPath = join(o.campaign, "alsem", "executions.csv");
   const alsem = (await exists(alsemPath))
@@ -746,10 +1059,10 @@ export async function runReport(o: RunOptions): Promise<void> {
     }
     declared[n] = dir;
   }
-  const extra: ValueTable = new Map();
+  const extra: ValueTable | null = o.extra?.length ? new Map() : null;
   for (const p of o.extra ?? []) {
     for (const [k, v] of extraTable(await Deno.readTextFile(p), declared)) {
-      extra.set(k, { ...extra.get(k), ...v });
+      extra!.set(k, { ...extra!.get(k), ...v });
     }
   }
 
@@ -796,16 +1109,19 @@ export async function runReport(o: RunOptions): Promise<void> {
       unverified,
       idsUnverified,
       campaignId: sj?.campaign_id,
-      metrics: judgeMetrics(
-        items,
-        sj,
-      ),
+      metrics: judgeMetrics(items, sj),
     });
   }
 
   const strataMap = new Map<string, string>();
   if (o.strata) {
-    for (const r of parseCsv(await Deno.readTextFile(o.strata))) {
+    for (
+      const r of parseCsv(
+        await Deno.readTextFile(o.strata),
+        ["task", "stratum"],
+        "--strata csv",
+      )
+    ) {
       if (r["stratum"] === "all") {
         throw new Error(
           `--strata: the stratum name "all" is reserved for the overall scope (task ${
@@ -825,27 +1141,21 @@ export async function runReport(o: RunOptions): Promise<void> {
 
   for (const [base, variant] of wanted) {
     const pairs = all.filter((p) => p.base === base && p.variant === variant);
-    type M = {
-      name: string;
-      group: "quality" | "context";
-      tm: TaskMean[];
-      low?: boolean;
-      na?: boolean;
-      unv?: boolean;
-      ids?: boolean;
-      axis?: string;
-    };
-    const ms: M[] = [];
+    const specs: Spec[] = [];
     const fromTable = (
       t: ValueTable | null,
-      metrics: Record<string, Dir>,
-      group: M["group"],
+      metrics: Record<string, Dir | null>,
+      group: "quality" | "context",
       axis?: string,
     ) => {
       if (!t) return;
       for (const [name, dir] of Object.entries(metrics)) {
-        const tm = taskMeans(pairDiffs(pairs, t, name, dir === "higher"));
-        if (tm.length) ms.push({ name, group, tm, ...(axis ? { axis } : {}) });
+        specs.push({
+          name,
+          group: dir === null ? "descriptive" : group,
+          ...(axis ? { axis } : {}),
+          outcomes: collectPairs(pairs, t, name, dir),
+        });
       }
     };
     fromTable(alsem, ALSEM_METRICS, "quality", "alsem");
@@ -853,108 +1163,177 @@ export async function runReport(o: RunOptions): Promise<void> {
     fromTable(extra, declared, "quality", "extra");
     const jg = judges.get(`${base}:${variant}`);
     for (const [name, jm] of jg?.metrics ?? []) {
-      const tm = taskMeans(jm.signs);
-      if (tm.length) {
-        ms.push({
-          name,
-          group: "quality",
-          tm,
-          low: jm.lowAgreement,
-          na: jm.kappaNa,
-          unv: jg!.unverified,
-          ids: jg!.idsUnverified,
-          axis: "judge",
-        });
-      }
+      specs.push({
+        name,
+        group: "quality",
+        axis: "judge",
+        outcomes: collectJudge(pairs, jm),
+        low: jm.lowAgreement,
+        na: jm.kappaNa,
+        unv: jg!.unverified,
+        ids: jg!.idsUnverified,
+      });
     }
     fromTable(context, CONTEXT_METRICS, "context");
-    for (const m of ms) if (m.axis) present.add(m.axis);
 
     const strata = [
       "all",
       ...(o.strata
-        ? [...new Set(ms.flatMap((m) => m.tm.map((x) => stratumOf(x.task))))]
-          .sort()
+        ? [...new Set(pairs.map((p) => stratumOf(p.task)))].sort()
         : []),
     ];
-    type Row = {
-      s: string;
-      group: string;
-      metric: string;
-      a: Agg;
-      low: boolean;
-      unv: boolean;
-      ids: boolean;
-      na: boolean;
-    };
     const rows: Row[] = [];
-    for (const m of ms) {
-      for (const x of m.tm) {
+    for (const sp of specs) {
+      for (const s of strata) {
+        const sub = s === "all"
+          ? sp.outcomes
+          : sp.outcomes.filter((x) => stratumOf(x.task) === s);
+        if (!sub.length) continue;
+        const cs = cohortStats(sub);
+        if (cs.observedPairs > 0 && sp.axis) present.add(sp.axis);
+        const tms = taskMeans(
+          sub.flatMap((x) =>
+            x.d === undefined
+              ? []
+              : [{ task: x.task, repeat: x.repeat, d: x.d }]
+          ),
+        );
+        if (cs.observedPairs === 0) {
+          rows.push({
+            s,
+            spec: sp,
+            cs,
+            tms,
+            agg: null,
+            status: "unavailable",
+            wording:
+              `unavailable (0 of ${cs.expectedPairs} expected pairs observed)`,
+          });
+        } else if (sp.group === "descriptive") {
+          const rawMed = median(tms.map((x) => x.rawMean));
+          rows.push({
+            s,
+            spec: sp,
+            cs,
+            tms,
+            agg: null,
+            status: "descriptive",
+            wording:
+              `descriptive context, no direction assigned (median raw difference ${
+                f(rawMed)
+              } over ${tms.length} tasks)`,
+          });
+        } else {
+          const agg = aggregate(tms.map((x) => x.score), {
+            boot,
+            seed,
+            raw: tms.map((x) => x.rawMean),
+          });
+          rows.push({
+            s,
+            spec: sp,
+            cs,
+            tms,
+            agg,
+            status: "ok",
+            wording: wording(agg, s, {
+              observedTasks: cs.observedTasks,
+              expectedTasks: cs.expectedTasks,
+            }),
+          });
+        }
+      }
+      for (
+        const x of taskMeans(
+          sp.outcomes.flatMap((y) =>
+            y.d === undefined
+              ? []
+              : [{ task: y.task, repeat: y.repeat, d: y.d }]
+          ),
+        )
+      ) {
+        const desc = sp.group === "descriptive";
         taskRows.push({
           base,
           variant,
-          metric: m.name,
+          metric: sp.name,
           task: x.task,
           stratum: stratumOf(x.task),
           n_pairs: x.nPairs,
-          task_mean: x.mean,
-          task_sign: Math.sign(x.mean),
-        });
-      }
-      for (const s of strata) {
-        const sub = s === "all"
-          ? m.tm
-          : m.tm.filter((x) => stratumOf(x.task) === s);
-        if (!sub.length) continue;
-        const a = aggregate(sub.map((x) => x.mean), { boot, seed });
-        const r = {
-          base,
-          variant,
-          stratum: s,
-          metric: m.name,
-          group: m.group,
-          n_tasks: a.nTasks,
-          k: a.k,
-          m: a.m,
-          t: a.t,
-          median: a.median,
-          mean: a.mean,
-          ci_lo: a.ci?.[0],
-          ci_hi: a.ci?.[1],
-          sign_p: a.signP,
-          wilcoxon_w_plus: a.wilcoxon.wPlus,
-          wilcoxon_n: a.wilcoxon.n,
-          wilcoxon_p: a.wilcoxon.p,
-          loto_min: a.loto.min,
-          loto_max: a.loto.max,
-          loto_flips: a.loto.flips,
-          low_agreement: m.low ?? false,
-          kappa_na: m.na ?? false,
-          wording: wording(a, s),
-          unverified: m.unv ?? false,
-          ids_unverified: m.ids ?? false,
-        };
-        head.push(r);
-        rows.push({
-          s,
-          group: m.group,
-          metric: m.name,
-          a,
-          low: m.low ?? false,
-          unv: m.unv ?? false,
-          ids: m.ids ?? false,
-          na: m.na ?? false,
+          task_score: desc ? "" : x.score,
+          task_raw_mean: x.rawMean,
+          task_sign: desc ? "" : Math.sign(x.score),
         });
       }
     }
+    for (const r of rows) {
+      const a = r.agg;
+      const rawOnly = r.status === "descriptive"
+        ? { r: r.tms.map((x) => x.rawMean) }
+        : null;
+      head.push({
+        base,
+        variant,
+        stratum: r.s,
+        metric: r.spec.name,
+        group: r.spec.group,
+        status: r.status,
+        expected_pairs: r.cs.expectedPairs,
+        observed_pairs: r.cs.observedPairs,
+        na_pairs: r.cs.naPairs,
+        expected_tasks: r.cs.expectedTasks,
+        observed_tasks: r.cs.observedTasks,
+        ...Object.fromEntries(
+          MISSING_KEYS.map((k) => [`missing_${k}`, r.cs.missing[k]]),
+        ),
+        n_tasks: r.status === "unavailable" ? 0 : r.cs.observedTasks,
+        k: a?.k,
+        m: a?.m,
+        t: a?.t,
+        median: a?.median,
+        mean: a?.mean,
+        median_raw: a ? a.medianRaw : rawOnly ? median(rawOnly.r) : undefined,
+        mean_raw: a ? a.meanRaw : rawOnly ? mean(rawOnly.r) : undefined,
+        ci_lo: a?.ci?.[0],
+        ci_hi: a?.ci?.[1],
+        sign_p: a?.signP,
+        wilcoxon_w_plus: a?.wilcoxon.wPlus,
+        wilcoxon_n: a?.wilcoxon.n,
+        wilcoxon_p: a?.wilcoxon.p,
+        loto_min: a?.loto.min,
+        loto_max: a?.loto.max,
+        loto_flips: a?.loto.flips,
+        low_agreement: r.spec.low ?? false,
+        kappa_na: r.spec.na ?? false,
+        wording: r.wording,
+        unverified: r.spec.unv ?? false,
+        ids_unverified: r.spec.ids ?? false,
+      });
+    }
 
     md.push(`## ${base} vs ${variant}`, "");
+    const missStr = (r: Row) =>
+      MISSING_KEYS.filter((k) => r.cs.missing[k]).map((k) =>
+        `${k}=${r.cs.missing[k]}`
+      ).join(" ");
+    const cohortCols = (r: Row) => [
+      `${r.cs.observedTasks}/${r.cs.expectedTasks}`,
+      `${r.cs.observedPairs}/${r.cs.expectedPairs}${
+        r.cs.naPairs ? ` (+${r.cs.naPairs} n/a)` : ""
+      }`,
+      missStr(r),
+    ];
     const cols = [
       "metric",
+      "status",
+      "tasks obs/exp",
+      "pairs obs/exp",
+      "missing",
       "k/m/t",
-      "n_tasks",
-      "median",
-      "mean",
+      "median score",
+      "mean score",
+      "median raw",
+      "mean raw",
       "CI95",
       "sign p",
       "Wilcoxon W+ (n)",
@@ -964,54 +1343,98 @@ export async function runReport(o: RunOptions): Promise<void> {
       "flags",
       "wording",
     ];
-    const line = (x: Row) => {
-      const a = x.a;
+    const line = (r: Row) => {
+      const a = r.agg;
+      const [tk, pr, ms] = cohortCols(r);
       return [
-        x.metric,
-        `${a.k}/${a.m}/${a.t}`,
-        a.nTasks,
-        f(a.median),
-        f(a.mean),
-        `[${f(a.ci?.[0] ?? null)}, ${f(a.ci?.[1] ?? null)}]`,
-        f(a.signP),
-        `${a.wilcoxon.wPlus} (${a.wilcoxon.n})`,
-        f(a.wilcoxon.p),
-        `[${f(a.loto.min)}, ${f(a.loto.max)}]`,
-        a.loto.flips,
+        r.spec.name,
+        r.status,
+        tk,
+        pr,
+        ms,
+        a ? `${a.k}/${a.m}/${a.t}` : "",
+        a ? f(a.median) : "",
+        a ? f(a.mean) : "",
+        a ? f(a.medianRaw) : "",
+        a ? f(a.meanRaw) : "",
+        a ? `[${f(a.ci?.[0] ?? null)}, ${f(a.ci?.[1] ?? null)}]` : "",
+        a ? f(a.signP) : "",
+        a ? `${a.wilcoxon.wPlus} (${a.wilcoxon.n})` : "",
+        a ? f(a.wilcoxon.p) : "",
+        a ? `[${f(a.loto.min)}, ${f(a.loto.max)}]` : "",
+        a ? a.loto.flips : "",
         [
-          x.low ? "low_agreement" : "",
-          x.na ? "kappa_na" : "",
-          x.unv ? "unverified" : "",
-          x.ids ? "ids_unverified" : "",
-        ]
-          .filter(Boolean).join(" "),
-        wording(a, x.s),
+          r.spec.low ? "low_agreement" : "",
+          r.spec.na ? "kappa_na" : "",
+          r.spec.unv ? "unverified" : "",
+          r.spec.ids ? "ids_unverified" : "",
+        ].filter(Boolean).join(" "),
+        r.wording,
+      ];
+    };
+    const dcols = [
+      "metric",
+      "status",
+      "tasks obs/exp",
+      "pairs obs/exp",
+      "missing",
+      "median raw",
+      "mean raw",
+      "note",
+    ];
+    const dline = (r: Row) => {
+      const [tk, pr, ms] = cohortCols(r);
+      const raw = r.tms.map((x) => x.rawMean);
+      return [
+        r.spec.name,
+        r.status,
+        tk,
+        pr,
+        ms,
+        raw.length ? f(median(raw)) : "",
+        raw.length ? f(mean(raw)) : "",
+        r.wording,
       ];
     };
     for (const [title, g] of [["Quality", "quality"], ["Context", "context"]]) {
-      const sel = rows.filter((x) => x.s === "all" && x.group === g);
+      const sel = rows.filter((x) => x.s === "all" && x.spec.group === g);
       md.push(`### ${title}`, "");
       md.push(sel.length ? mdTable(cols, sel.map(line)) : "(none)", "");
     }
+    const dsel = rows.filter((x) =>
+      x.s === "all" && x.spec.group === "descriptive"
+    );
+    md.push("### Descriptive", "");
+    md.push(dsel.length ? mdTable(dcols, dsel.map(dline)) : "(none)", "");
     if (o.strata) {
       for (const s of strata.filter((x) => x !== "all")) {
-        const sel = rows.filter((x) => x.s === s);
+        const sel = rows.filter((x) =>
+          x.s === s && x.spec.group !== "descriptive"
+        );
         md.push(`### Stratum ${s}`, "", mdTable(cols, sel.map(line)), "");
       }
     }
     md.push("### Per-task", "");
-    for (const m of ms) {
+    for (const sp of specs) {
+      const tms = taskMeans(
+        sp.outcomes.flatMap((y) =>
+          y.d === undefined ? [] : [{ task: y.task, repeat: y.repeat, d: y.d }]
+        ),
+      );
+      if (!tms.length) continue;
+      const desc = sp.group === "descriptive";
       md.push(
-        `#### ${m.name}`,
+        `#### ${sp.name}`,
         "",
         mdTable(
-          ["task", "stratum", "n_pairs", "task mean", "sign"],
-          m.tm.map((x) => [
+          ["task", "stratum", "n_pairs", "task score", "task raw mean", "sign"],
+          tms.map((x) => [
             x.task,
             stratumOf(x.task),
             x.nPairs,
-            f(x.mean),
-            Math.sign(x.mean),
+            desc ? "" : f(x.score),
+            f(x.rawMean),
+            desc ? "" : Math.sign(x.score),
           ]),
         ),
         "",
@@ -1027,6 +1450,8 @@ export async function runReport(o: RunOptions): Promise<void> {
     "# Solution quality report",
     "",
     `Missing axes: ${missing.length ? missing.join(", ") : "none"}`,
+    "",
+    "Inferential score per task = mean of the pair signs; k/m/t, tests, CI and LOTO use it. Raw differences are descriptive.",
     "",
     ...[...judges].filter(([, j]) => j.campaignId !== undefined).map(([p, j]) =>
       `Judge campaign_id (${p}): ${j.campaignId}`
