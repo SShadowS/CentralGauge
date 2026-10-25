@@ -116,6 +116,11 @@ Every alsem envelope is validated strictly: `alsemVersion` (string), `schemaVers
 string), `kind`, `diagnostics` (array of objects with a severity) and `payload` (object) must all be
 present with their types, plus the payload fields the runner reads (analyze `findings`; digest
 `entries`, `summary`, `changedRootsDiagnostics`; diff `findings`, `summary`); nothing is defaulted.
+Digest 1.6.0 and 1.7.0 (al-sem 2.1.1) are known. A `changedRootsDiagnostics` kind other than
+`diff-file-deleted`, `diff-file-unmatched` and `hunk-outside-routines` fails the digest (1.7.0's
+`diff-file-ambiguous` gives no roots for its file, so changed routines would be under-reported),
+and so does a digest with table reads (`payload.includeReads`, a `DB_READ` effect): the script never
+passes `--include-reads`, and `tables_read` keeps its earlier meaning.
 The al-call-hierarchy output is checked for the metrics / findings fields it uses.
 `alsemVersion`, `schemaVersion` and the envelope `diagnostics` are kept per tree in each row, and
 `summary.json` counts the diagnostics. An error-level envelope diagnostic, an unparseable, wrong-kind

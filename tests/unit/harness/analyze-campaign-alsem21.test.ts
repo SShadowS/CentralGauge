@@ -96,8 +96,8 @@ Deno.test("alsemEnvelope: a digest entry with a non-array unresolved fails namin
   assertEquals(alsemEnvelope(env(ok), "digest").kind, "digest");
 });
 
-Deno.test("DERIVATION is 11: a done row written with derive 10 is not done", async () => {
-  assertEquals(DERIVATION, 11);
+// The current value is pinned in analyze-campaign-alsem211.test.ts (Q-08: 12).
+Deno.test("DERIVATION: a done row written with the A-03b epoch's predecessor (derive 10) is not done", async () => {
   const dir = await Deno.makeTempDir();
   try {
     const stamp = { build: "b", rev: "r", hash: "h" };
