@@ -104,6 +104,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),
   [`${H}qualify.test.ts`]: c(true, 0),
+  // Q-07: temp dirs only.
+  [`${H}quality-report.test.ts`]: c(true, 1),
   [`${H}realistic-bundle.test.ts`]: c(true, 1),
   [`${H}records.test.ts`]: c(true, 0),
   [`${H}redact-patterns.test.ts`]: c(true, 0),
