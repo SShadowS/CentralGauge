@@ -339,7 +339,7 @@ Deno.test("end to end: only --campaign reports Missing axes", async () => {
     assertStringIncludes(md, "alsem");
     assertStringIncludes(md, "cost_usd");
     const head = parseCsv(await Deno.readTextFile(join(out, "headline.csv")));
-    assert(head.every((r) => r.group === "context"));
+    assert(head.every((r) => r["group"] === "context"));
     assertEquals(head.length, 2);
   });
 });
@@ -370,26 +370,31 @@ Deno.test("end to end: full fixture, no pooling, header columns", async () => {
     );
     assert((await Deno.readTextFile(join(out, "report.md"))).length > 0);
     const tasks = parseCsv(tText);
-    const t1 = tasks.filter((r) => r.metric === "cost_usd" && r.task === "T1");
+    const t1 = tasks.filter((r) =>
+      r["metric"] === "cost_usd" && r["task"] === "T1"
+    );
     assertEquals(t1.length, 1);
-    assertEquals(t1[0]!.n_pairs, "3");
-    assertEquals(t1[0]!.stratum, "events");
+    assertEquals(t1[0]!["n_pairs"], "3");
+    assertEquals(t1[0]!["stratum"], "events");
     const head = parseCsv(hText);
     const get = (stratum: string, metric: string) =>
-      head.find((r) => r.stratum === stratum && r.metric === metric)!;
+      head.find((r) => r["stratum"] === stratum && r["metric"] === metric)!;
     const cost = get("all", "cost_usd");
-    assertEquals(cost.n_tasks, "4");
-    assertEquals(cost.group, "context");
-    assertEquals(get("all", "judge_conventions").low_agreement, "true");
-    assertEquals(get("all", "sql_cost").k, "4");
+    assertEquals(cost["n_tasks"], "4");
+    assertEquals(cost["group"], "context");
+    assertEquals(get("all", "judge_conventions")["low_agreement"], "true");
+    assertEquals(get("all", "sql_cost")["k"], "4");
     assertStringIncludes(
-      get("events", "sql_cost").wording,
+      get("events", "sql_cost")["wording"]!,
       "consistent in stratum events",
     );
-    assertStringIncludes(get("caching", "sql_cost").wording, "task-dependent");
-    assertEquals(get("all", "agent_catches_bug").group, "quality");
+    assertStringIncludes(
+      get("caching", "sql_cost")["wording"]!,
+      "task-dependent",
+    );
+    assertEquals(get("all", "agent_catches_bug")["group"], "quality");
     // wall_min is worse for the variant on T4 only
     const wall = get("all", "wall_min");
-    assertEquals([wall.k, wall.m], ["3", "1"]);
+    assertEquals([wall["k"], wall["m"]], ["3", "1"]);
   });
 });
