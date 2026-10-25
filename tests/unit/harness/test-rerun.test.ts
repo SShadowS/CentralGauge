@@ -731,6 +731,84 @@ Deno.test("selectAgentTests: matches on comment-stripped source", async () => {
   assertEquals(await sel("H-e2"), []);
 });
 
-Deno.test("TEST_RERUN_DERIVATION is 3", () => {
-  assertEquals(TEST_RERUN_DERIVATION, 3);
+const selOf = (w: World, h: string) =>
+  selectAgentTests(
+    join(w.root, "start", "Test"),
+    join(w.results, "workspaces", h, "Test"),
+  );
+
+Deno.test("selectAgentTests: a declaration on the same line as the previous closing brace owns its own procedures", async () => {
+  const two = (a: string, b: string) =>
+    cu({ P: a }, 80010).trimEnd() + " " + cu({ P: b }, 80011);
+  const w = await world(two("x := 1;", "x := 1;"), {
+    e1: two("x := 2;", "x := 1;"),
+  });
+  assertEquals(await selOf(w, "H-e1"), [{ codeunit: 80010, procedure: "P" }]);
+});
+
+Deno.test("selectAgentTests: Codeunit.Run(<id>) in a body is not an object declaration", async () => {
+  const src = (id: number, q: string) =>
+    cu({ P: `Codeunit.Run(${id});`, Q: q }, 80020);
+  const w = await world(src(80020, "x := 1;"), {
+    e1: src(80021, "x := 2;"),
+  });
+  assertEquals(await selOf(w, "H-e1"), [
+    { codeunit: 80020, procedure: "P" },
+    { codeunit: 80020, procedure: "Q" },
+  ]);
+});
+
+Deno.test("selectAgentTests: a header split over lines is attributed to its id", async () => {
+  const src = (x: string) =>
+    `codeunit\n80010 "Tests"\n{\n    Subtype = Test;\n\n    [Test]\n    procedure P()\n    begin\n        ${x}\n    end;\n}\n`;
+  const w = await world(src("x := 1;"), { e1: src("x := 2;") });
+  assertEquals(await selOf(w, "H-e1"), [{ codeunit: 80010, procedure: "P" }]);
+});
+
+// deno-lint-ignore no-explicit-any
+async function tamper(w: World, runner: string, f: (row: any) => void) {
+  const file = join(w.root, "out", "cache", runner, "exec", "e1.json");
+  const doc = JSON.parse(await Deno.readTextFile(file));
+  f(doc.row);
+  await Deno.writeTextFile(file, JSON.stringify(doc));
+}
+
+Deno.test("cache: a self-consistent cached shipped pass missing a current shipped procedure is recomputed", async () => {
+  const two = (a: string) => cu({ TestA: a, TestB: "x := 1;" });
+  const w = await world(two("x := 1;"), { e1: two("x := 2;") });
+  const both = (r: TestRerunRequest) =>
+    result(
+      r.specs.flatMap((s) =>
+        s.codeunit === 50100 ? [pass("TestA"), pass("TestB")] : []
+      ),
+    );
+  const m = mock("r1", () => result([fail("TestA")]), both);
+  await run(w, m.runner);
+  await tamper(w, "r1", (row) => {
+    row.shipped_vs_final.procedures = row.shipped_vs_final.procedures.filter((
+      p: { procedure: string },
+    ) => p.procedure === "TestA");
+  });
+  const before = m.calls.length;
+  const again = await run(w, m.runner);
+  assert(m.calls.length > before);
+  assertEquals(again.skipped, 0);
+  assertEquals(again.done[0]!.shipped_vs_final.procedures.length, 2);
+});
+
+Deno.test("cache: a cached agent no_tests with selected [] is recomputed when the current selection is non-empty", async () => {
+  const w = await world(START, { e1: NEW_B });
+  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+  await run(w, m.runner);
+  await tamper(w, "r1", (row) => {
+    row.agent_vs_start = { outcome: "no_tests", selected: [], procedures: [] };
+  });
+  const before = m.calls.length;
+  const again = await run(w, m.runner);
+  assert(m.calls.length > before);
+  assertEquals(again.done[0]!.agent_vs_start.outcome, "catches");
+});
+
+Deno.test("TEST_RERUN_DERIVATION is 4", () => {
+  assertEquals(TEST_RERUN_DERIVATION, 4);
 });

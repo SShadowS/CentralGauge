@@ -41,8 +41,11 @@ import {
  * procedure was part of its body, so cached selections differ).
  * 3: selection per enclosing codeunit on comment-stripped source; runner rows fail closed on
  * any infra / not_run / duplicate row; cached rows must be justified by their procedures.
+ * 4: codeunits are attributed by brace-depth-0 declarations on stripped text (same-line
+ * headers, split headers, Codeunit.Run(...) calls); cached rows are reused only when their
+ * procedure keys and outcome class match the current expectation.
  */
-export const TEST_RERUN_DERIVATION = 3;
+export const TEST_RERUN_DERIVATION = 4;
 
 /** Runner contract (aligned with bc-lane TestSpec / TestRow / DeployTestResult). */
 export interface TestSpec {
@@ -393,9 +396,38 @@ function procedureEnd(stripped: string, from: number): number {
   return stripped.length;
 }
 
-/** An object declaration at a line start, in stripped text: kind and optional id. */
-const OBJECT_DECL =
-  /(?:^|\n)[ \t]*(codeunit|table|tableextension|page|pageextension|pagecustomization|report|reportextension|query|xmlport|enum|enumextension|interface|controladdin|permissionset|permissionsetextension|entitlement|profile|dotnet)\b[ \t]*(\d+)?/gi;
+const CODEUNIT_DECL = /\bcodeunit\s+(\d+)/gi;
+
+/**
+ * Codeunit declarations at brace depth 0 of stripped text (quoted identifiers
+ * blanked), each with the offset span of its braced body. Anywhere deeper, `codeunit`
+ * is a variable type or `Codeunit.Run(...)`, never an object.
+ */
+function codeunitSpans(blanked: string): Map<number, [number, number]> {
+  const out = new Map<number, [number, number]>();
+  let depth = 0;
+  let at = 0;
+  for (const m of blanked.matchAll(CODEUNIT_DECL)) {
+    for (; at < m.index!; at++) {
+      if (blanked[at] === "{") depth++;
+      else if (blanked[at] === "}") depth = Math.max(0, depth - 1);
+    }
+    if (depth !== 0) continue;
+    let end = blanked.indexOf("{", m.index!);
+    if (end < 0) end = blanked.length;
+    else {
+      for (let d = 0; end < blanked.length; end++) {
+        if (blanked[end] === "{") d++;
+        else if (blanked[end] === "}" && --d === 0) {
+          end++;
+          break;
+        }
+      }
+    }
+    if (!out.has(Number(m[1]))) out.set(Number(m[1]), [m.index!, end]);
+  }
+  return out;
+}
 
 /**
  * `codeunit|procedure` (lowercase) -> display name + normalized body, for every
@@ -415,17 +447,9 @@ async function testBodies(
     const masked = stripAlNoise(src);
     // Quoted identifiers blanked too: "End Date" must not close a block.
     const blanked = masked.replace(/"[^"\n]*"/g, (q) => " ".repeat(q.length));
-    const decls = [...masked.matchAll(OBJECT_DECL)].map((d) => ({
-      at: d.index! + d[0].search(/\S/),
-      kind: d[1]!.toLowerCase(),
-      id: d[2] === undefined ? null : Number(d[2]),
-    }));
-    const i = decls.findIndex((d) =>
-      d.kind === "codeunit" && d.id === c.codeunit
-    );
-    if (i < 0) continue;
-    const start = decls[i]!.at;
-    const end = decls[i + 1]?.at ?? src.length;
+    const span = codeunitSpans(blanked).get(c.codeunit);
+    if (!span) continue;
+    const [start, end] = span;
     const mSlice = masked.slice(start, end);
     const bSlice = blanked.slice(start, end);
     const rSlice = src.slice(start, end);
@@ -724,23 +748,48 @@ export async function testRerunStep(o: {
     };
     return { start, finalDir, selected, shipped, edited, stamp };
   };
-  const readPrior = async (id: string, stamp: DoneStamp) => {
-    const prior = await readDone<unknown>(execDir, id, stamp);
+  type Expect = {
+    stamp: DoneStamp;
+    kind: string;
+    selected: Selected[];
+    shipped: Selected[];
+  };
+  const readPrior = async (id: string, x: Expect) => {
+    const prior = await readDone<unknown>(execDir, id, x.stamp);
     if (prior === null) return null;
     try {
-      return validateTestRerunRow(prior);
+      const row = validateTestRerunRow(prior);
+      // self-consistent is not enough: it must be the current expectation
+      const a = row.agent_vs_start;
+      const s = row.shipped_vs_final;
+      const sameKeys = (p: Selected[], q: Selected[]) =>
+        JSON.stringify(p.map((e) => keyOf(e.codeunit, e.procedure)).sort()) ===
+          JSON.stringify(q.map((e) => keyOf(e.codeunit, e.procedure)).sort());
+      const agentOk = x.kind !== "bugfix"
+        ? a.outcome === "not_applicable" && a.reason === x.kind &&
+          a.selected.length === 0
+        : x.selected.length === 0
+        ? a.outcome === "no_tests"
+        : a.outcome !== "no_tests" &&
+          (a.outcome !== "not_applicable" || a.reason === "compile") &&
+          sameKeys(a.selected, x.selected);
+      if (
+        row.kind !== x.kind || !agentOk ||
+        (s.status !== "compile_fail" && !sameKeys(s.procedures, x.shipped))
+      ) return null;
+      return row;
     } catch {
       return null; // a malformed stored row is recomputed, never read
     }
   };
   let skipped = 0;
   const failed: { id: string; error: string }[] = [];
-  const stamps = new Map<string, DoneStamp>();
+  const stamps = new Map<string, Expect>();
   await pool(o.jobs, todo, async (r) => {
     try {
       const x = await inputs(r);
-      stamps.set(r.id, x.stamp);
-      if (await readPrior(r.id, x.stamp)) {
+      stamps.set(r.id, { ...x, kind: r.kind });
+      if (await readPrior(r.id, stamps.get(r.id)!)) {
         skipped++;
         return;
       }
