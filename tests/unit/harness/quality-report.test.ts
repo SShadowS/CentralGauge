@@ -409,9 +409,12 @@ Deno.test("end to end: full fixture, no pooling, header columns", async () => {
     assertEquals(cost["group"], "context");
     assertEquals(get("all", "judge_conventions")["low_agreement"], "true");
     assertEquals(get("all", "sql_cost")["k"], "4");
+    // the --extra fixture covers 3 of the 5 "events" pairs: not "consistent" (Q-07b)
+    const ev = get("events", "sql_cost")["wording"]!;
+    assert(!ev.includes("consistent"), ev);
     assertStringIncludes(
-      get("events", "sql_cost")["wording"]!,
-      "consistent in stratum events",
+      ev,
+      "task-dependent; incomplete repeat coverage (3 of 5 pairs observed)",
     );
     assertStringIncludes(
       get("caching", "sql_cost")["wording"]!,
