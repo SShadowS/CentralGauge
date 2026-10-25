@@ -349,6 +349,10 @@ function checkTestCoverage(tc: unknown): string | null {
   ) {
     return "payload.testCoverage.covered";
   }
+  const n = (k: string) => (tc[k] as unknown[] | undefined)?.length ?? 0;
+  if (n("covered") + n("uncovered") !== changed) {
+    return "payload.testCoverage.uncovered";
+  }
   return null;
 }
 
@@ -417,15 +421,25 @@ function checkPayload(kind: string, p: J, tests: boolean): string | null {
             ? "payload.entries[].routine.stableId"
             : anchor !== undefined && !isObj(anchor)
             ? "payload.entries[].routine.anchor"
+            : isObj(anchor) && typeof anchor["file"] !== "string"
+            ? "payload.entries[].routine.anchor.file"
             : fx !== undefined && !Array.isArray(fx)
             ? "payload.entries[].effects"
             : first(
               (fx ?? []) as unknown[],
-              (x) =>
-                isObj(x) && str(x["type"]) &&
-                  (x["detail"] === undefined || isObj(x["detail"]))
-                  ? null
-                  : "payload.entries[].effects[]",
+              (x) => {
+                if (
+                  !isObj(x) || !str(x["type"]) ||
+                  !(x["detail"] === undefined || isObj(x["detail"]))
+                ) return "payload.entries[].effects[]";
+                const d = x["detail"];
+                return isObj(d) &&
+                    ["boundary", "resourceDisplay"].some((k) =>
+                      d[k] !== undefined && typeof d[k] !== "string"
+                    )
+                  ? "payload.entries[].effects[].detail"
+                  : null;
+              },
             );
         }) ??
         (tests ? checkTestCoverage(p["testCoverage"]) : null);
@@ -588,6 +602,28 @@ function badTestQuality(tq: unknown): string | null {
       typeof p["zero_assert"] === "boolean" &&
       typeof p["has_asserterror"] === "boolean" && eq(p["are_equal"]);
     if (!ok) return "a procedure row is malformed";
+    const ae = p["are_equal"] as J;
+    const counts: [string, unknown][] = [
+      ["assert_count", p["assert_count"]],
+      ["assert_count_reachable", p["assert_count_reachable"]],
+      ["are_equal.total", ae["total"]],
+      ["are_equal.literal_expected", ae["literal_expected"]],
+      ["are_equal.expression_expected", ae["expression_expected"]],
+    ];
+    const badCount = counts.find(([, v]) =>
+      !Number.isInteger(v) || (v as number) < 0
+    );
+    if (badCount) return `${badCount[0]} is not a nonnegative integer`;
+    if (
+      (ae["literal_expected"] as number) +
+          (ae["expression_expected"] as number) !== ae["total"]
+    ) return "are_equal.literal_expected + expression_expected != total";
+    if (
+      (p["assert_count_reachable"] as number) < (p["assert_count"] as number)
+    ) return "assert_count_reachable < assert_count";
+    if (p["zero_assert"] !== (p["assert_count_reachable"] === 0)) {
+      return "zero_assert disagrees with assert_count_reachable";
+    }
   }
   const ws = tq["workspace"];
   const procs = tq["procedures"] as TestProc[];
@@ -1731,7 +1767,8 @@ export interface DoneStamp {
  * bytes, not validation under the current rules, so bump it whenever any
  * validation tightens (a done row of an older epoch is revalidated, never skipped).
  */
-export const DERIVATION = 8;
+export const DERIVATION = 9;
+// v9 (A-03b Sol self-check r1): validation tightened, nothing recomputed. testCoverage covered + uncovered lists must sum to changedRoutines; digest routine.anchor.file, effect detail.boundary and detail.resourceDisplay must be strings when present; test_quality procedure counts must be nonnegative integers with are_equal.literal_expected + expression_expected == total, assert_count_reachable >= assert_count and zero_assert == (assert_count_reachable == 0). Done rows of epoch 8 are revalidated.
 // v8 (A-03b, al-sem 2.1.0-rc.4): the digest is cross-app. (a) A digest effect can be a dependency boundary group (detail.boundary): digestTouches leaves it out of tables_written / tables_read / events_published / commits (those stay workspace-code effects, comparable with 2.0.3) and counts the production ones in dependency_effect_groups. (b) summary.totalUnresolved now includes dependency routines' unresolved calls, which land on the Test app's entries: unresolved is the sum of entries[].unresolved lengths over production entries, unresolved_raw keeps totalUnresolved, a non-array entries[].unresolved fails the digest. looseFingerprint values change per detector in 2.1 (#252) with no consumer change: the cache path and done rows are keyed by the binaries' sha256, so 2.0.3 artifacts are never reused.
 // v7 (A-03b smoke): test coverage counts production routines only (al-sem also counts test-app helpers and non-[Test] test-codeunit procedures), declaration-only routines leave the denominator, al-sem's raw values kept as *_raw, an unmappable covered / uncovered stableId fails the row.
 // v6 (A-03b, al-sem 2.0.3): introduced findings by the looseFingerprint rule (+ _fp columns), tree.json holds the [Test] procedures (test_quality), digests run with --tests (digest-tests-<patch>.json) and carry testCoverage.

@@ -546,6 +546,89 @@ Deno.test("alsemEnvelope digest with --tests: testCoverage is required and consi
   assertEquals(alsemEnvelope(env(digest()), "digest").kind, "digest");
 });
 
+Deno.test("alsemEnvelope digest with --tests: covered + uncovered must sum to changedRoutines", () => {
+  const { uncovered: _u, ...noUncovered } = COVERAGE;
+  assertThrows(
+    () => alsemEnvelope(env(digest(noUncovered)), "digest", { tests: true }),
+    Error,
+    "testCoverage.uncovered",
+  );
+});
+
+Deno.test("alsemEnvelope digest: anchor.file and effect detail.boundary / resourceDisplay are typed", () => {
+  const withEntry = (routine: unknown, effects: unknown[] = []) => ({
+    entries: [{ routine, effects }],
+    summary: {},
+    changedRootsDiagnostics: [],
+  });
+  const reject = (p: unknown, what: string) =>
+    assertThrows(
+      () => alsemEnvelope(env(p), "digest"),
+      Error,
+      "",
+      what,
+    );
+  reject(
+    withEntry({ stableId: "r", anchor: { file: 7 } }),
+    "anchor.file as a number",
+  );
+  reject(
+    withEntry({ stableId: "r" }, [{ type: "COMMIT", detail: { boundary: 7 } }]),
+    "boundary as a number",
+  );
+  reject(
+    withEntry({ stableId: "r" }, [
+      { type: "DB_MODIFY", detail: { resourceDisplay: 7 } },
+    ]),
+    "resourceDisplay as a number",
+  );
+  const ok = withEntry({ stableId: "r", anchor: { file: "ws:Prod/A.al" } }, [
+    { type: "COMMIT", detail: { boundary: "dep:Base" } },
+    { type: "DB_MODIFY", detail: { resourceDisplay: "Customer" } },
+    { type: "COMMIT" },
+  ]);
+  assertEquals(alsemEnvelope(env(ok), "digest").kind, "digest");
+});
+
+Deno.test("checkedAch: test_quality counts are nonnegative integers with consistent are_equal and zero_assert", () => {
+  const bad: [string, string][] = [
+    [
+      "literal_expected + expression_expected != total",
+      ach([proc("T", 1, {
+        are_equal: { total: 1, literal_expected: 2, expression_expected: 0 },
+      })]),
+    ],
+    [
+      "zero_assert with reachable assertions",
+      ach([proc("T", 1, { zero_assert: true })]),
+    ],
+    [
+      "not zero_assert with no reachable assertions",
+      ach([proc("T", 0, { zero_assert: false })]),
+    ],
+    ["fractional assert_count", ach([proc("T", 2, { assert_count: 1.5 })])],
+    ["negative assert_count", ach([proc("T", 2, { assert_count: -1 })])],
+    [
+      "reachable below assert_count",
+      ach([proc("T", 1, { assert_count: 2 })]),
+    ],
+    [
+      "negative are_equal.total",
+      ach([proc("T", 1, {
+        are_equal: { total: -1, literal_expected: 0, expression_expected: -1 },
+      })]),
+    ],
+  ];
+  for (const [what, text] of bad) {
+    assertThrows(() => checkedAch(text), Error, "test_quality", what);
+  }
+  const ok = checkedAch(ach([proc("T", 2, {
+    assert_count: 1,
+    are_equal: { total: 3, literal_expected: 1, expression_expected: 2 },
+  })]));
+  assertEquals(ok.test_quality.procedures.length, 1);
+});
+
 Deno.test("alsemEnvelope: an analyze finding without looseFingerprint (2.0.2 output) is invalid; the schemaVersions are unchanged and strict", () => {
   const finding = {
     detector: "d1",
@@ -670,6 +753,39 @@ Deno.test("alsemSummary: new rule drives new / curated columns, the fingerprint 
     ],
     [null, null, null, null],
   );
+});
+
+Deno.test("pooledTestQuality: unequal denominators are weighted by the pooled counts, not averaged per execution", () => {
+  const m = (o: Record<string, number | null>) => o as never;
+  const q = pooledTestQuality([
+    m({ // 1 scored procedure: mean 4, asserterror share 1, literal share 1
+      new_test_procs: 1,
+      test_procs_scored: 1,
+      test_assert_reachable_sum: 4,
+      test_zero_assert_procs: 0,
+      test_asserterror_procs: 1,
+      test_areequal_total: 1,
+      test_areequal_literal: 1,
+    }),
+    m({ // 3 scored procedures: mean 1, zero share 2/3, asserterror 0, literal share 0
+      new_test_procs: 3,
+      test_procs_scored: 3,
+      test_assert_reachable_sum: 3,
+      test_zero_assert_procs: 2,
+      test_asserterror_procs: 0,
+      test_areequal_total: 3,
+      test_areequal_literal: 0,
+    }),
+  ]);
+  // An unweighted mean of the execution values would give 2.5, 1/3, 0.5, 0.5.
+  assertEquals(q, {
+    new_test_procs: 4,
+    procs_scored: 4,
+    assert_reachable_mean: 1.75,
+    zero_assert_share: 0.5,
+    asserterror_share: 0.25,
+    areequal_literal_share: 0.25,
+  });
 });
 
 Deno.test("pooledTestQuality / pooledCoverage: sums over executions, shares from the pooled counts, null when the denominator is 0", () => {
