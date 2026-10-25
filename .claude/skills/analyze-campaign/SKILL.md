@@ -242,12 +242,15 @@ and `error` columns) and `summary.json`.
 - Scale scenarios (on by default for a task with `infra/cg-sql-scale/<task>/src/`, read from
   the working tree): after a measured oracle run the scenario codeunits are the only sources of
   the Test app over the execution's final production apps, run through the test-rerun runner
-  with the same measuring swap. Methods run in declaration order; a `Setup...` method builds the
-  data (flagged `setup`), the others are one measured call each. A scenario compile error or
-  failed row is `scenario_failed`, a passing row without a measurement `scenario_unmeasured`
-  (no numbers). Neither changes a verdict, a pass rate or the oracle rows. The summary has
-  per-method n and median/min/max over passing scenarios only, and the failed and unmeasured
-  counts per task and arm. Scenario sources are in the cache key.
+  with the same measuring swap. Every method is self-contained and order does not matter. A
+  `Setup...` method (`SetupOnly`: the setup alone) is the baseline, flagged `setup` and listed
+  raw; every other method is setup plus one call, and its net is `method - SetupOnly` within the
+  same execution. The summary has, per task, arm and method, n and median/min/max of the raw and
+  of the net values, over passing scenarios only, plus the `scenario_failed` and
+  `scenario_unmeasured` counts. A scenario compile error or failed row is `scenario_failed`; a
+  passing row without a measurement, or a missing, failed or unmeasured `SetupOnly`, is
+  `scenario_unmeasured` (no numbers). Neither changes a verdict, a pass rate or the oracle rows.
+  Scenario sources are in the cache key.
 - The numbers include a constant framework overhead per test (the same for every solution).
   Compare solutions of one task; do not read them as the cost of the code alone.
 - Fails closed: an execution is listed under `failed`, with no numbers, when the measured verdict

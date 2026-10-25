@@ -39,6 +39,7 @@ import {
   type ScenarioFile,
   type ScenarioRecord,
   scenarioRecord,
+  type ScenarioRow,
   type ScenarioRunResult,
   scenarioSha,
   type ScenarioSpec,
@@ -224,6 +225,12 @@ export type ScenarioEntry = ScenarioRecord & {
   repeat: number;
 };
 
+export type ScenarioMethod = Stat & {
+  setup: boolean;
+  net_statements: ReturnType<typeof spread>;
+  net_ms: ReturnType<typeof spread>;
+};
+
 export interface SqlCostCell {
   /** Oracle procedures, by `codeunit.procedure`. */
   procedures: Record<string, Stat>;
@@ -233,7 +240,8 @@ export interface SqlCostCell {
     executions_ok: number;
     scenario_failed: number;
     scenario_unmeasured: number;
-    methods: Record<string, Stat & { setup: boolean }>;
+    /** Raw statements / ms per method, plus the net of a call over SetupOnly (null for a setup method). */
+    methods: Record<string, ScenarioMethod>;
   };
 }
 export type SqlCostSummary = Record<string, Record<string, SqlCostCell>>;
@@ -277,13 +285,20 @@ export function sqlCostSummary(
     const ss = scenarios.filter((s) => s.task === task && s.arm === arm);
     if (ss.length > 0) {
       const ok = ss.filter((s) => s.status === "ok");
-      const methods: Record<string, Stat & { setup: boolean }> = {};
+      const methods: Record<string, ScenarioMethod> = {};
       const all = ok.flatMap((s) => s.rows);
       const mname = (r: { codeunit: number; procedure: string }) =>
         `${r.codeunit}.${r.procedure}`;
       for (const n of [...new Set(all.map(mname))].sort()) {
         const mine = all.filter((r) => mname(r) === n);
-        methods[n] = { ...stat(mine), setup: mine[0]!.setup };
+        const net = (pick: (r: ScenarioRow) => number | null) =>
+          spread(mine.flatMap((r) => pick(r) === null ? [] : [pick(r)!]));
+        methods[n] = {
+          ...stat(mine),
+          setup: mine[0]!.setup,
+          net_statements: net((r) => r.net_statements),
+          net_ms: net((r) => r.net_ms),
+        };
       }
       c.scenario = {
         executions_ok: ok.length,
@@ -324,6 +339,8 @@ function flatRows(
       error: "",
       statements: r.statements,
       ms: r.ms,
+      net_statements: "",
+      net_ms: "",
     })),
     ...scenarios.flatMap((s): Record<string, string | number | boolean>[] =>
       s.status === "ok"
@@ -339,6 +356,8 @@ function flatRows(
           error: "",
           statements: r.statements,
           ms: r.ms,
+          net_statements: r.net_statements ?? "",
+          net_ms: r.net_ms ?? "",
         }))
         : [{
           ...base(s),
@@ -352,6 +371,8 @@ function flatRows(
           error: s.error ?? "",
           statements: "",
           ms: "",
+          net_statements: "",
+          net_ms: "",
         }]
     ),
   ];

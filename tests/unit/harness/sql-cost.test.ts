@@ -174,17 +174,21 @@ Deno.test("sqlCostSummary: scenarios count failed ones, aggregate passing ones o
     rows: [
       {
         codeunit: 84980,
-        procedure: "Setup100",
+        procedure: "SetupOnly",
         setup: true,
         statements: 500,
+        net_statements: null,
+        net_ms: null,
         ms: 5,
       },
       {
         codeunit: 84980,
         procedure: "Call100",
         setup: false,
-        statements: s,
-        ms: s,
+        statements: 500 + s,
+        net_statements: s,
+        net_ms: s,
+        ms: 5 + s,
       },
     ],
   });
@@ -205,22 +209,28 @@ Deno.test("sqlCostSummary: scenarios count failed ones, aggregate passing ones o
     [2, 1, 1],
   );
   assertEquals(sc.methods["84980.Call100"]!.n, 2);
-  assertEquals(sc.methods["84980.Call100"]!.statements, {
+  assertEquals(sc.methods["84980.Call100"]!.net_statements, {
     median: 20,
     min: 10,
     max: 30,
   });
+  assertEquals(sc.methods["84980.SetupOnly"]!.net_statements, null);
+  assertEquals(sc.methods["84980.Call100"]!.statements, {
+    median: 520,
+    min: 510,
+    max: 530,
+  });
   assertEquals(sc.methods["84980.Call100"]!.setup, false);
-  assertEquals(sc.methods["84980.Setup100"]!.setup, true);
+  assertEquals(sc.methods["84980.SetupOnly"]!.setup, true);
   // the failed executions' (absent) numbers are not in n
-  assertEquals(sc.methods["84980.Setup100"]!.n, 2);
+  assertEquals(sc.methods["84980.SetupOnly"]!.n, 2);
 });
 
 // ---- the step: cache and outputs
 
 const okScenario = (): ScenarioRunResult => ({
   compile: { ok: true, diagnostics: [] },
-  rows: ["Setup100", "Call100"].map((procedure) => ({
+  rows: ["SetupOnly", "Call100"].map((procedure) => ({
     codeunit: 84980,
     procedure,
     outcome: "pass" as const,
@@ -228,8 +238,8 @@ const okScenario = (): ScenarioRunResult => ({
     message: null,
   })),
   measurements: [
-    meas(84980, "Setup100", 500),
-    meas(84980, "Call100", 12),
+    meas(84980, "SetupOnly", 500),
+    meas(84980, "Call100", 512),
   ],
   identity: { container: "Cronus28", bc_version: "28.1" },
 });
@@ -289,7 +299,7 @@ async function scenarioRoot(body = "x") {
   await Deno.mkdir(join(root, "HX-022", "src"), { recursive: true });
   await Deno.writeTextFile(
     join(root, "HX-022", "src", "S.Codeunit.al"),
-    `codeunit 84980 "S"\n{\n    [Test]\n    procedure Setup100()\n    begin\n    end;\n    [Test]\n    procedure Call100()\n    begin\n    end; // ${body}\n}\n`,
+    `codeunit 84980 "S"\n{\n    [Test]\n    procedure SetupOnly()\n    begin\n    end;\n    [Test]\n    procedure Call100()\n    begin\n    end; // ${body}\n}\n`,
   );
   return root;
 }
@@ -340,7 +350,7 @@ Deno.test("sqlCostStep: json and csv carry kind and scenario columns; a failed o
       ]),
       [
         ["e1", "oracle", "TestA"],
-        ["e1", "scenario", "Setup100"],
+        ["e1", "scenario", "SetupOnly"],
         ["e1", "scenario", "Call100"],
       ],
     );
@@ -356,8 +366,11 @@ Deno.test("sqlCostStep: json and csv carry kind and scenario columns; a failed o
     );
     const cell = summary.tasks["HX-022"].a;
     assertEquals(cell.procedures["85001.TestA"].n, 1);
-    assertEquals(cell.scenario.methods["84980.Setup100"].setup, true);
-    assertEquals(cell.scenario.methods["84980.Call100"].statements.median, 12);
+    assertEquals(cell.scenario.methods["84980.SetupOnly"].setup, true);
+    assertEquals(
+      cell.scenario.methods["84980.Call100"].net_statements.median,
+      12,
+    );
   } finally {
     await Deno.remove(dir, { recursive: true });
     await Deno.remove(root, { recursive: true });
@@ -407,7 +420,7 @@ Deno.test("sqlCostStep: an unmeasured scenario method is scenario_unmeasured", a
   try {
     const { runner } = mockRunner("r", () => result(), () => ({
       ...okScenario(),
-      measurements: [meas(84980, "Setup100", 500)],
+      measurements: [meas(84980, "SetupOnly", 500)],
     }));
     const out = await step(dir, runner, { scenarioRoot: root });
     assertEquals(out.scenarios.map((s) => s.status), [

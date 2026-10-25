@@ -74,7 +74,7 @@ Deno.test("scenarioSha: changes with a source byte or a name", async () => {
   assertEquals(a === await scenarioSha([{ name: "b.al", text: "x" }]), false);
 });
 
-const specs = [{ codeunit: 84980, procedures: ["Setup100Linked", "Call100"] }];
+const specs = [{ codeunit: 84980, procedures: ["SetupOnly", "Call100"] }];
 const run = (over: Partial<ScenarioRunResult> = {}): ScenarioRunResult => ({
   compile: { ok: true, diagnostics: [] },
   rows: specs[0]!.procedures.map((procedure) => ({
@@ -87,7 +87,7 @@ const run = (over: Partial<ScenarioRunResult> = {}): ScenarioRunResult => ({
   measurements: [
     {
       codeunit: 84980,
-      procedure: "Setup100Linked",
+      procedure: "SetupOnly",
       statements: 900,
       ms: 50,
       success: true,
@@ -95,8 +95,8 @@ const run = (over: Partial<ScenarioRunResult> = {}): ScenarioRunResult => ({
     {
       codeunit: 84980,
       procedure: "Call100",
-      statements: 12,
-      ms: 3,
+      statements: 912,
+      ms: 53,
       success: true,
     },
   ],
@@ -104,12 +104,51 @@ const run = (over: Partial<ScenarioRunResult> = {}): ScenarioRunResult => ({
   ...over,
 });
 
-Deno.test("scenarioRecord: all passed gives per-method rows, setup flagged", () => {
+Deno.test("scenarioRecord: all passed gives raw and net rows, setup flagged and never netted", () => {
   const r = scenarioRecord(specs, run());
   assertEquals(r.status, "ok");
   assertEquals(
-    r.rows.map((x) => [x.procedure, x.setup, x.statements]),
-    [["Setup100Linked", true, 900], ["Call100", false, 12]],
+    r.rows.map((
+      x,
+    ) => [x.procedure, x.setup, x.statements, x.net_statements, x.net_ms]),
+    [["SetupOnly", true, 900, null, null], ["Call100", false, 912, 12, 3]],
+  );
+});
+
+Deno.test("scenarioRecord: the net does not depend on method order", () => {
+  const rows = run().rows.reverse();
+  const r = scenarioRecord(
+    [{ codeunit: 84980, procedures: ["Call100", "SetupOnly"] }],
+    run({ rows, measurements: run().measurements.reverse() }),
+  );
+  assertEquals(r.status, "ok");
+  assertEquals(
+    r.rows.find((x) => x.procedure === "Call100")!.net_statements,
+    12,
+  );
+});
+
+Deno.test("scenarioRecord: SetupOnly missing, failed or unmeasured is scenario_unmeasured, no net values", () => {
+  const noBase = [{ codeunit: 84980, procedures: ["Call100"] }];
+  const missing = scenarioRecord(
+    noBase,
+    run({ rows: run().rows.slice(1) }),
+  );
+  assertEquals([missing.status, missing.rows], ["scenario_unmeasured", []]);
+  const failedRows = run().rows;
+  failedRows[0] = {
+    ...failedRows[0]!,
+    outcome: "fail",
+    message: "setup broke",
+  };
+  assertEquals(
+    scenarioRecord(specs, run({ rows: failedRows })).status,
+    "scenario_unmeasured",
+  );
+  assertEquals(
+    scenarioRecord(specs, run({ measurements: run().measurements.slice(1) }))
+      .status,
+    "scenario_unmeasured",
   );
 });
 
@@ -133,10 +172,11 @@ Deno.test("scenarioRecord: a failed row, later rows included, is scenario_failed
   assertEquals(r.status, "scenario_failed");
   assertEquals(r.error?.includes("Boom in the call"), true);
   assertEquals(r.rows, []);
-  // a not_run row and a row that is missing altogether count too
+  // a not_run call row counts too
+  const notRun = run().rows;
+  notRun[1] = { ...notRun[1]!, outcome: "not_run" };
   assertEquals(
-    scenarioRecord(specs, run({ rows: [{ ...rows[0]!, outcome: "not_run" }] }))
-      .status,
+    scenarioRecord(specs, run({ rows: notRun })).status,
     "scenario_failed",
   );
 });

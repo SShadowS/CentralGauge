@@ -110,6 +110,9 @@ export interface ScenarioRow {
   setup: boolean;
   statements: number;
   ms: number;
+  /** The call's cost: this method minus the codeunit's SetupOnly. null for a setup method. */
+  net_statements: number | null;
+  net_ms: number | null;
 }
 
 export interface ScenarioRecord {
@@ -119,13 +122,17 @@ export interface ScenarioRecord {
   rows: ScenarioRow[];
 }
 
+/** A setup method builds data; the baseline is the setup alone. */
+const BASELINE = "SetupOnly";
+const isSetup = (procedure: string) => procedure.startsWith("Setup");
+
 const key = (codeunit: number, procedure: string) =>
   `${codeunit}|${procedure.toLowerCase()}`;
 
 /**
  * The scenario's record. Fail closed: a compile failure or any non-passing row
  * (later rows count too) is `scenario_failed` with the text; a passing row with
- * no measurement is `scenario_unmeasured`; no numbers in either case. An infra
+ * no measurement, or no passing measured SetupOnly baseline, is `scenario_unmeasured`; no numbers in either case. An infra
  * row throws (the run is retried, nothing is recorded).
  */
 export function scenarioRecord(
@@ -143,6 +150,28 @@ export function scenarioRecord(
   const infra = res.rows.find((r) => r.failure === "infra");
   if (infra) throw new Error(`${infra.codeunit} ${infra.procedure} is infra`);
   const byKey = new Map(res.rows.map((r) => [key(r.codeunit, r.procedure), r]));
+  const measured = (codeunit: number, procedure: string) => {
+    const m = res.measurements.filter((x) =>
+      key(x.codeunit, x.procedure) === key(codeunit, procedure)
+    );
+    return m.length === 1 ? m[0]! : null;
+  };
+  // Each call method is netted against its codeunit's SetupOnly baseline (any
+  // method order): without a passing, measured baseline there are no net values.
+  const base = new Map<number, SqlMeasurement>();
+  for (const s of specs) {
+    if (s.procedures.every(isSetup)) continue;
+    const b = byKey.get(key(s.codeunit, BASELINE));
+    const m = b?.outcome === "pass" ? measured(s.codeunit, BASELINE) : null;
+    if (!m) {
+      return {
+        status: "scenario_unmeasured",
+        error: `${s.codeunit} ${BASELINE} is missing, failed or unmeasured`,
+        ...none,
+      };
+    }
+    base.set(s.codeunit, m);
+  }
   const bad: string[] = [];
   for (const s of specs) {
     for (const p of s.procedures) {
@@ -160,17 +189,18 @@ export function scenarioRecord(
   const unmeasured: string[] = [];
   for (const s of specs) {
     for (const p of s.procedures) {
-      const m = res.measurements.filter((x) =>
-        key(x.codeunit, x.procedure) === key(s.codeunit, p)
-      );
-      if (m.length !== 1) unmeasured.push(`${s.codeunit} ${p}`);
+      const m = measured(s.codeunit, p);
+      if (!m) unmeasured.push(`${s.codeunit} ${p}`);
       else {
+        const b = isSetup(p) ? undefined : base.get(s.codeunit);
         rows.push({
           codeunit: s.codeunit,
           procedure: p,
-          setup: p.startsWith("Setup"),
-          statements: m[0]!.statements,
-          ms: m[0]!.ms,
+          setup: isSetup(p),
+          statements: m.statements,
+          ms: m.ms,
+          net_statements: b ? m.statements - b.statements : null,
+          net_ms: b ? m.ms - b.ms : null,
         });
       }
     }
@@ -195,6 +225,8 @@ export function validScenarioRecord(x: unknown): x is ScenarioRecord {
     r.rows.every((w) =>
       Number.isInteger(w.codeunit) && typeof w.procedure === "string" &&
       typeof w.setup === "boolean" && Number.isFinite(w.statements) &&
-      Number.isFinite(w.ms)
+      Number.isFinite(w.ms) &&
+      (w.net_statements === null || Number.isFinite(w.net_statements)) &&
+      (w.net_ms === null || Number.isFinite(w.net_ms))
     ) && (r.status === "ok" ? r.rows.length > 0 : r.rows.length === 0);
 }
