@@ -37,7 +37,11 @@ import type {
   PlanEnv,
   RunOptions,
 } from "../../src/harness/campaign.ts";
-import type { CellResult, HarnessEnv } from "../../src/harness/execution.ts";
+import type {
+  CellResult,
+  HarnessEnv,
+  SecretAccount,
+} from "../../src/harness/execution.ts";
 import type { QualifyManifest } from "../../src/harness/qualify.ts";
 import type { FrozenClaudeCode, ImageFacts } from "../../src/harness/images.ts";
 import type { ManifestReader } from "../../src/harness/symbols.ts";
@@ -532,7 +536,7 @@ export interface CellCliOptions {
   containers: string[];
   backendHost?: string | undefined;
   backendPort: number;
-  secretsDir: string;
+  secretAccounts: SecretAccount[];
   symbolStore: string;
   privateDir: string;
   credentialLedger: string | null;
@@ -627,7 +631,7 @@ function envOptions(
     containers: o.containers,
     backendHost: o.backendHost,
     backendPort: o.backendPort,
-    secretsSource: o.secretsDir,
+    secretAccounts: o.secretAccounts,
     symbolStore: o.symbolStore,
     privateRoot: o.privateDir,
     credentialLedger: o.credentialLedger,
@@ -1591,7 +1595,7 @@ interface CellCliFlags {
   containers: string;
   backendHost?: string;
   backendPort: number;
-  secretsDir: string;
+  secretsDir: string[];
   symbolStore: string;
   privateDir?: string;
   credentialLedger?: string;
@@ -1625,6 +1629,38 @@ function coordLeases(pairs: [string, string][]): Map<string, string> {
   return m;
 }
 
+/**
+ * `--secrets-dir` values: one plain dir (one unlabelled account) or several
+ * `label=dir` pairs (lowercase slug labels, unique labels and dirs). Dirs are
+ * resolved against the cwd.
+ */
+export function parseSecretsDirs(values: string[]): SecretAccount[] {
+  const bad = (why: string) =>
+    new ValidationError(`--secrets-dir: ${why}`, values);
+  if (values.length === 0) throw bad("at least one directory is required");
+  const out = values.map((v) => {
+    const eq = v.indexOf("=");
+    // A Windows drive path (C:\x) has no "=", so the first "=" splits label from dir.
+    const label = eq < 0 ? null : v.slice(0, eq);
+    const dir = eq < 0 ? v : v.slice(eq + 1);
+    if (label !== null && !/^[a-z0-9][a-z0-9-]*$/.test(label)) {
+      throw bad(`bad label "${label}" (lowercase letters, digits, hyphen)`);
+    }
+    if (dir === "") throw bad(`empty directory in "${v}"`);
+    return { label, dir: resolve(Deno.cwd(), dir) };
+  });
+  if (out.length > 1 && out.some((a) => a.label === null)) {
+    throw bad("several directories must all be label=dir");
+  }
+  if (new Set(out.map((a) => a.label)).size !== out.length) {
+    throw bad("a label is used twice");
+  }
+  if (new Set(out.map((a) => a.dir.toLowerCase())).size !== out.length) {
+    throw bad("the same directory is used twice");
+  }
+  return out;
+}
+
 /** Relative directories against the cwd; --containers split on commas; the ledger from the flag or CG_CREDENTIAL_LEDGER. */
 function cliOpts(f: CellCliFlags): CellCliOptions {
   const cwd = Deno.cwd();
@@ -1644,7 +1680,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
     containers: f.containers.split(",").map((c) => c.trim()).filter(Boolean),
     backendHost: f.backendHost,
     backendPort: f.backendPort,
-    secretsDir: abs(f.secretsDir),
+    secretAccounts: parseSecretsDirs(f.secretsDir),
     symbolStore: abs(f.symbolStore),
     privateDir: abs(privateDir),
     credentialLedger: ledger ? abs(ledger) : null,
@@ -3244,8 +3280,8 @@ export function registerHarnessCommand(
       })
       .option(
         "--secrets-dir <dir:string>",
-        "Operator secrets directory (provider credentials)",
-        { required: true },
+        "Operator secrets directory (provider credentials). Repeat as label=dir to spread cells over several Claude accounts (blocks alternate accounts)",
+        { required: true, collect: true },
       )
       .option("--symbol-store <dir:string>", "Host symbol store", {
         default: "results/harness/symbols",

@@ -12,7 +12,7 @@ import { join, resolve } from "@std/path";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
 import type { PlanEnv } from "../../src/harness/campaign.ts";
-import type { HarnessEnv } from "../../src/harness/execution.ts";
+import type { HarnessEnv, SecretAccount } from "../../src/harness/execution.ts";
 import type { DockerCli } from "../../src/harness/sandbox.ts";
 import type { EgressRuntime } from "../../src/harness/egress.ts";
 import { ConfigManager } from "../../src/config/config.ts";
@@ -150,7 +150,7 @@ export interface EnvOptions {
   judgeContainers?: string[];
   backendHost?: string | undefined;
   backendPort: number;
-  secretsSource: string;
+  secretAccounts: SecretAccount[];
   symbolStore: string;
   privateRoot: string;
   credentialLedger: string | null;
@@ -929,6 +929,7 @@ export async function openPlanEnv(
     egressEnforced: mode === "enforced",
     egressPlaced: mode !== "off",
     proxyIsolation: await markerProxyIsolation(sharedResults),
+    secretAccounts: o.secretAccounts,
   };
 }
 
@@ -1529,7 +1530,7 @@ export async function openHarnessEnv(
       symbols,
       symbolStore: o.symbolStore,
       onPrem,
-      secretsSource: o.secretsSource,
+      secretAccounts: o.secretAccounts,
       // Owned ids come from each grant's and judgment's trusted roots (M1-16).
       // H-35 S3: every judge deployment resets to the lineage (--lineage);
       // without one, judging refuses.

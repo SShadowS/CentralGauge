@@ -768,7 +768,7 @@ Deno.test("recovery: an interrupted attempt keeps its spend at the original pric
   // Prices changed and the operator rotated the credential file since the attempt.
   t.env.pricing = () => Promise.resolve({ at: "x", models: {} });
   await Deno.writeTextFile(
-    join(t.env.secretsSource, "claude-oauth-token"),
+    join(t.env.secretAccounts[0]!.dir, "claude-oauth-token"),
     "rotated-0123456789abcdef",
   );
   t.env.hooks = {};
@@ -2135,7 +2135,7 @@ Deno.test("preflight failures (missing image, missing operator secret) reserve n
   );
   assert(!await exists(t.env.credentialLedger!), "image: no slot reserved");
   await using t2 = await makeEnv();
-  await Deno.remove(join(t2.env.secretsSource, "claude-oauth-token"));
+  await Deno.remove(join(t2.env.secretAccounts[0]!.dir, "claude-oauth-token"));
   const e = (await runCell(t2.env, await cellFor(t2))).executions[0]!;
   assertEquals(e.termination, "setup_failed");
   assert(!await exists(t2.env.credentialLedger!), "secret: no slot reserved");
@@ -4338,7 +4338,7 @@ limits: { timeout_min: 30, max_budget_usd: 2 }
     "centralgauge.harness.base_digest": `sha256:${"b".repeat(64)}`,
   });
   await Deno.writeTextFile(
-    join(t.env.secretsSource, "openrouter-api-key"),
+    join(t.env.secretAccounts[0]!.dir, "openrouter-api-key"),
     "sk-or-v1-".padEnd(48, "7"),
   );
   return t;
@@ -5598,7 +5598,7 @@ async function unqualifiedCell(t: TestEnv) {
 Deno.test("runExecution (H-03): an unqualified Claude Code version on r3+ is refused before the intent, the ledger and any secret read", async () => {
   await using t = await makeEnv();
   // A secret read would fail on this missing source instead of the refusal.
-  await Deno.remove(t.env.secretsSource, { recursive: true });
+  await Deno.remove(t.env.secretAccounts[0]!.dir, { recursive: true });
   await assertRejects(
     async () => runCell(t.env, await unqualifiedCell(t)),
     ConfigurationError,

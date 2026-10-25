@@ -200,7 +200,8 @@ export interface HarnessEnv {
    * (admitOnPrem); every judge input carries it.
    */
   onPrem: OnPremIndex;
-  secretsSource: string;
+  /** Operator secrets directories, one per Claude account (`--secrets-dir [label=]dir`); at least one. */
+  secretAccounts: SecretAccount[];
   /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
   secretAcl?: { icacls: IcaclsRunner; user: string };
   /** Drive type of the private root ("Fixed" is the only local type accepted); tests inject it. */
@@ -469,6 +470,8 @@ interface Intent {
   egress_override?: EgressOverride;
   /** H-13b: likewise its calibration waiver. */
   calibration_waived?: true;
+  /** R-02: the account label the attempt ran under; recovery copies it, never re-derives it. */
+  account?: string;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -804,6 +807,32 @@ async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
       );
     }
   }
+}
+
+/** One operator secrets directory; the label (null when the run has a single unlabelled account) is all that is ever recorded. */
+export interface SecretAccount {
+  label: string | null;
+  dir: string;
+}
+
+/**
+ * The account a cell uses: its campaign block index modulo the account count.
+ * Every arm of a block shares one account, blocks alternate, and a retry or a
+ * resume of a cell always gets the same account.
+ */
+export function pickAccount(
+  accounts: readonly SecretAccount[],
+  blockIndex: number,
+): SecretAccount {
+  return accounts[blockIndex % accounts.length]!;
+}
+
+/** Run-start check: every account dir holds every required secret file. */
+export async function checkAccountsSecrets(
+  accounts: readonly SecretAccount[],
+  files: readonly string[],
+): Promise<void> {
+  for (const a of accounts) await checkOperatorSecrets(a.dir, files);
 }
 
 /** Operator secret files as the adapter declares them: present and long enough (preflight, nothing released). */
@@ -1227,6 +1256,8 @@ interface DraftInput {
   preStart?: boolean;
   /** H-16: the sandbox is confirmed gone but a backend request did not drain: harness_crash with this infra reason. */
   undrained?: string | null;
+  /** The Claude account label of the cell (absent: unlabelled or stub). */
+  account?: string | null;
 }
 
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
@@ -1454,6 +1485,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ...(f.at.usageResetIgnored
       ? { usage_reset_ignored: f.at.usageResetIgnored }
       : {}),
+    ...(f.account ? { account: f.account } : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -1702,6 +1734,11 @@ export async function runExecution(
       image_override: stubProvider.imageOverride ?? null,
     }
     : null;
+  // A stub cell releases no real credential: dummy secrets, no account label.
+  const account = stub ? null : pickAccount(
+    env.secretAccounts,
+    cell.block.index,
+  );
   await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
@@ -1759,6 +1796,7 @@ export async function runExecution(
       }
       : {}),
     ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
+    ...(account?.label ? { account: account.label } : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -1874,10 +1912,15 @@ export async function runExecution(
       manifest.limits.timeout_min,
     );
     // A stub cell releases no credential: every credential file is a dummy.
-    const secretsSource = stub
-      ? await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles)
-      : env.secretsSource;
-    await checkOperatorSecrets(secretsSource, adapter.secretFiles);
+    const secretsSource = account
+      ? account.dir
+      : await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles);
+    // R-02: a real cell checks every supplied account dir, not only its own (a
+    // campaign checks at its start too; `harness cell` reaches only this).
+    // Like any missing secret, a failure is this cell's setup_failed.
+    if (account) {
+      await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
+    } else await checkOperatorSecrets(secretsSource, adapter.secretFiles);
     // Predictable egress checks come before the grant and the reservation.
     let hosts: string[] = [];
     let expect: Record<string, boolean> = {};
@@ -2401,6 +2444,7 @@ export async function runExecution(
     egressStop,
     preStart: inventoryRefused !== null || notLive !== null,
     undrained,
+    account: account?.label ?? null,
   });
   holdNamespace(env, nothingPublished);
   await publishDraft(
@@ -3891,6 +3935,8 @@ export async function recoverInterrupted(
         secrets,
         mode: intent.mode ?? "normal",
         stub: intent.stub ?? null,
+        // R-02: the label the attempt recorded in its intent, whatever command recovers.
+        account: intent.account ?? null,
       });
     }
     hold();
