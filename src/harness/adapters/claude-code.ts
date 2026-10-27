@@ -1192,6 +1192,75 @@ export const BUILTIN_INVENTORY: Readonly<
     qualified:
       "H-20 stub cells on image sha256:f1b97481fbdf6f0450f2865036f5e369738465f2097b29dd951bc2d46063f742 (plain 8d9f653f-194c-41e6-8d3f-916fbf544369, adcdcfde-08eb-45a4-80c0-e68ee832d534; LSP 5b981278-b4d1-4fd3-9311-5aaa7c2904df, d831e03e-cf65-4a32-8981-2b7986a5e39d; web 3d29ebaf-ed2c-46ee-b87a-7fe67a17a800, 6812da89-d390-4095-9396-f0d5691d85b8; review H:\\cg-coord\\tasks\\H-20\\infra-qualify-2.1.302.md)",
   },
+  // R-01 dev qualification (image r4, the Tuesday run). Against 2.1.302:
+  // agents, skills, plugins, slash commands (45), MCP servers and init keys
+  // unchanged. Observed differences: tool Monitor added in every arm (R-01
+  // disallows it, DISALLOWED_TOOLS, so it is hidden from here on and carried
+  // unobserved like the six); capabilities interrupt_requeue_taken_v1 and
+  // lifecycle_wakeup_source_v1 added (13; this adapter reads none). al-lsp
+  // v1.18.11 unchanged. Qualified by the R-01 stub cells, including the
+  // reproof with Monitor hidden.
+  "2.1.310": {
+    agents: [
+      "claude",
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "statusline-setup",
+    ],
+    skills: [
+      "deep-research",
+      "dataviz",
+      "update-config",
+      "verify",
+      "debug",
+      "code-review",
+      "simplify",
+      "batch",
+      "fewer-permission-prompts",
+      "doctor",
+      "loop",
+      "schedule",
+      "claude-api",
+      "workflow-authoring",
+      "run",
+      "run-skill-generator",
+      "plugin-authoring",
+    ],
+    plugins: [
+      "cc-plugin-agents-md@builtin",
+      "cc-plugin-plugin-authoring@builtin",
+    ],
+    tools: [
+      "Task",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListAgents",
+      "Monitor",
+      "NotebookEdit",
+      "Read",
+      "RemoteTrigger",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Skill",
+      "TaskStop",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Workflow",
+      "Write",
+    ],
+    qualified:
+      "R-01 stub cells on image sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2 (capture plain 6cbdc5e3-6188-492d-ae8e-2c22ec7dbe00, c242df07-d446-4e8c-9690-6adf9e9aba78; LSP 6ce590dc-ef86-4693-9469-b4af080ca17d; web 784b6b0b-9cd8-43ee-87e7-eaa1b20f2089, b1fdf6dd-af49-4e0e-b226-b855ebd7ee4d; reproof with Monitor disallowed: plain 5fe02ad4-0351-4447-8a0d-79411164f934, 133a0ba8-cbff-46fa-aabf-1e96a7733929; LSP b4a326ca-1080-4f7a-8ae1-97d79d834a33, e620333e-e6c8-4495-8c51-15a3288fec25; web 4d78fb22-7174-4be3-8b14-464021fb513d, 2eaa5eaf-bbd5-40f1-8242-4966430aea68; review H:\\cg-coord\\tasks\\R-01\\infra-qualify-2.1.310.md)",
+  },
 };
 
 /**
@@ -1206,6 +1275,11 @@ export const CAMPAIGN_CALIBRATED: Readonly<
     version: "2.1.302",
     calibration:
       "M9-17 integrated gate-1 cells on image r3 (HX-003, Cronus282): cc-v2-plain f5233317-687f-41f4-8803-aab71aa9aea0, cc-v2-plain-lsp 10d0adc5-ab2e-4887-a61e-938c3790f65f, cc-v2-realistic 80891c85-65cb-41a8-bdad-7d171f0197c2, cc-v2-realistic-lsp 6d617739-ce9e-4185-b502-0e00c49f027a (evidence H:\\cg-coord\\m9\\gate1\\evidence-r3.md)",
+  },
+  "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2": {
+    version: "2.1.310",
+    calibration:
+      "R-01 supervised calibration cells on image r4 (HX-003, Cronus281, campaign 2bf01ce1-9c82-4265-bebf-df72ad67a150): cc-v2-tue-plain 0d97a7e3-6d5b-4964-b746-0eb78a8669a1, cc-v2-tue-plain-bcquality d718fa33-5caf-4785-8c79-801709a40c32, cc-v2-tue-realistic 0cb66ba8-cad4-4bd9-8134-e4305a991cb5, cc-v2-tue-realistic-bcquality c8cbf482-c8e6-44ed-948b-ef0966095f86 (evidence H:\\cg-coord\\tasks\\R-01\\cal\\evidence-r4.md)",
   },
 };
 
@@ -2218,13 +2292,27 @@ export function parseClaudeStream(
 
 /**
  * Session-control and cross-session tools a benchmark cell has no use for
- * (M1-32b), sorted: those of ScheduleWakeup, ListAgents, SendMessage, Monitor,
- * CronCreate, CronDelete and RemoteTrigger that 2.1.282's system/init lists
- * (Monitor is not listed). Background Task/Agent use stays allowed. Passed as
- * --disallowedTools by run.ps1 and recorded in settings.native, so they are
- * identity inputs.
+ * (M1-32b), sorted: ScheduleWakeup, ListAgents, SendMessage, Monitor,
+ * CronCreate, CronDelete and RemoteTrigger, each once a system/init lists it.
+ * 2.1.282 lists all but Monitor (PRE_R01_TOOLS); 2.1.310 lists Monitor too,
+ * so R-01 (decisions 2026-10-25-tuesday-run) disallows it. Background
+ * Task/Agent use stays allowed. Passed as --disallowedTools by run.ps1 and
+ * recorded in settings.native, so they are identity inputs.
  */
 const DISALLOWED_TOOLS = [
+  "CronCreate",
+  "CronDelete",
+  "ListAgents",
+  "Monitor",
+  "RemoteTrigger",
+  "ScheduleWakeup",
+  "SendMessage",
+] as const;
+/**
+ * The list before R-01 (no Monitor): what frozen v1 arms run with and every
+ * manifest recorded before R-01 carries. Never changes.
+ */
+const PRE_R01_TOOLS = [
   "CronCreate",
   "CronDelete",
   "ListAgents",
@@ -2240,27 +2328,35 @@ const WEB_TOOLS = ["WebFetch", "WebSearch"] as const;
 
 /**
  * Native settings this adapter derives from its harness alone (M5-01a): the
- * default arm, web tools blocked; `webTools` is a web arm's list.
+ * default arm, web tools blocked; `webTools` is a web arm's list. `preR01`
+ * gives the list without Monitor (v1 arms; stored pre-R-01 manifests).
  */
 export const claudeCodeHarnessNative = (
   webTools = false,
-): { disallowed_tools: string[] } => ({
-  disallowed_tools: webTools
-    ? [...DISALLOWED_TOOLS]
-    : [...DISALLOWED_TOOLS, ...WEB_TOOLS].sort(),
-});
+  preR01 = false,
+): { disallowed_tools: string[] } => {
+  const tools = preR01 ? PRE_R01_TOOLS : DISALLOWED_TOOLS;
+  return {
+    disallowed_tools: webTools ? [...tools] : [...tools, ...WEB_TOOLS].sort(),
+  };
+};
 
 /**
  * The M5-01a derivation for a stored manifest (integrity, vary [harness]): the
- * default list, except a pre-H-07 manifest, which recorded the six session
- * tools and no web_tools request (code since H-07 never writes that pair; a
- * web arm requests web_tools and so stays a settings difference).
+ * default list of the manifest's era. A recorded list without Monitor was
+ * written before R-01 and derives the pre-R-01 default (the six session tools
+ * plus the web tools); a list with Monitor derives today's. Either way a
+ * pre-H-07 manifest, which recorded the six session tools and no web_tools
+ * request, derives those six (code since H-07 never writes that pair; a web
+ * arm requests web_tools and so stays a settings difference). Any other
+ * recorded list differs from its derivation.
  */
 export const claudeCodeDerivedNative = (m: ResolvedManifest) => {
   const listed = m.settings.native["disallowed_tools"];
+  const preR01 = !(Array.isArray(listed) && listed.includes("Monitor"));
   const legacy = !Object.hasOwn(m.settings.requested, "web_tools") &&
-    JSON.stringify(listed) === JSON.stringify(DISALLOWED_TOOLS);
-  return claudeCodeHarnessNative(legacy);
+    JSON.stringify(listed) === JSON.stringify(PRE_R01_TOOLS);
+  return claudeCodeHarnessNative(legacy, preR01);
 };
 
 export const claudeCodeAdapter: HarnessAdapter = {
@@ -2308,7 +2404,8 @@ export const claudeCodeAdapter: HarnessAdapter = {
     // explicit false would hash (settings.requested) unlike the equal default.
     const { web_tools, ...settings } = config.settings;
     // v1 is frozen (data freeze 2026-09-29): its image_revision "2" arms keep
-    // the six-tool list they ran with, so their identity never changes.
+    // the six-tool list they ran with (no Monitor, R-01), so their identity
+    // never changes.
     const v1 = config.image_revision === "2";
     if (v1 && web_tools !== undefined) {
       throw new ConfigurationError(
@@ -2324,7 +2421,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
     return {
       ...settings,
       api_models,
-      ...claudeCodeHarnessNative(web_tools === true || v1),
+      ...claudeCodeHarnessNative(web_tools === true || v1, v1),
       ...(config.components.mcp.length > 0
         ? { mcp: [...config.components.mcp].sort() }
         : {}),

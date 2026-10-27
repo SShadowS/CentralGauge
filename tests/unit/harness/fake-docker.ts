@@ -517,6 +517,9 @@ export const ccRel = (version: string) => ({
 export const CC_REL = ccRel("2.1.296");
 export const CC_MAIN_URL =
   "https://registry.npmjs.org/@anthropic-ai/claude-code/latest";
+/** The registry's version document of a pinned release (R-01). */
+export const ccPinnedUrl = (v: string) =>
+  `https://registry.npmjs.org/@anthropic-ai/claude-code/${v}`;
 export const ccWinUrl = (v = CC_REL.version) =>
   `https://registry.npmjs.org/@anthropic-ai/claude-code-win32-x64/${v}`;
 /** The registry's dist-tag latest version document (the shape 2.1.296 has). */
@@ -570,7 +573,7 @@ export function ccFetch(
     o.calls?.push({ url, init });
     const body = url.startsWith("https://api.github.com/")
       ? lspLatestBody()
-      : url === CC_MAIN_URL
+      : url === CC_MAIN_URL || url === ccPinnedUrl(v)
       ? o.main ?? ccMainDoc(v)
       : url === ccWinUrl(v)
       ? o.win ?? ccWinDoc(v)
@@ -594,9 +597,10 @@ export const ccLabels = (
     main: { integrity: string };
     win32_x64: { integrity: string };
   } = CC_REL,
+  track = "npm-latest",
 ): Record<string, string> => ({
   "centralgauge.harness.version": rel.version,
-  "centralgauge.harness.track": "npm-latest",
+  "centralgauge.harness.track": track,
   "centralgauge.harness.package":
     `@anthropic-ai/claude-code@${rel.version} ${rel.main.integrity} ${rel.win32_x64.integrity}`,
 });

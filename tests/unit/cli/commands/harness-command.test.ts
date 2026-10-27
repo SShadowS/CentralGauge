@@ -128,6 +128,7 @@ import {
   CC_REL,
   ccFetch,
   ccLabels,
+  ccPinnedUrl,
   ccRel,
   ccResolvedJson,
   ccWinUrl,
@@ -7633,7 +7634,7 @@ function ccBuild(
   root: string,
   id: string,
   labels: Record<string, string>,
-  o: { version?: string; revision?: string } = {},
+  o: { version?: string; revision?: string; track?: string } = {},
 ) {
   const revision = o.revision ?? "3-dev-T";
   const rel = ccRel(o.version ?? CC_REL.version);
@@ -7642,7 +7643,7 @@ function ccBuild(
     labels: {
       ...labels,
       "centralgauge.harness.revision": revision,
-      ...ccLabels(rel),
+      ...ccLabels(rel, o.track),
     },
     layers: ["l1", "l2"],
   });
@@ -7728,6 +7729,62 @@ Deno.test("harnessImagesBuild (H-03): claude-code resolves the newest release, b
     !await exists(join(root, "publish-lock", ".bench-running.json")),
     "the publication lock is released",
   );
+});
+
+Deno.test("harnessImagesBuild (R-01): claudeCodeVersion is refused for any other harness, before any build or fetch", async () => {
+  const { root, docker } = await ccRoot();
+  const calls: { url: string }[] = [];
+  for (const h of ["codex", "base"]) {
+    await assertRejects(
+      () =>
+        harnessImagesBuild(
+          h,
+          { root, version: "1.0.0", claudeCodeVersion: "2.1.310" },
+          docker,
+          ccFetch({ calls }),
+        ),
+      ConfigurationError,
+      "--claude-code-version",
+    );
+  }
+  assertEquals(calls.length, 0);
+  assertEquals(docker.builds.length, 0);
+});
+
+Deno.test("harnessImagesBuild (R-01): claude-code with claudeCodeVersion builds the pinned release, labels npm-pinned and logs (npm pinned)", async () => {
+  const { root, docker, baseId } = await ccRoot();
+  const id = `sha256:${"c".repeat(64)}`;
+  const rel = ccRel("2.1.310");
+  const b = ccBuild(docker, root, id, {
+    "centralgauge.harness": "claude-code",
+    "centralgauge.harness.base_digest": baseId,
+  }, { revision: "3", version: rel.version, track: "npm-pinned" });
+  const calls: { url: string }[] = [];
+  const printed: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => {
+    printed.push(a.map(String).join(" "));
+  });
+  let f;
+  try {
+    f = await harnessImagesBuild(
+      "claude-code",
+      { ...b.opts, claudeCodeVersion: "2.1.310" },
+      docker,
+      ccFetch({ version: "2.1.310", calls }),
+    );
+  } finally {
+    log.restore();
+  }
+  assertEquals(calls.map((c) => c.url), [
+    ccPinnedUrl("2.1.310"),
+    ccWinUrl("2.1.310"),
+  ]);
+  assertEquals(f.package?.track, "npm-pinned");
+  assert(
+    docker.builds[0]!.includes("centralgauge.harness.track=npm-pinned"),
+    "pinned label",
+  );
+  assertStringIncludes(printed.join("\n"), "Claude Code 2.1.310 (npm pinned)");
 });
 
 Deno.test("harnessImagesBuild (H-03): --version is refused for claude-code (an existing or frozen tag first); the revision must be 3 or later", async () => {

@@ -1,0 +1,11 @@
+# R-01 qualification config for Claude Code 2.1.310 on image revision 4 (developmental). Never part of an experiment.
+id: cc-v2-probe-r01-web
+harness: claude-code
+harness_version: "latest"
+image_revision: "4"
+models:
+  main: anthropic/claude-sonnet-5
+settings: { web_tools: true }
+components:
+  instructions: bundles/env/instructions
+limits: { timeout_min: 30, max_budget_usd: 5 }

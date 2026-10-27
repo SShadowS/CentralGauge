@@ -1249,17 +1249,18 @@ Deno.test("claude-code settings: session-control tools present in 2.1.282 are di
     limits: { timeout_min: 30, max_budget_usd: 5 },
   });
   const native = claudeCodeAdapter.nativeSettings(cfg, catalog);
-  // H-07: the default arm also blocks the web tools; a web arm only those six.
+  // H-07: the default arm also blocks the web tools; a web arm only those six
+  // and, since R-01, Monitor (listed from 2.1.310).
   assertEquals(
     native["disallowed_tools"],
-    [...expected, "WebFetch", "WebSearch"].sort(),
+    [...expected, "Monitor", "WebFetch", "WebSearch"].sort(),
   );
   assertEquals(
     claudeCodeAdapter.nativeSettings({
       ...cfg,
       settings: { ...cfg.settings, web_tools: true },
     }, catalog)["disallowed_tools"],
-    expected,
+    [...expected, "Monitor"].sort(),
   );
   assertEquals(native["thinking"], "high");
   // An arm cannot re-enable them by setting the key itself.
@@ -3175,7 +3176,7 @@ Deno.test("unqualified (H-03): dev use needs a BUILTIN_INVENTORY entry on r3+; a
   // 2.1.296 was the refused version here until its H-03 qualification entry.
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302)",
+    "Claude Code 2.1.999 is not qualified for development use (qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302, 2.1.310)",
   );
   // Frozen v1 (no revision, r2) keeps the M2 rules: never refused here.
   for (const revision of [undefined, "2"]) {
@@ -3267,7 +3268,10 @@ Deno.test("calibrated (H-22): r3 sha256:0a874646 (2.1.302) runs at campaign leve
     u(at(`sha256:${"e".repeat(64)}`), "campaign")!,
     "has no M8-07c real calibration",
   );
-  assertEquals(Object.keys(CAMPAIGN_CALIBRATED), [R3]);
+  assertEquals(Object.keys(CAMPAIGN_CALIBRATED), [
+    R3,
+    "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2",
+  ]);
   assertEquals(CAMPAIGN_CALIBRATED[R3]!.version, "2.1.302");
   for (
     const cell of [
@@ -3278,6 +3282,60 @@ Deno.test("calibrated (H-22): r3 sha256:0a874646 (2.1.302) runs at campaign leve
       "evidence-r3.md",
     ]
   ) assertStringIncludes(CAMPAIGN_CALIBRATED[R3]!.calibration, cell);
+});
+
+Deno.test("calibrated (R-01): r4 sha256:3b0327e6 (2.1.310, npm-pinned) runs at campaign level on its 4 Tuesday-setup cells; a version mismatch on either calibrated digest is refused", () => {
+  const u = claudeCodeAdapter.unqualified!;
+  const R3 =
+    "sha256:0a8746462fc8d62f2ea104d844b5fb43b2c9e12080608b81ab5e94ddfaf46f36";
+  const R4 =
+    "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2";
+  const at = (digest: string, version: string) =>
+    manifest(
+      "cc",
+      V2({
+        harness_version: version,
+        image: {
+          digest,
+          base_digest:
+            "sha256:13def9e09a858085999838738c89ec4bb8f78244670ad8a4462f3c4877799595",
+          revision: "4",
+          package: {
+            name: "@anthropic-ai/claude-code",
+            version,
+            track: "npm-pinned",
+            integrity: {
+              main: `sha512-${"M".repeat(86)}==`,
+              win32_x64: `sha512-${"W".repeat(86)}==`,
+            },
+          },
+        },
+      }),
+    );
+  assertEquals(u(at(R4, "2.1.310"), "campaign"), null);
+  assertEquals(u(at(R4, "2.1.310"), "dev"), null);
+  for (
+    const [digest, version] of [
+      [R4, "2.1.302"],
+      [R3, "2.1.310"],
+      [`sha256:${"e".repeat(64)}`, "2.1.310"],
+    ] as const
+  ) {
+    assertStringIncludes(
+      u(at(digest, version), "campaign")!,
+      "has no M8-07c real calibration",
+    );
+  }
+  assertEquals(CAMPAIGN_CALIBRATED[R4]!.version, "2.1.310");
+  for (
+    const cell of [
+      "0d97a7e3-6d5b-4964-b746-0eb78a8669a1",
+      "d718fa33-5caf-4785-8c79-801709a40c32",
+      "0cb66ba8-cad4-4bd9-8134-e4305a991cb5",
+      "c8cbf482-c8e6-44ed-948b-ef0966095f86",
+      "evidence-r4.md",
+    ]
+  ) assertStringIncludes(CAMPAIGN_CALIBRATED[R4]!.calibration, cell);
 });
 
 // ---- H-03: Claude Code 2.1.296 dev qualification (level 1) ----
@@ -3301,7 +3359,7 @@ const arm296 = (lsp: boolean) => ({
     native: {
       api_models: { main: "claude-sonnet-5" },
       // Captured before H-07: the six session tools only, web tools allowed.
-      ...claudeCodeHarnessNative(true),
+      ...claudeCodeHarnessNative(true, true),
       ...(lsp ? { lsp: ["al"] } : {}),
     },
   },
@@ -3372,23 +3430,25 @@ const webCfg = (settings: Record<string, unknown>) =>
 Deno.test("web tools (H-07): blocked by default; settings.web_tools: true allows them; the flag is part of the manifest hash", async () => {
   const native = (s: Record<string, unknown>) =>
     claudeCodeAdapter.nativeSettings(webCfg(s), WEB_CATALOG);
-  const SIX = [
+  // The six session tools, plus Monitor since R-01.
+  const SEVEN = [
     "CronCreate",
     "CronDelete",
     "ListAgents",
+    "Monitor",
     "RemoteTrigger",
     "ScheduleWakeup",
     "SendMessage",
   ];
   assertEquals(
     native({})["disallowed_tools"],
-    [...SIX, "WebFetch", "WebSearch"].sort(),
+    [...SEVEN, "WebFetch", "WebSearch"].sort(),
   );
   assertEquals(
     claudeCodeHarnessNative()["disallowed_tools"],
     native({})["disallowed_tools"],
   );
-  assertEquals(native({ web_tools: true })["disallowed_tools"], SIX);
+  assertEquals(native({ web_tools: true })["disallowed_tools"], SEVEN);
   // One encoding: the flag itself is not copied, and only true is accepted
   // (an explicit false would hash, via settings.requested, unlike absent).
   assertEquals(native({ web_tools: true })["web_tools"], undefined);
@@ -3419,7 +3479,8 @@ const webArm = (lsp: boolean, web: boolean) => ({
     requested: web ? { web_tools: true } : {},
     native: {
       api_models: { main: "claude-sonnet-5" },
-      ...claudeCodeHarnessNative(web),
+      // Recorded before R-01: no Monitor.
+      ...claudeCodeHarnessNative(web, true),
       ...(lsp ? { lsp: ["al"] } : {}),
     },
   },
@@ -3656,8 +3717,9 @@ Deno.test("web tools (H-07 review): the stored-manifest derivation keeps pre-H-0
         native: { disallowed_tools: disallowed },
       },
     });
-  const SIX = claudeCodeHarnessNative(true).disallowed_tools;
-  const EIGHT = claudeCodeHarnessNative().disallowed_tools;
+  // The lists recorded before R-01 (no Monitor).
+  const SIX = claudeCodeHarnessNative(true, true).disallowed_tools;
+  const EIGHT = claudeCodeHarnessNative(false, true).disallowed_tools;
   // A pre-H-07 manifest: six tools, no web_tools request.
   assertEquals(claudeCodeDerivedNative(m({}, SIX)).disallowed_tools, SIX);
   assertEquals(claudeCodeDerivedNative(m({}, EIGHT)).disallowed_tools, EIGHT);
@@ -3854,7 +3916,7 @@ Deno.test("web tools (H-07): v1 arms (image_revision 2) are frozen: they keep th
     });
   assertEquals(
     claudeCodeAdapter.nativeSettings(v1({}), WEB_CATALOG)["disallowed_tools"],
-    claudeCodeHarnessNative(true).disallowed_tools,
+    claudeCodeHarnessNative(true, true).disallowed_tools,
   );
   for (const web_tools of [true, false]) {
     assertThrows(
@@ -3932,7 +3994,7 @@ Deno.test("qualification (H-11): 2.1.300 is qualified for dev use; an unknown ve
   );
   assertStringIncludes(
     u(manifest("cc", V2({ harness_version: "2.1.999" })), "dev")!,
-    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302)",
+    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302, 2.1.310)",
   );
 });
 
@@ -4577,4 +4639,222 @@ Deno.test("additional directories (H-20): the refusal covers every same-session 
   const got = await problems(text.replace(init, unknown));
   assertStringIncludes(got, "no qualified built-in inventory");
   assertStringIncludes(got, "additional_directories");
+});
+
+// ---- R-01: Monitor disallowed (decisions 2026-10-25-tuesday-run), Claude Code 2.1.310 ----
+// The recorded lists, literal: M1-32b's six (pre-H-07 manifests, H-07 web
+// arms, v1), H-07's default eight, and R-01's lists with Monitor.
+const R01_SIX = [
+  "CronCreate",
+  "CronDelete",
+  "ListAgents",
+  "RemoteTrigger",
+  "ScheduleWakeup",
+  "SendMessage",
+];
+const R01_EIGHT = [...R01_SIX, "WebFetch", "WebSearch"].sort();
+const R01_WEB = [...R01_SIX, "Monitor"].sort();
+const R01_DEFAULT = [...R01_WEB, "WebFetch", "WebSearch"].sort();
+
+Deno.test("R-01: new manifests disallow Monitor (default and web arm); v1 arms keep the six they ran with", () => {
+  const native = (s: Record<string, unknown>) =>
+    claudeCodeAdapter.nativeSettings(webCfg(s), WEB_CATALOG)[
+      "disallowed_tools"
+    ];
+  assertEquals(native({}), R01_DEFAULT);
+  assertEquals(native({ web_tools: true }), R01_WEB);
+  assertEquals(claudeCodeHarnessNative().disallowed_tools, R01_DEFAULT);
+  assertEquals(claudeCodeHarnessNative(true).disallowed_tools, R01_WEB);
+  const v1 = HarnessConfigSchema.parse({
+    id: "cc-v1",
+    harness: "claude-code",
+    harness_version: "2.1.282",
+    image_revision: "2",
+    models: { main: "anthropic/claude-sonnet-5" },
+    settings: {},
+    limits: { timeout_min: 30, max_budget_usd: 5 },
+  });
+  assertEquals(
+    claudeCodeAdapter.nativeSettings(v1, WEB_CATALOG)["disallowed_tools"],
+    R01_SIX,
+  );
+});
+
+Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-01 default to itself, a new manifest to the Monitor list, and nothing else", () => {
+  const m = (requested: object, disallowed: unknown) =>
+    manifest("cc", {
+      settings: {
+        requested: requested as Record<string, unknown>,
+        native: { disallowed_tools: disallowed },
+      },
+    });
+  const derive = (requested: object, disallowed: unknown) =>
+    claudeCodeDerivedNative(m(requested, disallowed)).disallowed_tools;
+  // History: pre-H-07 (six, no web_tools request) and the H-07 default (eight).
+  assertEquals(derive({}, R01_SIX), R01_SIX);
+  assertEquals(derive({}, R01_EIGHT), R01_EIGHT);
+  // An H-07 web arm stays a settings difference (as before R-01).
+  assertEquals(derive({ web_tools: true }, R01_SIX), R01_EIGHT);
+  // New: the R-01 default; an R-01 web arm stays a settings difference.
+  assertEquals(derive({}, R01_DEFAULT), R01_DEFAULT);
+  assertEquals(derive({ web_tools: true }, R01_WEB), R01_DEFAULT);
+  // Tampered lists never re-derive to themselves.
+  for (
+    const [requested, bad] of [
+      [{}, R01_WEB], // six + Monitor without the web tools, non-web arm
+      [{}, R01_SIX.slice(1)], // the six missing one tool
+      [{}, R01_EIGHT.filter((t) => t !== "WebSearch")],
+      [{}, R01_DEFAULT.filter((t) => t !== "SendMessage")],
+      [{}, [...R01_EIGHT, "Bash"].sort()],
+      [{}, "Monitor"],
+    ] as const
+  ) {
+    assert(
+      JSON.stringify(derive(requested, bad)) !== JSON.stringify(bad),
+      JSON.stringify(bad),
+    );
+  }
+});
+
+Deno.test("R-01: BUILTIN_INVENTORY 2.1.310 is 2.1.302 plus Monitor (a hidden tool); dev use qualified, the qualification records the reproof", () => {
+  const a = BUILTIN_INVENTORY["2.1.302"]!;
+  const b = BUILTIN_INVENTORY["2.1.310"]!;
+  assertEquals(b.agents, a.agents);
+  assertEquals(b.skills, a.skills);
+  assertEquals(b.plugins, a.plugins);
+  assertEquals([...b.tools].sort(), [...a.tools, "Monitor"].sort());
+  assertStringIncludes(b.qualified, "reproof with Monitor disallowed");
+  for (
+    const id of [
+      "5fe02ad4-0351-4447-8a0d-79411164f934",
+      "133a0ba8-cbff-46fa-aabf-1e96a7733929",
+      "b4a326ca-1080-4f7a-8ae1-97d79d834a33",
+      "e620333e-e6c8-4495-8c51-15a3288fec25",
+      "4d78fb22-7174-4be3-8b14-464021fb513d",
+      "2eaa5eaf-bbd5-40f1-8242-4966430aea68",
+    ]
+  ) assertStringIncludes(b.qualified, id);
+  assertStringIncludes(
+    b.qualified,
+    "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2",
+  );
+  assertEquals(
+    unqualifiedClaudeCode(
+      manifest("cc", V2({ harness_version: "2.1.310" })),
+      "dev",
+    ),
+    null,
+  );
+  assertStringIncludes(
+    unqualifiedClaudeCode(
+      manifest("cc", V2({ harness_version: "2.1.999" })),
+      "dev",
+    )!,
+    "(qualified: 2.1.282, 2.1.296, 2.1.300, 2.1.302, 2.1.310)",
+  );
+});
+
+Deno.test("R-01: a 2.1.310 init listing Monitor while the arm disallows it is refused; hidden, it is clean", async () => {
+  const text = await Deno.readTextFile(STUB_302.lsp);
+  const line = text.split("\n")[1]!;
+  const rec = JSON.parse(line);
+  const as310 = (tools: string[]) =>
+    text.replace(
+      line,
+      JSON.stringify({ ...rec, claude_code_version: "2.1.310", tools }),
+    );
+  const arm = (disallowed: string[]) => {
+    const a = arm302(true);
+    return {
+      ...a,
+      harness_version: "2.1.310",
+      settings: {
+        ...a.settings,
+        native: { ...a.settings.native, disallowed_tools: disallowed },
+      },
+    };
+  };
+  const problems = async (t: string, disallowed: string[]) =>
+    (await parse(t, 0, arm(disallowed))).r.inventoryProblems!;
+  const hidden: string[] = rec.tools;
+  assert(!hidden.includes("Monitor"));
+  assertEquals(await problems(as310(hidden), R01_DEFAULT), []);
+  assertEquals(
+    await problems(as310([...hidden, "Monitor"]), R01_DEFAULT),
+    ["unexpected tool Monitor"],
+  );
+  // An arm that does not disallow it expects Monitor listed.
+  assertEquals(
+    await problems(as310(hidden), R01_EIGHT),
+    ["missing tool Monitor"],
+  );
+});
+
+// ---- R-01: Claude Code 2.1.310 dev qualification (level 1, track-latest) ----
+// The raw.jsonl of R-01 reproof stub cells (Monitor disallowed) on image
+// sha256:3b0327e66b26...: b4a326ca (LSP arm) and 4d78fb22 (web-on arm),
+// byte-exact except the CRLF line endings stored as LF.
+const STUB_310 = {
+  lsp: "tests/fixtures/harness/claude-code/stub-2.1.310-lsp.jsonl",
+  web: "tests/fixtures/harness/claude-code/stub-2.1.310-web.jsonl",
+};
+const arm310 = (lsp: boolean) => {
+  const a = arm302(lsp);
+  return {
+    ...a,
+    harness_version: "2.1.310",
+    settings: {
+      ...a.settings,
+      native: {
+        ...a.settings.native,
+        disallowed_tools: lsp ? R01_DEFAULT : R01_WEB,
+      },
+    },
+  };
+};
+
+Deno.test("qualification (R-01): the 2.1.310 stub captures (LSP, web-on) reparse with no inventory or stream problems and load what the arm declares", async () => {
+  for (const lsp of [false, true]) {
+    const text = await Deno.readTextFile(lsp ? STUB_310.lsp : STUB_310.web);
+    const { r, dir } = await parse(text, 0, arm310(lsp));
+    const tag = lsp ? "lsp" : "web";
+    assertEquals(r.inventoryProblems, [], tag);
+    assertEquals(
+      (r.telemetry.raw_usage as { stream_problems: string[] }).stream_problems,
+      [],
+      tag,
+    );
+    assertEquals(r.observed.harness_version, "2.1.310");
+    assertEquals(
+      [...r.observed.loaded_components!].sort(),
+      lsp ? ["instructions", "lsp:al"] : ["instructions"],
+      tag,
+    );
+    assertEquals(r.unobservable, [], tag);
+    // Cost reconciles exactly (gate 3): 9 messages x 10 input, 45 output.
+    assertAlmostEquals(
+      r.telemetry.cost_usd!,
+      (90 * 2 + 45 * 10) / 1e6,
+      1e-12,
+      tag,
+    );
+    assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.00063, 1e-12, tag);
+    assertEquals(r.termination, "completed", tag);
+    const trace = (await Deno.readTextFile(join(dir, "trace.jsonl"))).trim()
+      .split("\n").map((l) => JSON.parse(l));
+    const calls = trace.filter((e) => e.type === "tool_call");
+    assertEquals(calls.length, 8, tag);
+    assertEquals(calls.filter((e) => e.tool === "LSP").length, 3, tag);
+    const init = JSON.parse(text.split("\n")[1]!);
+    assert(!init.tools.includes("Monitor"), tag);
+  }
+  // A 2.1.310 init that drops a builtin agent is still caught.
+  const text = await Deno.readTextFile(STUB_310.lsp);
+  const init = text.split("\n")[1]!;
+  const { r } = await parse(
+    text.replace(init, init.replace('"statusline-setup"', '"other-agent"')),
+    0,
+    arm310(true),
+  );
+  assert(r.inventoryProblems!.length > 0, "a changed builtin list is refused");
 });

@@ -47,6 +47,9 @@ export const IMAGE_LABELS = {
 
 /** H-03: what a tracked claude-code image tracks (npm dist-tag latest). */
 export const CLAUDE_CODE_TRACK = "npm-latest";
+/** R-01: an image built with an explicit `--claude-code-version`. */
+export const CLAUDE_CODE_PINNED = "npm-pinned";
+const CC_TRACKS: readonly string[] = [CLAUDE_CODE_TRACK, CLAUDE_CODE_PINNED];
 export const CLAUDE_CODE_PACKAGE = "@anthropic-ai/claude-code";
 const CC_MAIN = CLAUDE_CODE_PACKAGE;
 const CC_WIN = "@anthropic-ai/claude-code-win32-x64";
@@ -256,9 +259,11 @@ function packageFacts(
       })`,
     );
   }
-  if (l[T] !== CLAUDE_CODE_TRACK) {
+  if (!CC_TRACKS.includes(l[T]!)) {
     throw new ConfigurationError(
-      `image ${ref}: label ${T} must be ${CLAUDE_CODE_TRACK}, got "${l[T]}"`,
+      `image ${ref}: label ${T} must be ${CLAUDE_CODE_TRACK} or ${CLAUDE_CODE_PINNED}, got "${
+        l[T]
+      }"`,
     );
   }
   const m = /^@anthropic-ai\/claude-code@(\S+) (\S+) (\S+)$/.exec(l[P]!);
@@ -282,7 +287,7 @@ function packageFacts(
   return {
     name: CC_MAIN,
     version: m[1]!,
-    track: CLAUDE_CODE_TRACK,
+    track: l[T] as ClaudePackage["track"],
     integrity: { main: m[2]!, win32_x64: m[3]! },
   };
 }
@@ -811,6 +816,8 @@ export interface ClaudeCodeRelease {
   /** Exactly the registry tarball URL of that version, and its dist.integrity. */
   main: { url: string; integrity: string };
   win32_x64: { url: string; integrity: string };
+  /** `npm-pinned` when an explicit version was asked for, else `npm-latest` (R-01). */
+  track: typeof CLAUDE_CODE_TRACK | typeof CLAUDE_CODE_PINNED;
 }
 
 const isEmpty = (v: unknown) =>
@@ -822,10 +829,11 @@ const isEmpty = (v: unknown) =>
 async function npmDoc(
   url: string,
   fetchFn: typeof fetch,
+  which = "newest",
 ): Promise<Record<string, unknown>> {
   const fail = (why: string) =>
     new ConfigurationError(
-      `cannot resolve the newest ${CC_MAIN} (${url}): ${why}`,
+      `cannot resolve the ${which} ${CC_MAIN} (${url}): ${why}`,
     );
   try {
     const res = await fetchFn(url, {
@@ -859,21 +867,36 @@ async function npmDoc(
  * places the binary at, sha512 integrities, exact registry tarball URLs, and
  * for the platform package os/cpu and no scripts. The integrities are what
  * install-claude-code.ps1 verifies both archives against.
+ * R-01: with `pinned`, that exact version's document is fetched instead of
+ * `latest`; every check is the same and the document must name that version.
  */
 export async function resolveClaudeCode(
   fetchFn: typeof fetch,
+  pinned?: string,
 ): Promise<ClaudeCodeRelease> {
-  const mainUrl = `${NPM_REGISTRY}/${CC_MAIN}/latest`;
-  const main = await npmDoc(mainUrl, fetchFn);
+  if (pinned !== undefined && !SEMVER.test(pinned)) {
+    throw new ConfigurationError(
+      `the pinned ${CC_MAIN} version "${pinned}" is not <major>.<minor>.<patch>`,
+    );
+  }
+  const which = pinned === undefined ? "newest" : "pinned";
+  const mainUrl = `${NPM_REGISTRY}/${CC_MAIN}/${pinned ?? "latest"}`;
+  const main = await npmDoc(mainUrl, fetchFn, which);
   const fail = (url: string, why: string) =>
     new ConfigurationError(
-      `cannot resolve the newest ${CC_MAIN} (${url}): ${why}`,
+      `cannot resolve the ${which} ${CC_MAIN} (${url}): ${why}`,
     );
   const v = main["version"];
   if (typeof v !== "string" || !SEMVER.test(v)) {
     throw fail(
       mainUrl,
       `version ${JSON.stringify(v)} is not <major>.<minor>.<patch>`,
+    );
+  }
+  if (pinned !== undefined && v !== pinned) {
+    throw fail(
+      mainUrl,
+      `the document's version ${JSON.stringify(v)} is not the pinned ${pinned}`,
     );
   }
   const dist = (doc: Record<string, unknown>, url: string, name: string) => {
@@ -931,7 +954,7 @@ export async function resolveClaudeCode(
   }
   const mainDist = dist(main, mainUrl, CC_MAIN);
   const winUrl = `${NPM_REGISTRY}/${CC_WIN}/${v}`;
-  const win = await npmDoc(winUrl, fetchFn);
+  const win = await npmDoc(winUrl, fetchFn, which);
   check(win, winUrl, CC_WIN);
   for (const [k, want] of [["os", "win32"], ["cpu", "x64"]] as const) {
     if (JSON.stringify(win[k]) !== JSON.stringify([want])) {
@@ -941,7 +964,12 @@ export async function resolveClaudeCode(
   if (!isEmpty(win["scripts"])) {
     throw fail(winUrl, "scripts must be absent (no lifecycle script)");
   }
-  return { version: v, main: mainDist, win32_x64: dist(win, winUrl, CC_WIN) };
+  return {
+    version: v,
+    main: mainDist,
+    win32_x64: dist(win, winUrl, CC_WIN),
+    track: pinned === undefined ? CLAUDE_CODE_TRACK : CLAUDE_CODE_PINNED,
+  };
 }
 
 /** The resolved release as claude-code build args (install-claude-code.ps1) and image labels. */
@@ -959,7 +987,7 @@ export const claudeCodeArgs = (r: ClaudeCodeRelease): string[] => [
   "--label",
   `${IMAGE_LABELS.version}=${r.version}`,
   "--label",
-  `${IMAGE_LABELS.track}=${CLAUDE_CODE_TRACK}`,
+  `${IMAGE_LABELS.track}=${r.track}`,
   "--label",
   `${IMAGE_LABELS.package}=${CC_MAIN}@${r.version} ${r.main.integrity} ${r.win32_x64.integrity}`,
 ];
@@ -1039,7 +1067,7 @@ export function runtimeFacts(
   }
   if (!latest && image.package) {
     throw new ConfigurationError(
-      `${config.id}: image ${image.digest} tracks ${CLAUDE_CODE_TRACK} (Claude Code ${image.version}); a config names it with harness_version ${LATEST}, not ${config.harness_version}`,
+      `${config.id}: image ${image.digest} tracks ${image.package.track} (Claude Code ${image.version}); a config names it with harness_version ${LATEST}, not ${config.harness_version}`,
     );
   }
   if (
