@@ -1276,6 +1276,11 @@ export const CAMPAIGN_CALIBRATED: Readonly<
     calibration:
       "M9-17 integrated gate-1 cells on image r3 (HX-003, Cronus282): cc-v2-plain f5233317-687f-41f4-8803-aab71aa9aea0, cc-v2-plain-lsp 10d0adc5-ab2e-4887-a61e-938c3790f65f, cc-v2-realistic 80891c85-65cb-41a8-bdad-7d171f0197c2, cc-v2-realistic-lsp 6d617739-ce9e-4185-b502-0e00c49f027a (evidence H:\\cg-coord\\m9\\gate1\\evidence-r3.md)",
   },
+  "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2": {
+    version: "2.1.310",
+    calibration:
+      "R-01 supervised calibration cells on image r4 (HX-003, Cronus281, campaign 2bf01ce1-9c82-4265-bebf-df72ad67a150): cc-v2-tue-plain 0d97a7e3-6d5b-4964-b746-0eb78a8669a1, cc-v2-tue-plain-bcquality d718fa33-5caf-4785-8c79-801709a40c32, cc-v2-tue-realistic 0cb66ba8-cad4-4bd9-8134-e4305a991cb5, cc-v2-tue-realistic-bcquality c8cbf482-c8e6-44ed-948b-ef0966095f86 (evidence H:\\cg-coord\\tasks\\R-01\\cal\\evidence-r4.md)",
+  },
 };
 
 /**
