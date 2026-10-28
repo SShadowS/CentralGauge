@@ -1,0 +1,16 @@
+# R-07 (lane-ops): owner rulings 2026-10-28 ~11:55Z "Start now, concurrency 2" (in parallel with R-04b, on
+# Cronus282/285) and R-06 (directed BCQuality setups: one instruction line asks for bcquality:al-code-review).
+# The undirected counterparts are R-04 repeat 1 (campaign 6df4f81e-c19a-4dea-8af2-f67b507fb454). Copy of
+# cc-v2-tuesday.yml; only id, baseline, variants, vary and repeats differ.
+# Tuesday run 2026-10-27 (R-02/R-04, owner decision decisions\2026-10-25-tuesday-run.md). Exploratory
+# only: never a screening or confirmatory result. 4 setups x the 22 P-02 tasks x 3 repeats; every
+# comparison stays inside this run, plain is the base for the other three. Held-out HX-010/030/037/039
+# must never run here.
+id: cc-v2-tuesday-directed
+hypothesis: "Exploratory: the realistic team setup and BCQuality change Claude Code's pass rate and cost on the 22 P-02 tasks."
+primary_metric: pass_rate
+baseline: cc-v2-tue-plain-bcquality-directed
+variants: [cc-v2-tue-realistic-bcquality-directed]
+vary: [instructions, skills, agents, mcp]
+tasks: "harness-tasks/tasks/{HX-007,HX-008,HX-020,HX-022,HX-031,HX-055,HX-056,HX-011,HX-012,HX-013,HX-023,HX-025,HX-035,HX-045,HX-058,HX-014,HX-038,HX-026,HX-027,HX-048,HX-049,HX-061}"
+repeats: 2
