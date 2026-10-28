@@ -1,0 +1,19 @@
+# R-06 (owner 2026-10-28): cc-v2-tue-realistic-bcquality plus one change, an instructions bundle whose
+# step 7 also asks for the bcquality:al-code-review skill (bundles/realistic-bcquality-directed: a copy of
+# bundles/realistic/instructions with that step reworded, nothing else). R-04 repeat 1 found BCQuality
+# offered and never used in the undirected setups (H:\cg-coord\analysis\R\r05\r1\bcquality-use.csv).
+# Same image, Claude Code 2.1.310 (image_revision "4" = 2.1.310-r4), BCQuality a4593a1b, model and limits.
+id: cc-v2-tue-realistic-bcquality-directed
+harness: claude-code
+harness_version: "latest"
+image_revision: "4"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/realistic-bcquality-directed/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+  plugins: [bundles/bcquality]
+limits: { timeout_min: 45, max_budget_usd: 5 }
