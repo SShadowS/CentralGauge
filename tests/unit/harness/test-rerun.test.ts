@@ -1,9 +1,10 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
-import { join } from "@std/path";
+import { fromFileUrl, join } from "@std/path";
 import {
   type AlsemEvidence,
   newOrChangedTestProcs,
   type Row,
+  runnerEnvOptions,
   type TestProc,
 } from "../../../scripts/harness/analyze-campaign.ts";
 import {
@@ -1873,3 +1874,29 @@ for (
     assertEquals(p.code, 0, err);
   });
 }
+
+Deno.test("runnerEnvOptions: the env opens on this checkout, not --repo, and carries --unverified-bc-egress-ok (Q-04e)", () => {
+  const o = runnerEnvOptions({
+    containers: "Cronus282, Cronus285",
+    "coord-lease": ["Cronus282=t"],
+    symbols: "s",
+    lineage: "l",
+    "private-dir": "p",
+    "unverified-bc-egress-ok": "NST egress unenforced (Q-05)",
+  }, join("out", "test-rerun"));
+  // The baselines live in <checkout>/results/harness/baselines (openHarnessEnv reads them from repoRoot).
+  assertEquals(o.repoRoot, fromFileUrl(new URL("../../../", import.meta.url)));
+  assertEquals(o.resultsDir, join("out", "test-rerun", "env"));
+  assertEquals(o.containers, ["Cronus282", "Cronus285"]);
+  assertEquals(o.coordLeases, ["Cronus282=t"]);
+  assertEquals(o.bcEgressOverride, "NST egress unenforced (Q-05)");
+  assertEquals(
+    runnerEnvOptions(
+      { containers: "C", "coord-lease": [], symbols: "s" },
+      "d",
+      "L",
+    )
+      .bcEgressOverride,
+    null,
+  );
+});
