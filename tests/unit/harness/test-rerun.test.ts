@@ -1775,3 +1775,101 @@ Deno.test("analyze-campaign CLI: --test-rerun without --alsem is rejected with a
     ),
   );
 });
+
+// Q-04d: main() dynamically imports test-rerun.ts / sql-cost.ts, which import
+// analyze-campaign.ts back. Under a top-level `await main()` that import waits
+// on the entry module forever ("Top-level await promise never resolved").
+// A campaign with no executions reaches both imports without a container.
+const CAMPAIGN = "00000000-0000-4000-8000-000000000001";
+async function runEntryOnEmptyCampaign(flags: string[]) {
+  const root = await Deno.makeTempDir({ prefix: "q04d-" });
+  try {
+    const git = (...a: string[]) =>
+      new Deno.Command("git", { args: a, cwd: repo, stdout: "null" }).output();
+    const repo = join(root, "repo");
+    await Deno.mkdir(join(repo, "harness-tasks"), { recursive: true });
+    await Deno.writeTextFile(
+      join(repo, "harness-tasks", "symbols.lock.json"),
+      JSON.stringify({ packages: [] }),
+    );
+    await git("init", "-q");
+    await git("add", ".");
+    await git(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-qm",
+      "fixture",
+    );
+    const results = join(root, "results");
+    await Deno.mkdir(join(results, "campaigns"), { recursive: true });
+    await Deno.writeTextFile(
+      join(results, "campaigns", `${CAMPAIGN}.json`),
+      JSON.stringify({
+        experiment: { baseline: "a", variants: ["b"] },
+        task_set: { tasks: [] },
+        tasks_meta: [],
+      }),
+    );
+    const entry = join(
+      import.meta.dirname!,
+      "..",
+      "..",
+      "..",
+      "scripts",
+      "harness",
+      "analyze-campaign.ts",
+    );
+    return await new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--allow-all",
+        entry,
+        CAMPAIGN,
+        "--results",
+        results,
+        "--rev",
+        "HEAD",
+        "--out",
+        join(root, "out"),
+        "--repo",
+        repo,
+        "--containers",
+        "NoSuchContainer",
+        "--symbols",
+        join(root, "symbols"),
+        "--lineage",
+        join(root, "lineage"),
+        "--private-dir",
+        join(root, "private"),
+        ...flags,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+}
+
+for (
+  const [name, flags] of [
+    ["--test-rerun", [
+      "--test-rerun",
+      "--alsem",
+      Deno.execPath(),
+      "--ach",
+      Deno.execPath(),
+    ]],
+    ["--sql-cost", ["--sql-cost", "--no-sql-cost-scenarios"]],
+  ] as const
+) {
+  Deno.test(`analyze-campaign CLI: ${name} entry point loads its runner (Q-04d, no import deadlock)`, async () => {
+    const p = await runEntryOnEmptyCampaign([...flags]);
+    const err = new TextDecoder().decode(p.stderr);
+    assert(!err.includes("Top-level await"), err);
+    assertEquals(p.code, 0, err);
+  });
+}
