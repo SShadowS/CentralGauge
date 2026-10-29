@@ -644,6 +644,42 @@ function wildcard(pattern: string): RegExp {
 }
 
 /**
+ * R-09: a capture's timing, carried on its T| marker (`T|<n>|<json object>`,
+ * fs-digest.ps1 Invoke-FsCaptureCore): ms under the hold, per phase and per
+ * root. Measurement only; it never enters a comparison.
+ */
+export interface FsCaptureTiming {
+  held_ms?: number | null;
+  bound_s?: number;
+  roots?: { root: string; entries: number; ms: number }[];
+  [phase: string]: unknown;
+}
+
+/** `T|<n>` or `T|<n>|<json object>`; null when malformed. */
+function parseMark(
+  line: string,
+): { count: number; timing: FsCaptureTiming | null } | null {
+  const m = /^T\|(\d+)(?:\|(.+))?$/.exec(line);
+  if (!m) return null;
+  if (m[2] === undefined) return { count: Number(m[1]), timing: null };
+  try {
+    const t = JSON.parse(m[2]);
+    if (t === null || typeof t !== "object" || Array.isArray(t)) return null;
+    return { count: Number(m[1]), timing: t };
+  } catch {
+    return null;
+  }
+}
+
+/** R-09: the timing on a capture's last line (its T| marker), or null. */
+export function fsCaptureTiming(
+  lines: readonly string[],
+): FsCaptureTiming | null {
+  const last = lines.map((l) => l.trimEnd()).filter((l) => l !== "").at(-1);
+  return last?.startsWith("T|") ? parseMark(last)?.timing ?? null : null;
+}
+
+/**
  * H-35 S3 L4 (decisions/2026-10-20-h-35-l4-scope.md): compare two
  * fsDigest(W) captures. Any difference in an entry's line (content, size,
  * attributes, last-write time, a stream, a link target) outside the
@@ -676,13 +712,16 @@ export function fsDiff(
     const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
     const marks = lines.filter((l) => l.startsWith("T|"));
     const entries = lines.filter((l) => !l.startsWith("T|"));
+    const mark = marks.length === 1 ? parseMark(marks[0]!) : null;
     if (marks.length !== 1 || lines.at(-1) !== marks[0]) {
       errors.push(
         `${side}: no T| marker as the last line (incomplete capture)`,
       );
-    } else if (marks[0] !== `T|${entries.length}`) {
+    } else if (mark === null) {
+      errors.push(`${side}: malformed T| marker ${marks[0]}`);
+    } else if (mark.count !== entries.length) {
       errors.push(
-        `${side}: ${marks[0]} does not match the count ${entries.length}`,
+        `${side}: T|${mark.count} does not match the count ${entries.length}`,
       );
     }
     const seen = new Set<string>();
