@@ -28,10 +28,18 @@ import {
 } from "../../../src/harness/manifest.ts";
 import {
   type CampaignRecord,
+  type ExecutionRecord,
   experimentHash,
   planBlocks,
 } from "../../../src/harness/records.ts";
-import { campaign, execution, H, judgment, manifest } from "./fixtures.ts";
+import {
+  campaign,
+  execution,
+  H,
+  judgment,
+  manifest,
+  telemetry,
+} from "./fixtures.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function scenario(): Promise<CampaignRecords> {
@@ -92,6 +100,8 @@ async function onImage(
   list: string[],
   observed: string | null,
   init: string | null,
+  /** Executions to record with no evidence at all, with these field overrides. */
+  bare: (e: ExecutionRecord) => Partial<ExecutionRecord> | null = () => null,
 ): Promise<string[]> {
   const r = await scenario();
   const root = await Deno.realPath(await testTempDir());
@@ -109,6 +119,18 @@ async function onImage(
   const executions = [];
   for (const e of r.executions) {
     const a = byArm.get(e.arm)!;
+    const over = bare(e);
+    if (over) {
+      executions.push({
+        ...e,
+        manifest: a.manifest,
+        arm_manifest_hash: a.manifest_hash,
+        observed: { ...e.observed, harness_version: null },
+        raw_log_path: null,
+        ...over,
+      });
+      continue;
+    }
     let raw_log_path: string | null = null;
     if (init !== null) {
       raw_log_path = `runs/${e.id}/raw.jsonl`;
@@ -180,6 +202,52 @@ Deno.test("R-01c: the pre-R-01 exemption needs evidence; a run whose evidence ma
   // but evidence that contradicts a current manifest is still refused
   const p = await onImage(R4_IMAGE, "2.1.310", NINE, "2.1.302", null);
   assert(p.some((x) => x.includes("observed")), p.join("; "));
+});
+
+Deno.test("R-01c (orchestrator ruling b): only a superseded, cost-free, pre-start setup_failed attempt needs no evidence; anything an aggregate could read does", async () => {
+  // the scenario's plain HX-001 attempt 1 is setup_failed, did_work false,
+  // superseded by its auto retry (attempt 2); the others carry evidence
+  const first = (e: ExecutionRecord) => e.attempt === 1 && e.arm === "plain";
+  const cost0 = { ...telemetry(0), cost_usd: 0 };
+  const noEvidence = (over: Partial<ExecutionRecord>) =>
+    onImage(
+      R3,
+      "2.1.302",
+      EIGHT,
+      "2.1.302",
+      "2.1.302",
+      (e) => first(e) ? { telemetry: cost0, ...over } : null,
+    );
+  assertEquals(await noEvidence({}), []);
+  const refused = async (over: Partial<ExecutionRecord>, why: string) => {
+    const p = await noEvidence(over);
+    assert(p.some((x) => x.includes("no evidence")), `${why}: ${p.join("; ")}`);
+  };
+  // did_work false but a non-setup_failed termination (an editable pair)
+  await refused({ termination: "completed" }, "did_work false + completed");
+  await refused({ did_work: true }, "did work");
+  await refused({ telemetry: telemetry(1) }, "spent");
+  // a final setup_failed attempt (analysis reads the latest attempt): the
+  // scenario's skills HX-002 cell, made setup_failed with no work and no cost
+  const final = await onImage(
+    R3,
+    "2.1.302",
+    EIGHT,
+    "2.1.302",
+    "2.1.302",
+    (e) =>
+      e.arm === "skills"
+        ? {
+          termination: "setup_failed",
+          did_work: false,
+          telemetry: cost0,
+        }
+        : null,
+  );
+  assert(
+    final.some((x) => x.includes("no evidence")),
+    `final attempt: ${final.join("; ")}`,
+  );
 });
 
 Deno.test("validateCampaignRecords: a consistent campaign passes", async () => {

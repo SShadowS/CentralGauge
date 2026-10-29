@@ -220,7 +220,18 @@ async function evidenceProblems(
     }
     const legacy = !claudeCodeDerivedNative(e.manifest).disallowed_tools
       .includes("Monitor");
-    if (legacy && observed === null && init === null) {
+    // Orchestrator ruling (R-01c, b): a pre-start setup_failed attempt that
+    // did no work, cost nothing and is superseded by a later attempt of its
+    // cell needs no evidence: no aggregate reads it (it is never judged, its
+    // spend is 0, analysis takes the latest attempt). Every evidence mismatch
+    // above stays refused whatever these fields say.
+    const unread = e.termination === "setup_failed" && !e.did_work &&
+      e.telemetry.cost_usd === 0 &&
+      executions.some((x) =>
+        x.arm === e.arm && x.task_id === e.task_id && x.repeat === e.repeat &&
+        x.attempt > e.attempt
+      );
+    if (legacy && observed === null && init === null && !unread) {
       out.push(
         `${at}: no evidence (observed version or raw.jsonl init) for its pre-R-01 disallowed_tools exemption`,
       );
