@@ -2044,13 +2044,17 @@ export async function readCellRecord(
     }
   } catch { /* no cells */ }
   if (!record || record["id"] !== cell) return { record: null, problem: null };
-  // A plain stat first: a cell with no overlay folder keeps the lenient read
-  // (the store refuses a non-uuid id it would never need to look up).
-  const overlays = await Deno.stat(join(cells, "rederivations", cell)).then(
-    () => true,
-    () => false,
-  );
   try {
+    // A plain stat first: a cell with no overlay folder keeps the lenient
+    // read (the store refuses a non-uuid id it would never need to look up).
+    // Only NotFound means none; any other error refuses (Sol run 002 P2).
+    const overlays = await Deno.stat(join(cells, "rederivations", cell)).then(
+      () => true,
+      (err) => {
+        if (err instanceof Deno.errors.NotFound) return false;
+        throw err;
+      },
+    );
     if (Object.hasOwn(record, "rederived") || overlays) {
       const e = await new RecordStore(cells).execution(cell);
       return { record: e as Record<string, unknown> | null, problem: null };

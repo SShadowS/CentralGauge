@@ -426,3 +426,37 @@ Deno.test("recordCellProblems (Sol run 001 P2): the record-mode cell is read thr
   const p = await recordCellProblems(repo, s.e.id);
   assert(p.some((x) => x.includes("raw.jsonl sha256 is")), p.join("; "));
 });
+
+Deno.test("recordCellProblems (Sol run 002 P2): an overlay folder that cannot be checked (not NotFound) refuses the cell, never the lenient read", async () => {
+  const repo = await Deno.realPath(await testTempDir());
+  const cells = join(repo, "results", "harness", "cells");
+  await Deno.mkdir(cells, { recursive: true });
+  const s = await stored(await forkProbe(), 0, null, cells);
+  const real = Deno.stat;
+  Object.defineProperty(Deno, "stat", {
+    value: (p: string | URL) =>
+      String(p).includes("rederivations")
+        ? Promise.reject(
+          new Deno.errors.PermissionDenied("stubbed: access denied"),
+        )
+        : real(p),
+    configurable: true,
+    writable: true,
+  });
+  try {
+    const p = await recordCellProblems(repo, s.e.id);
+    assert(
+      p.some((x) =>
+        x.includes("execution record refused") &&
+        x.includes("stubbed: access denied")
+      ),
+      p.join("; "),
+    );
+  } finally {
+    Object.defineProperty(Deno, "stat", {
+      value: real,
+      configurable: true,
+      writable: true,
+    });
+  }
+});
