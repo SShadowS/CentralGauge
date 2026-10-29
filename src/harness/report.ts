@@ -368,6 +368,8 @@ export interface ReportOptions extends BootstrapOptions {
     oracleHash: string,
     taskId: string,
   ) => Promise<OracleDescriptor | "unknown">;
+  /** R-01c: the records root, so validation reads each claude-code raw.jsonl init line. */
+  resultsRoot?: string;
 }
 
 function traceCoverage(
@@ -647,10 +649,10 @@ export async function buildReport(
   records: CampaignRecords,
   opts: ReportOptions = {},
 ): Promise<HarnessReport> {
-  await validateCampaignRecords(
-    records,
-    opts.descriptor ? { descriptor: opts.descriptor } : {},
-  );
+  await validateCampaignRecords(records, {
+    ...(opts.descriptor ? { descriptor: opts.descriptor } : {}),
+    ...(opts.resultsRoot ? { resultsRoot: opts.resultsRoot } : {}),
+  });
   const { campaign } = records;
   const exp = campaign.experiment;
   const arms = [exp.baseline, ...exp.variants];

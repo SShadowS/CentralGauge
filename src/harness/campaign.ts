@@ -1163,6 +1163,7 @@ async function campaignInvocation(
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
       descriptor: descriptorLoader(env.resultsRoot, env.repoRoot),
+      resultsRoot: env.resultsRoot,
     });
   }
   // H-13b: every execution of a waived campaign records it.
