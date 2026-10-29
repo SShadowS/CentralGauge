@@ -20,7 +20,7 @@
  */
 
 import { parseArgs } from "@std/cli/parse-args";
-import { basename, join, resolve } from "@std/path";
+import { basename, fromFileUrl, join, resolve } from "@std/path";
 import type { TraceEvent } from "../../src/harness/trace.ts";
 import { applyOverlay, TAR_BINARY } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
@@ -3051,6 +3051,49 @@ function dossier(
   ].join("\n");
 }
 
+/** This checkout: where analyze-campaign runs, with its results/harness (baselines, egress marker). */
+const HARNESS_CHECKOUT = fromFileUrl(new URL("../../", import.meta.url));
+
+export interface RunnerEnvArgs {
+  containers: string;
+  "coord-lease": string[];
+  symbols: string;
+  lineage?: string;
+  "private-dir"?: string;
+  "unverified-bc-egress-ok"?: string;
+}
+
+/**
+ * The harness env options of --test-rerun and --sql-cost. Q-04e: the env
+ * opens on this checkout, not on --repo (the task-rev source): openHarnessEnv
+ * reads the instance manifests from <repoRoot>/results/harness/baselines, as
+ * harness run in the same checkout. Its own records go to <dir>/env.
+ */
+export function runnerEnvOptions(
+  a: RunnerEnvArgs,
+  dir: string,
+  localAppData = Deno.env.get("LOCALAPPDATA"),
+) {
+  const privateRoot = a["private-dir"]
+    ? resolve(a["private-dir"])
+    : localAppData
+    ? join(localAppData, "centralgauge", "harness")
+    : null;
+  if (!privateRoot) {
+    throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
+  }
+  return {
+    repoRoot: HARNESS_CHECKOUT,
+    resultsDir: join(dir, "env"),
+    containers: a.containers.split(",").map((c) => c.trim()).filter(Boolean),
+    coordLeases: a["coord-lease"],
+    symbolStore: resolve(a.symbols),
+    privateRoot,
+    lineage: a.lineage ? resolve(a.lineage) : null,
+    bcEgressOverride: a["unverified-bc-egress-ok"] ?? null,
+  };
+}
+
 async function main() {
   const args = parseArgs(Deno.args, {
     string: [
@@ -3070,6 +3113,7 @@ async function main() {
       "lineage",
       "sql-cost-task",
       "sql-cost-scenarios",
+      "unverified-bc-egress-ok",
     ],
     boolean: ["test-rerun", "sql-cost", "no-sql-cost-scenarios"],
     collect: ["pair", "coord-lease", "sql-cost-task"],
@@ -3091,9 +3135,9 @@ async function main() {
     console.error(
       "usage: analyze-campaign.ts <campaign-id> --results <dir> --rev <task rev> --out <dir> [--pair base:variant ...] [--repo .] [--only <id or id prefix>,...]\n" +
         "  [--alsem <alsem binary> --ach <al-call-hierarchy binary> --symbols <symbol store> [--alsem-jobs 3]]\n" +
-        "  [--test-rerun --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--coord-lease <container>=<token> ...] [--private-dir <dir>]]\n" +
+        "  [--test-rerun --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--coord-lease <container>=<token> ...] [--private-dir <dir>] [--unverified-bc-egress-ok <reason>]]\n" +
         "      Q-04: requires --alsem in the same invocation (test selection from its evidence); agent tests vs the start tree, shipped tests vs the final tree. Container runs through the harness lane: takes the bench lock and private-root lock, refuses coord-leased containers without a matching --coord-lease.\n" +
-        "  [--sql-cost --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--sql-cost-task <HX-nnn> ...] [--sql-cost-scenarios <dir> | --no-sql-cost-scenarios] [--coord-lease ...] [--private-dir <dir>]]\n" +
+        "  [--sql-cost --containers <a,b> --symbols <symbol store> --lineage <reset lineage> [--sql-cost-task <HX-nnn> ...] [--sql-cost-scenarios <dir> | --no-sql-cost-scenarios] [--coord-lease ...] [--private-dir <dir>] [--unverified-bc-egress-ok <reason>]]\n" +
         "      Q-06: opt-in. Re-judges each execution with SQL measurement on (the judgment is discarded) and writes <out>/sql-cost/. Per task and arm only; fails closed.",
     );
     Deno.exit(2);
@@ -3550,27 +3594,10 @@ async function main() {
       console.error("[test-rerun] 0 executions, skipped");
     } else {
       const dir = join(out, "test-rerun");
-      const local = Deno.env.get("LOCALAPPDATA");
-      const privateRoot = args["private-dir"]
-        ? resolve(args["private-dir"])
-        : local
-        ? join(local, "centralgauge", "harness")
-        : null;
-      if (!privateRoot) {
-        throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
-      }
       // Opens the harness environment: bench lock, private-root lock, coord lease check.
-      const runner = await productionRunner({
-        repoRoot: resolve(repo),
-        resultsDir: join(dir, "env"),
-        containers: args.containers!.split(",").map((c) => c.trim()).filter(
-          Boolean,
-        ),
-        coordLeases: args["coord-lease"] as string[],
-        symbolStore: resolve(args.symbols!),
-        privateRoot,
-        lineage: args.lineage ? resolve(args.lineage) : null,
-      });
+      const runner = await productionRunner(
+        runnerEnvOptions(args as RunnerEnvArgs, dir),
+      );
       try {
         await testRerunStep({
           runner,
@@ -3606,25 +3633,8 @@ async function main() {
         dir: args["sql-cost-scenarios"],
         repo: resolve(repo),
       });
-      const local = Deno.env.get("LOCALAPPDATA");
-      const privateRoot = args["private-dir"]
-        ? resolve(args["private-dir"])
-        : local
-        ? join(local, "centralgauge", "harness")
-        : null;
-      if (!privateRoot) {
-        throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
-      }
       const runner = await productionRunner({
-        repoRoot: resolve(repo),
-        resultsDir: join(dir, "env"),
-        containers: args.containers!.split(",").map((c) => c.trim()).filter(
-          Boolean,
-        ),
-        coordLeases: args["coord-lease"] as string[],
-        symbolStore: resolve(args.symbols!),
-        privateRoot,
-        lineage: args.lineage ? resolve(args.lineage) : null,
+        ...runnerEnvOptions(args as RunnerEnvArgs, dir),
         repo: resolve(repo),
         rev: args.rev,
         results: resolve(results),

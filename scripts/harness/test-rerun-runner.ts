@@ -16,6 +16,7 @@ import {
   type Prepared,
   type TestSpec,
 } from "../../src/harness/bc-lane.ts";
+import type { EnvOptions, OpenEnv } from "../../cli/commands/harness-env.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import { safeCopyTree } from "../../src/harness/fsutil.ts";
 import {
@@ -291,18 +292,26 @@ export interface ProductionOptions {
   symbolStore: string;
   privateRoot: string;
   lineage: string | null;
+  /** `--unverified-bc-egress-ok <reason>`: as harness run, an unenforced lineage needs it. */
+  bcEgressOverride: string | null;
+}
+
+/** Test seam: the env opener (default openHarnessEnv). */
+export interface ProductionDeps {
+  open?: (o: EnvOptions) => Promise<OpenEnv>;
 }
 
 /** Opens the harness environment for this step; `close()` releases it. */
 export async function productionRunner(
   o: ProductionOptions,
+  deps: ProductionDeps = {},
 ): Promise<TestRerunRunner> {
   const [{ openHarnessEnv }, { parseCoordLease }] = await Promise.all([
     import("../../cli/commands/harness-env.ts"),
     import("../../cli/commands/harness-command.ts"),
   ]);
   const leases = new Map(o.coordLeases.map(parseCoordLease));
-  const h = await openHarnessEnv({
+  const h = await (deps.open ?? openHarnessEnv)({
     repoRoot: o.repoRoot,
     resultsDir: o.resultsDir,
     containers: o.containers,
@@ -315,6 +324,7 @@ export async function productionRunner(
     command: "analyze-campaign --test-rerun",
     supervised: false,
     ...(o.lineage ? { lineage: o.lineage } : {}),
+    ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
     ...(leases.size > 0 ? { coordLeases: leases } : {}),
   });
   const work = join(o.privateRoot, "work", `test-rerun-${crypto.randomUUID()}`);

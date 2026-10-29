@@ -14,6 +14,7 @@ import {
   authoritativeCalls,
   envRunner,
   measuringBc,
+  productionRunner,
   withBc,
 } from "../../../scripts/harness/sql-cost-runner.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -628,4 +629,36 @@ Deno.test("envRunner regression: an unselected sibling in a scored codeunit is m
     sqlCostRows(row("pass"), res).map((x) => [x.codeunit, x.procedure]),
     [[80010, "ShippedPasses"], [85000, "FixWorks"]],
   );
+});
+
+Deno.test("productionRunner: the env opens on the given harness root, with the BC egress note (Q-04e)", async () => {
+  let seen: Record<string, unknown> | null = null;
+  await assertRejects(
+    () =>
+      productionRunner({
+        repoRoot: "/harness-checkout",
+        resultsDir: "/out/sql-cost/env",
+        containers: ["Cronus282"],
+        coordLeases: [],
+        symbolStore: "/symbols",
+        privateRoot: "/private",
+        lineage: "/lineage.json",
+        bcEgressOverride: "NST egress unenforced (Q-05)",
+        repo: "/task-repo",
+        rev: "abc",
+        results: "/results",
+        taskCache: "/tasks",
+      }, {
+        open: (o) => {
+          seen = { ...o };
+          return Promise.reject(new Error("stop"));
+        },
+      }),
+    Error,
+    "stop",
+  );
+  assertEquals(seen!["repoRoot"], "/harness-checkout");
+  assertEquals(seen!["resultsDir"], "/out/sql-cost/env");
+  assertEquals(seen!["bcEgressOverride"], "NST egress unenforced (Q-05)");
+  assertEquals(seen!["command"], "analyze-campaign --sql-cost");
 });
