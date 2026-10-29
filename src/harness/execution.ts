@@ -1349,8 +1349,11 @@ export function deriveOutcome(i: {
       ? "timeout"
       : i.sandbox.startError !== null
       ? "harness_crash"
-      : parsed.termination ??
-        (i.sandbox.exitCode === 0 ? "completed" : "harness_crash");
+      // R-10 Sol run 001 P1: a parse with no termination has no final result,
+      // so never completed, whatever the exit code (exit 0 alone was
+      // completed since 5c24d3cb; that decided no stored R-04, R-04b or R-07
+      // cell: every completed one has its result line).
+      : parsed.termination ?? "harness_crash";
   return {
     telemetry,
     termination,
