@@ -16,7 +16,6 @@ import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
 import { z } from "zod";
 import { isTaskBuildArtifact } from "../../src/harness/hash.ts";
-import { RecordStore } from "../../src/harness/records.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import { isSourceFile, TEST_APP } from "../../src/harness/verdict-workspace.ts";
 import { startingTree } from "./analyze-campaign.ts";
@@ -1235,9 +1234,10 @@ export async function loadPairs(o: {
   // Latest attempt per cell, as analyze-campaign does.
   const cells = new Map<string, J>();
   const manifests: unknown[] = [];
-  // Through the store, so a re-derivation (R-10) is applied.
-  for (const x of await new RecordStore(o.results).executions(o.campaign)) {
-    const e = x as unknown as J;
+  const dir = join(o.results, "executions", o.campaign);
+  for await (const f of Deno.readDir(dir)) {
+    if (!f.name.endsWith(".json")) continue;
+    const e = await readJson(join(dir, f.name));
     manifests.push(e["manifest"]);
     const key = `${e["arm"]}|${e["task_id"]}|${e["repeat"]}`;
     const prev = cells.get(key);
