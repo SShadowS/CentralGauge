@@ -24,6 +24,7 @@ import {
   deriveOutcome,
   hostLog,
   streamProblems,
+  UNDRAINED_REASON,
   unparsed,
 } from "./execution.ts";
 import { ExecutionRecordSchema, RederivationRecordSchema } from "./records.ts";
@@ -114,7 +115,11 @@ export async function rederiveExecution(o: {
     JSON.parse(await Deno.readTextFile(join(runDir, "sandbox.json"))),
   );
   if (!side.sandbox.started) refuse(`${at}: the sandbox never started`);
-  if (side.stop_reason !== null) {
+  // R-11: the one recorded stop the derivation itself decides is a cap hit
+  // with a BC request in flight (timeout); every other stop is refused.
+  const cappedUndrained = side.stop_reason === "backend_undrained" &&
+    side.sandbox.timedOut;
+  if (side.stop_reason !== null && !cappedUndrained) {
     refuse(`${at}: stopped for ${side.stop_reason}, not by the parse`);
   }
   const rawPath = join(o.store.root, e.raw_log_path!);
@@ -161,8 +166,8 @@ export async function rederiveExecution(o: {
     started: true,
     preStart: false,
     setupError: null,
-    stopReason: null,
-    undrained: null,
+    stopReason: side.stop_reason,
+    undrained: cappedUndrained ? UNDRAINED_REASON : null,
     sandbox: side.sandbox,
     parsed,
     parseError,
