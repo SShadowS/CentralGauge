@@ -311,6 +311,20 @@ export const ExecutionRecordSchema = z.strictObject({
 export type ExecutionRecord = z.output<typeof ExecutionRecordSchema>;
 
 /**
+ * R-10 Sol run 001 P1: an execution record file as stored. `rederived` is
+ * only ever set by RecordStore when it applies an overlay, so a file that
+ * carries it (a copied overlaid record) is refused before any overlay.
+ */
+const StoredExecutionSchema = ExecutionRecordSchema.refine(
+  (e) => e.rederived === undefined,
+  {
+    message:
+      "rederived is never stored in an execution record (only an applied re-derivation sets it)",
+    path: ["rederived"],
+  },
+);
+
+/**
  * R-10: a write-once re-derivation of one stored execution: the fields a
  * parse decides, re-decided from the stored raw.jsonl by a later parser
  * (rederive.ts). Strict: it can carry no identity field. It is bound to the
@@ -1104,12 +1118,47 @@ export class RecordStore {
     const stored = await readAll(
       this.root,
       join(this.root, "executions", campaign_id),
-      ExecutionRecordSchema,
+      StoredExecutionSchema,
       (id) => ({ id, campaign_id }),
     );
     const out: ExecutionRecord[] = [];
     for (const e of stored) out.push(await this.withRederivation(e));
     return out.sort(byInstant((e) => e.started_at));
+  }
+
+  /**
+   * R-10: one execution by id, in whichever campaign holds it, with its
+   * re-derivation applied and checked; null when no campaign has it. Only
+   * that record is read, so other records' problems do not refuse it.
+   */
+  async execution(executionId: string): Promise<ExecutionRecord | null> {
+    const id = safeId(executionId, "execution");
+    const dir = join(this.root, "executions");
+    const campaigns: string[] = [];
+    try {
+      for await (const d of Deno.readDir(dir)) {
+        if (d.isDirectory) campaigns.push(d.name);
+      }
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return null;
+      throw err;
+    }
+    for (const campaign_id of campaigns.sort()) {
+      let e: ExecutionRecord;
+      try {
+        e = await readRecord(
+          this.root,
+          join(dir, campaign_id, `${id}.json`),
+          StoredExecutionSchema,
+          { id, campaign_id },
+        );
+      } catch (err) {
+        if (err instanceof Deno.errors.NotFound) continue;
+        throw err;
+      }
+      return await this.withRederivation(e);
+    }
+    return null;
   }
 
   /**
