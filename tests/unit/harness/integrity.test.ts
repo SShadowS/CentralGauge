@@ -10,6 +10,7 @@ import { readCatalog } from "../../../src/ingest/catalog/read.ts";
 import {
   claudeCodeDerivedNative,
   claudeCodeHarnessNative,
+  PRE_R01_IMAGES,
 } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import { piHarnessNative } from "../../../src/harness/adapters/pi.ts";
@@ -531,6 +532,11 @@ Deno.test("validateCampaignRecords: a campaign mixing execution record versions 
 // M5-01a: under vary [harness], each side's native settings may differ only
 // by the keys its own adapter derives, with exactly the derived values.
 const REPO = fromFileUrl(new URL("../../../", import.meta.url));
+/** R-01b: the first recorded pre-R-01 image of a Claude Code version, or undefined. */
+const V1_IMAGE_OF = (version: string) =>
+  Object.entries(PRE_R01_IMAGES).find(([, v]) => v === version)?.[0];
+const R4 =
+  "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2";
 
 /** The real cc-vs-pi arms, resolved the way `harness run` resolves them. */
 async function ccVsPi(
@@ -549,7 +555,11 @@ async function ccVsPi(
   const arms: CampaignRecord["arms"] = [];
   for (const config of configs) {
     const image = {
-      digest: `sha256:${config.harness}`,
+      // R-01b: a claude-code arm runs a real pre-R-01 image of its version
+      // when one exists (the old era is bound to the digest).
+      digest: config.harness === "claude-code"
+        ? V1_IMAGE_OF(config.harness_version) ?? `sha256:${config.harness}`
+        : `sha256:${config.harness}`,
       base_digest: "sha256:base",
       harness: config.harness,
       version: config.harness_version,
@@ -884,24 +894,29 @@ Deno.test("validateCampaignRecords (R-01): cc-vs-pi stays valid with each record
     assertEquals(p.length, 1, JSON.stringify(bad));
     assertStringIncludes(p[0]!, ": settings");
   }
-  // R-01b (Sol R-01 P2): a 2.1.310 manifest with Monitor removed alone (and
-  // its hashes recomputed) is refused; with Monitor it is valid.
-  const at310 = (list: string[]) => (m: ResolvedManifest) =>
+  // R-01b (Sol R-01 and R-01b P2): the r4 (2.1.310) image with Monitor
+  // removed (hashes recomputed) is refused, at its own version and with the
+  // version downgraded to 2.1.302; with Monitor it is valid.
+  const onR4 = (list: string[], version: string) => (m: ResolvedManifest) =>
     m.harness === "claude-code"
       ? {
         ...native(m, (n) => ({ ...n, disallowed_tools: list })),
-        harness_version: "2.1.310",
+        harness_version: version,
+        image: { ...m.image, digest: R4 },
       }
       : m;
-  assertEquals(await ccVsPi(at310(nine), undefined, true), []);
-  const tampered = await ccVsPi(at310(eight), undefined, true);
-  assertEquals(tampered.length, 1);
-  assertStringIncludes(tampered[0]!, ": settings");
+  assertEquals(await ccVsPi(onR4(nine, "2.1.310"), undefined, true), []);
+  for (const version of ["2.1.310", "2.1.302"]) {
+    const tampered = await ccVsPi(onR4(eight, version), undefined, true);
+    assertEquals(tampered.length, 1, version);
+    assertStringIncludes(tampered[0]!, ": settings");
+  }
   // Two claude-code arms of different eras (H-07 eight, R-01 nine) differ in
   // settings, even under vary [harness].
   const arm = (id: string, disallowed: string[]) =>
     manifest(id, {
       harness: "claude-code",
+      image: { digest: V1_IMAGE_OF("2.1.282")!, base_digest: "sha256:base" },
       settings: { requested: {}, native: { disallowed_tools: disallowed } },
     });
   const derive = { "claude-code": claudeCodeDerivedNative };
@@ -923,6 +938,7 @@ Deno.test("assertVaryHolds (H-07 review): two claude-code arms with six vs eight
   const arm = (id: string, disallowed: string[]) =>
     manifest(id, {
       harness: "claude-code",
+      image: { digest: V1_IMAGE_OF("2.1.282")!, base_digest: "sha256:base" },
       settings: { requested: {}, native: { disallowed_tools: disallowed } },
     });
   // The lists recorded before R-01 (no Monitor).
