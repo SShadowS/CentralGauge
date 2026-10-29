@@ -104,6 +104,7 @@ async function stored(
   exitCode = 0,
   stop: string | null = null,
   at?: string,
+  timedOut = false,
 ) {
   const root = at ?? await Deno.realPath(await testTempDir());
   const store = new RecordStore(root);
@@ -132,7 +133,7 @@ async function stored(
         exitCode,
         started: true,
         startError: null,
-        timedOut: false,
+        timedOut,
         interrupted: false,
         overflow: false,
       },
@@ -255,6 +256,78 @@ Deno.test("deriveOutcome (Sol run 001 P1): no termination from the parse never d
       `exit ${exitCode}`,
     );
   }
+});
+
+Deno.test("deriveOutcome (R-11): a cap hit with a BC request still in flight is a timeout; backend_undrained without the cap stays harness_crash; other stop reasons still win", () => {
+  const base = {
+    manifest: manifest("plain"),
+    declared: [] as const,
+    started: true,
+    preStart: false,
+    setupError: null,
+    parseError: null,
+    problems: [],
+    orphansExempt: false,
+    configInvalid: false,
+    host: { lines: [], bad: [] },
+  };
+  const parsed = {
+    telemetry: telemetry(null),
+    observed: { harness_version: null, models: null, loaded_components: null },
+    unobservable: [],
+    didWork: true,
+    termination: null,
+    usageResetAt: null,
+    imageSupport: null,
+    traceEvents: 0,
+  };
+  const at = (stopReason: string | null, timedOut: boolean) =>
+    deriveOutcome({
+      ...base,
+      stopReason,
+      undrained: stopReason === "backend_undrained"
+        ? "backend request br_1 did not drain within 150 s of revoke"
+        : null,
+      sandbox: { exitCode: -1, timedOut, startError: null },
+      parsed,
+    });
+  const capped = at("backend_undrained", true);
+  assertEquals(capped.termination, "timeout");
+  // the undrained request stays recorded (infra exposed, its reason kept)
+  assert(capped.validity.infra_exposed);
+  assert(capped.infraReasons.some((r) => r.includes("did not drain")));
+  assertEquals(at("backend_undrained", false).termination, "harness_crash");
+  assertEquals(at(null, true).termination, "timeout");
+  for (
+    const s of ["operator_interrupt", "capture_overflow", "runner_interrupted"]
+  ) {
+    assertEquals(at(s, true).termination, "harness_crash", s);
+  }
+});
+
+Deno.test("rederive (R-11): a stored cap hit with an undrained BC request and no result line re-derives to timeout, never completed", async () => {
+  const raw = (await forkProbe()).trim().split("\n").slice(0, -1);
+  for (const exit of [0, -1]) {
+    const s = await stored(
+      raw.join("\n") + "\n",
+      exit,
+      "backend_undrained",
+      undefined,
+      true,
+    );
+    const r = await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+    assertEquals(r.derived.termination, "timeout", `exit ${exit}`);
+    assertEquals(r.from_termination, "harness_crash");
+    assert(r.derived.validity.infra_exposed);
+    assertEquals((await s.store.executions(s.c.id))[0]!.termination, "timeout");
+  }
+  // without the cap, an undrained request is still not a parse outcome
+  const crash = await stored(await forkProbe(), 0, "backend_undrained");
+  await assertRejects(
+    () => rederive(crash.store, crash.e),
+    ValidationError,
+    "stopped for backend_undrained",
+  );
 });
 
 Deno.test("rederive (R-10): the reader refuses an overlay whose raw.jsonl changed", async () => {
