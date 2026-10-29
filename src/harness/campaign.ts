@@ -803,6 +803,24 @@ export async function runCampaign(
   o: RunOptions,
   io: RunIO,
 ): Promise<CampaignSummary> {
+  // R-08 Sol run 001 P2: the quarantine hooks this invocation installs end
+  // with it; each lane gets its previous callback back, so a later runCell or
+  // command on the same env never writes into this campaign's log or summary.
+  const lanes = [...new Set([env.lane, env.judgeLane])].filter((l) => !!l);
+  const previous = lanes.map((l) => l.onQuarantine);
+  try {
+    return await campaignInvocation(env, experimentId, o, io);
+  } finally {
+    lanes.forEach((l, i) => (l.onQuarantine = previous[i]));
+  }
+}
+
+async function campaignInvocation(
+  env: HarnessEnv,
+  experimentId: string,
+  o: RunOptions,
+  io: RunIO,
+): Promise<CampaignSummary> {
   if (!Number.isInteger(o.concurrency) || o.concurrency < 1) {
     throw new ConfigurationError(
       `concurrency must be a positive integer: ${o.concurrency}`,

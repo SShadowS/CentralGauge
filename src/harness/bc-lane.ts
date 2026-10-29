@@ -217,7 +217,7 @@ export class BcLane {
   readonly quarantined = new Map<string, string>();
 
   /** R-08: told synchronously of every quarantine, after the in-memory entry is set (the campaign logs it). */
-  onQuarantine?: (container: string, reason: string) => void;
+  onQuarantine: ((container: string, reason: string) => void) | undefined;
 
   /** H-41 (6): join `c`; a rejoin reuses its Mutex and Semaphore, never replaces them. */
   add(c: string): void {
