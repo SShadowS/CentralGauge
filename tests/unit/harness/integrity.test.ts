@@ -884,6 +884,19 @@ Deno.test("validateCampaignRecords (R-01): cc-vs-pi stays valid with each record
     assertEquals(p.length, 1, JSON.stringify(bad));
     assertStringIncludes(p[0]!, ": settings");
   }
+  // R-01b (Sol R-01 P2): a 2.1.310 manifest with Monitor removed alone (and
+  // its hashes recomputed) is refused; with Monitor it is valid.
+  const at310 = (list: string[]) => (m: ResolvedManifest) =>
+    m.harness === "claude-code"
+      ? {
+        ...native(m, (n) => ({ ...n, disallowed_tools: list })),
+        harness_version: "2.1.310",
+      }
+      : m;
+  assertEquals(await ccVsPi(at310(nine), undefined, true), []);
+  const tampered = await ccVsPi(at310(eight), undefined, true);
+  assertEquals(tampered.length, 1);
+  assertStringIncludes(tampered[0]!, ": settings");
   // Two claude-code arms of different eras (H-07 eight, R-01 nine) differ in
   // settings, even under vary [harness].
   const arm = (id: string, disallowed: string[]) =>

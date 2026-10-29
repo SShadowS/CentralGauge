@@ -4716,6 +4716,41 @@ Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-0
   }
 });
 
+Deno.test("R-01b (Sol R-01 P2): the era comes from the manifest's Claude Code version, never the list: removing Monitor alone from a 2.1.310+ manifest is refused", () => {
+  const derive = (version: string, requested: object, disallowed: unknown) =>
+    claudeCodeDerivedNative(manifest("cc", {
+      harness_version: version,
+      settings: {
+        requested: requested as Record<string, unknown>,
+        native: { disallowed_tools: disallowed },
+      },
+    })).disallowed_tools;
+  const noMonitor = R01_DEFAULT.filter((t) => t !== "Monitor");
+  assertEquals(noMonitor, R01_EIGHT);
+  for (const v of ["2.1.310", "2.1.311", "2.2.0", "3.0.0"]) {
+    // Current: the Monitor list re-derives to itself.
+    assertEquals(derive(v, {}, R01_DEFAULT), R01_DEFAULT, v);
+    // Tampered: Monitor removed alone (the eight), or the pre-H-07 six.
+    for (const bad of [noMonitor, R01_SIX]) {
+      assert(
+        JSON.stringify(derive(v, {}, bad)) !== JSON.stringify(bad),
+        `${v} ${JSON.stringify(bad)}`,
+      );
+    }
+  }
+  // History is unchanged: every version qualified before R-01 keeps its
+  // recorded pre-R-01 lists, and a post-R-01 manifest of them its Monitor list.
+  for (const v of ["2.1.282", "2.1.296", "2.1.300", "2.1.302"]) {
+    assertEquals(derive(v, {}, R01_SIX), R01_SIX, v);
+    assertEquals(derive(v, {}, R01_EIGHT), R01_EIGHT, v);
+    assertEquals(derive(v, {}, R01_DEFAULT), R01_DEFAULT, v);
+  }
+  // An unreadable version is never the old era (fail closed).
+  assert(
+    JSON.stringify(derive("next", {}, R01_EIGHT)) !== JSON.stringify(R01_EIGHT),
+  );
+});
+
 Deno.test("R-01: BUILTIN_INVENTORY 2.1.310 is 2.1.302 plus Monitor (a hidden tool); dev use qualified, the qualification records the reproof", () => {
   const a = BUILTIN_INVENTORY["2.1.302"]!;
   const b = BUILTIN_INVENTORY["2.1.310"]!;
