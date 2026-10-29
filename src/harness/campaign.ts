@@ -10,6 +10,7 @@
  * the next run recovers it before planning).
  */
 
+import * as colors from "@std/fmt/colors";
 import { exists } from "@std/fs";
 import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
@@ -126,6 +127,11 @@ export interface CampaignSummary {
    * its claim), absent when none.
    */
   owed?: number;
+  /** R-08: containers quarantined during this invocation (absent when none). */
+  quarantined?: number;
+  /** R-08: members / joined containers of the lane of the latest quarantine. */
+  poolSize?: number;
+  poolTotal?: number;
 }
 
 export interface RunIO {
@@ -1214,6 +1220,25 @@ export async function runCampaign(
     }
     return false;
   };
+  // R-08: a quarantine is loud in the log and counted in the summary.
+  for (
+    const lane of new Set([
+      env.lane,
+      env.judgeLane,
+    ])
+  ) {
+    if (!lane) continue;
+    lane.onQuarantine = (container, reason) => {
+      summary.quarantined = (summary.quarantined ?? 0) + 1;
+      summary.poolSize = lane.members().length;
+      summary.poolTotal = lane.containers.length;
+      io.log(
+        `${colors.red("[QUARANTINE]")} ${container}: ${
+          reason.replace(/\s*[\r\n]+\s*/g, " ")
+        } (judging pool ${summary.poolSize}/${summary.poolTotal})`,
+      );
+    };
+  }
   if (await stopRequested()) return summary;
   // H-09: an agent slot frees once its execution is published; the judge
   // queue judges on the judge lane. Owed judgments (a crash after
