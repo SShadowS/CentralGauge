@@ -2342,10 +2342,53 @@ export const claudeCodeHarnessNative = (
 };
 
 /**
+ * R-01b run 002 (Sol R-01b P2): every claude-code image a manifest recorded
+ * before R-01 (lists without Monitor), by digest, with the Claude Code
+ * version it ran. The old era is granted only on one of these digests at its
+ * own version: a record's harness_version alone is an editable field, its
+ * digest names an image that exists. Taken from every stored claude-code
+ * campaign arm and execution (all stores, 2026-10-29). Closed: R-01 ended the
+ * era, no image is added.
+ */
+export const PRE_R01_IMAGES: Readonly<Record<string, string>> = {
+  "sha256:0d8322daa94921b23b109ce99576260a9cf8dd540a3f47d072d230b4ee8b2b42":
+    "2.1.282",
+  "sha256:1bb05afae0c8403cff8f089d4e7316f8272aa59ae90387b2e71cd691c31677cc":
+    "2.1.282",
+  "sha256:40e467b0bf5e60d004260b71093d24321faaa13de64173ec1494f5375bb6a6f3":
+    "2.1.282",
+  "sha256:42499efd3f108da8ca7a57518743792baf984cfba6092dc37c1449fae14df80e":
+    "2.1.282",
+  "sha256:50af9755653cd6d9a4bb1cf816081ae84d8928a02a2d0aa08dedf2a189c5eeeb":
+    "2.1.282",
+  "sha256:53c2854c222bd072eb4135cf6c1f96479f9ad06e9ec43c400f94bf6dd7ffa8f5":
+    "2.1.282",
+  "sha256:5bd72980ffc1b4b252e741e3a2d3d932a4544cdbf157d0a2528934007d230cb6":
+    "2.1.282",
+  "sha256:9c30258b6fc9456399aae693f27792f682a2586b72bb2c93c1196c0b256e46aa":
+    "2.1.282",
+  "sha256:ee533d9d9783f3910002f2677f77a5450bfd68a580ac4f3dfadbcf9bcdf31f0a":
+    "2.1.282",
+  "sha256:51c3095af96c3310f5f6674f494d7c349e7e9a4655a9f2aaf546c8820dd6290d":
+    "2.1.296",
+  "sha256:b727290ec889c297241070fab41ef60ac8d7157b23021994e92d52ed1a66d8a1":
+    "2.1.296",
+  "sha256:a9e8969009e303fdf515844cdc438521468ef0fb42dc1858e77335e8e2f8d310":
+    "2.1.300",
+  "sha256:c3c05bb4f3b48a7cced954180655db43bd092f66e2ebb869b2f1d6385d4574a1":
+    "2.1.300",
+  "sha256:0a8746462fc8d62f2ea104d844b5fb43b2c9e12080608b81ab5e94ddfaf46f36":
+    "2.1.302",
+  "sha256:f1b97481fbdf6f0450f2865036f5e369738465f2097b29dd951bc2d46063f742":
+    "2.1.302",
+};
+
+/**
  * The M5-01a derivation for a stored manifest (integrity, vary [harness]): the
- * default list of the manifest's era. A recorded list without Monitor was
- * written before R-01 and derives the pre-R-01 default (the six session tools
- * plus the web tools); a list with Monitor derives today's. Either way a
+ * default list of the manifest's era. A recorded list without Monitor, on an
+ * image of PRE_R01_IMAGES at that image's own version, was written before
+ * R-01 and derives the pre-R-01 default (the six session tools plus the web
+ * tools); any other manifest derives today's (Monitor included). Either way a
  * pre-H-07 manifest, which recorded the six session tools and no web_tools
  * request, derives those six (code since H-07 never writes that pair; a web
  * arm requests web_tools and so stays a settings difference). Any other
@@ -2353,7 +2396,12 @@ export const claudeCodeHarnessNative = (
  */
 export const claudeCodeDerivedNative = (m: ResolvedManifest) => {
   const listed = m.settings.native["disallowed_tools"];
-  const preR01 = !(Array.isArray(listed) && listed.includes("Monitor"));
+  // R-01b: the era is never the list being checked (Sol R-01 P2), nor the
+  // record's own harness_version (Sol R-01b P2): only a pre-R-01 image digest
+  // at that image's version. An unknown digest is never the old era.
+  const preR01 = !(Array.isArray(listed) && listed.includes("Monitor")) &&
+    Object.hasOwn(PRE_R01_IMAGES, m.image.digest) &&
+    PRE_R01_IMAGES[m.image.digest] === m.harness_version;
   const legacy = !Object.hasOwn(m.settings.requested, "web_tools") &&
     JSON.stringify(listed) === JSON.stringify(PRE_R01_TOOLS);
   return claudeCodeHarnessNative(legacy, preR01);

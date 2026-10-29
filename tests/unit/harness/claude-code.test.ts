@@ -23,6 +23,7 @@ import {
   LSP_PLUGINS,
   parseClaudeStream,
   pluginIs,
+  PRE_R01_IMAGES,
   unqualifiedClaudeCode,
 } from "../../../src/harness/adapters/claude-code.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
@@ -3712,6 +3713,12 @@ Deno.test("web tools (H-07 review): disallowed use, unexecuted calls, missing co
 Deno.test("web tools (H-07 review): the stored-manifest derivation keeps pre-H-07 six-tool manifests valid, never a web arm", () => {
   const m = (requested: object, disallowed: string[]) =>
     manifest("cc", {
+      // R-01b: the frozen 2.1.282 image (PRE_R01_IMAGES), where the old era is real.
+      image: {
+        digest:
+          "sha256:53c2854c222bd072eb4135cf6c1f96479f9ad06e9ec43c400f94bf6dd7ffa8f5",
+        base_digest: "sha256:base",
+      },
       settings: {
         requested: requested as Record<string, unknown>,
         native: { disallowed_tools: disallowed },
@@ -4683,6 +4690,12 @@ Deno.test("R-01: new manifests disallow Monitor (default and web arm); v1 arms k
 Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-01 default to itself, a new manifest to the Monitor list, and nothing else", () => {
   const m = (requested: object, disallowed: unknown) =>
     manifest("cc", {
+      // R-01b: the frozen 2.1.282 image (PRE_R01_IMAGES), where the old era is real.
+      image: {
+        digest:
+          "sha256:53c2854c222bd072eb4135cf6c1f96479f9ad06e9ec43c400f94bf6dd7ffa8f5",
+        base_digest: "sha256:base",
+      },
       settings: {
         requested: requested as Record<string, unknown>,
         native: { disallowed_tools: disallowed },
@@ -4714,6 +4727,57 @@ Deno.test("R-01: the stored-manifest derivation re-derives each recorded pre-R-0
       JSON.stringify(bad),
     );
   }
+});
+
+Deno.test("R-01b (Sol R-01 and R-01b P2): the era is a pre-R-01 image digest at its own version, never the list or the record's version: Monitor removed, alone or with a version downgrade, is refused", () => {
+  const derive = (
+    digest: string,
+    version: string,
+    requested: object,
+    disallowed: unknown,
+  ) =>
+    claudeCodeDerivedNative(manifest("cc", {
+      harness_version: version,
+      image: { digest, base_digest: "sha256:base" },
+      settings: {
+        requested: requested as Record<string, unknown>,
+        native: { disallowed_tools: disallowed },
+      },
+    })).disallowed_tools;
+  const R4 =
+    "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2";
+  const R3 =
+    "sha256:0a8746462fc8d62f2ea104d844b5fb43b2c9e12080608b81ab5e94ddfaf46f36";
+  const refused = (d: string, v: string, list: string[]) =>
+    assert(
+      JSON.stringify(derive(d, v, {}, list)) !== JSON.stringify(list),
+      `${d} ${v} ${JSON.stringify(list)}`,
+    );
+  const noMonitor = R01_DEFAULT.filter((t) => t !== "Monitor");
+  assertEquals(noMonitor, R01_EIGHT);
+  // The r4 image: its Monitor list re-derives to itself; Monitor removed is
+  // refused at its own version and at every downgraded one (Sol R-01b P2).
+  assertEquals(derive(R4, "2.1.310", {}, R01_DEFAULT), R01_DEFAULT);
+  for (const v of ["2.1.310", "2.1.302", "2.1.300", "2.1.282", "next"]) {
+    for (const bad of [noMonitor, R01_SIX]) refused(R4, v, bad);
+  }
+  // An unknown digest is never the old era, at any version.
+  for (const v of ["2.1.282", "2.1.302"]) {
+    refused(`sha256:${"e".repeat(64)}`, v, R01_EIGHT);
+    refused(`sha256:${"e".repeat(64)}`, v, R01_SIX);
+  }
+  // A pre-R-01 digest only at its own version.
+  refused(R3, "2.1.300", R01_EIGHT);
+  // History is unchanged: every recorded pre-R-01 image keeps its six and
+  // eight, and its post-R-01 Monitor list.
+  assertEquals(Object.keys(PRE_R01_IMAGES).length, 15);
+  for (const [d, v] of Object.entries(PRE_R01_IMAGES)) {
+    assertEquals(derive(d, v, {}, R01_SIX), R01_SIX, d);
+    assertEquals(derive(d, v, {}, R01_EIGHT), R01_EIGHT, d);
+    assertEquals(derive(d, v, {}, R01_DEFAULT), R01_DEFAULT, d);
+  }
+  assertEquals(PRE_R01_IMAGES[R3], "2.1.302");
+  assert(!Object.hasOwn(PRE_R01_IMAGES, R4));
 });
 
 Deno.test("R-01: BUILTIN_INVENTORY 2.1.310 is 2.1.302 plus Monitor (a hidden tool); dev use qualified, the qualification records the reproof", () => {
