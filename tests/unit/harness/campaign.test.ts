@@ -2550,4 +2550,12 @@ Deno.test("R-08: a mid-campaign quarantine prints one [QUARANTINE] line with the
     [s.quarantined, s.poolSize, s.poolTotal],
     [1, 0, 1],
   );
+  // R-08 Sol run 001 P2: the hook ends with the invocation. A later
+  // quarantine on the same env (a runCell, another command) neither prints
+  // into this campaign's log nor counts in its summary.
+  const before = log.lines.length;
+  await t.env.lane.quarantine("C2", "later");
+  assertEquals(log.lines.length, before);
+  assertEquals(s.quarantined, 1);
+  assertEquals(t.env.lane.onQuarantine, undefined);
 });
