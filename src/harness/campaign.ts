@@ -1228,6 +1228,10 @@ export async function runCampaign(
     ])
   ) {
     if (!lane) continue;
+    // The lane that judges (the judge lane, else the one lane) is the judging pool.
+    const pool = lane === (env.judgeLane ?? env.lane)
+      ? "judging pool"
+      : "agent pool";
     lane.onQuarantine = (container, reason) => {
       summary.quarantined = (summary.quarantined ?? 0) + 1;
       summary.poolSize = lane.members().length;
@@ -1235,7 +1239,7 @@ export async function runCampaign(
       io.log(
         `${colors.red("[QUARANTINE]")} ${container}: ${
           reason.replace(/\s*[\r\n]+\s*/g, " ")
-        } (judging pool ${summary.poolSize}/${summary.poolTotal})`,
+        } (${pool} ${summary.poolSize}/${summary.poolTotal})`,
       );
     };
   }
