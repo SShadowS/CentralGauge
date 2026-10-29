@@ -2341,11 +2341,25 @@ export const claudeCodeHarnessNative = (
   };
 };
 
+/** R-01: the first Claude Code version whose system/init lists Monitor. */
+const MONITOR_SINCE = "2.1.310";
+
+/** `a` < `b` for x.y.z versions; false when either is not x.y.z. */
+const versionBefore = (a: string, b: string): boolean => {
+  const p = (v: string) =>
+    /^(\d+)\.(\d+)\.(\d+)$/.exec(v)?.slice(1).map(Number);
+  const [x, y] = [p(a), p(b)];
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! < y[i]!;
+  return false;
+};
+
 /**
  * The M5-01a derivation for a stored manifest (integrity, vary [harness]): the
- * default list of the manifest's era. A recorded list without Monitor was
- * written before R-01 and derives the pre-R-01 default (the six session tools
- * plus the web tools); a list with Monitor derives today's. Either way a
+ * default list of the manifest's era. A recorded list without Monitor, on a
+ * Claude Code version before 2.1.310, was written before R-01 and derives the
+ * pre-R-01 default (the six session tools plus the web tools); any other
+ * manifest derives today's (Monitor included). Either way a
  * pre-H-07 manifest, which recorded the six session tools and no web_tools
  * request, derives those six (code since H-07 never writes that pair; a web
  * arm requests web_tools and so stays a settings difference). Any other
@@ -2353,7 +2367,12 @@ export const claudeCodeHarnessNative = (
  */
 export const claudeCodeDerivedNative = (m: ResolvedManifest) => {
   const listed = m.settings.native["disallowed_tools"];
-  const preR01 = !(Array.isArray(listed) && listed.includes("Monitor"));
+  // R-01b (Sol R-01 P2): the era is the manifest's Claude Code version, never
+  // the list being checked. 2.1.310 is the first version qualified with
+  // Monitor (R-01), so no manifest of it or later predates R-01; an
+  // unreadable version is never the old era.
+  const preR01 = !(Array.isArray(listed) && listed.includes("Monitor")) &&
+    versionBefore(m.harness_version, MONITOR_SINCE);
   const legacy = !Object.hasOwn(m.settings.requested, "web_tools") &&
     JSON.stringify(listed) === JSON.stringify(PRE_R01_TOOLS);
   return claudeCodeHarnessNative(legacy, preR01);
