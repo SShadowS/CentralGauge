@@ -90,7 +90,8 @@ function Test-NstSuspended([string]$Container) {
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
 # C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
 $NstFreezeDir = 'C:\ProgramData\cg-harness'
-function Enable-NstFreeze([string]$Container, [int]$Seconds = 38, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
+$NstHoldSeconds = 38
+function Enable-NstFreeze([string]$Container, [int]$Seconds = $NstHoldSeconds, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
   $t = Invoke-InContainer $Container { param($s, $dir, $tpid)
     New-Item -ItemType Directory -Force (Join-Path $dir 'tmp') | Out-Null
     $g = [guid]::NewGuid().ToString('N')
@@ -248,6 +249,13 @@ function Clear-NstFreezeLeftover([string]$Container, [string]$Dir = $NstFreezeDi
 function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
   $lines = @()
   $held = $null
+  # R-09: timing (measurement only) rides on the T| marker as JSON: hold_setup_ms (Enable-NstFreeze, the holder's
+  # bound already running), held_ms (from the hold until the held-check ends: what the bound must cover, less the
+  # setup), its phases, the bound, and per root the entries and in-container walk ms (Get-FsDigest).
+  $timing = [ordered]@{ hold_setup_ms = $null; held_ms = $null; w1_ms = $null; walk_ms = $null; w2_ms = $null
+    assert_ms = $null; bound_s = $NstHoldSeconds; roots = @() }
+  $hold = $null
+  $script:FsDigestRoots = @()
   try {
     if ((Clear-NstFreezeLeftover $Container) -gt 0) {
       throw 'a killed capture left the NST held; ended, this capture fails closed'
@@ -258,16 +266,29 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
       throw 'the NST was left suspended (a killed capture); resumed, this capture fails closed'
     }
     if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
-    $held = Enable-NstFreeze $Container
+    $phase = [Diagnostics.Stopwatch]::StartNew()
+    $held = Enable-NstFreeze $Container $NstHoldSeconds
+    $timing.hold_setup_ms = $phase.ElapsedMilliseconds
+    $hold = [Diagnostics.Stopwatch]::StartNew()
+    $phase.Restart()
     $w1 = Get-NstSessionWatermark $Container
+    $timing.w1_ms = $phase.ElapsedMilliseconds
+    $phase.Restart()
     $lines = @(Get-FsDigest $Container $Roots)
+    $timing.walk_ms = $phase.ElapsedMilliseconds
+    $phase.Restart()
     $w2 = Get-NstSessionWatermark $Container
+    $timing.w2_ms = $phase.ElapsedMilliseconds
     if ($w2 -ne $w1) { throw "the NST session log moved while held ($w1 -> $w2)" }
     # Sol r1 H3: the hold lasted the whole walk (proof, not the watermark)
+    $phase.Restart()
     Assert-NstFreezeHeld $Container $held
+    $timing.assert_ms = $phase.ElapsedMilliseconds
   } catch {
     $lines = @("E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))")
   } finally {
+    if ($hold) { $timing.held_ms = $hold.ElapsedMilliseconds }
+    $timing.roots = @($script:FsDigestRoots)
     if ($held) {
       try { Disable-NstFreeze $Container $held }
       catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
@@ -278,7 +299,7 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
     catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
   }
   $lines
-  "T|$($lines.Count)"
+  "T|$($lines.Count)|$(ConvertTo-Json ([pscustomobject]$timing) -Compress -Depth 4)"
 }
 
 # The NST's user + background session count, read by a query bounded ON THE HOST (orch r004 barrier M2): a plain
@@ -366,65 +387,87 @@ public static class CgFsStreams {
       if ($null -eq $b) { $b = [byte[]]@() }
       , $b
     }
-    function Streams($item) {
-      $names = [CgFsStreams]::Names($item.FullName)
+    # Streams of one entry, into $out. R-09: by path, into a list (no per-call output arrays).
+    function Streams([string]$path, $out) {
+      $names = [CgFsStreams]::Names($path)
       foreach ($n in $names) {
         if ($n -eq '::$DATA') { continue }
         $name = $n -replace '^:([^:]*):\$DATA$', '$1'
-        $p = "$($item.FullName):$name"
+        $p = "${path}:$name"
         try {
           # read twice: a stream rewritten during the scan is an error, never a record
-          $h1 = Get-Sha (ReadStream $item.FullName $name)
-          $b = ReadStream $item.FullName $name
-          if ((Get-Sha $b) -ne $h1) { "E|$p|changed during the scan" }
-          else { "S|$h1|$($b.Length)|$p" }
-        } catch { "E|$p|$(Clean $_.Exception.Message)" }
+          $h1 = Get-Sha (ReadStream $path $name)
+          $b = ReadStream $path $name
+          if ((Get-Sha $b) -ne $h1) { $out.Add("E|$p|changed during the scan") }
+          else { $out.Add("S|$h1|$($b.Length)|$p") }
+        } catch { $out.Add("E|$p|$(Clean $_.Exception.Message)") }
       }
       # Sol S3 r2: a stream added or removed while the others were read
-      if ((@([CgFsStreams]::Names($item.FullName)) -join '|') -ne (@($names) -join '|')) {
-        "E|$($item.FullName)|streams changed during the scan"
+      if ((@([CgFsStreams]::Names($path)) -join '|') -ne (@($names) -join '|')) {
+        $out.Add("E|$path|streams changed during the scan")
       }
     }
-    # One entry; a directory's children are enumerated, then its last-write time is re-read (a child added or
-    # removed meanwhile changes it).
-    function Entry($i) {
+    # R-09: a fresh stat of the entry itself (what Get-Item -Force gave, without its cmdlet cost: 16x, R-09 ops
+    # io-vs-overhead): a directory's DirectoryInfo, else a FileInfo; a path that is gone throws, as Get-Item did.
+    function Stat([string]$path) {
+      $i = if ([IO.Directory]::Exists($path)) { [IO.DirectoryInfo]::new($path) } else { [IO.FileInfo]::new($path) }
+      if (-not $i.Exists) { throw "Cannot find path '$path' because it does not exist." }
+      $i
+    }
+    # One entry, into $out; a directory's children are enumerated, then its last-write time is re-read (a child
+    # added or removed meanwhile changes it). R-09: the same stats, reads and checks in the same order as before,
+    # by path with .NET, into one list (the lines are unchanged; the PowerShell per-file cost was the walk's time).
+    function Entry([string]$path, $out) {
       try {
         # enumeration reads the parent's index, which NTFS updates lazily: stat the entry itself
-        $i = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+        $i = Stat $path
         $attrs = [int]$i.Attributes
         $t = $i.LastWriteTimeUtc.Ticks
         if ($i.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-          "L|$attrs|$t|$($i.FullName)|$(Clean "$($i.Target)")"
-        } elseif ($i.PSIsContainer) {
-          $lines = @("D|$attrs|$t|$($i.FullName)") + @(Streams $i)
-          foreach ($c in @(Get-ChildItem -LiteralPath $i.FullName -Force -ErrorAction Stop)) { $lines += @(Entry $c) }
-          $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
-          if ($after.LastWriteTimeUtc.Ticks -ne $t) { $lines += "E|$($i.FullName)|changed during the scan" }
-          $lines
+          # the link target as PowerShell reports it (reparse points are few)
+          $out.Add("L|$attrs|$t|$($i.FullName)|$(Clean "$((Get-Item -LiteralPath $path -Force -ErrorAction Stop).Target)")")
+        } elseif ($i -is [IO.DirectoryInfo]) {
+          $out.Add("D|$attrs|$t|$($i.FullName)")
+          Streams $i.FullName $out
+          foreach ($c in @([IO.Directory]::GetFileSystemEntries($i.FullName))) { Entry $c $out }
+          if ((Stat $i.FullName).LastWriteTimeUtc.Ticks -ne $t) { $out.Add("E|$($i.FullName)|changed during the scan") }
         } else {
           $b = [IO.File]::ReadAllBytes($i.FullName)
-          $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+          $after = Stat $i.FullName
           if ($after.Length -ne $b.Length -or $after.LastWriteTimeUtc.Ticks -ne $t) {
-            "E|$($i.FullName)|changed during the scan"
+            $out.Add("E|$($i.FullName)|changed during the scan")
           } else {
             $head = [BitConverter]::ToString($b, 0, [Math]::Min(26, $b.Length)).Replace('-', '').ToLowerInvariant()
-            "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$head|$($i.FullName)"
-            Streams $i
+            $out.Add("F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$head|$($i.FullName)")
+            Streams $i.FullName $out
             # and the file itself after its streams were read
-            $again = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+            $again = Stat $i.FullName
             if ($again.Length -ne $b.Length -or $again.LastWriteTimeUtc.Ticks -ne $t) {
-              "E|$($i.FullName)|changed during the scan"
+              $out.Add("E|$($i.FullName)|changed during the scan")
             }
           }
         }
-      } catch { "E|$($i.FullName)|$(Clean $_.Exception.Message)" }
+      } catch { $out.Add("E|$path|$(Clean $_.Exception.Message)") }
     }
     foreach ($r in $roots) {
-      if (-not (Test-Path -LiteralPath $r)) { "E|$r|root missing"; continue }
-      try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop) }
-      catch { "E|$r|$(Clean $_.Exception.Message)" }
+      # R-09: each root's entry lines and walk ms, as an R| line the host side takes out (never a digest line)
+      $sw = [Diagnostics.Stopwatch]::StartNew()
+      $out = [Collections.Generic.List[string]]::new()
+      if (-not (Test-Path -LiteralPath $r)) { $out.Add("E|$r|root missing") }
+      else {
+        try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop).FullName $out }
+        catch { $out.Add("E|$r|$(Clean $_.Exception.Message)") }
+      }
+      $out
+      "R|$r|$($out.Count)|$($sw.ElapsedMilliseconds)"
     }
   } (, $Roots)
+  # R-09: the per-root timing for Invoke-FsCaptureCore's T| marker; only digest lines go on
+  $script:FsDigestRoots = @($lines | Where-Object { $_ -like 'R|*' } | ForEach-Object {
+      $p = $_ -split '\|'
+      [ordered]@{ root = $p[1]; entries = [int]$p[2]; ms = [long]$p[3] }
+    })
+  $lines = @($lines | Where-Object { $_ -notlike 'R|*' })
   # the path field: F (v3) 6, E 1, D/S/L 3
   Sort-Ordinal $lines { $p = $args[0] -split '\|'; switch ($p[0]) { 'F' { $p[6] } 'E' { $p[1] } default { $p[3] } } }
 }

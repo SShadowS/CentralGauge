@@ -127,20 +127,37 @@ function Run([hashtable]$o) {
   function script:Get-FsDigest($c, $r) {
     $script:calls.Add('walk')
     if ($script:o.walkThrows) { throw 'docker exec died' }
+    $script:FsDigestRoots = @([ordered]@{ root = 'C:\W'; entries = 1; ms = 7 })
     'D|16|1|C:\W'
   }
   $out = @(Invoke-FsCaptureCore 'x' @('C:\W'))
   [pscustomobject]@{ out = $out; calls = @($script:calls) }
 }
+# R-09: the T| marker carries the capture's timing as JSON (src/harness/reset.ts fsCaptureTiming)
+function Timing($out) {
+  $m = [regex]::Match([string]$out[-1], '^T\|(\d+)\|(\{.*\})$')
+  Assert $m.Success "T marker with timing: $($out[-1])"
+  Assert ([int]$m.Groups[1].Value -eq $out.Count - 1) "T count: $($out[-1])"
+  $m.Groups[2].Value | ConvertFrom-Json
+}
 
 # happy path: w1 and w2 both read while held (a post-release healthcheck row does not count), held-check, release
 $r = Run @{}
 Assert (($r.calls -join ',') -eq 'leftover?,suspended?,quiescent,hold,watermark(held=True),walk,watermark(held=True),held?,release,quiescent') "order: $($r.calls -join ',')"
-Assert (($r.out -join ';') -eq 'D|16|1|C:\W;T|1') "out: $($r.out -join ';')"
+Assert ($r.out.Count -eq 2 -and $r.out[0] -eq 'D|16|1|C:\W') "out: $($r.out -join ';')"
+$t = Timing $r.out
+foreach ($k in 'hold_setup_ms', 'held_ms', 'w1_ms', 'walk_ms', 'w2_ms', 'assert_ms') {
+  Assert ($t.$k -is [int] -or $t.$k -is [long]) "timing $k is a count of ms: $($r.out[-1])"
+}
+Assert ($t.bound_s -eq 38) "timing bound_s: $($r.out[-1])"
+Assert (@($t.roots).Count -eq 1 -and $t.roots[0].root -eq 'C:\W' -and $t.roots[0].entries -eq 1 -and $t.roots[0].ms -eq 7) "timing roots: $($r.out[-1])"
 # a hold that did not last the walk fails the capture; the release still runs
 $r = Run @{ heldFails = $true }
 Assert ($r.out[0] -like 'E|(fs-capture)|*did not hold*') "held error: $($r.out -join ';')"
 Assert ($r.calls -contains 'release') 'release after a broken hold'
+# R-09: an expired hold still fails closed, and its capture says how long it was held
+$t = Timing $r.out
+Assert ($t.held_ms -is [int] -or $t.held_ms -is [long]) "held_ms on a broken hold: $($r.out[-1])"
 # a live hold a killed capture left: ended, this capture fails closed before anything else
 $r = Run @{ leftHeld = 1 }
 Assert (($r.calls -join ',') -eq 'leftover?') "left held: $($r.calls -join ',')"
@@ -161,7 +178,7 @@ Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|*expired*' }) 'release 
 $r = Run @{ walkThrows = $true }
 Assert ($r.calls -contains 'release') 'release after a throwing walk'
 Assert ($r.out[0] -like 'E|(fs-capture)|*docker exec died*') "walk error: $($r.out -join ';')"
-Assert ($r.out[-1] -eq "T|$($r.out.Count - 1)") 'T marker'
+$null = Timing $r.out
 # not quiescent before: nothing held, nothing walked
 $r = Run @{ busy = $true }
 Assert (($r.calls -join ',') -eq 'leftover?,suspended?,quiescent') "busy: $($r.calls -join ',')"
