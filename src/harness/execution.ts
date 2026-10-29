@@ -1264,6 +1264,10 @@ interface DraftInput {
   account?: string | null;
 }
 
+/** H-16: the infra reason of a backend request that did not drain (stop_reason backend_undrained). */
+export const UNDRAINED_REASON =
+  "backend request did not drain after revoke (abort plus the longest BC step's timeout); its container stays held until it settles";
+
 /**
  * R-10: the record fields a parse decides (telemetry, termination, validity),
  * from the parse and the run's recorded facts. Pure, so a live run and a
@@ -1337,11 +1341,17 @@ export function deriveOutcome(i: {
   const mismatch = inventory.length > 0
     ? `component inventory: ${inventory.join("; ")}`
     : check.mismatch;
+  // R-11 (owner 2026-10-29, "Count as timeout"): a cell that hit its time cap
+  // while a BC request was still in flight is a timeout. The undrained request
+  // stays on record as sandbox.json stop_reason backend_undrained and in the
+  // infra reasons (infra exposed). Without the cap it stays a harness_crash.
+  const cappedUndrained = i.stopReason === "backend_undrained" &&
+    i.sandbox.timedOut;
   const termination: ExecutionRecord["termination"] =
     !started || i.setupError !== null || mismatch !== null ||
       i.configInvalid
       ? "setup_failed"
-      : i.stopReason !== null || i.parseError !== null
+      : (i.stopReason !== null && !cappedUndrained) || i.parseError !== null
       ? "harness_crash"
       : parsed.termination === "usage_limited"
       ? "usage_limited"
@@ -2490,9 +2500,7 @@ export async function runExecution(
       "stop",
     );
   }
-  const undrained = drained
-    ? null
-    : "backend request did not drain after revoke (abort plus the longest BC step's timeout); its container stays held until it settles";
+  const undrained = drained ? null : UNDRAINED_REASON;
   if (undrained) console.warn(`[WARN] ${name}: ${undrained}`);
   // Review 546e8337 P3-4: suspended past the stale window, the new holder
   // may already have recovered this execution: lost, nothing is drafted or
