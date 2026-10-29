@@ -157,6 +157,7 @@ import {
   preflightExpect,
   ProbeEvidenceSchema,
   realEgressCollector,
+  readCellRecord,
   recordCellProblems,
   RECORDED_HOSTS_PATH,
   ROUTE_HOSTS,
@@ -3048,7 +3049,16 @@ async function authorizationProblems(
     p.push(`cell ${o.cell} not found under ${cells}`);
     return { problems: p, allowlist };
   }
-  const cell = CellSchema.safeParse(await readJsonFile(cellPath, "execution"));
+  // R-10 Sol run 001 P2: a re-derived cell is read with its overlay applied
+  // and checked (readCellRecord), so this gate and the store agree.
+  const read = await readCellRecord(cells, o.cell);
+  if (read.problem) {
+    p.push(read.problem);
+    return { problems: p, allowlist };
+  }
+  const cell = CellSchema.safeParse(
+    read.record ?? await readJsonFile(cellPath, "execution"),
+  );
   if (!cell.success) {
     p.push(
       `execution ${cellPath} is invalid: ${cell.error.issues[0]?.message}`,
