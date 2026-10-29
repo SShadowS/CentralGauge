@@ -3,6 +3,7 @@ import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { LineageSchema, loadLineage } from "../../../src/harness/lineage.ts";
 import {
   commandReset,
+  fsCaptureTiming,
   fsDiff,
   fsLineRestored,
   goldenReset,
@@ -281,6 +282,24 @@ Deno.test("H-35 S3 L4 fsDiff: exclusions match case-insensitively with * as any 
     "after: unparsable line garbage",
     "after: (nst): not quiescent: 1",
   ]);
+});
+
+Deno.test("R-09: the T| marker may carry the capture's timing as JSON; its count is still enforced and anything else after it is refused", () => {
+  const body = [w("D|16|5|C:/W"), F("C:/W/a.txt")];
+  const timing =
+    '{"held_ms":31234,"bound_s":38,"roots":[{"root":"C:\\\\W","entries":2,"ms":12}]}';
+  const errs = (after: string[]) =>
+    fsDiff(cap(...body), after, [], [w("C:/W")]).errors;
+  assertEquals(errs([...body, `T|2|${timing}`]), []);
+  assert(errs([...body, `T|3|${timing}`])[0]!.includes("count"));
+  for (const bad of ["T|2|junk", "T|2|", "T|2|{not json", "T|2|[1]"]) {
+    assert(
+      errs([...body, bad])[0]?.includes("T| marker"),
+      `${bad}: ${errs([...body, bad]).join("; ")}`,
+    );
+  }
+  assertEquals(fsCaptureTiming([...body, `T|2|${timing}`])?.held_ms, 31234);
+  assertEquals(fsCaptureTiming(cap(...body)), null);
 });
 
 Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong count, malformed fields, a duplicate key, or a declared root it does not cover is an error (fail closed); empty captures never compare clean", () => {
