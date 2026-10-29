@@ -6,7 +6,7 @@ import type {
   ExecutionRecord,
   RederivationRecord,
 } from "../../../src/harness/records.ts";
-import { RecordStore } from "../../../src/harness/records.ts";
+import { RecordStore, TERMINATIONS } from "../../../src/harness/records.ts";
 import {
   rederiveExecution,
   rederiveTargets,
@@ -302,6 +302,75 @@ Deno.test("deriveOutcome (R-11): a cap hit with a BC request still in flight is 
     const s of ["operator_interrupt", "capture_overflow", "runner_interrupted"]
   ) {
     assertEquals(at(s, true).termination, "harness_crash", s);
+  }
+});
+
+Deno.test("deriveOutcome (R-11 Sol run 001 P2): a capped cell with backend_undrained derives exactly what the same capped cell derives without the stop reason, for every parse outcome", () => {
+  const base = {
+    manifest: manifest("plain"),
+    declared: [] as const,
+    started: true,
+    preStart: false,
+    setupError: null,
+    parseError: null,
+    problems: [],
+    orphansExempt: false,
+    configInvalid: false,
+    host: { lines: [], bad: [] },
+    sandbox: { exitCode: -1, timedOut: true, startError: null },
+  };
+  for (const t of [null, ...TERMINATIONS]) {
+    const parsed = {
+      telemetry: telemetry(null),
+      observed: {
+        harness_version: null,
+        models: null,
+        loaded_components: null,
+      },
+      unobservable: [],
+      didWork: true,
+      termination: t,
+      usageResetAt: null,
+      imageSupport: null,
+      traceEvents: 0,
+    };
+    const plain = deriveOutcome({
+      ...base,
+      stopReason: null,
+      undrained: null,
+      parsed,
+    });
+    const undrained = deriveOutcome({
+      ...base,
+      stopReason: "backend_undrained",
+      undrained: "backend request did not drain",
+      parsed,
+    });
+    assertEquals(undrained.termination, plain.termination, `parse ${t}`);
+  }
+  // As since M1-22 (5c24d3cb): a rejected rate limit outranks the cap on
+  // both paths, so the campaign's usage_limited retry policy applies.
+  const limited = {
+    telemetry: telemetry(null),
+    observed: { harness_version: null, models: null, loaded_components: null },
+    unobservable: [],
+    didWork: true,
+    termination: "usage_limited" as const,
+    usageResetAt: null,
+    imageSupport: null,
+    traceEvents: 0,
+  };
+  for (const stopReason of [null, "backend_undrained"]) {
+    assertEquals(
+      deriveOutcome({
+        ...base,
+        stopReason,
+        undrained: stopReason ? "backend request did not drain" : null,
+        parsed: limited,
+      }).termination,
+      "usage_limited",
+      String(stopReason),
+    );
   }
 });
 
