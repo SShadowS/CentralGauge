@@ -25,6 +25,7 @@ import type { TraceEvent } from "../../src/harness/trace.ts";
 import { applyOverlay, TAR_BINARY } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import { readTrace } from "../../src/harness/trace.ts";
+import { RecordStore } from "../../src/harness/records.ts";
 import { REFAPP_PATH } from "../../src/harness/identity.ts";
 import { isTaskBuildArtifact } from "../../src/harness/hash.ts";
 import { isSourceFile, TEST_APP } from "../../src/harness/verdict-workspace.ts";
@@ -3134,13 +3135,12 @@ async function main() {
     return starts.get(task)!;
   };
 
-  // Latest attempt per cell.
-  const execDir = join(results, "executions", campaignId);
+  // Latest attempt per cell. Read through the store, so a re-derivation
+  // (R-10) is applied and refused when it no longer matches its raw log.
   const cells = new Map<string, J>();
   const only = args.only ? args.only.split(",") : [];
-  for await (const f of Deno.readDir(execDir)) {
-    if (!f.name.endsWith(".json")) continue;
-    const e = await readJson(join(execDir, f.name));
+  for (const x of await new RecordStore(results).executions(campaignId)) {
+    const e = x as unknown as J;
     if (!keepExecution(e["id"] as string, only)) continue;
     const key = `${e["arm"]}|${e["task_id"]}|${e["repeat"]}`;
     const prev = cells.get(key);

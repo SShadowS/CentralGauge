@@ -179,6 +179,20 @@ const waiverNeedsOverride = (
   }
 };
 
+/**
+ * R-10: which re-derivation an execution read back from the store carries.
+ * Set only by RecordStore when it applies the overlay; never written into an
+ * execution record file.
+ */
+const RederivedSchema = z.strictObject({
+  id: Uuid,
+  created_at: Iso,
+  reason: z.string().min(1),
+  code_commit: z.string().regex(/^[0-9a-f]{40}$/),
+  raw_sha256: Sha256Hex,
+  from_termination: z.enum(TERMINATIONS),
+});
+
 export const ExecutionRecordSchema = z.strictObject({
   /** 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed. */
   v: z.union([z.literal(1), z.literal(2)]),
@@ -237,6 +251,8 @@ export const ExecutionRecordSchema = z.strictObject({
   }).optional(),
   /** Claude account label the cell ran under (`--secrets-dir label=dir`); absent when unlabelled or stub. */
   account: z.string().min(1).optional(),
+  /** R-10: present only on a record read back with a re-derivation applied. */
+  rederived: RederivedSchema.optional(),
 }).superRefine((e, ctx) => {
   waiverNeedsOverride(e, ctx);
   if (e.usage_reset_ignored && e.run_kind !== "auto_retry") {
@@ -293,6 +309,45 @@ export const ExecutionRecordSchema = z.strictObject({
   }
 });
 export type ExecutionRecord = z.output<typeof ExecutionRecordSchema>;
+
+/**
+ * R-10 Sol run 001 P1: an execution record file as stored. `rederived` is
+ * only ever set by RecordStore when it applies an overlay, so a file that
+ * carries it (a copied overlaid record) is refused before any overlay.
+ */
+const StoredExecutionSchema = ExecutionRecordSchema.refine(
+  (e) => e.rederived === undefined,
+  {
+    message:
+      "rederived is never stored in an execution record (only an applied re-derivation sets it)",
+    path: ["rederived"],
+  },
+);
+
+/**
+ * R-10: a write-once re-derivation of one stored execution: the fields a
+ * parse decides, re-decided from the stored raw.jsonl by a later parser
+ * (rederive.ts). Strict: it can carry no identity field. It is bound to the
+ * raw.jsonl it read (raw_sha256). The execution record file is never
+ * rewritten; RecordStore applies the newest overlay on read.
+ */
+export const RederivationRecordSchema = z.strictObject({
+  v: z.literal(1),
+  ...RederivedSchema.shape,
+  execution_id: Uuid,
+  campaign_id: Uuid,
+  /** The re-derived run's diagnostics (sandbox.json is not rewritten). */
+  infra_reason: z.string().nullable(),
+  stream_problems: z.array(z.string()),
+  derived: z.strictObject({
+    observed: ExecutionRecordSchema.shape.observed,
+    termination: z.enum(TERMINATIONS),
+    validity: ValiditySchema,
+    telemetry: TelemetrySchema,
+    trace_path: z.string().nullable(),
+  }),
+});
+export type RederivationRecord = z.output<typeof RederivationRecordSchema>;
 
 /** Observed fields left unverified (`[]` for a `v: 1` record). */
 export const incompleteObserved = (e: ExecutionRecord): string[] =>
@@ -939,6 +994,11 @@ export class RecordStore {
 
   writeExecution(e: ExecutionRecord): Promise<void> {
     const r = ExecutionRecordSchema.parse(e);
+    if (r.rederived) {
+      const msg =
+        `execution ${r.id}: a record read with its re-derivation is never written back`;
+      return Promise.reject(new ValidationError(msg, [msg]));
+    }
     return publishOnce(
       join(this.root, "executions", r.campaign_id, `${r.id}.json`),
       r,
@@ -974,15 +1034,131 @@ export class RecordStore {
       .sort((a, b) => oldest(b, a));
   }
 
-  /** Executions of one campaign, by started_at then id. */
-  async executions(campaignId: string): Promise<ExecutionRecord[]> {
-    const campaign_id = safeId(campaignId, "campaign");
+  /** R-10: write-once; a later re-derivation never removes an earlier one. */
+  writeRederivation(d: RederivationRecord): Promise<void> {
+    const r = RederivationRecordSchema.parse(d);
+    return publishOnce(
+      join(this.root, "rederivations", r.execution_id, `${r.id}.json`),
+      r,
+    );
+  }
+
+  /** Re-derivations of one execution, by created_at then id. */
+  async rederivations(executionId: string): Promise<RederivationRecord[]> {
+    const execution_id = safeId(executionId, "execution");
     return (await readAll(
       this.root,
+      join(this.root, "rederivations", execution_id),
+      RederivationRecordSchema,
+      (id) => ({ id, execution_id }),
+    )).sort(byInstant((r) => r.created_at));
+  }
+
+  /**
+   * R-10: the execution with its newest re-derivation applied. Every overlay
+   * must belong to it (campaign, from_termination, after it ended) and match
+   * the raw.jsonl it was derived from; otherwise the read is refused.
+   */
+  private async withRederivation(e: ExecutionRecord): Promise<ExecutionRecord> {
+    const all = await this.rederivations(e.id);
+    if (all.length === 0) return e;
+    const refuse = (msg: string) => {
+      throw new ValidationError(msg, [msg]);
+    };
+    let raw: string | null = null;
+    for (const r of all) {
+      const at = `re-derivation ${r.id} of execution ${e.id}`;
+      if (r.campaign_id !== e.campaign_id) {
+        refuse(`${at}: campaign ${r.campaign_id}, not ${e.campaign_id}`);
+      }
+      if (r.from_termination !== e.termination) {
+        refuse(
+          `${at}: derived from termination ${r.from_termination}, the record says ${e.termination}`,
+        );
+      }
+      if (compareInstant(r.created_at, e.ended_at) < 0) {
+        refuse(`${at}: created before the execution ended`);
+      }
+      if (e.raw_log_path === null) {
+        refuse(`${at}: the execution has no raw log`);
+      }
+      const path = join(this.root, e.raw_log_path!);
+      if (!(await lstatNoLinks(this.root, path)).isFile) {
+        refuse(`${at}: raw log is not a file: ${path}`);
+      }
+      raw ??= [
+        ...new Uint8Array(
+          await crypto.subtle.digest("SHA-256", await Deno.readFile(path)),
+        ),
+      ].map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (raw !== r.raw_sha256) {
+        refuse(
+          `${at}: raw.jsonl sha256 is ${raw}, not the ${r.raw_sha256} it was derived from`,
+        );
+      }
+    }
+    const r = all.at(-1)!;
+    return ExecutionRecordSchema.parse({
+      ...e,
+      ...r.derived,
+      rederived: {
+        id: r.id,
+        created_at: r.created_at,
+        reason: r.reason,
+        code_commit: r.code_commit,
+        raw_sha256: r.raw_sha256,
+        from_termination: r.from_termination,
+      },
+    });
+  }
+
+  /** Executions of one campaign (re-derivations applied), by started_at then id. */
+  async executions(campaignId: string): Promise<ExecutionRecord[]> {
+    const campaign_id = safeId(campaignId, "campaign");
+    const stored = await readAll(
+      this.root,
       join(this.root, "executions", campaign_id),
-      ExecutionRecordSchema,
+      StoredExecutionSchema,
       (id) => ({ id, campaign_id }),
-    )).sort(byInstant((e) => e.started_at));
+    );
+    const out: ExecutionRecord[] = [];
+    for (const e of stored) out.push(await this.withRederivation(e));
+    return out.sort(byInstant((e) => e.started_at));
+  }
+
+  /**
+   * R-10: one execution by id, in whichever campaign holds it, with its
+   * re-derivation applied and checked; null when no campaign has it. Only
+   * that record is read, so other records' problems do not refuse it.
+   */
+  async execution(executionId: string): Promise<ExecutionRecord | null> {
+    const id = safeId(executionId, "execution");
+    const dir = join(this.root, "executions");
+    const campaigns: string[] = [];
+    try {
+      for await (const d of Deno.readDir(dir)) {
+        if (d.isDirectory) campaigns.push(d.name);
+      }
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return null;
+      throw err;
+    }
+    for (const campaign_id of campaigns.sort()) {
+      let e: ExecutionRecord;
+      try {
+        e = await readRecord(
+          this.root,
+          join(dir, campaign_id, `${id}.json`),
+          StoredExecutionSchema,
+          { id, campaign_id },
+        );
+      } catch (err) {
+        if (err instanceof Deno.errors.NotFound) continue;
+        throw err;
+      }
+      return await this.withRederivation(e);
+    }
+    return null;
   }
 
   /**
