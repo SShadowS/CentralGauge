@@ -387,66 +387,77 @@ public static class CgFsStreams {
       if ($null -eq $b) { $b = [byte[]]@() }
       , $b
     }
-    function Streams($item) {
-      $names = [CgFsStreams]::Names($item.FullName)
+    # Streams of one entry, into $out. R-09: by path, into a list (no per-call output arrays).
+    function Streams([string]$path, $out) {
+      $names = [CgFsStreams]::Names($path)
       foreach ($n in $names) {
         if ($n -eq '::$DATA') { continue }
         $name = $n -replace '^:([^:]*):\$DATA$', '$1'
-        $p = "$($item.FullName):$name"
+        $p = "${path}:$name"
         try {
           # read twice: a stream rewritten during the scan is an error, never a record
-          $h1 = Get-Sha (ReadStream $item.FullName $name)
-          $b = ReadStream $item.FullName $name
-          if ((Get-Sha $b) -ne $h1) { "E|$p|changed during the scan" }
-          else { "S|$h1|$($b.Length)|$p" }
-        } catch { "E|$p|$(Clean $_.Exception.Message)" }
+          $h1 = Get-Sha (ReadStream $path $name)
+          $b = ReadStream $path $name
+          if ((Get-Sha $b) -ne $h1) { $out.Add("E|$p|changed during the scan") }
+          else { $out.Add("S|$h1|$($b.Length)|$p") }
+        } catch { $out.Add("E|$p|$(Clean $_.Exception.Message)") }
       }
       # Sol S3 r2: a stream added or removed while the others were read
-      if ((@([CgFsStreams]::Names($item.FullName)) -join '|') -ne (@($names) -join '|')) {
-        "E|$($item.FullName)|streams changed during the scan"
+      if ((@([CgFsStreams]::Names($path)) -join '|') -ne (@($names) -join '|')) {
+        $out.Add("E|$path|streams changed during the scan")
       }
     }
-    # One entry; a directory's children are enumerated, then its last-write time is re-read (a child added or
-    # removed meanwhile changes it).
-    function Entry($i) {
+    # R-09: a fresh stat of the entry itself (what Get-Item -Force gave, without its cmdlet cost: 16x, R-09 ops
+    # io-vs-overhead): a directory's DirectoryInfo, else a FileInfo; a path that is gone throws, as Get-Item did.
+    function Stat([string]$path) {
+      $i = if ([IO.Directory]::Exists($path)) { [IO.DirectoryInfo]::new($path) } else { [IO.FileInfo]::new($path) }
+      if (-not $i.Exists) { throw "Cannot find path '$path' because it does not exist." }
+      $i
+    }
+    # One entry, into $out; a directory's children are enumerated, then its last-write time is re-read (a child
+    # added or removed meanwhile changes it). R-09: the same stats, reads and checks in the same order as before,
+    # by path with .NET, into one list (the lines are unchanged; the PowerShell per-file cost was the walk's time).
+    function Entry([string]$path, $out) {
       try {
         # enumeration reads the parent's index, which NTFS updates lazily: stat the entry itself
-        $i = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+        $i = Stat $path
         $attrs = [int]$i.Attributes
         $t = $i.LastWriteTimeUtc.Ticks
         if ($i.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-          "L|$attrs|$t|$($i.FullName)|$(Clean "$($i.Target)")"
-        } elseif ($i.PSIsContainer) {
-          $lines = @("D|$attrs|$t|$($i.FullName)") + @(Streams $i)
-          foreach ($c in @(Get-ChildItem -LiteralPath $i.FullName -Force -ErrorAction Stop)) { $lines += @(Entry $c) }
-          $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
-          if ($after.LastWriteTimeUtc.Ticks -ne $t) { $lines += "E|$($i.FullName)|changed during the scan" }
-          $lines
+          # the link target as PowerShell reports it (reparse points are few)
+          $out.Add("L|$attrs|$t|$($i.FullName)|$(Clean "$((Get-Item -LiteralPath $path -Force -ErrorAction Stop).Target)")")
+        } elseif ($i -is [IO.DirectoryInfo]) {
+          $out.Add("D|$attrs|$t|$($i.FullName)")
+          Streams $i.FullName $out
+          foreach ($c in @([IO.Directory]::GetFileSystemEntries($i.FullName))) { Entry $c $out }
+          if ((Stat $i.FullName).LastWriteTimeUtc.Ticks -ne $t) { $out.Add("E|$($i.FullName)|changed during the scan") }
         } else {
           $b = [IO.File]::ReadAllBytes($i.FullName)
-          $after = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+          $after = Stat $i.FullName
           if ($after.Length -ne $b.Length -or $after.LastWriteTimeUtc.Ticks -ne $t) {
-            "E|$($i.FullName)|changed during the scan"
+            $out.Add("E|$($i.FullName)|changed during the scan")
           } else {
             $head = [BitConverter]::ToString($b, 0, [Math]::Min(26, $b.Length)).Replace('-', '').ToLowerInvariant()
-            "F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$head|$($i.FullName)"
-            Streams $i
+            $out.Add("F|$(Get-Sha $b)|$($b.Length)|$attrs|$t|$head|$($i.FullName)")
+            Streams $i.FullName $out
             # and the file itself after its streams were read
-            $again = Get-Item -LiteralPath $i.FullName -Force -ErrorAction Stop
+            $again = Stat $i.FullName
             if ($again.Length -ne $b.Length -or $again.LastWriteTimeUtc.Ticks -ne $t) {
-              "E|$($i.FullName)|changed during the scan"
+              $out.Add("E|$($i.FullName)|changed during the scan")
             }
           }
         }
-      } catch { "E|$($i.FullName)|$(Clean $_.Exception.Message)" }
+      } catch { $out.Add("E|$path|$(Clean $_.Exception.Message)") }
     }
     foreach ($r in $roots) {
       # R-09: each root's entry lines and walk ms, as an R| line the host side takes out (never a digest line)
       $sw = [Diagnostics.Stopwatch]::StartNew()
-      $out = @(if (-not (Test-Path -LiteralPath $r)) { "E|$r|root missing" } else {
-          try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop) }
-          catch { "E|$r|$(Clean $_.Exception.Message)" }
-        })
+      $out = [Collections.Generic.List[string]]::new()
+      if (-not (Test-Path -LiteralPath $r)) { $out.Add("E|$r|root missing") }
+      else {
+        try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop).FullName $out }
+        catch { $out.Add("E|$r|$(Clean $_.Exception.Message)") }
+      }
       $out
       "R|$r|$($out.Count)|$($sw.ElapsedMilliseconds)"
     }
