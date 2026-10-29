@@ -90,7 +90,8 @@ function Test-NstSuspended([string]$Container) {
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
 # C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
 $NstFreezeDir = 'C:\ProgramData\cg-harness'
-function Enable-NstFreeze([string]$Container, [int]$Seconds = 38, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
+$NstHoldSeconds = 38
+function Enable-NstFreeze([string]$Container, [int]$Seconds = $NstHoldSeconds, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
   $t = Invoke-InContainer $Container { param($s, $dir, $tpid)
     New-Item -ItemType Directory -Force (Join-Path $dir 'tmp') | Out-Null
     $g = [guid]::NewGuid().ToString('N')
@@ -248,6 +249,13 @@ function Clear-NstFreezeLeftover([string]$Container, [string]$Dir = $NstFreezeDi
 function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
   $lines = @()
   $held = $null
+  # R-09: timing (measurement only) rides on the T| marker as JSON: hold_setup_ms (Enable-NstFreeze, the holder's
+  # bound already running), held_ms (from the hold until the held-check ends: what the bound must cover, less the
+  # setup), its phases, the bound, and per root the entries and in-container walk ms (Get-FsDigest).
+  $timing = [ordered]@{ hold_setup_ms = $null; held_ms = $null; w1_ms = $null; walk_ms = $null; w2_ms = $null
+    assert_ms = $null; bound_s = $NstHoldSeconds; roots = @() }
+  $hold = $null
+  $script:FsDigestRoots = @()
   try {
     if ((Clear-NstFreezeLeftover $Container) -gt 0) {
       throw 'a killed capture left the NST held; ended, this capture fails closed'
@@ -258,16 +266,29 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
       throw 'the NST was left suspended (a killed capture); resumed, this capture fails closed'
     }
     if (-not (Test-NstQuiescent $Container)) { throw 'NST not quiescent before the scan' }
-    $held = Enable-NstFreeze $Container
+    $phase = [Diagnostics.Stopwatch]::StartNew()
+    $held = Enable-NstFreeze $Container $NstHoldSeconds
+    $timing.hold_setup_ms = $phase.ElapsedMilliseconds
+    $hold = [Diagnostics.Stopwatch]::StartNew()
+    $phase.Restart()
     $w1 = Get-NstSessionWatermark $Container
+    $timing.w1_ms = $phase.ElapsedMilliseconds
+    $phase.Restart()
     $lines = @(Get-FsDigest $Container $Roots)
+    $timing.walk_ms = $phase.ElapsedMilliseconds
+    $phase.Restart()
     $w2 = Get-NstSessionWatermark $Container
+    $timing.w2_ms = $phase.ElapsedMilliseconds
     if ($w2 -ne $w1) { throw "the NST session log moved while held ($w1 -> $w2)" }
     # Sol r1 H3: the hold lasted the whole walk (proof, not the watermark)
+    $phase.Restart()
     Assert-NstFreezeHeld $Container $held
+    $timing.assert_ms = $phase.ElapsedMilliseconds
   } catch {
     $lines = @("E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))")
   } finally {
+    if ($hold) { $timing.held_ms = $hold.ElapsedMilliseconds }
+    $timing.roots = @($script:FsDigestRoots)
     if ($held) {
       try { Disable-NstFreeze $Container $held }
       catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
@@ -278,7 +299,7 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
     catch { $lines += "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))" }
   }
   $lines
-  "T|$($lines.Count)"
+  "T|$($lines.Count)|$(ConvertTo-Json ([pscustomobject]$timing) -Compress -Depth 4)"
 }
 
 # The NST's user + background session count, read by a query bounded ON THE HOST (orch r004 barrier M2): a plain
@@ -420,11 +441,22 @@ public static class CgFsStreams {
       } catch { "E|$($i.FullName)|$(Clean $_.Exception.Message)" }
     }
     foreach ($r in $roots) {
-      if (-not (Test-Path -LiteralPath $r)) { "E|$r|root missing"; continue }
-      try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop) }
-      catch { "E|$r|$(Clean $_.Exception.Message)" }
+      # R-09: each root's entry lines and walk ms, as an R| line the host side takes out (never a digest line)
+      $sw = [Diagnostics.Stopwatch]::StartNew()
+      $out = @(if (-not (Test-Path -LiteralPath $r)) { "E|$r|root missing" } else {
+          try { Entry (Get-Item -LiteralPath $r -Force -ErrorAction Stop) }
+          catch { "E|$r|$(Clean $_.Exception.Message)" }
+        })
+      $out
+      "R|$r|$($out.Count)|$($sw.ElapsedMilliseconds)"
     }
   } (, $Roots)
+  # R-09: the per-root timing for Invoke-FsCaptureCore's T| marker; only digest lines go on
+  $script:FsDigestRoots = @($lines | Where-Object { $_ -like 'R|*' } | ForEach-Object {
+      $p = $_ -split '\|'
+      [ordered]@{ root = $p[1]; entries = [int]$p[2]; ms = [long]$p[3] }
+    })
+  $lines = @($lines | Where-Object { $_ -notlike 'R|*' })
   # the path field: F (v3) 6, E 1, D/S/L 3
   Sort-Ordinal $lines { $p = $args[0] -split '\|'; switch ($p[0]) { 'F' { $p[6] } 'E' { $p[1] } default { $p[3] } } }
 }
