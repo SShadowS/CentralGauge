@@ -32,6 +32,7 @@ import {
   planBlocks,
 } from "../../../src/harness/records.ts";
 import { campaign, execution, H, judgment, manifest } from "./fixtures.ts";
+import { testTempDir } from "../../utils/temp-dir.ts";
 
 async function scenario(): Promise<CampaignRecords> {
   const c = await campaign();
@@ -70,6 +71,116 @@ async function problems(r: CampaignRecords): Promise<string[]> {
     return err.errors;
   }
 }
+
+// ---- R-01c (Sol R-01b run 002 P2): the image identity is bound to the run's own evidence ----
+
+const R3 =
+  "sha256:0a8746462fc8d62f2ea104d844b5fb43b2c9e12080608b81ab5e94ddfaf46f36";
+const R4_IMAGE =
+  "sha256:3b0327e66b26d62385a7bed9bc2db0154e0fc96e1778dfe11c7dbe8d406dbdd2";
+const EIGHT = claudeCodeHarnessNative(false, true).disallowed_tools;
+const NINE = claudeCodeHarnessNative().disallowed_tools;
+
+/**
+ * The scenario with every arm and execution on one claude-code image,
+ * version and list (hashes recomputed), each execution's observed version
+ * and raw.jsonl init version as given (null: none recorded).
+ */
+async function onImage(
+  digest: string,
+  version: string,
+  list: string[],
+  observed: string | null,
+  init: string | null,
+): Promise<string[]> {
+  const r = await scenario();
+  const root = await Deno.realPath(await testTempDir());
+  const edit = (m: ResolvedManifest): ResolvedManifest => ({
+    ...m,
+    harness_version: version,
+    image: { ...m.image, digest },
+    settings: { requested: {}, native: { disallowed_tools: list } },
+  });
+  const arms = await Promise.all(r.campaign.arms.map(async (a) => {
+    const manifest = edit(a.manifest);
+    return { ...a, manifest, manifest_hash: await manifestHash(manifest) };
+  }));
+  const byArm = new Map(arms.map((a) => [a.config_id, a]));
+  const executions = [];
+  for (const e of r.executions) {
+    const a = byArm.get(e.arm)!;
+    let raw_log_path: string | null = null;
+    if (init !== null) {
+      raw_log_path = `runs/${e.id}/raw.jsonl`;
+      await Deno.mkdir(join(root, "runs", e.id), { recursive: true });
+      await Deno.writeTextFile(
+        join(root, raw_log_path),
+        JSON.stringify({ type: "cg_inventory", ok: true }) + "\n" +
+          JSON.stringify({
+            type: "system",
+            subtype: "init",
+            claude_code_version: init,
+          }) + "\n",
+      );
+    }
+    executions.push({
+      ...e,
+      manifest: a.manifest,
+      arm_manifest_hash: a.manifest_hash,
+      observed: { ...e.observed, harness_version: observed },
+      raw_log_path,
+    });
+  }
+  try {
+    await validateCampaignRecords(
+      { ...r, campaign: { ...r.campaign, arms }, executions },
+      { resultsRoot: root },
+    );
+    return [];
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err;
+    return err.errors;
+  }
+}
+
+Deno.test("R-01c: a historical digest substituted for a 2.1.310 run (Monitor removed, version 2.1.302) is refused by the run's observed version or its raw init line", async () => {
+  // Sol's scenario: r3 digest, 2.1.302, the eight; the evidence says 2.1.310.
+  for (
+    const [observed, init] of [["2.1.310", null], [null, "2.1.310"], [
+      "2.1.310",
+      "2.1.310",
+    ]] as const
+  ) {
+    const p = await onImage(R3, "2.1.302", EIGHT, observed, init);
+    assert(
+      p.some((x) => x.includes("2.1.310") && x.includes("2.1.302")),
+      `${observed}/${init}: ${p.join("; ")}`,
+    );
+  }
+  // The record's own two pieces of evidence disagree.
+  const split = await onImage(R3, "2.1.302", EIGHT, "2.1.302", "2.1.310");
+  assert(split.some((x) => x.includes("init")), split.join("; "));
+});
+
+Deno.test("R-01c: the pre-R-01 exemption needs evidence; a run whose evidence matches stays valid, and a current manifest needs none", async () => {
+  assertEquals(await onImage(R3, "2.1.302", EIGHT, "2.1.302", "2.1.302"), []);
+  assertEquals(await onImage(R3, "2.1.302", EIGHT, "2.1.302", null), []);
+  assertEquals(await onImage(R3, "2.1.302", EIGHT, null, "2.1.302"), []);
+  const none = await onImage(R3, "2.1.302", EIGHT, null, null);
+  assert(
+    none.some((x) => x.includes("no evidence")),
+    `no evidence: ${none.join("; ")}`,
+  );
+  // today's list (Monitor) on r4: no exemption claimed, nothing to prove
+  assertEquals(await onImage(R4_IMAGE, "2.1.310", NINE, null, null), []);
+  assertEquals(
+    await onImage(R4_IMAGE, "2.1.310", NINE, "2.1.310", "2.1.310"),
+    [],
+  );
+  // but evidence that contradicts a current manifest is still refused
+  const p = await onImage(R4_IMAGE, "2.1.310", NINE, "2.1.302", null);
+  assert(p.some((x) => x.includes("observed")), p.join("; "));
+});
 
 Deno.test("validateCampaignRecords: a consistent campaign passes", async () => {
   assertEquals(await problems(await scenario()), []);
