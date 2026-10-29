@@ -216,6 +216,9 @@ export class BcLane {
   /** Containers whose cleanup failed: never selected until `harness recover` clears them. */
   readonly quarantined = new Map<string, string>();
 
+  /** R-08: told synchronously of every quarantine, after the in-memory entry is set (the campaign logs it). */
+  onQuarantine: ((container: string, reason: string) => void) | undefined;
+
   /** H-41 (6): join `c`; a rejoin reuses its Mutex and Semaphore, never replaces them. */
   add(c: string): void {
     if (!this.locks.has(c)) {
@@ -283,6 +286,9 @@ export class BcLane {
     fsDiff: FsDiffEntry[] | null = null,
   ): Promise<void> {
     this.quarantined.set(container, reason);
+    try {
+      this.onQuarantine?.(container, reason);
+    } catch { /* a reporting hook never blocks the quarantine */ }
     if (!this.opts.persist) return;
     try {
       await this.opts.persist(container, reason, fsDiff);
