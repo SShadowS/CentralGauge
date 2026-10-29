@@ -17,6 +17,7 @@ import {
 } from "../../../scripts/harness/test-rerun.ts";
 import {
   envRunner,
+  productionRunner,
   type RerunEnv,
 } from "../../../scripts/harness/test-rerun-runner.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -418,4 +419,32 @@ Deno.test("a workspace violation (production app folder missing in the final tre
   await Deno.remove(join(finalDir, "Rental"), { recursive: true });
   await assertRejects(() => w.runner.run(shippedReq(w, finalDir)));
   assertEquals(f.bc.tests, []);
+});
+
+Deno.test("productionRunner: the env opens on the given harness root, with the BC egress note (Q-04e)", async () => {
+  let seen: Record<string, unknown> | null = null;
+  await assertRejects(
+    () =>
+      productionRunner({
+        repoRoot: "/harness-checkout",
+        resultsDir: "/out/test-rerun/env",
+        containers: ["Cronus282"],
+        coordLeases: [],
+        symbolStore: "/symbols",
+        privateRoot: "/private",
+        lineage: "/lineage.json",
+        bcEgressOverride: "NST egress unenforced (Q-05)",
+      }, {
+        open: (o) => {
+          seen = { ...o };
+          return Promise.reject(new Error("stop"));
+        },
+      }),
+    Error,
+    "stop",
+  );
+  assertEquals(seen!["repoRoot"], "/harness-checkout");
+  assertEquals(seen!["resultsDir"], "/out/test-rerun/env");
+  assertEquals(seen!["bcEgressOverride"], "NST egress unenforced (Q-05)");
+  assertEquals(seen!["command"], "analyze-campaign --test-rerun");
 });
