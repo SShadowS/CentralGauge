@@ -339,6 +339,128 @@ Deno.test("claudeTrace: a repeated tool_use id is refused with the line", () => 
   );
 });
 
+Deno.test("claudeTrace: a second tool_result for one call is refused with the line", () => {
+  for (const name of ["Read", "Agent"]) {
+    assertThrows(
+      () =>
+        claudeTrace(
+          [
+            rec(asst("1", [use("a", name, { subagent_type: "Explore" })]), 1),
+            rec(res("a", "one"), 2),
+            rec(res("a", "two"), 3),
+          ],
+          "f",
+          new Set(),
+        ),
+      ValidationError,
+      "f:3: second result for a",
+    );
+  }
+});
+
+// R-10: Claude Code 2.1.310 answers an Agent fork twice (R-07 raw.jsonl,
+// cell 37609da2 lines 585-626): "Fork started — that fork is you." inside the
+// fork's own stream (parent_tool_use_id = the call), then the hand-back in
+// the parent's stream. The hand-back is the call's result.
+const forkStart = (id: string, ts = "2026-10-01T00:00:00.500Z") => ({
+  ...res(id, [{ type: "text", text: "Fork started — that fork is you." }]),
+  timestamp: ts,
+  parent_tool_use_id: id,
+});
+
+Deno.test("claudeTrace (R-10): a fork's start placeholder is recorded as such; the hand-back is the one result", () => {
+  const t = claudeTrace(
+    [
+      rec(asst("1", [use("f", "Agent", { subagent_type: "fork" })]), 1),
+      rec(forkStart("f"), 2),
+      rec(asst("2", [use("r", "Read")], "f"), 3),
+      rec(res("r", "file text", false, "2026-10-01T00:00:02.000Z"), 4),
+      rec(
+        res(
+          "f",
+          "[Subagent hand-back] done",
+          false,
+          "2026-10-01T00:00:09.000Z",
+        ),
+        5,
+      ),
+      rec({ type: "result", subtype: "success", is_error: false }, 6),
+    ],
+    "f",
+    new Set(),
+  );
+  const fork = t.events.find((e) =>
+    e.type === "tool_call" && e.tool === "Agent"
+  )!;
+  assertEquals(
+    [fork.outcome, fork.result_bytes, fork.duration_ms],
+    ["ok", "[Subagent hand-back] done".length, 9000],
+  );
+  assertEquals(
+    t.events.filter((e) => e.type === "tool_call").map((e) =>
+      `${e.tool}:${e.agent}`
+    ),
+    ["Agent:main", "Read:fork"],
+  );
+  assertEquals(t.forkStarts, ["f"]);
+  assertEquals(t.structural, []);
+});
+
+Deno.test("claudeTrace (R-10): a fork with only its start placeholder has no result", () => {
+  const t = claudeTrace(
+    [
+      rec(asst("1", [use("f", "Agent", { subagent_type: "fork" })]), 1),
+      rec(forkStart("f"), 2),
+      rec({ type: "result", subtype: "success", is_error: false }, 3),
+    ],
+    "f",
+    new Set(),
+  );
+  assertEquals(t.events.find((e) => e.tool === "Agent")!.outcome, null);
+  assertEquals(t.forkStarts, ["f"]);
+  assertEquals(t.structural, ["tool_use f has no result"]);
+});
+
+Deno.test("claudeTrace (R-10): a start placeholder is refused for a non-fork call, twice for one fork, or with no call", () => {
+  const cases: [Line<J>[], string][] = [
+    [
+      [
+        rec(asst("1", [use("a", "Agent", { subagent_type: "Explore" })]), 1),
+        rec(forkStart("a"), 2),
+        rec(res("a", "done"), 3),
+      ],
+      "f:2: tool_result for a inside its own stream, but a is not an Agent fork",
+    ],
+    [
+      [
+        rec(asst("1", [use("a", "Read")]), 1),
+        rec(forkStart("a"), 2),
+        rec(res("a", "done"), 3),
+      ],
+      "f:2: tool_result for a inside its own stream, but a is not an Agent fork",
+    ],
+    [[
+      rec(asst("1", [use("f", "Agent", { subagent_type: "fork" })]), 1),
+      rec(forkStart("f"), 2),
+      rec(forkStart("f"), 3),
+      rec(res("f", "done"), 4),
+    ], "f:3: second fork start for f"],
+    [[
+      rec(asst("1", [use("f", "Agent", { subagent_type: "fork" })]), 1),
+      rec(forkStart("f"), 2),
+      rec(res("f", "done"), 3),
+      rec(res("f", "again"), 4),
+    ], "f:4: second result for f"],
+    [
+      [rec(forkStart("x"), 1)],
+      "f:1: tool_result for x inside its own stream, but x is not an Agent fork",
+    ],
+  ];
+  for (const [ls, msg] of cases) {
+    assertThrows(() => claudeTrace(ls, "f", new Set()), ValidationError, msg);
+  }
+});
+
 Deno.test("readTrace: v2 round trip; v1 upgraded; mixed versions refused", async () => {
   const dir = await Deno.realPath(await testTempDir());
   const t = claudeTrace(await probe(), FIXTURE, new Set());

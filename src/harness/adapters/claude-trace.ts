@@ -73,6 +73,8 @@ export interface ClaudeTrace {
   requests: Map<string, number>;
   /** Assistant records without a message id (requests unprovable). */
   unidentified: number;
+  /** R-10: Agent fork calls whose start placeholder was seen (never their result). */
+  forkStarts: string[];
 }
 
 const ms = (ts: unknown) => {
@@ -210,6 +212,12 @@ export function claudeTrace(
     string,
     { error: boolean; bytes: number; text: string; at: number | null }
   >();
+  // R-10: Claude Code 2.1.310 answers an Agent fork twice. The first answer,
+  // "Fork started", opens the fork's own stream (parent_tool_use_id is the
+  // call itself); the hand-back in the parent's stream is the result. A result
+  // inside its own call's stream is accepted only for an Agent fork (checked
+  // once the calls are read), once per call.
+  const forkStart = new Map<string, number>();
   for (const { rec, line } of lines) {
     if (rec.type !== "user") continue;
     for (const c of list(obj(rec.message).content).map(obj)) {
@@ -217,6 +225,13 @@ export function claudeTrace(
       const id = c.tool_use_id;
       if (typeof id !== "string") {
         refuse(`${file}:${line}: tool_result without a tool_use_id`);
+      }
+      if (rec.parent_tool_use_id === id) {
+        if (forkStart.has(id)) {
+          refuse(`${file}:${line}: second fork start for ${id}`);
+        }
+        forkStart.set(id, line);
+        continue;
       }
       if (results.has(id)) refuse(`${file}:${line}: second result for ${id}`);
       const body = typeof c.content === "string"
@@ -370,6 +385,13 @@ export function claudeTrace(
       }
     }
   }
+  for (const [id, line] of forkStart) {
+    if (spawned.get(id) !== "fork") {
+      refuse(
+        `${file}:${line}: tool_result for ${id} inside its own stream, but ${id} is not an Agent fork`,
+      );
+    }
+  }
   for (const id of [...results.keys()].sort()) {
     if (!callLine.has(id)) structural.push(`tool_result for unknown ${id}`);
   }
@@ -380,5 +402,12 @@ export function claudeTrace(
       }
     }
   }
-  return { events, problems, structural, requests, unidentified };
+  return {
+    events,
+    problems,
+    structural,
+    requests,
+    unidentified,
+    forkStarts: [...forkStart.keys()],
+  };
 }
