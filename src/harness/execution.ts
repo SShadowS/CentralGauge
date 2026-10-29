@@ -20,6 +20,7 @@ import type {
   ExecutionRecord,
   JudgmentRecord,
   RunKind,
+  Telemetry,
 } from "./records.ts";
 import type { QualifyManifest } from "./qualify.ts";
 import { type LoadedTask, loadTask } from "./task.ts";
@@ -1048,7 +1049,10 @@ function notStarted(exitCode: number | null): ParsedRun {
 }
 
 /** The harness ran but its log was refused (contradictory records): everything unknown. */
-function unparsed(exitCode: number | null, m: ResolvedManifest): ParsedRun {
+export function unparsed(
+  exitCode: number | null,
+  m: ResolvedManifest,
+): ParsedRun {
   const p = notStarted(exitCode);
   return {
     ...p,
@@ -1158,7 +1162,7 @@ export function budgetCutOrphansExempt(
 }
 
 /** Backend host log, tolerant of a line cut by a crash: bad lines are counted, never fatal. */
-async function hostLog(
+export async function hostLog(
   path: string,
 ): Promise<{ lines: HostLogLine[]; bad: number[] }> {
   let text = "";
@@ -1260,6 +1264,115 @@ interface DraftInput {
   account?: string | null;
 }
 
+/**
+ * R-10: the record fields a parse decides (telemetry, termination, validity),
+ * from the parse and the run's recorded facts. Pure, so a live run and a
+ * re-derivation of a stored run (rederive.ts) decide them the same way.
+ */
+export function deriveOutcome(i: {
+  manifest: ResolvedManifest;
+  declared: readonly (keyof Telemetry)[];
+  started: boolean;
+  /** The component inventory refused the arm before any credential was released. */
+  preStart: boolean;
+  setupError: string | null;
+  stopReason: string | null;
+  /** H-16: the infra reason of an undrained backend request. */
+  undrained: string | null;
+  sandbox: Pick<SandboxResult, "exitCode" | "timedOut" | "startError">;
+  parsed: ParsedRun;
+  /** The adapter refused the harness log (its message). */
+  parseError: string | null;
+  /** streamProblems of the parse ([] when not started). */
+  problems: string[];
+  orphansExempt: boolean;
+  configInvalid: boolean;
+  host: { lines: HostLogLine[]; bad: number[] };
+}): {
+  telemetry: Telemetry;
+  termination: ExecutionRecord["termination"];
+  mismatch: string | null;
+  unverified: string[];
+  infraReasons: string[];
+  validity: ExecutionRecord["validity"];
+} {
+  const { parsed, problems, started } = i;
+  // M1-32 ruling: stream problems with no usable result expose infra; with
+  // a usable result they make the cost unprovable.
+  let telemetry = i.preStart
+    ? notStarted(i.sandbox.exitCode).telemetry
+    : parsed.telemetry;
+  if (
+    !i.preStart && parsed.termination !== null && problems.length > 0 &&
+    !i.orphansExempt
+  ) {
+    telemetry = {
+      ...telemetry,
+      cost_usd: null,
+      cost_source: null,
+      pricing_snapshot: null,
+    };
+  }
+  const infraReasons = [
+    ...(parsed.termination === null && problems.length > 0
+      ? [
+        `no usable result record; non-JSON harness stdout or other stream problems: ${
+          problems.join("; ")
+        }`,
+      ]
+      : []),
+    ...(i.parseError ? [`harness log refused: ${i.parseError}`] : []),
+    ...(i.host.bad.length > 0
+      ? [`host log lines unreadable: ${i.host.bad.join(", ")}`]
+      : []),
+    ...(i.undrained ? [i.undrained] : []),
+  ];
+  const check = started
+    ? observedMismatch(i.manifest, parsed.observed, parsed.unobservable)
+    : { mismatch: null, unverified: [] };
+  // Spec v2 gate 1: an arm whose components the adapter could not prove is never
+  // judged. The inventory problem is the root cause, so it outranks the derived
+  // "requested components did not load" mismatch.
+  const inventory = started ? parsed.inventoryProblems ?? [] : [];
+  const mismatch = inventory.length > 0
+    ? `component inventory: ${inventory.join("; ")}`
+    : check.mismatch;
+  const termination: ExecutionRecord["termination"] =
+    !started || i.setupError !== null || mismatch !== null ||
+      i.configInvalid
+      ? "setup_failed"
+      : i.stopReason !== null || i.parseError !== null
+      ? "harness_crash"
+      : parsed.termination === "usage_limited"
+      ? "usage_limited"
+      : i.sandbox.timedOut
+      ? "timeout"
+      : i.sandbox.startError !== null
+      ? "harness_crash"
+      // R-10 Sol run 001 P1: a parse with no termination has no final result,
+      // so never completed, whatever the exit code (exit 0 alone was
+      // completed since 5c24d3cb; that decided no stored R-04, R-04b or R-07
+      // cell: every completed one has its result line).
+      : parsed.termination ?? "harness_crash";
+  return {
+    telemetry,
+    termination,
+    mismatch,
+    unverified: check.unverified,
+    infraReasons,
+    validity: {
+      incomplete_telemetry: started && !i.preStart
+        ? incompleteTelemetry(i.declared, telemetry)
+        : [],
+      incomplete_observed: check.unverified.length > 0
+        ? ["loaded_components"]
+        : [],
+      infra_exposed: i.host.lines.some((l) => l.outcome === "infra") ||
+        infraReasons.length > 0,
+    },
+  };
+}
+
 /** Everything after the container is confirmed gone: freeze, parse, stage redacted files, save the draft. */
 async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
   const now = env.now ?? (() => new Date());
@@ -1304,12 +1417,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       parsed = unparsed(f.sandbox.exitCode, f.manifest);
     }
   }
-  // M1-32 ruling: stream problems with no usable result expose infra; with
-  // a usable result they make the cost unprovable.
   const problems = started ? streamProblems(parsed.telemetry.raw_usage) : [];
-  let telemetry = f.preStart
-    ? notStarted(f.sandbox.exitCode).telemetry
-    : parsed.telemetry;
   // H-12: a budget cut's orphan tool calls alone leave an exact cost provable.
   const orphansExempt = problems.length > 0 &&
     parsed.termination === "budget_exhausted" &&
@@ -1319,42 +1427,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       problems,
       parsed,
     );
-  if (
-    !f.preStart && parsed.termination !== null && problems.length > 0 &&
-    !orphansExempt
-  ) {
-    telemetry = {
-      ...telemetry,
-      cost_usd: null,
-      cost_source: null,
-      pricing_snapshot: null,
-    };
-  }
   const host = await hostLog(p.host);
-  const infraReasons = [
-    ...(parsed.termination === null && problems.length > 0
-      ? [
-        `no usable result record; non-JSON harness stdout or other stream problems: ${
-          problems.join("; ")
-        }`,
-      ]
-      : []),
-    ...(parseError ? [`harness log refused: ${parseError}`] : []),
-    ...(host.bad.length > 0
-      ? [`host log lines unreadable: ${host.bad.join(", ")}`]
-      : []),
-    ...(f.undrained ? [f.undrained] : []),
-  ];
-  const check = started
-    ? observedMismatch(f.manifest, parsed.observed, parsed.unobservable)
-    : { mismatch: null, unverified: [] };
-  // Spec v2 gate 1: an arm whose components the adapter could not prove is never
-  // judged. The inventory problem is the root cause, so it outranks the derived
-  // "requested components did not load" mismatch.
-  const inventory = started ? parsed.inventoryProblems ?? [] : [];
-  const mismatch = inventory.length > 0
-    ? `component inventory: ${inventory.join("; ")}`
-    : check.mismatch;
   const stopReason = f.egressStop
     ? f.egressStop
     : f.sandbox.interrupted
@@ -1374,20 +1447,29 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     problems.some((x) => x.startsWith("pi_config_invalid: ")) ||
     (started && f.manifest.harness === "pi" &&
       await piConfigInvalid(p.stderr) !== null);
-  const termination: ExecutionRecord["termination"] =
-    !started || f.setupError !== null || mismatch !== null ||
-      configInvalid
-      ? "setup_failed"
-      : stopReason !== null || parseError !== null
-      ? "harness_crash"
-      : parsed.termination === "usage_limited"
-      ? "usage_limited"
-      : f.sandbox.timedOut
-      ? "timeout"
-      : f.sandbox.startError !== null
-      ? "harness_crash"
-      : parsed.termination ??
-        (f.sandbox.exitCode === 0 ? "completed" : "harness_crash");
+  const {
+    telemetry,
+    termination,
+    mismatch,
+    unverified,
+    infraReasons,
+    validity,
+  } = deriveOutcome({
+    manifest: f.manifest,
+    declared: adapter.declared,
+    started,
+    preStart: f.preStart === true,
+    setupError: f.setupError,
+    stopReason,
+    undrained: f.undrained ?? null,
+    sandbox: f.sandbox,
+    parsed,
+    parseError,
+    problems,
+    orphansExempt,
+    configInvalid,
+    host,
+  });
   const did_work = parsed.didWork || host.lines.length > 0 ||
     (frozen !== null && frozen.workspace_hash !== f.pristineHash);
   const runDir = join(p.pending, "run");
@@ -1407,7 +1489,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     // H-03: the --memory every sandbox runs with (buildRunArgs); unhashed side file.
     sandbox: { ...f.sandbox, memory: SANDBOX_MEMORY },
     setup_error: f.setupError ?? mismatch,
-    unverified: check.unverified,
+    unverified,
     stop_reason: stopReason,
     infra_reason: infraReasons.length > 0 ? infraReasons.join("; ") : null,
     stream_problems: problems,
@@ -1449,16 +1531,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     observed: parsed.observed,
     termination,
     did_work,
-    validity: {
-      incomplete_telemetry: started && !f.preStart
-        ? incompleteTelemetry(adapter.declared, telemetry)
-        : [],
-      incomplete_observed: check.unverified.length > 0
-        ? ["loaded_components"]
-        : [],
-      infra_exposed: host.lines.some((l) => l.outcome === "infra") ||
-        infraReasons.length > 0,
-    },
+    validity,
     image_attachments: imageAttachments(
       f.cell.task.task.attachments,
       parsed.imageSupport,

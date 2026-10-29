@@ -10,6 +10,7 @@
  * the next run recovers it before planning).
  */
 
+import * as colors from "@std/fmt/colors";
 import { exists } from "@std/fs";
 import { join, relative } from "@std/path";
 import { globToRegExp } from "@std/path/posix";
@@ -126,6 +127,11 @@ export interface CampaignSummary {
    * its claim), absent when none.
    */
   owed?: number;
+  /** R-08: containers quarantined during this invocation (absent when none). */
+  quarantined?: number;
+  /** R-08: members / joined containers of the lane of the latest quarantine. */
+  poolSize?: number;
+  poolTotal?: number;
 }
 
 export interface RunIO {
@@ -797,6 +803,24 @@ export async function runCampaign(
   o: RunOptions,
   io: RunIO,
 ): Promise<CampaignSummary> {
+  // R-08 Sol run 001 P2: the quarantine hooks this invocation installs end
+  // with it; each lane gets its previous callback back, so a later runCell or
+  // command on the same env never writes into this campaign's log or summary.
+  const lanes = [...new Set([env.lane, env.judgeLane])].filter((l) => !!l);
+  const previous = lanes.map((l) => l.onQuarantine);
+  try {
+    return await campaignInvocation(env, experimentId, o, io);
+  } finally {
+    lanes.forEach((l, i) => (l.onQuarantine = previous[i]));
+  }
+}
+
+async function campaignInvocation(
+  env: HarnessEnv,
+  experimentId: string,
+  o: RunOptions,
+  io: RunIO,
+): Promise<CampaignSummary> {
   if (!Number.isInteger(o.concurrency) || o.concurrency < 1) {
     throw new ConfigurationError(
       `concurrency must be a positive integer: ${o.concurrency}`,
@@ -1214,6 +1238,29 @@ export async function runCampaign(
     }
     return false;
   };
+  // R-08: a quarantine is loud in the log and counted in the summary.
+  for (
+    const lane of new Set([
+      env.lane,
+      env.judgeLane,
+    ])
+  ) {
+    if (!lane) continue;
+    // The lane that judges (the judge lane, else the one lane) is the judging pool.
+    const pool = lane === (env.judgeLane ?? env.lane)
+      ? "judging pool"
+      : "agent pool";
+    lane.onQuarantine = (container, reason) => {
+      summary.quarantined = (summary.quarantined ?? 0) + 1;
+      summary.poolSize = lane.members().length;
+      summary.poolTotal = lane.containers.length;
+      io.log(
+        `${colors.red("[QUARANTINE]")} ${container}: ${
+          reason.replace(/\s*[\r\n]+\s*/g, " ")
+        } (${pool} ${summary.poolSize}/${summary.poolTotal})`,
+      );
+    };
+  }
   if (await stopRequested()) return summary;
   // H-09: an agent slot frees once its execution is published; the judge
   // queue judges on the judge lane. Owed judgments (a crash after

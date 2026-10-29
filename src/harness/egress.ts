@@ -28,6 +28,7 @@ import type {
   SharedProxyOptions,
 } from "./egress-proxy.ts";
 import type { SecretValue } from "./fsutil.ts";
+import { RecordStore } from "./records.ts";
 import { dockerChildEnv, SANDBOX_USER } from "./sandbox.ts";
 
 export type { EgressLogLine } from "./egress-proxy.ts";
@@ -2019,12 +2020,17 @@ const NON_TERMINAL_OR_CRASH = [
  * terminal non-crash outcome; its record-mode facts say supervised,
  * credential-bearing Claude Code; the recording names it as its source.
  */
-export async function recordCellProblems(
-  repoRoot: string,
+/**
+ * The record-mode cell's execution record, by id under the cells store. A
+ * cell with a re-derivation (or a file carrying `rederived`) is read through
+ * RecordStore (R-10 Sol run 001 P2): its overlay applies and a raw log changed
+ * since, a forged `rederived` or an overlay of another execution is a problem.
+ * Any other cell keeps the lenient read this gate always had.
+ */
+export async function readCellRecord(
+  cells: string,
   cell: string,
-): Promise<string[]> {
-  const cells = join(repoRoot, "results", "harness", "cells");
-  const p: string[] = [];
+): Promise<{ record: Record<string, unknown> | null; problem: string | null }> {
   let record: Record<string, unknown> | null = null;
   try {
     for (const d of Deno.readDirSync(join(cells, "executions"))) {
@@ -2037,9 +2043,43 @@ export async function recordCellProblems(
       } catch { /* not in this campaign */ }
     }
   } catch { /* no cells */ }
-  if (!record || record["id"] !== cell) {
-    return [`cell ${cell}: no execution record under ${cells}`];
+  if (!record || record["id"] !== cell) return { record: null, problem: null };
+  try {
+    // A plain stat first: a cell with no overlay folder keeps the lenient
+    // read (the store refuses a non-uuid id it would never need to look up).
+    // Only NotFound means none; any other error refuses (Sol run 002 P2).
+    const overlays = await Deno.stat(join(cells, "rederivations", cell)).then(
+      () => true,
+      (err) => {
+        if (err instanceof Deno.errors.NotFound) return false;
+        throw err;
+      },
+    );
+    if (Object.hasOwn(record, "rederived") || overlays) {
+      const e = await new RecordStore(cells).execution(cell);
+      return { record: e as Record<string, unknown> | null, problem: null };
+    }
+  } catch (err) {
+    return {
+      record: null,
+      problem: `cell ${cell}: execution record refused: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    };
   }
+  return { record, problem: null };
+}
+
+export async function recordCellProblems(
+  repoRoot: string,
+  cell: string,
+): Promise<string[]> {
+  const cells = join(repoRoot, "results", "harness", "cells");
+  const p: string[] = [];
+  const read = await readCellRecord(cells, cell);
+  if (read.problem) return [read.problem];
+  const record = read.record;
+  if (!record) return [`cell ${cell}: no execution record under ${cells}`];
   const termination = String(record["termination"]);
   if (NON_TERMINAL_OR_CRASH.includes(termination)) {
     p.push(

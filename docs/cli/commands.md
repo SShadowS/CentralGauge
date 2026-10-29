@@ -1196,6 +1196,31 @@ changed since it was frozen is refused. `--results-dir` defaults to
 `results/harness`; `--root` (default `.`) is the repository whose history
 recovers legacy task descriptors.
 
+### harness rederive
+
+```bash
+centralgauge harness rederive <campaign> --reason <text> [--execution <ids>] [--results-dir <dir>] [--root <dir>]
+```
+
+Re-derives stored executions from their published `raw.jsonl` with this
+checkout's parser, for runs a parser bug recorded wrongly (R-10: Claude Code
+2.1.310's fork results were refused, so finished runs were recorded
+`harness_crash` with no telemetry). Without `--execution` it takes every
+execution of the campaign whose stored log the parser refused.
+
+Only the fields a parse decides are re-decided: telemetry, observed,
+termination, validity and the trace (written as
+`runs/<id>/trace.rederived-<overlay id>.jsonl`). They are decided by the same
+function a live run uses. Each result is a write-once overlay under
+`rederivations/<execution id>/`, bound to the `raw.jsonl` sha256 it read and to
+the checkout's commit (`src/harness` must be clean). The execution record,
+`sandbox.json` and every judgment are never rewritten. The record store applies
+the newest overlay when it reads executions and adds a `rederived` provenance
+field. An overlay whose `raw.jsonl` changed, or that does not belong to its
+execution, makes the read fail. Runs that never started, failed setup or
+stopped for a recorded reason (operator, egress, undrained backend) are
+refused.
+
 ## Exit Codes
 
 | Code | Description         |
