@@ -247,6 +247,8 @@ export function claudeTrace(
   }
 
   const spawned = new Map<string, string>();
+  /** R-10 Sol run 001 P2: Agent calls with subagent_type fork, apart from attribution. */
+  const forks = new Set<string>();
   const orphans = new Set<string>();
   const seenMsg = new Set<string>();
   const callLine = new Map<string, number>();
@@ -375,6 +377,7 @@ export function claudeTrace(
         spawned.set(id, str(input.subagent_type) ?? "subagent");
         push({ ...BASE, ...common, type: "subagent_spawn" });
       }
+      if (name === "Agent" && input.subagent_type === "fork") forks.add(id);
       if (name === "Skill") {
         push({
           ...BASE,
@@ -386,7 +389,7 @@ export function claudeTrace(
     }
   }
   for (const [id, line] of forkStart) {
-    if (spawned.get(id) !== "fork") {
+    if (!forks.has(id)) {
       refuse(
         `${file}:${line}: tool_result for ${id} inside its own stream, but ${id} is not an Agent fork`,
       );
