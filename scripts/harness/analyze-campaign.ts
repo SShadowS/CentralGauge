@@ -3545,44 +3545,49 @@ async function main() {
     // Dynamic import: test-rerun.ts imports this module's helpers.
     const { testRerunStep } = await import("./test-rerun.ts");
     const { productionRunner } = await import("./test-rerun-runner.ts");
-    const dir = join(out, "test-rerun");
-    const local = Deno.env.get("LOCALAPPDATA");
-    const privateRoot = args["private-dir"]
-      ? resolve(args["private-dir"])
-      : local
-      ? join(local, "centralgauge", "harness")
-      : null;
-    if (!privateRoot) {
-      throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
-    }
-    // Opens the harness environment: bench lock, private-root lock, coord lease check.
-    const runner = await productionRunner({
-      repoRoot: resolve(repo),
-      resultsDir: join(dir, "env"),
-      containers: args.containers!.split(",").map((c) => c.trim()).filter(
-        Boolean,
-      ),
-      coordLeases: args["coord-lease"] as string[],
-      symbolStore: resolve(args.symbols!),
-      privateRoot,
-      lineage: args.lineage ? resolve(args.lineage) : null,
-    });
-    try {
-      await testRerunStep({
-        runner,
-        rows,
-        results,
-        hashOf,
-        startOf,
-        pairs,
-        jobs: 1, // container runs are serialized by the lane anyway
-        dir,
-        rev: args.rev,
-        alsemEvidence,
-        alsemBuild,
+    // Nothing to rerun: the harness environment (bench lock, containers) is not opened.
+    if (rows.length === 0) {
+      console.error("[test-rerun] 0 executions, skipped");
+    } else {
+      const dir = join(out, "test-rerun");
+      const local = Deno.env.get("LOCALAPPDATA");
+      const privateRoot = args["private-dir"]
+        ? resolve(args["private-dir"])
+        : local
+        ? join(local, "centralgauge", "harness")
+        : null;
+      if (!privateRoot) {
+        throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
+      }
+      // Opens the harness environment: bench lock, private-root lock, coord lease check.
+      const runner = await productionRunner({
+        repoRoot: resolve(repo),
+        resultsDir: join(dir, "env"),
+        containers: args.containers!.split(",").map((c) => c.trim()).filter(
+          Boolean,
+        ),
+        coordLeases: args["coord-lease"] as string[],
+        symbolStore: resolve(args.symbols!),
+        privateRoot,
+        lineage: args.lineage ? resolve(args.lineage) : null,
       });
-    } finally {
-      await runner.close?.();
+      try {
+        await testRerunStep({
+          runner,
+          rows,
+          results,
+          hashOf,
+          startOf,
+          pairs,
+          jobs: 1, // container runs are serialized by the lane anyway
+          dir,
+          rev: args.rev,
+          alsemEvidence,
+          alsemBuild,
+        });
+      } finally {
+        await runner.close?.();
+      }
     }
   }
 
@@ -3590,55 +3595,68 @@ async function main() {
     // Dynamic import: sql-cost.ts imports this module's helpers.
     const { scenarioRootOf, sqlCostStep } = await import("./sql-cost.ts");
     const { productionRunner } = await import("./sql-cost-runner.ts");
-    const dir = join(out, "sql-cost");
-    // Before the environment opens: a bad override is refused up front.
-    const scenarioRoot = await scenarioRootOf({
-      off: args["no-sql-cost-scenarios"],
-      dir: args["sql-cost-scenarios"],
-      repo: resolve(repo),
-    });
-    const local = Deno.env.get("LOCALAPPDATA");
-    const privateRoot = args["private-dir"]
-      ? resolve(args["private-dir"])
-      : local
-      ? join(local, "centralgauge", "harness")
-      : null;
-    if (!privateRoot) {
-      throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
-    }
-    const runner = await productionRunner({
-      repoRoot: resolve(repo),
-      resultsDir: join(dir, "env"),
-      containers: args.containers!.split(",").map((c) => c.trim()).filter(
-        Boolean,
-      ),
-      coordLeases: args["coord-lease"] as string[],
-      symbolStore: resolve(args.symbols!),
-      privateRoot,
-      lineage: args.lineage ? resolve(args.lineage) : null,
-      repo: resolve(repo),
-      rev: args.rev,
-      results: resolve(results),
-      taskCache: join(cache, "tasks"),
-    });
-    try {
-      await sqlCostStep({
-        runner,
-        rows,
-        results,
-        hashOf,
-        startOf,
-        jobs: 1, // the runner swaps the lane's bc: one execution at a time
-        dir,
-        rev: args.rev,
-        tasks: args["sql-cost-task"] as string[],
-        // Scale scenarios run for a task that has <root>/<task>/src.
-        scenarioRoot,
+    // Nothing to measure: the harness environment (bench lock, containers) is not opened.
+    if (rows.length === 0) {
+      console.error("[sql-cost] 0 executions, skipped");
+    } else {
+      const dir = join(out, "sql-cost");
+      // Before the environment opens: a bad override is refused up front.
+      const scenarioRoot = await scenarioRootOf({
+        off: args["no-sql-cost-scenarios"],
+        dir: args["sql-cost-scenarios"],
+        repo: resolve(repo),
       });
-    } finally {
-      await runner.close?.();
+      const local = Deno.env.get("LOCALAPPDATA");
+      const privateRoot = args["private-dir"]
+        ? resolve(args["private-dir"])
+        : local
+        ? join(local, "centralgauge", "harness")
+        : null;
+      if (!privateRoot) {
+        throw new Error("pass --private-dir (LOCALAPPDATA is not set)");
+      }
+      const runner = await productionRunner({
+        repoRoot: resolve(repo),
+        resultsDir: join(dir, "env"),
+        containers: args.containers!.split(",").map((c) => c.trim()).filter(
+          Boolean,
+        ),
+        coordLeases: args["coord-lease"] as string[],
+        symbolStore: resolve(args.symbols!),
+        privateRoot,
+        lineage: args.lineage ? resolve(args.lineage) : null,
+        repo: resolve(repo),
+        rev: args.rev,
+        results: resolve(results),
+        taskCache: join(cache, "tasks"),
+      });
+      try {
+        await sqlCostStep({
+          runner,
+          rows,
+          results,
+          hashOf,
+          startOf,
+          jobs: 1, // the runner swaps the lane's bc: one execution at a time
+          dir,
+          rev: args.rev,
+          tasks: args["sql-cost-task"] as string[],
+          // Scale scenarios run for a task that has <root>/<task>/src.
+          scenarioRoot,
+        });
+      } finally {
+        await runner.close?.();
+      }
     }
   }
 }
 
-if (import.meta.main) await main();
+// Not a top-level await: main() dynamically imports test-rerun.ts and
+// sql-cost.ts, which import this module back, and that import would wait on
+// this module's evaluation forever (Q-04d). Uncaught errors still exit 1.
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(err);
+    Deno.exit(1);
+  });
+}
