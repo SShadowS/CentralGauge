@@ -439,6 +439,16 @@ Deno.test("claudeTrace (R-10): a start placeholder is refused for a non-fork cal
       ],
       "f:2: tool_result for a inside its own stream, but a is not an Agent fork",
     ],
+    // Sol run 001 P2: only an Agent fork; Task (the older spawn tool) is not
+    // seen emitting fork starts, so its duplicate stays refused.
+    [
+      [
+        rec(asst("1", [use("a", "Task", { subagent_type: "fork" })]), 1),
+        rec(forkStart("a"), 2),
+        rec(res("a", "done"), 3),
+      ],
+      "f:2: tool_result for a inside its own stream, but a is not an Agent fork",
+    ],
     [[
       rec(asst("1", [use("f", "Agent", { subagent_type: "fork" })]), 1),
       rec(forkStart("f"), 2),

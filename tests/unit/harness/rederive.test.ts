@@ -11,6 +11,8 @@ import {
   rederiveExecution,
   rederiveTargets,
 } from "../../../src/harness/rederive.ts";
+import { deriveOutcome } from "../../../src/harness/execution.ts";
+import { recordCellProblems } from "../../../src/harness/egress.ts";
 import { campaign, execution, manifest, telemetry } from "./fixtures.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
@@ -97,8 +99,13 @@ async function forkProbe(): Promise<string> {
 }
 
 /** A stored harness_crash execution (the R-07 shape) with its run folder. */
-async function stored(raw: string, exitCode = 0, stop: string | null = null) {
-  const root = await Deno.realPath(await testTempDir());
+async function stored(
+  raw: string,
+  exitCode = 0,
+  stop: string | null = null,
+  at?: string,
+) {
+  const root = at ?? await Deno.realPath(await testTempDir());
   const store = new RecordStore(root);
   const c = await campaign();
   const base = execution(c);
@@ -198,16 +205,56 @@ Deno.test("rederive (R-10): a stored fork run re-derives to completed with cost 
   assertEquals(r.infra_reason, null);
 });
 
-Deno.test("rederive (R-10): a raw log without its result line stays harness_crash, as a live run decides it", async () => {
+Deno.test("rederive (R-10): a raw log without its result line stays harness_crash, whatever the exit code (Sol run 001 P1)", async () => {
   const raw = (await forkProbe()).trim().split("\n");
   assertEquals(JSON.parse(raw.at(-1)!).type, "result");
-  const s = await stored(raw.slice(0, -1).join("\n") + "\n", -1);
-  const r = await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
-  assertEquals(r.derived.termination, "harness_crash");
-  assertEquals(r.derived.telemetry.cost_usd, null);
-  assert(r.derived.validity.infra_exposed);
-  const [x] = await s.store.executions(s.c.id);
-  assertEquals([x!.termination, x!.rederived?.id], ["harness_crash", r.id]);
+  for (const exit of [-1, 0]) {
+    const s = await stored(raw.slice(0, -1).join("\n") + "\n", exit);
+    const r = await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+    assertEquals(r.derived.termination, "harness_crash", `exit ${exit}`);
+    assertEquals(r.derived.telemetry.cost_usd, null);
+    assert(r.derived.validity.infra_exposed);
+    const [x] = await s.store.executions(s.c.id);
+    assertEquals([x!.termination, x!.rederived?.id], ["harness_crash", r.id]);
+  }
+});
+
+Deno.test("deriveOutcome (Sol run 001 P1): no termination from the parse never derives completed, on exit 0 too", () => {
+  const base = {
+    manifest: manifest("plain"),
+    declared: [] as const,
+    started: true,
+    preStart: false,
+    setupError: null,
+    stopReason: null,
+    undrained: null,
+    parseError: null,
+    problems: [],
+    orphansExempt: false,
+    configInvalid: false,
+    host: { lines: [], bad: [] },
+  };
+  const parsed = {
+    telemetry: telemetry(null),
+    observed: { harness_version: null, models: null, loaded_components: null },
+    unobservable: [],
+    didWork: true,
+    termination: null,
+    usageResetAt: null,
+    imageSupport: null,
+    traceEvents: 0,
+  };
+  for (const exitCode of [0, 1, null]) {
+    assertEquals(
+      deriveOutcome({
+        ...base,
+        sandbox: { exitCode, timedOut: false, startError: null },
+        parsed,
+      }).termination,
+      "harness_crash",
+      `exit ${exitCode}`,
+    );
+  }
 });
 
 Deno.test("rederive (R-10): the reader refuses an overlay whose raw.jsonl changed", async () => {
@@ -321,4 +368,61 @@ Deno.test("rederiveTargets (R-10): by default every execution whose log the pars
     ValidationError,
     "not in campaign",
   );
+});
+
+Deno.test("rederive (Sol run 001 P1): an execution file that carries `rederived` is refused on read, overlay or not", async () => {
+  const s = await stored(await forkProbe());
+  await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+  const overlaid = (await s.store.executions(s.c.id))[0]!;
+  // A copy of the overlaid record into a fresh store's executions/.
+  const forged = await stored(await forkProbe());
+  await Deno.writeTextFile(
+    forged.file,
+    JSON.stringify({ ...overlaid, id: forged.e.id }),
+  );
+  await assertRejects(
+    () => forged.store.executions(forged.c.id),
+    ValidationError,
+    "rederived",
+  );
+  await assertRejects(
+    () => forged.store.execution(forged.e.id),
+    ValidationError,
+    "rederived",
+  );
+});
+
+Deno.test("RecordStore.execution (R-10): one execution by id with its overlay applied and checked; null when absent", async () => {
+  const s = await stored(await forkProbe());
+  assertEquals((await s.store.execution(s.e.id))!.termination, "harness_crash");
+  await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+  assertEquals((await s.store.execution(s.e.id))!.termination, "completed");
+  assertEquals(await s.store.execution(crypto.randomUUID()), null);
+  await Deno.writeTextFile(join(s.run, "raw.jsonl"), "\n", { append: true });
+  await assertRejects(
+    () => s.store.execution(s.e.id),
+    ValidationError,
+    "raw.jsonl sha256 is",
+  );
+});
+
+Deno.test("recordCellProblems (Sol run 001 P2): the record-mode cell is read through the store: its overlay applies and a changed raw log is refused", async () => {
+  const repo = await Deno.realPath(await testTempDir());
+  const cells = join(repo, "results", "harness", "cells");
+  await Deno.mkdir(cells, { recursive: true });
+  const s = await stored(await forkProbe(), 0, null, cells);
+  // The stored record says harness_crash (a crash outcome).
+  assert(
+    (await recordCellProblems(repo, s.e.id)).some((p) =>
+      p.includes("ended harness_crash")
+    ),
+  );
+  await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+  assert(
+    !(await recordCellProblems(repo, s.e.id)).some((p) => p.includes("ended ")),
+    "the overlay's completed is what the check sees",
+  );
+  await Deno.writeTextFile(join(s.run, "raw.jsonl"), "\n", { append: true });
+  const p = await recordCellProblems(repo, s.e.id);
+  assert(p.some((x) => x.includes("raw.jsonl sha256 is")), p.join("; "));
 });
