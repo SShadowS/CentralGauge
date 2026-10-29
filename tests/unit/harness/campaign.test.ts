@@ -2528,3 +2528,26 @@ Deno.test("judgeQueue (H-33): after stop, drain still throws a failure recorded 
   queue.stop();
   await assertRejects(() => queue.drain(), Error, "injected judging failure");
 });
+
+Deno.test("R-08: a mid-campaign quarantine prints one [QUARANTINE] line with the pool size and counts it in the summary", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  let n = 0;
+  t.env.hooks = {
+    beforeDraft: async () => {
+      if (++n === 1) {
+        await t.env.lane.quarantine("C1", "cleanup failed\nL4 diff: x");
+      }
+    },
+  };
+  const log = io();
+  const s = await runCampaign(t.env, "contract", opts(), log);
+  const q = log.lines.filter((l) => l.includes("QUARANTINE"));
+  assertEquals(q.length, 1);
+  assertStringIncludes(q[0]!, "C1: cleanup failed L4 diff: x");
+  assertStringIncludes(q[0]!, "judging pool 0/1");
+  assertEquals(
+    [s.quarantined, s.poolSize, s.poolTotal],
+    [1, 0, 1],
+  );
+});
