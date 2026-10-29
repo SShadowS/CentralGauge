@@ -94,6 +94,12 @@ import {
   renderReport,
 } from "../../src/harness/report.ts";
 import { verifyPrereg } from "../../src/harness/prereg.ts";
+import {
+  rederiveExecution,
+  rederiveTargets,
+} from "../../src/harness/rederive.ts";
+import type { RederivationRecord } from "../../src/harness/records.ts";
+import { loadPricingBook } from "../../src/harness/pricing.ts";
 import { loadTraces } from "../../src/harness/trace-metrics.ts";
 import { checkScenario } from "../../scripts/harness/stub-anthropic.mjs";
 import { loadTaskSet } from "../../src/harness/task.ts";
@@ -2461,6 +2467,62 @@ export async function harnessRejudge(
 }
 
 /**
+ * `harness rederive` (R-10): re-derive stored executions from their raw.jsonl
+ * with this checkout's parser, as write-once overlays (src/harness/rederive.ts).
+ * The checkout must be clean under src/harness: the overlay names its commit.
+ */
+export async function harnessRederive(o: {
+  campaign: string;
+  executions: string[];
+  reason: string;
+  resultsDir: string;
+  repoRoot: string;
+}): Promise<RederivationRecord[]> {
+  if (o.reason.trim() === "" || o.reason.includes("\n")) {
+    throw new ConfigurationError(
+      "rederive --reason must be one non-blank line",
+    );
+  }
+  const git = async (...args: string[]) => {
+    const r = await new Deno.Command("git", {
+      args: ["-C", o.repoRoot, ...args],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (!r.success) {
+      throw new ConfigurationError(
+        `git ${args.join(" ")}: ${new TextDecoder().decode(r.stderr).trim()}`,
+      );
+    }
+    return new TextDecoder().decode(r.stdout).trim();
+  };
+  const dirty = await git("status", "--porcelain", "--", "src/harness");
+  if (dirty !== "") {
+    throw new ConfigurationError(
+      `rederive needs a clean src/harness (the overlay records the commit):\n${dirty}`,
+    );
+  }
+  const codeCommit = await git("rev-parse", "HEAD");
+  const store = new RecordStore(o.resultsDir);
+  const out: RederivationRecord[] = [];
+  for (
+    const e of await rederiveTargets(store, o.campaign, o.executions)
+  ) {
+    out.push(
+      await rederiveExecution({
+        store,
+        execution: e,
+        reason: o.reason,
+        codeCommit,
+        pricing: (at) =>
+          loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
+      }),
+    );
+  }
+  return out;
+}
+
+/**
  * `harness pairing` (H-35 S2.5, design-r5 5.1): a rejudge's frozen pairing,
  * reconciled with its completions. Read-only; a changed left side is refused.
  */
@@ -3256,6 +3318,50 @@ export function registerHarnessCommand(
       fail(async () => {
         const r = await harnessPairing(digest, opts.resultsDir, opts.root);
         console.log(opts.json ? JSON.stringify(r, null, 2) : renderPairing(r));
+      })
+    );
+
+  parent
+    .command(
+      "rederive <campaign:string>",
+      "R-10: re-derive stored executions' telemetry, termination and trace from their raw.jsonl with this parser (write-once overlays; verdicts untouched)",
+    )
+    .option("--results-dir <dir:string>", "Harness records root", {
+      default: "results/harness",
+    })
+    .option(
+      "--execution <ids:string>",
+      "Only these executions (comma-separated; default: every one whose log the parser refused)",
+      { collect: true },
+    )
+    .option("--reason <text:string>", "Why (recorded in each overlay)", {
+      required: true,
+    })
+    .option("--root <dir:string>", "Repository root", { default: "." })
+    .action((opts, campaign: string) =>
+      fail(async () => {
+        const done = await harnessRederive({
+          campaign,
+          executions: (opts.execution ?? []).flatMap((s: string) =>
+            s.split(",").map((x) => x.trim()).filter(Boolean)
+          ),
+          reason: opts.reason,
+          resultsDir: opts.resultsDir,
+          repoRoot: opts.root,
+        });
+        for (const r of done) {
+          const t = r.derived.telemetry;
+          console.log(
+            `${
+              colors.green("[OK]")
+            } ${r.execution_id} ${r.from_termination} -> ${r.derived.termination} cost ${
+              t.cost_usd ?? "null"
+            } turns ${t.turns ?? "null"} wall_ms ${
+              t.wall_ms ?? "null"
+            } (overlay ${r.id})`,
+          );
+        }
+        console.log(`${done.length} execution(s) re-derived`);
       })
     );
 
