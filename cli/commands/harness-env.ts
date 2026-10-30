@@ -47,6 +47,7 @@ import {
   type LockedSymbols,
 } from "../../src/harness/bc-lane.ts";
 import type { OnPremIndex } from "../../src/harness/onprem-symbols.ts";
+import type { ProbeRunner } from "../../src/harness/key-custody.ts";
 import {
   placedConcurrencyProblem,
   placedConcurrencyRefusal,
@@ -65,6 +66,7 @@ import {
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import {
+  admitKeyCustody,
   admitOnPrem,
   ensurePin,
   type EnvPin,
@@ -177,6 +179,10 @@ export interface EnvOptions {
   poolWaitMin?: number;
   /** H-41 (7): --coord-lease pairs: coord leases this run holds (container -> token). */
   coordLeases?: ReadonlyMap<string, string>;
+  /** H-44: `--key-custody <dir>`, admitted (fatal) before anything else is opened. */
+  keyCustody?: string;
+  /** H-44: a judging command (rejudge, judge-pending): the custody dir must exist; never created. */
+  judgeOnly?: boolean;
 }
 
 export interface EnvDeps {
@@ -232,6 +238,8 @@ export interface EnvDeps {
   ) => { url: string; shutdown(): Promise<void> };
   /** H-38 test seam for the OnPrem index admission (default: admitOnPrem). */
   admitOnPrem?: (lock: LockedSymbols) => Promise<OnPremIndex>;
+  /** H-44 test seam: the key custody probe's command execution (default: Windows PowerShell). */
+  probeRunner?: ProbeRunner;
 }
 
 export const REAL_DEPS: EnvDeps = {
@@ -1068,6 +1076,19 @@ export async function openHarnessEnv(
         "nothing swept",
       );
     hold();
+    // H-44 (5.1): --key-custody admitted before anything else; any failure is fatal.
+    const keyCustody = o.keyCustody
+      ? await admitKeyCustody(
+        {
+          resultsRoot: o.resultsDir,
+          repoRoot: o.repoRoot,
+          privateRoot: o.privateRoot,
+          ...(deps.probeRunner ? { probeRunner: deps.probeRunner } : {}),
+        },
+        o.keyCustody,
+        !o.judgeOnly,
+      )
+      : undefined;
     // Review 546e8337 P2-a, run 003 item 1: any older harness's state refuses
     // the start before ANY sweep; nothing legacy is ever removed here.
     const docker = deps.docker();
@@ -1551,6 +1572,8 @@ export async function openHarnessEnv(
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
       namespaceLost,
       acquisition,
+      ...(keyCustody ? { keyCustody } : {}),
+      ...(deps.probeRunner ? { probeRunner: deps.probeRunner } : {}),
       ...(pinContext ? { pinContext } : {}),
       ...(pool ? { judgePooled: pool } : {}),
       // H-41 (10): an explicit list pins the start members' env_fp; `auto`

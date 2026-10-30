@@ -72,6 +72,7 @@ import {
   freezeWorkspace,
   safeCopyTree,
   type scanReparsePoints,
+  validatedDest,
   validatedDir,
 } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree } from "./hash.ts";
@@ -121,6 +122,7 @@ import {
   writeSecretFiles,
 } from "./sandbox.ts";
 import { readAppGraph, type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
+import { probeCustody, type ProbeRunner } from "./key-custody.ts";
 import { selectJudgment } from "./outcome.ts";
 import {
   currentScorerFingerprint,
@@ -276,6 +278,14 @@ export interface HarnessEnv {
    * any other token (or none) are a predecessor's and are reclaimed.
    */
   acquisition: string;
+  /**
+   * H-44 (5.1, 5.2): the admitted `--key-custody` dir (canonical). New
+   * intents record it (their export destination); judging imports from it
+   * only when the own bundle is missing. Unset: nothing exported or imported.
+   */
+  keyCustody?: string;
+  /** H-44 test seam: the custody probe's command execution (parsing and evaluation stay real). */
+  probeRunner?: ProbeRunner;
   /**
    * H-41 (section 4): the lineage a campaign env pin records and is compared
    * on, set by openHarnessEnv with --lineage; unset: no lineage (judgments
@@ -491,6 +501,8 @@ interface Intent {
   calibration_waived?: true;
   /** R-02: the account label the attempt ran under; recovery copies it, never re-derives it. */
   account?: string;
+  /** H-44 (M3): the key custody dir its bundle is exported to, whatever command publishes it; absent: none. */
+  key_custody?: string;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -785,9 +797,11 @@ function parseBundle(
 
 /**
  * H-44 (5.2): the redaction keys and stub attestation a judge of record `e`
- * uses. v1/v2: the own key file (an own bundle means a downgraded record).
- * v3: the bundle whose sha256 is the record's anchor, read once, hashed,
- * then parsed from those same bytes; a null anchor is never judged.
+ * uses. v1/v2: the own key file (an own bundle means a downgraded record;
+ * never a custody copy). v3: the bundle whose sha256 is the record's anchor
+ * (the own one, else with --key-custody only, the probed `<K>/<id>.json`),
+ * read once, hashed, then parsed from those same bytes; a null anchor is
+ * never judged.
  */
 export async function loadJudgeKeys(
   env: HarnessEnv,
@@ -805,10 +819,17 @@ export async function loadJudgeKeys(
     try {
       text = await Deno.readTextFile(p.keys);
     } catch (err) {
-      // H-44 group 2 hook: with --key-custody a legacy record refuses here
-      // ("published before H-44 (record v<n>): no redaction anchor; ...").
-      if (err instanceof Deno.errors.NotFound) throw missingKeys(p.keys, e.id);
-      throw unreadableKeys(p.keys, e.id, msg(err));
+      if (!(err instanceof Deno.errors.NotFound)) {
+        throw unreadableKeys(p.keys, e.id, msg(err));
+      }
+      // H-44 (R8): no anchor binds a legacy record to a custody copy.
+      if (env.keyCustody) {
+        throw new ValidationError(
+          `execution ${e.id} was published before H-44 (record v${e.v}): no redaction anchor; judge it in its publishing private root or copy redaction/${e.id}.json there`,
+          [p.keys],
+        );
+      }
+      throw missingKeys(p.keys, e.id);
     }
     let keys: unknown;
     try {
@@ -834,14 +855,17 @@ export async function loadJudgeKeys(
     );
   }
   let bytes: Uint8Array<ArrayBuffer>;
-  const path = p.bundle;
+  let path = p.bundle;
   try {
     bytes = await Deno.readFile(path);
   } catch (err) {
-    // H-44 group 2 hook: only on this NotFound and only with --key-custody,
-    // probe <K> (dir, parent, bundle) and read <K>/<id>.json instead (R3, R4).
-    if (err instanceof Deno.errors.NotFound) throw missingKeys(path, e.id);
-    throw unreadableKeys(path, e.id, msg(err));
+    if (!(err instanceof Deno.errors.NotFound)) {
+      throw unreadableKeys(path, e.id, msg(err));
+    }
+    // H-44 (R1): without --key-custody the custody dir is never opened.
+    if (!env.keyCustody) throw missingKeys(path, e.id);
+    path = join(env.keyCustody, `${e.id}.json`);
+    bytes = await custodyBundle(env, env.keyCustody, path, e.id);
   }
   const got = await sha256Hex(bytes);
   if (got !== e.redaction_anchor) {
@@ -852,6 +876,45 @@ export async function loadJudgeKeys(
   }
   const b = parseBundle(bytes, path, e.id);
   return { keys: b.keys, stub: b.stub };
+}
+
+/**
+ * H-44 (5.2 steps 3-5): the bytes of `<custody>/<id>.json`: missing is R3
+ * (a metadata check, never a probe failure); the dir, its parent and the
+ * bundle are probed (R4) before the bundle is read once.
+ */
+async function custodyBundle(
+  env: HarnessEnv,
+  custody: string,
+  path: string,
+  id: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  try {
+    await Deno.lstat(path);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) {
+      throw new ValidationError(
+        `redaction bundle ${path} for execution ${id} is not in key custody ${custody}; refusing to judge`,
+        [path],
+      );
+    }
+    throw unreadableKeys(path, id, msg(err));
+  }
+  try {
+    await probeCustody(custody, path, probeOptions(env));
+  } catch (err) {
+    throw new ValidationError(
+      `key custody ${custody} for execution ${id} refused (${
+        msg(err)
+      }); refusing to judge`,
+      [path],
+    );
+  }
+  try {
+    return await Deno.readFile(path);
+  } catch (err) {
+    throw unreadableKeys(path, id, msg(err));
+  }
 }
 
 /**
@@ -947,10 +1010,22 @@ async function realDriveType(path: string): Promise<string> {
  * before anything is reserved or written.
  */
 async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
-  const r = env.privateRoot;
+  await validateLocalRoot(env, env.privateRoot, "privateRoot", [
+    [env.resultsRoot, "results root"],
+    [env.repoRoot, "repo worktree"],
+  ]);
+}
+
+/** H-44: the location rules of the private root, for root `r` (named `what`); its canonical path. */
+async function validateLocalRoot(
+  env: Pick<HarnessEnv, "driveType">,
+  r: string,
+  what: string,
+  others: readonly (readonly [string, string])[],
+): Promise<string> {
   if (/^[\\/]{2}/.test(r)) {
     throw new ConfigurationError(
-      `privateRoot ${r} is a UNC path; it must be on a local drive`,
+      `${what} ${r} is a UNC path; it must be on a local drive`,
     );
   }
   let canon: string;
@@ -958,30 +1033,143 @@ async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
     canon = await validatedDir(r);
   } catch (err) {
     throw new ConfigurationError(
-      `privateRoot ${r} is not a canonical local directory (${msg(err)})`,
+      `${what} ${r} is not a canonical local directory (${msg(err)})`,
     );
   }
   const type = await (env.driveType ?? realDriveType)(canon);
   if (type !== "Fixed") {
     throw new ConfigurationError(
-      `privateRoot ${canon} is on a ${type} drive; a network, removable or unknown drive is refused`,
+      `${what} ${canon} is on a ${type} drive; a network, removable or unknown drive is refused`,
     );
   }
+  await disjointFrom(canon, what, others);
+  return canon;
+}
+
+async function disjointFrom(
+  canon: string,
+  what: string,
+  others: readonly (readonly [string, string])[],
+): Promise<void> {
   const fold = (x: string) => Deno.build.os === "windows" ? x.toLowerCase() : x;
-  for (
-    const [other, what] of [
-      [env.resultsRoot, "results root"],
-      [env.repoRoot, "repo worktree"],
-    ] as const
-  ) {
+  for (const [other, name] of others) {
     const o = await Deno.realPath(resolve(other)).catch(() => resolve(other));
     const [a, b] = [fold(canon), fold(o)];
     if (a === b || a.startsWith(b + SEPARATOR) || b.startsWith(a + SEPARATOR)) {
       throw new ConfigurationError(
-        `privateRoot ${canon} overlaps the ${what} ${o}; they must be disjoint`,
+        `${what} ${canon} overlaps the ${name} ${o}; they must be disjoint`,
       );
     }
   }
+}
+
+/** H-44 (5.1): what admitting a key custody dir reads of the environment. */
+export type CustodyEnv = Pick<
+  HarnessEnv,
+  | "resultsRoot"
+  | "repoRoot"
+  | "privateRoot"
+  | "driveType"
+  | "secretAcl"
+  | "probeRunner"
+  | "opTimeoutMs"
+>;
+
+/**
+ * H-44 (5.1): admit `--key-custody <dir>` (fatal on any failure): a
+ * publisher (`create`) creates a missing dir owner-only, a judge requires it.
+ * Returns the canonical dir.
+ */
+export async function admitKeyCustody(
+  env: CustodyEnv,
+  dir: string,
+  create: boolean,
+): Promise<string> {
+  try {
+    if (/^[\\/]{2}/.test(dir)) throw new Error("a UNC path");
+    // Only NotFound is missing: a dir this user cannot stat goes to the probe.
+    const missing = await Deno.lstat(dir).then(
+      () => false,
+      (err) => err instanceof Deno.errors.NotFound,
+    );
+    if (missing) {
+      if (!create) {
+        throw new Error(
+          "it does not exist (a judging process never creates it)",
+        );
+      }
+      // Nothing is created where the location rules would refuse it.
+      await disjointFrom(resolve(dir), "key custody", custodyOthers(env));
+      await restrictPath(await validatedDest(dir), env.secretAcl ?? {}, "dir");
+    }
+    // The probe first: its command reports an unsafe ACL before any lstat fails on it.
+    await probeCustody(resolve(dir), null, probeOptions(env));
+    return await validateLocalRoot(
+      env,
+      dir,
+      "key custody",
+      custodyOthers(env),
+    );
+  } catch (err) {
+    throw new ConfigurationError(`key custody ${dir} refused: ${msg(err)}`);
+  }
+}
+
+/** H-44: a custody dir is disjoint from results/, the repo and this private root. */
+const custodyOthers = (
+  env: Pick<HarnessEnv, "resultsRoot" | "repoRoot" | "privateRoot">,
+) =>
+  [
+    [env.resultsRoot, "results root"],
+    [env.repoRoot, "repo worktree"],
+    [env.privateRoot, "private root"],
+  ] as const;
+
+const probeOptions = (
+  env: Pick<HarnessEnv, "probeRunner" | "opTimeoutMs">,
+) => ({
+  ...(env.probeRunner ? { runner: env.probeRunner } : {}),
+  timeoutMs: env.opTimeoutMs ?? OP_TIMEOUT_MS,
+});
+
+/**
+ * H-44 (section 4): copy the published v3 record's own bundle to
+ * `<custody>/<id>.json` (write-once), after the location rules (against the
+ * effective results root) and the probe. A refused custody dir only warns
+ * (no byte written there, publication goes on); an own bundle that no longer
+ * matches the anchor, or a lost lock, stops publication.
+ */
+async function exportBundle(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+  custody: string,
+): Promise<void> {
+  let dir: string;
+  try {
+    dir = await validateLocalRoot(
+      env,
+      custody,
+      "key custody",
+      custodyOthers(env),
+    );
+    await probeCustody(dir, null, probeOptions(env));
+  } catch (err) {
+    console.warn(
+      `[WARN] ${e.id}: key custody ${custody} refused (${
+        msg(err)
+      }); not exported`,
+    );
+    return;
+  }
+  const own = privatePaths(env, e.id).bundle;
+  await verifyPrivatePath(own, env.secretAcl ?? {}, "file");
+  const bytes = await Deno.readFile(own);
+  if (await sha256Hex(bytes) !== e.redaction_anchor) {
+    throw new ConfigurationError(
+      `execution ${e.id}: its own redaction bundle ${own} does not match the record's redaction_anchor; nothing published, intent kept`,
+    );
+  }
+  await linkTemp(env, join(dir, `${e.id}.json`), bytes, e.id);
 }
 
 /** One operator secrets directory; the label (null when the run has a single unlabelled account) is all that is ever recorded. */
@@ -1898,6 +2086,8 @@ async function publishDraft(
   draft: Draft,
   pristine: string | null,
   taskUnchanged: boolean,
+  /** H-44 (M3): the intent's key custody dir (persisted authorization); null: no export. */
+  custody: string | null,
   /** H-16: remove the private state only once this settles (an undrained backend request). */
   cleanupAfter?: Promise<void>,
 ) {
@@ -1911,6 +2101,10 @@ async function publishDraft(
     holdNamespace(env, "publication stopped; nothing more written or removed");
   const runs = join(env.resultsRoot, "runs");
   hold();
+  // H-44: exported before the run appears in results/ (a v3 record with released keys only).
+  if (custody && e.v >= 3 && e.redaction_anchor) {
+    await exportBundle(env, e, custody);
+  }
   if (!await exists(join(runs, e.id))) {
     await Deno.mkdir(runs, { recursive: true });
     // A crash inside an earlier copy left a temp name: remove it first.
@@ -2182,6 +2376,8 @@ export async function runExecution(
       : {}),
     ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
     ...(account?.label ? { account: account.label } : {}),
+    // H-44 (M3): the export destination, persisted with the attempt.
+    ...(env.keyCustody ? { key_custody: env.keyCustody } : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -2837,6 +3033,7 @@ export async function runExecution(
     draft,
     staged.pristine,
     true,
+    intent.key_custody ?? null,
     (undrained ? env.backend.drained(id) : null) ?? undefined,
   );
   if (privilegeFailure !== null) {
@@ -4351,7 +4548,15 @@ export async function recoverInterrupted(
       });
     }
     hold();
-    await publishDraft(own, cell, draft, null, taskUnchanged);
+    // H-44 (M3): the intent's custody dir, whatever flag the recovering command has.
+    await publishDraft(
+      own,
+      cell,
+      draft,
+      null,
+      taskUnchanged,
+      intent.key_custody ?? null,
+    );
     if (!taskUnchanged) {
       console.warn(
         `[WARN] ${id}: task files changed or unavailable since the attempt; recorded, not judged (use harness rejudge)`,
