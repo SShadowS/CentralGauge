@@ -156,8 +156,8 @@ import {
   MARKER_STATES,
   preflightExpect,
   ProbeEvidenceSchema,
-  realEgressCollector,
   readCellRecord,
+  realEgressCollector,
   recordCellProblems,
   RECORDED_HOSTS_PATH,
   ROUTE_HOSTS,
@@ -527,6 +527,8 @@ export async function harnessReport(
     traces: await loadTraces(opts.resultsDir, executions),
     // H-35 S2.5: scorer names checked against the task preimage store.
     descriptor: descriptorLoader(opts.resultsDir, opts.root),
+    // R-01c: each claude-code raw.jsonl init line checked against its manifest.
+    resultsRoot: opts.resultsDir,
     // H-04b: the rejudge budget counts only the current scorer suite.
     judging: {
       ...(opts.judging === "current"
@@ -2196,6 +2198,7 @@ export async function harnessRejudge(
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
       descriptor: descriptorLoader(env.resultsRoot, o.root),
+      resultsRoot: env.resultsRoot,
     });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
@@ -2630,6 +2633,7 @@ export async function harnessMeasure(
     const data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
       descriptor: descriptorLoader(env.resultsRoot, o.root),
+      resultsRoot: env.resultsRoot,
     });
     const tasks = new Map(
       (await loadTaskSet(join(o.root, "harness-tasks", "tasks"))).map((
