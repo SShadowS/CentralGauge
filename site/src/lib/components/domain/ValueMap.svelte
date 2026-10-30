@@ -1,28 +1,32 @@
 <script lang="ts">
-  import type { LeaderboardRow } from '$lib/shared/api-types';
-  import { computeValueMap } from '$lib/shared/value-map';
+  import { computeValueMapFrom, type ValueInput } from '$lib/shared/value-map';
   import { formatCost } from '$lib/client/format';
 
   interface Props {
-    rows: LeaderboardRow[];
+    points: ValueInput[];
+    noun?: string;
+    yLabel?: string;
     width?: number;
     height?: number;
   }
 
-  let { rows, width = 640, height = 420 }: Props = $props();
+  let { points, noun = 'model', yLabel = 'Solve AUC@2', width = 640, height = 420 }: Props = $props();
 
   const padding = 48;
 
-  const vm = $derived(computeValueMap(rows, { width, height, padding }));
+  const vm = $derived(computeValueMapFrom(points, { width, height, padding }));
+
+  // Short form of the y label for per-dot text ("Solve AUC@2" -> "AUC").
+  const yShort = $derived(yLabel.replace(/^Solve /, '').replace(/@\d+$/, ''));
 
   const nLabel = $derived(
-    vm.points.length === 1 ? '1 model' : `${vm.points.length} models`
+    vm.points.length === 1 ? `1 ${noun}` : `${vm.points.length} ${noun}s`
   );
 
   function omittedLabel(count: number): string {
     return count === 1
-      ? '1 model with no cost data omitted'
-      : `${count} models with no cost data omitted`;
+      ? `1 ${noun} with no cost data omitted`
+      : `${count} ${noun}s with no cost data omitted`;
   }
 </script>
 
@@ -38,7 +42,7 @@
     <svg
       viewBox="0 0 {width} {height}"
       role="img"
-      aria-label="Cost vs Solve AUC@2 scatter, {nLabel}"
+      aria-label="Cost vs {yLabel} scatter, {nLabel}"
     >
       <!-- y-axis line -->
       <line
@@ -114,7 +118,7 @@
         font-size="11"
         fill="var(--text-faint)"
         transform="rotate(-90 12 {padding + (height - 2 * padding) / 2})"
-      >Solve AUC@2</text>
+      >{yLabel}</text>
 
       <!-- Pareto frontier path -->
       {#if vm.frontierPath}
@@ -145,14 +149,14 @@
           class="dot"
           class:dominated={!p.onFrontier}
           class:provisional={p.provisional}
-          aria-label="{p.display_name}: {p.auc.toFixed(1)} AUC at {formatCost(p.cost)}/task{p.provisional ? ' (cost under review)' : ''}"
+          aria-label="{p.display_name}: {p.y.toFixed(1)} {yShort} at {formatCost(p.cost)}/task{p.provisional ? ' (cost under review)' : ''}"
         >
           <circle
             cx={p.cx}
             cy={p.cy}
             r={p.onFrontier ? 5 : 4}
           />
-          <title>{p.display_name} — {p.auc.toFixed(1)} AUC · {formatCost(p.cost)}/task{p.provisional ? ' · cost under review (understated)' : p.onFrontier ? ' · best-value frontier' : ''}</title>
+          <title>{p.display_name} — {p.y.toFixed(1)} {yShort} · {formatCost(p.cost)}/task{p.provisional ? ' · cost under review (understated)' : p.onFrontier ? ' · best-value frontier' : ''}</title>
         </a>
       {/each}
     </svg>
