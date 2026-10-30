@@ -30,6 +30,11 @@ describe("migration 0001 core schema", () => {
       "shortcoming_occurrences",
       "machine_keys",
       "ingest_events",
+      "setup_task_sets",
+      "hx_tasks",
+      "setups",
+      "setup_runs",
+      "setup_cells",
     ]) {
       expect(names).toContain(required);
     }
