@@ -1,14 +1,14 @@
 import { ApiError } from "./errors";
 
 export interface SealedKey {
-  ciphertext: Uint8Array;
-  iv: Uint8Array;
+  ciphertext: Uint8Array<ArrayBuffer>;
+  iv: Uint8Array<ArrayBuffer>;
 }
 
 const enc = new TextEncoder();
 
 async function aesKey(secretB64: string): Promise<CryptoKey> {
-  let raw: Uint8Array | null = null;
+  let raw: Uint8Array<ArrayBuffer> | null = null;
   try {
     raw = Uint8Array.from(atob(secretB64), (c) => c.charCodeAt(0));
   } catch {
