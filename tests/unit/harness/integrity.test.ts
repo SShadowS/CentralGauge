@@ -31,6 +31,7 @@ import {
   type ExecutionRecord,
   experimentHash,
   planBlocks,
+  type Telemetry,
 } from "../../../src/harness/records.ts";
 import {
   campaign,
@@ -99,7 +100,8 @@ async function onImage(
   version: string,
   list: string[],
   observed: string | null,
-  init: string | null,
+  /** One init line per version (R-01c run 002: a resumed session logs several). */
+  init: string | string[] | null,
   /** Executions to record with no evidence at all, with these field overrides. */
   bare: (e: ExecutionRecord) => Partial<ExecutionRecord> | null = () => null,
 ): Promise<string[]> {
@@ -137,12 +139,16 @@ async function onImage(
       await Deno.mkdir(join(root, "runs", e.id), { recursive: true });
       await Deno.writeTextFile(
         join(root, raw_log_path),
-        JSON.stringify({ type: "cg_inventory", ok: true }) + "\n" +
-          JSON.stringify({
-            type: "system",
-            subtype: "init",
-            claude_code_version: init,
-          }) + "\n",
+        [
+          JSON.stringify({ type: "cg_inventory", ok: true }),
+          ...[init].flat().map((v) =>
+            JSON.stringify({
+              type: "system",
+              subtype: "init",
+              claude_code_version: v,
+            })
+          ),
+        ].join("\n") + "\n",
       );
     }
     executions.push({
@@ -182,6 +188,22 @@ Deno.test("R-01c: a historical digest substituted for a 2.1.310 run (Monitor rem
   // The record's own two pieces of evidence disagree.
   const split = await onImage(R3, "2.1.302", EIGHT, "2.1.302", "2.1.310");
   assert(split.some((x) => x.includes("init")), split.join("; "));
+});
+
+Deno.test("R-01c run 002 (Sol run 001 P2): every init line in the scan window is read; inits that disagree are refused, agreeing ones pass", async () => {
+  // a resumed session: init 2.1.302, then 2.1.310; observed takes the first
+  const p = await onImage(R3, "2.1.302", EIGHT, "2.1.302", [
+    "2.1.302",
+    "2.1.310",
+  ]);
+  assert(
+    p.some((x) => x.includes("init") && x.includes("2.1.310")),
+    p.join("; "),
+  );
+  assertEquals(
+    await onImage(R3, "2.1.302", EIGHT, "2.1.302", ["2.1.302", "2.1.302"]),
+    [],
+  );
 });
 
 Deno.test("R-01c: the pre-R-01 exemption needs evidence; a run whose evidence matches stays valid, and a current manifest needs none", async () => {
@@ -227,6 +249,31 @@ Deno.test("R-01c (orchestrator ruling b): only a superseded, cost-free, pre-star
   await refused({ termination: "completed" }, "did_work false + completed");
   await refused({ did_work: true }, "did work");
   await refused({ telemetry: telemetry(1) }, "spent");
+  // R-01c run 002 (Sol run 001 P2): cellValues() sums telemetry over every
+  // attempt, so any recorded telemetry value makes the attempt read
+  const t0 = { ...cost0, turns: 0, wall_ms: 0, compactions: 0 };
+  assertEquals(await noEvidence({ telemetry: t0 }), []);
+  const reads: [Partial<Telemetry>, string][] = [
+    [{ turns: 3 }, "turns"],
+    [{ wall_ms: 1000 }, "wall_ms"],
+    [{ compactions: 1 }, "compactions"],
+    [{ reported_cost_usd: 0.5 }, "reported cost"],
+    [{
+      per_model: [{
+        model: "m",
+        requests: 1,
+        tokens_in_uncached: 10,
+        tokens_cache_read: 0,
+        tokens_cache_write: 0,
+        tokens_out: 5,
+        tokens_reasoning: 0,
+        cost_usd: 0,
+      }],
+    }, "per_model"],
+  ];
+  for (const [over, why] of reads) {
+    await refused({ telemetry: { ...cost0, ...over } }, why);
+  }
   // a final setup_failed attempt (analysis reads the latest attempt): the
   // scenario's skills HX-002 cell, made setup_failed with no work and no cost
   const final = await onImage(

@@ -144,13 +144,17 @@ async function campaignProblems(c: CampaignRecord): Promise<string[]> {
 /** R-01c: how much of raw.jsonl is read for the init line (it is within the first few lines). */
 const INIT_SCAN_BYTES = 64 * 1024;
 
-/** The claude_code_version of raw.jsonl's system/init line, or null (no file, no init in the head). */
-async function rawInitVersion(path: string): Promise<string | null> {
+/**
+ * The claude_code_version of every system/init line in raw.jsonl's head, in
+ * order ([]: no file, no init). R-01c run 002 (Sol run 001 P2): a resumed
+ * session logs several inits; all are read, so a later one cannot hide.
+ */
+async function rawInitVersions(path: string): Promise<string[]> {
   let f: Deno.FsFile;
   try {
     f = await Deno.open(path, { read: true });
   } catch (err) {
-    if (err instanceof Deno.errors.NotFound) return null;
+    if (err instanceof Deno.errors.NotFound) return [];
     throw err;
   }
   try {
@@ -164,6 +168,7 @@ async function rawInitVersion(path: string): Promise<string | null> {
     const lines = new TextDecoder().decode(buf.subarray(0, n)).split(/\r?\n/);
     // a line cut at the scan end is not read
     if (n === buf.length) lines.pop();
+    const out: string[] = [];
     for (const l of lines) {
       let rec: unknown;
       try {
@@ -176,13 +181,14 @@ async function rawInitVersion(path: string): Promise<string | null> {
         subtype?: unknown;
         claude_code_version?: unknown;
       } | null;
-      if (o?.type === "system" && o.subtype === "init") {
-        return typeof o.claude_code_version === "string"
-          ? o.claude_code_version
-          : null;
+      if (
+        o?.type === "system" && o.subtype === "init" &&
+        typeof o.claude_code_version === "string"
+      ) {
+        out.push(o.claude_code_version);
       }
     }
-    return null;
+    return out;
   } finally {
     f.close();
   }
@@ -194,6 +200,11 @@ async function rawInitVersion(path: string): Promise<string | null> {
  * root, raw.jsonl's init claude_code_version. A record that claims the
  * pre-R-01 disallowed_tools exemption (its derivation lacks Monitor) needs at
  * least one of them: "no evidence" is not a pass for it.
+ * R-01c run 002 (Sol run 001 P2): this proves consistency, not provenance.
+ * The manifest, observed version and raw_log_path are fields of the same
+ * editable record, and raw.jsonl carries no checksum outside an R-10 overlay,
+ * so a record edited coherently (or with its raw_log_path nulled) passes. It
+ * catches a digest swapped without its evidence, not a forged record.
  */
 async function evidenceProblems(
   executions: ExecutionRecord[],
@@ -210,13 +221,15 @@ async function evidenceProblems(
         `${at}: observed Claude Code ${observed}, its manifest says ${want}`,
       );
     }
-    const init = resultsRoot !== undefined && e.raw_log_path !== null
-      ? await rawInitVersion(join(resultsRoot, e.raw_log_path))
-      : null;
-    if (init !== null && init !== want) {
-      out.push(
-        `${at}: raw.jsonl init reports Claude Code ${init}, its manifest says ${want}`,
-      );
+    const inits = resultsRoot !== undefined && e.raw_log_path !== null
+      ? await rawInitVersions(join(resultsRoot, e.raw_log_path))
+      : [];
+    for (const init of new Set(inits)) {
+      if (init !== want) {
+        out.push(
+          `${at}: raw.jsonl init reports Claude Code ${init}, its manifest says ${want}`,
+        );
+      }
     }
     const legacy = !claudeCodeDerivedNative(e.manifest).disallowed_tools
       .includes("Monitor");
@@ -224,14 +237,18 @@ async function evidenceProblems(
     // did no work, cost nothing and is superseded by a later attempt of its
     // cell needs no evidence: no aggregate reads it (it is never judged, its
     // spend is 0, analysis takes the latest attempt). Every evidence mismatch
-    // above stays refused whatever these fields say.
+    // above stays refused whatever these fields say. R-01c run 002 (Sol run
+    // 001 P2): cellValues() sums telemetry over every attempt, so the attempt
+    // must also carry no telemetry value at all.
+    const t = e.telemetry;
     const unread = e.termination === "setup_failed" && !e.did_work &&
-      e.telemetry.cost_usd === 0 &&
+      t.cost_usd === 0 && !t.turns && !t.wall_ms && !t.compactions &&
+      !t.reported_cost_usd && t.per_model.length === 0 &&
       executions.some((x) =>
         x.arm === e.arm && x.task_id === e.task_id && x.repeat === e.repeat &&
         x.attempt > e.attempt
       );
-    if (legacy && observed === null && init === null && !unread) {
+    if (legacy && observed === null && inits.length === 0 && !unread) {
       out.push(
         `${at}: no evidence (observed version or raw.jsonl init) for its pre-R-01 disallowed_tools exemption`,
       );
