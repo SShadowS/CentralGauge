@@ -47,13 +47,37 @@ export function failedFsChecks(
   };
   if (l.judgment_id !== j.id || l.execution_id !== j.execution_id) return [];
   if (!Array.isArray(l.fs_checks)) return [];
+  // Sol r2: a malformed field is shown as JSON, never coerced (that can throw).
+  const text = (x: unknown) =>
+    typeof x === "string" ? x : JSON.stringify(x) ?? "undefined";
   return l.fs_checks
     .filter((c) => typeof c === "object" && c !== null && c.ok === false)
     .map((c) => ({
-      container: String(c.container),
+      container: text(c.container),
       differences: Array.isArray(c.diff) ? c.diff.length : 0,
-      errors: Array.isArray(c.errors) ? c.errors.map(String) : [],
+      errors: Array.isArray(c.errors) ? c.errors.map(text) : [],
     }));
+}
+
+/**
+ * H-45 (a) Sol r2: a judgment's verdict log, parsed; undefined only when it
+ * does not exist. Any other read or parse failure throws: a report never
+ * silently drops a log it could not read.
+ */
+export async function readVerdictLog(
+  resultsRoot: string,
+  judgmentId: string,
+): Promise<unknown> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(
+      join(resultsRoot, "verdicts", `${judgmentId}.json`),
+    );
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return undefined;
+    throw err;
+  }
+  return JSON.parse(text);
 }
 
 /** One rendered failed-check list: "container N differences; error | ...". */

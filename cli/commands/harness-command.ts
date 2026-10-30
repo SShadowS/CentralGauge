@@ -80,6 +80,7 @@ import {
   type LogEvidence,
   type PairingReport,
   pairingReport,
+  readVerdictLog,
   renderPairing,
 } from "../../src/harness/judgment-report.ts";
 import {
@@ -2562,13 +2563,15 @@ export async function harnessPairing(
     ).catch(() => null);
     if (text !== null) logs.set(j.id, JSON.parse(text));
   }
-  // H-45 (a): every judgment's verdict log, for its failed L4 checks.
+  // H-45 (a): the verdict log of each judgment a completion or a frozen cell
+  // names, for its failed L4 checks. Only a missing log is skipped (Sol r2).
   const verdictLogs = new Map<string, unknown>();
-  for (const j of byId.values()) {
-    const text = await Deno.readTextFile(
-      join(resultsDir, "verdicts", `${j.id}.json`),
-    ).catch(() => null);
-    if (text !== null) verdictLogs.set(j.id, JSON.parse(text));
+  const named = new Set([
+    ...pairing.cells.map((c) => c.old_judgment_id),
+    ...completions.map((c) => c.new_judgment_id),
+  ]);
+  for (const id of named) {
+    if (byId.has(id)) verdictLogs.set(id, await readVerdictLog(resultsDir, id));
   }
   return pairingReport(
     digest,
