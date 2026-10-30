@@ -877,26 +877,29 @@ Deno.test("aggregation: pair counts where the variant catches and the base does 
   assertEquals(p.variant.shipped_pass_share, 2 / 3);
 });
 
-Deno.test("step outputs: harness_crash is out of every aggregate but stays in the csv", async () => {
-  const w = await world(START, { e1: NEW_B, e2: NEW_B });
-  w.rows[1]!.termination = "harness_crash";
-  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
-  await run(w, m.runner);
-  const out = join(w.root, "out");
-  const summary = JSON.parse(
-    await Deno.readTextFile(join(out, "summary.json")),
-  );
-  assertEquals(summary.per_arm.A.executions, 1);
-  assertEquals(summary.excluded.map((x: { id: string }) => x.id), ["e2"]);
-  const csv = (await Deno.readTextFile(join(out, "executions.csv"))).split(
-    "\n",
-  );
-  assertEquals(csv.length >= 3, true);
-  assert(
-    csv[0]!.includes("agent_outcome") && csv[0]!.includes("shipped_status"),
-  );
-  assert(csv.some((l) => l.startsWith("e2,") && l.includes("harness_crash")));
-});
+// Q-04f: setup_failed (the agent never started; a pristine tree) is excluded like harness_crash.
+for (const t of ["harness_crash", "setup_failed"]) {
+  Deno.test(`step outputs: ${t} is out of every aggregate but stays in the csv`, async () => {
+    const w = await world(START, { e1: NEW_B, e2: NEW_B });
+    w.rows[1]!.termination = t;
+    const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+    await run(w, m.runner);
+    const out = join(w.root, "out");
+    const summary = JSON.parse(
+      await Deno.readTextFile(join(out, "summary.json")),
+    );
+    assertEquals(summary.per_arm.A.executions, 1);
+    assertEquals(summary.excluded.map((x: { id: string }) => x.id), ["e2"]);
+    const csv = (await Deno.readTextFile(join(out, "executions.csv"))).split(
+      "\n",
+    );
+    assertEquals(csv.length >= 3, true);
+    assert(
+      csv[0]!.includes("agent_outcome") && csv[0]!.includes("shipped_status"),
+    );
+    assert(csv.some((l) => l.startsWith("e2,") && l.includes(t)));
+  });
+}
 
 Deno.test("step: a runner that rejects is listed as failed, not thrown", async () => {
   const w = await world(START, { e1: NEW_B });
