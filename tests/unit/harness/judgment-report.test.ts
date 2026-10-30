@@ -4,11 +4,13 @@ import { ValidationError } from "../../../src/errors.ts";
 import type { JudgmentRecord } from "../../../src/harness/records.ts";
 import {
   appendCompletion,
+  failedFsChecks,
   freezePairing,
   loadPairing,
   pairFlags,
   type Pairing,
   pairingReport,
+  readVerdictLog,
   reconcilePairing,
   renderPairing,
   scorerCount,
@@ -728,4 +730,123 @@ Deno.test("H-35 orch Sol r1 #4: task-applicable denominators are over planned ce
     mutant_kill: 1,
   });
   assertEquals(s!.applicability_unknown, 1);
+});
+
+Deno.test("H-45 (a): pairingReport discloses a failed L4 check on either side of a completed pair; a log of another judgment or none discloses nothing", () => {
+  const of = (j: JudgmentRecord, e: string) => ({ ...j, execution_id: e });
+  const o1 = of(v2([m("build", false)]), "E1");
+  const n1 = of(v2([m("build", false)]), "E1");
+  const o2 = of(v2([m("build", true)]), "E2");
+  const n2 = of(v2([m("build", true)]), "E2");
+  const o3 = of(v2([m("build", true)]), "E3");
+  const n3 = of(v2([m("build", true)]), "E3");
+  const cell = (old: JudgmentRecord) => ({
+    execution_id: old.execution_id,
+    cell: `a T ${old.execution_id}`,
+    workspace_hash: "a".repeat(64),
+    old_judgment_id: old.id,
+    scorer_fingerprint: old.scorer_fingerprint,
+  });
+  const p: Pairing = {
+    cohort: { campaign: "c1", started_at: "2026-10-19T10:00:00.000Z" },
+    cells: [cell(o1), cell(o2), cell(o3)],
+  };
+  const at = "2026-10-19T11:00:00.000Z";
+  const completions = [
+    { execution_id: "E1", new_judgment_id: n1.id, at },
+    { execution_id: "E2", new_judgment_id: n2.id, at },
+    { execution_id: "E3", new_judgment_id: n3.id, at },
+  ];
+  const byId = new Map([o1, n1, o2, n2, o3, n3].map((j) => [j.id, j]));
+  const failed = {
+    container: "Cronus284",
+    ok: false,
+    diff: [],
+    errors: ["before: fs-capture expired|676|1056"],
+  };
+  const clean = { container: "Cronus282", ok: true, diff: [], errors: [] };
+  const log = (j: JudgmentRecord, fs_checks: unknown[], id = j.id) => ({
+    judgment_id: id,
+    execution_id: j.execution_id,
+    fs_checks,
+  });
+  const logs = new Map<string, unknown>([
+    [o1.id, log(o1, [failed])],
+    [n1.id, log(n1, [clean])],
+    // Recovered pass on the new side: a failed check, then a clean one.
+    [n2.id, log(n2, [failed, clean])],
+    // Names another judgment: not o3's evidence.
+    [o3.id, log(o3, [failed], n3.id)],
+  ]);
+  const r = pairingReport(
+    "d".repeat(64),
+    p,
+    completions,
+    (id) => byId.get(id),
+    () => false,
+    undefined,
+    undefined,
+    (j) => logs.get(j.id),
+  );
+  const checks = [{
+    container: "Cronus284",
+    differences: 0,
+    errors: ["before: fs-capture expired|676|1056"],
+  }];
+  assertEquals(r.l4_failed, [
+    { cell: "a T E1", side: "old", judgment: o1.id, verdict: "fail", checks },
+    { cell: "a T E2", side: "new", judgment: n2.id, verdict: "pass", checks },
+  ]);
+  const text = renderPairing(r);
+  assert(text.includes("L4 checks failed"));
+  assert(
+    text.includes(
+      `a T E2 new ${n2.id} (pass): Cronus284 0 differences; before: fs-capture expired|676|1056`,
+    ),
+  );
+  const none = pairingReport(
+    "d".repeat(64),
+    p,
+    completions,
+    (id) => byId.get(id),
+    () => false,
+  );
+  assertEquals("l4_failed" in none, false);
+  assertEquals(renderPairing(none).includes("L4 checks failed"), false);
+});
+
+Deno.test("H-45 (a) Sol r2: failedFsChecks never throws on malformed values; a failed check's odd fields are shown as JSON", () => {
+  const j = v2([m("build", true)]);
+  const odd = { toString: null };
+  assertEquals(
+    failedFsChecks(j, {
+      judgment_id: j.id,
+      execution_id: j.execution_id,
+      fs_checks: [
+        { ok: false, container: odd, diff: "x", errors: [odd, "after: e"] },
+        null,
+        "ok",
+        { ok: true, container: "C1", diff: [], errors: [] },
+      ],
+    }),
+    [{
+      container: '{"toString":null}',
+      differences: 0,
+      errors: ['{"toString":null}', "after: e"],
+    }],
+  );
+});
+
+Deno.test("H-45 (a) Sol r2: readVerdictLog: a missing log is undefined, any other read failure throws (never a silent omission)", async () => {
+  const root = await testTempDir();
+  await Deno.mkdir(join(root, "verdicts", "j2.json"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "verdicts", "j3.json"),
+    JSON.stringify({ judgment_id: "j3" }),
+  );
+  assertEquals(await readVerdictLog(root, "j1"), undefined);
+  assertEquals(await readVerdictLog(root, "j3"), { judgment_id: "j3" });
+  await assertRejects(() => readVerdictLog(root, "j2"));
+  await Deno.writeTextFile(join(root, "verdicts", "j4.json"), "{cut");
+  await assertRejects(() => readVerdictLog(root, "j4"), SyntaxError);
 });
