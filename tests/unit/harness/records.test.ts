@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { join } from "@std/path";
 import { stub } from "@std/testing/mock";
 import { ValidationError } from "../../../src/errors.ts";
@@ -861,6 +867,56 @@ Deno.test("execution v2: incomplete_observed required in v2, forbidden in v1; bo
   assertEquals(
     (await store.executions(c.id))[0],
     ExecutionRecordSchema.parse(e2),
+  );
+});
+
+Deno.test("H-44 (20): execution v3 carries redaction_anchor (sha256 or null) and round-trips; v3 without it, v1/v2 with it and a malformed anchor are refused", async () => {
+  const c = await campaign();
+  const e3 = execution(c, {}, { v: 3, redaction_anchor: "d".repeat(64) });
+  const n3 = execution(c, {}, { v: 3, redaction_anchor: null });
+  assertEquals(
+    ExecutionRecordSchema.parse(e3).redaction_anchor,
+    "d".repeat(64),
+  );
+  assertEquals(ExecutionRecordSchema.parse(n3).redaction_anchor, null);
+  const { redaction_anchor: _a, ...bare } = e3;
+  const issue = (v: unknown) => {
+    const r = ExecutionRecordSchema.safeParse(v);
+    return r.success ? "parsed" : r.error.issues.map((i) => i.message).join();
+  };
+  assertStringIncludes(issue(bare), "execution v3 needs redaction_anchor");
+  assertStringIncludes(
+    issue({ ...execution(c), redaction_anchor: "d".repeat(64) }),
+    "execution v2 carries no redaction_anchor",
+  );
+  assertStringIncludes(
+    issue({ ...execution(c), redaction_anchor: null }),
+    "execution v2 carries no redaction_anchor",
+  );
+  const e1 = execution(c, {}, {
+    v: 1,
+    validity: { incomplete_telemetry: [], infra_exposed: false },
+  });
+  assertStringIncludes(
+    issue({ ...e1, redaction_anchor: "d".repeat(64) }),
+    "execution v1 carries no redaction_anchor",
+  );
+  // The M1-22 rule now holds from v2 on.
+  assertStringIncludes(
+    issue({
+      ...e3,
+      validity: { incomplete_telemetry: [], infra_exposed: false },
+    }),
+    "execution v3 needs validity.incomplete_observed",
+  );
+  assert(issue({ ...e3, redaction_anchor: "D".repeat(64) }) !== "parsed");
+  assert(issue({ ...e3, v: 4 }) !== "parsed");
+  const store = new RecordStore(await testTempDir());
+  await store.writeExecution(e3);
+  await store.writeExecution(n3);
+  assertEquals(
+    (await store.executions(c.id)).map((x) => [x.v, x.redaction_anchor]),
+    [[3, "d".repeat(64)], [3, null]],
   );
 });
 

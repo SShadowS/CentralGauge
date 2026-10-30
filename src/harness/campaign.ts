@@ -1165,6 +1165,14 @@ async function campaignInvocation(
       descriptor: descriptorLoader(env.resultsRoot, env.repoRoot),
       resultsRoot: env.resultsRoot,
     });
+    // H-44 (D4): a campaign has one record version and new executions are
+    // v3: before binding, a rerun target or any cell. Recovery (above),
+    // reading, reporting and rejudging stay available.
+    if (data.executions.some((e) => e.v < 3)) {
+      throw new ConfigurationError(
+        `campaign ${c.id} has executions recorded before H-44; new executions cannot join it. Start a fresh campaign under a new experiment id or a new --results-dir; existing results stay as they are`,
+      );
+    }
   }
   // H-13b: every execution of a waived campaign records it.
   if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };

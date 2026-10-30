@@ -1158,11 +1158,41 @@ export async function restrictPath(
       `could not set the ACL of ${what} ${path}: icacls exited ${grant.code}: ${grant.stderr.trim()}`,
     );
   }
+  await verifyPrivatePath(path, { icacls, user }, kind);
+}
+
+/**
+ * H-44: verify, never repair, that an existing custody dir or file is this
+ * user's (and SYSTEM's) only: the strict icacls listing on Windows; on POSIX
+ * this uid and mode 0700 (dir) or 0600 (file).
+ */
+export async function verifyPrivatePath(
+  path: string,
+  custody: Pick<SecretCustody, "icacls" | "user">,
+  kind: "dir" | "file",
+): Promise<void> {
+  const what = kind === "dir" ? "secrets dir" : "secrets file";
+  const st = await Deno.lstat(path);
+  if (st.isSymlink || (kind === "dir" ? !st.isDirectory : !st.isFile)) {
+    throw new ConfigurationError(
+      `refusing ${what} ${path}: not a plain ${kind}`,
+    );
+  }
+  if (Deno.build.os !== "windows") {
+    const mode = (st.mode ?? 0) & 0o777;
+    if (st.uid !== Deno.uid() || mode !== (kind === "dir" ? 0o700 : 0o600)) {
+      throw new ConfigurationError(
+        `refusing ${what} ${path}: owner ${st.uid}, mode ${mode.toString(8)}`,
+      );
+    }
+    return;
+  }
+  const flags = kind === "dir" ? "(oi)(ci)" : "";
+  const icacls = custody.icacls ??
+    ((args: string[]) => runTool("icacls.exe", args));
+  const user = custody.user ?? await currentUser();
   const listing = await icacls([path]);
-  if (
-    listing.code !== 0 ||
-    !aclIsPrivate(listing.stdout, path, user, flags.toLowerCase())
-  ) {
+  if (listing.code !== 0 || !aclIsPrivate(listing.stdout, path, user, flags)) {
     throw new ConfigurationError(
       `refusing ${what} ${path}: its ACL is not exactly ${user} and SYSTEM: ${listing.stdout.trim()}`,
     );

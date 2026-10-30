@@ -569,6 +569,8 @@ export interface CellCliOptions {
   bcEgressOverride?: string | null;
   /** H-41 (7): `--coord-lease <container>=<token>`: coord leases this run holds. */
   coordLeases?: ReadonlyMap<string, string>;
+  /** H-44: `--key-custody <dir>`: where published redaction bundles go and judging imports them. */
+  keyCustody?: string;
 }
 
 /** H-41 (7): `--coord-lease <container>=<token>`: a container name and a non-empty token. */
@@ -650,6 +652,7 @@ function envOptions(
     ...(o.lineage ? { lineage: o.lineage } : {}),
     ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
     ...(o.coordLeases ? { coordLeases: o.coordLeases } : {}),
+    ...(o.keyCustody ? { keyCustody: o.keyCustody } : {}),
   };
 }
 
@@ -1621,6 +1624,7 @@ interface CellCliFlags {
   lineage?: string;
   unverifiedBcEgressOk?: string;
   coordLease?: [string, string][];
+  keyCustody?: string;
 }
 
 /** H-41 (7): the --coord-lease pairs; one token per container (case-insensitive). */
@@ -1707,6 +1711,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
       ? { bcEgressOverride: f.unverifiedBcEgressOk }
       : {}),
     ...(f.coordLease ? { coordLeases: coordLeases(f.coordLease) } : {}),
+    ...(f.keyCustody ? { keyCustody: abs(f.keyCustody) } : {}),
   };
 }
 
@@ -1924,9 +1929,11 @@ export async function harnessJudgePending(
 ): Promise<number> {
   checkJudgeConcurrency(o.judgeConcurrency);
   // --containers are the judges' here: this command runs no agent.
-  const h = await open(
-    envOptions(o, join(o.resultsDir, "cells"), "harness judge-pending"),
-  );
+  const h = await open({
+    ...envOptions(o, join(o.resultsDir, "cells"), "harness judge-pending"),
+    // H-44: a judge requires the custody dir; it never creates one.
+    judgeOnly: true,
+  });
   const taskDirs: string[] = [];
   const skip = (id: string, why: string) =>
     console.log(`${colors.yellow("[WARN]")} ${id}: ${why}; not judged`);
@@ -2178,6 +2185,7 @@ export async function harnessRejudge(
   const h = await open({
     ...envOptions(o, o.resultsDir, `harness rejudge ${experimentId}`),
     ...autoEnv(o),
+    judgeOnly: true,
   });
   try {
     const env = h.env;
@@ -2333,7 +2341,7 @@ export async function harnessRejudge(
       );
       if (why) throw new ConfigurationError(`${why}: rejudge --force refused`);
       forced = {
-        reason: await scrubForcedReason(env, e.id, o.reason!.trim()),
+        reason: await scrubForcedReason(env, e, o.reason!.trim()),
         replaces: o.replaces!,
         basis: decision!,
       };
@@ -3443,6 +3451,10 @@ export function registerHarnessCommand(
         "--coord-lease <pair:lease>",
         "H-41: <container>=<token> of a coord lease this run holds (repeatable); a container another holder coord-leases is refused",
         { collect: true },
+      )
+      .option(
+        "--key-custody <dir:string>",
+        "H-44: owner-only dir for redaction bundles: a publisher copies each new execution's bundle there, a judge without it in its private dir reads it there. Pass the same dir to the publishing and the judging process",
       );
 
   shared(

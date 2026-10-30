@@ -32,7 +32,8 @@ import {
 } from "../../../src/harness/execution.ts";
 import { exists } from "../../../src/harness/fsutil.ts";
 import { acquireBenchLock } from "../../../src/utils/bench-lock.ts";
-import { FakeBc, OK_RESET } from "./fake-bc.ts";
+import { factsRunner } from "./custody-fixture.ts";
+import { FakeBc, OK_RESET, result } from "./fake-bc.ts";
 import { FakeDocker } from "./fake-docker.ts";
 import { noOnPrem } from "./onprem-fixture.ts";
 import { poolWorld } from "./pool-fixture.ts";
@@ -80,6 +81,10 @@ export interface DriverArgs {
   computed?: string;
   lineage?: string;
   envFp?: string;
+  /** H-44: `--key-custody`, the parent's custody dir (probed through crafted safe output). */
+  keyCustody?: string;
+  /** H-44: the harness test failure message prints these (judge output to redact). */
+  leak?: string[];
 }
 
 export interface DriverResult {
@@ -148,7 +153,17 @@ async function main(a: DriverArgs): Promise<DriverResult> {
     }
   };
 
-  const bc = verdictBc();
+  const bc = a.leak
+    ? new FakeBc((cu) => {
+      if (cu === 80010) return result({ ShippedPasses: true });
+      if (cu === 85000) {
+        return result({
+          FixWorks: `Assert.AreEqual failed. Expected:<${a.leak!.join("|")}>`,
+        });
+      }
+      return result({});
+    })
+    : verdictBc();
   if (a.unscored) {
     bc.runHarnessTests = (c) =>
       Promise.reject(
@@ -173,6 +188,8 @@ async function main(a: DriverArgs): Promise<DriverResult> {
     health: () => ({ getState: () => ({ containers: [] }), record: () => {} }),
     verifyEgress: () => Promise.resolve(["not implemented (M1-33)"]),
     admitOnPrem: (l) => noOnPrem(l),
+    // H-44: the custody dir is test-owned (no real ACL): crafted safe probe output.
+    ...(a.keyCustody ? { probeRunner: factsRunner() } : {}),
   };
 
   const n = { calls: 0 };
@@ -247,6 +264,7 @@ async function main(a: DriverArgs): Promise<DriverResult> {
     concurrency: 1,
     maxPauseMin: 0,
     yes: !a.pauses.includes("asked"),
+    ...(a.keyCustody ? { keyCustody: a.keyCustody } : {}),
   };
   const out: DriverResult = {
     name: a.name,
@@ -275,6 +293,7 @@ async function main(a: DriverArgs): Promise<DriverResult> {
         credentialLedger: cli.credentialLedger,
         command: `pool-driver ${a.name}`,
         supervised: false,
+        ...(a.keyCustody ? { keyCustody: a.keyCustody } : {}),
       });
       try {
         if (a.recover) out.recovered = await recoverFences(h.env);

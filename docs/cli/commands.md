@@ -1165,12 +1165,75 @@ start, or published without the queue, stays owed and is logged `[INFO] <id>:
 judgment owed (judging pool)`. `run --rerun` judges its cell through the queue
 too.
 
-**Redaction keys.** Judging reads the execution's redaction keys from the
-judging process's own private dir (`<private-root>/redaction/<execution>.json`),
-written by the process that ran the agent. A process judging work it did not
-run (another machine or another private root) needs a copy of that
-`redaction/` folder in its private dir; without it, judging refuses with
-`redaction keys ... are missing or invalid; refusing to judge`.
+**Redaction keys and `--key-custody <dir>`.** Each execution record (v3)
+carries a `redaction_anchor`: the sha256 of its redaction bundle (the salted
+key hashes, the execution id and the stub attestation), which the publishing
+process keeps in its private dir as
+`<private-root>/redaction/<execution>.bundle.json`. Nothing of it is written
+under `--results-dir`. A judge uses that bundle when its own private dir holds
+it. To judge in another process (another machine or private root), pass
+`--key-custody <dir>` to both the publishing and the judging process (every
+command with `--private-dir` takes it):
+
+- The publisher copies each bundle to `<dir>/<execution>.json` before the run
+  appears under `--results-dir`. The dir is recorded with the attempt, so a
+  recovery exports there whatever `--key-custody` the recovering command has
+  (or none).
+- A judge whose private dir lacks the bundle reads `<dir>/<execution>.json`,
+  checks its sha256 against the anchor and judges. Without the flag it never
+  opens the dir and refuses with `redaction keys ... are missing or invalid;
+  refusing to judge (nothing could be redacted). Judging in another process:
+  pass --key-custody <dir> to both the publishing and the judging process`.
+
+Protection is checked at start, at every export and at every import, before
+any key byte is read. The dir is a canonical local directory on a fixed drive
+(no UNC path, link or junction), disjoint from the results dir, the repo and
+the private dir. Windows: the dir and each bundle are owned by a trusted
+principal, inherit nothing, and hold exactly two Allow entries with full
+control, the current user and SYSTEM (no Deny, inherit-only or other entry);
+the immediate parent is owned by a trusted principal and grants nobody else a
+write, delete, permission or ownership right; no reparse point on the dir, a
+bundle or any ancestor. POSIX: the dir is mode 0700 and each bundle 0600, owned
+by the current uid; the parent is owned by the current uid or root and is not
+group or other writable unless sticky; no symlinks. Trusted principals are the
+current user, SYSTEM and BUILTIN\Administrators (POSIX: the current uid and
+root): administrators and root can read the keys, as they can read the private
+dir. Ancestors above the parent are assumed writable only by trusted
+principals (not checked). A suitable place is
+`%LOCALAPPDATA%\centralgauge\key-custody`. A publishing command creates a
+missing dir owner-only; `rejudge` and `judge-pending` require it to exist. A
+dir refused at start stops the command.
+
+Judging refuses (no judgment, no verdict) when the bundle is missing from the
+dir (`redaction bundle <dir>/<id>.json for execution <id> is not in key custody
+<dir>`), when a protection check fails (`key custody <dir> for execution <id>
+refused (<why>)`), when the bundle's sha256 is not the anchor, when the bundle
+is malformed or names another execution, when the anchor is null (no secret was
+released) and when the bundle attests a stub run. A judge's own bundle that is
+unreadable or wrong refuses too, with no fallback to the dir.
+
+An export whose dir fails its checks is skipped, never retried:
+`[WARN] <id>: key custody <dir> refused (<why>); not exported`, and the run is
+published as usual. To repair it, as the custody user copy
+`<private-root>/redaction/<id>.bundle.json` to `<dir>/<id>.json` and protect it:
+Windows `icacls <dir>\<id>.json /inheritance:r /grant:r <user>:F SYSTEM:F` (the
+owner must be the user or Administrators), POSIX `chmod 600 <dir>/<id>.json`
+(owned by the user). The judge's checks and the anchor still verify the copy. A
+lost private-root lock or an own bundle that no longer matches its anchor stops
+the publication instead; the attempt stays for recovery.
+
+Executions recorded before H-44 (record v1 or v2) have no anchor: they are
+judged only in their publishing private dir, from `redaction/<id>.json`. Through
+`--key-custody` such an execution refuses with `published before H-44 (record
+v<n>): no redaction anchor; judge it in its publishing private root or copy
+redaction/<id>.json there`. A v2 record whose private dir holds a bundle is
+refused as downgraded. A campaign holding such executions takes no new ones:
+start a fresh campaign under a new experiment id or a new `--results-dir`
+(recovery, reports, `rejudge` and `judge-pending` stay available). Never open a
+private dir used by this version with an older centralgauge binary: it cannot
+read v3 records and enforces none of this. That is a documented prohibition,
+not something the older binary enforces; this version's loader then refuses
+the v2 records such a binary wrote as downgraded.
 
 ### harness pairing
 

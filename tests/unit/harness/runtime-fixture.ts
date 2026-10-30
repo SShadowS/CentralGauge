@@ -314,6 +314,8 @@ limits: { timeout_min: 5, max_budget_usd: 1 }
     qualifyManifest: QUALIFY,
     killGraceMs: 50,
     opTimeoutMs: 100,
+    // H-44 (5.4): one lock acquisition per test environment.
+    acquisition: crypto.randomUUID(),
   };
   return {
     env,

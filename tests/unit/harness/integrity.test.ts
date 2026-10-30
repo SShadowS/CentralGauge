@@ -31,8 +31,10 @@ import {
   type ExecutionRecord,
   experimentHash,
   planBlocks,
+  RecordStore,
   type Telemetry,
 } from "../../../src/harness/records.ts";
+import { loadCampaignData } from "../../../src/harness/campaign.ts";
 import {
   campaign,
   execution,
@@ -299,6 +301,58 @@ Deno.test("R-01c (orchestrator ruling b): only a superseded, cost-free, pre-star
 
 Deno.test("validateCampaignRecords: a consistent campaign passes", async () => {
   assertEquals(await problems(await scenario()), []);
+});
+
+/** Every record of `r` written to a fresh store and read back from its files. */
+async function storedRecords(
+  r: CampaignRecords,
+): Promise<CampaignRecords> {
+  const store = new RecordStore(await testTempDir());
+  await store.writeCampaign(r.campaign);
+  for (const e of r.executions) await store.writeExecution(e);
+  for (const a of r.artifacts) await store.writeArtifact(a);
+  for (const j of r.judgments) await store.writeJudgment(j);
+  const [c] = await store.campaigns(r.campaign.experiment.id);
+  return await loadCampaignData(store, c!);
+}
+
+Deno.test("H-44 (owner): stored v2 and v1 records still parse and verify; a v3 campaign verifies; mixing v2 and v3 is refused", async () => {
+  const v2 = await scenario();
+  assertEquals(v2.executions.map((e) => e.v), [2, 2, 2]);
+  const back2 = await storedRecords(v2);
+  assertEquals(back2.executions.length, 3);
+  assertEquals(back2.executions.map((e) => e.v), [2, 2, 2]);
+  assert(back2.executions.every((e) => !("redaction_anchor" in e)));
+  assertEquals(await problems(back2), []);
+  const asV1 = (e: ExecutionRecord): ExecutionRecord => {
+    const { incomplete_observed: _o, ...validity } = e.validity;
+    return { ...e, v: 1, validity };
+  };
+  const back1 = await storedRecords({
+    ...v2,
+    executions: v2.executions.map(asV1),
+  });
+  assertEquals(back1.executions.map((e) => e.v), [1, 1, 1]);
+  assertEquals(await problems(back1), []);
+  const asV3 = (e: ExecutionRecord): ExecutionRecord => ({
+    ...e,
+    v: 3,
+    redaction_anchor: e.workspace_hash === null ? null : H("e"),
+  });
+  const back3 = await storedRecords({
+    ...v2,
+    executions: v2.executions.map(asV3),
+  });
+  assertEquals(back3.executions.map((e) => e.v), [3, 3, 3]);
+  assertEquals(await problems(back3), []);
+  const mixed = await problems({
+    ...v2,
+    executions: [asV3(v2.executions[0]!), ...v2.executions.slice(1)],
+  });
+  assert(
+    mixed.some((p) => p.startsWith("campaign mixes execution record versions")),
+    mixed.join("\n"),
+  );
 });
 
 Deno.test("validateCampaignRecords: tampered stored hashes are caught", async () => {
