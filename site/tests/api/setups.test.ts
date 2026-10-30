@@ -65,6 +65,9 @@ describe("setups API", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as any;
       expect(body.id).toBe("HX-001");
+      // The seeded sha matches no catalog entry (the shipped catalog is empty),
+      // so the summary is withheld. The sha-match case is unit-tested in
+      // src/lib/server/hx-task-summaries.test.ts.
       expect(body.summary).toBeNull();
       expect(body.task_set.hash).toBe("hx-cur");
       expect(Array.isArray(body.results)).toBe(true);

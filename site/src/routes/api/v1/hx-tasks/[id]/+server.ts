@@ -3,6 +3,7 @@ import type { HxTaskResponse } from "$lib/shared/api-types";
 import { cachedJson } from "$lib/server/cache";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { epochCachedJson } from "$lib/server/shared-cache";
+import { hxTaskSummary } from "$lib/server/hx-task-summaries";
 import { getHxTaskResults, listSetupTaskSets } from "$lib/server/setups";
 
 export const GET: RequestHandler = async ({ request, url, params, platform }) => {
@@ -27,8 +28,12 @@ export const GET: RequestHandler = async ({ request, url, params, platform }) =>
         if (!found) {
           throw new ApiError(404, "task_not_found", `No task '${params.id}' in this set`);
         }
-        // summary is wired in by the task summaries work (Task 9).
-        return { id: params.id!, summary: null, task_set: taskSet, results: found.results };
+        return {
+          id: params.id!,
+          summary: hxTaskSummary(params.id!, found.description_sha),
+          task_set: taskSet,
+          results: found.results,
+        };
       },
     });
     return cachedJson(request, payload);

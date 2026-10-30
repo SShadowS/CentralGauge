@@ -8,6 +8,7 @@
  *   deno task summary-audit --print-baseline  ids with no summary
  */
 import { expandGlob } from "@std/fs";
+import { basename, dirname } from "@std/path";
 import {
   parseTaskSummaries,
   type TaskSummariesParse,
@@ -15,6 +16,7 @@ import {
 import { loadTaskManifest } from "../src/tasks/loader.ts";
 
 const SUMMARIES = "site/catalog/task-summaries.md";
+const HX_SUMMARIES = "site/catalog/hx-task-summaries.md";
 const BASELINE = "site/catalog/task-summaries.baseline.txt";
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -81,6 +83,45 @@ export function auditSummaries(input: AuditInput): string[] {
   return failures;
 }
 
+/**
+ * HX (setups) tasks: same sha / length / duplicate rules, but no baseline. A
+ * task without a summary is allowed; its page shows "No summary yet."
+ */
+export function auditHxSummaries(
+  input: Pick<AuditInput, "tasks" | "summaries">,
+): string[] {
+  const failures = [...input.summaries.errors];
+  const taskSha = new Map(input.tasks.map((t) => [t.id, t.descriptionSha]));
+  for (const e of input.summaries.entries) {
+    const sha = taskSha.get(e.id);
+    if (sha === undefined) {
+      failures.push(
+        `${e.id}: summary for a task that does not exist; remove the entry`,
+      );
+    } else if (sha !== e.descriptionSha) {
+      failures.push(
+        `${e.id}: description changed; re-read the summary, update it if needed, then set description_sha to ${sha}`,
+      );
+    }
+  }
+  return failures;
+}
+
+/** HX description_sha is sha256 of the exact prompt.md text. */
+export async function loadHxTasks(): Promise<
+  Array<{ id: string; descriptionSha: string }>
+> {
+  const out: Array<{ id: string; descriptionSha: string }> = [];
+  for await (const f of expandGlob("harness-tasks/tasks/*/prompt.md")) {
+    if (!f.isFile) continue;
+    out.push({
+      id: basename(dirname(f.path)),
+      descriptionSha: await sha256Hex(await Deno.readTextFile(f.path)),
+    });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 async function loadTasks(): Promise<
   Array<{ id: string; descriptionSha: string }>
 > {
@@ -104,11 +145,13 @@ async function readOr(path: string, fallback: string): Promise<string> {
 
 if (import.meta.main) {
   const tasks = await loadTasks();
+  const hxTasks = await loadHxTasks();
   const summaries = parseTaskSummaries(await readOr(SUMMARIES, ""));
+  const hxSummaries = parseTaskSummaries(await readOr(HX_SUMMARIES, ""));
   const printSha = Deno.args.indexOf("--print-sha");
   if (printSha !== -1) {
     const id = Deno.args[printSha + 1];
-    const t = tasks.find((x) => x.id === id);
+    const t = [...tasks, ...hxTasks].find((x) => x.id === id);
     if (!t) {
       console.error(`No task ${id}`);
       Deno.exit(1);
@@ -122,12 +165,17 @@ if (import.meta.main) {
     Deno.exit(0);
   }
   const baseline = parseBaseline(await readOr(BASELINE, ""));
-  const failures = auditSummaries({ tasks, summaries, baseline });
+  const failures = [
+    ...auditSummaries({ tasks, summaries, baseline }),
+    ...auditHxSummaries({ tasks: hxTasks, summaries: hxSummaries }).map((f) =>
+      `${f} (${HX_SUMMARIES})`
+    ),
+  ];
   if (failures.length > 0) {
     for (const f of failures) console.error(`[FAIL] ${f}`);
     Deno.exit(1);
   }
   console.log(
-    `[OK] summary-audit: ${summaries.entries.length} summarised, ${baseline.length} baselined, ${tasks.length} tasks`,
+    `[OK] summary-audit: ${summaries.entries.length} summarised, ${baseline.length} baselined, ${tasks.length} tasks; ${hxSummaries.entries.length} of ${hxTasks.length} HX tasks summarised`,
   );
 }

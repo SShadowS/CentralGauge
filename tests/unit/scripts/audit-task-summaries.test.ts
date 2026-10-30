@@ -1,7 +1,9 @@
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import {
+  auditHxSummaries,
   auditSummaries,
+  loadHxTasks,
   parseBaseline,
   sha256Hex,
 } from "../../../scripts/audit-task-summaries.ts";
@@ -145,6 +147,73 @@ Deno.test("auditSummaries", async (t) => {
       ],
     );
   });
+});
+
+Deno.test("auditHxSummaries", async (t) => {
+  const tasks = [
+    { id: "HX-001", descriptionSha: S },
+    { id: "HX-002", descriptionSha: S },
+  ];
+
+  await t.step("a task without a summary is allowed", () => {
+    assertEquals(
+      auditHxSummaries({
+        tasks,
+        summaries: parseTaskSummaries(entry("HX-001")),
+      }),
+      [],
+    );
+  });
+
+  await t.step("a wrong sha is reported with the current one", () => {
+    assertEquals(
+      auditHxSummaries({
+        tasks,
+        summaries: parseTaskSummaries(entry("HX-001", "d".repeat(64))),
+      }),
+      [
+        `HX-001: description changed; re-read the summary, update it if needed, then set description_sha to ${S}`,
+      ],
+    );
+  });
+
+  await t.step("an entry for a missing task is reported", () => {
+    assertEquals(
+      auditHxSummaries({
+        tasks,
+        summaries: parseTaskSummaries(entry("HX-404")),
+      }),
+      ["HX-404: summary for a task that does not exist; remove the entry"],
+    );
+  });
+
+  await t.step("duplicates and overlong bodies are reported", () => {
+    const long = `## HX-002\ndescription_sha: ${S}\n${"x".repeat(601)}\n`;
+    assertEquals(
+      auditHxSummaries({
+        tasks,
+        summaries: parseTaskSummaries(entry("HX-001") + entry("HX-001") + long),
+      }),
+      [
+        "HX-001: duplicate entry",
+        "HX-002: summary body is 601 characters (max 600)",
+      ],
+    );
+  });
+});
+
+Deno.test("the real HX catalog audits clean", async () => {
+  const tasks = await loadHxTasks();
+  assert(tasks.length > 0);
+  assertEquals(
+    auditHxSummaries({
+      tasks,
+      summaries: parseTaskSummaries(
+        await Deno.readTextFile("site/catalog/hx-task-summaries.md"),
+      ),
+    }),
+    [],
+  );
 });
 
 Deno.test("baseline never grows", async () => {
