@@ -30,6 +30,25 @@ describe('ValueMap', () => {
     expect(container.textContent).toMatch(/1 model.*omitted/i);
   });
 
+  it('honours noun, yLabel, hrefBase and xLabel props', () => {
+    const { container } = render(ValueMap, {
+      props: {
+        points: [
+          { slug: 's1', display_name: 'S1', cost: 0.1, y: 70, provisional: false },
+          { slug: 'nocost', display_name: 'No cost', cost: null, y: 50, provisional: false },
+        ],
+        noun: 'setup',
+        yLabel: 'Score',
+        hrefBase: '/setups',
+        xLabel: 'Price / solved task (log)',
+      },
+    });
+    expect(container.querySelector('a[href="/setups/s1"]')).not.toBeNull();
+    expect(container.textContent).toContain('1 setup with no cost data omitted');
+    expect(container.textContent).toContain('Price / solved task (log)');
+    expect(container.querySelector('svg')?.getAttribute('aria-label')).toBe('Cost vs Score scatter, 1 setup');
+  });
+
   it('renders an empty state when no models are priced', () => {
     const { container } = render(ValueMap, { props: { points: leaderboardValueInputs([row('free', 0.5, 0)]) } });
     expect(container.textContent).toMatch(/no cost data/i);

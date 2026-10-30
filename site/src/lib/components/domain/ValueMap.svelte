@@ -6,11 +6,21 @@
     points: ValueInput[];
     noun?: string;
     yLabel?: string;
+    xLabel?: string;
+    hrefBase?: string;
     width?: number;
     height?: number;
   }
 
-  let { points, noun = 'model', yLabel = 'Solve AUC@2', width = 640, height = 420 }: Props = $props();
+  let {
+    points,
+    noun = 'model',
+    yLabel = 'Solve AUC@2',
+    xLabel = 'Cost / task (log)',
+    hrefBase = '/models',
+    width = 640,
+    height = 420,
+  }: Props = $props();
 
   const padding = 48;
 
@@ -108,7 +118,7 @@
         text-anchor="middle"
         font-size="11"
         fill="var(--text-faint)"
-      >Cost / task (log)</text>
+      >{xLabel}</text>
 
       <!-- y-axis caption -->
       <text
@@ -145,7 +155,7 @@
       <!-- dots — each is a focusable link -->
       {#each vm.points as p (p.slug)}
         <a
-          href="/models/{p.slug}"
+          href="{hrefBase}/{p.slug}"
           class="dot"
           class:dominated={!p.onFrontier}
           class:provisional={p.provisional}
