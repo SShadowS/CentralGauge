@@ -6,6 +6,8 @@ import { env } from "cloudflare:test";
 export async function resetDb(): Promise<void> {
   // D1: delete in strict FK-respecting order (leaves first).
   await env.DB.batch([
+    // 0025_setup_submissions.sql (FKs into setups, so before it).
+    env.DB.prepare(`DELETE FROM setup_submissions`),
     // 0024_setups.sql tables, children first.
     env.DB.prepare(`DELETE FROM setup_cells`),
     env.DB.prepare(`DELETE FROM setup_runs`),
