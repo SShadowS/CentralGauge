@@ -17,8 +17,8 @@ export interface SetupRow {
 
 export const KNOWN_ISSUES: Record<AgentTool, string> = {
   'claude-code': 'Open bugs leave a few calls out: a retried failed stream counts only the retry; model-switch and auto-mode classifier calls are not counted.',
-  codex: "No model id, so all tokens are priced at the main model's rate. Subagent and background-compaction coverage UNCONFIRMED.",
-  pi: 'Subagents exist only via extensions; their usage UNCONFIRMED.',
+  codex: "No model id, so all tokens are priced at the main model's rate. Subagent and background-compaction coverage unconfirmed.",
+  pi: 'Subagents exist only via extensions; their usage unconfirmed.',
   opencode: 'Subagent sessions, title generation and compaction are not counted, so cost is understated when they run.',
   cursor: 'No model id, no reasoning tokens; coverage of subagents and background calls unknown. Cost is approximate.',
   antigravity: 'No model id, no cache-write tokens; how thinking tokens relate to output is unclear; subagent coverage undocumented. Cost is approximate.',

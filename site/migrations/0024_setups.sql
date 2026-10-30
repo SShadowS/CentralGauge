@@ -27,6 +27,7 @@ CREATE TABLE setup_runs (
   cost_per_solved_usd REAL, price_note TEXT,
   excluded_cells INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX idx_setup_runs_set ON setup_runs(task_set_hash, setup_id, published_at);
+CREATE INDEX idx_setup_runs_setup ON setup_runs(setup_id);
 
 CREATE TABLE setup_cells (
   run_id TEXT NOT NULL REFERENCES setup_runs(id) ON DELETE CASCADE,

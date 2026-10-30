@@ -1,5 +1,6 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { KNOWN_ISSUES } from "../../src/lib/shared/setups";
 import { resetDb } from "../utils/reset-db";
 import { seedSetups } from "../utils/seed-setups";
 
@@ -33,6 +34,20 @@ describe("setups API", () => {
     it("includes private rows with private=1", async () => {
       const body = (await (await get("setups?private=1")).json()) as any;
       expect(body.rows.map((r: any) => r.id)).toContain("cc-secret");
+    });
+
+    it("keeps private rows out of the public response around a private=1 request", async () => {
+      const first = await (await get("setups")).text();
+      const priv = await (await get("setups?private=1")).text();
+      const again = await (await get("setups")).text();
+      expect(first).not.toContain("cc-secret");
+      expect(priv).toContain("cc-secret");
+      expect(again).not.toContain("cc-secret");
+    });
+
+    it("attaches known_issue after the cache", async () => {
+      const body = (await (await get("setups/cc-plain")).json()) as any;
+      expect(body.known_issue).toBe(KNOWN_ISSUES["claude-code"]);
     });
 
     it("accepts an explicit old set and 404s an unknown one", async () => {

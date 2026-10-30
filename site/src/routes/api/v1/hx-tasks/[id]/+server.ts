@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ request, url, params, platform }) =>
   const env = platform!.env;
   try {
     const set = url.searchParams.get("set") ?? "";
-    const payload = await epochCachedJson<HxTaskResponse>({
+    const cached = await epochCachedJson<Omit<HxTaskResponse, "summary"> & { description_sha: string }>({
       db: env.DB,
       caches: platform!.caches,
       cacheName: "cg-setups",
@@ -30,12 +30,20 @@ export const GET: RequestHandler = async ({ request, url, params, platform }) =>
         }
         return {
           id: params.id!,
-          summary: hxTaskSummary(params.id!, found.description_sha),
+          description_sha: found.description_sha,
           task_set: taskSet,
           results: found.results,
         };
       },
     });
+    // The summary comes from the bundle, so it is attached after the epoch cache.
+    const { description_sha, ...rest } = cached;
+    const payload: HxTaskResponse = {
+      id: rest.id,
+      summary: hxTaskSummary(rest.id, description_sha),
+      task_set: rest.task_set,
+      results: rest.results,
+    };
     return cachedJson(request, payload);
   } catch (err) {
     return errorResponse(err);

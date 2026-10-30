@@ -62,7 +62,7 @@
           <table>
             <thead><tr><th>Role</th><th>Model</th><th>Effort</th></tr></thead>
             <tbody>
-              {#each d.setup.roles as r (r.role)}
+              {#each d.setup.roles as r}
                 <tr><td>{r.role}</td><td>{r.model}</td><td>{r.effort ?? 'default'}</td></tr>
               {/each}
             </tbody>

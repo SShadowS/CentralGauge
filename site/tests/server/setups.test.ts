@@ -1,7 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { applyD1Migrations, env } from 'cloudflare:test';
 import { computeSetupRanking, getHxTaskResults, getSetupDetail, listSetupTaskSets } from '../../src/lib/server/setups';
-import { KNOWN_ISSUES } from '../../src/lib/shared/setups';
 import { resetDb } from '../utils/reset-db';
 import { seedSetups } from '../utils/seed-setups';
 
@@ -47,10 +46,19 @@ describe('setups queries', () => {
     const d = await getSetupDetail(env.DB, 'cc-plain');
     expect(d!.runs.map((r) => r.run_id)).toEqual(['r-cc-2', 'r-cc-1']);
     expect(d!.runs[0].is_current).toBe(true);
-    expect(d!.known_issue).toBe(KNOWN_ISSUES['claude-code']);
     expect(d!.setup.flow).toBe('plain flow');
     expect(d!.latest!.run_id).toBe('r-cc-2');
     expect(d!.latest!.cells).toHaveLength(4);
+  });
+
+  it('normalises a setup inserted without ingredients_json, public and private', async () => {
+    for (const [id, vis] of [['bare-pub', 'public'], ['bare-priv', 'private']]) {
+      await env.DB.prepare(
+        `INSERT INTO setups (id, description, agent_tool, base_model, visibility, created_at) VALUES (?, 'd', 'pi', 'm-1', ?, '2026-10-01T00:00:00Z')`,
+      ).bind(id, vis).run();
+      const d = await getSetupDetail(env.DB, id);
+      expect(d!.setup.ingredients).toEqual({ instructions: null, rules: [], settings: null, skills: [], mcp: [], hooks: [] });
+    }
   });
 
   it('latest is null when the setup has no run on the current set', async () => {

@@ -1,4 +1,4 @@
-import { KNOWN_ISSUES, rankRows, taskGrid, withholdContents } from '$lib/shared/setups';
+import { rankRows, taskGrid, withholdContents } from '$lib/shared/setups';
 import type { AgentTool, Cell, Ingredients, Role, SetupRow } from '$lib/shared/setups';
 
 export interface SetupTaskSet { hash: string; display_name: string; task_count: number; is_current: boolean; promoted_at: string | null; tasks: string[]; }
@@ -9,6 +9,8 @@ export interface SetupDetail {
   runs: SetupRunSummary[];
   latest: { run_id: string; task_set_hash: string; cells: Cell[] } | null;
 }
+/** The D1-derived part of SetupDetail; known_issue comes from the bundle and is attached after the cache. */
+export type SetupDetailData = Omit<SetupDetail, 'known_issue'>;
 
 // Newest run per setup on a set: max published_at, then max id.
 const NEWEST_RUN = `r.id = (SELECT r2.id FROM setup_runs r2 WHERE r2.setup_id = r.setup_id AND r2.task_set_hash = r.task_set_hash
@@ -36,14 +38,17 @@ export async function computeSetupRanking(db: D1Database, setHash: string, inclu
   return rankRows(rows.map((r) => ({ ...r, needs_key: r.needs_key === 1 })));
 }
 
-export async function getSetupDetail(db: D1Database, id: string): Promise<SetupDetail | null> {
+export async function getSetupDetail(db: D1Database, id: string): Promise<SetupDetailData | null> {
   const s = await db.prepare(`SELECT * FROM setups WHERE id = ?`).bind(id).first<{
     id: string; description: string; agent_tool: AgentTool; base_model: string; visibility: 'public' | 'private';
     needs_key: number; roles_json: string; flow: string | null; ingredients_json: string;
   }>();
   if (!s) return null;
   const isPrivate = s.visibility === 'private';
-  const ingredients: Ingredients = JSON.parse(s.ingredients_json);
+  const ingredients: Ingredients = {
+    instructions: null, rules: [], settings: null, skills: [], mcp: [], hooks: [],
+    ...JSON.parse(s.ingredients_json),
+  };
 
   const runs = (await db.prepare(
     `SELECT r.id AS run_id, r.task_set_hash, t.display_name AS task_set_name, t.is_current, r.tool_version, r.published_at,
@@ -54,7 +59,7 @@ export async function getSetupDetail(db: D1Database, id: string): Promise<SetupD
     .map((r) => ({ ...r, is_current: r.is_current === 1 }));
 
   const newest = runs.find((r) => r.is_current);
-  let latest: SetupDetail['latest'] = null;
+  let latest: SetupDetailData['latest'] = null;
   if (newest) {
     const cells = (await db.prepare(
       `SELECT task_id, repeat, outcome, cost_usd, duration_ms FROM setup_cells WHERE run_id = ? ORDER BY task_id, repeat`,
@@ -69,7 +74,6 @@ export async function getSetupDetail(db: D1Database, id: string): Promise<SetupD
       flow: isPrivate ? null : s.flow,
       ingredients: isPrivate ? withholdContents(ingredients) : ingredients,
     },
-    known_issue: KNOWN_ISSUES[s.agent_tool],
     runs,
     latest,
   };

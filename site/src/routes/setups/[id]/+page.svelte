@@ -41,7 +41,7 @@
   <table>
     <thead><tr><th>Role</th><th>Model</th><th>Effort</th></tr></thead>
     <tbody>
-      {#each s.roles as r (r.role)}
+      {#each s.roles as r}
         <tr><td>{r.role}</td><td>{r.model}</td><td>{r.effort ?? 'default'}</td></tr>
       {/each}
     </tbody>
@@ -60,7 +60,7 @@
   {#if files.length === 0}
     <p class="text-muted">None.</p>
   {/if}
-  {#each files as f (f.name)}
+  {#each files as f}
     <h3>{f.name}</h3>
     {#if f.content !== null}
       <!-- MarkdownRenderer sanitises with DOMPurify and a tag allowlist -->
@@ -119,7 +119,7 @@
         <tr>
           <td>{r.task_set_name}</td>
           <td>{r.tool_version}</td>
-          <td>{r.published_at}</td>
+          <td>{r.published_at.slice(0, 10)}</td>
           <td>{formatMetric(r.score, 'rate')}</td>
           <td>{r.cost_per_solved_usd === null ? 'price not available' : formatMetric(r.cost_per_solved_usd, 'usd')}</td>
         </tr>
