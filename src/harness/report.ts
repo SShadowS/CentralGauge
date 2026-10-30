@@ -17,7 +17,13 @@ import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
 import { type CampaignRecords, validateCampaignRecords } from "./integrity.ts";
-import { type ScoringSummary, summarizeScoring } from "./judgment-report.ts";
+import {
+  type FailedFsCheck,
+  failedFsChecks,
+  renderFsChecks,
+  type ScoringSummary,
+  summarizeScoring,
+} from "./judgment-report.ts";
 import type { OracleDescriptor } from "./task-oracle.ts";
 import { diffManifests, type ManifestKey } from "./manifest.ts";
 import {
@@ -215,6 +221,11 @@ export interface HarnessReport {
    * written before H-35.
    */
   scoring?: ScoringSummary[];
+  /**
+   * H-45 (a): judgments whose verdict log has a failed L4 check, any
+   * verdict (l4FailedOf). Absent when there is none.
+   */
+  l4_failed?: L4Failure[];
   /**
    * M11-12: per-arm rollups and paired deltas of the exploratory metrics over
    * every counted-or-unscored terminal cell (equal task weight). A value the
@@ -448,6 +459,40 @@ export async function loadReportLogs(
     if (m !== null) measures.set(j.id, m);
   }
   return { host, verdict, measures };
+}
+
+/** H-45 (a): one judgment whose verdict log holds a failed L4 check. */
+export interface L4Failure {
+  judgment: string;
+  execution: string;
+  arm: string;
+  task: string;
+  repeat: number;
+  verdict: string;
+  checks: FailedFsCheck[];
+}
+
+/** H-45 (a): every judgment of the campaign with a failed L4 check (failedFsChecks). */
+function l4FailedOf(
+  records: CampaignRecords,
+  verdicts: ReportLogs["verdict"],
+): L4Failure[] {
+  const out: L4Failure[] = [];
+  for (const j of records.judgments) {
+    const checks = failedFsChecks(j, verdicts.get(j.id));
+    if (checks.length === 0) continue;
+    const e = records.executions.find((x) => x.id === j.execution_id)!;
+    out.push({
+      judgment: j.id,
+      execution: j.execution_id,
+      arm: e.arm,
+      task: e.task_id,
+      repeat: e.repeat,
+      verdict: j.verdict,
+      checks,
+    });
+  }
+  return out;
 }
 
 function median(xs: number[]): number | null {
@@ -1058,6 +1103,7 @@ export async function buildReport(
   }
   const provisional = summaries.some((s) => s.provisional);
   const repeats = { planned: exp.repeats, reported };
+  const l4Failed = l4FailedOf(records, logs.verdict);
   return {
     v: 1,
     experiment: {
@@ -1181,6 +1227,7 @@ export async function buildReport(
       (id) => logs.verdict.get(id)?.diagnostics,
       (t) => applicability.get(t),
     ),
+    ...(l4Failed.length > 0 ? { l4_failed: l4Failed } : {}),
     ...(overrideReasons.length > 0
       ? {
         egress_override: {
@@ -1623,6 +1670,16 @@ export function renderReport(r: HarnessReport): string {
       );
       out.push(
         `    agent tests: submitted ${s.agent_tests.submitted}, not_submitted ${s.agent_tests.not_submitted}, credit_excluded ${s.agent_tests.credit_excluded}`,
+      );
+    }
+  }
+  if (r.l4_failed) {
+    h("L4 checks failed (disclosed; scoring never used those deployments)");
+    for (const f of r.l4_failed) {
+      out.push(
+        `  ${f.judgment} (${f.arm} ${f.task} r${f.repeat}, ${f.verdict}): ${
+          renderFsChecks(f.checks)
+        }`,
       );
     }
   }

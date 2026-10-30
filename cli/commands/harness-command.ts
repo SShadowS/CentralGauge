@@ -80,6 +80,7 @@ import {
   type LogEvidence,
   type PairingReport,
   pairingReport,
+  readVerdictLog,
   renderPairing,
 } from "../../src/harness/judgment-report.ts";
 import {
@@ -2570,6 +2571,16 @@ export async function harnessPairing(
     ).catch(() => null);
     if (text !== null) logs.set(j.id, JSON.parse(text));
   }
+  // H-45 (a): the verdict log of each judgment a completion or a frozen cell
+  // names, for its failed L4 checks. Only a missing log is skipped (Sol r2).
+  const verdictLogs = new Map<string, unknown>();
+  const named = new Set([
+    ...pairing.cells.map((c) => c.old_judgment_id),
+    ...completions.map((c) => c.new_judgment_id),
+  ]);
+  for (const id of named) {
+    if (byId.has(id)) verdictLogs.set(id, await readVerdictLog(resultsDir, id));
+  }
   return pairingReport(
     digest,
     pairing,
@@ -2578,6 +2589,7 @@ export async function harnessPairing(
     (j) => unknown.has(j.task_oracle_hash),
     (j) => logs.get(j.id),
     (j) => trusted.get(j.task_oracle_hash),
+    (j) => verdictLogs.get(j.id),
   );
 }
 
