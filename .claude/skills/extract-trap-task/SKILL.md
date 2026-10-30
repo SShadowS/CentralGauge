@@ -97,7 +97,7 @@ only, write a **correct** and a **naive** reference solution under `scratch/`
 ### 6. VALIDATE + REGISTER
 `validate-tasks` (Zod load + no-hints scan), local dry-run, then
 `sync-catalog --apply` and the `refresh-task-taxonomy` skill. (Registration is
-often deferred; keep local until deliberately publishing.)
+often deferred; keep local until deliberately publishing.) Before committing, write the task's summary entry in `site/catalog/task-summaries.md` per CLAUDE.md "Every Task Needs a Human Summary", then run `deno task summary-audit` and confirm it passes.
 
 ## The probe harness
 

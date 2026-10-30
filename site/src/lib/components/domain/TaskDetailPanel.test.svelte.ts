@@ -9,6 +9,7 @@ const t: TaskDetail = {
   content_hash: "a".repeat(64),
   task_set_hash: "b".repeat(64),
   category: { slug: "syntax", name: "Syntax" },
+  summary: null,
   manifest: {
     description: "Test description",
     objective: "Pass",
@@ -52,5 +53,24 @@ describe("TaskDetailPanel", () => {
     expect(screen.getAllByText("✓").length).toBeGreaterThan(0);
     expect(screen.getAllByText("✗").length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("shows the summary and folds the exact prompt when a summary exists", async () => {
+    render(TaskDetailPanel, { task: { ...t, summary: "Human summary." } });
+    expect(await screen.findByText("Human summary.")).toBeDefined();
+    const details = document.querySelector("details.prompt");
+    expect(details).not.toBeNull();
+    expect(details!.hasAttribute("open")).toBe(false);
+    expect(details!.querySelector("summary")!.textContent).toContain(
+      "Exact model prompt",
+    );
+    expect(await screen.findByText("Test description")).toBeDefined();
+    expect(details!.textContent).toContain("Test description");
+  });
+
+  it("renders the description as today when there is no summary", async () => {
+    render(TaskDetailPanel, { task: t });
+    expect(document.querySelector("details.prompt")).toBeNull();
+    expect(await screen.findByText("Test description")).toBeDefined();
   });
 });

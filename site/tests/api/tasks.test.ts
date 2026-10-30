@@ -1,6 +1,7 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "../utils/reset-db";
+import { taskSummary } from "../../src/lib/server/task-summaries";
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -291,5 +292,46 @@ describe("GET /api/v1/tasks/:id", () => {
   it("returns 404 for unknown task", async () => {
     const res = await SELF.fetch("https://x/api/v1/tasks/easy/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  // Real X185 description, as the loader parses it (sha must match the catalog entry).
+  const X185_DESCRIPTION = "The application exchanges figures with an external service, imports amounts from a nightly feed, settles travel claims, and consolidates readings across the companies on the database. Codeunit \"CG X092 Wire Format\" converts values to and from the text form that service exchanges documents in: ToWireDecimal writes an amount as a leading \"-\" for a negative value, plain digits and a single \".\" before any fractional part, with nothing marking the thousands; ToWireDate writes a date; FromWireDecimal and FromWireDate read such text back into the value it stands for. They produce and accept the same text on every server. Codeunit \"CG X076 Import Job\"'s ImportBatch calls \"CG X076 Legacy Importer\"'s ImportLine once per line of a batch and returns how many lines were imported: a well-formed, non-negative amount text produces one \"CG X076 Legacy Amount\" row for its entry code and counts as imported, while a badly formed or negative one reports failure and leaves no row behind. ParseAmount converts a well-formed amount text; TryParseAmount reports whether one can be converted. Codeunit \"CG X114 Allowance Calc\" derives a travel allowance from a claim's away-time in minutes through CalculateAllowance, stores that amount onto the \"CG X114 Travel Claim\" record through RecalculateClaim, and classifies the same away-time into the bands the away-time statistics report uses through OvertimeBandOf. The amount a claim is paid and the band it is reported under describe the same outcome for any away-time. Codeunit \"CG X162 Consolidator\"'s CollectReadings walks every company on the database and copies each company's \"CG X162 Meter Reading\" rows into one \"CG X162 Collected Reading\" list, each collected row carrying the quantity read and the \"Source Company\" it was read in. Since the last release, figures this application hands over have stopped agreeing with the records they were built from, and nobody reporting it has been able to say where it starts. Fix the application so every contract above holds.";
+
+  it("returns the catalog summary for a summarised task and null otherwise", async () => {
+    await env.DB.prepare(
+      `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+       VALUES ('ts','CG-AL-X185','hash-x','hard',2,?),
+              ('ts','CG-AL-E001','hash-e','easy',1,'{"id":"CG-AL-E001"}')`,
+    )
+      .bind(
+        JSON.stringify({ id: "CG-AL-X185", description: X185_DESCRIPTION }),
+      )
+      .run();
+    const x = (await (await SELF.fetch("https://x/api/v1/tasks/CG-AL-X185"))
+      .json()) as { summary: string | null };
+    expect(x.summary).toBe(
+      await taskSummary("CG-AL-X185", X185_DESCRIPTION),
+    );
+    expect(x.summary).not.toBeNull();
+    const e = (await (await SELF.fetch("https://x/api/v1/tasks/CG-AL-E001"))
+      .json()) as { summary: string | null };
+    expect(e.summary).toBeNull();
+  });
+
+  it("returns a null summary when the served description is not the one it was written for", async () => {
+    await env.DB.prepare(
+      `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+       VALUES ('ts','CG-AL-X185','hash-x','hard',2,?)`,
+    )
+      .bind(
+        JSON.stringify({
+          id: "CG-AL-X185",
+          description: X185_DESCRIPTION + " An edited sentence.",
+        }),
+      )
+      .run();
+    const x = (await (await SELF.fetch("https://x/api/v1/tasks/CG-AL-X185"))
+      .json()) as { summary: string | null };
+    expect(x.summary).toBeNull();
   });
 });

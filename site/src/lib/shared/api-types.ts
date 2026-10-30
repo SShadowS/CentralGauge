@@ -900,6 +900,8 @@ export interface TaskDetail {
   task_set_hash: string;
   category: TaskCategory | null;
   manifest: unknown; // JSON-shape; renderer does narrow type-guards
+  /** Human-readable summary from site/catalog/task-summaries.md; null when the task has none. Not the model prompt. */
+  summary: string | null;
   solved_by: TaskDetailSolvedBy[];
 }
 

@@ -2,6 +2,7 @@ import type { RequestHandler } from "./$types";
 import { cachedJson } from "$lib/server/cache";
 import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
+import { taskSummary } from "$lib/server/task-summaries";
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
@@ -82,6 +83,10 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         ? { slug: task.category_slug, name: task.category_name! }
         : null,
       manifest,
+      summary: await taskSummary(
+        task.id,
+        (manifest as { description?: string } | null)?.description,
+      ),
       solved_by: solvedBy.map((r) => {
         const runsTotal = +(r.runs_total ?? 0);
         return {
