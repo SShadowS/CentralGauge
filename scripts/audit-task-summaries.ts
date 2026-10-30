@@ -10,6 +10,7 @@
 import { expandGlob } from "@std/fs";
 import { basename, dirname } from "@std/path";
 import {
+  normalizeHxPrompt,
   parseTaskSummaries,
   type TaskSummariesParse,
 } from "../shared/task-summaries.ts";
@@ -107,7 +108,11 @@ export function auditHxSummaries(
   return failures;
 }
 
-/** HX description_sha is sha256 of the exact prompt.md text. */
+export function hxPromptSha(text: string): Promise<string> {
+  return sha256Hex(normalizeHxPrompt(text));
+}
+
+/** HX description_sha is sha256 of the LF-normalised prompt.md text. */
 export async function loadHxTasks(): Promise<
   Array<{ id: string; descriptionSha: string }>
 > {
@@ -116,7 +121,7 @@ export async function loadHxTasks(): Promise<
     if (!f.isFile) continue;
     out.push({
       id: basename(dirname(f.path)),
-      descriptionSha: await sha256Hex(await Deno.readTextFile(f.path)),
+      descriptionSha: await hxPromptSha(await Deno.readTextFile(f.path)),
     });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));

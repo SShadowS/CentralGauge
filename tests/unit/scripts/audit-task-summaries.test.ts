@@ -3,6 +3,7 @@ import { join } from "@std/path";
 import {
   auditHxSummaries,
   auditSummaries,
+  hxPromptSha,
   loadHxTasks,
   parseBaseline,
   sha256Hex,
@@ -147,6 +148,13 @@ Deno.test("auditSummaries", async (t) => {
       ],
     );
   });
+});
+
+Deno.test("HX prompt sha is the same for CRLF and LF checkouts", async () => {
+  assertEquals(
+    await hxPromptSha("line one\r\nline two\r\n"),
+    await hxPromptSha("line one\nline two\n"),
+  );
 });
 
 Deno.test("auditHxSummaries", async (t) => {

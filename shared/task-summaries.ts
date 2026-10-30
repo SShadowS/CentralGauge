@@ -19,6 +19,11 @@ export interface TaskSummariesParse {
 
 export const SUMMARY_MAX_CHARS = 600;
 
+/** HX description_sha is sha256 of this; the audit and Plan 3's ingest share it. */
+export function normalizeHxPrompt(text: string): string {
+  return text.replaceAll("\r\n", "\n");
+}
+
 const HEADER = /^## (\S+)\s*$/;
 // "##" followed by a non-"#": a header attempt ("###" stays body text).
 const HEADER_LIKE = /^##(?!#)/;
