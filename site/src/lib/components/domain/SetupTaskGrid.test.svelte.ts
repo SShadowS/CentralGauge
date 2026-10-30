@@ -19,6 +19,12 @@ describe("SetupTaskGrid", () => {
     expect(screen.getByText("50%")).toBeTruthy();
   });
 
+  it("shows no data for a task with no cell, distinct from blocked", () => {
+    render(SetupTaskGrid, { rows, tasks: ["HX-001", "HX-002", "HX-003"], set: "hx-cur" });
+    expect(screen.getByText("no data").className).toContain("nodata");
+    expect(screen.getByText("blocked").className).not.toContain("nodata");
+  });
+
   it("links each column header to the task", () => {
     render(SetupTaskGrid, { rows, tasks: ["HX-001", "HX-002"], set: "hx-cur" });
     expect(screen.getByRole("link", { name: "HX-001" }).getAttribute("href")).toBe("/hx-tasks/HX-001?set=hx-cur");
