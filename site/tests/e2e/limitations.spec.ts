@@ -10,6 +10,8 @@ test.describe("/limitations", () => {
 
   test("expanding a row shows affected models", async ({ page }) => {
     await page.goto("/limitations");
+    // Wait for hydration: a click before the client bundle attaches is lost.
+    await page.waitForLoadState("networkidle");
     const firstToggle = page.getByRole("button", { name: /Toggle details/i })
       .first();
     await firstToggle.click();

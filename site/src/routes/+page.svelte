@@ -14,6 +14,7 @@
   import ModeFilter from '$lib/components/domain/ModeFilter.svelte';
   import ViewToggle from '$lib/components/domain/ViewToggle.svelte';
   import ValueMap from '$lib/components/domain/ValueMap.svelte';
+  import { leaderboardValueInputs } from '$lib/shared/value-map';
   import { minorityMode } from '$lib/shared/leaderboard-derive';
   import { presetForSort, presetEligible } from '$lib/shared/sort-presets';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
@@ -179,7 +180,7 @@
       </div>
     {/if}
     {#if view === 'value-map'}
-      <ValueMap rows={data.leaderboard.data} />
+      <ValueMap points={leaderboardValueInputs(data.leaderboard.data)} />
     {:else}
       <LeaderboardTable rows={tableRows} sort={data.sort} onsort={onSort} />
     {/if}

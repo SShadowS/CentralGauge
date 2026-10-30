@@ -41,7 +41,18 @@
   </div>
 </section>
 
-{#if manifest.description}
+{#if task.summary}
+  <section class="desc">
+    <h2>Summary</h2>
+    <div class="body"><MarkdownRenderer source={task.summary} /></div>
+    {#if manifest.description}
+      <details class="prompt">
+        <summary>Exact model prompt</summary>
+        <div class="body"><MarkdownRenderer source={reflowDescription(manifest.description)} /></div>
+      </details>
+    {/if}
+  </section>
+{:else if manifest.description}
   <section class="desc">
     <h2>Description</h2>
     <div class="body"><MarkdownRenderer source={reflowDescription(manifest.description)} /></div>
@@ -109,6 +120,8 @@
   .meta .row { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; font-size: var(--text-sm); }
   .cat { color: var(--accent); font-size: var(--text-sm); }
   .hash { font-size: var(--text-xs); }
+  .prompt { margin-top: var(--space-4); }
+  .prompt summary { cursor: pointer; color: var(--text-muted); font-size: var(--text-sm); }
 
   /* Task prose: a readable measure, a quiet card, and list spacing that keeps
      nested field lists visibly grouped under their numbered item. */

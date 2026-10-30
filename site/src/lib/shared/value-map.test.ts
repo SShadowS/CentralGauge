@@ -1,6 +1,6 @@
 // site/src/lib/shared/value-map.test.ts
 import { describe, it, expect } from 'vitest';
-import { computeValueMap } from './value-map';
+import { computeValueMap, computeValueMapFrom } from './value-map';
 import type { LeaderboardRow } from './api-types';
 
 function row(p: Partial<LeaderboardRow> & { slug: string; auc_2: number; avg_cost_usd: number }): LeaderboardRow {
@@ -16,6 +16,23 @@ function row(p: Partial<LeaderboardRow> & { slug: string; auc_2: number; avg_cos
 }
 
 const dims = { width: 600, height: 400, padding: 40 };
+
+describe('computeValueMapFrom', () => {
+  it('omits null-cost items and builds a frontier through the priced ones', () => {
+    const item = (slug: string, cost: number | null, y: number) =>
+      ({ slug, display_name: slug, cost, y, provisional: false });
+    const vm = computeValueMapFrom([
+      item('a', 0.05, 60),
+      item('b', 0.20, 85),
+      item('none', null, 90),
+    ], dims);
+    expect(vm.omittedCount).toBe(1);
+    expect(vm.points.map((p) => p.slug).sort()).toEqual(['a', 'b']);
+    expect(vm.points.every((p) => p.onFrontier)).toBe(true);
+    expect(vm.frontierPath.startsWith('M')).toBe(true);
+    expect(vm.frontierPath).toContain('L');
+  });
+});
 
 describe('computeValueMap', () => {
   it('omits models with non-positive cost and reports the count', () => {
@@ -98,7 +115,7 @@ describe('computeValueMap', () => {
     (r as { pass_at_1?: number }).pass_at_1 = 0.5;
     (r as { pass_at_n: number }).pass_at_n = 0.7;
     const vm = computeValueMap([r], dims);
-    expect(vm.points[0].auc).toBeCloseTo(60, 5);
+    expect(vm.points[0].y).toBeCloseTo(60, 5);
   });
 
   it('emits a $-prefixed power-of-ten x tick label within range', () => {
