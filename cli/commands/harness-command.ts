@@ -2562,6 +2562,14 @@ export async function harnessPairing(
     ).catch(() => null);
     if (text !== null) logs.set(j.id, JSON.parse(text));
   }
+  // H-45 (a): every judgment's verdict log, for its failed L4 checks.
+  const verdictLogs = new Map<string, unknown>();
+  for (const j of byId.values()) {
+    const text = await Deno.readTextFile(
+      join(resultsDir, "verdicts", `${j.id}.json`),
+    ).catch(() => null);
+    if (text !== null) verdictLogs.set(j.id, JSON.parse(text));
+  }
   return pairingReport(
     digest,
     pairing,
@@ -2570,6 +2578,7 @@ export async function harnessPairing(
     (j) => unknown.has(j.task_oracle_hash),
     (j) => logs.get(j.id),
     (j) => trusted.get(j.task_oracle_hash),
+    (j) => verdictLogs.get(j.id),
   );
 }
 

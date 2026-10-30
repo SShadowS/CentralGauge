@@ -19,6 +19,50 @@ export const G_SCORERS = ["build", "pass_to_pass", "fail_to_pass"] as const;
 const A_SCORERS = ["agent_tests", "mutant_kill"];
 const isG = (name: string) => (G_SCORERS as readonly string[]).includes(name);
 
+/** H-45 (a): one failed L4 check as reports disclose it. */
+export interface FailedFsCheck {
+  container: string;
+  differences: number;
+  /** As recorded; each keeps fsDiff's before:/after: label. */
+  errors: string[];
+}
+
+/**
+ * H-45 (a), disclosure only: the failed L4 checks (`fs_checks[].ok ===
+ * false`) in `log` when it is this judgment's verdict log (judgment and
+ * execution ids match); [] otherwise, or for a log written before L4.
+ * Whatever the verdict: a pass here was scored on a clean retry. No
+ * recovered/terminal label: the log cannot tell them apart (Sol r2). Not
+ * integrity-validated: integrity never reads verdict logs.
+ */
+export function failedFsChecks(
+  j: JudgmentRecord,
+  log: unknown,
+): FailedFsCheck[] {
+  if (typeof log !== "object" || log === null) return [];
+  const l = log as {
+    judgment_id?: unknown;
+    execution_id?: unknown;
+    fs_checks?: unknown;
+  };
+  if (l.judgment_id !== j.id || l.execution_id !== j.execution_id) return [];
+  if (!Array.isArray(l.fs_checks)) return [];
+  return l.fs_checks
+    .filter((c) => typeof c === "object" && c !== null && c.ok === false)
+    .map((c) => ({
+      container: String(c.container),
+      differences: Array.isArray(c.diff) ? c.diff.length : 0,
+      errors: Array.isArray(c.errors) ? c.errors.map(String) : [],
+    }));
+}
+
+/** One rendered failed-check list: "container N differences; error | ...". */
+export function renderFsChecks(checks: readonly FailedFsCheck[]): string {
+  return checks.map((c) =>
+    [`${c.container} ${c.differences} differences`, ...c.errors].join("; ")
+  ).join(" | ");
+}
+
 export type ScorerCount =
   | "pass"
   | "fail"
@@ -604,6 +648,17 @@ export interface PairingReport {
   /** Pairs per flag; flags are nonexclusive, so they need not sum to `pairs`. */
   flags: Record<PairFlag, number>;
   cells: { cell: string; old: string; new: string; flags: PairFlag[] }[];
+  /**
+   * H-45 (a): completed pairs whose old or new judgment's verdict log has a
+   * failed L4 check (failedFsChecks). Absent when there is none.
+   */
+  l4_failed?: {
+    cell: string;
+    side: "old" | "new";
+    judgment: string;
+    verdict: string;
+    checks: FailedFsCheck[];
+  }[];
 }
 
 /** A frozen pairing's report; `oldUnknown`: the old oracle has no descriptor. */
@@ -626,8 +681,22 @@ export function pairingReport(
       }[];
     }
     | undefined = () => undefined,
+  /** H-45 (a): any judgment's verdict log (undefined: none read). */
+  verdictLog: (j: JudgmentRecord) => unknown = () => undefined,
 ): PairingReport {
   const r = reconcilePairing(p, completions, judgment);
+  const l4_failed = r.completed.flatMap((c) =>
+    (["old", "new"] as const).flatMap((side) => {
+      const checks = failedFsChecks(c[side], verdictLog(c[side]));
+      return checks.length === 0 ? [] : [{
+        cell: c.cell,
+        side,
+        judgment: c[side].id,
+        verdict: c[side].verdict,
+        checks,
+      }];
+    })
+  );
   const flags = Object.fromEntries(PAIR_FLAGS.map((f) => [f, 0])) as Record<
     PairFlag,
     number
@@ -659,6 +728,7 @@ export function pairingReport(
     ),
     flags,
     cells,
+    ...(l4_failed.length > 0 ? { l4_failed } : {}),
   };
 }
 
@@ -696,5 +766,17 @@ export function renderPairing(r: PairingReport): string {
       Object.entries(r.flags).map(([f, n]) => `${f} ${n}`).join(", ")
     }`,
   );
+  if (r.l4_failed) {
+    out.push(
+      "  L4 checks failed (disclosed; scoring never used those deployments):",
+    );
+    for (const f of r.l4_failed) {
+      out.push(
+        `    ${f.cell} ${f.side} ${f.judgment} (${f.verdict}): ${
+          renderFsChecks(f.checks)
+        }`,
+      );
+    }
+  }
   return out.join("\n");
 }

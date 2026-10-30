@@ -462,6 +462,10 @@ Deno.test("H-45: every judgment whose verdict log has a failed L4 check is discl
     text,
     `${j1!.id} (plain HX-002 r1, pass): Cronus281 1 differences`,
   );
+  assertStringIncludes(
+    text,
+    `${j2!.id} (skills HX-001 r1, unscored): Cronus281 1 differences`,
+  );
 });
 
 Deno.test("H-45: no failed L4 check, a log of another judgment, or no log: nothing disclosed, the field is absent", async () => {

@@ -17,7 +17,13 @@ import { ValidationError } from "../errors.ts";
 import type { PrimaryMetric } from "./config.ts";
 import { taskSetHash } from "./identity.ts";
 import { type CampaignRecords, validateCampaignRecords } from "./integrity.ts";
-import { type ScoringSummary, summarizeScoring } from "./judgment-report.ts";
+import {
+  type FailedFsCheck,
+  failedFsChecks,
+  renderFsChecks,
+  type ScoringSummary,
+  summarizeScoring,
+} from "./judgment-report.ts";
 import type { OracleDescriptor } from "./task-oracle.ts";
 import { diffManifests, type ManifestKey } from "./manifest.ts";
 import {
@@ -463,30 +469,18 @@ export interface L4Failure {
   task: string;
   repeat: number;
   verdict: string;
-  /** Only the failed checks; each error keeps fsDiff's before:/after: label. */
-  checks: { container: string; differences: number; errors: string[] }[];
+  checks: FailedFsCheck[];
 }
 
-/**
- * H-45 (a), disclosure only: every judgment of the campaign whose own
- * verdict log (judgment and execution ids match) has an `fs_checks` entry
- * with `ok: false`, whatever its verdict. Scoring never used a deployment
- * whose check failed; a pass here was scored on a clean retry. No
- * recovered/terminal label: the log cannot tell them apart (Sol r2). Not
- * integrity-validated: integrity never reads verdict logs.
- */
+/** H-45 (a): every judgment of the campaign with a failed L4 check (failedFsChecks). */
 function l4FailedOf(
   records: CampaignRecords,
   verdicts: ReportLogs["verdict"],
 ): L4Failure[] {
   const out: L4Failure[] = [];
   for (const j of records.judgments) {
-    const log = verdicts.get(j.id);
-    if (log?.judgment_id !== j.id || log.execution_id !== j.execution_id) {
-      continue;
-    }
-    const failed = (log.fs_checks ?? []).filter((f) => f.ok === false);
-    if (failed.length === 0) continue;
+    const checks = failedFsChecks(j, verdicts.get(j.id));
+    if (checks.length === 0) continue;
     const e = records.executions.find((x) => x.id === j.execution_id)!;
     out.push({
       judgment: j.id,
@@ -495,11 +489,7 @@ function l4FailedOf(
       task: e.task_id,
       repeat: e.repeat,
       verdict: j.verdict,
-      checks: failed.map((f) => ({
-        container: f.container,
-        differences: f.diff.length,
-        errors: f.errors,
-      })),
+      checks,
     });
   }
   return out;
@@ -1688,10 +1678,7 @@ export function renderReport(r: HarnessReport): string {
     for (const f of r.l4_failed) {
       out.push(
         `  ${f.judgment} (${f.arm} ${f.task} r${f.repeat}, ${f.verdict}): ${
-          f.checks.map((c) =>
-            [`${c.container} ${c.differences} differences`, ...c.errors]
-              .join("; ")
-          ).join(" | ")
+          renderFsChecks(f.checks)
         }`,
       );
     }
