@@ -4,11 +4,13 @@ import { ValidationError } from "../../../src/errors.ts";
 import type { JudgmentRecord } from "../../../src/harness/records.ts";
 import {
   appendCompletion,
+  failedFsChecks,
   freezePairing,
   loadPairing,
   pairFlags,
   type Pairing,
   pairingReport,
+  readVerdictLog,
   reconcilePairing,
   renderPairing,
   scorerCount,
@@ -811,4 +813,40 @@ Deno.test("H-45 (a): pairingReport discloses a failed L4 check on either side of
   );
   assertEquals("l4_failed" in none, false);
   assertEquals(renderPairing(none).includes("L4 checks failed"), false);
+});
+
+Deno.test("H-45 (a) Sol r2: failedFsChecks never throws on malformed values; a failed check's odd fields are shown as JSON", () => {
+  const j = v2([m("build", true)]);
+  const odd = { toString: null };
+  assertEquals(
+    failedFsChecks(j, {
+      judgment_id: j.id,
+      execution_id: j.execution_id,
+      fs_checks: [
+        { ok: false, container: odd, diff: "x", errors: [odd, "after: e"] },
+        null,
+        "ok",
+        { ok: true, container: "C1", diff: [], errors: [] },
+      ],
+    }),
+    [{
+      container: '{"toString":null}',
+      differences: 0,
+      errors: ['{"toString":null}', "after: e"],
+    }],
+  );
+});
+
+Deno.test("H-45 (a) Sol r2: readVerdictLog: a missing log is undefined, any other read failure throws (never a silent omission)", async () => {
+  const root = await testTempDir();
+  await Deno.mkdir(join(root, "verdicts", "j2.json"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, "verdicts", "j3.json"),
+    JSON.stringify({ judgment_id: "j3" }),
+  );
+  assertEquals(await readVerdictLog(root, "j1"), undefined);
+  assertEquals(await readVerdictLog(root, "j3"), { judgment_id: "j3" });
+  await assertRejects(() => readVerdictLog(root, "j2"));
+  await Deno.writeTextFile(join(root, "verdicts", "j4.json"), "{cut");
+  await assertRejects(() => readVerdictLog(root, "j4"), SyntaxError);
 });
