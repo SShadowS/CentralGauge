@@ -1154,6 +1154,8 @@ async function exportBundle(
     );
     await probeCustody(dir, null, probeOptions(env));
   } catch (err) {
+    // H-44 (M1): a lock lost meanwhile is terminal, never an export skip.
+    holdNamespace(env, "publication stopped; nothing more written or removed");
     console.warn(
       `[WARN] ${e.id}: key custody ${custody} refused (${
         msg(err)
@@ -2105,6 +2107,8 @@ async function publishDraft(
   if (custody && e.v >= 3 && e.redaction_anchor) {
     await exportBundle(env, e, custody);
   }
+  // H-44 (M1): rechecked after the export, right before the run enters results/.
+  hold();
   if (!await exists(join(runs, e.id))) {
     await Deno.mkdir(runs, { recursive: true });
     // A crash inside an earlier copy left a temp name: remove it first.
@@ -2115,6 +2119,7 @@ async function publishDraft(
     }
     const tmp = join(runs, `.tmp-${e.id}-${crypto.randomUUID().slice(0, 8)}`);
     await safeCopyTree(join(p.pending, "run"), tmp);
+    hold();
     await Deno.rename(tmp, join(runs, e.id));
   }
   await env.hooks?.after?.("run");

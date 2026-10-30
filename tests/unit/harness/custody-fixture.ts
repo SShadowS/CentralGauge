@@ -111,6 +111,54 @@ export async function custodyDir(): Promise<
   };
 }
 
+const FS_OPS = [
+  "readFile",
+  "readTextFile",
+  "open",
+  "lstat",
+  "stat",
+  "realPath",
+  "readFileSync",
+  "readTextFileSync",
+  "openSync",
+  "lstatSync",
+  "statSync",
+  "realPathSync",
+] as const;
+const READS = new Set(["readFile", "readTextFile", "open"]);
+
+/** Every Deno fs call (and which) on a path under `root` while in scope. */
+export function fsSpy(root: string) {
+  const hits: { op: string; path: string }[] = [];
+  const d = Deno as unknown as Record<string, (...a: unknown[]) => unknown>;
+  const saved = FS_OPS.map((op) => [op, d[op]!] as const);
+  const fold = (p: string) => Deno.build.os === "windows" ? p.toLowerCase() : p;
+  for (const [op, real] of saved) {
+    Object.defineProperty(Deno, op, {
+      configurable: true,
+      writable: true,
+      value: (...a: unknown[]) => {
+        const p = String(a[0]);
+        if (fold(p).startsWith(fold(root))) hits.push({ op, path: p });
+        return real.apply(Deno, a);
+      },
+    });
+  }
+  return {
+    hits,
+    reads: () => hits.filter((h) => READS.has(h.op)),
+    [Symbol.dispose]() {
+      for (const [op, real] of saved) {
+        Object.defineProperty(Deno, op, {
+          configurable: true,
+          writable: true,
+          value: real,
+        });
+      }
+    },
+  };
+}
+
 /** makeEnv publishing with `--key-custody` (a custodyDir) through crafted safe probe output. */
 export async function custodyEnv(
   o: { bc?: FakeBc } = {},

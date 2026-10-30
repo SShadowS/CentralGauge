@@ -35,6 +35,7 @@ import {
 import { validateCampaignRecords } from "../../../src/harness/integrity.ts";
 import { buildReport } from "../../../src/harness/report.ts";
 import { loadTask } from "../../../src/harness/task.ts";
+import { custodyEnv, fsSpy } from "./custody-fixture.ts";
 import { FakeBc, result } from "./fake-bc.ts";
 import { write } from "./refapp-fixture.ts";
 import {
@@ -227,10 +228,34 @@ Deno.test("H-44 (5): another execution's authentic bundle, an edited anchor and 
   assertEquals((await t.env.store.judgments(e.id)).length, 2);
 });
 
-Deno.test("H-44 (6): malformed own bundles whose anchor matches refuse with their own reason, never R6; an unreadable own bundle refuses with no fallback", async () => {
-  await using t = await makeEnv();
+Deno.test("H-44 (6): malformed own bundles whose anchor matches refuse with their own reason, never R6; an unreadable or mismatched own bundle refuses; none falls back to an authorized, working <K> (zero accesses there)", async () => {
+  await using t = await custodyEnv();
   const { cell, e, p } = await judgedRun(t);
+  // H-44 (M3) control: with the own bundle gone, the authorized <K> judges.
+  const own = await Deno.readFile(p.bundle);
+  await Deno.remove(p.bundle);
+  const viaK = countJudgings(t);
+  await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  assert(viaK.calls > 0, "control: judged through <K>");
+  await Deno.writeFile(p.bundle, own);
+  using spy = fsSpy(t.custody);
   const good = JSON.parse(await Deno.readTextFile(p.bundle));
+  // A mismatched own bundle (the anchor is the authentic K copy's): R6 on the own path.
+  await Deno.writeTextFile(
+    p.bundle,
+    JSON.stringify({
+      ...good,
+      keys: good.keys.map((k: { name: string }, i: number) =>
+        i === 0 ? { ...k, name: "renamed" } : k
+      ),
+    }),
+  );
+  await refusesJudging(
+    t,
+    cell,
+    e,
+    `redaction bundle ${p.bundle} for execution ${e.id} ${R6}`,
+  );
   const cases: [string, string, string][] = [
     ["malformed JSON", '{"v":1,"execution_id":', "not JSON"],
     [
@@ -268,6 +293,8 @@ Deno.test("H-44 (6): malformed own bundles whose anchor matches refuse with thei
   await Deno.remove(p.bundle);
   await Deno.mkdir(p.bundle);
   await refusesJudging(t, cell, e, "cannot be read or are malformed", R6);
+  assertEquals(spy.hits, [], "zero accesses under <K>");
+  assertEquals(t.env.keyCustody, t.custody, "authorized throughout");
 });
 
 // ---- 7: sticky stub vetoes (a, b; c with the own bundle) ----
@@ -356,9 +383,11 @@ Deno.test("H-44 (9): a v3 record rewritten to v2 refuses as downgraded (its own 
 
 // ---- 21: own-root parts ----
 
-Deno.test("H-44 (21): scrubForcedReason redacts with the record's own bundle and refuses R1 (H-41 prefix, new tail) without it; a malformed legacy key file refuses with no fallback", async () => {
-  await using t = await makeEnv();
+Deno.test("H-44 (21): scrubForcedReason redacts with the record's own bundle and refuses R1 (H-41 prefix, new tail) without it; a malformed or unreadable legacy key file refuses with no fallback, also to an authorized, working <K>", async () => {
+  await using t = await custodyEnv();
   const { cell, e, p } = await judgedRun(t);
+  // Published with --key-custody (<K> holds the bundle); the R1 cases run without the flag.
+  delete t.env.keyCustody;
   assertEquals(
     await scrubForcedReason(t.env, e, `infra: ${SECRET_OAUTH} leaked`),
     "infra: [REDACTED:claude-oauth-token] leaked",
@@ -374,6 +403,12 @@ Deno.test("H-44 (21): scrubForcedReason redacts with the record's own bundle and
     `redaction keys ${p.bundle} for execution ${e.id} ${R1_PREFIX}. ${R1_TAIL}`,
   );
   await refusesJudging(t, cell, e, `${R1_PREFIX}. ${R1_TAIL}`);
+  // H-44 (M3) control: authorized, the same root judges e through <K>.
+  t.env.keyCustody = t.custody;
+  const viaK = countJudgings(t);
+  await rejudgeExecution(t.env, cell, e, cell.oracleHash);
+  assert(viaK.calls > 0, "control: judged through <K>");
+  using spy = fsSpy(t.custody);
   // A legacy (v2) record of this root: its key file is the source; malformed refuses.
   const { redaction_anchor: _a, ...rest } = e;
   const legacy: ExecutionRecord = { ...rest, v: 2 };
@@ -384,8 +419,21 @@ Deno.test("H-44 (21): scrubForcedReason redacts with the record's own bundle and
   );
   await Deno.writeTextFile(p.keys, '[{"name":');
   await refusesJudging(t, cell, legacy, "cannot be read or are malformed");
+  await assertRejects(
+    () => scrubForcedReason(t.env, legacy, "infra"),
+    ValidationError,
+    "cannot be read or are malformed",
+  );
+  // Unreadable (a directory where the key file should be).
+  await Deno.remove(p.keys);
+  await Deno.mkdir(p.keys);
+  await refusesJudging(t, cell, legacy, "cannot be read or are malformed");
+  await Deno.remove(p.keys);
   await Deno.writeTextFile(p.keys, "[]");
   await refusesJudging(t, cell, legacy, "are an empty set");
+  assertEquals(spy.hits, [], "a legacy record never touches <K>");
+  // The R1 message below is the unauthorized one.
+  delete t.env.keyCustody;
   await Deno.remove(p.keys);
   await refusesJudging(
     t,
@@ -597,30 +645,47 @@ Deno.test("H-44 (16) M1: a reclaimer paused after enumerating, whose lock is tak
   assertEquals(await Deno.readTextFile(final), "{}", "B's link succeeded");
 });
 
-Deno.test("H-44 (16) M1 variant: a reclaimer paused after a passing check deletes only that candidate; a temp the successor created later survives (no re-enumeration)", async () => {
+Deno.test("H-44 (16) M1 variant: a reclaimer of two candidates losing its lock after the first's passing check deletes only that one and refuses before the second; a temp the successor created later survives (no re-enumeration)", async () => {
   await using t = await makeEnv();
   const dir = join(t.env.privateRoot, "redaction");
   await Deno.mkdir(dir, { recursive: true });
   const id = crypto.randomUUID();
-  const candidate = plantTemp(dir, `${id}.json`, null);
+  const planted = [
+    plantTemp(dir, `${id}.json`, null),
+    plantTemp(dir, `${id}.bundle.json`, crypto.randomUUID()),
+  ];
   let lost = false;
   const succ = crypto.randomUUID();
   let late = "";
+  const checked: string[] = [];
   const a: HarnessEnv = {
     ...t.env,
     namespaceLost: () => lost,
     hooks: {
-      reclaim: (step) => {
+      reclaim: (step, list) => {
+        if (step === "listed") {
+          assertEquals([...list].sort(), [...planted].sort(), "two candidates");
+        }
         if (step === "checked") {
+          checked.push(...list);
+          // The first passed its check; the lock is taken over before the second's.
           lost = true;
-          late = plantTemp(dir, `${id}.bundle.json`, succ);
+          late = plantTemp(dir, `${id}.late.json`, succ);
         }
         return Promise.resolve();
       },
     },
   };
-  await reclaimTemps(a, dir);
-  assert(!names(dir).includes(candidate), "the checked candidate is removed");
+  await assertRejects(
+    () => reclaimTemps(a, dir),
+    ConfigurationError,
+    "was taken over",
+  );
+  assertEquals(checked.length, 1, "only the first candidate passed a check");
+  const [first] = checked;
+  const second = planted.find((n) => n !== first)!;
+  assert(!names(dir).includes(first!), "the checked candidate is removed");
+  assert(names(dir).includes(second), "the second candidate is kept");
   assert(
     late !== "" && names(dir).includes(late),
     "the successor's later temp survives",

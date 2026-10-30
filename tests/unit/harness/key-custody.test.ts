@@ -21,6 +21,7 @@ import type {
 } from "../../../src/harness/execution.ts";
 import type { ProbeRunner } from "../../../src/harness/key-custody.ts";
 import type { ExecutionRecord } from "../../../src/harness/records.ts";
+import { RecordStore } from "../../../src/harness/records.ts";
 import {
   admitKeyCustody,
   judgmentOwed,
@@ -49,6 +50,7 @@ import {
   factOf,
   type Facts,
   factsRunner,
+  fsSpy,
   rule,
   safeFacts,
   USERS_SID,
@@ -181,54 +183,6 @@ async function judgesRedacted(
   return j;
 }
 
-const FS_OPS = [
-  "readFile",
-  "readTextFile",
-  "open",
-  "lstat",
-  "stat",
-  "realPath",
-  "readFileSync",
-  "readTextFileSync",
-  "openSync",
-  "lstatSync",
-  "statSync",
-  "realPathSync",
-] as const;
-const READS = new Set(["readFile", "readTextFile", "open"]);
-
-/** Every Deno fs call (and which) on a path under `root` while in scope. */
-function fsSpy(root: string) {
-  const hits: { op: string; path: string }[] = [];
-  const d = Deno as unknown as Record<string, (...a: unknown[]) => unknown>;
-  const saved = FS_OPS.map((op) => [op, d[op]!] as const);
-  const fold = (p: string) => isWindows ? p.toLowerCase() : p;
-  for (const [op, real] of saved) {
-    Object.defineProperty(Deno, op, {
-      configurable: true,
-      writable: true,
-      value: (...a: unknown[]) => {
-        const p = String(a[0]);
-        if (fold(p).startsWith(fold(root))) hits.push({ op, path: p });
-        return real.apply(Deno, a);
-      },
-    });
-  }
-  return {
-    hits,
-    reads: () => hits.filter((h) => READS.has(h.op)),
-    [Symbol.dispose]() {
-      for (const [op, real] of saved) {
-        Object.defineProperty(Deno, op, {
-          configurable: true,
-          writable: true,
-          value: real,
-        });
-      }
-    },
-  };
-}
-
 /** console.warn lines while in scope. */
 function warnings() {
   const lines: string[] = [];
@@ -245,7 +199,11 @@ function warnings() {
 const entries = (dir: string) => [...Deno.readDirSync(dir)].map((x) => x.name);
 
 /** The salts, key hashes and own bundle bytes of `e` appear nowhere under results/. */
-async function nothingUnderResults(t: TestEnv, e: ExecutionRecord) {
+async function nothingUnderResults(
+  t: TestEnv,
+  e: ExecutionRecord,
+  root = t.env.resultsRoot,
+) {
   const p = privatePaths(t.env, e.id);
   const bundle = await Deno.readTextFile(p.bundle);
   const keys = JSON.parse(await Deno.readTextFile(p.keys)) as {
@@ -253,7 +211,10 @@ async function nothingUnderResults(t: TestEnv, e: ExecutionRecord) {
     sha256: string;
   }[];
   let published = "";
-  for await (const x of walk(t.env.resultsRoot, { includeDirs: false })) {
+  for await (const x of walk(root, { includeDirs: false })) {
+    // H-44 (M2): no custody bundle or temp of it either.
+    assert(x.path !== join(root, `${e.id}.json`), `${x.path} under ${root}`);
+    assert(!x.name.includes(".tmp-"), `a temp ${x.path} under ${root}`);
     published += new TextDecoder("latin1").decode(await Deno.readFile(x.path));
   }
   assert(!published.includes(bundle), "the bundle under results/");
@@ -448,6 +409,59 @@ Deno.test("H-44 (3): a recovery whose intent names the original results root as 
   );
 });
 
+Deno.test("H-44 (3) M2: a recovery by a command with another, disjoint results root, whose intent names the ORIGINAL results root as custody, skips the export with the overlap warning, publishes into the original store, and leaves no bundle or temp in either public tree", async () => {
+  await using t = await custodyEnv();
+  const base = await Deno.realPath(
+    await Deno.makeTempDir({ prefix: "cg-h44-m2-" }),
+  );
+  try {
+    // Both public roots outside the repo, so only the results-root rule refuses.
+    const original = join(base, "original");
+    const command = join(base, "command");
+    await Deno.mkdir(original);
+    await Deno.mkdir(command);
+    t.env.resultsRoot = original;
+    t.env.store = new RecordStore(original);
+    const { cell, path, intent } = await killedBeforeDraft(t);
+    assertEquals(intent.results_root, original);
+    await Deno.writeTextFile(
+      path,
+      JSON.stringify({ ...intent, key_custody: original }),
+    );
+    t.env.resultsRoot = command;
+    t.env.store = new RecordStore(command);
+    using w = warnings();
+    const [r] = await recoverInterrupted(t.env, loadTask);
+    assertEquals(r!.id, intent.execution_id);
+    const line = w.lines.find((l) => l.includes("key custody"));
+    assert(line, w.lines.join("\n"));
+    assertStringIncludes(
+      line,
+      `[WARN] ${r!.id}: key custody ${original} refused (`,
+    );
+    assertStringIncludes(line, `overlaps the results root ${original}`);
+    assertStringIncludes(line, "); not exported");
+    assertEquals(
+      (await new RecordStore(original).executions(cell.campaignId)).map((x) =>
+        x.id
+      ),
+      [r!.id],
+      "published into the original store",
+    );
+    assert(await exists(join(original, "runs", r!.id)), "the original run");
+    assertEquals(
+      await new RecordStore(command).executions(cell.campaignId),
+      [],
+    );
+    assertEquals(entries(command), [], "nothing in the command's tree");
+    assertEquals(entries(t.custody), [], "nothing in the command's custody");
+    await nothingUnderResults(t, r!, original);
+    await nothingUnderResults(t, r!, command);
+  } finally {
+    await Deno.remove(base, { recursive: true }).catch(() => {});
+  }
+});
+
 // ---- 4: byte identity ----
 
 /** A computed judgment's bytes, per-run values (ids, times, spans) aside. */
@@ -595,6 +609,32 @@ Deno.test("H-44 (export): a lock lost at the custody link propagates out of publ
   assert(!w.lines.some((l) => l.includes("not exported")), "not a skip");
   assertEquals(await t.env.store.executions(cell.campaignId), []);
   assertEquals(entries(join(t.env.resultsRoot)).includes("runs"), false);
+});
+
+Deno.test("H-44 (export) M1: a lock lost while the custody probe is paused, which then fails, propagates lock-lost (no skip warning): no run dir, no record, nothing in <K>", async () => {
+  await using t = await custodyEnv();
+  const cell = await cellFor(t);
+  let lost = false;
+  let probes = 0;
+  t.env.namespaceLost = () => lost;
+  t.env.probeRunner = async () => {
+    probes++;
+    // Paused; another process takes the lock over; then the probe fails.
+    await new Promise((r) => setTimeout(r, 10));
+    lost = true;
+    return { code: 1, stdout: "", stderr: "access denied" };
+  };
+  using w = warnings();
+  const err = await assertRejects(() => runCell(t.env, cell));
+  assertStringIncludes((err as Error).message, "was taken over");
+  assertEquals(probes, 1, "the export's probe ran");
+  assert(
+    !w.lines.some((l) => l.includes("not exported")),
+    `not a skip: ${w.lines.join("\n")}`,
+  );
+  assertEquals(entries(t.env.resultsRoot).includes("runs"), false, "no run");
+  assertEquals(await t.env.store.executions(cell.campaignId), []);
+  assertEquals(entries(t.custody), []);
 });
 
 // ---- 11: the evaluator (crafted output, the real parser and evaluator) ----
@@ -790,8 +830,28 @@ Deno.test("H-44 (11, POSIX evaluator): a 0755 parent of another uid, a 0750 dir 
 
 // ---- 12: the command boundary ----
 
+/** H-44 (M4): the signals the timeout runner got; it never settles on its own. */
+const timeoutSignals: AbortSignal[] = [];
+
+/** After a public operation that met the timeout runner: it was aborted, and the operation refused within bounds. */
+function timedOut(name: string, mark: { at: number; n: number }) {
+  if (name !== "timeout") return;
+  assert(timeoutSignals.length > mark.n, "the timeout runner ran");
+  for (const s of timeoutSignals.slice(mark.n)) {
+    assert(s.aborted, "the timed-out command was aborted");
+  }
+  const ms = Date.now() - mark.at;
+  // opTimeoutMs is 100; a whole cell (the export case) stays well inside.
+  assert(ms < 10_000, `settled after ${ms} ms`);
+}
+
+const mark = () => ({ at: Date.now(), n: timeoutSignals.length });
+
 const FAULTS: [string, (good: string) => ProbeRunner][] = [
-  ["timeout", () => () => new Promise(() => {})],
+  ["timeout", () => (_paths, signal) => {
+    timeoutSignals.push(signal);
+    return new Promise(() => {});
+  }],
   ["launch throw", () => () => Promise.reject(new Error("spawn failed"))],
   [
     "non-zero exit",
@@ -837,12 +897,14 @@ Deno.test("H-44 (12): each command-boundary fault refuses admission (fatal)", as
   assertEquals(await admitKeyCustody(t.env, k.dir, false), k.dir, "control");
   for (const [name, runner] of faultRunners()) {
     t.env.probeRunner = runner;
+    const m = mark();
     const err = await assertRejects(
       () => admitKeyCustody(t.env, k.dir, false),
       ConfigurationError,
       `key custody ${k.dir} refused: `,
     );
     assertStringIncludes(err.message, "probe", name);
+    timedOut(name, m);
   }
 });
 
@@ -854,6 +916,7 @@ Deno.test("H-44 (12): each command-boundary fault refuses an import before any k
   for (const [name, runner] of faultRunners()) {
     b.probeRunner = runner;
     using spy = fsSpy(t.custody);
+    const at = mark();
     const m = await refusesJudging(
       t,
       b,
@@ -862,6 +925,7 @@ Deno.test("H-44 (12): each command-boundary fault refuses an import before any k
       `key custody ${t.custody} for execution ${e.id} refused (`,
     );
     assertStringIncludes(m, "probe", name);
+    timedOut(name, at);
     assertEquals(spy.reads(), [], `${name}: a read under K`);
   }
 });
@@ -875,7 +939,9 @@ Deno.test("H-44 (12): each command-boundary fault skips the export with a warnin
     t.env.probeRunner = runner;
     using w = warnings();
     const cell = await cellFor(t);
+    const at = mark();
     const e = (await runCell(t.env, cell)).executions[0]!;
+    timedOut(name, at);
     assert(
       (await t.env.store.executions(cell.campaignId)).some((x) =>
         x.id === e.id
