@@ -216,6 +216,11 @@ export interface HarnessReport {
    */
   scoring?: ScoringSummary[];
   /**
+   * H-45 (a): judgments whose verdict log has a failed L4 check, any
+   * verdict (l4FailedOf). Absent when there is none.
+   */
+  l4_failed?: L4Failure[];
+  /**
    * M11-12: per-arm rollups and paired deltas of the exploratory metrics over
    * every counted-or-unscored terminal cell (equal task weight). A value the
    * records cannot supply is missing (counted as such), never zero.
@@ -448,6 +453,56 @@ export async function loadReportLogs(
     if (m !== null) measures.set(j.id, m);
   }
   return { host, verdict, measures };
+}
+
+/** H-45 (a): one judgment whose verdict log holds a failed L4 check. */
+export interface L4Failure {
+  judgment: string;
+  execution: string;
+  arm: string;
+  task: string;
+  repeat: number;
+  verdict: string;
+  /** Only the failed checks; each error keeps fsDiff's before:/after: label. */
+  checks: { container: string; differences: number; errors: string[] }[];
+}
+
+/**
+ * H-45 (a), disclosure only: every judgment of the campaign whose own
+ * verdict log (judgment and execution ids match) has an `fs_checks` entry
+ * with `ok: false`, whatever its verdict. Scoring never used a deployment
+ * whose check failed; a pass here was scored on a clean retry. No
+ * recovered/terminal label: the log cannot tell them apart (Sol r2). Not
+ * integrity-validated: integrity never reads verdict logs.
+ */
+function l4FailedOf(
+  records: CampaignRecords,
+  verdicts: ReportLogs["verdict"],
+): L4Failure[] {
+  const out: L4Failure[] = [];
+  for (const j of records.judgments) {
+    const log = verdicts.get(j.id);
+    if (log?.judgment_id !== j.id || log.execution_id !== j.execution_id) {
+      continue;
+    }
+    const failed = (log.fs_checks ?? []).filter((f) => f.ok === false);
+    if (failed.length === 0) continue;
+    const e = records.executions.find((x) => x.id === j.execution_id)!;
+    out.push({
+      judgment: j.id,
+      execution: j.execution_id,
+      arm: e.arm,
+      task: e.task_id,
+      repeat: e.repeat,
+      verdict: j.verdict,
+      checks: failed.map((f) => ({
+        container: f.container,
+        differences: f.diff.length,
+        errors: f.errors,
+      })),
+    });
+  }
+  return out;
 }
 
 function median(xs: number[]): number | null {
@@ -1058,6 +1113,7 @@ export async function buildReport(
   }
   const provisional = summaries.some((s) => s.provisional);
   const repeats = { planned: exp.repeats, reported };
+  const l4Failed = l4FailedOf(records, logs.verdict);
   return {
     v: 1,
     experiment: {
@@ -1181,6 +1237,7 @@ export async function buildReport(
       (id) => logs.verdict.get(id)?.diagnostics,
       (t) => applicability.get(t),
     ),
+    ...(l4Failed.length > 0 ? { l4_failed: l4Failed } : {}),
     ...(overrideReasons.length > 0
       ? {
         egress_override: {
@@ -1623,6 +1680,19 @@ export function renderReport(r: HarnessReport): string {
       );
       out.push(
         `    agent tests: submitted ${s.agent_tests.submitted}, not_submitted ${s.agent_tests.not_submitted}, credit_excluded ${s.agent_tests.credit_excluded}`,
+      );
+    }
+  }
+  if (r.l4_failed) {
+    h("L4 checks failed (disclosed; scoring never used those deployments)");
+    for (const f of r.l4_failed) {
+      out.push(
+        `  ${f.judgment} (${f.arm} ${f.task} r${f.repeat}, ${f.verdict}): ${
+          f.checks.map((c) =>
+            [`${c.container} ${c.differences} differences`, ...c.errors]
+              .join("; ")
+          ).join(" | ")
+        }`,
       );
     }
   }
