@@ -2332,7 +2332,7 @@ export async function harnessRejudge(
       );
       if (why) throw new ConfigurationError(`${why}: rejudge --force refused`);
       forced = {
-        reason: await scrubForcedReason(env, e.id, o.reason!.trim()),
+        reason: await scrubForcedReason(env, e, o.reason!.trim()),
         replaces: o.replaces!,
         basis: decision!,
       };

@@ -105,11 +105,12 @@ async function stored(
   stop: string | null = null,
   at?: string,
   timedOut = false,
+  over: Partial<ExecutionRecord> = {},
 ) {
   const root = at ?? await Deno.realPath(await testTempDir());
   const store = new RecordStore(root);
   const c = await campaign();
-  const base = execution(c);
+  const base = execution(c, {}, over);
   const e: ExecutionRecord = {
     ...base,
     manifest: manifest("plain", PROBE_ARM),
@@ -204,6 +205,23 @@ Deno.test("rederive (R-10): a stored fork run re-derives to completed with cost 
   assertEquals([fork.outcome, fork.agent], ["ok", "main"]);
   assertEquals(r.stream_problems, []);
   assertEquals(r.infra_reason, null);
+});
+
+Deno.test("H-44 (20): a v3 execution read with its re-derivation keeps v3 and its redaction_anchor, and is never written back", async () => {
+  const anchor = "e".repeat(64);
+  const s = await stored(await forkProbe(), 0, null, undefined, false, {
+    v: 3,
+    redaction_anchor: anchor,
+  });
+  await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+  const [x] = await s.store.executions(s.c.id);
+  assertEquals(x!.termination, "completed", "the overlay applied");
+  assertEquals([x!.v, x!.redaction_anchor], [3, anchor]);
+  await assertRejects(
+    () => s.store.writeExecution(x!),
+    ValidationError,
+    "never written back",
+  );
 });
 
 Deno.test("rederive (R-10): a raw log without its result line stays harness_crash, whatever the exit code (Sol run 001 P1)", async () => {

@@ -1039,6 +1039,7 @@ export async function openHarnessEnv(
     // of this private root only (its temp, intents, secrets and sandboxes):
     // its exclusive lock first, before any of them, then its own owner label.
     let namespaceLost: () => boolean;
+    let acquisition: string;
     try {
       const held = deps.acquireLock(o.privateRoot, {
         command: `${o.command} (private root)`,
@@ -1051,6 +1052,8 @@ export async function openHarnessEnv(
         );
       }
       namespaceLost = held.lost;
+      // H-44 (5.4): this acquisition's token, named in every restricted temp it writes.
+      acquisition = crypto.randomUUID();
     } catch (err) {
       if (err instanceof BenchLockHeldError) {
         err.message +=
@@ -1547,6 +1550,7 @@ export async function openHarnessEnv(
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
       namespaceLost,
+      acquisition,
       ...(pinContext ? { pinContext } : {}),
       ...(pool ? { judgePooled: pool } : {}),
       // H-41 (10): an explicit list pins the start members' env_fp; `auto`

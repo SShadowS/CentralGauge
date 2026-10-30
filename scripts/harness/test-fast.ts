@@ -110,6 +110,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}realistic-bundle.test.ts`]: c(true, 1),
   [`${H}records.test.ts`]: c(true, 0),
   [`${H}redact-patterns.test.ts`]: c(true, 0),
+  // H-44: makeEnv temp dirs and in-process fakes only (mock pwsh child per D4 run).
+  [`${H}redaction-anchor.test.ts`]: c(true, 30),
   [`${H}report-charts.test.ts`]: c(true, 0),
   [`${H}report-extras.test.ts`]: c(true, 0),
   [`${H}report.test.ts`]: c(true, 3),

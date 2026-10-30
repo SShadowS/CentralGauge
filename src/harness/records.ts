@@ -194,8 +194,11 @@ const RederivedSchema = z.strictObject({
 });
 
 export const ExecutionRecordSchema = z.strictObject({
-  /** 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed. */
-  v: z.union([z.literal(1), z.literal(2)]),
+  /**
+   * 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed; 3:
+   * H-44, adds redaction_anchor.
+   */
+  v: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   id: Uuid,
   campaign_id: Uuid,
   block: z.number().int().nonnegative(),
@@ -253,6 +256,12 @@ export const ExecutionRecordSchema = z.strictObject({
   account: z.string().min(1).optional(),
   /** R-10: present only on a record read back with a re-derivation applied. */
   rederived: RederivedSchema.optional(),
+  /**
+   * H-44: sha256 of the exact redaction bundle bytes (keys, id, stub) a judge
+   * reads; null when nothing was released (never judged). Required in v3,
+   * absent before.
+   */
+  redaction_anchor: Sha256Hex.nullable().optional(),
 }).superRefine((e, ctx) => {
   waiverNeedsOverride(e, ctx);
   if (e.usage_reset_ignored && e.run_kind !== "auto_retry") {
@@ -262,10 +271,24 @@ export const ExecutionRecordSchema = z.strictObject({
       path: ["usage_reset_ignored"],
     });
   }
-  if (e.v === 2 && e.validity.incomplete_observed === undefined) {
+  if (e.v === 3 && e.redaction_anchor === undefined) {
     ctx.addIssue({
       code: "custom",
-      message: "execution v2 needs validity.incomplete_observed",
+      message: "execution v3 needs redaction_anchor",
+      path: ["redaction_anchor"],
+    });
+  }
+  if (e.v < 3 && e.redaction_anchor !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: `execution v${e.v} carries no redaction_anchor`,
+      path: ["redaction_anchor"],
+    });
+  }
+  if (e.v >= 2 && e.validity.incomplete_observed === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: `execution v${e.v} needs validity.incomplete_observed`,
       path: ["validity", "incomplete_observed"],
     });
   }
