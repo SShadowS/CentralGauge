@@ -17,10 +17,12 @@ test.describe("/setups", () => {
   });
 
   test("ticking two rows and following Compare lands on the compare page", async ({ page }) => {
-    await page.goto("/setups");
+    // networkidle: the checkbox handlers are wired only after hydration.
+    await page.goto("/setups", { waitUntil: "networkidle" });
     await page.getByLabel("Select cc-plain description").check();
     await page.getByLabel("Select pi-default description").check();
-    await page.getByRole("link", { name: "Compare", exact: true }).click();
+    // The site nav also has a "Compare" link, so target the setups one by href.
+    await page.locator('a[href^="/setups/compare"]').click();
     await expect(page).toHaveURL(/\/setups\/compare\?ids=/);
   });
 
