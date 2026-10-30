@@ -203,6 +203,44 @@ describe("POST /api/v1/setup-submissions", () => {
   });
 });
 
+describe("route guards", () => {
+  type MutableEnv = Record<string, unknown>;
+  const e = env as unknown as MutableEnv;
+  const saved = {
+    SUBMISSION_KEY_SECRET: e.SUBMISSION_KEY_SECRET,
+    TURNSTILE_SECRET_KEY: e.TURNSTILE_SECRET_KEY,
+    BLOBS: e.BLOBS,
+  };
+  afterEach(() => Object.assign(e, saved));
+
+  for (const name of ["SUBMISSION_KEY_SECRET", "TURNSTILE_SECRET_KEY"]) {
+    it(`503 submissions_unavailable when ${name} is missing`, async () => {
+      const before = await countRows();
+      delete e[name];
+      const res = await post(form());
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as { code: string }).code).toBe(
+        "submissions_unavailable",
+      );
+      expect(await countRows()).toBe(before);
+    });
+  }
+
+  it("hides internal errors behind a generic 500", async () => {
+    e.BLOBS = {
+      put: async () => {
+        throw new Error("r2 internal detail");
+      },
+      delete: async () => {},
+    };
+    const res = await post(form());
+    const text = await res.text();
+    expect(res.status).toBe(500);
+    expect(text).not.toContain("r2 internal detail");
+    expect(JSON.parse(text).code).toBe("internal_error");
+  });
+});
+
 describe("secret handling", () => {
   it("a bad SUBMISSION_KEY_SECRET is submissions_unavailable", async () => {
     await expect(sealKey("k", "not-base64-32-bytes")).rejects.toMatchObject({

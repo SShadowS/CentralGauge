@@ -78,6 +78,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const now = new Date();
     const createdAt = now.toISOString();
     const ipHash = await hashIp(ip ?? "unknown");
+    // ponytail: check-then-insert race, so concurrent requests can exceed the cap slightly; bounded by the fresh Turnstile token each request needs.
     const recent = await countRecentByIp(
       env.DB,
       ipHash,
@@ -178,6 +179,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     );
   } catch (err) {
     if (r2Key) await env.BLOBS.delete(r2Key).catch(() => {});
-    return errorResponse(err);
+    // Never echo D1/R2/crypto internals to the public.
+    return errorResponse(
+      err instanceof ApiError
+        ? err
+        : new ApiError(500, "internal_error", "Submission failed."),
+    );
   }
 };
