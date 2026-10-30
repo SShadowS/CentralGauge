@@ -1,10 +1,11 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import type { HostLogLine } from "../../../src/harness/backend.ts";
 import type { CampaignRecords } from "../../../src/harness/integrity.ts";
 import {
   buildReport,
   loadReportLogs,
+  renderReport,
   type ReportLogs,
 } from "../../../src/harness/report.ts";
 import type { VerdictLog } from "../../../src/harness/verdict.ts";
@@ -361,4 +362,127 @@ Deno.test("backend queue wait: median of the host log's per-request queue_ms, se
     [20, null],
   );
   assertEquals(rep.efficiency[1]!.backend_queue_ms_median, null);
+});
+
+/**
+ * H-45 (a): plain HX-001 fail with a failed before-capture (the 057feb8b
+ * shape), plain HX-002 pass recovered on a second container, skills HX-001
+ * unscored by an agent-tests hold that ran out of retries (log.error null),
+ * skills HX-002 a clean pass.
+ */
+async function l4Records(): Promise<{ r: CampaignRecords; logs: ReportLogs }> {
+  const c = await campaign();
+  const rows: Array<[string, string, boolean | null]> = [
+    ["plain", "HX-001", false],
+    ["plain", "HX-002", true],
+    ["skills", "HX-001", null],
+    ["skills", "HX-002", true],
+  ];
+  const executions = [];
+  const judgments = [];
+  for (const [arm, task, pass] of rows) {
+    const e = execution(c, { arm, task }, { telemetry: telemetry(1) });
+    executions.push(e);
+    judgments.push(judgment(c, e, pass));
+  }
+  const r = { campaign: c, executions, artifacts: [], judgments };
+  const before = {
+    container: "Cronus284",
+    ok: false,
+    diff: [],
+    errors: ["before: fs-capture expired|676|1056"],
+  };
+  const after = {
+    container: "Cronus281",
+    ok: false,
+    diff: [{ path: "x", before: null, after: "f|1|0|aa" }],
+    errors: [],
+  };
+  const clean = { container: "Cronus282", ok: true, diff: [], errors: [] };
+  const checks = [[before], [after, clean], [clean, after], [clean]];
+  const logs: ReportLogs = {
+    host: new Map(),
+    verdict: new Map(
+      judgments.map((j, i) => [j.id, {
+        ...vlog(j.id, j.execution_id, 1, 1),
+        error: i === 0 ? "HostDirtyError" : null,
+        fs_checks: checks[i],
+      } as VerdictLog]),
+    ),
+  };
+  return { r, logs };
+}
+
+Deno.test("H-45: every judgment whose verdict log has a failed L4 check is disclosed, whatever its verdict", async () => {
+  const { r, logs } = await l4Records();
+  const rep = await buildReport(r, { resamples: 50, seed: 1, logs });
+  const [j0, j1, j2] = r.judgments;
+  assertEquals(rep.l4_failed, [
+    {
+      judgment: j0!.id,
+      execution: j0!.execution_id,
+      arm: "plain",
+      task: "HX-001",
+      repeat: 1,
+      verdict: "fail",
+      checks: [{
+        container: "Cronus284",
+        differences: 0,
+        errors: ["before: fs-capture expired|676|1056"],
+      }],
+    },
+    {
+      judgment: j1!.id,
+      execution: j1!.execution_id,
+      arm: "plain",
+      task: "HX-002",
+      repeat: 1,
+      verdict: "pass",
+      checks: [{ container: "Cronus281", differences: 1, errors: [] }],
+    },
+    {
+      judgment: j2!.id,
+      execution: j2!.execution_id,
+      arm: "skills",
+      task: "HX-001",
+      repeat: 1,
+      verdict: "unscored",
+      checks: [{ container: "Cronus281", differences: 1, errors: [] }],
+    },
+  ]);
+  const text = renderReport(rep);
+  assertStringIncludes(text, "L4 checks failed");
+  assertStringIncludes(
+    text,
+    `${
+      j0!.id
+    } (plain HX-001 r1, fail): Cronus284 0 differences; before: fs-capture expired|676|1056`,
+  );
+  assertStringIncludes(
+    text,
+    `${j1!.id} (plain HX-002 r1, pass): Cronus281 1 differences`,
+  );
+});
+
+Deno.test("H-45: no failed L4 check, a log of another judgment, or no log: nothing disclosed, the field is absent", async () => {
+  const { r, logs } = await l4Records();
+  const [j0, j1] = r.judgments;
+  // j0's log names another judgment: not this judgment's evidence; the rest
+  // have no log, j3's clean one aside.
+  const j3 = r.judgments[3]!;
+  const rep = await buildReport(r, {
+    resamples: 50,
+    seed: 1,
+    logs: {
+      host: new Map(),
+      verdict: new Map([
+        [j0!.id, { ...logs.verdict.get(j0!.id)!, judgment_id: j1!.id }],
+        [j3.id, logs.verdict.get(j3.id)!],
+      ]),
+    },
+  });
+  assertEquals("l4_failed" in rep, false);
+  assertEquals(renderReport(rep).includes("L4 checks failed"), false);
+  const none = await buildReport(r, { resamples: 50, seed: 1 });
+  assertEquals("l4_failed" in none, false);
 });
