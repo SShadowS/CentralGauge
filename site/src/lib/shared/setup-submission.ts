@@ -19,13 +19,14 @@ const DAY_MS = 86_400_000;
 function utcDay(s: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const t = Date.parse(`${s}T00:00:00Z`);
-  return Number.isNaN(t) ? null : t;
+  return Number.isNaN(t) || new Date(t).toISOString().slice(0, 10) !== s ? null : t;
 }
 
 function parseRoles(json: string): Role[] | string {
+  if (!json) return [];
   let data: unknown;
   try { data = JSON.parse(json); } catch { return 'Roles must be valid JSON.'; }
-  if (!Array.isArray(data) || data.length === 0) return 'Add at least one role.';
+  if (!Array.isArray(data)) return 'Roles must be a list.';
   if (data.length > SUBMISSION_LIMITS.rolesMax) return `Use at most ${SUBMISSION_LIMITS.rolesMax} roles.`;
   const roles: Role[] = [];
   for (const r of data) {
@@ -53,7 +54,9 @@ export function parseSubmissionFields(
   if (!description) errors.description = 'Description is required.';
   else if (description.length > SUBMISSION_LIMITS.descriptionMax) errors.description = `Description must be at most ${SUBMISSION_LIMITS.descriptionMax} characters.`;
 
-  const visibility = get('visibility') === 'private' ? 'private' : 'public';
+  const vis = get('visibility') || 'public';
+  if (vis !== 'public' && vis !== 'private') errors.visibility = 'Visibility must be public or private.';
+  const visibility = vis === 'private' ? 'private' : 'public';
 
   const instructions_name = get('instructions_name') as SubmissionFields['instructions_name'];
   if (instructions_name !== 'CLAUDE.md' && instructions_name !== 'AGENTS.md') errors.instructions_name = 'Instructions file must be CLAUDE.md or AGENTS.md.';

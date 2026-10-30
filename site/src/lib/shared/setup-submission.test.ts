@@ -29,11 +29,30 @@ describe('parseSubmissionFields', () => {
   });
 
   it('errors on each missing required field', () => {
-    for (const f of ['agent_tool', 'base_model', 'description', 'instructions_name', 'roles_json']) {
+    for (const f of ['agent_tool', 'base_model', 'description', 'instructions_name']) {
       const raw = base();
       delete raw[f];
-      expect(errors(raw)[f === 'roles_json' ? 'roles' : f], f).toBeTruthy();
+      expect(errors(raw)[f], f).toBeTruthy();
     }
+  });
+
+  it('treats missing or empty roles as no roles', () => {
+    const missing = base();
+    delete missing.roles_json;
+    for (const raw of [missing, { ...base(), roles_json: '[]' }]) {
+      const r = parseSubmissionFields(raw, TODAY);
+      expect(r.ok && r.value.roles).toEqual([]);
+    }
+  });
+
+  it('rejects an invalid visibility', () => {
+    expect(errors({ ...base(), visibility: 'secret' }).visibility).toBeTruthy();
+    const r = parseSubmissionFields({ ...base(), visibility: 'private' }, TODAY);
+    expect(r.ok && r.value.visibility).toBe('private');
+  });
+
+  it('rejects impossible calendar dates', () => {
+    expect(errors({ ...base(), key: 'sk-abc', key_expires_on: '2026-02-30' }).key_expires_on).toBeTruthy();
   });
 
   it('rejects an unknown agent tool and instructions name', () => {
