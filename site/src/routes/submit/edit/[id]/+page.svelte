@@ -2,6 +2,10 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { SUBMISSION_LIMITS } from '$shared/setup-submission';
+  import SubmissionStatusBadge from '$lib/components/domain/SubmissionStatusBadge.svelte';
+  import Alert from '$lib/components/ui/Alert.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import Radio from '$lib/components/ui/Radio.svelte';
 
   interface Status {
     id: string; status: string; created_at: string; agent_tool: string; base_model: string;
@@ -66,45 +70,100 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
-<h1>Edit your submission</h1>
+<div class="page">
+  <header class="head">
+    <h1>Edit your submission</h1>
+    {#if info}
+      <div class="meta">
+        <SubmissionStatusBadge status={info.status} />
+        <span class="text-muted">{info.agent_tool} · <span class="text-mono">{info.base_model}</span></span>
+      </div>
+    {/if}
+  </header>
 
-{#if !token}
-  <p>This link is missing its secret part.</p>
-{:else}
-  {#if message}<p class="banner" role="status">{message}</p>{/if}
-  {#if info}
-    <p>Status: <strong>{info.status}</strong></p>
-    <p>{info.description} ({info.agent_tool}, {info.base_model})</p>
+  {#if !token}
+    <Alert variant="warning">This link is missing its secret part.</Alert>
+  {:else}
+    {#if message}<Alert>{message}</Alert>{/if}
+    {#if info}
+      <p class="desc">{info.description}</p>
 
-    <fieldset>
-      <legend>Visibility</legend>
-      <label class="inline"><input type="radio" bind:group={visibility} value="public" /> Public</label>
-      <label class="inline"><input type="radio" bind:group={visibility} value="private" /> Private</label>
-      <button type="button" onclick={saveVisibility}>Save visibility</button>
-      {#if errors.visibility}<p class="err">{errors.visibility}</p>{/if}
-    </fieldset>
+      <section class="group" aria-labelledby="sec-visibility">
+        <h2 id="sec-visibility">Visibility</h2>
+        <fieldset class="radios" aria-describedby={errors.visibility ? 'err-visibility' : undefined}>
+          <legend class="sr-only">Visibility</legend>
+          <Radio label="Public" name="visibility" value="public" bind:group={visibility} />
+          <Radio label="Private" name="visibility" value="private" bind:group={visibility} />
+        </fieldset>
+        {#if errors.visibility}<p class="err" id="err-visibility">{errors.visibility}</p>{/if}
+        <div><Button onclick={saveVisibility}>Save visibility</Button></div>
+      </section>
 
-    <form onsubmit={sendKey}>
-      <h2>Send a fresh key</h2>
-      <p>{info.has_key ? `A key is on file, expiring ${info.key_expires_on}.` : 'No key is on file.'}</p>
-      <label for="key">Key</label>
-      <input id="key" type="password" autocomplete="off" bind:value={key} maxlength={SUBMISSION_LIMITS.keyMax} required />
-      {#if errors.key}<p class="err">{errors.key}</p>{/if}
-      <label for="key_expires_on">Key expires on</label>
-      <input id="key_expires_on" type="date" bind:value={keyExpires} required />
-      {#if errors.key_expires_on}<p class="err">{errors.key_expires_on}</p>{/if}
-      <p class="hint">Use a key that expires within {SUBMISSION_LIMITS.keyMaxDays} days. Setups that need no key are preferred.</p>
-      <button type="submit">Send key</button>
-    </form>
+      <form class="group" onsubmit={sendKey} aria-labelledby="sec-key">
+        <h2 id="sec-key">Send a fresh key</h2>
+        <p class="text-muted">{info.has_key ? `A key is on file, expiring ${info.key_expires_on}.` : 'No key is on file.'}</p>
+        <div class="pair">
+          <div class="field">
+            <label for="key">Key</label>
+            <input id="key" type="password" autocomplete="off" bind:value={key} maxlength={SUBMISSION_LIMITS.keyMax} required class="control mono" class:invalid={!!errors.key} aria-describedby="key-hint{errors.key ? ' err-key' : ''}" />
+            {#if errors.key}<p class="err" id="err-key">{errors.key}</p>{/if}
+          </div>
+          <div class="field">
+            <label for="key_expires_on">Key expires on</label>
+            <input id="key_expires_on" type="date" bind:value={keyExpires} required class="control" class:invalid={!!errors.key_expires_on} aria-describedby={errors.key_expires_on ? 'err-key_expires_on' : undefined} />
+            {#if errors.key_expires_on}<p class="err" id="err-key_expires_on">{errors.key_expires_on}</p>{/if}
+          </div>
+        </div>
+        <p class="hint" id="key-hint">Use a key that expires within {SUBMISSION_LIMITS.keyMaxDays} days. Setups that need no key are preferred.</p>
+        <div><Button type="submit" variant="primary">Send key</Button></div>
+      </form>
+    {/if}
   {/if}
-{/if}
+</div>
 
 <style>
-  form, fieldset { display: flex; flex-direction: column; gap: var(--space-2); max-width: 32rem; margin-top: var(--space-4); }
-  fieldset { border: 1px solid var(--border); border-radius: var(--radius-2); }
-  label.inline { margin-right: var(--space-4); }
-  .hint { color: var(--text-muted); margin: 0; }
-  .err { color: var(--danger, #b00020); margin: 0; }
-  .banner { padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-2); }
-  button { align-self: flex-start; padding: var(--space-2) var(--space-4); }
+  .page { max-width: var(--container-narrow); display: flex; flex-direction: column; gap: var(--space-5); }
+  .head h1 { font-size: var(--text-3xl); line-height: var(--leading-3xl); }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+  }
+  .desc { font-size: var(--text-lg); line-height: var(--leading-lg); }
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    padding: var(--space-6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface);
+  }
+  @media (max-width: 640px) { .group { padding: var(--space-5); } }
+  .group h2 { font-size: var(--text-lg); line-height: var(--leading-lg); }
+  fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .radios { display: flex; flex-wrap: wrap; gap: var(--space-6); }
+  .pair { display: grid; grid-template-columns: 1fr; gap: var(--space-5); }
+  @media (min-width: 640px) { .pair { grid-template-columns: 1fr 1fr; } }
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  label { font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .control {
+    width: 100%;
+    min-height: var(--input-h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-elevated);
+    color: var(--text);
+    font-size: var(--text-base);
+  }
+  .control:hover { border-color: var(--border-strong); }
+  .control:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .control.mono { font-family: var(--font-mono); }
+  .control.invalid { border-color: var(--danger); }
+  .hint { color: var(--text-muted); font-size: var(--text-sm); }
+  .err { color: var(--danger); font-size: var(--text-sm); font-weight: var(--weight-medium); }
 </style>
