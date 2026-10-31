@@ -167,7 +167,7 @@ export interface RuntimeFacts {
   provider_routes: Record<string, string>;
 }
 
-async function pathComponent(harnessRoot: string, rel: string) {
+export async function pathComponent(harnessRoot: string, rel: string) {
   // hashFile / listTree refuse links only from the path they are given down;
   // a directory component also needs every step from the harness root.
   let abs = harnessRoot;

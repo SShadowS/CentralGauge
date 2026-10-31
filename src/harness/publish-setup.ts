@@ -14,9 +14,12 @@ import type {
 } from "../../site/src/lib/shared/setups.ts";
 import { normalizeHxPrompt } from "../../shared/task-summaries.ts";
 import { CentralGaugeError } from "../errors.ts";
-import { type HarnessConfig, loadConfig } from "./config.ts";
+import { experimentTasks } from "./campaign.ts";
 import { sha256Hex } from "./hash.ts";
+import { loadSymbolsLock, taskSetIdentity } from "./identity.ts";
 import type { CampaignRecords } from "./integrity.ts";
+import { pathComponent, type ResolvedManifest } from "./manifest.ts";
+import type { CampaignRecord } from "./records.ts";
 import type { HarnessReport } from "./report.ts";
 
 export interface PublishOptions {
@@ -27,6 +30,18 @@ export interface PublishOptions {
   visibility: "public" | "private" | null;
   displayName: string | null;
   repoRoot: string;
+  /** Test seam: the task-set identity of the files on disk. Default recomputes it. */
+  currentIdentity?: (c: CampaignRecord, repoRoot: string) => Promise<string>;
+}
+
+async function identityOnDisk(
+  c: CampaignRecord,
+  repoRoot: string,
+): Promise<string> {
+  const symbols = await loadSymbolsLock(repoRoot);
+  if (!symbols) return "(no symbols lock)";
+  const tasks = await experimentTasks(repoRoot, c.experiment.id, c.experiment);
+  return (await taskSetIdentity(repoRoot, tasks, symbols)).identity;
 }
 
 export class PublishRefused extends CentralGaugeError {
@@ -38,43 +53,77 @@ export class PublishRefused extends CentralGaugeError {
 
 const enc = new TextEncoder();
 
-async function entryNames(dir: string): Promise<string[]> {
-  const names: string[] = [];
-  for await (const e of Deno.readDir(dir)) names.push(e.name);
-  return names.sort();
-}
-
-async function readInstructions(
+/** Refuse when a component on disk is no longer what the campaign ran. */
+async function checkComponents(
   harnessRoot: string,
-  config: HarnessConfig,
-): Promise<NamedFile | null> {
-  const rel = config.components.instructions;
-  if (rel === null) return null;
-  const dir = join(harnessRoot, rel);
-  const files = (await Array.fromAsync(Deno.readDir(dir)))
-    .filter((e) => e.isFile).map((e) => e.name).sort();
-  const preferred = config.harness === "claude-code"
-    ? "CLAUDE.md"
-    : "AGENTS.md";
-  const name = files.includes(preferred) ? preferred : files[0];
-  if (name === undefined) return null;
-  return { name, content: await Deno.readTextFile(join(dir, name)) };
+  m: ResolvedManifest,
+): Promise<void> {
+  const parts = [
+    ["instructions", m.instructions],
+    ["skills", m.skills],
+    ["agents", m.agents],
+    ["hooks", m.hooks],
+    ...m.plugins.map((p) => ["plugin", p] as const),
+  ] as const;
+  for (const [name, c] of parts) {
+    if (c === null) continue;
+    let now: string | null = null;
+    try {
+      now = (await pathComponent(harnessRoot, c.path)).hash;
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    }
+    if (now !== c.hash) {
+      throw new PublishRefused(
+        `${name} component ${c.path} changed since the campaign ran (manifest ${
+          c.hash.slice(0, 8)
+        }, now ${now === null ? "missing" : now.slice(0, 8)})`,
+      );
+    }
+  }
 }
 
 async function ingredients(
   harnessRoot: string,
-  config: HarnessConfig,
+  m: ResolvedManifest,
 ): Promise<Ingredients> {
-  const c = config.components;
+  let instructions: NamedFile | null = null;
+  const rules: NamedFile[] = [];
+  if (m.instructions !== null) {
+    const base = join(harnessRoot, m.instructions.path);
+    const expected = m.harness === "claude-code" ? "CLAUDE.md" : "AGENTS.md";
+    const paths = m.instructions.files.map((f) => f.path);
+    if (!paths.includes(expected)) {
+      throw new PublishRefused(
+        `instructions ${m.instructions.path} has no ${expected}, which ${m.harness} loads`,
+      );
+    }
+    instructions = {
+      name: expected,
+      content: await Deno.readTextFile(join(base, expected)),
+    };
+    for (const p of paths.filter((p) => /^rules\/[^/]+\.md$/.test(p)).sort()) {
+      rules.push({
+        name: p.slice("rules/".length),
+        content: await Deno.readTextFile(join(base, p)),
+      });
+    }
+  }
+  const firstSegments = (files: { path: string }[] | undefined) =>
+    [
+      ...new Set(
+        (files ?? []).filter((f) => f.path.includes("/")).map((f) =>
+          f.path.split("/")[0]!
+        ),
+      ),
+    ].sort();
   return {
-    instructions: await readInstructions(harnessRoot, config),
-    rules: [],
+    instructions,
+    rules,
     settings: null,
-    skills: c.skills === null
-      ? []
-      : await entryNames(join(harnessRoot, c.skills)),
-    mcp: [...c.mcp],
-    hooks: c.hooks === null ? [] : await entryNames(join(harnessRoot, c.hooks)),
+    skills: firstSegments(m.skills?.files),
+    mcp: m.mcp.map((s) => s.name),
+    hooks: (m.hooks?.files ?? []).map((f) => f.path).sort(),
   };
 }
 
@@ -102,22 +151,39 @@ export async function buildSetupPublishPayload(
     throw new PublishRefused(`arm ${opts.arm} has no pass rate`);
   }
   const harnessRoot = join(opts.repoRoot, "harness");
-  const config = await loadConfig(harnessRoot, opts.arm);
-  if (!AGENT_TOOLS.includes(config.harness as AgentTool)) {
+  // What actually ran: the arm's campaign manifest, not the working-tree config.
+  const manifest = records.campaign.arms.find((a) => a.config_id === opts.arm)
+    ?.manifest;
+  if (!manifest) {
+    throw new PublishRefused(`arm ${opts.arm} is not in the campaign`);
+  }
+  if (!AGENT_TOOLS.includes(manifest.harness as AgentTool)) {
     throw new PublishRefused(
-      `harness ${config.harness} is not a publishable agent tool (${
+      `harness ${manifest.harness} is not a publishable agent tool (${
         AGENT_TOOLS.join(", ")
       })`,
     );
   }
+  await checkComponents(harnessRoot, manifest);
+  const onDisk = await (opts.currentIdentity ?? identityOnDisk)(
+    records.campaign,
+    opts.repoRoot,
+  );
+  if (onDisk !== records.campaign.task_set.identity) {
+    throw new PublishRefused(
+      `the task set changed since the campaign ran (campaign ${
+        records.campaign.task_set.identity.slice(0, 8)
+      }, now ${onDisk.slice(0, 8)})`,
+    );
+  }
 
   const cells = report.cells.filter((c) => c.arm === opts.arm);
-  const used = new Map(records.executions.map((e) => [e.id, e]));
+  const byId = new Map(records.executions.map((e) => [e.id, e]));
   const versions = new Set<string>();
   for (const c of cells) {
     const v = c.used_execution === null
       ? null
-      : used.get(c.used_execution)?.observed.harness_version;
+      : byId.get(c.used_execution)?.observed.harness_version;
     if (v) versions.add(v);
   }
   if (versions.size > 1) {
@@ -165,7 +231,7 @@ export async function buildSetupPublishPayload(
   const outCells = cells.map((c) => {
     const wall = c.used_execution === null
       ? null
-      : used.get(c.used_execution)?.telemetry.wall_ms ?? null;
+      : byId.get(c.used_execution)?.telemetry.wall_ms ?? null;
     const outcome: CellOutcome = c.status === "scored"
       ? (c.pass ? "pass" : "fail")
       : "infra";
@@ -178,18 +244,19 @@ export async function buildSetupPublishPayload(
     };
   }).sort((a, b) => a.task_id.localeCompare(b.task_id) || a.repeat - b.repeat);
 
-  const slots = Object.entries(config.models);
+  const slots = Object.entries(manifest.models);
   const identity = records.campaign.task_set.identity;
   const cost = arm.cost_per_solved_task;
+  const unknown = arm.unknown_spend_cells;
   return {
     setup: {
       id: opts.setupId,
-      agent_tool: config.harness as AgentTool,
-      base_model: config.models["main"] ?? slots[0]![1],
+      agent_tool: manifest.harness as AgentTool,
+      base_model: manifest.models["main"] ?? slots[0]![1],
       description: opts.description,
       visibility: opts.visibility,
       roles: slots.map(([role, model]) => ({ role, model, effort: null })),
-      ingredients: await ingredients(harnessRoot, config),
+      ingredients: await ingredients(harnessRoot, manifest),
     },
     submission_id: opts.submissionId,
     task_set: {
@@ -202,11 +269,13 @@ export async function buildSetupPublishPayload(
       tool_version: toolVersion,
       score: arm.pass_rate,
       cost_per_solved_usd: cost,
-      price_note: cost !== null
-        ? null
-        : arm.unknown_spend_cells > 0
-        ? `Price not available: ${arm.unknown_spend_cells} cells with unknown cost.`
-        : "Price not available.",
+      price_note: cost === null
+        ? (unknown > 0
+          ? `Price not available: ${unknown} cells with unknown cost.`
+          : "Price not available.")
+        : (unknown > 0
+          ? `Price excludes ${unknown} cells with unknown cost.`
+          : null),
       excluded_cells: arm.unscored_cells,
       repeats: report.repeats.reported,
       cells: outCells,

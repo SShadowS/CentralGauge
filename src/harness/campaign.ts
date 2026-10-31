@@ -681,7 +681,7 @@ async function dryRunEstimate(
 }
 
 /** The tasks an experiment's pattern selects; none is refused. */
-async function experimentTasks(
+export async function experimentTasks(
   repoRoot: string,
   experimentId: string,
   experiment: CampaignRecord["experiment"],
