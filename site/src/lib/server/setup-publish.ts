@@ -54,9 +54,19 @@ export async function publishSetupRun(
     visibility = sub.visibility;
     rolesJson = sub.roles_json;
     flow = sub.flow;
-    needsKey = sub.key_ciphertext !== null && sub.key_deleted_at === null
+    // "The submission ever supplied a key": the key is deleted when a run finishes.
+    needsKey = sub.key_ciphertext !== null || sub.key_deleted_at !== null
       ? 1
       : 0;
+  } else if (
+    await db.prepare("SELECT 1 AS x FROM setup_submissions WHERE setup_id = ?")
+      .bind(setup.id).first()
+  ) {
+    throw new ApiError(
+      409,
+      "submission_linked",
+      "this setup came from a submission; publish with its submission_id",
+    );
   }
 
   const now = new Date().toISOString();
@@ -82,7 +92,8 @@ export async function publishSetupRun(
        VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET description = excluded.description,
          agent_tool = excluded.agent_tool, base_model = excluded.base_model,
-         visibility = excluded.visibility, needs_key = excluded.needs_key,
+         visibility = excluded.visibility,
+         needs_key = MAX(setups.needs_key, excluded.needs_key),
          roles_json = excluded.roles_json, flow = excluded.flow,
          ingredients_json = excluded.ingredients_json`,
     ).bind(

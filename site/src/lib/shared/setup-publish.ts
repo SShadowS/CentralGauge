@@ -92,7 +92,7 @@ export function validatePublishPayload(
         errors.push(`cell ${key} has an invalid repeat`);
       }
       if (!OUTCOMES.includes(o.outcome as string)) errors.push(`cell ${key} has an invalid outcome`);
-      if (!nullableNum(o.cost_usd) || !nullableNum(o.duration_ms)) errors.push(`cell ${key} has an invalid cost or duration`);
+      if (!nullableNum(o.cost_usd) || !nullableNum(o.duration_ms) || (o.duration_ms !== null && !Number.isInteger(o.duration_ms))) errors.push(`cell ${key} has an invalid cost or duration`);
       if (seen.has(key)) errors.push(`duplicate cell ${key}`);
       seen.add(key);
     }

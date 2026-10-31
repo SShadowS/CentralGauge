@@ -144,13 +144,14 @@ beforeAll(async () => {
 describe("POST /api/v1/admin/setups/publish", () => {
   it("rejects unsigned calls", async () => {
     const r = await post(payload());
-    expect([401, 403]).toContain(r.status);
+    expect(r.status).toBe(401);
   });
 
   it("publishes a run with cells, tasks and a non-current task set", async () => {
-    const before = await env.DB.prepare(
-      "SELECT epoch FROM data_epoch WHERE id = 1",
-    ).first<{ epoch: number }>().catch(() => null);
+    const epoch = async () =>
+      (await env.DB.prepare("SELECT epoch FROM cache_epoch WHERE id = 1")
+        .first<{ epoch: number }>())!.epoch;
+    const before = await epoch();
     const r = await post(await signed(payload()));
     expect(r.status).toBe(201);
     expect(await r.json()).toEqual({
@@ -172,12 +173,7 @@ describe("POST /api/v1/admin/setups/publish", () => {
         "SELECT COUNT(*) n FROM admin_audit WHERE event = 'setup.published'",
       ),
     ).toBe(1);
-    if (before) {
-      const after = await env.DB.prepare(
-        "SELECT epoch FROM data_epoch WHERE id = 1",
-      ).first<{ epoch: number }>();
-      expect(after!.epoch).toBeGreaterThan(before.epoch);
-    }
+    expect(await epoch()).toBeGreaterThan(before);
   });
 
   it("refuses a second publish of the same run id and leaves counts alone", async () => {
@@ -251,5 +247,32 @@ describe("POST /api/v1/admin/setups/publish", () => {
     p.submission_id = "nope";
     const r = await post(await signed(p));
     expect(r.status).toBe(404);
+  });
+
+  it("keeps needs_key sticky across a second run for the same setup", async () => {
+    await seedSubmission("sub-key", "approved");
+    const p1 = payload({ runId: "camp5:a", setupId: "keyed" });
+    p1.submission_id = "sub-key";
+    expect((await post(await signed(p1))).status).toBe(201);
+    const nk = () =>
+      count("SELECT needs_key n FROM setups WHERE id = 'keyed'");
+    expect(await nk()).toBe(1);
+    // The key was deleted by run 1; a second run via the submission keeps the flag.
+    const p2 = payload({ runId: "camp5:b", setupId: "keyed" });
+    p2.submission_id = "sub-key";
+    expect((await post(await signed(p2))).status).toBe(201);
+    expect(await nk()).toBe(1);
+  });
+
+  it("refuses a no-submission publish for a setup linked to a submission", async () => {
+    const before = await count("SELECT COUNT(*) n FROM setup_runs");
+    const r = await post(
+      await signed(payload({ runId: "camp6:x", setupId: "keyed" })),
+    );
+    expect(r.status).toBe(409);
+    expect(((await r.json()) as { code: string }).code).toBe(
+      "submission_linked",
+    );
+    expect(await count("SELECT COUNT(*) n FROM setup_runs")).toBe(before);
   });
 });
