@@ -17,6 +17,39 @@ function chunks<T>(xs: T[], n: number): T[][] {
   return out;
 }
 
+export async function promoteSetupTaskSet(
+  db: D1Database,
+  actor: string,
+  args: unknown,
+): Promise<Response> {
+  const hash = (args as { hash?: unknown } | null)?.hash;
+  if (typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash)) {
+    throw new ApiError(400, "invalid_hash", "hash must be 64 hex characters");
+  }
+  if (
+    !(await db.prepare("SELECT 1 AS x FROM setup_task_sets WHERE hash = ?")
+      .bind(hash).first())
+  ) {
+    throw new ApiError(404, "not_found", "setup task set not found");
+  }
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare("UPDATE setup_task_sets SET is_current = 0 WHERE is_current = 1"),
+    db.prepare(
+      "UPDATE setup_task_sets SET is_current = 1, promoted_at = ? WHERE hash = ?",
+    ).bind(now, hash),
+    appendAuditStmt(db, {
+      event: "setup_task_set.promoted",
+      taskSetHash: hash,
+      details: { actor },
+    }),
+    forceBumpDataEpochStmt(db),
+  ]);
+  return jsonResponse({ hash, promoted_at: now }, 200, {
+    "Cache-Control": "no-store",
+  });
+}
+
 export async function publishSetupRun(
   db: D1Database,
   actor: string,
