@@ -20,8 +20,13 @@ One row in D1 `setup_submissions` (migration `0025`) plus one zip in R2 under
 | `visibility`           | `public` or `private`.                                                                  |
 | `status`               | `new`, then `approved` or `rejected`.                                                   |
 
-Limits: 5 submissions per IP per day (the IP is stored only as a hash), and a
-Turnstile check on every submission. The submitter gets an edit link
+Limits: 5 submissions per IP per day, and a Turnstile check on every
+submission. The IP is stored only as an HMAC-SHA-256 keyed from
+`SUBMISSION_KEY_SECRET`, and an IPv6 address counts by its /64 prefix. The
+Turnstile token travels in the `cf-turnstile-response` request header and is
+checked before the body is read. Text caps: base model 200 characters, each
+role's name, model and effort 100, a key 4096, and an edit request body
+16 KiB. The submitter gets an edit link
 (`/submit/edit/<id>#<token>`) that shows status, changes visibility and
 replaces the key. Only a hash of the token is stored.
 
@@ -66,11 +71,31 @@ missing tables fails. Order matters.
    other length is rejected as "not configured". Keep a copy somewhere safe
    (see "Rotating the secret").
 
-5. Deploy:
+5. Add the submission paths to Cloudflare Access. In the Cloudflare
+   dashboard, open Zero Trust, Access, Applications, then the
+   `CentralGauge Admin Lifecycle` application (see `operations.md`, "Admin
+   lifecycle UI access"). Under the application domain, add two more path
+   entries next to the lifecycle ones:
+   - `/admin/submissions*`
+   - `/api/v1/admin/setup-submissions/*`
+
+   Do this on every hostname the application lists (the custom domain and
+   the workers.dev one). Without the second path the pages load but their
+   API calls return 401. Verify in a fresh incognito window that
+   `/admin/submissions` redirects to the Access login.
+
+6. Deploy:
 
    ```bash
    cd site && npm run deploy
    ```
+
+The admin pages' server-side loaders reach the admin API the same way the
+lifecycle review page (`/admin/lifecycle/review`) does: SvelteKit's server
+fetch carries the browser's Cloudflare Access cookie to `/api/v1/admin/...`. Before relying on the
+submissions pages, confirm that the lifecycle review page works in prod. If it
+does not, the submissions pages fail the same way, and the fix belongs to the
+shared Access setup, not to this feature.
 
 Until both secrets exist, `POST /api/v1/setup-submissions` answers
 `503 submissions_unavailable`. The form is visible but cannot submit.
@@ -79,7 +104,10 @@ Until both secrets exist, `POST /api/v1/setup-submissions` answers
 
 Admin pages use the same Cloudflare Access gate as the lifecycle UI (see
 `operations.md`, "Admin lifecycle UI access"). The admin API also accepts a
-signed CLI request.
+signed CLI request. Its Ed25519 signature covers
+`canonicalJSON({ payload, path, signed_at })`, where `path` is the request
+path, so a signature made for one route or one time cannot be replayed on
+another.
 
 1. Open `/admin/submissions`. The filter row switches between `new` (the
    default), `approved`, `rejected` and `all`. The list shows up to 200 rows,
@@ -112,6 +140,23 @@ instructions, build the run config by hand, and run the bench yourself. Linking
 a submission to a ranked setup (the `setup_id` column) and deleting the key when
 its run finishes are planned for a later change. Until then, use "Delete key".
 
+## Purging a spam submission
+
+Rejecting keeps the row and the zip. To remove a spam submission entirely,
+delete the row and its zip. From `site/`, with `<id>` the submission id:
+
+```bash
+npx wrangler d1 execute centralgauge --remote \
+  --command "SELECT id, zip_key FROM setup_submissions WHERE id = '<id>'"
+npx wrangler r2 object delete centralgauge-blobs/setup-submissions/<id>.zip --remote
+npx wrangler d1 execute centralgauge --remote \
+  --command "DELETE FROM setup_submissions WHERE id = '<id>'"
+```
+
+Check that the `SELECT` shows the expected `zip_key` before deleting. The
+audit rows stay, which is intended. A purged row no longer counts toward its
+IP's daily limit.
+
 ## Rotating `SUBMISSION_KEY_SECRET`
 
 Stored keys can only be opened with the secret that sealed them. After a
@@ -121,6 +166,9 @@ decrypted". So:
 1. Delete every stored key first (use "Delete key" on each submission with a
    key, or reject the submission).
 2. Run `wrangler secret put SUBMISSION_KEY_SECRET` with the new value.
+
+The IP hashes are keyed from the same secret, so a rotation also resets every
+IP's daily count.
 
 Submitters who still want their setup run must add a key again through their
 edit link.
