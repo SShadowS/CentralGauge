@@ -5,6 +5,7 @@ import {
   buildHeaderSignedFields,
   verifyLifecycleAdminRequest,
 } from "$lib/server/lifecycle-auth";
+import { readBodyWithCap } from "$lib/server/body-cap";
 import { validateR2Key } from "$lib/server/r2-key";
 
 /**
@@ -165,45 +166,3 @@ export const GET: RequestHandler = async ({
     return errorResponse(err);
   }
 };
-
-/**
- * Read a `ReadableStream<Uint8Array>` into a single `Uint8Array`, aborting
- * with `413 payload_too_large` if cumulative bytes exceed `cap`. Used in
- * place of `request.arrayBuffer()` so we don't materialize a > 50 MB buffer
- * just to throw it away.
- */
-async function readBodyWithCap(
-  stream: ReadableStream<Uint8Array> | null,
-  cap: number,
-): Promise<Uint8Array> {
-  if (!stream) return new Uint8Array(0);
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      total += value.byteLength;
-      if (total > cap) {
-        throw new ApiError(
-          413,
-          "payload_too_large",
-          `body exceeds ${cap} bytes`,
-        );
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  // Concatenate.
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) {
-    out.set(c, off);
-    off += c.byteLength;
-  }
-  return out;
-}

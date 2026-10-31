@@ -22,6 +22,15 @@ FLAG_DENSITY_TOGGLE = "on"          # P5.4
 FLAG_RUM_BEACON = "on"              # P5.4
 CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTICS_TOKEN` runs
 
+# Public "submit a setup" form. TURNSTILE_SITE_KEY is public; this is
+# Cloudflare's always-pass TEST key. The owner replaces it with the real one.
+TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+# Two secrets, NOT [vars] entries (a baked-in value would shadow the secret):
+#   wrangler secret put TURNSTILE_SECRET_KEY    (Turnstile widget secret)
+#   wrangler secret put SUBMISSION_KEY_SECRET   (base64 of 32 random bytes;
+#                                                seals submitter API keys)
+# Without them POST /api/v1/setup-submissions answers 503.
+
 # Staged ingest-security rollout (S5 + S3). Both default "off" = tolerant:
 # v1 envelopes and unsigned finalize calls are accepted AND logged
 # (console.warn) so the operator can watch for legacy traffic. Flip each to

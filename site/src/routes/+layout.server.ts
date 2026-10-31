@@ -20,9 +20,11 @@ export const load: LayoutServerLoad = async ({ platform, url }) => {
   // secret put` value at deploy time, or the empty-string `[vars]` placeholder
   // in dev. Empty string is falsy so the emit guard suppresses the script
   // until a real token is set.
-  const cfWebAnalyticsToken: string | null = building
-    ? null
-    : (env.CF_WEB_ANALYTICS_TOKEN ?? null);
+  // Never on edit links: the page URL carries the submitter's secret token.
+  const cfWebAnalyticsToken: string | null =
+    building || url.pathname.startsWith("/submit/edit/")
+      ? null
+      : (env.CF_WEB_ANALYTICS_TOKEN ?? null);
 
   return {
     flags,
