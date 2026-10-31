@@ -135,6 +135,11 @@ export const LineageSchema = z.strictObject({
         /** Addendum 7: an existing file may change in place. */
         in_place: z.literal(true).optional(),
         /**
+         * Q-05 (CryptnetUrlCache MetaData 330 -> 328): with in_place, the
+         * size may also move by at most this many bytes.
+         */
+        in_place_size_delta: z.number().int().min(1).max(64).optional(),
+        /**
          * Addendum 8b: an existing file may change in place, size included,
          * when its new head is a CAB header of its new size.
          */
@@ -143,6 +148,9 @@ export const LineageSchema = z.strictObject({
       }).refine((e) => !(e.in_place && e.in_place_cab), {
         message: "platform_cache: in_place and in_place_cab are exclusive",
         path: ["in_place_cab"],
+      }).refine((e) => !e.in_place_size_delta || e.in_place, {
+        message: "platform_cache: in_place_size_delta needs in_place",
+        path: ["in_place_size_delta"],
       }),
     ])),
     survey: z.strictObject({ path: z.string().min(1), sha256: Sha }),

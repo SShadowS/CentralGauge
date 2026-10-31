@@ -242,7 +242,13 @@ Deno.test("H-40: the shipped lineage's other caches judge 26-byte (digest v4) he
       f(`${m3}\\${hex}.res`, "efbb", hex.toLowerCase()),
     ], 0],
     ["MetaData in place", [md("a".repeat(64))], [md("b".repeat(64))], 0],
-    ["MetaData resized", [md("a".repeat(64))], [md("b".repeat(64), 343)], 1],
+    // Q-05: a resize within in_place_size_delta (16) is tolerated, beyond it not
+    ["MetaData resized +16", [md("a".repeat(64))], [
+      md("b".repeat(64), 358),
+    ], 0],
+    ["MetaData resized +17", [md("a".repeat(64))], [
+      md("b".repeat(64), 359),
+    ], 1],
     ["MetaData new file", [md("a".repeat(64))], [
       md("a".repeat(64)),
       md("c".repeat(64), 330, "77EC63BDA74BD0D0E0426DC8F8008506"),
@@ -268,6 +274,70 @@ Deno.test("H-40: the shipped lineage's other caches judge 26-byte (digest v4) he
       assertEquals([r.diff.length, r.errors], [n, []], what);
     }
   }
+});
+
+/** The MetaData file quarantined on Cronus282 and Cronus285 (Q-05). */
+const P77EC =
+  "C:\\Windows\\System32\\config\\systemprofile\\AppData\\LocalLow\\Microsoft\\CryptnetUrlCache\\MetaData\\77EC63BDA74BD0D0E0426DC8F8008506";
+
+Deno.test("Q-05: the shipped lineage tolerates the 215b5b06174c record's MetaData rewrite (330 -> 328, attrs 36, digest v4 heads); the only in_place cache with a size delta is MetaData at 16", async () => {
+  const caches = await shippedCaches();
+  const before =
+    `F|7df21c3dea6e6e93db4823be033da377fae23b1c24cf9dea3d2ec0ee2ab1f655|330|36|639290585452870590|700000000101022001000000ae00000094ee6db6a345dd012800|${P77EC}`;
+  const after =
+    `F|004cf6c0fa742c60e7e3e33b66848ab03806cf80b69353cb1a56d5d79a6b1a58|328|36|639290622058279048|700000000101022001000000ae00000088b08ee15769dd012800|${P77EC}`;
+  assertEquals(fsDiff([before, "T|1"], [after, "T|1"], [], [], caches), {
+    diff: [],
+    errors: [],
+  });
+  assertEquals(
+    caches.filter((c) => c.inPlaceSizeDelta !== undefined).map((
+      c,
+    ) => [c.files, c.inPlaceSizeDelta]),
+    [[String.raw`^MetaData\\[0-9A-F]{32}$`, 16]],
+  );
+});
+
+Deno.test("Q-05: in_place_size_delta without in_place, or outside 1..64, is refused", async () => {
+  const v2 = JSON.parse(
+    await Deno.readTextFile(
+      "infra/harness-reset/lineages/golden-o09-v2.json",
+    ),
+  );
+  const cab = v2.fs.exclude.find((e: Record<string, unknown>) =>
+    e["in_place_cab"]
+  );
+  const md = v2.fs.exclude.find((e: Record<string, unknown>) => e["in_place"]);
+  const withEntry = (e: Record<string, unknown>) =>
+    copyLineage((j) => {
+      j["fs"] = {
+        ...v2.fs,
+        exclude: v2.fs.exclude.map((x: Record<string, unknown>) =>
+          x === md ? e : x
+        ),
+      };
+    });
+  await assertRejects(
+    async () =>
+      loadLineage(
+        await copyLineage((j) => {
+          j["fs"] = {
+            ...v2.fs,
+            exclude: [...v2.fs.exclude, { ...cab, in_place_size_delta: 4 }],
+          };
+        }),
+      ),
+    ConfigurationError,
+    "in_place_size_delta needs in_place",
+  );
+  for (const bad of [0, 65, 2.5]) {
+    await assertRejects(
+      async () =>
+        loadLineage(await withEntry({ ...md, in_place_size_delta: bad })),
+      ConfigurationError,
+    );
+  }
+  await loadLineage(await withEntry({ ...md, in_place_size_delta: 64 }));
 });
 
 Deno.test("H-40 addendum 8b Q5: a platform_cache entry with both in_place and in_place_cab is refused", async () => {

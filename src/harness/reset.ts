@@ -434,6 +434,9 @@ export function goldenReset(o: {
               ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
               ...(e.dir_time_only ? { dirTimeOnly: true } : {}),
               ...(e.in_place ? { inPlace: true } : {}),
+              ...(e.in_place_size_delta
+                ? { inPlaceSizeDelta: e.in_place_size_delta }
+                : {}),
               ...(e.in_place_cab ? { inPlaceCab: true } : {}),
             }]
             : []
@@ -541,6 +544,8 @@ export interface FsPlatformCache {
   dirTimeOnly?: boolean;
   /** Addendum 7: an existing file may change in place (same path, size, attributes). */
   inPlace?: boolean;
+  /** Q-05: with inPlace, the size may move by at most this many bytes. */
+  inPlaceSizeDelta?: number;
   /**
    * Addendum 8b: an existing file may change in place, size included (same
    * path, attributes), when its new head is a CAB header of its new size.
@@ -581,6 +586,7 @@ function cacheTolerates(
     nameIsSha256?: boolean;
     dirTimeOnly?: boolean;
     inPlace?: boolean;
+    inPlaceSizeDelta?: number;
     inPlaceCab?: boolean;
   }[],
   d: FsDiffEntry,
@@ -595,10 +601,13 @@ function cacheTolerates(
     if (d.after![0] === "F" && c.inPlace) {
       // addendum 7: an EXISTING file changed in place: same path spelling,
       // size and attributes; content and last-write time may move. A new,
-      // removed, resized or re-attributed file stays a difference.
+      // removed, resized or re-attributed file stays a difference; Q-05: a
+      // resize within inPlaceSizeDelta bytes is tolerated.
       const before = d.before?.[0] === "F" ? fsParse(d.before) : undefined;
       return before !== undefined && c.files.test(rel) &&
-        before["p"] === after["p"] && before["size"] === after["size"] &&
+        before["p"] === after["p"] &&
+        Math.abs(Number(before["size"]) - Number(after["size"])) <=
+          (c.inPlaceSizeDelta ?? 0) &&
         before["attrs"] === after["attrs"] &&
         (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
     }
