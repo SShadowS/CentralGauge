@@ -107,6 +107,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),
   [`${H}production-policy.test.ts`]: c(true, 0),
+  [`${H}publish-setup.test.ts`]: c(true, 1),
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),
   [`${H}qualify.test.ts`]: c(true, 0),

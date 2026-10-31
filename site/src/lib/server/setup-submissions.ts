@@ -490,15 +490,14 @@ export async function revealKey({
 const KEY_NULLED =
   "key_ciphertext = NULL, key_iv = NULL, key_deleted_at = COALESCE(key_deleted_at, ?)";
 
-/** Idempotent. Plan 3 calls this when a run finishes. Returns false for an unknown id. */
-export async function deleteSubmissionKey(
+/** The key-nulling and audit statements, for callers that build their own batch. */
+export function deleteSubmissionKeyStmts(
   db: D1Database,
   id: string,
   actor: string,
-): Promise<boolean> {
-  if (!(await getSubmission(db, id))) return false;
-  const now = new Date().toISOString();
-  await db.batch([
+  now: string,
+): D1PreparedStatement[] {
+  return [
     db
       .prepare(
         `UPDATE setup_submissions SET ${KEY_NULLED}, updated_at = ? WHERE id = ?`,
@@ -508,7 +507,17 @@ export async function deleteSubmissionKey(
       event: "submission.key_deleted",
       details: { actor, submission_id: id },
     }),
-  ]);
+  ];
+}
+
+/** Idempotent. Returns false for an unknown id. */
+export async function deleteSubmissionKey(
+  db: D1Database,
+  id: string,
+  actor: string,
+): Promise<boolean> {
+  if (!(await getSubmission(db, id))) return false;
+  await db.batch(deleteSubmissionKeyStmts(db, id, actor, new Date().toISOString()));
   return true;
 }
 
