@@ -103,7 +103,8 @@
         "dirs": "^(?!)$",
         "magic": "7000",
         "in_place": true,
-        "reason": "SYSTEM account's CryptoAPI URL-retrieval cache (CRL/OCSP metadata): existing MetaData files are rewritten in place by certificate-chain checks during publish (same size and attributes); URL-hashed names; new, removed, resized or re-attributed files stay differences"
+        "in_place_size_delta": 16,
+        "reason": "SYSTEM account's CryptoAPI URL-retrieval cache (CRL/OCSP metadata): existing MetaData files are rewritten in place by certificate-chain checks during publish (same attributes; size within 16 bytes, Q-05: 77EC63BD... 330 -> 328 on Cronus282 and twice on Cronus285); URL-hashed names; new, removed, re-attributed or more-resized files stay differences"
       },
       {
         "disposition": "platform_cache",
