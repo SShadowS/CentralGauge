@@ -207,12 +207,67 @@ describe("POST edit", () => {
     )
       .bind(id)
       .run();
+    const pending = async () =>
+      Number(
+        (await env.DB.prepare(
+          "SELECT pending_since FROM cache_epoch WHERE id = 1",
+        ).first<{ pending_since: number }>())!.pending_since,
+      );
+    await env.DB.prepare(
+      "UPDATE cache_epoch SET pending_since = 0 WHERE id = 1",
+    ).run();
+    // Same visibility: no epoch mark.
+    expect((await call(id, "edit", { token, visibility: "public" })).status).toBe(
+      200,
+    );
+    expect(await pending()).toBe(0);
     const res = await call(id, "edit", { token, visibility: "private" });
     expect(res.status).toBe(200);
     const s = await env.DB.prepare(
       "SELECT visibility FROM setups WHERE id = 's-linked'",
     ).first<{ visibility: string }>();
     expect(s!.visibility).toBe("private");
+    expect(await pending()).toBeGreaterThan(0);
+  });
+
+  it("refuses a key on a rejected submission but allows visibility", async () => {
+    const { id, token } = await create();
+    await env.DB.prepare(
+      "UPDATE setup_submissions SET status = 'rejected' WHERE id = ?",
+    )
+      .bind(id)
+      .run();
+    const res = await call(id, "edit", {
+      token,
+      key: "sk-late",
+      key_expires_on: day(1),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe(
+      "submission_closed",
+    );
+    expect((await row(id))!.key_ciphertext).toBeNull();
+    expect(
+      (await call(id, "edit", { token, visibility: "private" })).status,
+    ).toBe(200);
+  });
+
+  it("reports a bad key under key, a bad visibility as 400, and sets no-store", async () => {
+    const { id, token } = await create();
+    const bad = await call(id, "edit", { token, key: 5, key_expires_on: day(1) });
+    expect(bad.status).toBe(400);
+    expect(
+      ((await bad.json()) as { details: Record<string, string> }).details.key,
+    ).toBeTruthy();
+    const vis = await call(id, "edit", {
+      token,
+      visibility: "x",
+      key: "sk-ok",
+      key_expires_on: day(1),
+    });
+    expect(vis.status).toBe(400);
+    const ok = await call(id, "status", { token });
+    expect(ok.headers.get("cache-control")).toBe("no-store");
   });
 
   it("sets updated_at on every edit", async () => {

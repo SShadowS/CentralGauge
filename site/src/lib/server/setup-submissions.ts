@@ -1,7 +1,6 @@
 import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { sealKey, tokenMatches } from "$lib/server/submission-crypto";
-import type { SealedKey } from "$lib/server/submission-crypto";
 import { validateKeyExpiry } from "$lib/shared/setup-submission";
 
 export interface SubmissionRow {
@@ -102,6 +101,7 @@ export function getSubmission(
     .first<SubmissionRow>();
 }
 
+const NO_STORE = { "Cache-Control": "no-store" };
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 // Compared against when the id is unknown so both 404 paths cost one hash.
 const DUMMY_HASH = "0".repeat(64);
@@ -182,7 +182,7 @@ export async function handleEditLink(
   try {
     const body = await readJson(request);
     const row = await authorize(env.DB, params.id ?? "", body.token);
-    if (op === "status") return jsonResponse(toView(row));
+    if (op === "status") return jsonResponse(toView(row), 200, NO_STORE);
 
     const sets: string[] = ["updated_at = ?"];
     const now = new Date().toISOString();
@@ -200,36 +200,27 @@ export async function handleEditLink(
       }
     }
 
-    let sealed: SealedKey | null = null;
-    let expiry: string | null = null;
+    // A rejected submission's key is deleted for good; never accept a new one.
+    if (body.key !== undefined && row.status === "rejected") {
+      throw new ApiError(
+        409,
+        "submission_closed",
+        "this submission was rejected and cannot take a key",
+      );
+    }
+
+    let newKey: string | null = null;
+    let expiry = "";
     if (body.key !== undefined) {
-      const exp = typeof body.key_expires_on === "string"
+      expiry = typeof body.key_expires_on === "string"
         ? body.key_expires_on
         : "";
-      const err = typeof body.key !== "string" || !body.key.trim()
-        ? "A key must be a non-empty string."
-        : validateKeyExpiry(exp, now.slice(0, 10));
-      if (err) fieldErrors.key_expires_on = err;
-      else {
-        if (!env.SUBMISSION_KEY_SECRET) {
-          throw new ApiError(
-            503,
-            "submissions_unavailable",
-            "submissions are not configured",
-          );
-        }
-        sealed = await sealKey(
-          (body.key as string).trim(),
-          env.SUBMISSION_KEY_SECRET,
-        );
-        expiry = exp;
-        sets.push(
-          "key_ciphertext = ?",
-          "key_iv = ?",
-          "key_expires_on = ?",
-          "key_deleted_at = NULL",
-        );
-        binds.push(sealed.ciphertext, sealed.iv, expiry);
+      if (typeof body.key !== "string" || !body.key.trim()) {
+        fieldErrors.key = "A key must be a non-empty string.";
+      } else {
+        newKey = body.key.trim();
+        const err = validateKeyExpiry(expiry, now.slice(0, 10));
+        if (err) fieldErrors.key_expires_on = err;
       }
     }
     if (Object.keys(fieldErrors).length > 0) {
@@ -240,13 +231,30 @@ export async function handleEditLink(
         fieldErrors,
       );
     }
+    if (newKey !== null) {
+      if (!env.SUBMISSION_KEY_SECRET) {
+        throw new ApiError(
+          503,
+          "submissions_unavailable",
+          "submissions are not configured",
+        );
+      }
+      const sealed = await sealKey(newKey, env.SUBMISSION_KEY_SECRET);
+      sets.push(
+        "key_ciphertext = ?",
+        "key_iv = ?",
+        "key_expires_on = ?",
+        "key_deleted_at = NULL",
+      );
+      binds.push(sealed.ciphertext, sealed.iv, expiry);
+    }
 
     const stmts = [
       env.DB.prepare(
         `UPDATE setup_submissions SET ${sets.join(", ")} WHERE id = ?`,
       ).bind(...binds, row.id),
     ];
-    if (visibility && row.setup_id) {
+    if (visibility && visibility !== row.visibility && row.setup_id) {
       stmts.push(
         env.DB.prepare("UPDATE setups SET visibility = ? WHERE id = ?").bind(
           visibility,
@@ -258,7 +266,7 @@ export async function handleEditLink(
     await env.DB.batch(stmts);
 
     const fresh = await getSubmission(env.DB, row.id);
-    return jsonResponse(toView(fresh ?? row));
+    return jsonResponse(toView(fresh ?? row), 200, NO_STORE);
   } catch (err) {
     // Never echo D1/crypto internals, and never log the token or key.
     return errorResponse(
