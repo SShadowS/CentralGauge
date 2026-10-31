@@ -43,6 +43,16 @@ describe("verifyTurnstile", () => {
     expect(await verifyTurnstile("tok", "sec", null, f as never)).toBe(false);
   });
 
+  it("passes a timeout signal and returns false when it aborts", async () => {
+    let seen: AbortSignal | undefined;
+    const f = (_url: string, init: RequestInit) => {
+      seen = init.signal ?? undefined;
+      return Promise.reject(new DOMException("timed out", "TimeoutError"));
+    };
+    expect(await verifyTurnstile("tok", "sec", null, f as never)).toBe(false);
+    expect(seen).toBeInstanceOf(AbortSignal);
+  });
+
   it("returns false on a 500 and on invalid JSON", async () => {
     expect(
       await verifyTurnstile("t", "s", null, (async () => json({ success: true }, 500)) as never),

@@ -82,6 +82,40 @@ export async function tokenMatches(
   return diff === 0;
 }
 
-export function hashIp(ip: string): Promise<string> {
-  return hashToken(ip);
+/**
+ * IPv6 addresses collapse to their /64 prefix (first four hextets of the
+ * expanded address), since one subscriber usually owns a whole /64.
+ * IPv4 and anything unparseable are used as given.
+ */
+function ipBucket(ip: string): string {
+  const addr = ip.trim().toLowerCase().split("%")[0];
+  if (!addr.includes(":")) return addr;
+  const [head, tail = ""] = addr.split("::");
+  const parts = (s: string) => (s ? s.split(":") : []);
+  const h = parts(head);
+  const t = parts(tail);
+  // An embedded dotted IPv4 tail fills two hextets.
+  const width = (xs: string[]) =>
+    xs.reduce((n, x) => n + (x.includes(".") ? 2 : 1), 0);
+  const zeros = addr.includes("::")
+    ? Array(Math.max(0, 8 - width(h) - width(t))).fill("0")
+    : [];
+  const first4 = [...h, ...zeros, ...t].slice(0, 4);
+  if (first4.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return addr;
+  return first4.map((x) => parseInt(x, 16).toString(16)).join(":") + "::/64";
+}
+
+/** HMAC-SHA-256 of the IP bucket, keyed by the submission secret. */
+export async function hashIp(ip: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(`ip-hash:${secret}`),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, enc.encode(ipBucket(ip)));
+  return [...new Uint8Array(mac)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }

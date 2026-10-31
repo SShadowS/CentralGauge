@@ -49,9 +49,14 @@
     errors = {};
     const fd = new FormData(e.currentTarget as HTMLFormElement);
     fd.set('roles_json', JSON.stringify(roles.filter((r) => r.role || r.model)));
-    fd.set('cf-turnstile-response', captchaToken);
+    // The token travels in a header so the server can check it before reading the body.
+    fd.delete('cf-turnstile-response');
     try {
-      const res = await fetch('/api/v1/setup-submissions', { method: 'POST', body: fd });
+      const res = await fetch('/api/v1/setup-submissions', {
+        method: 'POST',
+        body: fd,
+        headers: { 'cf-turnstile-response': captchaToken },
+      });
       const body = (await res.json().catch(() => ({}))) as { id: string; edit_path: string; error?: string; details?: Record<string, string> };
       if (res.status === 201) return onsubmitted(body);
       if (res.status === 400 && body.details) {

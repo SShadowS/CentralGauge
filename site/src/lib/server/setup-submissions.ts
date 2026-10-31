@@ -1,4 +1,5 @@
 import { appendAudit, appendAuditStmt } from "$lib/server/audit";
+import { readBodyWithCap } from "$lib/server/body-cap";
 import {
   actorIdFromAuth,
   authenticateAdminRequest,
@@ -6,7 +7,11 @@ import {
 import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { openKey, sealKey, tokenMatches } from "$lib/server/submission-crypto";
-import { validateKeyExpiry } from "$lib/shared/setup-submission";
+import { canonicalJSON } from "$lib/shared/canonical";
+import {
+  SUBMISSION_LIMITS,
+  validateKeyExpiry,
+} from "$lib/shared/setup-submission";
 
 export interface SubmissionRow {
   id: string;
@@ -157,9 +162,13 @@ async function authorize(
   return row;
 }
 
+const JSON_BODY_CAP = 16 * 1024;
+
 async function readJson(request: Request): Promise<Record<string, unknown>> {
+  // Throws 413 past the cap, before anything is parsed.
+  const bytes = await readBodyWithCap(request.body, JSON_BODY_CAP);
   try {
-    const b: unknown = await request.json();
+    const b: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (b && typeof b === "object" && !Array.isArray(b)) {
       return b as Record<string, unknown>;
     }
@@ -227,6 +236,9 @@ export async function handleEditLink(
         typeof body.key_expires_on === "string" ? body.key_expires_on : "";
       if (typeof body.key !== "string" || !body.key.trim()) {
         fieldErrors.key = "A key must be a non-empty string.";
+      } else if (body.key.trim().length > SUBMISSION_LIMITS.keyMax) {
+        fieldErrors.key =
+          `A key must be at most ${SUBMISSION_LIMITS.keyMax} characters.`;
       } else {
         newKey = body.key.trim();
         const err = validateKeyExpiry(expiry, now.slice(0, 10));
@@ -326,10 +338,21 @@ export async function adminRoute(
   try {
     const body = await readJson(request);
     const signed = !!body.signature;
+    // Bind the path and signed_at into the signed message, so a signature
+    // cannot be replayed on another route or with a fresh signed_at.
+    const sig = (signed ? body.signature : null) as { signed_at?: unknown } | null;
+    const message = signed
+      ? canonicalJSON({
+        payload: body.payload ?? null,
+        path: new URL(request.url).pathname,
+        signed_at: typeof sig?.signed_at === "string" ? sig.signed_at : "",
+      })
+      : undefined;
     const auth = await authenticateAdminRequest(
       request,
       env,
       signed ? body : null,
+      message,
     );
     const inner = signed ? body.payload : body;
     const args =

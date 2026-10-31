@@ -11,7 +11,11 @@ export async function verifyTurnstile(
   const body = new URLSearchParams({ secret, response: token });
   if (ip) body.set("remoteip", ip);
   try {
-    const res = await fetchFn(VERIFY_URL, { method: "POST", body });
+    const res = await fetchFn(VERIFY_URL, {
+      method: "POST",
+      body,
+      signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) return false;
     const json = (await res.json()) as { success?: unknown };
     return json.success === true;

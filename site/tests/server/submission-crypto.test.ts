@@ -60,7 +60,27 @@ describe("submission-crypto", () => {
     expect(await tokenMatches(t, "abc")).toBe(false);
   });
 
-  it("hashes ips as sha256 hex", async () => {
-    expect(await hashIp("1.2.3.4")).toBe(await hashToken("1.2.3.4"));
+  it("hashes ips as keyed hex, not a plain sha256", async () => {
+    const h = await hashIp("1.2.3.4", "s1");
+    expect(h).toMatch(/^[0-9a-f]{64}$/);
+    expect(h).not.toBe(await hashToken("1.2.3.4"));
+    expect(await hashIp("1.2.3.4", "s1")).toBe(h);
+    expect(await hashIp("1.2.3.5", "s1")).not.toBe(h);
+  });
+
+  it("gives different hashes for the same ip under different secrets", async () => {
+    expect(await hashIp("1.2.3.4", "s1")).not.toBe(
+      await hashIp("1.2.3.4", "s2"),
+    );
+  });
+
+  it("buckets ipv6 by /64", async () => {
+    const a = await hashIp("2001:db8:1:2:aaaa::1", "s");
+    expect(await hashIp("2001:0db8:0001:0002:ffff:1:2:3", "s")).toBe(a);
+    expect(await hashIp("2001:db8:1:3::1", "s")).not.toBe(a);
+    // "::" inside the prefix expands to zero hextets.
+    expect(await hashIp("2001:db8::1", "s")).toBe(
+      await hashIp("2001:db8:0:0:9::", "s"),
+    );
   });
 });

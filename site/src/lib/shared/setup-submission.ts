@@ -5,6 +5,7 @@ import type { AgentTool, Role } from './setups';
 export const SUBMISSION_LIMITS = {
   zipBytes: 10 * 1024 * 1024, instructionsBytes: 200 * 1024, descriptionMax: 200,
   flowMax: 4000, rolesMax: 12, keyMaxDays: 7, perIpPerDay: 5,
+  baseModelMax: 200, roleFieldMax: 100, keyMax: 4096,
 } as const;
 
 export interface SubmissionFields {
@@ -43,6 +44,10 @@ function parseRoles(json: string): Role[] | string {
     const o = (r ?? {}) as Record<string, unknown>;
     const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
     if (!s(o.role) || !s(o.model)) return 'Every role needs a name and a model.';
+    const max = SUBMISSION_LIMITS.roleFieldMax;
+    if ([o.role, o.model, o.effort].some((v) => s(v).length > max)) {
+      return `Role name, model and effort must each be at most ${max} characters.`;
+    }
     roles.push({ role: s(o.role), model: s(o.model), effort: s(o.effort) || null });
   }
   return roles;
@@ -59,6 +64,7 @@ export function parseSubmissionFields(
 
   const base_model = get('base_model');
   if (!base_model) errors.base_model = 'Base model is required.';
+  else if (base_model.length > SUBMISSION_LIMITS.baseModelMax) errors.base_model = `Base model must be at most ${SUBMISSION_LIMITS.baseModelMax} characters.`;
 
   const description = get('description');
   if (!description) errors.description = 'Description is required.';
@@ -79,6 +85,7 @@ export function parseSubmissionFields(
 
   const key = get('key') || null;
   let key_expires_on: string | null = null;
+  if (key && key.length > SUBMISSION_LIMITS.keyMax) errors.key = `A key must be at most ${SUBMISSION_LIMITS.keyMax} characters.`;
   if (key) {
     const exp = get('key_expires_on');
     const err = validateKeyExpiry(exp, today);

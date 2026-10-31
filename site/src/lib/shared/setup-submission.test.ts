@@ -71,6 +71,27 @@ describe('parseSubmissionFields', () => {
     expect(errors({ ...base(), roles_json: JSON.stringify([{ role: 'r', model: ' ', effort: null }]) }).roles).toBeTruthy();
   });
 
+  it('caps base_model at 200 characters', () => {
+    expect(errors({ ...base(), base_model: 'm'.repeat(201) }).base_model).toBeTruthy();
+    expect(parseSubmissionFields({ ...base(), base_model: 'm'.repeat(200) }, TODAY).ok).toBe(true);
+  });
+
+  it('caps each role field at 100 characters', () => {
+    const long = 'x'.repeat(101);
+    for (const field of ['role', 'model', 'effort']) {
+      const role = { role: 'r', model: 'm', effort: 'high', [field]: long };
+      expect(errors({ ...base(), roles_json: JSON.stringify([role]) }).roles, field).toBeTruthy();
+    }
+    const ok = { role: 'x'.repeat(100), model: 'x'.repeat(100), effort: 'x'.repeat(100) };
+    expect(parseSubmissionFields({ ...base(), roles_json: JSON.stringify([ok]) }, TODAY).ok).toBe(true);
+  });
+
+  it('caps the key at 4096 characters', () => {
+    const k = { ...base(), key_expires_on: '2026-11-01' };
+    expect(errors({ ...k, key: 'k'.repeat(4097) }).key).toBeTruthy();
+    expect(parseSubmissionFields({ ...k, key: 'k'.repeat(4096) }, TODAY).ok).toBe(true);
+  });
+
   it('limits key expiry to 7 days from today', () => {
     const k = { ...base(), key: 'sk-abc' };
     expect(errors({ ...k, key_expires_on: '2026-11-07' }).key_expires_on).toBeTruthy();

@@ -52,6 +52,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (Number.isFinite(declared) && declared > BODY_CAP) {
       throw new ApiError(413, "payload_too_large", "submission is too large");
     }
+    // Captcha first, from a header, so an unverified caller never makes us
+    // buffer up to BODY_CAP bytes.
+    const ip = request.headers.get("cf-connecting-ip");
+    const token = request.headers.get("cf-turnstile-response");
+    if (!token || !(await verifyTurnstile(token, turnstileSecret, ip))) {
+      throw new ApiError(403, "captcha_failed", "captcha check failed");
+    }
+
     // The declared length can be absent or wrong, so always cap while reading.
     const bytes = await readBodyWithCap(request.body, BODY_CAP);
     let form: FormData;
@@ -63,21 +71,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       throw new ApiError(400, "invalid_form", "expected multipart form data");
     }
 
-    const ip = request.headers.get("cf-connecting-ip");
-    const token = form.get("cf-turnstile-response");
-    if (
-      !(await verifyTurnstile(
-        typeof token === "string" ? token : null,
-        turnstileSecret,
-        ip,
-      ))
-    ) {
-      throw new ApiError(403, "captcha_failed", "captcha check failed");
-    }
-
     const now = new Date();
     const createdAt = now.toISOString();
-    const ipHash = await hashIp(ip ?? "unknown");
+    const ipHash = await hashIp(ip ?? "unknown", keySecret);
     // ponytail: check-then-insert race, so concurrent requests can exceed the cap slightly; bounded by the fresh Turnstile token each request needs.
     const recent = await countRecentByIp(
       env.DB,
@@ -179,11 +175,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     );
   } catch (err) {
     if (r2Key) await env.BLOBS.delete(r2Key).catch(() => {});
+    if (err instanceof ApiError) return errorResponse(err);
+    // Log the error class only: messages can carry field values or the key.
+    console.error(
+      "[setup-submissions] create failed",
+      err instanceof Error ? err.name : typeof err,
+      "internal_error",
+    );
     // Never echo D1/R2/crypto internals to the public.
     return errorResponse(
-      err instanceof ApiError
-        ? err
-        : new ApiError(500, "internal_error", "Submission failed."),
+      new ApiError(500, "internal_error", "Submission failed."),
     );
   }
 };

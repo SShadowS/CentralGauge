@@ -2,6 +2,9 @@ import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createSignedPayload } from "../fixtures/keys";
 import { registerMachineKey } from "../fixtures/ingest-helpers";
+import { bytesToB64 } from "../../src/lib/shared/base64";
+import { canonicalJSON } from "../../src/lib/shared/canonical";
+import { sign } from "../../src/lib/shared/ed25519";
 import { sealKey } from "../../src/lib/server/submission-crypto";
 
 const BASE = "https://x/api/v1/admin/setup-submissions";
@@ -45,18 +48,40 @@ async function seed(id: string, createdAt: string, withKey = true) {
 let keyId: number;
 let keypair: Awaited<ReturnType<typeof registerMachineKey>>["keypair"];
 
-async function call(path: string, payload: Record<string, unknown> = {}) {
-  const { signedRequest } = await createSignedPayload(
+/** Signs canonicalJSON({ payload, path, signed_at }), as adminRoute verifies. */
+async function signFor(
+  path: string,
+  payload: Record<string, unknown> = {},
+  signedAt = new Date().toISOString(),
+) {
+  const message = canonicalJSON({
     payload,
-    keyId,
-    undefined,
-    keypair,
+    path: new URL(`${BASE}${path}`).pathname,
+    signed_at: signedAt,
+  });
+  const value = bytesToB64(
+    await sign(new TextEncoder().encode(message), keypair.privateKey),
   );
-  return SELF.fetch(`${BASE}${path}`, {
+  return {
+    signature: {
+      alg: "Ed25519" as const,
+      key_id: keyId,
+      signed_at: signedAt,
+      value,
+    },
+    payload,
+  };
+}
+
+const post = (path: string, body: unknown) =>
+  SELF.fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(signedRequest),
+    body: JSON.stringify(body),
   });
+
+async function call(path: string, payload: Record<string, unknown> = {}) {
+  return post(path, await signFor(path, payload));
 }
 
 const audits = async (event: string) =>
@@ -206,5 +231,34 @@ describe("admin setup-submissions", () => {
       submissions: { id: string }[];
     };
     expect(submissions.map((s) => s.id)).toEqual(["sub-c"]);
+  });
+
+  it("rejects a payload-only signature (the legacy envelope)", async () => {
+    const { signedRequest } = await createSignedPayload(
+      {},
+      keyId,
+      undefined,
+      keypair,
+    );
+    expect((await post("", signedRequest)).status).toBe(401);
+  });
+
+  it("rejects a list-path signature replayed on /<id>/key", async () => {
+    const before = (await audits("submission.key_revealed")).length;
+    const r = await post("/sub-a/key", await signFor(""));
+    expect(r.status).toBe(401);
+    expect(((await r.json()) as { code: string }).code).toBe("bad_signature");
+    expect(await audits("submission.key_revealed")).toHaveLength(before);
+  });
+
+  it("rejects a signature replayed with a different signed_at", async () => {
+    const body = await signFor("/sub-a/key", {}, new Date(Date.now() - 60_000).toISOString());
+    const replay = {
+      ...body,
+      signature: { ...body.signature, signed_at: new Date().toISOString() },
+    };
+    const r = await post("/sub-a/key", replay);
+    expect(r.status).toBe(401);
+    expect(((await r.json()) as { code: string }).code).toBe("bad_signature");
   });
 });

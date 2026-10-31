@@ -33,13 +33,16 @@ async function create(
     ...over,
   };
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
-  fd.set("cf-turnstile-response", "ok");
   fd.set("instructions", new File(["# secret instructions"], "CLAUDE.md"));
   fd.set("zip", new File([ZIP], "s.zip", { type: "application/zip" }));
   const res = await SELF.fetch(BASE, {
     method: "POST",
     body: fd,
-    headers: { origin: "https://x", "cf-connecting-ip": `10.7.0.${++ipN}` },
+    headers: {
+      origin: "https://x",
+      "cf-connecting-ip": `10.7.0.${++ipN}`,
+      "cf-turnstile-response": "ok",
+    },
   });
   expect(res.status).toBe(201);
   const { id, edit_path } = (await res.json()) as {
@@ -180,6 +183,34 @@ describe("POST edit", () => {
     });
     expect(res.status).toBe(400);
     expect((await row(id))!.key_ciphertext).toBeNull();
+  });
+
+  it("rejects a key over 4096 characters and writes nothing", async () => {
+    const { id, token } = await create();
+    const res = await call(id, "edit", {
+      token,
+      key: "k".repeat(4097),
+      key_expires_on: day(1),
+    });
+    expect(res.status).toBe(400);
+    expect(
+      ((await res.json()) as { details: Record<string, string> }).details.key,
+    ).toBeTruthy();
+    expect((await row(id))!.key_ciphertext).toBeNull();
+  });
+
+  it("413s on a body over 16 KiB and writes nothing", async () => {
+    const { id, token } = await create();
+    const res = await call(id, "edit", {
+      token,
+      visibility: "private",
+      pad: "p".repeat(17 * 1024),
+    });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { code: string }).code).toBe(
+      "payload_too_large",
+    );
+    expect((await row(id))!.visibility).toBe("public");
   });
 
   it("rejects a key without an expiry", async () => {

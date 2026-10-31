@@ -65,6 +65,7 @@ describe("SubmitForm", () => {
     await waitFor(() => expect(onsubmitted).toHaveBeenCalledWith({ id: "abc", edit_path: "/submit/edit/abc#tok" }));
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/v1/setup-submissions");
-    expect((init.body as FormData).get("cf-turnstile-response")).toBe("test-token");
+    expect(new Headers(init.headers).get("cf-turnstile-response")).toBe("test-token");
+    expect((init.body as FormData).has("cf-turnstile-response")).toBe(false);
   });
 });
