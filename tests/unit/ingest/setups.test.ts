@@ -8,7 +8,7 @@ import {
   postSetupPublish,
 } from "../../../src/ingest/setups.ts";
 import { CentralGaugeError } from "../../../src/errors.ts";
-import type { SetupPublishPayload } from "../../../src/ingest/setups.ts";
+import type { SetupPublishPayload } from "../../../site/src/lib/shared/setup-publish.ts";
 
 const key = ed.utils.randomSecretKey();
 const config = {
@@ -108,17 +108,4 @@ Deno.test("500 is retried up to 3 attempts", async () => {
   );
   assertEquals((err as CentralGaugeError).code, "internal_error");
   assertEquals(calls.length, 3);
-});
-
-Deno.test("mirrored SetupPublishPayload matches the site interface", async () => {
-  const norm = (s: string) =>
-    s.replace(/\s+/g, "").replace(/"/g, "'").replace(/[;,]/g, "");
-  const block = (src: string) =>
-    /export interface SetupPublishPayload \{[\s\S]*?\n\}\n/.exec(src)?.[0];
-  const site = block(
-    await Deno.readTextFile("site/src/lib/shared/setup-publish.ts"),
-  );
-  const mirror = block(await Deno.readTextFile("src/ingest/setups.ts"));
-  assert(site && mirror);
-  assertEquals(norm(mirror), norm(site));
 });

@@ -1,53 +1,8 @@
-import type {
-  AgentTool,
-  CellOutcome,
-  Ingredients,
-  Role,
-} from "../../site/src/lib/shared/setups.ts";
+import type { SetupPublishPayload } from "../../site/src/lib/shared/setup-publish.ts";
 import type { AdminConfig } from "./types.ts";
 import { CentralGaugeError } from "../errors.ts";
 import { postWithRetry, type RetryOptions } from "./client.ts";
 import { signPathBound } from "./sign.ts";
-
-/**
- * Mirror of `SetupPublishPayload` in site/src/lib/shared/setup-publish.ts.
- * That file cannot be type-checked from Deno (its runtime body fails Deno's
- * stricter flags), so the interface is copied; setups.test.ts fails if the
- * two drift.
- */
-export interface SetupPublishPayload {
-  setup: {
-    id: string;
-    agent_tool: AgentTool;
-    base_model: string;
-    description: string | null;
-    visibility: "public" | "private" | null;
-    roles: Role[];
-    ingredients: Ingredients;
-  };
-  submission_id: string | null;
-  task_set: {
-    hash: string;
-    display_name: string;
-    tasks: { task_id: string; description_sha: string }[];
-  };
-  run: {
-    id: string;
-    tool_version: string;
-    score: number;
-    cost_per_solved_usd: number | null;
-    price_note: string | null;
-    excluded_cells: number;
-    repeats: number;
-    cells: {
-      task_id: string;
-      repeat: number;
-      outcome: CellOutcome;
-      cost_usd: number | null;
-      duration_ms: number | null;
-    }[];
-  };
-}
 
 const PUBLISH_PATH = "/api/v1/admin/setups/publish";
 const PROMOTE_PATH = "/api/v1/admin/setups/task-sets/promote";
