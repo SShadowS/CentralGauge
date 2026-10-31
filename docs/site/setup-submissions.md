@@ -136,9 +136,56 @@ yourself once the run is done.
 ## After approval: the manual step
 
 Turning a zip into a run config is the owner's job. Read the zip and the
-instructions, build the run config by hand, and run the bench yourself. Linking
-a submission to a ranked setup (the `setup_id` column) and deleting the key when
-its run finishes are planned for a later change. Until then, use "Delete key".
+instructions, build the run config by hand, and run the bench yourself. Then
+publish the run as described next.
+
+## Publishing a run
+
+1. Approve the submission (see "Review flow").
+2. Translate the zip into a harness arm by hand and run the campaign. Use
+   `harness report` to check that the report for the arm is complete.
+3. Dry run: `centralgauge harness publish-setup <experiment> --arm <id>
+   --setup-id <slug> --judging <campaign|current> --submission <submission id>`.
+   It prints a summary and sends nothing. The build is refused for a partial
+   report, a missing arm, an arm with no pass rate, a tool that is not allowed,
+   several tool versions in one arm, a missing `prompt.md`, a missing
+   `CLAUDE.md` or `AGENTS.md`, or a component or the task set having changed
+   on disk since the campaign ran. The full list is in `docs/cli/commands.md`.
+4. Add `--apply` to send it. Nothing reaches the site without `--apply`. Running
+   it against production is the owner's action. The CLI reads the admin URL,
+   key file and key id from `CENTRALGAUGE_INGEST_URL`,
+   `CENTRALGAUGE_ADMIN_KEY_PATH` and `CENTRALGAUGE_ADMIN_KEY_ID`, or from
+   `ingest.url`, `ingest.admin_key_path` and `ingest.admin_key_id` in
+   `.centralgauge.yml`. The signed request goes to
+   `POST /api/v1/admin/setups/publish`.
+5. If the task set is new, promote it with
+   `centralgauge harness promote-setup-set <task set hash> --apply`. Its
+   endpoint is `POST /api/v1/admin/setups/task-sets/promote`.
+
+With a submission, the setup's description, visibility and roles come from the
+submission, and the submission's `setup_id` is set to the published setup.
+Publishing deletes the submitter's stored key in the same write and records a
+`submission.key_deleted` audit row. The setup's key-needed flag is set when the
+submission ever supplied a key, including one already deleted, and once set it
+is never cleared by a later publish. Without a submission, the setup's
+description and visibility come from `--description` and `--visibility`
+(defaults: empty and public).
+
+Publish and promote each write an audit row (`setup.published`,
+`setup_task_set.promoted`) and bump the data epoch so the pages refresh at once.
+
+Errors from the publish endpoint:
+
+| Status and code                 | Meaning                                                              |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `400 invalid_publish`           | The payload failed validation. The field errors are returned.        |
+| `404 not_found`                 | The `submission_id` is unknown.                                      |
+| `409 already_published`         | A run with this run id is already on the site.                       |
+| `409 submission_not_approved`   | The submission is not approved.                                      |
+| `409 submission_linked`         | No submission id was sent, but this setup id came from a submission. |
+
+Errors from the promote endpoint: `400 invalid_hash` (not 64 hex characters)
+and `404 not_found` (no such setup task set).
 
 ## Purging a spam submission
 

@@ -1284,6 +1284,80 @@ execution, makes the read fail. Runs that never started, failed setup or
 stopped for a recorded reason (operator, egress, undrained backend) are
 refused.
 
+### harness publish-setup
+
+```bash
+centralgauge harness publish-setup <experiment> --arm <id> --setup-id <slug> --judging <campaign|current> \
+  [--campaign <id>] [--submission <id>] [--description <text>] [--visibility <public|private>] \
+  [--display-name <text>] [--results-dir <dir>] [--root <dir>] [--apply]
+```
+
+Publishes one arm of a complete harness campaign to the setups leaderboard.
+`--arm`, `--setup-id` and `--judging` are required. `--campaign` defaults to
+the newest campaign of the experiment. `--results-dir` defaults to
+`results/harness` and `--root` to `.`. `--submission` links the run to an
+approved setup submission. `--description` and `--visibility` are used only
+when there is no submission. For a submission, the site takes the description,
+visibility and roles from the submission itself. `--display-name` names the
+task set (default `HX set <first 8 characters of the task set hash>`).
+
+The command builds the report for the campaign (2000 resamples, seed 1), then
+the publish payload from it. The score and the price are the report's own
+numbers. Without `--apply` it prints a summary and sends nothing: setup id,
+tool, base model, tool version, task set hash, task count, repeats, score,
+price, excluded cells, submission and run id, followed by
+`[DRY] nothing sent; pass --apply to publish`. Nothing reaches the site
+without `--apply`. Running `--apply` against production is the owner's action.
+
+With `--apply` the command first loads the admin credentials, so a missing key
+fails before any report work. It then prints the same summary and posts it
+signed to `/api/v1/admin/setups/publish`. On success it prints
+`[OK] published run <run id> for setup <setup id> on task set <hash>`.
+
+Admin credentials come from the same places as the other admin commands: the
+site URL from `CENTRALGAUGE_INGEST_URL` or `ingest.url` in `.centralgauge.yml`,
+the key file from `CENTRALGAUGE_ADMIN_KEY_PATH` or `ingest.admin_key_path`, and
+the key id from `CENTRALGAUGE_ADMIN_KEY_ID` or `ingest.admin_key_id`.
+
+Exit code 0 on a dry run or a successful publish. Exit code 1, with a `[FAIL]`
+line, when credentials are unavailable, the build is refused, or the site
+rejects the request. A `409 already_published` also prints a hint that the run
+may already be on the site, for example from an earlier attempt that got
+through, and to check the setups page before retrying.
+
+The build is refused (`Publish refused: ...`) when:
+
+- the report is partial. Only a complete report is published.
+- the arm is not in the report, or has no pass rate.
+- the arm is not in the campaign.
+- the arm's harness is not a publishable agent tool.
+- the arm ran under more than one tool version, or has no observed tool version.
+- a task has no `prompt.md` under `harness-tasks/tasks/<id>/`.
+- the instructions component has no `CLAUDE.md` (Claude Code) or `AGENTS.md`
+  (other tools), which the tool loads.
+- an instructions, skills, agents, hooks or plugin component on disk differs
+  from the one in the campaign manifest, or is gone.
+- the task set on disk differs from the one the campaign ran.
+
+The price note on the run is set from the report. With no price, it reads
+`Price not available.`, or `Price not available: N cells with unknown cost.`
+when cells without a known cost caused it. With a price that leaves out cells
+of unknown cost, it reads `Price excludes N cells with unknown cost.`
+
+### harness promote-setup-set
+
+```bash
+centralgauge harness promote-setup-set <hash> [--apply]
+```
+
+Makes a setups task set the current one. `<hash>` is the task set hash printed
+by `publish-setup`. Without `--apply` it prints `[DRY] would promote task set
+<hash>; pass --apply to send` and sends nothing. With `--apply` it loads the
+admin credentials (as above), posts to `/api/v1/admin/setups/task-sets/promote`
+and prints `[OK] promoted task set <hash> at <time>`. Exit code 1 with `[FAIL]`
+on a credentials or site error. Promoting against production is the owner's
+action. See `docs/site/setup-submissions.md`, "Publishing a run".
+
 ## Exit Codes
 
 | Code | Description         |
