@@ -139,6 +139,11 @@ import {
   precheckCampaignPin,
   runCampaign,
 } from "../../src/harness/campaign.ts";
+import {
+  publishSetupDeps,
+  runPromoteSetupSet,
+  runPublishSetup,
+} from "./harness-publish-setup.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
 import {
   exists,
@@ -4021,6 +4026,64 @@ export function registerHarnessCommand(
         })
       ),
   );
+
+  parent
+    .command(
+      "publish-setup <experiment:string>",
+      "Publish one arm of a complete campaign to the setups leaderboard (dry run unless --apply)",
+    )
+    .type("judging", new EnumType(["campaign", "current"]))
+    .type("visibility", new EnumType(["public", "private"]))
+    .option("--arm <id:string>", "Arm (config id) to publish", {
+      required: true,
+    })
+    .option("--setup-id <slug:string>", "Setup id on the site", {
+      required: true,
+    })
+    .option("--judging <source:judging>", "Oracles to judge with", {
+      required: true,
+    })
+    .option("--campaign <id:string>", "Campaign id (default: newest)")
+    .option("--submission <id:string>", "Submission id")
+    .option("--description <text:string>", "Setup description")
+    .option("--visibility <v:visibility>", "public or private")
+    .option("--display-name <text:string>", "Task set display name")
+    .option("--results-dir <dir:string>", "Harness records root", {
+      default: "results/harness",
+    })
+    .option("--root <dir:string>", "Repository root", { default: "." })
+    .option("--apply", "Send to the site (default: dry run)")
+    .action(async (opts, experiment: string) => {
+      Deno.exitCode = await runPublishSetup(experiment, {
+        arm: opts.arm,
+        setupId: opts.setupId,
+        judging: opts.judging,
+        campaign: opts.campaign,
+        submission: opts.submission,
+        description: opts.description,
+        visibility: opts.visibility,
+        displayName: opts.displayName,
+        resultsDir: opts.resultsDir,
+        root: opts.root,
+        apply: opts.apply === true,
+        resamples: 2000,
+        seed: 1,
+      }, publishSetupDeps(harnessReport));
+    });
+
+  parent
+    .command(
+      "promote-setup-set <hash:string>",
+      "Promote a setups task set (dry run unless --apply)",
+    )
+    .option("--apply", "Send to the site (default: dry run)")
+    .action(async (opts, hash: string) => {
+      Deno.exitCode = await runPromoteSetupSet(
+        hash,
+        { apply: opts.apply === true },
+        publishSetupDeps(harnessReport),
+      );
+    });
 
   // deno-lint-ignore no-explicit-any
   (cli as any).command("harness", parent);
