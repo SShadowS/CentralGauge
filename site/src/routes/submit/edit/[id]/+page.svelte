@@ -21,11 +21,17 @@
   async function call(path: 'status' | 'edit', extra: Record<string, unknown> = {}) {
     errors = {};
     message = '';
-    const res = await fetch(`/api/v1/setup-submissions/${page.params.id}/${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token, ...extra }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`/api/v1/setup-submissions/${page.params.id}/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, ...extra }),
+      });
+    } catch {
+      message = 'Network error. Reload the page to try again.';
+      return false;
+    }
     const body = (await res.json().catch(() => ({}))) as Status & { error?: string; details?: Record<string, string> };
     if (res.ok) {
       info = body;
@@ -82,7 +88,7 @@
       <h2>Send a fresh key</h2>
       <p>{info.has_key ? `A key is on file, expiring ${info.key_expires_on}.` : 'No key is on file.'}</p>
       <label for="key">Key</label>
-      <input id="key" type="password" autocomplete="off" bind:value={key} required />
+      <input id="key" type="password" autocomplete="off" bind:value={key} maxlength={SUBMISSION_LIMITS.keyMax} required />
       {#if errors.key}<p class="err">{errors.key}</p>{/if}
       <label for="key_expires_on">Key expires on</label>
       <input id="key_expires_on" type="date" bind:value={keyExpires} required />

@@ -16,6 +16,12 @@
   let copied = $state(false);
 
   onDestroy(() => { revealed = null; });
+  // Navigating between submissions reuses this component; drop the old key.
+  $effect(() => {
+    void s.id;
+    revealed = null;
+    copied = false;
+  });
 
   async function post(path: string, body: object = {}): Promise<Response> {
     const r = await fetch(`${base}${path}`, {
@@ -59,7 +65,12 @@
     await invalidateAll();
   });
 
-  const deleteKey = () => run(async () => {
+  const deleteKey = () => {
+    if (!confirm('Delete the stored key? This cannot be undone.')) return;
+    return deleteKeyNow();
+  };
+
+  const deleteKeyNow = () => run(async () => {
     await post('/delete-key');
     revealed = null;
     await invalidateAll();
