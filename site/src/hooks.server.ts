@@ -1,4 +1,4 @@
-import type { Handle } from "@sveltejs/kit";
+import type { Handle, HandleFetch } from "@sveltejs/kit";
 import { isRateLimited, type RateLimitBinding } from "$lib/server/rate-limit";
 import { resetIdCounter } from "$lib/client/use-id";
 import { isCanary } from "$lib/server/canary";
@@ -196,6 +196,26 @@ export const handle: Handle = async ({ event, resolve }) => {
     dur_ms: Date.now() - startNs,
   });
   return response;
+};
+
+/**
+ * SvelteKit's internal same-origin fetch forwards only `cookie` and
+ * `authorization`, so admin loaders calling `/api/v1/admin/*` lose the
+ * Cloudflare Access JWT that the page gate already verified and the API
+ * (authenticateAdminRequest) then 401s. Re-attach it, same-origin admin API
+ * calls only, never cross-origin.
+ */
+export const handleFetch: HandleFetch = ({ event, request, fetch }) => {
+  const url = new URL(request.url);
+  const jwt = event.request.headers.get("cf-access-jwt-assertion");
+  if (
+    jwt && url.origin === event.url.origin &&
+    url.pathname.startsWith("/api/v1/admin/") &&
+    !request.headers.has("cf-access-jwt-assertion")
+  ) {
+    request.headers.set("cf-access-jwt-assertion", jwt);
+  }
+  return fetch(request);
 };
 
 interface LogEntry {
