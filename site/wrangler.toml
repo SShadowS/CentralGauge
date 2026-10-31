@@ -22,9 +22,10 @@ FLAG_DENSITY_TOGGLE = "on"          # P5.4
 FLAG_RUM_BEACON = "on"              # P5.4
 CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTICS_TOKEN` runs
 
-# Public "submit a setup" form. TURNSTILE_SITE_KEY is public; this is
-# Cloudflare's always-pass TEST key. The owner replaces it with the real one.
-TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+# Public "submit a setup" form. TURNSTILE_SITE_KEY is public (the real
+# widget for ai.sshadows.dk). For local tests, Cloudflare's always-pass test
+# key is 1x00000000000000000000AA.
+TURNSTILE_SITE_KEY = "0x4AAAAAAFuEL8IPl4W82Fn1"
 # Two secrets, NOT [vars] entries (a baked-in value would shadow the secret):
 #   wrangler secret put TURNSTILE_SECRET_KEY    (Turnstile widget secret)
 #   wrangler secret put SUBMISSION_KEY_SECRET   (base64 of 32 random bytes;
