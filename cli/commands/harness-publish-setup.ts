@@ -5,6 +5,7 @@
  */
 import * as colors from "@std/fmt/colors";
 import type { SetupPublishPayload } from "../../site/src/lib/shared/setup-publish.ts";
+import { validatePublishPayload } from "../../site/src/lib/shared/setup-publish.ts";
 import type { AdminConfig } from "../../src/ingest/types.ts";
 import {
   type IngestCliFlags,
@@ -167,6 +168,10 @@ export async function runPublishSetup(
       displayName: o.displayName ?? null,
       repoRoot: o.root,
     });
+    const v = validatePublishPayload(payload);
+    if (!v.ok) {
+      return fail(d, `payload is invalid: ${v.errors.join("; ")}`);
+    }
     for (const l of summary(payload)) d.log(l);
     if (!config || !key) {
       d.log(`${colors.yellow("[DRY]")} nothing sent; pass --apply to publish`);

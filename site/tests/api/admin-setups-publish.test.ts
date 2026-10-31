@@ -264,6 +264,22 @@ describe("POST /api/v1/admin/setups/publish", () => {
     expect(await nk()).toBe(1);
   });
 
+  it("keeps a stored private visibility when a republish leaves visibility null", async () => {
+    const p1 = payload({ runId: "camp7:a", setupId: "vis-priv" });
+    p1.setup.visibility = "private";
+    expect((await post(await signed(p1))).status).toBe(201);
+    const p2 = payload({ runId: "camp7:b", setupId: "vis-priv" });
+    p2.setup.visibility = null;
+    expect((await post(await signed(p2))).status).toBe(201);
+    const s = await env.DB.prepare(
+      "SELECT visibility FROM setups WHERE id = 'vis-priv'",
+    ).first<{ visibility: string }>();
+    expect(s!.visibility).toBe("private");
+    const r = await SELF.fetch(`https://x/api/v1/setups?set=${HASH}`);
+    const body = (await r.json()) as { rows: { id: string }[] };
+    expect(body.rows.some((x) => x.id === "vis-priv")).toBe(false);
+  });
+
   it("refuses a no-submission publish for a setup linked to a submission", async () => {
     const before = await count("SELECT COUNT(*) n FROM setup_runs");
     const r = await post(

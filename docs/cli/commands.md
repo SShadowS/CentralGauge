@@ -1297,7 +1297,9 @@ Publishes one arm of a complete harness campaign to the setups leaderboard.
 the newest campaign of the experiment. `--results-dir` defaults to
 `results/harness` and `--root` to `.`. `--submission` links the run to an
 approved setup submission. `--description` and `--visibility` are used only
-when there is no submission. For a submission, the site takes the description,
+when there is no submission, and `--description` is required then. The command
+validates the payload before the dry-run summary and before posting, and exits
+1 with `[FAIL]` when it is invalid. For a submission, the site takes the description,
 visibility and roles from the submission itself. `--display-name` names the
 task set (default `HX set <first 8 characters of the task set hash>`).
 

@@ -168,8 +168,10 @@ Publishing deletes the submitter's stored key in the same write and records a
 `submission.key_deleted` audit row. The setup's key-needed flag is set when the
 submission ever supplied a key, including one already deleted, and once set it
 is never cleared by a later publish. Without a submission, the setup's
-description and visibility come from `--description` and `--visibility`
-(defaults: empty and public).
+description and visibility come from `--description` and `--visibility`.
+`--description` is required when there is no `--submission`. Visibility
+defaults to public on a setup's first publish; on a later publish, leaving
+`--visibility` out keeps the stored value, and passing it overwrites.
 
 Publish and promote each write an audit row (`setup.published`,
 `setup_task_set.promoted`) and bump the data epoch so the pages refresh at once.

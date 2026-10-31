@@ -134,28 +134,62 @@ Deno.test("promote-setup-set: dry run does not post; apply does", async () => {
  * campaign fixture would duplicate publish-setup.test.ts, so the builder is
  * swapped through the `build` seam.
  */
-function runWithPayload(deps: PublishSetupDeps, apply: boolean) {
+function validPayload() {
+  return {
+    setup: {
+      id: "my-setup",
+      agent_tool: "claude-code",
+      base_model: "m",
+      description: "A setup",
+      visibility: null,
+      roles: [],
+      ingredients: {},
+    },
+    submission_id: null,
+    task_set: {
+      hash: "a".repeat(64),
+      display_name: "HX set aaaaaaaa",
+      tasks: [{ task_id: "t1", description_sha: "b".repeat(64) }],
+    },
+    run: {
+      id: "camp1:plain",
+      tool_version: "1",
+      score: 0.75,
+      cost_per_solved_usd: null,
+      price_note: "Price not available.",
+      excluded_cells: 0,
+      repeats: 1,
+      cells: [{
+        task_id: "t1",
+        repeat: 1,
+        outcome: "pass",
+        cost_usd: null,
+        duration_ms: null,
+      }],
+    },
+  };
+}
+
+function runWithPayload(
+  deps: PublishSetupDeps,
+  apply: boolean,
+  payload: unknown = validPayload(),
+) {
   return runPublishSetup("exp", { ...OPTS, apply }, {
     ...deps,
-    build: () =>
-      Promise.resolve(anyv({
-        setup: {
-          id: "my-setup",
-          agent_tool: "claude-code",
-          base_model: "m",
-        },
-        submission_id: null,
-        task_set: { hash: "h" },
-        run: {
-          id: "camp1:plain",
-          tool_version: "1",
-          score: 0.75,
-          cost_per_solved_usd: null,
-          price_note: "Price not available.",
-          excluded_cells: 0,
-          repeats: 1,
-          cells: [{ task_id: "t1" }],
-        },
-      })),
+    build: () => Promise.resolve(anyv(payload)),
   });
 }
+
+Deno.test("publish-setup: an invalid payload fails in dry run and before posting", async () => {
+  for (const apply of [false, true]) {
+    const { deps, errs, calls } = mk();
+    const bad = validPayload();
+    bad.run.score = 2;
+    const code = await runWithPayload(deps, apply, bad);
+    assertEquals(code, 1);
+    assertStringIncludes(errs.join("\n"), "[FAIL]");
+    assertStringIncludes(errs.join("\n"), "run.score");
+    assertEquals(calls.publish, 0);
+  }
+});

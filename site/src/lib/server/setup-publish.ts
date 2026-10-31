@@ -69,7 +69,8 @@ export async function publishSetupRun(
   }
 
   let description = setup.description ?? "";
-  let visibility = setup.visibility ?? "public";
+  // null keeps the stored visibility on republish; "public" only on first insert.
+  let visibility: string | null = setup.visibility;
   let rolesJson = JSON.stringify(setup.roles);
   let flow: string | null = null;
   let needsKey = 0;
@@ -125,7 +126,7 @@ export async function publishSetupRun(
        VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET description = excluded.description,
          agent_tool = excluded.agent_tool, base_model = excluded.base_model,
-         visibility = excluded.visibility,
+         visibility = COALESCE(?, setups.visibility),
          needs_key = MAX(setups.needs_key, excluded.needs_key),
          roles_json = excluded.roles_json, flow = excluded.flow,
          ingredients_json = excluded.ingredients_json`,
@@ -134,12 +135,13 @@ export async function publishSetupRun(
       description,
       setup.agent_tool,
       setup.base_model,
-      visibility,
+      visibility ?? "public",
       needsKey,
       rolesJson,
       flow,
       JSON.stringify(setup.ingredients),
       now,
+      visibility,
     ),
     db.prepare(
       `INSERT INTO setup_runs (id, setup_id, task_set_hash, tool_version, published_at, score,
