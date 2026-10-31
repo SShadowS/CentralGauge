@@ -28,6 +28,7 @@ const STATIC_PAGES = [
   { id: "/", label: "Home", href: "/", hint: "leaderboard" },
   { id: "/models", label: "Models", href: "/models", hint: "browse all" },
   { id: "/setups", label: "Setups", href: "/setups", hint: "agent setups" },
+  { id: "/submit", label: "Submit", href: "/submit", hint: "submit a setup" },
   { id: "/families", label: "Families", href: "/families", hint: "by vendor" },
   { id: "/runs", label: "Runs", href: "/runs", hint: "global feed" },
   { id: "/tasks", label: "Tasks", href: "/tasks", hint: "benchmark suite" },

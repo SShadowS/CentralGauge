@@ -45,6 +45,7 @@ export const SITEMAP_ROUTES: ReadonlyArray<string> = [
   "/search",
   "/setups",
   "/setups/archive",
+  "/submit",
   "/tasks",
 ];
 
