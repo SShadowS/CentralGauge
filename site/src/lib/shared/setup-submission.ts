@@ -22,6 +22,16 @@ function utcDay(s: string): number | null {
   return Number.isNaN(t) || new Date(t).toISOString().slice(0, 10) !== s ? null : t;
 }
 
+/** Returns an error message, or null when `exp` (YYYY-MM-DD) is today..today+keyMaxDays. */
+export function validateKeyExpiry(exp: string, today: string): string | null {
+  const e = utcDay(exp);
+  const t = utcDay(today);
+  if (e === null || t === null) return 'A key needs an expiry date (YYYY-MM-DD).';
+  if (e < t) return 'The key expiry date is in the past.';
+  if (e > t + SUBMISSION_LIMITS.keyMaxDays * DAY_MS) return `The key must expire within ${SUBMISSION_LIMITS.keyMaxDays} days.`;
+  return null;
+}
+
 function parseRoles(json: string): Role[] | string {
   if (!json) return [];
   let data: unknown;
@@ -71,11 +81,8 @@ export function parseSubmissionFields(
   let key_expires_on: string | null = null;
   if (key) {
     const exp = get('key_expires_on');
-    const e = utcDay(exp);
-    const t = utcDay(today);
-    if (e === null || t === null) errors.key_expires_on = 'A key needs an expiry date (YYYY-MM-DD).';
-    else if (e < t) errors.key_expires_on = 'The key expiry date is in the past.';
-    else if (e > t + SUBMISSION_LIMITS.keyMaxDays * DAY_MS) errors.key_expires_on = `The key must expire within ${SUBMISSION_LIMITS.keyMaxDays} days.`;
+    const err = validateKeyExpiry(exp, today);
+    if (err) errors.key_expires_on = err;
     else key_expires_on = exp;
   }
 
