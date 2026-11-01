@@ -165,6 +165,7 @@ import {
   ValidationError,
 } from "../../../../src/errors.ts";
 import { exists } from "../../../../src/harness/fsutil.ts";
+import { STOP_FILE } from "../../../../src/harness/graceful-stop.ts";
 import { OnPremIndexError } from "../../../../src/harness/onprem-symbols.ts";
 import { noOnPrem } from "../../harness/onprem-fixture.ts";
 import { FP, poolWorld, until } from "../../harness/pool-fixture.ts";
@@ -11176,6 +11177,81 @@ Deno.test("H-35 run 004 Sol r1 H4 in-use records: written once per container (ag
   );
   assertEquals(states, []);
   await Deno.remove(squat);
+});
+
+Deno.test("graceful stop: a signalled environment closes cleanly (no in-use record left, the container claimable again), stops listening and exits non-zero", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  let fire: (() => void) | null = null;
+  let exits = 0;
+  const d = (): EnvDeps => ({
+    ...deps([]),
+    quarantineDir: () => qDir,
+    onStopSignal: (cb) => {
+      fire = cb;
+      return () => void (fire = null);
+    },
+    stoppedExit: () => void exits++,
+  });
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const h = await openHarnessEnv(envOpts(t), d());
+  assertEquals((await findRecords(qDir, key)).map((f) => f.record?.state), [
+    "in_use",
+  ]);
+  assert(!h.stop!.aborted && !await h.stopRequested!());
+  const err = stub(console, "error", () => {});
+  try {
+    fire!();
+  } finally {
+    err.restore();
+  }
+  assert(h.stop!.aborted && await h.stopRequested!());
+  await h.close();
+  assertEquals(await findRecords(qDir, key), []);
+  assertEquals([exits, fire], [1, null]);
+  // nothing for recover to refuse: the next environment claims it at once
+  const again = await openHarnessEnv(envOpts(t), d());
+  await again.close();
+  assertEquals(exits, 1, "an unstopped close keeps the exit code");
+});
+
+Deno.test("graceful stop: the stop file in the private root is honoured between rows and consumed by the close; one left at start refuses the environment", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const d = (): EnvDeps => ({
+    ...deps([]),
+    quarantineDir: () => qDir,
+    onStopSignal: () => () => {},
+    stoppedExit: () => {},
+  });
+  const file = join(t.env.privateRoot, STOP_FILE);
+  const h = await openHarnessEnv(envOpts(t), d());
+  assert(!await h.stopRequested!());
+  await Deno.writeTextFile(file, "");
+  const err = stub(console, "error", () => {});
+  try {
+    assert(await h.stopRequested!());
+  } finally {
+    err.restore();
+  }
+  assert(h.stop!.aborted);
+  await h.close();
+  assertEquals(
+    await findRecords(qDir, { name: "Cronus281", id: fakeId("Cronus281") }),
+    [],
+  );
+  assert(!await exists(file), "consumed: the next holder starts normally");
+  await Deno.writeTextFile(file, "");
+  await assertRejects(
+    () => openHarnessEnv(envOpts(t), d()),
+    ConfigurationError,
+    `stop file ${file} is present`,
+  );
+  // refused before any claim: nothing to recover
+  assertEquals(
+    await findRecords(qDir, { name: "Cronus281", id: fakeId("Cronus281") }),
+    [],
+  );
 });
 
 Deno.test("H-35 run 004 Sol r1 H4 quarantine at close: a quarantined container keeps its record; one whose quarantine write failed keeps its in-use record; both refuse the next environment", async () => {

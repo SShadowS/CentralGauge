@@ -332,6 +332,7 @@ export async function productionRunner(
     const runner = await envRunner(h.env, work);
     return {
       ...runner,
+      ...(h.stopRequested ? { stopRequested: h.stopRequested } : {}),
       close: async () => {
         await Deno.remove(work, { recursive: true }).catch(() => {});
         await h.close();

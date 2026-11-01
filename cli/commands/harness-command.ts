@@ -630,6 +630,12 @@ const autoEnv = (o: RunCliOptions): Partial<EnvOptions> =>
     : {};
 
 type Opener = (o: EnvOptions) => Promise<OpenEnv>;
+
+/** Graceful stop between rows: the environment then closes cleanly. */
+const stoppedBetweenRows = (command: string) =>
+  new ConfigurationError(
+    `${command} stopped (signal or stop file) between rows; the environment closes cleanly, the remaining rows were not run`,
+  );
 type OnInterrupt = (cb: () => void) => () => void;
 
 const sigint: OnInterrupt = (cb) => {
@@ -720,6 +726,8 @@ export async function harnessCell(
     );
     stop.abort();
   });
+  // Graceful stop (SIGBREAK, the stop file): the same as an interrupt.
+  h.stop?.addEventListener("abort", () => stop.abort(), { once: true });
   let stubDir: string | null = null;
   const pending = new Set<string>();
   try {
@@ -1905,7 +1913,11 @@ export async function harnessRun(
     const s = await runCampaign(
       env,
       experimentId,
-      { ...ro, dryRun: false },
+      {
+        ...ro,
+        dryRun: false,
+        ...(h.stopRequested ? { stopRequested: h.stopRequested } : {}),
+      },
       io,
     );
     console.log(
@@ -1960,7 +1972,11 @@ export async function harnessJudgePending(
           skip(e.id, err.message);
         }),
     );
+    // Graceful stop: no new judging; the running ones finish (as rejudge).
+    const q = queue;
+    h.stop?.addEventListener("abort", () => q.stop(), { once: true });
     for (const e of await env.store.allExecutions()) {
+      if (h.stop?.aborted) break;
       if (!await judgmentOwed(env, e)) continue;
       // Judging reads the task, its oracle and the refapp: the task as the
       // cell loaded it (--rev), unchanged; judgeDeferred checks the oracle
@@ -2170,7 +2186,7 @@ export async function harnessRejudge(
   o: RunCliOptions,
   open: Opener = openHarnessEnv,
   ask: (question: string) => boolean = askUser,
-  signal?: AbortSignal,
+  interrupt?: AbortSignal,
 ): Promise<
   {
     campaignId: string;
@@ -2192,6 +2208,10 @@ export async function harnessRejudge(
     ...autoEnv(o),
     judgeOnly: true,
   });
+  // Graceful stop: the environment's stop (SIGBREAK, the stop file) interrupts too.
+  const signal = h.stop && interrupt
+    ? AbortSignal.any([interrupt, h.stop])
+    : h.stop ?? interrupt;
   try {
     const env = h.env;
     const c = await rejudgeTarget(env.store, experimentId, o);
@@ -2741,6 +2761,8 @@ export async function harnessMeasure(
     // One run: the canary and each task's start counts are computed once.
     const run: MeasureRun = { startCache: new Map(), analyzers: null };
     for (const { e, j } of due) {
+      // Graceful stop between executions; the rest stay unmeasured.
+      if (await h.stopRequested?.()) throw stoppedBetweenRows("measure");
       const cell = cellRefFor(
         c,
         opened,
@@ -2881,6 +2903,8 @@ export async function harnessQualify(
       for (
         const variant of [t.positive, ...t.naive.map((n) => `naive/${n}`)]
       ) {
+        // Graceful stop between variants: no partial index is written.
+        if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
         const j = await harnessJudgeFixture(taskId, variant, {
           ...o,
           rev: t.rev,

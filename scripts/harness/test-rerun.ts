@@ -135,7 +135,12 @@ export interface TestRerunRunner {
   run(req: TestRerunRequest): Promise<RunnerResult>;
   /** Releases the environment the runner opened (bench lock, leases). */
   close?(): Promise<void>;
+  /** Graceful stop (signal or stop file): checked before each run; true stops the step. */
+  stopRequested?(): Promise<boolean>;
 }
+
+/** The step stopped between runs: no partial row was written, nothing aggregated. */
+export class TestRerunStopped extends Error {}
 
 // ---------------------------------------------------------------- row types
 
@@ -1187,6 +1192,12 @@ export async function testRerunStep(o: {
   let skipped = 0;
   const failed: { id: string; error: string }[] = [];
   const stamps = new Map<string, Expect>();
+  // Graceful stop: checked before every run; a row cut between its two runs
+  // is never written (writeDone is its last step).
+  let stopped = 0;
+  const halt = async () => {
+    if (await o.runner.stopRequested?.()) throw new TestRerunStopped();
+  };
   await pool(o.jobs, todo, async (r) => {
     try {
       const x = await inputs(r);
@@ -1195,6 +1206,7 @@ export async function testRerunStep(o: {
         skipped++;
         return;
       }
+      await halt();
       const specs: TestSpec[] = [];
       for (const s of x.selected) {
         const sp = specs.find((q) => q.codeunit === s.codeunit);
@@ -1212,6 +1224,7 @@ export async function testRerunStep(o: {
           }),
         )
         : null;
+      if (agentRun) await halt();
       const shippedRun = validateRunnerResult(
         await o.runner.run({
           executionId: r.id,
@@ -1255,11 +1268,20 @@ export async function testRerunStep(o: {
       // Written last and atomically: only a complete, valid row marks the execution done.
       await writeDone(execDir, r.id, x.stamp, row);
     } catch (err) {
+      if (err instanceof TestRerunStopped) {
+        stopped++;
+        return;
+      }
       const error = (err as Error).message;
       failed.push({ id: r.id, error });
       console.error(`[WARN] test-rerun ${r.id}: ${error}`);
     }
   });
+  if (stopped > 0) {
+    throw new TestRerunStopped(
+      `test-rerun stopped (signal or stop file): ${stopped} execution(s) not run, no partial row written; rerun the step to finish (done rows are reused)`,
+    );
+  }
   const byId = new Map(todo.map((r) => [r.id, r]));
   const all: TestRerunDone[] = [];
   for (const id of [...stamps.keys()].sort()) {

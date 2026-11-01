@@ -126,6 +126,11 @@ import {
   inspectContainer,
 } from "../../src/container/docker-inspect.ts";
 import { loadTask } from "../../src/harness/task.ts";
+import {
+  type OnStopSignal,
+  stopFileLeft,
+  watchStop,
+} from "../../src/harness/graceful-stop.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
   acquireBenchLock,
@@ -240,6 +245,10 @@ export interface EnvDeps {
   admitOnPrem?: (lock: LockedSymbols) => Promise<OnPremIndex>;
   /** H-44 test seam: the key custody probe's command execution (default: Windows PowerShell). */
   probeRunner?: ProbeRunner;
+  /** Graceful-stop test seam: the stop signals (default SIGINT + SIGBREAK). */
+  onStopSignal?: OnStopSignal;
+  /** Graceful-stop test seam: a stopped environment's exit (default Deno.exitCode = 130). */
+  stoppedExit?: () => void;
 }
 
 export const REAL_DEPS: EnvDeps = {
@@ -288,6 +297,14 @@ export const REAL_DEPS: EnvDeps = {
 export interface OpenEnv {
   env: HarnessEnv;
   close(): Promise<void>;
+  /**
+   * Graceful stop (src/harness/graceful-stop.ts): aborted by SIGINT, SIGBREAK
+   * or the stop file `<private root>/STOP`. A holder stops between rows, never
+   * caching a partial one, then closes; close() sets a non-zero exit code.
+   */
+  stop?: AbortSignal;
+  /** Checks the stop file now; true once a stop was requested. Call between rows. */
+  stopRequested?(): Promise<boolean>;
 }
 
 /** What `harness env check` and `harness baseline create` read. */
@@ -1019,6 +1036,13 @@ export async function openHarnessEnv(
     packages: symbols,
   });
   const sharedResults = join(o.repoRoot, "results", "harness");
+  // Graceful stop: a stop file left behind would stop this run at once.
+  const left = await stopFileLeft(o.privateRoot);
+  if (left) {
+    throw new ConfigurationError(
+      `stop file ${left} is present (a stop request for this private root): remove it to start`,
+    );
+  }
   let release: () => Promise<void>;
   try {
     release = deps.acquireLock(
@@ -1033,6 +1057,16 @@ export async function openHarnessEnv(
     }
     throw err;
   }
+  // Graceful stop: from here a signal no longer kills the process; the holder
+  // stops between rows and closes (claims released). Listening ends only
+  // after the close, so a signal during it cannot cut it short.
+  const stop = watchStop(o.privateRoot, deps.onStopSignal);
+  const unwatch = async () => {
+    await stop.dispose();
+    if (stop.signal.aborted) {
+      (deps.stoppedExit ?? (() => void (Deno.exitCode = 130)))();
+    }
+  };
   const closers: (() => Promise<void>)[] = [release];
   // H-35 run 004 Sol r2 N3: closer failures so far (the in-use release reads them)
   const closeFailures: string[] = [];
@@ -1595,9 +1629,14 @@ export async function openHarnessEnv(
       );
     }
     // A second close is a no-op (M1-33e).
-    return { env, close: () => closing ??= closeAll() };
+    return {
+      env,
+      close: () => closing ??= closeAll().finally(unwatch),
+      stop: stop.signal,
+      stopRequested: stop.requested,
+    };
   } catch (err) {
-    await closeAll();
+    await closeAll().finally(unwatch);
     throw err;
   }
 }
