@@ -1370,6 +1370,9 @@ The price note on the run is set from the report. With no price, it reads
 `Price not available.`, or `Price not available: N cells with unknown cost.`
 when cells without a known cost caused it. With a price that leaves out cells
 of unknown cost, it reads `Price excludes N cells with unknown cost.`
+When more than 25% of the arm's cells have unknown cost (mostly timeouts and
+crashes, the expensive runs), no price is published and the note reads
+`Price not available: N of M cells have unknown cost.` The score is unchanged.
 
 ### harness promote-setup-set
 
