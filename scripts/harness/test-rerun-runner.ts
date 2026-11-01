@@ -19,6 +19,7 @@ import {
 import type { EnvOptions, OpenEnv } from "../../cli/commands/harness-env.ts";
 import type { HarnessEnv } from "../../src/harness/execution.ts";
 import { safeCopyTree } from "../../src/harness/fsutil.ts";
+import { fsTimingLine } from "../../src/harness/reset.ts";
 import {
   hashFile,
   hashTree,
@@ -225,6 +226,9 @@ export async function envRunner(
           `[WARN] test-rerun ${req.executionId}: quarantined ${held.container}: ${held.result.cleanupError}`,
         );
       }
+      // R-09: the L4 walk timing of this run (load evidence for lane-ops)
+      const timing = fsTimingLine(held.result.fsCheck);
+      if (timing) console.error(`${timing} (test-rerun ${req.executionId})`);
       const key = (codeunit: number, procedure: string) =>
         `${codeunit}|${procedure.toLowerCase()}`;
       const messages = new Map<string, string[]>();
@@ -332,6 +336,7 @@ export async function productionRunner(
     const runner = await envRunner(h.env, work);
     return {
       ...runner,
+      ...(h.stopRequested ? { stopRequested: h.stopRequested } : {}),
       close: async () => {
         await Deno.remove(work, { recursive: true }).catch(() => {});
         await h.close();

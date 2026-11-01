@@ -84,6 +84,8 @@ export interface RunOptions {
   maxPauseMs: number;
   /** Any of these present stops the campaign before its next cell. */
   stopFiles?: string[];
+  /** Graceful stop of the environment (OpenEnv.stopRequested): checked with the stop files. */
+  stopRequested?: () => Promise<boolean>;
   /** Resume exactly this campaign; refused when it no longer matches, never created. */
   campaign?: string;
   /** Run exactly this unscored cell again as a manual_rerun; nothing else runs. */
@@ -1241,6 +1243,16 @@ async function campaignInvocation(
         summary.stopped = true;
         io.log(
           `[PAUSE] stop file ${path} present; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+        );
+      }
+      return true;
+    }
+    // Graceful stop (signal or the environment's stop file): the same pause.
+    if (await o.stopRequested?.()) {
+      if (!summary.stopped) {
+        summary.stopped = true;
+        io.log(
+          `[PAUSE] stop requested; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
         );
       }
       return true;

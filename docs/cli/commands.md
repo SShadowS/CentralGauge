@@ -1092,6 +1092,31 @@ copies the survey next to the lineage as `<name>.survey.json` and emits no
 exclusions (add each one, with a disposition, only from a measured difference).
 All lineage identity fields, these sections included, enter env_fp.
 
+### Graceful stop
+
+Every command that opens a harness environment (`harness cell`, `run`,
+`rejudge`, `judge-pending`, `judge-fixture`, `measure`, `qualify`,
+`analyze-campaign --test-rerun` and `--sql-cost`, `backend-probe`) stops
+gracefully on SIGINT (Ctrl-C), SIGBREAK (Ctrl-Break) or the stop file
+`<private-dir>/STOP`. Create the stop file to stop a detached process that no
+console signal reaches; it addresses exactly one environment, because each
+private dir is held by one environment at a time. The file is polled every
+2 s and at every row boundary.
+
+On a stop the command finishes or aborts its current row and never caches a
+partial one: a cell's sandbox is stopped, a rejudge or `judge-pending` admits
+no new judging while the running ones finish, `run` stops before its next
+cell (resume with `--campaign`), and `measure`, `qualify`, `--test-rerun` and
+`--sql-cost` stop before their next run (a test-rerun row cut between its two
+runs is not written; rerunning the step reuses the finished rows). The
+environment then closes the normal way, with the post-cleanup check, the L4
+after-capture and the release of its in-use records, and the process exits
+non-zero (130, or 1 where the command reports the stop as an error). A
+consumed stop file is removed by the close. A stop file already present when
+an environment opens refuses the start. A hard kill (`taskkill /F`) cannot be
+caught: its in-use records stay, and `harness recover` refuses them (the
+container must be recreated).
+
 ### Judging pool (`auto`)
 
 `harness rejudge --containers auto` and `harness run --judge-containers auto`

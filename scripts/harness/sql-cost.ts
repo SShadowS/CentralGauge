@@ -104,6 +104,8 @@ export interface SqlCostRunner {
   /** Phase 2: absent = this runner cannot run scenarios. */
   scenario?(req: ScenarioRequest): Promise<ScenarioRunResult>;
   close?(): Promise<void>;
+  /** Graceful stop (signal or stop file): checked before each run; true stops the step. */
+  stopRequested?(): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------- oracle rows
@@ -502,7 +504,16 @@ export async function sqlCostStep(o: {
     failed.push({ id, part, error });
     console.error(`[WARN] sql-cost ${id} (${part}): ${error}`);
   };
+  // Graceful stop (signal or stop file): checked before each run; a run is
+  // written only when complete (writeDone last), so nothing partial is kept.
+  let stopped = 0;
+  const halt = async () => {
+    if (!await o.runner.stopRequested?.()) return false;
+    stopped++;
+    return true;
+  };
   await pool(o.jobs, todo, async (r) => {
+    if (await halt()) return;
     const start = await o.startOf(r.task).catch((err) => {
       fail(r.id, "oracle", err);
       return null;
@@ -557,6 +568,7 @@ export async function sqlCostStep(o: {
       if (!o.runner.scenario) {
         throw new Error("this runner cannot run scenarios");
       }
+      if (await halt()) return;
       const res = await o.runner.scenario({
         executionId: r.id,
         task: r.task,
@@ -581,6 +593,11 @@ export async function sqlCostStep(o: {
       fail(r.id, "scenario", err);
     }
   });
+  if (stopped > 0) {
+    throw new Error(
+      `sql-cost stopped (signal or stop file): ${stopped} run(s) not done, no partial row written; rerun the step to finish (done rows are reused)`,
+    );
+  }
   const all: SqlCostRow[] = [];
   const scenarios: ScenarioEntry[] = [];
   const byId = new Map(todo.map((r) => [r.id, r]));
