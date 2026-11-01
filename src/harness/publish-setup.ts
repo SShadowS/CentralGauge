@@ -127,6 +127,42 @@ async function ingredients(
   };
 }
 
+/**
+ * Above this share of an arm's cells with unknown cost, no price is published:
+ * the unknown cells are mostly timeouts and crashes, the expensive runs, so a
+ * price over the rest is biased low.
+ */
+export const MAX_UNKNOWN_COST_SHARE = 0.25;
+
+/** The published cost per solved task and its note. */
+export function publishedPrice(
+  cost: number | null,
+  unknown: number,
+  total: number,
+): { cost: number | null; note: string | null } {
+  if (total > 0 && unknown / total > MAX_UNKNOWN_COST_SHARE) {
+    return {
+      cost: null,
+      note:
+        `Price not available: ${unknown} of ${total} cells have unknown cost.`,
+    };
+  }
+  if (cost === null) {
+    return {
+      cost,
+      note: unknown > 0
+        ? `Price not available: ${unknown} cells with unknown cost.`
+        : "Price not available.",
+    };
+  }
+  return {
+    cost,
+    note: unknown > 0
+      ? `Price excludes ${unknown} cells with unknown cost.`
+      : null,
+  };
+}
+
 export async function buildSetupPublishPayload(
   report: HarnessReport,
   records: CampaignRecords,
@@ -246,8 +282,11 @@ export async function buildSetupPublishPayload(
 
   const slots = Object.entries(manifest.models);
   const identity = records.campaign.task_set.identity;
-  const cost = arm.cost_per_solved_task;
-  const unknown = arm.unknown_spend_cells;
+  const price = publishedPrice(
+    arm.cost_per_solved_task,
+    arm.unknown_spend_cells,
+    cells.length,
+  );
   return {
     setup: {
       id: opts.setupId,
@@ -268,14 +307,8 @@ export async function buildSetupPublishPayload(
       id: `${records.campaign.id}:${opts.arm}`,
       tool_version: toolVersion,
       score: arm.pass_rate,
-      cost_per_solved_usd: cost,
-      price_note: cost === null
-        ? (unknown > 0
-          ? `Price not available: ${unknown} cells with unknown cost.`
-          : "Price not available.")
-        : (unknown > 0
-          ? `Price excludes ${unknown} cells with unknown cost.`
-          : null),
+      cost_per_solved_usd: price.cost,
+      price_note: price.note,
       excluded_cells: arm.unscored_cells,
       repeats: report.repeats.reported,
       cells: outCells,

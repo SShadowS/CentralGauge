@@ -13,6 +13,8 @@ import type {
 } from "../../../src/harness/records.ts";
 import {
   buildSetupPublishPayload,
+  MAX_UNKNOWN_COST_SHARE,
+  publishedPrice,
   type PublishOptions,
   PublishRefused,
 } from "../../../src/harness/publish-setup.ts";
@@ -27,6 +29,7 @@ import {
 
 interface Opts {
   unknownCost?: boolean; // plain HX-002 repeat 2 has unknown cost
+  unknownCostBoth?: boolean; // with unknownCost: plain HX-002 repeat 1 too
   noSolves?: boolean; // plain fails everything
   unscored?: boolean; // plain HX-002 repeat 2 is unscored
   pending?: boolean; // plain HX-002 repeat 2 has no judgment
@@ -42,6 +45,8 @@ async function records(o: Opts = {}): Promise<CampaignRecords> {
     for (const task of ["HX-001", "HX-002"]) {
       for (const repeat of [1, 2]) {
         const special = arm === "plain" && task === "HX-002" && repeat === 2;
+        const unknown = o.unknownCost && arm === "plain" && task === "HX-002" &&
+          (repeat === 2 || o.unknownCostBoth);
         const e = execution(c, { arm, task, repeat }, {
           observed: {
             harness_version: o.noVersion ? null : "2.1.282",
@@ -49,12 +54,12 @@ async function records(o: Opts = {}): Promise<CampaignRecords> {
             loaded_components: null,
           },
           validity: {
-            incomplete_telemetry: special && o.unknownCost ? ["cost_usd"] : [],
+            incomplete_telemetry: unknown ? ["cost_usd"] : [],
             incomplete_observed: o.noVersion ? ["harness_version"] : [],
             infra_exposed: false,
           },
           telemetry: {
-            ...telemetry(special && o.unknownCost ? null : 1),
+            ...telemetry(unknown ? null : 1),
             wall_ms: special && o.nullWall ? null : 1000,
           },
         });
@@ -281,6 +286,60 @@ Deno.test("publish-setup: a price over fewer cells (unknown spend, solves) says 
   );
   assertEquals(p.run.cost_per_solved_usd, arm.cost_per_solved_task);
   assertEquals(p.run.price_note, "Price excludes 1 cells with unknown cost.");
+});
+
+Deno.test("publish-setup: unknown cost on more than 25% of the arm's cells publishes no price; the score stands", async () => {
+  const root = await repo(PROMPTS);
+  // plain HX-002 repeats 1 and 2 unknown: 2 of 4 cells.
+  const raw = await records({ unknownCost: true, unknownCostBoth: true });
+  const report = await rpt(raw);
+  const arm = report.arms.find((a) => a.arm === "plain")!;
+  assertEquals(arm.unknown_spend_cells, 2);
+  assert(arm.cost_per_solved_task !== null);
+  const p = await buildSetupPublishPayload(
+    report,
+    await ran(raw, root),
+    base(root),
+  );
+  assertEquals(p.run.cost_per_solved_usd, null);
+  assertEquals(
+    p.run.price_note,
+    "Price not available: 2 of 4 cells have unknown cost.",
+  );
+  assertEquals(p.run.score, arm.pass_rate);
+  assertEquals(validatePublishPayload(p).ok, true);
+});
+
+Deno.test("publish-setup: the unknown-cost threshold is 25% of the arm's cells, inclusive", () => {
+  assertEquals(MAX_UNKNOWN_COST_SHARE, 0.25);
+  // Exactly 25% still prices.
+  assertEquals(publishedPrice(1.45, 11, 44), {
+    cost: 1.45,
+    note: "Price excludes 11 cells with unknown cost.",
+  });
+  // Just above 25%: no price.
+  assertEquals(publishedPrice(1.45, 12, 44), {
+    cost: null,
+    note: "Price not available: 12 of 44 cells have unknown cost.",
+  });
+  // The cc-v2-tue-realistic dry run.
+  assertEquals(publishedPrice(1.45, 24, 44).cost, null);
+  // 0% unchanged.
+  assertEquals(publishedPrice(1.45, 0, 44), { cost: 1.45, note: null });
+  assertEquals(publishedPrice(null, 0, 44), {
+    cost: null,
+    note: "Price not available.",
+  });
+  // All unknown folds into the new note.
+  assertEquals(publishedPrice(null, 44, 44), {
+    cost: null,
+    note: "Price not available: 44 of 44 cells have unknown cost.",
+  });
+  // A null cost at or below 25% keeps its note.
+  assertEquals(publishedPrice(null, 1, 4), {
+    cost: null,
+    note: "Price not available: 1 cells with unknown cost.",
+  });
 });
 
 Deno.test("publish-setup: a missing wall_ms gives a null duration", async () => {
