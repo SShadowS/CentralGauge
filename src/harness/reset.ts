@@ -81,6 +81,35 @@ export interface FsCheckRecord {
   ok: boolean;
   diff: FsDiffEntry[];
   errors: string[];
+  /**
+   * R-09: each capture's walk timing from its T| marker (measurement only;
+   * absent when neither capture carried one). held_ms: how long the NST was
+   * held for the walk; bound_s: the hold's bound.
+   */
+  timing?: { before: FsHoldTiming | null; after: FsHoldTiming | null };
+}
+
+export interface FsHoldTiming {
+  held_ms: number | null;
+  bound_s: number | null;
+}
+
+/** R-09: held_ms and bound_s of a capture's T| marker, or null. */
+export function fsHoldTiming(lines: readonly string[]): FsHoldTiming | null {
+  const t = fsCaptureTiming(lines);
+  if (!t) return null;
+  const num = (v: unknown) => typeof v === "number" ? v : null;
+  return { held_ms: num(t.held_ms), bound_s: num(t.bound_s) };
+}
+
+/** R-09: one log line of an L4 check's walk timing, or null without one. */
+export function fsTimingLine(f: FsCheckRecord | null): string | null {
+  if (!f?.timing) return null;
+  const one = (t: FsHoldTiming | null) =>
+    t ? `held ${t.held_ms ?? "?"} ms of ${t.bound_s ?? "?"} s` : "no timing";
+  return `[fs] ${f.container}: L4 walk before ${one(f.timing.before)}, after ${
+    one(f.timing.after)
+  }`;
 }
 
 /**

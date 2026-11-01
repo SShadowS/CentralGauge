@@ -20,6 +20,7 @@ import {
 import {
   type FsCheckRecord,
   type FsDiffEntry,
+  fsTimingLine,
   HostDirtyError,
   HttpBlockFailedError,
   ResetFailedError,
@@ -2645,6 +2646,8 @@ function digestingReset(
   bc: FakeBc,
   captures: (c: string, n: number) => string[],
   roots: string[] = [],
+  /** R-09: the n-th capture's T| JSON timing (default: a bare T| marker). */
+  timing: (n: number) => string | null = () => null,
 ) {
   const base = fakeReset(bc);
   const checks: FsCheckRecord[] = [];
@@ -2658,7 +2661,11 @@ function digestingReset(
       n.set(c, i + 1);
       base.log.push(`fs ${c}#${i}@${bc.syncs.length}`);
       const lines = captures(c, i);
-      return Promise.resolve([...lines, `T|${lines.length}`]);
+      const t = timing(i);
+      return Promise.resolve([
+        ...lines,
+        `T|${lines.length}${t === null ? "" : `|${t}`}`,
+      ]);
     },
   };
   return {
@@ -2703,6 +2710,69 @@ Deno.test("H-35 S3 L4 deployAndTest: fsDigest is taken right after the reset and
   });
   assertEquals(r.checks.length, 1);
   assertEquals(out.cleanupError, null);
+});
+
+Deno.test("R-09: each capture's T| timing (held_ms, bound_s) is stored on the L4 check record, before and after, and renders as a log line", async () => {
+  const bc = new FakeBc((cu) =>
+    cu === 80010 ? result({ Works: true }) : result({})
+  );
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = digestingReset(
+    bc,
+    () => [FS_LINE("C:/W/a.txt")],
+    [],
+    (i) =>
+      i === 0
+        ? JSON.stringify({ hold_setup_ms: 900, held_ms: 13021, bound_s: 38 })
+        : JSON.stringify({ held_ms: 31234, bound_s: 38, roots: [] }),
+  );
+  const out = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r.mechanism,
+      onFsCheck: r.onFsCheck,
+    },
+  });
+  const timing = {
+    before: { held_ms: 13021, bound_s: 38 },
+    after: { held_ms: 31234, bound_s: 38 },
+  };
+  assertEquals(out.fsCheck?.timing, timing);
+  // the verdict log's fs_checks[] receives the same record
+  assertEquals(r.checks[0]?.timing, timing);
+  assertEquals(
+    fsTimingLine(out.fsCheck),
+    "[fs] C1: L4 walk before held 13021 ms of 38 s, after held 31234 ms of 38 s",
+  );
+  // a capture without timing (null held_ms: no hold) keeps its slot
+  const r2 = digestingReset(
+    bc,
+    () => [FS_LINE("C:/W/a.txt")],
+    [],
+    (i) => i === 0 ? null : JSON.stringify({ held_ms: null, bound_s: 38 }),
+  );
+  const out2 = await deployAndTest(bc, "C1", {
+    wanted: p.wanted,
+    tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+    cleanupIds: [IDS.test],
+    ctx: {
+      ledgerRoot: await tmp(),
+      trustedRoots: [p.pristine],
+      reset: r2.mechanism,
+    },
+  });
+  assertEquals(out2.fsCheck?.timing, {
+    before: null,
+    after: { held_ms: null, bound_s: 38 },
+  });
+  assertEquals(
+    fsTimingLine(out2.fsCheck),
+    "[fs] C1: L4 walk before no timing, after held ? ms of 38 s",
+  );
 });
 
 Deno.test("H-35 S3 L4: a difference after the cleanup throws HostDirtyError (unscored here), records the diff, and the lane quarantines and reroutes", async () => {
