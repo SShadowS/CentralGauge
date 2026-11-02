@@ -1,0 +1,52 @@
+v: 1
+partial_credit:
+  weights:
+    "87380/Scenario01": 1
+    "87380/Scenario02": 1
+    "87380/Scenario03": 1
+    "87380/Scenario04": 1
+    "87380/Scenario05": 1
+    "87380/Scenario06": 1
+    "87380/Scenario07": 1
+    "87380/Scenario08": 1
+    "87380/Scenario09": 1
+    "87380/Scenario10": 1
+    "87380/Scenario11": 1
+  hidden_regressions: []
+reuse: null
+# Measured: gate 2026-11-02T10-01-06-955Z on e14ca83d (Cronus283) matched every value below, after
+# integer-total was corrected from the reasoned 1/11 to the measured 0. S10 and S11 (Sol C-15 r3): S10 is a statement whose only share is closed (and on hold), payable and switchable
+# as today; S11 has three payable shares, one due on the cutoff day itself, all paid in this run.
+# The shipped baseline fails S1-S9 (it never deducts a held or not-yet-due share) and passes S10, S11.
+# follow-the-ticket deducts held shares due by the cutoff but keeps To Be Paid on and has no
+# guard: passes S5, S10, S11.
+# due-only misses the share due after the cutoff: loses S3, S9.
+# no-field-guard: Validate is never refused: loses S4, S6, S8, S9.
+# guard-on-modify refuses only on save; refusal checks validate without saving: loses S4, S6, S8, S9.
+# guard-all-lines refuses the share line once its own share goes on hold: loses S6.
+# closed-shares-count deducts closed shares and counts them for the hold: loses S2, S10.
+# stale-guard accepts the owner line whose shares went all on hold after the proposal (S6) and
+# still refuses after the hold is released (S8): loses S6, S8.
+# integer-total rounds every fractional share total: loses all eleven rows. It fails Suggest itself, so a
+# scenario stops before its closing reset; Suggest proposes every open statement, and S10 then meets
+# the fractional shares an earlier scenario left behind.
+# closed-held-blocks treats a statement with only closed shares as held: loses S10.
+# cutoff-exclusive pays shares due before the cutoff day only: loses S11.
+# first-share-only (Sol C-15 r4) proposes one payout line per statement for its shares: loses S11.
+# owner-as-payee (Sol C-15 r6) pays share lines to the owner: loses every row with a share line
+# (S5, S6, S11). Every owner and share line is now checked for its payee. S11 has three payable
+# shares: two to one payee, one (due on the cutoff day) to another, each on its own line (Sol C-15 r8, r9).
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/follow-the-ticket: { partial_credit: 0.2727272727272727 }
+  naive/due-only: { partial_credit: 0.8181818181818182 }
+  naive/no-field-guard: { partial_credit: 0.6363636363636364 }
+  naive/guard-on-modify: { partial_credit: 0.6363636363636364 }
+  naive/guard-all-lines: { partial_credit: 0.9090909090909091 }
+  naive/closed-shares-count: { partial_credit: 0.8181818181818182 }
+  naive/stale-guard: { partial_credit: 0.8181818181818182 }
+  naive/integer-total: { partial_credit: 0 }
+  naive/closed-held-blocks: { partial_credit: 0.9090909090909091 }
+  naive/cutoff-exclusive: { partial_credit: 0.9090909090909091 }
+  naive/first-share-only: { partial_credit: 0.9090909090909091 }
+  naive/owner-as-payee: { partial_credit: 0.7272727272727273 }

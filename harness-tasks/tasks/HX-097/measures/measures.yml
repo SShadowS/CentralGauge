@@ -1,0 +1,50 @@
+v: 1
+partial_credit:
+  weights:
+    "87400/Scenario01": 1
+    "87400/Scenario02": 1
+    "87400/Scenario03": 1
+    "87400/Scenario04": 1
+    "87400/Scenario05": 1
+    "87400/Scenario06": 1
+    "87400/Scenario07": 1
+    "87400/Scenario08": 1
+    "87400/Scenario09": 1
+    "87400/Scenario10": 1
+  hidden_regressions: []
+reuse:
+  targets:
+    - { codeunit: 70270, procedure: AddSharedApprovals, signature: "(var ApprovalEntry: Record \"CGR Approval Entry\"; UserID: Code[50]; var Result: Record \"CGR Approval Entry\" temporary)", file: Rental/src/RentalApprovals.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 87400, procedures: [Scenario02, Scenario03, Scenario04, Scenario05, Scenario10] }
+# Measured: gate 2026-11-02T04-08-29-977Z on 2e3716ba (Cronus284) matched every partial_credit value below
+# (baseline oracle compile_fail AL0132 as designed). reuse/fixture expectations are not gate-measured.
+# The oracle calls the new public AddSharedApprovals (S7, S8), so the oracle does not compile
+# against the shipped baseline: every row fails there and all ten rows are weighted.
+# Reuse: S2-S5 and S10 go through BuildApprovalList and each expects a shared row. Under exit; the
+# shared rows vanish, so all five fail; the executed marker escapes BuildApprovalList (direct call,
+# no runner) into their failure text. S1/S6/S9 share nothing and S7/S8 call the target directly.
+# keep-early-exit: no event when both flags are off: loses S1.
+# event-twice: event raised inside AddSharedApprovals past its flag check too: loses S2-S7, S9, S10.
+# fresh-record: the caller's Table ID filter is lost, the 70202 rows leak: loses S3, S7.
+# reset-passed-record: Reset drops the caller's filters in every filter group and the Open filter:
+# loses S3, S4, S7.
+# out-of-office-dropped: loses S5 (S10 passes: its Colleague sharing row brings both entries).
+# flags-outside-only: AddSharedApprovals shares every type with no flag check: loses S5 (the
+# Colleague row leaks while only out-of-office is on) and S8 (direct call with both flags off).
+# no-dedup: the second sharing row of the same owner adds each entry again as Entry No. + 1000000:
+# loses S10 on the row count.
+# group0-filters-only: copies the caller's filters by GetFilter (filter group 0 only), so the
+# filter-group-2 Document No. filter is lost and entry 97706 leaks: loses S7.
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  fixture/duplicated-logic: { reuse_executed: false, reuse: false }
+  fixture/dead-call: { reuse_executed: false, reuse: false }
+  naive/keep-early-exit: { partial_credit: 0.9 }
+  naive/event-twice: { partial_credit: 0.2 }
+  naive/fresh-record: { partial_credit: 0.8 }
+  naive/reset-passed-record: { partial_credit: 0.7 }
+  naive/out-of-office-dropped: { partial_credit: 0.9 }
+  naive/flags-outside-only: { partial_credit: 0.8 }
+  naive/no-dedup: { partial_credit: 0.9 }
+  naive/group0-filters-only: { partial_credit: 0.9 }

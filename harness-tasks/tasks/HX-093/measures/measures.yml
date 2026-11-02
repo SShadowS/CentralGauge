@@ -1,0 +1,28 @@
+v: 1
+partial_credit:
+  weights:
+    "87320/Scenario01": 1
+    "87320/Scenario02": 1
+    "87320/Scenario03": 1
+    "87320/Scenario04": 1
+    "87320/Scenario06": 1
+    "87320/Scenario07": 1
+    "87320/Scenario08": 1
+    "87320/Scenario10": 1
+  hidden_regressions:
+    - "87320/Scenario05"
+    - "87320/Scenario09"
+reuse: null
+# Measured: gate 2026-11-02T02-32-39-086Z on 15688de7 (Cronus284) matched every value below.
+# S6, S7, S8 pair an exemption with its negation, so the baseline loses them on the negation half.
+# unconditional loses S6, S7, S8 (exempt halves); ignore-import-flag loses S6; contract-method
+# loses S3, S4 (and the hidden S5); check-only and late-stop lose S2, S4; post-only loses
+# S1, S3, S10 and the negation halves of S6, S7, S8.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/unconditional: { partial_credit: 0.625 }
+  naive/contract-method: { partial_credit: 0.75 }
+  naive/check-only: { partial_credit: 0.75 }
+  naive/post-only: { partial_credit: 0.25 }
+  naive/late-stop: { partial_credit: 0.75 }
+  naive/ignore-import-flag: { partial_credit: 0.875 }

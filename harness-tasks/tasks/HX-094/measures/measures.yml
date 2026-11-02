@@ -1,0 +1,34 @@
+v: 1
+partial_credit:
+  weights:
+    "87340/Scenario01": 1
+    "87340/Scenario02": 1
+    "87340/Scenario03": 1
+    "87340/Scenario04": 1
+    "87340/Scenario05": 1
+    "87340/Scenario06": 1
+    "87340/Scenario07": 1
+    "87340/Scenario08": 1
+    "87340/Scenario09": 1
+    "87340/Scenario10": 1
+    "87340/Scenario11": 1
+  hidden_regressions: []
+reuse: null
+# Measured: gate 2026-11-02T03-05-11-672Z on 73c757f1 (Cronus284) matched every value below.
+# Every scenario fails on the shipped baseline (a negative Discount line, or one line per
+# invoice line where the group nets to one); S11 fails there only on its net-negative group,
+# the baseline clears both buffers. So all eleven rows are weighted.
+# per-line-flip passes only the one-line-per-group S1, S5, S10, S11; document-net loses the
+# multi-group S4, S6, S8, S10; stale-header loses every row with a negative group (S1, S2,
+# S4, S5, S8, S9, S10, S11); zero-line-kept loses S6; fee-merged loses the same rows as
+# stale-header because no DISC-ADJ line exists; base-discounted-lines-only loses S7, S8;
+# no-buffer-reset loses S11 (the first build's lines and header stay in the buffers).
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/per-line-flip: { partial_credit: 0.36363636363636365 }
+  naive/document-net: { partial_credit: 0.6363636363636364 }
+  naive/stale-header: { partial_credit: 0.2727272727272727 }
+  naive/zero-line-kept: { partial_credit: 0.9090909090909091 }
+  naive/fee-merged: { partial_credit: 0.2727272727272727 }
+  naive/base-discounted-lines-only: { partial_credit: 0.8181818181818182 }
+  naive/no-buffer-reset: { partial_credit: 0.9090909090909091 }

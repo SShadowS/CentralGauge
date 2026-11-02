@@ -1,0 +1,60 @@
+codeunit 70243 "CGR Billing Match"
+{
+    procedure OpenDays(BillingLineNo: Integer): Decimal
+    var
+        BillingLine: Record "CGR Billing Line";
+        DayLine: Record "CGR Contract Day Line";
+    begin
+        BillingLine.Get(BillingLineNo);
+        DayLine.SetRange("Billing Line No.", BillingLineNo);
+        DayLine.CalcSums("Matched Days");
+        exit(BillingLine.Days - DayLine."Matched Days");
+    end;
+
+    procedure MatchLines(BillingLineNo: Integer; var DayLines: Record "CGR Contract Day Line")
+    var
+        FleetMgt: Codeunit "CGR Fleet Mgt";
+        Open: Decimal;
+    begin
+        DayLines.SetCurrentKey("Contract No.", "Line No.");
+        if not DayLines.FindSet() then
+            exit;
+        if DayLines.Count() = 1 then begin
+            if FleetMgt.SubstituteFor(DayLines."Vehicle No.") <> DayLines."Vehicle No." then begin
+                DayLines."Matched Days" := DayLines.Days;
+                DayLines."Billing Line No." := 0;
+                DayLines.Modify();
+            end else
+                MatchSingle(BillingLineNo, DayLines);
+            exit;
+        end;
+        repeat
+            Open := OpenDays(BillingLineNo);
+            if DayLines."Billing Line No." = BillingLineNo then
+                Open += DayLines."Matched Days";
+            DayLines."Matched Days" := DayLines.Days;
+            if (FleetMgt.SubstituteFor(DayLines."Vehicle No.") = DayLines."Vehicle No.") and (DayLines.Days <= Open) then
+                DayLines."Billing Line No." := BillingLineNo
+            else
+                DayLines."Billing Line No." := 0;
+            DayLines.Modify();
+        until DayLines.Next() = 0;
+    end;
+
+    local procedure MatchSingle(BillingLineNo: Integer; var DayLine: Record "CGR Contract Day Line")
+    var
+        Open: Decimal;
+    begin
+        Open := OpenDays(BillingLineNo);
+        if DayLine."Billing Line No." = BillingLineNo then
+            Open += DayLine."Matched Days";
+        if Open < 0 then
+            Open := 0;
+        if DayLine.Days < Open then
+            DayLine."Matched Days" := DayLine.Days
+        else
+            DayLine."Matched Days" := Open;
+        DayLine."Billing Line No." := BillingLineNo;
+        DayLine.Modify();
+    end;
+}

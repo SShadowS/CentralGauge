@@ -1,0 +1,34 @@
+v: 1
+partial_credit:
+  weights:
+    "87360/Scenario01": 1
+    "87360/Scenario02": 1
+    "87360/Scenario03": 1
+    "87360/Scenario04": 1
+    "87360/Scenario05": 1
+    "87360/Scenario06": 1
+    "87360/Scenario07": 1
+    "87360/Scenario08": 1
+    "87360/Scenario09": 1
+  hidden_regressions: []
+reuse: null
+# Measured: gate 2026-11-02T03-35-18-150Z on b7b58d0e (Cronus284) matched every value below.
+# Every scenario fails on the shipped baseline: S1-S3, S8 and S9 by the TestField error in the
+# apply handler, S4-S7 because UpdateAmount and Rebuild recalculate the locked line (100/80
+# becomes 130/81.25), so all nine rows are weighted.
+# skip-locked-lines leaves the locked lines' Applies-to ID behind: loses S1, S2, S3, S8.
+# restore-in-memory stores the recalculated amounts: loses S1, S2, S3, S8, S9.
+# handler-only leaves UpdateAmount and Rebuild unguarded: loses S4, S5, S6, S7.
+# lcy-from-rate stores Amount (LCY) = 100 / current rate on every locked line: loses S1-S9.
+# rebuild-unguarded: loses S6, S7.
+# sent-only recalculates Exported lines: loses S2, S4, S7.
+# only-on-id-change skips the same-ID reapplication, so the Open line stays 130 / 81.25: loses S9.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/skip-locked-lines: { partial_credit: 0.5555555555555556 }
+  naive/restore-in-memory: { partial_credit: 0.4444444444444444 }
+  naive/handler-only: { partial_credit: 0.5555555555555556 }
+  naive/lcy-from-rate: { partial_credit: 0 }
+  naive/rebuild-unguarded: { partial_credit: 0.7777777777777778 }
+  naive/sent-only: { partial_credit: 0.6666666666666666 }
+  naive/only-on-id-change: { partial_credit: 0.8888888888888888 }
