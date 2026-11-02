@@ -60,11 +60,19 @@ codeunit 70533 "CGR Invoice Summary"
     var
         TaxGroupCode: Code[10];
         i: Integer;
+        Done: Boolean;
     begin
         foreach TaxGroupCode in Totals.Keys() do begin
             i := 1;
-            while (i <= Sorted.Count()) and (Sorted.Get(i) < TaxGroupCode) do
-                i += 1;
+            Done := false;
+            while not Done do
+                if i > Sorted.Count() then
+                    Done := true
+                else
+                    if Sorted.Get(i) < TaxGroupCode then
+                        i += 1
+                    else
+                        Done := true;
             if i > Sorted.Count() then
                 Sorted.Add(TaxGroupCode)
             else

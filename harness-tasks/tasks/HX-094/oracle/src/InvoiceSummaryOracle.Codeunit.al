@@ -224,6 +224,38 @@ codeunit 87340 "HX094 Invoice Summary Oracle"
         HX094Cleanup(InvoiceNo);
     end;
 
+    [Test]
+    procedure Scenario11()
+    var
+        Header: Record "CGR Invoice Summary Header" temporary;
+        Lines: Record "CGR Invoice Summary Line" temporary;
+        FirstInvoiceNo: Code[20];
+        InvoiceNo: Code[20];
+    begin
+        FirstInvoiceNo := HX094Invoice('11', 5);
+        HX094InvoiceLine(FirstInvoiceNo, 10000, 'A', 100, 10);
+        InvoiceNo := HX094Invoice('11', 0);
+        HX094InvoiceLine(InvoiceNo, 10000, 'A', 200, -30);
+
+        HX094Build(FirstInvoiceNo, Header, Lines);
+        Lines.Reset();
+        Assert.AreEqual(2, Lines.Count(), 'S11: precondition, the first build holds a Discount and a FEE line');
+
+        Lines.SetRange("Line Type", "CGR Summary Line Type"::Discount);
+        HX094Build(InvoiceNo, Header, Lines);
+        Lines.Reset();
+
+        Assert.AreEqual(1, Lines.Count(), 'S11: after the second build the lines are only those of the second invoice');
+        HX094AssertCount(Lines, "CGR Summary Line Type"::Discount, 0, 'S11');
+        HX094AssertCount(Lines, "CGR Summary Line Type"::Charge, 1, 'S11');
+        HX094AssertLine(Lines, "CGR Summary Line Type"::Charge, 'DISC-ADJ', 'A', 200, 30, 'S11');
+        HX094AssertNoNegative(Lines, 'S11');
+        Assert.IsFalse(Header.Get(FirstInvoiceNo), 'S11: the header of the first invoice is gone');
+        HX094AssertHeader(Header, InvoiceNo, 200, 0, 30, 230, 'S11');
+        HX094Cleanup(FirstInvoiceNo);
+        HX094Cleanup(InvoiceNo);
+    end;
+
     local procedure HX094Invoice(Tag: Text[2]; HandlingFee: Decimal): Code[20]
     var
         Invoice: Record "CGR Rental Invoice";

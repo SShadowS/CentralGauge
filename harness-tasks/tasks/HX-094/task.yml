@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental, Leasing, Reporting]
   tests:
-    - { codeunit: 87340, procedures: [Scenario01, Scenario02, Scenario03, Scenario04, Scenario05, Scenario06, Scenario07, Scenario08, Scenario09, Scenario10] }
+    - { codeunit: 87340, procedures: [Scenario01, Scenario02, Scenario03, Scenario04, Scenario05, Scenario06, Scenario07, Scenario08, Scenario09, Scenario10, Scenario11] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
