@@ -13,4 +13,6 @@ Two things to change:
 
    It adds to Result the approval entries shared with UserID, under the selection ApprovalEntry describes, and respects the sharing switches in Setup. It does not raise `OnAfterBuildApprovalList`. `BuildApprovalList` uses it.
 
+   ApprovalFilter and ApprovalEntry never filter on Approver ID; UserID decides whose approvals they are.
+
 Apart from the event, the list `BuildApprovalList` returns must not change.

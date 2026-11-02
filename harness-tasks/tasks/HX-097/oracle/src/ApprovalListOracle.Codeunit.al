@@ -3,7 +3,7 @@ codeunit 87400 "HX097 Approval List Oracle"
     Subtype = Test;
     TestPermissions = Disabled;
 
-    // Scenario N uses users and owners 'HX097-UN-*' and approval entries 97N01..97N99; the
+    // Scenario N uses users and owners 'HX097-UN-*' and approval entries 97000 + 100 * N + 1..99; the
     // subscriber adds the marker row Entry No. 9799900 + N (Table ID 0).
 
     var
@@ -63,6 +63,7 @@ codeunit 87400 "HX097 Approval List Oracle"
         Expected.Add(97203);
         Expected.Add(9799902);
         HX097AssertList(Result, Expected, 'S2');
+        HX097AssertCopy(Result, 97203, 'S2');
         Assert.AreEqual(1, Spy.HX097Calls(), 'S2: OnAfterBuildApprovalList is raised once');
         HX097End(2);
     end;
@@ -197,16 +198,21 @@ codeunit 87400 "HX097 Approval List Oracle"
         HX097Entry(97703, 70201, 'HX097-U7-O1', "CGR Approval Status"::Approved);
         HX097Entry(97704, 70201, 'HX097-U7-ME', "CGR Approval Status"::Open);
         HX097Entry(97705, 70201, 'HX097-U7-O2', "CGR Approval Status"::Open);
+        HX097Entry(97706, 70201, 'HX097-U7-O1', "CGR Approval Status"::Open);
         Spy.HX097SetMarker(9799907);
         BindSubscription(Spy);
 
         ApprovalEntry.SetRange("Table ID", 70201);
         ApprovalEntry.SetRange(Status, ApprovalEntry.Status::Open);
+        ApprovalEntry.FilterGroup(2);
+        ApprovalEntry.SetRange("Document No.", HX097DocNo(97701));
+        ApprovalEntry.FilterGroup(0);
         Approvals.AddSharedApprovals(ApprovalEntry, 'HX097-U7-ME', Result);
 
         UnbindSubscription(Spy);
         Expected.Add(97701);
         HX097AssertList(Result, Expected, 'S7');
+        HX097AssertCopy(Result, 97701, 'S7');
         Assert.AreEqual(0, Spy.HX097Calls(), 'S7: AddSharedApprovals does not raise OnAfterBuildApprovalList');
         HX097End(7);
     end;
@@ -262,6 +268,36 @@ codeunit 87400 "HX097 Approval List Oracle"
         HX097End(9);
     end;
 
+    [Test]
+    procedure Scenario10()
+    var
+        ApprovalFilter: Record "CGR Approval Entry";
+        Result: Record "CGR Approval Entry" temporary;
+        Approvals: Codeunit "CGR Rental Approvals";
+        Spy: Codeunit "HX097 List Spy";
+        Expected: List of [Integer];
+    begin
+        HX097Begin(10, true, true);
+        HX097Entry(98001, 70201, 'HX097-U10-ME', "CGR Approval Status"::Open);
+        HX097Share('HX097-U10-O1', 'HX097-U10-ME', "CGR Sharing Type"::Colleague);
+        HX097Share('HX097-U10-O1', 'HX097-U10-ME', "CGR Sharing Type"::"Out of Office");
+        HX097Entry(98002, 70201, 'HX097-U10-O1', "CGR Approval Status"::Open);
+        HX097Entry(98003, 70202, 'HX097-U10-O1', "CGR Approval Status"::Open);
+        Spy.HX097SetMarker(9799910);
+        BindSubscription(Spy);
+
+        Approvals.BuildApprovalList(ApprovalFilter, 'HX097-U10-ME', Result);
+
+        UnbindSubscription(Spy);
+        Expected.Add(98001);
+        Expected.Add(98002);
+        Expected.Add(98003);
+        Expected.Add(9799910);
+        HX097AssertList(Result, Expected, 'S10');
+        Assert.AreEqual(1, Spy.HX097Calls(), 'S10: OnAfterBuildApprovalList is raised once');
+        HX097End(10);
+    end;
+
     local procedure HX097Begin(Scenario: Integer; ShareWithColleagues: Boolean; ShareOutOfOffice: Boolean)
     var
         SessionContext: Codeunit "CGR Session Context";
@@ -308,7 +344,7 @@ codeunit 87400 "HX097 Approval List Oracle"
         Entry.Init();
         Entry."Entry No." := EntryNo;
         Entry."Table ID" := TableID;
-        Entry."Document No." := CopyStr('HX097-' + Format(EntryNo, 0, 9), 1, MaxStrLen(Entry."Document No."));
+        Entry."Document No." := HX097DocNo(EntryNo);
         Entry."Approver ID" := ApproverID;
         Entry.Status := Status;
         Entry.Insert();
@@ -323,6 +359,24 @@ codeunit 87400 "HX097 Approval List Oracle"
         Sharing."Shared With ID" := SharedWithID;
         Sharing."Sharing Type" := SharingType;
         Sharing.Insert();
+    end;
+
+    local procedure HX097DocNo(EntryNo: Integer): Code[20]
+    begin
+        exit(CopyStr('HX097-' + Format(EntryNo, 0, 9), 1, 20));
+    end;
+
+    local procedure HX097AssertCopy(var Result: Record "CGR Approval Entry" temporary; EntryNo: Integer; Scenario: Text)
+    var
+        Source: Record "CGR Approval Entry";
+    begin
+        Source.Get(EntryNo);
+        Result.Reset();
+        Assert.IsTrue(Result.Get(EntryNo), StrSubstNo('%1: entry %2 is in the approval list', Scenario, EntryNo));
+        Assert.AreEqual(Source."Table ID", Result."Table ID", StrSubstNo('%1: Table ID of entry %2', Scenario, EntryNo));
+        Assert.AreEqual(Source."Document No.", Result."Document No.", StrSubstNo('%1: Document No. of entry %2', Scenario, EntryNo));
+        Assert.AreEqual(Source."Approver ID", Result."Approver ID", StrSubstNo('%1: Approver ID of entry %2', Scenario, EntryNo));
+        Assert.AreEqual(Source.Status, Result.Status, StrSubstNo('%1: Status of entry %2', Scenario, EntryNo));
     end;
 
     local procedure HX097AssertList(var Result: Record "CGR Approval Entry" temporary; Expected: List of [Integer]; Scenario: Text)
