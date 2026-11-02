@@ -12,7 +12,7 @@ partial_credit:
     - "87280/Scenario08"
     - "87280/Scenario09"
 reuse: null
-# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Measured: gate 2026-11-02T02-02-05-220Z on f8c688af (Cronus284) matched every value below.
 # optimistic-failure passes every weighted row: it loses only the hidden regression S6,
 # which partial_credit does not count (it shows in the hidden-regression share).
 expect:
