@@ -2554,8 +2554,8 @@ export async function harnessRederive(o: {
         execution: e,
         reason: o.reason,
         codeCommit,
-        pricing: (at) =>
-          loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
+        pricing: (at, armSlugs) =>
+          loadPricingBook(join(o.repoRoot, "site", "catalog"), at, armSlugs),
       }),
     );
   }

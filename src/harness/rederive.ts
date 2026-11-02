@@ -100,7 +100,8 @@ export async function rederiveExecution(o: {
   reason: string;
   /** The commit of the parser doing the re-derivation (40 hex). */
   codeCommit: string;
-  pricing: (at: Date) => Promise<PricingBook>;
+  /** The book at `at`; the arm's slugs settle an id listed on several routes (H-02). */
+  pricing: (at: Date, armSlugs: readonly string[]) => Promise<PricingBook>;
   now?: () => Date;
 }): Promise<RederivationRecord> {
   const e = o.execution;
@@ -128,6 +129,12 @@ export async function rederiveExecution(o: {
   const traceRel = `runs/${e.id}/trace.rederived-${id}.jsonl`;
   const traceOut = join(o.store.root, traceRel);
   const adapter = adapterFor(e.manifest.harness);
+  // Outside the parse try: a catalog error refuses the rederive (overlays are
+  // write-once); it is never recorded as this execution's parse failure.
+  const pricing = await o.pricing(
+    new Date(side.pricing_book_at),
+    Object.values(e.manifest.models),
+  );
   let parseError: string | null = null;
   let parsed: ParsedRun;
   try {
@@ -138,7 +145,7 @@ export async function rederiveExecution(o: {
       executionId: e.id,
       exitCode: side.sandbox.exitCode,
       manifest: e.manifest,
-      pricing: await o.pricing(new Date(side.pricing_book_at)),
+      pricing,
       traceOut,
     });
   } catch (err) {
