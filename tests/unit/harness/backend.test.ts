@@ -1502,12 +1502,14 @@ Deno.test("production ops (H-43 L2a): a test request blocks HttpClient for every
   );
   assertEquals(res.status, 200, await res.clone().text());
   // Core is the unchanged staged prerequisite; Test is the agent's app.
+  // H-50: once before the publish, then again after it.
   assertEquals(
     bc.httpSettings.map((s) => [s.container, s.id, s.allowed]),
-    [["C1", IDS.test, false]],
+    [["C1", IDS.test, false], ["C1", IDS.test, false]],
   );
-  assert(bc.httpSettings.every((s) => s.at >= 1), "after the publish");
-  assertEquals(testsAt, 1, "set before the first test");
+  assert(bc.httpSettings[1]!.at >= 1, "after the publish");
+  assert(bc.httpSettings[0]!.at < bc.httpSettings[1]!.at, "before the publish");
+  assertEquals(testsAt, 2, "set before the first test");
 });
 
 Deno.test("production ops (H-50): a test request writes the block before the agent app's publish, so a leftover allow=true row never reaches its install code", async () => {

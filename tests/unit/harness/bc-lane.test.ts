@@ -2879,15 +2879,17 @@ Deno.test("H-35 S3 L2a deployAndTest: in a judge deployment every candidate gets
   });
   const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
   assert(cands.length > 0);
+  // H-50: once before the publish, then again after it.
   assertEquals(
     bc.httpSettings.map((s) => [s.id, s.allowed]),
-    cands.map((id) => [id, false]),
+    [...cands, ...cands].map((id) => [id, false]),
   );
+  const pre = bc.httpSettings[0]!.at;
   assert(
-    bc.httpSettings.every((s) => s.at >= 1),
+    bc.httpSettings.slice(cands.length).every((s) => s.at >= 1 && s.at > pre),
     "after the deployment's sync",
   );
-  assertEquals(testsAt, cands.length, "all set before the first test");
+  assertEquals(testsAt, 2 * cands.length, "all set before the first test");
 });
 
 Deno.test("H-35 S3 L2a: a read-back that is not allow=false fails the deployment as infra; the lane quarantines and reroutes", async () => {
@@ -2934,12 +2936,18 @@ Deno.test("H-43 L2a: an agent-session deployment (no reset) blocks every candida
   });
   const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
   assertEquals(cands.sort(), [IDS.rental, IDS.test].sort());
-  assertEquals(
-    bc.httpSettings.map((s) => [s.id, s.allowed]).sort(),
-    cands.map((id) => [id, false]).sort(),
-  );
-  assert(bc.httpSettings.every((s) => s.at >= 1), "after the publish");
-  assertEquals(testsAt, cands.length, "all set before the first test");
+  // H-50: once before the publish (no sync yet), then again after it.
+  const pre = bc.httpSettings.slice(0, cands.length);
+  const post = bc.httpSettings.slice(cands.length);
+  for (const half of [pre, post]) {
+    assertEquals(
+      half.map((s) => [s.id, s.allowed]).sort(),
+      cands.map((id) => [id, false]).sort(),
+    );
+  }
+  assert(pre.every((s) => s.at === 0), "before the publish");
+  assert(post.every((s) => s.at >= 1), "after the publish");
+  assertEquals(testsAt, 2 * cands.length, "all set before the first test");
 });
 
 Deno.test("H-43 L2a: in an agent-session deployment (no reset) a read-back other than allow=false or a throw refuses the deployment (HttpBlockFailedError, no test runs)", async () => {
@@ -3013,8 +3021,9 @@ Deno.test("H-43 L2a: an agent-session candidate publish failure still blocks eve
   });
   assert(out.deployed.candidateFailure);
   assertEquals(bc.tests, []);
+  // H-50: the pre-publish writes plus, after the failed publish, every candidate again.
   assertEquals(
-    bc.httpSettings.map((s) => s.id).sort(),
+    bc.httpSettings.filter((s) => s.at >= 1).map((s) => s.id).sort(),
     p.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
   );
 });
@@ -3219,8 +3228,10 @@ Deno.test("H-35 Sol S3 r1 #4: a setting call that throws is HttpBlockFailedError
     reset: fakeReset(bc2).mechanism,
   });
   assert(d.candidateFailure);
+  // H-50: after the failed publish (the last sync), every candidate again.
+  const synced = bc2.syncs.length;
   assertEquals(
-    bc2.httpSettings.map((s) => s.id).sort(),
+    bc2.httpSettings.filter((s) => s.at === synced).map((s) => s.id).sort(),
     p2.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
   );
 });
