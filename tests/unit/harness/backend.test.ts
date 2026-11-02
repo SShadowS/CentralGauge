@@ -1510,6 +1510,20 @@ Deno.test("production ops (H-43 L2a): a test request blocks HttpClient for every
   assertEquals(testsAt, 1, "set before the first test");
 });
 
+Deno.test("production ops (H-50): a test request writes the block before the agent app's publish, so a leftover allow=true row never reaches its install code", async () => {
+  const bc = new FakeBc(() => result({ A: true }));
+  bc.httpRows.set(`C1|${IDS.test.toLowerCase()}`, true);
+  const { b, tok, exec } = await crashBackend(bc, ["C1"], "h50-pre");
+  const res = await b.handle(
+    req("/v1/test", tok, '{"codeunits":[80010]}', exec),
+  );
+  assertEquals(res.status, 200, await res.clone().text());
+  assertEquals(
+    bc.httpRowAtPublish.filter((r) => r.id === IDS.test).map((r) => r.allowed),
+    [false],
+  );
+});
+
 Deno.test("production ops (H-43 L2a): a block that does not hold fails the test request closed (503, no test runs) and quarantines the container", async () => {
   const bc = new FakeBc(() => result({ A: true }));
   bc.httpReadback = () => "allow=true";

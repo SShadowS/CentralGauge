@@ -3019,6 +3019,96 @@ Deno.test("H-43 L2a: an agent-session candidate publish failure still blocks eve
   );
 });
 
+// ---- H-50: the HttpClient block row is written before the publish (H-46) ----
+
+Deno.test("H-50: judge and agent-session deployments write allow=false for every candidate before its publish, overwriting a leftover allow=true row, and again after it", async () => {
+  for (const judge of [true, false]) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]), ["Rental"]);
+    const cands = p.wanted.filter((w) => w.role === "candidate");
+    assertEquals(cands.length, 2);
+    // A leftover row from an earlier publish of the same fixed App ID.
+    for (const w of cands) bc.httpRows.set(`C1|${w.id.toLowerCase()}`, true);
+    await deployAndTest(bc, "C1", {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [...p.candidateIds].reverse(),
+      ctx: {
+        ledgerRoot: await tmp(),
+        trustedRoots: [p.pristine],
+        ...(judge ? { reset: fakeReset(bc).mechanism } : {}),
+      },
+    });
+    const pub = bc.syncs.findIndex((s) =>
+      cands.every((w) => s.publish.includes(w.file))
+    );
+    assert(pub >= 0, "one sync publishes the candidates");
+    for (const w of cands) {
+      assertEquals(
+        bc.httpRowAtPublish.filter((r) => r.id === w.id).map((r) => r.allowed),
+        [false],
+        `${w.name}: the row its install code sees (judge=${judge})`,
+      );
+      assertEquals(
+        bc.httpSettings.filter((s) => s.id === w.id).map((
+          s,
+        ) => [s.at, s.allowed]),
+        [[pub, false], [pub + 1, false]],
+        `${w.name}: before and after the publish (judge=${judge})`,
+      );
+    }
+  }
+});
+
+Deno.test("H-50: a pre-publish block that does not hold (read-back or throw) refuses the deployment before any candidate is published", async () => {
+  for (const judge of [true, false]) {
+    for (
+      const readback of [
+        () => "allow=true",
+        () => {
+          throw new ContainerError("SOAP timed out", "C1", "test");
+        },
+      ]
+    ) {
+      const bc = new FakeBc((cu) =>
+        cu === 80010 ? result({ Works: true }) : result({})
+      );
+      const p = await prep(bc, new BcLane(bc, ["C1"]));
+      const cands = new Set(
+        p.wanted.filter((w) => w.role === "candidate").map((w) => w.id),
+      );
+      const published = bc.httpRowAtPublish.length;
+      bc.httpReadback = readback;
+      await assertRejects(
+        async () =>
+          await deployAndTest(bc, "C1", {
+            wanted: p.wanted,
+            tests: [{
+              codeunit: 80010,
+              procedures: ["Works"],
+              target: "candidate",
+            }],
+            cleanupIds: [IDS.test],
+            ctx: {
+              ledgerRoot: await tmp(),
+              trustedRoots: [p.pristine],
+              ...(judge ? { reset: fakeReset(bc).mechanism } : {}),
+            },
+          }),
+        HttpBlockFailedError,
+      );
+      assertEquals(
+        bc.httpRowAtPublish.slice(published).filter((r) => cands.has(r.id)),
+        [],
+        `no candidate published (judge=${judge})`,
+      );
+      assertEquals(bc.tests, []);
+    }
+  }
+});
+
 // ---- H-35 Sol S3 r1 fixes ----
 
 Deno.test("H-35 Sol S3 r1 #1: a failed cleanup still takes the second capture; a difference then throws HostDirtyError (never scored), a clean one keeps the measurement with the cleanupError", async () => {
