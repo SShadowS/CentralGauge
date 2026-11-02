@@ -494,17 +494,24 @@ export function excludedLines(excluded: Excluded[]): string[] {
   return excluded.map((x) => `excluded ${x.execution} ${x.task} ${x.reason}`);
 }
 
-/** Tasks the next screen must run: incomplete or never screened. */
-export function rescreenTasks(status: Map<string, Status>): string[] {
-  return [...status].filter(([, s]) => s === "incomplete" || s === "unscreened")
-    .map(([id]) => id);
+/**
+ * Tasks the next screen must run: incomplete or never screened. H-51: a
+ * candidate in `ruled` (flagged by --stratify-env) waits for a ruling instead.
+ */
+export function rescreenTasks(
+  status: Map<string, Status>,
+  ruled: { has(id: string): boolean } = new Set(),
+): string[] {
+  return [...status].filter(([id, s]) =>
+    (s === "incomplete" || s === "unscreened") && !ruled.has(id)
+  ).map(([id]) => id);
 }
 
 export interface ScreenCampaign {
   id: string;
   experiment: string;
   created_at: string;
-  cells: Cell[];
+  cells: EnvCell[];
   /** H-29: cells excluded because their execution ended in harness_crash. */
   excluded?: Excluded[];
   /** M8-02b: problems found in the campaign's raw records (manualRerunProblems). */
@@ -561,7 +568,7 @@ export function screeningHistory(
   campaigns: ScreenCampaign[],
   rules: Rules,
 ): {
-  cells: Cell[];
+  cells: EnvCell[];
   screens: Map<string, number>;
   problems: string[];
   /** H-29: the excluded cells of each task's counted (newest) screen. */
@@ -575,7 +582,7 @@ export function screeningHistory(
     problems.push(`experiment ${x} has more than one campaign`);
   }
   for (const c of campaigns) problems.push(...(c.problems ?? []));
-  const latest = new Map<string, Cell[]>();
+  const latest = new Map<string, EnvCell[]>();
   const latestExcluded = new Map<string, Excluded[]>();
   const screens = new Map<string, number>();
   const order = [...campaigns].sort((a, b) =>
@@ -645,6 +652,95 @@ export function classify(
     );
   }
   return status;
+}
+
+/**
+ * H-51: a cell plus its environment, the counted v2 judgment's env_fp
+ * ("(none)" when that is unknown, as checkOneEnvironment), "(v1)" for a
+ * legacy judgment (no env_fp, so never pooled with one), null without a
+ * counted judgment (such a cell is never scored).
+ */
+export type EnvCell = Cell & { env?: string | null };
+
+export function cellEnvs<T extends { judgment_id: string | null }>(
+  cells: T[],
+  judgments: readonly JudgmentRecord[],
+): (T & { env: string | null })[] {
+  const byId = new Map(judgments.map((j) => [j.id, j]));
+  return cells.map((c) => {
+    const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
+    return {
+      ...c,
+      env: !j ? null : j.v === 2 ? j.provenance?.env_fp ?? "(none)" : "(v1)",
+    };
+  });
+}
+
+export interface EnvStratum {
+  env: string;
+  status: Status;
+  solved: number;
+  scored: number;
+}
+
+const RESOLVED = new Set<Status>([...STRATA, "dead", "saturated"]);
+const FROM_TALLY = new Set<Status>([...RESOLVED, "incomplete", "unscreenable"]);
+
+/**
+ * H-51 `--stratify-env`: classify with pooled verdicts computed per env_fp,
+ * never across one. A candidate whose cells span more than one env_fp gets
+ * a status per stratum and is flagged when they disagree or when no stratum
+ * has enough cells for a status; its own status is then "incomplete", and
+ * the caller keeps it out of the next screen (the orchestrator rules).
+ */
+export function stratifyByEnv(
+  s: Screening,
+  sealed: Set<string>,
+  heldOut: string[],
+  cells: EnvCell[],
+  screens: Map<string, number>,
+): {
+  status: Map<string, Status>;
+  strata: Map<string, EnvStratum[]>;
+  flagged: Map<string, string>;
+} {
+  const status = classify(
+    s,
+    sealed,
+    heldOut,
+    tally(cells, s.rules),
+    screens,
+  );
+  const strata = new Map<string, EnvStratum[]>();
+  const flagged = new Map<string, string>();
+  const envs = new Map<string, Set<string>>();
+  for (const c of cells) {
+    if (c.env == null) continue;
+    envs.set(c.task, (envs.get(c.task) ?? new Set()).add(c.env));
+  }
+  for (const [id, set] of envs) {
+    if (set.size < 2 || !status.has(id)) continue;
+    const per = [...set].sort().map((env): EnvStratum => {
+      // An env-less cell is never scored; it joins every stratum of its task.
+      const t = tally(
+        cells.filter((c) => c.task === id && (c.env ?? env) === env),
+        s.rules,
+      ).get(id)!;
+      const st = classify(s, sealed, heldOut, new Map([[id, t]]), screens)
+        .get(id)!;
+      return { env, status: st, solved: t.solved, scored: t.scored };
+    });
+    strata.set(id, per);
+    if (!FROM_TALLY.has(status.get(id)!)) continue;
+    const reason = new Set(per.map((p) => p.status)).size > 1
+      ? "strata disagree"
+      : RESOLVED.has(per[0]!.status)
+      ? null
+      : "no stratum has enough cells for a status";
+    status.set(id, reason === null ? per[0]!.status : "incomplete");
+    if (reason !== null) flagged.set(id, reason);
+  }
+  return { status, strata, flagged };
 }
 
 /** A held-out task, or a task never sealed, must have no pilot cell. */
@@ -1037,6 +1133,8 @@ export async function loadScreenCampaigns(
   rules: Rules,
   /** H-35: where a legacy task descriptor is recovered from (git history). */
   repoRoot = ".",
+  /** H-51: cells carry their env_fp and a mix is stratified, not refused. */
+  stratifyEnv = false,
 ): Promise<{ campaigns: ScreenCampaign[]; ran: Map<string, TaskIdentity[]> }> {
   const store = new RecordStore(resultsDir);
   const campaigns: ScreenCampaign[] = [];
@@ -1084,23 +1182,26 @@ export async function loadScreenCampaigns(
     counted.push(...records);
     judged.push(...data.judgments);
     const { cells, excluded } = excludeCrashCells(records, data.executions);
+    const envs = cellEnvs(records, data.judgments);
     campaigns.push({
       id: c.id,
       experiment: c.experiment.id,
       created_at: c.created_at,
-      cells,
+      // excludeCrashCells keeps order, so cells[i] is records[i].
+      cells: cells.map((x, i) => ({ ...x, env: envs[i]!.env })),
       excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
     });
     ran.set(c.id, c.task_set.tasks);
   }
-  checkOneEnvironment(counted, judged);
+  if (!stratifyEnv) checkOneEnvironment(counted, judged);
   return { campaigns, ran };
 }
 
 async function main(): Promise<number> {
   const a = parseArgs(Deno.args, {
     string: ["results-dir", "out", "n"],
+    boolean: ["stratify-env"],
     default: {
       "results-dir": "results/harness",
       out: "harness-tasks/v2/selection.json",
@@ -1134,7 +1235,9 @@ async function main(): Promise<number> {
     return 0;
   }
   if (cmd !== "status" && cmd !== "select") {
-    console.error("usage: screening.ts heldout | status | select --n <N>");
+    console.error(
+      "usage: screening.ts heldout | status [--stratify-env] | select --n <N> [--stratify-env]",
+    );
     return 1;
   }
   const head = await commitOf(root, "HEAD");
@@ -1159,16 +1262,25 @@ async function main(): Promise<number> {
     a["results-dir"],
     now.rules,
     root,
+    a["stratify-env"],
   );
   const hist = screeningHistory(campaigns, now.rules);
   const tallies = tally(hist.cells, now.rules);
-  const status = classify(
-    now,
-    new Set(sealedIds),
-    heldOut,
-    tallies,
-    hist.screens,
-  );
+  // H-51: without --stratify-env, the pooled classify as before (a mixed
+  // env_fp was refused above).
+  const { status, strata, flagged } = a["stratify-env"]
+    ? stratifyByEnv(now, new Set(sealedIds), heldOut, hist.cells, hist.screens)
+    : {
+      status: classify(
+        now,
+        new Set(sealedIds),
+        heldOut,
+        tallies,
+        hist.screens,
+      ),
+      strata: new Map<string, EnvStratum[]>(),
+      flagged: new Map<string, string>(),
+    };
   const problems = [
     ...seals.flatMap((s) => [
       ...appendOnlyProblems(s.tag, s.screening, now),
@@ -1191,14 +1303,30 @@ async function main(): Promise<number> {
   if (problems.length > 0) return 1;
   for (const [id, s] of status) {
     const t = tallies.get(id);
-    console.log(`${id} ${s}${t ? ` ${t.solved}/${t.scored}` : ""}`);
+    const per = strata.get(id);
+    // H-51: a candidate spanning env_fp shows each stratum, never a pooled count.
+    console.log(`${id} ${s}${per ? "" : t ? ` ${t.solved}/${t.scored}` : ""}`);
+    for (const p of per ?? []) {
+      console.log(
+        `  env ${p.env.slice(0, 12)} ${p.status} ${p.solved}/${p.scored}`,
+      );
+    }
   }
   for (const l of excludedLines(hist.excluded)) console.log(l);
-  const rescreen = rescreenTasks(status);
+  for (const [id, why] of flagged) {
+    console.log(colors.yellow(`[FLAG] ${id}: ${why}; needs a ruling`));
+  }
+  const rescreen = rescreenTasks(status, flagged);
   if (rescreen.length > 0) {
     console.log(`next screen tasks: "${tasksGlob(rescreen)}"`);
   }
   if (cmd === "status") return 0;
+  if (flagged.size > 0) {
+    console.error(colors.red(
+      `[FAIL] select needs a ruling on ${[...flagged.keys()].join(", ")}`,
+    ));
+    return 1;
+  }
   const n = Number(a.n);
   if (!Number.isInteger(n) || n < 1) {
     console.error(colors.red("[FAIL] --n must be a positive integer"));

@@ -1198,3 +1198,113 @@ Deno.test("excludeCrashCells (H-29): on records, a judged crash-ended cell is ex
     ["scored", true],
   );
 });
+
+// ---- H-51: --stratify-env. Two synthetic campaigns judged on different
+// env_fp; pooled verdicts are computed per env_fp, never across one.
+
+import {
+  cellEnvs,
+  type EnvCell,
+  stratifyByEnv,
+} from "../../../scripts/harness/screening.ts";
+
+const FP_A = "a".repeat(64);
+const FP_B = "b".repeat(64);
+const onEnv = (env: string | null, cells: Cell[]): EnvCell[] =>
+  cells.map((c) => ({ ...c, env }));
+
+Deno.test("cellEnvs (H-51): a cell's env is its counted v2 judgment's env_fp, (v1) for a legacy one, null without one", async () => {
+  const c = await campaign();
+  const e1 = execution(c, { arm: "plain" });
+  const e2 = execution(c, { arm: "skills" });
+  const v2 = (fp: string | null) => ({
+    v: 2 as const,
+    policy: { passed: true, violations: [] },
+    provenance: { harness_commit: null, production_manifest: null, env_fp: fp },
+  });
+  const ja = judgment(c, e1, true, v2(FP_A));
+  const jn = judgment(c, e2, true, v2(null));
+  const jv1 = judgment(c, e2, true);
+  const cells = [
+    { ...cell("HX-001", "plain", 1, true), judgment_id: ja.id },
+    { ...cell("HX-001", "skills", 1, true), judgment_id: jn.id },
+    { ...cell("HX-001", "skills", 2, true), judgment_id: jv1.id },
+    { ...cell("HX-001", "skills", 3, null), judgment_id: null },
+  ];
+  assertEquals(
+    cellEnvs(cells, [ja, jn, jv1]).map((x) => x.env),
+    [FP_A, "(none)", "(v1)", null],
+  );
+});
+
+Deno.test("stratifyByEnv (H-51): one-env candidates keep the pooled status; a candidate spanning two env_fp gets a status per stratum and a flag", () => {
+  // v2-screen-1 judged on FP_A; v2-screen-2 on FP_B. HX-002's cells span both.
+  const hist = screeningHistory([
+    {
+      id: "c1",
+      experiment: "v2-screen-1",
+      created_at: "2026-10-20T00:00:00Z",
+      cells: [
+        ...onEnv(FP_A, six("HX-001", 1)),
+        ...onEnv(FP_A, six("HX-002", 6).slice(0, 4)),
+        ...onEnv(FP_B, six("HX-002", 6).slice(4)),
+      ],
+    },
+    {
+      id: "c2",
+      experiment: "v2-screen-2",
+      created_at: "2026-10-30T00:00:00Z",
+      cells: [
+        ...onEnv(FP_B, six("HX-003", 5)),
+        ...onEnv(null, [cell("HX-003", RULES.arms[1], 4, null)]),
+      ],
+    },
+  ], RULES);
+  assertEquals(hist.problems, []);
+  const s = S([C("HX-001"), C("HX-002"), C("HX-003")]);
+  const sealed = new Set(["HX-001", "HX-002", "HX-003"]);
+  const r = stratifyByEnv(s, sealed, [], hist.cells, hist.screens);
+  assertEquals(r.status.get("HX-001"), "hard");
+  // An env-less (never judged) cell joins no stratum of its own.
+  assertEquals(r.status.get("HX-003"), "easy");
+  assertEquals([...r.strata.keys()], ["HX-002"]);
+  assertEquals(r.strata.get("HX-002"), [
+    { env: FP_A, status: "incomplete", solved: 4, scored: 4 },
+    { env: FP_B, status: "incomplete", solved: 2, scored: 2 },
+  ]);
+  assertEquals(
+    r.flagged,
+    new Map([["HX-002", "no stratum has enough cells for a status"]]),
+  );
+  // The orchestrator rules on a flagged candidate: it is never rescreened automatically.
+  assertEquals(rescreenTasks(r.status, r.flagged).includes("HX-002"), false);
+  assertEquals(rescreenTasks(r.status).includes("HX-002"), true);
+});
+
+Deno.test("stratifyByEnv (H-51): strata that disagree are flagged; held-out, broken and unsealed are never flagged", () => {
+  const s = S([C("HX-001"), C("HX-002", { broken: "d.md" }), C("HX-003")]);
+  const cells: EnvCell[] = [
+    // HX-001: complete and saturated on FP_A, a further scored pair on FP_B.
+    ...onEnv(FP_A, six("HX-001", 6)),
+    ...onEnv(FP_B, [cell("HX-001", RULES.arms[0], 1, false)]),
+    ...onEnv(FP_A, six("HX-002", 3).slice(0, 3)),
+    ...onEnv(FP_B, six("HX-002", 3).slice(3)),
+    ...onEnv(FP_A, six("HX-003", 3).slice(0, 3)),
+    ...onEnv(FP_B, six("HX-003", 3).slice(3)),
+  ];
+  const r = stratifyByEnv(
+    s,
+    new Set(["HX-001", "HX-002"]),
+    [],
+    cells,
+    new Map([["HX-001", 1], ["HX-002", 1], ["HX-003", 1]]),
+  );
+  assertEquals(r.flagged.get("HX-001"), "strata disagree");
+  assertEquals(r.strata.get("HX-001")!.map((x) => x.status), [
+    "saturated",
+    "incomplete",
+  ]);
+  assertEquals(r.status.get("HX-002"), "broken");
+  assertEquals(r.status.get("HX-003"), "unsealed");
+  assertEquals(r.flagged.has("HX-002") || r.flagged.has("HX-003"), false);
+});
