@@ -93,7 +93,9 @@ todo --claim--> doing --submit--> review --accept--> accepted
 - Before leasing, check the container is up: `DOCKER_CONTEXT=desktop-windows docker inspect -f "{{.State.Running}}" <container>`.
   Not `true`: do not start it. `coord ask "<container> is stopped" --task <id> --from lane-ops`,
   checkpoint with `--wait owner`, move to other work.
-- A stale lease is never taken over. It becomes a question for the owner.
+- A stale lease is never taken over. It becomes a question for the owner. Once the owner agrees,
+  the orchestrator frees it with `coord break <container> --reason "<text>" --from cg-orchestrator`
+  (stale leases in this root's allocation only; `coord timeline <container>` shows the history).
 - Hold a lease only while a container operation runs, not while waiting for review.
 
 ### Questions and decisions
