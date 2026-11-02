@@ -86,16 +86,8 @@ codeunit 87281 "HX091 Delivery Spy"
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Invoice Delivery", 'OnBeforeSendInvoiceMail', '', false, false)]
     local procedure HX091OnMail(ContractNo: Code[20])
-    var
-        Entry: Record "CGR Invoice Dispatch Entry";
     begin
-        if (ProbeContract <> '') and (ContractNo = ProbeContract) and not ProbeSeen then begin
-            ProbeSeen := true;
-            Entry.SetRange("Contract No.", ContractNo);
-            ProbeFound := Entry.FindFirst();
-            ProbeError := Entry.Error;
-            ProbeRetry := Entry."Retry Count";
-        end;
+        HX091Look(ContractNo, true);
         if HX091Take(MailFails, ContractNo) then
             Error(MailErr, ContractNo);
         HX091Bump(Mails, ContractNo);
@@ -104,6 +96,7 @@ codeunit 87281 "HX091 Delivery Spy"
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Invoice Delivery", 'OnBeforeExportInvoice', '', false, false)]
     local procedure HX091OnExport(ContractNo: Code[20])
     begin
+        HX091Look(ContractNo, false);
         if HX091Take(ExportFails, ContractNo) then
             Error(ExportErr, ContractNo);
         HX091Bump(Exports, ContractNo);
@@ -112,8 +105,33 @@ codeunit 87281 "HX091 Delivery Spy"
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Invoice Dispatch Run", 'OnAfterDeliverInvoice', '', false, false)]
     local procedure HX091OnAfter(ContractNo: Code[20])
     begin
+        HX091Look(ContractNo, false);
         if HX091Take(AfterFails, ContractNo) then
             Error(AfterErr, ContractNo);
+    end;
+
+    // The probed entry is read at every delivery step of the probed contract: it must be in the
+    // queue while its mail is sent, and never show Error or a retry before anything has failed.
+    local procedure HX091Look(ContractNo: Code[20]; AtMail: Boolean)
+    var
+        Entry: Record "CGR Invoice Dispatch Entry";
+    begin
+        if (ProbeContract = '') or (ContractNo <> ProbeContract) then
+            exit;
+        Entry.SetRange("Contract No.", ContractNo);
+        if not Entry.FindFirst() then begin
+            if AtMail then
+                ProbeSeen := true;
+            exit;
+        end;
+        if AtMail and not ProbeSeen then begin
+            ProbeSeen := true;
+            ProbeFound := true;
+        end;
+        if Entry.Error then
+            ProbeError := true;
+        if Entry."Retry Count" > ProbeRetry then
+            ProbeRetry := Entry."Retry Count";
     end;
 
     local procedure HX091Count(var Counter: Dictionary of [Code[20], Integer]; ContractNo: Code[20]): Integer

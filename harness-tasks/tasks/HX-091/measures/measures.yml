@@ -18,6 +18,8 @@ reuse: null
 # mark-without-commit, mark-before-send and flags-on-entry lose S1 S2 S3 S5 S7 (pass S6);
 # mark-per-entry loses S3; mail-only loses S2; optimistic-failure loses S6;
 # never-cleared and clear-only-clean lose S1 S2 among the weighted rows.
+# error-after-mail (Sol C-15 r1) sets Error on the entry once the mail is out, before the export:
+# S6 now reads the entry at every delivery step, so it loses S6 only.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
   naive/mark-without-commit: { partial_credit: 0.16666666666666666 }
@@ -28,3 +30,4 @@ expect:
   naive/never-cleared: { partial_credit: 0.6666666666666666 }
   naive/clear-only-clean: { partial_credit: 0.6666666666666666 }
   naive/flags-on-entry: { partial_credit: 0.16666666666666666 }
+  naive/error-after-mail: { partial_credit: 0.8333333333333334 }
