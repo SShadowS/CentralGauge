@@ -17,7 +17,8 @@ reuse:
     - { codeunit: 70270, procedure: AddSharedApprovals, signature: "(var ApprovalEntry: Record \"CGR Approval Entry\"; UserID: Code[50]; var Result: Record \"CGR Approval Entry\" temporary)", file: Rental/src/RentalApprovals.Codeunit.al, perturb: "exit;" }
   tests:
     - { codeunit: 87400, procedures: [Scenario02, Scenario03, Scenario04, Scenario05, Scenario10] }
-# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Measured: gate 2026-11-02T04-08-29-977Z on 2e3716ba (Cronus284) matched every partial_credit value below
+# (baseline oracle compile_fail AL0132 as designed). reuse/fixture expectations are not gate-measured.
 # The oracle calls the new public AddSharedApprovals (S7, S8), so the oracle does not compile
 # against the shipped baseline: every row fails there and all ten rows are weighted.
 # Reuse: S2-S5 and S10 go through BuildApprovalList and each expects a shared row. Under exit; the
