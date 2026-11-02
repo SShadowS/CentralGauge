@@ -161,13 +161,25 @@ codeunit 87320 "HX093 Balancing Oracle"
     [Test]
     procedure Scenario10()
     var
+        Contract: Record "CGR Rental Contract";
+        ContractCheck: Codeunit "CGR Contract Check";
+        Problems: List of [Code[30]];
         ContractNo: Code[20];
         VehicleNo: Code[20];
         CodeA: Code[10];
         CodeB: Code[10];
     begin
         HX093Arrange('10', false, '1940', '', false, true, false, false, false, ContractNo, VehicleNo, CodeA, CodeB);
-        HX093AssertProblems(ContractNo, true, true, 'S10');
+        Contract.Get(ContractNo);
+        Contract."Vehicle No." := '';
+        Contract.Modify();
+        Commit();
+
+        ContractCheck.CheckContract(ContractNo, Problems);
+        Assert.IsTrue(Problems.Contains('NOT-RETURNED'), 'S10: NOT-RETURNED listed');
+        Assert.IsTrue(Problems.Contains('NO-VEHICLE'), 'S10: NO-VEHICLE listed');
+        Assert.IsTrue(Problems.Contains('NO-BALANCING-ACCOUNT'), 'S10: NO-BALANCING-ACCOUNT listed');
+        Assert.AreEqual(3, Problems.Count(), 'S10: number of problems listed');
         HX093Cleanup(ContractNo, VehicleNo, CodeA, CodeB);
     end;
 
@@ -272,6 +284,8 @@ codeunit 87320 "HX093 Balancing Oracle"
         Assert.AreEqual(0, Spy.HX093LedgerInserts(), Step + ': no rental ledger entry was written');
         Assert.AreEqual(0, Spy.HX093BalancingInserts(), Step + ': no balancing entry was written');
         Assert.AreEqual(0, Spy.HX093BeforePostCalls(), Step + ': posting stopped before OnBeforePostRentalContract');
+        Assert.AreEqual(0, Spy.HX093ContractModifies(), Step + ': the contract was not modified');
+        Assert.AreEqual(0, Spy.HX093AfterPostCalls(), Step + ': OnAfterPostRentalContract was not raised');
     end;
 
     local procedure HX093AssertPosts(var Spy: Codeunit "HX093 Posting Spy"; ContractNo: Code[20]; BalancingCount: Integer; Step: Text)
@@ -287,6 +301,8 @@ codeunit 87320 "HX093 Balancing Oracle"
         UnbindSubscription(Spy);
         Assert.IsTrue(Posted, Step + ': the contract posts. ' + GetLastErrorText());
         Assert.AreEqual(1, Spy.HX093LedgerInserts(), Step + ': one rental ledger entry');
+        Assert.AreEqual(1, Spy.HX093BeforePostCalls(), Step + ': OnBeforePostRentalContract raised once');
+        Assert.AreEqual(1, Spy.HX093AfterPostCalls(), Step + ': OnAfterPostRentalContract raised once');
         Assert.AreEqual(BalancingCount, Spy.HX093BalancingInserts(), Step + ': balancing entries written');
         BalancingEntry.SetRange("Contract No.", ContractNo);
         Assert.AreEqual(BalancingCount, BalancingEntry.Count(), Step + ': balancing entries stored');

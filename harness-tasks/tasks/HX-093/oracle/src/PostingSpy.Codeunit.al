@@ -9,6 +9,8 @@ codeunit 87321 "HX093 Posting Spy"
         LedgerInserts: Integer;
         BalancingInserts: Integer;
         BeforePostCalls: Integer;
+        AfterPostCalls: Integer;
+        ContractModifies: Integer;
 
     procedure HX093Watch(ContractNo: Code[20])
     begin
@@ -16,6 +18,32 @@ codeunit 87321 "HX093 Posting Spy"
         LedgerInserts := 0;
         BalancingInserts := 0;
         BeforePostCalls := 0;
+        AfterPostCalls := 0;
+        ContractModifies := 0;
+    end;
+
+    procedure HX093AfterPostCalls(): Integer
+    begin
+        exit(AfterPostCalls);
+    end;
+
+    procedure HX093ContractModifies(): Integer
+    begin
+        exit(ContractModifies);
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Rental-Post", 'OnAfterPostRentalContract', '', false, false)]
+    local procedure HX093OnAfterPost(var RentalContract: Record "CGR Rental Contract"; Amount: Decimal)
+    begin
+        if RentalContract."No." = WatchedContractNo then
+            AfterPostCalls += 1;
+    end;
+
+    [EventSubscriber(ObjectType::Table, Database::"CGR Rental Contract", 'OnAfterModifyEvent', '', false, false)]
+    local procedure HX093OnContractModify(var Rec: Record "CGR Rental Contract"; var xRec: Record "CGR Rental Contract"; RunTrigger: Boolean)
+    begin
+        if Rec."No." = WatchedContractNo then
+            ContractModifies += 1;
     end;
 
     procedure HX093LedgerInserts(): Integer
