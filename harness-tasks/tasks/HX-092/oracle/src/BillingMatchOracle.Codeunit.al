@@ -190,6 +190,29 @@ codeunit 87300 "HX092 Billing Match Oracle"
         HX092Reset(C, 92091, 92092);
     end;
 
+    [Test]
+    procedure Scenario10()
+    var
+        C: Code[20];
+    begin
+        C := 'HX092-10';
+        HX092Reset(C, 92010, 0);
+        HX092Billing(92010, 10);
+        HX092Day(C, 10, 4);
+        HX092Day(C, 20, 4);
+        HX092Day(C, 30, 4);
+        HX092Match(92010, C, 10, 10);
+        HX092AssertLine(C, 10, 4, 92010, 'S10 setup line 10');
+
+        HX092Match(92010, C, 20, 30);
+
+        HX092AssertLine(C, 10, 4, 92010, 'S10 line 10');
+        HX092AssertLine(C, 20, 4, 92010, 'S10 line 20');
+        HX092AssertLine(C, 30, 4, 0, 'S10 line 30');
+        HX092AssertOpen(92010, 2, 'S10');
+        HX092Reset(C, 92010, 0);
+    end;
+
     local procedure HX092Reset(ContractNo: Code[20]; BillingNo1: Integer; BillingNo2: Integer)
     var
         BillingLine: Record "CGR Billing Line";

@@ -6,7 +6,7 @@ When a corporate customer's monthly billing line comes in, the desk matches it a
 
 Requested, for a selection of several day lines:
 
-- A selected line is linked to the billing line when all of its days fit into what is still open on the billing line at that moment. Lines are taken in line-number order, and each line that gets linked reduces what is open for the lines after it.
+- A selected line is linked to the billing line when all of its days fit into what is still open on the billing line at that moment. The desk always selects lines of one contract, and they are taken in line-number order. Each line that gets linked reduces what is open for the lines after it.
 - A selected line that does not fit in full is matched in full (Matched Days = its Days) but not linked, and it does not reduce what is open.
 - A line whose vehicle was swapped for another vehicle (it has a vehicle substitution in Fleet) is never linked this way. It is matched in full without a link.
 - A selected line that is already linked to this billing line may use its own days: what it is already matched counts as open when deciding whether it fits.
