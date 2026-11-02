@@ -1,0 +1,30 @@
+v: 1
+partial_credit:
+  weights:
+    "87360/Scenario01": 1
+    "87360/Scenario02": 1
+    "87360/Scenario03": 1
+    "87360/Scenario04": 1
+    "87360/Scenario05": 1
+    "87360/Scenario06": 1
+    "87360/Scenario07": 1
+    "87360/Scenario08": 1
+  hidden_regressions: []
+reuse: null
+# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Every scenario fails on the shipped baseline: S1-S3 and S8 by the TestField error in the
+# apply handler, S4-S7 because UpdateAmount and Rebuild recalculate the locked line (100/80
+# becomes 130/81.25), so all eight rows are weighted.
+# skip-locked-lines leaves the locked lines' Applies-to ID behind: loses S1, S2, S3, S8.
+# restore-in-memory stores the recalculated amounts: loses S1, S2, S3, S8.
+# handler-only leaves UpdateAmount and Rebuild unguarded: loses S4, S5, S6, S7.
+# lcy-from-rate stores Amount (LCY) 62.50 (100 / 1.6) on every locked line: loses S1-S8.
+# rebuild-unguarded: loses S6, S7. sent-only recalculates the Exported line: loses S2, S7.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/skip-locked-lines: { partial_credit: 0.5 }
+  naive/restore-in-memory: { partial_credit: 0.5 }
+  naive/handler-only: { partial_credit: 0.5 }
+  naive/lcy-from-rate: { partial_credit: 0 }
+  naive/rebuild-unguarded: { partial_credit: 0.75 }
+  naive/sent-only: { partial_credit: 0.75 }
