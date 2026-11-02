@@ -1,0 +1,26 @@
+v: 1
+partial_credit:
+  weights:
+    "87280/Scenario01": 1
+    "87280/Scenario02": 1
+    "87280/Scenario03": 1
+    "87280/Scenario05": 1
+    "87280/Scenario07": 1
+  hidden_regressions:
+    - "87280/Scenario04"
+    - "87280/Scenario06"
+    - "87280/Scenario08"
+    - "87280/Scenario09"
+reuse: null
+# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# optimistic-failure and never-cleared pass every weighted row: they lose only a hidden
+# regression (S6 and S4 respectively), which partial_credit does not count.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/mark-without-commit: { partial_credit: 0 }
+  naive/mark-per-entry: { partial_credit: 0.8 }
+  naive/mail-only: { partial_credit: 0.8 }
+  naive/mark-before-send: { partial_credit: 0.2 }
+  naive/optimistic-failure: { partial_credit: 1 }
+  naive/never-cleared: { partial_credit: 1 }
+  naive/flags-on-entry: { partial_credit: 0 }
