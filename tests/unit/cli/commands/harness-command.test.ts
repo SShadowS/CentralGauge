@@ -2324,6 +2324,93 @@ Deno.test("openHarnessEnv: the lane comes from CG_LANE, never a placeholder", as
   }
 });
 
+Deno.test("H-49: --lane sets the lane over CG_LANE; run and cell take it", async () => {
+  await using t = await makeEnv();
+  const prev = Deno.env.get("CG_LANE");
+  try {
+    Deno.env.set("CG_LANE", "lane-env");
+    const h = await openHarnessEnv(
+      { ...envOpts(t), lane: "lane-ops" },
+      deps([]),
+    );
+    assertEquals(h.env.lane_id, "lane-ops");
+    await h.close();
+    Deno.env.delete("CG_LANE");
+    const u = await openHarnessEnv({ ...envOpts(t), lane: " " }, deps([]));
+    assertEquals(u.env.lane_id, "", "blank: the reservation refuses it");
+    await u.close();
+  } finally {
+    if (prev === undefined) Deno.env.delete("CG_LANE");
+    else Deno.env.set("CG_LANE", prev);
+  }
+  const cli = new Command();
+  registerHarnessCommand(cli);
+  const harness = cli.getCommand("harness")!;
+  for (const c of ["run", "cell"]) {
+    assert(harness.getCommand(c)?.getOption("lane"), `${c} --lane`);
+  }
+});
+
+Deno.test("H-49: the run's environment reads the shared results from --results-dir, not <repoRoot>/results/harness", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  // Another worktree's results root holds the authorized marker; the repo root has none.
+  const other = await authorizedRoot();
+  const shared = join(other, "results", "harness");
+  const seen: string[] = [];
+  const s = await harnessRun(
+    "contract",
+    runOpts(t, { dryRun: true, resultsDir: shared }),
+    () => Promise.reject(new Error("a dry run opens no environment")),
+    async (eo) => {
+      const p = await openPlanEnv(
+        eo,
+        planDeps(t, [], () => Promise.resolve([])),
+      );
+      seen.push(`${eo.sharedResults} ${p.egressEnforced}`);
+      return p;
+    },
+  );
+  assertEquals(s.planned, 2);
+  assertEquals(seen, [`${shared} true`]);
+  // Without it the default stays <repoRoot>/results/harness (no marker there).
+  const d = await openPlanEnv(envOpts(t), planDeps(t, []));
+  assertEquals(d.egressPlaced, false);
+});
+
+Deno.test("H-49: env check and baseline create honour --results-dir", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  const l = await loadLineage(lineage);
+  const fake = () => testResetFor(lineage, l);
+  const shared = join(await testTempDir(), "results", "harness");
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  await baselineCreate({ ...o, sharedResults: shared }, deps([]), fake);
+  const here = await envCheck({ ...o, sharedResults: shared }, deps([]), fake);
+  assert(here.admissible, renderEnvCheck(here));
+  // The repo's own results root has no baseline.
+  assertEquals((await envCheck(o, deps([]), fake)).admissible, false);
+  const cli = new Command();
+  registerHarnessCommand(cli);
+  const harness = cli.getCommand("harness")!;
+  for (
+    const c of [
+      harness.getCommand("env")?.getCommand("check"),
+      harness.getCommand("baseline")?.getCommand("create"),
+      harness.getCommand("recover"),
+    ]
+  ) {
+    assert(c?.getOption("results-dir"), `${c?.getName()} --results-dir`);
+  }
+});
+
 // M2-08: stub-provider cells from the CLI.
 
 /** An opener that honours the command's records root (the stub cell picks <results>/stub-cells). */

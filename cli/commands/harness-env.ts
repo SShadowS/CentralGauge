@@ -188,7 +188,15 @@ export interface EnvOptions {
   keyCustody?: string;
   /** H-44: a judging command (rejudge, judge-pending): the custody dir must exist; never created. */
   judgeOnly?: boolean;
+  /** H-49: the shared harness results root (--results-dir); default <repoRoot>/results/harness. */
+  sharedResults?: string;
+  /** H-49: `--lane`, the credential-run ledger's lane; default CG_LANE. */
+  lane?: string;
 }
+
+/** H-49: where the egress marker, baselines and bc-ledger live. */
+const sharedResultsOf = (o: { repoRoot: string; sharedResults?: string }) =>
+  o.sharedResults ?? join(o.repoRoot, "results", "harness");
 
 export interface EnvDeps {
   /** The allocated spelling of a container, or a throw (coord allocation.json, fail closed). */
@@ -316,6 +324,8 @@ export interface LineageCommandOptions {
   symbolStore: string;
   /** H-35 S3 L2b: `--unverified-bc-egress-ok <reason>` (env check). */
   bcEgressOverride?: string | null;
+  /** H-49: `--results-dir`, where baselines are read and written; default <repoRoot>/results/harness. */
+  sharedResults?: string;
 }
 
 export type ResetFor = (
@@ -346,7 +356,7 @@ async function lineageContext(
     names,
     mechanism: resetFor(o.lineage, lineage),
     inputs: {
-      resultsRoot: join(o.repoRoot, "results", "harness"),
+      resultsRoot: sharedResultsOf(o),
       lineageId: lineage.id,
       lockDigest: await lockDigestOf({
         store: o.symbolStore,
@@ -932,7 +942,7 @@ export async function openPlanEnv(
   // The marker is verified exactly as the real environment verifies it (a
   // failing one throws), and the gate inputs are read after that, so a dry
   // run's concurrency gate sees what a real run's would.
-  const sharedResults = join(o.repoRoot, "results", "harness");
+  const sharedResults = sharedResultsOf(o);
   const mode = await egressMode(sharedResults, deps.verifyEgress);
   // H-35 S3 L2b (Sol S3 r3): the lineage's NST egress, statically checked as
   // admission checks it, so a dry run (and a dry resume) sees the override.
@@ -1035,7 +1045,7 @@ export async function openHarnessEnv(
     store: o.symbolStore,
     packages: symbols,
   });
-  const sharedResults = join(o.repoRoot, "results", "harness");
+  const sharedResults = sharedResultsOf(o);
   // Graceful stop: a stop file left behind would stop this run at once.
   const left = await stopFileLeft(o.privateRoot);
   if (left) {
@@ -1604,7 +1614,7 @@ export async function openHarnessEnv(
       ...(egress ? { egress, proxyIsolation } : {}),
       credentialLedger: o.credentialLedger,
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
-      lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
+      lane_id: (o.lane ?? Deno.env.get("CG_LANE"))?.trim() ?? "",
       namespaceLost,
       acquisition,
       ...(keyCustody ? { keyCustody } : {}),

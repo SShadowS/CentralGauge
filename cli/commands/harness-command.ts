@@ -578,6 +578,8 @@ export interface CellCliOptions {
   coordLeases?: ReadonlyMap<string, string>;
   /** H-44: `--key-custody <dir>`: where published redaction bundles go and judging imports them. */
   keyCustody?: string;
+  /** H-49: `--lane`: the credential-run ledger's lane (default CG_LANE). */
+  lane?: string;
 }
 
 /** H-41 (7): `--coord-lease <container>=<token>`: a container name and a non-empty token. */
@@ -666,6 +668,9 @@ function envOptions(
     ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
     ...(o.coordLeases ? { coordLeases: o.coordLeases } : {}),
     ...(o.keyCustody ? { keyCustody: o.keyCustody } : {}),
+    ...(o.lane !== undefined ? { lane: o.lane } : {}),
+    // H-49: the marker, baselines and bc-ledger follow --results-dir.
+    sharedResults: o.resultsDir,
   };
 }
 
@@ -1640,6 +1645,7 @@ interface CellCliFlags {
   unverifiedBcEgressOk?: string;
   coordLease?: [string, string][];
   keyCustody?: string;
+  lane?: string;
 }
 
 /** H-41 (7): the --coord-lease pairs; one token per container (case-insensitive). */
@@ -1727,6 +1733,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
       : {}),
     ...(f.coordLease ? { coordLeases: coordLeases(f.coordLease) } : {}),
     ...(f.keyCustody ? { keyCustody: abs(f.keyCustody) } : {}),
+    ...(f.lane !== undefined ? { lane: f.lane } : {}),
   };
 }
 
@@ -3517,6 +3524,10 @@ export function registerHarnessCommand(
       .option(
         "--key-custody <dir:string>",
         "H-44: owner-only dir for redaction bundles: a publisher copies each new execution's bundle there, a judge without it in its private dir reads it there. Pass the same dir to the publishing and the judging process",
+      )
+      .option(
+        "--lane <name:string>",
+        "H-49: the lane the credential-run ledger records (default: CG_LANE)",
       );
 
   shared(
@@ -3894,7 +3905,12 @@ export function registerHarnessCommand(
       })
       .option("--symbol-store <dir:string>", "Host symbol store", {
         default: "results/harness/symbols",
-      });
+      })
+      .option(
+        "--results-dir <dir:string>",
+        "Harness results root holding baselines (H-49)",
+        { default: "results/harness" },
+      );
   parent.command(
     "env",
     lineageOpts(
@@ -3923,6 +3939,7 @@ export function registerHarnessCommand(
             .filter(Boolean),
           lineage: resolve(opts.lineage),
           symbolStore: resolve(opts.symbolStore),
+          sharedResults: resolve(opts.resultsDir),
           ...(opts.unverifiedBcEgressOk
             ? { bcEgressOverride: opts.unverifiedBcEgressOk }
             : {}),
@@ -3953,6 +3970,7 @@ export function registerHarnessCommand(
             containers: [container],
             lineage: resolve(opts.lineage),
             symbolStore: resolve(opts.symbolStore),
+            sharedResults: resolve(opts.resultsDir),
           })
         ) {
           console.log(
@@ -3985,6 +4003,7 @@ export function registerHarnessCommand(
           containers: [container],
           lineage: resolve(opts.lineage),
           symbolStore: resolve(opts.symbolStore),
+          sharedResults: resolve(opts.resultsDir),
           abandon: opts.abandon ?? null,
         });
         console.log(
