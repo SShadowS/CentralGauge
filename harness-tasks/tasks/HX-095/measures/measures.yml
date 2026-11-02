@@ -12,7 +12,7 @@ partial_credit:
     "87360/Scenario09": 1
   hidden_regressions: []
 reuse: null
-# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Measured: gate 2026-11-02T03-35-18-150Z on b7b58d0e (Cronus284) matched every value below.
 # Every scenario fails on the shipped baseline: S1-S3, S8 and S9 by the TestField error in the
 # apply handler, S4-S7 because UpdateAmount and Rebuild recalculate the locked line (100/80
 # becomes 130/81.25), so all nine rows are weighted.
