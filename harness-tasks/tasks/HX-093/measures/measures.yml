@@ -13,7 +13,7 @@ partial_credit:
     - "87320/Scenario05"
     - "87320/Scenario09"
 reuse: null
-# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Measured: gate 2026-11-02T02-32-39-086Z on 15688de7 (Cronus284) matched every value below.
 # S6, S7, S8 pair an exemption with its negation, so the baseline loses them on the negation half.
 # unconditional loses S6, S7, S8 (exempt halves); ignore-import-flag loses S6; contract-method
 # loses S3, S4 (and the hidden S5); check-only and late-stop lose S2, S4; post-only loses
