@@ -61,7 +61,10 @@ and "lane-admin specifics" below; it does no coding tasks.
 4. Severity rubric from round 1: a fail-closed false positive (a check that refuses something
    legitimate, visibly) is MEDIUM, unless a corpus scan hits it. A bypass, a wrong score or a
    silent pass stays HIGH. After two rounds in a row with no HIGH, submit and list the open
-   MEDIUM items in the submit note.
+   MEDIUM items in the submit note. For HX task oracles (orchestrator ruling 2026-11-02, C-15): a
+   finding is HIGH only when a plausible fix of the stated symptom passes while breaking the
+   contract. A wrong fix that reaches full credit only by breaking or caching shipped code the fix
+   does not touch is an adversarial fix: MEDIUM, listed in the submit note.
 5. Self-check before submit: run the orchestrator's review yourself. Use `pi_ask` with
    `gpt-6.1-sol` against the frozen design, the decisions that apply, and the task's reject
    file if there is one. Ask whether the submit conforms. Save the answer under
@@ -71,6 +74,41 @@ and "lane-admin specifics" below; it does no coding tasks.
 6. A submit note may not contain "decisions the design does not state". A mechanism the
    design leaves open (for example how a scanner resolves symbols) goes back to the
    orchestrator as a design question (`coord ask`) before you build on it.
+
+## Mined HX tasks (owner 2026-11-02)
+
+HX tasks built from real merged PRs follow these four rules on top of the gate. The goal is a
+task a frontier model fails on attempt 1, not a realistic ticket that every model passes. Read
+`docs/reasoning-suite/LESSONS.md` before a batch.
+
+1. **Selection filter.** Applied at the shortlist and in the binding review, before any build.
+   Delete the draft prompt's Expected bullets. Reject the candidate if the shipped code plus the
+   Observed sentence still determine the fix, or if every planned naive is "skipped one stated
+   bullet". The fix must depend on at least one measured BC fact (decisions or premise-probe
+   results) that is neither present in the shipped overlay nor implied by the prompt. The
+   review verdict carries a field `frontier-catcher: yes|no`; "no" is a reject, unless the
+   batch books at most one filler task and says so.
+2. **Mechanism not in the overlay.** The design brief's "Shipped code" section must not already
+   contain what the fix needs. A brief whose correct diff mostly moves or copies shipped code
+   (an existing check chain lifted into a predicate, a loop already routed through the right
+   record) is rejected before any build.
+3. **Contract, not diagnosis.** The prompt has one Observed symptom as the desk saw it, and an
+   Expected section that states the business contract in two or three sentences. No bullet per
+   branch, and no reproduction that isolates the failing step. A review finding of the kind
+   "requirement not stated in the prompt" is resolved by moving that scenario to pass_to_pass,
+   dropping it, or dropping the candidate. It is never resolved by adding a sentence that names
+   the branch. The Sol self-check rubric gets a fourth class, **TOO EASY**: the prompt or the
+   overlay gives away the branch or the mechanism the trap lives in. A TOO EASY finding blocks
+   submit like a HIGH.
+4. **Frontier gate.** After the container gate PASSes and before the Sol self-check and merge,
+   the task gets one frontier attempt: an Opus-class agent on the harness agent path, from the
+   prompt and the overlay only. Ask lane-ops for it like a gate job. An attempt-1 pass means the
+   task does not ship: it goes to the filler pool (if the batch books one) or is dropped. Budget
+   about three builds per shipped task.
+
+For hard tasks, prefer assembling over inventing: combine two or three gated single-trap tasks
+(Commit-family donors first) into one overlay with one symptom. That is the only route with
+measured frontier failures so far (LESSONS.md, composite sections).
 
 ## Context size
 
