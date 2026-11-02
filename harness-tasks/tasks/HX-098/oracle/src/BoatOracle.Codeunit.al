@@ -160,13 +160,13 @@ codeunit 87420 "HX098 Boat Oracle"
     begin
         // A boat is due for service every 100 engine hours.
         HX098Setup();
-        HX098Asset('HX98-B08', "CGR Asset Type"::Boat, 599, 200);
+        HX098Asset('HX98-B08', "CGR Asset Type"::Boat, 636, 200);
         Vehicle.Get('HX98-B08');
-        Vehicle."Last Service Km" := 500;
+        Vehicle."Last Service Km" := 537;
         Vehicle.Modify();
         Assert.IsFalse(ServicePlanMgt.IsServiceDue('HX98-B08', 20270301D), 'S8: 99 hours after its service the boat is not due');
         Vehicle.Get('HX98-B08');
-        Vehicle.Mileage := 600;
+        Vehicle.Mileage := 637;
         Vehicle.Modify();
         Assert.IsTrue(ServicePlanMgt.IsServiceDue('HX98-B08', 20270301D), 'S8: 100 hours after its service the boat is due');
     end;
@@ -228,8 +228,10 @@ codeunit 87420 "HX098 Boat Oracle"
         Buffer.Reset();
         Assert.IsTrue(Buffer.Get("CGR Asset Type"::Boat), 'S11: boats have a revenue row');
         Assert.AreEqual(100, Buffer.Amount, 'S11: boat revenue');
+        Assert.AreEqual(2, Buffer."Entry Count", 'S11: boat entries');
         Assert.IsTrue(Buffer.Get("CGR Asset Type"::Car), 'S11: cars have a revenue row');
         Assert.AreEqual(110, Buffer.Amount, 'S11: car revenue');
+        Assert.AreEqual(1, Buffer."Entry Count", 'S11: car entries');
         Buffer.Reset();
         if Buffer.FindSet() then
             repeat
@@ -275,6 +277,84 @@ codeunit 87420 "HX098 Boat Oracle"
         ContractNo := HX098Contract('HX98-B13', 'HX98-HB', 'BL-1313');
         RentalMgt.CheckOut(ContractNo);
         asserterror RentalMgt.SwapVehicle(ContractNo, 'HX98-C13');
+    end;
+
+    [Test]
+    procedure Scenario14()
+    var
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        // Hidden regression: a van rental cannot be moved onto a boat.
+        HX098Setup();
+        HX098Branch('HX98-HB', true);
+        HX098Asset('HX98-V14', "CGR Asset Type"::Van, 30000, 120);
+        HX098Asset('HX98-B14', "CGR Asset Type"::Boat, 1000, 200);
+        ContractNo := HX098Contract('HX98-V14', 'HX98-HB', 'BL-1414');
+        HX098LicenceClass(ContractNo, 'C');
+        RentalMgt.CheckOut(ContractNo);
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX98-B14');
+    end;
+
+    [Test]
+    procedure Scenario15()
+    var
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        // Hidden regression: a boat rental cannot be moved onto a van.
+        HX098Setup();
+        HX098Branch('HX98-HB', true);
+        HX098Asset('HX98-B15', "CGR Asset Type"::Boat, 1000, 200);
+        HX098Asset('HX98-V15', "CGR Asset Type"::Van, 30000, 120);
+        ContractNo := HX098Contract('HX98-B15', 'HX98-HB', 'BL-1515');
+        HX098LicenceClass(ContractNo, 'C');
+        RentalMgt.CheckOut(ContractNo);
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX98-V15');
+    end;
+
+    [Test]
+    procedure Scenario16()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Pricing: Codeunit "CGR Rental Pricing";
+        ContractNo: Code[20];
+    begin
+        // Hidden regression: vans keep their licence check and their surcharge.
+        HX098Setup();
+        HX098Branch('HX98-HB', true);
+        HX098Asset('HX98-V16', "CGR Asset Type"::Van, 30000, 80);
+        ContractNo := HX098Contract('HX98-V16', 'HX98-HB', '');
+        HX098LicenceClass(ContractNo, 'C');
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 30100, '');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(315, Pricing.CalcAmount(Contract), 'S16: three van days at 80 plus the van surcharge of 25 a day');
+    end;
+
+    [Test]
+    procedure Scenario17()
+    var
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        // Hidden regression: a van without licence class C or CE is not handed out.
+        HX098Setup();
+        HX098Branch('HX98-HB', true);
+        HX098Asset('HX98-V17', "CGR Asset Type"::Van, 30000, 80);
+        ContractNo := HX098Contract('HX98-V17', 'HX98-HB', 'BL-1717');
+        HX098LicenceClass(ContractNo, 'B');
+        asserterror RentalMgt.CheckOut(ContractNo);
+    end;
+
+    local procedure HX098LicenceClass(ContractNo: Code[20]; LicenceClass: Code[10])
+    var
+        Contract: Record "CGR Rental Contract";
+    begin
+        Contract.Get(ContractNo);
+        Contract."Driving Licence Class" := LicenceClass;
+        Contract.Modify();
     end;
 
     local procedure HX098WeekendSurcharge(SurchargePct: Decimal)

@@ -16,7 +16,11 @@ partial_credit:
     "87420/Scenario11": 3
     "87420/Scenario12": 2
     "87420/Scenario13": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "87420/Scenario14"
+    - "87420/Scenario15"
+    - "87420/Scenario16"
+    - "87420/Scenario17"
 reuse: null
 # Planned, not yet gated. Total weight 32. Template floor: copying the planted car/van sites only (explicit-sites-only) scores 13/32.
 # enum-only passes S5 S7 (2/32); explicit-sites-only loses S2 S4 S6 S8 S9 S10 S13 (13/32); pricing-with-km loses S2 S10 (25/32);
