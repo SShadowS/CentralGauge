@@ -1046,6 +1046,43 @@ Deno.test("validateCampaignRecords: vary [harness, models] refuses a model id th
   );
 });
 
+Deno.test("validateCampaignRecords (H-48): vary [models] admits only the derived api_models pin", async () => {
+  const cc = (id: string, slug: string, extra: Record<string, unknown> = {}) =>
+    manifest(id, {
+      models: { main: slug },
+      settings: {
+        requested: {},
+        native: {
+          ...claudeCodeHarnessNative(),
+          api_models: { main: slug.slice(slug.indexOf("/") + 1) },
+          ...extra,
+        },
+      },
+    });
+  const sonnet = cc("sonnet", "anthropic/claude-sonnet-5");
+  const opus = cc("opus", "anthropic/claude-opus-5-5");
+  // A models-only pair passes.
+  assertEquals(await pair(["models"], sonnet, opus), []);
+  // A pair that also hand-edits another native setting is refused.
+  const edited = cc("opus", "anthropic/claude-opus-5-5", { thinking: "high" });
+  assertStringIncludes(
+    (await pair(["models"], sonnet, edited)).join("\n"),
+    "outside vary [models]: settings",
+  );
+  // A pin that is not its slug's is refused, on either side.
+  const wrong = cc("opus", "anthropic/claude-opus-5-5", {
+    api_models: { main: "claude-opus-5" },
+  });
+  assertStringIncludes(
+    (await pair(["models"], sonnet, wrong)).join("\n"),
+    "outside vary [models]: settings",
+  );
+  assertStringIncludes(
+    (await pair(["models"], wrong, sonnet)).join("\n"),
+    "outside vary [models]: settings",
+  );
+});
+
 Deno.test("validateCampaignRecords: vary [harness, mcp] keeps the MCP rule", async () => {
   const server = { name: "al-tools", version: "1", tool_schema_hash: "s" };
   const cc = (
