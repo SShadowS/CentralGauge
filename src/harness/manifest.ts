@@ -414,6 +414,24 @@ function lspKeyDerived(m: ResolvedManifest): boolean {
   return JSON.stringify(m.settings.native["lsp"]) === JSON.stringify(names);
 }
 
+/**
+ * native.api_models holds one model id per slot, each its slug minus the first
+ * segment: the catalog convention (src/catalog/seed/inference.ts apiModelId),
+ * so no catalog lookup. ponytail: a catalog row breaking that convention is
+ * refused.
+ */
+function apiModelsDerived(m: ResolvedManifest): boolean {
+  const ids = m.settings.native["api_models"];
+  return ids !== null && typeof ids === "object" && !Array.isArray(ids) &&
+    JSON.stringify(Object.keys(ids).sort()) ===
+      JSON.stringify(Object.keys(m.models).sort()) &&
+    Object.entries(m.models).every(([slot, slug]) => {
+      const i = slug.indexOf("/");
+      return i > 0 &&
+        (ids as Record<string, unknown>)[slot] === slug.slice(i + 1);
+    });
+}
+
 /** Each varied component's derived native keys follow it on this side. */
 const componentKeysDerived = (m: ResolvedManifest, vary: readonly VaryKey[]) =>
   (!vary.includes("mcp") || mcpKeysDerived(m)) &&
@@ -421,9 +439,10 @@ const componentKeysDerived = (m: ResolvedManifest, vary: readonly VaryKey[]) =>
 
 /**
  * True when two manifests' settings differ only by native keys derived from the
- * varied mcp and lsp components (M2-14, H-14): removing exactly native.mcp and
- * native.mcp_tools (vary [mcp]) and native.lsp (vary [lsp]) makes the settings
- * hash-equal, and on each side those keys follow its own component.
+ * varied mcp, lsp and models components (M2-14, H-14, H-48): removing exactly
+ * native.mcp and native.mcp_tools (vary [mcp]), native.lsp (vary [lsp]) and
+ * native.api_models (vary [models]) makes the settings hash-equal, and on each
+ * side those keys follow its own component.
  */
 async function componentDerivedSettingsOnly(
   a: ResolvedManifest,
@@ -433,10 +452,15 @@ async function componentDerivedSettingsOnly(
   if (!componentKeysDerived(a, vary) || !componentKeysDerived(b, vary)) {
     return false;
   }
+  // A harness that carries no api_models pin (on either side) is left as it was.
+  const models = vary.includes("models") &&
+    [a, b].some((m) => Object.hasOwn(m.settings.native, "api_models"));
+  if (models && (!apiModelsDerived(a) || !apiModelsDerived(b))) return false;
   if (vary.includes("mcp") && sharedServerToolsDiffer(a, b)) return false;
   const keys: string[] = [
     ...(vary.includes("mcp") ? MCP_NATIVE_KEYS : []),
     ...(vary.includes("lsp") ? ["lsp"] : []),
+    ...(models ? ["api_models"] : []),
   ];
   const strip = (m: ResolvedManifest) => ({
     requested: m.settings.requested,
@@ -492,20 +516,7 @@ async function harnessDerivedSettingsOnly(
       delete native[k];
     }
     if (vary.includes("models")) {
-      // Each slot's id is its slug minus the first segment: the catalog
-      // convention (src/catalog/seed/inference.ts apiModelId), so no catalog
-      // lookup. ponytail: a catalog row breaking that convention is refused.
-      const ids = native["api_models"];
-      if (
-        ids === null || typeof ids !== "object" || Array.isArray(ids) ||
-        JSON.stringify(Object.keys(ids).sort()) !==
-          JSON.stringify(Object.keys(m.models).sort()) ||
-        !Object.entries(m.models).every(([slot, slug]) => {
-          const i = slug.indexOf("/");
-          return i > 0 &&
-            (ids as Record<string, unknown>)[slot] === slug.slice(i + 1);
-        })
-      ) return null;
+      if (!apiModelsDerived(m)) return null;
       delete native["api_models"];
     }
     if (vary.includes("mcp")) {
@@ -566,6 +577,12 @@ export async function assertVaryHolds(
       // (a variant with servers and no derived key equals a no-server baseline).
       bad = [...bad, "settings"];
     }
+  } else if (
+    vary.includes("models") && bad.includes("settings") &&
+    await componentDerivedSettingsOnly(baseline, variant, vary)
+  ) {
+    // H-48: under vary [models], native.api_models follows the models.
+    bad = bad.filter((k) => k !== "settings");
   }
   // Under vary [harness], native settings follow each side's adapter; with no
   // derivations given, a settings difference stays refused.
