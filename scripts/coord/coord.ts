@@ -1033,6 +1033,114 @@ export async function release(
   await writeExclusive(join(dir, "release.json"), { at: Date.now() });
 }
 
+/** Minutes since a held lease's latest sign of life: its heartbeat, else its `at`. */
+function leaseAgeMin(h: { at: number; hb?: number | undefined }, now: number) {
+  return Math.floor((now - (h.hb ?? h.at)) / 60000);
+}
+
+/**
+ * Orchestrator or owner only (a convention, as for `accept`): releases a stale
+ * lease without the holder's token. Only a lease `stale` would report, and only
+ * a container allocated to this root's project. Writes release.json like
+ * `release` does, plus who broke it and why, so a later `lease` works as normal.
+ */
+export async function breakLease(
+  root: string,
+  container: string,
+  opts: { by: string; reason: string; now?: number },
+): Promise<{ attempt: string; holder: string }> {
+  await openRoot(root);
+  if (!opts.by.trim()) throw new CoordError("break needs --from <who>");
+  if (!opts.reason.trim()) throw new CoordError("break needs --reason <text>");
+  await refuseIfNotAllocated(root, container);
+  const h = await leaseHolder(root, container);
+  if (!h) throw new CoordError(`${container} is not leased`);
+  const now = opts.now ?? Date.now();
+  const min = leaseAgeMin(h, now);
+  if (min < LEASE_STALE_MIN) {
+    throw new CoordError(
+      `${container}/${h.attempt} (${h.lane}) is not stale: last heartbeat ${min} min ago, stale after ${LEASE_STALE_MIN}`,
+    );
+  }
+  const dir = join(leaseRoot(root, container), h.attempt);
+  const rec = await readJson<{ token: string }>(join(dir, "lease.json"));
+  await writeExclusive(join(dir, "release.json"), {
+    at: now,
+    broken: true,
+    by: opts.by,
+    reason: opts.reason,
+    holder: h.lane,
+    token: rec?.token ?? null,
+  });
+  return { attempt: h.attempt, holder: h.lane };
+}
+
+interface ReleaseRecord {
+  at: number;
+  broken?: boolean;
+  by?: string;
+  reason?: string;
+}
+
+export interface LeaseHistory {
+  container: string;
+  attempts: {
+    attempt: string;
+    lane: string | null;
+    at: number | null;
+    hb: number | null;
+    released: ReleaseRecord | null;
+  }[];
+}
+
+/** Read-only: every lease attempt on a container, oldest first. */
+export async function leaseHistory(
+  root: string,
+  container: string,
+): Promise<LeaseHistory> {
+  await openRoot(root);
+  const lr = leaseRoot(root, container);
+  const attempts: LeaseHistory["attempts"] = [];
+  for (const a of (await listDir(lr)).filter((a) => RUN_RE.test(a))) {
+    const rec = await readJson<{ lane: string; at: number }>(
+      join(lr, a, "lease.json"),
+    );
+    attempts.push({
+      attempt: a,
+      lane: rec?.lane ?? null,
+      at: rec?.at ?? null,
+      hb: (await readJson<{ at: number }>(join(lr, a, "hb.json")))?.at ?? null,
+      released: await readJson<ReleaseRecord>(join(lr, a, "release.json")),
+    });
+  }
+  return { container, attempts };
+}
+
+function brokenText(r: ReleaseRecord): string {
+  return `BROKEN by ${r.by}: ${r.reason}`;
+}
+
+export function leaseHistoryText(h: LeaseHistory): string {
+  if (h.attempts.length === 0) return `no leases on ${h.container}`;
+  const t = (ms: number | null) =>
+    ms === null
+      ? "-"
+      : new Date(ms).toISOString().replace("T", " ").slice(0, 19) + "Z";
+  return [
+    `${h.container} leases`,
+    ...h.attempts.map((x) => {
+      const end = x.released === null
+        ? "held"
+        : x.released.broken
+        ? `${brokenText(x.released)} (${t(x.released.at)})`
+        : `released ${t(x.released.at)}`;
+      return `  ${x.attempt}  ${x.lane ?? "(no lease.json)"}  leased ${
+        t(x.at)
+      }  hb ${t(x.hb)}  ${end}`;
+    }),
+  ].join("\n");
+}
+
 // ---------- diagnostics ----------
 
 export async function why(root: string, id: string): Promise<string[]> {
@@ -1097,8 +1205,22 @@ export async function stale(
     })
   ) {
     const h = await leaseHolder(root, c);
-    if (!h) continue;
-    const min = Math.floor((now - (h.hb ?? h.at)) / 60000);
+    if (!h) {
+      // A broken lease is free, but it is reported until the next lease.
+      const lr = join(machineRoot(root), "leases", c);
+      const as = (await listDir(lr)).filter((a) => RUN_RE.test(a));
+      const a = as[as.length - 1];
+      if (a === undefined) continue;
+      const r = await readJson<ReleaseRecord>(join(lr, a, "release.json"));
+      if (r?.broken) {
+        const holder = (await readJson<{ lane: string }>(
+          join(lr, a, "lease.json"),
+        ))?.lane;
+        out.push(`lease ${c}/${a} (${holder}): ${brokenText(r)} (free)`);
+      }
+      continue;
+    }
+    const min = leaseAgeMin(h, now);
     if (min >= LEASE_STALE_MIN) {
       out.push(
         `lease ${c} (${h.lane}): no heartbeat for ${min} min (report only, never transferred)`,
@@ -1527,6 +1649,7 @@ async function main(args: string[]): Promise<number> {
       "watch",
       "machine-root",
       "run",
+      "reason",
     ],
     boolean: ["json"],
   });
@@ -1700,7 +1823,21 @@ async function main(args: string[]): Promise<number> {
       a.json ? out(s) : console.log(sweepText(s));
       return 0;
     }
+    case "break":
+      out(
+        await breakLease(root, arg(rest, 0), {
+          by: a.from ?? "",
+          reason: a.reason ?? "",
+        }),
+      );
+      return 0;
     case "timeline": {
+      // A container name is never a task id: show its lease history.
+      if (!ID_RE.test(arg(rest, 0))) {
+        const h = await leaseHistory(root, arg(rest, 0));
+        a.json ? out(h) : console.log(leaseHistoryText(h));
+        return 0;
+      }
       const t = await timeline(root, arg(rest, 0), { runId: a.run });
       a.json ? out(t) : console.log(timelineText(t));
       return 0;
@@ -1712,7 +1849,7 @@ async function main(args: string[]): Promise<number> {
     }
     default:
       console.error(
-        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|holder|stale|sweep [--json]|timeline <id> [--run R] [--json]|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
+        "usage: coord <init|add|status|next|why|claim|checkpoint|submit|fail|abandon|accept|reject|ask|answer|questions|lease|heartbeat|release|break <container> --reason R --from W|holder|stale|sweep [--json]|timeline <id|container> [--run R] [--json]|doctor|pause|resume|pause-state|overview [--watch N]|import-gh <owner/repo> [--lane L]> ...",
       );
       return 2;
   }
