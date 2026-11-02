@@ -116,9 +116,9 @@ block shipping). It may merge once (a) holds; it stays in the breadth pool only 
 - (a) the hidden checks spread partial credit: every functional area has one or more
   independently scored fail_to_pass procedures, and every planned incomplete naive lands at a
   distinct, non-zero score below 1.0 in the gate;
-- (b) a setup comparison, run by lane-ops after merge at equal limits, separates the arms: mean
-  partial credit differs between at least two arms by more than the spread of repeats within
-  either arm. If it does not, the orchestrator retires the task to the filler pool.
+- (b) a setup comparison, run by lane-ops after merge at equal limits, separates the arms: with at
+  least three repeats per arm, the mean partial credit of two arms differs by more than the
+  larger of the two arms' sample standard deviations. If it does not, the orchestrator retires the task to the filler pool.
 
 A breadth task is never counted as a frontier-catcher. Rule 2 applies with one boundary: the
 overlay may plant working code for the existing kinds (that is where the touchpoints live), and
