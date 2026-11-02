@@ -16,8 +16,7 @@ description: >-
 ## Core insight
 
 In a well-reviewed PR, **every code comment that justifies a non-obvious decision
-marks a latent trap.** Real examples from the seed PRs (Continia `Document Output
-- Extensions`, PRs 50590 / 50285):
+marks a latent trap.** Real examples from the seed PRs:
 
 - "We can't use a TryFunction: TryFunctions can't contain database writes on-prem."
 - "BindSubscription is bound to the current call-stack frame and does NOT reliably
@@ -87,7 +86,7 @@ would do X; correct is Y because Z."
 
 ### 3. DISTILL
 Per trap: choose containment (see `reference/containment-policy.md`), strip
-project-specific objects (no Continia objects — they aren't in the vanilla
+project-specific objects (no vendor objects: they aren't in the vanilla
 container), restate as a generic problem. The prompt describes *what* to build,
 never *how*, and carries **no guiding notes** (project rule — hints that help the
 model dodge the trap destroy the signal). Specifying required *behavior* is
