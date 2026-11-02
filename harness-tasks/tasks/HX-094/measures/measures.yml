@@ -14,7 +14,7 @@ partial_credit:
     "87340/Scenario11": 1
   hidden_regressions: []
 reuse: null
-# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Measured: gate 2026-11-02T03-05-11-672Z on 73c757f1 (Cronus284) matched every value below.
 # Every scenario fails on the shipped baseline (a negative Discount line, or one line per
 # invoice line where the group nets to one); S11 fails there only on its net-negative group,
 # the baseline clears both buffers. So all eleven rows are weighted.
