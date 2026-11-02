@@ -62,17 +62,23 @@ codeunit 87360 "HX095 Payment Export Oracle"
         Frag: Code[8];
         AppId: Code[20];
         SentLine: Integer;
+        ExportedLine: Integer;
     begin
         HX095Arrange('04', ContractNo, CurrencyCode, Frag);
         AppId := 'APP' + Frag;
         HX095AddEntry(ContractNo, CurrencyCode, 60, AppId);
         HX095AddEntry(ContractNo, CurrencyCode, 70, AppId);
+        ExportedLine := HX095AddLine(ContractNo, CurrencyCode, "CGR Export Line Status"::Exported, AppId, 100, 80);
         SentLine := HX095AddLine(ContractNo, CurrencyCode, "CGR Export Line Status"::Sent, AppId, 100, 80);
         HX095SetRate(CurrencyCode, 1.6);
 
+        ExportLine.Get(ExportedLine);
+        ExportLineAmount.UpdateAmount(ExportLine);
+        Clear(ExportLine);
         ExportLine.Get(SentLine);
         ExportLineAmount.UpdateAmount(ExportLine);
 
+        HX095AssertLine(ExportedLine, AppId, 100, 80, 'S4 Exported line');
         HX095AssertLine(SentLine, AppId, 100, 80, 'S4 Sent line');
         HX095Cleanup(ContractNo, CurrencyCode);
     end;
@@ -189,6 +195,34 @@ codeunit 87360 "HX095 Payment Export Oracle"
         Assert.AreEqual(NewId, PaymentEntry."Applies-to ID", 'S8: second applied entry carries the new Applies-to ID');
         HX095AssertLine(LineA, NewId, 100, 80, 'S8 first Sent line');
         HX095AssertLine(LineB, NewId, 100, 80, 'S8 second Sent line');
+        HX095Cleanup(ContractNo, CurrencyCode);
+    end;
+
+    [Test]
+    procedure Scenario09()
+    var
+        PaymentApplication: Codeunit "CGR Payment Application";
+        EntryNos: List of [Integer];
+        ContractNo: Code[20];
+        CurrencyCode: Code[10];
+        Frag: Code[8];
+        AppId: Code[20];
+        OpenLine: Integer;
+        SentLine: Integer;
+    begin
+        HX095Arrange('09', ContractNo, CurrencyCode, Frag);
+        AppId := 'APP' + Frag;
+        EntryNos.Add(HX095AddEntry(ContractNo, CurrencyCode, 60, AppId));
+        EntryNos.Add(HX095AddEntry(ContractNo, CurrencyCode, 70, AppId));
+        OpenLine := HX095AddLine(ContractNo, CurrencyCode, "CGR Export Line Status"::Open, AppId, 130, 81.25);
+        SentLine := HX095AddLine(ContractNo, CurrencyCode, "CGR Export Line Status"::Sent, AppId, 100, 80);
+        EntryNos.Add(HX095AddEntry(ContractNo, CurrencyCode, 20, AppId));
+        HX095SetRate(CurrencyCode, 2.0);
+
+        PaymentApplication.ApplyEntries(ContractNo, AppId, EntryNos);
+
+        HX095AssertLine(OpenLine, AppId, 150, 75, 'S9 Open line reapplied under the same ID');
+        HX095AssertLine(SentLine, AppId, 100, 80, 'S9 Sent line');
         HX095Cleanup(ContractNo, CurrencyCode);
     end;
 
