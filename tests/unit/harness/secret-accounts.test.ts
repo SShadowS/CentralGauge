@@ -15,6 +15,9 @@ import {
 } from "../../../src/errors.ts";
 import { ExecutionRecordSchema } from "../../../src/harness/records.ts";
 import { loadTask } from "../../../src/harness/task.ts";
+import { secretFilesOf } from "../../../src/harness/adapter.ts";
+import { PI_ROUTE, piAdapter } from "../../../src/harness/adapters/pi.ts";
+import { codexAuthText } from "./codex-fixture.ts";
 import { tempDir } from "./temp-dirs.ts";
 import { ccBehavior, cellFor, makeEnv } from "./runtime-fixture.ts";
 
@@ -95,6 +98,30 @@ Deno.test("checkAccountsSecrets: a second account dir missing its token fails be
     ConfigurationError,
     "claude-oauth-token",
   );
+});
+
+// H-02 rebase onto R-02: the campaign-start check takes each arm's route files
+// (secretFilesOf on the config's routes) and the codex expiry rule.
+Deno.test("checkAccountsSecrets (H-02): a pi codex arm checks the codex file, not the OpenRouter key, and refuses a token that won't outlive the run", async () => {
+  const codexFiles = secretFilesOf(piAdapter, {
+    provider_routes: { main: "openai-codex:oauth" },
+  });
+  assertEquals(codexFiles, ["openai-codex-auth"]);
+  assertEquals(
+    secretFilesOf(piAdapter, { provider_routes: { main: PI_ROUTE } }),
+    ["openrouter-api-key"],
+  );
+  const dir = await tempDir();
+  const f = join(dir, "openai-codex-auth");
+  const acct = [{ label: "work", dir }];
+  await Deno.writeTextFile(f, codexAuthText(Date.now() + 10 * 60_000));
+  await assertRejects(
+    () => checkAccountsSecrets(acct, codexFiles, 30),
+    ConfigurationError,
+    "expires",
+  );
+  await Deno.writeTextFile(f, codexAuthText(Date.now() + 120 * 60_000));
+  await checkAccountsSecrets(acct, codexFiles, 30);
 });
 
 Deno.test("execution record carries account for a labelled run and omits it unlabelled", async () => {
