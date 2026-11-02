@@ -278,6 +278,7 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         PayoutLine.SetRange("Statement Entry No.", EntryNo);
         Assert.AreEqual(ExpectedLines, PayoutLine.Count(), Tag + ': payout lines of the statement');
         HX096GetLine(EntryNo, 0, PayoutLine);
+        Assert.AreEqual('OWN4410', Format(PayoutLine."Payee Code"), Tag + ': owner payout goes to the owner');
         Assert.AreEqual(ExpectedAmount, PayoutLine.Amount, Tag + ': owner payout amount');
         Assert.AreEqual(ExpectedToBePaid, PayoutLine."To Be Paid", Tag + ': owner To Be Paid');
     end;
@@ -287,6 +288,7 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         PayoutLine: Record "CGR Payout Line";
     begin
         HX096GetLine(EntryNo, ShareLineNo, PayoutLine);
+        Assert.AreEqual('BANK01', Format(PayoutLine."Payee Code"), Tag + ': share payout goes to the share''s payee');
         Assert.AreEqual(ExpectedAmount, PayoutLine.Amount, Tag + ': share payout amount');
         Assert.AreEqual(ExpectedToBePaid, PayoutLine."To Be Paid", Tag + ': share To Be Paid');
     end;

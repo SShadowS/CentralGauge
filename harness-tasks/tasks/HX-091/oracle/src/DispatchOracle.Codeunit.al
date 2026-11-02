@@ -270,6 +270,42 @@ codeunit 87280 "HX091 Dispatch Oracle"
     end;
 
     [Test]
+    procedure Scenario10()
+    var
+        Spy: Codeunit "HX091 Delivery Spy";
+        Entry: Record "CGR Invoice Dispatch Entry";
+        ContractNo: Code[20];
+        EntryNo: Integer;
+    begin
+        ContractNo := HX091Contract('10');
+        HX091Init();
+        Spy.HX091FailMail(ContractNo, 1);
+        Spy.HX091FailExport(ContractNo, 1);
+        BindSubscription(Spy);
+        EntryNo := HX091Queue(ContractNo);
+
+        HX091Process();
+        HX091AssertDelivered(Spy, ContractNo, 0, 0, 'Run 1');
+        Assert.IsTrue(Entry.Get(EntryNo), 'Run 1: the failed entry stays queued');
+        Assert.AreEqual(Spy.HX091MailErrText(ContractNo), Entry."Error Message", 'Run 1: Error Message holds the mail error');
+        Assert.AreEqual(1, Entry."Retry Count", 'Run 1: Retry Count is 1');
+
+        HX091Process();
+        HX091AssertDelivered(Spy, ContractNo, 1, 0, 'Run 2');
+        Assert.IsTrue(Entry.Get(EntryNo), 'Run 2: the failed entry stays queued');
+        Assert.IsTrue(Entry.Error, 'Run 2: the entry has Error set');
+        Assert.AreEqual(Spy.HX091ExportErrText(ContractNo), Entry."Error Message", 'Run 2: Error Message holds the latest error');
+        Assert.AreEqual(2, Entry."Retry Count", 'Run 2: Retry Count is 2');
+
+        HX091Process();
+        HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 3');
+        Assert.IsFalse(HX091Stored(EntryNo), 'Run 3: the delivered entry is removed');
+
+        UnbindSubscription(Spy);
+        HX091Cleanup(ContractNo);
+    end;
+
+    [Test]
     procedure Scenario09()
     var
         Spy: Codeunit "HX091 Delivery Spy";

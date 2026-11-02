@@ -10,30 +10,36 @@ partial_credit:
     "87280/Scenario07": 1
     "87280/Scenario08": 1
     "87280/Scenario09": 1
+    "87280/Scenario10": 1
   hidden_regressions: []
 reuse: null
 # Every scenario is weighted (C-15): each states a requirement of the ticket, so a wrong fix that
-# breaks one of them cannot take full credit. The baseline passes S4 S6 S8 S9, so it scores 4/9.
-# Reasoned from the failing rows of gate 2026-11-02T02-02-05-220Z on f8c688af (Cronus284):
+# breaks one of them cannot take full credit. The baseline passes S4 S6 S8 S9, so it scores 4/10.
+# S1-S9 reasoned from the failing rows of gate 2026-11-02T02-02-05-220Z on f8c688af (Cronus284):
 # mark-without-commit and flags-on-entry lose S1 S2 S3 S5 S7; mark-before-send loses those and S8;
 # mark-per-entry loses S3; mail-only loses S2; optimistic-failure loses S6;
 # never-cleared loses S1 S2 S4 S8; clear-only-clean loses S1 S2 S8.
+# S10 (Sol C-15 r6): the mail fails, then the export fails, then it goes through. Error Message holds
+# the latest error. It is lost by the baseline (second mail), mark-without-commit (second mail),
+# flags-on-entry (stale entry), mark-before-send and mark-mail-before-send (mail never retried),
+# and first-error-only (keeps the first error). The other naives pass it.
 # error-after-mail (Sol C-15 r1) sets Error on the entry once the mail is out, before the export:
 # S6 reads the entry at every delivery step, so it loses S6 only.
-# mark-mail-before-send (Sol C-15 r3) commits the mail mark before sending: a failed mail is
-# never retried, so it loses S8 only (S8 is the only scenario whose mail fails).
+# mark-mail-before-send (Sol C-15 r3) commits the mail mark before sending: loses S8, S10.
 # clear-if-failed (Sol C-15 r4) clears the delivery marks only for an entry that failed before:
 # a deliberate resend after a clean delivery sends nothing, so it loses S4 only.
+# first-error-only (Sol C-15 r6) writes Error Message only when it is empty: loses S10 only.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/mark-without-commit: { partial_credit: 0.4444444444444444 }
-  naive/mark-per-entry: { partial_credit: 0.8888888888888888 }
-  naive/mail-only: { partial_credit: 0.8888888888888888 }
-  naive/mark-before-send: { partial_credit: 0.3333333333333333 }
-  naive/optimistic-failure: { partial_credit: 0.8888888888888888 }
-  naive/never-cleared: { partial_credit: 0.5555555555555556 }
-  naive/clear-only-clean: { partial_credit: 0.6666666666666666 }
-  naive/flags-on-entry: { partial_credit: 0.4444444444444444 }
-  naive/error-after-mail: { partial_credit: 0.8888888888888888 }
-  naive/mark-mail-before-send: { partial_credit: 0.8888888888888888 }
-  naive/clear-if-failed: { partial_credit: 0.8888888888888888 }
+  naive/mark-without-commit: { partial_credit: 0.4 }
+  naive/mark-per-entry: { partial_credit: 0.9 }
+  naive/mail-only: { partial_credit: 0.9 }
+  naive/mark-before-send: { partial_credit: 0.3 }
+  naive/optimistic-failure: { partial_credit: 0.9 }
+  naive/never-cleared: { partial_credit: 0.6 }
+  naive/clear-only-clean: { partial_credit: 0.7 }
+  naive/flags-on-entry: { partial_credit: 0.4 }
+  naive/error-after-mail: { partial_credit: 0.9 }
+  naive/mark-mail-before-send: { partial_credit: 0.8 }
+  naive/clear-if-failed: { partial_credit: 0.9 }
+  naive/first-error-only: { partial_credit: 0.9 }

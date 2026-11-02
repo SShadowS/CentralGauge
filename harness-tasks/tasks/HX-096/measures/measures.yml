@@ -31,6 +31,8 @@ reuse: null
 # closed-held-blocks treats a statement with only closed shares as held: loses S10.
 # cutoff-exclusive pays shares due before the cutoff day only: loses S11.
 # first-share-only (Sol C-15 r4) proposes one payout line per statement for its shares: loses S11.
+# owner-as-payee (Sol C-15 r6) pays share lines to the owner: loses every row with a share line
+# (S5, S6, S11). Every owner and share line is now checked for its payee.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
   naive/follow-the-ticket: { partial_credit: 0.2727272727272727 }
@@ -44,3 +46,4 @@ expect:
   naive/closed-held-blocks: { partial_credit: 0.9090909090909091 }
   naive/cutoff-exclusive: { partial_credit: 0.9090909090909091 }
   naive/first-share-only: { partial_credit: 0.9090909090909091 }
+  naive/owner-as-payee: { partial_credit: 0.7272727272727273 }
