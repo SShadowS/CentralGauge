@@ -134,9 +134,10 @@ codeunit 87420 "HX098 Boat Oracle"
     var
         Contract: Record "CGR Rental Contract";
         RentalMgt: Codeunit "CGR Rental Mgt";
+        FleetMgt: Codeunit "CGR Fleet Mgt";
         ContractNo: Code[20];
     begin
-        // A boat rental can move to another boat.
+        // A boat rental can move to another boat, and the boats change places.
         HX098Setup();
         HX098Branch('HX98-HB', true);
         HX098Asset('HX98-B07', "CGR Asset Type"::Boat, 1000, 200);
@@ -146,6 +147,9 @@ codeunit 87420 "HX098 Boat Oracle"
         RentalMgt.SwapVehicle(ContractNo, 'HX98-B7X');
         Contract.Get(ContractNo);
         Assert.AreEqual('HX98-B7X', Contract."Vehicle No.", 'S7: the contract moved to the other boat');
+        Assert.AreEqual(400, Contract."Start Km", 'S7: the start reading is the new boat''s engine hours');
+        Assert.IsTrue(FleetMgt.IsAvailable('HX98-B07'), 'S7: the first boat is free again');
+        Assert.IsFalse(FleetMgt.IsAvailable('HX98-B7X'), 'S7: the new boat is out');
     end;
 
     [Test]
@@ -216,7 +220,7 @@ codeunit 87420 "HX098 Boat Oracle"
         HX098Asset('HX98-B11', "CGR Asset Type"::Boat, 1000, 200);
         Entry.SetRange("Posting Date", 20310301D, 20310331D);
         Entry.DeleteAll();
-        HX098Ledger('HX98-C11', 20310305D, 100);
+        HX098Ledger('HX98-C11', 20310305D, 110);
         HX098Ledger('HX98-V11', 20310310D, 50);
         HX098Ledger('HX98-B11', 20310312D, 70);
         HX098Ledger('HX98-B11', 20310320D, 30);
@@ -224,12 +228,14 @@ codeunit 87420 "HX098 Boat Oracle"
         Buffer.Reset();
         Assert.IsTrue(Buffer.Get("CGR Asset Type"::Boat), 'S11: boats have a revenue row');
         Assert.AreEqual(100, Buffer.Amount, 'S11: boat revenue');
+        Assert.IsTrue(Buffer.Get("CGR Asset Type"::Car), 'S11: cars have a revenue row');
+        Assert.AreEqual(110, Buffer.Amount, 'S11: car revenue');
         Buffer.Reset();
         if Buffer.FindSet() then
             repeat
                 Total += Buffer.Amount;
             until Buffer.Next() = 0;
-        Assert.AreEqual(250, Total, 'S11: revenue per asset type adds up to the ledger');
+        Assert.AreEqual(260, Total, 'S11: revenue per asset type adds up to the ledger');
     end;
 
     [Test]
@@ -304,7 +310,7 @@ codeunit 87420 "HX098 Boat Oracle"
         Setup."Km Allowance per Day" := 100;
         Setup."Excess Km Rate" := 0.5;
         Setup."Amount Rounding Precision" := 0.01;
-        Setup."Van Surcharge per Day" := 0;
+        Setup."Van Surcharge per Day" := 25;
         Setup."Engine Hour Allowance per Day" := 8;
         Setup."Excess Engine Hour Rate" := 40;
         Setup.Modify();

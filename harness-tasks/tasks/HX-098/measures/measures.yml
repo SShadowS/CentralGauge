@@ -1,6 +1,6 @@
 v: 1
 partial_credit:
-  # Breadth class: scenarios grouped by functional area. Weights make every single-area miss land at its own score.
+  # Breadth class: scenarios grouped by functional area. Weights give each of the eight planned naives its own score.
   # S1 S2 pricing, S3-S5 hand-out, S6 S7 S13 swap, S8 service, S9 leasing, S10 ledger, S11 reporting, S12 portal.
   weights:
     "87420/Scenario01": 4
