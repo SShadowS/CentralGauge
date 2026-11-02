@@ -13,7 +13,7 @@ partial_credit:
     - "87300/Scenario07"
     - "87300/Scenario08"
 reuse: null
-# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Measured: gate 2026-11-02T01-27-02-249Z on 266b8b37 (Cronus284) matched every value below.
 # total-fits, clamp-each, against-billing-days lose S1, S2, S9, S10; stop-after-miss loses S2;
 # no-substitution loses S6; own-match-not-open loses S5; fresh-budget loses S10.
 # substitution-on-single passes every weighted row and loses only the hidden regression S8,
