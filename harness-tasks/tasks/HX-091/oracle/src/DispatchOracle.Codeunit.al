@@ -21,19 +21,19 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 0, 'Run 1');
         Assert.IsTrue(Entry.Get(EntryNo), 'Run 1: the failed entry stays queued');
         Assert.IsTrue(Entry.Error, 'Run 1: the failed entry has Error set');
         Assert.AreEqual(Spy.HX091ExportErrText(ContractNo), Entry."Error Message", 'Run 1: Error Message holds the export error');
         Assert.AreEqual(1, Entry."Retry Count", 'Run 1: Retry Count is 1');
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 2: the delivered entry is removed');
 
         EntryNo := HX091Queue(ContractNo);
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Resend after the recovered delivery');
         Assert.IsFalse(HX091Stored(EntryNo), 'Resend: the entry is removed');
 
@@ -56,19 +56,19 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 1');
         Assert.IsTrue(Entry.Get(EntryNo), 'Run 1: the failed entry stays queued');
         Assert.IsTrue(Entry.Error, 'Run 1: the failed entry has Error set');
         Assert.AreEqual(Spy.HX091AfterErrText(ContractNo), Entry."Error Message", 'Run 1: Error Message holds the later step''s error');
         Assert.AreEqual(1, Entry."Retry Count", 'Run 1: Retry Count is 1');
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 2: the completed entry is removed');
 
         EntryNo := HX091Queue(ContractNo);
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Resend after the recovered delivery');
         Assert.IsFalse(HX091Stored(EntryNo), 'Resend: the entry is removed');
 
@@ -92,7 +92,7 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryA := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 0, 'Run 1');
         Assert.IsTrue(Entry.Get(EntryA), 'Run 1: the failed entry A stays queued');
         Assert.IsTrue(Entry.Error, 'Run 1: entry A has Error set');
@@ -102,7 +102,7 @@ codeunit 87280 "HX091 Dispatch Oracle"
         Commit();
         EntryB := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2 under entry B');
         Assert.IsFalse(HX091Stored(EntryB), 'Run 2: entry B is removed');
         Assert.IsFalse(HX091Stored(EntryA), 'Entry A stays deleted');
@@ -124,12 +124,12 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'First delivery');
         Assert.IsFalse(HX091Stored(EntryNo), 'First delivery: the entry is removed');
 
         EntryNo := HX091Queue(ContractNo);
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Deliberate resend');
         Assert.IsFalse(HX091Stored(EntryNo), 'Deliberate resend: the entry is removed');
 
@@ -152,18 +152,18 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         Assert.IsTrue(Entry.Get(EntryNo), 'Run 1: the failed entry stays queued');
         Assert.AreEqual(1, Entry."Retry Count", 'Run 1: Retry Count is 1');
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 0, 'Run 2');
         Assert.IsTrue(Entry.Get(EntryNo), 'Run 2: the failed entry stays queued');
         Assert.IsTrue(Entry.Error, 'Run 2: the entry has Error set');
         Assert.AreEqual(Spy.HX091ExportErrText(ContractNo), Entry."Error Message", 'Run 2: Error Message holds the export error');
         Assert.AreEqual(2, Entry."Retry Count", 'Run 2: Retry Count is 2 after two failed attempts');
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 3');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 3: the delivered entry is removed');
 
@@ -185,7 +185,7 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         Assert.IsTrue(Spy.HX091ProbeSeen(), 'The mail step ran');
         Assert.IsTrue(Spy.HX091ProbeFound(), 'The entry is in the queue while its mail is sent');
         Assert.IsFalse(Spy.HX091ProbeError(), 'An entry that has never failed is not shown with Error');
@@ -216,7 +216,7 @@ codeunit 87280 "HX091 Dispatch Oracle"
         FirstEntry := HX091Queue(FirstNo);
         SecondEntry := HX091Queue(SecondNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, SecondNo, 1, 1, 'Run 1, second invoice');
         Assert.IsFalse(HX091Stored(SecondEntry), 'Run 1: the second entry is removed');
         HX091AssertDelivered(Spy, FirstNo, 1, 0, 'Run 1, first invoice');
@@ -224,7 +224,7 @@ codeunit 87280 "HX091 Dispatch Oracle"
         Assert.IsTrue(Entry.Error, 'Run 1: the first entry has Error set');
         Assert.AreEqual(1, Entry."Retry Count", 'Run 1: the first entry has Retry Count 1');
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, FirstNo, 1, 1, 'Run 2, first invoice');
         Assert.IsFalse(HX091Stored(FirstEntry), 'Run 2: the first entry is removed');
         HX091AssertDelivered(Spy, SecondNo, 1, 1, 'Run 2, second invoice');
@@ -249,19 +249,19 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 0, 0, 'Run 1');
         Assert.IsTrue(Entry.Get(EntryNo), 'Run 1: the failed entry stays queued');
         Assert.IsTrue(Entry.Error, 'Run 1: the failed entry has Error set');
         Assert.AreEqual(Spy.HX091MailErrText(ContractNo), Entry."Error Message", 'Run 1: Error Message holds the mail error');
         Assert.AreEqual(1, Entry."Retry Count", 'Run 1: Retry Count is 1');
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 2: the delivered entry is removed');
 
         EntryNo := HX091Queue(ContractNo);
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Resend after the recovered delivery');
         Assert.IsFalse(HX091Stored(EntryNo), 'Resend: the entry is removed');
 
@@ -282,7 +282,7 @@ codeunit 87280 "HX091 Dispatch Oracle"
         BindSubscription(Spy);
         EntryNo := HX091Queue(ContractNo);
 
-        Dispatcher.ProcessQueue();
+        HX091Process();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Clean run');
         Assert.IsFalse(HX091Stored(EntryNo), 'The delivered entry is removed');
 
@@ -302,6 +302,17 @@ codeunit 87280 "HX091 Dispatch Oracle"
         MailLog.DeleteAll();
         ExportLog.DeleteAll();
         Commit();
+    end;
+
+    // ProcessQueue must complete: an error escaping it (not a failed delivery, which the queue records) fails the scenario.
+    local procedure HX091Process()
+    var
+        Ok: Boolean;
+    begin
+        Commit();
+        ClearLastError();
+        Ok := Codeunit.Run(Codeunit::"HX091 Queue Runner");
+        Assert.IsTrue(Ok, 'ProcessQueue completes without an error: ' + GetLastErrorText());
     end;
 
     // A fresh contract number per test run, so delivery memory left in the database by an earlier run cannot leak in.
