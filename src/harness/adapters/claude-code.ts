@@ -64,6 +64,105 @@ const isHeartbeat = (r: J) =>
 
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/** H-52: the sub-agent retry shape of M8-16b cell 6bcb27fa (Claude Code 2.1.302), exactly. */
+const RETRY_KEYS = [
+  "elapsed_time_seconds",
+  "parent_tool_use_id",
+  "session_id",
+  "subagent_retry",
+  "subagent_type",
+  "tool_name",
+  "tool_use_id",
+  "type",
+  "uuid",
+];
+const RETRY_INNER_KEYS = [
+  "agent_id",
+  "attempt",
+  "error_category",
+  "error_status",
+  "max_retries",
+  "retry_delay_ms",
+];
+const RETRY_STRINGS = [
+  "parent_tool_use_id",
+  "session_id",
+  "subagent_type",
+  "tool_use_id",
+  "uuid",
+];
+const keysAre = (r: J, keys: string[]) =>
+  Object.keys(r).sort().join() === keys.join();
+/** The retry line; its follow-up is the same record without subagent_retry. */
+const isRetryLine = (r: J, follow: boolean) =>
+  keysAre(
+    r,
+    follow ? RETRY_KEYS.filter((k) => k !== "subagent_retry") : RETRY_KEYS,
+  ) &&
+  r["tool_name"] === "Agent" &&
+  typeof r["elapsed_time_seconds"] === "number" &&
+  Number.isFinite(r["elapsed_time_seconds"]) &&
+  RETRY_STRINGS.every((k) => typeof r[k] === "string") &&
+  (follow || isRetryInner(obj(r["subagent_retry"]), r["subagent_retry"]));
+const isRetryInner = (x: J, raw: unknown) =>
+  raw !== null && typeof raw === "object" && !Array.isArray(raw) &&
+  keysAre(x, RETRY_INNER_KEYS) &&
+  typeof x["agent_id"] === "string" &&
+  isCount(x["attempt"]) && (x["attempt"] as number) >= 1 &&
+  isCount(x["max_retries"]) &&
+  (x["max_retries"] as number) >= (x["attempt"] as number) &&
+  isCount(x["retry_delay_ms"]) &&
+  x["error_status"] === null &&
+  typeof x["error_category"] === "string";
+
+/** A qualified sub-agent retry, as raw_usage.subagent_retries records it. */
+interface SubagentRetry {
+  lines: [number, number];
+  agent_id: string;
+  subagent_type: string;
+  attempt: number;
+  max_retries: number;
+  error_category: string;
+}
+
+/**
+ * H-52: every tool_progress record is a heartbeat, or one half of a retry
+ * pair: the retry line, then on the very next line the same tool_use_id,
+ * parent, session and sub-agent type without subagent_retry. Anything else,
+ * a lone half included, is `bad` (fails closed).
+ */
+function subagentRetries(
+  lines: Line[],
+): { bad: number[]; retries: SubagentRetry[] } {
+  const bad: number[] = [];
+  const retries: SubagentRetry[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const { rec, line } = lines[i]!;
+    if (rec.type !== "tool_progress" || isHeartbeat(rec)) continue;
+    const next = lines[i + 1];
+    const same = (k: string) => next!.rec[k] === rec[k];
+    if (
+      isRetryLine(rec, false) && next !== undefined &&
+      next.line === line + 1 && next.rec.type === "tool_progress" &&
+      isRetryLine(next.rec, true) &&
+      ["tool_use_id", "parent_tool_use_id", "session_id", "subagent_type"]
+        .every(same)
+    ) {
+      const x = obj(rec["subagent_retry"]);
+      retries.push({
+        lines: [line, next.line],
+        agent_id: x["agent_id"] as string,
+        subagent_type: rec["subagent_type"] as string,
+        attempt: x["attempt"] as number,
+        max_retries: x["max_retries"] as number,
+        error_category: x["error_category"] as string,
+      });
+      i++;
+    } else bad.push(line);
+  }
+  return { bad, retries };
+}
 /** Lower bound only (raw_usage.partial): never feeds the cost. */
 const num = (v: unknown): number => (isCount(v) ? v : 0);
 /** A required usage field: missing or non-numeric is recorded, never treated as zero. */
@@ -1809,12 +1908,13 @@ export function parseClaudeStream(
   for (const [t, n] of [...unknown].sort(([a], [b]) => a < b ? -1 : 1)) {
     streamProblems.push(`unknown record type ${t} (${n})`);
   }
-  for (const { rec, line } of of("tool_progress")) {
-    if (!isHeartbeat(rec)) {
-      streamProblems.push(
-        `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
-      );
-    }
+  // H-52: a sub-agent retry pair (subagent-retry-2.1.302.jsonl) is no
+  // heartbeat; it is qualified for pricing only, below, once a result exists.
+  const progress = subagentRetries(lines);
+  for (const line of progress.bad) {
+    streamProblems.push(
+      `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
+    );
   }
 
   // A same-session resume (M1-32b: a background task wakes the session) adds
@@ -1858,6 +1958,17 @@ export function parseClaudeStream(
   const unproven = provenanceAndPlacement(file, lines, inits, allResults);
   const init = inits[0]?.rec;
   const result = results.at(-1)?.rec;
+  // Without a usable result the retry lines stay stream problems, so the
+  // infra path (no result: stream problems are infra) is unchanged.
+  if (!result) {
+    for (const r of progress.retries) {
+      for (const line of r.lines) {
+        streamProblems.push(
+          `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
+        );
+      }
+    }
+  }
   const version = typeof init?.claude_code_version === "string"
     ? init.claude_code_version
     : null;
@@ -2372,6 +2483,15 @@ export function parseClaudeStream(
       ),
     ],
     stream_problems: streamProblems,
+    // H-52: qualified sub-agent retries (not stream problems once a result exists).
+    ...(result && progress.retries.length > 0
+      ? {
+        subagent_retries: {
+          count: progress.retries.length,
+          retries: progress.retries,
+        },
+      }
+      : {}),
     ...(unproven.trace.length > 0 ? { trace_incomplete: unproven.trace } : {}),
     // Kept apart from stream_problems: an MCP inventory mismatch is a setup
     // fact (not loaded / setup_failed), never a reason to doubt the cost.

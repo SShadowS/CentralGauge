@@ -4636,6 +4636,144 @@ Deno.test("otel short (H-52): never priced when OTel exceeds modelUsage, falls b
   }
 });
 
+// ---- H-52 ruling (b): the sub-agent retry pair, qualified for pricing only ----
+// subagent-retry-2.1.302.jsonl: raw.jsonl lines 660-661 of M8-16b cell
+// 6bcb27fa (Claude Code 2.1.302), byte-exact.
+const RETRY_FIXTURE =
+  "tests/fixtures/harness/claude-code/subagent-retry-2.1.302.jsonl";
+/** The nested stub with `pair` inserted before its result record (line 17). */
+const withRetry = (raw: string, pair: string[]) => {
+  const l = raw.trimEnd().split("\n");
+  return [...l.slice(0, 16), ...pair, ...l.slice(16)].join("\n") + "\n";
+};
+const retryPair = async () =>
+  (await Deno.readTextFile(RETRY_FIXTURE)).trimEnd().split("\n");
+const PROGRESS_BAD = "is not a heartbeat of the recorded shape";
+const rawOf = (r: { telemetry: Telemetry }) =>
+  r.telemetry.raw_usage as {
+    stream_problems: string[];
+    subagent_retries?: {
+      count: number;
+      retries: Record<string, unknown>[];
+    };
+  };
+
+Deno.test("subagent retry (H-52): the recorded retry pair is no stream problem once a result exists; recorded with its sub-agent; the cell prices from modelUsage", async () => {
+  const pair = await retryPair();
+  const raw = withRetry(await Deno.readTextFile(NESTED.raw), pair);
+  const r = await parseOtelAs(raw, await nestedWithout(8), NESTED_ID);
+  const u = rawOf(r);
+  assertEquals(u.stream_problems, []);
+  assertEquals(u.subagent_retries, {
+    count: 1,
+    retries: [{
+      lines: [17, 18],
+      agent_id: "adc1908b921b4a33f",
+      subagent_type: "al-reviewer",
+      attempt: 1,
+      max_retries: 10,
+      error_category: "unknown",
+    }],
+  });
+  assertEquals(otelRaw(r).usage_reconciliation?.status, "model_usage");
+  assertEquals(otelRaw(r).otel?.status, "mismatch");
+  assertAlmostEquals(r.telemetry.cost_usd!, 0.0139205, 1e-12);
+});
+
+Deno.test("subagent retry (H-52): a near-miss shape (one field off) or a lone half still fails closed", async () => {
+  const [retry, follow] = await retryPair();
+  const base = await Deno.readTextFile(NESTED.raw);
+  /** The fields the near-miss cases touch. */
+  type Rec = {
+    subagent_retry?: Rec | null;
+    usage?: unknown;
+    subagent_type?: unknown;
+    tool_name?: unknown;
+    error_status?: unknown;
+    cost_usd?: unknown;
+    attempt?: unknown;
+    tool_use_id?: unknown;
+    heartbeat?: unknown;
+  };
+  const edit = (l: string, f: (o: Rec) => void) => {
+    const o = JSON.parse(l) as Rec;
+    f(o);
+    return JSON.stringify(o);
+  };
+  const inner = (f: (x: Rec) => void) =>
+    edit(retry!, (o) => f(o.subagent_retry!));
+  const cases: [string, string[]][] = [
+    ["extra key", [edit(retry!, (o) => o.usage = {}), follow!]],
+    ["missing key", [edit(retry!, (o) => delete o.subagent_type), follow!]],
+    ["tool_name", [edit(retry!, (o) => o.tool_name = "Bash"), follow!]],
+    ["error_status set", [inner((x) => x.error_status = 529), follow!]],
+    ["inner extra key", [inner((x) => x.cost_usd = 1), follow!]],
+    ["attempt 0", [inner((x) => x.attempt = 0), follow!]],
+    ["attempt > max", [inner((x) => x.attempt = 11), follow!]],
+    ["subagent_retry null", [
+      edit(retry!, (o) => o.subagent_retry = null),
+      follow!,
+    ]],
+    ["follow-up other tool", [
+      retry!,
+      edit(follow!, (o) => o.tool_use_id = "x"),
+    ]],
+    ["follow-up extra key", [retry!, edit(follow!, (o) => o.heartbeat = true)]],
+    ["retry alone", [retry!]],
+    ["follow-up alone", [follow!]],
+    ["halves reversed", [follow!, retry!]],
+  ];
+  for (const [label, pair] of cases) {
+    const r = await parseOtelAs(
+      withRetry(base, pair),
+      await nestedWithout(8),
+      NESTED_ID,
+    );
+    const u = rawOf(r);
+    assert(
+      u.stream_problems.some((p) => p.includes(PROGRESS_BAD)),
+      `${label}: ${JSON.stringify(u.stream_problems)}`,
+    );
+    assertEquals(u.subagent_retries, undefined, label);
+  }
+});
+
+Deno.test("subagent retry (H-52): pricing only: the parse is otherwise unchanged, and with no result the pair stays a stream problem (infra path)", async () => {
+  const pair = await retryPair();
+  const base = await Deno.readTextFile(NESTED.raw);
+  const input = {
+    rawLog: "raw.jsonl",
+    exitCode: 0,
+    pricing: BOOK,
+    manifest: manifest("cc", armH10()),
+    executionId: NESTED_ID,
+  };
+  const otel = await nestedWithout(8);
+  const strip = (r: ReturnType<typeof parseClaudeStream>) => {
+    const { telemetry, trace: _trace, ...rest } = r;
+    const raw = { ...(telemetry.raw_usage as Record<string, unknown>) };
+    delete raw["subagent_retries"];
+    return { ...rest, telemetry: { ...telemetry, raw_usage: raw } };
+  };
+  const plain = parseClaudeStream(base, input, [], otel);
+  const retried = parseClaudeStream(withRetry(base, pair), input, [], otel);
+  // Termination, observed components, inventory, telemetry: all as without the pair.
+  assertEquals(strip(retried), strip(plain));
+  // No result record: the pair is reported as stream problems, as before H-52.
+  const cut =
+    withRetry(base, pair).trimEnd().split("\n").filter((l) =>
+      !l.startsWith('{"duration_api_ms"')
+    ).join("\n") + "\n";
+  const nr = parseClaudeStream(cut, input, [], otel);
+  assertEquals(nr.termination, null);
+  const u = rawOf(nr);
+  assertEquals(u.stream_problems.filter((p) => p.includes(PROGRESS_BAD)), [
+    `tool_progress at line 17 ${PROGRESS_BAD}`,
+    `tool_progress at line 18 ${PROGRESS_BAD}`,
+  ]);
+  assertEquals(u.subagent_retries, undefined);
+});
+
 // ---- H-20: system/init additional_directories (first seen in 2.1.302) ----
 Deno.test("additional directories (H-20): a non-empty or malformed system/init additional_directories is refused; [] and absent are unchanged", async () => {
   const text = await Deno.readTextFile(STUB_300.lsp);
