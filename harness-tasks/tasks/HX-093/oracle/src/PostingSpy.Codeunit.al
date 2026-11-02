@@ -11,10 +11,18 @@ codeunit 87321 "HX093 Posting Spy"
         BeforePostCalls: Integer;
         AfterPostCalls: Integer;
         ContractModifies: Integer;
+        WatchedVehicleNo: Code[20];
+        VehicleModifies: Integer;
 
     procedure HX093Watch(ContractNo: Code[20])
+    var
+        Contract: Record "CGR Rental Contract";
     begin
         WatchedContractNo := ContractNo;
+        WatchedVehicleNo := '';
+        if Contract.Get(ContractNo) then
+            WatchedVehicleNo := Contract."Vehicle No.";
+        VehicleModifies := 0;
         LedgerInserts := 0;
         BalancingInserts := 0;
         BeforePostCalls := 0;
@@ -44,6 +52,18 @@ codeunit 87321 "HX093 Posting Spy"
     begin
         if Rec."No." = WatchedContractNo then
             ContractModifies += 1;
+    end;
+
+    procedure HX093VehicleModifies(): Integer
+    begin
+        exit(VehicleModifies);
+    end;
+
+    [EventSubscriber(ObjectType::Table, Database::"CGR Vehicle", 'OnAfterModifyEvent', '', false, false)]
+    local procedure HX093OnVehicleModify(var Rec: Record "CGR Vehicle"; var xRec: Record "CGR Vehicle"; RunTrigger: Boolean)
+    begin
+        if (WatchedVehicleNo <> '') and (Rec."No." = WatchedVehicleNo) then
+            VehicleModifies += 1;
     end;
 
     procedure HX093LedgerInserts(): Integer

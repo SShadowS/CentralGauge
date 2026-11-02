@@ -285,6 +285,7 @@ codeunit 87320 "HX093 Balancing Oracle"
         Assert.AreEqual(0, Spy.HX093BalancingInserts(), Step + ': no balancing entry was written');
         Assert.AreEqual(0, Spy.HX093BeforePostCalls(), Step + ': posting stopped before OnBeforePostRentalContract');
         Assert.AreEqual(0, Spy.HX093ContractModifies(), Step + ': the contract was not modified');
+        Assert.AreEqual(0, Spy.HX093VehicleModifies(), Step + ': the vehicle was not modified');
         Assert.AreEqual(0, Spy.HX093AfterPostCalls(), Step + ': OnAfterPostRentalContract was not raised');
     end;
 
