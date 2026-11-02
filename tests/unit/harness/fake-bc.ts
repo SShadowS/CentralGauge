@@ -307,6 +307,11 @@ export class FakeBc implements HarnessBc {
     for (const [index, file] of plan.publish.entries()) {
       const app = JSON.parse(await Deno.readTextFile(file)) as FakeApp;
       published.push({ index, ms: 5 });
+      this.httpRowAtPublish.push({
+        container,
+        id: app.id,
+        allowed: this.httpRows.get(`${container}|${app.id.toLowerCase()}`),
+      });
       const keptAt = kept.get(app.name);
       const newer = (a: string, b: string) => {
         const x = a.split(".").map(Number), y = b.split(".").map(Number);
@@ -357,6 +362,18 @@ export class FakeBc implements HarnessBc {
   }[] = [];
   /** Test hook: the read-back for a write (default: what was written). */
   httpReadback: ((container: string, id: string) => string) | null = null;
+  /**
+   * H-50: the NAV App Setting rows, `container|id` -> Allow HttpClient
+   * Requests. A row survives publish, unpublish and sync (H-46); a write
+   * inserts or overwrites it. Seed one to model a leftover row.
+   */
+  httpRows = new Map<string, boolean>();
+  /** H-50: each published app's row as its install/upgrade code would see it (undefined: no row). */
+  httpRowAtPublish: {
+    container: string;
+    id: string;
+    allowed: boolean | undefined;
+  }[] = [];
 
   setHttpClientAllowed(
     container: string,
@@ -370,6 +387,7 @@ export class FakeBc implements HarnessBc {
       allowed,
       at: this.syncs.length,
     });
+    this.httpRows.set(`${container}|${appId.toLowerCase()}`, allowed);
     return Promise.resolve(
       this.httpReadback?.(container, appId) ?? `allow=${allowed}`,
     );

@@ -2879,15 +2879,17 @@ Deno.test("H-35 S3 L2a deployAndTest: in a judge deployment every candidate gets
   });
   const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
   assert(cands.length > 0);
+  // H-50: once before the publish, then again after it.
   assertEquals(
     bc.httpSettings.map((s) => [s.id, s.allowed]),
-    cands.map((id) => [id, false]),
+    [...cands, ...cands].map((id) => [id, false]),
   );
+  const pre = bc.httpSettings[0]!.at;
   assert(
-    bc.httpSettings.every((s) => s.at >= 1),
+    bc.httpSettings.slice(cands.length).every((s) => s.at >= 1 && s.at > pre),
     "after the deployment's sync",
   );
-  assertEquals(testsAt, cands.length, "all set before the first test");
+  assertEquals(testsAt, 2 * cands.length, "all set before the first test");
 });
 
 Deno.test("H-35 S3 L2a: a read-back that is not allow=false fails the deployment as infra; the lane quarantines and reroutes", async () => {
@@ -2934,12 +2936,18 @@ Deno.test("H-43 L2a: an agent-session deployment (no reset) blocks every candida
   });
   const cands = p.wanted.filter((w) => w.role === "candidate").map((w) => w.id);
   assertEquals(cands.sort(), [IDS.rental, IDS.test].sort());
-  assertEquals(
-    bc.httpSettings.map((s) => [s.id, s.allowed]).sort(),
-    cands.map((id) => [id, false]).sort(),
-  );
-  assert(bc.httpSettings.every((s) => s.at >= 1), "after the publish");
-  assertEquals(testsAt, cands.length, "all set before the first test");
+  // H-50: once before the publish (no sync yet), then again after it.
+  const pre = bc.httpSettings.slice(0, cands.length);
+  const post = bc.httpSettings.slice(cands.length);
+  for (const half of [pre, post]) {
+    assertEquals(
+      half.map((s) => [s.id, s.allowed]).sort(),
+      cands.map((id) => [id, false]).sort(),
+    );
+  }
+  assert(pre.every((s) => s.at === 0), "before the publish");
+  assert(post.every((s) => s.at >= 1), "after the publish");
+  assertEquals(testsAt, 2 * cands.length, "all set before the first test");
 });
 
 Deno.test("H-43 L2a: in an agent-session deployment (no reset) a read-back other than allow=false or a throw refuses the deployment (HttpBlockFailedError, no test runs)", async () => {
@@ -3013,10 +3021,101 @@ Deno.test("H-43 L2a: an agent-session candidate publish failure still blocks eve
   });
   assert(out.deployed.candidateFailure);
   assertEquals(bc.tests, []);
+  // H-50: the pre-publish writes plus, after the failed publish, every candidate again.
   assertEquals(
-    bc.httpSettings.map((s) => s.id).sort(),
+    bc.httpSettings.filter((s) => s.at >= 1).map((s) => s.id).sort(),
     p.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
   );
+});
+
+// ---- H-50: the HttpClient block row is written before the publish (H-46) ----
+
+Deno.test("H-50: judge and agent-session deployments write allow=false for every candidate before its publish, overwriting a leftover allow=true row, and again after it", async () => {
+  for (const judge of [true, false]) {
+    const bc = new FakeBc((cu) =>
+      cu === 80010 ? result({ Works: true }) : result({})
+    );
+    const p = await prep(bc, new BcLane(bc, ["C1"]), ["Rental"]);
+    const cands = p.wanted.filter((w) => w.role === "candidate");
+    assertEquals(cands.length, 2);
+    // A leftover row from an earlier publish of the same fixed App ID.
+    for (const w of cands) bc.httpRows.set(`C1|${w.id.toLowerCase()}`, true);
+    await deployAndTest(bc, "C1", {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [...p.candidateIds].reverse(),
+      ctx: {
+        ledgerRoot: await tmp(),
+        trustedRoots: [p.pristine],
+        ...(judge ? { reset: fakeReset(bc).mechanism } : {}),
+      },
+    });
+    const pub = bc.syncs.findIndex((s) =>
+      cands.every((w) => s.publish.includes(w.file))
+    );
+    assert(pub >= 0, "one sync publishes the candidates");
+    for (const w of cands) {
+      assertEquals(
+        bc.httpRowAtPublish.filter((r) => r.id === w.id).map((r) => r.allowed),
+        [false],
+        `${w.name}: the row its install code sees (judge=${judge})`,
+      );
+      assertEquals(
+        bc.httpSettings.filter((s) => s.id === w.id).map((
+          s,
+        ) => [s.at, s.allowed]),
+        [[pub, false], [pub + 1, false]],
+        `${w.name}: before and after the publish (judge=${judge})`,
+      );
+    }
+  }
+});
+
+Deno.test("H-50: a pre-publish block that does not hold (read-back or throw) refuses the deployment before any candidate is published", async () => {
+  for (const judge of [true, false]) {
+    for (
+      const readback of [
+        () => "allow=true",
+        () => {
+          throw new ContainerError("SOAP timed out", "C1", "test");
+        },
+      ]
+    ) {
+      const bc = new FakeBc((cu) =>
+        cu === 80010 ? result({ Works: true }) : result({})
+      );
+      const p = await prep(bc, new BcLane(bc, ["C1"]));
+      const cands = new Set(
+        p.wanted.filter((w) => w.role === "candidate").map((w) => w.id),
+      );
+      const published = bc.httpRowAtPublish.length;
+      bc.httpReadback = readback;
+      await assertRejects(
+        async () =>
+          await deployAndTest(bc, "C1", {
+            wanted: p.wanted,
+            tests: [{
+              codeunit: 80010,
+              procedures: ["Works"],
+              target: "candidate",
+            }],
+            cleanupIds: [IDS.test],
+            ctx: {
+              ledgerRoot: await tmp(),
+              trustedRoots: [p.pristine],
+              ...(judge ? { reset: fakeReset(bc).mechanism } : {}),
+            },
+          }),
+        HttpBlockFailedError,
+      );
+      assertEquals(
+        bc.httpRowAtPublish.slice(published).filter((r) => cands.has(r.id)),
+        [],
+        `no candidate published (judge=${judge})`,
+      );
+      assertEquals(bc.tests, []);
+    }
+  }
 });
 
 // ---- H-35 Sol S3 r1 fixes ----
@@ -3129,8 +3228,10 @@ Deno.test("H-35 Sol S3 r1 #4: a setting call that throws is HttpBlockFailedError
     reset: fakeReset(bc2).mechanism,
   });
   assert(d.candidateFailure);
+  // H-50: after the failed publish (the last sync), every candidate again.
+  const synced = bc2.syncs.length;
   assertEquals(
-    bc2.httpSettings.map((s) => s.id).sort(),
+    bc2.httpSettings.filter((s) => s.at === synced).map((s) => s.id).sort(),
     p2.wanted.filter((w) => w.role === "candidate").map((w) => w.id).sort(),
   );
 });

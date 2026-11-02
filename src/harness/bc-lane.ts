@@ -2038,6 +2038,9 @@ export async function deploy(
       );
     }
   }
+  // H-50: the row is written by App ID before the publish, so install and
+  // upgrade codeunits already run blocked (H-46); a failure publishes nothing.
+  await blockCandidateHttp(bc, container, wanted);
   const ledger = await loadLedger(ctx.ledgerRoot, container);
   const allow = await trustedHarnessAppIds(ctx.trustedRoots, ledger);
   const plan = planAppSync(
@@ -2115,8 +2118,11 @@ export async function deploy(
  * than false refuses the deployment (HttpBlockFailedError: quarantined).
  * Sol S3 r1 #4: every candidate, a publish failure notwithstanding (the
  * others are installed), and a call that throws refuses as well.
- * Owner 2026-10-23: after the publish, before any test, is the accepted
- * scope; install/upgrade codeunits run before it (pre-publish write: H-46).
+ * H-50: deploy runs it twice. Before the publish it inserts or overwrites the
+ * row (a leftover allow=true included), so install/upgrade codeunits run
+ * blocked (H-46 measured the row survives publish, sync, install, upgrade).
+ * After the publish it runs again before any test (H-43), kept as the check
+ * that the setting still holds once the apps are installed.
  */
 async function blockCandidateHttp(
   bc: HarnessBc,
