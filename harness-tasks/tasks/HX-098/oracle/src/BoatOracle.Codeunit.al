@@ -53,6 +53,8 @@ codeunit 87420 "HX098 Boat Oracle"
         Contract: Record "CGR Rental Contract";
         RentalMgt: Codeunit "CGR Rental Mgt";
         Pricing: Codeunit "CGR Rental Pricing";
+        PreviewLine: Record "CGR Invoice Preview Line";
+        Preview: Codeunit "CGR Rental Invoice Preview";
         ContractNo: Code[20];
     begin
         // Engine hours over the daily allowance are charged at the hourly rate; the km rule does not apply.
@@ -65,6 +67,8 @@ codeunit 87420 "HX098 Boat Oracle"
         RentalMgt.Return(ContractNo, 1030, '');
         Contract.Get(ContractNo);
         Assert.AreEqual(840, Pricing.CalcAmount(Contract), 'S2: 600 for three days plus 6 extra engine hours at 40, no km charge');
+        Preview.BuildPreview(ContractNo, PreviewLine);
+        Assert.AreEqual(840, Preview.TotalAmount(PreviewLine), 'S2: the invoice preview shows the same boat price');
     end;
 
     [Test]
