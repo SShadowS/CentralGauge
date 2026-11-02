@@ -110,6 +110,23 @@ Deno.test("codexExpiryProblem: refuses a token that expires before the timeout p
   );
 });
 
+// H-02 minor owed at merge: an `expires` outside the Date range (|ms| > 8.64e15)
+// is refused at parse, so the expiry refusal never throws a RangeError.
+Deno.test("parseCodexAuth: expires outside the valid Date range is refused, the bounds load", () => {
+  for (const x of [8.64e15 + 1, -8.64e15 - 1, Number.MAX_SAFE_INTEGER]) {
+    assertThrows(
+      () => parseCodexAuth(codexAuthText(x)),
+      ConfigurationError,
+      "Date range",
+    );
+  }
+  for (const x of [8.64e15, -8.64e15]) {
+    const a = parseCodexAuth(codexAuthText(x));
+    assertEquals(a.expires, x);
+    codexExpiryProblem(a, 30); // never throws
+  }
+});
+
 Deno.test('releasedCodexAuth (H-02 review): the sandbox copy carries refresh ""; the rest unchanged', () => {
   const text = codexAuthText(1_900_000_000_000);
   const out = releasedCodexAuth(text);

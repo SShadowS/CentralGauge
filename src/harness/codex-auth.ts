@@ -72,6 +72,10 @@ export function parseCodexAuth(text: string): CodexAuth {
   if (typeof expires !== "number" || !Number.isSafeInteger(expires)) {
     return bad("expires is not an integer (epoch milliseconds)");
   }
+  // Out of the Date range, the expiry refusal's toISOString would throw a RangeError.
+  if (Math.abs(expires) > 8.64e15) {
+    return bad("expires is outside the Date range (|ms| <= 8.64e15)");
+  }
   return {
     access: e["access"] as string,
     refresh: e["refresh"] as string,
