@@ -64,6 +64,105 @@ const isHeartbeat = (r: J) =>
 
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/** H-52: the sub-agent retry shape of M8-16b cell 6bcb27fa (Claude Code 2.1.302), exactly. */
+const RETRY_KEYS = [
+  "elapsed_time_seconds",
+  "parent_tool_use_id",
+  "session_id",
+  "subagent_retry",
+  "subagent_type",
+  "tool_name",
+  "tool_use_id",
+  "type",
+  "uuid",
+];
+const RETRY_INNER_KEYS = [
+  "agent_id",
+  "attempt",
+  "error_category",
+  "error_status",
+  "max_retries",
+  "retry_delay_ms",
+];
+const RETRY_STRINGS = [
+  "parent_tool_use_id",
+  "session_id",
+  "subagent_type",
+  "tool_use_id",
+  "uuid",
+];
+const keysAre = (r: J, keys: string[]) =>
+  Object.keys(r).sort().join() === keys.join();
+/** The retry line; its follow-up is the same record without subagent_retry. */
+const isRetryLine = (r: J, follow: boolean) =>
+  keysAre(
+    r,
+    follow ? RETRY_KEYS.filter((k) => k !== "subagent_retry") : RETRY_KEYS,
+  ) &&
+  r["tool_name"] === "Agent" &&
+  typeof r["elapsed_time_seconds"] === "number" &&
+  Number.isFinite(r["elapsed_time_seconds"]) &&
+  RETRY_STRINGS.every((k) => typeof r[k] === "string") &&
+  (follow || isRetryInner(obj(r["subagent_retry"]), r["subagent_retry"]));
+const isRetryInner = (x: J, raw: unknown) =>
+  raw !== null && typeof raw === "object" && !Array.isArray(raw) &&
+  keysAre(x, RETRY_INNER_KEYS) &&
+  typeof x["agent_id"] === "string" &&
+  isCount(x["attempt"]) && (x["attempt"] as number) >= 1 &&
+  isCount(x["max_retries"]) &&
+  (x["max_retries"] as number) >= (x["attempt"] as number) &&
+  isCount(x["retry_delay_ms"]) &&
+  x["error_status"] === null &&
+  typeof x["error_category"] === "string";
+
+/** A qualified sub-agent retry, as raw_usage.subagent_retries records it. */
+interface SubagentRetry {
+  lines: [number, number];
+  agent_id: string;
+  subagent_type: string;
+  attempt: number;
+  max_retries: number;
+  error_category: string;
+}
+
+/**
+ * H-52: every tool_progress record is a heartbeat, or one half of a retry
+ * pair: the retry line, then on the very next line the same tool_use_id,
+ * parent, session and sub-agent type without subagent_retry. Anything else,
+ * a lone half included, is `bad` (fails closed).
+ */
+function subagentRetries(
+  lines: Line[],
+): { bad: number[]; retries: SubagentRetry[] } {
+  const bad: number[] = [];
+  const retries: SubagentRetry[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const { rec, line } = lines[i]!;
+    if (rec.type !== "tool_progress" || isHeartbeat(rec)) continue;
+    const next = lines[i + 1];
+    const same = (k: string) => next!.rec[k] === rec[k];
+    if (
+      isRetryLine(rec, false) && next !== undefined &&
+      next.line === line + 1 && next.rec.type === "tool_progress" &&
+      isRetryLine(next.rec, true) &&
+      ["tool_use_id", "parent_tool_use_id", "session_id", "subagent_type"]
+        .every(same)
+    ) {
+      const x = obj(rec["subagent_retry"]);
+      retries.push({
+        lines: [line, next.line],
+        agent_id: x["agent_id"] as string,
+        subagent_type: rec["subagent_type"] as string,
+        attempt: x["attempt"] as number,
+        max_retries: x["max_retries"] as number,
+        error_category: x["error_category"] as string,
+      });
+      i++;
+    } else bad.push(line);
+  }
+  return { bad, retries };
+}
 /** Lower bound only (raw_usage.partial): never feeds the cost. */
 const num = (v: unknown): number => (isCount(v) ? v : 0);
 /** A required usage field: missing or non-numeric is recorded, never treated as zero. */
@@ -180,7 +279,18 @@ export type Reconciliation =
    * streamed) but the OTel api_request rows equal modelUsage exactly; the
    * cost comes from those rows. `stream` is what the stream alone gave.
    */
-  | { status: "exact_otel"; stream: Reconciliation };
+  | { status: "exact_otel"; stream: Reconciliation }
+  /**
+   * H-52: neither the stream nor OTel is complete, but OTel is only short of
+   * modelUsage (and covers the stream): the cost is modelUsage's totals,
+   * priced as raw_usage.otel.short says. `why` is the OTel mismatch.
+   */
+  | {
+    status: "model_usage";
+    why: string;
+    stream: Reconciliation;
+    otel_short: NonNullable<OtelCheck["short"]>;
+  };
 
 /** H-10: raw_usage.otel, the OTel check of an inventoried run. */
 export interface OtelCheck {
@@ -204,6 +314,18 @@ export interface OtelCheck {
       { ours: number | null; reported: number | null; ok: boolean }
     >;
   };
+  /**
+   * H-52: per model, what modelUsage counts beyond the OTel rows (requests
+   * OTel never received) and the TTL costUSD fixes for the unseen cache
+   * writes. Present on a mismatch only when the modelUsage totals were priced.
+   */
+  short?: Record<string, {
+    input: number;
+    cache_read: number;
+    cache_write: number;
+    output: number;
+    cache_write_ttl: "5m" | "1h" | null;
+  }>;
 }
 const COST_TOL_MIN = 0.0005;
 const COST_TOL_REL = 0.001;
@@ -253,8 +375,15 @@ function otelCheck(
     /** Stream-exact: the split must equal the stream's; else dominate it. */
     streamExact: boolean;
     pricing: ParseInput["pricing"];
+    /** H-52: per model, what the stream showed; absent: a short OTel is never priced. */
+    streamTotals?: ReadonlyMap<string, Tally>;
   },
-): { check: OtelCheck; tally: Map<string, OtelTally> } {
+): {
+  check: OtelCheck;
+  tally: Map<string, OtelTally>;
+  /** H-52: a short OTel's priced modelUsage totals (check.short says how). */
+  totals?: Map<string, OtelTally>;
+} {
   const tally = new Map<string, OtelTally>();
   if (text === null) {
     return {
@@ -357,11 +486,15 @@ function otelCheck(
       return mismatch(`model ${m || "(no model)"} is only in modelUsage`);
     }
   }
+  let totalsWhy: string | null = null;
+  const short: NonNullable<OtelCheck["short"]> = {};
+  let shortOk = true;
   for (const [m, t] of [...tally].sort(([a], [b]) => a < b ? -1 : 1)) {
     if (!Object.hasOwn(last, m)) {
       return mismatch(`model ${m || "(no model)"} is only in OTel`);
     }
     const x = obj(last[m]);
+    const d: number[] = [];
     for (
       const [f, n] of [
         ["inputTokens", t.input],
@@ -370,25 +503,43 @@ function otelCheck(
         ["outputTokens", t.out],
       ] as const
     ) {
-      if (x[f] !== n) {
-        return mismatch(
-          `${m} ${f}: OTel ${n} != modelUsage ${
-            isCount(x[f]) ? x[f] : "missing"
-          }`,
-        );
-      }
+      totalsWhy ??= x[f] !== n
+        ? `${m} ${f}: OTel ${n} != modelUsage ${
+          isCount(x[f]) ? x[f] : "missing"
+        }`
+        : null;
+      d.push(isCount(x[f]) ? x[f] - n : -1);
     }
+    // H-52: OTel short of modelUsage (requests it never received), never
+    // above it, and never below what the stream itself showed.
+    const s = ctx.streamTotals?.get(m);
+    if (
+      d.every((v) => v >= 0) && s !== undefined && t.input >= s.input &&
+      t.read >= s.read && t.w5m + t.w1h >= s.write
+    ) {
+      short[m] = {
+        input: d[0]!,
+        cache_read: d[1]!,
+        cache_write: d[2]!,
+        output: d[3]!,
+        cache_write_ttl: null,
+      };
+    } else shortOk = false;
   }
+  if (totalsWhy !== null && !shortOk) return mismatch(totalsWhy);
+  // A short OTel stays a mismatch whatever else holds, its why unchanged.
+  const fail = (why: string, extra: Partial<OtelCheck> = {}) =>
+    mismatch(totalsWhy ?? why, extra);
   const sorted = [...tally].sort(([a], [b]) => a < b ? -1 : 1);
   const unstreamed: NonNullable<OtelCheck["unstreamed"]> = {};
   for (const [m, t] of sorted) {
     const s = ctx.streamSplit.get(m) ?? { m5: 0, h1: 0, bad: false };
-    if (s.bad) return mismatch(`${m} stream TTL split not computable`);
+    if (s.bad) return fail(`${m} stream TTL split not computable`);
     const ok = ctx.streamExact
       ? t.w5m === s.m5 && t.w1h === s.h1
       : t.w5m >= s.m5 && t.w1h >= s.h1;
     if (!ok) {
-      return mismatch(
+      return fail(
         `${m} TTL split: OTel 5m ${t.w5m} / 1h ${t.w1h} ${
           ctx.streamExact ? "differs from" : "is below"
         } the stream's 5m ${s.m5} / 1h ${s.h1}`,
@@ -409,22 +560,47 @@ function otelCheck(
     per_model: {},
   };
   let costWhy: string | null = null;
+  const totals = new Map<string, OtelTally>();
   for (const [m, t] of sorted) {
     const x = obj(last[m]);
     const c = x["costUSD"];
     const reported = typeof c === "number" && Number.isFinite(c) ? c : null;
-    const ours = estimateCost([{
-      model: m,
-      requests: t.requests,
-      input: t.input,
-      cache_read: t.read,
-      cache_write_5m: t.w5m,
-      cache_write_1h: t.w1h,
-      cache_write_unknown: 0,
-      output: t.out,
-      reasoning: null,
-      problems: [],
-    }], ctx.pricing).per_model[0]?.cost_usd ?? null;
+    const sh = totalsWhy !== null ? short[m] : undefined;
+    // H-52: a short OTel prices the modelUsage totals: OTel's split plus the
+    // unseen cache writes at the one TTL costUSD fits (the closer if both do).
+    const candidates: [OtelTally, "5m" | "1h" | null][] = sh
+      ? ([["5m", sh.cache_write, 0], ["1h", 0, sh.cache_write]] as const).map((
+        [ttl, w5, w1],
+      ) => [{
+        requests: t.requests,
+        input: t.input + sh.input,
+        read: t.read + sh.cache_read,
+        w5m: t.w5m + w5,
+        w1h: t.w1h + w1,
+        out: t.out + sh.output,
+      }, ttl])
+      : [[t, null]];
+    const priceOf = (u: OtelTally) =>
+      estimateCost([{
+        model: m,
+        requests: u.requests,
+        input: u.input,
+        cache_read: u.read,
+        cache_write_5m: u.w5m,
+        cache_write_1h: u.w1h,
+        cache_write_unknown: 0,
+        output: u.out,
+        reasoning: null,
+        problems: [],
+      }], ctx.pricing).per_model[0]?.cost_usd ?? null;
+    const priced = candidates.map(([u, ttl]) => ({ u, ttl, ours: priceOf(u) }))
+      .sort((a, b) =>
+        reported === null || a.ours === null || b.ours === null
+          ? 0
+          : Math.abs(a.ours - reported) - Math.abs(b.ours - reported)
+      );
+    const best = priced[0]!;
+    const ours = best.ours;
     let why: string | null = null;
     if (x["costBasis"] !== "list") {
       why = `cost not verifiable: ${m} costBasis ${
@@ -437,14 +613,23 @@ function otelCheck(
     } else {
       const tol = Math.max(COST_TOL_MIN, COST_TOL_REL * reported);
       if (Math.abs(ours - reported) > tol) {
-        why =
-          `${m} costUSD ${reported} != our price ${ours} of the OTel tokens (tolerance ${tol})`;
+        why = `${m} costUSD ${reported} != our price ${ours} of the ${
+          sh ? "modelUsage" : "OTel"
+        } tokens (tolerance ${tol})`;
       }
     }
     cost_check.per_model[m] = { ours, reported, ok: why === null };
     costWhy ??= why;
+    if (sh) sh.cache_write_ttl = best.ttl;
+    totals.set(m, best.u);
   }
-  if (costWhy !== null) return mismatch(costWhy, { cost_check });
+  if (costWhy !== null) return fail(costWhy, { cost_check });
+  if (totalsWhy !== null) {
+    return {
+      ...mismatch(totalsWhy, { unstreamed, cost_check, short }),
+      totals,
+    };
+  }
   return {
     check: { status: "exact", rows, requests, unstreamed, cost_check },
     tally,
@@ -516,17 +701,11 @@ function webProblem(last: J, web: WebUse): string | null {
  * per-request usage for those calls, so an unrelated input excess on such a
  * model is accepted too; upgrade if Claude Code ever streams them.
  */
-function reconcile(
-  last: J,
+/** Per model, the streamed messages plus each sub-agent's final request; a string names the bad record. */
+function streamTotals(
   perMessage: PerMessage,
   children: { line: number; model: string | null; usage: J }[],
-  compactions: number,
-  web: WebUse,
-): Reconciliation {
-  const no = (why: string): Reconciliation => ({ status: "unreconciled", why });
-  // H-07: disallowed web calls and wrong search counts are never reconciled.
-  const webWhy = webProblem(last, web);
-  if (webWhy !== null) return no(webWhy);
+): Map<string, Tally> | string {
   const FIELDS = [
     ["input", "input_tokens"],
     ["read", "cache_read_input_tokens"],
@@ -545,11 +724,11 @@ function reconcile(
   };
   for (const [id, v] of perMessage) {
     const bad = add(`message ${id}`, v.model, v.usage, v.out);
-    if (bad) return no(bad);
+    if (bad) return bad;
   }
   for (const c of children) {
     if (c.model === null) {
-      return no(`line ${c.line}: sub-agent usage without a model`);
+      return `line ${c.line}: sub-agent usage without a model`;
     }
     const bad = add(
       `line ${c.line}: sub-agent usage`,
@@ -557,8 +736,24 @@ function reconcile(
       c.usage,
       c.usage.output_tokens as number,
     );
-    if (bad) return no(bad);
+    if (bad) return bad;
   }
+  return want;
+}
+
+function reconcile(
+  last: J,
+  perMessage: PerMessage,
+  children: { line: number; model: string | null; usage: J }[],
+  compactions: number,
+  web: WebUse,
+): Reconciliation {
+  const no = (why: string): Reconciliation => ({ status: "unreconciled", why });
+  // H-07: disallowed web calls and wrong search counts are never reconciled.
+  const webWhy = webProblem(last, web);
+  if (webWhy !== null) return no(webWhy);
+  const want = streamTotals(perMessage, children);
+  if (typeof want === "string") return no(want);
   for (const m of Object.keys(last)) {
     if (!want.has(m)) {
       return no(`model ${m || "(no model)"} is only in modelUsage`);
@@ -1713,12 +1908,13 @@ export function parseClaudeStream(
   for (const [t, n] of [...unknown].sort(([a], [b]) => a < b ? -1 : 1)) {
     streamProblems.push(`unknown record type ${t} (${n})`);
   }
-  for (const { rec, line } of of("tool_progress")) {
-    if (!isHeartbeat(rec)) {
-      streamProblems.push(
-        `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
-      );
-    }
+  // H-52: a sub-agent retry pair (subagent-retry-2.1.302.jsonl) is no
+  // heartbeat; it is qualified for pricing only, below, once a result exists.
+  const progress = subagentRetries(lines);
+  for (const line of progress.bad) {
+    streamProblems.push(
+      `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
+    );
   }
 
   // A same-session resume (M1-32b: a background task wakes the session) adds
@@ -1762,6 +1958,17 @@ export function parseClaudeStream(
   const unproven = provenanceAndPlacement(file, lines, inits, allResults);
   const init = inits[0]?.rec;
   const result = results.at(-1)?.rec;
+  // Without a usable result the retry lines stay stream problems, so the
+  // infra path (no result: stream problems are infra) is unchanged.
+  if (!result) {
+    for (const r of progress.retries) {
+      for (const line of r.lines) {
+        streamProblems.push(
+          `tool_progress at line ${line} is not a heartbeat of the recorded shape`,
+        );
+      }
+    }
+  }
   const version = typeof init?.claude_code_version === "string"
     ? init.claude_code_version
     : null;
@@ -1982,12 +2189,14 @@ export function parseClaudeStream(
   // H-10: the OTel api_request rows cover nested sub-agent requests the
   // stream never shows. They never override a hard stream failure: H-07 web
   // problems, a lost line, a resume not proven cumulative, provenance.
+  const shown = streamTotals(perMessage, children);
   const otel = streamRec && result
     ? otelCheck(otelText, obj(result.modelUsage), {
       execution: input.executionId ?? null,
       streamSplit: split,
       streamExact: streamRec.status === "exact",
       pricing: input.pricing,
+      ...(typeof shown === "string" ? {} : { streamTotals: shown }),
     })
     : null;
   const hard = unproven.costs.length > 0 || nonJson.count > 0 ||
@@ -2000,6 +2209,15 @@ export function parseClaudeStream(
     const otelWhy = `otel ${c.status}${c.why ? `: ${c.why}` : ""}`;
     if (streamRec.status !== "exact" && c.status === "exact" && !hard) {
       reconciliation = { status: "exact_otel", stream: streamRec };
+    } else if (
+      streamRec.status === "unreconciled" && c.short && otel.totals && !hard
+    ) {
+      reconciliation = {
+        status: "model_usage",
+        why: otelWhy,
+        stream: streamRec,
+        otel_short: c.short,
+      };
     } else if (streamRec.status === "unreconciled") {
       reconciliation = { ...streamRec, why: `${streamRec.why}; ${otelWhy}` };
     } else if (c.status === "mismatch" || c.status === "invalid") {
@@ -2027,13 +2245,19 @@ export function parseClaudeStream(
   const proven = unproven.costs.length === 0;
   // H-10: an exact_otel run is priced from the OTel rows (per-request TTL
   // split, request count); reasoning stays modelUsage's thinkingTokens.
-  const tally = reconciliation?.status === "exact_otel" ? otel!.tally : null;
+  // H-52: a model_usage run is priced from the modelUsage totals with OTel's
+  // split; the request count is unknown (OTel missed some), never OTel's.
+  const tally = reconciliation?.status === "exact_otel"
+    ? otel!.tally
+    : reconciliation?.status === "model_usage"
+    ? otel!.totals!
+    : null;
   const pricedUsage: ModelTokens[] = tally
     ? usage.map((u) => {
       const t = tally.get(u.model)!;
       return {
         model: u.model,
-        requests: t.requests,
+        requests: reconciliation?.status === "model_usage" ? null : t.requests,
         input: t.input,
         cache_read: t.read,
         cache_write_5m: t.w5m,
@@ -2259,6 +2483,15 @@ export function parseClaudeStream(
       ),
     ],
     stream_problems: streamProblems,
+    // H-52: qualified sub-agent retries (not stream problems once a result exists).
+    ...(result && progress.retries.length > 0
+      ? {
+        subagent_retries: {
+          count: progress.retries.length,
+          retries: progress.retries,
+        },
+      }
+      : {}),
     ...(unproven.trace.length > 0 ? { trace_incomplete: unproven.trace } : {}),
     // Kept apart from stream_problems: an MCP inventory mismatch is a setup
     // fact (not loaded / setup_failed), never a reason to doubt the cost.
