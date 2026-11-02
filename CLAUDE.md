@@ -218,6 +218,21 @@ If a model incorrectly adds an ID to an interface, that's a valid test failure -
 - Don't explain AL language rules or syntax
 - Don't warn about common mistakes
 
+### Every Task Needs a Human Summary
+
+The `description` is the model prompt and is hashed; the site shows a separate
+human summary from `site/catalog/task-summaries.md`. Every new task needs an entry:
+
+- `## <task id>`, then `description_sha: <hash>` from
+  `deno task summary-audit --print-sha <task id>`, then 1 to 5 plain sentences
+  (max 600 characters).
+- Say what the task covers (kind, objects, what is asked). Never name the defect,
+  its location, the platform behaviour a trap relies on, or any hint the prompt
+  withholds. The site is public.
+- Never add a new task to `site/catalog/task-summaries.baseline.txt`.
+- Editing a description makes `deno task summary-audit` fail until the summary is
+  re-read and its `description_sha` updated.
+
 ## Writing AL Tests (for CentralGauge benchmark tasks)
 
 ### Never Use Placeholder Assertions

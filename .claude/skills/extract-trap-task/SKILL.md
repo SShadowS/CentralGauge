@@ -16,8 +16,7 @@ description: >-
 ## Core insight
 
 In a well-reviewed PR, **every code comment that justifies a non-obvious decision
-marks a latent trap.** Real examples from the seed PRs (Continia `Document Output
-- Extensions`, PRs 50590 / 50285):
+marks a latent trap.** Real examples from the seed PRs:
 
 - "We can't use a TryFunction: TryFunctions can't contain database writes on-prem."
 - "BindSubscription is bound to the current call-stack frame and does NOT reliably
@@ -38,6 +37,39 @@ oracle.** The naive is a throwaway dev artifact — never committed. If the test
 passes for both, or fails for both, the oracle does not measure the trap: redesign
 or drop. This is the entire point; do not skip it to save a container run.
 
+## Difficulty rules (owner 2026-11-02, after a mined batch came out too easy)
+
+A mined batch of seven tasks passed every gate and still came out mostly easy. Each stage had
+removed difficulty: selection rewarded realism, the design put the mechanism into the shipped
+code, the review loop turned every trap into a stated requirement, and the gate only proved
+that the author's own naives fail. These rules apply to every mined task, X-series or HX:
+
+1. **Selection filter (SELECT and EXTRACT).** Delete the draft prompt's Expected bullets. If the
+   shipped code plus the symptom still determine the fix, or if every planned naive is "skipped
+   one stated bullet", reject the candidate. The fix must depend on at least one measured BC fact
+   (`docs/reasoning-suite/decisions.md` or a premise-probe result) that is neither in the shipped
+   code nor implied by the prompt. Every review verdict carries `frontier-catcher: yes|no`; "no"
+   is a reject, unless the batch books at most one filler.
+2. **Mechanism not in the shipped code (DISTILL).** If the correct diff mostly moves or copies
+   code that ships with the task, the design is wrong. Check this against the design's shipped
+   code before you build.
+3. **Contract, not diagnosis (DISTILL).** One observed symptom; the expected behaviour as the
+   business contract in two or three sentences. No bullet per branch, no reproduction that
+   isolates the failing step. When a reviewer finds a requirement the prompt doesn't state, move
+   that check to a regression guard, drop it, or drop the candidate. Never add a sentence that
+   names the branch. A review finding that the prompt or shipped code gives the trap away
+   (**TOO EASY**) blocks shipping like a correctness finding. A finding is HIGH only when a
+   plausible fix of the stated symptom passes while breaking the contract; a fix that passes
+   only by breaking shipped code it does not need to touch is adversarial (MEDIUM).
+4. **Frontier gate (after AUTHOR + DISCRIMINATION PROBE, before review and merge).** One attempt
+   by an Opus-class agent on the harness agent path (for X-series, a `bench --agents` dry run),
+   from the prompt and shipped code only. An attempt-1 pass means the task
+   does not ship (filler pool or drop). The discrimination probe is necessary, never sufficient
+   (see "Making a task frontier-HARD" below). Budget about three builds per shipped task.
+
+Prefer assembling over inventing: two or three already-gated single-trap tasks (Commit-family
+first) combined into one app with one symptom. See `docs/reasoning-suite/LESSONS.md`.
+
 ## Six stages
 
 ### 1. SELECT
@@ -54,7 +86,7 @@ would do X; correct is Y because Z."
 
 ### 3. DISTILL
 Per trap: choose containment (see `reference/containment-policy.md`), strip
-project-specific objects (no Continia objects — they aren't in the vanilla
+project-specific objects (no vendor objects: they aren't in the vanilla
 container), restate as a generic problem. The prompt describes *what* to build,
 never *how*, and carries **no guiding notes** (project rule — hints that help the
 model dodge the trap destroy the signal). Specifying required *behavior* is
@@ -97,7 +129,7 @@ only, write a **correct** and a **naive** reference solution under `scratch/`
 ### 6. VALIDATE + REGISTER
 `validate-tasks` (Zod load + no-hints scan), local dry-run, then
 `sync-catalog --apply` and the `refresh-task-taxonomy` skill. (Registration is
-often deferred; keep local until deliberately publishing.)
+often deferred; keep local until deliberately publishing.) Before committing, write the task's summary entry in `site/catalog/task-summaries.md` per CLAUDE.md "Every Task Needs a Human Summary", then run `deno task summary-audit` and confirm it passes.
 
 ## The probe harness
 

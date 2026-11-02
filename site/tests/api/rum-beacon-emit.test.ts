@@ -26,4 +26,12 @@ describe("RUM beacon emission (server-rendered)", () => {
     expect(html).toMatch(/data-cf-beacon=/);
     expect(html).toContain("test-token");
   });
+
+  it("omits the beacon on /submit/edit/* (the URL fragment holds a secret)", async () => {
+    const res = await SELF.fetch("http://x/submit/edit/abc");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toMatch(/cloudflareinsights\.com\/beacon\.min\.js/);
+    expect(html).not.toContain("test-token");
+  });
 });

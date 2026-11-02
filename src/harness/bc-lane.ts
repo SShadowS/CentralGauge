@@ -57,6 +57,7 @@ import {
   type FsCheckRecord,
   fsDiff,
   type FsDiffEntry,
+  fsHoldTiming,
   HostDirtyError,
   HttpBlockFailedError,
   QuarantiningError,
@@ -2221,12 +2222,20 @@ export async function deployAndTest(
       return [`E|(fsDigest)|${why.replace(/[\r\n|]+/g, " ")}`];
     }
   };
-  const fsChecked = (diff: FsDiffEntry[], errors: string[]) => {
+  const fsChecked = (
+    diff: FsDiffEntry[],
+    errors: string[],
+    after: string[] | null = null,
+  ) => {
+    // R-09: the walk timing of both captures, when either carried one
+    const before = fsBefore ? fsHoldTiming(fsBefore) : null;
+    const afterT = after ? fsHoldTiming(after) : null;
     fsCheck = {
       container,
       ok: diff.length === 0 && errors.length === 0,
       diff,
       errors,
+      ...(before || afterT ? { timing: { before, after: afterT } } : {}),
     };
     i.ctx.onFsCheck?.(fsCheck);
     return fsCheck;
@@ -2257,14 +2266,15 @@ export async function deployAndTest(
     // Sol S3 r1 #1: the second capture whatever the cleanup's outcome, so a
     // dirty host is never scored behind a cleanup failure.
     if (fsBefore && m.fsDigest) {
+      const after = await capture(m);
       const d = fsDiff(
         fsBefore,
-        await capture(m),
+        after,
         m.fsExclude ?? [],
         m.fsRoots ?? [],
         m.fsCaches ?? [],
       );
-      const f = fsChecked(d.diff, d.errors);
+      const f = fsChecked(d.diff, d.errors, after);
       if (!f.ok) why.push(new HostDirtyError(f).message);
     }
     return why.length > 0 ? why.join("; ") : null;

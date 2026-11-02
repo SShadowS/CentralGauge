@@ -1189,7 +1189,8 @@ Deno.test("records of a campaign pass ExecutionRecordSchema and validateCampaign
   assertEquals(executions.length, 3);
   for (const e of executions) {
     ExecutionRecordSchema.parse(e);
-    assertEquals(e.v, 2);
+    // H-44 (design-final section 3): new runs write record v3.
+    assertEquals(e.v, 3);
   }
   const artifacts: ArtifactRecord[] = [];
   const judgments: JudgmentRecord[] = [];
@@ -1729,11 +1730,13 @@ Deno.test("H-41: a fenced rejudge and a recovered fence write the bytes the pre-
   assertEquals(await recoverFences(t.env), 0, "idempotent");
 });
 
-Deno.test("H-41 M4: missing redaction keys refuse to judge and say each judging process needs a copy", async () => {
+Deno.test("H-41 M4 (H-44 R1): missing redaction keys refuse to judge and say both processes need --key-custody", async () => {
   await using t = await makeEnv();
   const cell = await cellFor(t);
   const e = (await runCell(t.env, cell)).executions[0]!;
+  // H-44: a v3 record judges from its own bundle; both own sources removed.
   await Deno.remove(privatePaths(t.env, e.id).keys);
+  await Deno.remove(privatePaths(t.env, e.id).bundle);
   const err = await assertRejects(
     () => rejudgeExecution(t.env, cell, e, cell.oracleHash),
     ValidationError,
@@ -1741,7 +1744,7 @@ Deno.test("H-41 M4: missing redaction keys refuse to judge and say each judging 
   );
   assertStringIncludes(
     err.message,
-    "copy redaction/ into each judging process's private dir",
+    "Judging in another process: pass --key-custody <dir> to both the publishing and the judging process",
   );
 });
 

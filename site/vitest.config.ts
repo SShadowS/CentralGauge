@@ -72,6 +72,10 @@ export default defineConfig(async () => {
             // wrangler.toml [vars]; the blocked-in-prod regression tests
             // delete/restore it per test.
             ALLOW_TEST_BROADCAST: "on",
+            // Setup submissions: Cloudflare's always-pass Turnstile secret
+            // and a fixed base64 of 32 bytes (AES-256-GCM key sealing).
+            TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+            SUBMISSION_KEY_SECRET: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
           },
           durableObjects: {
             LEADERBOARD_BROADCASTER: {

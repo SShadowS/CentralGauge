@@ -6,6 +6,14 @@ import { env } from "cloudflare:test";
 export async function resetDb(): Promise<void> {
   // D1: delete in strict FK-respecting order (leaves first).
   await env.DB.batch([
+    // 0025_setup_submissions.sql (FKs into setups, so before it).
+    env.DB.prepare(`DELETE FROM setup_submissions`),
+    // 0024_setups.sql tables, children first.
+    env.DB.prepare(`DELETE FROM setup_cells`),
+    env.DB.prepare(`DELETE FROM setup_runs`),
+    env.DB.prepare(`DELETE FROM hx_tasks`),
+    env.DB.prepare(`DELETE FROM setups`),
+    env.DB.prepare(`DELETE FROM setup_task_sets`),
     // 0018_taxonomy_v2.sql tables — children before parents. scoring_policies
     // is deleted AFTER task_sets below (task_sets.scoring_policy_id FKs into it).
     env.DB.prepare(`DELETE FROM release_tasks`),

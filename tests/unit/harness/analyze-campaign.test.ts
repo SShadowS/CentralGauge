@@ -1338,9 +1338,19 @@ Deno.test("loadDone: aggregates every done execution of the campaign, earlier ru
   });
 });
 
-Deno.test("alsemExclusion: harness_crash is excluded, every other termination is kept", () => {
+Deno.test("alsemExclusion: harness_crash and setup_failed are excluded, every other termination is kept", () => {
   assertEquals(alsemExclusion("harness_crash"), "harness_crash");
-  for (const t of ["completed", "timeout", "budget"]) {
+  // Q-04f: the agent never started; the frozen workspace is the pristine tree.
+  assertEquals(alsemExclusion("setup_failed"), "setup_failed");
+  for (
+    const t of [
+      "completed",
+      "timeout",
+      "budget_exhausted",
+      "refusal",
+      "usage_limited",
+    ]
+  ) {
     assertEquals(alsemExclusion(t), null);
   }
 });
@@ -1363,6 +1373,7 @@ Deno.test("alsemExclusionText: states the rule and lists the excluded executions
     },
   ]);
   assertEquals(txt.includes("harness_crash"), true);
+  assertEquals(txt.includes("setup_failed"), true);
   assertEquals(txt.includes("H-29"), true);
   assertEquals(txt.indexOf("e1") < txt.indexOf("e2"), true);
   assertEquals(txt.includes("HX-031 r3"), true);

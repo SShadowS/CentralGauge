@@ -1092,6 +1092,31 @@ copies the survey next to the lineage as `<name>.survey.json` and emits no
 exclusions (add each one, with a disposition, only from a measured difference).
 All lineage identity fields, these sections included, enter env_fp.
 
+### Graceful stop
+
+Every command that opens a harness environment (`harness cell`, `run`,
+`rejudge`, `judge-pending`, `judge-fixture`, `measure`, `qualify`,
+`analyze-campaign --test-rerun` and `--sql-cost`, `backend-probe`) stops
+gracefully on SIGINT (Ctrl-C), SIGBREAK (Ctrl-Break) or the stop file
+`<private-dir>/STOP`. Create the stop file to stop a detached process that no
+console signal reaches; it addresses exactly one environment, because each
+private dir is held by one environment at a time. The file is polled every
+2 s and at every row boundary.
+
+On a stop the command finishes or aborts its current row and never caches a
+partial one: a cell's sandbox is stopped, a rejudge or `judge-pending` admits
+no new judging while the running ones finish, `run` stops before its next
+cell (resume with `--campaign`), and `measure`, `qualify`, `--test-rerun` and
+`--sql-cost` stop before their next run (a test-rerun row cut between its two
+runs is not written; rerunning the step reuses the finished rows). The
+environment then closes the normal way, with the post-cleanup check, the L4
+after-capture and the release of its in-use records, and the process exits
+non-zero (130, or 1 where the command reports the stop as an error). A
+consumed stop file is removed by the close. A stop file already present when
+an environment opens refuses the start. A hard kill (`taskkill /F`) cannot be
+caught: its in-use records stay, and `harness recover` refuses them (the
+container must be recreated).
+
 ### Judging pool (`auto`)
 
 `harness rejudge --containers auto` and `harness run --judge-containers auto`
@@ -1165,12 +1190,75 @@ start, or published without the queue, stays owed and is logged `[INFO] <id>:
 judgment owed (judging pool)`. `run --rerun` judges its cell through the queue
 too.
 
-**Redaction keys.** Judging reads the execution's redaction keys from the
-judging process's own private dir (`<private-root>/redaction/<execution>.json`),
-written by the process that ran the agent. A process judging work it did not
-run (another machine or another private root) needs a copy of that
-`redaction/` folder in its private dir; without it, judging refuses with
-`redaction keys ... are missing or invalid; refusing to judge`.
+**Redaction keys and `--key-custody <dir>`.** Each execution record (v3)
+carries a `redaction_anchor`: the sha256 of its redaction bundle (the salted
+key hashes, the execution id and the stub attestation), which the publishing
+process keeps in its private dir as
+`<private-root>/redaction/<execution>.bundle.json`. Nothing of it is written
+under `--results-dir`. A judge uses that bundle when its own private dir holds
+it. To judge in another process (another machine or private root), pass
+`--key-custody <dir>` to both the publishing and the judging process (every
+command with `--private-dir` takes it):
+
+- The publisher copies each bundle to `<dir>/<execution>.json` before the run
+  appears under `--results-dir`. The dir is recorded with the attempt, so a
+  recovery exports there whatever `--key-custody` the recovering command has
+  (or none).
+- A judge whose private dir lacks the bundle reads `<dir>/<execution>.json`,
+  checks its sha256 against the anchor and judges. Without the flag it never
+  opens the dir and refuses with `redaction keys ... are missing or invalid;
+  refusing to judge (nothing could be redacted). Judging in another process:
+  pass --key-custody <dir> to both the publishing and the judging process`.
+
+Protection is checked at start, at every export and at every import, before
+any key byte is read. The dir is a canonical local directory on a fixed drive
+(no UNC path, link or junction), disjoint from the results dir, the repo and
+the private dir. Windows: the dir and each bundle are owned by a trusted
+principal, inherit nothing, and hold exactly two Allow entries with full
+control, the current user and SYSTEM (no Deny, inherit-only or other entry);
+the immediate parent is owned by a trusted principal and grants nobody else a
+write, delete, permission or ownership right; no reparse point on the dir, a
+bundle or any ancestor. POSIX: the dir is mode 0700 and each bundle 0600, owned
+by the current uid; the parent is owned by the current uid or root and is not
+group or other writable unless sticky; no symlinks. Trusted principals are the
+current user, SYSTEM and BUILTIN\Administrators (POSIX: the current uid and
+root): administrators and root can read the keys, as they can read the private
+dir. Ancestors above the parent are assumed writable only by trusted
+principals (not checked). A suitable place is
+`%LOCALAPPDATA%\centralgauge\key-custody`. A publishing command creates a
+missing dir owner-only; `rejudge` and `judge-pending` require it to exist. A
+dir refused at start stops the command.
+
+Judging refuses (no judgment, no verdict) when the bundle is missing from the
+dir (`redaction bundle <dir>/<id>.json for execution <id> is not in key custody
+<dir>`), when a protection check fails (`key custody <dir> for execution <id>
+refused (<why>)`), when the bundle's sha256 is not the anchor, when the bundle
+is malformed or names another execution, when the anchor is null (no secret was
+released) and when the bundle attests a stub run. A judge's own bundle that is
+unreadable or wrong refuses too, with no fallback to the dir.
+
+An export whose dir fails its checks is skipped, never retried:
+`[WARN] <id>: key custody <dir> refused (<why>); not exported`, and the run is
+published as usual. To repair it, as the custody user copy
+`<private-root>/redaction/<id>.bundle.json` to `<dir>/<id>.json` and protect it:
+Windows `icacls <dir>\<id>.json /inheritance:r /grant:r <user>:F SYSTEM:F` (the
+owner must be the user or Administrators), POSIX `chmod 600 <dir>/<id>.json`
+(owned by the user). The judge's checks and the anchor still verify the copy. A
+lost private-root lock or an own bundle that no longer matches its anchor stops
+the publication instead; the attempt stays for recovery.
+
+Executions recorded before H-44 (record v1 or v2) have no anchor: they are
+judged only in their publishing private dir, from `redaction/<id>.json`. Through
+`--key-custody` such an execution refuses with `published before H-44 (record
+v<n>): no redaction anchor; judge it in its publishing private root or copy
+redaction/<id>.json there`. A v2 record whose private dir holds a bundle is
+refused as downgraded. A campaign holding such executions takes no new ones:
+start a fresh campaign under a new experiment id or a new `--results-dir`
+(recovery, reports, `rejudge` and `judge-pending` stay available). Never open a
+private dir used by this version with an older centralgauge binary: it cannot
+read v3 records and enforces none of this. That is a documented prohibition,
+not something the older binary enforces; this version's loader then refuses
+the v2 records such a binary wrote as downgraded.
 
 ### harness pairing
 
@@ -1220,6 +1308,85 @@ field. An overlay whose `raw.jsonl` changed, or that does not belong to its
 execution, makes the read fail. Runs that never started, failed setup or
 stopped for a recorded reason (operator, egress, undrained backend) are
 refused.
+
+### harness publish-setup
+
+```bash
+centralgauge harness publish-setup <experiment> --arm <id> --setup-id <slug> --judging <campaign|current> \
+  [--campaign <id>] [--submission <id>] [--description <text>] [--visibility <public|private>] \
+  [--display-name <text>] [--results-dir <dir>] [--root <dir>] [--apply]
+```
+
+Publishes one arm of a complete harness campaign to the setups leaderboard.
+`--arm`, `--setup-id` and `--judging` are required. `--campaign` defaults to
+the newest campaign of the experiment. `--results-dir` defaults to
+`results/harness` and `--root` to `.`. `--submission` links the run to an
+approved setup submission. `--description` and `--visibility` are used only
+when there is no submission, and `--description` is required then. The command
+validates the payload before the dry-run summary and before posting, and exits
+1 with `[FAIL]` when it is invalid. For a submission, the site takes the description,
+visibility and roles from the submission itself. `--display-name` names the
+task set (default `HX set <first 8 characters of the task set hash>`).
+
+The command builds the report for the campaign (2000 resamples, seed 1), then
+the publish payload from it. The score and the price are the report's own
+numbers. Without `--apply` it prints a summary and sends nothing: setup id,
+tool, base model, tool version, task set hash, task count, repeats, score,
+price, excluded cells, submission and run id, followed by
+`[DRY] nothing sent; pass --apply to publish`. Nothing reaches the site
+without `--apply`. Running `--apply` against production is the owner's action.
+
+With `--apply` the command first loads the admin credentials, so a missing key
+fails before any report work. It then prints the same summary and posts it
+signed to `/api/v1/admin/setups/publish`. On success it prints
+`[OK] published run <run id> for setup <setup id> on task set <hash>`.
+
+Admin credentials come from the same places as the other admin commands: the
+site URL from `CENTRALGAUGE_INGEST_URL` or `ingest.url` in `.centralgauge.yml`,
+the key file from `CENTRALGAUGE_ADMIN_KEY_PATH` or `ingest.admin_key_path`, and
+the key id from `CENTRALGAUGE_ADMIN_KEY_ID` or `ingest.admin_key_id`.
+
+Exit code 0 on a dry run or a successful publish. Exit code 1, with a `[FAIL]`
+line, when credentials are unavailable, the build is refused, or the site
+rejects the request. A `409 already_published` also prints a hint that the run
+may already be on the site, for example from an earlier attempt that got
+through, and to check the setups page before retrying.
+
+The build is refused (`Publish refused: ...`) when:
+
+- the report is partial. Only a complete report is published.
+- the arm is not in the report, or has no pass rate.
+- the arm is not in the campaign.
+- the arm's harness is not a publishable agent tool.
+- the arm ran under more than one tool version, or has no observed tool version.
+- a task has no `prompt.md` under `harness-tasks/tasks/<id>/`.
+- the instructions component has no `CLAUDE.md` (Claude Code) or `AGENTS.md`
+  (other tools), which the tool loads.
+- an instructions, skills, agents, hooks or plugin component on disk differs
+  from the one in the campaign manifest, or is gone.
+- the task set on disk differs from the one the campaign ran.
+
+The price note on the run is set from the report. With no price, it reads
+`Price not available.`, or `Price not available: N cells with unknown cost.`
+when cells without a known cost caused it. With a price that leaves out cells
+of unknown cost, it reads `Price excludes N cells with unknown cost.`
+When more than 25% of the arm's cells have unknown cost (mostly timeouts and
+crashes, the expensive runs), no price is published and the note reads
+`Price not available: N of M cells have unknown cost.` The score is unchanged.
+
+### harness promote-setup-set
+
+```bash
+centralgauge harness promote-setup-set <hash> [--apply]
+```
+
+Makes a setups task set the current one. `<hash>` is the task set hash printed
+by `publish-setup`. Without `--apply` it prints `[DRY] would promote task set
+<hash>; pass --apply to send` and sends nothing. With `--apply` it loads the
+admin credentials (as above), posts to `/api/v1/admin/setups/task-sets/promote`
+and prints `[OK] promoted task set <hash> at <time>`. Exit code 1 with `[FAIL]`
+on a credentials or site error. Promoting against production is the owner's
+action. See `docs/site/setup-submissions.md`, "Publishing a run".
 
 ## Exit Codes
 

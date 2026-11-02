@@ -30,6 +30,12 @@ describe("migration 0001 core schema", () => {
       "shortcoming_occurrences",
       "machine_keys",
       "ingest_events",
+      "setup_task_sets",
+      "hx_tasks",
+      "setups",
+      "setup_runs",
+      "setup_cells",
+      "setup_submissions",
     ]) {
       expect(names).toContain(required);
     }
@@ -384,6 +390,26 @@ describe("migration 0022 run exclusion", () => {
     ).first<{ excluded_at: string | null; excluded_reason: string | null }>();
     expect(cleared?.excluded_at).toBe(null);
     expect(cleared?.excluded_reason).toBe(null);
+  });
+});
+
+describe("migration 0025 setup submissions", () => {
+  const insert = (instructionsName: string) =>
+    env.DB.prepare(
+      `INSERT INTO setup_submissions(id, created_at, ip_hash, agent_tool, base_model, description, instructions_name, instructions_md, zip_key, zip_bytes, zip_sha256, edit_token_hash, updated_at)
+       VALUES (?, '2026-10-30T00:00:00Z', 'h', 'claude-code', 'm', 'd', ?, '# x', 'k', 1, 's', 't', '2026-10-30T00:00:00Z')`,
+    ).bind(`sub-${instructionsName}`, instructionsName);
+
+  it("accepts CLAUDE.md and applies defaults", async () => {
+    await insert("CLAUDE.md").run();
+    const row = await env.DB.prepare(
+      `SELECT visibility, status, roles_json FROM setup_submissions WHERE id = 'sub-CLAUDE.md'`,
+    ).first<{ visibility: string; status: string; roles_json: string }>();
+    expect(row).toEqual({ visibility: "public", status: "new", roles_json: "[]" });
+  });
+
+  it("rejects instructions_name = README.md via CHECK", async () => {
+    await expect(insert("README.md").run()).rejects.toThrow();
   });
 });
 

@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "@std/assert";
 import {
   CLASSES,
+  gate,
   parseSummary,
   plan,
 } from "../../../scripts/harness/test-fast.ts";
@@ -49,6 +50,18 @@ Deno.test("parseSummary: ok and FAILED summary lines, with ANSI and steps", () =
     { ok: false, passed: 12, failed: 1, ignored: 0 },
   );
   assertEquals(parseSummary("error: Module not found"), undefined);
+});
+
+Deno.test("T-09 gate: the fast suite passes only when every chunk passed and no file is unclassified", () => {
+  const ok = {
+    code: 0,
+    summary: { ok: true, passed: 3, failed: 0, ignored: 0 },
+  };
+  assertEquals(gate([ok, ok], []), true);
+  // An unclassified file fails the run even when it and every chunk passed.
+  assertEquals(gate([ok, ok], ["tests/unit/harness/new.test.ts"]), false);
+  assertEquals(gate([ok, { ...ok, code: 1 }], []), false);
+  assertEquals(gate([ok, { code: 0, summary: undefined }], []), false);
 });
 
 Deno.test("CLASSES covers every harness test file", () => {

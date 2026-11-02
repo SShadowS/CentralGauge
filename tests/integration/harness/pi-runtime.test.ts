@@ -178,7 +178,9 @@ async function runPi(
   const r = parsePiStream(text, {
     rawLog: "runtime",
     exitCode: out.code,
-    pricing: await loadPricingBook("site/catalog", new Date()),
+    pricing: await loadPricingBook("site/catalog", new Date(), [
+      "openrouter/google/gemini-3.8-flash",
+    ]),
     manifest: manifest("pi", {
       harness: "pi",
       harness_version: "0.87.1",

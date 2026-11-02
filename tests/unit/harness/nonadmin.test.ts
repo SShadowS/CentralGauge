@@ -27,6 +27,7 @@ import {
   USER_GROUPS_CSV,
 } from "./fake-docker.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
+import { codexAuthText, FAKE_CODEX } from "./codex-fixture.ts";
 
 const GUARD = "harness/images/base/cg-nonadmin.ps1";
 const ENTRYPOINTS = {
@@ -642,7 +643,14 @@ Deno.test("H-01 run 005: cg-pi-stage.ps1 is COPYed to C:\\cg-pi-stage.ps1 and lo
       "'/setowner'",
     ]
   ) assertStringIncludes(s, x);
-  assert(!/cg-secrets|OPENROUTER/i.test(s));
+  // H-02 run 004: the one secret the script may name is the released codex
+  // file, read only in -Codex mode (after the release, before ready); never
+  // the OpenRouter key, never another file in the mount.
+  assert(!/OPENROUTER/i.test(s));
+  assertEquals(
+    s.split(/\r?\n/).filter((l) => /cg-secrets/i.test(l)).map((l) => l.trim()),
+    ["[string]$Secret = 'C:\\cg-secrets\\openai-codex-auth'"],
+  );
 });
 
 Deno.test("H-01 run 005: run.ps1 writes nothing into C:\\pi-agent; after ready it requires the staged settings.json; pi skips prompt templates and themes", async () => {
@@ -904,6 +912,124 @@ Deno.test({
       for (const d of dirs) await dropTree(d);
       await Deno.remove(good, { recursive: true });
       await Deno.remove(bad, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-02 run 004: cg-pi-stage -Codex stages the released codex file into auth.json (admin-owned, Users RX) and refuses a malformed, multi-entry, refresh-bearing, non-oauth or already-staged input, writing nothing",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const me = await meSid();
+    const cfg = await piConfigDir(GOOD_PI);
+    const tmp = await Deno.makeTempDir({ prefix: "cg-codex-secret-" });
+    const dirs: string[] = [];
+    // A staged agent dir (auth.json "{}"), the host user standing in for
+    // ContainerAdministrator; only the stand-in is flagged by Test-Shape.
+    const staged = async () => {
+      const dir = await piAgentDir();
+      dirs.push(dir);
+      const g = await ps1([`icacls '${dir}' /grant '*${me}:(OI)(CI)F' /Q`]);
+      assertEquals(g.code, 0, g.out);
+      const r = await runStage(["-Dir", dir, "-Config", cfg, "-Owner", me]);
+      assertEquals(
+        await Deno.readTextFile(`${dir}\\auth.json`),
+        "{}",
+        r.out,
+      );
+      // The staged file grants only SYSTEM, Administrators (full) and Users
+      // (read): the non-admin stand-in needs its own grant, as on the dir.
+      const w = await ps1([
+        `icacls '${dir}\\auth.json' /grant '*${me}:F' /Q`,
+      ]);
+      assertEquals(w.code, 0, w.out);
+      return dir;
+    };
+    const standIn = (out: string, dir: string) => {
+      for (const f of fails(out)) {
+        assert(
+          f.startsWith("[FAIL] owner ") || f === `[FAIL] write ${me} ${dir}` ||
+            f === `[FAIL] inherited append ${me} ${dir}` ||
+            f === `[FAIL] write ${me} ${dir}\\auth.json`,
+          f,
+        );
+      }
+    };
+    const codex = (dir: string, secret: string) =>
+      runStage(["-Codex", "-Dir", dir, "-Secret", secret, "-Owner", me]);
+    const later = Date.now() + 3 * 3600_000;
+    const good = codexAuthText(later, { refresh: "" });
+    const two = JSON.stringify({
+      ...JSON.parse(good),
+      openrouter: { type: "api_key", key: "sk-or-v1-cgfake" + "0".repeat(48) },
+    });
+    try {
+      const dir = await staged();
+      const secret = `${tmp}\\openai-codex-auth`;
+      await Deno.writeTextFile(secret, good + "\n");
+      let r = await codex(dir, secret);
+      standIn(r.out, dir);
+      for (const v of Object.values(FAKE_CODEX)) assert(!r.out.includes(v));
+      assertEquals(
+        await Deno.readFile(`${dir}\\auth.json`),
+        await Deno.readFile(secret),
+      );
+      const a = await pwsh(["-Command", `icacls '${dir}\\auth.json'`]);
+      assertEquals(a.out.match(/BUILTIN\\Users:\S*/g) ?? [], [
+        "BUILTIN\\Users:(RX)",
+      ]);
+      assert(!/\(I\)/.test(a.out), a.out);
+      // Staged once: a second -Codex never replaces a credential.
+      r = await codex(dir, secret);
+      assertEquals(r.code, 6, r.out);
+      assertStringIncludes(r.out, "[FAIL] ");
+      assertStringIncludes(r.out, "not the staged {}");
+      assertEquals(
+        await Deno.readFile(`${dir}\\auth.json`),
+        await Deno.readFile(secret),
+      );
+      const cases: [string, string, string][] = [
+        ["not JSON", "{", "not JSON"],
+        ["two entries", two, "exactly one entry"],
+        ["refresh", codexAuthText(later), "refresh"],
+        [
+          "api key",
+          codexAuthText(later, { refresh: "", type: "api_key" }),
+          "oauth",
+        ],
+        [
+          "short access",
+          codexAuthText(later, { refresh: "", access: "short" }),
+          "oauth",
+        ],
+        [
+          "expires text",
+          codexAuthText(later, { refresh: "", expires: "soon" }),
+          "oauth",
+        ],
+      ];
+      for (const [what, text, want] of cases) {
+        const d = await staged();
+        const s = `${tmp}\\${what.replaceAll(" ", "-")}`;
+        await Deno.writeTextFile(s, text);
+        const x = await codex(d, s);
+        assertEquals(x.code, 6, `${what}: ${x.out}`);
+        assertStringIncludes(x.out, want, what);
+        assertEquals(await Deno.readTextFile(`${d}\\auth.json`), "{}", what);
+        for (const v of Object.values(FAKE_CODEX)) {
+          assert(!x.out.includes(v), `${what}: no value echoed`);
+        }
+      }
+      // A missing file refuses too.
+      const d = await staged();
+      const x = await codex(d, `${tmp}\\absent`);
+      assertEquals(x.code, 6, x.out);
+      assertEquals(await Deno.readTextFile(`${d}\\auth.json`), "{}");
+    } finally {
+      for (const d of dirs) await dropTree(d);
+      await Deno.remove(cfg, { recursive: true });
+      await Deno.remove(tmp, { recursive: true });
     }
   },
 });

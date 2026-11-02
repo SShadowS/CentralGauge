@@ -579,16 +579,23 @@ export const PI_STAGE_ARGV = [
   "-File",
   "C:\\cg-pi-stage.ps1",
 ];
+/**
+ * H-02 run 004: the openai-codex cell's OAuth entry, staged into the agent
+ * auth.json by the same admin script once the released credential file is
+ * in the mount and before ready (pi reads credentials only from that file).
+ */
+export const PI_STAGE_CODEX_ARGV = [...PI_STAGE_ARGV, "-Codex"];
 /** Runs the pi config staging in the sandbox; throws on non-zero, error or timeout. */
 export async function stagePiConfig(
   docker: DockerCli,
   name: string,
   opMs: number,
+  argv: string[] = PI_STAGE_ARGV,
 ): Promise<void> {
   const r = await bounded(
-    docker.exec(name, PI_STAGE_USER, PI_STAGE_ARGV),
+    docker.exec(name, PI_STAGE_USER, argv),
     opMs,
-    `docker exec ${name} cg-pi-stage.ps1`,
+    `docker exec ${name} ${argv.slice(-2).join(" ")}`,
   );
   if (r.code !== 0) {
     throw new Error(
@@ -1158,11 +1165,41 @@ export async function restrictPath(
       `could not set the ACL of ${what} ${path}: icacls exited ${grant.code}: ${grant.stderr.trim()}`,
     );
   }
+  await verifyPrivatePath(path, { icacls, user }, kind);
+}
+
+/**
+ * H-44: verify, never repair, that an existing custody dir or file is this
+ * user's (and SYSTEM's) only: the strict icacls listing on Windows; on POSIX
+ * this uid and mode 0700 (dir) or 0600 (file).
+ */
+export async function verifyPrivatePath(
+  path: string,
+  custody: Pick<SecretCustody, "icacls" | "user">,
+  kind: "dir" | "file",
+): Promise<void> {
+  const what = kind === "dir" ? "secrets dir" : "secrets file";
+  const st = await Deno.lstat(path);
+  if (st.isSymlink || (kind === "dir" ? !st.isDirectory : !st.isFile)) {
+    throw new ConfigurationError(
+      `refusing ${what} ${path}: not a plain ${kind}`,
+    );
+  }
+  if (Deno.build.os !== "windows") {
+    const mode = (st.mode ?? 0) & 0o777;
+    if (st.uid !== Deno.uid() || mode !== (kind === "dir" ? 0o700 : 0o600)) {
+      throw new ConfigurationError(
+        `refusing ${what} ${path}: owner ${st.uid}, mode ${mode.toString(8)}`,
+      );
+    }
+    return;
+  }
+  const flags = kind === "dir" ? "(oi)(ci)" : "";
+  const icacls = custody.icacls ??
+    ((args: string[]) => runTool("icacls.exe", args));
+  const user = custody.user ?? await currentUser();
   const listing = await icacls([path]);
-  if (
-    listing.code !== 0 ||
-    !aclIsPrivate(listing.stdout, path, user, flags.toLowerCase())
-  ) {
+  if (listing.code !== 0 || !aclIsPrivate(listing.stdout, path, user, flags)) {
     throw new ConfigurationError(
       `refusing ${what} ${path}: its ACL is not exactly ${user} and SYSTEM: ${listing.stdout.trim()}`,
     );

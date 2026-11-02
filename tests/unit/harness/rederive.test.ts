@@ -1,7 +1,10 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
-import type { PricingBook } from "../../../src/harness/pricing.ts";
+import {
+  loadPricingBook,
+  type PricingBook,
+} from "../../../src/harness/pricing.ts";
 import type {
   ExecutionRecord,
   RederivationRecord,
@@ -105,11 +108,12 @@ async function stored(
   stop: string | null = null,
   at?: string,
   timedOut = false,
+  over: Partial<ExecutionRecord> = {},
 ) {
   const root = at ?? await Deno.realPath(await testTempDir());
   const store = new RecordStore(root);
   const c = await campaign();
-  const base = execution(c);
+  const base = execution(c, {}, over);
   const e: ExecutionRecord = {
     ...base,
     manifest: manifest("plain", PROBE_ARM),
@@ -204,6 +208,23 @@ Deno.test("rederive (R-10): a stored fork run re-derives to completed with cost 
   assertEquals([fork.outcome, fork.agent], ["ok", "main"]);
   assertEquals(r.stream_problems, []);
   assertEquals(r.infra_reason, null);
+});
+
+Deno.test("H-44 (20): a v3 execution read with its re-derivation keeps v3 and its redaction_anchor, and is never written back", async () => {
+  const anchor = "e".repeat(64);
+  const s = await stored(await forkProbe(), 0, null, undefined, false, {
+    v: 3,
+    redaction_anchor: anchor,
+  });
+  await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+  const [x] = await s.store.executions(s.c.id);
+  assertEquals(x!.termination, "completed", "the overlay applied");
+  assertEquals([x!.v, x!.redaction_anchor], [3, anchor]);
+  await assertRejects(
+    () => s.store.writeExecution(x!),
+    ValidationError,
+    "never written back",
+  );
 });
 
 Deno.test("rederive (R-10): a raw log without its result line stays harness_crash, whatever the exit code (Sol run 001 P1)", async () => {
@@ -601,4 +622,50 @@ Deno.test("recordCellProblems (Sol run 002 P2): an overlay folder that cannot be
       writable: true,
     });
   }
+});
+
+// H-02 rebase review finding 1: the real catalog lists gpt-6-luna on two slugs,
+// so a book loaded without the arm's slugs throws. Rederive passes them.
+Deno.test("rederive (H-02): against the real site/catalog the arm's slugs settle the book; the fork run still derives completed with a cost", async () => {
+  const s = await stored(await forkProbe());
+  let seen: readonly string[] | undefined;
+  await rederiveExecution({
+    store: s.store,
+    execution: (await s.store.executions(s.c.id))[0]!,
+    reason: "H-02 real catalog",
+    codeCommit: COMMIT,
+    pricing: (at, slugs) => {
+      seen = slugs;
+      return loadPricingBook("site/catalog", at, slugs);
+    },
+    now: () => new Date("2026-10-29T12:00:00.000Z"),
+  });
+  assertEquals(seen, Object.values(s.e.manifest.models));
+  const [x] = await s.store.executions(s.c.id);
+  assertEquals(x!.termination, "completed");
+  assert(x!.telemetry.cost_usd! > 0);
+});
+
+// A pricing (catalog) error is the operator's to fix: the rederive refuses and
+// writes no overlay (overlays are write-once), never a parse failure.
+Deno.test("rederive (H-02): a pricing load error refuses the rederive and writes no overlay", async () => {
+  const s = await stored(await forkProbe());
+  const e = (await s.store.executions(s.c.id))[0]!;
+  const why = "api_model_id x is listed twice";
+  await assertRejects(
+    () =>
+      rederiveExecution({
+        store: s.store,
+        execution: e,
+        reason: "H-02 broken catalog",
+        codeCommit: COMMIT,
+        pricing: () => Promise.reject(new ValidationError(why, [why])),
+      }),
+    ValidationError,
+    "listed twice",
+  );
+  assertEquals(await s.store.rederivations(s.e.id), []);
+  const [x] = await s.store.executions(s.c.id);
+  assertEquals(x!.termination, "harness_crash");
+  assertEquals(x!.rederived, undefined);
 });

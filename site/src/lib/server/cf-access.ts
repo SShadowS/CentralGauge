@@ -414,6 +414,8 @@ export interface AdminAuthEnv extends CfAccessEnv {
  * @param signedBody The parsed request body when the endpoint expects a
  *                   `SignedRequest` envelope; `null` for endpoints that
  *                   accept CF Access only (GET reads, debug bundle proxy).
+ * @param message    Optional exact signed message for the signature path;
+ *                   defaults to canonical(payload) in `verifySignedRequest`.
  * @returns          A discriminated `AdminAuthResult`.
  * @throws           `ApiError(401, 'unauthenticated', ...)` when neither
  *                   path succeeds.
@@ -422,6 +424,7 @@ export async function authenticateAdminRequest(
   request: Request,
   env: AdminAuthEnv,
   signedBody: { signature?: unknown } | null,
+  message?: string,
 ): Promise<AdminAuthResult> {
   // Order: Ed25519 body signature first, then CF Access JWT.
   //
@@ -444,6 +447,7 @@ export async function authenticateAdminRequest(
       env.DB,
       signedBody as SignedRequest,
       "admin",
+      message,
     );
     return {
       kind: "admin-sig",

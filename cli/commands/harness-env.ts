@@ -47,6 +47,7 @@ import {
   type LockedSymbols,
 } from "../../src/harness/bc-lane.ts";
 import type { OnPremIndex } from "../../src/harness/onprem-symbols.ts";
+import type { ProbeRunner } from "../../src/harness/key-custody.ts";
 import {
   placedConcurrencyProblem,
   placedConcurrencyRefusal,
@@ -65,6 +66,7 @@ import {
   verifyEgressState,
 } from "../../src/harness/egress.ts";
 import {
+  admitKeyCustody,
   admitOnPrem,
   ensurePin,
   type EnvPin,
@@ -124,6 +126,11 @@ import {
   inspectContainer,
 } from "../../src/container/docker-inspect.ts";
 import { loadTask } from "../../src/harness/task.ts";
+import {
+  type OnStopSignal,
+  stopFileLeft,
+  watchStop,
+} from "../../src/harness/graceful-stop.ts";
 import { ContainerHealthMonitor } from "../../src/health/monitor.ts";
 import {
   acquireBenchLock,
@@ -177,6 +184,10 @@ export interface EnvOptions {
   poolWaitMin?: number;
   /** H-41 (7): --coord-lease pairs: coord leases this run holds (container -> token). */
   coordLeases?: ReadonlyMap<string, string>;
+  /** H-44: `--key-custody <dir>`, admitted (fatal) before anything else is opened. */
+  keyCustody?: string;
+  /** H-44: a judging command (rejudge, judge-pending): the custody dir must exist; never created. */
+  judgeOnly?: boolean;
 }
 
 export interface EnvDeps {
@@ -232,6 +243,12 @@ export interface EnvDeps {
   ) => { url: string; shutdown(): Promise<void> };
   /** H-38 test seam for the OnPrem index admission (default: admitOnPrem). */
   admitOnPrem?: (lock: LockedSymbols) => Promise<OnPremIndex>;
+  /** H-44 test seam: the key custody probe's command execution (default: Windows PowerShell). */
+  probeRunner?: ProbeRunner;
+  /** Graceful-stop test seam: the stop signals (default SIGINT + SIGBREAK). */
+  onStopSignal?: OnStopSignal;
+  /** Graceful-stop test seam: a stopped environment's exit (default Deno.exitCode = 130). */
+  stoppedExit?: () => void;
 }
 
 export const REAL_DEPS: EnvDeps = {
@@ -280,6 +297,14 @@ export const REAL_DEPS: EnvDeps = {
 export interface OpenEnv {
   env: HarnessEnv;
   close(): Promise<void>;
+  /**
+   * Graceful stop (src/harness/graceful-stop.ts): aborted by SIGINT, SIGBREAK
+   * or the stop file `<private root>/STOP`. A holder stops between rows, never
+   * caching a partial one, then closes; close() sets a non-zero exit code.
+   */
+  stop?: AbortSignal;
+  /** Checks the stop file now; true once a stop was requested. Call between rows. */
+  stopRequested?(): Promise<boolean>;
 }
 
 /** What `harness env check` and `harness baseline create` read. */
@@ -1011,6 +1036,13 @@ export async function openHarnessEnv(
     packages: symbols,
   });
   const sharedResults = join(o.repoRoot, "results", "harness");
+  // Graceful stop: a stop file left behind would stop this run at once.
+  const left = await stopFileLeft(o.privateRoot);
+  if (left) {
+    throw new ConfigurationError(
+      `stop file ${left} is present (a stop request for this private root): remove it to start`,
+    );
+  }
   let release: () => Promise<void>;
   try {
     release = deps.acquireLock(
@@ -1025,6 +1057,16 @@ export async function openHarnessEnv(
     }
     throw err;
   }
+  // Graceful stop: from here a signal no longer kills the process; the holder
+  // stops between rows and closes (claims released). Listening ends only
+  // after the close, so a signal during it cannot cut it short.
+  const stop = watchStop(o.privateRoot, deps.onStopSignal);
+  const unwatch = async () => {
+    await stop.dispose();
+    if (stop.signal.aborted) {
+      (deps.stoppedExit ?? (() => void (Deno.exitCode = 130)))();
+    }
+  };
   const closers: (() => Promise<void>)[] = [release];
   // H-35 run 004 Sol r2 N3: closer failures so far (the in-use release reads them)
   const closeFailures: string[] = [];
@@ -1039,6 +1081,7 @@ export async function openHarnessEnv(
     // of this private root only (its temp, intents, secrets and sandboxes):
     // its exclusive lock first, before any of them, then its own owner label.
     let namespaceLost: () => boolean;
+    let acquisition: string;
     try {
       const held = deps.acquireLock(o.privateRoot, {
         command: `${o.command} (private root)`,
@@ -1051,6 +1094,8 @@ export async function openHarnessEnv(
         );
       }
       namespaceLost = held.lost;
+      // H-44 (5.4): this acquisition's token, named in every restricted temp it writes.
+      acquisition = crypto.randomUUID();
     } catch (err) {
       if (err instanceof BenchLockHeldError) {
         err.message +=
@@ -1065,6 +1110,19 @@ export async function openHarnessEnv(
         "nothing swept",
       );
     hold();
+    // H-44 (5.1): --key-custody admitted before anything else; any failure is fatal.
+    const keyCustody = o.keyCustody
+      ? await admitKeyCustody(
+        {
+          resultsRoot: o.resultsDir,
+          repoRoot: o.repoRoot,
+          privateRoot: o.privateRoot,
+          ...(deps.probeRunner ? { probeRunner: deps.probeRunner } : {}),
+        },
+        o.keyCustody,
+        !o.judgeOnly,
+      )
+      : undefined;
     // Review 546e8337 P2-a, run 003 item 1: any older harness's state refuses
     // the start before ANY sweep; nothing legacy is ever removed here.
     const docker = deps.docker();
@@ -1539,7 +1597,8 @@ export async function openHarnessEnv(
         reset,
         ...(bcEgress ? { bcEgress } : {}),
       },
-      pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
+      pricing: (at, armSlugs) =>
+        loadPricingBook(join(o.repoRoot, "site", "catalog"), at, armSlugs),
       supervised: o.supervised,
       egressEnforced: mode === "enforced",
       ...(egress ? { egress, proxyIsolation } : {}),
@@ -1547,6 +1606,9 @@ export async function openHarnessEnv(
       // No placeholder: an unset lane is refused at the credential reservation (M1-28b).
       lane_id: Deno.env.get("CG_LANE")?.trim() ?? "",
       namespaceLost,
+      acquisition,
+      ...(keyCustody ? { keyCustody } : {}),
+      ...(deps.probeRunner ? { probeRunner: deps.probeRunner } : {}),
       ...(pinContext ? { pinContext } : {}),
       ...(pool ? { judgePooled: pool } : {}),
       // H-41 (10): an explicit list pins the start members' env_fp; `auto`
@@ -1568,9 +1630,14 @@ export async function openHarnessEnv(
       );
     }
     // A second close is a no-op (M1-33e).
-    return { env, close: () => closing ??= closeAll() };
+    return {
+      env,
+      close: () => closing ??= closeAll().finally(unwatch),
+      stop: stop.signal,
+      stopRequested: stop.requested,
+    };
   } catch (err) {
-    await closeAll();
+    await closeAll().finally(unwatch);
     throw err;
   }
 }

@@ -2,6 +2,7 @@ import {
   assert,
   assertAlmostEquals,
   assertEquals,
+  assertRejects,
   assertStringIncludes,
   assertThrows,
 } from "@std/assert";
@@ -15,16 +16,27 @@ import {
   PI_CAPABILITIES,
   PI_SETTINGS,
   piAdapter,
+  piHarnessNative,
 } from "../../../src/harness/adapters/pi.ts";
 import { callFields } from "../../../src/harness/call-fields.ts";
 import {
   checkModelsInCatalog,
+  ExperimentSchema,
   HarnessConfigSchema,
   loadConfig,
 } from "../../../src/harness/config.ts";
 import { budgetStep } from "../../../harness/images/pi/cg-budget.ts";
+import { secretFilesOf } from "../../../src/harness/adapter.ts";
+import { codexAuthText, FAKE_CODEX } from "./codex-fixture.ts";
 import { manifest } from "./fixtures.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
+import { readCatalog } from "../../../src/ingest/catalog/read.ts";
+import { runtimeFacts } from "../../../src/harness/images.ts";
+import {
+  assertVaryHolds,
+  resolveManifest,
+} from "../../../src/harness/manifest.ts";
+import { readYaml } from "../../../src/harness/yaml.ts";
 
 const FIXTURE = "tests/fixtures/harness/pi/probe.jsonl";
 const BOOK: PricingBook = {
@@ -1503,4 +1515,347 @@ Deno.test("pi adapter (H-07): settings.web_tools is refused by name, never ignor
       "pi 0.87.1 has no web tools; web_tools is a claude-code setting",
     );
   }
+});
+
+// H-02: the ChatGPT-subscription route through pi's openai-codex provider.
+
+const CODEX_SLUG = "openai-codex/gpt-6-luna";
+const CODEX_CATALOG = {
+  ...CATALOG,
+  models: [...CATALOG.models, {
+    slug: CODEX_SLUG,
+    api_model_id: "gpt-6-luna",
+    family: "gpt",
+    display_name: "L",
+  }],
+};
+const CODEX_CFG = { ...CFG, models: { main: CODEX_SLUG } };
+const CODEX_BOOK: PricingBook = {
+  at: "2026-10-05T00:00:00.000Z",
+  models: {
+    "gpt-6-luna": {
+      slug: CODEX_SLUG,
+      pricing_version: "2026-09-28",
+      input: 0.1,
+      output: 0.5,
+      cache_read: 0.01,
+      cache_write_5m: 0.125,
+      cache_write_1h: null,
+      cache_write_1h_derived: false,
+    },
+  },
+};
+const codexPm = () =>
+  pm({
+    models: { main: CODEX_SLUG },
+    provider_routes: { main: "openai-codex:oauth" },
+  });
+
+Deno.test("pi adapter (H-02): an openai-codex/ slug runs provider openai-codex on route openai-codex:oauth with its own secret file", () => {
+  assertEquals(piAdapter.nativeSettings(CODEX_CFG, CODEX_CATALOG), {
+    provider: "openai-codex",
+    api_models: { main: "gpt-6-luna" },
+    pi_settings: PI_SETTINGS,
+  });
+  assertEquals(piAdapter.providerRoutes(CODEX_CFG), {
+    main: "openai-codex:oauth",
+  });
+  assertEquals(piAdapter.secretFilesFor!(codexPm()), ["openai-codex-auth"]);
+  // The OpenRouter arm is unchanged and never receives the codex credential.
+  assertEquals(piAdapter.secretFilesFor!(pm()), ["openrouter-api-key"]);
+  assertEquals(secretFilesOf(piAdapter, codexPm()), ["openai-codex-auth"]);
+  assertThrows(
+    () =>
+      piAdapter.secretFilesFor!(
+        pm({ provider_routes: { main: "openai:api-key" } }),
+      ),
+    ConfigurationError,
+    "openai:api-key",
+  );
+  for (const slug of ["openai/gpt-6-luna", "openai-codex-x/gpt-6-luna"]) {
+    assertThrows(
+      () =>
+        piAdapter.nativeSettings(
+          { ...CFG, models: { main: slug } },
+          CODEX_CATALOG,
+        ),
+      ConfigurationError,
+      "openai-codex/",
+    );
+  }
+});
+
+Deno.test("pi parse (H-02): the codex arm accepts provider openai-codex, flags any other; list-price estimate from the catalog", () => {
+  const msg = (provider: string) =>
+    JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        provider,
+        model: "gpt-6-luna",
+        stopReason: "stop",
+        usage: {
+          input: 1_000_000,
+          output: 1_000_000,
+          cacheRead: 1_000_000,
+          cacheWrite: 0,
+          totalTokens: 3_000_000,
+          cost: { total: 0.61 },
+        },
+      },
+    });
+  const parse = (provider: string, manifest = codexPm()) =>
+    parsePiStream(HEAD + msg(provider) + "\n" + END, {
+      rawLog: "C:\\q\\raw.jsonl",
+      exitCode: 0,
+      manifest,
+      pricing: CODEX_BOOK,
+    });
+  const ok = parse("openai-codex");
+  assertEquals(ok.termination, "completed");
+  assertEquals(raw(ok).missing, []);
+  assertAlmostEquals(ok.telemetry.cost_usd!, 0.1 + 0.5 + 0.01, 1e-12);
+  assertEquals(ok.telemetry.reported_cost_usd, 0.61);
+  const other = raw(parse("openrouter")).missing.join("\n");
+  assertStringIncludes(other, "provider openrouter, expected openai-codex");
+  // And the OpenRouter arm flags a codex message.
+  const r = raw(parse("openai-codex", pm())).missing.join("\n");
+  assertStringIncludes(r, "provider openai-codex, expected openrouter");
+});
+
+Deno.test("run.ps1 (H-02): never touches the codex credential; tells the guard which provider to hold", async () => {
+  const run = await Deno.readTextFile("harness/images/pi/run.ps1");
+  for (const s of ["openai-codex-auth", "print-bearer-token"]) {
+    assert(!run.includes(s), s);
+  }
+  // H-02 run 004: auth.json is staged admin-owned (cg-pi-stage.ps1); run.ps1
+  // only mentions it in a comment and never writes it.
+  for (
+    const line of run.split(/\r?\n/).filter((l) => l.includes("auth.json"))
+  ) {
+    assert(line.trimStart().startsWith("#"), line);
+  }
+  assertStringIncludes(
+    run,
+    "$env:CG_PI_PROVIDER = [string]$cfg.settings.provider",
+  );
+  // H-02 review: the guard checks the token outlives this run's timeout.
+  assertStringIncludes(
+    run,
+    "$env:CG_TIMEOUT_MIN = [string]$cfg.limits.timeout_min",
+  );
+  assert(
+    run.indexOf("$env:CG_PI_PROVIDER") > 0 &&
+      run.indexOf("$env:CG_PI_PROVIDER") < run.indexOf("| & pi @piArgs"),
+    "set before pi starts",
+  );
+  // The guard documents that the harness stages the entry and it only reads it.
+  const guard = await Deno.readTextFile("harness/images/pi/cg-budget.ts");
+  assertStringIncludes(guard, "cg-pi-stage.ps1 -Codex");
+  assert(!guard.includes("writeFileSync"), "the guard never writes a file");
+});
+
+async function withGuardEnv(
+  env: Record<string, string>,
+  f: (dir: string) => Promise<void>,
+) {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const keys = [
+    "CG_PI_PROVIDER",
+    "CG_PI_AUTH_FILE",
+    "CG_PI_KEY_FILE",
+    "CG_MAX_BUDGET_USD",
+    "CG_TIMEOUT_MIN",
+    "PI_CODING_AGENT_DIR",
+  ];
+  const prev = keys.map((k) => Deno.env.get(k));
+  try {
+    for (const k of keys) Deno.env.delete(k);
+    Deno.env.set("CG_MAX_BUDGET_USD", "2");
+    Deno.env.set("CG_TIMEOUT_MIN", "30");
+    Deno.env.set("PI_CODING_AGENT_DIR", join(dir, "agent"));
+    for (const [k, v] of Object.entries(env)) Deno.env.set(k, v);
+    await f(dir);
+  } finally {
+    keys.forEach((k, i) => {
+      const v = prev[i];
+      if (v === undefined) Deno.env.delete(k);
+      else Deno.env.set(k, v);
+    });
+  }
+}
+
+/** The released sandbox copy: the refresh token withheld (H-02 review). */
+const sandboxAuth = (expires: number, over: object = {}) =>
+  codexAuthText(expires, { refresh: "", ...over });
+
+Deno.test("cg-budget (H-02 run 004): on the codex route it verifies the admin-staged agent auth.json and never writes it; openrouter is never registered", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const registered: string[] = [];
+  const api = {
+    registerProvider: (n: string) => void registered.push(n),
+    appendEntry: () => {},
+    on: () => {},
+  };
+  await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (d) => {
+    await Deno.mkdir(join(d, "agent"));
+    const staged = join(d, "agent", "auth.json");
+    const text = sandboxAuth(Date.now() + 2 * 3600_000) + "\n";
+    await Deno.writeTextFile(staged, text);
+    const before = await Deno.stat(staged);
+    guard(api);
+    assertEquals(registered, []);
+    assertEquals(await Deno.readTextFile(staged), text);
+    assertEquals((await Deno.stat(staged)).mtime, before.mtime);
+    // The secrets file is not the guard's to read any more.
+    assertEquals([...Deno.readDirSync(d)].map((e) => e.name), ["agent"]);
+  });
+});
+
+Deno.test("cg-budget (H-02 run 004): on the openrouter route the agent auth.json stays the staged {} and is never touched", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const api = {
+    registerProvider: () => {},
+    appendEntry: () => {},
+    on: () => {},
+  };
+  await withGuardEnv({ CG_PI_PROVIDER: "openrouter" }, async (d) => {
+    await Deno.mkdir(join(d, "agent"));
+    const staged = join(d, "agent", "auth.json");
+    await Deno.writeTextFile(staged, "{}");
+    const key = join(d, "key");
+    await Deno.writeTextFile(key, "sk-or-v1-cgfake" + "0".repeat(48));
+    Deno.env.set("CG_PI_KEY_FILE", key);
+    const before = await Deno.stat(staged);
+    guard(api);
+    assertEquals(await Deno.readTextFile(staged), "{}");
+    assertEquals((await Deno.stat(staged)).mtime, before.mtime);
+  });
+});
+
+Deno.test("cg-budget (H-02 run 004): refuses an unstaged ({} or missing), expiring, multi-entry, non-oauth or refresh-bearing agent auth.json and an unknown provider; never writes; no value in any error", async () => {
+  const { default: guard } = await import(
+    "../../../harness/images/pi/cg-budget.ts"
+  );
+  const api = {
+    registerProvider: () => {},
+    appendEntry: () => {},
+    on: () => {},
+  };
+  const later = Date.now() + 2 * 3600_000;
+  const extra = {
+    ...JSON.parse(sandboxAuth(later)),
+    openrouter: { type: "api_key", key: "sk-or-v1-x" },
+  };
+  // CG_TIMEOUT_MIN 30: the token must last 35 minutes from now.
+  const cases: [string, string | null, string?][] = [
+    ["missing file", null],
+    ["not staged", "{}"],
+    ["expiring", sandboxAuth(Date.now() + 60_000)],
+    ["timeout plus 5", sandboxAuth(Date.now() + 34 * 60_000)],
+    ["no timeout", sandboxAuth(later), ""],
+    ["extra entry", JSON.stringify(extra)],
+    ["api key type", sandboxAuth(later, { type: "api_key" })],
+    ["refresh not withheld", codexAuthText(later)],
+    ["not JSON", "{"],
+  ];
+  for (const [what, text, timeout] of cases) {
+    await withGuardEnv({
+      CG_PI_PROVIDER: "openai-codex",
+      CG_TIMEOUT_MIN: timeout ?? "30",
+    }, async (dir) => {
+      await Deno.mkdir(join(dir, "agent"));
+      const staged = join(dir, "agent", "auth.json");
+      if (text !== null) await Deno.writeTextFile(staged, text);
+      const err = assertThrows(() => guard(api), Error, undefined, what);
+      for (const v of Object.values(FAKE_CODEX)) {
+        assert(!err.message.includes(v), `${what}: ${err.message}`);
+      }
+      assertEquals(
+        await Deno.readTextFile(staged).catch(() => null),
+        text,
+        `${what}: nothing written`,
+      );
+    });
+  }
+  // 36 minutes of validity passes a 30-minute timeout.
+  await withGuardEnv({ CG_PI_PROVIDER: "openai-codex" }, async (dir) => {
+    await Deno.mkdir(join(dir, "agent"));
+    await Deno.writeTextFile(
+      join(dir, "agent", "auth.json"),
+      sandboxAuth(Date.now() + 36 * 60_000),
+    );
+    guard(api);
+  });
+  await withGuardEnv({ CG_PI_PROVIDER: "anthropic" }, () => {
+    assertThrows(() => guard(api), Error, "provider");
+    return Promise.resolve();
+  });
+});
+
+Deno.test("pi-gpt6-luna-codex and the draft experiment pi-codex-luna (H-02): catalog slugs, schema, outside harness/experiments, arms differ only in models", async () => {
+  const cfg = await loadConfig("harness", "pi-gpt6-luna-codex");
+  const base = await loadConfig("harness", "pi-sonnet-plain");
+  assertEquals(cfg.models, { main: "openai-codex/gpt-6-luna" });
+  // Same as pi-sonnet-plain except id and model.
+  assertEquals({ ...cfg, id: base.id, models: base.models }, base);
+  await checkModelsInCatalog([cfg], "site/catalog");
+  const e = await readYaml(
+    "harness/experiment-drafts/pi-codex-luna.yml",
+    ExperimentSchema,
+  );
+  assertEquals(
+    [e.id, e.baseline, e.variants, e.vary, e.primary_metric, e.repeats],
+    [
+      "pi-codex-luna",
+      "pi-sonnet-plain",
+      ["pi-gpt6-luna-codex"],
+      ["models", "settings"],
+      "pass_rate",
+      3,
+    ],
+  );
+  assert(
+    !await Deno.stat("harness/experiments/pi-codex-luna.yml").then(
+      () => true,
+      () => false,
+    ),
+    "a draft is never picked up as an experiment",
+  );
+  const catalog = await readCatalog("site/catalog");
+  const resolved: ResolvedManifest[] = [];
+  for (const c of [base, cfg]) {
+    const facts = runtimeFacts(
+      c,
+      {
+        digest: `sha256:${"e".repeat(64)}`,
+        base_digest: `sha256:${"b".repeat(64)}`,
+        harness: "pi",
+        version: "0.87.1",
+        // Both arms name image_revision 2 (H-01 run 004 labels).
+        revision: "2",
+      },
+      piAdapter,
+      catalog,
+    );
+    resolved.push(await resolveManifest("harness", c, facts));
+  }
+  await assertVaryHolds(resolved[0]!, resolved[1]!, e.vary, {
+    pi: piHarnessNative,
+  });
+  // Models alone does not hold: provider and api_models follow the model in native settings.
+  await assertRejects(
+    () =>
+      assertVaryHolds(resolved[0]!, resolved[1]!, ["models"], {
+        pi: piHarnessNative,
+      }),
+    ConfigurationError,
+    "settings",
+  );
+  assertEquals(resolved[1]!.settings.native["provider"], "openai-codex");
+  assertEquals(resolved[1]!.provider_routes, { main: "openai-codex:oauth" });
 });

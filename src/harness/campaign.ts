@@ -25,6 +25,7 @@ import type { HarnessConfig } from "./config.ts";
 import type { JudgeGate } from "./pool.ts";
 import { ConfigurationError } from "../errors.ts";
 import { PoolLostError } from "./bc-lane.ts";
+import { secretFilesOf } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import { proxyIsolationProblem } from "./egress.ts";
 import { PROXY_ISOLATION } from "./egress-proxy.ts";
@@ -84,6 +85,8 @@ export interface RunOptions {
   maxPauseMs: number;
   /** Any of these present stops the campaign before its next cell. */
   stopFiles?: string[];
+  /** Graceful stop of the environment (OpenEnv.stopRequested): checked with the stop files. */
+  stopRequested?: () => Promise<boolean>;
   /** Resume exactly this campaign; refused when it no longer matches, never created. */
   campaign?: string;
   /** Run exactly this unscored cell again as a manual_rerun; nothing else runs. */
@@ -681,7 +684,7 @@ async function dryRunEstimate(
 }
 
 /** The tasks an experiment's pattern selects; none is refused. */
-async function experimentTasks(
+export async function experimentTasks(
   repoRoot: string,
   experimentId: string,
   experiment: CampaignRecord["experiment"],
@@ -857,6 +860,18 @@ async function campaignInvocation(
     env.harnessRoot,
     experimentId,
   );
+  // H-02 (orchestrator ruling): the codex arm holds one ChatGPT credential, so
+  // it runs with a single account; every account's copy would expire on its own.
+  const accounts = env.secretAccounts?.length ?? 0;
+  for (const c of accounts > 1 ? configs : []) {
+    if (c.harness !== "pi") continue; // the codex route is pi's only
+    const routes = Object.values(adapterFor(c.harness).providerRoutes(c));
+    if (routes.includes("openai-codex:oauth")) {
+      throw new ConfigurationError(
+        `${c.id} runs on openai-codex:oauth with one --secrets-dir account, not ${accounts}`,
+      );
+    }
+  }
   // Every arm's image, before any recovery, record or cell (new run and resume).
   const armProblem = placedConcurrencyProblem(
     placedGateOf(env),
@@ -911,10 +926,13 @@ async function campaignInvocation(
   }
   // Every account dir holds every secret the arms need, before any cell.
   if (!o.dryRun) {
+    // H-02: per arm route (a pi codex arm needs the codex file, not the OpenRouter key).
     for (const c of configs) {
+      const a = adapterFor(c.harness);
       await checkAccountsSecrets(
         env.secretAccounts,
-        adapterFor(c.harness).secretFiles,
+        secretFilesOf(a, { provider_routes: a.providerRoutes(c) }),
+        c.limits.timeout_min,
       );
     }
   }
@@ -1163,7 +1181,16 @@ async function campaignInvocation(
     data = await loadCampaignData(env.store, c);
     await validateCampaignRecords(data, {
       descriptor: descriptorLoader(env.resultsRoot, env.repoRoot),
+      resultsRoot: env.resultsRoot,
     });
+    // H-44 (D4): a campaign has one record version and new executions are
+    // v3: before binding, a rerun target or any cell. Recovery (above),
+    // reading, reporting and rejudging stay available.
+    if (data.executions.some((e) => e.v < 3)) {
+      throw new ConfigurationError(
+        `campaign ${c.id} has executions recorded before H-44; new executions cannot join it. Start a fresh campaign under a new experiment id or a new --results-dir; existing results stay as they are`,
+      );
+    }
   }
   // H-13b: every execution of a waived campaign records it.
   if (calibrationWaived) runEnv = { ...runEnv, calibrationWaived: true };
@@ -1232,6 +1259,16 @@ async function campaignInvocation(
         summary.stopped = true;
         io.log(
           `[PAUSE] stop file ${path} present; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+        );
+      }
+      return true;
+    }
+    // Graceful stop (signal or the environment's stop file): the same pause.
+    if (await o.stopRequested?.()) {
+      if (!summary.stopped) {
+        summary.stopped = true;
+        io.log(
+          `[PAUSE] stop requested; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
         );
       }
       return true;

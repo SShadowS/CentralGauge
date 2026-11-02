@@ -72,9 +72,18 @@ const CatalogPricing = z.array(
   ),
 );
 
+/**
+ * The pricing book at `at`, keyed by the model id a harness log reports
+ * (api_model_id). One id listed under several slugs is one model on several
+ * routes (H-02: openai/gpt-6-luna and openai-codex/gpt-6-luna): without the
+ * arm's slugs that is ambiguous and refused; with them, the arm's own slug
+ * prices the id, an id none of the arm's slugs owns is left out (never
+ * guessed), and an id two of them share is refused.
+ */
 export async function loadPricingBook(
   catalogDir: string,
   at: Date,
+  armSlugs?: readonly string[],
 ): Promise<PricingBook> {
   const modelsFile = join(catalogDir, "models.yml");
   const pricingFile = join(catalogDir, "pricing.yml");
@@ -96,10 +105,17 @@ export async function loadPricingBook(
   }
   const book: Record<string, ModelPrice> = {};
   for (const m of models) {
-    if (Object.hasOwn(book, m.api_model_id)) {
-      const msg =
-        `${modelsFile}: api_model_id ${m.api_model_id} is listed twice`;
-      throw new ValidationError(msg, [msg]);
+    const shared = models.filter((x) => x.api_model_id === m.api_model_id);
+    if (shared.length > 1) {
+      const mine = shared.filter((x) => armSlugs?.includes(x.slug));
+      if (armSlugs === undefined || mine.length > 1) {
+        const msg =
+          `${modelsFile}: api_model_id ${m.api_model_id} is listed twice (${
+            shared.map((x) => x.slug).join(", ")
+          })${armSlugs === undefined ? "" : " among the arm's models"}`;
+        throw new ValidationError(msg, [msg]);
+      }
+      if (mine[0] !== m) continue;
     }
     const effective = pricing
       .filter((x) =>

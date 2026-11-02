@@ -44,10 +44,14 @@ import { write } from "./refapp-fixture.ts";
 import {
   CATALOG,
   cellFor,
-  makeEnv,
   mockImageBehavior,
+  SECRET_OAUTH,
   type TestEnv,
 } from "./runtime-fixture.ts";
+import { custodyEnv } from "./custody-fixture.ts";
+
+/** H-44: every parent publishes with --key-custody; its children judge through it. */
+const makeEnv = () => custodyEnv();
 
 const DRIVER = fromFileUrl(new URL("./pool-driver.ts", import.meta.url));
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -59,6 +63,8 @@ interface Child {
   status: Promise<Deno.CommandStatus>;
   stdout: Promise<string>;
   stderr: Promise<string>;
+  /** H-44: the child's own private root (nothing copied into it). */
+  privateRoot: string;
 }
 
 /**
@@ -120,10 +126,6 @@ class World implements AsyncDisposable {
       await Deno.makeTempDir({ prefix: `cg-h41-${name}-private-` }),
     );
     this.dirs.push(privateRoot);
-    // Judging redacts with the execution's keys, read from the judge's own
-    // private root: every judge of these executions carries a copy.
-    const keys = join(this.t.env.privateRoot, "redaction");
-    if (await exists(keys)) await copy(keys, join(privateRoot, "redaction"));
     const args: DriverArgs = {
       name,
       scenario,
@@ -137,6 +139,8 @@ class World implements AsyncDisposable {
       quarantineDir: this.quarantineDir,
       coordRoot: this.coordRoot,
       containers: ["C1"],
+      // H-44: judging redacts with the keys the parent exported to its custody dir.
+      ...(this.t.env.keyCustody ? { keyCustody: this.t.env.keyCustody } : {}),
       ...o,
     };
     const file = join(this.root, `args-${name}.json`);
@@ -149,6 +153,7 @@ class World implements AsyncDisposable {
     }).spawn();
     const child: Child = {
       name,
+      privateRoot,
       proc,
       done: false,
       status: proc.status.then((s) => {
@@ -400,6 +405,32 @@ const settled = (t: TestEnv, id: string) =>
   names(claimsDir(t, id)).filter((n) =>
     n === ".bench-running.json" || n.includes(".tmp-")
   );
+
+// ---- H-44 (design-final 7, test 1) ----
+
+Deno.test("H-44 (1, two processes): A publishes with --key-custody; B, from an empty private root (no redaction/, no marker), judges via judge-pending through <K>; its verdict log is redacted", async () => {
+  await using t = await makeEnv();
+  const x = await owedExecution(t);
+  assertEquals(await judgmentIds(t, x.id), []);
+  assert(await exists(join(t.env.keyCustody!, `${x.id}.json`)), "exported");
+  await using w = await World.open(t);
+  const b = await w.spawn("b", "judge-pending", {
+    containers: ["C2"],
+    // B's container prints the attempt's secret into the judge output.
+    leak: [SECRET_OAUTH],
+  });
+  const rb = await w.result(b);
+  assertEquals(rb.judged, 1);
+  assert(rb.computes > 0, "B computed");
+  assert(
+    !await exists(join(b.privateRoot, "redaction")),
+    "B's root never held redaction/",
+  );
+  const [j] = await t.env.store.judgments(x.id);
+  const log = await Deno.readTextFile(logPath(t, j!.id));
+  assert(!log.includes(SECRET_OAUTH), "the secret in B's verdict log");
+  assertStringIncludes(log, "[REDACTED:claude-oauth-token]");
+});
 
 // ---- Task 4 ----
 

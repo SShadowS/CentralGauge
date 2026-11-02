@@ -1071,6 +1071,7 @@ export async function loadScreenCampaigns(
     // H-35 S2.5: scorer names checked against the task preimage store.
     await validateCampaignRecords(data, {
       descriptor: descriptorLoader(resultsDir, repoRoot),
+      resultsRoot: resultsDir,
     });
     const byExecution = new Map<string, JudgmentRecord[]>();
     for (const j of data.judgments) {

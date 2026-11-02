@@ -39,6 +39,19 @@
   max_output_tokens: 128000
   capabilities: ["thinking", "image", "pdf", "structured", "batch"]
 
+# Harness Bench H-02: GPT-6 Luna on the ChatGPT subscription, the route of
+# pi's openai-codex provider (OAuth, no API key); not the OpenAI API row above.
+# Limits from pi 0.87.1's openai-codex model data (context 272000, max 128000).
+- slug: openai-codex/gpt-6-luna
+  api_model_id: gpt-6-luna
+  family: gpt
+  display_name: GPT-6 Luna (ChatGPT subscription)
+  generation: 6
+  released_at: "2026-09-22"
+  max_input_tokens: 272000
+  max_output_tokens: 128000
+  capabilities: ["thinking", "image", "structured"]
+
 - slug: gemini/gemini-3.8-flash
   api_model_id: gemini-3.8-flash
   family: gemini

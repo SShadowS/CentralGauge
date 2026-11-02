@@ -34,6 +34,11 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}al-tools-mcp.test.ts`]: c(true, 6),
   [`${H}allocation.test.ts`]: c(true, 0),
   [`${H}analyze-campaign-alsem203.test.ts`]: c(true, 0),
+  // T-09: these five ran unclassified (chunk 0) since Q-08/R-02/R-11. Temp
+  // dirs, read-only fixtures and in-process mocks only; seconds measured
+  // standalone 2026-10-30.
+  [`${H}analyze-campaign-alsem21.test.ts`]: c(true, 0),
+  [`${H}analyze-campaign-alsem211.test.ts`]: c(true, 0),
   [`${H}analyze-campaign-density.test.ts`]: c(true, 0),
   [`${H}analyze-campaign.test.ts`]: c(true, 0),
   [`${H}app-package.test.ts`]: c(true, 0),
@@ -48,6 +53,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}classify.test.ts`]: c(true, 0),
   [`${H}claude-code.test.ts`]: c(true, 4),
   [`${H}claude-trace.test.ts`]: c(true, 0),
+  [`${H}codex-auth.test.ts`]: c(true, 0),
   [`${H}config.test.ts`]: c(true, 0),
   [`${H}coord-lease.test.ts`]: c(true, 0),
   [`${H}credential-budget.test.ts`]: c(true, 1),
@@ -55,6 +61,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}egress-proxy.test.ts`]: c(true, 2),
   [`${H}egress.test.ts`]: c(true, 1),
   [`${H}estimate.test.ts`]: c(true, 0),
+  [`${H}execution-codex.test.ts`]: c(true, 13),
   [`${H}execution.test.ts`]: c(true, 233),
   [`${H}extracted-tests.test.ts`]: c(true, 2),
   [`${H}final-code.test.ts`]: c(true, 0),
@@ -102,6 +109,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),
   [`${H}production-policy.test.ts`]: c(true, 0),
+  [`${H}publish-setup.test.ts`]: c(true, 1),
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),
   [`${H}qualify.test.ts`]: c(true, 0),
@@ -109,7 +117,12 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}quality-report.test.ts`]: c(true, 1),
   [`${H}realistic-bundle.test.ts`]: c(true, 1),
   [`${H}records.test.ts`]: c(true, 0),
+  [`${H}rederive.test.ts`]: c(true, 1), // T-09
   [`${H}redact-patterns.test.ts`]: c(true, 0),
+  // H-44: makeEnv temp dirs and in-process fakes only (mock pwsh child per D4 run).
+  [`${H}redaction-anchor.test.ts`]: c(true, 30),
+  // H-44: own temp dirs (real icacls only on dirs it created, real locks on its own roots).
+  [`${H}key-custody.test.ts`]: c(true, 51),
   [`${H}report-charts.test.ts`]: c(true, 0),
   [`${H}report-extras.test.ts`]: c(true, 0),
   [`${H}report.test.ts`]: c(true, 3),
@@ -118,6 +131,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}rollups.test.ts`]: c(true, 0),
   [`${H}sandbox.test.ts`]: c(true, 4),
   [`${H}screening.test.ts`]: c(true, 5),
+  // T-09: runtime-fixture makeEnv (docker mock, temp dirs), like execution.
+  [`${H}secret-accounts.test.ts`]: c(true, 16),
   [`${H}skills-bundle.test.ts`]: c(true, 0),
   [`${H}soap-measure.test.ts`]: c(true, 0),
   [`${H}sql-cost-runner.test.ts`]: c(true, 0),
@@ -141,6 +156,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}verdict-workspace-helpers.test.ts`]: c(true, 2),
   [`${H}verdict-workspace.test.ts`]: c(true, 1),
   [`${H}verdict.test.ts`]: c(true, 33),
+  [`${H}write-config-dir.test.ts`]: c(true, 0), // T-09
 };
 
 export interface Plan {
@@ -206,6 +222,20 @@ export function parseSummary(output: string): Summary | undefined {
   };
 }
 
+/**
+ * T-09: the run passes only when every chunk exited 0 with an ok summary and
+ * no file is unclassified. An unclassified file still runs (chunk 0), but it
+ * fails the run: the CLASSES-coverage test lives in tests/unit/scripts, which
+ * this suite does not run, so it never gated a merge.
+ */
+export function gate(
+  results: { code: number; summary: Summary | undefined }[],
+  unclassified: string[],
+): boolean {
+  return unclassified.length === 0 &&
+    results.every((r) => r.code === 0 && r.summary?.ok === true);
+}
+
 function discover(): string[] {
   const files = [...Deno.readDirSync(H)]
     .filter((e) => e.isFile && e.name.endsWith(".test.ts"))
@@ -246,7 +276,7 @@ async function main() {
   for (const f of p.unclassified) {
     console.log(
       colors.yellow(
-        `[WARN] ${f} is not classified in CLASSES; running it in chunk 0 with the unsafe files`,
+        `[WARN] ${f} is not classified in CLASSES; running it in chunk 0 with the unsafe files, then failing the run`,
       ),
     );
   }
@@ -271,11 +301,10 @@ async function main() {
     p.chunks.map((files, i) => runChunk(i, files, logDir)),
   );
   const total = { passed: 0, failed: 0, ignored: 0 };
-  let bad = false;
+  const bad = !gate(results, p.unclassified);
   for (const r of results) {
     const s = r.summary;
-    const fine = r.code === 0 && s?.ok === true;
-    bad ||= !fine;
+    const fine = gate([r], []);
     if (s) {
       total.passed += s.passed;
       total.failed += s.failed;
@@ -289,6 +318,15 @@ async function main() {
       `${tag} chunk ${r.i}: exit ${r.code} | ${counts} (${
         Math.round(r.wall)
       }s) ${r.log}`,
+    );
+  }
+  if (p.unclassified.length > 0) {
+    console.log(
+      colors.red(
+        `[FAIL] ${p.unclassified.length} file(s) not classified in CLASSES (scripts/harness/test-fast.ts): ${
+          p.unclassified.join(", ")
+        }`,
+      ),
     );
   }
   const wall = Math.round((Date.now() - start) / 1000);

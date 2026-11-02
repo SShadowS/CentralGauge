@@ -16,6 +16,7 @@ import type { ModelTokens } from "../pricing.ts";
 import type { Telemetry, Termination } from "../records.ts";
 import type { TraceEvent } from "../trace.ts";
 import { ConfigurationError } from "../../errors.ts";
+import { CODEX_AUTH_FILE, CODEX_PROVIDER } from "../codex-auth.ts";
 import { requestedComponents } from "../adapter.ts";
 import { callFields } from "../call-fields.ts";
 import { RULES_VERSION } from "../classify.ts";
@@ -32,6 +33,25 @@ import {
 
 export const PI_PROVIDER = "openrouter";
 export const PI_ROUTE = "openrouter:api-key";
+/**
+ * The pi providers this adapter runs, by the model slug's first segment,
+ * each with its provider route and the one secret file it releases (H-02:
+ * openai-codex is the ChatGPT-subscription OAuth route).
+ */
+export const PI_PROVIDERS: Readonly<
+  Record<string, { route: string; secret: string }>
+> = {
+  [PI_PROVIDER]: { route: PI_ROUTE, secret: "openrouter-api-key" },
+  [CODEX_PROVIDER]: { route: "openai-codex:oauth", secret: CODEX_AUTH_FILE },
+};
+/** The pi provider of a model slug (`<provider>/<model>`), or null for a provider this adapter does not run. */
+export function piProviderOf(slug: string): string | null {
+  const p = slug.slice(0, Math.max(0, slug.indexOf("/")));
+  return Object.hasOwn(PI_PROVIDERS, p) ? p : null;
+}
+const providerOfRoute = (route: string | undefined): string | null =>
+  Object.entries(PI_PROVIDERS).find(([, v]) => v.route === route)?.[0] ??
+    null;
 export const ENTRY_RECORD = "cg_entry";
 export const BUDGET_ENTRY = "cg-budget";
 export const TTL_ASSUMPTION = "pi_openrouter_cache_write_5m";
@@ -198,6 +218,10 @@ export function parsePiStream(
   const retryPending =
     (lastOf(retryStarts)?.line ?? 0) > (lastRetryEnd?.line ?? 0);
   const sessionId = str(session?.["id"]);
+  // The provider of the arm's route (H-02); any other provider is flagged.
+  const provider = providerOfRoute(
+    Object.values(input.manifest.provider_routes)[0],
+  );
   const version = /\d+\.\d+\.\d+/.exec(str(entry?.["pi_version"]) ?? "")?.[0] ??
     null;
 
@@ -304,11 +328,11 @@ export function parsePiStream(
       };
       usage.set(model, a);
       a.requests++;
-      if (m["provider"] !== PI_PROVIDER) {
+      if (provider === null || m["provider"] !== provider) {
         a.problems.push(
-          `line ${line}: provider ${
-            String(m["provider"])
-          }, expected ${PI_PROVIDER}`,
+          `line ${line}: provider ${String(m["provider"])}, expected ${
+            provider ?? "the provider of a known pi route"
+          }`,
         );
       }
       const u = obj(m["usage"]);
@@ -639,7 +663,19 @@ export const piAdapter: HarnessAdapter = {
   harness: "pi",
   parser: PI_CAPABILITIES.parser,
   declared: PI_DECLARED,
-  secretFiles: ["openrouter-api-key"],
+  secretFiles: [PI_PROVIDERS[PI_PROVIDER]!.secret],
+  /** The secret file of the arm's route: an OpenRouter arm never receives the codex credential, nor the reverse. */
+  secretFilesFor(manifest) {
+    return [...new Set(Object.values(manifest.provider_routes))].map((r) => {
+      const p = providerOfRoute(r);
+      if (p === null) {
+        throw new ConfigurationError(
+          `pi has no secret file for provider route ${r}; refusing`,
+        );
+      }
+      return PI_PROVIDERS[p]!.secret;
+    });
+  },
   credentialBearing: true,
   enforcesBudget: true,
   nativeSettings(config, catalog) {
@@ -667,9 +703,13 @@ export const piAdapter: HarnessAdapter = {
       );
     }
     const slug = config.models["main"]!;
-    if (!slug.startsWith(`${PI_PROVIDER}/`)) {
+    const provider = piProviderOf(slug);
+    if (provider === null) {
+      const known = Object.keys(PI_PROVIDERS).map((p) => `${p}/`).join(", ");
       throw new ConfigurationError(
-        `${config.id}: pi runs through ${PI_PROVIDER}; ${slug} is not an ${PI_PROVIDER}/ slug`,
+        `${config.id}: pi runs through ${
+          Object.keys(PI_PROVIDERS).join(" or ")
+        }; ${slug} is not a ${known} slug`,
       );
     }
     const m = catalog.models.find((x) => x.slug === slug);
@@ -700,12 +740,16 @@ export const piAdapter: HarnessAdapter = {
     return {
       ...config.settings,
       ...piHarnessNative(),
+      provider,
       api_models: { main: m.api_model_id },
     };
   },
   providerRoutes(config) {
     return Object.fromEntries(
-      Object.keys(config.models).map((slot) => [slot, PI_ROUTE]),
+      Object.entries(config.models).map(([slot, slug]) => [
+        slot,
+        PI_PROVIDERS[piProviderOf(slug) ?? PI_PROVIDER]!.route,
+      ]),
     );
   },
   extraMounts: () => Promise.resolve([]),

@@ -900,6 +900,8 @@ export interface TaskDetail {
   task_set_hash: string;
   category: TaskCategory | null;
   manifest: unknown; // JSON-shape; renderer does narrow type-guards
+  /** Human-readable summary from site/catalog/task-summaries.md; null when the task has none. Not the model prompt. */
+  summary: string | null;
   solved_by: TaskDetailSolvedBy[];
 }
 
@@ -1358,4 +1360,20 @@ export interface ExportV2Item {
   release_slug: string;
   files: { key: string; sha256: string; bytes: number }[];
   manifest_sha256: string;
+}
+
+/** `GET /api/v1/setups`. `task_set` is null when no current set exists. */
+export interface SetupsResponse {
+  task_set: import("./../server/setups").SetupTaskSet | null;
+  rows: import("./setups").SetupRow[];
+}
+
+/** `GET /api/v1/hx-tasks/[id]`. `summary` is filled once task summaries are wired in. */
+export interface HxTaskResponse {
+  id: string;
+  summary: string | null;
+  task_set: import("./../server/setups").SetupTaskSet;
+  results: NonNullable<
+    Awaited<ReturnType<typeof import("./../server/setups").getHxTaskResults>>
+  >["results"];
 }

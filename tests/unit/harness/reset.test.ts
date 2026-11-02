@@ -627,6 +627,52 @@ Deno.test("H-35 addendum 7: an in_place cache tolerates an existing file changed
   );
 });
 
+Deno.test("Q-05: an in_place cache with inPlaceSizeDelta tolerates a resize within the bound (either way) and nothing more; other in_place rules still hold", () => {
+  const CNC = w("C:/sys/CryptnetUrlCache");
+  const ip = [{
+    base: CNC,
+    files: String.raw`^MetaData\\[0-9A-F]{32}$`,
+    dirs: String.raw`^(?!)$`,
+    magic: "7000",
+    inPlace: true,
+    inPlaceSizeDelta: 16,
+  }];
+  const N = "77EC63BDA74BD0D0E0426DC8F8008506";
+  const meta = (sha: string, size: number, attrs = 36, head = "7000") =>
+    w(`F|${sha}|${size}|${attrs}|1|${head}|${CNC}/MetaData/${N}`);
+  const dirs = [D(CNC), D(`${CNC}/MetaData`)];
+  const before = cap(...dirs, meta("a".repeat(64), 330));
+  const diff = (after: string) =>
+    fsDiff(before, cap(...dirs, after), [], [], ip).diff.length;
+  assertEquals(diff(meta("b".repeat(64), 328)), 0, "330 -> 328");
+  assertEquals(diff(meta("b".repeat(64), 314)), 0, "-16 (the bound)");
+  assertEquals(diff(meta("b".repeat(64), 346)), 0, "+16 (the bound)");
+  assertEquals(diff(meta("b".repeat(64), 313)), 1, "-17");
+  assertEquals(diff(meta("b".repeat(64), 347)), 1, "+17");
+  assertEquals(diff(meta("b".repeat(64), 328, 38)), 1, "resized + attrs");
+  assertEquals(diff(meta("b".repeat(64), 328, 36, "4d5a")), 1, "wrong magic");
+  // a new file of the shape stays a difference, whatever its size
+  assertEquals(
+    fsDiff(
+      cap(...dirs),
+      cap(...dirs, meta("b".repeat(64), 328)),
+      [],
+      [],
+      ip,
+    ).diff.length,
+    1,
+    "new file",
+  );
+  // without the field, any resize stays a difference (addendum 7)
+  const { inPlaceSizeDelta: _, ...plain } = ip[0]!;
+  assertEquals(
+    fsDiff(before, cap(...dirs, meta("b".repeat(64), 329)), [], [], [plain])
+      .diff.length,
+    1,
+    "no delta: 330 -> 329",
+  );
+});
+
 /** A u32 as little-endian hex. */
 const le32 = (n: number) =>
   [0, 8, 16, 24].map((s) => ((n >>> s) & 255).toString(16).padStart(2, "0"))

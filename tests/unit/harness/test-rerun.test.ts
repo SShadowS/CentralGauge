@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import {
   type AlsemEvidence,
@@ -21,6 +27,7 @@ import {
   type TestRerunRequest,
   type TestRerunRunner,
   testRerunStep,
+  TestRerunStopped,
   validateRunnerResult,
   validateTestRerunRow,
 } from "../../../scripts/harness/test-rerun.ts";
@@ -271,6 +278,7 @@ async function run(w: World, runner: TestRerunRunner, o: {
   build?: string;
   /** Default evidence only: the digest's changed procedure names (explicit, never derived). */
   changed?: string[];
+  jobs?: number;
 } = {}) {
   const rows = o.rows ?? w.rows;
   return testRerunStep({
@@ -289,7 +297,7 @@ async function run(w: World, runner: TestRerunRunner, o: {
         id: o.startId ?? w.startId,
       }),
     pairs: [],
-    jobs: 2,
+    jobs: o.jobs ?? 2,
     dir: join(w.root, "out"),
     rev: "R1",
     derivation: o.derivation,
@@ -609,6 +617,41 @@ Deno.test("cache: an unchanged execution is skipped and the runner is NOT called
   assertEquals(out.done.length, 1);
 });
 
+Deno.test("graceful stop: a stop between a row's two runs caches nothing of it; the step throws and the next run recomputes the row", async () => {
+  const w = await world(START, { e1: NEW_B });
+  let stop = false;
+  const m = mock("r1", () => {
+    stop = true; // the signal lands during the agent run
+    return result([fail("TestB")]);
+  }, GOOD_SHIPPED);
+  m.runner.stopRequested = () => Promise.resolve(stop);
+  const err = await assertRejects(() => run(w, m.runner), TestRerunStopped);
+  assertStringIncludes(err.message, "1 execution(s) not run");
+  // the shipped run never started: the row was cut, not finished
+  assertEquals(m.calls.length, 1);
+  stop = false;
+  m.runner.stopRequested = () => Promise.resolve(false);
+  const out = await run(w, m.runner);
+  assertEquals([out.skipped, out.done.length], [0, 1]);
+  assertEquals(m.calls.length, 3);
+});
+
+Deno.test("graceful stop: honoured between rows; the finished row is cached and reused, the rest run next time", async () => {
+  const w = await world(START, { e1: NEW_B, e2: NEW_B });
+  let stop = false;
+  const m = mock("r1", () => result([fail("TestB")]), (r) => {
+    stop = true; // requested while the first row's last run is in flight
+    return GOOD_SHIPPED(r);
+  });
+  m.runner.stopRequested = () => Promise.resolve(stop);
+  await assertRejects(() => run(w, m.runner, { jobs: 1 }), TestRerunStopped);
+  assertEquals(m.calls.length, 2); // the first row only
+  m.runner.stopRequested = () => Promise.resolve(false);
+  const out = await run(w, m.runner, { jobs: 1 });
+  assertEquals([out.skipped, out.done.length], [1, 2]);
+  assertEquals(m.calls.length, 4);
+});
+
 Deno.test("cache: a changed workspace hash, start id, runner id or derivation recomputes", async () => {
   const w = await world(START, { e1: NEW_B });
   const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
@@ -877,26 +920,29 @@ Deno.test("aggregation: pair counts where the variant catches and the base does 
   assertEquals(p.variant.shipped_pass_share, 2 / 3);
 });
 
-Deno.test("step outputs: harness_crash is out of every aggregate but stays in the csv", async () => {
-  const w = await world(START, { e1: NEW_B, e2: NEW_B });
-  w.rows[1]!.termination = "harness_crash";
-  const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
-  await run(w, m.runner);
-  const out = join(w.root, "out");
-  const summary = JSON.parse(
-    await Deno.readTextFile(join(out, "summary.json")),
-  );
-  assertEquals(summary.per_arm.A.executions, 1);
-  assertEquals(summary.excluded.map((x: { id: string }) => x.id), ["e2"]);
-  const csv = (await Deno.readTextFile(join(out, "executions.csv"))).split(
-    "\n",
-  );
-  assertEquals(csv.length >= 3, true);
-  assert(
-    csv[0]!.includes("agent_outcome") && csv[0]!.includes("shipped_status"),
-  );
-  assert(csv.some((l) => l.startsWith("e2,") && l.includes("harness_crash")));
-});
+// Q-04f: setup_failed (the agent never started; a pristine tree) is excluded like harness_crash.
+for (const t of ["harness_crash", "setup_failed"]) {
+  Deno.test(`step outputs: ${t} is out of every aggregate but stays in the csv`, async () => {
+    const w = await world(START, { e1: NEW_B, e2: NEW_B });
+    w.rows[1]!.termination = t;
+    const m = mock("r1", () => result([fail("TestB")]), GOOD_SHIPPED);
+    await run(w, m.runner);
+    const out = join(w.root, "out");
+    const summary = JSON.parse(
+      await Deno.readTextFile(join(out, "summary.json")),
+    );
+    assertEquals(summary.per_arm.A.executions, 1);
+    assertEquals(summary.excluded.map((x: { id: string }) => x.id), ["e2"]);
+    const csv = (await Deno.readTextFile(join(out, "executions.csv"))).split(
+      "\n",
+    );
+    assertEquals(csv.length >= 3, true);
+    assert(
+      csv[0]!.includes("agent_outcome") && csv[0]!.includes("shipped_status"),
+    );
+    assert(csv.some((l) => l.startsWith("e2,") && l.includes(t)));
+  });
+}
 
 Deno.test("step: a runner that rejects is listed as failed, not thrown", async () => {
   const w = await world(START, { e1: NEW_B });

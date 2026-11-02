@@ -59,6 +59,32 @@ export async function signEnvelopeV2(
 }
 
 /**
+ * Path-bound admin signature: canonicalJSON({ payload, path, signed_at }), so a
+ * captured body cannot be replayed on another admin route. Server counterpart:
+ * `adminRoute` in site/src/lib/server/setup-submissions.ts.
+ */
+export async function signPathBound(
+  payload: unknown,
+  path: string,
+  privateKey: Uint8Array,
+  keyId: number,
+  now: Date = new Date(),
+): Promise<Signature> {
+  const signedAt = now.toISOString();
+  const canonical = canonicalJSON({ payload, path, signed_at: signedAt });
+  const sig = await ed.signAsync(
+    new TextEncoder().encode(canonical),
+    privateKey,
+  );
+  return {
+    alg: "Ed25519",
+    key_id: keyId,
+    signed_at: signedAt,
+    value: encodeBase64(sig),
+  };
+}
+
+/**
  * Header-style request signature: canonicalJSON({ method, path,
  * body_sha256, signed_at }), sent as X-CG-Signature / X-CG-Key-Id /
  * X-CG-Signed-At. Used by blob PUTs and the finalize POST (S3; empty body

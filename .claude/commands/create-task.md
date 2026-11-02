@@ -264,6 +264,7 @@ Before finalizing, verify:
 - [ ] Premise-gated: the trap's BC behavior reproduces on the target container
 - [ ] Probed: a correct reference PASSES and a naive-but-plausible reference GENUINELY FAILS via `scripts/trap-probe.ts` (naive fails on a real assertion/compile, not `inconclusive`)
 - [ ] No shallow-oracle hole: an intermediate-state case rejects plausible short-circuits
+- [ ] Write the task's summary entry in `site/catalog/task-summaries.md` per CLAUDE.md "Every Task Needs a Human Summary", then run `deno task summary-audit` and confirm it passes.
 - [ ] After creating: run the `refresh-task-taxonomy` skill so the task is
       findable in the `/tasks` filter (decoupled from the hash — no re-bench),
       and `sync-catalog --apply` before benching

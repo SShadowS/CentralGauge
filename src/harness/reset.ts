@@ -81,6 +81,35 @@ export interface FsCheckRecord {
   ok: boolean;
   diff: FsDiffEntry[];
   errors: string[];
+  /**
+   * R-09: each capture's walk timing from its T| marker (measurement only;
+   * absent when neither capture carried one). held_ms: how long the NST was
+   * held for the walk; bound_s: the hold's bound.
+   */
+  timing?: { before: FsHoldTiming | null; after: FsHoldTiming | null };
+}
+
+export interface FsHoldTiming {
+  held_ms: number | null;
+  bound_s: number | null;
+}
+
+/** R-09: held_ms and bound_s of a capture's T| marker, or null. */
+export function fsHoldTiming(lines: readonly string[]): FsHoldTiming | null {
+  const t = fsCaptureTiming(lines);
+  if (!t) return null;
+  const num = (v: unknown) => typeof v === "number" ? v : null;
+  return { held_ms: num(t.held_ms), bound_s: num(t.bound_s) };
+}
+
+/** R-09: one log line of an L4 check's walk timing, or null without one. */
+export function fsTimingLine(f: FsCheckRecord | null): string | null {
+  if (!f?.timing) return null;
+  const one = (t: FsHoldTiming | null) =>
+    t ? `held ${t.held_ms ?? "?"} ms of ${t.bound_s ?? "?"} s` : "no timing";
+  return `[fs] ${f.container}: L4 walk before ${one(f.timing.before)}, after ${
+    one(f.timing.after)
+  }`;
 }
 
 /**
@@ -434,6 +463,9 @@ export function goldenReset(o: {
               ...(e.name_is_sha256 ? { nameIsSha256: true } : {}),
               ...(e.dir_time_only ? { dirTimeOnly: true } : {}),
               ...(e.in_place ? { inPlace: true } : {}),
+              ...(e.in_place_size_delta
+                ? { inPlaceSizeDelta: e.in_place_size_delta }
+                : {}),
               ...(e.in_place_cab ? { inPlaceCab: true } : {}),
             }]
             : []
@@ -541,6 +573,8 @@ export interface FsPlatformCache {
   dirTimeOnly?: boolean;
   /** Addendum 7: an existing file may change in place (same path, size, attributes). */
   inPlace?: boolean;
+  /** Q-05: with inPlace, the size may move by at most this many bytes. */
+  inPlaceSizeDelta?: number;
   /**
    * Addendum 8b: an existing file may change in place, size included (same
    * path, attributes), when its new head is a CAB header of its new size.
@@ -581,6 +615,7 @@ function cacheTolerates(
     nameIsSha256?: boolean;
     dirTimeOnly?: boolean;
     inPlace?: boolean;
+    inPlaceSizeDelta?: number;
     inPlaceCab?: boolean;
   }[],
   d: FsDiffEntry,
@@ -595,10 +630,13 @@ function cacheTolerates(
     if (d.after![0] === "F" && c.inPlace) {
       // addendum 7: an EXISTING file changed in place: same path spelling,
       // size and attributes; content and last-write time may move. A new,
-      // removed, resized or re-attributed file stays a difference.
+      // removed, resized or re-attributed file stays a difference; Q-05: a
+      // resize within inPlaceSizeDelta bytes is tolerated.
       const before = d.before?.[0] === "F" ? fsParse(d.before) : undefined;
       return before !== undefined && c.files.test(rel) &&
-        before["p"] === after["p"] && before["size"] === after["size"] &&
+        before["p"] === after["p"] &&
+        Math.abs(Number(before["size"]) - Number(after["size"])) <=
+          (c.inPlaceSizeDelta ?? 0) &&
         before["attrs"] === after["attrs"] &&
         (c.magic === undefined || (after["head"] ?? "").startsWith(c.magic));
     }

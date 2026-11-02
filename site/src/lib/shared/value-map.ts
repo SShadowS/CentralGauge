@@ -9,7 +9,7 @@ export interface ValuePoint {
   slug: string;
   display_name: string;
   cost: number;
-  auc: number;      // 0..100
+  y: number;        // 0..100
   cx: number;       // pixel x
   cy: number;       // pixel y (SVG, grows downward)
   onFrontier: boolean;
@@ -24,12 +24,32 @@ export interface ValueMapModel {
   omittedCount: number;
 }
 
-const aucOf = (r: LeaderboardRow) => aucFraction(r) * 100;
+export interface ValueInput {
+  slug: string;
+  display_name: string;
+  cost: number | null;
+  y: number;            // 0..100
+  provisional: boolean; // cost understated/under review
+}
+
+export function leaderboardValueInputs(rows: LeaderboardRow[]): ValueInput[] {
+  return rows.map((r) => ({
+    slug: r.model.slug,
+    display_name: r.model.display_name,
+    cost: r.avg_cost_usd,
+    y: aucFraction(r) * 100,
+    provisional: isCostProvisional(r.model.slug),
+  }));
+}
 
 export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): ValueMapModel {
+  return computeValueMapFrom(leaderboardValueInputs(rows), dims);
+}
+
+export function computeValueMapFrom(items: ValueInput[], dims: ValueMapDims): ValueMapModel {
   const { width, height, padding } = dims;
-  const priced = rows.filter((r) => r.avg_cost_usd > 0);
-  const omittedCount = rows.length - priced.length;
+  const priced = items.filter((r): r is ValueInput & { cost: number } => r.cost != null && r.cost > 0);
+  const omittedCount = items.length - priced.length;
   if (priced.length === 0) {
     return { points: [], frontierPath: '', xTicks: [], yTicks: [], omittedCount };
   }
@@ -37,7 +57,7 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
   const innerW = width - 2 * padding;
   const innerH = height - 2 * padding;
 
-  const logs = priced.map((r) => Math.log10(r.avg_cost_usd));
+  const logs = priced.map((r) => Math.log10(r.cost));
   let minLog = logs.reduce((a, b) => Math.min(a, b), Infinity);
   let maxLog = logs.reduce((a, b) => Math.max(a, b), -Infinity);
   if (minLog === maxLog) { minLog -= 0.5; maxLog += 0.5; } // avoid divide-by-zero for a single x
@@ -47,34 +67,33 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
 
   const xOf = (cost: number) =>
     padding + ((Math.log10(cost) - minLog) / (maxLog - minLog)) * innerW;
-  const yOf = (auc: number) =>
-    padding + innerH - ((auc - yMin) / (yMax - yMin)) * innerH;
+  const yOf = (y: number) =>
+    padding + innerH - ((y - yMin) / (yMax - yMin)) * innerH;
 
   // Pareto frontier: sort by cost asc; a point is on the frontier if its auc
   // exceeds the best auc seen at strictly-lower-or-equal cost. Sweep keeping a
   // running max auc; ties in cost resolved by auc desc so the better one wins.
   const sorted = [...priced].sort((a, b) =>
-    a.avg_cost_usd - b.avg_cost_usd || aucOf(b) - aucOf(a));
+    a.cost - b.cost || b.y - a.y);
   // Provisional-cost models are skipped in the sweep: their x-position (cost) is
   // understated, so letting them define the value frontier would be wrong. They
   // are still plotted (dimmed) so their skill is visible.
   const frontierSlugs = new Set<string>();
   let runningMaxAuc = -Infinity;
   for (const r of sorted) {
-    if (isCostProvisional(r.model.slug)) continue;
-    const a = aucOf(r);
-    if (a > runningMaxAuc) { frontierSlugs.add(r.model.slug); runningMaxAuc = a; }
+    if (r.provisional) continue;
+    if (r.y > runningMaxAuc) { frontierSlugs.add(r.slug); runningMaxAuc = r.y; }
   }
 
   const points: ValuePoint[] = priced.map((r) => ({
-    slug: r.model.slug,
-    display_name: r.model.display_name,
-    cost: r.avg_cost_usd,
-    auc: aucOf(r),
-    cx: xOf(r.avg_cost_usd),
-    cy: yOf(aucOf(r)),
-    onFrontier: frontierSlugs.has(r.model.slug),
-    provisional: isCostProvisional(r.model.slug),
+    slug: r.slug,
+    display_name: r.display_name,
+    cost: r.cost,
+    y: r.y,
+    cx: xOf(r.cost),
+    cy: yOf(r.y),
+    onFrontier: frontierSlugs.has(r.slug),
+    provisional: r.provisional,
   }));
 
   // Frontier polyline through frontier points sorted by cost asc.
@@ -93,7 +112,7 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
   // tick falls in range. Emit ticks at the actual min/max cost so the axis is
   // never blank.
   if (xTicks.length === 0) {
-    const costs = priced.map((r) => r.avg_cost_usd);
+    const costs = priced.map((r) => r.cost);
     const lo = costs.reduce((a, b) => Math.min(a, b), Infinity);
     const hi = costs.reduce((a, b) => Math.max(a, b), -Infinity);
     for (const value of lo === hi ? [lo] : [lo, hi]) {

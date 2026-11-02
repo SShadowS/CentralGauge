@@ -11,6 +11,7 @@ import {
   addTask,
   answer,
   ask,
+  breakLease,
   checkpoint,
   claim,
   CoordError,
@@ -19,6 +20,9 @@ import {
   heartbeat,
   initRoot,
   lease,
+  LEASE_STALE_MIN,
+  leaseHistory,
+  leaseHistoryText,
   leaseHolder,
   next,
   openQuestions,
@@ -551,6 +555,209 @@ Deno.test("coord: allocation.json in the machine root limits leases per project,
   );
   const now = await lease(a, "Cronus284", "ops");
   assertEquals(now.attempt, "002");
+});
+
+// ---------- break ----------
+
+const MIN = 60 * 1000;
+
+Deno.test("coord break: a stale lease is broken, recorded, shown, and the container leases again", async () => {
+  const root = await freshRoot();
+  const l = await lease(root, "Cronus281", "kraken-lethal");
+  const later = Date.now() + (LEASE_STALE_MIN + 1) * MIN;
+  const r = await breakLease(root, "Cronus281", {
+    by: "cg-orchestrator",
+    reason: "no heartbeat for weeks",
+    now: later,
+  });
+  assertEquals(r.attempt, "001");
+  const rec = JSON.parse(
+    await Deno.readTextFile(
+      join(root, "leases", "Cronus281", "001", "release.json"),
+    ),
+  );
+  assertEquals(rec, {
+    at: later,
+    broken: true,
+    by: "cg-orchestrator",
+    reason: "no heartbeat for weeks",
+    holder: "kraken-lethal",
+    token: l.token,
+  });
+  assertEquals(await leaseHolder(root, "Cronus281"), null);
+  const st = await stale(root, { now: later });
+  assert(
+    st.some((s) =>
+      s.includes("Cronus281/001") && s.includes("BROKEN") &&
+      s.includes("cg-orchestrator") && s.includes("no heartbeat for weeks")
+    ),
+    st.join("\n"),
+  );
+  const hist = leaseHistoryText(await leaseHistory(root, "Cronus281"));
+  assertStringIncludes(
+    hist,
+    "BROKEN by cg-orchestrator: no heartbeat for weeks",
+  );
+
+  const l2 = await lease(root, "Cronus281", "ops");
+  assertEquals(l2.attempt, "002");
+  assert(
+    !(await stale(root)).some((s) => s.includes("BROKEN")),
+    "a fresh lease clears the BROKEN line",
+  );
+  // The old holder's token no longer releases anything.
+  await assertRejects(
+    () => release(root, "Cronus281", l.token),
+    CoordError,
+    "token",
+  );
+});
+
+Deno.test("coord break: a live lease is refused, heartbeat counts", async () => {
+  const root = await freshRoot();
+  const l = await lease(root, "Cronus281", "ops");
+  const opts = { by: "owner", reason: "x" };
+  await assertRejects(
+    () => breakLease(root, "Cronus281", opts),
+    CoordError,
+    "not stale",
+  );
+  await heartbeat(root, "Cronus281", l.token);
+  const hb = JSON.parse(
+    await Deno.readTextFile(
+      join(root, "leases", "Cronus281", "001", "hb.json"),
+    ),
+  ).at as number;
+  // Stale by `at`, live by the heartbeat: refused.
+  await Deno.writeTextFile(
+    join(root, "leases", "Cronus281", "001", "lease.json"),
+    JSON.stringify({ lane: "ops", token: l.token, at: hb - 60 * MIN }),
+  );
+  await assertRejects(
+    () =>
+      breakLease(root, "Cronus281", {
+        ...opts,
+        now: hb + (LEASE_STALE_MIN - 1) * MIN,
+      }),
+    CoordError,
+    "not stale",
+  );
+  assertEquals((await leaseHolder(root, "Cronus281"))?.lane, "ops");
+});
+
+Deno.test("coord break: a released or never-leased container is refused", async () => {
+  const root = await freshRoot();
+  const l = await lease(root, "Cronus281", "ops");
+  await release(root, "Cronus281", l.token);
+  const opts = { by: "owner", reason: "x", now: Date.now() + 60 * MIN };
+  await assertRejects(
+    () => breakLease(root, "Cronus281", opts),
+    CoordError,
+    "not leased",
+  );
+  await assertRejects(
+    () => breakLease(root, "Cronus282", opts),
+    CoordError,
+    "not leased",
+  );
+});
+
+Deno.test("coord break: needs by and a reason", async () => {
+  const root = await freshRoot();
+  await lease(root, "Cronus281", "ops");
+  const now = Date.now() + 60 * MIN;
+  await assertRejects(
+    () => breakLease(root, "Cronus281", { by: "", reason: "x", now }),
+    CoordError,
+    "--from",
+  );
+  await assertRejects(
+    () => breakLease(root, "Cronus281", { by: "owner", reason: " ", now }),
+    CoordError,
+    "--reason",
+  );
+});
+
+Deno.test("coord break: the caller's allocation group comes from its root, as lease does", async () => {
+  const base = await testTempDir({ prefix: "coord-break-alloc-" });
+  const harness = join(base, "harness");
+  const lethal = join(base, "lethal");
+  await initRoot(harness, "harness-bench-2026-10");
+  await initRoot(lethal, "lethal", { machineRoot: harness });
+  await Deno.writeTextFile(
+    join(harness, "allocation.json"),
+    JSON.stringify({
+      "harness-bench-2026-10": ["Cronus28", "Cronus281"],
+      "lethal": ["bc1", "bc2", "bc3"],
+    }),
+  );
+  // 85 released attempts, then 086 taken before the allocation moved: its
+  // holder is from another project.
+  for (let i = 1; i <= 86; i++) {
+    const d = join(harness, "leases", "Cronus28", String(i).padStart(3, "0"));
+    await Deno.mkdir(d, { recursive: true });
+    await Deno.writeTextFile(
+      join(d, "lease.json"),
+      JSON.stringify({ lane: "kraken-lethal", token: `t-${i}`, at: 1000 }),
+    );
+    if (i < 86) {
+      await Deno.writeTextFile(
+        join(d, "release.json"),
+        JSON.stringify({ at: 2000 }),
+      );
+    }
+  }
+  await lease(lethal, "bc1", "lethal-lane");
+  const opts = {
+    by: "cg-orchestrator",
+    reason: "stale",
+    now: Date.now() + 60 * MIN,
+  };
+  await assertRejects(
+    () => breakLease(harness, "bc1", opts),
+    CoordError,
+    "allocated to lethal",
+  );
+  assertEquals((await leaseHolder(harness, "bc1"))?.lane, "lethal-lane");
+  const r = await breakLease(harness, "Cronus28", opts);
+  assertEquals(r, { attempt: "086", holder: "kraken-lethal" });
+  assertEquals((await lease(harness, "Cronus28", "ops")).attempt, "087");
+  assertEquals((await leaseHolder(harness, "Cronus28"))?.lane, "ops");
+});
+
+Deno.test("coord break: CLI takes --reason and --from", async () => {
+  const root = await freshRoot();
+  await Deno.mkdir(join(root, "leases", "Cronus281", "001"), {
+    recursive: true,
+  });
+  await Deno.writeTextFile(
+    join(root, "leases", "Cronus281", "001", "lease.json"),
+    JSON.stringify({ lane: "ops", token: "t", at: 1000 }),
+  );
+  const script = new URL("../../../scripts/coord/coord.ts", import.meta.url)
+    .pathname.replace(/^\/([A-Za-z]:)/, "$1");
+  const run = (args: string[]) =>
+    new Deno.Command(Deno.execPath(), {
+      args: ["run", "--allow-all", script, ...args],
+      env: { CG_COORD_ROOT: root },
+    }).output();
+  const missing = await run(["break", "Cronus281", "--from", "owner"]);
+  assertEquals(missing.code, 1);
+  const ok = await run([
+    "break",
+    "Cronus281",
+    "--reason",
+    "gone",
+    "--from",
+    "owner",
+  ]);
+  assertEquals(ok.code, 0, new TextDecoder().decode(ok.stderr));
+  const tl = await run(["timeline", "Cronus281"]);
+  assertEquals(tl.code, 0, new TextDecoder().decode(tl.stderr));
+  assertStringIncludes(
+    new TextDecoder().decode(tl.stdout),
+    "BROKEN by owner: gone",
+  );
 });
 
 // ---------- sweep ----------

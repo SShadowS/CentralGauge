@@ -35,6 +35,7 @@ import {
   observedMismatch,
   type ParsedRun,
   requestedComponents,
+  secretFilesOf,
 } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import {
@@ -50,6 +51,13 @@ import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import type { ResetMechanism } from "./reset.ts";
 import type { BcEgressRecord } from "./environment.ts";
 import type { JudgeGate } from "./pool.ts";
+import {
+  CODEX_AUTH_FILE,
+  codexExpiryProblem,
+  parseCodexAuth,
+  releasedSecretFiles,
+  withCredentialForms,
+} from "./codex-auth.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -62,7 +70,10 @@ import {
   proxyCredentialForms,
   RECORD_MODE_FILE,
   RECORDED_HOSTS_PATH,
+  RECORDED_ROUTES,
   recordedHostsJson,
+  recordingPath,
+  ROUTE_AUTHORIZED_ROUTES,
   SANDBOX_NETWORK,
   sandboxSource,
 } from "./egress.ts";
@@ -72,6 +83,7 @@ import {
   freezeWorkspace,
   safeCopyTree,
   type scanReparsePoints,
+  validatedDest,
   validatedDir,
 } from "./fsutil.ts";
 import { hashFile, hashJson, hashTree } from "./hash.ts";
@@ -99,6 +111,7 @@ import {
   MIN_SECRET_LENGTH,
   namespaceOwner,
   OP_TIMEOUT_MS,
+  PI_STAGE_CODEX_ARGV,
   publishRedacted,
   READ_PREFIX,
   readSecretValues,
@@ -117,9 +130,11 @@ import {
   sweepOwnedSandboxes,
   sweepStaleSecrets,
   teardownSandbox,
+  verifyPrivatePath,
   writeSecretFiles,
 } from "./sandbox.ts";
 import { readAppGraph, type StagedWorkspace, TASK_SOURCES } from "./staging.ts";
+import { probeCustody, type ProbeRunner } from "./key-custody.ts";
 import { selectJudgment } from "./outcome.ts";
 import {
   currentScorerFingerprint,
@@ -154,9 +169,11 @@ import {
   InfraRetriesExhaustedError,
   NoEligibleContainersError,
 } from "../parallel/errors.ts";
-import type { z } from "zod";
+import { z } from "zod";
 
 export type PublishStep =
+  /** H-44: the own redaction bundle is linked (before the draft is saved). */
+  | "bundle"
   | "draft"
   | "run"
   | "execution"
@@ -219,7 +236,8 @@ export interface HarnessEnv {
     /** H-35 S3 L2b: the admitted NST egress state, recorded in every verdict. */
     bcEgress?: BcEgressRecord | null;
   };
-  pricing(at: Date): Promise<PricingBook>;
+  /** The book at `at`; the arm's slugs settle an id listed on several routes (H-02). */
+  pricing(at: Date, armSlugs?: readonly string[]): Promise<PricingBook>;
   /** Started by a human at a terminal; no automatic retries. */
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
@@ -268,6 +286,20 @@ export interface HarnessEnv {
   /** M10-08c: true once another process took the private root's lock; no execution starts then. */
   namespaceLost?: () => boolean;
   /**
+   * H-44 (5.4): this lock acquisition's token, set by openHarnessEnv right
+   * after the private-root lock. Every restricted temp carries it; temps of
+   * any other token (or none) are a predecessor's and are reclaimed.
+   */
+  acquisition: string;
+  /**
+   * H-44 (5.1, 5.2): the admitted `--key-custody` dir (canonical). New
+   * intents record it (their export destination); judging imports from it
+   * only when the own bundle is missing. Unset: nothing exported or imported.
+   */
+  keyCustody?: string;
+  /** H-44 test seam: the custody probe's command execution (parsing and evaluation stay real). */
+  probeRunner?: ProbeRunner;
+  /**
    * H-41 (section 4): the lineage a campaign env pin records and is compared
    * on, set by openHarnessEnv with --lineage; unset: no lineage (judgments
    * then carry env_fp null and pin nothing).
@@ -309,7 +341,11 @@ export interface HarnessEnv {
     /** T-06: a campaign worker's throw is recorded (no new cell starts after this). */
     workerThrew?(): void;
     /** H-41: a fence, pin, materialized verdict log or workspace temp is written (and synced), right before its link or rename. */
-    beforeLink?(what: "fence" | "pin" | "log" | "workspace"): Promise<void>;
+    beforeLink?(
+      what: "fence" | "pin" | "log" | "workspace" | "bundle",
+    ): Promise<void>;
+    /** H-44: reclaimTemps listed its candidates, or one candidate's ownership check passed (before its delete). */
+    reclaim?(step: "listed" | "checked", names: string[]): Promise<void>;
     /** H-41: the fence is linked (committed), before it is materialized. */
     afterFence?(): Promise<void>;
   };
@@ -403,10 +439,22 @@ async function dummySecrets(
   files: readonly string[],
 ): Promise<string> {
   await Deno.mkdir(dir, { recursive: true });
+  const dummy = "stub-dummy-credential-".padEnd(40, "0");
   for (const f of files) {
     await Deno.writeTextFile(
       join(dir, f),
-      "stub-dummy-credential-".padEnd(40, "0"),
+      // The codex file is a pi auth.json; its dummy keeps that shape (H-02).
+      f === CODEX_AUTH_FILE
+        ? JSON.stringify({
+          "openai-codex": {
+            type: "oauth",
+            access: dummy,
+            refresh: dummy,
+            expires: 8.64e15,
+            accountId: dummy,
+          },
+        })
+        : dummy,
     );
   }
   return dir;
@@ -441,6 +489,11 @@ export interface AttemptRef {
 
 interface Intent {
   v: 2;
+  /**
+   * H-44 (B3): the execution record version this attempt publishes. Absent:
+   * a pre-H-44 intent, rebuilt at v2; 3: v3; anything else is refused.
+   */
+  record_v?: 3;
   execution_id: string;
   /** prepared: nothing released; released: custody written, sandbox may start; published: records written. */
   phase: "prepared" | "released" | "published";
@@ -473,6 +526,8 @@ interface Intent {
   calibration_waived?: true;
   /** R-02: the account label the attempt ran under; recovery copies it, never re-derives it. */
   account?: string;
+  /** H-44 (M3): the key custody dir its bundle is exported to, whatever command publishes it; absent: none. */
+  key_custody?: string;
 }
 
 type AttemptMode = "normal" | "stub";
@@ -504,6 +559,8 @@ export function privatePaths(env: HarnessEnv, id: string) {
     keys: join(p, "redaction", `${id}.json`),
     /** Private stub marker, kept after publication beside the keys: judging never trusts results/ alone. */
     stubMarker: join(p, "redaction", `${id}.stub.json`),
+    /** H-44: the v3 record's redaction bundle (keys, id, stub); its sha256 is the record's redaction_anchor. */
+    bundle: join(p, "redaction", `${id}.bundle.json`),
     raw: join(p, "quarantine", id, "raw.jsonl"),
     stderr: join(p, "quarantine", id, "stderr.txt"),
     host: join(p, "quarantine", id, "host-log.jsonl"),
@@ -541,18 +598,41 @@ async function writeAtomic(path: string, text: string) {
   }
 }
 
-/** Remove `.tmp-` leftovers of writeAtomic in a private dir (custody temps hold plaintext secrets). */
-async function removeTemps(dir: string, prefix = ""): Promise<void> {
+/** H-44 (5.4): the acquisition token of a `<final>.tmp-<acquisition>-<uuid>` temp; null for a token-less (pre-H-44) one. */
+const TEMP_TOKEN =
+  /\.tmp-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * H-44 (5.4, M1): remove a predecessor's `.tmp-` leftovers in a private dir
+ * (custody temps hold plaintext secrets). The candidates are listed once:
+ * every temp whose token is not this acquisition's (`own`: this
+ * acquisition's too, for one finished execution's prefix). Each delete
+ * follows its own lock check, and nothing is listed again, so a successor's
+ * temp (created after the list) is never a candidate.
+ */
+export async function reclaimTemps(
+  env: Pick<
+    HarnessEnv,
+    "privateRoot" | "namespaceLost" | "acquisition" | "hooks"
+  >,
+  dir: string,
+  prefix = "",
+  own = false,
+): Promise<void> {
   let names: string[];
   try {
     names = [...Deno.readDirSync(dir)].filter((e) =>
-      e.isFile && e.name.startsWith(prefix) && e.name.includes(".tmp-")
+      e.isFile && e.name.startsWith(prefix) && e.name.includes(".tmp-") &&
+      (own || TEMP_TOKEN.exec(e.name)?.[1] !== env.acquisition)
     ).map((e) => e.name);
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) return;
     throw err;
   }
+  await env.hooks?.reclaim?.("listed", names);
   for (const n of names) {
+    holdNamespace(env, "temp reclamation stopped; nothing more removed");
+    await env.hooks?.reclaim?.("checked", [n]);
     await Deno.remove(join(dir, n)).catch((err) => {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
@@ -659,25 +739,207 @@ function redactByKeys(text: string, keys: RedactionKey[]): string {
   return out;
 }
 
-async function readRedactionKeys(
-  env: HarnessEnv,
+/** A key file's keys as pre-H-44 judging accepted them (any salt string). */
+const isLegacyKeys = (keys: unknown): keys is RedactionKey[] =>
+  Array.isArray(keys) &&
+  keys.every((k) =>
+    typeof k?.name === "string" && Number.isSafeInteger(k.length) &&
+    typeof k.salt === "string" && /^[0-9a-f]{64}$/.test(k.sha256)
+  );
+
+/** H-44: one key of a redaction bundle, exactly as redactionKeys writes it. */
+const BundleKeySchema = z.strictObject({
+  name: z.string(),
+  length: z.number().int().nonnegative(),
+  salt: z.string().regex(/^[0-9a-f]{32}$/),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+/** H-44 (section 4): `JSON.stringify({v: 1, execution_id, stub, keys})`, every field required. */
+const RedactionBundleSchema = z.strictObject({
+  v: z.literal(1),
+  execution_id: z.string(),
+  stub: z.strictObject({
+    scenario_sha256: z.string(),
+    image_override: z.string().nullable(),
+  }).nullable(),
+  keys: z.array(BundleKeySchema).min(1),
+});
+type RedactionBundle = z.output<typeof RedactionBundleSchema>;
+
+/** H-44 (5.3 R1): the H-41 prefix verbatim, then how judging elsewhere works now. */
+const missingKeys = (path: string, id: string) =>
+  new ValidationError(
+    `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted). Judging in another process: pass --key-custody <dir> to both the publishing and the judging process`,
+    [path],
+  );
+
+/** H-44 (R2): the own source exists but cannot be read or parsed; never a fallback. */
+const unreadableKeys = (path: string, id: string, why: string) =>
+  new ValidationError(
+    `redaction keys ${path} for execution ${id} cannot be read or are malformed (${why}); refusing to judge, with no fallback`,
+    [path],
+  );
+
+/**
+ * H-44 (R5): the bundle bytes (already anchor-checked) as a bundle of
+ * execution `id`, each malformation with its own reason.
+ */
+function parseBundle(
+  bytes: Uint8Array,
+  path: string,
   id: string,
-): Promise<RedactionKey[]> {
-  const path = privatePaths(env, id).keys;
-  const keys = await readJson<RedactionKey[]>(path);
-  if (
-    !Array.isArray(keys) ||
-    !keys.every((k) =>
-      typeof k?.name === "string" && Number.isSafeInteger(k.length) &&
-      typeof k.salt === "string" && /^[0-9a-f]{64}$/.test(k.sha256)
-    )
-  ) {
+): RedactionBundle {
+  const bad = (why: string) =>
+    new ValidationError(
+      `redaction bundle ${path} for execution ${id} is invalid (${why}); refusing to judge`,
+      [path],
+    );
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw bad("not JSON");
+  }
+  const o = raw as Partial<RedactionBundle> | null;
+  if (o === null || typeof o !== "object" || Array.isArray(o)) {
+    throw bad("not an object");
+  }
+  if (o.v !== 1) throw bad(`bundle version ${JSON.stringify(o.v)}`);
+  if (o.execution_id !== id) {
+    throw bad(`names execution ${JSON.stringify(o.execution_id)}`);
+  }
+  if (Array.isArray(o.keys) && o.keys.length === 0) throw bad("no keys");
+  const r = RedactionBundleSchema.safeParse(raw);
+  if (!r.success) {
+    throw bad(
+      r.error.issues.map((i) => `${i.path.join(".") || "bundle"}: ${i.message}`)
+        .join("; "),
+    );
+  }
+  return r.data;
+}
+
+/**
+ * H-44 (5.2): the redaction keys and stub attestation a judge of record `e`
+ * uses. v1/v2: the own key file (an own bundle means a downgraded record;
+ * never a custody copy). v3: the bundle whose sha256 is the record's anchor
+ * (the own one, else with --key-custody only, the probed `<K>/<id>.json`),
+ * read once, hashed, then parsed from those same bytes; a null anchor is
+ * never judged.
+ */
+export async function loadJudgeKeys(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+): Promise<{ keys: RedactionKey[]; stub: StubProvenance | null }> {
+  const p = privatePaths(env, e.id);
+  if (e.v <= 2) {
+    if (await exists(p.bundle)) {
+      throw new ValidationError(
+        `execution ${e.id} is record v${e.v} but its private root holds the redaction bundle ${p.bundle}: a downgraded record; refusing to judge`,
+        [p.bundle],
+      );
+    }
+    let text: string;
+    try {
+      text = await Deno.readTextFile(p.keys);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        throw unreadableKeys(p.keys, e.id, msg(err));
+      }
+      // H-44 (R8): no anchor binds a legacy record to a custody copy.
+      if (env.keyCustody) {
+        throw new ValidationError(
+          `execution ${e.id} was published before H-44 (record v${e.v}): no redaction anchor; judge it in its publishing private root or copy redaction/${e.id}.json there`,
+          [p.keys],
+        );
+      }
+      throw missingKeys(p.keys, e.id);
+    }
+    let keys: unknown;
+    try {
+      keys = JSON.parse(text);
+    } catch {
+      throw unreadableKeys(p.keys, e.id, "not JSON");
+    }
+    if (!isLegacyKeys(keys)) {
+      throw unreadableKeys(p.keys, e.id, "not a key list");
+    }
+    if (keys.length === 0) {
+      throw new ValidationError(
+        `redaction keys ${p.keys} for execution ${e.id} are an empty set; refusing to judge (record v${e.v})`,
+        [p.keys],
+      );
+    }
+    return { keys, stub: null };
+  }
+  if (!e.redaction_anchor) {
     throw new ValidationError(
-      `redaction keys ${path} for execution ${id} are missing or invalid; refusing to judge (nothing could be redacted). Judging in another process (a judging pool across machines or private roots): copy redaction/ into each judging process's private dir`,
+      `execution ${e.id} is record v${e.v} with a null redaction_anchor (no secret was released): never judged`,
+      [e.id],
+    );
+  }
+  let bytes: Uint8Array<ArrayBuffer>;
+  let path = p.bundle;
+  try {
+    bytes = await Deno.readFile(path);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) {
+      throw unreadableKeys(path, e.id, msg(err));
+    }
+    // H-44 (R1): without --key-custody the custody dir is never opened.
+    if (!env.keyCustody) throw missingKeys(path, e.id);
+    path = join(env.keyCustody, `${e.id}.json`);
+    bytes = await custodyBundle(env, env.keyCustody, path, e.id);
+  }
+  const got = await sha256Hex(bytes);
+  if (got !== e.redaction_anchor) {
+    throw new ValidationError(
+      `redaction bundle ${path} for execution ${e.id} does not match the record's redaction_anchor (sha256 ${got}); refusing to judge`,
       [path],
     );
   }
-  return keys;
+  const b = parseBundle(bytes, path, e.id);
+  return { keys: b.keys, stub: b.stub };
+}
+
+/**
+ * H-44 (5.2 steps 3-5): the bytes of `<custody>/<id>.json`: missing is R3
+ * (a metadata check, never a probe failure); the dir, its parent and the
+ * bundle are probed (R4) before the bundle is read once.
+ */
+async function custodyBundle(
+  env: HarnessEnv,
+  custody: string,
+  path: string,
+  id: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  try {
+    await Deno.lstat(path);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) {
+      throw new ValidationError(
+        `redaction bundle ${path} for execution ${id} is not in key custody ${custody}; refusing to judge`,
+        [path],
+      );
+    }
+    throw unreadableKeys(path, id, msg(err));
+  }
+  try {
+    await probeCustody(custody, path, probeOptions(env));
+  } catch (err) {
+    throw new ValidationError(
+      `key custody ${custody} for execution ${id} refused (${
+        msg(err)
+      }); refusing to judge`,
+      [path],
+    );
+  }
+  try {
+    return await Deno.readFile(path);
+  } catch (err) {
+    throw unreadableKeys(path, id, msg(err));
+  }
 }
 
 /**
@@ -715,10 +977,10 @@ export function forcedRefusal(
 /** C-03 review: a forced rejudge's reason as the judgment will record it (scrubbed). */
 export async function scrubForcedReason(
   env: HarnessEnv,
-  id: string,
+  e: ExecutionRecord,
   reason: string,
 ): Promise<string> {
-  return scrubJudgeOutput(reason, await readRedactionKeys(env, id), env);
+  return scrubJudgeOutput(reason, (await loadJudgeKeys(env, e)).keys, env);
 }
 
 /** Judge output: custody secrets (by salted hash) and private paths scrubbed from every string. */
@@ -773,10 +1035,22 @@ async function realDriveType(path: string): Promise<string> {
  * before anything is reserved or written.
  */
 async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
-  const r = env.privateRoot;
+  await validateLocalRoot(env, env.privateRoot, "privateRoot", [
+    [env.resultsRoot, "results root"],
+    [env.repoRoot, "repo worktree"],
+  ]);
+}
+
+/** H-44: the location rules of the private root, for root `r` (named `what`); its canonical path. */
+async function validateLocalRoot(
+  env: Pick<HarnessEnv, "driveType">,
+  r: string,
+  what: string,
+  others: readonly (readonly [string, string])[],
+): Promise<string> {
   if (/^[\\/]{2}/.test(r)) {
     throw new ConfigurationError(
-      `privateRoot ${r} is a UNC path; it must be on a local drive`,
+      `${what} ${r} is a UNC path; it must be on a local drive`,
     );
   }
   let canon: string;
@@ -784,30 +1058,145 @@ async function validatePrivateRoot(env: HarnessEnv): Promise<void> {
     canon = await validatedDir(r);
   } catch (err) {
     throw new ConfigurationError(
-      `privateRoot ${r} is not a canonical local directory (${msg(err)})`,
+      `${what} ${r} is not a canonical local directory (${msg(err)})`,
     );
   }
   const type = await (env.driveType ?? realDriveType)(canon);
   if (type !== "Fixed") {
     throw new ConfigurationError(
-      `privateRoot ${canon} is on a ${type} drive; a network, removable or unknown drive is refused`,
+      `${what} ${canon} is on a ${type} drive; a network, removable or unknown drive is refused`,
     );
   }
+  await disjointFrom(canon, what, others);
+  return canon;
+}
+
+async function disjointFrom(
+  canon: string,
+  what: string,
+  others: readonly (readonly [string, string])[],
+): Promise<void> {
   const fold = (x: string) => Deno.build.os === "windows" ? x.toLowerCase() : x;
-  for (
-    const [other, what] of [
-      [env.resultsRoot, "results root"],
-      [env.repoRoot, "repo worktree"],
-    ] as const
-  ) {
+  for (const [other, name] of others) {
     const o = await Deno.realPath(resolve(other)).catch(() => resolve(other));
     const [a, b] = [fold(canon), fold(o)];
     if (a === b || a.startsWith(b + SEPARATOR) || b.startsWith(a + SEPARATOR)) {
       throw new ConfigurationError(
-        `privateRoot ${canon} overlaps the ${what} ${o}; they must be disjoint`,
+        `${what} ${canon} overlaps the ${name} ${o}; they must be disjoint`,
       );
     }
   }
+}
+
+/** H-44 (5.1): what admitting a key custody dir reads of the environment. */
+export type CustodyEnv = Pick<
+  HarnessEnv,
+  | "resultsRoot"
+  | "repoRoot"
+  | "privateRoot"
+  | "driveType"
+  | "secretAcl"
+  | "probeRunner"
+  | "opTimeoutMs"
+>;
+
+/**
+ * H-44 (5.1): admit `--key-custody <dir>` (fatal on any failure): a
+ * publisher (`create`) creates a missing dir owner-only, a judge requires it.
+ * Returns the canonical dir.
+ */
+export async function admitKeyCustody(
+  env: CustodyEnv,
+  dir: string,
+  create: boolean,
+): Promise<string> {
+  try {
+    if (/^[\\/]{2}/.test(dir)) throw new Error("a UNC path");
+    // Only NotFound is missing: a dir this user cannot stat goes to the probe.
+    const missing = await Deno.lstat(dir).then(
+      () => false,
+      (err) => err instanceof Deno.errors.NotFound,
+    );
+    if (missing) {
+      if (!create) {
+        throw new Error(
+          "it does not exist (a judging process never creates it)",
+        );
+      }
+      // Nothing is created where the location rules would refuse it.
+      await disjointFrom(resolve(dir), "key custody", custodyOthers(env));
+      await restrictPath(await validatedDest(dir), env.secretAcl ?? {}, "dir");
+    }
+    // The probe first: its command reports an unsafe ACL before any lstat fails on it.
+    await probeCustody(resolve(dir), null, probeOptions(env));
+    return await validateLocalRoot(
+      env,
+      dir,
+      "key custody",
+      custodyOthers(env),
+    );
+  } catch (err) {
+    throw new ConfigurationError(`key custody ${dir} refused: ${msg(err)}`);
+  }
+}
+
+/** H-44: a custody dir is disjoint from results/, the repo and this private root. */
+const custodyOthers = (
+  env: Pick<HarnessEnv, "resultsRoot" | "repoRoot" | "privateRoot">,
+) =>
+  [
+    [env.resultsRoot, "results root"],
+    [env.repoRoot, "repo worktree"],
+    [env.privateRoot, "private root"],
+  ] as const;
+
+const probeOptions = (
+  env: Pick<HarnessEnv, "probeRunner" | "opTimeoutMs">,
+) => ({
+  ...(env.probeRunner ? { runner: env.probeRunner } : {}),
+  timeoutMs: env.opTimeoutMs ?? OP_TIMEOUT_MS,
+});
+
+/**
+ * H-44 (section 4): copy the published v3 record's own bundle to
+ * `<custody>/<id>.json` (write-once), after the location rules (against the
+ * effective results root) and the probe. A refused custody dir only warns
+ * (no byte written there, publication goes on); an own bundle that no longer
+ * matches the anchor, or a lost lock, stops publication.
+ */
+async function exportBundle(
+  env: HarnessEnv,
+  e: ExecutionRecord,
+  custody: string,
+): Promise<void> {
+  let dir: string;
+  try {
+    dir = await validateLocalRoot(
+      env,
+      custody,
+      "key custody",
+      custodyOthers(env),
+    );
+    await probeCustody(dir, null, probeOptions(env));
+  } catch (err) {
+    // H-44 (M1): a lock lost meanwhile is terminal, never an export skip.
+    holdNamespace(env, "publication stopped; nothing more written or removed");
+    console.warn(
+      `[WARN] ${e.id}: key custody ${custody} refused (${
+        msg(err)
+      }); not exported`,
+    );
+    return;
+  }
+  const own = privatePaths(env, e.id).bundle;
+  await verifyPrivatePath(own, env.secretAcl ?? {}, "file");
+  const bytes = await Deno.readFile(own);
+  if (await sha256Hex(bytes) !== e.redaction_anchor) {
+    throw new ConfigurationError(
+      `execution ${e.id}: its own redaction bundle ${own} does not match the record's redaction_anchor; nothing published, intent kept`,
+    );
+  }
+  await linkTemp(env, join(dir, `${e.id}.json`), bytes, e.id);
 }
 
 /** One operator secrets directory; the label (null when the run has a single unlabelled account) is all that is ever recorded. */
@@ -832,14 +1221,18 @@ export function pickAccount(
 export async function checkAccountsSecrets(
   accounts: readonly SecretAccount[],
   files: readonly string[],
+  timeoutMin: number,
 ): Promise<void> {
-  for (const a of accounts) await checkOperatorSecrets(a.dir, files);
+  for (const a of accounts) {
+    await checkOperatorSecrets(a.dir, files, timeoutMin);
+  }
 }
 
 /** Operator secret files as the adapter declares them: present and long enough (preflight, nothing released). */
 async function checkOperatorSecrets(
   source: string,
   files: readonly string[],
+  timeoutMin: number,
 ): Promise<void> {
   for (const f of files) {
     if (!/^[A-Za-z0-9._-]+$/.test(f) || f.startsWith(".")) {
@@ -861,6 +1254,11 @@ async function checkOperatorSecrets(
         `secret ${f} is shorter than ${MIN_SECRET_LENGTH} characters`,
       );
     }
+    // H-02: never refreshed inside the sandbox, so it must outlive the run.
+    if (f === CODEX_AUTH_FILE) {
+      const why = codexExpiryProblem(parseCodexAuth(v), timeoutMin);
+      if (why) throw new ConfigurationError(why);
+    }
   }
 }
 
@@ -875,7 +1273,8 @@ async function restrictedTemp(env: HarnessEnv, path: string): Promise<string> {
   const dir = dirname(path);
   await Deno.mkdir(dir, { recursive: true });
   await restrictPath(dir, acl, "dir");
-  const tmp = `${path}.tmp-${crypto.randomUUID()}`;
+  // H-44 (5.4): named for this acquisition; reclaimTemps never takes it for a predecessor's.
+  const tmp = `${path}.tmp-${env.acquisition}-${crypto.randomUUID()}`;
   (await Deno.open(tmp, { write: true, createNew: true, mode: 0o600 })).close();
   try {
     await restrictPath(tmp, acl, "file");
@@ -905,6 +1304,63 @@ async function commitTemp(tmp: string, path: string, text: string) {
     throw err;
   }
 }
+
+/**
+ * H-44 (section 4): write-once publication of a private, secret-derived
+ * file: a restricted temp, written and synced, then hard-linked to `path`
+ * (never renamed onto it), the temp removed. An existing file is verified
+ * owner-only and accepted only with identical bytes. A temp that vanished
+ * before its link (reclaimed after a lock takeover) or a lock lost by then
+ * stops `id` from being published.
+ */
+export async function linkTemp(
+  env: HarnessEnv,
+  path: string,
+  bytes: Uint8Array,
+  id: string,
+): Promise<void> {
+  const tmp = await restrictedTemp(env, path);
+  try {
+    const f = await Deno.open(tmp, { write: true, truncate: true });
+    try {
+      for (let off = 0; off < bytes.length;) {
+        off += await f.write(bytes.subarray(off));
+      }
+      await f.sync();
+    } finally {
+      f.close();
+    }
+    await env.hooks?.beforeLink?.("bundle");
+    let vanished = false;
+    try {
+      await Deno.link(tmp, path);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) vanished = true;
+      else if (!(err instanceof Deno.errors.AlreadyExists)) throw err;
+    }
+    if (env.namespaceLost?.()) {
+      throw new ConfigurationError(
+        `lock on private root ${env.privateRoot} was taken over: ${id} not published`,
+      );
+    }
+    if (vanished) {
+      throw new ConfigurationError(
+        `temp ${tmp} vanished before its link: ${path} not written, ${id} not published`,
+      );
+    }
+    await verifyPrivatePath(path, env.secretAcl ?? {}, "file");
+    if (!sameBytes(await Deno.readFile(path), bytes)) {
+      throw new ConfigurationError(
+        `${path} already exists with other bytes; refusing to overwrite (write-once)`,
+      );
+    }
+  } finally {
+    await Deno.remove(tmp).catch(() => {});
+  }
+}
+
+const sameBytes = (a: Uint8Array, b: Uint8Array) =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**
  * Absolute private paths (plain, forward-slash and JSON-escaped spellings)
@@ -1262,6 +1718,66 @@ interface DraftInput {
   undrained?: string | null;
   /** The Claude account label of the cell (absent: unlabelled or stub). */
   account?: string | null;
+  /** H-44 (B3): the record version the intent names (2 only for a pre-H-44 intent's rebuild). */
+  recordV: 2 | 3;
+}
+
+/**
+ * H-44 (section 4): the own bundle's bytes for a v3 draft, null when no key
+ * file exists and nothing was released (null anchor). An existing bundle
+ * (a crash after its link) must be owner-only, of this id and stub, with
+ * exactly the key file's keys: its bytes are reused, never regenerated.
+ * `link` is false when it exists already.
+ */
+async function ownBundle(
+  env: HarnessEnv,
+  f: DraftInput,
+): Promise<{ bytes: Uint8Array<ArrayBuffer>; link: boolean } | null> {
+  const p = privatePaths(env, f.id);
+  let text: string;
+  try {
+    text = await Deno.readTextFile(p.keys);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+    if (f.secrets.length > 0) {
+      throw new ConfigurationError(
+        `execution ${f.id}: secrets were released but its redaction keys ${p.keys} are missing; nothing published, intent kept`,
+      );
+    }
+    return null;
+  }
+  const keys = z.array(BundleKeySchema).min(1).safeParse(
+    JSON.parse(text),
+  );
+  if (!keys.success) {
+    throw new ConfigurationError(
+      `execution ${f.id}: redaction keys ${p.keys} are not a non-empty key set; nothing published, intent kept`,
+    );
+  }
+  const stub = f.stub ?? null;
+  if (await exists(p.bundle)) {
+    await verifyPrivatePath(p.bundle, env.secretAcl ?? {}, "file");
+    const bytes = await Deno.readFile(p.bundle);
+    let b: RedactionBundle | null = null;
+    try {
+      b = parseBundle(bytes, p.bundle, f.id);
+    } catch { /* refused below */ }
+    if (
+      b === null || JSON.stringify(b.stub) !== JSON.stringify(stub) ||
+      JSON.stringify(b.keys) !== JSON.stringify(keys.data)
+    ) {
+      throw new ConfigurationError(
+        `execution ${f.id}: redaction bundle ${p.bundle} exists but does not match its key file and stub; nothing published, intent kept`,
+      );
+    }
+    return { bytes, link: false };
+  }
+  return {
+    bytes: new TextEncoder().encode(
+      JSON.stringify({ v: 1, execution_id: f.id, stub, keys: keys.data }),
+    ),
+    link: true,
+  };
 }
 
 /** H-16: the infra reason of a backend request that did not drain (stop_reason backend_undrained). */
@@ -1521,8 +2037,10 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     JSON.stringify(side, null, 2) + "\n",
   );
   const runRel = `runs/${f.id}`;
+  // H-44 (section 4): a v3 record binds its redaction bundle by sha256.
+  const bundle = f.recordV === 3 ? await ownBundle(env, f) : null;
   const record = {
-    v: 2,
+    v: f.recordV,
     id: f.id,
     campaign_id: f.cell.campaignId,
     block: f.cell.block.index,
@@ -1569,6 +2087,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       ? { usage_reset_ignored: f.at.usageResetIgnored }
       : {}),
     ...(f.account ? { account: f.account } : {}),
+    ...(f.recordV === 3
+      ? { redaction_anchor: bundle ? await sha256Hex(bundle.bytes) : null }
+      : {}),
   };
   const draft: Draft = {
     v: 1,
@@ -1584,6 +2105,11 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     usage_reset_at: parsed.usageResetAt,
   };
   await env.hooks?.beforeDraft?.();
+  // H-44: linked before the draft is saved; a crash in between rebuilds and reuses it.
+  if (bundle?.link) {
+    await linkTemp(env, p.bundle, bundle.bytes, f.id);
+    await env.hooks?.after?.("bundle");
+  }
   await writeAtomic(join(p.pending, "draft.json"), JSON.stringify(draft));
   await env.hooks?.after?.("draft");
   return draft;
@@ -1596,6 +2122,8 @@ async function publishDraft(
   draft: Draft,
   pristine: string | null,
   taskUnchanged: boolean,
+  /** H-44 (M3): the intent's key custody dir (persisted authorization); null: no export. */
+  custody: string | null,
   /** H-16: remove the private state only once this settles (an undrained backend request). */
   cleanupAfter?: Promise<void>,
 ) {
@@ -1609,6 +2137,12 @@ async function publishDraft(
     holdNamespace(env, "publication stopped; nothing more written or removed");
   const runs = join(env.resultsRoot, "runs");
   hold();
+  // H-44: exported before the run appears in results/ (a v3 record with released keys only).
+  if (custody && e.v >= 3 && e.redaction_anchor) {
+    await exportBundle(env, e, custody);
+  }
+  // H-44 (M1): rechecked after the export, right before the run enters results/.
+  hold();
   if (!await exists(join(runs, e.id))) {
     await Deno.mkdir(runs, { recursive: true });
     // A crash inside an earlier copy left a temp name: remove it first.
@@ -1619,6 +2153,7 @@ async function publishDraft(
     }
     const tmp = join(runs, `.tmp-${e.id}-${crypto.randomUUID().slice(0, 8)}`);
     await safeCopyTree(join(p.pending, "run"), tmp);
+    hold();
     await Deno.rename(tmp, join(runs, e.id));
   }
   await env.hooks?.after?.("run");
@@ -1709,10 +2244,9 @@ async function finishCleanup(env: HarnessEnv, id: string) {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
   }
-  hold();
-  await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
-  hold();
-  await removeTemps(join(env.privateRoot, "redaction"), `${id}.json`);
+  // H-44 (5.4): this finished execution's temps of any acquisition, each delete after its own lock check.
+  await reclaimTemps(env, join(env.privateRoot, "custody"), `${id}.`, true);
+  await reclaimTemps(env, join(env.privateRoot, "redaction"), `${id}.`, true);
   for (const f of [p.custody, p.intent]) {
     hold();
     await Deno.remove(f).catch((err) => {
@@ -1729,8 +2263,8 @@ async function discardAttempt(env: HarnessEnv, id: string): Promise<void> {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     });
   }
-  await removeTemps(join(env.privateRoot, "custody"), `${id}.json`);
-  await removeTemps(join(env.privateRoot, "redaction"), `${id}.json`);
+  await reclaimTemps(env, join(env.privateRoot, "custody"), `${id}.`, true);
+  await reclaimTemps(env, join(env.privateRoot, "redaction"), `${id}.`, true);
   await Deno.remove(p.intent).catch((err) => {
     if (!(err instanceof Deno.errors.NotFound)) throw err;
   });
@@ -1772,22 +2306,39 @@ export async function runExecution(
     throw new ConfigurationError(`${cell.arm}: ${unqualified}`);
   }
   const record = env.recordOAuthHosts === true;
-  const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+  /** Record mode records the one recorded route this arm runs on (H-02: not only the OAuth route). */
+  const recordRoutes = [
+    ...new Set(Object.values(cell.armManifest.provider_routes)),
+  ].filter((r) => RECORDED_ROUTES.includes(r));
+  const recordRoute = recordRoutes[0] ?? "";
+  // Each route's own recording file (H-02 run 002).
+  const recordedRel = recordRoute
+    ? recordingPath(recordRoute)
+    : RECORDED_HOSTS_PATH;
+  const recordedPath = join(env.repoRoot, ...recordedRel.split("/"));
   if (record) {
     const why = mode === "stub"
       ? "a stub cell releases no credential and is never placed"
       : !env.egress
       ? "the egress marker must be qualified (sandboxes placed)"
-      : env.egressEnforced
+      // A later route records under the authorized marker (H-02 run 002):
+      // only its own sandbox gets the record-mode proxy.
+      : env.egressEnforced && !ROUTE_AUTHORIZED_ROUTES.includes(recordRoute)
       ? "the marker is already authorized"
       : !env.supervised
       ? "it runs only supervised (harness cell --supervised)"
-      : adapter.harness !== "claude-code" || !adapter.credentialBearing
-      ? `it needs a credential-bearing Claude Code arm, not ${adapter.harness}`
+      : !adapter.credentialBearing || recordRoutes.length !== 1
+      ? `it needs a credential-bearing arm on exactly one recorded route (${
+        RECORDED_ROUTES.join(", ")
+      }), not ${adapter.harness} on ${
+        Object.values(cell.armManifest.provider_routes).join(", ") || "none"
+      }`
       : !env.credentialLedger
       ? "it runs inside the shared credential ledger (CG_CREDENTIAL_LEDGER)"
       : await exists(recordedPath)
-      ? `${RECORDED_HOSTS_PATH} exists (remove it explicitly to record again)`
+      ? `${
+        recordingPath(recordRoute)
+      } exists (remove it explicitly to record again)`
       : null;
     if (why) {
       throw new ConfigurationError(`${cell.arm}: record mode refused: ${why}`);
@@ -1826,7 +2377,11 @@ export async function runExecution(
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
   const started_at = now().toISOString();
-  const pricing = await env.pricing(now()); // loaded once; stored in the intent
+  // Loaded once; stored in the intent.
+  const pricing = await env.pricing(
+    now(),
+    Object.values(cell.armManifest.models),
+  );
   const base = forTask(cell.armManifest, cell.task.task.limits);
   // A drift drill runs another image of the same harness; the manifest
   // records the id and base digest of the image it ran.
@@ -1836,6 +2391,8 @@ export async function runExecution(
       image: await overrideImage(env, stub.image_override, base),
     }
     : base;
+  // Per manifest (H-02): a pi arm releases only its own route's credential.
+  const secretFiles = secretFilesOf(adapter, manifest);
   const p = privatePaths(env, id);
   await Deno.mkdir(p.quarantine, { recursive: true });
   // Immutable task snapshot for recovery; the folder keeps the task id (loadTask checks it).
@@ -1855,6 +2412,7 @@ export async function runExecution(
   const { task: _t, ...rest } = cell;
   const intent: Intent = {
     v: 2,
+    record_v: 3,
     execution_id: id,
     phase: "prepared",
     results_root: env.resultsRoot,
@@ -1880,6 +2438,8 @@ export async function runExecution(
       : {}),
     ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
     ...(account?.label ? { account: account.label } : {}),
+    // H-44 (M3): the export destination, persisted with the attempt.
+    ...(env.keyCustody ? { key_custody: env.keyCustody } : {}),
   };
   await writeAtomic(p.intent, JSON.stringify(intent, null, 2));
   if (stub) await writeAtomic(p.stubMarker, JSON.stringify(stub));
@@ -1997,13 +2557,14 @@ export async function runExecution(
     // A stub cell releases no credential: every credential file is a dummy.
     const secretsSource = account
       ? account.dir
-      : await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles);
+      : await dummySecrets(join(p.work, "stub-secrets"), secretFiles);
     // R-02: a real cell checks every supplied account dir, not only its own (a
     // campaign checks at its start too; `harness cell` reaches only this).
     // Like any missing secret, a failure is this cell's setup_failed.
+    const timeoutMin = manifest.limits.timeout_min;
     if (account) {
-      await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
-    } else await checkOperatorSecrets(secretsSource, adapter.secretFiles);
+      await checkAccountsSecrets(env.secretAccounts, secretFiles, timeoutMin);
+    } else await checkOperatorSecrets(secretsSource, secretFiles, timeoutMin);
     // Predictable egress checks come before the grant and the reservation.
     let hosts: string[] = [];
     let expect: Record<string, boolean> = {};
@@ -2028,7 +2589,11 @@ export async function runExecution(
       }
       let hp: string[];
       try {
-        hp = await bounded(eg.verify(), 3 * opMs, "egress host verification");
+        hp = await bounded(
+          eg.verify(record ? [] : Object.values(manifest.provider_routes)),
+          3 * opMs,
+          "egress host verification",
+        );
       } catch (err) {
         throw egressFail(`egress host verification failed: ${msg(err)}`);
       }
@@ -2067,9 +2632,17 @@ export async function runExecution(
     try {
       const values = await readSecretValues(
         secretsSource,
-        adapter.secretFiles,
+        secretFiles,
         token,
       );
+      // H-02 review: the sandbox gets the codex file with its refresh token
+      // withheld; redaction and the argv guard cover the real inner values
+      // and the released copy as a whole.
+      const released = releasedSecretFiles(values);
+      const redact = [
+        ...withCredentialForms(values),
+        ...released.filter((r, i) => r.value !== values[i]!.value),
+      ];
       if (eg) {
         // The environment's shared proxy (M1-33d) and the backend listen on
         // the gateway only.
@@ -2135,12 +2708,29 @@ export async function runExecution(
       let credForms: SecretValue[] = [];
       /** Secret files, custody, keys, the released phase, then ready (empty, never custody) last. */
       const release = async () => {
-        await writeSecretFiles(dir, values);
-        await commitCustody([...values, ...credForms]);
+        await writeSecretFiles(dir, released);
+        await commitCustody([...redact, ...credForms]);
         await writeAtomic(
           p.intent,
           JSON.stringify({ ...intent, phase: "released" }, null, 2),
         );
+        // H-02 run 004: pi reads the codex OAuth entry only from its agent
+        // auth.json, which the agent user cannot write (H-01 run 005): the
+        // admin script stages it from the released file, validated, before
+        // ready. A failure throws here, so ready is never written.
+        if (
+          manifest.harness === "pi" && secretFiles.includes(CODEX_AUTH_FILE)
+        ) {
+          try {
+            await stagePiConfig(env.docker, name, opMs, PI_STAGE_CODEX_ARGV);
+          } catch (err) {
+            // Deterministic (the released file is refused, or the exec
+            // failed): recorded setup_failed, never judged, as the H-01 staging.
+            throw new ConfigurationError(
+              `pi codex auth staging failed: ${msg(err)}`,
+            );
+          }
+        }
         await Deno.writeTextFile(join(dir, READY_FILE), "");
       };
       // M10-08c run 002 item 1: right before the start, the private root is
@@ -2190,7 +2780,7 @@ export async function runExecution(
             env.streamEndGraceMs ?? STREAM_END_GRACE_MS,
           ),
         },
-        values.map((v) => v.value),
+        redact.map((v) => v.value),
         stop,
       );
       let preflightError: string | null = null;
@@ -2339,7 +2929,7 @@ export async function runExecution(
           // M1-33d review: the host and marker are read again right before
           // provider secrets and ready; any change since the first read refuses.
           const again = await bounded(
-            eg.verify(),
+            eg.verify(record ? [] : Object.values(manifest.provider_routes)),
             3 * opMs,
             "egress host verification before release",
           );
@@ -2526,6 +3116,7 @@ export async function runExecution(
     preStart: inventoryRefused !== null || notLive !== null,
     undrained,
     account: account?.label ?? null,
+    recordV: 3,
   });
   holdNamespace(env, nothingPublished);
   await publishDraft(
@@ -2534,6 +3125,7 @@ export async function runExecution(
     draft,
     staged.pristine,
     true,
+    intent.key_custody ?? null,
     (undrained ? env.backend.drained(id) : null) ?? undefined,
   );
   if (privilegeFailure !== null) {
@@ -2557,7 +3149,7 @@ export async function runExecution(
       draft.execution.termination !== "completed" || recordedHosts.size === 0
     ) {
       throw new ContainerError(
-        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${RECORDED_HOSTS_PATH} not written`,
+        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${recordedRel} not written`,
         name,
         "setup",
       );
@@ -2578,9 +3170,14 @@ export async function runExecution(
         2,
       ) + "\n",
     );
+    // The route's own file (H-02 run 002): no other recording is touched.
     await writeAtomic(
       recordedPath,
-      recordedHostsJson([...recordedHosts], `record mode execution ${id}`),
+      recordedHostsJson(
+        [...recordedHosts],
+        `record mode execution ${id}`,
+        recordRoute,
+      ),
     );
   }
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };
@@ -2904,7 +3501,13 @@ async function computeIn(
     throw new ValidationError(`no artifact for execution ${e.id}`, [e.id]);
   }
   // Before judging: no key set means nothing could be redacted (fail closed).
-  const keys = await readRedactionKeys(env, e.id);
+  const { keys, stub } = await loadJudgeKeys(env, e);
+  // H-44 (5.2 step 6): the bundle's stub attestation vetoes on its own.
+  if (stub !== null) {
+    throw new ConfigurationError(
+      `execution ${e.id} is a stub-provider run (scripted model): never judged`,
+    );
+  }
   // H-35 (design-r4 4): the oracle side of this judgment stays readable.
   await storeOraclePreimage(env.resultsRoot, cell.task);
   const raw = await judge(env.lane, {
@@ -3276,10 +3879,22 @@ export async function ensurePin(
 
 /** H-09: published, judgeable and never judged (a crash before the judge queue reached it). */
 export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
-  return outcomePolicy(e.termination, e.did_work).judge &&
-    e.workspace_hash !== null &&
-    (await env.store.judgments(e.id)).length === 0 &&
-    !await exists(privatePaths(env, e.id).stubMarker);
+  if (
+    !(outcomePolicy(e.termination, e.did_work).judge &&
+      e.workspace_hash !== null &&
+      (await env.store.judgments(e.id)).length === 0 &&
+      !await exists(privatePaths(env, e.id).stubMarker))
+  ) return false;
+  if (e.v < 3) return true;
+  // H-44 (R7): nothing was released, so it is never judged.
+  if (e.redaction_anchor === null) return false;
+  // H-44 (5.2): an authentic stub bundle is never owed; an invalid one is
+  // (computeIn then refuses it).
+  try {
+    return (await loadJudgeKeys(env, e)).stub === null;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -3848,11 +4463,11 @@ export async function recoverInterrupted(
   await sweepStaleSecrets(env.privateRoot, env.owner, hold);
   // Temp files of an interrupted writeAtomic are never needed (the final
   // name is renamed into place), and a custody temp holds plaintext secrets.
-  hold();
-  await removeTemps(join(env.privateRoot, "custody"));
-  await removeTemps(join(env.privateRoot, "redaction"));
+  // H-44 (5.4): only a predecessor's, each delete after its own lock check.
+  await reclaimTemps(env, join(env.privateRoot, "custody"));
+  await reclaimTemps(env, join(env.privateRoot, "redaction"));
   const dir = join(env.privateRoot, "intents");
-  await removeTemps(dir);
+  await reclaimTemps(env, dir);
   const recovered: ExecutionRecord[] = [];
   let names: string[] = [];
   try {
@@ -3890,6 +4505,14 @@ export async function recoverInterrupted(
       );
     }
     const id = intent.execution_id;
+    // H-44 (B3): absent is a pre-H-44 intent (rebuilt at v2); only 3 otherwise.
+    const rv: unknown = intent.record_v;
+    if (rv !== undefined && rv !== 3) {
+      throw new ConfigurationError(
+        `intent ${id} has unsupported record_v ${JSON.stringify(rv)}; kept`,
+      );
+    }
+    const recordV = rv === 3 ? 3 : 2;
     // Publish into the store of the command that started the attempt, whatever command recovers it.
     const {
       unverifiedEgressReason: _override,
@@ -4018,10 +4641,19 @@ export async function recoverInterrupted(
         stub: intent.stub ?? null,
         // R-02: the label the attempt recorded in its intent, whatever command recovers.
         account: intent.account ?? null,
+        recordV,
       });
     }
     hold();
-    await publishDraft(own, cell, draft, null, taskUnchanged);
+    // H-44 (M3): the intent's custody dir, whatever flag the recovering command has.
+    await publishDraft(
+      own,
+      cell,
+      draft,
+      null,
+      taskUnchanged,
+      intent.key_custody ?? null,
+    );
     if (!taskUnchanged) {
       console.warn(
         `[WARN] ${id}: task files changed or unavailable since the attempt; recorded, not judged (use harness rejudge)`,

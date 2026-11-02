@@ -68,6 +68,11 @@ for (const m of migrations) {
 //   machine_keys ← runs
 //   runs ← results ← shortcoming_occurrences
 const SEED_SQL = `
+DELETE FROM setup_cells;
+DELETE FROM setup_runs;
+DELETE FROM setups;
+DELETE FROM hx_tasks;
+DELETE FROM setup_task_sets;
 DELETE FROM shortcoming_occurrences;
 DELETE FROM shortcomings;
 DELETE FROM results;
@@ -131,6 +136,35 @@ INSERT INTO shortcomings(id,model_id,al_concept,concept,description,correct_patt
 INSERT INTO shortcoming_occurrences(shortcoming_id,result_id,task_id,error_code) VALUES
   (1,3,'CG-AL-M001','AL0132'),
   (2,5,'CG-AL-E002','AL0500');
+
+-- Setups section; mirrors seedSetups() in tests/utils/seed-setups.ts.
+INSERT INTO setup_task_sets(hash,display_name,task_count,is_current,created_at,promoted_at) VALUES
+  ('hx-cur','HX current',2,1,'2026-10-01T00:00:00Z','2026-10-02T00:00:00Z'),
+  ('hx-old','HX old',1,0,'2026-09-01T00:00:00Z',NULL);
+INSERT INTO hx_tasks(task_set_hash,task_id,description_sha) VALUES
+  ('hx-cur','HX-002','sha-cur-2'),('hx-cur','HX-001','sha-cur-1'),('hx-old','HX-001','sha-old-1');
+INSERT INTO setups(id,description,agent_tool,base_model,visibility,needs_key,roles_json,flow,ingredients_json,created_at) VALUES
+  ('cc-plain','cc-plain description','claude-code','m-1','public',0,'[{"role":"main","model":"m-1","effort":null}]','plain flow','{"instructions":null,"rules":[],"settings":null,"skills":[],"mcp":[],"hooks":[]}','2026-10-01T00:00:00Z'),
+  ('pi-default','pi-default description','pi','m-1','public',0,'[{"role":"main","model":"m-1","effort":null}]',NULL,'{"instructions":null,"rules":[],"settings":null,"skills":[],"mcp":[],"hooks":[]}','2026-10-01T00:00:00Z'),
+  ('cc-secret','cc-secret description','claude-code','m-1','private',0,'[{"role":"main","model":"m-1","effort":null}]','SECRET-FLOW','{"instructions":{"name":"CLAUDE.md","content":"SECRET-BODY"},"rules":[{"name":"style.md","content":"SECRET-RULE"}],"settings":{"name":"settings.json","content":"SECRET-SETTINGS"},"skills":["skill-a","skill-b"],"mcp":["mcp-x"],"hooks":["hook-y"]}','2026-10-01T00:00:00Z'),
+  ('codex-old','codex-old description','codex','m-1','public',0,'[{"role":"main","model":"m-1","effort":null}]',NULL,'{"instructions":null,"rules":[],"settings":null,"skills":[],"mcp":[],"hooks":[]}','2026-10-01T00:00:00Z');
+INSERT INTO setup_runs(id,setup_id,task_set_hash,tool_version,published_at,score,cost_per_solved_usd,price_note,excluded_cells) VALUES
+  ('r-cc-1','cc-plain','hx-cur','2.1.300','2026-10-05T00:00:00Z',0.5,0.4,NULL,0),
+  ('r-cc-2','cc-plain','hx-cur','2.1.314','2026-10-10T00:00:00Z',0.75,0.3,NULL,0),
+  ('r-pi-1','pi-default','hx-cur','0.9.0','2026-10-06T00:00:00Z',0.25,NULL,'no price data',0),
+  ('r-sec-1','cc-secret','hx-cur','2.1.314','2026-10-07T00:00:00Z',0.9,0.2,NULL,0),
+  ('r-old-1','codex-old','hx-old','1.0.0','2026-09-10T00:00:00Z',0.6,0.5,NULL,0);
+INSERT INTO setup_cells(run_id,task_id,repeat,outcome,cost_usd,duration_ms) VALUES
+  ('r-cc-2','HX-001',1,'pass',0.1,1000),
+  ('r-cc-2','HX-001',2,'pass',0.1,1000),
+  ('r-cc-2','HX-002',1,'pass',0.1,1000),
+  ('r-cc-2','HX-002',2,'fail',0.1,1000),
+  ('r-cc-1','HX-001',1,'fail',0.1,1000),
+  ('r-cc-1','HX-002',1,'fail',0.1,1000),
+  ('r-pi-1','HX-001',1,'env_blocked',0.1,1000),
+  ('r-pi-1','HX-002',1,'fail',0.1,1000),
+  ('r-sec-1','HX-001',1,'pass',0.1,1000),
+  ('r-old-1','HX-001',1,'pass',0.1,1000);
 `;
 
 const seedFile = join(tmpdir(), "cg-seed.sql");

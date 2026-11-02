@@ -2231,9 +2231,14 @@ export function keepExecution(id: string, only: string[]): boolean {
   return !only.length || only.some((p) => id.startsWith(p));
 }
 
-/** H-29 ruling (2026-10-18): a harness_crash execution stays in the per-execution rows, flagged, but out of every al-sem aggregate. */
+/**
+ * H-29 ruling (2026-10-18): a harness_crash execution stays in the per-execution rows, flagged, but out of every al-sem aggregate.
+ * Q-04f: setup_failed likewise; the agent never started, so its frozen workspace is the pristine tree.
+ */
 export function alsemExclusion(termination: string): string | null {
-  return termination === "harness_crash" ? "harness_crash" : null;
+  return termination === "harness_crash" || termination === "setup_failed"
+    ? termination
+    : null;
 }
 
 export function alsemExclusionText(
@@ -2245,9 +2250,11 @@ export function alsemExclusionText(
     excluded: string | null;
   }[],
 ): string {
-  const head = "Executions with termination `harness_crash` are left out of " +
-    "every al-sem aggregate (per arm, per pair, medians and counts) under the " +
-    "2026-10-18 H-29 ruling; their per-execution rows stay, flagged `excluded`.";
+  const head = "Executions with termination `harness_crash` (2026-10-18 H-29 " +
+    "ruling) or `setup_failed` (Q-04f: the agent never started, its workspace " +
+    "is the pristine tree) are left out of every al-sem aggregate (per arm, " +
+    "per pair, medians and counts); their per-execution rows stay, flagged " +
+    "`excluded` with the reason.";
   if (!excluded.length) return `${head} Excluded here: none.\n`;
   const lines = [...excluded].sort((a, b) => a.id.localeCompare(b.id)).map((
     x,

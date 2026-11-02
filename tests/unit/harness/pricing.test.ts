@@ -1,4 +1,5 @@
 import {
+  assert,
   assertAlmostEquals,
   assertEquals,
   assertRejects,
@@ -212,6 +213,36 @@ Deno.test("loadPricingBook: a missing file and duplicate api ids fail naming the
   assertStringIncludes(e.message, join(dup, "models.yml"));
 });
 
+Deno.test("loadPricingBook (H-02): an id on two routes is priced by the arm's own slug; not the arm's is left out; two of the arm's refused", async () => {
+  const dup = await catalog(
+    MODELS_YML + `- slug: codex/gpt-x
+  api_model_id: gpt-x
+  family: gpt
+  display_name: GPT X (subscription)
+`,
+    GPT_X + PRICE("c1", "codex/gpt-x", "2026-01-01T00:00:00.000Z"),
+  );
+  const mine = await loadPricingBook(dup, AT, ["codex/gpt-x"]);
+  assertEquals(mine.models["gpt-x"]?.slug, "codex/gpt-x");
+  assertEquals(mine.models["gpt-x"]?.pricing_version, "c1");
+  assertEquals(
+    (await loadPricingBook(dup, AT, ["openai/gpt-x"])).models["gpt-x"]?.slug,
+    "openai/gpt-x",
+  );
+  assertEquals(
+    (await loadPricingBook(dup, AT, ["anthropic/claude-sonnet-5"])).models[
+      "gpt-x"
+    ],
+    undefined,
+    "an id the arm does not own is never guessed",
+  );
+  await assertRejects(
+    () => loadPricingBook(dup, AT, ["openai/gpt-x", "codex/gpt-x"]),
+    ValidationError,
+    "among the arm's models",
+  );
+});
+
 Deno.test("loadPricingBook: two entries equally effective are ambiguous; effective_until is exclusive", async () => {
   const amb = await catalog(
     MODELS_YML,
@@ -233,10 +264,26 @@ Deno.test("loadPricingBook: two entries equally effective are ambiguous; effecti
   assertEquals((await loadPricingBook(ended, AT)).models["gpt-x"], undefined);
 });
 
-Deno.test("loadPricingBook: the real catalog loads with finite rates", async () => {
+Deno.test("loadPricingBook: the real catalog loads with finite rates, for every model's arm", async () => {
   const dir = fromFileUrl(new URL("../../../site/catalog", import.meta.url));
-  const book = await loadPricingBook(dir, new Date());
-  for (const [id, p] of Object.entries(book.models)) {
+  // H-02: gpt-6-luna is one model on two routes, ambiguous without the arm's slugs.
+  await assertRejects(
+    () => loadPricingBook(dir, new Date()),
+    ValidationError,
+    "gpt-6-luna is listed twice",
+  );
+  const slugs = (await Deno.readTextFile(join(dir, "models.yml")))
+    .split(/\r?\n/).filter((l) => l.startsWith("- slug: "))
+    .map((l) => l.slice("- slug: ".length).trim());
+  assert(slugs.length > 10);
+  const models: PricingBook["models"] = {};
+  for (const slug of slugs) {
+    const book = await loadPricingBook(dir, new Date(), [slug]);
+    const own = Object.values(book.models).find((p) => p.slug === slug);
+    if (own) models[`${slug}`] = own;
+  }
+  assertEquals(models["openai-codex/gpt-6-luna"]?.input, 0.1);
+  for (const [id, p] of Object.entries(models)) {
     for (
       const r of [
         p.input,

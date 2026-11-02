@@ -49,6 +49,8 @@
     <ul class="links">
       <li><a href="/">Leaderboard</a></li>
       <li><a href="/models">Models</a></li>
+      <li><a href="/setups">Setups</a></li>
+      <li><a href="/submit">Submit</a></li>
       <li><a href="/categories">Categories</a></li>
       <li><a href="/tasks">Tasks</a></li>
       <li><a href="/matrix">Matrix</a></li>
