@@ -70,10 +70,12 @@ that the author's own naives fail. These rules apply to every mined task, X-seri
 **Breadth class (owner 2026-11-02, HX only).** A task graded on coverage (a new kind of thing
 must reach every place the app silently assumes the existing kinds) is exempt from rule 1 and
 from rule 4's ship condition: the frontier attempt still runs and records partial credit, but
-an attempt-1 pass does not block it. It ships when (a) its planned incomplete naives land at
-distinct, non-zero scores below 1.0 in the gate and (b) a setup comparison separates the arms.
-It never counts as a frontier-catcher. Rules 2 and 3 still apply; state the template floor
-(the score from copying planted sites alone). Details: the harness lane runbook, "Mined HX
+an attempt-1 pass does not block it. It merges when its planned incomplete naives land at
+distinct, non-zero scores below 1.0 in the gate, and stays in the breadth pool only if a setup
+comparison after merge separates the arms. It never counts as a frontier-catcher. Rules 2 and 3
+apply as adapted there: the overlay may plant sites for the existing kinds, the design states the
+template floor (the score from extending planted sites alone), and the prompt states the business
+differences and API seams, never the touchpoints. Details: the harness lane runbook, "Mined HX
 tasks".
 
 Prefer assembling over inventing: two or three already-gated single-trap tasks (Commit-family

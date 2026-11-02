@@ -111,17 +111,22 @@ fact: a new kind of thing (an asset type, a document type) must reach every plac
 silently assumes the existing kinds. It is exempt from rule 1 (no measured BC fact is needed,
 and the `frontier-catcher: yes` requirement does not apply) and from rule 4's ship condition
 (the frontier attempt still runs and records partial credit, but an attempt-1 pass does not
-block shipping). It ships when both hold:
+block shipping). It may merge once (a) holds; it stays in the breadth pool only if (b) holds:
 
-- (a) the hidden checks spread partial credit: one fail_to_pass procedure per functional area,
-  and every planned incomplete naive lands at a distinct, non-zero score below 1.0 in the gate;
-- (b) a setup comparison separates the arms (run by lane-ops after merge, at equal limits).
+- (a) the hidden checks spread partial credit: every functional area has one or more
+  independently scored fail_to_pass procedures, and every planned incomplete naive lands at a
+  distinct, non-zero score below 1.0 in the gate;
+- (b) a setup comparison, run by lane-ops after merge at equal limits, separates the arms: mean
+  partial credit differs between at least two arms by more than the spread of repeats within
+  either arm. If it does not, the orchestrator retires the task to the filler pool.
 
-A breadth task is never counted as a frontier-catcher. Rules 2 and 3 still apply: the overlay
-may plant working code for the existing kinds (that is where the touchpoints live), but the
-design states the template floor, the score an agent reaches by copying those sites alone, and
-the difficulty must rest on touchpoints no single keyword finds. The prompt states the business
-differences of the new kind and the API seams the oracle needs, never the touchpoints.
+A breadth task is never counted as a frontier-catcher. Rule 2 applies with one boundary: the
+overlay may plant working code for the existing kinds (that is where the touchpoints live), and
+the correct diff may extend those planted sites, but the design states the template floor (the
+score from extending planted sites alone), and the difficulty must rest on touchpoints that no
+single keyword finds and that no planted site points at. Rule 3 applies to a feature ticket as:
+state the request and the business differences of the new kind, plus the API seams the oracle
+needs; never name a touchpoint, a procedure to change, or the number of places involved.
 
 For hard tasks, prefer assembling over inventing: combine two or three gated single-trap tasks
 (Commit-family donors first) into one overlay with one symptom. That is the only route with
