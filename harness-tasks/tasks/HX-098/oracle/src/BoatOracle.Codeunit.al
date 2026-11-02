@@ -23,6 +23,16 @@ codeunit 87420 "HX098 Boat Oracle"
         RentalMgt.Return(ContractNo, 1010, '');
         Contract.Get(ContractNo);
         Assert.AreEqual(600, Pricing.CalcAmount(Contract), 'S1: three days at the boat''s daily rate, hours within the allowance');
+
+        HX098Asset('HX98-B1W', "CGR Asset Type"::Boat, 2000, 150);
+        ContractNo := HX098Contract('HX98-B1W', 'HX98-HB', 'BL-0111');
+        Contract.Get(ContractNo);
+        Contract."Pricing Method" := Contract."Pricing Method"::"Weekend Package";
+        Contract.Modify();
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 2010, '');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(300, Pricing.CalcAmount(Contract), 'S1: the weekend package prices a boat like a car');
     end;
 
     [Test]
@@ -33,15 +43,16 @@ codeunit 87420 "HX098 Boat Oracle"
         Pricing: Codeunit "CGR Rental Pricing";
         ContractNo: Code[20];
     begin
-        // Engine hours over the daily allowance are charged at the hourly rate.
+        // Engine hours over the daily allowance are charged at the hourly rate; the km rule does not apply.
         HX098Setup();
+        HX098KmAllowance(5);
         HX098Branch('HX98-HB', true);
         HX098Asset('HX98-B02', "CGR Asset Type"::Boat, 1000, 200);
         ContractNo := HX098Contract('HX98-B02', 'HX98-HB', 'BL-0202');
         RentalMgt.CheckOut(ContractNo);
         RentalMgt.Return(ContractNo, 1030, '');
         Contract.Get(ContractNo);
-        Assert.AreEqual(840, Pricing.CalcAmount(Contract), 'S2: 600 for three days plus 6 extra engine hours at 40');
+        Assert.AreEqual(840, Pricing.CalcAmount(Contract), 'S2: 600 for three days plus 6 extra engine hours at 40, no km charge');
     end;
 
     [Test]
@@ -214,6 +225,8 @@ codeunit 87420 "HX098 Boat Oracle"
     var
         Entry: Record "CGR Outbox Entry";
         RentalMgt: Codeunit "CGR Rental Mgt";
+        Payload: JsonObject;
+        Token: JsonToken;
         ContractNo: Code[20];
     begin
         // The partner portal hears that a boat went out.
@@ -225,7 +238,36 @@ codeunit 87420 "HX098 Boat Oracle"
         ContractNo := HX098Contract('HX98-B12', 'HX98-HB', 'BL-1212');
         RentalMgt.CheckOut(ContractNo);
         Assert.IsTrue(Entry.FindLast(), 'S12: the checkout is queued for the portal');
-        Assert.IsTrue(StrPos(Entry.Payload, '"assetType":"boat"') > 0, 'S12: the message names the asset type: ' + Entry.Payload);
+        Assert.IsTrue(Payload.ReadFrom(Entry.Payload), 'S12: the message is JSON: ' + Entry.Payload);
+        Assert.IsTrue(Payload.Get('assetType', Token), 'S12: the message names the asset type: ' + Entry.Payload);
+        Assert.AreEqual('boat', Token.AsValue().AsText(), 'S12: the asset type is boat');
+    end;
+
+    [Test]
+    procedure Scenario13()
+    var
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        ContractNo: Code[20];
+    begin
+        // A boat rental cannot be moved onto a car.
+        HX098Setup();
+        HX098Branch('HX98-HB', true);
+        HX098Asset('HX98-B13', "CGR Asset Type"::Boat, 1000, 200);
+        HX098Asset('HX98-C13', "CGR Asset Type"::Car, 20000, 80);
+        ContractNo := HX098Contract('HX98-B13', 'HX98-HB', 'BL-1313');
+        RentalMgt.CheckOut(ContractNo);
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX98-C13');
+    end;
+
+    local procedure HX098KmAllowance(KmPerDay: Integer)
+    var
+        Setup: Record "CGR Setup";
+        SessionContext: Codeunit "CGR Session Context";
+    begin
+        Setup.Get();
+        Setup."Km Allowance per Day" := KmPerDay;
+        Setup.Modify();
+        SessionContext.Reset();
     end;
 
     local procedure HX098Setup()

@@ -73,7 +73,7 @@ codeunit 70200 "CGR Rental Mgt"
             Error(NotAvailableErr, NewVehicleNo);
         HasOldVehicle := OldVehicle.Get(Contract."Vehicle No.");
         if HasOldVehicle then
-            if IsBoat(OldVehicle) <> IsBoat(NewVehicle) then
+            if OldVehicle."Asset Type" <> NewVehicle."Asset Type" then
                 Error(SwapKindErr, ContractNo, OldVehicle."No.", NewVehicleNo);
         if HasOldVehicle then begin
             OldVehicle."Checked Out" := false;
@@ -118,10 +118,5 @@ codeunit 70200 "CGR Rental Mgt"
         if not Branch.Get(BranchCode) then
             exit(false);
         exit(Branch.Harbour);
-    end;
-
-    local procedure IsBoat(Vehicle: Record "CGR Vehicle"): Boolean
-    begin
-        exit(Vehicle."Asset Type" = Vehicle."Asset Type"::Boat);
     end;
 }
