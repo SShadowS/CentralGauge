@@ -579,16 +579,23 @@ export const PI_STAGE_ARGV = [
   "-File",
   "C:\\cg-pi-stage.ps1",
 ];
+/**
+ * H-02 run 004: the openai-codex cell's OAuth entry, staged into the agent
+ * auth.json by the same admin script once the released credential file is
+ * in the mount and before ready (pi reads credentials only from that file).
+ */
+export const PI_STAGE_CODEX_ARGV = [...PI_STAGE_ARGV, "-Codex"];
 /** Runs the pi config staging in the sandbox; throws on non-zero, error or timeout. */
 export async function stagePiConfig(
   docker: DockerCli,
   name: string,
   opMs: number,
+  argv: string[] = PI_STAGE_ARGV,
 ): Promise<void> {
   const r = await bounded(
-    docker.exec(name, PI_STAGE_USER, PI_STAGE_ARGV),
+    docker.exec(name, PI_STAGE_USER, argv),
     opMs,
-    `docker exec ${name} cg-pi-stage.ps1`,
+    `docker exec ${name} ${argv.slice(-2).join(" ")}`,
   );
   if (r.code !== 0) {
     throw new Error(

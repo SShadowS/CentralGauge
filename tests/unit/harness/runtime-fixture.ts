@@ -83,6 +83,12 @@ export const CATALOG = {
     api_model_id: "claude-sonnet-5",
     family: "claude",
     display_name: "S5",
+  }, {
+    // H-02: the pi ChatGPT-subscription arm (execution-codex.test.ts).
+    slug: "openai-codex/gpt-6-luna",
+    api_model_id: "gpt-6-luna",
+    family: "gpt",
+    display_name: "L",
   }],
   pricing: [],
   families: [],

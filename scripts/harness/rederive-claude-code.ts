@@ -50,6 +50,7 @@ const at = typeof sandbox.pricing_book_at === "string"
 const book = await loadPricingBook(
   fromFileUrl(new URL("../../site/catalog", import.meta.url)),
   new Date(at),
+  Object.values(exec.manifest.models),
 );
 const raw = await read("raw.jsonl");
 // H-10: the published otel.jsonl; absent = OTel missing, never zero usage.

@@ -342,6 +342,50 @@ limits: { timeout_min: 30, max_budget_usd: 5 }
   assertEquals(await t.env.store.campaigns("cc"), []);
 });
 
+// H-02 rebase review finding 3 (orchestrator ruling): the codex arm holds one
+// ChatGPT credential, so it runs with a single --secrets-dir account.
+Deno.test("H-02: a campaign with a pi codex arm and more than one account is refused at start, dry run too; one account passes this check", async () => {
+  await using t = await makeEnv();
+  t.env.supervised = false;
+  await write(
+    t.harnessRoot,
+    "configs/pi-luna-codex.yml",
+    `id: pi-luna-codex
+harness: pi
+harness_version: "0.87.1"
+models: { main: openai-codex/gpt-6-luna }
+settings: {}
+limits: { timeout_min: 30, max_budget_usd: 5 }
+`,
+  );
+  await experiment(
+    t,
+    "cx",
+    "cc-sonnet-plain",
+    ["pi-luna-codex"],
+    "[harness, harness_version, models]",
+  );
+  const one = t.env.secretAccounts[0]!;
+  t.env.secretAccounts = [
+    { label: "work", dir: one.dir },
+    { label: "maxpriv2", dir: one.dir },
+  ];
+  for (const dryRun of [false, true]) {
+    await assertRejects(
+      () => runCampaign(t.env, "cx", opts({ dryRun }), io()),
+      ConfigurationError,
+      "pi-luna-codex runs on openai-codex:oauth with one --secrets-dir account, not 2",
+    );
+  }
+  assertEquals(t.docker.runs.length, 0);
+  assertEquals(await t.env.store.campaigns("cx"), []);
+  // One account: whatever else a dry run says, it is not this rule.
+  t.env.secretAccounts = [one];
+  const err = await runCampaign(t.env, "cx", opts({ dryRun: true }), io())
+    .then(() => null, (x: Error) => x);
+  assert(!err?.message.includes("--secrets-dir account"), String(err));
+});
+
 Deno.test("a credential-bearing arm is refused without egress enforcement; with it, the campaign runs unattended", async () => {
   await using t = await makeEnv();
   t.env.supervised = false;

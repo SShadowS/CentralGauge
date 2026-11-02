@@ -1,7 +1,10 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
-import type { PricingBook } from "../../../src/harness/pricing.ts";
+import {
+  loadPricingBook,
+  type PricingBook,
+} from "../../../src/harness/pricing.ts";
 import type {
   ExecutionRecord,
   RederivationRecord,
@@ -619,4 +622,50 @@ Deno.test("recordCellProblems (Sol run 002 P2): an overlay folder that cannot be
       writable: true,
     });
   }
+});
+
+// H-02 rebase review finding 1: the real catalog lists gpt-6-luna on two slugs,
+// so a book loaded without the arm's slugs throws. Rederive passes them.
+Deno.test("rederive (H-02): against the real site/catalog the arm's slugs settle the book; the fork run still derives completed with a cost", async () => {
+  const s = await stored(await forkProbe());
+  let seen: readonly string[] | undefined;
+  await rederiveExecution({
+    store: s.store,
+    execution: (await s.store.executions(s.c.id))[0]!,
+    reason: "H-02 real catalog",
+    codeCommit: COMMIT,
+    pricing: (at, slugs) => {
+      seen = slugs;
+      return loadPricingBook("site/catalog", at, slugs);
+    },
+    now: () => new Date("2026-10-29T12:00:00.000Z"),
+  });
+  assertEquals(seen, Object.values(s.e.manifest.models));
+  const [x] = await s.store.executions(s.c.id);
+  assertEquals(x!.termination, "completed");
+  assert(x!.telemetry.cost_usd! > 0);
+});
+
+// A pricing (catalog) error is the operator's to fix: the rederive refuses and
+// writes no overlay (overlays are write-once), never a parse failure.
+Deno.test("rederive (H-02): a pricing load error refuses the rederive and writes no overlay", async () => {
+  const s = await stored(await forkProbe());
+  const e = (await s.store.executions(s.c.id))[0]!;
+  const why = "api_model_id x is listed twice";
+  await assertRejects(
+    () =>
+      rederiveExecution({
+        store: s.store,
+        execution: e,
+        reason: "H-02 broken catalog",
+        codeCommit: COMMIT,
+        pricing: () => Promise.reject(new ValidationError(why, [why])),
+      }),
+    ValidationError,
+    "listed twice",
+  );
+  assertEquals(await s.store.rederivations(s.e.id), []);
+  const [x] = await s.store.executions(s.c.id);
+  assertEquals(x!.termination, "harness_crash");
+  assertEquals(x!.rederived, undefined);
 });

@@ -130,7 +130,11 @@ const r = parsePiStream(await Deno.readTextFile(d("raw.jsonl")), {
   rawLog: d("raw.jsonl"),
   exitCode: res.exitCode,
   manifest: m,
-  pricing: await loadPricingBook("site/catalog", new Date()),
+  pricing: await loadPricingBook(
+    "site/catalog",
+    new Date(),
+    Object.values(m.models),
+  ),
 });
 console.log(
   JSON.stringify(

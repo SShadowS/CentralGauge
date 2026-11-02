@@ -152,21 +152,23 @@ import {
 } from "../../src/harness/fsutil.ts";
 import { hashTree, sha256Hex } from "../../src/harness/hash.ts";
 import {
+  authorizedAllowlist,
   authorizedMarkerProblems,
-  cellEgressProblems,
   collectEgressState,
   evaluatePreflight,
-  hostsForRoutes,
-  loadRecordedHosts,
   MARKER_FILE,
   MARKER_STATES,
   preflightExpect,
   ProbeEvidenceSchema,
-  readCellRecord,
   realEgressCollector,
-  recordCellProblems,
   RECORDED_HOSTS_PATH,
-  ROUTE_HOSTS,
+  RECORDED_ROUTES,
+  recordedCellProblems,
+  recordingPath,
+  rotationOf,
+  ROUTE_AUTHORIZED_ROUTES,
+  ROUTE_ROTATED_CREDENTIALS,
+  routeAuthorizationProblems,
   SANDBOX_NETWORK,
   sha256File,
   sha256Text,
@@ -564,7 +566,7 @@ export interface CellCliOptions {
   stubProvider?: string | null;
   /** Another image of the same harness (sha256 id); only with stubProvider. */
   image?: string | null;
-  /** M1-34 Step 11: record the OAuth hosts (qualified marker, supervised Claude arm, ledger). */
+  /** M1-34 Step 11: record the hosts of the arm's recorded route (qualified marker, supervised credential-bearing arm, ledger; H-02: also openai-codex:oauth). */
   recordOAuthHosts?: boolean;
   /** H-09: record the cell unjudged; `harness judge-pending` judges it. */
   deferJudging?: boolean;
@@ -2552,8 +2554,8 @@ export async function harnessRederive(o: {
         execution: e,
         reason: o.reason,
         codeCommit,
-        pricing: (at) =>
-          loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
+        pricing: (at, armSlugs) =>
+          loadPricingBook(join(o.repoRoot, "site", "catalog"), at, armSlugs),
       }),
     );
   }
@@ -2982,16 +2984,6 @@ const RotationSchema = z.object({
   })),
 }).strict();
 
-const CellSchema = z.object({
-  id: z.string(),
-  manifest: z.object({
-    harness: z.string(),
-    provider_routes: z.record(z.string(), z.string()),
-  }),
-  termination: z.string(),
-  started_at: z.iso.datetime(),
-});
-
 async function readJsonFile(path: string, what: string): Promise<unknown> {
   try {
     return JSON.parse(await Deno.readTextFile(path));
@@ -3055,10 +3047,8 @@ async function authorizationProblems(
   const p: string[] = [];
   let allowlist: string[] = [];
   try {
-    allowlist = hostsForRoutes(
-      Object.keys(ROUTE_HOSTS),
-      await loadRecordedHosts(root),
-    );
+    // The marker's own routes (MARKER_ROUTES); later routes are authorized on their own.
+    allowlist = (await authorizedAllowlist(root)).allowlist;
   } catch (err) {
     p.push((err as Error).message);
   }
@@ -3090,69 +3080,99 @@ async function authorizationProblems(
       }
     }
   }
-  const cells = join(root, "results", "harness", "cells");
-  let cellPath: string | null = null;
-  try {
-    for (const d of Deno.readDirSync(join(cells, "executions"))) {
-      const f = join(cells, "executions", d.name, `${o.cell}.json`);
-      if (d.isDirectory && await exists(f)) cellPath = f;
-    }
-  } catch { /* no cells yet */ }
-  if (!cellPath) {
-    p.push(`cell ${o.cell} not found under ${cells}`);
-    return { problems: p, allowlist };
-  }
-  // R-10 Sol run 001 P2: a re-derived cell is read with its overlay applied
-  // and checked (readCellRecord), so this gate and the store agree.
-  const read = await readCellRecord(cells, o.cell);
-  if (read.problem) {
-    p.push(read.problem);
-    return { problems: p, allowlist };
-  }
-  const cell = CellSchema.safeParse(
-    read.record ?? await readJsonFile(cellPath, "execution"),
-  );
-  if (!cell.success) {
-    p.push(
-      `execution ${cellPath} is invalid: ${cell.error.issues[0]?.message}`,
-    );
-    return { problems: p, allowlist };
-  }
-  const e = cell.data;
-  p.push(...await recordCellProblems(root, o.cell));
-  if (e.manifest.harness !== "claude-code") {
-    p.push(`cell ${o.cell} ran ${e.manifest.harness}, not claude-code`);
-  }
-  if (e.termination !== "completed") {
-    p.push(
-      `cell ${o.cell} ended ${e.termination}; authorization needs a completed cell`,
-    );
-  }
-  const started = new Date(e.started_at).getTime();
-  if (started < new Date(qualifiedAt).getTime()) {
-    p.push(
-      `cell ${o.cell} started before the qualified marker (${qualifiedAt}): not an enforced cell`,
-    );
-  }
-  if (rotatedAt && started < new Date(rotatedAt).getTime()) {
-    p.push(
-      `cell ${o.cell} started before the rotation (${rotatedAt}); it must start after the rotation`,
-    );
-  }
-  let log: string;
-  try {
-    log = await Deno.readTextFile(join(cells, "runs", o.cell, "egress.jsonl"));
-  } catch {
-    p.push(`cell ${o.cell} has no egress.jsonl: not an enforced run`);
-    return { problems: p, allowlist };
-  }
-  // M1-34e: the preflight's own lines exactly as expected, the agent phase clean.
+  // M1-34e: the Claude record-mode cell, the same check every route
+  // authorization runs (recordedCellProblems, egress.ts).
   p.push(
-    ...cellEgressProblems(log, Object.values(e.manifest.provider_routes)).map(
-      (x) => `cell ${o.cell} egress.jsonl: ${x}`,
-    ),
+    ...await recordedCellProblems(root, o.cell, RECORDED_ROUTES[0]!, [
+      { what: "the qualified marker", at: qualifiedAt },
+      { what: "the rotation", at: rotatedAt },
+    ]),
   );
   return { problems: p, allowlist };
+}
+
+export interface RouteAuthorizeOptions {
+  root: string;
+  /** A route beyond the marker's own (ROUTE_AUTHORIZED_ROUTES). */
+  route: string;
+  /** Its supervised record-mode cell (the recording's source). */
+  cell: string;
+  /** The rotation record naming the route's credential. */
+  rotation: string;
+  evidence: string;
+}
+
+/**
+ * H-02 run 002: authorize one later route in the authorized marker. The
+ * marker must verify for its own routes; the route's recording, allowlist,
+ * rotation and record-mode cell are checked with routeAuthorizationProblems
+ * (the same check every marker read runs). The marker's own fields and
+ * hashes are never changed, and an existing route authorization is never
+ * overwritten (remove it from the marker explicitly to redo it). Returns
+ * problems.
+ */
+export async function harnessEgressAuthorizeRoute(
+  o: RouteAuthorizeOptions,
+): Promise<string[]> {
+  const markerPath = join(o.root, "results", "harness", MARKER_FILE);
+  if (!ROUTE_AUTHORIZED_ROUTES.includes(o.route)) {
+    return [
+      `${o.route} is not a route authorized on its own (${
+        ROUTE_AUTHORIZED_ROUTES.join(", ")
+      })`,
+    ];
+  }
+  if (!await exists(markerPath)) return [`no egress marker at ${markerPath}`];
+  const m = await readJsonFile(markerPath, "egress marker") as Record<
+    string,
+    unknown
+  >;
+  if (m["state"] !== "authorized") {
+    return [`marker is ${String(m["state"])}: authorize the marker first`];
+  }
+  const base = await authorizedMarkerProblems(o.root, m);
+  if (base.length > 0) {
+    return base.map((x) => `the marker is not authorized: ${x}`);
+  }
+  const prior = m["routes_authorized"];
+  const routes = prior !== null && typeof prior === "object"
+    ? { ...(prior as Record<string, unknown>) }
+    : {};
+  if (Object.hasOwn(routes, o.route)) {
+    return [
+      `${o.route} is already authorized: refusing to overwrite (remove its entry from ${markerPath} explicitly to redo it)`,
+    ];
+  }
+  if (!o.evidence.trim()) return ["route authorization needs --evidence"];
+  const rot = await rotationOf(o.rotation, [
+    ROUTE_ROTATED_CREDENTIALS[o.route]!,
+  ]);
+  if (rot.problems.length > 0) return rot.problems;
+  const rel = recordingPath(o.route);
+  let allow: { allowlist: string[]; sha256: string };
+  let recSha: string;
+  try {
+    recSha = await sha256File(join(o.root, ...rel.split("/")));
+    allow = await authorizedAllowlist(o.root, [o.route]);
+  } catch (err) {
+    return [`${o.route}: ${(err as Error).message}`];
+  }
+  const entry = {
+    route: o.route,
+    verified_at: new Date().toISOString(),
+    evidence: o.evidence,
+    recorded_hosts_sha256: recSha,
+    allowlist: allow.allowlist,
+    allowlist_sha256: allow.sha256,
+    rotation: o.rotation,
+    rotated_at: rot.at,
+    cell: o.cell,
+  };
+  const next = { ...m, routes_authorized: { ...routes, [o.route]: entry } };
+  const p = await routeAuthorizationProblems(o.root, next, o.route);
+  if (p.length > 0) return p;
+  await Deno.writeTextFile(markerPath, JSON.stringify(next, null, 2) + "\n");
+  return [];
 }
 
 /**
@@ -3177,6 +3197,19 @@ export async function harnessEgressVerify(
         unknown
       >;
       p.push(...await authorizedMarkerProblems(o.root, m));
+      // H-02 run 002: each route authorized on its own, reported by route.
+      const own = m["routes_authorized"];
+      for (
+        const r of own !== null && typeof own === "object"
+          ? Object.keys(own)
+          : []
+      ) {
+        p.push(
+          ...(await routeAuthorizationProblems(o.root, m, r)).map((x) =>
+            `route ${r}: ${x}`
+          ),
+        );
+      }
     }
     return p;
   }
@@ -3511,7 +3544,7 @@ export function registerHarnessCommand(
     )
     .option(
       "--record-oauth-hosts",
-      "M1-34 Step 11: record the OAuth hosts into harness/egress/recorded-hosts.json (qualified marker, supervised Claude arm)",
+      "M1-34 Step 11: record the hosts of the arm's recorded route (the Claude OAuth route, or pi's openai-codex:oauth) into harness/egress/recorded-hosts.json beside any route already recorded (qualified marker, supervised arm)",
     )
     .option(
       "--defer-judging",
@@ -3994,18 +4027,30 @@ export function registerHarnessCommand(
         "--evidence <ref:string>",
         "authorized: evidence reference (M1-34/nnn)",
       )
+      .option(
+        "--authorize-route <route:string>",
+        "H-02: authorize one later route (openai-codex:oauth) in the authorized marker, with --cell (its record-mode cell), --rotation and --evidence",
+      )
       .action((opts) =>
         fail(async () => {
-          const problems = await harnessEgressVerify({
-            root: Deno.cwd(),
-            ...(opts.mark ? { mark: opts.mark as MarkerState } : {}),
-            ...(opts.probeEvidence
-              ? { probeEvidence: resolve(opts.probeEvidence) }
-              : {}),
-            ...(opts.rotation ? { rotation: resolve(opts.rotation) } : {}),
-            ...(opts.cell ? { cell: opts.cell } : {}),
-            ...(opts.evidence ? { evidence: opts.evidence } : {}),
-          });
+          const problems = opts.authorizeRoute
+            ? await harnessEgressAuthorizeRoute({
+              root: Deno.cwd(),
+              route: opts.authorizeRoute,
+              cell: opts.cell ?? "",
+              rotation: opts.rotation ? resolve(opts.rotation) : "",
+              evidence: opts.evidence ?? "",
+            })
+            : await harnessEgressVerify({
+              root: Deno.cwd(),
+              ...(opts.mark ? { mark: opts.mark as MarkerState } : {}),
+              ...(opts.probeEvidence
+                ? { probeEvidence: resolve(opts.probeEvidence) }
+                : {}),
+              ...(opts.rotation ? { rotation: resolve(opts.rotation) } : {}),
+              ...(opts.cell ? { cell: opts.cell } : {}),
+              ...(opts.evidence ? { evidence: opts.evidence } : {}),
+            });
           for (const p of problems) {
             console.error(`${colors.red("[FAIL]")} ${p}`);
           }
@@ -4015,7 +4060,11 @@ export function registerHarnessCommand(
           }
           console.log(
             `${colors.green("[OK]")} egress policy verified${
-              opts.mark ? `; marker ${opts.mark} written` : ""
+              opts.authorizeRoute
+                ? `; route ${opts.authorizeRoute} authorized`
+                : opts.mark
+                ? `; marker ${opts.mark} written`
+                : ""
             }`,
           );
         })

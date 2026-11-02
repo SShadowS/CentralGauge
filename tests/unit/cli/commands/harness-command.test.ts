@@ -13,6 +13,7 @@ import {
   type CellCliOptions,
   cellGate,
   harnessCell,
+  harnessEgressAuthorizeRoute,
   harnessEgressVerify,
   harnessImagesBuild,
   harnessJudgeFixture,
@@ -28,6 +29,7 @@ import {
   parseRerunCell,
   publicationLockDir,
   registerHarnessCommand,
+  type RouteAuthorizeOptions,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
 import {
@@ -51,14 +53,19 @@ import {
   recordFile,
 } from "../../../../src/harness/quarantine.ts";
 import {
+  authorizedRecordedHosts,
   BACKEND_PORT,
   cellEgressProblems,
   type EgressState,
   firewallPlan,
+  hostsForRoutes,
   preflightExpect,
   PROXY_PORT,
   realEgressRuntime,
   RECORDED_HOSTS_PATH,
+  recordedHostsJson,
+  recordingPath,
+  routeAuthorizationProblems,
   SANDBOX_NETWORK,
 } from "../../../../src/harness/egress.ts";
 import {
@@ -11960,4 +11967,555 @@ Deno.test("H-35 run 004 Sol r2 N4/N5 recover: no clean after-capture, a recorded
   await plant(`${roots[0]}\\f.txt:hid`);
   await recoverContainer(o, d, mech);
   assertEquals(await findRecords(qDir, key), []);
+});
+
+// H-02 run 002: per-route authorization. A later route (openai-codex:oauth)
+// is recorded in its own file and authorized on its own; the M1-34 marker
+// keeps covering the routes it authorized.
+
+const CODEX = "openai-codex:oauth";
+const inMin = (min: number) =>
+  new Date(Date.now() + min * 60_000).toISOString();
+/**
+ * An authorized marker whose own authorization lies two hours back, so a
+ * codex rotation, record-mode cell and route authorization can follow it
+ * in real time order (H-02 run 003: verified_at after all of them).
+ */
+async function codexRoot(): Promise<string> {
+  const root = await authorizedRoot();
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const m = JSON.parse(await Deno.readTextFile(markerPath));
+  await Deno.writeTextFile(
+    markerPath,
+    JSON.stringify({ ...m, verified_at: inMin(-120) }),
+  );
+  return root;
+}
+
+/** A record-mode codex cell's tagged log: its preflight lines, then the agent phase. */
+const codexLog = (extra: LogLine[] = [], pre = true): LogLine[] => [
+  ...(pre
+    ? [
+      ["allow", "example.com:443", "allowed"],
+      ["deny", "1.1.1.1:443", "ip literal"],
+    ].map(([decision, target, reason]) => ({
+      at: "2026-10-20T08:00:00.000Z",
+      decision,
+      target,
+      reason,
+      phase: "preflight",
+    }))
+    : []),
+  {
+    at: "2026-10-20T08:00:05.000Z",
+    decision: "allow",
+    target: "chatgpt.example.test:443",
+    reason: "allowed",
+    phase: "agent",
+  },
+  ...extra,
+];
+
+/** The supervised record-mode pi cell that recorded CODEX, and the recording naming it. */
+async function recordCodex(
+  root: string,
+  id: string,
+  o: {
+    started: string;
+    log?: LogLine[];
+    supervised?: boolean;
+    route?: string;
+    source?: string;
+  },
+) {
+  const cells = join(root, "results", "harness", "cells");
+  await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "executions", "camp1", `${id}.json`),
+    JSON.stringify({
+      id,
+      manifest: { harness: "pi", provider_routes: { main: o.route ?? CODEX } },
+      termination: "completed",
+      started_at: o.started,
+    }),
+  );
+  await Deno.mkdir(join(cells, "runs", id), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", id, "record-mode.json"),
+    JSON.stringify({
+      v: 1,
+      execution_id: id,
+      record_mode: true,
+      supervised: o.supervised ?? true,
+      credential_bearing: true,
+      harness: "pi",
+      termination: "completed",
+    }),
+  );
+  await Deno.writeTextFile(
+    join(cells, "runs", id, "egress.jsonl"),
+    jsonl(o.log ?? codexLog()),
+  );
+  const rec = join(root, ...recordingPath(CODEX).split("/"));
+  await Deno.mkdir(join(rec, ".."), { recursive: true });
+  await Deno.writeTextFile(
+    rec,
+    recordedHostsJson(
+      ["chatgpt.example.test"],
+      o.source ?? `record mode execution ${id}`,
+      CODEX,
+    ),
+  );
+}
+
+Deno.test("per-route authorization (H-02 run 002): a master marker keeps authorizing its routes while openai-codex:oauth is unrecorded or unauthorized; only codex refuses", async () => {
+  const root = await codexRoot();
+  const shared = join(root, "results", "harness");
+  const ok = () => Promise.resolve([]);
+  const m = JSON.parse(await Deno.readTextFile(join(shared, EGRESS_MARKER)));
+  // The marker as master writes it: no route authorizations.
+  assertEquals(m.routes_authorized, undefined);
+  const check = async () => {
+    assertEquals(await egressMode(shared, ok), "enforced");
+    assertEquals(
+      await harnessEgressVerify({ root }, markerAwareCollector()),
+      [],
+    );
+    const rec = await authorizedRecordedHosts(root, m);
+    assertEquals(Object.keys(rec), ["anthropic:first-party-oauth"]);
+    assertEquals(hostsForRoutes(["anthropic:first-party-oauth"], rec), [
+      "api.anthropic.com",
+      "oauth.example.test",
+    ]);
+    assertEquals(hostsForRoutes(["openrouter:api-key"], rec), [
+      "openrouter.ai",
+    ]);
+    assertThrows(() => hostsForRoutes([CODEX], rec), ConfigurationError, CODEX);
+    assertStringIncludes(
+      (await routeAuthorizationProblems(root, m, CODEX)).join("\n"),
+      "no route authorization",
+    );
+  };
+  await check(); // codex unrecorded
+  await recordCodex(root, "cell-cx", { started: inMin(-20) });
+  await check(); // recorded, not authorized: the marker's own recording is untouched
+});
+
+Deno.test("route authorization (H-02 run 002): the codex recording cell is checked like the Claude cell; then codex gets exactly its recorded hosts; rechecked at every read", async () => {
+  const root = await codexRoot();
+  const shared = join(root, "results", "harness");
+  const markerPath = join(shared, EGRESS_MARKER);
+  const ok = () => Promise.resolve([]);
+  const before = JSON.parse(await Deno.readTextFile(markerPath));
+  const rotation = join(root, "rotation-codex.json");
+  const rotate = (names: string[], at = inMin(-30)) =>
+    Deno.writeTextFile(
+      rotation,
+      JSON.stringify({
+        v: 1,
+        credentials: names.map((name) => ({
+          name,
+          revoked_at: at,
+          created_at: at,
+        })),
+      }),
+    );
+  await rotate(["openai-codex"]);
+  const auth = async (o: Partial<RouteAuthorizeOptions> = {}) =>
+    (await harnessEgressAuthorizeRoute({
+      root,
+      route: CODEX,
+      cell: "cell-cx",
+      rotation,
+      evidence: "H-02/001",
+      ...o,
+    })).join("\n");
+  assertStringIncludes(await auth(), CODEX); // nothing recorded yet
+  assertStringIncludes(
+    await auth({ route: "anthropic:first-party-oauth" }),
+    "not a route authorized on its own",
+  );
+  const refused: [string, Parameters<typeof recordCodex>[2], string][] = [
+    ["before the rotation", { started: inMin(-40) }, "before the rotation"],
+    [
+      "before the marker",
+      { started: inMin(-180) },
+      "before the marker's authorization",
+    ],
+    ["unsupervised", { started: inMin(-20), supervised: false }, "supervised"],
+    [
+      "another route",
+      { started: inMin(-20), route: "openrouter:api-key" },
+      "did not run on openai-codex:oauth",
+    ],
+    [
+      "agent deny",
+      {
+        started: inMin(-20),
+        log: codexLog([{
+          at: "2026-10-20T08:00:06.000Z",
+          decision: "deny",
+          target: "evil.test:443",
+          reason: "host not allowed",
+          phase: "agent",
+        }]),
+      },
+      "agent-phase deny",
+    ],
+    [
+      "unrecorded allow",
+      {
+        started: inMin(-20),
+        log: codexLog([{
+          at: "2026-10-20T08:00:06.000Z",
+          decision: "allow",
+          target: "other.example.test:443",
+          reason: "allowed",
+          phase: "agent",
+        }]),
+      },
+      "is not a recorded host",
+    ],
+    [
+      "no preflight",
+      { started: inMin(-20), log: codexLog([], false) },
+      "missing preflight line",
+    ],
+    [
+      "re-record spoof",
+      { started: inMin(-20), source: "record mode execution cell-ok" },
+      "does not name cell cell-cx",
+    ],
+  ];
+  for (const [what, o, want] of refused) {
+    await recordCodex(root, "cell-cx", o);
+    assertStringIncludes(await auth(), want, what);
+  }
+  await recordCodex(root, "cell-cx", { started: inMin(-20) });
+  await rotate(["claude-oauth"]);
+  assertStringIncludes(await auth(), "rotation record lacks openai-codex");
+  await rotate(["openai-codex"]);
+  assertStringIncludes(await auth({ evidence: " " }), "--evidence");
+  assertEquals(
+    JSON.parse(await Deno.readTextFile(markerPath)),
+    before,
+    "a refused route authorization writes nothing",
+  );
+  assertEquals(await auth(), "");
+  const after = JSON.parse(await Deno.readTextFile(markerPath));
+  // The marker's own fields and hashes are unchanged.
+  const { routes_authorized: own, ...rest } = after;
+  assertEquals(rest, before);
+  assertEquals(Object.keys(own), [CODEX]);
+  assertEquals(await egressMode(shared, ok), "enforced");
+  assertEquals(await harnessEgressVerify({ root }, markerAwareCollector()), []);
+  let rec = await authorizedRecordedHosts(root, after);
+  assertEquals(hostsForRoutes([CODEX], rec), ["chatgpt.example.test"]);
+  // The environment's runtime hands out exactly the authorized recordings.
+  const runtimeHosts = async () =>
+    (await realEgressRuntime({
+      repoRoot: root,
+      markerPath,
+      acceptCandidate: true,
+    }))
+      .recordedHosts;
+  assertEquals(Object.keys(await runtimeHosts()).sort(), [
+    "anthropic:first-party-oauth",
+    CODEX,
+  ]);
+  assertStringIncludes(await auth(), "already authorized");
+  // Every read rechecks it: a changed codex cell drops codex only.
+  const facts = join(shared, "cells", "runs", "cell-cx", "record-mode.json");
+  const f = JSON.parse(await Deno.readTextFile(facts));
+  await Deno.writeTextFile(facts, JSON.stringify({ ...f, supervised: false }));
+  rec = await authorizedRecordedHosts(root, after);
+  assertEquals(Object.keys(rec), ["anthropic:first-party-oauth"]);
+  assertEquals(Object.keys(await runtimeHosts()), [
+    "anthropic:first-party-oauth",
+  ]);
+  assertEquals(await egressMode(shared, ok), "enforced");
+  assertStringIncludes(
+    (await harnessEgressVerify({ root }, markerAwareCollector())).join("\n"),
+    "route openai-codex:oauth: openai-codex:oauth: cell cell-cx was not supervised",
+  );
+  await Deno.writeTextFile(facts, JSON.stringify(f));
+  // A changed codex recording drops it too.
+  const recPath = join(root, ...recordingPath(CODEX).split("/"));
+  await Deno.writeTextFile(
+    recPath,
+    recordedHostsJson(
+      ["chatgpt.example.test", "more.example.test"],
+      "record mode execution cell-cx",
+      CODEX,
+    ),
+  );
+  assertStringIncludes(
+    (await routeAuthorizationProblems(root, after, CODEX)).join("\n"),
+    "recorded_hosts_sha256 does not match",
+  );
+  assertEquals(Object.keys(await authorizedRecordedHosts(root, after)), [
+    "anthropic:first-party-oauth",
+  ]);
+  assertEquals(await egressMode(shared, ok), "enforced");
+});
+
+Deno.test("per-route authorization (H-02 run 002 review): a malformed codex recording refuses only codex; the marker's routes still verify and run", async () => {
+  const bad: [string, string][] = [
+    ["not JSON", "{"],
+    [
+      "wrong route key",
+      recordedHostsJson(["x.example.test"], "record mode execution cell-cx"),
+    ],
+    [
+      "schema-invalid",
+      JSON.stringify({
+        v: 1,
+        source: "record mode execution cell-cx",
+        routes: { [CODEX]: ["auth.openai.com"] },
+      }),
+    ],
+  ];
+  for (const authorized of [false, true]) {
+    const root = await codexRoot();
+    const shared = join(root, "results", "harness");
+    const markerPath = join(shared, EGRESS_MARKER);
+    if (authorized) {
+      await recordCodex(root, "cell-cx", { started: inMin(-20) });
+      const rotation = join(root, "rotation-codex.json");
+      await Deno.writeTextFile(
+        rotation,
+        JSON.stringify({
+          v: 1,
+          credentials: [{
+            name: "openai-codex",
+            revoked_at: inMin(-30),
+            created_at: inMin(-30),
+          }],
+        }),
+      );
+      assertEquals(
+        await harnessEgressAuthorizeRoute({
+          root,
+          route: CODEX,
+          cell: "cell-cx",
+          rotation,
+          evidence: "H-02/001",
+        }),
+        [],
+      );
+    }
+    const m = JSON.parse(await Deno.readTextFile(markerPath));
+    const recPath = join(root, ...recordingPath(CODEX).split("/"));
+    await Deno.mkdir(join(recPath, ".."), { recursive: true });
+    for (const [what, text] of bad) {
+      const tag = `${what} (${authorized ? "authorized" : "unauthorized"})`;
+      await Deno.writeTextFile(recPath, text);
+      assertEquals(
+        await egressMode(shared, () => Promise.resolve([])),
+        "enforced",
+        tag,
+      );
+      const rec = await authorizedRecordedHosts(root, m);
+      assertEquals(Object.keys(rec), ["anthropic:first-party-oauth"], tag);
+      const rt = await realEgressRuntime({
+        repoRoot: root,
+        markerPath,
+        acceptCandidate: true,
+      });
+      assertEquals(
+        Object.keys(rt.recordedHosts),
+        ["anthropic:first-party-oauth"],
+        tag,
+      );
+      assertEquals(
+        hostsForRoutes(["openrouter:api-key"], rt.recordedHosts),
+        ["openrouter.ai"],
+        tag,
+      );
+      assertThrows(
+        () => hostsForRoutes([CODEX], rt.recordedHosts),
+        ConfigurationError,
+        CODEX,
+        tag,
+      );
+      const problems = await routeAuthorizationProblems(root, m, CODEX);
+      assert(problems.length > 0, tag);
+      if (authorized) {
+        assertStringIncludes(problems.join("\n"), recordingPath(CODEX), tag);
+        // The marker's own routes verify; the report names only the codex route.
+        const v = await harnessEgressVerify(
+          { root },
+          markerAwareCollector(),
+        );
+        assert(
+          v.length > 0 && v.every((x) => x.startsWith(`route ${CODEX}`)),
+          tag,
+        );
+      } else {
+        assertEquals(
+          await harnessEgressVerify({ root }, markerAwareCollector()),
+          [],
+          tag,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("route authorization (H-02 run 002 review): the rotation instant compares as time, not text (mixed fractional seconds)", async () => {
+  const root = await codexRoot();
+  const s = new Date(Date.now() - 10 * 60_000).toISOString().slice(0, 19);
+  const rotation = join(root, "rotation-codex.json");
+  // As text "...Z" sorts after "...500Z"; as time the .500 instant is later.
+  await Deno.writeTextFile(
+    rotation,
+    JSON.stringify({
+      v: 1,
+      credentials: [{
+        name: "openai-codex",
+        revoked_at: `${s}Z`,
+        created_at: `${s}.500Z`,
+      }],
+    }),
+  );
+  await recordCodex(root, "cell-cx", { started: `${s}.250Z` });
+  assertStringIncludes(
+    (await harnessEgressAuthorizeRoute({
+      root,
+      route: CODEX,
+      cell: "cell-cx",
+      rotation,
+      evidence: "H-02/001",
+    })).join("\n"),
+    `before the rotation (${s}.500Z)`,
+  );
+});
+
+/** A marker with openai-codex:oauth authorized on its own (H-02 run 003). */
+async function codexAuthorizedRoot() {
+  const root = await codexRoot();
+  const shared = join(root, "results", "harness");
+  const markerPath = join(shared, EGRESS_MARKER);
+  await recordCodex(root, "cell-cx", { started: inMin(-20) });
+  const rotation = join(root, "rotation-codex.json");
+  const rotationText = JSON.stringify({
+    v: 1,
+    credentials: [{
+      name: "openai-codex",
+      revoked_at: inMin(-30),
+      created_at: inMin(-30),
+    }],
+  });
+  await Deno.writeTextFile(rotation, rotationText);
+  assertEquals(
+    await harnessEgressAuthorizeRoute({
+      root,
+      route: CODEX,
+      cell: "cell-cx",
+      rotation,
+      evidence: "H-02/001",
+    }),
+    [],
+  );
+  return { root, shared, markerPath, rotation, rotationText };
+}
+
+Deno.test("route authorization (H-02 run 003): every read validates the entry's route, rotation record, evidence and verified_at; each defect refuses codex only", async () => {
+  const { root, shared, markerPath, rotation, rotationText } =
+    await codexAuthorizedRoot();
+  const good = JSON.parse(await Deno.readTextFile(markerPath));
+  const entry = good.routes_authorized[CODEX];
+  assertEquals(await routeAuthorizationProblems(root, good, CODEX), []);
+  const withEntry = (e: Record<string, unknown>) => ({
+    ...good,
+    routes_authorized: { [CODEX]: e },
+  });
+  const later = (iso: string, ms: number) =>
+    new Date(Date.parse(iso) + ms).toISOString();
+  const cases: [string, Record<string, unknown>, string, string?][] = [];
+  for (const k of Object.keys(entry)) {
+    const { [k]: _gone, ...rest } = entry;
+    cases.push([`no ${k}`, withEntry(rest), k]);
+  }
+  cases.push(
+    [
+      "route mismatch",
+      withEntry({ ...entry, route: "openrouter:api-key" }),
+      "route",
+    ],
+    ["blank evidence", withEntry({ ...entry, evidence: "  " }), "evidence"],
+    ["extra field", withEntry({ ...entry, note: "x" }), "note"],
+    [
+      "rotated_at edited",
+      withEntry({ ...entry, rotated_at: later(entry.rotated_at, 1000) }),
+      "rotated_at",
+    ],
+    [
+      "future verified_at",
+      withEntry({
+        ...entry,
+        verified_at: later(new Date().toISOString(), 3600_000),
+      }),
+      "future",
+    ],
+    [
+      "verified_at before the marker",
+      withEntry({ ...entry, verified_at: later(good.verified_at, -1000) }),
+      "verified_at",
+    ],
+    [
+      "verified_at before the cell started",
+      withEntry({ ...entry, verified_at: later(entry.rotated_at, 1) }),
+      "verified_at",
+    ],
+  );
+  const refusesCodexOnly = async (what: string, m: unknown, want: string) => {
+    await Deno.writeTextFile(markerPath, JSON.stringify(m));
+    const mm = m as Record<string, unknown>;
+    assertStringIncludes(
+      (await routeAuthorizationProblems(root, mm, CODEX)).join("\n"),
+      want,
+      what,
+    );
+    assertEquals(
+      Object.keys(await authorizedRecordedHosts(root, mm)),
+      ["anthropic:first-party-oauth"],
+      what,
+    );
+    assertEquals(
+      await egressMode(shared, () => Promise.resolve([])),
+      "enforced",
+      what,
+    );
+  };
+  for (const [what, m, want] of cases) await refusesCodexOnly(what, m, want);
+  // The rotation record is re-read at every check.
+  await Deno.remove(rotation);
+  await refusesCodexOnly("rotation record missing", good, "rotation record");
+  await Deno.writeTextFile(
+    rotation,
+    JSON.stringify({
+      v: 1,
+      credentials: [{
+        name: "claude-oauth",
+        revoked_at: entry.rotated_at,
+        created_at: entry.rotated_at,
+      }],
+    }),
+  );
+  await refusesCodexOnly(
+    "rotation record without openai-codex",
+    good,
+    "lacks openai-codex",
+  );
+  const r = JSON.parse(rotationText);
+  r.credentials[0].created_at = later(entry.rotated_at, 1000);
+  await Deno.writeTextFile(rotation, JSON.stringify(r));
+  await refusesCodexOnly("rotation record edited", good, "rotated_at");
+  await Deno.writeTextFile(rotation, "{");
+  await refusesCodexOnly("rotation record not JSON", good, "rotation record");
+  // Restored, it authorizes again.
+  await Deno.writeTextFile(rotation, rotationText);
+  await Deno.writeTextFile(markerPath, JSON.stringify(good));
+  assertEquals(await routeAuthorizationProblems(root, good, CODEX), []);
 });

@@ -9,6 +9,7 @@ import {
   verify,
 } from "../../../scripts/harness/freeze-archive.ts";
 import { testTempDir, testTempFile } from "../../utils/temp-dir.ts";
+import { codexAuthText, FAKE_CODEX } from "./codex-fixture.ts";
 
 async function tree() {
   const root = await testTempDir();
@@ -552,4 +553,33 @@ Deno.test("the pack temp dir carries a fixed prefix and verify refuses a dir who
   await Deno.rename(good, left);
   assert((await verify(left)).some((x) => x.includes("temp dir")));
   assertEquals((await cli("verify", left)).code, 1);
+});
+
+Deno.test("H-02 review: an openai-codex-auth secret file is scanned for its inner access, refresh and accountId", async () => {
+  const f = join(await testTempDir(), "openai-codex-auth");
+  await Deno.writeTextFile(f, codexAuthText(1_900_000_000_000) + "\n");
+  for (const v of Object.values(FAKE_CODEX)) {
+    const root = await tree();
+    await Deno.writeTextFile(join(root, "leak.txt"), `x ${v} y`);
+    const hit = await assertRejects(
+      async () => pack(root, await out(), { meta: {}, secretFiles: [f] }),
+      FindingError,
+      "leak.txt",
+    );
+    assert(!hit.message.includes(v));
+  }
+  // A clean tree still packs: the JSON punctuation lines are not secrets.
+  const clean = await tree();
+  await Deno.writeTextFile(join(clean, "x.json"), '{ "type": "oauth",\n}');
+  assertEquals(
+    (await pack(clean, await out(), { meta: {}, secretFiles: [f] })).files,
+    3,
+  );
+  // A malformed codex file is operational, never echoed.
+  await Deno.writeTextFile(f, codexAuthText(1, { refresh: "rt" }));
+  const bad = await assertRejects(
+    async () => pack(await tree(), await out(), { meta: {}, secretFiles: [f] }),
+    OperationalError,
+  );
+  assert(!bad.message.includes(FAKE_CODEX.access));
 });

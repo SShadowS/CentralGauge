@@ -35,6 +35,7 @@ import {
   observedMismatch,
   type ParsedRun,
   requestedComponents,
+  secretFilesOf,
 } from "./adapter.ts";
 import { adapterFor } from "./adapters/mod.ts";
 import {
@@ -50,6 +51,13 @@ import type { BcLane, BuildCache, DeployContext } from "./bc-lane.ts";
 import type { ResetMechanism } from "./reset.ts";
 import type { BcEgressRecord } from "./environment.ts";
 import type { JudgeGate } from "./pool.ts";
+import {
+  CODEX_AUTH_FILE,
+  codexExpiryProblem,
+  parseCodexAuth,
+  releasedSecretFiles,
+  withCredentialForms,
+} from "./codex-auth.ts";
 import { reserveCredentialRun } from "./credential-budget.ts";
 import {
   type EgressLogLine,
@@ -62,7 +70,10 @@ import {
   proxyCredentialForms,
   RECORD_MODE_FILE,
   RECORDED_HOSTS_PATH,
+  RECORDED_ROUTES,
   recordedHostsJson,
+  recordingPath,
+  ROUTE_AUTHORIZED_ROUTES,
   SANDBOX_NETWORK,
   sandboxSource,
 } from "./egress.ts";
@@ -100,6 +111,7 @@ import {
   MIN_SECRET_LENGTH,
   namespaceOwner,
   OP_TIMEOUT_MS,
+  PI_STAGE_CODEX_ARGV,
   publishRedacted,
   READ_PREFIX,
   readSecretValues,
@@ -224,7 +236,8 @@ export interface HarnessEnv {
     /** H-35 S3 L2b: the admitted NST egress state, recorded in every verdict. */
     bcEgress?: BcEgressRecord | null;
   };
-  pricing(at: Date): Promise<PricingBook>;
+  /** The book at `at`; the arm's slugs settle an id listed on several routes (H-02). */
+  pricing(at: Date, armSlugs?: readonly string[]): Promise<PricingBook>;
   /** Started by a human at a terminal; no automatic retries. */
   supervised: boolean;
   /** True only when M1-24 confirmed the verified enforcement state at start (M1-33, M1-34). */
@@ -426,10 +439,22 @@ async function dummySecrets(
   files: readonly string[],
 ): Promise<string> {
   await Deno.mkdir(dir, { recursive: true });
+  const dummy = "stub-dummy-credential-".padEnd(40, "0");
   for (const f of files) {
     await Deno.writeTextFile(
       join(dir, f),
-      "stub-dummy-credential-".padEnd(40, "0"),
+      // The codex file is a pi auth.json; its dummy keeps that shape (H-02).
+      f === CODEX_AUTH_FILE
+        ? JSON.stringify({
+          "openai-codex": {
+            type: "oauth",
+            access: dummy,
+            refresh: dummy,
+            expires: 8.64e15,
+            accountId: dummy,
+          },
+        })
+        : dummy,
     );
   }
   return dir;
@@ -1196,14 +1221,18 @@ export function pickAccount(
 export async function checkAccountsSecrets(
   accounts: readonly SecretAccount[],
   files: readonly string[],
+  timeoutMin: number,
 ): Promise<void> {
-  for (const a of accounts) await checkOperatorSecrets(a.dir, files);
+  for (const a of accounts) {
+    await checkOperatorSecrets(a.dir, files, timeoutMin);
+  }
 }
 
 /** Operator secret files as the adapter declares them: present and long enough (preflight, nothing released). */
 async function checkOperatorSecrets(
   source: string,
   files: readonly string[],
+  timeoutMin: number,
 ): Promise<void> {
   for (const f of files) {
     if (!/^[A-Za-z0-9._-]+$/.test(f) || f.startsWith(".")) {
@@ -1224,6 +1253,11 @@ async function checkOperatorSecrets(
       throw new ConfigurationError(
         `secret ${f} is shorter than ${MIN_SECRET_LENGTH} characters`,
       );
+    }
+    // H-02: never refreshed inside the sandbox, so it must outlive the run.
+    if (f === CODEX_AUTH_FILE) {
+      const why = codexExpiryProblem(parseCodexAuth(v), timeoutMin);
+      if (why) throw new ConfigurationError(why);
     }
   }
 }
@@ -2272,22 +2306,39 @@ export async function runExecution(
     throw new ConfigurationError(`${cell.arm}: ${unqualified}`);
   }
   const record = env.recordOAuthHosts === true;
-  const recordedPath = join(env.repoRoot, ...RECORDED_HOSTS_PATH.split("/"));
+  /** Record mode records the one recorded route this arm runs on (H-02: not only the OAuth route). */
+  const recordRoutes = [
+    ...new Set(Object.values(cell.armManifest.provider_routes)),
+  ].filter((r) => RECORDED_ROUTES.includes(r));
+  const recordRoute = recordRoutes[0] ?? "";
+  // Each route's own recording file (H-02 run 002).
+  const recordedRel = recordRoute
+    ? recordingPath(recordRoute)
+    : RECORDED_HOSTS_PATH;
+  const recordedPath = join(env.repoRoot, ...recordedRel.split("/"));
   if (record) {
     const why = mode === "stub"
       ? "a stub cell releases no credential and is never placed"
       : !env.egress
       ? "the egress marker must be qualified (sandboxes placed)"
-      : env.egressEnforced
+      // A later route records under the authorized marker (H-02 run 002):
+      // only its own sandbox gets the record-mode proxy.
+      : env.egressEnforced && !ROUTE_AUTHORIZED_ROUTES.includes(recordRoute)
       ? "the marker is already authorized"
       : !env.supervised
       ? "it runs only supervised (harness cell --supervised)"
-      : adapter.harness !== "claude-code" || !adapter.credentialBearing
-      ? `it needs a credential-bearing Claude Code arm, not ${adapter.harness}`
+      : !adapter.credentialBearing || recordRoutes.length !== 1
+      ? `it needs a credential-bearing arm on exactly one recorded route (${
+        RECORDED_ROUTES.join(", ")
+      }), not ${adapter.harness} on ${
+        Object.values(cell.armManifest.provider_routes).join(", ") || "none"
+      }`
       : !env.credentialLedger
       ? "it runs inside the shared credential ledger (CG_CREDENTIAL_LEDGER)"
       : await exists(recordedPath)
-      ? `${RECORDED_HOSTS_PATH} exists (remove it explicitly to record again)`
+      ? `${
+        recordingPath(recordRoute)
+      } exists (remove it explicitly to record again)`
       : null;
     if (why) {
       throw new ConfigurationError(`${cell.arm}: record mode refused: ${why}`);
@@ -2326,7 +2377,11 @@ export async function runExecution(
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
   const started_at = now().toISOString();
-  const pricing = await env.pricing(now()); // loaded once; stored in the intent
+  // Loaded once; stored in the intent.
+  const pricing = await env.pricing(
+    now(),
+    Object.values(cell.armManifest.models),
+  );
   const base = forTask(cell.armManifest, cell.task.task.limits);
   // A drift drill runs another image of the same harness; the manifest
   // records the id and base digest of the image it ran.
@@ -2336,6 +2391,8 @@ export async function runExecution(
       image: await overrideImage(env, stub.image_override, base),
     }
     : base;
+  // Per manifest (H-02): a pi arm releases only its own route's credential.
+  const secretFiles = secretFilesOf(adapter, manifest);
   const p = privatePaths(env, id);
   await Deno.mkdir(p.quarantine, { recursive: true });
   // Immutable task snapshot for recovery; the folder keeps the task id (loadTask checks it).
@@ -2500,13 +2557,14 @@ export async function runExecution(
     // A stub cell releases no credential: every credential file is a dummy.
     const secretsSource = account
       ? account.dir
-      : await dummySecrets(join(p.work, "stub-secrets"), adapter.secretFiles);
+      : await dummySecrets(join(p.work, "stub-secrets"), secretFiles);
     // R-02: a real cell checks every supplied account dir, not only its own (a
     // campaign checks at its start too; `harness cell` reaches only this).
     // Like any missing secret, a failure is this cell's setup_failed.
+    const timeoutMin = manifest.limits.timeout_min;
     if (account) {
-      await checkAccountsSecrets(env.secretAccounts, adapter.secretFiles);
-    } else await checkOperatorSecrets(secretsSource, adapter.secretFiles);
+      await checkAccountsSecrets(env.secretAccounts, secretFiles, timeoutMin);
+    } else await checkOperatorSecrets(secretsSource, secretFiles, timeoutMin);
     // Predictable egress checks come before the grant and the reservation.
     let hosts: string[] = [];
     let expect: Record<string, boolean> = {};
@@ -2531,7 +2589,11 @@ export async function runExecution(
       }
       let hp: string[];
       try {
-        hp = await bounded(eg.verify(), 3 * opMs, "egress host verification");
+        hp = await bounded(
+          eg.verify(record ? [] : Object.values(manifest.provider_routes)),
+          3 * opMs,
+          "egress host verification",
+        );
       } catch (err) {
         throw egressFail(`egress host verification failed: ${msg(err)}`);
       }
@@ -2570,9 +2632,17 @@ export async function runExecution(
     try {
       const values = await readSecretValues(
         secretsSource,
-        adapter.secretFiles,
+        secretFiles,
         token,
       );
+      // H-02 review: the sandbox gets the codex file with its refresh token
+      // withheld; redaction and the argv guard cover the real inner values
+      // and the released copy as a whole.
+      const released = releasedSecretFiles(values);
+      const redact = [
+        ...withCredentialForms(values),
+        ...released.filter((r, i) => r.value !== values[i]!.value),
+      ];
       if (eg) {
         // The environment's shared proxy (M1-33d) and the backend listen on
         // the gateway only.
@@ -2638,12 +2708,29 @@ export async function runExecution(
       let credForms: SecretValue[] = [];
       /** Secret files, custody, keys, the released phase, then ready (empty, never custody) last. */
       const release = async () => {
-        await writeSecretFiles(dir, values);
-        await commitCustody([...values, ...credForms]);
+        await writeSecretFiles(dir, released);
+        await commitCustody([...redact, ...credForms]);
         await writeAtomic(
           p.intent,
           JSON.stringify({ ...intent, phase: "released" }, null, 2),
         );
+        // H-02 run 004: pi reads the codex OAuth entry only from its agent
+        // auth.json, which the agent user cannot write (H-01 run 005): the
+        // admin script stages it from the released file, validated, before
+        // ready. A failure throws here, so ready is never written.
+        if (
+          manifest.harness === "pi" && secretFiles.includes(CODEX_AUTH_FILE)
+        ) {
+          try {
+            await stagePiConfig(env.docker, name, opMs, PI_STAGE_CODEX_ARGV);
+          } catch (err) {
+            // Deterministic (the released file is refused, or the exec
+            // failed): recorded setup_failed, never judged, as the H-01 staging.
+            throw new ConfigurationError(
+              `pi codex auth staging failed: ${msg(err)}`,
+            );
+          }
+        }
         await Deno.writeTextFile(join(dir, READY_FILE), "");
       };
       // M10-08c run 002 item 1: right before the start, the private root is
@@ -2693,7 +2780,7 @@ export async function runExecution(
             env.streamEndGraceMs ?? STREAM_END_GRACE_MS,
           ),
         },
-        values.map((v) => v.value),
+        redact.map((v) => v.value),
         stop,
       );
       let preflightError: string | null = null;
@@ -2842,7 +2929,7 @@ export async function runExecution(
           // M1-33d review: the host and marker are read again right before
           // provider secrets and ready; any change since the first read refuses.
           const again = await bounded(
-            eg.verify(),
+            eg.verify(record ? [] : Object.values(manifest.provider_routes)),
             3 * opMs,
             "egress host verification before release",
           );
@@ -3062,7 +3149,7 @@ export async function runExecution(
       draft.execution.termination !== "completed" || recordedHosts.size === 0
     ) {
       throw new ContainerError(
-        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${RECORDED_HOSTS_PATH} not written`,
+        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${recordedRel} not written`,
         name,
         "setup",
       );
@@ -3083,9 +3170,14 @@ export async function runExecution(
         2,
       ) + "\n",
     );
+    // The route's own file (H-02 run 002): no other recording is touched.
     await writeAtomic(
       recordedPath,
-      recordedHostsJson([...recordedHosts], `record mode execution ${id}`),
+      recordedHostsJson(
+        [...recordedHosts],
+        `record mode execution ${id}`,
+        recordRoute,
+      ),
     );
   }
   return { execution: draft.execution, usageResetAt: draft.usage_reset_at };

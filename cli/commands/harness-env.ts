@@ -1597,7 +1597,8 @@ export async function openHarnessEnv(
         reset,
         ...(bcEgress ? { bcEgress } : {}),
       },
-      pricing: (at) => loadPricingBook(join(o.repoRoot, "site", "catalog"), at),
+      pricing: (at, armSlugs) =>
+        loadPricingBook(join(o.repoRoot, "site", "catalog"), at, armSlugs),
       supervised: o.supervised,
       egressEnforced: mode === "enforced",
       ...(egress ? { egress, proxyIsolation } : {}),

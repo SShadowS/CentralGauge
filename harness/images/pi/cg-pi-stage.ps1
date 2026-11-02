@@ -17,7 +17,10 @@ param(
   [string]$VerifyOnly,
   [string]$Dir = 'C:\pi-agent',
   [string]$Config = 'C:\config',
-  [string]$Owner = 'S-1-5-32-544'
+  [string]$Owner = 'S-1-5-32-544',
+  # H-02 run 004: stage the openai-codex OAuth entry (see the -Codex block).
+  [switch]$Codex,
+  [string]$Secret = 'C:\cg-secrets\openai-codex-auth'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -81,7 +84,58 @@ function Test-Shape([string]$d) {
   exit 0
 }
 
+$utf8 = New-Object System.Text.UTF8Encoding $false
+function Write-Locked([string]$name, [byte[]]$bytes) {
+  $p = Join-Path $Dir $name
+  [IO.File]::WriteAllBytes($p, $bytes)
+  # Owner first, while the inherited ACL still grants the writer WRITE_OWNER.
+  Invoke-Icacls @($p, '/setowner', ('*' + $Owner), '/Q')
+  Invoke-Icacls @($p, '/inheritance:r', '/grant:r', '*S-1-5-18:F', '*S-1-5-32-544:F', '*S-1-5-32-545:RX', '/Q')
+}
+
 if ($VerifyOnly) { Test-Shape $VerifyOnly }
+
+# H-02 run 004: -Codex runs once more, after the harness released the secrets
+# and before ready. pi reads credentials only from its agent auth.json, which
+# the agent user cannot write, so the openai-codex OAuth entry is staged here,
+# admin-owned like every file in the agent dir (pi cannot persist a refresh
+# there either). Only the staged "{}" is replaced, never a credential. The
+# released file must hold exactly one oauth entry, the refresh token withheld
+# (""). Any problem prints one [FAIL] line, exits 6 and writes nothing; no
+# line ever holds a value.
+if ($Codex) {
+  function Refuse([string]$why) {
+    [Console]::Out.WriteLine('[FAIL] openai-codex credential: ' + $why)
+    exit 6
+  }
+  $auth = Join-Path $Dir 'auth.json'
+  if (-not (Test-Path -LiteralPath $auth -PathType Leaf) -or ([IO.File]::ReadAllText($auth) -cne '{}')) {
+    Refuse 'the agent auth.json is not the staged {} (staged once, never replaced)'
+  }
+  if (-not (Test-Path -LiteralPath $Secret -PathType Leaf)) { Refuse 'the released file is missing' }
+  $bytes = [IO.File]::ReadAllBytes($Secret)
+  $v = $null
+  try {
+    $text = (New-Object System.Text.UTF8Encoding $false, $true).GetString($bytes)
+    $v = $text | ConvertFrom-Json
+  } catch { Refuse 'not JSON' }
+  if ($v -isnot [pscustomobject]) { Refuse 'not JSON' }
+  $names = @($v.PSObject.Properties | ForEach-Object { $_.Name })
+  if ($names.Count -ne 1 -or $names[0] -cne 'openai-codex') { Refuse 'must hold exactly one entry, openai-codex' }
+  $e = $v.'openai-codex'
+  # As src/harness/codex-auth.ts: printable, no space, quote or backslash, at least 16 characters.
+  $inner = '^[\x21\x23-\x5b\x5d-\x7e]{16,}$'
+  $fields = if ($e -is [pscustomobject]) { (@($e.PSObject.Properties | ForEach-Object { $_.Name }) | Sort-Object) -join ',' } else { '' }
+  if (($fields -cne 'access,accountId,expires,refresh,type') -or ($e.type -isnot [string]) -or ($e.type -cne 'oauth') -or
+      ($e.access -isnot [string]) -or ($e.access -cnotmatch $inner) -or ($e.accountId -isnot [string]) -or ($e.accountId -cnotmatch $inner) -or
+      -not (($e.expires -is [long]) -or ($e.expires -is [int]))) {
+    Refuse 'not an oauth entry of exactly access, refresh, expires, accountId'
+  }
+  if (($e.refresh -isnot [string]) -or ($e.refresh -cne '')) { Refuse 'the refresh token is not withheld' }
+  # The released bytes, unchanged: the host wrote them (codex-auth.ts releasedCodexAuth).
+  Write-Locked 'auth.json' $bytes
+  Test-Shape $Dir
+}
 
 $cfg = Get-Content (Join-Path $Config 'settings.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 # The recorded agent settings must disable billing outside message_end; never write null or partial settings.
@@ -112,14 +166,6 @@ $present = @(Get-ChildItem -LiteralPath $Dir -Force | ForEach-Object { $_.Name }
 if ($present.Count -gt 0) {
   [Console]::Out.WriteLine('[FAIL] ' + $Dir + ' is not empty: ' + ($present -join ', '))
   exit 1
-}
-$utf8 = New-Object System.Text.UTF8Encoding $false
-function Write-Locked([string]$name, [byte[]]$bytes) {
-  $p = Join-Path $Dir $name
-  [IO.File]::WriteAllBytes($p, $bytes)
-  # Owner first, while the inherited ACL still grants the writer WRITE_OWNER.
-  Invoke-Icacls @($p, '/setowner', ('*' + $Owner), '/Q')
-  Invoke-Icacls @($p, '/inheritance:r', '/grant:r', '*S-1-5-18:F', '*S-1-5-32-544:F', '*S-1-5-32-545:RX', '/Q')
 }
 Write-Locked 'settings.json' $utf8.GetBytes((ConvertTo-Json -InputObject $ps -Depth 8))
 if ($null -ne $agents) { Write-Locked 'AGENTS.md' $agents }
