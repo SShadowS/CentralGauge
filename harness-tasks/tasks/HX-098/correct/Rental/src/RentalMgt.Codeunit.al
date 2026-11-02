@@ -7,7 +7,7 @@ codeunit 70200 "CGR Rental Mgt"
         LicenceClassErr: Label 'Rental contract %1 needs driving licence class C or CE for van %2.', Comment = '%1 = contract number, %2 = vehicle number';
         BoatLicenceErr: Label 'Rental contract %1 needs the customer''s boat licence for boat %2.', Comment = '%1 = contract number, %2 = vehicle number';
         HarbourErr: Label 'Boat %1 can only be handed out at a harbour branch, not at branch %2.', Comment = '%1 = vehicle number, %2 = branch code';
-        SwapKindErr: Label 'Rental contract %1 cannot move from %2 to %3: a rental stays with one kind of asset.', Comment = '%1 = contract number, %2 = current vehicle, %3 = new vehicle';
+        SwapKindErr: Label 'Rental contract %1 cannot move from %2 to %3: a rental never moves between a boat and a road vehicle.', Comment = '%1 = contract number, %2 = current vehicle, %3 = new vehicle';
 
     procedure CreateContract(VehicleNo: Code[20]; CustomerName: Text[100]; StartDate: Date; EndDate: Date): Code[20]
     var
@@ -73,7 +73,7 @@ codeunit 70200 "CGR Rental Mgt"
             Error(NotAvailableErr, NewVehicleNo);
         HasOldVehicle := OldVehicle.Get(Contract."Vehicle No.");
         if HasOldVehicle then
-            if OldVehicle."Asset Type" <> NewVehicle."Asset Type" then
+            if IsBoat(OldVehicle) <> IsBoat(NewVehicle) then
                 Error(SwapKindErr, ContractNo, OldVehicle."No.", NewVehicleNo);
         if HasOldVehicle then begin
             OldVehicle."Checked Out" := false;
@@ -118,5 +118,10 @@ codeunit 70200 "CGR Rental Mgt"
         if not Branch.Get(BranchCode) then
             exit(false);
         exit(Branch.Harbour);
+    end;
+
+    local procedure IsBoat(Vehicle: Record "CGR Vehicle"): Boolean
+    begin
+        exit(Vehicle."Asset Type" = Vehicle."Asset Type"::Boat);
     end;
 }

@@ -10,7 +10,7 @@ Where a boat differs:
 - It is metered in engine hours, not km. The rental includes a daily allowance of engine hours; extra hours are charged at an hourly rate from Setup. The km allowance and the excess km charge do not apply to boats.
 - It is serviced every 100 engine hours.
 - Boats are never leased.
-- A rental stays with one kind of asset from hand-out to return.
+- A rental never moves between a boat and a road vehicle.
 
 Everything else (the daily rate and pricing methods, damage, availability, posting) works for a boat as it does for a car.
 

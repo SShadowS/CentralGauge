@@ -33,6 +33,18 @@ codeunit 87420 "HX098 Boat Oracle"
         RentalMgt.Return(ContractNo, 2010, '');
         Contract.Get(ContractNo);
         Assert.AreEqual(300, Pricing.CalcAmount(Contract), 'S1: the weekend package prices a boat like a car');
+
+        HX098WeekendSurcharge(50);
+        HX098Asset('HX98-B1S', "CGR Asset Type"::Boat, 3000, 100);
+        ContractNo := HX098Contract('HX98-B1S', 'HX98-HB', 'BL-0112');
+        Contract.Get(ContractNo);
+        Contract."Start Date" := 20270305D;
+        Contract."End Date" := 20270307D;
+        Contract.Modify();
+        RentalMgt.CheckOut(ContractNo);
+        RentalMgt.Return(ContractNo, 3010, '');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(400, Pricing.CalcAmount(Contract), 'S1: Friday to Sunday, 300 plus the weekend surcharge on two days');
     end;
 
     [Test]
@@ -257,6 +269,17 @@ codeunit 87420 "HX098 Boat Oracle"
         ContractNo := HX098Contract('HX98-B13', 'HX98-HB', 'BL-1313');
         RentalMgt.CheckOut(ContractNo);
         asserterror RentalMgt.SwapVehicle(ContractNo, 'HX98-C13');
+    end;
+
+    local procedure HX098WeekendSurcharge(SurchargePct: Decimal)
+    var
+        Setup: Record "CGR Setup";
+        SessionContext: Codeunit "CGR Session Context";
+    begin
+        Setup.Get();
+        Setup."Weekend Surcharge %" := SurchargePct;
+        Setup.Modify();
+        SessionContext.Reset();
     end;
 
     local procedure HX098KmAllowance(KmPerDay: Integer)
