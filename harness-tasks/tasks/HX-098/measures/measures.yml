@@ -1,0 +1,38 @@
+v: 1
+partial_credit:
+  # Breadth class: scenarios grouped by functional area. Weights give each of the eight planned naives its own score.
+  # S1 S2 pricing, S3-S5 hand-out, S6 S7 S13 swap, S8 service, S9 leasing, S10 ledger, S11 reporting, S12 portal.
+  weights:
+    "87420/Scenario01": 4
+    "87420/Scenario02": 4
+    "87420/Scenario03": 2
+    "87420/Scenario04": 1
+    "87420/Scenario05": 1
+    "87420/Scenario06": 1
+    "87420/Scenario07": 1
+    "87420/Scenario08": 4
+    "87420/Scenario09": 5
+    "87420/Scenario10": 3
+    "87420/Scenario11": 3
+    "87420/Scenario12": 2
+    "87420/Scenario13": 1
+  hidden_regressions:
+    - "87420/Scenario14"
+    - "87420/Scenario15"
+    - "87420/Scenario16"
+    - "87420/Scenario17"
+reuse: null
+# Planned, not yet gated. Total weight 32. Template floor: copying the planted car/van sites only (explicit-sites-only) scores 13/32.
+# enum-only passes S5 S7 (2/32); explicit-sites-only loses S2 S4 S6 S8 S9 S10 S13 (13/32); pricing-with-km loses S2 S10 (25/32);
+# no-lease-guard loses S9 (27/32); default-strategy loses S8 (28/32); summary-forgot loses S11 (29/32);
+# no-swap-guard loses S6 S13 (30/32); licence-only-checkout loses S4 (31/32).
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/enum-only: { partial_credit: 0.0625 }
+  naive/explicit-sites-only: { partial_credit: 0.40625 }
+  naive/pricing-with-km: { partial_credit: 0.78125 }
+  naive/no-lease-guard: { partial_credit: 0.84375 }
+  naive/default-strategy: { partial_credit: 0.875 }
+  naive/summary-forgot: { partial_credit: 0.90625 }
+  naive/no-swap-guard: { partial_credit: 0.9375 }
+  naive/licence-only-checkout: { partial_credit: 0.96875 }

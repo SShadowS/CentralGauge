@@ -106,6 +106,28 @@ task a frontier model fails on attempt 1, not a realistic ticket that every mode
    task does not ship: it goes to the filler pool (if the batch books one) or is dropped. Budget
    about three builds per shipped task.
 
+**Breadth class (owner 2026-11-02).** A breadth task is graded on coverage, not on one withheld
+fact: a new kind of thing (an asset type, a document type) must reach every place the app
+silently assumes the existing kinds. It is exempt from rule 1 (no measured BC fact is needed,
+and the `frontier-catcher: yes` requirement does not apply) and from rule 4's ship condition
+(the frontier attempt still runs and records partial credit, but an attempt-1 pass does not
+block shipping). It may merge once (a) holds; it stays in the breadth pool only if (b) holds:
+
+- (a) the hidden checks spread partial credit: every functional area has one or more
+  independently scored fail_to_pass procedures, and every planned incomplete naive lands at a
+  distinct, non-zero score below 1.0 in the gate;
+- (b) a setup comparison, run by lane-ops after merge at equal limits, separates the arms: with at
+  least three repeats per arm, the mean partial credit of two arms differs by more than the
+  larger of the two arms' sample standard deviations. If it does not, the orchestrator retires the task to the filler pool.
+
+A breadth task is never counted as a frontier-catcher. Rule 2 applies with one boundary: the
+overlay may plant working code for the existing kinds (that is where the touchpoints live), and
+the correct diff may extend those planted sites, but the design states the template floor (the
+score from extending planted sites alone), and the difficulty must rest on touchpoints that no
+single keyword finds and that no planted site points at. Rule 3 applies to a feature ticket as:
+state the request and the business differences of the new kind, plus the API seams the oracle
+needs; never name a touchpoint, a procedure to change, or the number of places involved.
+
 For hard tasks, prefer assembling over inventing: combine two or three gated single-trap tasks
 (Commit-family donors first) into one overlay with one symptom. That is the only route with
 measured frontier failures so far (LESSONS.md, composite sections).
