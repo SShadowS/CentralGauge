@@ -5,23 +5,26 @@ partial_credit:
     "87280/Scenario02": 1
     "87280/Scenario03": 1
     "87280/Scenario05": 1
+    "87280/Scenario06": 1
     "87280/Scenario07": 1
   hidden_regressions:
     - "87280/Scenario04"
-    - "87280/Scenario06"
     - "87280/Scenario08"
     - "87280/Scenario09"
 reuse: null
-# Measured: gate 2026-11-02T02-02-05-220Z on f8c688af (Cronus284) matched every value below.
-# optimistic-failure passes every weighted row: it loses only the hidden regression S6,
-# which partial_credit does not count (it shows in the hidden-regression share).
+# S6 (an entry that never failed is never shown as failed) is weighted, so optimistic-failure
+# no longer takes full credit. The baseline passes S6, so it scores 1/6.
+# Reasoned from the failing rows of gate 2026-11-02T02-02-05-220Z on f8c688af (Cronus284):
+# mark-without-commit, mark-before-send and flags-on-entry lose S1 S2 S3 S5 S7 (pass S6);
+# mark-per-entry loses S3; mail-only loses S2; optimistic-failure loses S6;
+# never-cleared and clear-only-clean lose S1 S2 among the weighted rows.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/mark-without-commit: { partial_credit: 0 }
-  naive/mark-per-entry: { partial_credit: 0.8 }
-  naive/mail-only: { partial_credit: 0.8 }
-  naive/mark-before-send: { partial_credit: 0 }
-  naive/optimistic-failure: { partial_credit: 1 }
-  naive/never-cleared: { partial_credit: 0.6 }
-  naive/clear-only-clean: { partial_credit: 0.6 }
-  naive/flags-on-entry: { partial_credit: 0 }
+  naive/mark-without-commit: { partial_credit: 0.16666666666666666 }
+  naive/mark-per-entry: { partial_credit: 0.8333333333333334 }
+  naive/mail-only: { partial_credit: 0.8333333333333334 }
+  naive/mark-before-send: { partial_credit: 0.16666666666666666 }
+  naive/optimistic-failure: { partial_credit: 0.8333333333333334 }
+  naive/never-cleared: { partial_credit: 0.6666666666666666 }
+  naive/clear-only-clean: { partial_credit: 0.6666666666666666 }
+  naive/flags-on-entry: { partial_credit: 0.16666666666666666 }

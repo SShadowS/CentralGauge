@@ -10,7 +10,7 @@ Product owner decision: take every open share off the owner's amount, whether it
 
 - The owner's payout line is reduced by all open third-party shares. Closed shares are not deducted.
 - When all open shares of the statement are on hold, the owner's payout line is proposed with To Be Paid off.
-- Nobody can switch To Be Paid on for such an owner line while its shares are still all on hold. Once a hold is released, it can be switched on again. Switching it on is refused right away, before the line is saved.
+- Nobody can switch To Be Paid on for such an owner line while its shares are still all on hold. Once a hold is released, it can be switched on again. The desk should get the error the moment they tick the box, not when they leave the line.
 - Payout lines for the shares themselves are proposed as today: only for shares that are open, not on hold and due by the cutoff. They can be switched on and off freely.
 - Statements without open shares are proposed as today.
 

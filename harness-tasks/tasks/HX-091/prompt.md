@@ -12,7 +12,7 @@ Observed:
 
 Expected:
 
-- A delivery that has happened stays done, even when a later step of the same attempt fails. A retry delivers only what has not yet been delivered for that invoice, whichever queue entry the earlier attempt ran under.
+- A delivery that has happened stays done, even when a later step of the same attempt fails. A retry delivers only what has not yet been delivered for that invoice.
 - Once an invoice has gone out on both channels it is complete. Queuing the same invoice again after that sends it again; that is how the desk does a deliberate resend.
 - A failed attempt leaves the entry with Error set, the error text in Error Message, and Retry Count increased by one for each failed attempt. An entry that has never failed is never shown as failed.
 - An invoice that goes through without errors gets exactly one mail and one export, as today.
