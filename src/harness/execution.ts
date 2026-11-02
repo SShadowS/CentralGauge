@@ -2312,12 +2312,10 @@ export async function runExecution(
   ].filter((r) => RECORDED_ROUTES.includes(r));
   const recordRoute = recordRoutes[0] ?? "";
   // Each route's own recording file (H-02 run 002).
-  const recordedPath = join(
-    env.repoRoot,
-    ...(recordRoute ? recordingPath(recordRoute) : RECORDED_HOSTS_PATH).split(
-      "/",
-    ),
-  );
+  const recordedRel = recordRoute
+    ? recordingPath(recordRoute)
+    : RECORDED_HOSTS_PATH;
+  const recordedPath = join(env.repoRoot, ...recordedRel.split("/"));
   if (record) {
     const why = mode === "stub"
       ? "a stub cell releases no credential and is never placed"
@@ -3151,7 +3149,7 @@ export async function runExecution(
       draft.execution.termination !== "completed" || recordedHosts.size === 0
     ) {
       throw new ContainerError(
-        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${RECORDED_HOSTS_PATH} not written`,
+        `record mode: execution ${id} ended ${draft.execution.termination} with ${recordedHosts.size} recorded hosts; ${recordedRel} not written`,
         name,
         "setup",
       );

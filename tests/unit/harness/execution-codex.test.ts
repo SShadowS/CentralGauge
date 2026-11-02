@@ -340,6 +340,21 @@ Deno.test("record mode (H-02): refused when the route's file exists (recorded or
   );
 });
 
+// H-02 rebase review finding 4: the failure names the route's own file.
+Deno.test("record mode (H-02): a codex recording cell that recorded no host names the codex recording file as not written", async () => {
+  const t = await codexEnv();
+  const eg = enforce(t);
+  t.env.egressEnforced = false;
+  t.env.recordOAuthHosts = true;
+  eg.recordedHosts = {};
+  const err = await assertRejects(() => recordRun(t, eg, []), ContainerError);
+  assert(
+    err.message.includes(`${recordingPath("openai-codex:oauth")} not written`),
+    err.message,
+  );
+  assert(!err.message.includes(RECORDED_HOSTS_PATH), err.message);
+});
+
 Deno.test("codex arm (H-02 run 002): enforced, it runs once its route's recorded hosts are authorized, and the proxy gets exactly them", async () => {
   const t = await codexEnv();
   const eg = enforce(t);
