@@ -149,6 +149,11 @@ nothing in flight. After a clear, run your start procedure again.
 - Before any sandbox run: every secrets file the run needs in `H:\Temp3\harness-spike\secrets\`
   must exist and must not start with `REPLACE_ME`. Placeholder or missing: `coord ask`
   naming the file, checkpoint `--wait owner`. Never print or log a secret value.
+- A harness run started outside the main checkout passes `--results-dir` naming the shared
+  results root (`U:\Git\CentralGauge\results\harness`): the egress marker, baselines and
+  bc-ledger are read there (H-49).
+- A credential-bearing run passes `--lane <your lane>` (or sets `CG_LANE`); without either
+  the credential reservation refuses it (H-49).
 - Lease before use, heartbeat every 5 minutes, release right after. Record the job you are
   about to start in your checkpoint note before starting it.
 - Container jobs for other lanes run in a clean checkout of the commit they name

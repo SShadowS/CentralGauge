@@ -953,6 +953,12 @@ the same flag with the same reason. The harness report then carries a
 This flag is separate from `--unverified-egress-ok`, which concerns the agent
 sandbox egress, not the BC container.
 
+These commands read the egress marker, the baselines and the bc-ledger under
+`--results-dir` (default `results/harness`), so a run started from another
+worktree passes `--results-dir` to the shared results root. They also take
+`--lane <name>`: the lane the credential-run ledger records. Without it the lane
+comes from `CG_LANE`; a credential-bearing run with neither is refused.
+
 ### harness env check
 
 Read-only. Prints each container's lineage, env_fp and baseline time, and exits
@@ -961,7 +967,7 @@ one env_fp.
 
 ```bash
 centralgauge harness env check --containers <names> --lineage <path> \
-  [--symbol-store <dir>] [--unverified-bc-egress-ok <reason>]
+  [--symbol-store <dir>] [--results-dir <dir>] [--unverified-bc-egress-ok <reason>]
 ```
 
 | Option                               | Default                   | Description                                    |
@@ -969,10 +975,11 @@ centralgauge harness env check --containers <names> --lineage <path> \
 | `--containers <names>`               | required                  | Comma-separated BC containers                  |
 | `--lineage <path>`                   | required                  | Reset lineage JSON                             |
 | `--symbol-store <dir>`               | `results/harness/symbols` | Host symbol store (its lock digest enters env_fp) |
+| `--results-dir <dir>`                | `results/harness`         | Harness results root holding the baselines (also on `baseline create` and `recover`) |
 | `--unverified-bc-egress-ok <reason>` | -                         | Check as a run that declares unenforced NST egress |
 
 A container is admitted when its instance manifest
-(`results/harness/baselines/<container>.json`) exists, names this container
+(`<results-dir>/baselines/<container>.json`) exists, names this container
 and this lineage, and records the same env_fp as the live one. The env_fp
 hashes the lineage's identity fields, the reset mechanism, the symbols lock
 digest and the container's compiler identity.
