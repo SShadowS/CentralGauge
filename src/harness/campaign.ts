@@ -860,6 +860,18 @@ async function campaignInvocation(
     env.harnessRoot,
     experimentId,
   );
+  // H-02 (orchestrator ruling): the codex arm holds one ChatGPT credential, so
+  // it runs with a single account; every account's copy would expire on its own.
+  const accounts = env.secretAccounts?.length ?? 0;
+  for (const c of accounts > 1 ? configs : []) {
+    if (c.harness !== "pi") continue; // the codex route is pi's only
+    const routes = Object.values(adapterFor(c.harness).providerRoutes(c));
+    if (routes.includes("openai-codex:oauth")) {
+      throw new ConfigurationError(
+        `${c.id} runs on openai-codex:oauth with one --secrets-dir account, not ${accounts}`,
+      );
+    }
+  }
   // Every arm's image, before any recovery, record or cell (new run and resume).
   const armProblem = placedConcurrencyProblem(
     placedGateOf(env),

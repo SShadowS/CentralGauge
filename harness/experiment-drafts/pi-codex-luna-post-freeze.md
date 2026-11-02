@@ -97,6 +97,11 @@ frozen `pi-sonnet-plain`) and `pi-gpt6-luna-codex`.
      alone while it is valid), the staged auth.json is read-only to the agent (pi cannot
      persist a refresh), the guard refuses a token that does not outlive
      `timeout_min + 5` minutes, and a recording holding an `auth*.openai.com` host is refused.
+   - **One account only.** A codex arm runs with a single `--secrets-dir` (one ChatGPT
+     subscription, one credential). Every cell checks every supplied account dir (R-02),
+     including the codex expiry, so with several accounts each would need its own copy, each
+     expiring on its own clock, and one stale copy would refuse every codex cell. A campaign
+     with a codex arm and more than one account is refused at start (dry run too).
 4. **Rotate the codex credential** (owner). A rotation record alone is not a rotation:
    - First note when the old access token expires, printing only the date, never a token.
      Run this before `/logout` (which deletes the local entry), once for each copy (the pi
@@ -157,7 +162,8 @@ frozen `pi-sonnet-plain`) and `pi-gpt6-luna-codex`.
    - no credential in the published files (a grep for the start of the access token finds
      nothing; redactions show as `[REDACTED:openai-codex-auth]`).
 8. **Experiment** (owner decision): move `harness/experiment-drafts/pi-codex-luna.yml` into
-   `harness/experiments/`, run the `--sample 1` dry run, then the campaign. Cost reporting:
+   `harness/experiments/`, run the `--sample 1` dry run, then the campaign, both with one
+   `--secrets-dir` (step 3: more than one account is refused). Cost reporting:
    the record carries the list-price estimate; the subscription cash cost is 0 and paid spend
    (`decisions/spend.md`) does not change.
 
