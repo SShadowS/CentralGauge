@@ -200,11 +200,13 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         Share."Due Date" := DMY2Date(31, 5, 2027);
         Share."Payee Code" := 'BANK02';
         Share.Modify();
+        HX096AddShare(96011, 3, 20.00, false, true, false);
         Commit();
         HX096Suggest();
-        HX096AssertMain(96011, 920.30, true, 3, 'S11');
+        HX096AssertMain(96011, 900.30, true, 4, 'S11');
         HX096AssertShare(96011, 1, 30.10, true, 'S11 first share');
         HX096AssertShare(96011, 2, 50.15, true, 'S11 share due on the cutoff day');
+        HX096AssertShare(96011, 3, 20.00, true, 'S11 second share to the first payee');
         HX096Reset(96011);
     end;
 
