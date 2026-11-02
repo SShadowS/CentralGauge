@@ -13,6 +13,8 @@ partial_credit:
     "87280/Scenario10": 1
   hidden_regressions: []
 reuse: null
+# Measured: gate 2026-11-02T09-20-13-905Z on 162ac549 (Cronus284) matched every value below, after
+# mark-mail-before-send was corrected from the reasoned 0.8 to the measured 0.4.
 # Every scenario is weighted (C-15): each states a requirement of the ticket, so a wrong fix that
 # breaks one of them cannot take full credit. The baseline passes S4 S6 S8 S9, so it scores 4/10.
 # S1-S9 reasoned from the failing rows of gate 2026-11-02T02-02-05-220Z on f8c688af (Cronus284):
@@ -25,7 +27,9 @@ reuse: null
 # and first-error-only (keeps the first error). The other naives pass it.
 # error-after-mail (Sol C-15 r1) sets Error on the entry once the mail is out, before the export:
 # S6 reads the entry at every delivery step, so it loses S6 only.
-# mark-mail-before-send (Sol C-15 r3) commits the mail mark before sending: loses S8, S10.
+# mark-mail-before-send (Sol C-15 r3) commits the mail mark before sending: a failed mail is never
+# retried (S8, S10), and the mail log row written after that commit rolls back with any later
+# failure of the attempt (S1 S3 S5 S7): loses S1 S3 S5 S7 S8 S10.
 # clear-if-failed (Sol C-15 r4) clears the delivery marks only for an entry that failed before:
 # a deliberate resend after a clean delivery sends nothing, so it loses S4 only.
 # first-error-only (Sol C-15 r6) writes Error Message only when it is empty: loses S10 only.
@@ -40,6 +44,6 @@ expect:
   naive/clear-only-clean: { partial_credit: 0.7 }
   naive/flags-on-entry: { partial_credit: 0.4 }
   naive/error-after-mail: { partial_credit: 0.9 }
-  naive/mark-mail-before-send: { partial_credit: 0.8 }
+  naive/mark-mail-before-send: { partial_credit: 0.4 }
   naive/clear-if-failed: { partial_credit: 0.9 }
   naive/first-error-only: { partial_credit: 0.9 }
