@@ -32,7 +32,8 @@ reuse: null
 # cutoff-exclusive pays shares due before the cutoff day only: loses S11.
 # first-share-only (Sol C-15 r4) proposes one payout line per statement for its shares: loses S11.
 # owner-as-payee (Sol C-15 r6) pays share lines to the owner: loses every row with a share line
-# (S5, S6, S11). Every owner and share line is now checked for its payee.
+# (S5, S6, S11). Every owner and share line is now checked for its payee; S11's two shares go to
+# different payees (Sol C-15 r8).
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
   naive/follow-the-ticket: { partial_credit: 0.2727272727272727 }

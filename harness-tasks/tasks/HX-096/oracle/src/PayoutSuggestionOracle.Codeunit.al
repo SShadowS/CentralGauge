@@ -198,6 +198,7 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         HX096AddShare(96011, 2, 50.15, false, true, false);
         Share.Get(96011, 2);
         Share."Due Date" := DMY2Date(31, 5, 2027);
+        Share."Payee Code" := 'BANK02';
         Share.Modify();
         Commit();
         HX096Suggest();
@@ -286,9 +287,11 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
     local procedure HX096AssertShare(EntryNo: Integer; ShareLineNo: Integer; ExpectedAmount: Decimal; ExpectedToBePaid: Boolean; Tag: Text)
     var
         PayoutLine: Record "CGR Payout Line";
+        Share: Record "CGR Third-Party Share";
     begin
         HX096GetLine(EntryNo, ShareLineNo, PayoutLine);
-        Assert.AreEqual('BANK01', Format(PayoutLine."Payee Code"), Tag + ': share payout goes to the share''s payee');
+        Share.Get(EntryNo, ShareLineNo);
+        Assert.AreEqual(Format(Share."Payee Code"), Format(PayoutLine."Payee Code"), Tag + ': share payout goes to the share''s payee');
         Assert.AreEqual(ExpectedAmount, PayoutLine.Amount, Tag + ': share payout amount');
         Assert.AreEqual(ExpectedToBePaid, PayoutLine."To Be Paid", Tag + ': share To Be Paid');
     end;
