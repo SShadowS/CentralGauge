@@ -502,3 +502,19 @@ Deno.test("reconciliationStatus (H-10): exact_otel counts as exact (gate 3 evide
     4,
   );
 });
+
+Deno.test("reconciliationStatus (H-52): model_usage (OTel short of modelUsage) stays unreconciled, tokens unproven", () => {
+  const mu = exec("a", [pm(4)], "p", 1, {
+    usage_reconciliation: {
+      status: "model_usage",
+      why: "otel mismatch: x",
+      stream: { status: "unreconciled", why: "x" },
+      otel_short: {},
+    },
+  });
+  assertEquals(reconciliationStatus([mu]), "unreconciled");
+  assertEquals(
+    cellValues([mu], mu, undefined, new Map(), new Map(), false).tokens_out,
+    null,
+  );
+});

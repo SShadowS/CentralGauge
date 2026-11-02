@@ -4524,6 +4524,118 @@ Deno.test("otel (H-10 r3): parseClaudeStream takes the expected execution from i
   assert(status() !== "exact_otel", "no expected id: fail closed");
 });
 
+// ---- H-52: OTel short of modelUsage (M8-16b cell 6bcb27fa: OTel 160 != 162) ----
+// The live cell: one sub-agent request (input 2, cache read 33312, cache write
+// 1063, output 5) is in neither the stream nor otel.jsonl; modelUsage, claude's
+// cumulative total, counts it. Synthetic analogue: the nested stub with the
+// grandchild row (sequence 8: 13/103/1003/23) dropped from otel.jsonl, so
+// stream and OTel both miss it and OTel reads 52 != modelUsage 65.
+const nestedWithout = async (...seqs: number[]) =>
+  (await Deno.readTextFile(NESTED.otel)).trim().split("\n").filter((l) =>
+    !seqs.includes(JSON.parse(l).sequence)
+  ).join("\n") + "\n";
+
+Deno.test("otel short (H-52): OTel short of modelUsage prices the modelUsage totals, the remainder's TTL fixed by costUSD; mismatch kept visible", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  const r = await parseOtelAs(raw, await nestedWithout(8), NESTED_ID);
+  const u = otelRaw(r) as ReturnType<typeof otelRaw> & {
+    usage_reconciliation: {
+      status: string;
+      why: string;
+      stream: { status: string };
+      otel_short: Record<
+        string,
+        {
+          input: number;
+          cache_read: number;
+          cache_write: number;
+          output: number;
+          cache_write_ttl: string;
+        }
+      >;
+    };
+  };
+  // The mismatch stays: status and detail as before.
+  assertEquals(u.otel?.status, "mismatch");
+  assertEquals(
+    u.otel?.why,
+    "claude-sonnet-5 inputTokens: OTel 52 != modelUsage 65",
+  );
+  assertEquals(u.usage_reconciliation.status, "model_usage");
+  assertEquals(u.usage_reconciliation.stream.status, "unreconciled");
+  assertStringIncludes(u.usage_reconciliation.why, "OTel 52 != modelUsage 65");
+  assertEquals(u.usage_reconciliation.otel_short, {
+    "claude-sonnet-5": {
+      input: 13,
+      cache_read: 103,
+      cache_write: 1003,
+      output: 23,
+      cache_write_ttl: "5m",
+    },
+  });
+  // Priced from the modelUsage totals (65/515/5015 all 5m/115): claude's costUSD.
+  assertAlmostEquals(r.telemetry.cost_usd!, 0.0139205, 1e-12);
+  assertEquals(r.telemetry.cost_source, "estimated");
+  assertAlmostEquals(r.telemetry.reported_cost_usd!, 0.0139205, 1e-12);
+  assertEquals(r.telemetry.per_model.length, 1);
+  // OTel saw 4 of the requests: the count is unknown, never 4.
+  assertEquals(r.telemetry.per_model[0]!.requests, null);
+  assertEquals(r.telemetry.per_model[0]!.tokens_cache_write, 5015);
+  assert(
+    !u.missing.some((m) => m.includes("usage not reconciled")),
+    JSON.stringify(u.missing),
+  );
+  assertEquals(
+    u.otel?.cost_check?.per_model["claude-sonnet-5"]?.ok,
+    true,
+  );
+  // costUSD that only the 1h remainder explains: priced 1h.
+  const h1 = 0.0139205 + 1003 * 1.5 / 1e6;
+  const r1 = await parseOtelAs(
+    raw.replace('"costUSD":0.013920500000000002', `"costUSD":${h1}`),
+    await nestedWithout(8),
+    NESTED_ID,
+  );
+  assertAlmostEquals(r1.telemetry.cost_usd!, h1, 1e-12);
+  assertEquals(
+    (otelRaw(r1) as unknown as typeof u).usage_reconciliation.otel_short[
+      "claude-sonnet-5"
+    ]!.cache_write_ttl,
+    "1h",
+  );
+});
+
+Deno.test("otel short (H-52): never priced when OTel exceeds modelUsage, falls below the stream, or costUSD explains neither TTL", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  const lines = (await nestedWithout(8)).trim().split("\n");
+  const bump =
+    lines.map((l, i) =>
+      i === 0 ? JSON.stringify({ ...JSON.parse(l), output_tokens: 999 }) : l
+    ).join("\n") + "\n";
+  const cases: [string, string, string][] = [
+    ["OTel output above modelUsage", raw, bump],
+    // Sequence 5 is a streamed main message: OTel below the stream.
+    ["OTel below the stream", raw, await nestedWithout(5, 8)],
+    [
+      "costUSD explains neither TTL",
+      raw.replace('"costUSD":0.013920500000000002', '"costUSD":0.02'),
+      await nestedWithout(8),
+    ],
+    [
+      "not list pricing",
+      raw.replace('"costBasis":"list"', '"costBasis":"subscription"'),
+      await nestedWithout(8),
+    ],
+  ];
+  for (const [label, text, otel] of cases) {
+    const r = await parseOtelAs(text, otel, NESTED_ID);
+    const u = otelRaw(r);
+    assertEquals(u.otel?.status, "mismatch", label);
+    assertEquals(u.usage_reconciliation?.status, "unreconciled", label);
+    assertEquals(r.telemetry.cost_usd, null, label);
+  }
+});
+
 // ---- H-20: system/init additional_directories (first seen in 2.1.302) ----
 Deno.test("additional directories (H-20): a non-empty or malformed system/init additional_directories is refused; [] and absent are unchanged", async () => {
   const text = await Deno.readTextFile(STUB_300.lsp);
