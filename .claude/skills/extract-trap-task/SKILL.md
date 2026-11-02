@@ -63,7 +63,8 @@ that the author's own naives fail. These rules apply to every mined task, X-seri
    plausible fix of the stated symptom passes while breaking the contract; a fix that passes
    only by breaking shipped code it does not need to touch is adversarial (MEDIUM).
 4. **Frontier gate (after AUTHOR + DISCRIMINATION PROBE, before review and merge).** One attempt
-   by an Opus-class agent from the prompt and shipped code only. An attempt-1 pass means the task
+   by an Opus-class agent on the harness agent path (for X-series, a `bench --agents` dry run),
+   from the prompt and shipped code only. An attempt-1 pass means the task
    does not ship (filler pool or drop). The discrimination probe is necessary, never sufficient
    (see "Making a task frontier-HARD" below). Budget about three builds per shipped task.
 
