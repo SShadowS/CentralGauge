@@ -268,8 +268,9 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         Assert.AreEqual(ExpectedToBePaid, PayoutLine."To Be Paid", Tag + ': stored To Be Paid');
     end;
 
-    // Validates and stores NewValue through a runner codeunit, so a wrong refusal and a missing
-    // refusal both lose an assertion. A refused change leaves the stored value as it was.
+    // An accepted change is validated and stored by a runner codeunit; an expected refusal is only
+    // validated (no Modify), so it must be raised by the field itself. A wrong refusal and a
+    // missing refusal both lose an assertion. A refused change leaves the stored value as it was.
     local procedure HX096Expect(EntryNo: Integer; ShareLineNo: Integer; NewValue: Boolean; Accepted: Boolean; Tag: Text)
     var
         PayoutLine: Record "CGR Payout Line";
@@ -279,10 +280,13 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         HX096GetLine(EntryNo, ShareLineNo, PayoutLine);
         StoredBefore := PayoutLine."To Be Paid";
         Commit();
-        if NewValue then
-            Ok := Codeunit.Run(Codeunit::"HX096 Set To Be Paid", PayoutLine)
+        if not Accepted then
+            Ok := Codeunit.Run(Codeunit::"HX096 Validate To Be Paid", PayoutLine)
         else
-            Ok := Codeunit.Run(Codeunit::"HX096 Clear To Be Paid", PayoutLine);
+            if NewValue then
+                Ok := Codeunit.Run(Codeunit::"HX096 Set To Be Paid", PayoutLine)
+            else
+                Ok := Codeunit.Run(Codeunit::"HX096 Clear To Be Paid", PayoutLine);
         if Accepted then begin
             Assert.IsTrue(Ok, Tag + ': change should be accepted: ' + GetLastErrorText());
             HX096AssertStored(EntryNo, ShareLineNo, NewValue, Tag);

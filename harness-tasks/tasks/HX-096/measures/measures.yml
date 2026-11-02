@@ -21,6 +21,7 @@ reuse: null
 # guard: passes only S5 (held + paid share, owner amount and flag happen to agree).
 # due-only misses the share due after the cutoff: loses S3, S9.
 # no-field-guard: Validate is never refused: loses S4, S6, S8, S9.
+# guard-on-modify refuses only on save; refusal checks validate without saving: loses S4, S6, S8, S9.
 # guard-all-lines refuses the share line once its own share goes on hold: loses S6.
 # closed-shares-count deducts the closed 100.00 and counts it as not held: loses S2.
 # stale-guard accepts the owner line whose shares went all on hold after the proposal (S6) and
@@ -31,6 +32,7 @@ expect:
   naive/follow-the-ticket: { partial_credit: 0.1111111111111111 }
   naive/due-only: { partial_credit: 0.7777777777777778 }
   naive/no-field-guard: { partial_credit: 0.5555555555555556 }
+  naive/guard-on-modify: { partial_credit: 0.5555555555555556 }
   naive/guard-all-lines: { partial_credit: 0.8888888888888888 }
   naive/closed-shares-count: { partial_credit: 0.8888888888888888 }
   naive/stale-guard: { partial_credit: 0.7777777777777778 }
