@@ -515,7 +515,7 @@ function otelCheck(
     const s = ctx.streamTotals?.get(m);
     if (
       d.every((v) => v >= 0) && s !== undefined && t.input >= s.input &&
-      t.read >= s.read && t.w5m + t.w1h >= s.write
+      t.read >= s.read && t.w5m + t.w1h >= s.write && t.out >= s.out
     ) {
       short[m] = {
         input: d[0]!,
@@ -2443,6 +2443,8 @@ export function parseClaudeStream(
     if (m.requests !== null) continue;
     const why = !captureComplete
       ? (result ? nonJsonReason(nonJson) : noResult)
+      : reconciliation?.status === "model_usage"
+      ? "request count unknown: modelUsage counts requests OTel never received (H-52)"
       : built.unidentified > 0
       ? `${built.unidentified} assistant record(s) without a message id or model`
       : `no assistant record for ${
