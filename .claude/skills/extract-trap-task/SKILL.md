@@ -67,6 +67,15 @@ that the author's own naives fail. These rules apply to every mined task, X-seri
    does not ship (filler pool or drop). The discrimination probe is necessary, never sufficient
    (see "Making a task frontier-HARD" below). Budget about three builds per shipped task.
 
+**Breadth class (owner 2026-11-02, HX only).** A task graded on coverage (a new kind of thing
+must reach every place the app silently assumes the existing kinds) is exempt from rule 1 and
+from rule 4's ship condition: the frontier attempt still runs and records partial credit, but
+an attempt-1 pass does not block it. It ships when (a) its planned incomplete naives land at
+distinct, non-zero scores below 1.0 in the gate and (b) a setup comparison separates the arms.
+It never counts as a frontier-catcher. Rules 2 and 3 still apply; state the template floor
+(the score from copying planted sites alone). Details: the harness lane runbook, "Mined HX
+tasks".
+
 Prefer assembling over inventing: two or three already-gated single-trap tasks (Commit-family
 first) combined into one app with one symptom. See `docs/reasoning-suite/LESSONS.md`.
 

@@ -106,6 +106,23 @@ task a frontier model fails on attempt 1, not a realistic ticket that every mode
    task does not ship: it goes to the filler pool (if the batch books one) or is dropped. Budget
    about three builds per shipped task.
 
+**Breadth class (owner 2026-11-02).** A breadth task is graded on coverage, not on one withheld
+fact: a new kind of thing (an asset type, a document type) must reach every place the app
+silently assumes the existing kinds. It is exempt from rule 1 (no measured BC fact is needed,
+and the `frontier-catcher: yes` requirement does not apply) and from rule 4's ship condition
+(the frontier attempt still runs and records partial credit, but an attempt-1 pass does not
+block shipping). It ships when both hold:
+
+- (a) the hidden checks spread partial credit: one fail_to_pass procedure per functional area,
+  and every planned incomplete naive lands at a distinct, non-zero score below 1.0 in the gate;
+- (b) a setup comparison separates the arms (run by lane-ops after merge, at equal limits).
+
+A breadth task is never counted as a frontier-catcher. Rules 2 and 3 still apply: the overlay
+may plant working code for the existing kinds (that is where the touchpoints live), but the
+design states the template floor, the score an agent reaches by copying those sites alone, and
+the difficulty must rest on touchpoints no single keyword finds. The prompt states the business
+differences of the new kind and the API seams the oracle needs, never the touchpoints.
+
 For hard tasks, prefer assembling over inventing: combine two or three gated single-trap tasks
 (Commit-family donors first) into one overlay with one symptom. That is the only route with
 measured frontier failures so far (LESSONS.md, composite sections).
