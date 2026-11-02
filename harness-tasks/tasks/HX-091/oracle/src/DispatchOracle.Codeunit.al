@@ -32,6 +32,11 @@ codeunit 87280 "HX091 Dispatch Oracle"
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 2: the delivered entry is removed');
 
+        EntryNo := HX091Queue(ContractNo);
+        Dispatcher.ProcessQueue();
+        HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Resend after the recovered delivery');
+        Assert.IsFalse(HX091Stored(EntryNo), 'Resend: the entry is removed');
+
         UnbindSubscription(Spy);
         HX091Cleanup(ContractNo);
     end;
@@ -61,6 +66,11 @@ codeunit 87280 "HX091 Dispatch Oracle"
         Dispatcher.ProcessQueue();
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 2: the completed entry is removed');
+
+        EntryNo := HX091Queue(ContractNo);
+        Dispatcher.ProcessQueue();
+        HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Resend after the recovered delivery');
+        Assert.IsFalse(HX091Stored(EntryNo), 'Resend: the entry is removed');
 
         UnbindSubscription(Spy);
         HX091Cleanup(ContractNo);
@@ -250,6 +260,11 @@ codeunit 87280 "HX091 Dispatch Oracle"
         HX091AssertDelivered(Spy, ContractNo, 1, 1, 'Run 2');
         Assert.IsFalse(HX091Stored(EntryNo), 'Run 2: the delivered entry is removed');
 
+        EntryNo := HX091Queue(ContractNo);
+        Dispatcher.ProcessQueue();
+        HX091AssertDelivered(Spy, ContractNo, 2, 2, 'Resend after the recovered delivery');
+        Assert.IsFalse(HX091Stored(EntryNo), 'Resend: the entry is removed');
+
         UnbindSubscription(Spy);
         HX091Cleanup(ContractNo);
     end;
@@ -299,12 +314,14 @@ codeunit 87280 "HX091 Dispatch Oracle"
     var
         Dispatcher: Codeunit "CGR Invoice Dispatcher";
         Entry: Record "CGR Invoice Dispatch Entry";
+        EntryNo: Integer;
     begin
-        Dispatcher.QueueInvoice(ContractNo);
+        EntryNo := Dispatcher.QueueInvoice(ContractNo);
         Commit();
         Entry.SetRange("Contract No.", ContractNo);
         Entry.SetCurrentKey("Entry No.");
         Entry.FindLast();
+        Assert.AreEqual(Entry."Entry No.", EntryNo, 'QueueInvoice returns the number of the entry it queued');
         exit(Entry."Entry No.");
     end;
 

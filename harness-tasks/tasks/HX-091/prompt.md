@@ -2,7 +2,7 @@
 
 Reported by Billing desk.
 
-Rental invoices go out through the invoice dispatch queue in Integration. `CGR Invoice Dispatcher.QueueInvoice(ContractNo)` adds an entry, and `ProcessQueue()` delivers every queued entry: first the invoice mail to the customer, then the invoice export file for the accounting partner. An entry whose delivery fails stays in the queue with Error, Error Message and Retry Count, and the next `ProcessQueue()` tries it again. A delivered entry is removed from the queue.
+Rental invoices go out through the invoice dispatch queue in Integration. `CGR Invoice Dispatcher.QueueInvoice(ContractNo)` adds an entry, and `ProcessQueue()` delivers every queued entry: first the invoice mail to the customer, then the invoice export file for the accounting partner. An entry whose delivery fails stays in the queue with Error, Error Message and Retry Count, and the next `ProcessQueue()` tries it again. A delivered entry is removed from the queue. `ProcessQueue()` runs from a scheduled job, each run in a new session, so a retry often comes hours later or after a server restart.
 
 Observed:
 
