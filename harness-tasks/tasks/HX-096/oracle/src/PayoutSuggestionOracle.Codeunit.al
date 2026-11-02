@@ -4,8 +4,8 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
     TestPermissions = Disabled;
 
     // Cutoff 31 May 2027. Every statement is due 15 May 2027 for 1000.55. A share is due 20 May
-    // 2027 unless a scenario says it is due after the cutoff (30 June 2027). Setup and every
-    // accepted change are committed, so an asserterror rollback never removes what is read next.
+    // 2027 unless a scenario says it is due after the cutoff (30 June 2027). Setup is committed and
+    // every To Be Paid change runs in its own runner codeunit, re-read with Get afterwards.
 
     var
         Assert: Codeunit "Library Assert";
@@ -57,11 +57,15 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         HX096Suggest();
         HX096AssertMain(96004, 800.25, false, 1, 'S4');
 
-        HX096GetLine(96004, 0, PayoutLine);
-        asserterror PayoutLine.Validate("To Be Paid", true);
-        HX096AssertStored(96004, 0, false, 'S4 refused');
+        HX096Expect(96004, 0, true, false, 'S4 on');
+        HX096Expect(96004, 0, false, true, 'S4 off');
 
-        HX096Accept(96004, 0, false, 'S4 switch off');
+        // The refusal depends on the shares, not on the amount left on the line.
+        HX096GetLine(96004, 0, PayoutLine);
+        PayoutLine.Amount := 1000.55;
+        PayoutLine.Modify();
+        Commit();
+        HX096Expect(96004, 0, true, false, 'S4 full amount on');
         HX096Reset(96004);
     end;
 
@@ -80,7 +84,6 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
     [Test]
     procedure Scenario06()
     var
-        PayoutLine: Record "CGR Payout Line";
         Share: Record "CGR Third-Party Share";
     begin
         HX096Reset(96006);
@@ -93,17 +96,18 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         HX096AssertShare(96006, 2, 50.15, true, 'S6 A');
         HX096AssertMain(96016, 800.25, false, 1, 'S6 B');
 
-        // The paid share is put on hold after the proposal: its own line still switches freely.
+        // The paid share is put on hold after the proposal: its own line still switches freely,
+        // while the owner line, payable at proposal time, is now held by the current shares.
         Share.Get(96006, 2);
         Share."On Hold" := true;
         Share.Modify();
         Commit();
-        HX096Accept(96006, 2, false, 'S6 A share off');
-        HX096Accept(96006, 2, true, 'S6 A share on');
+        HX096Expect(96006, 2, false, true, 'S6 A share off');
+        HX096Expect(96006, 2, true, true, 'S6 A share on');
+        HX096Expect(96006, 0, false, true, 'S6 A owner off');
+        HX096Expect(96006, 0, true, false, 'S6 A owner on');
 
-        HX096GetLine(96016, 0, PayoutLine);
-        asserterror PayoutLine.Validate("To Be Paid", true);
-        HX096AssertStored(96016, 0, false, 'S6 B refused');
+        HX096Expect(96016, 0, true, false, 'S6 B on');
         HX096Reset(96006);
         HX096Reset(96016);
     end;
@@ -126,7 +130,6 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
     [Test]
     procedure Scenario08()
     var
-        PayoutLine: Record "CGR Payout Line";
         Share: Record "CGR Third-Party Share";
     begin
         HX096Reset(96008);
@@ -142,19 +145,15 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         Share."On Hold" := false;
         Share.Modify();
         Commit();
-        HX096Accept(96008, 0, true, 'S8 A released');
+        HX096Expect(96008, 0, true, true, 'S8 A released on');
 
-        HX096GetLine(96018, 0, PayoutLine);
-        asserterror PayoutLine.Validate("To Be Paid", true);
-        HX096AssertStored(96018, 0, false, 'S8 B refused');
+        HX096Expect(96018, 0, true, false, 'S8 B on');
         HX096Reset(96008);
         HX096Reset(96018);
     end;
 
     [Test]
     procedure Scenario09()
-    var
-        PayoutLine: Record "CGR Payout Line";
     begin
         HX096Reset(96009);
         HX096Reset(96019);
@@ -165,12 +164,10 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         HX096AssertMain(96009, 800.00, true, 1, 'S9 A');
         HX096AssertMain(96019, 800.25, false, 1, 'S9 B');
 
-        HX096Accept(96009, 0, false, 'S9 A off');
-        HX096Accept(96009, 0, true, 'S9 A on');
+        HX096Expect(96009, 0, false, true, 'S9 A off');
+        HX096Expect(96009, 0, true, true, 'S9 A on');
 
-        HX096GetLine(96019, 0, PayoutLine);
-        asserterror PayoutLine.Validate("To Be Paid", true);
-        HX096AssertStored(96019, 0, false, 'S9 B refused');
+        HX096Expect(96019, 0, true, false, 'S9 B on');
         HX096Reset(96009);
         HX096Reset(96019);
     end;
@@ -271,22 +268,28 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         Assert.AreEqual(ExpectedToBePaid, PayoutLine."To Be Paid", Tag + ': stored To Be Paid');
     end;
 
-    // Validates and stores the value; a refusal fails the assertion instead of escaping the test.
-    local procedure HX096Accept(EntryNo: Integer; ShareLineNo: Integer; NewValue: Boolean; Tag: Text)
+    // Validates and stores NewValue through a runner codeunit, so a wrong refusal and a missing
+    // refusal both lose an assertion. A refused change leaves the stored value as it was.
+    local procedure HX096Expect(EntryNo: Integer; ShareLineNo: Integer; NewValue: Boolean; Accepted: Boolean; Tag: Text)
     var
         PayoutLine: Record "CGR Payout Line";
+        StoredBefore: Boolean;
+        Ok: Boolean;
     begin
         HX096GetLine(EntryNo, ShareLineNo, PayoutLine);
-        Assert.IsTrue(HX096TryValidate(PayoutLine, NewValue), Tag + ': To Be Paid change should be accepted');
-        PayoutLine.Modify();
+        StoredBefore := PayoutLine."To Be Paid";
         Commit();
-        HX096AssertStored(EntryNo, ShareLineNo, NewValue, Tag);
-    end;
-
-    [TryFunction]
-    local procedure HX096TryValidate(var PayoutLine: Record "CGR Payout Line"; NewValue: Boolean)
-    begin
-        PayoutLine.Validate("To Be Paid", NewValue);
+        if NewValue then
+            Ok := Codeunit.Run(Codeunit::"HX096 Set To Be Paid", PayoutLine)
+        else
+            Ok := Codeunit.Run(Codeunit::"HX096 Clear To Be Paid", PayoutLine);
+        if Accepted then begin
+            Assert.IsTrue(Ok, Tag + ': change should be accepted: ' + GetLastErrorText());
+            HX096AssertStored(EntryNo, ShareLineNo, NewValue, Tag);
+        end else begin
+            Assert.IsFalse(Ok, Tag + ': change should be refused');
+            HX096AssertStored(EntryNo, ShareLineNo, StoredBefore, Tag);
+        end;
     end;
 
     local procedure HX096Reset(EntryNo: Integer)
