@@ -1,0 +1,27 @@
+v: 1
+partial_credit:
+  weights:
+    "87300/Scenario01": 1
+    "87300/Scenario02": 1
+    "87300/Scenario03": 1
+    "87300/Scenario04": 1
+    "87300/Scenario05": 1
+    "87300/Scenario06": 1
+    "87300/Scenario09": 1
+  hidden_regressions:
+    - "87300/Scenario07"
+    - "87300/Scenario08"
+reuse: null
+# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# total-fits, clamp-each, against-billing-days lose S1, S2, S9; stop-after-miss loses S2;
+# no-substitution loses S6; own-match-not-open loses S5. substitution-on-single passes every
+# weighted row and loses only the hidden regression S8, which partial_credit does not count.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/total-fits: { partial_credit: 0.571 }
+  naive/stop-after-miss: { partial_credit: 0.857 }
+  naive/clamp-each: { partial_credit: 0.571 }
+  naive/against-billing-days: { partial_credit: 0.571 }
+  naive/no-substitution: { partial_credit: 0.857 }
+  naive/own-match-not-open: { partial_credit: 0.857 }
+  naive/substitution-on-single: { partial_credit: 1 }
