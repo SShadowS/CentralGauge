@@ -10,30 +10,35 @@ partial_credit:
     "87380/Scenario07": 1
     "87380/Scenario08": 1
     "87380/Scenario09": 1
+    "87380/Scenario10": 1
+    "87380/Scenario11": 1
   hidden_regressions: []
 reuse: null
-# Measured: gate 2026-11-02T05-20-09-182Z on b32e4c50 (Cronus284) matched every value below.
-# Every scenario fails on the shipped baseline: it never deducts a held or not-yet-due share, so
-# every statement with such a share keeps the wrong owner amount and To Be Paid on, and no
-# Validate is ever refused. S7's statement without shares passes there, its held one does not.
-# So all nine rows are weighted.
+# S1-S9 measured: gate 2026-11-02T05-20-09-182Z on b32e4c50 (Cronus284). S10 and S11 (Sol C-15 r3)
+# are reasoned: S10 is a statement whose only share is closed (and on hold), payable and switchable
+# as today; S11 is a share due on the cutoff day itself, paid in this run.
+# The shipped baseline fails S1-S9 (it never deducts a held or not-yet-due share) and passes S10, S11.
 # follow-the-ticket deducts held shares due by the cutoff but keeps To Be Paid on and has no
-# guard: passes only S5 (held + paid share, owner amount and flag happen to agree).
+# guard: passes S5, S10, S11.
 # due-only misses the share due after the cutoff: loses S3, S9.
 # no-field-guard: Validate is never refused: loses S4, S6, S8, S9.
 # guard-on-modify refuses only on save; refusal checks validate without saving: loses S4, S6, S8, S9.
 # guard-all-lines refuses the share line once its own share goes on hold: loses S6.
-# closed-shares-count deducts the closed 100.00 and counts it as not held: loses S2.
+# closed-shares-count deducts closed shares and counts them for the hold: loses S2, S10.
 # stale-guard accepts the owner line whose shares went all on hold after the proposal (S6) and
 # still refuses after the hold is released (S8): loses S6, S8.
-# integer-total rounds every fractional share total: loses all nine.
+# integer-total rounds every fractional share total: loses every row with a share it adds (all but S10).
+# closed-held-blocks treats a statement with only closed shares as held: loses S10.
+# cutoff-exclusive pays shares due before the cutoff day only: loses S11.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/follow-the-ticket: { partial_credit: 0.1111111111111111 }
-  naive/due-only: { partial_credit: 0.7777777777777778 }
-  naive/no-field-guard: { partial_credit: 0.5555555555555556 }
-  naive/guard-on-modify: { partial_credit: 0.5555555555555556 }
-  naive/guard-all-lines: { partial_credit: 0.8888888888888888 }
-  naive/closed-shares-count: { partial_credit: 0.8888888888888888 }
-  naive/stale-guard: { partial_credit: 0.7777777777777778 }
-  naive/integer-total: { partial_credit: 0 }
+  naive/follow-the-ticket: { partial_credit: 0.2727272727272727 }
+  naive/due-only: { partial_credit: 0.8181818181818182 }
+  naive/no-field-guard: { partial_credit: 0.6363636363636364 }
+  naive/guard-on-modify: { partial_credit: 0.6363636363636364 }
+  naive/guard-all-lines: { partial_credit: 0.9090909090909091 }
+  naive/closed-shares-count: { partial_credit: 0.8181818181818182 }
+  naive/stale-guard: { partial_credit: 0.8181818181818182 }
+  naive/integer-total: { partial_credit: 0.09090909090909091 }
+  naive/closed-held-blocks: { partial_credit: 0.9090909090909091 }
+  naive/cutoff-exclusive: { partial_credit: 0.9090909090909091 }

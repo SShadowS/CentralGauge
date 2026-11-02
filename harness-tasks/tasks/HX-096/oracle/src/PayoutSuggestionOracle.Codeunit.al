@@ -172,6 +172,39 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         HX096Reset(96019);
     end;
 
+    [Test]
+    procedure Scenario10()
+    begin
+        HX096Reset(96010);
+        HX096AddStatement(96010);
+        HX096AddShare(96010, 1, 200.30, false, false, true);
+        Commit();
+        HX096Suggest();
+        HX096AssertMain(96010, 1000.55, true, 1, 'S10');
+
+        HX096Expect(96010, 0, false, true, 'S10 off');
+        HX096Expect(96010, 0, true, true, 'S10 on');
+        HX096Reset(96010);
+    end;
+
+    [Test]
+    procedure Scenario11()
+    var
+        Share: Record "CGR Third-Party Share";
+    begin
+        HX096Reset(96011);
+        HX096AddStatement(96011);
+        HX096AddShare(96011, 1, 50.15, false, true, false);
+        Share.Get(96011, 1);
+        Share."Due Date" := DMY2Date(31, 5, 2027);
+        Share.Modify();
+        Commit();
+        HX096Suggest();
+        HX096AssertMain(96011, 950.40, true, 2, 'S11');
+        HX096AssertShare(96011, 1, 50.15, true, 'S11');
+        HX096Reset(96011);
+    end;
+
     local procedure HX096AddHeldShare(EntryNo: Integer)
     begin
         HX096AddStatement(EntryNo);
