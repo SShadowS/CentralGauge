@@ -224,11 +224,15 @@ codeunit 87380 "HX096 Payout Suggestion Oracle"
         Share.Insert();
     end;
 
+    // Suggest must complete: an error escaping it fails the scenario as an assertion.
     local procedure HX096Suggest()
     var
-        PayoutSuggestion: Codeunit "CGR Payout Suggestion";
+        Ok: Boolean;
     begin
-        PayoutSuggestion.Suggest(DMY2Date(31, 5, 2027));
+        Commit();
+        ClearLastError();
+        Ok := Codeunit.Run(Codeunit::"HX096 Suggest Runner");
+        Assert.IsTrue(Ok, 'Suggest completes without an error: ' + GetLastErrorText());
         Commit();
     end;
 
