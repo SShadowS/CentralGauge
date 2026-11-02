@@ -110,6 +110,14 @@ For hard tasks, prefer assembling over inventing: combine two or three gated sin
 (Commit-family donors first) into one overlay with one symptom. That is the only route with
 measured frontier failures so far (LESSONS.md, composite sections).
 
+Before submitting any HX task, run `deno test --allow-all tests/unit/harness/realistic-bundle.test.ts`.
+It refuses, as a whole word in the bundle, every object and procedure name of six characters or
+more from any task's AL files and every oracle procedure in a task.yml (bar a short list of BC
+trigger names), so a generic
+name (a procedure called `Suggest`, `Validate`, `Process`) breaks master once the realistic
+bundle uses that word. Rename the task's identifier to something specific; never edit the
+bundle (it is hashed into the realistic arms) or the guard.
+
 ## Context size
 
 You cannot run `/clear` or `/compact` yourself; only the owner can. Every turn re-sends your

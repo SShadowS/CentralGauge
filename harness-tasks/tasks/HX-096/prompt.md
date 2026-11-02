@@ -2,7 +2,7 @@
 
 Reported by Fleet partner desk. Reviewed by the product owner (decision below).
 
-Every month `CGR Payout Suggestion.Suggest(CutoffDate)` (Leasing) proposes what we pay our vehicle owners. A statement line can carry third-party shares: parts of the amount we pay to someone else, usually the owner's financing bank. A share can be put On Hold when the bank asks us to wait.
+Every month `CGR Payout Suggestion.SuggestPayouts(CutoffDate)` (Leasing) proposes what we pay our vehicle owners. A statement line can carry third-party shares: parts of the amount we pay to someone else, usually the owner's financing bank. A share can be put On Hold when the bank asks us to wait.
 
 Report from the desk: "Owner 4410 has a 200.30 share on hold, but the proposal still has the full 1,000.55 for the owner. Please take the held share off and pay the owner 800.25."
 

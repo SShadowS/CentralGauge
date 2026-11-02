@@ -2,7 +2,7 @@ codeunit 70340 "CGR Payout Suggestion"
 {
     // Proposes the monthly owner payouts: one line per open statement due by the cutoff, plus one
     // line per third-party share paid in this run.
-    procedure Suggest(CutoffDate: Date)
+    procedure SuggestPayouts(CutoffDate: Date)
     var
         StatementLine: Record "CGR Owner Statement Line";
         Share: Record "CGR Third-Party Share";
