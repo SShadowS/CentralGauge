@@ -32,6 +32,10 @@ import {
   HarnessConfigSchema,
   loadConfig,
 } from "../../../src/harness/config.ts";
+import {
+  deriveOutcome,
+  streamProblems,
+} from "../../../src/harness/execution.ts";
 import { manifestHash } from "../../../src/harness/manifest.ts";
 import type { PricingBook } from "../../../src/harness/pricing.ts";
 import type { Telemetry } from "../../../src/harness/records.ts";
@@ -4636,6 +4640,129 @@ Deno.test("otel short (H-52): never priced when OTel exceeds modelUsage, falls b
   }
 });
 
+/** The nested OTel rows without sequence 8, row `seq` changed as given. */
+const nestedShortWith = async (
+  seq: number,
+  over: Record<string, unknown>,
+) =>
+  (await nestedWithout(8)).trim().split("\n").map((l) => {
+    const o = JSON.parse(l);
+    return JSON.stringify(o.sequence === seq ? { ...o, ...over } : o);
+  }).join("\n") + "\n";
+type ShortRaw = ReturnType<typeof otelRaw> & {
+  otel?: {
+    short?: Record<
+      string,
+      {
+        input: number;
+        cache_read: number;
+        cache_write: number;
+        output: number;
+        cache_write_ttl: string | null;
+      }
+    >;
+  };
+};
+
+Deno.test("otel short (H-52): the M8-16b shape, OTel 160 != modelUsage 162 input, is priced from modelUsage", async () => {
+  // modelUsage input 65 -> 162 (costUSD up by 97 input tokens); OTel row 7's
+  // input 12 -> 120, so the OTel rows sum to 160 with row 8 still missing.
+  const raw = (await Deno.readTextFile(NESTED.raw)).replace(
+    '"inputTokens":65,',
+    '"inputTokens":162,',
+  ).replace(
+    '"costUSD":0.013920500000000002',
+    `"costUSD":${0.0139205 + 97 * 2 / 1e6}`,
+  );
+  const r = await parseOtelAs(
+    raw,
+    await nestedShortWith(7, { input_tokens: 120 }),
+    NESTED_ID,
+  );
+  const u = otelRaw(r) as ShortRaw;
+  assertEquals(u.otel?.status, "mismatch");
+  assertEquals(
+    u.otel?.why,
+    "claude-sonnet-5 inputTokens: OTel 160 != modelUsage 162",
+  );
+  assertEquals(u.usage_reconciliation?.status, "model_usage");
+  assertEquals(u.otel?.short?.["claude-sonnet-5"]?.input, 2);
+  assertAlmostEquals(r.telemetry.cost_usd!, 0.0139205 + 97 * 2 / 1e6, 1e-12);
+  assertEquals(r.telemetry.per_model[0]!.tokens_in_uncached, 162);
+  assertStringIncludes(
+    (r.telemetry.raw_usage as {
+      incomplete_reasons: Record<string, string>;
+    }).incomplete_reasons["per_model[anthropic/claude-sonnet-5].requests"]!,
+    "OTel never received",
+  );
+});
+
+Deno.test("otel short (H-52): OTel or modelUsage output below the stream's is never priced (Sol r1 HIGH)", async () => {
+  // Sol r1's counterexample: OTel output 0, modelUsage output 1 (the stream
+  // shows 27), costUSD set to the list price of those totals.
+  const raw = (await Deno.readTextFile(NESTED.raw)).replace(
+    '"outputTokens":115,',
+    '"outputTokens":1,',
+  ).replace('"costUSD":0.013920500000000002', '"costUSD":0.0127805');
+  const zero =
+    (await nestedWithout(8)).trim().split("\n").map((l) =>
+      JSON.stringify({ ...JSON.parse(l), output_tokens: 0 })
+    ).join("\n") + "\n";
+  const r = await parseOtelAs(raw, zero, NESTED_ID);
+  assertEquals(otelRaw(r).otel?.status, "mismatch");
+  assertEquals(otelRaw(r).usage_reconciliation?.status, "unreconciled");
+  assertEquals(r.telemetry.cost_usd, null);
+});
+
+Deno.test("otel short (H-52): an output-only shortfall prices modelUsage; when both TTLs fit costUSD the closer one wins", async () => {
+  const raw = await Deno.readTextFile(NESTED.raw);
+  // Every OTel row kept, row 16 output 25 -> 20: short only by 5 output tokens.
+  const all = (await Deno.readTextFile(NESTED.otel)).trim().split("\n").map(
+    (l) => {
+      const o = JSON.parse(l);
+      return JSON.stringify(
+        o.sequence === 16 ? { ...o, output_tokens: 20 } : o,
+      );
+    },
+  ).join("\n") + "\n";
+  const o = await parseOtelAs(raw, all, NESTED_ID);
+  assertEquals(otelRaw(o).usage_reconciliation?.status, "model_usage");
+  assertEquals((otelRaw(o) as ShortRaw).otel?.short, {
+    "claude-sonnet-5": {
+      input: 0,
+      cache_read: 0,
+      cache_write: 0,
+      output: 5,
+      cache_write_ttl: "5m",
+    },
+  });
+  assertAlmostEquals(o.telemetry.cost_usd!, 0.0139205, 1e-12);
+  // Row 12 writes 1004 -> 1707 (5m): 300 writes unseen; 300 at 1h is 0.00045
+  // above 5m, inside the 0.0005 tolerance, so both fit; the closer wins.
+  const small = await nestedShortWith(12, {
+    cache_creation_tokens: 1707,
+    cache_creation_5m_tokens: 1707,
+  });
+  const ttl = async (cost: number) => {
+    const r = await parseOtelAs(
+      raw.replace('"costUSD":0.013920500000000002', `"costUSD":${cost}`),
+      small,
+      NESTED_ID,
+    );
+    return [
+      (otelRaw(r) as ShortRaw).otel?.short?.["claude-sonnet-5"]
+        ?.cache_write_ttl,
+      r.telemetry.cost_usd,
+    ];
+  };
+  const [t5, c5] = await ttl(0.0139205);
+  assertEquals(t5, "5m");
+  assertAlmostEquals(c5 as number, 0.0139205, 1e-12);
+  const [t1, c1] = await ttl(0.0139205 + 300 * 1.5 / 1e6);
+  assertEquals(t1, "1h");
+  assertAlmostEquals(c1 as number, 0.0139205 + 300 * 1.5 / 1e6, 1e-12);
+});
+
 // ---- H-52 ruling (b): the sub-agent retry pair, qualified for pricing only ----
 // subagent-retry-2.1.302.jsonl: raw.jsonl lines 660-661 of M8-16b cell
 // 6bcb27fa (Claude Code 2.1.302), byte-exact.
@@ -4772,6 +4899,69 @@ Deno.test("subagent retry (H-52): pricing only: the parse is otherwise unchanged
     `tool_progress at line 18 ${PROGRESS_BAD}`,
   ]);
   assertEquals(u.subagent_retries, undefined);
+});
+
+Deno.test("subagent retry (H-52): through deriveOutcome the pair prices the cell, a near-miss voids the cost, and termination, validity and observed checks are the same in all three", async () => {
+  const pair = await retryPair();
+  const base = await Deno.readTextFile(NESTED.raw);
+  const m = manifest("cc", armH10());
+  const input = {
+    rawLog: "raw.jsonl",
+    exitCode: 0,
+    pricing: BOOK,
+    manifest: m,
+    executionId: NESTED_ID,
+  };
+  const otel = await nestedWithout(8);
+  const outcome = (raw: string) => {
+    const { trace: _t, ...parsed } = parseClaudeStream(raw, input, [], otel);
+    return deriveOutcome({
+      manifest: m,
+      declared: claudeCodeAdapter.declared,
+      started: true,
+      preStart: false,
+      setupError: null,
+      stopReason: null,
+      undrained: null,
+      sandbox: { exitCode: 0, timedOut: false, startError: null },
+      parsed,
+      parseError: null,
+      problems: streamProblems(parsed.telemetry.raw_usage),
+      orphansExempt: false,
+      configInvalid: false,
+      host: { lines: [], bad: [] },
+    });
+  };
+  const near = JSON.stringify({ ...JSON.parse(pair[0]!), extra: 1 });
+  const plain = outcome(base);
+  const retried = outcome(withRetry(base, pair));
+  const miss = outcome(withRetry(base, [near, pair[1]!]));
+  assertAlmostEquals(plain.telemetry.cost_usd!, 0.0139205, 1e-12);
+  assertAlmostEquals(retried.telemetry.cost_usd!, 0.0139205, 1e-12);
+  assertEquals(miss.telemetry.cost_usd, null);
+  const verdictSide = (o: ReturnType<typeof outcome>) => ({
+    termination: o.termination,
+    validity: o.validity,
+    mismatch: o.mismatch,
+    unverified: o.unverified,
+    infraReasons: o.infraReasons,
+  });
+  assertEquals(verdictSide(retried), verdictSide(plain));
+  // The near-miss differs only by the voided cost, listed as incomplete.
+  assertEquals(miss.validity.incomplete_telemetry, [
+    "cost_usd",
+    ...plain.validity.incomplete_telemetry,
+  ]);
+  const noCost = (o: ReturnType<typeof outcome>) => ({
+    ...verdictSide(o),
+    validity: {
+      ...o.validity,
+      incomplete_telemetry: o.validity.incomplete_telemetry.filter((k) =>
+        k !== "cost_usd"
+      ),
+    },
+  });
+  assertEquals(noCost(miss), noCost(plain));
 });
 
 // ---- H-20: system/init additional_directories (first seen in 2.1.302) ----
