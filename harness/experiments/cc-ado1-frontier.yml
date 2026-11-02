@@ -1,0 +1,13 @@
+# Q-09 frontier difficulty attempt on ADO batch 1 (owner decision 2026-11-02, "Measure first").
+# Exploratory only: never a screening or confirmatory result. Plain Sonnet 5 vs plain Opus 5.5,
+# one attempt per task on HX-091..HX-097 only; no other HX task may run here.
+id: cc-ado1-frontier
+hypothesis: "Exploratory: how hard ADO batch 1 (HX-091..HX-097) is for plain Claude Code on Sonnet 5 and Opus 5.5."
+primary_metric: pass_rate
+baseline: cc-v2-tue-plain
+variants: [cc-ado1-opus-plain]
+# settings: the claude-code adapter derives settings.native.api_models from models, which vary
+# [models] alone does not admit; limits: the Opus arm has a 10 USD budget (owner, 2026-11-02).
+vary: [models, settings, limits]
+tasks: "harness-tasks/tasks/{HX-091,HX-092,HX-093,HX-094,HX-095,HX-096,HX-097}"
+repeats: 1
