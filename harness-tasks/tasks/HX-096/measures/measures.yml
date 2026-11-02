@@ -16,7 +16,7 @@ partial_credit:
 reuse: null
 # S1-S9 measured: gate 2026-11-02T05-20-09-182Z on b32e4c50 (Cronus284). S10 and S11 (Sol C-15 r3)
 # are reasoned: S10 is a statement whose only share is closed (and on hold), payable and switchable
-# as today; S11 is a share due on the cutoff day itself, paid in this run.
+# as today; S11 has two payable shares, one due on the cutoff day itself, both paid in this run.
 # The shipped baseline fails S1-S9 (it never deducts a held or not-yet-due share) and passes S10, S11.
 # follow-the-ticket deducts held shares due by the cutoff but keeps To Be Paid on and has no
 # guard: passes S5, S10, S11.
@@ -30,6 +30,7 @@ reuse: null
 # integer-total rounds every fractional share total: loses every row with a share it adds (all but S10).
 # closed-held-blocks treats a statement with only closed shares as held: loses S10.
 # cutoff-exclusive pays shares due before the cutoff day only: loses S11.
+# first-share-only (Sol C-15 r4) proposes one payout line per statement for its shares: loses S11.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
   naive/follow-the-ticket: { partial_credit: 0.2727272727272727 }
@@ -42,3 +43,4 @@ expect:
   naive/integer-total: { partial_credit: 0.09090909090909091 }
   naive/closed-held-blocks: { partial_credit: 0.9090909090909091 }
   naive/cutoff-exclusive: { partial_credit: 0.9090909090909091 }
+  naive/first-share-only: { partial_credit: 0.9090909090909091 }
