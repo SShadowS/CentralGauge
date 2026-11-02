@@ -1,0 +1,36 @@
+v: 1
+partial_credit:
+  weights:
+    "87380/Scenario01": 1
+    "87380/Scenario02": 1
+    "87380/Scenario03": 1
+    "87380/Scenario04": 1
+    "87380/Scenario05": 1
+    "87380/Scenario06": 1
+    "87380/Scenario07": 1
+    "87380/Scenario08": 1
+    "87380/Scenario09": 1
+  hidden_regressions: []
+reuse: null
+# Values derived by reasoning, not yet measured on a container (gate before trusting them).
+# Every scenario fails on the shipped baseline: it never deducts a held or not-yet-due share, so
+# every statement with such a share keeps the wrong owner amount and To Be Paid on, and no
+# Validate is ever refused. S7's statement without shares passes there, its held one does not.
+# So all nine rows are weighted.
+# follow-the-ticket deducts held shares due by the cutoff but keeps To Be Paid on and has no
+# guard: passes only S5 (held + paid share, owner amount and flag happen to agree).
+# due-only misses the share due after the cutoff: loses S3, S9.
+# no-field-guard: Validate is never refused: loses S4, S6, S8, S9.
+# guard-all-lines refuses the share line once its own share goes on hold: loses S6.
+# closed-shares-count deducts the closed 100.00 and counts it as not held: loses S2.
+# stale-guard still refuses after the hold is released: loses S8.
+# integer-total rounds every fractional share total: loses all nine.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/follow-the-ticket: { partial_credit: 0.1111111111111111 }
+  naive/due-only: { partial_credit: 0.7777777777777778 }
+  naive/no-field-guard: { partial_credit: 0.5555555555555556 }
+  naive/guard-all-lines: { partial_credit: 0.8888888888888888 }
+  naive/closed-shares-count: { partial_credit: 0.8888888888888888 }
+  naive/stale-guard: { partial_credit: 0.8888888888888888 }
+  naive/integer-total: { partial_credit: 0 }
