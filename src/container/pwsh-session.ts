@@ -6,6 +6,7 @@
 
 import { PwshSessionError } from "../errors.ts";
 import { bcchConfigInit, bcchImport } from "./bcch-config.ts";
+import { bchRootFor, SHARED_BCH_ROOT } from "./bch-root.ts";
 import { dockerContextEnv } from "./docker-context.ts";
 
 export interface PwshSessionOptions {
@@ -152,11 +153,28 @@ export class PwshContainerSession {
 
     // Send the bootstrap script with a marker
     const token = crypto.randomUUID();
-    const wrapped =
-      `${this._bootstrapScript}\nWrite-Output "@@CG-DONE-${token}-EXIT-0@@"\n`;
+    // H-58 (Sol r1): stdin runs the bootstrap statement by statement, so a
+    // throw would not stop the success marker. For a container with its own
+    // BCH root the bootstrap runs as one guarded line and a failed root (mount)
+    // check fails init; every other bootstrap is sent exactly as before.
+    const guarded = bchRootFor(this.containerName) !== SHARED_BCH_ROOT;
+    const wrapped = guarded
+      ? `$cgBootExit = 1; try { ${
+        this._bootstrapScript.split(/\r?\n/).map((l) => l.trim()).filter(
+          Boolean,
+        ).join("; ")
+      }; $cgBootExit = 0 } catch { Write-Output "CG_BOOTSTRAP_THREW: $($_.Exception.Message)" } finally { Write-Output "@@CG-DONE-${token}-EXIT-$cgBootExit@@" }\n`
+      : `${this._bootstrapScript}\nWrite-Output "@@CG-DONE-${token}-EXIT-0@@"\n`;
     try {
       await this.writeToStdin(wrapped);
-      await this.readUntilMarker(token, this._bootstrapTimeoutMs);
+      const boot = await this.readUntilMarker(token, this._bootstrapTimeoutMs);
+      if (boot.exitCode !== 0) {
+        throw new PwshSessionError(
+          `bootstrap failed: ${boot.output.trim()}`,
+          "session_init_failed",
+          { container: this.containerName },
+        );
+      }
     } catch (e) {
       await this.killProcess();
       if (e instanceof PwshSessionError) throw e;

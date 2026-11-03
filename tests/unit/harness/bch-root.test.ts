@@ -15,6 +15,7 @@ import {
   buildPrereqCleanupScript,
 } from "../../../src/container/bc-script-builders.ts";
 import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
+import { createMockPwshProcess } from "../../utils/mock-pwsh-process.ts";
 import { loadLineage } from "../../../src/harness/lineage.ts";
 import { goldenReset } from "../../../src/harness/reset.ts";
 import { join } from "@std/path";
@@ -135,6 +136,7 @@ Deno.test("bch-root: a malformed, unknown-key or unsafe-name file fails closed",
       JSON.stringify({ migrated: ["Cronus285"], extra: 1 }),
       JSON.stringify({ migrated: ["Cronus285'; rm"] }),
       JSON.stringify({ migrated: ["Cronus285", "cronus285"] }),
+      JSON.stringify([{ migrated: ["Cronus285"] }]),
     ]
   ) {
     await withRoots(body, () => {
@@ -166,6 +168,45 @@ Deno.test("bch-root: a container's warm pwsh session bootstraps with that contai
   });
 });
 
+/** Drives init() against a mock pwsh: answers the bootstrap marker with `exit`; returns what was sent. */
+async function initWith(c: string, exit: number) {
+  const mock = createMockPwshProcess();
+  const sess = new PwshContainerSession(c, {
+    spawnFactory: () => mock.process,
+    bootstrapTimeoutMs: 5_000,
+  });
+  const init = sess.init();
+  await new Promise((r) => setTimeout(r, 10));
+  const sent = mock.getStdinWrites().join("");
+  const token = /CG-DONE-([a-f0-9-]+)-EXIT-/.exec(sent)![1];
+  mock.emitStdout(
+    `${
+      exit ? "CG_BOOTSTRAP_THREW: [CG-BCH-ROOT] x\n" : ""
+    }@@CG-DONE-${token}-EXIT-${exit}@@\n`,
+  );
+  return { init, sent, sess };
+}
+
+Deno.test("bch-root: a migrated container's session bootstrap runs guarded and a failed root check fails init; others are sent as before", async () => {
+  await withRoots(MIGRATED, async () => {
+    const bad = await initWith("Cronus285", 1);
+    assertStringIncludes(bad.sent, "try { ");
+    assertStringIncludes(bad.sent, "-EXIT-$cgBootExit@@");
+    await assertRejects(() => bad.init, Error, "[CG-BCH-ROOT]");
+    const good = await initWith("Cronus285", 0);
+    await good.init;
+    assertEquals(good.sess.state, "idle");
+    await good.sess.dispose();
+    const plain = await initWith("Cronus281", 0);
+    await plain.init;
+    assert(!plain.sent.includes("try {"), "unmigrated bootstrap is unchanged");
+    assert(
+      /\nWrite-Output "@@CG-DONE-[a-f0-9-]+-EXIT-0@@"\n$/.test(plain.sent),
+    );
+    await plain.sess.dispose();
+  });
+});
+
 Deno.test("bch-root: container scripts carry the root; the host-side compile script never does", async () => {
   await withRoots(MIGRATED, () => {
     const line = bchRootLines("Cronus285");
@@ -187,6 +228,12 @@ class PathProbe extends BcContainerProvider {
   my(c: string) {
     return this.harnessSharedFolder(c);
   }
+  /** Where adoption looks: BCH builds `hostHelperFolder\compiler\CentralGauge-<c>` (New-BcCompilerFolder.ps1:64). */
+  adoptable(c: string) {
+    return (this as unknown as {
+      adoptableFolderPath(c: string): string | undefined;
+    }).adoptableFolderPath(c);
+  }
 }
 
 Deno.test("bch-root: the provider stages under the container's own root and refuses to create a migrated container", async () => {
@@ -196,6 +243,14 @@ Deno.test("bch-root: the provider stages under the container's own root and refu
     assertEquals(
       p.my("Cronus281"),
       `${SHARED_BCH_ROOT}\\Extensions\\Cronus281\\my`,
+    );
+    assertEquals(
+      p.adoptable("Cronus285"),
+      `${OWN}\\compiler\\CentralGauge-Cronus285`,
+    );
+    assertEquals(
+      p.adoptable("Cronus281"),
+      `${SHARED_BCH_ROOT}\\compiler\\CentralGauge-Cronus281`,
     );
     await assertRejects(
       () => p.setup({ name: "Cronus285" } as Parameters<PathProbe["setup"]>[0]),
@@ -279,6 +334,16 @@ Deno.test({
         )).out,
         `${OWN}\\Extensions\\Cronus285\\cg-official\\g.bak`,
       );
+      // read once per process: an edit mid-script changes nothing (Sol r1 HIGH)
+      const file = join(dir, "bch-roots.json");
+      assertEquals(
+        (await resetLib(
+          dir,
+          `Get-CgBchRoot 'Cronus285'; Set-Content -LiteralPath '${file}' '{"migrated":[]}'; Get-CgBchRoot 'Cronus285'`,
+        )).out.split(/\r?\n/),
+        [OWN, OWN],
+      );
+      await Deno.writeTextFile(file, MIGRATED);
       // the calling process resolved another root: refused
       const mismatch = await resetLib(dir, "Get-CgBchRoot 'Cronus285'", {
         [BCH_ROOT_ENV]: SHARED_BCH_ROOT,
@@ -300,6 +365,8 @@ Deno.test({
           JSON.stringify({ migrated: "Cronus285" }),
           JSON.stringify({ migrated: ["Cronus285"], extra: 1 }),
           JSON.stringify({ migrated: ["Cronus285'"] }),
+          JSON.stringify([{ migrated: ["Cronus285"] }]),
+          JSON.stringify({ migrated: ["Cronus285", "cronus285"] }),
         ]
       ) {
         await Deno.writeTextFile(join(dir, "bch-roots.json"), body);

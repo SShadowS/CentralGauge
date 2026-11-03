@@ -7,26 +7,33 @@
 # C:\ProgramData\BcContainerHelper-<container> (src/container/bch-root.ts is the TypeScript side of this rule).
 # Invoke-ScriptInBcContainer's docker-exec path writes its script under hostHelperFolder, so every script here must
 # use the container's root. No file: the shared root, nothing changes. A malformed file, or a CG_BCH_ROOT (the root
-# the calling harness process resolved) that disagrees, throws.
+# the calling harness process resolved) that disagrees, throws. The file is read once per process (Sol r1), so a script
+# never uses two roots for one container.
 $CgSharedBchRoot = 'C:\ProgramData\BcContainerHelper'
-function Get-CgBchRoot([string]$Container) {
+function Get-CgBchMigrated {
+  if ($null -ne $global:CgBchMigrated) { return $global:CgBchMigrated }
   $coord = if ($env:CG_COORD_ROOT) { $env:CG_COORD_ROOT } else { 'H:\cg-coord' }
   $file = Join-Path $coord 'bch-roots.json'
-  $root = $CgSharedBchRoot
+  $map = @{}
   if (Test-Path -LiteralPath $file) {
-    $j = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop
-    $keys = @($j.PSObject.Properties.Name)
+    # -NoEnumerate keeps a top-level array an array, so only an object passes (the TypeScript rule)
+    $j = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
+    $keys = @(if ($j -is [Management.Automation.PSCustomObject]) { $j.PSObject.Properties.Name })
     if ($keys.Count -ne 1 -or $keys[0] -cne 'migrated' -or $j.migrated -isnot [array]) {
       throw "[CG-BCH-ROOT] $file must be {`"migrated`": [container names]}"
     }
-    $seen = @{}
     foreach ($c in @($j.migrated)) {
       if ($c -isnot [string] -or $c -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_-]*$') { throw "[CG-BCH-ROOT] $file lists an unsafe name" }
-      if ($seen.ContainsKey($c.ToLowerInvariant())) { throw "[CG-BCH-ROOT] $file lists $c twice" }
-      $seen[$c.ToLowerInvariant()] = $true
-      if ($c -ieq $Container) { $root = "$CgSharedBchRoot-$c" }
+      if ($map.ContainsKey($c.ToLowerInvariant())) { throw "[CG-BCH-ROOT] $file lists $c twice" }
+      $map[$c.ToLowerInvariant()] = "$CgSharedBchRoot-$c"
     }
   }
+  $global:CgBchMigrated = $map
+  $map
+}
+function Get-CgBchRoot([string]$Container) {
+  $map = Get-CgBchMigrated
+  $root = if ($map.ContainsKey($Container.ToLowerInvariant())) { $map[$Container.ToLowerInvariant()] } else { $CgSharedBchRoot }
   if ($env:CG_BCH_ROOT -and $env:CG_BCH_ROOT -ne $root) {
     throw "[CG-BCH-ROOT] $Container resolves to $root here but to $($env:CG_BCH_ROOT) in the calling process"
   }
