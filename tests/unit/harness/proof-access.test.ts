@@ -209,6 +209,19 @@ Deno.test("H-35c (Sol r3 #2): BCH's per-container folder is exempt only from the
     ).length,
     1,
   );
+  // Sol r4: even when that root resolves to BCH's root itself.
+  assertEquals(
+    serverMountProblems(
+      [{ Source: own, Destination: "c:\\run", RW: true }],
+      R,
+      "Cronus285",
+      [
+        ...deniedRoots(R),
+        { target: "private_root", path: "C:\\ProgramData\\BcContainerHelper" },
+      ],
+    ).length,
+    1,
+  );
   // Without such a root, the own folder is still accepted.
   assertEquals(
     serverMountProblems(

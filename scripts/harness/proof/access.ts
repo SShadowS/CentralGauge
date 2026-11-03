@@ -61,9 +61,14 @@ const PRIVATE_DENIED = [
 /** BCH's host folders: compiler folders and their caches, per-container `my`. */
 const BCH_ROOT = "C:\\ProgramData\\BcContainerHelper";
 
-export function deniedRoots(
-  r: AccessRoots,
-): { target: string; path: string }[] {
+/** `bch`: BCH's root rule, the only one a container's own BCH folder lifts. */
+export interface Denied {
+  target: string;
+  path: string;
+  bch?: true;
+}
+
+export function deniedRoots(r: AccessRoots): Denied[] {
   return [
     { target: "results", path: r.resultsRoot },
     // The verdict logs live under results/harness/verdicts; the raw, stderr
@@ -76,7 +81,7 @@ export function deniedRoots(
     })),
     ...(r.keyCustody ? [{ target: "private_root", path: r.keyCustody }] : []),
     { target: "symbols_and_compiler_caches", path: r.symbolStore },
-    { target: "symbols_and_compiler_caches", path: BCH_ROOT },
+    { target: "symbols_and_compiler_caches", path: BCH_ROOT, bch: true },
     { target: "appinfo", path: join(r.symbolStore, "appinfo") },
   ];
 }
@@ -90,7 +95,7 @@ const key = (p: string) =>
 /** Sol r2 #1: every denied path, not just the roots, by the filesystem's own name. */
 export async function canonicalDenied(
   r: AccessRoots,
-): Promise<{ target: string; path: string }[]> {
+): Promise<Denied[]> {
   return await Promise.all(
     deniedRoots(r).map(async (d) => ({
       ...d,
@@ -210,7 +215,8 @@ export function serverMountProblems(
     // denied root (custody resolving into it, say) still applies.
     const ownFolder = within(m.Source, own);
     const hit = denied.find((d) =>
-      !(ownFolder && key(d.path) === key(BCH_ROOT)) &&
+      // Sol r4: by the rule's tag, never by where a path resolves.
+      !(ownFolder && d.bch) &&
       (within(m.Source, d.path) || within(d.path, m.Source))
     );
     if (hit) why(`${hit.target}: ${hit.path}`);
