@@ -1062,6 +1062,20 @@ outside the NST process (for example a detached process an OnPrem DotNet call
 started) is not stopped by the hold and is not covered. The campaign guarantee rests on L1 (Cloud
 compile), L2 (network) and L3 (bans).
 
+**Accepted L4 residual: CryptnetUrlCache (owner, 2026-11-03, H-59).** The
+lineage tolerates in-place rewrites of the SYSTEM profile's CryptoAPI URL
+cache (`...\LocalLow\Microsoft\CryptnetUrlCache`): an existing `MetaData`
+file may take any content that starts with `7000`, same attributes, size
+within 16 bytes (golden-o09-v2); an existing `Content` file may take any body
+behind a valid CAB header of its new size. Windows rewrites these files during
+certificate checks, and they forced container recreations before the rules
+existed. The rules do not check the URL or the rest of the structure, so code
+that writes files as SYSTEM in the container (an OnPrem app using .NET
+interop; the NST runs as SYSTEM) can keep state there across executions
+without an L4 difference, and later code can read it back. The owner accepts
+this channel. New, removed or re-attributed files in that folder stay
+differences, and `C:\Windows\Temp` has no tolerance.
+
 **L3 scope.** L3 (`persistence_ref`) bans the r5 2.3 table in agent production
 and Test text before the build, by name (namespace-qualified names included)
 and by object id. L3 `onprem_ref` bans, in the same text, calls by name to

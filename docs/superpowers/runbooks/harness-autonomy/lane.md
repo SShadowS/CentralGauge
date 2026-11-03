@@ -210,6 +210,16 @@ nothing in flight. After a clear, run your start procedure again.
   after another process reclaimed the root; this rule keeps that from happening. If the
   harness refuses to open because of legacy state, follow the one-time migration it prints
   (no harness process running) and tell the orchestrator.
+- Stopping a run (H-59): create `<its --private-dir>\STOP` (`New-Item <dir>\STOP`), or press
+  Ctrl-C/Ctrl-Break in its console. The environment stops before its next row, closes the
+  normal way (post-cleanup check, L4 after-capture, in-use records released) and exits 130;
+  it removes the STOP it acted on, so to keep a chain from starting the next set also write the
+  chain's own stop file. Never taskkill a harness process: a kill leaves in-use records that
+  recover refuses, and the container is recreated. Exceptions: `harness recover` is not
+  stoppable this way (short, releases its claim in a finally), and a claim the close cannot
+  prove released is kept with a `[WARN] in-use record of <c> kept` line. A supervisor's RAM
+  guard follows `H:\cg-coord\tasks\H-59\sup.sh.proposed`: chain latch, then the private STOP,
+  wait; an emergency kill only below its last threshold or deadline, logged as an abort.
 
 ## lane-admin specifics
 
