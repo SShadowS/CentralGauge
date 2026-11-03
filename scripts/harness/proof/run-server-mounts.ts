@@ -19,6 +19,7 @@ import {
   serverMountProblems,
 } from "./access.ts";
 import { proofRoot, writeProofRecord } from "./lib.ts";
+import { BCH_ROOT, visibleArtifacts } from "../sweep-shared.ts";
 
 async function main(argv: string[]) {
   const { options: o } = await new Command()
@@ -59,6 +60,10 @@ async function main(argv: string[]) {
     o.container,
     await canonicalDenied(roots),
   );
+  // H-55 (4): what the mounts SHOW is its own finding, "judge artifacts on
+  // shared mount", kept apart from whether a mount is allowed at all (the
+  // BCH-mount ruling).
+  const artifacts: string[] = [];
   // Sol r1 #7: whatever is actually mapped to C:\Run\my, searched recursively.
   const runMy = mounts.filter((m) =>
     m.Destination.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase() ===
@@ -69,31 +74,41 @@ async function main(argv: string[]) {
     // Sol r2 #5: any case of .app; a link inside is refused, never followed.
     for await (const e of walk(m.Source, { followSymlinks: false })) {
       if (e.isSymlink) {
-        problems.push(`${e.path}: a link inside C:\\Run\\my`);
+        artifacts.push(`${e.path}: a link inside C:\\Run\\my`);
       } else if (e.isFile && e.name.toLowerCase().endsWith(".app")) {
-        problems.push(`${e.path}: a package left in C:\\Run\\my`);
+        artifacts.push(`${e.path}: a package left in C:\\Run\\my`);
       }
     }
   }
-  const pass = problems.length === 0;
-  const detail = `${mounts.length} mounts: ${
-    mounts.map((m: { Source: string; Destination: string }) =>
-      `${m.Source} -> ${m.Destination}`
-    ).join(", ")
-  }; problems: ${problems.join("; ") || "none"}`;
-  const file = await writeProofRecord(
-    proofRoot(Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT),
-    {
+  for (const i of await visibleArtifacts(mounts, BCH_ROOT)) {
+    if (!artifacts.some((a) => a.startsWith(`${i.path}:`))) {
+      artifacts.push(`${i.path}: ${i.kind} of ${i.container}`);
+    }
+  }
+  const listed = mounts.map((m) => `${m.Source} -> ${m.Destination}`)
+    .join(", ");
+  const root = proofRoot(Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT);
+  let failed = false;
+  for (
+    const [control, found, what] of [
+      ["access-server-mounts", problems, "problems"],
+      ["access-shared-artifacts", artifacts, "judge artifacts on shared mount"],
+    ] as const
+  ) {
+    const pass = found.length === 0;
+    failed ||= !pass;
+    const detail = `${mounts.length} mounts: ${listed}; ${what}: ${
+      found.length === 0 ? "none" : `${found.length}: ${found.join("; ")}`
+    }`;
+    const file = await writeProofRecord(root, {
       v: 1,
       provenance: { proof: true, harness_commit: null },
       at: new Date().toISOString(),
-      outcome: { control: "access-server-mounts", pass, detail },
-    },
-  );
-  console.log(
-    `${pass ? "[OK]" : "[FAIL]"} access-server-mounts: ${detail} (${file})`,
-  );
-  if (!pass) Deno.exit(1);
+      outcome: { control, pass, detail },
+    });
+    console.log(`${pass ? "[OK]" : "[FAIL]"} ${control}: ${detail} (${file})`);
+  }
+  if (failed) Deno.exit(1);
 }
 
 if (import.meta.main) await main(Deno.args);
