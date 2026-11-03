@@ -141,3 +141,64 @@ export function mountProblems(args: string[], r: AccessRoots): string[] {
   }
   return problems;
 }
+
+// ---- the sandbox canary probe (lane-ops runs sandbox-probe.ps1 in the image) ----
+
+export const canaryName = (token: string) => `cg-canary-${token}.txt`;
+
+export interface Canary {
+  path: string;
+  /** The own workspace's: the probe must find it (its search works). */
+  positive: boolean;
+}
+
+/**
+ * One canary in every denied root that exists and the harness owns (never
+ * BCH's host folder: the mount check covers it), plus the positive control
+ * in the execution's own workspace.
+ */
+export async function plantCanaries(
+  r: AccessRoots,
+  workspace: string,
+  token: string,
+): Promise<Canary[]> {
+  const ours = [r.resultsRoot, r.privateRoot, r.symbolStore, r.keyCustody]
+    .filter((p): p is string => !!p);
+  const dirs = [
+    ...new Set(
+      deniedRoots(r).map((d) => d.path).filter((p) =>
+        ours.some((o) => within(p, o))
+      ),
+    ),
+  ];
+  const planted: Canary[] = [];
+  for (
+    const [dir, positive] of [
+      ...dirs.map((d) => [d, false] as const),
+      [workspace, true] as const,
+    ]
+  ) {
+    if (!(await Deno.stat(dir).catch(() => null))?.isDirectory) continue;
+    const path = join(dir, canaryName(token));
+    await Deno.writeTextFile(path, `CGCANARY-${token}\n`, { createNew: true });
+    planted.push({ path, positive });
+  }
+  return planted;
+}
+
+export async function removeCanaries(planted: Canary[]): Promise<void> {
+  for (const c of planted) await Deno.remove(c.path).catch(() => {});
+}
+
+/** `found`: the probe's hits (container paths) for canary names. */
+export function judgeProbe(found: string[], token: string) {
+  const name = canaryName(token).toLowerCase();
+  const mine = found.filter((f) => f.toLowerCase().endsWith(`\\${name}`));
+  const positive = mine.some((f) =>
+    f.toLowerCase() === `c:\\workspace\\${name}`
+  );
+  const leaks = mine.filter((f) =>
+    f.toLowerCase() !== `c:\\workspace\\${name}`
+  );
+  return { pass: positive && leaks.length === 0, positive, leaks };
+}

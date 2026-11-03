@@ -353,7 +353,8 @@ export interface ProofRecord {
   v: 1;
   provenance: { proof: true; harness_commit: string | null };
   at: string;
-  outcome: ControlOutcome;
+  /** A control's outcome, or an access probe's (access.ts). */
+  outcome: ControlOutcome | { control: string; pass: boolean; detail: string };
 }
 
 /** Write-once under `root`, which must be a proofRoot. */
