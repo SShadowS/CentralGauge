@@ -494,6 +494,12 @@ export const JudgmentRecordSchema = z.strictObject({
     harness_commit: z.string().nullable(),
     production_manifest: Sha256Hex.nullable(),
     env_fp: Sha256Hex.nullable(),
+    /**
+     * H-35c (design-r3 11.3): set only by the proof builders
+     * (scripts/harness/proof/), whose records live under the coord's
+     * tasks/H-35/proof. The campaign store and integrity refuse it.
+     */
+    proof: z.literal(true).optional(),
   }).optional(),
 }).superRefine((j, ctx) => {
   const issue = (message: string, path: (string | number)[]) =>
@@ -1038,6 +1044,11 @@ export class RecordStore {
 
   writeJudgment(j: JudgmentRecord): Promise<void> {
     const r = JudgmentRecordSchema.parse(j);
+    if (r.provenance?.proof) {
+      const msg =
+        `judgment ${r.id}: proof provenance is never a campaign record`;
+      return Promise.reject(new ValidationError(msg, [msg]));
+    }
     return publishOnce(
       join(this.root, "judgments", r.execution_id, `${r.id}.json`),
       r,

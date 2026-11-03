@@ -1471,3 +1471,38 @@ Deno.test("H-38 (Q9, 8.5): a stored h35 judgment (v2 record, fingerprint b23eeb8
   await validateCampaignRecords({ ...r, judgments: stored }, { descriptor });
   for (const j of stored) assertEquals(await isCurrentJudgment(j), false);
 });
+
+Deno.test("H-35c (design-r3 11.3, 6.3): a campaign holding a judgment with proof provenance fails integrity", async () => {
+  const r = await scenario();
+  const stored = r.judgments.map((j, i) => ({
+    ...j,
+    v: 2 as const,
+    scorer_versions: H35,
+    scorer_fingerprint: H35_FP,
+    scorers: ["build"].map((name) => ({
+      name,
+      passed: j.verdict === "pass",
+      state: "measured" as const,
+      tests: [],
+    })),
+    policy: { passed: true, violations: [] },
+    provenance: {
+      harness_commit: null,
+      production_manifest: null,
+      env_fp: null,
+      ...(i === 0 ? { proof: true as const } : {}),
+    },
+  }));
+  const err = await assertRejects(
+    () => validateCampaignRecords({ ...r, judgments: stored }),
+    ValidationError,
+  );
+  assertStringIncludes(
+    err.message,
+    `judgment ${stored[0]!.id}: proof provenance`,
+  );
+  assertEquals(
+    err.message.includes(`judgment ${stored[1]!.id}: proof`),
+    false,
+  );
+});
