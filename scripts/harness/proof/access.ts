@@ -142,6 +142,37 @@ export function mountProblems(args: string[], r: AccessRoots): string[] {
   return problems;
 }
 
+/**
+ * The NST identity's half without AL (design-r5 2.5, server column): the BC
+ * container sees the host only through its bind mounts (docker inspect
+ * .Mounts). Only BCH's own per-container folder (C:\Run\my and its kin) may
+ * be mounted; anything of, in or above a denied root, BCH's root or another
+ * container's folder is refused. A judge .app left in C:\Run\my after a
+ * publish is an L4 difference already (the lineage's C:\Run `^my$` entry
+ * tolerates no file inside).
+ */
+export function serverMountProblems(
+  mounts: { Source: string; Destination: string; RW: boolean }[],
+  r: AccessRoots,
+  container: string,
+): string[] {
+  const own = join(BCH_ROOT, "Extensions", container);
+  const problems: string[] = [];
+  for (const m of mounts) {
+    const why = (s: string) =>
+      problems.push(`${m.Source} -> ${m.Destination}: ${s}`);
+    if (within(m.Source, own)) continue;
+    const hit = deniedRoots(r).find((d) =>
+      within(m.Source, d.path) || within(d.path, m.Source)
+    );
+    if (hit) why(`${hit.target}: ${hit.path}`);
+    else if (
+      within(r.privateRoot, m.Source) || within(m.Source, r.privateRoot)
+    ) why("private root");
+  }
+  return problems;
+}
+
 // ---- the sandbox canary probe (lane-ops runs sandbox-probe.ps1 in the image) ----
 
 export const canaryName = (token: string) => `cg-canary-${token}.txt`;

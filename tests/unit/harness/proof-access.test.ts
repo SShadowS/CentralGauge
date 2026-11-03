@@ -8,6 +8,7 @@ import {
   type AccessRoots,
   deniedRoots,
   mountProblems,
+  serverMountProblems,
 } from "../../../scripts/harness/proof/access.ts";
 
 const R: AccessRoots = {
@@ -113,6 +114,43 @@ Deno.test("H-35c: only the workspace is writable; any other read-write mount is 
   );
   assertEquals(p.length, 1);
   assert(p[0]!.includes("read-write"));
+});
+
+Deno.test("H-35c: the BC container's mounts (docker inspect) pass when they are BCH's per-container folder only; a results, private, symbol or compiler-folder mount fails", () => {
+  const ok = [
+    {
+      Source: "C:\\ProgramData\\BcContainerHelper\\Extensions\\Cronus285",
+      Destination: "c:\\run\\my",
+      RW: true,
+    },
+    {
+      Source: "C:\\ProgramData\\BcContainerHelper",
+      Destination: "c:\\programdata\\bccontainerhelper",
+      RW: true,
+    },
+  ];
+  // BCH's own shared folder mount (the whole BCH root) carries the compiler
+  // folders: refused unless lane-ops shows it is absent.
+  assertEquals(serverMountProblems(ok.slice(0, 1), R, "Cronus285"), []);
+  const bad = [
+    R.resultsRoot,
+    join(R.privateRoot, "work", "x"),
+    R.symbolStore,
+    "C:\\ProgramData\\BcContainerHelper\\compiler-cache-0123456789ab",
+    "C:\\ProgramData\\BcContainerHelper\\Extensions\\Cronus284",
+    "C:\\ProgramData\\BcContainerHelper",
+  ];
+  for (const Source of bad) {
+    assertEquals(
+      serverMountProblems(
+        [{ Source, Destination: "c:\\x", RW: false }],
+        R,
+        "Cronus285",
+      ).length,
+      1,
+      Source,
+    );
+  }
 });
 
 Deno.test("H-35c: the denied roots name the design-r5 2.5 targets", () => {
