@@ -184,28 +184,66 @@ Deno.test("H-35c: L2 control: the NST's blocked-request text in the write's mess
   assertEquals([p.observed, p.pass], ["not_blocked", false]);
 });
 
-Deno.test("H-35c: reset control: the write seeds, the read on the same container finds nothing (cleared) or something (leaked); an unseeded write is infra", async () => {
+Deno.test("H-35c (design-r5 6.5): reset control: the write seeds; a read after the ordinary cleanup alone still finds it; a read after the reset, on the same container, finds nothing (cleared) or something (leaked)", async () => {
   const c = control("seed-job-queue");
   const routed: string[] = [];
-  const run = async (read: true | string, seed: true | string = true) => {
+  const events: string[] = [];
+  /** `reads`: the Gone outcome of the read without, then with, the reset. */
+  const run = async (
+    reads: [true | string, true | string],
+    seed: true | string = true,
+  ) => {
+    let read = 0;
+    const reset: ResetMechanism = {
+      ...OK_RESET,
+      reset: (container) => {
+        events.push("reset");
+        return OK_RESET.reset(container);
+      },
+    };
     const e = await env((cu, _d, container) => {
-      routed.push(`${cu}@${container}`);
-      return cu === 80010 ? result({ Seed: seed }) : result({ Gone: read });
-    });
+      routed.push(container);
+      events.push(`${cu}`);
+      return cu === 80010
+        ? result({ Seed: seed })
+        : result({ Gone: reads[read++]! });
+    }, reset);
     return await runControl(e, c, await repoWith(c), await tmp());
   };
-  const ok = await run(true);
-  assertEquals([ok.observed, ok.pass], ["cleared", true]);
-  const [w, r] = routed.splice(0);
+  const STILL = "job queue entry still there";
+  const ok = await run([STILL, true]);
+  assertEquals([ok.observed, ok.pass], ["cleared", true], ok.detail);
+  // write after a reset; the contrast read with no reset; the read after one
+  assertEquals(events.splice(0), ["reset", "80010", "80020", "reset", "80020"]);
   assertEquals(
-    w!.split("@")[1],
-    r!.split("@")[1],
-    "read pinned to the write's container",
+    new Set(routed.splice(0)).size,
+    1,
+    "every step on one container",
   );
-  const leak = await run("job queue entry still there");
+  // Gone already after the ordinary cleanup: the seed proves nothing.
+  const weak = await run([true, true]);
+  assertEquals([weak.observed, weak.pass], ["not_persisted", false]);
+  const leak = await run([STILL, STILL]);
   assertEquals([leak.observed, leak.pass], ["leaked", false]);
-  const infra = await run(true, "could not seed");
+  const infra = await run([STILL, true], "could not seed");
   assertEquals([infra.observed, infra.pass], ["infra", false]);
+});
+
+Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay published past its cleanup; the rest is removed", async () => {
+  const c = control("seed-global-app");
+  const repo = await repoWith(c);
+  const spec = join(repo, c.dir, "proof.json");
+  const s = JSON.parse(await Deno.readTextFile(spec));
+  s.write.leave = [IDS.core];
+  await Deno.writeTextFile(spec, JSON.stringify(s));
+  const e = await env((cu) =>
+    cu === 80010
+      ? result({ Seed: true })
+      : result({ Gone: e.bc.syncs.length > 4 ? true : "still published" })
+  );
+  await runControl(e, c, repo, await tmp());
+  // The write's cleanup (the 2nd sync) removed the Test app only.
+  assertEquals(e.bc.syncs[1]!.removeIds, [IDS.test]);
 });
 
 Deno.test("H-35c: proof records are written once and only under <coord>/tasks/H-35/proof, with proof provenance", async () => {

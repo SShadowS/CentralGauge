@@ -127,7 +127,8 @@ export const HTTP_BLOCKED_TEXT =
 
 /** `<fixture>/proof.json`: the tests of each step; `read` absent for L2 and L4. */
 export interface FixtureSpec {
-  write: { tests: TestSpec[] };
+  /** `leave`: app ids the write's cleanup keeps published (the global app seed). */
+  write: { tests: TestSpec[]; leave?: string[] };
   read?: { tests: TestSpec[] };
 }
 
@@ -136,6 +137,7 @@ export type Observed =
   | "not_detected"
   | "not_blocked"
   | "leaked"
+  | "not_persisted"
   | "fixture_missing"
   | "infra";
 
@@ -169,14 +171,20 @@ async function readSpec(dir: string): Promise<FixtureSpec | null> {
   }
 }
 
-/** One OnPrem build plus one deployment of `ws`, on `pin` when given. */
+/**
+ * One OnPrem build plus one deployment of `ws`, on `pin` when given; `reset`
+ * false only for the contrast read (no reset, so no L4 capture either).
+ */
 async function step(
   env: ProofEnv,
   ws: string,
   tests: TestSpec[],
   work: string,
   pin: string | null,
+  reset = true,
+  leave: readonly string[] = [],
 ): Promise<{ container: string; result: DeployTestResult }> {
+  const kept = new Set(leave.map((id) => id.toLowerCase()));
   const apps = await readAppGraph(ws);
   const prep = await prepareApps(env.lane, {
     pristine: ws,
@@ -206,12 +214,14 @@ async function step(
       deployAndTest(env.lane.bc, c, {
         wanted: prep.wanted,
         tests,
-        cleanupIds: [...prep.candidateIds].reverse(),
+        cleanupIds: [...prep.candidateIds].reverse().filter((id) =>
+          !kept.has(id.toLowerCase())
+        ),
         // The fixture is ours (trusted): its app ids are the removal allowlist.
         ctx: {
           ledgerRoot: env.ledgerRoot,
           trustedRoots: [ws],
-          reset: env.reset,
+          ...(reset ? { reset: env.reset } : {}),
         },
       }),
     undefined,
@@ -269,6 +279,8 @@ export async function runControl(
       spec.write.tests,
       join(work, "write"),
       null,
+      true,
+      spec.write.leave ?? [],
     );
   } catch (err) {
     if (err instanceof HostDirtyError) {
@@ -299,20 +311,34 @@ export async function runControl(
   if (unseeded.length > 0) {
     return out("infra", `write did not seed: ${unseeded.join(", ")}`, c);
   }
-  let read: { container: string; result: DeployTestResult };
-  try {
-    read = await step(
-      env,
-      join(dir, "read"),
-      spec.read.tests,
-      join(work, "read"),
+  // The read's tests assert the seeded state is gone. Read twice on the
+  // write's container: after the ordinary cleanup alone (design-r5 6.5: the
+  // state must survive it, or the seed proves nothing), then after a reset.
+  const reads: DeployTestResult[] = [];
+  for (const [i, reset] of [false, true].entries()) {
+    try {
+      reads.push(
+        (await step(
+          env,
+          join(dir, "read"),
+          spec.read.tests,
+          join(work, `read${i}`),
+          c,
+          reset,
+        )).result,
+      );
+    } catch (err) {
+      return out("infra", err instanceof Error ? err.message : String(err), c);
+    }
+  }
+  if (failedRows(reads[0]!).length === 0) {
+    return out(
+      "not_persisted",
+      "the state was gone after the ordinary cleanup alone",
       c,
     );
-  } catch (err) {
-    return out("infra", err instanceof Error ? err.message : String(err), c);
   }
-  // The read's tests assert the seeded state is gone after the reset.
-  const left = failedRows(read.result);
+  const left = failedRows(reads[1]!);
   return left.length === 0
     ? out("cleared", "the reset removed the seeded state before the read", c)
     : out("leaked", `state survived the reset: ${left.join(", ")}`, c);
