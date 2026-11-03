@@ -14,6 +14,7 @@ import {
   resolve,
 } from "@std/path";
 import { ConfigurationError } from "../errors.ts";
+import { DEFAULT_COORD_ROOT } from "./allocation.ts";
 import {
   BENCH_LOCK_FILENAME,
   DEFAULT_STALE_AFTER_MS,
@@ -30,12 +31,15 @@ const MACHINE_STATE = new Set([
 const RECORD_DIRS = ["campaigns", "executions", "runs"];
 /** Frozen content (agent files): copied byte for byte, never filtered. */
 const FROZEN = new Set(["workspaces", "artifacts"]);
-/** Publish temps: `<name>.tmp-<uuid>[-<uuid>]`, `.tmp-<uuid>`, `.tmp-<execution>-<hex>`. */
-const TEMP = /\.tmp-[0-9a-f][0-9a-f-]*$/i;
+/**
+ * Publish temps: `<name>.tmp-<uuid>[-<uuid>]`, `.tmp-<uuid>`,
+ * `.tmp-<execution>-<hex>`, and this archive's own `.tmp-archive-<uuid>`.
+ */
+const TEMP = /\.tmp-(archive-)?[0-9a-f][0-9a-f-]*$/i;
 
 const inside = (child: string, parent: string): boolean => {
   const r = relative(parent, child);
-  return r === "" || (!r.startsWith("..") && !isAbsolute(r));
+  return r === "" || (r.split(/[\\/]/)[0] !== ".." && !isAbsolute(r));
 };
 
 const isDirSync = (p: string): boolean => {
@@ -109,6 +113,23 @@ export function resultsDirCheck(
     };
 }
 
+/**
+ * Recovery publishes into the root its attempt began in (write-once), so a
+ * job-worktree root (a pre-H-54 attempt) is never refused there, only named.
+ */
+export function warnJobRoot(
+  dir: string,
+  coordRoot = Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
+): void {
+  const c = resultsDirCheck(dir, join(coordRoot, "jobs"));
+  const why = c?.warn ?? c?.refuse;
+  if (why) {
+    console.warn(
+      colors.yellow(`[WARN] recovery publishes into its own root: ${why}`),
+    );
+  }
+}
+
 /** {@link resultsDirCheck}, enforced: a refusal throws, a warning prints. */
 export function guardResultsDir(resultsDir: string, jobsRoot: string): void {
   const c = resultsDirCheck(resultsDir, jobsRoot);
@@ -139,6 +160,15 @@ export interface ArchiveReport {
   verified: number;
   /** Machine-state entries left out, relative to --from. */
   skipped: string[];
+}
+
+async function lstatOrNull(p: string): Promise<Deno.FileInfo | null> {
+  try {
+    return await Deno.lstat(p);
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return null;
+    throw e;
+  }
 }
 
 async function sha256(path: string): Promise<string> {
@@ -201,7 +231,8 @@ async function inventory(root: string): Promise<Inventory> {
         inv.dirs.push(r);
         await walk(
           r,
-          mode > 0 ? 2 : recordRoot && FROZEN.has(e.name.toLowerCase()) ? 1 : 0,
+          // any workspaces/ or artifacts/ store, fixtures/workspaces included
+          mode > 0 ? 2 : FROZEN.has(e.name.toLowerCase()) ? 1 : 0,
         );
       } else if (e.isFile) {
         const p = join(root, r);
@@ -283,23 +314,17 @@ export async function archiveResults(
   }
   const conflicts: string[] = [];
   const todo: string[] = [];
-  for (const [rel, hash] of inv.files) {
-    try {
-      const st = await Deno.stat(join(to, rel));
-      if (!st.isFile || await sha256(join(to, rel)) !== hash) {
-        conflicts.push(rel);
-      }
-    } catch (e) {
-      if (!(e instanceof Deno.errors.NotFound)) throw e;
-      todo.push(rel);
-    }
-  }
+  // Dirs first: a link or junction anywhere below --to would redirect writes.
   for (const rel of inv.dirs) {
-    try {
-      if (!(await Deno.stat(join(to, rel))).isDirectory) conflicts.push(rel);
-    } catch (e) {
-      if (!(e instanceof Deno.errors.NotFound)) throw e;
-    }
+    const st = await lstatOrNull(join(to, rel));
+    if (st && (st.isSymlink || !st.isDirectory)) conflicts.push(rel);
+  }
+  for (const [rel, hash] of inv.files) {
+    const st = await lstatOrNull(join(to, rel));
+    if (!st) todo.push(rel);
+    else if (
+      st.isSymlink || !st.isFile || await sha256(join(to, rel)) !== hash
+    ) conflicts.push(rel);
   }
   if (conflicts.length > 0) {
     throw new ConfigurationError(
@@ -323,6 +348,9 @@ export async function archiveResults(
           `copy of ${rel} does not match its source hash (source changed?)`,
         );
       }
+      // durable before it is published (as records.ts publishOnce)
+      using f = await Deno.open(tmp, { read: true, write: true });
+      await f.sync();
       await Deno.link(tmp, dest); // write-once: never replaces a file
       copied++;
     } catch (e) {
@@ -336,6 +364,11 @@ export async function archiveResults(
   const again = await inventory(from);
   const changed = [...new Set([...inv.files.keys(), ...again.files.keys()])]
     .filter((r) => inv.files.get(r) !== again.files.get(r));
+  const dirsNow = new Set(again.dirs);
+  changed.push(
+    ...inv.dirs.filter((d) => !dirsNow.has(d)),
+    ...again.dirs.filter((d) => !inv.dirs.includes(d)),
+  );
   if (changed.length > 0) {
     throw new ConfigurationError(
       `${from} changed during the archive (${changed.length} file(s), e.g. ${
@@ -344,8 +377,15 @@ export async function archiveResults(
     );
   }
   const bad: string[] = [];
+  for (const rel of inv.dirs) {
+    const st = await lstatOrNull(join(to, rel));
+    if (!st || st.isSymlink || !st.isDirectory) bad.push(rel);
+  }
   for (const [rel, hash] of inv.files) {
-    if (await sha256(join(to, rel)) !== hash) bad.push(rel);
+    const st = await lstatOrNull(join(to, rel));
+    if (!st?.isFile || st.isSymlink || await sha256(join(to, rel)) !== hash) {
+      bad.push(rel);
+    }
   }
   if (bad.length > 0) {
     throw new ConfigurationError(

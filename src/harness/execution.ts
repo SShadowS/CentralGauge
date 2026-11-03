@@ -101,6 +101,7 @@ import {
   RecordStore,
   retryProblem,
 } from "./records.ts";
+import { warnJobRoot } from "./results-root.ts";
 import { tryAcquireBenchLock } from "../utils/bench-lock.ts";
 import type { Mutex } from "../parallel/semaphore.ts";
 import {
@@ -4565,6 +4566,9 @@ export async function recoverInterrupted(
       calibrationWaived: _waived,
       ...baseEnv
     } = env;
+    if (resolve(intent.results_root) !== resolve(env.resultsRoot)) {
+      warnJobRoot(intent.results_root); // H-54
+    }
     const own: HarnessEnv = {
       ...baseEnv,
       resultsRoot: intent.results_root,

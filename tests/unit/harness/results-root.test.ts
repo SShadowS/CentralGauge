@@ -315,4 +315,64 @@ Deno.test("H-54 archive: a source that changes during the archive is not clean",
   // once quiet, the next run completes it
   const r = await c.archive({ from, to });
   assertEquals([r.copied, r.present], [1, 4]);
+  // a dir-only change (a new empty dir) is a change too
+  await refused(
+    c.archive({
+      from,
+      to,
+      afterCopy: () =>
+        Deno.mkdir(join(from, "workspaces", "h9", "empty"), {
+          recursive: true,
+        }),
+    }),
+    "changed during the archive",
+  );
+});
+
+Deno.test("H-54 archive: a link or junction below the destination refuses, nothing written through it", async () => {
+  const c = await coord();
+  const from = join(await c.worktree("P-02"), "results", "harness");
+  await records(from);
+  const live = join(await c.worktree("M8-16a"), "results", "harness", "runs");
+  await Deno.mkdir(live, { recursive: true });
+  const to = join(c.root, "results", "harness");
+  await Deno.mkdir(to, { recursive: true });
+  await Deno.symlink(live, join(to, "runs"), { type: "junction" });
+  await refused(c.archive({ from, to }), "runs");
+  assertEquals([...Deno.readDirSync(live)], []);
+  assertFalse(await exists(join(to, "campaigns")));
+});
+
+Deno.test("H-54 archive: fixture workspaces are frozen content too", async () => {
+  const c = await coord();
+  const from = join(await c.worktree("P-02"), "results", "harness");
+  const to = join(c.root, "results", "harness");
+  await records(from);
+  const ws = join("fixtures", "workspaces", "h2");
+  await put(join(from, ws, "notes.tmp-deadbeef"), "agent file");
+  await put(join(from, ws, ".bench-running.json"), "agent file");
+  // the store's own publish temp is still skipped
+  await put(
+    join(
+      from,
+      "fixtures",
+      "workspaces",
+      ".tmp-0a1b2c3d-1111-2222-3333-444455556666",
+      "x",
+    ),
+    "temp",
+  );
+  const r = await c.archive({ from, to });
+  assertEquals(r.copied, 6);
+  assertEquals(
+    await Deno.readTextFile(join(to, ws, "notes.tmp-deadbeef")),
+    "agent file",
+  );
+  assert(await exists(join(to, ws, ".bench-running.json")));
+});
+
+Deno.test("H-54 guard: a job worktree whose name starts with '..' is still inside jobs", async () => {
+  const c = await coord();
+  const wt = await c.worktree("..scratch");
+  assert(resultsDirCheck(join(wt, "results", "harness"), c.jobs)?.refuse);
 });
