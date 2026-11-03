@@ -1,0 +1,24 @@
+{
+  "write": {
+    "tests": [
+      {
+        "codeunit": 84964,
+        "procedures": [
+          "Seed"
+        ],
+        "target": "candidate"
+      }
+    ]
+  },
+  "read": {
+    "tests": [
+      {
+        "codeunit": 84965,
+        "procedures": [
+          "Gone"
+        ],
+        "target": "candidate"
+      }
+    ]
+  }
+}

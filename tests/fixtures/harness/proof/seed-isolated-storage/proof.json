@@ -1,0 +1,27 @@
+{
+  "write": {
+    "tests": [
+      {
+        "codeunit": 84960,
+        "procedures": [
+          "Seed"
+        ],
+        "target": "candidate"
+      }
+    ],
+    "leave": [
+      "c6a1e0f0-0000-4000-8000-000000000011"
+    ]
+  },
+  "read": {
+    "tests": [
+      {
+        "codeunit": 84961,
+        "procedures": [
+          "Gone"
+        ],
+        "target": "candidate"
+      }
+    ]
+  }
+}

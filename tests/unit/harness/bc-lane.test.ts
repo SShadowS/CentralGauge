@@ -2044,6 +2044,37 @@ Deno.test("H-35: the Cloud policy compiles every app with target Cloud in the ef
   }
 });
 
+Deno.test("H-35c: an OnPrem policy (the proof builder's) compiles every app with target OnPrem; its policy id is in the build key", async () => {
+  const ws = await workspace();
+  const bc = new FakeBc();
+  const o = {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    lock: await lock(),
+  };
+  const onPrem = await buildApps(bc, "C1", {
+    ...o,
+    outDir: await tmp(),
+    policy: { target: "OnPrem", id: "test-onprem@1" },
+  });
+  for (const b of onPrem) {
+    assertEquals((await readApp(b.file!)).target, "OnPrem");
+  }
+  const cloud = await buildApps(bc, "C1", {
+    ...o,
+    outDir: await tmp(),
+    policy: CLOUD_POLICY,
+  });
+  for (const [i, b] of onPrem.entries()) {
+    assert(b.build_key, `${b.folder}: no build key`);
+    assert(
+      b.build_key !== cloud[i]!.build_key,
+      `${b.folder}: key shared with Cloud`,
+    );
+  }
+});
+
 Deno.test("H-35: the build policy is in the cache key: the same source under another policy is a miss", async () => {
   const ws = await workspace();
   const lk = await lock();

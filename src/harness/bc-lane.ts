@@ -121,10 +121,12 @@ export interface HarnessBc {
  * lookup and the compile (so the compiler refuses File, DotNet and every
  * OnPrem-scoped API); `as-declared` keeps the workspace's target (trusted
  * builds only: the oracle, analysis compiles). The policy id is in every
- * build key, and a cache hit must carry the policy's target.
+ * build key, and a cache hit must carry the policy's target. H-35c:
+ * `OnPrem` is the proof builder's only (scripts/harness/proof/), never
+ * judging or the backend.
  */
 export interface BuildPolicy {
-  target: "Cloud" | "as-declared";
+  target: "Cloud" | "as-declared" | "OnPrem";
   id: string;
 }
 export const CLOUD_POLICY: BuildPolicy = { target: "Cloud", id: "h35-cloud@1" };
@@ -879,7 +881,7 @@ export async function effectiveBuildKey(
     [k: string]: unknown;
   };
   appJson.version = o.version;
-  if (o.policy.target === "Cloud") appJson["target"] = "Cloud";
+  if (o.policy.target !== "as-declared") appJson["target"] = o.policy.target;
   await Deno.writeTextFile(
     join(dir, "app.json"),
     JSON.stringify(appJson, null, 2),
