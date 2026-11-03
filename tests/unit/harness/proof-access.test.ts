@@ -193,6 +193,33 @@ Deno.test("H-35c (Sol r2 #1): a denied folder that is itself a junction is caugh
   );
 });
 
+Deno.test("H-35c (Sol r3 #2): BCH's per-container folder is exempt only from the BCH-root rule, never from another denied root that resolves into it", () => {
+  const own = "C:\\ProgramData\\BcContainerHelper\\Extensions\\Cronus285";
+  const denied = [
+    ...deniedRoots(R),
+    // custody, canonicalized, turned out to be a junction into BCH's folder
+    { target: "private_root", path: `${own}\\my` },
+  ];
+  assertEquals(
+    serverMountProblems(
+      [{ Source: own, Destination: "c:\\run", RW: true }],
+      R,
+      "Cronus285",
+      denied,
+    ).length,
+    1,
+  );
+  // Without such a root, the own folder is still accepted.
+  assertEquals(
+    serverMountProblems(
+      [{ Source: own, Destination: "c:\\run", RW: true }],
+      R,
+      "Cronus285",
+    ),
+    [],
+  );
+});
+
 Deno.test("H-35c (Sol r2 #2): containerPaths maps a host path through the mounts to every container path that shows it", () => {
   const a = args([{ src: "D:\\share", dst: "C:\\share" }]);
   assertEquals(containerPaths("D:\\share\\sub\\f.txt", a), [

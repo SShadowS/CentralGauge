@@ -206,9 +206,12 @@ export function serverMountProblems(
   for (const m of mounts) {
     const why = (s: string) =>
       problems.push(`${m.Source} -> ${m.Destination}: ${s}`);
-    if (within(m.Source, own)) continue;
+    // Sol r3 #2: the own folder lifts only the BCH-root rule; every other
+    // denied root (custody resolving into it, say) still applies.
+    const ownFolder = within(m.Source, own);
     const hit = denied.find((d) =>
-      within(m.Source, d.path) || within(d.path, m.Source)
+      !(ownFolder && key(d.path) === key(BCH_ROOT)) &&
+      (within(m.Source, d.path) || within(d.path, m.Source))
     );
     if (hit) why(`${hit.target}: ${hit.path}`);
     else if (

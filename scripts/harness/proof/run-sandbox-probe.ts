@@ -55,19 +55,29 @@ async function main(argv: string[]) {
   // Sol r1 #3: every root by the filesystem's own name (links, short names).
   const privateRoot = await canonicalPath(o.privateRoot);
   const work = join(privateRoot, "work", id);
-  const secrets = join(privateRoot, "secrets", `proof-${id}`);
+  const secretsAt = join(privateRoot, "secrets", `proof-${id}`);
+  for (const d of ["workspace", "task", "config"]) {
+    await Deno.mkdir(join(work, d), { recursive: true });
+  }
+  await Deno.mkdir(secretsAt, { recursive: true });
+  // Sol r3 #1: the mount sources by their real names too, once they exist
+  // (a junctioned work or secrets folder resolves to where it really is).
+  const [workspace, taskDir, configDir, secrets] = await Promise.all(
+    [
+      join(work, "workspace"),
+      join(work, "task"),
+      join(work, "config"),
+      secretsAt,
+    ].map(canonicalPath),
+  );
   const roots: AccessRoots = {
     resultsRoot: await canonicalPath(o.resultsDir),
     privateRoot,
     symbolStore: await canonicalPath(o.symbolStore),
     keyCustody: o.keyCustody ? await canonicalPath(o.keyCustody) : null,
     executionId: id,
-    secretsDir: secrets,
+    secretsDir: secrets!,
   };
-  for (const d of ["workspace", "task", "config"]) {
-    await Deno.mkdir(join(work, d), { recursive: true });
-  }
-  await Deno.mkdir(secrets, { recursive: true });
   await Deno.copyFile(
     join(dirname(fromFileUrl(import.meta.url)), "sandbox-probe.ps1"),
     join(work, "config", "sandbox-probe.ps1"),
@@ -79,10 +89,10 @@ async function main(argv: string[]) {
       owner: "h35-proof",
       executionId: id,
       imageId: o.image,
-      workspace: join(work, "workspace"),
-      taskDir: join(work, "task"),
-      configDir: join(work, "config"),
-      secretsDir: secrets,
+      workspace: workspace!,
+      taskDir: taskDir!,
+      configDir: configDir!,
+      secretsDir: secrets!,
       extraMounts: [],
       env: {},
       command: [
@@ -105,7 +115,7 @@ async function main(argv: string[]) {
   );
   const layout = mountProblems(args, roots, await canonicalDenied(roots));
   if (layout.length > 0) throw new Error(`mount layout: ${layout.join("; ")}`);
-  const planted = await plantCanaries(roots, join(work, "workspace"), token);
+  const planted = await plantCanaries(roots, workspace!, token);
   // Sol r1 #6: the probe also opens every denied canary by its host path,
   // so a folder that refuses listing but serves a known name still counts.
   await Deno.writeTextFile(
@@ -136,7 +146,7 @@ async function main(argv: string[]) {
     await docker(["rm", "-f", name]);
     await removeCanaries(planted);
     await Deno.remove(work, { recursive: true }).catch(() => {});
-    await Deno.remove(secrets, { recursive: true }).catch(() => {});
+    await Deno.remove(secretsAt, { recursive: true }).catch(() => {});
   }
   const file = await writeProofRecord(
     proofRoot(Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT),
