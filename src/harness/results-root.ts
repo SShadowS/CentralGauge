@@ -335,8 +335,9 @@ export async function archiveResults(
     );
   }
   // The destination must still be where it was planned (no link or junction
-  // swapped in since): checked before every write. ponytail: a swap between
-  // this check and the write is not caught; it needs a hostile local process.
+  // swapped in since): checked after each mkdir, before each copy and right
+  // before each link. ponytail: a swap inside those gaps is not caught; it
+  // needs a hostile local process (no openat-style API in Deno).
   const unmoved = (p: string) => {
     if (relative(canonical(p), p) !== "") {
       throw new ConfigurationError(
@@ -368,6 +369,7 @@ export async function archiveResults(
       // durable before it is published (as records.ts publishOnce)
       using f = await Deno.open(tmp, { read: true, write: true });
       await f.sync();
+      unmoved(dirname(dest)); // again, right before the publish
       await Deno.link(tmp, dest); // write-once: never replaces a file
       copied++;
     } catch (e) {
