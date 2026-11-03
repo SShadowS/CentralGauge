@@ -226,6 +226,11 @@ export interface HarnessEnv {
    * absent: the block's account (pickAccount), as before pools.
    */
   accountChoice?: { label: string; choice: AccountChoice };
+  /**
+   * H-53: false once another cell parked that label; runCell then starts no
+   * inner retry on it (the cell stays due and the scheduler picks again).
+   */
+  accountUsable?: () => boolean;
   /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
   secretAcl?: { icacls: IcaclsRunner; user: string };
   /** Drive type of the private root ("Fixed" is the only local type accepted); tests inject it. */
@@ -4351,6 +4356,11 @@ export async function runCell(
           `automatic retry after ${e.termination} withheld in supervised mode`,
         stopped: null,
       };
+    }
+    // H-53: the pool label was parked meanwhile: the retry stays due, for
+    // the scheduler to start on a free label.
+    if (env.accountUsable && !env.accountUsable()) {
+      return { executions, pause: null, withheld: null, stopped: null };
     }
     at = next;
   }

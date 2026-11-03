@@ -1320,9 +1320,15 @@ label, or adding one without both options, is refused. A dry run checks the
 addition and writes nothing. A single-label campaign behaves exactly as before
 until a label is added; its existing executions keep their recorded label.
 
-`harness report` lists executions and `usage_limited` counts per label under
-**Accounts**, and `screening.ts status` prints one `account <label>: ...` line
-each, so an account-level anomaly stays visible.
+A pooled `--rerun` takes a pool label the same way. Its limit parks that
+label, and the owed retry runs on a free label at the next plain resume. A run
+pauses only when no label is free.
+
+`harness report` lists executions, `usage_limited` counts and the
+`account_choice` spread per label under **Accounts**. `screening.ts status`
+prints one `account <label>: ...` line each, and `analyze-campaign` writes
+`per_account` (over every attempt) into `summary.json`, so an account-level
+anomaly stays visible.
 
 ### harness pairing
 

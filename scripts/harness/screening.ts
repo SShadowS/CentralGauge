@@ -525,15 +525,16 @@ export interface ScreenCampaign {
 
 /** H-53: per account label over every campaign (status prints it, triage reads it). */
 export function accountLines(campaigns: readonly ScreenCampaign[]): string[] {
-  const all: Record<string, { executions: number; usage_limited: number }> = {};
+  const all = new Map<string, { executions: number; usage_limited: number }>();
   for (const c of campaigns) {
     for (const [l, a] of Object.entries(c.accounts ?? {})) {
-      const t = all[l] ??= { executions: 0, usage_limited: 0 };
+      const t = all.get(l) ?? { executions: 0, usage_limited: 0 };
       t.executions += a.executions;
       t.usage_limited += a.usage_limited;
+      all.set(l, t);
     }
   }
-  return Object.entries(all).sort(([a], [b]) => a < b ? -1 : 1).map((
+  return [...all].sort(([a], [b]) => a < b ? -1 : 1).map((
     [l, a],
   ) =>
     `account ${l}: ${a.executions} execution(s), ${a.usage_limited} usage_limited`

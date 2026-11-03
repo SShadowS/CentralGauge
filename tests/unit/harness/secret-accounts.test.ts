@@ -171,6 +171,70 @@ Deno.test("R-02 run 002: recovery records the interrupted attempt's own account,
   }
 });
 
+Deno.test("H-53: a pooled cell records the scheduler's label and choice; recovery keeps both, whatever command recovers", async () => {
+  await using t = await makeEnv();
+  const cell = await cellFor(t);
+  const dir = t.env.secretAccounts[0]!.dir;
+  // Block 0 would take "work" by index; the scheduler names "maxpriv2".
+  const pool = [{ label: "work", dir }, { label: "maxpriv2", dir }];
+  const [ran] = (await runCell(
+    {
+      ...t.env,
+      secretAccounts: pool,
+      accountChoice: { label: "maxpriv2", choice: "round_robin" },
+    },
+    cell,
+  )).executions;
+  assertEquals([ran!.account, ran!.account_choice], [
+    "maxpriv2",
+    "round_robin",
+  ]);
+  ExecutionRecordSchema.parse(ran);
+  // A label outside this run's --secrets-dir is refused.
+  await assertRejects(
+    () =>
+      runCell({
+        ...t.env,
+        secretAccounts: pool,
+        accountChoice: { label: "max", choice: "round_robin" },
+      }, cell),
+    ConfigurationError,
+    "not among this run's --secrets-dir labels",
+  );
+  await using u = await makeEnv();
+  const ucell = await cellFor(u);
+  u.docker.behavior = async (call, io) => {
+    u.docker.lingering.add(call.name);
+    return await ccBehavior(join(u.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  const udir = u.env.secretAccounts[0]!.dir;
+  await assertRejects(
+    () =>
+      runCell({
+        ...u.env,
+        secretAccounts: [{ label: "work", dir: udir }, {
+          label: "maxpriv2",
+          dir: udir,
+        }],
+        accountChoice: { label: "maxpriv2", choice: "retry_after_limit" },
+      }, ucell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  u.docker.lingering.clear();
+  const [e] = await recoverInterrupted(
+    { ...u.env, secretAccounts: [{ label: null, dir: udir }] },
+    loadTask,
+  );
+  assertEquals([e!.account, e!.account_choice], [
+    "maxpriv2",
+    "retry_after_limit",
+  ]);
+});
+
 Deno.test("R-02 run 002: a real cell checks every supplied account dir before anything runs", async () => {
   await using t = await makeEnv();
   const cell = await cellFor(t);

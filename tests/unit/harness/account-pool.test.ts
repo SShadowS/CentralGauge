@@ -144,12 +144,18 @@ Deno.test("account pool (H-53): additions are write-once records, read back in s
 });
 
 // ---- campaign runs on the mock image ----
-async function poolEnv(labels: string[], repeats = 2) {
+async function poolEnv(
+  labels: string[],
+  repeats = 2,
+  variant = "mock-naive-a",
+) {
   const t = await makeEnv();
   t.env.supervised = false;
   let clock = Date.now();
   t.env.now = () => new Date(clock);
   const limited = new Set<string>();
+  /** Seconds to each label's reset (default 3600); null: the limit names no reset. */
+  const resetIn = new Map<string, number | null>();
   const real = mockImageBehavior();
   // The fake limit signal: the label the attempt's intent names (never a token).
   t.docker.behavior = async (call, run) => {
@@ -165,9 +171,12 @@ async function poolEnv(labels: string[], repeats = 2) {
           mode: "usage-limit",
         }),
       );
+      const s = resetIn.has(intent.account)
+        ? resetIn.get(intent.account)!
+        : 3600;
       await run.stdout(JSON.stringify({
         type: "mock_usage_limit",
-        resets_at: Math.floor(clock / 1000) + 3600,
+        ...(s === null ? {} : { resets_at: Math.floor(clock / 1000) + s }),
       }));
       return 2;
     }
@@ -180,7 +189,7 @@ async function poolEnv(labels: string[], repeats = 2) {
 hypothesis: Mock contract.
 primary_metric: pass_rate
 baseline: mock-positive
-variants: [mock-naive-a]
+variants: [${variant}]
 vary: [settings]
 tasks: "harness-tasks/tasks/*"
 repeats: ${repeats}
@@ -191,7 +200,14 @@ repeats: ${repeats}
     t.env.secretAccounts = ls.map((label) => ({ label, dir }));
   };
   as(...labels);
-  return { t, limited, as, tick: (ms: number) => void (clock += ms) };
+  return {
+    t,
+    limited,
+    resetIn,
+    as,
+    tick: (ms: number) => void (clock += ms),
+    now: () => clock,
+  };
 }
 const opts = (over: Partial<RunOptions> = {}): RunOptions => ({
   dryRun: false,
@@ -388,4 +404,127 @@ Deno.test("pool (H-53): an addition needs a reason and who, never starts a campa
     ConfigurationError,
     "pool",
   );
+});
+
+// ---- Sol r1 (H-53): concurrency, --rerun, failed resume, reset kinds, ties ----
+
+Deno.test("pool (H-53, Sol r1): concurrency 2: once a label is parked no cell starts on it; every cell runs once", async () => {
+  const { t, limited } = await poolEnv(["work", "maxpriv2"], 3);
+  limited.add("work");
+  const s = await runCampaign(t.env, "pool", opts({ concurrency: 2 }), io());
+  assertEquals(s.paused, null);
+  const es = await executions(t);
+  const lim = es.filter((e) => e.termination === "usage_limited");
+  assertEquals(lim.length, 1);
+  assertEquals(lim[0]!.account, "work");
+  // Every other execution ran on maxpriv2, and each cell has one completed execution.
+  for (const e of es.filter((e) => e.id !== lim[0]!.id)) {
+    assertEquals([e.account, e.termination], ["maxpriv2", "completed"]);
+  }
+  const [c] = await t.env.store.campaigns("pool");
+  assertEquals(es.length, c!.blocks.length * 2 + 1);
+});
+
+Deno.test("pool (H-53, Sol r1): a pooled --rerun takes a pool label; its limit parks the label without pausing, and the owed retry runs on a free label", async () => {
+  // mock-crash exhausts its retries: an unscored cell, which --rerun accepts.
+  const { t, limited } = await poolEnv(
+    ["work", "maxpriv2"],
+    1,
+    "mock-crash",
+  );
+  await runCampaign(t.env, "pool", opts(), io());
+  const es = await executions(t);
+  assertEquals(new Set(es.map((e) => e.account)), new Set(["work"]));
+  limited.add("work");
+  const out = io();
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({ rerun: { task: es[0]!.task_id, repeat: 1, arm: "mock-crash" } }),
+    out,
+  );
+  assertEquals(s.paused, null);
+  const re = (await executions(t)).find((e) => e.run_kind === "manual_rerun")!;
+  assertEquals([re.account, re.account_choice, re.termination], [
+    "work",
+    "block_pair",
+    "usage_limited",
+  ]);
+  assert(
+    out.lines.some((l) => l.includes("[POOL] account work parked")),
+    out.lines.join("\n"),
+  );
+  // A plain resume runs its owed retry on maxpriv2.
+  await runCampaign(t.env, "pool", opts(), io());
+  const retry = (await executions(t)).find((e) => e.retry_of === re.id)!;
+  assertEquals([retry.account, retry.account_choice], [
+    "maxpriv2",
+    "retry_after_limit",
+  ]);
+});
+
+Deno.test("pool (H-53, Sol r1): a resume refused after the pool check (env pin) writes no addition", async () => {
+  const { t, as } = await poolEnv(["maxpriv2"], 1);
+  await runCampaign(t.env, "pool", opts(), io());
+  const [c] = await t.env.store.campaigns("pool");
+  as("maxpriv2", "work");
+  t.env.bindCampaign = () => Promise.reject(new Error("env pin mismatch"));
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts({ addAccounts: ADD }), io()),
+    Error,
+    "env pin mismatch",
+  );
+  assertEquals(await t.env.store.accountAdditions(c!.id), []);
+});
+
+Deno.test("pool (H-53, Sol r1): a limit with no reset parks its label for the rest of the run", async () => {
+  const { t, limited, resetIn } = await poolEnv(["work", "maxpriv2"], 3);
+  limited.add("work");
+  resetIn.set("work", null);
+  const out = io();
+  const s = await runCampaign(t.env, "pool", opts(), out);
+  assertEquals(s.paused, null);
+  const es = await executions(t);
+  assertEquals(es.filter((e) => e.account === "work").length, 1);
+  assert(
+    out.lines.some((l) => l.includes("account work parked until unknown")),
+    out.lines.join("\n"),
+  );
+});
+
+Deno.test("pool (H-53, Sol r1): with every label parked the run waits for the earliest reset, not the latest", async () => {
+  const { t, limited, resetIn, now } = await poolEnv(["work", "maxpriv2"], 1);
+  limited.add("work");
+  limited.add("maxpriv2");
+  resetIn.set("work", 7200);
+  resetIn.set("maxpriv2", 3600);
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      waits.push(ms);
+      return Promise.reject(new Error("stop waiting"));
+    },
+  };
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts({ maxPauseMs: 3 * 3600_000 }), out),
+    Error,
+    "stop waiting",
+  );
+  assertEquals(waits.length, 1);
+  // maxpriv2 resets first: about an hour, never two.
+  assert(waits[0]! <= 3600_000 && waits[0]! > 3599_000, String(waits[0]));
+  assert(now() > 0);
+});
+
+Deno.test("pool (H-53, Sol r1): three labels, equal start times: the next arm follows the retry's label, not the parked parent's", async () => {
+  const { t, limited } = await poolEnv(["work", "maxpriv2", "max"], 1);
+  limited.add("work");
+  await runCampaign(t.env, "pool", opts(), io());
+  const es = await executions(t);
+  assertEquals(es.map((e) => [e.account, e.account_choice]), [
+    ["work", "round_robin"],
+    ["maxpriv2", "retry_after_limit"],
+    ["maxpriv2", "block_pair"],
+  ]);
 });
