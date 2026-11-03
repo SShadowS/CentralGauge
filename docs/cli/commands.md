@@ -1356,6 +1356,45 @@ changed since it was frozen is refused. `--results-dir` defaults to
 `results/harness`; `--root` (default `.`) is the repository whose history
 recovers legacy task descriptors.
 
+### harness archive
+
+```bash
+centralgauge harness archive --from <root> [--to <shared root>] [--allow-coord-copy]
+```
+
+Copies a finished results root into the shared results root,
+`H:\cg-coord\results\harness` (or `$CG_COORD_ROOT\results\harness`), which is
+the default `--to`. Runs started from a job worktree under
+`H:\cg-coord\jobs\` pass that shared root as `--results-dir` (H-54). The harness
+refuses a new results dir inside a registered job worktree, because the dir
+would be removed with the worktree. An existing results dir there only warns,
+and the warning names the archive command to run.
+
+The archive command works as follows:
+
+- It copies every file under `--from` to the same relative path under `--to`.
+  Nested roots such as `cells\` and `stub-cells\` are included.
+- It leaves out per-machine state: `symbols`, `baselines`, `bc-ledger`, the
+  egress files, bench markers and `.tmp-` publish temps. The report lists the
+  top-level entries it left out.
+- It is idempotent. A file already present with the same content is left
+  alone. If any same-path file has other content, the whole run is refused
+  before anything is copied, and the refusal lists the files.
+- Copies are write-once: they are hard-linked into place, never replaced. After
+  the copy, every file is checked by sha256 against its source.
+- It refuses when `--from` is not a results root (it has no `campaigns`,
+  `executions` or `runs`).
+- It refuses when `--from` and `--to` overlap, or when `--to` is inside a job
+  worktree.
+- It refuses when a live bench marker sits in `--from` or its parent. A paused
+  run has no marker, so do not archive a paused campaign's root.
+- It refuses a `--from` under `$CG_COORD_ROOT\tasks` (proof or pre-rejudge
+  copies) unless `--allow-coord-copy` is passed.
+
+On success it prints
+`[OK] archived <from> -> <to>: N copied, M already present, K verified by sha256; clean`.
+Remove a job worktree only after every results root in it reports `clean`.
+
 ### harness rederive
 
 ```bash
