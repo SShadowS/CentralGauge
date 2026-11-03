@@ -8,7 +8,7 @@ Lane-ops runs them on one scratch container under its coord lease. Their records
 | --- | --- |
 | `run-controls.ts` | The seeded-state controls in `PROOF_CONTROLS` (`lib.ts`): a write leaves state behind, then reads show what the reset cleared or what L4 detected. |
 | `run-sandbox-probe.ts` + `sandbox-probe.ps1` | The agent sandbox reaches no denied root (canary probe in the real image). |
-| `run-server-mounts.ts` | The BC container's mounts against the denied roots, and no package left in `C:\Run\my`. |
+| `run-server-mounts.ts` | Two records. `access-server-mounts`: the BC container's mounts against the denied roots. `access-shared-artifacts` (H-55): no package or link in `C:\Run\my`, and no CentralGauge-owned app under the BCH root that any mount shows the container. |
 
 ## Disclosure
 

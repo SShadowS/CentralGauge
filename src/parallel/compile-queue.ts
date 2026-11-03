@@ -630,6 +630,9 @@ export class CompileQueue implements CompileWorkQueue {
     let compileDurationMs = 0;
     let testDurationMs: number | undefined;
     let succeeded = false;
+    // H-55: every compile's private output dir (CompilationResult.outputDir),
+    // removed with the temp project once publish and tests are done.
+    const compileOutputs: string[] = [];
 
     // P1: the compile permit must be released EXACTLY once on every exit
     // path (success, temp-project throw, compile-phase throw, cleanup
@@ -672,6 +675,7 @@ export class CompileQueue implements CompileWorkQueue {
         entry.item,
         projectDir,
         startTime,
+        compileOutputs,
       );
       // The exact source that was compiled, so the next attempt can build on
       // it instead of the starter (see CompileWorkItem.overlayBase).
@@ -802,6 +806,9 @@ export class CompileQueue implements CompileWorkQueue {
         succeeded,
       );
       await this.cleanupTempProject(projectDir);
+      for (const d of compileOutputs) {
+        await Deno.remove(d, { recursive: true }).catch(() => {});
+      }
     }
   }
 
@@ -843,6 +850,7 @@ export class CompileQueue implements CompileWorkQueue {
     item: CompileWorkItem,
     projectDir: string,
     startTime: number,
+    compileOutputs: string[] = [],
   ): Promise<CompileWorkResult> {
     // Anti-gaming guard: a candidate that shadows the test infrastructure by
     // NAME (codeunit Any, Assert, Library - *, CG-AL-* companions) is rejected
@@ -901,6 +909,9 @@ export class CompileQueue implements CompileWorkQueue {
         this.containerName,
         prereqProject,
       );
+      if (prereqCompileResult.outputDir) {
+        compileOutputs.push(prereqCompileResult.outputDir);
+      }
       if (!prereqCompileResult.success) {
         log.error("Prereq compilation failed", {
           name: prereq.appJson["name"],
@@ -981,6 +992,9 @@ export class CompileQueue implements CompileWorkQueue {
       project,
       { label: modelLabel },
     );
+    if (compilationResult.outputDir) {
+      compileOutputs.push(compilationResult.outputDir);
+    }
     const compileDuration = Date.now() - compileStart;
 
     // Log compilation result if debug is enabled
