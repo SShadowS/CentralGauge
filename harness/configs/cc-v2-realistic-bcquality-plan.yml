@@ -1,0 +1,21 @@
+# H-60 (owner 2026-11-03): cc-v2-tue-realistic-bcquality plus a plan-first instructions bundle
+# (bundles/realistic-bcquality-plan: a byte copy of bundles/realistic/instructions plus one block: write a
+# plan to C:\Users\ContainerUser\development-plan.md, run bcquality:al-plan-guidance on it, implement it).
+# The plan file sits in the agent's home in the container layer: not mounted, not in the frozen workspace
+# (workspace_hash, grading, scans), removed with each cell's container. Same image, Claude Code 2.1.310
+# (image_revision "4"), BCQuality a4593a1b, model. Limits are the v2-screen realistic arm's
+# (cc-v2-realistic-lsp in v2-screen-1): timeout_min 60, max_budget_usd 5.
+id: cc-v2-realistic-bcquality-plan
+harness: claude-code
+harness_version: "latest"
+image_revision: "4"
+models:
+  main: anthropic/claude-sonnet-5
+settings: {}
+components:
+  instructions: bundles/realistic-bcquality-plan/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+  plugins: [bundles/bcquality]
+limits: { timeout_min: 60, max_budget_usd: 5 }
