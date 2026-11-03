@@ -200,6 +200,49 @@ Deno.test("H-55 sweep apply: a lease another lane takes after the plan keeps its
   for (const p of OURS_281) assert(await exists(join(w.bch, p)), p);
 });
 
+Deno.test("H-55 sweep apply (Sol r2 #2): a bench that reclaims the lock mid-apply stops every further deletion", async () => {
+  const w = await world();
+  await lease(w, "Cronus281", "031", "mine");
+  const opts = {
+    bchRoot: w.bch,
+    coordRoot: w.coord,
+    benchDirs: [w.bench],
+    coordLeases: new Map([["Cronus281", "mine"]]),
+  };
+  const plan = await planSweep({ ...opts, containers: ["Cronus281"] });
+  const marker = join(w.bench, ".bench-running.json");
+  // The marker changes hands while apply walks its list.
+  const items = Object.assign([...plan.items], {
+    *[Symbol.iterator]() {
+      Deno.writeTextFileSync(
+        marker,
+        JSON.stringify({ pid: 2, token: "a-bench", command: "bench" }),
+      );
+      yield* plan.items;
+    },
+  });
+  await assertRejects(() => applySweep(items, opts), Error, "lock lost");
+  for (const p of OURS_281) assert(await exists(join(w.bch, p)), p);
+  // The bench's marker is not ours to release.
+  assert(await exists(marker));
+});
+
+Deno.test("H-55 server check (Sol r2 #3): a junction-backed BCH root is matched against the mount's canonical source", async () => {
+  const w = await world();
+  const via = join(await testTempDir(), "BcContainerHelper");
+  try {
+    await Deno.symlink(w.bch, via, { type: "junction" });
+  } catch (err) {
+    console.warn(`[SKIP] no junction here: ${err}`);
+    return;
+  }
+  const shown = await visibleArtifacts(
+    [{ Source: await Deno.realPath(via), Destination: "c:\\x" }],
+    via,
+  );
+  assertEquals(shown.length, OURS_281.length + 1);
+});
+
 Deno.test("H-55 sweep (Sol r1 #1): a link anywhere on the way, an ancestor included, is never followed", async () => {
   const w = await world();
   const outside = await testTempDir();

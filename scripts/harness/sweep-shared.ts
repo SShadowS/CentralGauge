@@ -20,6 +20,7 @@ import { dirname, join, relative } from "@std/path";
 import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import { coordLeaseBlock } from "../../src/harness/coord-lease.ts";
 import {
+  benchLockLost,
   isBenchRunning,
   tryAcquireBenchLock,
 } from "../../src/utils/bench-lock.ts";
@@ -91,12 +92,18 @@ async function plainFiles(dir: string): Promise<string[]> {
 
 async function itemsOf(bch: string, c: string): Promise<SweepItem[]> {
   const found: SweepItem[] = [];
+  // Sol r2 #1: a folder is checked (no link on the way) BEFORE it is read.
   const out = join(bch, "compiler", `CentralGauge-${c}`, "output");
-  for (const p of await plainFiles(out)) {
+  const files = await plainUnder(bch, out) ? await plainFiles(out) : [];
+  for (const p of files) {
     found.push({ path: p, container: c, kind: "compiler-output" });
   }
   const ext = join(bch, "Extensions", c);
-  for (const e of await entries(join(ext, "my"))) {
+  const extOk = await plainUnder(bch, ext);
+  const my = extOk && await plainUnder(bch, join(ext, "my"))
+    ? await entries(join(ext, "my"))
+    : [];
+  for (const e of my) {
     if (e.isFile && OUR_MY_APP.test(e.name)) {
       found.push({
         path: join(ext, "my", e.name),
@@ -105,8 +112,9 @@ async function itemsOf(bch: string, c: string): Promise<SweepItem[]> {
       });
     }
   }
-  for (const e of await entries(ext)) {
-    if (!e.isDirectory || !GUID.test(e.name)) continue;
+  for (const e of extOk ? await entries(ext) : []) {
+    // A junction is a symlink entry, never a directory one: not entered.
+    if (!e.isDirectory || e.isSymlink || !GUID.test(e.name)) continue;
     // Sol r1 #3/#6: our apps by name, also in a mixed dir; the rest stays.
     for (const f of await entries(join(ext, e.name))) {
       if (f.isFile && OUR_APP.test(f.name)) {
@@ -144,12 +152,19 @@ export async function visibleArtifacts(
   for (const e of await entries(join(bchRoot, "Extensions"))) {
     if (e.isDirectory) names.add(e.name);
   }
-  const all: SweepItem[] = [];
-  for (const c of names) all.push(...await itemsOf(bchRoot, c));
-  return all.filter((i) =>
-    i.path.toLowerCase().endsWith(".app") &&
-    mounts.some((m) => norm(i.path).startsWith(norm(m.Source)))
-  );
+  // Sol r2 #3: both sides by the filesystem's own name (a junction-backed
+  // BCH root shows its target as the mount source).
+  const real = (p: string) => Deno.realPath(p).catch(() => p);
+  const sources = await Promise.all(mounts.map((m) => real(m.Source)));
+  const shown: SweepItem[] = [];
+  for (const c of names) {
+    for (const i of await itemsOf(bchRoot, c)) {
+      if (!i.path.toLowerCase().endsWith(".app")) continue;
+      const p = norm(await real(i.path));
+      if (sources.some((s) => p.startsWith(norm(s)))) shown.push(i);
+    }
+  }
+  return shown;
 }
 
 function benchRefusal(benchDirs: string[]): string | null {
@@ -202,15 +217,24 @@ export async function applySweep(
   },
 ): Promise<{ removed: SweepItem[]; skipped: SweepItem[] }> {
   const releases: (() => Promise<void>)[] = [];
+  const lost: (() => boolean)[] = [];
+  // Sol r2 #2: a lock reclaimed while we were stalled stops every deletion.
+  const stillOurs = () => {
+    if (lost.some((l) => l())) {
+      throw new Error("sweep aborted: bench lock lost");
+    }
+  };
   try {
     for (const d of o.benchDirs) {
       const r = tryAcquireBenchLock(d, { command: "sweep-shared --apply" });
       if (!r.acquired) throw new Error(`sweep refused: a bench holds ${d}`);
       releases.push(r.release);
+      lost.push(benchLockLost(d, r.token));
     }
     const removed: SweepItem[] = [];
     const skipped: SweepItem[] = [];
     for (const i of items) {
+      stillOurs();
       const st = await Deno.lstat(i.path).catch(() => null);
       if (
         !heldByUs(o.coordRoot, o.coordLeases, i.container) ||
@@ -239,6 +263,7 @@ export async function applySweep(
         norm(d) !== norm(stop(i)) && norm(d).startsWith(norm(stop(i)));
         d = dirname(d)
       ) {
+        stillOurs();
         if (!(await plainUnder(o.bchRoot, d))) break;
         if (!(await Deno.remove(d).then(() => true, () => false))) break;
       }
