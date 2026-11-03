@@ -627,6 +627,75 @@ Deno.test("pool (H-53, Sol r3): a --rerun that finds every label parked waits, t
   assert(re[0]!.account !== undefined);
 });
 
+Deno.test("pool (H-53, Sol r4): concurrency 2: a sibling parks a cell's label mid-cell; the cell yields its owed retry and the scheduler runs it once, on a free label", async () => {
+  const { t } = await poolEnv(["work", "maxpriv2"], 3, "mock-crash");
+  const real = mockImageBehavior();
+  type Seen = {
+    account?: string;
+    cell: { arm: string; block: { index: number } };
+    at: { attempt: number };
+  };
+  // The first block on work is W. W's mock-crash attempt 1 is held until a
+  // sibling's limit on work is recorded; any other block's cell on work hits
+  // the limit.
+  let w: number | null = null;
+  let held = false;
+  const limitedOnWork = async () => {
+    for (;;) {
+      const [c] = await t.env.store.campaigns("pool");
+      const es = c ? await t.env.store.executions(c.id) : [];
+      if (es.some((e) => e.termination === "usage_limited")) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    // Let the scheduler park the label (it does so right after the cell returns).
+    await new Promise((r) => setTimeout(r, 200));
+  };
+  t.docker.behavior = async (call, run) => {
+    const id = call.labels.get(EXECUTION_LABEL)!;
+    const x = JSON.parse(
+      await Deno.readTextFile(privatePaths(t.env, id).intent),
+    ) as Seen;
+    if (x.account === "work") {
+      w ??= x.cell.block.index;
+      if (x.cell.block.index !== w) {
+        await run.stdout(
+          JSON.stringify({ type: "mock_init", version: "2", mode: "x" }),
+        );
+        await run.stdout(JSON.stringify({
+          type: "mock_usage_limit",
+          resets_at: Math.floor(Date.now() / 1000) + 3600,
+        }));
+        return 2;
+      }
+      if (x.cell.arm === "mock-crash" && x.at.attempt === 1) {
+        held = true;
+        await limitedOnWork();
+      }
+    }
+    return await real(call, run);
+  };
+  const s = await runCampaign(t.env, "pool", opts({ concurrency: 2 }), io());
+  assertEquals(s.paused, null);
+  assert(held, "W's mock-crash cell was held on work");
+  const es = await executions(t);
+  const chain = es.filter((e) => e.block === w && e.arm === "mock-crash");
+  // Attempt 1 on work, then the yielded retry once, on maxpriv2.
+  assertEquals(chain.map((e) => [e.attempt, e.account]), [
+    [1, "work"],
+    [2, "maxpriv2"],
+  ]);
+  assertEquals(chain[1]!.retry_of, chain[0]!.id);
+  // No execution started on work after its limit.
+  const lim = es.find((e) => e.termination === "usage_limited")!;
+  assertEquals(
+    es.filter((e) =>
+      e.account === "work" && e.id !== lim.id && e.id !== chain[0]!.id &&
+      e.block !== w
+    ).length,
+    0,
+  );
+});
+
 Deno.test("pool (H-53, Sol r3): runCell yields an owed automatic retry when its label was parked, and runs it when not", async () => {
   await using t = await makeEnv();
   t.env.supervised = false;
