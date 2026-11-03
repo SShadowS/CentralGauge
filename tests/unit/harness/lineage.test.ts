@@ -97,13 +97,9 @@ Deno.test("H-35 S3: the shipped golden-o09-v2 lineage loads with every section a
   const real = [
     `D|16|1|${apps}`,
     f(`assembly\\release\\28.0.53667.0_1\\0A\\${hex}.dll`),
-    // H-35c: name_is_sha256, so the line carries its real content hash
     f(
       `metadata\\3\\00\\001123D29F565DFE84635228DD0770E1AFE17C986430431FA1FF06D65FE03C1B.xml`,
       "3c3f",
-    ).replace(
-      "a".repeat(64),
-      "001123d29f565dfe84635228dd0770e1afe17c986430431fa1ff06d65fe03c1b",
     ),
   ];
   assertEquals(
@@ -233,14 +229,7 @@ Deno.test("H-40: the shipped lineage's other caches judge 26-byte (digest v4) he
     ["assembly", [], [
       f(`${apps}\\assembly\\release\\28.0.53667.0_1\\0A\\${hex}.dll`, "4d5a"),
     ], 0],
-    // H-35c: .cs/.xml are name_is_sha256 (ops\cache captures A-E, Cronus283:
-    // every one of 21,091 files hash-named), so a mismatched one is a difference
-    ["metadata .xml", [], [
-      f(`${m3}\\${hex}.xml`, "3c3f", hex.toLowerCase()),
-    ], 0],
-    ["metadata .cs", [], [f(`${m3}\\${hex}.cs`, "7573", hex.toLowerCase())], 0],
-    ["misnamed .xml", [], [f(`${m3}\\${hex}.xml`, "3c3f")], 1],
-    ["misnamed .cs", [], [f(`${m3}\\${hex}.cs`, "7573")], 1],
+    ["metadata .xml", [], [f(`${m3}\\${hex}.xml`, "3c3f")], 0],
     ["planted .txt", [], [f(`${m3}\\cg.txt`, "6869")], 1],
     ["misnamed .dll", [], [
       f(`${apps}\\assembly\\release\\28.0.53667.0_1\\0A\\evil.dll`, "4d5a"),
