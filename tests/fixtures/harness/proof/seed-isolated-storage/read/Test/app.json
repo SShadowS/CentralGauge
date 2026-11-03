@@ -18,12 +18,6 @@
   ],
   "dependencies": [
     {
-      "id": "c6a1e0f0-0000-4000-8000-000000000011",
-      "name": "CG Proof Seed Storage",
-      "publisher": "CentralGauge",
-      "version": "1.0.0.0"
-    },
-    {
       "id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
       "name": "Library Assert",
       "publisher": "Microsoft",

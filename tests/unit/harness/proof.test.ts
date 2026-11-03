@@ -285,6 +285,61 @@ Deno.test("H-35c (design-r5 6.5): reset control: the write seeds; a read after t
   assertEquals([crash2.observed, crash2.pass], ["infra", false]);
 });
 
+Deno.test("H-35c rerun 1 (isolated storage, not_persisted on Cronus285): the seeding app stays installed past the write's cleanup and the read never redeploys it, so only the reset can clear the state", async () => {
+  // The harness purges an owned app's data whenever it (re)publishes it
+  // (M1-15a) and its cleanup uninstalls candidates, so Module-scoped
+  // IsolatedStorage survives the ordinary cleanup only while its app is never
+  // removed or republished between the write and the reads.
+  const dir = join(
+    "tests",
+    "fixtures",
+    "harness",
+    "proof",
+    "seed-isolated-storage",
+  );
+  const spec = JSON.parse(await Deno.readTextFile(join(dir, "proof.json")));
+  const seedApp = JSON.parse(
+    await Deno.readTextFile(join(dir, "write", "Seed", "app.json")),
+  );
+  const install = await Deno.readTextFile(
+    join(dir, "write", "Seed", "src", "Seed.Codeunit.al"),
+  );
+  assert(/Subtype = Install;/.test(install));
+  assert(/IsolatedStorage\.Set\(/.test(install));
+  assertEquals(
+    spec.write.leave,
+    [seedApp.id],
+    "the seeding app is left installed",
+  );
+  // The read deploys no app with the seeding app's id and does not depend on it.
+  const readApps: { id: string; dependencies?: { id: string }[] }[] = [];
+  for await (const e of Deno.readDir(join(dir, "read"))) {
+    if (e.isDirectory) {
+      readApps.push(
+        JSON.parse(
+          await Deno.readTextFile(join(dir, "read", e.name, "app.json")),
+        ),
+      );
+    }
+  }
+  assert(readApps.length > 0);
+  for (const a of readApps) {
+    assert(a.id !== seedApp.id, "the read never redeploys the seeding app");
+    assert(
+      !(a.dependencies ?? []).some((d) => d.id === seedApp.id),
+      "the read app does not depend on the left app",
+    );
+  }
+  // It reaches the seed through the left app's own code (Module scope).
+  const gone = [];
+  for await (const e of Deno.readDir(join(dir, "read", "Test", "src"))) {
+    gone.push(
+      await Deno.readTextFile(join(dir, "read", "Test", "src", e.name)),
+    );
+  }
+  assert(gone.some((s) => /Codeunit\.Run\(74901\)/.test(s)));
+});
+
 Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay published past its cleanup; the rest is removed", async () => {
   const c = control("seed-global-app");
   const repo = await repoWith(c);
