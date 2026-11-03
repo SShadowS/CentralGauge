@@ -50,11 +50,12 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_BOOTSTRAP_TIMEOUT_MS = 60_000;
 // Built per-call so the usePwshForBc24 knob (see bcch-config.ts / GH #12) is
 // resolved from the env at session-spawn time, not frozen at module load.
-function defaultBootstrapScript(): string {
+// H-58: the session serves one container, so its BCH root is that container's.
+function defaultBootstrapScript(containerName: string): string {
   return `
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
-${bcchImport()}
+${bcchImport(containerName)}
 ${bcchConfigInit()}
 `.trim();
 }
@@ -83,7 +84,8 @@ export class PwshContainerSession {
     this._defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this._bootstrapTimeoutMs = options.bootstrapTimeoutMs ??
       DEFAULT_BOOTSTRAP_TIMEOUT_MS;
-    this._bootstrapScript = options.bootstrapScript ?? defaultBootstrapScript();
+    this._bootstrapScript = options.bootstrapScript ??
+      defaultBootstrapScript(containerName);
     this._spawnFactory = options.spawnFactory ?? defaultSpawnFactory;
     this._stderrSink = options.stderrSink ?? (() => {});
   }

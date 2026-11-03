@@ -14,6 +14,7 @@
 import { join } from "@std/path";
 import { type Lineage, lineageCompat } from "./lineage.ts";
 import { ConfigurationError, ContainerError } from "../errors.ts";
+import { bchRootEnv } from "../container/bch-root.ts";
 
 /** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
 export const RESET_PHASES = [
@@ -424,7 +425,7 @@ export function goldenReset(o: {
       "-Lineage",
       o.lineagePath,
       ...extra,
-    ], o.dockerEnv);
+    ], { ...o.dockerEnv, ...bchRootEnv(container) }); // H-58: the script checks it resolves the same BCH root
   const fs = o.lineage.fs;
   return {
     ...commandReset({

@@ -129,7 +129,6 @@ Deno.test("H-55 sweep: a fresh bench marker refuses the plan, and apply cannot t
   );
   await assertRejects(() =>
     applySweep(plan.items, {
-      bchRoot: w.bch,
       coordRoot: w.coord,
       benchDirs: [w.bench],
       coordLeases: leases,
@@ -278,6 +277,7 @@ Deno.test("H-55 sweep (Sol r1 #1): a link anywhere on the way, an ancestor inclu
     path: join(out, "inner", "foreign.app"),
     container: "Cronus282",
     kind: "compiler-output",
+    root: w.bch,
   }], opts);
   assertEquals(done.removed, []);
   assert(await exists(join(outside, "inner", "foreign.app")));

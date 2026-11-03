@@ -19,7 +19,8 @@ import {
   serverMountProblems,
 } from "./access.ts";
 import { proofRoot, writeProofRecord } from "./lib.ts";
-import { BCH_ROOT, visibleArtifacts } from "../sweep-shared.ts";
+import { visibleArtifacts } from "../sweep-shared.ts";
+import { allBchRoots } from "../../../src/container/bch-root.ts";
 
 async function main(argv: string[]) {
   const { options: o } = await new Command()
@@ -80,9 +81,12 @@ async function main(argv: string[]) {
       }
     }
   }
-  for (const i of await visibleArtifacts(mounts, BCH_ROOT)) {
-    if (!artifacts.some((a) => a.startsWith(`${i.path}:`))) {
-      artifacts.push(`${i.path}: ${i.kind} of ${i.container}`);
+  // H-58: every BCH root, the shared one and each migrated container's own.
+  for (const bch of allBchRoots()) {
+    for (const i of await visibleArtifacts(mounts, bch)) {
+      if (!artifacts.some((a) => a.startsWith(`${i.path}:`))) {
+        artifacts.push(`${i.path}: ${i.kind} of ${i.container}`);
+      }
     }
   }
   const listed = mounts.map((m) => `${m.Source} -> ${m.Destination}`)

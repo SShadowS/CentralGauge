@@ -126,7 +126,7 @@ export function buildCompileScript(
       Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@${BCCH_PINNED_VERSION} sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      ${bcchImport()}
+      ${bcchImport(null)}
 
       try {
         $result = Compile-AppWithBcCompilerFolder \`
@@ -176,7 +176,7 @@ export function buildCleanupStaleCandidatesScript(
   harnessAppName: string,
 ): string {
   return `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       $stale = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
         $_.Publisher -eq "CentralGauge" -and
@@ -281,7 +281,7 @@ export function buildPrepareCandidateScript(
     ? " -useDevEndpoint -credential $cgPubCredential"
     : "";
   return `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       ${buildPwshTraceHelper()}
 ${devCredentialSetup}
@@ -423,7 +423,7 @@ export function buildPrereqCleanupScript(
       `'${escapeForPS(o.id.toLowerCase())}' = '${escapeForPS(o.name)}'`
     ).join("; ") + "}";
   return `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
 
       $expectedNames = ${expectedNamesLit}
@@ -661,7 +661,7 @@ export function buildTestScript(
       Write-Output "[CG-PIN] buildTestScript bccontainerhelper@${BCCH_PINNED_VERSION} usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
@@ -695,7 +695,7 @@ function harnessContainerName(name: string): string {
 export function buildListHarnessAppsScript(containerName: string): string {
   const cn = harnessContainerName(containerName);
   return `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       try {
         $cgRows = Invoke-ScriptInBcContainer -containerName '${cn}' -scriptblock {
@@ -870,7 +870,7 @@ export function buildSyncHarnessAppsScript(
       .join("; ")
   } }`;
   return `
-      ${bcchImport()}
+      ${bcchImport(cn)}
       ${bcchConfigInit()}
 ${credentialSetup}
       $cgRemoveIds = ${list(removeIds)}
@@ -957,7 +957,7 @@ export function buildSqlMeasureCompileScript(o: {
 }): string {
   const q = (s: string) => `'${escapeForPS(s)}'`;
   return `
-      ${bcchImport()}
+      ${bcchImport(null)}
       ${bcchConfigInit()}
       $ErrorActionPreference = 'Stop'
       $cgHarnessOut = ${q(`${o.work}\\harness`)}

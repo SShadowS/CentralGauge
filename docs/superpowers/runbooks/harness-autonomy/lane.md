@@ -203,6 +203,13 @@ nothing in flight. After a clear, run your start procedure again.
   since H-56 (owner, 2026-11-03).
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
+- BCH helper root (H-58, owner ruling 2026-11-03 item 12): a container listed in
+  `H:\cg-coord\bch-roots.json` (`{"migrated": ["Cronus285"]}`, lane-ops writes it when it
+  recreates the container) uses `C:\ProgramData\BcContainerHelper-<container>` in every BCH
+  call (scripts, warm sessions, compiler folder and cache, `my`, the golden backup on the host,
+  sweep-shared). The file is read once per process; edit it only while no harness or bench
+  process runs. No file means the shared root for every container. A malformed file, or a
+  migrated container whose root is not mounted, fails the call.
 - One harness process per `--private-dir` (M10-08c, owner 2026-10-13). Every `harness`
   command that runs at the same time as another one on this host gets its own
   `--private-dir`; the default directory is shared by every worktree. A second process on the

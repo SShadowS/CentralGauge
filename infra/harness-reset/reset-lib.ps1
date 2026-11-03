@@ -3,6 +3,54 @@
 #  - the WinRM session runs as 'winrm', which cannot use the NST encryption key (CryptographicException);
 #  - pwsh 7 in the container throws a DependencyInjection type-load error when Invoke-Sqlcmd is mixed with NAV cmdlets.
 
+# H-58: a container listed in <coord root>\bch-roots.json ({"migrated": [...]}) has its own BcContainerHelper root,
+# C:\ProgramData\BcContainerHelper-<container> (src/container/bch-root.ts is the TypeScript side of this rule).
+# Invoke-ScriptInBcContainer's docker-exec path writes its script under hostHelperFolder, so every script here must
+# use the container's root. No file: the shared root, nothing changes. A malformed file, or a CG_BCH_ROOT (the root
+# the calling harness process resolved) that disagrees, throws.
+$CgSharedBchRoot = 'C:\ProgramData\BcContainerHelper'
+function Get-CgBchRoot([string]$Container) {
+  $coord = if ($env:CG_COORD_ROOT) { $env:CG_COORD_ROOT } else { 'H:\cg-coord' }
+  $file = Join-Path $coord 'bch-roots.json'
+  $root = $CgSharedBchRoot
+  if (Test-Path -LiteralPath $file) {
+    $j = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop
+    $keys = @($j.PSObject.Properties.Name)
+    if ($keys.Count -ne 1 -or $keys[0] -cne 'migrated' -or $j.migrated -isnot [array]) {
+      throw "[CG-BCH-ROOT] $file must be {`"migrated`": [container names]}"
+    }
+    $seen = @{}
+    foreach ($c in @($j.migrated)) {
+      if ($c -isnot [string] -or $c -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_-]*$') { throw "[CG-BCH-ROOT] $file lists an unsafe name" }
+      if ($seen.ContainsKey($c.ToLowerInvariant())) { throw "[CG-BCH-ROOT] $file lists $c twice" }
+      $seen[$c.ToLowerInvariant()] = $true
+      if ($c -ieq $Container) { $root = "$CgSharedBchRoot-$c" }
+    }
+  }
+  if ($env:CG_BCH_ROOT -and $env:CG_BCH_ROOT -ne $root) {
+    throw "[CG-BCH-ROOT] $Container resolves to $root here but to $($env:CG_BCH_ROOT) in the calling process"
+  }
+  $root
+}
+# A path under the shared root moved onto $Container's root.
+function Convert-CgBchPath([string]$Container, [string]$Path) {
+  if (-not ($Path -eq $CgSharedBchRoot -or $Path.StartsWith("$CgSharedBchRoot\", [StringComparison]::OrdinalIgnoreCase))) {
+    throw "[CG-BCH-ROOT] $Path is not under $CgSharedBchRoot"
+  }
+  (Get-CgBchRoot $Container) + $Path.Substring($CgSharedBchRoot.Length)
+}
+function Set-CgBchRoot([string]$Container) {
+  $root = Get-CgBchRoot $Container
+  if ($root -ne $CgSharedBchRoot) {
+    $bcContainerHelperConfig.hostHelperFolder = $root
+    if ("$(Get-BcContainerPath -containerName $Container -path $root)" -eq '') {
+      throw "[CG-BCH-ROOT] $root is not mounted in $Container"
+    }
+  }
+}
+# Every entry script imports bccontainerhelper, then dot-sources this file, with a mandatory -Container.
+if ($Container) { Set-CgBchRoot $Container }
+
 function Invoke-InContainer([string]$Container, [scriptblock]$ScriptBlock, $ArgumentList) {
   Invoke-ScriptInBcContainer -containerName $Container -useSession:$false -usePwsh:$false `
     -scriptblock $ScriptBlock -argumentList $ArgumentList

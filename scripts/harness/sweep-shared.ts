@@ -17,6 +17,7 @@
  */
 import { Command } from "@cliffy/command";
 import { dirname, join, relative } from "@std/path";
+import { bchRootFor, SHARED_BCH_ROOT } from "../../src/container/bch-root.ts";
 import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import { coordLeaseBlock } from "../../src/harness/coord-lease.ts";
 import {
@@ -25,17 +26,20 @@ import {
   tryAcquireBenchLock,
 } from "../../src/utils/bench-lock.ts";
 
-export const BCH_ROOT = "C:\\ProgramData\\BcContainerHelper";
+export const BCH_ROOT = SHARED_BCH_ROOT;
 
 export interface SweepItem {
   /** Always a file. */
   path: string;
   container: string;
   kind: "compiler-output" | "my-app" | "bch-staging";
+  /** H-58: the BCH root the item was found under (the container's own one when migrated). */
+  root: string;
 }
 
 export interface SweepOptions {
-  bchRoot: string;
+  /** One BCH root for every container (tests, --bch-root); default each container's own (H-58). */
+  bchRoot?: string;
   coordRoot: string;
   /** Bench marker dirs: any fresh `.bench-running.json` refuses. */
   benchDirs: string[];
@@ -96,7 +100,7 @@ async function itemsOf(bch: string, c: string): Promise<SweepItem[]> {
   const out = join(bch, "compiler", `CentralGauge-${c}`, "output");
   const files = await plainUnder(bch, out) ? await plainFiles(out) : [];
   for (const p of files) {
-    found.push({ path: p, container: c, kind: "compiler-output" });
+    found.push({ path: p, container: c, kind: "compiler-output", root: bch });
   }
   const ext = join(bch, "Extensions", c);
   const extOk = await plainUnder(bch, ext);
@@ -109,6 +113,7 @@ async function itemsOf(bch: string, c: string): Promise<SweepItem[]> {
         path: join(ext, "my", e.name),
         container: c,
         kind: "my-app",
+        root: bch,
       });
     }
   }
@@ -122,6 +127,7 @@ async function itemsOf(bch: string, c: string): Promise<SweepItem[]> {
           path: join(ext, e.name, f.name),
           container: c,
           kind: "bch-staging",
+          root: bch,
         });
       }
     }
@@ -191,7 +197,7 @@ export async function planSweep(o: SweepOptions): Promise<{
       skipped.push({ container: c, why });
       continue;
     }
-    items.push(...await itemsOf(o.bchRoot, c));
+    items.push(...await itemsOf(o.bchRoot ?? bchRootFor(c), c));
   }
   return { refused: null, items, skipped };
 }
@@ -212,7 +218,7 @@ const heldByUs = (root: string, own: ReadonlyMap<string, string>, c: string) =>
  */
 export async function applySweep(
   items: SweepItem[],
-  o: Pick<SweepOptions, "benchDirs" | "coordRoot" | "bchRoot"> & {
+  o: Pick<SweepOptions, "benchDirs" | "coordRoot"> & {
     coordLeases: ReadonlyMap<string, string>;
   },
 ): Promise<{ removed: SweepItem[]; skipped: SweepItem[] }> {
@@ -236,7 +242,7 @@ export async function applySweep(
     for (const i of items) {
       stillOurs();
       const st = await Deno.lstat(i.path).catch(() => null);
-      const ok = st?.isFile && await plainUnder(o.bchRoot, i.path);
+      const ok = st?.isFile && await plainUnder(i.root, i.path);
       // Sol r3: the synchronous checks sit right before the removal, after
       // every await, so a stall cannot slip a bench or a lease in between.
       stillOurs();
@@ -251,9 +257,9 @@ export async function applySweep(
     // `output` or a container folder; a non-empty one refuses (no recursion).
     const stop = (i: SweepItem) =>
       i.kind === "compiler-output"
-        ? join(o.bchRoot, "compiler", `CentralGauge-${i.container}`, "output")
+        ? join(i.root, "compiler", `CentralGauge-${i.container}`, "output")
         : join(
-          o.bchRoot,
+          i.root,
           "Extensions",
           i.container,
           ...(i.kind === "my-app" ? ["my"] : []),
@@ -264,7 +270,7 @@ export async function applySweep(
         norm(d) !== norm(stop(i)) && norm(d).startsWith(norm(stop(i)));
         d = dirname(d)
       ) {
-        if (!(await plainUnder(o.bchRoot, d))) break;
+        if (!(await plainUnder(i.root, d))) break;
         stillOurs();
         if (!(await Deno.remove(d).then(() => true, () => false))) break;
       }
@@ -285,9 +291,10 @@ async function main(args: string[]) {
     .option("--bench-dir <dir:string>", "bench marker dir (repeatable)", {
       collect: true,
     })
-    .option("--bch-root <dir:string>", "BcContainerHelper root", {
-      default: BCH_ROOT,
-    })
+    .option(
+      "--bch-root <dir:string>",
+      "one BcContainerHelper root for every container (default: each container's own, H-58)",
+    )
     .option(
       "--coord-lease <pair:string>",
       "<container>=<token> (for --apply)",
@@ -298,7 +305,7 @@ async function main(args: string[]) {
     .option("--apply", "remove what is listed (default: list only)")
     .parse(args);
   const opts: SweepOptions = {
-    bchRoot: o.bchRoot,
+    ...(o.bchRoot ? { bchRoot: o.bchRoot } : {}),
     coordRoot: Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
     benchDirs: o.benchDir ?? ["results"],
     containers: o.container,

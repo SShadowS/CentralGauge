@@ -45,7 +45,8 @@ const log = Logger.create("container:bc");
 
 /** Both redactors on the WHOLE output, before any cut (a cut key no longer matches). */
 const redactAll = (s: string) => redactPatternText(redactSensitive(s)).text;
-import { ContainerError } from "../errors.ts";
+import { ConfigurationError, ContainerError } from "../errors.ts";
+import { bchPath, bchRootFor, SHARED_BCH_ROOT } from "./bch-root.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import { ContainerSessionSlot } from "./session-slot.ts";
 import { CompileSessionPool } from "./compile-session-pool.ts";
@@ -573,7 +574,7 @@ export class BcContainerProvider implements ContainerProvider {
       `Light NST maintenance on ${containerName} (every ${every} tasks): FREEPROCCACHE + stale-session sweep`,
     );
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       try {
         $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
@@ -660,7 +661,7 @@ export class BcContainerProvider implements ContainerProvider {
     // Drop stale sessions first so nothing tries to reuse the dying container.
     await this.disposeContainerSlot(name);
     const script = `
-      ${bcchImport()}
+      ${bcchImport(name)}
       try {
         Restart-BcContainer -containerName "${name}" -ErrorAction Stop
         Write-Output "RESTART_OK:${name}"
@@ -1026,6 +1027,15 @@ ${script}
   }
 
   async setup(config: ContainerConfig): Promise<void> {
+    // H-58: a migrated container is created with its own BCH root by the
+    // H-57 recreate procedure; this generic create would mount the wrong one.
+    if (bchRootFor(config.name) !== SHARED_BCH_ROOT) {
+      throw new ConfigurationError(
+        `${config.name} has its own BcContainerHelper root (${
+          bchRootFor(config.name)
+        }); recreate it with the H-57 procedure, not setup()`,
+      );
+    }
     log.info(`Setting up container: ${config.name}`);
 
     // Store credentials if provided
@@ -1046,7 +1056,7 @@ ${script}
       log.info("Installing bccontainerhelper module...");
       const installResult = await this.executePowerShell(`
         Install-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION} -Force -AllowClobber -Scope CurrentUser
-        ${bcchImport()}
+        ${bcchImport(null)}
         Write-Output "MODULE_INSTALLED"
       `);
 
@@ -1063,7 +1073,7 @@ ${script}
 
     // Remove existing container if it exists
     await this.executePowerShell(`
-      ${bcchImport()}
+      ${bcchImport(config.name)}
       if (Get-BcContainer -containerName "${config.name}" -ErrorAction SilentlyContinue) {
         Write-Output "Removing existing container: ${config.name}"
         Remove-BcContainer -containerName "${config.name}"
@@ -1072,7 +1082,7 @@ ${script}
 
     // Create new container
     const setupScript = `
-      ${bcchImport()}
+      ${bcchImport(config.name)}
 
       Write-Output "Creating Business Central container: ${config.name}"
       New-BcContainer \`
@@ -1108,7 +1118,7 @@ ${script}
     log.info(`Starting container: ${containerName}`);
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Start-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} started"
     `;
@@ -1132,7 +1142,7 @@ ${script}
     log.info(`Stopping container: ${containerName}`);
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Stop-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} stopped"
     `;
@@ -1156,7 +1166,7 @@ ${script}
     log.info(`Removing container: ${containerName}`);
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Remove-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} removed"
     `;
@@ -1178,7 +1188,7 @@ ${script}
 
   async status(containerName: string): Promise<ContainerStatus> {
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
 
       # Check if container exists using Get-BcContainers (plural)
       $containers = Get-BcContainers
@@ -1303,11 +1313,13 @@ ${script}
     // NotFound and log a warning per container before correctly proceeding
     // unlocked. `recursive: true` is already a no-op on an existing dir; a
     // permission failure still lands on that same proceed-unlocked path.
-    await Deno.mkdir(BcContainerProvider.COMPILER_FOLDER_DIR, {
-      recursive: true,
-    }).catch(() => {});
-    const lockPath =
-      `${BcContainerProvider.COMPILER_FOLDER_DIR}\\.cg-${containerName}.lock`;
+    // H-58: under the container's own BCH root when it has one.
+    const compilerDir = bchPath(
+      containerName,
+      BcContainerProvider.COMPILER_FOLDER_DIR,
+    );
+    await Deno.mkdir(compilerDir, { recursive: true }).catch(() => {});
+    const lockPath = `${compilerDir}\\.cg-${containerName}.lock`;
     const lock = await acquireLock(lockPath);
     try {
       // Double-check under the lock: another process may have finished a
@@ -1354,7 +1366,9 @@ ${script}
    */
   private adoptableFolderPath(containerName: string): string | undefined {
     if (!this._compilerCacheEnabled) return undefined;
-    return `${BcContainerProvider.COMPILER_FOLDER_DIR}\\CentralGauge-${containerName}`;
+    return `${
+      bchPath(containerName, BcContainerProvider.COMPILER_FOLDER_DIR)
+    }\\CentralGauge-${containerName}`;
   }
 
   /**
@@ -1447,8 +1461,9 @@ ${script}
     let cacheKey: string | undefined;
     if (this._compilerCacheEnabled && artifactUrl) {
       cacheKey = await compilerCacheKey(artifactUrl);
-      const cacheFolder =
-        `${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-${cacheKey}`;
+      const cacheFolder = `${
+        bchRootFor(containerName)
+      }\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-${cacheKey}`;
       cacheParams =
         ` -containerName "CentralGauge-${containerName}" -cacheFolder "${cacheFolder}"`;
       // Logged before the script runs, so an operator diagnosing a failed
@@ -1468,7 +1483,7 @@ ${script}
       : `$artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"`;
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${artifactUrlLine}
       Write-Output "ARTIFACT_URL:$artifactUrl"
       # No -includeTestToolkit: BCH 6.1.14's New-BcCompilerFolder has no such
@@ -1555,7 +1570,7 @@ ${script}
     if (!this.isWindows()) return;
 
     const probeScript = (name: string) => `
-      ${bcchImport()}
+      ${bcchImport(name)}
       $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
         $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
         $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
@@ -1617,7 +1632,7 @@ ${script}
         const escapedProject = projectDir.replace(/\\/g, "\\\\");
         const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
-          ${bcchImport()}
+          ${bcchImport(name)}
           ${bcchConfigInit()}
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
@@ -1887,7 +1902,7 @@ ${script}
       Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@${BCCH_PINNED_VERSION} usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-05-03-A"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
@@ -2184,7 +2199,10 @@ ${script}
 
   /** BCH shared "my" folder for app files. Overridden in unit tests. */
   protected harnessSharedFolder(containerName: string): string {
-    return `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    return bchPath(
+      containerName,
+      `${SHARED_BCH_ROOT}\\Extensions\\${containerName}\\my`,
+    );
   }
 
   /** H-35: the Target a compiled package's manifest records (host-side read). */
@@ -2844,7 +2862,7 @@ ${script}
     containerPath: string,
   ): Promise<void> {
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Copy-ToNavContainer -containerName "${containerName}" -localPath "${localPath}" -containerPath "${containerPath}"
       Write-Output "Copied ${localPath} to ${containerName}:${containerPath}"
     `;
@@ -2868,7 +2886,7 @@ ${script}
     localPath: string,
   ): Promise<void> {
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Copy-FromNavContainer -containerName "${containerName}" -containerPath "${containerPath}" -localPath "${localPath}"
       Write-Output "Copied ${containerName}:${containerPath} to ${localPath}"
     `;
@@ -2900,7 +2918,7 @@ ${script}
     // Expression runs it AS INTENDED inside the container (this method's
     // whole purpose is executing a caller-supplied command there).
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       $cgExecCommand = '${escapeForPS(command)}'
       $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
@@ -2930,7 +2948,7 @@ ${script}
       if (inspection && !inspection.running) return false;
       if (opts?.signal?.aborted) return false;
       const script = `
-        ${bcchImport()}
+        ${bcchImport(containerName)}
         ${bcchConfigInit()}
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"

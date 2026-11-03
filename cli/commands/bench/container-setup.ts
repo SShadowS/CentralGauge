@@ -10,6 +10,7 @@ import {
   BcContainerProvider,
   ContainerProviderRegistry,
 } from "../../../src/container/mod.ts";
+import { allBchRoots } from "../../../src/container/bch-root.ts";
 import { getTracer } from "../../../src/tracing/tracer.ts";
 import { log } from "../../helpers/mod.ts";
 
@@ -97,7 +98,10 @@ export async function setupContainer(
   // preserve — see the split in BcContainerProvider.clearCompilerFolders.
   // The shared artifact cache is NEVER purged from this path.
   if (options?.noCompilerCache) {
-    await BcContainerProvider.clearCompilerFolders();
+    // H-58: every BCH root, the shared one and each migrated container's.
+    for (const root of allBchRoots()) {
+      await BcContainerProvider.clearCompilerFolders(`${root}\\compiler`);
+    }
   }
 
   // Resolve container provider
@@ -271,7 +275,10 @@ export async function setupContainers(
   // preserve — see the split in BcContainerProvider.clearCompilerFolders.
   // The shared artifact cache is NEVER purged from this path.
   if (options?.noCompilerCache) {
-    await BcContainerProvider.clearCompilerFolders();
+    // H-58: every BCH root, the shared one and each migrated container's.
+    for (const root of allBchRoots()) {
+      await BcContainerProvider.clearCompilerFolders(`${root}\\compiler`);
+    }
   }
 
   // Resolve provider once (singleton per type)

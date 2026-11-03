@@ -48,6 +48,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}bc-apps.test.ts`]: c(true, 0),
   [`${H}bc-lane.test.ts`]: c(true, 4),
   [`${H}bc-sync-provider.test.ts`]: c(true, 4),
+  [`${H}bch-root.test.ts`]: c(true, 4),
   [`${H}build-log.test.ts`]: c(true, 0),
   [`${H}campaign.test.ts`]: c(true, 138),
   [`${H}classify.test.ts`]: c(true, 0),

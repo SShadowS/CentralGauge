@@ -18,6 +18,7 @@ import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
 import { resolveWithVariants } from "../../src/llm/variant-parser.ts";
 import type { ModelVariant } from "../../src/llm/variant-types.ts";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
+import { allBchRoots } from "../../src/container/bch-root.ts";
 
 interface DoctorOptions {
   json?: boolean;
@@ -135,8 +136,14 @@ const runAdmin = (options: DoctorOptions) =>
  */
 export async function runPurgeCompilerCache(): Promise<void> {
   try {
-    const { removed, skipped } = await BcContainerProvider
-      .purgeArtifactCache();
+    // H-58: the shared BCH root and every migrated container's own root.
+    let removed = 0;
+    const skipped: string[] = [];
+    for (const root of allBchRoots()) {
+      const r = await BcContainerProvider.purgeArtifactCache(root);
+      removed += r.removed;
+      skipped.push(...r.skipped);
+    }
 
     if (removed > 0) {
       console.log(

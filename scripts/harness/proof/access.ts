@@ -7,6 +7,7 @@
  * thing from inside.
  */
 import { join, normalize, resolve } from "@std/path";
+import { allBchRoots, bchRootFor } from "../../../src/container/bch-root.ts";
 
 export type Expect = "denied" | "not_present";
 
@@ -58,9 +59,6 @@ const PRIVATE_DENIED = [
   "broken",
 ];
 
-/** BCH's host folders: compiler folders and their caches, per-container `my`. */
-const BCH_ROOT = "C:\\ProgramData\\BcContainerHelper";
-
 /** `bch`: BCH's root rule, the only one a container's own BCH folder lifts. */
 export interface Denied {
   target: string;
@@ -81,7 +79,13 @@ export function deniedRoots(r: AccessRoots): Denied[] {
     })),
     ...(r.keyCustody ? [{ target: "private_root", path: r.keyCustody }] : []),
     { target: "symbols_and_compiler_caches", path: r.symbolStore },
-    { target: "symbols_and_compiler_caches", path: BCH_ROOT, bch: true },
+    // BCH's host folders (compiler folders and caches, per-container `my`):
+    // the shared root and, H-58, every migrated container's own root.
+    ...allBchRoots().map((path) => ({
+      target: "symbols_and_compiler_caches",
+      path,
+      bch: true as const,
+    })),
     { target: "appinfo", path: join(r.symbolStore, "appinfo") },
   ];
 }
@@ -206,7 +210,7 @@ export function serverMountProblems(
   container: string,
   denied = deniedRoots(r),
 ): string[] {
-  const own = join(BCH_ROOT, "Extensions", container);
+  const own = join(bchRootFor(container), "Extensions", container);
   const problems: string[] = [];
   for (const m of mounts) {
     const why = (s: string) =>

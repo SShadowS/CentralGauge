@@ -25,6 +25,8 @@
 // Only touch those for diagnostics. Re-enabling the PSSession reintroduces the
 // Get-NavServerInstance-after-Unpublish bug on affected images.
 
+import { bchRootLines } from "./bch-root.ts";
+
 /**
  * The single bccontainerhelper version every host-side script pins to.
  * Bump here (and re-verify per the CLAUDE.md checklist) — never inline a
@@ -45,13 +47,20 @@ export const BCCH_PINNED_VERSION = "6.1.14";
  *
  * Emits no output on success so callers that parse script output
  * (JSON/markers) are unaffected.
+ *
+ * H-58: `container` is the BC container the script acts on (`null` for a
+ * script that touches none). A migrated container also gets its own BCH root
+ * (`bch-root.ts`); every other script is unchanged.
  */
-export function bcchImport(): string {
-  return [
+export function bcchImport(container: string | null): string {
+  const lines = [
     `Import-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION} -WarningAction SilentlyContinue -ErrorAction Stop`,
     `$cgBcchResolved = (Get-Command Invoke-ScriptInBcContainer -ErrorAction Stop).Module.Version.ToString()`,
     `if ($cgBcchResolved -ne '${BCCH_PINNED_VERSION}') { throw "[CG-PIN] bccontainerhelper version mismatch: requested ${BCCH_PINNED_VERSION}, resolved $cgBcchResolved" }`,
-  ].join("\n");
+  ];
+  const root = bchRootLines(container);
+  if (root) lines.push(root);
+  return lines.join("\n");
 }
 
 function envFlag(name: string): "on" | "off" | "unset" {
