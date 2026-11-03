@@ -187,6 +187,60 @@ async function initWith(c: string, exit: number) {
   return { init, sent, sess };
 }
 
+/** The guarded line a migrated container's session sends for `bootstrap`, run in a real pwsh. */
+async function runGuarded(bootstrap: string): Promise<string> {
+  const mock = createMockPwshProcess();
+  const sess = new PwshContainerSession("Cronus285", {
+    spawnFactory: () => mock.process,
+    bootstrapTimeoutMs: 5_000,
+    bootstrapScript: bootstrap,
+  });
+  const init = sess.init().catch(() => {});
+  await new Promise((r) => setTimeout(r, 10));
+  const sent = mock.getStdinWrites().join("");
+  const token = /CG-DONE-([a-f0-9-]+)-EXIT-/.exec(sent)![1];
+  mock.emitStdout(`@@CG-DONE-${token}-EXIT-0@@\n`);
+  await init;
+  await sess.dispose();
+  const r = await new Deno.Command("pwsh", {
+    args: ["-NoProfile", "-NonInteractive", "-Command", sent],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  return new TextDecoder().decode(r.stdout);
+}
+
+Deno.test({
+  name:
+    "bch-root: the guarded bootstrap keeps the script's meaning (comments, here-strings, continuations) and a throw reports a non-zero exit (real pwsh)",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    await withRoots(MIGRATED, async () => {
+      const script = [
+        "# a comment line",
+        "$x = @'",
+        "here; # not a comment",
+        "'@",
+        "$y = 'a' + `",
+        "  'b'",
+        'Write-Output "V=$x|$y"',
+      ].join("\n");
+      const ok = await runGuarded(script);
+      assertStringIncludes(ok, "V=here; # not a comment|ab");
+      assert(/-EXIT-0@@/.test(ok), ok);
+      const bad = await runGuarded(
+        `${script}\nthrow "[CG-BCH-ROOT] not mounted"\nWrite-Output AFTER`,
+      );
+      assertStringIncludes(
+        bad,
+        "CG_BOOTSTRAP_THREW: [CG-BCH-ROOT] not mounted",
+      );
+      assert(!bad.includes("AFTER"), bad);
+      assert(/-EXIT-1@@/.test(bad), bad);
+    });
+  },
+});
+
 Deno.test("bch-root: a migrated container's session bootstrap runs guarded and a failed root check fails init; others are sent as before", async () => {
   await withRoots(MIGRATED, async () => {
     const bad = await initWith("Cronus285", 1);

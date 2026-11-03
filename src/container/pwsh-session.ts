@@ -153,17 +153,23 @@ export class PwshContainerSession {
 
     // Send the bootstrap script with a marker
     const token = crypto.randomUUID();
-    // H-58 (Sol r1): stdin runs the bootstrap statement by statement, so a
-    // throw would not stop the success marker. For a container with its own
-    // BCH root the bootstrap runs as one guarded line and a failed root (mount)
-    // check fails init; every other bootstrap is sent exactly as before.
+    // H-58 (Sol r1, r2): stdin runs the bootstrap statement by statement, so
+    // a throw would not stop the success marker. For a container with its own
+    // BCH root the bootstrap text, unchanged (base64, so comments, here-strings
+    // and continuations keep their meaning), is dot-sourced in one guarded
+    // line and a failed root (mount) check fails init. Every other bootstrap is
+    // sent exactly as before.
     const guarded = bchRootFor(this.containerName) !== SHARED_BCH_ROOT;
+    const b64 = guarded
+      ? btoa(
+        Array.from(
+          new TextEncoder().encode(this._bootstrapScript),
+          (b) => String.fromCharCode(b),
+        ).join(""),
+      )
+      : "";
     const wrapped = guarded
-      ? `$cgBootExit = 1; try { ${
-        this._bootstrapScript.split(/\r?\n/).map((l) => l.trim()).filter(
-          Boolean,
-        ).join("; ")
-      }; $cgBootExit = 0 } catch { Write-Output "CG_BOOTSTRAP_THREW: $($_.Exception.Message)" } finally { Write-Output "@@CG-DONE-${token}-EXIT-$cgBootExit@@" }\n`
+      ? `$cgBootExit = 1; try { . ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')))); $cgBootExit = 0 } catch { Write-Output "CG_BOOTSTRAP_THREW: $($_.Exception.Message)" } finally { Write-Output "@@CG-DONE-${token}-EXIT-$cgBootExit@@" }\n`
       : `${this._bootstrapScript}\nWrite-Output "@@CG-DONE-${token}-EXIT-0@@"\n`;
     try {
       await this.writeToStdin(wrapped);
