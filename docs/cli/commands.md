@@ -1267,6 +1267,71 @@ read v3 records and enforces none of this. That is a documented prohibition,
 not something the older binary enforces; this version's loader then refuses
 the v2 records such a binary wrote as downgraded.
 
+### Account pool (`--secrets-dir`)
+
+A campaign runs its Claude Code cells on one or more subscription accounts.
+Each account is one secrets directory, passed as `--secrets-dir <label>=<dir>`
+(repeatable). A label is lowercase letters, digits and hyphens (`maxpriv2`,
+`work`), and is all a record ever holds: no token is read into a record, log
+or report. One plain `--secrets-dir <dir>` is a single unlabelled account.
+
+**Setup per account.** Log in to the account and create a long-lived token
+with `claude setup-token`, then save it as the file `claude-oauth-token` in
+that account's directory. Every directory must also hold every other secret
+file the arms need (for example the backend and OpenRouter keys): a run checks
+all of them before any cell and refuses one that is missing.
+
+```bash
+centralgauge harness run <experiment> --containers <agents> \
+  --secrets-dir max=H:\Temp3\harness-spike\secrets \
+  --secrets-dir maxpriv=H:\Temp3\harness-spike\secrets-MaxPriv \
+  --secrets-dir maxpriv2=H:\Temp3\harness-spike\secrets-MaxPriv2 \
+  --secrets-dir work=H:\Temp3\harness-spike\secrets-Work ...
+```
+
+**Two or more labels make a pool** (H-53). The accounts are treated as
+equivalent: the account is not part of a cell's identity, env_fp, settings
+hash or lineage. Each cell takes its block's label while that label has
+headroom, so both arms of a matched pair usually share an account. Otherwise it
+takes the next free label in turn. Every execution records its `account` and
+`account_choice` (`block_pair`, `round_robin` or `retry_after_limit`). When a
+cell ends `usage_limited`, its label is parked until the recorded reset (an
+unknown reset parks it until the run ends). The cell's retry runs at once on
+another free label (`[POOL] account <label> parked until <reset>`). The run
+pauses only when every label is parked (`[PAUSE] usage limit on every account
+(<label> until <reset>, ...)`), and `--max-pause-min` then applies to the
+earliest reset. Parks come from the records, so a restart honours a reset that
+has not passed yet. `--ignore-usage-reset` is refused on a pool. A pi
+`openai-codex:oauth` arm still runs with one account only.
+
+**Resume.** A campaign pins its ordered labels. A resume must pass the pinned
+labels in the same order. It may append new labels after them only with both:
+
+| Option                           | Description                                                                 |
+| -------------------------------- | --------------------------------------------------------------------------- |
+| `--add-accounts-reason <reason>` | Why the labels join the pool (recorded).                                    |
+| `--added-by <who>`               | Who adds them (free text, recorded; never a credential).                    |
+
+Each addition is a write-once record
+`<results-dir>/account-pools/<campaign>/<seq>.json` (`001`, `002`, ... with no
+gap), holding the labels, who, when and why. The pinned list is then the
+campaign's labels followed by every addition. Dropping, renaming or reordering a
+label, or adding one without both options, is refused. A dry run checks the
+addition and writes nothing. A single-label campaign behaves exactly as before
+until a label is added; its existing executions keep their recorded label.
+
+A pooled `--rerun` takes a pool label the same way. Its limit parks that
+label, and its retry runs at once, in the same invocation, on a free label.
+With every label parked it waits for the earliest reset under
+`--max-pause-min` (the rerun itself included, if it has not started yet), then
+goes on. Otherwise it pauses.
+
+`harness report` lists executions, `usage_limited` counts and the
+`account_choice` spread per label under **Accounts**. `screening.ts status`
+prints one `account <label>: ...` line each, and `analyze-campaign` writes
+`per_account` (over every attempt) into `summary.json`, so an account-level
+anomaly stays visible.
+
 ### harness pairing
 
 ```bash

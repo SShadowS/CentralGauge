@@ -16,6 +16,7 @@ import type { PricingBook } from "./pricing.ts";
 import type { RefappRef, SymbolPackage } from "./identity.ts";
 import type { ResolvedManifest } from "./manifest.ts";
 import type {
+  AccountChoice,
   Block,
   ExecutionRecord,
   JudgmentRecord,
@@ -220,6 +221,16 @@ export interface HarnessEnv {
   onPrem: OnPremIndex;
   /** Operator secrets directories, one per Claude account (`--secrets-dir [label=]dir`); at least one. */
   secretAccounts: SecretAccount[];
+  /**
+   * H-53: the pool label the campaign scheduler gave this cell and why;
+   * absent: the block's account (pickAccount), as before pools.
+   */
+  accountChoice?: { label: string; choice: AccountChoice };
+  /**
+   * H-53: false once another cell parked that label; runCell then starts no
+   * inner retry on it (the cell stays due and the scheduler picks again).
+   */
+  accountUsable?: () => boolean;
   /** Windows custody ACL seam (tests inject icacls); defaults to the real icacls and user. */
   secretAcl?: { icacls: IcaclsRunner; user: string };
   /** Drive type of the private root ("Fixed" is the only local type accepted); tests inject it. */
@@ -526,6 +537,8 @@ interface Intent {
   calibration_waived?: true;
   /** R-02: the account label the attempt ran under; recovery copies it, never re-derives it. */
   account?: string;
+  /** H-53: why the pool gave it that label; recovery copies it too. */
+  account_choice?: AccountChoice;
   /** H-44 (M3): the key custody dir its bundle is exported to, whatever command publishes it; absent: none. */
   key_custody?: string;
 }
@@ -1718,6 +1731,8 @@ interface DraftInput {
   undrained?: string | null;
   /** The Claude account label of the cell (absent: unlabelled or stub). */
   account?: string | null;
+  /** H-53: why a pool gave the cell its label (absent outside a pool). */
+  accountChoice?: AccountChoice | null;
   /** H-44 (B3): the record version the intent names (2 only for a pre-H-44 intent's rebuild). */
   recordV: 2 | 3;
 }
@@ -2087,6 +2102,9 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
       ? { usage_reset_ignored: f.at.usageResetIgnored }
       : {}),
     ...(f.account ? { account: f.account } : {}),
+    ...(f.account && f.accountChoice
+      ? { account_choice: f.accountChoice }
+      : {}),
     ...(f.recordV === 3
       ? { redaction_anchor: bundle ? await sha256Hex(bundle.bytes) : null }
       : {}),
@@ -2369,10 +2387,21 @@ export async function runExecution(
     }
     : null;
   // A stub cell releases no real credential: dummy secrets, no account label.
-  const account = stub ? null : pickAccount(
-    env.secretAccounts,
-    cell.block.index,
-  );
+  // H-53: a pool campaign names the label; it must be one of this run's.
+  const chosen = env.accountChoice
+    ? env.secretAccounts.find((a) => a.label === env.accountChoice!.label) ??
+      (() => {
+        throw new ConfigurationError(
+          `account ${
+            env.accountChoice!.label
+          } is not among this run's --secrets-dir labels`,
+        );
+      })()
+    : null;
+  const account = stub
+    ? null
+    : chosen ?? pickAccount(env.secretAccounts, cell.block.index);
+  const accountChoice = !stub && chosen ? env.accountChoice!.choice : null;
   await validatePrivateRoot(env);
   const now = env.now ?? (() => new Date());
   const id = crypto.randomUUID();
@@ -2438,6 +2467,9 @@ export async function runExecution(
       : {}),
     ...(env.calibrationWaived ? { calibration_waived: true as const } : {}),
     ...(account?.label ? { account: account.label } : {}),
+    ...(account?.label && accountChoice
+      ? { account_choice: accountChoice }
+      : {}),
     // H-44 (M3): the export destination, persisted with the attempt.
     ...(env.keyCustody ? { key_custody: env.keyCustody } : {}),
   };
@@ -3116,6 +3148,7 @@ export async function runExecution(
     preStart: inventoryRefused !== null || notLive !== null,
     undrained,
     account: account?.label ?? null,
+    accountChoice,
     recordV: 3,
   });
   holdNamespace(env, nothingPublished);
@@ -4219,6 +4252,8 @@ export interface CellResult {
   withheld: string | null;
   /** Why no further automatic retry is allowed (Part 1 retryProblem, or an operator interrupt). */
   stopped: string | null;
+  /** H-53: an automatic retry is due but its pool label was parked meanwhile (env.accountUsable). */
+  yielded?: true;
 }
 
 /** One cell: run, judge per policy, automatic retries decided by ancestry (never in supervised mode). */
@@ -4322,6 +4357,17 @@ export async function runCell(
         withheld:
           `automatic retry after ${e.termination} withheld in supervised mode`,
         stopped: null,
+      };
+    }
+    // H-53: the pool label was parked meanwhile: the retry stays due, for
+    // the scheduler to start on a free label.
+    if (env.accountUsable && !env.accountUsable()) {
+      return {
+        executions,
+        pause: null,
+        withheld: null,
+        stopped: null,
+        yielded: true,
       };
     }
     at = next;
@@ -4641,6 +4687,7 @@ export async function recoverInterrupted(
         stub: intent.stub ?? null,
         // R-02: the label the attempt recorded in its intent, whatever command recovers.
         account: intent.account ?? null,
+        accountChoice: intent.account_choice ?? null,
         recordV,
       });
     }

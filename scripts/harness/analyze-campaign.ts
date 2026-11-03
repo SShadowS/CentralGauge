@@ -25,7 +25,11 @@ import type { TraceEvent } from "../../src/harness/trace.ts";
 import { applyOverlay, TAR_BINARY } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import { readTrace } from "../../src/harness/trace.ts";
-import { RecordStore } from "../../src/harness/records.ts";
+import {
+  type ExecutionRecord,
+  RecordStore,
+} from "../../src/harness/records.ts";
+import { accountCounts } from "../../src/harness/report.ts";
 import { REFAPP_PATH } from "../../src/harness/identity.ts";
 import { isTaskBuildArtifact } from "../../src/harness/hash.ts";
 import { isSourceFile, TEST_APP } from "../../src/harness/verdict-workspace.ts";
@@ -3190,9 +3194,12 @@ async function main() {
   // (R-10) is applied and refused when it no longer matches its raw log.
   const cells = new Map<string, J>();
   const only = args.only ? args.only.split(",") : [];
+  // H-53: per account label over every attempt (a limited one included).
+  const attempts: ExecutionRecord[] = [];
   for (const x of await new RecordStore(results).executions(campaignId)) {
     const e = x as unknown as J;
     if (!keepExecution(e["id"] as string, only)) continue;
+    attempts.push(x);
     const key = `${e["arm"]}|${e["task_id"]}|${e["repeat"]}`;
     const prev = cells.get(key);
     if (!prev || (e["attempt"] as number) > (prev["attempt"] as number)) {
@@ -3504,6 +3511,7 @@ async function main() {
         rev: args.rev,
         per_arm: perArm,
         per_pair: perPair,
+        per_account: accountCounts(attempts),
       },
       null,
       1,

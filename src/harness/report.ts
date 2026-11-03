@@ -34,6 +34,7 @@ import {
   type JudgingContext,
 } from "./outcome.ts";
 import {
+  type AccountChoice,
   type ExecutionRecord,
   incompleteObserved,
   type JudgmentRecord,
@@ -123,6 +124,11 @@ export interface HarnessReport {
   calibration_waived?: true;
   /** H-15: present when any execution ran before its parent's recorded usage reset. */
   usage_reset_ignored?: { reasons: string[] };
+  /**
+   * H-53: executions and usage limits per account label (present when any
+   * execution has one), so an account-level anomaly stays visible.
+   */
+  accounts?: Record<string, AccountCount>;
   experiment: {
     id: string;
     hypothesis: string;
@@ -759,6 +765,7 @@ export async function buildReport(
       ),
     ),
   ];
+  const accounts = accountCounts(records.executions);
   const knownSpend = (cs: CellRecord[]) =>
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
@@ -1250,7 +1257,40 @@ export async function buildReport(
     ...(resetReasons.length > 0
       ? { usage_reset_ignored: { reasons: resetReasons } }
       : {}),
+    ...(Object.keys(accounts).length > 0 ? { accounts } : {}),
   };
+}
+
+/** H-53: one label's executions, usage limits and why the pool chose it (pool campaigns only). */
+export interface AccountCount {
+  executions: number;
+  usage_limited: number;
+  choices: Partial<Record<AccountChoice, number>>;
+}
+
+/** H-53: executions and usage limits per account label, labels sorted; unlabelled executions are not counted. */
+export function accountCounts(
+  executions: readonly Pick<
+    ExecutionRecord,
+    "account" | "termination" | "account_choice"
+  >[],
+): NonNullable<HarnessReport["accounts"]> {
+  // A Map: a label such as "constructor" never meets an inherited property.
+  const out = new Map<string, AccountCount>();
+  for (const e of executions) {
+    if (!e.account) continue;
+    const a = out.get(e.account) ??
+      { executions: 0, usage_limited: 0, choices: {} };
+    a.executions++;
+    if (e.termination === "usage_limited") a.usage_limited++;
+    if (e.account_choice) {
+      a.choices[e.account_choice] = (a.choices[e.account_choice] ?? 0) + 1;
+    }
+    out.set(e.account, a);
+  }
+  return Object.fromEntries(
+    [...out].sort(([a], [b]) => a < b ? -1 : 1),
+  );
 }
 
 const usd = (x: number | null) => (x === null ? "n/a" : `$${x.toFixed(3)}`);
@@ -1315,6 +1355,23 @@ export function renderReport(r: HarnessReport): string {
         r.usage_reset_ignored.reasons.join("; ")
       }`,
     ));
+  }
+  if (r.accounts) {
+    out.push("Accounts");
+    for (const [l, a] of Object.entries(r.accounts)) {
+      out.push(
+        `  ${l}: ${a.executions} execution(s), ${a.usage_limited} usage_limited${
+          Object.keys(a.choices).length > 0
+            ? ` (${
+              Object.entries(a.choices).sort(([x], [y]) => x < y ? -1 : 1)
+                .map(([c, n]) =>
+                  `${c} ${n}`
+                ).join(", ")
+            })`
+            : ""
+        }`,
+      );
+    }
   }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
     ? r.confirmatory

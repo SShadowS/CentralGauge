@@ -1775,6 +1775,10 @@ export interface RunCliOptions extends CellCliOptions {
   unverifiedEgressReason?: string;
   /** run (H-15): owner override; owed retries ignore usage resets recorded before this run. */
   ignoreUsageReset?: string;
+  /** run (H-53): the recorded reason for --secrets-dir labels appended to the campaign's pool. */
+  addAccountsReason?: string;
+  /** run (H-53): who adds them (free text). */
+  addedBy?: string;
   /** H-41 (Q1): `rejudge --containers auto` ("containers"), `run --judge-containers auto` ("judges"). */
   auto?: "containers" | "judges";
   /** H-41 (Q5): --pool-wait-min (0 to 120, default 10). */
@@ -1821,6 +1825,12 @@ export async function harnessRun(
       "--ignore-usage-reset needs a non-empty reason",
     );
   }
+  // H-53: both or neither.
+  if ((o.addAccountsReason === undefined) !== (o.addedBy === undefined)) {
+    throw new ConfigurationError(
+      "--add-accounts-reason and --added-by go together",
+    );
+  }
   const override = o.unverifiedEgressReason !== undefined
     ? { unverifiedEgressReason: o.unverifiedEgressReason }
     : {};
@@ -1849,6 +1859,9 @@ export async function harnessRun(
     ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
     ...(o.ignoreUsageReset !== undefined
       ? { ignoreUsageReset: o.ignoreUsageReset }
+      : {}),
+    ...(o.addAccountsReason !== undefined && o.addedBy !== undefined
+      ? { addAccounts: { reason: o.addAccountsReason, by: o.addedBy } }
       : {}),
     ...(o.preregDecision !== undefined
       ? { preregDecision: o.preregDecision }
@@ -3635,6 +3648,8 @@ export function registerHarnessCommand(
     judgeContainers?: string;
     unverifiedEgressOk?: string;
     ignoreUsageReset?: string;
+    addAccountsReason?: string;
+    addedBy?: string;
     poolWaitMin?: number;
   };
   // H-41 (Q1): the literal `auto` makes that list the judging pool.
@@ -3675,6 +3690,10 @@ export function registerHarnessCommand(
     ...(f.ignoreUsageReset !== undefined
       ? { ignoreUsageReset: f.ignoreUsageReset }
       : {}),
+    ...(f.addAccountsReason !== undefined
+      ? { addAccountsReason: f.addAccountsReason }
+      : {}),
+    ...(f.addedBy !== undefined ? { addedBy: f.addedBy } : {}),
     ...(f.unverifiedEgressOk !== undefined
       ? { unverifiedEgressReason: f.unverifiedEgressOk }
       : {}),
@@ -3744,7 +3763,15 @@ export function registerHarnessCommand(
     )
     .option(
       "--ignore-usage-reset <reason:string>",
-      "H-15, OWNER ONLY: retries owed to usage resets recorded before this run start now (e.g. after an account swap); a limit hit during this run still pauses. Each such retry and the report carry the reason",
+      "H-15, OWNER ONLY: retries owed to usage resets recorded before this run start now (e.g. after an account swap); a limit hit during this run still pauses. Each such retry and the report carry the reason. Refused on an account pool (2+ labels)",
+    )
+    .option(
+      "--add-accounts-reason <reason:string>",
+      "H-53: on a resume, the --secrets-dir labels after the campaign's pool join it; the reason is recorded (account-pools/<campaign>/<seq>.json). Needs --added-by",
+    )
+    .option(
+      "--added-by <who:string>",
+      "H-53: who adds the labels (free text, recorded with --add-accounts-reason)",
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => {

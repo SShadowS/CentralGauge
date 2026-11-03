@@ -8931,6 +8931,25 @@ Deno.test("H-15: run --ignore-usage-reset with a blank reason is refused before 
   }
 });
 
+Deno.test("H-53: run --add-accounts-reason and --added-by go together, refused before planning or any environment", async () => {
+  await using t = await makeEnv();
+  for (
+    const over of [{ addAccountsReason: "spread load" }, { addedBy: "owner" }]
+  ) {
+    await assertRejects(
+      () =>
+        harnessRun(
+          "cc",
+          runOpts(t, { dryRun: true, ...over }),
+          () => Promise.reject(new Error("refused before the environment")),
+          () => Promise.reject(new Error("refused before planning")),
+        ),
+      ConfigurationError,
+      "--add-accounts-reason and --added-by go together",
+    );
+  }
+});
+
 Deno.test("H-16 (Sol r2): close holds the locks until a backend request revoke gave up on has drained, so no successor recovers state it still uses", async () => {
   await using t = await makeEnv();
   const order: string[] = [];
