@@ -7,6 +7,7 @@ import {
   fsDiff,
   fsLineRestored,
   goldenReset,
+  parseFsRemoveOutput,
   parseResetOutput,
   parseVerifyOutput,
   RESET_PHASES,
@@ -220,6 +221,45 @@ Deno.test("H-35 S3 goldenReset.verifyClean runs verify-clean.ps1 with the lineag
   assertEquals(calls[0]!.slice(-4), ["-Container", "C1", "-Lineage", "L.json"]);
   const bad = await m.verifyClean!("C2");
   assertEquals([bad.ok, bad.error], [false, "spawn died"]);
+});
+
+Deno.test("H-35c goldenReset.fsRemove runs fs-remove.ps1 with the lineage and the items as a JSON file, in order; parseFsRemoveOutput fails closed", async () => {
+  const seen: { args: string[]; items: unknown }[] = [];
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath: "L.json",
+    lineage: await loadLineage(
+      "infra/harness-reset/lineages/golden-o09-v2.json",
+    ),
+    dockerEnv: { DOCKER_CONTEXT: "desktop-windows" },
+    spawn: async (_cmd, args) => {
+      const file = args[args.indexOf("-Items") + 1]!;
+      seen.push({ args, items: JSON.parse(await Deno.readTextFile(file)) });
+      return { code: 0, stdout: "REMOVED|C:\\W\\d\\f.txt\nREMOVED|C:\\W\\d\n" };
+    },
+  });
+  const items = [
+    { path: "C:\\W\\d\\f.txt", kind: "F" as const },
+    { path: "C:\\W\\d", kind: "D" as const },
+  ];
+  const r = await m.fsRemove!("C1", items);
+  assertEquals(r, { removed: ["C:\\W\\d\\f.txt", "C:\\W\\d"], errors: [] });
+  assert(seen[0]!.args.some((a) => a.endsWith("fs-remove.ps1")));
+  assertEquals(seen[0]!.args.slice(-6, -2), [
+    "-Container",
+    "C1",
+    "-Lineage",
+    "L.json",
+  ]);
+  assertEquals(seen[0]!.items, items);
+  // A refusal, unexpected output or a nonzero exit is an error, never a removal.
+  const bad = parseFsRemoveOutput("REFUSED|C:\\W\\d|not empty\nnoise", 1);
+  assertEquals(bad.removed, []);
+  assertEquals(bad.errors, [
+    "C:\\W\\d|not empty",
+    "unexpected output: noise",
+    "fs-remove.ps1 exit 1",
+  ]);
 });
 
 // ---- H-35 S3 L4: fsDigest diff (decisions/2026-10-20-h-35-l4-scope.md) ----

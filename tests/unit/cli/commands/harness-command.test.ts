@@ -752,6 +752,9 @@ const testResetFor: ResetFor = (lineagePath, lineage) => ({
       }),
   }),
   reset: OK_RESET.reset,
+  // H-35c: nothing reaches a container; a test's fsDigest decides what is left.
+  fsRemove: (_c, items) =>
+    Promise.resolve({ removed: items.map((i) => i.path), errors: [] }),
 });
 
 /** H-35 run 004 Sol r1 H5: a fake Docker container id, one per (case-insensitive) name. */
@@ -11530,6 +11533,92 @@ Deno.test("H-35 run 004 Sol r1 H6 recover: a recorded L4 diff must be remediated
   await recoverContainer(o, d, mech);
   assertEquals(await findRecords(qDir, key), []);
   assert(await readInstanceManifest(resultsRoot, "Cronus281"));
+});
+
+Deno.test("H-35c recover: removes what the record says the seed created (files, then directories, deepest first) when it is still exactly as recorded; a changed file is not touched and the quarantine stays", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const calls: string[] = [];
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  const F = (p: string, h: string) => `F|${h.repeat(64)}|2|1|1|6262|${p}`;
+  const D = (p: string) => `D|16|0|${p}`;
+  const tmp = `${roots[0]}\\users\\default\\0c41\\TEMP`;
+  const seed = `${tmp}\\cg-proof-seed.txt`;
+  // What the container holds: the reset left the seed's directory (empty,
+  // the NST emptied it) and, in the second case, a file it did not create.
+  let present = new Map<string, string>();
+  const removed: string[][] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => D(r)), ...present.values()];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+    fsRemove: (_c: string, items: { path: string; kind: "F" | "D" }[]) => {
+      removed.push(items.map((i) => `${i.kind}:${i.path}`));
+      for (const i of items) present.delete(i.path.toLowerCase());
+      return Promise.resolve({ removed: items.map((i) => i.path), errors: [] });
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const plant = () =>
+    plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4",
+      by: "test",
+      pid: 1,
+      fs_diff: [
+        { path: tmp, before: null, after: D(tmp) },
+        { path: seed, before: null, after: F(seed, "b") },
+      ],
+      fs_captured: true,
+    });
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+
+  // A file the record does not show as the seed's (other content) stays, and
+  // so does its directory: the quarantine stays.
+  await plant();
+  present = new Map([
+    [tmp.toLowerCase(), D(tmp)],
+    [seed.toLowerCase(), F(seed, "c")],
+  ]);
+  const e = await assertRejects(
+    () => recoverContainer(o, d, mech),
+    ContainerError,
+  );
+  assertStringIncludes(e.message, "contamination not remediated");
+  assertEquals(removed, []);
+  assertEquals((await findRecords(qDir, key)).length, 1);
+
+  // The seed's file, still as recorded, and its directory: removed file
+  // first, directory after, then the recovery capture is clean.
+  present = new Map([
+    [tmp.toLowerCase(), D(tmp)],
+    [seed.toLowerCase(), F(seed, "b")],
+  ]);
+  await recoverContainer(o, d, mech);
+  assertEquals(removed, [[`F:${seed}`, `D:${tmp}`]]);
+  assertEquals(await findRecords(qDir, key), []);
+  assert(await readInstanceManifest(resultsRoot, "Cronus281"));
+
+  // lane-ops' case on Cronus285: the reset emptied the directory, only it is left.
+  removed.length = 0;
+  await plant();
+  present = new Map([[tmp.toLowerCase(), D(tmp)]]);
+  await recoverContainer(o, d, mech);
+  assertEquals(removed, [[`D:${tmp}`]]);
+  assertEquals(await findRecords(qDir, key), []);
 });
 
 /** Captures console.error while fn runs. */

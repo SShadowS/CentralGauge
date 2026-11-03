@@ -57,6 +57,16 @@ export interface ResetMechanism {
    * after the cleanup. A throw fails closed like an error line.
    */
   fsDigest?(container: string): Promise<string[]>;
+  /**
+   * H-35c: remove entries a quarantine record shows were created during a
+   * deployment (recover's remediation), in the order given: a file only if it
+   * is a plain file, a directory only if it is empty and no reparse point.
+   * Never recursive. Returns what was removed and one error per refusal.
+   */
+  fsRemove?(
+    container: string,
+    items: readonly { path: string; kind: "F" | "D" }[],
+  ): Promise<{ removed: string[]; errors: string[] }>;
   /** L4 exclusions (the lineage's dispositions), as Windows wildcards. */
   readonly fsExclude?: readonly string[];
   /** L4: the declared roots every capture must cover (the lineage's fs.roots). */
@@ -363,6 +373,8 @@ export const RESET_SCRIPT = ["infra", "harness-reset", "reset-golden.ps1"];
 export const VERIFY_SCRIPT = ["infra", "harness-reset", "verify-clean.ps1"];
 /** One L4 fsDigest(W) capture over the lineage's fs roots. */
 export const FS_SCRIPT = ["infra", "harness-reset", "fs-capture.ps1"];
+/** H-35c: recover's removal of what a deployment created (non-recursive). */
+export const FS_REMOVE_SCRIPT = ["infra", "harness-reset", "fs-remove.ps1"];
 /** The live NST config digest against the lineage (run 004 #4). */
 export const NST_CONFIG_SCRIPT = ["infra", "harness-reset", "nst-config.ps1"];
 /** Longer than the script's own 10 min health limit; then the reset failed. */
@@ -401,7 +413,7 @@ export function goldenReset(o: {
   spawn?: Spawn;
 }): ResetMechanism {
   const spawn = o.spawn ?? spawnProcess;
-  const run = (script: string[], container: string) =>
+  const run = (script: string[], container: string, extra: string[] = []) =>
     spawn("pwsh", [
       "-NoProfile",
       "-NonInteractive",
@@ -411,6 +423,7 @@ export function goldenReset(o: {
       container,
       "-Lineage",
       o.lineagePath,
+      ...extra,
     ], o.dockerEnv);
   const fs = o.lineage.fs;
   return {
@@ -478,6 +491,19 @@ export function goldenReset(o: {
             ? lines
             : [...lines, `E|(fs-capture)|exit ${out.code}`];
         },
+        fsRemove: async (container, items) => {
+          const file = await Deno.makeTempFile({ suffix: ".json" });
+          try {
+            await Deno.writeTextFile(file, JSON.stringify(items));
+            const out = await run(FS_REMOVE_SCRIPT, container, [
+              "-Items",
+              file,
+            ]);
+            return parseFsRemoveOutput(out.stdout, out.code);
+          } finally {
+            await Deno.remove(file).catch(() => {});
+          }
+        },
       }
       : {}),
     verifyClean: async (container) => {
@@ -499,6 +525,26 @@ export function goldenReset(o: {
 }
 
 /** One L4 difference: the digest line before and after (null: absent). */
+/**
+ * fs-remove.ps1's markers: `REMOVED|<path>` per removal, `REFUSED|<path>|why`
+ * per refusal; any other non-empty line or a nonzero exit is an error.
+ */
+export function parseFsRemoveOutput(
+  stdout: string,
+  code: number,
+): { removed: string[]; errors: string[] } {
+  const removed: string[] = [];
+  const errors: string[] = [];
+  for (const l of stdout.split(/\r?\n/).map((x) => x.trimEnd())) {
+    if (l === "") continue;
+    if (l.startsWith("REMOVED|")) removed.push(l.slice(8));
+    else if (l.startsWith("REFUSED|")) errors.push(l.slice(8));
+    else errors.push(`unexpected output: ${l}`);
+  }
+  if (code !== 0) errors.push(`fs-remove.ps1 exit ${code}`);
+  return { removed, errors };
+}
+
 export interface FsDiffEntry {
   path: string;
   before: string | null;
