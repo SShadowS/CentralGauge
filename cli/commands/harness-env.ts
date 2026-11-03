@@ -102,6 +102,7 @@ import {
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
+  emptyNstUserTemp,
   fsDiff,
   type FsDiffEntry,
   fsLineRestored,
@@ -413,6 +414,15 @@ function unremediated(
     ...new Set(
       recorded.filter((e) => {
         const cur = now.get(e.path.toLowerCase());
+        // H-35c: an empty NST per-user TEMP dir is restored whatever its
+        // mtime (removing the seed's file moves it again); fsDiff's own rule
+        if (
+          cur &&
+          emptyNstUserTemp(
+            { path: e.path, before: e.before, after: cur },
+            now.keys(),
+          )
+        ) return false;
         // addendum 8b Q6: an F line field by field, its head to the
         // recorded width (a digest v3 record holds 2 bytes)
         return e.before === null

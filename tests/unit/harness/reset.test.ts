@@ -301,6 +301,76 @@ Deno.test("H-35 S3 L4 fsDiff: new, changed (content or metadata only) and remove
   );
 });
 
+Deno.test("H-35c fsDiff: an EMPTY NST per-user TEMP dir that is new or changed only in time is no difference; a file inside it, another path, or changed attributes stay differences", () => {
+  const nav = w("C:/ProgramData/Microsoft/Microsoft Dynamics NAV");
+  const user = w(
+    `${nav}/280/Server/MicrosoftDynamicsNavServer$BC/users/default/0c41005d-7d40-49f9-94c0-b76bb6f52507`,
+  );
+  const tmp = `${user}\\TEMP`;
+  const D = (p: string, t = 1, a = 16) => `D|${a}|${t}|${p}`;
+  const base = [D(nav), D(user)];
+  const paths = (r: { diff: { path: string }[] }) => r.diff.map((d) => d.path);
+
+  // Pre-existing, emptied again: only its mtime moved.
+  assertEquals(
+    fsDiff(cap(...base, D(tmp, 1)), cap(...base, D(tmp, 2)), [], [nav]),
+    { diff: [], errors: [] },
+  );
+  // New and empty (its user dir already there).
+  assertEquals(
+    fsDiff(cap(...base), cap(...base, D(tmp, 2)), [], [nav]).diff,
+    [],
+  );
+  // A file inside: the file AND the directory are differences.
+  assertEquals(
+    paths(fsDiff(
+      cap(...base, D(tmp, 1)),
+      cap(...base, D(tmp, 2), F(`${tmp}/cg-proof-seed.txt`)),
+      [],
+      [nav],
+    )),
+    [tmp, `${tmp}\\cg-proof-seed.txt`],
+  );
+  // A stream on it is content too.
+  assertEquals(
+    paths(fsDiff(
+      cap(...base, D(tmp, 1)),
+      cap(...base, D(tmp, 2), `S|${"c".repeat(64)}|3|${tmp}:hid`),
+      [],
+      [nav],
+    )),
+    [tmp, `${tmp}:hid`],
+  );
+  // Changed attributes, another directory name, or a removed TEMP.
+  assertEquals(
+    paths(
+      fsDiff(cap(...base, D(tmp, 1)), cap(...base, D(tmp, 2, 18)), [], [nav]),
+    ),
+    [tmp],
+  );
+  const other = `${user}\\TEMP2`;
+  assertEquals(
+    paths(
+      fsDiff(cap(...base, D(other, 1)), cap(...base, D(other, 2)), [], [nav]),
+    ),
+    [other],
+  );
+  assertEquals(
+    paths(fsDiff(cap(...base, D(tmp, 1)), cap(...base), [], [nav])),
+    [tmp],
+  );
+  // An excluded file inside still makes it non-empty.
+  assertEquals(
+    paths(fsDiff(
+      cap(...base, D(tmp, 1)),
+      cap(...base, D(tmp, 2), F(`${tmp}/x.log`)),
+      [`${tmp}\\*`],
+      [nav],
+    )),
+    [tmp],
+  );
+});
+
 Deno.test("H-35 S3 L4 fsDiff: exclusions match case-insensitively with * as any run (subtree); E lines on either side and unparsable lines are errors (fail closed)", () => {
   const before = cap(F("C:/W/Logs/x.log"));
   const after = cap(

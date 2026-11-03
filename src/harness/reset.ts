@@ -839,12 +839,50 @@ export function fsDiff(
     return m;
   };
   const b = index("before", before), a = index("after", after);
+  // Every after-side path, excluded ones too: emptiness looks at all of them.
+  const afterAll = new Set<string>();
+  for (const l of after) {
+    const k = l.startsWith("E|") ? l.split("|")[1] : fsKey(l.trimEnd());
+    if (k) afterAll.add(k.toLowerCase());
+  }
   const diff: FsDiffEntry[] = [];
   for (const k of [...new Set([...b.keys(), ...a.keys()])].sort()) {
     const x = b.get(k) ?? null, y = a.get(k) ?? null;
     if (x === y) continue;
     const d = { path: fsKey((y ?? x)!)!, before: x, after: y };
-    if (!cacheTolerates(cacheRes, d)) diff.push(d);
+    if (!cacheTolerates(cacheRes, d) && !emptyNstUserTemp(d, afterAll)) {
+      diff.push(d);
+    }
   }
   return { diff, errors };
+}
+
+/**
+ * H-35c (orchestrator and owner, 2026-11-03): the NST makes
+ * `...\MicrosoftDynamicsNavServer$BC\users\<tenant>\<user>\TEMP` for a
+ * session's temp files and empties it again; an EMPTY one carries nothing
+ * between runs. So that exact path, as a plain directory (attributes 16),
+ * new or changed only in its mtime, is no difference while nothing at all
+ * (file, directory, stream or error line, excluded or not) lies below it in
+ * the after capture. A removed TEMP, another name, other attributes or any
+ * content stay differences; its user and tenant directories stay compared.
+ */
+const NST_USER_TEMP =
+  /^C:\\ProgramData\\Microsoft\\Microsoft Dynamics NAV\\\d+\\Server\\MicrosoftDynamicsNavServer\$BC\\users\\[^\\:]+\\[^\\:]+\\TEMP$/i;
+export function emptyNstUserTemp(
+  d: FsDiffEntry,
+  afterPaths: ReadonlySet<string> | Iterable<string>,
+): boolean {
+  if (!NST_USER_TEMP.test(d.path) || d.after === null) return false;
+  const dir = (line: string) => {
+    const f = line.split("|");
+    return f.length === 4 && f[0] === "D" && f[1] === "16" && f[3] === d.path;
+  };
+  if (!dir(d.after)) return false;
+  if (d.before !== null && !dir(d.before)) return false;
+  const p = d.path.toLowerCase();
+  for (const k of afterPaths) {
+    if (k.startsWith(`${p}\\`) || k.startsWith(`${p}:`)) return false;
+  }
+  return true;
 }

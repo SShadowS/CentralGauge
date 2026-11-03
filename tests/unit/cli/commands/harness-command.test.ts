@@ -11621,6 +11621,87 @@ Deno.test("H-35c recover: removes what the record says the seed created (files, 
   assertEquals(await findRecords(qDir, key), []);
 });
 
+Deno.test("H-35c recover: a pre-existing NST per-user TEMP dir whose recorded change is its mtime recovers once it is empty again; a file left inside keeps the quarantine", async () => {
+  await using t = await makeEnv();
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden([]);
+  const roots = (await loadLineage(lineage)).fs!.roots;
+  const nav = roots.find((r) => r.endsWith("Microsoft Dynamics NAV"))!;
+  const F = (p: string, h: string) => `F|${h.repeat(64)}|2|1|1|6262|${p}`;
+  const D = (p: string, mt = 0) => `D|16|${mt}|${p}`;
+  const user =
+    `${nav}\\280\\Server\\MicrosoftDynamicsNavServer$BC\\users\\default\\0c41005d-7d40-49f9-94c0-b76bb6f52507`;
+  const tmp = `${user}\\TEMP`;
+  const seed = `${tmp}\\cg-proof-seed.txt`;
+  let present = new Map<string, string>();
+  const removed: string[] = [];
+  const mech: ResetFor = () => ({
+    ...mechanism(),
+    fsDigest: () => {
+      const lines = [...roots.map((r) => D(r)), D(user), ...present.values()];
+      return Promise.resolve([...lines, `T|${lines.length}`]);
+    },
+    fsRemove: (_c: string, items: { path: string; kind: "F" | "D" }[]) => {
+      for (const i of items) {
+        removed.push(`${i.kind}:${i.path}`);
+        present.delete(i.path.toLowerCase());
+      }
+      // Removing a file is a write to its directory: the mtime moves again.
+      present.set(tmp.toLowerCase(), D(tmp, 3));
+      return Promise.resolve({ removed: items.map((i) => i.path), errors: [] });
+    },
+  });
+  const d: EnvDeps = { ...deps([]), quarantineDir: () => qDir };
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  // Cronus285's record 4920e7df: TEMP existed (mtime only), the seed file is new.
+  const plant = () =>
+    plantRecord(qDir, {
+      id: key.id,
+      container: "Cronus281",
+      state: "quarantined",
+      reason: "L4",
+      by: "test",
+      pid: 1,
+      fs_diff: [
+        { path: tmp, before: D(tmp, 1), after: D(tmp, 2) },
+        { path: seed, before: null, after: F(seed, "b") },
+      ],
+      fs_captured: true,
+    });
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "r",
+  };
+
+  // A file the record does not show stays inside: TEMP is not empty, refused.
+  await plant();
+  const other = `${tmp}\\left.txt`;
+  present = new Map([
+    [tmp.toLowerCase(), D(tmp, 2)],
+    [seed.toLowerCase(), F(seed, "b")],
+    [other.toLowerCase(), F(other, "c")],
+  ]);
+  const e = await assertRejects(
+    () => recoverContainer(o, d, mech),
+    ContainerError,
+  );
+  assertStringIncludes(e.message, `contamination not remediated: ${tmp}`);
+  assertEquals((await findRecords(qDir, key)).length, 1);
+
+  // Only the seed's file: removed, TEMP is empty with a new mtime, recovered.
+  removed.length = 0;
+  present = new Map([
+    [tmp.toLowerCase(), D(tmp, 2)],
+    [seed.toLowerCase(), F(seed, "b")],
+  ]);
+  await recoverContainer(o, d, mech);
+  assertEquals(removed, [`F:${seed}`]);
+  assertEquals(await findRecords(qDir, key), []);
+});
+
 /** Captures console.error while fn runs. */
 async function errorsOf(fn: () => Promise<unknown>): Promise<string> {
   const logged: string[] = [];
