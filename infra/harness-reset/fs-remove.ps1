@@ -16,6 +16,7 @@ $ProgressPreference = 'SilentlyContinue'
 if (-not $env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT = 'desktop-windows' }
 try {
   Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue *> $null
+  . (Join-Path $PSScriptRoot 'reset-lib.ps1') # H-58: a migrated container's own BCH root
   $bchVersion = "$((Get-Command Invoke-ScriptInBcContainer -ErrorAction SilentlyContinue).Module.Version)"
   if ($bchVersion -ne '6.1.14') { throw "bccontainerhelper resolved to '$bchVersion', pinned 6.1.14" }
   $lin = Get-Content -Raw $Lineage | ConvertFrom-Json

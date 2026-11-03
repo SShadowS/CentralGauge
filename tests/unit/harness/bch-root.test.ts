@@ -477,3 +477,19 @@ Deno.test({
     }
   },
 });
+
+Deno.test("every reset script that calls BCH dot-sources reset-lib.ps1, so a migrated container uses its own root (H-58 on the merge train: fs-remove.ps1)", async () => {
+  const dir = join(Deno.cwd(), "infra", "harness-reset");
+  const missing: string[] = [];
+  for await (const e of Deno.readDir(dir)) {
+    if (!e.isFile || !e.name.endsWith(".ps1") || e.name === "reset-lib.ps1") {
+      continue;
+    }
+    const text = await Deno.readTextFile(join(dir, e.name));
+    if (
+      /Invoke-ScriptInBcContainer|Get-BcContainerPath/.test(text) &&
+      !text.includes("'reset-lib.ps1'")
+    ) missing.push(e.name);
+  }
+  assertEquals(missing, []);
+});
