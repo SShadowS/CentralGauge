@@ -640,15 +640,14 @@ Deno.test("pool (H-53, Sol r4): concurrency 2: a sibling parks a cell's label mi
   // the limit.
   let w: number | null = null;
   let held = false;
+  const out = io();
+  // Bounded barrier on the scheduler's own park log line.
   const limitedOnWork = async () => {
-    for (;;) {
-      const [c] = await t.env.store.campaigns("pool");
-      const es = c ? await t.env.store.executions(c.id) : [];
-      if (es.some((e) => e.termination === "usage_limited")) break;
-      await new Promise((r) => setTimeout(r, 20));
+    const until = Date.now() + 60_000;
+    while (!out.lines.some((l) => l.includes("[POOL] account work parked"))) {
+      if (Date.now() > until) throw new Error("work was never parked");
+      await new Promise((r) => setTimeout(r, 10));
     }
-    // Let the scheduler park the label (it does so right after the cell returns).
-    await new Promise((r) => setTimeout(r, 200));
   };
   t.docker.behavior = async (call, run) => {
     const id = call.labels.get(EXECUTION_LABEL)!;
@@ -674,7 +673,7 @@ Deno.test("pool (H-53, Sol r4): concurrency 2: a sibling parks a cell's label mi
     }
     return await real(call, run);
   };
-  const s = await runCampaign(t.env, "pool", opts({ concurrency: 2 }), io());
+  const s = await runCampaign(t.env, "pool", opts({ concurrency: 2 }), out);
   assertEquals(s.paused, null);
   assert(held, "W's mock-crash cell was held on work");
   const es = await executions(t);
@@ -685,7 +684,7 @@ Deno.test("pool (H-53, Sol r4): concurrency 2: a sibling parks a cell's label mi
     [2, "maxpriv2"],
   ]);
   assertEquals(chain[1]!.retry_of, chain[0]!.id);
-  // No execution started on work after its limit.
+  // Outside W, the only execution on work is the one that hit the limit.
   const lim = es.find((e) => e.termination === "usage_limited")!;
   assertEquals(
     es.filter((e) =>
