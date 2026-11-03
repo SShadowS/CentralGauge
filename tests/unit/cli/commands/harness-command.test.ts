@@ -937,7 +937,7 @@ Deno.test("openHarnessEnv: refused containers first, then lock, sweep, container
   ]);
 });
 
-Deno.test("openHarnessEnv (H-56): Cronus284 opens as an agent and a judge container; Cronus28 stays refused for both and the pool", async () => {
+Deno.test("openHarnessEnv (H-56): Cronus284 opens as an agent and a judge container; Cronus28 stays refused for both", async () => {
   await using t = await makeEnv();
   const order: string[] = [];
   const a = await openHarnessEnv(
@@ -10571,6 +10571,38 @@ Deno.test("H-59 B graceful stop: an auto pool member that joined before the stop
 
 Deno.test("H-59 B graceful stop: a stop that arrives while a pool member is joining still leaves no in-use record after the close", async () => {
   await autoStop(true);
+});
+
+Deno.test("openHarnessEnv --containers auto (H-56): an allocated, baselined Cronus284 joins the pool; Cronus28 in any case is never set up", async () => {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  await baselines(t, lineage, ["Cronus284", "CRONUS28"]);
+  const order: string[] = [];
+  const a = autoDeps(order);
+  const h = await openHarnessEnv({
+    ...envOpts(t, []),
+    auto: "containers",
+    lineage,
+    bcEgressOverride: NO_NST_RULE,
+  }, a.d);
+  try {
+    const pool = h.env.judgePooled!;
+    a.alloc.push("CRONUS28", "Cronus284");
+    await h.env.bindCampaign!(crypto.randomUUID());
+    const c = captureAll();
+    try {
+      await pool.refresh();
+    } finally {
+      c.restore();
+    }
+    assertEquals(h.env.lane.members(), ["Cronus284"], c.lines.join("\n"));
+    assertEquals(order.filter((x) => x.startsWith("setup")), [
+      "setup:",
+      "setup:Cronus284",
+    ]);
+  } finally {
+    await h.close();
+  }
 });
 
 Deno.test("openHarnessEnv --judge-containers auto (H-41 N4 a): an interrupted execution recovered at open is published and left owed ([INFO]); the env opens with no judge member and nothing is compiled, deployed or tested", async () => {
