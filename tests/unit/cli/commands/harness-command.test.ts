@@ -10461,9 +10461,11 @@ async function autoStop(midJoin: boolean) {
   const a = autoDeps(order);
   let fire: (() => void) | null = null;
   let exits = 0;
-  // mid-join: the member's setup waits until the stop has been requested
+  // mid-join: the member's setup signals it was entered, then waits for the gate
   let releaseSetup: () => void = () => {};
   const setupGate = new Promise<void>((r) => releaseSetup = r);
+  let entered: () => void = () => {};
+  const setupEntered = new Promise<void>((r) => entered = r);
   const setup = a.d.setup;
   const d: EnvDeps = {
     ...a.d,
@@ -10473,7 +10475,10 @@ async function autoStop(midJoin: boolean) {
     },
     stoppedExit: () => void exits++,
     setup: async (names) => {
-      if (midJoin && names.length > 0) await setupGate;
+      if (midJoin && names.length > 0) {
+        entered();
+        await setupGate;
+      }
       return setup(names);
     },
   };
@@ -10489,25 +10494,32 @@ async function autoStop(midJoin: boolean) {
       id: fakeId("Cronus283"),
     })).map((f) => f.record?.state);
   const c = captureAll();
+  let closed = false;
   try {
     a.alloc.push("Cronus283");
     await h.env.bindCampaign!(crypto.randomUUID());
     const joining = h.env.judgePooled!.refresh();
     if (midJoin) {
       // the claim is taken before the member's setup runs
-      await new Promise((r) => setTimeout(r, 50));
+      await setupEntered;
       assertEquals(await records(), ["in_use"], "claimed while joining");
       fire!();
+      assert(h.stop!.aborted && await h.stopRequested!());
+      // the close starts while the member's setup is still blocked
+      const closing = h.close();
+      closed = true;
+      await new Promise((r) => setTimeout(r, 0));
       releaseSetup();
-      await joining;
+      await Promise.all([closing, joining.catch(() => {})]);
     } else {
       await joining;
       assertEquals(h.env.lane.members(), ["Cronus283"]);
       fire!();
+      assert(h.stop!.aborted && await h.stopRequested!());
     }
-    assert(h.stop!.aborted && await h.stopRequested!());
   } finally {
-    await h.close();
+    releaseSetup();
+    if (!closed) await h.close();
     c.restore();
   }
   assertEquals(await records(), [], c.lines.join("\n"));

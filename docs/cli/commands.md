@@ -1067,14 +1067,18 @@ lineage tolerates in-place rewrites of the SYSTEM profile's CryptoAPI URL
 cache (`...\LocalLow\Microsoft\CryptnetUrlCache`): an existing `MetaData`
 file may take any content that starts with `7000`, same attributes, size
 within 16 bytes (golden-o09-v2); an existing `Content` file may take any body
-behind a valid CAB header of its new size. Windows rewrites these files during
-certificate checks, and they forced container recreations before the rules
-existed. The rules do not check the URL or the rest of the structure, so code
-that writes files as SYSTEM in the container (an OnPrem app using .NET
-interop; the NST runs as SYSTEM) can keep state there across executions
-without an L4 difference, and later code can read it back. The owner accepts
-this channel. New, removed or re-attributed files in that folder stay
-differences, and `C:\Windows\Temp` has no tolerance.
+behind a CAB header that passes a few field checks (signature, reserved
+field, cabinet size equal to the file size, version 1.3); the payload is not
+validated. Windows rewrites these files during certificate checks, and they
+forced container recreations before the rules existed. The rules do not check
+the URL or the rest of the structure, so code that writes files as SYSTEM in
+the container (an OnPrem app using .NET interop; the NST runs as SYSTEM) can
+keep state there across executions without an L4 difference: later code can
+read it back, and a changed cache entry can also change later certificate
+retrieval or validation with no read-back at all. The owner accepts this
+channel. Still differences: a new, removed or renamed (spelling included)
+file, changed attributes, alternate data streams, any other file in the
+folder; and `C:\Windows\Temp` has no tolerance.
 
 **L3 scope.** L3 (`persistence_ref`) bans the r5 2.3 table in agent production
 and Test text before the build, by name (namespace-qualified names included)
