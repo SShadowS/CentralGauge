@@ -48,12 +48,12 @@ Needs the owner: dropping pi, fewer than 6 tasks, changing the primary metric.
 - Create and remove disposable sandbox containers named `cg-harness-*`.
 - Build images tagged `centralgauge/harness-*`.
 - Use only the BC containers allocated to this project in `H:\cg-coord\allocation.json` (owner
-  decision 2026-09-25: `Cronus281`, `Cronus282`, `Cronus283`), through leases (lane-ops only).
-  `Cronus28` belongs to LethAL; `Cronus284`/`Cronus285` are unallocated until the owner
-  allocates them.
-- Sandbox Claude Code runs authenticate with the Team account OAuth token
-  (`<secrets>/claude-oauth-token`), so the builders (Max) and the benchmarked runs (Team)
-  draw on different usage.
+  decision 2026-11-01: `Cronus28`, `Cronus281`-`Cronus285`), through leases (lane-ops only).
+  `Cronus28` stays refused for harness runs and judging (a foreign app on codeunit 80013).
+  LethAL uses `bc1`-`bc3`; never touch those.
+- Sandbox Claude Code runs authenticate with the subscription account pool given by the
+  `--secrets-dir <label>=<dir>` labels (owner 2026-11-03, H-53). Each execution records the
+  label that ran it; never relabel one account's token as another.
 - Paid API spend (non-subscription providers, for example OpenRouter for pi arms): hard stop
   at USD 150 total. Track it in `<coord>/decisions/spend.md`.
 - Campaigns start without asking, after a `--sample 1` dry run whose cost estimate fits the
