@@ -141,8 +141,17 @@ import {
 } from "../../src/utils/bench-lock.ts";
 import { setupContainers } from "./bench/container-setup.ts";
 
-/** Cronus28 hosts a foreign app on codeunit 80013; Cronus284 is untouched pending the owner. */
-export const REFUSED_CONTAINERS = ["Cronus28", "Cronus284"];
+/**
+ * Containers the harness never uses, with the reason. Cronus28 hosts a foreign app on
+ * codeunit 80013. (H-56: Cronus284 was refused pending the owner until 2026-11-03.)
+ */
+const REFUSED_CONTAINERS: Record<string, string> = {
+  cronus28: "Cronus28: codeunit 80013 collision",
+};
+
+/** Why the harness refuses container `c` (case-insensitive), or null. */
+export const refusedContainer = (c: string): string | null =>
+  REFUSED_CONTAINERS[c.toLowerCase()] ?? null;
 export const EGRESS_MARKER = MARKER_FILE;
 
 /** Host egress verification (M1-33) against the marker at markerPath. Returns problems; empty means verified. */
@@ -1074,13 +1083,13 @@ export async function openHarnessEnv(
     : UNCONFIGURED_RESET;
   const judges = o.judgeContainers ?? [];
   const refused = [...o.containers, ...judges].filter((c) =>
-    REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
+    refusedContainer(c)
   );
   if (refused.length > 0) {
     throw new ConfigurationError(
-      `harness refuses container(s) ${
-        refused.join(", ")
-      } (Cronus28: codeunit 80013 collision; Cronus284: owner pending)`,
+      `harness refuses container(s) ${refused.join(", ")} (${
+        [...new Set(refused.map(refusedContainer))].join("; ")
+      })`,
     );
   }
   // H-41 (Q1, section 10): `auto` judging needs a lineage (every admission
@@ -1485,8 +1494,8 @@ export async function openHarnessEnv(
         deps: {
           allocated: () => deps.allocatedAll(),
           excluded: (c) =>
-            REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
-              ? "refused by the harness (Cronus28, Cronus284)"
+            refusedContainer(c)
+              ? `refused by the harness (${refusedContainer(c)})`
               : containers.some((a) => a.toLowerCase() === c.toLowerCase())
               ? "an agent container of this run"
               : null,

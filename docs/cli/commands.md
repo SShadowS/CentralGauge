@@ -1164,7 +1164,7 @@ centralgauge harness run <experiment> --containers <agents> \
 The pool starts empty and admits nothing until the campaign is bound (its env
 pin loaded). Between admissions, and every 10 s while judging is queued, it
 re-reads `allocation.json`. A container joins when it is allocated to the
-campaign, is not `Cronus28`, `Cronus284` or one of the run's agent containers,
+campaign, is not `Cronus28` or one of the run's agent containers,
 is not blocked (below), Docker reports it running, no other harness record
 (another run, a quarantine, a recover) holds it, its baseline is admissible for
 the lineage, and its env_fp matches the campaign pin. A container with another

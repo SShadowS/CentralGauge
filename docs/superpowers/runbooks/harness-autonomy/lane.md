@@ -197,9 +197,10 @@ nothing in flight. After a clear, run your start procedure again.
   Why: removed worktrees took their records with them. The R-03 smoke campaign 4947777c
   (accepted) is lost, and only the coord notes remain (H-54 survey). Coord-task copies under
   `H:\cg-coord\tasks\` are never archive sources.
-- Containers: only those allocated to this project in `H:\cg-coord\allocation.json` (owner
-  decision 2026-09-25: Cronus281, Cronus282, Cronus283; Cronus28 belongs to LethAL;
-  Cronus284/285 unallocated). `coord lease` refuses any other container.
+- Containers: only those allocated to this project in `H:\cg-coord\allocation.json` (since
+  2026-11-01: Cronus28 and Cronus281 to Cronus285). `coord lease` refuses any other container.
+  `harness` itself still refuses Cronus28 (codeunit 80013 collision); Cronus284 is usable
+  since H-56 (owner, 2026-11-03).
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
 - One harness process per `--private-dir` (M10-08c, owner 2026-10-13). Every `harness`

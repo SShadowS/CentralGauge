@@ -43,6 +43,7 @@ import {
   openHarnessEnv,
   openPlanEnv,
   recoverContainer,
+  refusedContainer,
   type ResetFor,
   resolveEgress,
 } from "../../../../cli/commands/harness-env.ts";
@@ -912,9 +913,9 @@ Deno.test("openHarnessEnv: refused containers first, then lock, sweep, container
     "Cronus28",
   );
   await assertRejects(
-    () => openHarnessEnv(envOpts(t, ["cronus284"]), deps(order)),
+    () => openHarnessEnv(envOpts(t, ["cronus28"]), deps(order)),
     ConfigurationError,
-    "Cronus284",
+    "Cronus28",
   );
   assertEquals(order, []);
   const h = await openHarnessEnv(envOpts(t), deps(order));
@@ -934,6 +935,41 @@ Deno.test("openHarnessEnv: refused containers first, then lock, sweep, container
     "sweep",
     "release",
   ]);
+});
+
+Deno.test("openHarnessEnv (H-56): Cronus284 opens as an agent and a judge container; Cronus28 stays refused for both and the pool", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  const a = await openHarnessEnv(
+    { ...envOpts(t, ["Cronus281"]), judgeContainers: ["Cronus284"] },
+    deps(order),
+  );
+  try {
+    assertEquals(a.env.judgeLane?.containers, ["Cronus284"]);
+  } finally {
+    await a.close();
+  }
+  const b = await openHarnessEnv(envOpts(t, ["cronus284"]), deps(order));
+  try {
+    assertEquals(b.env.lane.containers, ["cronus284"]);
+  } finally {
+    await b.close();
+  }
+  await assertRejects(
+    () =>
+      openHarnessEnv(
+        { ...envOpts(t, ["Cronus281"]), judgeContainers: ["CRONUS28"] },
+        deps(order),
+      ),
+    ConfigurationError,
+    "CRONUS28",
+  );
+  assertEquals(refusedContainer("Cronus284"), null);
+  assertEquals(refusedContainer("Cronus281"), null);
+  assertEquals(
+    refusedContainer("cronus28"),
+    "Cronus28: codeunit 80013 collision",
+  );
 });
 
 Deno.test("openHarnessEnv: a container outside the campaign allocation is refused before the lock", async () => {
