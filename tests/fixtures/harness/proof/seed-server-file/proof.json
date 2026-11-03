@@ -8,6 +8,7 @@
         ],
         "target": "candidate"
       }
-    ]
+    ],
+    "detect": "[\\/]cg-proof-seed\\.txt$"
   }
 }

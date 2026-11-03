@@ -128,7 +128,12 @@ export const HTTP_BLOCKED_TEXT =
 /** `<fixture>/proof.json`: the tests of each step; `read` absent for L2 and L4. */
 export interface FixtureSpec {
   /** `leave`: app ids the write's cleanup keeps published (the global app seed). */
-  write: { tests: TestSpec[]; leave?: string[] };
+  write: {
+    tests: TestSpec[];
+    leave?: string[];
+    /** L4: a regex (case-insensitive) one of the differences' paths must match. */
+    detect?: string;
+  };
   read?: { tests: TestSpec[] };
 }
 
@@ -284,12 +289,24 @@ export async function runControl(
     );
   } catch (err) {
     if (err instanceof HostDirtyError) {
-      return out(
-        "detected",
-        err.message,
-        err.record.container,
-        err.record.diff.map((d) => d.path),
-      );
+      const paths = err.record.diff.map((d) => d.path);
+      // An unobservable capture (errors) proves nothing: infra, not detected.
+      if (err.record.errors.length > 0 || paths.length === 0) {
+        return out("infra", err.message, err.record.container, paths);
+      }
+      // The fixture's own file must be among the differences, not any noise.
+      const want = spec.write.detect
+        ? new RegExp(spec.write.detect, "i")
+        : null;
+      if (want && !paths.some((p) => want.test(p))) {
+        return out(
+          "not_detected",
+          `L4 differences without the fixture's file: ${err.message}`,
+          err.record.container,
+          paths,
+        );
+      }
+      return out("detected", err.message, err.record.container, paths);
     }
     return out("infra", err instanceof Error ? err.message : String(err));
   }

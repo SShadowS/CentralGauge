@@ -162,6 +162,42 @@ Deno.test("H-35c: L4 control: an OnPrem write that leaves a server file is detec
   assertEquals(targets, ["OnPrem", "OnPrem"]);
 });
 
+Deno.test("H-35c: L4 control: an unobservable capture (errors, no diff) is infra, never detected; a diff that misses the fixture's `detect` path is not_detected", async () => {
+  const c = control("seed-server-file");
+  // The capture right after the reset fails: deployAndTest throws HostDirtyError with errors only.
+  const blind = await env(
+    () => result({ Seed: true }),
+    {
+      ...OK_RESET,
+      fsDigest: () => Promise.reject(new Error("walk failed")),
+    },
+  );
+  const o = await runControl(blind, c, await repoWith(c, false), await tmp());
+  assertEquals([o.observed, o.pass], ["infra", false], o.detail);
+  // A difference elsewhere is not the fixture's file.
+  const repo = await repoWith(c, false);
+  const spec = join(repo, c.dir, "proof.json");
+  const s = JSON.parse(await Deno.readTextFile(spec));
+  s.write.detect = String.raw`[\\/]cg-proof-seed\.txt$`;
+  await Deno.writeTextFile(spec, JSON.stringify(s));
+  const other = await env(
+    () => result({ Seed: true }),
+    digesting((n) => n === 0 ? [F("C:/W/a.txt", "a")] : [F("C:/W/a.txt", "b")]),
+  );
+  const p = await runControl(other, c, repo, await tmp());
+  assertEquals([p.observed, p.pass], ["not_detected", false], p.detail);
+  const hit = await env(
+    () => result({ Seed: true }),
+    digesting((n) =>
+      n === 0
+        ? [F("C:/W/a.txt", "a")]
+        : [F("C:/W/a.txt", "a"), F("C:/W/T/cg-proof-seed.txt", "b")]
+    ),
+  );
+  const q = await runControl(hit, c, repo, await tmp());
+  assertEquals([q.observed, q.pass], ["detected", true], q.detail);
+});
+
 Deno.test("H-35c: L4 control: a clean write is not_detected and fails the control", async () => {
   const c = control("seed-server-file");
   const e = await env(
@@ -253,6 +289,8 @@ Deno.test("H-35c: every seeded fixture in the repo is well formed: steps parse, 
     const dir = join(REPO, c.dir);
     const spec = JSON.parse(await Deno.readTextFile(join(dir, "proof.json")));
     assertEquals(spec.read !== undefined, c.layer === "reset", c.name);
+    // An L4 detection must be the fixture's own file, not noise.
+    assertEquals(typeof spec.write.detect === "string", c.layer === "L4");
     for (const s of ["write", "read"] as const) {
       if (!spec[s]) continue;
       const apps = await readAppGraph(join(dir, s));
