@@ -18,7 +18,9 @@ import { DEFAULT_COORD_ROOT } from "../../../src/harness/allocation.ts";
 import { buildRunArgs } from "../../../src/harness/sandbox.ts";
 import {
   type AccessRoots,
+  canonicalDenied,
   canonicalPath,
+  containerPaths,
   judgeProbe,
   mountProblems,
   plantCanaries,
@@ -101,14 +103,18 @@ async function main(argv: string[]) {
       stderrLog: "",
     } as Parameters<typeof buildRunArgs>[0],
   );
-  const layout = mountProblems(args, roots);
+  const layout = mountProblems(args, roots, await canonicalDenied(roots));
   if (layout.length > 0) throw new Error(`mount layout: ${layout.join("; ")}`);
   const planted = await plantCanaries(roots, join(work, "workspace"), token);
   // Sol r1 #6: the probe also opens every denied canary by its host path,
   // so a folder that refuses listing but serves a known name still counts.
   await Deno.writeTextFile(
     join(work, "config", "known.txt"),
-    planted.filter((p) => !p.positive).map((p) => p.path).join("\r\n"),
+    // Sol r2 #2: by host path and by every container path a mount shows it at.
+    planted.filter((p) => !p.positive).flatMap((p) => [
+      p.path,
+      ...containerPaths(p.path, args),
+    ]).join("\r\n"),
   );
   let detail: string;
   let pass = false;

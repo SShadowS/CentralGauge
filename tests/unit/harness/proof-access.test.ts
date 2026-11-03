@@ -7,7 +7,9 @@ import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
   ACCESS_TABLE,
   type AccessRoots,
+  canonicalDenied,
   canonicalPath,
+  containerPaths,
   deniedRoots,
   mountProblems,
   serverMountProblems,
@@ -158,6 +160,49 @@ Deno.test("H-35c (Sol r1 #3): canonicalPath resolves a junction to its target, s
     ).length,
     1,
   );
+});
+
+Deno.test("H-35c (Sol r2 #1): a denied folder that is itself a junction is caught at its target through canonicalDenied", async () => {
+  const base = await Deno.realPath(await testTempDir());
+  const vault = join(base, "vault");
+  await Deno.mkdir(vault);
+  await Deno.mkdir(join(base, "private"));
+  try {
+    await Deno.symlink(vault, join(base, "private", "custody"), {
+      type: "junction",
+    });
+  } catch (err) {
+    console.warn(`[SKIP] no junction here: ${err}`);
+    return;
+  }
+  const roots = { ...R, privateRoot: join(base, "private") };
+  const denied = await canonicalDenied(roots);
+  assert(denied.some((d) => d.path === vault));
+  assertEquals(
+    mountProblems(args([{ src: vault, dst: "C:\\x" }]), roots, denied).length,
+    1,
+  );
+  assertEquals(
+    serverMountProblems(
+      [{ Source: vault, Destination: "c:\\x", RW: false }],
+      roots,
+      "Cronus285",
+      denied,
+    ).length,
+    1,
+  );
+});
+
+Deno.test("H-35c (Sol r2 #2): containerPaths maps a host path through the mounts to every container path that shows it", () => {
+  const a = args([{ src: "D:\\share", dst: "C:\\share" }]);
+  assertEquals(containerPaths("D:\\share\\sub\\f.txt", a), [
+    "C:\\share\\sub\\f.txt",
+  ]);
+  assertEquals(
+    containerPaths(join(R.privateRoot, "work", R.executionId, "task", "f"), a),
+    ["C:\\task\\f"],
+  );
+  assertEquals(containerPaths("D:\\nowhere\\f.txt", a), []);
 });
 
 Deno.test("H-35c: only the workspace is writable; any other read-write mount is refused", () => {

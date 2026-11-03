@@ -62,7 +62,11 @@ async function stepWs(dir: string, cu: number) {
 }
 
 /** A repo root holding one fixture for `c`: write (80010) and read (80020) steps. */
-async function repoWith(c: ProofControl, read = true): Promise<string> {
+async function repoWith(
+  c: ProofControl,
+  read = true,
+  detect?: string,
+): Promise<string> {
   const repo = await tmp();
   const dir = join(repo, c.dir);
   await stepWs(join(dir, "write"), 80010);
@@ -73,6 +77,7 @@ async function repoWith(c: ProofControl, read = true): Promise<string> {
     JSON.stringify({
       write: {
         tests: [{ codeunit: 80010, procedures: ["Seed"], target: "candidate" }],
+        ...(detect ? { detect } : {}),
       },
       ...(read
         ? {
@@ -150,12 +155,17 @@ Deno.test("H-35c: L4 control: an OnPrem write that leaves a server file is detec
     digesting((n) =>
       n === 0
         ? [F("C:/W/a.txt", "a")]
-        : [F("C:/W/a.txt", "a"), F("C:/W/cg.txt", "b")]
+        : [F("C:/W/a.txt", "a"), F("C:\\W\\cg.txt", "b")]
     ),
   );
-  const o = await runControl(e, c, await repoWith(c, false), await tmp());
-  assertEquals([o.observed, o.pass], ["detected", true]);
-  assertEquals(o.fs_diff, ["C:/W/cg.txt"]);
+  const o = await runControl(
+    e,
+    c,
+    await repoWith(c, false, String.raw`[\\/]cg\.txt$`),
+    await tmp(),
+  );
+  assertEquals([o.observed, o.pass], ["detected", true], o.detail);
+  assertEquals(o.fs_diff, ["C:\\W\\cg.txt"]);
   assert(o.container && e.lane.quarantined.has(o.container));
   assertEquals(e.lane.quarantined.size, 1, "no reroute to the other container");
   // The proof build compiled every fixture app OnPrem (ban and Cloud off).
@@ -281,18 +291,39 @@ Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay pub
   const s = JSON.parse(await Deno.readTextFile(spec));
   s.write.leave = [IDS.core];
   await Deno.writeTextFile(spec, JSON.stringify(s));
+  // The read, as in the real fixture, holds only a Test app (no Core).
+  const read = join(repo, c.dir, "read");
+  await Deno.remove(read, { recursive: true });
+  await write(
+    read,
+    "Test/app.json",
+    appJson(IDS.test, "CGR Test", [80000, 84999], [
+      { id: IDS.assert, name: "Library Assert" },
+    ]),
+  );
+  await write(
+    read,
+    "Test/src/T.al",
+    `codeunit 80020 "T"\n{\n    Subtype = Test;\n}\n`,
+  );
   // Sol r1 #5: the production inventory check would call the left app dirt
   // and quarantine before the reads; the write that leaves apps skips it.
   const verified: number[] = [];
   const e = await env(
-    (cu) =>
+    // Sol r2 #3: the answer is the container's state, not a sync count.
+    (cu, deployed) =>
       cu === 80010 ? result({ Seed: true }) : result({
-        Gone: e.bc.syncs.length > 4
-          ? true
-          : "Assert.IsTrue failed. still published",
+        Gone: deployed.has(IDS.core)
+          ? "Assert.IsTrue failed. still published"
+          : true,
       }),
     {
       ...OK_RESET,
+      // The real reset restores the app DB: the left app is gone after it.
+      reset: (container) => {
+        e.bc.state(container).delete(IDS.core);
+        return OK_RESET.reset(container);
+      },
       verifyClean: (container) => {
         verified.push(e.bc.syncs.length);
         return Promise.resolve({ container, ok: true, diff: [], error: null });
@@ -300,11 +331,25 @@ Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay pub
     },
   );
   const o = await runControl(e, c, repo, await tmp());
-  // The write's cleanup (the 2nd sync) removed the Test app only.
+  // The write's cleanup (the 2nd sync) removed the Test app only, and no
+  // later deployment removed the left app as an owned leftover.
   assertEquals(e.bc.syncs[1]!.removeIds, [IDS.test]);
+  for (const x of e.bc.syncs.slice(2)) {
+    assert(!x.removeIds.includes(IDS.core), "the seed is never cleaned up");
+  }
   assertEquals(verified.length, 1, "only the read after the reset verifies");
   assert(verified[0]! > 2, "never after the write's cleanup");
   assertEquals([o.observed, o.pass], ["cleared", true], o.detail);
+});
+
+Deno.test("H-35c (Sol r2 #6): an L4 fixture without a detect regex is infra, never detected", async () => {
+  const c = control("seed-server-file");
+  const e = await env(
+    () => result({ Seed: true }),
+    digesting((n) => n === 0 ? [F("C:/W/a.txt", "a")] : [F("C:/W/a.txt", "b")]),
+  );
+  const o = await runControl(e, c, await repoWith(c, false), await tmp());
+  assertEquals([o.observed, o.pass], ["infra", false], o.detail);
 });
 
 Deno.test("H-35c: every seeded fixture in the repo is well formed: steps parse, named test procedures exist, reset controls read, leave ids are write apps, app ids unique per fixture, all OnPrem CentralGauge apps", async () => {
@@ -315,6 +360,12 @@ Deno.test("H-35c: every seeded fixture in the repo is well formed: steps parse, 
     assertEquals(spec.read !== undefined, c.layer === "reset", c.name);
     // An L4 detection must be the fixture's own file, not noise.
     assertEquals(typeof spec.write.detect === "string", c.layer === "L4");
+    if (spec.write.detect) {
+      // Sol r2 #4: the digest's paths are Windows FullNames (backslashes).
+      const re = new RegExp(spec.write.detect, "i");
+      assert(re.test("C:\\Users\\X\\AppData\\Local\\Temp\\cg-proof-seed.txt"));
+      assert(!re.test("C:\\Users\\X\\other.txt"), c.name);
+    }
     for (const s of ["write", "read"] as const) {
       if (!spec[s]) continue;
       const apps = await readAppGraph(join(dir, s));

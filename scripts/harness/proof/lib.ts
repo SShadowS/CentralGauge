@@ -28,6 +28,11 @@ import {
   type ResetMechanism,
 } from "../../../src/harness/reset.ts";
 import { readAppGraph } from "../../../src/harness/staging.ts";
+import {
+  invalidate,
+  loadLedger,
+  saveLedger,
+} from "../../../src/harness/bc-apps.ts";
 
 export const PROOF_POLICY: BuildPolicy = {
   target: "OnPrem",
@@ -242,6 +247,19 @@ async function step(
       ...(pin ? { exclude: env.lane.containers.filter((c) => c !== pin) } : {}),
     },
   );
+  // Sol r2 #3: an app left on purpose is not the harness's to clean up: off
+  // the ledger, a later deployment leaves it alone (only the reset removes it).
+  if (kept.size > 0) {
+    const ledger = await loadLedger(env.ledgerRoot, held.container);
+    await saveLedger(
+      env.ledgerRoot,
+      held.container,
+      invalidate(
+        ledger,
+        Object.keys(ledger).filter((id) => kept.has(id.toLowerCase())),
+      ),
+    );
+  }
   return { container: held.container, result: held.result };
 }
 
@@ -306,10 +324,22 @@ export async function runControl(
         return out("infra", err.message, err.record.container, paths);
       }
       // The fixture's own file must be among the differences, not any noise.
-      const want = spec.write.detect
-        ? new RegExp(spec.write.detect, "i")
-        : null;
-      if (want && !paths.some((p) => want.test(p))) {
+      // Sol r2 #6: mandatory; without it any noise would count.
+      let want: RegExp;
+      try {
+        if (!spec.write.detect) throw new Error("no write.detect");
+        want = new RegExp(spec.write.detect, "i");
+      } catch (e) {
+        return out(
+          "infra",
+          `the L4 fixture's detect regex: ${
+            e instanceof Error ? e.message : e
+          }`,
+          err.record.container,
+          paths,
+        );
+      }
+      if (!paths.some((p) => want.test(p))) {
         return out(
           "not_detected",
           `L4 differences without the fixture's file: ${err.message}`,

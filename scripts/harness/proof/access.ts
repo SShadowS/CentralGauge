@@ -87,6 +87,32 @@ const key = (p: string) =>
   normalize(resolve(p.replaceAll("/", "\\"))).replace(/\\+$/, "")
     .toLowerCase() + "\\";
 
+/** Sol r2 #1: every denied path, not just the roots, by the filesystem's own name. */
+export async function canonicalDenied(
+  r: AccessRoots,
+): Promise<{ target: string; path: string }[]> {
+  return await Promise.all(
+    deniedRoots(r).map(async (d) => ({
+      ...d,
+      path: await canonicalPath(d.path),
+    })),
+  );
+}
+
+/**
+ * Sol r2 #2: where a host path shows inside the sandbox: through every bind
+ * mount whose source holds it, as destination + the rest of the path.
+ */
+export function containerPaths(hostPath: string, args: string[]): string[] {
+  return mounts(args).filter((m) => within(hostPath, m.src)).map((m) => {
+    const rest = key(hostPath).slice(key(m.src).length).replace(/\\$/, "");
+    const dst = m.dst.replace(/[\\/]+$/, "");
+    return rest
+      ? `${dst}\\${hostPath.slice(hostPath.length - rest.length)}`
+      : dst;
+  });
+}
+
 /**
  * The filesystem's own name for `p`: junctions, symlinks and 8.3 short names
  * resolved (realPath), or the absolute path when it does not exist.
@@ -123,7 +149,12 @@ function mounts(args: string[]) {
 }
 
 /** Why the sandbox's mounts break the access table; empty when they do not. */
-export function mountProblems(args: string[], r: AccessRoots): string[] {
+export function mountProblems(
+  args: string[],
+  r: AccessRoots,
+  /** Sol r2 #1: canonicalDenied(r) in the runners; default the lexical list. */
+  denied = deniedRoots(r),
+): string[] {
   const own = join(r.privateRoot, "work", r.executionId);
   const problems: string[] = [];
   for (const m of mounts(args)) {
@@ -132,7 +163,7 @@ export function mountProblems(args: string[], r: AccessRoots): string[] {
       why("read-write mount other than the workspace");
       continue;
     }
-    const hit = deniedRoots(r).find((d) =>
+    const hit = denied.find((d) =>
       within(m.src, d.path) || within(d.path, m.src)
     );
     if (hit) {
@@ -168,6 +199,7 @@ export function serverMountProblems(
   mounts: { Source: string; Destination: string; RW: boolean }[],
   r: AccessRoots,
   container: string,
+  denied = deniedRoots(r),
 ): string[] {
   const own = join(BCH_ROOT, "Extensions", container);
   const problems: string[] = [];
@@ -175,7 +207,7 @@ export function serverMountProblems(
     const why = (s: string) =>
       problems.push(`${m.Source} -> ${m.Destination}: ${s}`);
     if (within(m.Source, own)) continue;
-    const hit = deniedRoots(r).find((d) =>
+    const hit = denied.find((d) =>
       within(m.Source, d.path) || within(d.path, m.Source)
     );
     if (hit) why(`${hit.target}: ${hit.path}`);

@@ -13,7 +13,11 @@ import { Command } from "@cliffy/command";
 import { walk } from "@std/fs/walk";
 import { dockerContextEnv } from "../../../src/container/docker-context.ts";
 import { DEFAULT_COORD_ROOT } from "../../../src/harness/allocation.ts";
-import { canonicalPath, serverMountProblems } from "./access.ts";
+import {
+  canonicalDenied,
+  canonicalPath,
+  serverMountProblems,
+} from "./access.ts";
 import { proofRoot, writeProofRecord } from "./lib.ts";
 
 async function main(argv: string[]) {
@@ -42,13 +46,19 @@ async function main(argv: string[]) {
   const mounts = await Promise.all(
     raw.map(async (m) => ({ ...m, Source: await canonicalPath(m.Source) })),
   );
-  const problems = serverMountProblems(mounts, {
+  const roots = {
     resultsRoot: await canonicalPath(o.resultsDir),
     privateRoot: await canonicalPath(o.privateRoot),
     symbolStore: await canonicalPath(o.symbolStore),
     keyCustody: o.keyCustody ? await canonicalPath(o.keyCustody) : null,
     executionId: "-",
-  }, o.container);
+  };
+  const problems = serverMountProblems(
+    mounts,
+    roots,
+    o.container,
+    await canonicalDenied(roots),
+  );
   // Sol r1 #7: whatever is actually mapped to C:\Run\my, searched recursively.
   const runMy = mounts.filter((m) =>
     m.Destination.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase() ===
@@ -56,8 +66,11 @@ async function main(argv: string[]) {
   );
   if (runMy.length === 0) problems.push("no mount maps C:\\Run\\my");
   for (const m of runMy) {
-    for await (const e of walk(m.Source, { exts: [".app"] })) {
-      if (e.isFile || e.isSymlink) {
+    // Sol r2 #5: any case of .app; a link inside is refused, never followed.
+    for await (const e of walk(m.Source, { followSymlinks: false })) {
+      if (e.isSymlink) {
+        problems.push(`${e.path}: a link inside C:\\Run\\my`);
+      } else if (e.isFile && e.name.toLowerCase().endsWith(".app")) {
         problems.push(`${e.path}: a package left in C:\\Run\\my`);
       }
     }

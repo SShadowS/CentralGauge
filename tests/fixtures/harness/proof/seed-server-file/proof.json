@@ -9,6 +9,6 @@
         "target": "candidate"
       }
     ],
-    "detect": "[\\/]cg-proof-seed\\.txt$"
+    "detect": "[\\\\/]cg-proof-seed\\.txt$"
   }
 }
