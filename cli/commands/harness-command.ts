@@ -235,6 +235,11 @@ import {
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
 import { renderEnvCheck } from "../../src/harness/environment.ts";
 import {
+  archiveResults,
+  guardResultsDir,
+} from "../../src/harness/results-root.ts";
+import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
+import {
   baselineCreate,
   envCheck,
   markerAuthorized,
@@ -3437,6 +3442,51 @@ export function registerHarnessCommand(
       })
     );
 
+  const coordRoot = Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT;
+  parent
+    .command(
+      "archive",
+      "H-54: copy a finished results root into the shared root (write-once, idempotent, sha256-verified; a same-path file with other content refuses)",
+    )
+    .option("--from <dir:string>", "Results root to archive (a job root)", {
+      required: true,
+    })
+    .option("--to <dir:string>", "Shared results root", {
+      default: join(coordRoot, "results", "harness"),
+    })
+    .option(
+      "--allow-coord-copy",
+      "Allow a --from under the coord tasks (proof or pre-rejudge copies are never archived by default)",
+    )
+    .option(
+      "--allow-non-job-source",
+      "Allow a --from outside the coord jobs (e.g. a lane worktree's results root)",
+    )
+    .option(
+      "--quiet-min <minutes:number>",
+      "Refuse a --from with any file written this recently",
+      { default: 10 },
+    )
+    .action((opts) =>
+      fail(async () => {
+        const r = await archiveResults({
+          from: opts.from,
+          to: opts.to,
+          coordRoot,
+          allowCoordCopy: opts.allowCoordCopy === true,
+          allowNonJobSource: opts.allowNonJobSource === true,
+          quietMs: opts.quietMin * 60_000,
+        });
+        console.log(
+          `${
+            colors.green("[OK]")
+          } archived ${opts.from} -> ${opts.to}: ${r.copied} copied, ${r.present} already present, ${r.verified} verified by sha256${
+            r.skipped.length ? `; not archived: ${r.skipped.join(", ")}` : ""
+          }; clean`,
+        );
+      })
+    );
+
   parent
     .command(
       "rederive <campaign:string>",
@@ -3456,6 +3506,7 @@ export function registerHarnessCommand(
     .option("--root <dir:string>", "Repository root", { default: "." })
     .action((opts, campaign: string) =>
       fail(async () => {
+        guardResultsDir(opts.resultsDir, join(coordRoot, "jobs")); // H-54
         const done = await harnessRederive({
           campaign,
           executions: (opts.execution ?? []).flatMap((s: string) =>

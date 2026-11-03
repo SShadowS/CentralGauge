@@ -180,8 +180,10 @@ nothing in flight. After a clear, run your start procedure again.
   must exist and must not start with `REPLACE_ME`. Placeholder or missing: `coord ask`
   naming the file, checkpoint `--wait owner`. Never print or log a secret value.
 - A harness run started outside the main checkout passes `--results-dir` naming the shared
-  results root (`U:\Git\CentralGauge\results\harness`): the egress marker, baselines and
-  bc-ledger are read there (H-49).
+  results root (`H:\cg-coord\results\harness`, H-54): the egress marker, baselines and
+  bc-ledger are read there (H-49). A new results dir inside a job worktree under
+  `H:\cg-coord\jobs\` is refused (it would be removed with the worktree); an existing one
+  only warns until it is archived.
 - A credential-bearing run passes `--lane <your lane>` (or sets `CG_LANE`); without either
   the credential reservation refuses it (H-49).
 - Lease before use, heartbeat every 5 minutes, release right after. Record the job you are
@@ -189,6 +191,12 @@ nothing in flight. After a clear, run your start procedure again.
 - Container jobs for other lanes run in a clean checkout of the commit they name
   (`git worktree add H:\cg-coord\jobs\<id>-<n> <sha>`), never in their worktree. Report the
   result file path back to the requesting session and the orchestrator.
+- A job worktree is removed only after `harness archive --from <each results root in it>`
+  (default `--to H:\cg-coord\results\harness`) reports `clean` for every root in it,
+  `cells\` and any `results\harness-*` included, and never while its run is live or paused.
+  Why: removed worktrees took their records with them. The R-03 smoke campaign 4947777c
+  (accepted) is lost, and only the coord notes remain (H-54 survey). Coord-task copies under
+  `H:\cg-coord\tasks\` are never archive sources.
 - Containers: only those allocated to this project in `H:\cg-coord\allocation.json` (owner
   decision 2026-09-25: Cronus281, Cronus282, Cronus283; Cronus28 belongs to LethAL;
   Cronus284/285 unallocated). `coord lease` refuses any other container.
