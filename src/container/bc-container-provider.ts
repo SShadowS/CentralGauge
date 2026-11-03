@@ -2403,25 +2403,51 @@ ${script}
     testCodeunitId?: number,
     options?: { label?: string },
   ): Promise<TestResult> {
+    if (appFilePath) {
+      return await this.runTestsWithApp(
+        containerName,
+        project,
+        appFilePath,
+        testCodeunitId,
+        options,
+      );
+    }
+    // Use a project-local app or compile one. H-55: a compile here owns a
+    // private output dir, removed whatever the test run does.
+    const compiled = await this.ensureCompiledApp(
+      containerName,
+      project,
+      Date.now(),
+    );
+    if (!compiled.success) return compiled.failureResult!;
+    try {
+      return await this.runTestsWithApp(
+        containerName,
+        project,
+        compiled.appFilePath!,
+        testCodeunitId,
+        options,
+      );
+    } finally {
+      if (compiled.outputDir) {
+        await Deno.remove(compiled.outputDir, { recursive: true })
+          .catch(() => {});
+      }
+    }
+  }
+
+  private async runTestsWithApp(
+    containerName: string,
+    project: ALProject,
+    actualAppFilePath: string,
+    testCodeunitId?: number,
+    options?: { label?: string },
+  ): Promise<TestResult> {
     const contextLog = options?.label ? log.child(options.label) : log;
     contextLog.info(`Running tests in container: ${containerName}`);
 
     const startTime = Date.now();
     const credentials = this.getCredentials(containerName);
-
-    // Use provided app file path or search for one
-    let actualAppFilePath = appFilePath;
-    if (!actualAppFilePath) {
-      const appFileResult = await this.ensureCompiledApp(
-        containerName,
-        project,
-        startTime,
-      );
-      if (!appFileResult.success) {
-        return appFileResult.failureResult!;
-      }
-      actualAppFilePath = appFileResult.appFilePath!;
-    }
 
     // Extract extensionId from app.json for test filtering
     const appJson = project.appJson as { id?: string };
@@ -2729,9 +2755,12 @@ ${script}
     success: boolean;
     appFilePath?: string;
     failureResult?: TestResult;
+    /** H-55: the compile's private output dir; the caller removes it. */
+    outputDir?: string;
   }> {
     // Try to find existing compiled app
     let appFilePath = await this.findCompiledAppFile(project);
+    let outputDir: string | undefined;
 
     if (!appFilePath) {
       log.warn("No compiled app found, compiling first...");
@@ -2746,6 +2775,7 @@ ${script}
         };
       }
       appFilePath = compileResult.artifactPath;
+      outputDir = compileResult.outputDir;
     }
 
     if (!appFilePath) {
@@ -2758,7 +2788,7 @@ ${script}
       };
     }
 
-    return { success: true, appFilePath };
+    return { success: true, appFilePath, ...(outputDir && { outputDir }) };
   }
 
   /** Find the first .app file in the project output directory */

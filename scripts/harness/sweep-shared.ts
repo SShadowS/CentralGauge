@@ -1,25 +1,33 @@
 /**
  * H-55: list (and, only with --apply, remove) CentralGauge-owned files that
  * linger on the BcContainerHelper shared folder every BC container mounts:
- * compile outputs under compiler\CentralGauge-<c>\output, our staged copies
- * in Extensions\<c>\my, and BCH's own Publish staging dirs
- * (Extensions\<c>\<guid>) that hold only our apps. Foreign apps and other
- * products' folders are never listed. A container under a live coord lease
- * (or whose lease cannot be read) is skipped; a fresh bench marker refuses
- * the whole sweep. Links are never followed.
+ * files under compiler\CentralGauge-<c>\output, our staged copies in
+ * Extensions\<c>\my, and our apps in BCH's own Publish staging dirs
+ * (Extensions\<c>\<guid>). Ownership is decided per FILE, by name and place;
+ * a foreign file is never listed, and a directory is only ever removed once
+ * empty. A link anywhere on the way (an ancestor included) is never followed:
+ * the item is dropped. Listing skips a container under someone's live coord
+ * lease (or an unreadable one); --apply requires the caller to hold each
+ * container's lease (--coord-lease) and holds the bench lock while it deletes,
+ * so neither a lease nor a bench can start under it.
  *
  *   deno run --allow-all scripts/harness/sweep-shared.ts \
- *     --container Cronus281 --container Cronus285 [--bench-dir results] [--apply]
+ *     --container Cronus281 [--bench-dir results] \
+ *     [--apply --coord-lease Cronus281=<token>]
  */
 import { Command } from "@cliffy/command";
-import { join } from "@std/path";
+import { dirname, join, relative } from "@std/path";
 import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import { coordLeaseBlock } from "../../src/harness/coord-lease.ts";
-import { isBenchRunning } from "../../src/utils/bench-lock.ts";
+import {
+  isBenchRunning,
+  tryAcquireBenchLock,
+} from "../../src/utils/bench-lock.ts";
 
 export const BCH_ROOT = "C:\\ProgramData\\BcContainerHelper";
 
 export interface SweepItem {
+  /** Always a file. */
   path: string;
   container: string;
   kind: "compiler-output" | "my-app" | "bch-staging";
@@ -32,13 +40,12 @@ export interface SweepOptions {
   benchDirs: string[];
   /** The containers to sweep, named by the operator (never discovered). */
   containers: string[];
+  /** Coord leases this caller holds (container -> token). */
+  coordLeases?: ReadonlyMap<string, string>;
 }
 
 /** Our staged copy (publishApp, prepareCandidateApp, syncHarnessApps, legacy tests). */
 const OUR_MY_APP = /^[0-9a-f]{8}_CentralGauge_.+\.app$/i;
-/** The unit tests' fake container: everything staged there is a test leftover. */
-const TEST_CONTAINER = "TestContainer";
-const TEST_MY_APP = /^[0-9a-f]{8}_.+\.app$/i;
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OUR_APP = /^CentralGauge_.+\.app$/i;
 
@@ -52,44 +59,67 @@ async function entries(dir: string): Promise<Deno.DirEntry[]> {
   return out;
 }
 
-function benchRefusal(benchDirs: string[]): string | null {
-  const live = benchDirs.find((d) => isBenchRunning(d));
-  return live ? `a bench marker in ${live} is fresh` : null;
+/**
+ * Sol r1 #1: true only when every path segment from the BCH root down to
+ * `p` exists and is no link, and `p` resolves inside the canonical root.
+ */
+async function plainUnder(bch: string, p: string): Promise<boolean> {
+  let at = bch;
+  for (const seg of relative(bch, p).split(/[\\/]/)) {
+    if (!seg || seg === "..") return false;
+    at = join(at, seg);
+    const st = await Deno.lstat(at).catch(() => null);
+    if (!st || st.isSymlink) return false;
+  }
+  const real = await Deno.realPath(p).catch(() => null);
+  const root = await Deno.realPath(bch).catch(() => null);
+  return !!real && !!root &&
+    real.toLowerCase().startsWith(root.toLowerCase().replace(/\\*$/, "\\"));
+}
+
+/** Plain files under `dir`, recursively; a link (file or dir) is skipped, never entered. */
+async function plainFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const e of await entries(dir)) {
+    if (e.isSymlink) continue;
+    const p = join(dir, e.name);
+    if (e.isFile) out.push(p);
+    else if (e.isDirectory) out.push(...await plainFiles(p));
+  }
+  return out;
 }
 
 async function itemsOf(bch: string, c: string): Promise<SweepItem[]> {
-  const items: SweepItem[] = [];
+  const found: SweepItem[] = [];
   const out = join(bch, "compiler", `CentralGauge-${c}`, "output");
-  for (const e of await entries(out)) {
-    if (e.isSymlink) continue;
-    items.push({
-      path: join(out, e.name),
-      container: c,
-      kind: "compiler-output",
-    });
-  }
-  const my = join(bch, "Extensions", c, "my");
-  const mine = c === TEST_CONTAINER ? TEST_MY_APP : OUR_MY_APP;
-  for (const e of await entries(my)) {
-    if (e.isFile && mine.test(e.name)) {
-      items.push({ path: join(my, e.name), container: c, kind: "my-app" });
-    }
+  for (const p of await plainFiles(out)) {
+    found.push({ path: p, container: c, kind: "compiler-output" });
   }
   const ext = join(bch, "Extensions", c);
-  for (const e of await entries(ext)) {
-    if (!e.isDirectory || !GUID.test(e.name)) continue;
-    const inside = await entries(join(ext, e.name));
-    // Only a dir holding nothing but our apps; anything else stays.
-    if (
-      inside.length > 0 && inside.every((f) => f.isFile && OUR_APP.test(f.name))
-    ) {
-      items.push({
-        path: join(ext, e.name),
+  for (const e of await entries(join(ext, "my"))) {
+    if (e.isFile && OUR_MY_APP.test(e.name)) {
+      found.push({
+        path: join(ext, "my", e.name),
         container: c,
-        kind: "bch-staging",
+        kind: "my-app",
       });
     }
   }
+  for (const e of await entries(ext)) {
+    if (!e.isDirectory || !GUID.test(e.name)) continue;
+    // Sol r1 #3/#6: our apps by name, also in a mixed dir; the rest stays.
+    for (const f of await entries(join(ext, e.name))) {
+      if (f.isFile && OUR_APP.test(f.name)) {
+        found.push({
+          path: join(ext, e.name, f.name),
+          container: c,
+          kind: "bch-staging",
+        });
+      }
+    }
+  }
+  const items: SweepItem[] = [];
+  for (const i of found) if (await plainUnder(bch, i.path)) items.push(i);
   return items;
 }
 
@@ -97,7 +127,7 @@ const norm = (p: string) =>
   p.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase() + "\\";
 
 /**
- * H-55 (4): every CentralGauge-owned artifact under the BCH root (every
+ * H-55 (4): every CentralGauge-owned .app under the BCH root (every
  * container's, discovered, no lease check) that one of `mounts` shows the
  * container: the finding "judge artifacts on shared mount", separate from
  * whether the mount itself is allowed.
@@ -117,8 +147,14 @@ export async function visibleArtifacts(
   const all: SweepItem[] = [];
   for (const c of names) all.push(...await itemsOf(bchRoot, c));
   return all.filter((i) =>
+    i.path.toLowerCase().endsWith(".app") &&
     mounts.some((m) => norm(i.path).startsWith(norm(m.Source)))
   );
+}
+
+function benchRefusal(benchDirs: string[]): string | null {
+  const live = benchDirs.find((d) => isBenchRunning(d));
+  return live ? `a bench marker in ${live} is fresh` : null;
 }
 
 export async function planSweep(o: SweepOptions): Promise<{
@@ -131,7 +167,11 @@ export async function planSweep(o: SweepOptions): Promise<{
   const items: SweepItem[] = [];
   const skipped: { container: string; why: string }[] = [];
   for (const c of o.containers) {
-    const why = coordLeaseBlock(o.coordRoot, new Map(), c);
+    // A container leased by this caller is listed; any other lease (or an
+    // unreadable one) skips it.
+    const why = o.coordLeases && heldByUs(o.coordRoot, o.coordLeases, c)
+      ? null
+      : coordLeaseBlock(o.coordRoot, new Map(), c);
     if (why) {
       skipped.push({ container: c, why });
       continue;
@@ -141,29 +181,72 @@ export async function planSweep(o: SweepOptions): Promise<{
   return { refused: null, items, skipped };
 }
 
-/** Removes the listed items; the bench marker and each lease are re-checked first. */
+/**
+ * Sol r1 #2: held by THIS caller: someone holds it (refused without our
+ * token) and our token is that holder (admitted with it).
+ */
+const heldByUs = (root: string, own: ReadonlyMap<string, string>, c: string) =>
+  own.has(c) && coordLeaseBlock(root, new Map(), c) !== null &&
+  coordLeaseBlock(root, own, c) === null;
+
+/**
+ * Removes the listed files, one by one, re-checked first (a plain file under
+ * the root, its container's lease ours), then each emptied directory up to
+ * its container's folder, never a non-empty one. Holds the bench lock of
+ * every bench dir throughout.
+ */
 export async function applySweep(
   items: SweepItem[],
-  o: Pick<SweepOptions, "benchDirs" | "coordRoot">,
+  o: Pick<SweepOptions, "benchDirs" | "coordRoot" | "bchRoot"> & {
+    coordLeases: ReadonlyMap<string, string>;
+  },
 ): Promise<{ removed: SweepItem[]; skipped: SweepItem[] }> {
-  const refused = benchRefusal(o.benchDirs);
-  if (refused) throw new Error(`sweep refused: ${refused}`);
-  const removed: SweepItem[] = [];
-  const skipped: SweepItem[] = [];
-  for (const i of items) {
-    if (coordLeaseBlock(o.coordRoot, new Map(), i.container)) {
-      skipped.push(i);
-      continue;
+  const releases: (() => Promise<void>)[] = [];
+  try {
+    for (const d of o.benchDirs) {
+      const r = tryAcquireBenchLock(d, { command: "sweep-shared --apply" });
+      if (!r.acquired) throw new Error(`sweep refused: a bench holds ${d}`);
+      releases.push(r.release);
     }
-    const st = await Deno.lstat(i.path).catch(() => null);
-    if (!st || st.isSymlink) {
-      skipped.push(i);
-      continue;
+    const removed: SweepItem[] = [];
+    const skipped: SweepItem[] = [];
+    for (const i of items) {
+      const st = await Deno.lstat(i.path).catch(() => null);
+      if (
+        !heldByUs(o.coordRoot, o.coordLeases, i.container) ||
+        !st?.isFile || !(await plainUnder(o.bchRoot, i.path))
+      ) {
+        skipped.push(i);
+        continue;
+      }
+      await Deno.remove(i.path);
+      removed.push(i);
     }
-    await Deno.remove(i.path, { recursive: true });
-    removed.push(i);
+    // Emptied dirs (a compile output dir, a BCH staging dir), never `my`,
+    // `output` or a container folder; a non-empty one refuses (no recursion).
+    const stop = (i: SweepItem) =>
+      i.kind === "compiler-output"
+        ? join(o.bchRoot, "compiler", `CentralGauge-${i.container}`, "output")
+        : join(
+          o.bchRoot,
+          "Extensions",
+          i.container,
+          ...(i.kind === "my-app" ? ["my"] : []),
+        );
+    for (const i of removed) {
+      for (
+        let d = dirname(i.path);
+        norm(d) !== norm(stop(i)) && norm(d).startsWith(norm(stop(i)));
+        d = dirname(d)
+      ) {
+        if (!(await plainUnder(o.bchRoot, d))) break;
+        if (!(await Deno.remove(d).then(() => true, () => false))) break;
+      }
+    }
+    return { removed, skipped };
+  } finally {
+    for (const r of releases) await r();
   }
-  return { removed, skipped };
 }
 
 async function main(args: string[]) {
@@ -179,6 +262,13 @@ async function main(args: string[]) {
     .option("--bch-root <dir:string>", "BcContainerHelper root", {
       default: BCH_ROOT,
     })
+    .option(
+      "--coord-lease <pair:string>",
+      "<container>=<token> (for --apply)",
+      {
+        collect: true,
+      },
+    )
     .option("--apply", "remove what is listed (default: list only)")
     .parse(args);
   const opts: SweepOptions = {
@@ -187,16 +277,26 @@ async function main(args: string[]) {
     benchDirs: o.benchDir ?? ["results"],
     containers: o.container,
   };
-  const plan = await planSweep(opts);
+  const leases = new Map(
+    (o.coordLease ?? []).map((p) => {
+      const at = p.indexOf("=");
+      if (at < 1) {
+        throw new Error(`--coord-lease ${p}: want <container>=<token>`);
+      }
+      return [p.slice(0, at), p.slice(at + 1)] as const;
+    }),
+  );
+  const plan = await planSweep({ ...opts, coordLeases: leases });
   if (plan.refused) {
     console.log(`[FAIL] sweep refused: ${plan.refused}`);
     Deno.exit(1);
   }
   for (const s of plan.skipped) console.log(`[SKIP] ${s.container}: ${s.why}`);
   for (const i of plan.items) console.log(`[LIST] ${i.kind} ${i.path}`);
-  console.log(`${plan.items.length} item(s)${o.apply ? "" : " (list only)"}`);
+  console.log(`${plan.items.length} file(s)${o.apply ? "" : " (list only)"}`);
   if (!o.apply) return;
-  const done = await applySweep(plan.items, opts);
+  // Only containers whose lease this caller holds; applySweep re-checks.
+  const done = await applySweep(plan.items, { ...opts, coordLeases: leases });
   for (const i of done.skipped) console.log(`[SKIP] ${i.path}`);
   console.log(`[OK] removed ${done.removed.length}`);
 }

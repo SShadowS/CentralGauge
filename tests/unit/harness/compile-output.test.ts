@@ -96,6 +96,35 @@ Deno.test("H-55 compileProject: a thrown compile removes its own output folder",
   assertEquals(await Deno.stat(outDir).catch(() => null), null);
 });
 
+Deno.test("H-55 runTests without an app: the implicit compile's output dir goes even when the test run throws", async () => {
+  const p = new TestProvider(await testTempDir());
+  const out = await Deno.makeTempDir({ prefix: "cg-compile-test-" });
+  await Deno.writeTextFile(join(out, "P_T_1.0.0.0.app"), "app");
+  Object.assign(p, {
+    compileProject: () =>
+      Promise.resolve({
+        success: true,
+        errors: [],
+        warnings: [],
+        output: "",
+        duration: 1,
+        artifactPath: join(out, "P_T_1.0.0.0.app"),
+        outputDir: out,
+      }),
+    runTestsWithApp: () => Promise.reject(new Error("session lost")),
+  });
+  const project = await testTempDir();
+  await assertRejects(() =>
+    p.runTests("TestContainer", {
+      path: project,
+      appJson: {},
+      sourceFiles: [],
+      testFiles: [],
+    })
+  );
+  assertEquals(await Deno.stat(out).catch(() => null), null);
+});
+
 Deno.test("H-55 publishApp: the copy in the container's shared folder is removed even when the publish throws", async () => {
   const shared = await testTempDir();
   const src = join(await testTempDir(), "P_T_1.0.0.0.app");
