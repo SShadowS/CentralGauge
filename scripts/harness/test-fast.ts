@@ -123,6 +123,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}redaction-anchor.test.ts`]: c(true, 30),
   // H-44: own temp dirs (real icacls only on dirs it created, real locks on its own roots).
   [`${H}key-custody.test.ts`]: c(true, 51),
+  // H-54: own temp dirs only.
+  [`${H}results-root.test.ts`]: c(true, 0),
   [`${H}report-charts.test.ts`]: c(true, 0),
   [`${H}report-extras.test.ts`]: c(true, 0),
   [`${H}report.test.ts`]: c(true, 3),

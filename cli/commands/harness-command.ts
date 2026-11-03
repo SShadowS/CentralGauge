@@ -234,6 +234,8 @@ import {
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
 import { renderEnvCheck } from "../../src/harness/environment.ts";
+import { archiveResults } from "../../src/harness/results-root.ts";
+import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import {
   baselineCreate,
   envCheck,
@@ -3434,6 +3436,40 @@ export function registerHarnessCommand(
       fail(async () => {
         const r = await harnessPairing(digest, opts.resultsDir, opts.root);
         console.log(opts.json ? JSON.stringify(r, null, 2) : renderPairing(r));
+      })
+    );
+
+  const coordRoot = Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT;
+  parent
+    .command(
+      "archive",
+      "H-54: copy a finished results root into the shared root (write-once, idempotent, sha256-verified; a same-path file with other content refuses)",
+    )
+    .option("--from <dir:string>", "Results root to archive (a job root)", {
+      required: true,
+    })
+    .option("--to <dir:string>", "Shared results root", {
+      default: join(coordRoot, "results", "harness"),
+    })
+    .option(
+      "--allow-coord-copy",
+      "Allow a --from under the coord tasks (proof or pre-rejudge copies are never archived by default)",
+    )
+    .action((opts) =>
+      fail(async () => {
+        const r = await archiveResults({
+          from: opts.from,
+          to: opts.to,
+          coordRoot,
+          allowCoordCopy: opts.allowCoordCopy === true,
+        });
+        console.log(
+          `${
+            colors.green("[OK]")
+          } archived ${opts.from} -> ${opts.to}: ${r.copied} copied, ${r.present} already present, ${r.verified} verified by sha256${
+            r.skipped.length ? `; not archived: ${r.skipped.join(", ")}` : ""
+          }; clean`,
+        );
       })
     );
 

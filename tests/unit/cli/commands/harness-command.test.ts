@@ -12625,3 +12625,26 @@ Deno.test("route authorization (H-02 run 003): every read validates the entry's 
   await Deno.writeTextFile(markerPath, JSON.stringify(good));
   assertEquals(await routeAuthorizationProblems(root, good, CODEX), []);
 });
+
+Deno.test("H-54: a new results dir inside a job worktree refuses the plan and the real environment before any lock", async () => {
+  await using t = await makeEnv();
+  const order: string[] = [];
+  const d = planDeps(t, order);
+  const gitdir = join(d.coordRoot(), "repo.git", "worktrees", "X-01");
+  const wt = join(d.coordRoot(), "jobs", "X-01");
+  Deno.mkdirSync(gitdir, { recursive: true });
+  Deno.mkdirSync(wt, { recursive: true });
+  Deno.writeTextFileSync(join(wt, ".git"), `gitdir: ${gitdir}\n`);
+  const o = { ...envOpts(t), resultsDir: join(wt, "results", "harness-m5") };
+  await assertRejects(
+    () => openPlanEnv(o, d),
+    ConfigurationError,
+    "inside job worktree",
+  );
+  await assertRejects(
+    () => openHarnessEnv(o, d),
+    ConfigurationError,
+    "inside job worktree",
+  );
+  assertEquals(order, []);
+});
