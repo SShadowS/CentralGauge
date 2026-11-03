@@ -371,6 +371,31 @@ Deno.test("H-54 archive: fixture workspaces are frozen content too", async () =>
   assert(await exists(join(to, ws, ".bench-running.json")));
 });
 
+Deno.test("H-54 archive: junction-backed tasks and jobs dirs keep their meaning", async () => {
+  const c = await coord();
+  const elsewhere = await testTempDir({ prefix: "h54-elsewhere-" });
+  // <coord>/tasks is a junction; the copy is named by its physical path
+  const physical = join(elsewhere, "tasks");
+  await records(join(physical, "H-35", "results"));
+  await Deno.symlink(physical, join(c.root, "tasks"), { type: "junction" });
+  const to = join(c.root, "results", "harness");
+  await refused(
+    c.archive({
+      from: join(physical, "H-35", "results"),
+      to,
+      allowNonJobSource: true,
+    }),
+    "--allow-coord-copy",
+  );
+  // <coord>/jobs is a junction: a job root needs no override
+  const jobsReal = join(elsewhere, "jobs");
+  await Deno.mkdir(jobsReal);
+  await Deno.symlink(jobsReal, c.jobs, { type: "junction" });
+  const from = join(await c.worktree("P-02"), "results", "harness");
+  await records(from);
+  assertEquals((await c.archive({ from, to })).copied, 4);
+});
+
 Deno.test("H-54 guard: a job worktree whose name starts with '..' is still inside jobs", async () => {
   const c = await coord();
   const wt = await c.worktree("..scratch");

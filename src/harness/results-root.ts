@@ -262,7 +262,8 @@ export async function archiveResults(
   const from = canonical(o.from);
   const to = canonical(o.to);
   const coord = canonical(o.coordRoot);
-  const jobs = join(coord, "jobs");
+  const jobs = canonical(join(coord, "jobs"));
+  const tasks = canonical(join(coord, "tasks"));
   if (inside(from, to) || inside(to, from)) {
     throw new ConfigurationError(
       `--from ${from} and --to ${to} overlap (one holds the other)`,
@@ -275,7 +276,7 @@ export async function archiveResults(
       } dir)`,
     );
   }
-  if (inside(from, join(coord, "tasks"))) {
+  if (inside(from, tasks)) {
     if (!o.allowCoordCopy) {
       throw new ConfigurationError(
         `${from} is a copy under the coord tasks (proof or pre-rejudge records), not a job root: pass --allow-coord-copy to archive it anyway`,
@@ -333,13 +334,29 @@ export async function archiveResults(
       }`,
     );
   }
+  // The destination must still be where it was planned (no link or junction
+  // swapped in since): checked before every write. ponytail: a swap between
+  // this check and the write is not caught; it needs a hostile local process.
+  const unmoved = (p: string) => {
+    if (relative(canonical(p), p) !== "") {
+      throw new ConfigurationError(
+        `${p} now resolves to ${
+          canonical(p)
+        } (a link or junction appeared): stopped`,
+      );
+    }
+  };
+  await Deno.mkdir(to, { recursive: true });
+  unmoved(to);
   for (const rel of inv.dirs) {
     await Deno.mkdir(join(to, rel), { recursive: true });
+    unmoved(join(to, rel));
   }
   let copied = 0;
   for (const rel of todo) {
     const dest = join(to, rel);
     await Deno.mkdir(dirname(dest), { recursive: true });
+    unmoved(dirname(dest));
     const tmp = `${dest}.tmp-archive-${crypto.randomUUID()}`;
     try {
       await Deno.copyFile(join(from, rel), tmp);
@@ -377,6 +394,7 @@ export async function archiveResults(
     );
   }
   const bad: string[] = [];
+  if (relative(canonical(to), to) !== "") bad.push(to);
   for (const rel of inv.dirs) {
     const st = await lstatOrNull(join(to, rel));
     if (!st || st.isSymlink || !st.isDirectory) bad.push(rel);
