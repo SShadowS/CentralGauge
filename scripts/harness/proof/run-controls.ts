@@ -9,6 +9,7 @@
  *   deno run --allow-all scripts/harness/proof/run-controls.ts \
  *     --container Cronus285 --coord-lease Cronus285=<token> \
  *     --lineage <abs lineage.json> --symbol-store <dir> --private-root <dir> \
+ *     --results-dir <shared results/harness> [--unverified-bc-egress-ok <reason>] \
  *     [--control seed-job-queue ...]
  */
 import { Command } from "@cliffy/command";
@@ -37,6 +38,15 @@ async function main(args: string[]) {
       required: true,
     })
     .option("--private-root <dir:string>", "private root", { required: true })
+    .option(
+      "--results-dir <dir:string>",
+      "the shared harness results root (baselines, egress marker, bc-ledger)",
+      { required: true },
+    )
+    .option(
+      "--unverified-bc-egress-ok <reason:string>",
+      "owner-granted: NST egress unenforced in this lineage",
+    )
     .option("--control <name:string>", "run only these (default: all)", {
       collect: true,
     })
@@ -66,6 +76,8 @@ async function main(args: string[]) {
     supervised: false,
     lineage: o.lineage,
     coordLeases: new Map([parseCoordLease(o.coordLease)]),
+    sharedResults: resolve(o.resultsDir),
+    bcEgressOverride: o.unverifiedBcEgressOk ?? null,
   });
   let failed = 0;
   try {
