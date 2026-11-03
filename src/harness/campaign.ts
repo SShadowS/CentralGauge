@@ -1520,21 +1520,37 @@ async function campaignInvocation(
     i: number,
     first: AttemptRef,
     prior: ExecutionRecord[],
-    admit: () => Promise<boolean>,
-  ): Promise<{ executions: ExecutionRecord[]; pause: string | null }> => {
+    /** Awaited first: a stop request ends the cell. */
+    stop: () => Promise<boolean>,
+    /** Synchronous, after the last await: a halt ends the cell. */
+    halt: () => boolean,
+  ): Promise<{
+    executions: ExecutionRecord[];
+    pause: string | null;
+    /** With a pause: the attempt still to start (a manual rerun included) and its prior. */
+    pending: { at: AttemptRef; prior: ExecutionRecord[] } | null;
+  }> => {
     const executions: ExecutionRecord[] = [];
     let at: AttemptRef | null = first;
     let mine = prior;
     while (at) {
       const all = await env.store.executions(campaign.id);
-      if (!await admit()) break;
+      if (await stop()) break;
+      // No await from here to runCell: the halt, the pick and the start.
+      if (halt()) break;
       const retryOf = at.retryOf;
       const parent = mine.find((e) => e.id === retryOf);
       const choice = pickPooled(
         blockLabel(all, block, i),
         parent?.termination === "usage_limited",
       );
-      if (!choice) return { executions, pause: earliestReset() };
+      if (!choice) {
+        return {
+          executions,
+          pause: earliestReset(),
+          pending: { at, prior: mine },
+        };
+      }
       const r = await runCell(
         pooledEnv(base, choice),
         cellRefFor(campaign, opened, block, arm, i),
@@ -1547,7 +1563,7 @@ async function campaignInvocation(
       mine = await cellPrior(block, arm);
       at = nextAttempt(mine);
     }
-    return { executions, pause: null };
+    return { executions, pause: null, pending: null };
   };
   if (rerun && pool) {
     // H-53: the rerun cell's whole retry chain through the pool, waiting for
@@ -1555,8 +1571,7 @@ async function campaignInvocation(
     const arm = o.rerun!.arm;
     const i = rerun.block.order.indexOf(arm);
     const base = pooled ? agentEnv : runEnv;
-    const admit = async () =>
-      !await stopRequested() && !queue.failed() && !queue.starved();
+    const halt = () => queue.failed() || queue.starved();
     const done: ExecutionRecord[] = [];
     let r = await runPooled(
       base,
@@ -1565,10 +1580,11 @@ async function campaignInvocation(
       i,
       rerun.at,
       rerun.prior,
-      admit,
+      stopRequested,
+      halt,
     );
     done.push(...r.executions);
-    while (r.pause !== null) {
+    while (r.pause !== null && r.pending !== null) {
       const wait = r.pause === "unknown"
         ? Infinity
         : Date.parse(r.pause) - now();
@@ -1585,10 +1601,17 @@ async function campaignInvocation(
         } ms`,
       );
       await io.sleep(Math.max(wait, 0));
-      const mine = await cellPrior(rerun.block, arm);
-      const at = nextAttempt(mine);
-      if (!at) break;
-      r = await runPooled(base, rerun.block, arm, i, at, mine, admit);
+      // The attempt that waited (the manual rerun itself if none started).
+      r = await runPooled(
+        base,
+        rerun.block,
+        arm,
+        i,
+        r.pending.at,
+        r.pending.prior,
+        stopRequested,
+        halt,
+      );
       done.push(...r.executions);
     }
     if (pooled) await queue.drain();
@@ -1664,7 +1687,8 @@ async function campaignInvocation(
               i,
               at,
               prior,
-              async () => !await stopRequested() && !halted(),
+              stopRequested,
+              halted,
             );
             summary.ran += r.executions.length;
             ran.push(...r.executions);

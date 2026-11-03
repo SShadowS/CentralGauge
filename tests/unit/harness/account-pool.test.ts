@@ -11,10 +11,11 @@ import { join } from "@std/path";
 import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import {
   loadCampaignData,
+  nextAttempt,
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
-import { privatePaths } from "../../../src/harness/execution.ts";
+import { privatePaths, runCell } from "../../../src/harness/execution.ts";
 import {
   type AccountAddition,
   AccountAdditionSchema,
@@ -29,6 +30,7 @@ import { testTempDir } from "../../utils/temp-dir.ts";
 import { write } from "./refapp-fixture.ts";
 import {
   CATALOG,
+  cellFor,
   makeEnv,
   mockImageBehavior,
   type TestEnv,
@@ -574,4 +576,87 @@ Deno.test("pool (H-53, Sol r1): three labels, equal start times: the next arm fo
     ["maxpriv2", "retry_after_limit"],
     ["maxpriv2", "block_pair"],
   ]);
+});
+
+Deno.test("pool (H-53, Sol r3): a --rerun that finds every label parked waits, then runs the manual rerun itself", async () => {
+  const { t, limited, tick } = await poolEnv(
+    ["work", "maxpriv2"],
+    2,
+    "mock-crash",
+  );
+  await runCampaign(t.env, "pool", opts(), io());
+  const [c] = await t.env.store.campaigns("pool");
+  const [b1, b2] = c!.blocks;
+  // Park both labels from the records: block 1's rerun hits the limit on each.
+  limited.add("work");
+  limited.add("maxpriv2");
+  const first = await runCampaign(
+    t.env,
+    "pool",
+    opts({
+      rerun: { task: b1!.task_id, repeat: b1!.repeat, arm: "mock-crash" },
+    }),
+    io(),
+  );
+  assert(first.paused !== null, "both labels parked");
+  limited.clear();
+  // Block 2's rerun starts with no free label: it waits, then runs.
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      waits.push(ms);
+      tick(ms + 1000);
+      return Promise.resolve();
+    },
+  };
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({
+      rerun: { task: b2!.task_id, repeat: b2!.repeat, arm: "mock-crash" },
+      maxPauseMs: 2 * 3600_000,
+    }),
+    out,
+  );
+  assertEquals([s.paused, waits.length], [null, 1]);
+  const re = (await executions(t)).filter((e) =>
+    e.block === b2!.index && e.run_kind === "manual_rerun"
+  );
+  assertEquals(re.length, 1);
+  assert(re[0]!.account !== undefined);
+});
+
+Deno.test("pool (H-53, Sol r3): runCell yields an owed automatic retry when its label was parked, and runs it when not", async () => {
+  await using t = await makeEnv();
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  const cell = await cellFor(t, "mock-crash");
+  const dir = t.env.secretAccounts[0]!.dir;
+  const env = {
+    ...t.env,
+    secretAccounts: [{ label: "work", dir }, { label: "maxpriv2", dir }],
+    accountChoice: { label: "work", choice: "round_robin" as const },
+  };
+  const parked = await runCell({ ...env, accountUsable: () => false }, cell);
+  assertEquals(
+    [parked.executions.length, parked.yielded, parked.pause],
+    [1, true, null],
+  );
+  // The retry is still owed: nothing was dropped.
+  assert(nextAttempt(parked.executions) !== null);
+  await using u = await makeEnv();
+  u.env.supervised = false;
+  u.docker.behavior = mockImageBehavior();
+  const free = await runCell({
+    ...u.env,
+    secretAccounts: [{ label: "work", dir: u.env.secretAccounts[0]!.dir }, {
+      label: "maxpriv2",
+      dir: u.env.secretAccounts[0]!.dir,
+    }],
+    accountChoice: { label: "work", choice: "round_robin" },
+    accountUsable: () => true,
+  }, await cellFor(u, "mock-crash"));
+  assert(free.executions.length > 1, String(free.executions.length));
+  assertEquals(free.yielded, undefined);
 });

@@ -1321,8 +1321,10 @@ addition and writes nothing. A single-label campaign behaves exactly as before
 until a label is added; its existing executions keep their recorded label.
 
 A pooled `--rerun` takes a pool label the same way. Its limit parks that
-label, and the owed retry runs on a free label at the next plain resume. A run
-pauses only when no label is free.
+label, and its retry runs at once, in the same invocation, on a free label.
+With every label parked it waits for the earliest reset under
+`--max-pause-min` (the rerun itself included, if it has not started yet), then
+goes on. Otherwise it pauses.
 
 `harness report` lists executions, `usage_limited` counts and the
 `account_choice` spread per label under **Accounts**. `screening.ts status`
