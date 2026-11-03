@@ -236,10 +236,11 @@ export async function applySweep(
     for (const i of items) {
       stillOurs();
       const st = await Deno.lstat(i.path).catch(() => null);
-      if (
-        !heldByUs(o.coordRoot, o.coordLeases, i.container) ||
-        !st?.isFile || !(await plainUnder(o.bchRoot, i.path))
-      ) {
+      const ok = st?.isFile && await plainUnder(o.bchRoot, i.path);
+      // Sol r3: the synchronous checks sit right before the removal, after
+      // every await, so a stall cannot slip a bench or a lease in between.
+      stillOurs();
+      if (!ok || !heldByUs(o.coordRoot, o.coordLeases, i.container)) {
         skipped.push(i);
         continue;
       }
@@ -263,8 +264,8 @@ export async function applySweep(
         norm(d) !== norm(stop(i)) && norm(d).startsWith(norm(stop(i)));
         d = dirname(d)
       ) {
-        stillOurs();
         if (!(await plainUnder(o.bchRoot, d))) break;
+        stillOurs();
         if (!(await Deno.remove(d).then(() => true, () => false))) break;
       }
     }
