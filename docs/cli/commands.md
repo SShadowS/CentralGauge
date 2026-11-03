@@ -1360,6 +1360,7 @@ recovers legacy task descriptors.
 
 ```bash
 centralgauge harness archive --from <root> [--to <shared root>] [--allow-coord-copy]
+  [--allow-non-job-source] [--quiet-min <minutes>]
 ```
 
 Copies a finished results root into the shared results root,
@@ -1374,22 +1375,38 @@ The archive command works as follows:
 
 - It copies every file under `--from` to the same relative path under `--to`.
   Nested roots such as `cells\` and `stub-cells\` are included.
-- It leaves out per-machine state: `symbols`, `baselines`, `bc-ledger`, the
-  egress files, bench markers and `.tmp-` publish temps. The report lists the
-  top-level entries it left out.
+- In every results root, nested ones included, it leaves out per-machine
+  state: `symbols`, `baselines`, `bc-ledger` and the egress files. It also
+  leaves out bench markers and `.tmp-<uuid>` publish temps. The report lists
+  each entry it left out. Files under `workspaces\<hash>\` and
+  `artifacts\<id>\` are frozen content: they are copied byte for byte whatever
+  their names, and empty dirs are kept.
 - It is idempotent. A file already present with the same content is left
   alone. If any same-path file has other content, the whole run is refused
   before anything is copied, and the refusal lists the files.
-- Copies are write-once: they are hard-linked into place, never replaced. After
-  the copy, every file is checked by sha256 against its source.
+- Copies are write-once: each copy is checked by sha256 before it is
+  hard-linked into place, and a file is never replaced. After the copy, the
+  source is read again. If any file was added or changed in the meantime, the
+  run is not clean. Every destination file is then checked against its source
+  hash.
+- A conflict is possible between two jobs' `qualify\<manifest>\index.json` or
+  `task-oracle\<hash>.json` (recovered provenance). Resolve it by an owner
+  decision, never by deleting either file.
 - It refuses when `--from` is not a results root (it has no `campaigns`,
   `executions` or `runs`).
 - It refuses when `--from` and `--to` overlap, or when `--to` is inside a job
   worktree.
-- It refuses when a live bench marker sits in `--from` or its parent. A paused
-  run has no marker, so do not archive a paused campaign's root.
+- It refuses when a live bench marker sits in `--from`, in any dir above it or
+  in any nested root.
+- It refuses when any file was written in the last `--quiet-min` minutes
+  (default 10). A paused run has no marker, so do not archive a paused
+  campaign's root.
+- Links and junctions are resolved before every check. A link inside
+  `--from` refuses.
 - It refuses a `--from` under `$CG_COORD_ROOT\tasks` (proof or pre-rejudge
-  copies) unless `--allow-coord-copy` is passed.
+  copies) unless `--allow-coord-copy` is passed. It refuses any other `--from`
+  outside `$CG_COORD_ROOT\jobs` unless `--allow-non-job-source` is passed. A
+  lane worktree's root is one example.
 
 On success it prints
 `[OK] archived <from> -> <to>: N copied, M already present, K verified by sha256; clean`.
