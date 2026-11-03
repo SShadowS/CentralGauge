@@ -113,6 +113,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}proof.test.ts`]: c(true, 2),
   [`${H}proof-access.test.ts`]: c(true, 0),
   [`${H}proof-canary.test.ts`]: c(true, 0),
+  [`${H}compile-output.test.ts`]: c(true, 0),
+  [`${H}shared-sweep.test.ts`]: c(true, 0),
   [`${H}publish-setup.test.ts`]: c(true, 1),
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),

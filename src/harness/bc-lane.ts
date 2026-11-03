@@ -1178,284 +1178,296 @@ export async function buildApps(
     compile_ms,
   });
   const lockDigest = await lockDigestOf(o.lock);
-  for (const app of o.apps) {
-    checkCancel(o.signal);
-    const version = o.versions.get(app.folder) ?? app.version;
-    const failed = app.depends.find((d) => !files.has(d));
-    if (failed) {
-      out.push({
-        folder: app.folder,
-        id: app.id,
-        version,
-        ok: false,
-        attempted: false,
-        file: null,
-        diagnostics: [synthetic(`dependency ${failed} did not build`)],
-        compile_ms: 0,
-      });
-      continue;
-    }
-    // A declared dependency outside the workspace and the lock is this app's
-    // own build failure (the agent controls dependencies): never compiled,
-    // so BCH cannot fill it from its cache and turn it into an environment error.
-    const unlocked = app.external.find((id) => !lockedIds.has(id));
-    if (unlocked) {
-      out.push({
-        folder: app.folder,
-        id: app.id,
-        version,
-        ok: false,
-        attempted: false,
-        file: null,
-        diagnostics: [
-          synthetic(
-            `dependency ${unlocked} is not in the symbols lock or the workspace`,
-          ),
-        ],
-        compile_ms: 0,
-      });
-      continue;
-    }
-    const idTaken = o.lock.packages.find((p) =>
-      p.app_id.toLowerCase() === app.id.toLowerCase()
-    );
-    if (idTaken) {
-      out.push(
-        refuse(
-          app,
+  // H-55: each compile's private output dir; removed whatever happens, once
+  // its app is copied into outDir (the only copy anything publishes).
+  const compileOutputs: string[] = [];
+  try {
+    for (const app of o.apps) {
+      checkCancel(o.signal);
+      const version = o.versions.get(app.folder) ?? app.version;
+      const failed = app.depends.find((d) => !files.has(d));
+      if (failed) {
+        out.push({
+          folder: app.folder,
+          id: app.id,
           version,
-          false,
-          `app id ${app.id} is the id of the locked symbol package ${idTaken.file}`,
-        ),
-      );
-      continue;
-    }
-    // The symbol packages this compile restores (M1-40b), fixed before the
-    // cache lookup so they are in the key (H-27 r2): the declared closure once
-    // the app info is harvested, the whole lock before.
-    const { key, restored, dir, appJson } = await effectiveBuildKey(
-      compiler,
-      {
-        srcDir: o.srcDir,
-        app,
-        version,
-        files,
-        keys,
-        lock: o.lock,
-        lockDigest,
-        graph: o.graph ?? o.apps,
-        policy: o.policy,
-        stageDir: o.outDir,
-      },
-    );
-    // H-27 r2: the cache is best-effort; a failed read is a miss.
-    let hit: string | null = null;
-    // H-35: a hit whose package does not carry the policy's target is refused;
-    // the app is rebuilt unkeyed, so that entry is never adopted either.
-    let poisoned = false;
-    if (o.cache) {
-      try {
-        hit = await o.cache.get(key);
-      } catch (err) {
-        console.warn(
-          `[WARN] build cache read for ${app.folder} failed (built instead): ${
-            err instanceof Error ? err.message : err
-          }`,
-        );
-      }
-    }
-    const hitTaken = hit ? collision(hit) : undefined;
-    if (hit && hitTaken) {
-      out.push(
-        refuse(
-          app,
-          version,
-          false,
-          `reused build ${
-            basename(hit)
-          } has the file name of the locked symbol package ${hitTaken.file}`,
-        ),
-      );
-      continue;
-    }
-    // H-27 r3: a hit that cannot be materialized (unreadable, locked) is a
-    // miss: it is copied aside and renamed into place only once complete, so
-    // a failure leaves no partial file (and touches no other file), and the
-    // app is compiled normally.
-    const reused = hit ? join(o.outDir, ".apps", basename(hit)) : null;
-    if (hit && reused) {
-      const tmp = `${reused}.tmp-${crypto.randomUUID()}`;
-      try {
-        await Deno.copyFile(hit, tmp);
-        await Deno.rename(tmp, reused);
-      } catch (err) {
-        await Deno.remove(tmp).catch(() => {});
-        console.warn(
-          `[WARN] build cache entry for ${app.folder} unreadable (built instead): ${
-            err instanceof Error ? err.message : err
-          }`,
-        );
-        hit = null;
-      }
-    }
-    if (hit && o.policy.target === "Cloud") {
-      const target = await bc.packageTarget(reused!).catch(() => null);
-      if (target !== "Cloud") {
-        console.warn(
-          `[WARN] build cache entry for ${app.folder} has target ${target} under a Cloud key: refused, rebuilt unkeyed`,
-        );
-        await Deno.remove(reused!).catch(() => {});
-        hit = null;
-        poisoned = true;
-      }
-    }
-    if (hit) {
-      const file = reused!;
-      files.set(app.folder, file);
-      keys.set(app.folder, key);
-      out.push({
-        folder: app.folder,
-        id: app.id,
-        version,
-        ok: true,
-        attempted: false,
-        file,
-        diagnostics: [],
-        compile_ms: 0,
-        key,
-        build_key: key,
-      });
-      continue;
-    }
-    const pk = join(dir, ".alpackages");
-    // Only what the harness restores and seeds (the copy skips any case of it too).
-    await Deno.remove(pk, { recursive: true }).catch(() => {});
-    await restoreSymbols(o.lock.store, restored, pk);
-    const workspaceFiles = new Set([...files.values()].map((f) => basename(f)));
-    const workspaceLower = new Set(
-      [...workspaceFiles].map((f) => f.toLowerCase()),
-    );
-    await seedAppInfo(
-      pk,
-      o.lock.store,
-      lockDigest,
-      lockedNames,
-      workspaceFiles,
-    );
-    for (const f of files.values()) {
-      // Every workspace file here passed the collision check when built.
-      const taken = collision(f);
-      if (taken) {
-        throw new ValidationError(
-          `workspace package ${f} has the file name of the locked symbol package ${taken.file}`,
-          [basename(f)],
-        );
-      }
-      await Deno.copyFile(f, join(pk, basename(f)));
-    }
-    const t0 = performance.now();
-    const r = await bc.compileProject(container, {
-      path: dir,
-      appJson,
-      sourceFiles: [],
-      testFiles: [],
-      ...(o.analysis ? { analysis: o.analysis } : {}),
-    });
-    const compile_ms = performance.now() - t0;
-    const warned = o.analysis ? { warnings: r.warnings } : {};
-    const verified = new Set<string>();
-    for await (const e of Deno.readDir(pk)) {
-      // Only packages are checked: BCH writes its own index
-      // (cache_AppInfo.json) into .alpackages during the compile.
-      if (!e.name.toLowerCase().endsWith(".app")) continue;
-      // A locked package is always verified, never skipped as a workspace file.
-      const sha = lockedByName.get(e.name.toLowerCase())?.sha256;
-      if (sha === undefined && workspaceLower.has(e.name.toLowerCase())) {
+          ok: false,
+          attempted: false,
+          file: null,
+          diagnostics: [synthetic(`dependency ${failed} did not build`)],
+          compile_ms: 0,
+        });
         continue;
       }
-      if (sha === undefined || await hashFile(pk, join(pk, e.name)) !== sha) {
-        throw new ValidationError(
-          `compile of ${app.folder} used an unlocked symbol package: ${e.name} (the symbols lock does not match the compiler cache)`,
-          [e.name],
-        );
+      // A declared dependency outside the workspace and the lock is this app's
+      // own build failure (the agent controls dependencies): never compiled,
+      // so BCH cannot fill it from its cache and turn it into an environment error.
+      const unlocked = app.external.find((id) => !lockedIds.has(id));
+      if (unlocked) {
+        out.push({
+          folder: app.folder,
+          id: app.id,
+          version,
+          ok: false,
+          attempted: false,
+          file: null,
+          diagnostics: [
+            synthetic(
+              `dependency ${unlocked} is not in the symbols lock or the workspace`,
+            ),
+          ],
+          compile_ms: 0,
+        });
+        continue;
       }
-      verified.add(e.name.toLowerCase());
-    }
-    // Only the locked packages that hash-verified in this build keep their app info.
-    await harvestAppInfo(pk, o.lock.store, lockDigest, verified);
-    const outTaken = r.success && r.artifactPath
-      ? collision(r.artifactPath)
-      : undefined;
-    if (r.artifactPath && outTaken) {
-      out.push({
-        ...refuse(
+      const idTaken = o.lock.packages.find((p) =>
+        p.app_id.toLowerCase() === app.id.toLowerCase()
+      );
+      if (idTaken) {
+        out.push(
+          refuse(
+            app,
+            version,
+            false,
+            `app id ${app.id} is the id of the locked symbol package ${idTaken.file}`,
+          ),
+        );
+        continue;
+      }
+      // The symbol packages this compile restores (M1-40b), fixed before the
+      // cache lookup so they are in the key (H-27 r2): the declared closure once
+      // the app info is harvested, the whole lock before.
+      const { key, restored, dir, appJson } = await effectiveBuildKey(
+        compiler,
+        {
+          srcDir: o.srcDir,
           app,
           version,
-          true,
-          `output ${
-            basename(r.artifactPath)
-          } has the file name of the locked symbol package ${outTaken.file}`,
-          r.errors,
-          compile_ms,
-        ),
-        ...warned,
-      });
-      continue;
-    }
-    let file: string | null = null;
-    if (r.success && r.artifactPath) {
-      file = join(o.outDir, ".apps", basename(r.artifactPath));
-      await Deno.copyFile(r.artifactPath, file);
-      files.set(app.folder, file);
-      if (!poisoned && !o.cache) keys.set(app.folder, key);
-      if (o.cache && !poisoned) {
-        // H-27 r2: the cache's winning file is this app's file from here on
-        // (a concurrent builder may have won the key), so every dependent is
-        // built against the cached file. A failed write leaves the app unkeyed.
+          files,
+          keys,
+          lock: o.lock,
+          lockDigest,
+          graph: o.graph ?? o.apps,
+          policy: o.policy,
+          stageDir: o.outDir,
+        },
+      );
+      // H-27 r2: the cache is best-effort; a failed read is a miss.
+      let hit: string | null = null;
+      // H-35: a hit whose package does not carry the policy's target is refused;
+      // the app is rebuilt unkeyed, so that entry is never adopted either.
+      let poisoned = false;
+      if (o.cache) {
         try {
-          await o.cache.put(key, file);
-          const won = await o.cache.get(key);
-          if (won === null) throw new Error("no entry after the write");
-          // H-35 Sol r1 #6: the winner is target-checked like a first hit.
-          if (
-            o.policy.target === "Cloud" &&
-            await bc.packageTarget(won) !== "Cloud"
-          ) {
-            throw new Error("the winning cache entry is not a Cloud package");
-          }
-          // H-27 r3: the winner is copied aside and replaces the fresh build
-          // only once complete; on any failure the fresh build stays, unkeyed.
-          const tmp = `${file}.tmp-${crypto.randomUUID()}`;
-          try {
-            await Deno.copyFile(won, tmp);
-            await Deno.rename(tmp, file);
-          } catch (err) {
-            await Deno.remove(tmp).catch(() => {});
-            throw err;
-          }
-          keys.set(app.folder, key);
+          hit = await o.cache.get(key);
         } catch (err) {
           console.warn(
-            `[WARN] build cache write for ${app.folder} failed (not reused): ${
+            `[WARN] build cache read for ${app.folder} failed (built instead): ${
               err instanceof Error ? err.message : err
             }`,
           );
         }
       }
+      const hitTaken = hit ? collision(hit) : undefined;
+      if (hit && hitTaken) {
+        out.push(
+          refuse(
+            app,
+            version,
+            false,
+            `reused build ${
+              basename(hit)
+            } has the file name of the locked symbol package ${hitTaken.file}`,
+          ),
+        );
+        continue;
+      }
+      // H-27 r3: a hit that cannot be materialized (unreadable, locked) is a
+      // miss: it is copied aside and renamed into place only once complete, so
+      // a failure leaves no partial file (and touches no other file), and the
+      // app is compiled normally.
+      const reused = hit ? join(o.outDir, ".apps", basename(hit)) : null;
+      if (hit && reused) {
+        const tmp = `${reused}.tmp-${crypto.randomUUID()}`;
+        try {
+          await Deno.copyFile(hit, tmp);
+          await Deno.rename(tmp, reused);
+        } catch (err) {
+          await Deno.remove(tmp).catch(() => {});
+          console.warn(
+            `[WARN] build cache entry for ${app.folder} unreadable (built instead): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+          hit = null;
+        }
+      }
+      if (hit && o.policy.target === "Cloud") {
+        const target = await bc.packageTarget(reused!).catch(() => null);
+        if (target !== "Cloud") {
+          console.warn(
+            `[WARN] build cache entry for ${app.folder} has target ${target} under a Cloud key: refused, rebuilt unkeyed`,
+          );
+          await Deno.remove(reused!).catch(() => {});
+          hit = null;
+          poisoned = true;
+        }
+      }
+      if (hit) {
+        const file = reused!;
+        files.set(app.folder, file);
+        keys.set(app.folder, key);
+        out.push({
+          folder: app.folder,
+          id: app.id,
+          version,
+          ok: true,
+          attempted: false,
+          file,
+          diagnostics: [],
+          compile_ms: 0,
+          key,
+          build_key: key,
+        });
+        continue;
+      }
+      const pk = join(dir, ".alpackages");
+      // Only what the harness restores and seeds (the copy skips any case of it too).
+      await Deno.remove(pk, { recursive: true }).catch(() => {});
+      await restoreSymbols(o.lock.store, restored, pk);
+      const workspaceFiles = new Set(
+        [...files.values()].map((f) => basename(f)),
+      );
+      const workspaceLower = new Set(
+        [...workspaceFiles].map((f) => f.toLowerCase()),
+      );
+      await seedAppInfo(
+        pk,
+        o.lock.store,
+        lockDigest,
+        lockedNames,
+        workspaceFiles,
+      );
+      for (const f of files.values()) {
+        // Every workspace file here passed the collision check when built.
+        const taken = collision(f);
+        if (taken) {
+          throw new ValidationError(
+            `workspace package ${f} has the file name of the locked symbol package ${taken.file}`,
+            [basename(f)],
+          );
+        }
+        await Deno.copyFile(f, join(pk, basename(f)));
+      }
+      const t0 = performance.now();
+      const r = await bc.compileProject(container, {
+        path: dir,
+        appJson,
+        sourceFiles: [],
+        testFiles: [],
+        ...(o.analysis ? { analysis: o.analysis } : {}),
+      });
+      if (r.outputDir) compileOutputs.push(r.outputDir);
+      const compile_ms = performance.now() - t0;
+      const warned = o.analysis ? { warnings: r.warnings } : {};
+      const verified = new Set<string>();
+      for await (const e of Deno.readDir(pk)) {
+        // Only packages are checked: BCH writes its own index
+        // (cache_AppInfo.json) into .alpackages during the compile.
+        if (!e.name.toLowerCase().endsWith(".app")) continue;
+        // A locked package is always verified, never skipped as a workspace file.
+        const sha = lockedByName.get(e.name.toLowerCase())?.sha256;
+        if (sha === undefined && workspaceLower.has(e.name.toLowerCase())) {
+          continue;
+        }
+        if (sha === undefined || await hashFile(pk, join(pk, e.name)) !== sha) {
+          throw new ValidationError(
+            `compile of ${app.folder} used an unlocked symbol package: ${e.name} (the symbols lock does not match the compiler cache)`,
+            [e.name],
+          );
+        }
+        verified.add(e.name.toLowerCase());
+      }
+      // Only the locked packages that hash-verified in this build keep their app info.
+      await harvestAppInfo(pk, o.lock.store, lockDigest, verified);
+      const outTaken = r.success && r.artifactPath
+        ? collision(r.artifactPath)
+        : undefined;
+      if (r.artifactPath && outTaken) {
+        out.push({
+          ...refuse(
+            app,
+            version,
+            true,
+            `output ${
+              basename(r.artifactPath)
+            } has the file name of the locked symbol package ${outTaken.file}`,
+            r.errors,
+            compile_ms,
+          ),
+          ...warned,
+        });
+        continue;
+      }
+      let file: string | null = null;
+      if (r.success && r.artifactPath) {
+        file = join(o.outDir, ".apps", basename(r.artifactPath));
+        await Deno.copyFile(r.artifactPath, file);
+        files.set(app.folder, file);
+        if (!poisoned && !o.cache) keys.set(app.folder, key);
+        if (o.cache && !poisoned) {
+          // H-27 r2: the cache's winning file is this app's file from here on
+          // (a concurrent builder may have won the key), so every dependent is
+          // built against the cached file. A failed write leaves the app unkeyed.
+          try {
+            await o.cache.put(key, file);
+            const won = await o.cache.get(key);
+            if (won === null) throw new Error("no entry after the write");
+            // H-35 Sol r1 #6: the winner is target-checked like a first hit.
+            if (
+              o.policy.target === "Cloud" &&
+              await bc.packageTarget(won) !== "Cloud"
+            ) {
+              throw new Error("the winning cache entry is not a Cloud package");
+            }
+            // H-27 r3: the winner is copied aside and replaces the fresh build
+            // only once complete; on any failure the fresh build stays, unkeyed.
+            const tmp = `${file}.tmp-${crypto.randomUUID()}`;
+            try {
+              await Deno.copyFile(won, tmp);
+              await Deno.rename(tmp, file);
+            } catch (err) {
+              await Deno.remove(tmp).catch(() => {});
+              throw err;
+            }
+            keys.set(app.folder, key);
+          } catch (err) {
+            console.warn(
+              `[WARN] build cache write for ${app.folder} failed (not reused): ${
+                err instanceof Error ? err.message : err
+              }`,
+            );
+          }
+        }
+      }
+      out.push({
+        folder: app.folder,
+        id: app.id,
+        version,
+        ok: file !== null,
+        attempted: true,
+        file,
+        diagnostics: r.errors,
+        compile_ms,
+        ...warned,
+        ...(file && keys.get(app.folder) === key && key ? { key } : {}),
+        ...(file ? { build_key: key } : {}),
+      });
     }
-    out.push({
-      folder: app.folder,
-      id: app.id,
-      version,
-      ok: file !== null,
-      attempted: true,
-      file,
-      diagnostics: r.errors,
-      compile_ms,
-      ...warned,
-      ...(file && keys.get(app.folder) === key && key ? { key } : {}),
-      ...(file ? { build_key: key } : {}),
-    });
+  } finally {
+    for (const d of compileOutputs) {
+      await Deno.remove(d, { recursive: true }).catch(() => {});
+    }
   }
   return out;
 }

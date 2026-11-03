@@ -154,6 +154,27 @@ Deno.test("buildApps: dependency order, versions, workspace and locked symbols",
   );
 });
 
+Deno.test("H-55 buildApps: every compile's private output dir is removed once its app is copied out, a failed build's too", async () => {
+  const ws = await workspace();
+  await write(ws, "Test/src/T.al", "COMPILE_ERROR");
+  const bc = new FakeBc();
+  const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+  });
+  assert(built[0]!.ok && built[1]!.ok && !built[2]!.ok);
+  assertEquals(bc.compileOuts.length, 2);
+  for (const d of bc.compileOuts) {
+    assertEquals(await Deno.stat(d).catch(() => null), null, d);
+  }
+  // The copied apps the caller publishes are still there.
+  assert(await Deno.stat(built[0]!.file!));
+});
+
 Deno.test("buildApps: an unlocked package after compile is refused", async () => {
   const ws = await workspace();
   const bc = new FakeBc();

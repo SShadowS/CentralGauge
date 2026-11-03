@@ -1778,6 +1778,12 @@ ${script}
   ): Promise<CompilationResult> {
     const startTime = Date.now();
     const projectPath = project.path.replace(/\\/g, "\\\\");
+    // H-55: compile output goes to a private temp dir, never the compiler
+    // folder under the BCH shared folder every BC container mounts (the
+    // compile is host-side). A successful compile hands the dir to the caller
+    // (CompilationResult.outputDir); anything else removes it here.
+    let ownedOutput: string | undefined;
+    let handedOver = false;
 
     try {
       const compilerFolder = await this.getOrCreateCompilerFolder(
@@ -1785,21 +1791,15 @@ ${script}
       );
       const escapedCompilerFolder = compilerFolder.replace(/\\/g, "\\\\");
 
-      // Output to a subfolder of the compiler folder (which IS shared with container)
-      // Use a unique folder per project with a random suffix to avoid collisions
-      // when multiple compilations of the same project run in parallel
+      ownedOutput = await Deno.makeTempDir({ prefix: "cg-compile-" });
       const appJson = project.appJson as { name?: string };
-      const uniqueSuffix = crypto.randomUUID().slice(0, 8);
-      const projectName = `${
-        (appJson.name || "app").replace(/[^a-zA-Z0-9-_]/g, "_")
-      }_${uniqueSuffix}`;
-      const outputDir = `${compilerFolder}\\output\\${projectName}`.replace(
-        /\\/g,
-        "\\\\",
+      const projectName = (appJson.name || "app").replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_",
       );
-      await Deno.mkdir(`${compilerFolder}\\output\\${projectName}`, {
-        recursive: true,
-      });
+      const hostOutput = `${ownedOutput}\\${projectName}`;
+      await Deno.mkdir(hostOutput);
+      const outputDir = hostOutput.replace(/\\/g, "\\\\");
 
       const script = buildCompileScript(
         escapedCompilerFolder,
@@ -1818,12 +1818,15 @@ ${script}
         ? await pool.runScript(script)
         : await this.executePowerShell(script);
 
-      return this.buildCompilationResult(
+      const built = this.buildCompilationResult(
         result.output,
         Date.now() - startTime,
         contextLog,
         { analyzerCodes: project.analysis !== undefined },
       );
+      if (!built.success || !built.artifactPath) return built;
+      handedOver = true;
+      return { ...built, outputDir: ownedOutput };
     } catch (error) {
       // Infra-classified failures (container/session/queue faults) must
       // PROPAGATE so the compile-queue catch routes them through the inline
@@ -1849,6 +1852,10 @@ ${script}
         output: errorMessage,
         duration: Date.now() - startTime,
       };
+    } finally {
+      if (ownedOutput && !handedOver) {
+        await Deno.remove(ownedOutput, { recursive: true }).catch(() => {});
+      }
     }
   }
 
@@ -1861,8 +1868,7 @@ ${script}
     // Copy the app to the shared "my" folder which is mounted in the container
     const appFileName = appPath.split(/[/\\]/).pop()!;
     const uuid = crypto.randomUUID().slice(0, 8);
-    const sharedFolder =
-      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedFolder = this.harnessSharedFolder(containerName);
     const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
 
     await Deno.mkdir(sharedFolder, { recursive: true });
@@ -1947,17 +1953,17 @@ ${script}
     // Route through the persistent per-container session slot so the BCH
     // module-load + Windows-PowerShell sub-session spin-up (~120 s) is paid
     // once at session init, not per task. See BenchBattleplan.md Phase 2.
-    const result = await this.runScriptThroughSession(
-      containerName,
-      script,
-      "publish",
-    );
-
-    // Cleanup the copied file
+    // H-55: the staged copy sits on the shared folder every BC container
+    // mounts; it goes whatever the publish does (a throw included).
+    let result: { output: string; exitCode: number };
     try {
-      await Deno.remove(sharedAppPath);
-    } catch {
-      // Ignore cleanup errors
+      result = await this.runScriptThroughSession(
+        containerName,
+        script,
+        "publish",
+      );
+    } finally {
+      await Deno.remove(sharedAppPath).catch(() => {});
     }
 
     if (!result.output.includes("PUBLISH_SUCCESS")) {
@@ -2056,8 +2062,7 @@ ${script}
     // the container without changing the script's path scheme.
     const appFileName = appPath.split(/[/\\]/).pop()!;
     const uuid = crypto.randomUUID().slice(0, 8);
-    const sharedFolder =
-      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedFolder = this.harnessSharedFolder(containerName);
     const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
     await Deno.mkdir(sharedFolder, { recursive: true });
     await Deno.copyFile(appPath, sharedAppPath);
@@ -2578,8 +2583,7 @@ ${script}
     // Copy main app to shared folder accessible by container
     const appFileName = actualAppFilePath.split(/[/\\]/).pop()!;
     const uuid = crypto.randomUUID().slice(0, 8);
-    const sharedFolder =
-      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedFolder = this.harnessSharedFolder(containerName);
     await ensureDir(sharedFolder);
     const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
     await Deno.copyFile(actualAppFilePath, sharedAppPath);
@@ -2592,28 +2596,28 @@ ${script}
       extensionId,
       testCodeunitId,
     );
-    const result = await getTracer().span(
-      "test.legacy.total",
-      {
-        tid: containerName,
-        cat: ["legacy", "test"],
-        args: {
-          taskId: extensionId,
-          container: containerName,
-          path: "legacy",
-        },
-      },
-      () => this.runScriptThroughSession(containerName, script, "test-legacy"),
-    );
-    const duration = Date.now() - startTime;
-
-    // Remove the staged candidate copy now so the publish-failure early
-    // return / infra throw below cannot leak it.
+    // H-55: the staged candidate copy goes whatever the script does (a throw
+    // included), before the publish-failure early return / infra throw below.
+    let result: { output: string; exitCode: number };
     try {
-      await Deno.remove(sharedAppPath);
-    } catch {
-      // Ignore cleanup errors
+      result = await getTracer().span(
+        "test.legacy.total",
+        {
+          tid: containerName,
+          cat: ["legacy", "test"],
+          args: {
+            taskId: extensionId,
+            container: containerName,
+            path: "legacy",
+          },
+        },
+        () =>
+          this.runScriptThroughSession(containerName, script, "test-legacy"),
+      );
+    } finally {
+      await Deno.remove(sharedAppPath).catch(() => {});
     }
+    const duration = Date.now() - startTime;
 
     // Publish-failure ownership (legacy path), TERMINAL — does NOT fall through.
     // model  -> failed TestResult (scored as a model failure, no retry)

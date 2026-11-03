@@ -20,6 +20,11 @@ export interface CompilationResult {
   output: string;
   duration: number; // milliseconds
   artifactPath?: string; // Path to compiled app file
+  /**
+   * H-55: the private dir holding artifactPath, outside the BCH shared
+   * folder. The caller owns it and removes it once the app is copied away.
+   */
+  outputDir?: string;
 }
 
 export interface CompilationError {
