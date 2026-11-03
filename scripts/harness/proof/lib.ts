@@ -44,7 +44,7 @@ export type Disposition = "detected" | "blocked" | "cleared";
 
 export interface ProofControl {
   name: string;
-  kind: "hostile" | "seeded";
+  kind: "seeded";
   /** The layer the control proves (the next one after L1 and L3). */
   layer: "L2" | "L4" | "reset";
   expect: Disposition;
@@ -52,43 +52,16 @@ export interface ProofControl {
   dir: string;
 }
 
-const HOSTILE = "tests/fixtures/harness/hostile";
 const SEEDED = "tests/fixtures/harness/proof";
 
 /**
- * design-r5 2.5 table (proof-only control column) and 6.5 seeded state. The
- * four hostile fixtures are reserved for the owner (H-35b): absent, they
- * report `fixture_missing` and never pass.
+ * design-r5 6.5 seeded state. The four hostile controls of the 2.5
+ * proof-only column (file-packageid, http-exfil, server-path,
+ * background-task) are DROPPED by the owner ruling of 2026-11-03
+ * (decisions/2026-11-03-h35-owner-rulings.md); the gap is listed in
+ * scripts/harness/proof/README.md next to the H-35 disclosure.
  */
 export const PROOF_CONTROLS: readonly ProofControl[] = [
-  {
-    name: "file-packageid",
-    kind: "hostile",
-    layer: "L4",
-    expect: "detected",
-    dir: `${HOSTILE}/file-packageid`,
-  },
-  {
-    name: "http-exfil",
-    kind: "hostile",
-    layer: "L2",
-    expect: "blocked",
-    dir: `${HOSTILE}/http-exfil`,
-  },
-  {
-    name: "server-path",
-    kind: "hostile",
-    layer: "L4",
-    expect: "detected",
-    dir: `${HOSTILE}/server-path`,
-  },
-  {
-    name: "background-task",
-    kind: "hostile",
-    layer: "reset",
-    expect: "cleared",
-    dir: `${HOSTILE}/background-task`,
-  },
   {
     name: "seed-isolated-storage",
     kind: "seeded",
@@ -298,12 +271,7 @@ export async function runControl(
   const dir = join(repoRoot, control.dir);
   const spec = await readSpec(dir);
   if (!spec) {
-    return out(
-      "fixture_missing",
-      control.kind === "hostile"
-        ? "hostile fixture not written: the owner decides its route (H-35b)"
-        : `no ${control.dir}/proof.json`,
-    );
+    return out("fixture_missing", `no ${control.dir}/proof.json`);
   }
   let write: { container: string; result: DeployTestResult };
   try {

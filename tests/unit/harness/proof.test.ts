@@ -116,14 +116,10 @@ async function env(script: TestScript, reset: ResetMechanism = OK_RESET) {
 
 const control = (name: string) => PROOF_CONTROLS.find((c) => c.name === name)!;
 
-Deno.test("H-35c: the controls match design-r5 2.5 (hostile, proof-only column) and 6.5 (seeded state)", () => {
+Deno.test("H-35c: the controls are design-r5 6.5's seeded state; the four hostile 2.5 controls are dropped (owner ruling 2026-11-03)", () => {
   assertEquals(
     PROOF_CONTROLS.map((c) => [c.name, c.kind, c.layer, c.expect]),
     [
-      ["file-packageid", "hostile", "L4", "detected"],
-      ["http-exfil", "hostile", "L2", "blocked"],
-      ["server-path", "hostile", "L4", "detected"],
-      ["background-task", "hostile", "reset", "cleared"],
       ["seed-isolated-storage", "seeded", "reset", "cleared"],
       ["seed-job-queue", "seeded", "reset", "cleared"],
       ["seed-scheduled-task", "seeded", "reset", "cleared"],
@@ -134,13 +130,11 @@ Deno.test("H-35c: the controls match design-r5 2.5 (hostile, proof-only column) 
   assertEquals(PROOF_POLICY.target, "OnPrem");
 });
 
-Deno.test("H-35c: a hostile fixture that is not written reports fixture_missing (owner route) and never passes", async () => {
+Deno.test("H-35c: a control whose fixture is absent reports fixture_missing and never passes", async () => {
   const e = await env(() => result({}));
-  for (const c of PROOF_CONTROLS.filter((c) => c.kind === "hostile")) {
-    const o = await runControl(e, c, await tmp(), await tmp());
-    assertEquals([o.observed, o.pass], ["fixture_missing", false]);
-    assert(o.detail.includes("owner"));
-  }
+  const c: ProofControl = { ...control("seed-job-queue"), dir: "fx/absent" };
+  const o = await runControl(e, c, await tmp(), await tmp());
+  assertEquals([o.observed, o.pass], ["fixture_missing", false]);
   assertEquals(e.bc.syncs.length, 0, "nothing deployed");
 });
 
@@ -220,7 +214,14 @@ Deno.test("H-35c: L4 control: a clean write is not_detected and fails the contro
 });
 
 Deno.test("H-35c: L2 control: the NST's blocked-request text in the write's messages is blocked; without it, not_blocked", async () => {
-  const c: ProofControl = { ...control("http-exfil"), dir: "fx/http" };
+  // The L2 mechanism has no control since the hostile drop; an inline one.
+  const c: ProofControl = {
+    name: "l2-mechanism",
+    kind: "seeded",
+    layer: "L2",
+    expect: "blocked",
+    dir: "fx/http",
+  };
   const blocked = await env(() =>
     result({ Seed: `Error: ${HTTP_BLOCKED_TEXT}.` })
   );
