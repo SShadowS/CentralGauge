@@ -26,7 +26,10 @@ import {
   taskSetIdentity,
 } from "../../src/harness/identity.ts";
 import { validateCampaignRecords } from "../../src/harness/integrity.ts";
-import { checkOneEnvironment } from "../../src/harness/report.ts";
+import {
+  accountCounts,
+  checkOneEnvironment,
+} from "../../src/harness/report.ts";
 import { descriptorLoader } from "../../src/harness/task-oracle.ts";
 import {
   campaignJudging,
@@ -516,6 +519,25 @@ export interface ScreenCampaign {
   excluded?: Excluded[];
   /** M8-02b: problems found in the campaign's raw records (manualRerunProblems). */
   problems?: string[];
+  /** H-53: executions and usage limits per account label. */
+  accounts?: ReturnType<typeof accountCounts>;
+}
+
+/** H-53: per account label over every campaign (status prints it, triage reads it). */
+export function accountLines(campaigns: readonly ScreenCampaign[]): string[] {
+  const all: Record<string, { executions: number; usage_limited: number }> = {};
+  for (const c of campaigns) {
+    for (const [l, a] of Object.entries(c.accounts ?? {})) {
+      const t = all[l] ??= { executions: 0, usage_limited: 0 };
+      t.executions += a.executions;
+      t.usage_limited += a.usage_limited;
+    }
+  }
+  return Object.entries(all).sort(([a], [b]) => a < b ? -1 : 1).map((
+    [l, a],
+  ) =>
+    `account ${l}: ${a.executions} execution(s), ${a.usage_limited} usage_limited`
+  );
 }
 
 /**
@@ -1191,6 +1213,7 @@ export async function loadScreenCampaigns(
       cells: cells.map((x, i) => ({ ...x, env: envs[i]!.env })),
       excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
+      accounts: accountCounts(data.executions),
     });
     ran.set(c.id, c.task_set.tasks);
   }
@@ -1313,6 +1336,7 @@ async function main(): Promise<number> {
     }
   }
   for (const l of excludedLines(hist.excluded)) console.log(l);
+  for (const l of accountLines(campaigns)) console.log(l);
   for (const [id, why] of flagged) {
     console.log(colors.yellow(`[FLAG] ${id}: ${why}; needs a ruling`));
   }

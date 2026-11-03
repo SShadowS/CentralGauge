@@ -59,6 +59,79 @@ export function isOwnerApproval(line: string): boolean {
   return m !== null && ApprovalTime.safeParse(m[2]).success;
 }
 const n = z.number().nonnegative().nullable();
+/** H-53: why a pool gave a cell its label. */
+export const ACCOUNT_CHOICES = [
+  "block_pair",
+  "round_robin",
+  "retry_after_limit",
+] as const;
+export type AccountChoice = (typeof ACCOUNT_CHOICES)[number];
+/** R-02: unique slug account labels (`--secrets-dir label=dir`). */
+const AccountLabels = z.array(z.string().regex(/^[a-z0-9][a-z0-9-]*$/)).min(1)
+  .refine((xs) => new Set(xs).size === xs.length, "duplicate account label");
+
+/**
+ * H-53: labels added to a campaign's account pool on a resume, one
+ * write-once record per addition (account-pools/<campaign>/<seq>.json),
+ * numbered from 001 without gaps. Labels and free text only, never a credential.
+ */
+export const AccountAdditionSchema = z.strictObject({
+  v: z.literal(1),
+  campaign_id: Uuid,
+  seq: z.string().regex(/^\d{3}$/),
+  added: AccountLabels,
+  /** Who added them (free text, required). */
+  by: z.string().trim().min(1),
+  at: Iso,
+  reason: z.string().trim().min(1),
+});
+export type AccountAddition = z.output<typeof AccountAdditionSchema>;
+
+/**
+ * H-53: the campaign's effective account pool, its own labels then each
+ * addition's in seq order; null for an unlabelled campaign with none. A gap
+ * in seq, a label already in the pool, another campaign's addition or an
+ * addition to an unlabelled campaign is refused.
+ */
+export function accountPool(
+  c: Pick<CampaignRecord, "id" | "accounts">,
+  additions: readonly AccountAddition[],
+): string[] | null {
+  const refuse = (msg: string): never => {
+    throw new ValidationError(msg, [msg]);
+  };
+  if (!c.accounts) {
+    if (additions.length > 0) {
+      refuse(
+        `campaign ${c.id} is unlabelled (one --secrets-dir): it takes no account additions`,
+      );
+    }
+    return null;
+  }
+  const pool = [...c.accounts];
+  for (const [i, a] of additions.entries()) {
+    const want = String(i + 1).padStart(3, "0");
+    if (a.campaign_id !== c.id) {
+      refuse(
+        `account addition ${a.seq} belongs to campaign ${a.campaign_id}, not ${c.id}`,
+      );
+    }
+    if (a.seq !== want) {
+      refuse(
+        `campaign ${c.id}: account addition ${want} is missing (found ${a.seq})`,
+      );
+    }
+    for (const l of a.added) {
+      if (pool.includes(l)) {
+        refuse(
+          `campaign ${c.id}: account addition ${a.seq} adds ${l}, already in the pool`,
+        );
+      }
+      pool.push(l);
+    }
+  }
+  return pool;
+}
 
 export const TERMINATIONS = [
   "completed",
@@ -254,6 +327,8 @@ export const ExecutionRecordSchema = z.strictObject({
   }).optional(),
   /** Claude account label the cell ran under (`--secrets-dir label=dir`); absent when unlabelled or stub. */
   account: z.string().min(1).optional(),
+  /** H-53: why a pool campaign gave the cell its account; absent outside a pool (2+ labels). */
+  account_choice: z.enum(ACCOUNT_CHOICES).optional(),
   /** R-10: present only on a record read back with a re-derivation applied. */
   rederived: RederivedSchema.optional(),
   /**
@@ -600,10 +675,7 @@ export const CampaignRecordSchema = z.strictObject({
    * created with; a cell's account is accounts[block % n], so a resume must pass
    * the same list in the same order. Absent: one unlabelled account. Not hashed.
    */
-  accounts: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]*$/)).min(1).refine(
-    (xs) => new Set(xs).size === xs.length,
-    "duplicate account label",
-  ).optional(),
+  accounts: AccountLabels.optional(),
 }).superRefine((c, ctx) => {
   waiverNeedsOverride(c, ctx);
   const issue = (message: string, path: (string | number)[]) =>
@@ -1055,6 +1127,26 @@ export class RecordStore {
     const oldest = byInstant<CampaignRecord>((c) => c.created_at);
     return all.filter((c) => c.experiment.id === experimentId)
       .sort((a, b) => oldest(b, a));
+  }
+
+  /** H-53: write-once, under its seq. */
+  writeAccountAddition(a: AccountAddition): Promise<void> {
+    const r = AccountAdditionSchema.parse(a);
+    return publishOnce(
+      join(this.root, "account-pools", r.campaign_id, `${r.seq}.json`),
+      r,
+    );
+  }
+
+  /** H-53: a campaign's account additions in seq order (accountPool checks them). */
+  async accountAdditions(campaignId: string): Promise<AccountAddition[]> {
+    const campaign_id = safeId(campaignId, "campaign");
+    return (await readAll(
+      this.root,
+      join(this.root, "account-pools", campaign_id),
+      AccountAdditionSchema,
+      (seq) => ({ seq, campaign_id }),
+    )).sort((a, b) => a.seq < b.seq ? -1 : 1);
   }
 
   /** R-10: write-once; a later re-derivation never removes an earlier one. */

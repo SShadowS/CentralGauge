@@ -1308,3 +1308,32 @@ Deno.test("stratifyByEnv (H-51): strata that disagree are flagged; held-out, bro
   assertEquals(r.status.get("HX-003"), "unsealed");
   assertEquals(r.flagged.has("HX-002") || r.flagged.has("HX-003"), false);
 });
+
+// ---- H-53: executions per account label in screening status ----
+import { accountLines } from "../../../scripts/harness/screening.ts";
+
+Deno.test("accountLines (H-53): executions and usage limits per label, summed over campaigns, labels sorted", () => {
+  const c = (
+    accounts: Record<string, { executions: number; usage_limited: number }>,
+  ) => ({
+    id: "c",
+    experiment: "screen-x",
+    created_at: "2026-11-03T00:00:00.000Z",
+    cells: [],
+    accounts,
+  });
+  assertEquals(
+    accountLines([
+      c({ work: { executions: 3, usage_limited: 1 } }),
+      c({
+        maxpriv2: { executions: 10, usage_limited: 0 },
+        work: { executions: 2, usage_limited: 0 },
+      }),
+    ]),
+    [
+      "account maxpriv2: 10 execution(s), 0 usage_limited",
+      "account work: 5 execution(s), 1 usage_limited",
+    ],
+  );
+  assertEquals(accountLines([c({})]), []);
+});

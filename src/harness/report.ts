@@ -123,6 +123,11 @@ export interface HarnessReport {
   calibration_waived?: true;
   /** H-15: present when any execution ran before its parent's recorded usage reset. */
   usage_reset_ignored?: { reasons: string[] };
+  /**
+   * H-53: executions and usage limits per account label (present when any
+   * execution has one), so an account-level anomaly stays visible.
+   */
+  accounts?: Record<string, { executions: number; usage_limited: number }>;
   experiment: {
     id: string;
     hypothesis: string;
@@ -759,6 +764,7 @@ export async function buildReport(
       ),
     ),
   ];
+  const accounts = accountCounts(records.executions);
   const knownSpend = (cs: CellRecord[]) =>
     cs.reduce((s, c) => s + c.known_spend_usd, 0);
   // Refuse before any number: bad bootstrap options, mixed scorers.
@@ -1250,7 +1256,24 @@ export async function buildReport(
     ...(resetReasons.length > 0
       ? { usage_reset_ignored: { reasons: resetReasons } }
       : {}),
+    ...(Object.keys(accounts).length > 0 ? { accounts } : {}),
   };
+}
+
+/** H-53: executions and usage limits per account label, labels sorted; unlabelled executions are not counted. */
+export function accountCounts(
+  executions: readonly Pick<ExecutionRecord, "account" | "termination">[],
+): NonNullable<HarnessReport["accounts"]> {
+  const out: NonNullable<HarnessReport["accounts"]> = {};
+  for (const e of executions) {
+    if (!e.account) continue;
+    const a = out[e.account] ??= { executions: 0, usage_limited: 0 };
+    a.executions++;
+    if (e.termination === "usage_limited") a.usage_limited++;
+  }
+  return Object.fromEntries(
+    Object.entries(out).sort(([a], [b]) => a < b ? -1 : 1),
+  );
 }
 
 const usd = (x: number | null) => (x === null ? "n/a" : `$${x.toFixed(3)}`);
@@ -1315,6 +1338,14 @@ export function renderReport(r: HarnessReport): string {
         r.usage_reset_ignored.reasons.join("; ")
       }`,
     ));
+  }
+  if (r.accounts) {
+    out.push("Accounts");
+    for (const [l, a] of Object.entries(r.accounts)) {
+      out.push(
+        `  ${l}: ${a.executions} execution(s), ${a.usage_limited} usage_limited`,
+      );
+    }
   }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
     ? r.confirmatory

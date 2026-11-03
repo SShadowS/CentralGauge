@@ -53,6 +53,9 @@ import { campaignJudging, cellsFromRecords } from "./outcome.ts";
 import { currentScorerFingerprint } from "./verdict.ts";
 import { verifyPrereg } from "./prereg.ts";
 import {
+  type AccountAddition,
+  AccountAdditionSchema,
+  accountPool,
   type ArtifactRecord,
   type Block,
   type CampaignRecord,
@@ -100,6 +103,11 @@ export interface RunOptions {
    * before this invocation run now; a limit hit during it still pauses.
    */
   ignoreUsageReset?: string;
+  /**
+   * H-53: a resume whose --secrets-dir labels extend the campaign's pool
+   * records this addition (`--add-accounts-reason`, `--added-by`).
+   */
+  addAccounts?: { reason: string; by: string };
 }
 
 export interface CampaignSummary {
@@ -837,6 +845,20 @@ async function campaignInvocation(
       "--ignore-usage-reset needs a non-empty reason",
     );
   }
+  const addAccounts = o.addAccounts
+    ? { reason: o.addAccounts.reason.trim(), by: o.addAccounts.by.trim() }
+    : undefined;
+  if (addAccounts && (addAccounts.reason === "" || addAccounts.by === "")) {
+    throw new ConfigurationError(
+      "--add-accounts-reason and --added-by both need non-empty text",
+    );
+  }
+  // H-53: a pool moves a limited cell's retry to another label at once.
+  if (ignoreReset !== undefined && (env.secretAccounts?.length ?? 0) > 1) {
+    throw new ConfigurationError(
+      "--ignore-usage-reset is for a single-account campaign: an account pool moves the retry to another label",
+    );
+  }
   if (ignoreReset !== undefined) {
     io.log(
       `[WARN] usage resets recorded before this run are ignored (owner override --ignore-usage-reset): ${ignoreReset}`,
@@ -1049,6 +1071,13 @@ async function campaignInvocation(
       `no campaign of experiment ${experimentId} matches the current experiment, task set and arm manifests: --rerun targets an existing campaign`,
     );
   }
+  if (!c && addAccounts) {
+    throw new ConfigurationError(
+      "--add-accounts-reason adds labels to an existing campaign's pool; a new campaign takes its --secrets-dir labels as they are",
+    );
+  }
+  /** H-53: the addition this resume records, after every resume check passes. */
+  let addition: AccountAddition | null = null;
   if (!c) {
     if (campaigns.length > 0) {
       io.log(
@@ -1144,18 +1173,51 @@ async function campaignInvocation(
           : `campaign ${c.id} was created without --unverified-bc-egress-ok: resume it without the flag`,
       );
     }
-    // R-02: and its ordered account labels, so no block changes account.
-    const pinned = c.accounts ?? null;
-    if (JSON.stringify(pinned) !== JSON.stringify(accountLabels)) {
+    // R-02: and its ordered account labels. H-53: the pinned list is the
+    // campaign's labels plus each recorded addition; a resume may only append
+    // new labels after it, with --add-accounts-reason and --added-by.
+    const additions = await env.store.accountAdditions(c.id);
+    const pinned = accountPool(c, additions);
+    const same = JSON.stringify(pinned) === JSON.stringify(accountLabels);
+    const extends_ = pinned !== null && accountLabels !== null &&
+      accountLabels.length > pinned.length &&
+      pinned.every((l, i) => accountLabels[i] === l);
+    if (!same && !(extends_ && addAccounts)) {
       throw new ConfigurationError(
-        `campaign ${c.id} was created with accounts ${
+        `campaign ${c.id} has accounts ${
           pinned ? `[${pinned.join(", ")}]` : "(one unlabelled --secrets-dir)"
         }, this run has accounts ${
           accountLabels
             ? `[${accountLabels.join(", ")}]`
             : "(one unlabelled --secrets-dir)"
-        }: resume it with the same --secrets-dir labels in the same order`,
+        }: resume it with the same --secrets-dir labels in the same order${
+          extends_
+            ? "; to add the new labels to the pool pass --add-accounts-reason and --added-by"
+            : pinned
+            ? " (new labels may only be appended after them)"
+            : ""
+        }`,
       );
+    }
+    if (same && addAccounts) {
+      throw new ConfigurationError(
+        `--add-accounts-reason: no new --secrets-dir label beyond campaign ${c.id}'s pool [${
+          pinned!.join(", ")
+        }]`,
+      );
+    }
+    if (!same) {
+      addition = {
+        v: 1,
+        campaign_id: c.id,
+        seq: String(additions.length + 1).padStart(3, "0"),
+        added: accountLabels!.slice(pinned!.length),
+        by: addAccounts!.by,
+        at: (env.now ?? (() => new Date()))().toISOString(),
+        reason: addAccounts!.reason,
+      };
+      // The full pool stays valid (a label twice is refused here too).
+      accountPool(c, [...additions, AccountAdditionSchema.parse(addition)]);
     }
     // H-13b: and its calibration waiver state.
     if ((c.calibration_waived ?? false) !== calibrationWaived) {
@@ -1190,6 +1252,22 @@ async function campaignInvocation(
       throw new ConfigurationError(
         `campaign ${c.id} has executions recorded before H-44; new executions cannot join it. Start a fresh campaign under a new experiment id or a new --results-dir; existing results stay as they are`,
       );
+    }
+    if (addition) {
+      if (o.dryRun) {
+        io.log(
+          `[DRY] would add accounts [${
+            addition.added.join(", ")
+          }] to campaign ${c.id} (addition ${addition.seq}, by ${addition.by}): ${addition.reason}`,
+        );
+      } else {
+        await env.store.writeAccountAddition(addition);
+        io.log(
+          `[POOL] accounts [${
+            addition.added.join(", ")
+          }] added to campaign ${c.id} (addition ${addition.seq}, by ${addition.by}): ${addition.reason}`,
+        );
+      }
     }
   }
   // H-13b: every execution of a waived campaign records it.
@@ -1368,6 +1446,60 @@ async function campaignInvocation(
   let crashed: { err: unknown } | null = null;
   // H-41 (9): a starved queue admits no new cell either.
   const halted = () => crashed !== null || queue.failed() || queue.starved();
+  // H-53: an account pool (2+ labels). A label is parked while a usage limit
+  // on it has not reset (from the records, so a restart honours it; an
+  // unknown reset hit in this run parks it until the run ends). A cell takes
+  // its block's label while free, else the next free label round-robin; the
+  // run pauses only when every label is parked.
+  const pool = (env.secretAccounts?.length ?? 0) > 1
+    ? env.secretAccounts!.map((a) => a.label!)
+    : null;
+  const parked = new Map<string, string>();
+  if (pool) {
+    for (const e of await env.store.executions(campaign.id)) {
+      if (!e.account || !pool.includes(e.account)) continue;
+      const r = await pendingReset(env, e);
+      if (r !== null && Date.parse(r) > now()) {
+        parked.set(e.account, laterReset(parked.get(e.account) ?? null, r));
+      }
+    }
+  }
+  const free = (l: string) => {
+    const r = parked.get(l);
+    return r === undefined || (r !== "unknown" && Date.parse(r) <= now());
+  };
+  let turn = 0;
+  const pickPooled = (
+    blockLabel: string | null,
+    afterLimit: boolean,
+  ): HarnessEnv["accountChoice"] | null => {
+    if (blockLabel !== null && free(blockLabel)) {
+      return {
+        label: blockLabel,
+        choice: afterLimit ? "retry_after_limit" : "block_pair",
+      };
+    }
+    for (let k = 0; k < pool!.length; k++) {
+      const l = pool![(turn + k) % pool!.length]!;
+      if (!free(l)) continue;
+      turn = (turn + k + 1) % pool!.length;
+      return {
+        label: l,
+        choice: afterLimit ? "retry_after_limit" : "round_robin",
+      };
+    }
+    return null;
+  };
+  /** Every label parked: the earliest reset ("unknown" only if all are). */
+  const earliestReset = () => {
+    const known = [...parked.values()].filter((r) => r !== "unknown")
+      .sort(compareInstant);
+    return known[0] ?? "unknown";
+  };
+  const parkedNote = () =>
+    [...parked].sort(([a], [b]) => a < b ? -1 : 1).map(([l, r]) =>
+      `${l} until ${r}`
+    ).join(", ");
   for (;;) {
     let paused: string | null = null;
     let next = 0;
@@ -1379,13 +1511,55 @@ async function campaignInvocation(
         next < blocks.length
       ) {
         const block = blocks[next++]!;
-        for (const [i, arm] of block.order.entries()) {
+        for (let i = 0; i < block.order.length; i++) {
+          const arm = block.order[i]!;
           if (paused !== null || summary.stopped || halted()) break;
-          const prior = (await env.store.executions(campaign.id)).filter((
-            e,
-          ) => e.block === block.index && e.arm === arm);
+          const all = await env.store.executions(campaign.id);
+          const prior = all.filter((e) =>
+            e.block === block.index && e.arm === arm
+          );
           let at = nextAttempt(prior);
           if (!at) continue;
+          if (pool) {
+            // H-53: the block's label is its newest labelled execution's.
+            const inBlock = all.filter((e) =>
+              e.block === block.index && e.account !== undefined
+            ).sort((a, b) => compareInstant(a.started_at, b.started_at));
+            const parentRec = prior.find((e) => e.id === at!.retryOf);
+            const choice = pickPooled(
+              inBlock.at(-1)?.account ?? null,
+              parentRec?.termination === "usage_limited",
+            );
+            if (!choice) {
+              paused = earliestReset();
+              break;
+            }
+            if (await stopRequested()) break;
+            if (halted()) break;
+            const r = await runCell(
+              { ...agentEnv, accountChoice: choice },
+              cellRefFor(campaign, opened, block, arm, i),
+              at,
+              prior,
+            );
+            summary.ran += r.executions.length;
+            ran.push(...r.executions);
+            if (r.pause) {
+              parked.set(
+                choice.label,
+                laterReset(parked.get(choice.label) ?? null, r.pause),
+              );
+              io.log(
+                `[POOL] account ${choice.label} parked until ${
+                  parked.get(choice.label)
+                }; the cell continues on the next free label`,
+              );
+              // The limited cell stays due: run its retry on another label now
+              // (each limit parks a label, so this ends once all are parked).
+              i--;
+            }
+            continue;
+          }
           // A usage limit survives a restart: no retry before its reset.
           const parent = at.retryOf;
           const waitFor = at.runKind === "auto_retry"
@@ -1449,16 +1623,18 @@ async function campaignInvocation(
     if (queue.starved()) return await starvedOut();
     if (paused === null || summary.stopped) return summary;
     const wait = paused === "unknown" ? Infinity : Date.parse(paused) - now();
+    // H-53: a pool pauses only with every label parked; name each.
+    const what = pool
+      ? `usage limit on every account (${parkedNote()})`
+      : `usage limit until ${paused}`;
     if (wait > o.maxPauseMs) {
       summary.paused = paused;
       io.log(
-        `[PAUSE] usage limit until ${paused}; resume with: centralgauge harness run ${experimentId}`,
+        `[PAUSE] ${what}; resume with: centralgauge harness run ${experimentId}`,
       );
       return summary;
     }
-    io.log(
-      `[PAUSE] usage limit until ${paused}; waiting ${Math.max(wait, 0)} ms`,
-    );
+    io.log(`[PAUSE] ${what}; waiting ${Math.max(wait, 0)} ms`);
     await io.sleep(Math.max(wait, 0));
   }
 }

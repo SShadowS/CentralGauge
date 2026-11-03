@@ -133,6 +133,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}screening.test.ts`]: c(true, 5),
   // T-09: runtime-fixture makeEnv (docker mock, temp dirs), like execution.
   [`${H}secret-accounts.test.ts`]: c(true, 16),
+  // H-53: account pool records, plus campaign runs on the mock image.
+  [`${H}account-pool.test.ts`]: c(true, 30),
   [`${H}skills-bundle.test.ts`]: c(true, 0),
   [`${H}soap-measure.test.ts`]: c(true, 0),
   [`${H}sql-cost-runner.test.ts`]: c(true, 0),
