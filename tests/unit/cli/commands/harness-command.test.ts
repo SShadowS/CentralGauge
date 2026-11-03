@@ -10447,6 +10447,93 @@ Deno.test("openHarnessEnv --containers auto (H-41 sections 6, 10; Task 1): opens
   assertEquals(await records(), []);
 });
 
+/**
+ * H-59 B: a graceful stop (here the console signal) of an `auto` environment
+ * whose pool member joined before the stop, or was mid-join when it came:
+ * the close releases the member's claim, so nothing is left for recover to
+ * refuse, and the stopped exit is set once.
+ */
+async function autoStop(midJoin: boolean) {
+  await using t = await makeEnv();
+  const lineage = await v2Lineage();
+  await baselines(t, lineage, ["Cronus283"]);
+  const order: string[] = [];
+  const a = autoDeps(order);
+  let fire: (() => void) | null = null;
+  let exits = 0;
+  // mid-join: the member's setup signals it was entered, then waits for the gate
+  let releaseSetup: () => void = () => {};
+  const setupGate = new Promise<void>((r) => releaseSetup = r);
+  let entered: () => void = () => {};
+  const setupEntered = new Promise<void>((r) => entered = r);
+  const setup = a.d.setup;
+  const d: EnvDeps = {
+    ...a.d,
+    onStopSignal: (cb) => {
+      fire = cb;
+      return () => void (fire = null);
+    },
+    stoppedExit: () => void exits++,
+    setup: async (names) => {
+      if (midJoin && names.length > 0) {
+        entered();
+        await setupGate;
+      }
+      return setup(names);
+    },
+  };
+  const h = await openHarnessEnv({
+    ...envOpts(t, []),
+    auto: "containers",
+    lineage,
+    bcEgressOverride: NO_NST_RULE,
+  }, d);
+  const records = async () =>
+    (await findRecords(d.quarantineDir(), {
+      name: "Cronus283",
+      id: fakeId("Cronus283"),
+    })).map((f) => f.record?.state);
+  const c = captureAll();
+  let closed = false;
+  try {
+    a.alloc.push("Cronus283");
+    await h.env.bindCampaign!(crypto.randomUUID());
+    const joining = h.env.judgePooled!.refresh();
+    if (midJoin) {
+      // the claim is taken before the member's setup runs
+      await setupEntered;
+      assertEquals(await records(), ["in_use"], "claimed while joining");
+      fire!();
+      assert(h.stop!.aborted && await h.stopRequested!());
+      // the close starts while the member's setup is still blocked
+      const closing = h.close();
+      closed = true;
+      await new Promise((r) => setTimeout(r, 0));
+      releaseSetup();
+      await Promise.all([closing, joining.catch(() => {})]);
+    } else {
+      await joining;
+      assertEquals(h.env.lane.members(), ["Cronus283"]);
+      fire!();
+      assert(h.stop!.aborted && await h.stopRequested!());
+    }
+  } finally {
+    releaseSetup();
+    if (!closed) await h.close();
+    c.restore();
+  }
+  assertEquals(await records(), [], c.lines.join("\n"));
+  assertEquals([exits, fire], [1, null]);
+}
+
+Deno.test("H-59 B graceful stop: an auto pool member that joined before the stop has its claim released by the close", async () => {
+  await autoStop(false);
+});
+
+Deno.test("H-59 B graceful stop: a stop that arrives while a pool member is joining still leaves no in-use record after the close", async () => {
+  await autoStop(true);
+});
+
 Deno.test("openHarnessEnv --judge-containers auto (H-41 N4 a): an interrupted execution recovered at open is published and left owed ([INFO]); the env opens with no judge member and nothing is compiled, deployed or tested", async () => {
   await using t = await makeEnv();
   const cell = await cellFor(t);
