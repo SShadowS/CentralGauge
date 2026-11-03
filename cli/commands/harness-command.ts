@@ -234,7 +234,10 @@ import {
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
 import { renderEnvCheck } from "../../src/harness/environment.ts";
-import { archiveResults } from "../../src/harness/results-root.ts";
+import {
+  archiveResults,
+  guardResultsDir,
+} from "../../src/harness/results-root.ts";
 import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import {
   baselineCreate,
@@ -3455,6 +3458,15 @@ export function registerHarnessCommand(
       "--allow-coord-copy",
       "Allow a --from under the coord tasks (proof or pre-rejudge copies are never archived by default)",
     )
+    .option(
+      "--allow-non-job-source",
+      "Allow a --from outside the coord jobs (e.g. a lane worktree's results root)",
+    )
+    .option(
+      "--quiet-min <minutes:number>",
+      "Refuse a --from with any file written this recently",
+      { default: 10 },
+    )
     .action((opts) =>
       fail(async () => {
         const r = await archiveResults({
@@ -3462,6 +3474,8 @@ export function registerHarnessCommand(
           to: opts.to,
           coordRoot,
           allowCoordCopy: opts.allowCoordCopy === true,
+          allowNonJobSource: opts.allowNonJobSource === true,
+          quietMs: opts.quietMin * 60_000,
         });
         console.log(
           `${
@@ -3492,6 +3506,7 @@ export function registerHarnessCommand(
     .option("--root <dir:string>", "Repository root", { default: "." })
     .action((opts, campaign: string) =>
       fail(async () => {
+        guardResultsDir(opts.resultsDir, join(coordRoot, "jobs")); // H-54
         const done = await harnessRederive({
           campaign,
           executions: (opts.execution ?? []).flatMap((s: string) =>

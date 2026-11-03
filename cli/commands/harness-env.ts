@@ -31,7 +31,7 @@ import {
   laneBlocked,
   poolBlocked,
 } from "../../src/harness/coord-lease.ts";
-import { resultsDirCheck } from "../../src/harness/results-root.ts";
+import { guardResultsDir } from "../../src/harness/results-root.ts";
 import { JudgePool, type PoolBounds } from "../../src/harness/pool.ts";
 import { ContainerProviderRegistry } from "../../src/container/registry.ts";
 import {
@@ -930,17 +930,14 @@ export async function backendAddress(
  * the egress state (a failing marker still stops). No lock, no container.
  */
 /** H-54: results inside a job worktree die with it (a new root refuses). */
-function guardResultsDir(o: EnvOptions, deps: EnvDeps): void {
-  const c = resultsDirCheck(o.resultsDir, join(deps.coordRoot(), "jobs"));
-  if (c?.refuse) throw new ConfigurationError(c.refuse);
-  if (c?.warn) console.warn(colors.yellow(`[WARN] ${c.warn}`));
-}
+const guardEnvResults = (o: EnvOptions, deps: EnvDeps) =>
+  guardResultsDir(o.resultsDir, join(deps.coordRoot(), "jobs"));
 
 export async function openPlanEnv(
   o: EnvOptions,
   deps: EnvDeps = REAL_DEPS,
 ): Promise<PlanEnv> {
-  guardResultsDir(o, deps);
+  guardEnvResults(o, deps);
   const symbols = await loadSymbolsLock(o.repoRoot);
   if (!symbols) {
     throw new ValidationError(
@@ -981,7 +978,7 @@ export async function openHarnessEnv(
   o: EnvOptions,
   deps: EnvDeps = REAL_DEPS,
 ): Promise<OpenEnv> {
-  guardResultsDir(o, deps);
+  guardEnvResults(o, deps);
   // H-35 S3.2: an unproven lineage stops the start, before anything opens.
   const lineage = o.lineage ? await loadLineage(o.lineage) : null;
   // run 004 #4: a test seam; the mechanism's live checks (NST config, fs)

@@ -5,6 +5,7 @@ import { assert, assertEquals, assertFalse, assertRejects } from "@std/assert";
 import { dirname, join } from "@std/path";
 import { ConfigurationError } from "../../../src/errors.ts";
 import {
+  type ArchiveOptions,
   archiveResults,
   resultsDirCheck,
 } from "../../../src/harness/results-root.ts";
@@ -24,22 +25,25 @@ const exists = async (p: string) => {
   }
 };
 
+const old = new Date(Date.now() - 3_600_000);
+
 /** A coord root with jobs/<name> registered as a git worktree. */
-async function coord(): Promise<
-  { root: string; jobs: string; worktree: (name: string) => Promise<string> }
-> {
+async function coord() {
   const root = await testTempDir({ prefix: "h54-coord-" });
   const jobs = join(root, "jobs");
   const gitdirs = join(root, "repo.git", "worktrees");
   return {
     root,
     jobs,
-    worktree: async (name) => {
+    worktree: async (name: string) => {
       const wt = join(jobs, name);
       await Deno.mkdir(join(gitdirs, name), { recursive: true });
       await put(join(wt, ".git"), `gitdir: ${join(gitdirs, name)}\n`);
       return wt;
     },
+    /** archive with no quiet window (test files are fresh) */
+    archive: (o: Omit<ArchiveOptions, "coordRoot">) =>
+      archiveResults({ quietMs: 0, coordRoot: root, ...o }),
   };
 }
 
@@ -52,6 +56,14 @@ async function records(root: string, campaign = "c1"): Promise<void> {
   await put(join(root, "executions", campaign, "e1.json"), '{"e":1}');
   await put(join(root, "runs", "r1.json"), '{"r":1}');
   await put(join(root, "cells", "executions", "x", "e9.json"), '{"cell":1}');
+}
+
+async function refused(
+  p: Promise<unknown>,
+  why: string,
+): Promise<void> {
+  const e = await assertRejects(() => p, ConfigurationError);
+  assert(e.message.includes(why), `"${e.message}" lacks "${why}"`);
 }
 
 Deno.test("H-54 guard: a new results dir inside a job worktree is refused", async () => {
@@ -72,7 +84,9 @@ Deno.test("H-54 guard: an existing records root inside a job worktree only warns
   assertFalse(check?.refuse);
   assert(check?.warn?.includes("harness archive"));
   // a cells root (executions, no campaigns) is an existing root too
-  assertFalse(resultsDirCheck(join(dir, "cells"), c.jobs)?.refuse);
+  const cells = resultsDirCheck(join(dir, "cells"), c.jobs);
+  assertFalse(cells?.refuse);
+  assert(cells?.warn);
 });
 
 Deno.test("H-54 guard: removed worktrees, stale .git files and dirs outside jobs pass", async () => {
@@ -95,6 +109,19 @@ Deno.test("H-54 guard: removed worktrees, stale .git files and dirs outside jobs
   );
 });
 
+Deno.test("H-54 guard: a relative gitdir and a junction into a job worktree are both seen", async () => {
+  const c = await coord();
+  const wt = join(c.jobs, "R-01");
+  await Deno.mkdir(join(c.root, "repo.git", "worktrees", "R-01"), {
+    recursive: true,
+  });
+  await put(join(wt, ".git"), "gitdir: ../../repo.git/worktrees/R-01\n");
+  assert(resultsDirCheck(join(wt, "results", "harness"), c.jobs)?.refuse);
+  const alias = join(c.root, "alias");
+  await Deno.symlink(wt, alias, { type: "junction" });
+  assert(resultsDirCheck(join(alias, "results", "harness"), c.jobs)?.refuse);
+});
+
 Deno.test("H-54 archive: copies records, skips machine state, verifies by hash, idempotent", async () => {
   const c = await coord();
   const wt = await c.worktree("P-02");
@@ -110,22 +137,34 @@ Deno.test("H-54 archive: copies records, skips machine state, verifies by hash, 
       "egress-verified.json",
       "egress-verified.json.superseded-by-recreate",
       ".bench-running.json",
+      ".bench-running.json.guard",
       "claims/e1/.bench-running.json",
-      "runs/r2.json.tmp-abc",
+      "runs/r2.json.tmp-0a1b2c3d-1111-2222-3333-444455556666",
+      "workspaces/.tmp-0a1b2c3d-1111-2222-3333-444455556666/f.txt",
+      // a nested root's machine state is skipped too (any case)
+      "cells/Symbols/a.app",
+      "cells/bc-ledger/l.json",
     ]
   ) {
     await put(join(from, skip), "machine state");
   }
-  // a stale marker (a crashed or finished run) is skipped, not "live"
-  const old = new Date(Date.now() - 3_600_000);
-  await Deno.utime(join(from, ".bench-running.json"), old, old);
-  const r1 = await archiveResults({ from, to, coordRoot: c.root });
-  assertEquals(r1.copied, 4);
-  assertEquals(r1.present, 0);
-  assertEquals(r1.verified, 4);
+  // frozen agent files are content: copied whatever their names
+  await put(join(from, "workspaces", "h1", "notes.tmp-final.txt"), "kept");
+  await put(join(from, "workspaces", "h1", "symbols", "x.al"), "kept");
+  await Deno.mkdir(join(from, "workspaces", "h1", "empty"), {
+    recursive: true,
+  });
+  // stale markers (a crashed or finished run) are skipped, not "live"
+  for (const m of [".bench-running.json", "claims/e1/.bench-running.json"]) {
+    await Deno.utime(join(from, m), old, old);
+  }
+  const r1 = await c.archive({ from, to });
+  assertEquals([r1.copied, r1.present, r1.verified], [6, 0, 6]);
   assertEquals(r1.skipped, [
     "baselines",
     "bc-ledger",
+    join("cells", "Symbols"),
+    join("cells", "bc-ledger"),
     "egress-host.jsonl",
     "egress-verified.json",
     "egress-verified.json.superseded-by-recreate",
@@ -135,16 +174,33 @@ Deno.test("H-54 archive: copies records, skips machine state, verifies by hash, 
     await Deno.readTextFile(join(to, "cells", "executions", "x", "e9.json")),
     '{"cell":1}',
   );
-  assertFalse(await exists(join(to, "symbols")));
-  assertFalse(await exists(join(to, ".bench-running.json")));
-  assertFalse(await exists(join(to, "claims")));
-  assertFalse(await exists(join(to, "runs", "r2.json.tmp-abc")));
-  const r2 = await archiveResults({ from, to, coordRoot: c.root });
-  assertEquals([r2.copied, r2.present, r2.verified], [0, 4, 4]);
+  assertEquals(
+    await Deno.readTextFile(
+      join(to, "workspaces", "h1", "notes.tmp-final.txt"),
+    ),
+    "kept",
+  );
+  assert(await exists(join(to, "workspaces", "h1", "symbols", "x.al")));
+  assert((await Deno.stat(join(to, "workspaces", "h1", "empty"))).isDirectory);
+  for (
+    const gone of [
+      "symbols",
+      ".bench-running.json",
+      ".bench-running.json.guard",
+      join("claims", "e1", ".bench-running.json"),
+      join("runs", "r2.json.tmp-0a1b2c3d-1111-2222-3333-444455556666"),
+      join("workspaces", ".tmp-0a1b2c3d-1111-2222-3333-444455556666"),
+      join("cells", "Symbols"),
+    ]
+  ) {
+    assertFalse(await exists(join(to, gone)), gone);
+  }
+  const r2 = await c.archive({ from, to });
+  assertEquals([r2.copied, r2.present, r2.verified], [0, 6, 6]);
   // a second root merges into the same shared root
   const other = join(await c.worktree("R-07-branch"), "results", "harness");
   await put(join(other, "campaigns", "c2.json"), '{"id":"c2"}');
-  const r3 = await archiveResults({ from: other, to, coordRoot: c.root });
+  const r3 = await c.archive({ from: other, to });
   assertEquals([r3.copied, r3.present], [1, 0]);
 });
 
@@ -154,11 +210,7 @@ Deno.test("H-54 archive: a same-path file with other content refuses and copies 
   const to = join(c.root, "results", "harness");
   await records(from);
   await put(join(to, "runs", "r1.json"), '{"r":"different"}');
-  const e = await assertRejects(
-    () => archiveResults({ from, to, coordRoot: c.root }),
-    ConfigurationError,
-  );
-  assert(e.message.includes(join("runs", "r1.json")));
+  await refused(c.archive({ from, to }), join("runs", "r1.json"));
   assertFalse(await exists(join(to, "campaigns")));
   assertEquals(
     await Deno.readTextFile(join(to, "runs", "r1.json")),
@@ -166,24 +218,31 @@ Deno.test("H-54 archive: a same-path file with other content refuses and copies 
   );
 });
 
-Deno.test("H-54 archive: a coord-task copy is refused unless allowed", async () => {
+Deno.test("H-54 archive: a coord-task copy and a non-job source are refused unless allowed", async () => {
   const c = await coord();
-  const from = join(c.root, "tasks", "H-35", "proof", "results");
   const to = join(c.root, "results", "harness");
-  await records(from);
-  const e = await assertRejects(
-    () => archiveResults({ from, to, coordRoot: c.root }),
-    ConfigurationError,
+  const copy = join(c.root, "tasks", "H-35", "proof", "results");
+  await records(copy);
+  await refused(c.archive({ from: copy, to }), "--allow-coord-copy");
+  // a junction outside tasks pointing at the copy is the same copy
+  const alias = join(c.root, "copy-alias");
+  await Deno.symlink(copy, alias, { type: "junction" });
+  await refused(
+    c.archive({ from: alias, to, allowNonJobSource: true }),
+    "--allow-coord-copy",
   );
-  assert(e.message.includes("--allow-coord-copy"));
   assertFalse(await exists(to));
-  const r = await archiveResults({
-    from,
-    to,
-    coordRoot: c.root,
-    allowCoordCopy: true,
-  });
-  assertEquals(r.copied, 4);
+  assertEquals(
+    (await c.archive({ from: copy, to, allowCoordCopy: true })).copied,
+    4,
+  );
+  const lane = join(c.root, "lane-ops", "results", "harness");
+  await records(lane, "c3");
+  await refused(c.archive({ from: lane, to }), "--allow-non-job-source");
+  assertEquals(
+    (await c.archive({ from: lane, to, allowNonJobSource: true })).copied,
+    2, // campaign c3 and its execution; runs/r1 and the cell are identical
+  );
 });
 
 Deno.test("H-54 archive: refuses a non-records source, overlapping roots and a job-worktree destination", async () => {
@@ -191,38 +250,69 @@ Deno.test("H-54 archive: refuses a non-records source, overlapping roots and a j
   const wt = await c.worktree("P-02");
   const from = join(wt, "results", "harness");
   await records(from);
-  const empty = join(c.root, "empty");
-  await Deno.mkdir(empty);
-  for (
-    const [f, t] of [
-      [empty, join(c.root, "shared")],
-      [from, from],
-      [from, join(from, "archive")],
-      [join(c.root, "shared2"), join(c.root, "shared2", "x")],
-      [from, join(await c.worktree("H-99"), "results", "harness")],
-    ] as [string, string][]
-  ) {
-    await assertRejects(
-      () => archiveResults({ from: f, to: t, coordRoot: c.root }),
-      ConfigurationError,
-    );
-  }
+  const empty = join(c.jobs, "empty");
+  await put(join(empty, "campaigns"), "a file, not a dir");
+  await refused(
+    c.archive({ from: empty, to: join(c.root, "shared") }),
+    "not a harness results root",
+  );
+  await refused(c.archive({ from, to: from }), "overlap");
+  await refused(c.archive({ from, to: join(from, "archive") }), "overlap");
+  const other = join(await c.worktree("H-99"), "results", "harness");
+  await refused(c.archive({ from, to: other }), "inside job worktree");
+  // a junction outside jobs into a job worktree is that worktree
+  const alias = join(c.root, "dest-alias");
+  await Deno.symlink(join(c.jobs, "H-99"), alias, { type: "junction" });
+  await refused(
+    c.archive({ from, to: join(alias, "results", "harness") }),
+    "inside job worktree",
+  );
+  assertFalse(await exists(join(c.jobs, "H-99", "results")));
 });
 
-Deno.test("H-54 archive: a source under a live bench marker is refused", async () => {
+Deno.test("H-54 archive: live markers above or inside the source refuse", async () => {
   const c = await coord();
   const wt = await c.worktree("M8-16a");
   const from = join(wt, "results", "harness");
+  const to = join(c.root, "results", "harness");
   await records(from);
+  // the checkout's marker two levels above a nested cells root
   await put(join(wt, "results", ".bench-running.json"), '{"pid":1}');
-  const e = await assertRejects(
-    () =>
-      archiveResults({
-        from,
-        to: join(c.root, "results", "harness"),
-        coordRoot: c.root,
-      }),
-    ConfigurationError,
+  await refused(c.archive({ from: join(from, "cells"), to }), "live");
+  await Deno.remove(join(wt, "results", ".bench-running.json"));
+  await put(join(from, "cells", ".bench-running.json"), '{"pid":1}');
+  await refused(c.archive({ from, to }), "live");
+  assertFalse(await exists(to));
+});
+
+Deno.test("H-54 archive: a recently written source refuses (quiet window)", async () => {
+  const c = await coord();
+  const from = join(await c.worktree("P-02"), "results", "harness");
+  await records(from);
+  await refused(
+    archiveResults({
+      from,
+      to: join(c.root, "results", "harness"),
+      coordRoot: c.root,
+    }),
+    "changed in the last 10 min",
   );
-  assert(e.message.includes("live"));
+});
+
+Deno.test("H-54 archive: a source that changes during the archive is not clean", async () => {
+  const c = await coord();
+  const from = join(await c.worktree("P-02"), "results", "harness");
+  const to = join(c.root, "results", "harness");
+  await records(from);
+  await refused(
+    c.archive({
+      from,
+      to,
+      afterCopy: () => put(join(from, "runs", "late.json"), "{}"),
+    }),
+    "changed during the archive",
+  );
+  // once quiet, the next run completes it
+  const r = await c.archive({ from, to });
+  assertEquals([r.copied, r.present], [1, 4]);
 });
