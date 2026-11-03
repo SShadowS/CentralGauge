@@ -247,7 +247,8 @@ Deno.test("H-35c (design-r5 6.5): reset control: the write seeds; a read after t
     }, reset);
     return await runControl(e, c, await repoWith(c), await tmp());
   };
-  const STILL = "job queue entry still there";
+  // The read's own assertion (Assert.IsFalse) failing: the state is there.
+  const STILL = "Assert.IsFalse failed. job queue entry still there";
   const ok = await run([STILL, true]);
   assertEquals([ok.observed, ok.pass], ["cleared", true], ok.detail);
   // write after a reset; the contrast read with no reset; the read after one
@@ -264,6 +265,13 @@ Deno.test("H-35c (design-r5 6.5): reset control: the write seeds; a read after t
   assertEquals([leak.observed, leak.pass], ["leaked", false]);
   const infra = await run([STILL, true], "could not seed");
   assertEquals([infra.observed, infra.pass], ["infra", false]);
+  // Sol r1 #4: a contrast read that crashed (not its assertion) proves no
+  // persistence, so a clean read after the reset proves nothing either.
+  const crash = await run(["Object reference not set", true]);
+  assertEquals([crash.observed, crash.pass], ["infra", false], crash.detail);
+  // A leak must be the assertion too; a crash after the reset is infra.
+  const crash2 = await run([STILL, "Object reference not set"]);
+  assertEquals([crash2.observed, crash2.pass], ["infra", false]);
 });
 
 Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay published past its cleanup; the rest is removed", async () => {
@@ -273,14 +281,30 @@ Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay pub
   const s = JSON.parse(await Deno.readTextFile(spec));
   s.write.leave = [IDS.core];
   await Deno.writeTextFile(spec, JSON.stringify(s));
-  const e = await env((cu) =>
-    cu === 80010
-      ? result({ Seed: true })
-      : result({ Gone: e.bc.syncs.length > 4 ? true : "still published" })
+  // Sol r1 #5: the production inventory check would call the left app dirt
+  // and quarantine before the reads; the write that leaves apps skips it.
+  const verified: number[] = [];
+  const e = await env(
+    (cu) =>
+      cu === 80010 ? result({ Seed: true }) : result({
+        Gone: e.bc.syncs.length > 4
+          ? true
+          : "Assert.IsTrue failed. still published",
+      }),
+    {
+      ...OK_RESET,
+      verifyClean: (container) => {
+        verified.push(e.bc.syncs.length);
+        return Promise.resolve({ container, ok: true, diff: [], error: null });
+      },
+    },
   );
-  await runControl(e, c, repo, await tmp());
+  const o = await runControl(e, c, repo, await tmp());
   // The write's cleanup (the 2nd sync) removed the Test app only.
   assertEquals(e.bc.syncs[1]!.removeIds, [IDS.test]);
+  assertEquals(verified.length, 1, "only the read after the reset verifies");
+  assert(verified[0]! > 2, "never after the write's cleanup");
+  assertEquals([o.observed, o.pass], ["cleared", true], o.detail);
 });
 
 Deno.test("H-35c: every seeded fixture in the repo is well formed: steps parse, named test procedures exist, reset controls read, leave ids are write apps, app ids unique per fixture, all OnPrem CentralGauge apps", async () => {

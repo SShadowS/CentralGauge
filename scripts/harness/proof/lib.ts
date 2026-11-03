@@ -226,7 +226,13 @@ async function step(
         ctx: {
           ledgerRoot: env.ledgerRoot,
           trustedRoots: [ws],
-          ...(reset ? { reset: env.reset } : {}),
+          // Sol r1 #5: a write that leaves apps (the global app seed) skips
+          // the inventory check, which would call its seed dirt; L4 stays.
+          ...(reset
+            ? {
+              reset: kept.size > 0 ? withoutVerify(env.reset) : env.reset,
+            }
+            : {}),
         },
       }),
     undefined,
@@ -237,6 +243,11 @@ async function step(
     },
   );
   return { container: held.container, result: held.result };
+}
+
+function withoutVerify(m: ResetMechanism): ResetMechanism {
+  const { verifyClean: _, ...rest } = m;
+  return rest;
 }
 
 const failedRows = (r: DeployTestResult) =>
@@ -325,6 +336,9 @@ export async function runControl(
   if (!spec.read) return out("infra", "a reset control needs a read step", c);
   // The write must have run: its own tests assert the state was seeded.
   const unseeded = failedRows(write.result);
+  if (write.result.rows.length === 0) {
+    return out("infra", "the write ran no test", c);
+  }
   if (unseeded.length > 0) {
     return out("infra", `write did not seed: ${unseeded.join(", ")}`, c);
   }
@@ -348,17 +362,42 @@ export async function runControl(
       return out("infra", err instanceof Error ? err.message : String(err), c);
     }
   }
-  if (failedRows(reads[0]!).length === 0) {
+  // Sol r1 #4: each read is one verdict of its own assertion: every row
+  // passed (gone), or every row failed on the assertion (still there);
+  // anything else (a crash, not run, no rows) proves nothing.
+  const verdict = (r: DeployTestResult): "gone" | "there" | null =>
+    r.rows.length === 0
+      ? null
+      : r.rows.every((x) => x.outcome === "pass")
+      ? "gone"
+      : r.rows.every((x) => x.outcome === "fail" && x.failure === "assertion")
+      ? "there"
+      : null;
+  const [before, after] = reads.map(verdict);
+  if (before === null || after === null) {
+    return out(
+      "infra",
+      `a read did not run its assertion: ${
+        reads.map((r) => failedRows(r).join(", ") || `${r.rows.length} rows`)
+          .join(" | ")
+      }`,
+      c,
+    );
+  }
+  if (before === "gone") {
     return out(
       "not_persisted",
       "the state was gone after the ordinary cleanup alone",
       c,
     );
   }
-  const left = failedRows(reads[1]!);
-  return left.length === 0
+  return after === "gone"
     ? out("cleared", "the reset removed the seeded state before the read", c)
-    : out("leaked", `state survived the reset: ${left.join(", ")}`, c);
+    : out(
+      "leaked",
+      `state survived the reset: ${failedRows(reads[1]!).join(", ")}`,
+      c,
+    );
 }
 
 /** design-r3 11.3: proof records live only under the coord's tasks/H-35/proof. */
