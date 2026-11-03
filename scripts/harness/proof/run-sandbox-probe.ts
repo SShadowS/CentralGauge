@@ -18,6 +18,7 @@ import { DEFAULT_COORD_ROOT } from "../../../src/harness/allocation.ts";
 import { buildRunArgs } from "../../../src/harness/sandbox.ts";
 import {
   type AccessRoots,
+  canonicalPath,
   judgeProbe,
   mountProblems,
   plantCanaries,
@@ -49,15 +50,18 @@ async function main(argv: string[]) {
     .parse(argv);
   const id = crypto.randomUUID();
   const token = crypto.randomUUID().replaceAll("-", "");
+  // Sol r1 #3: every root by the filesystem's own name (links, short names).
+  const privateRoot = await canonicalPath(o.privateRoot);
+  const work = join(privateRoot, "work", id);
+  const secrets = join(privateRoot, "secrets", `proof-${id}`);
   const roots: AccessRoots = {
-    resultsRoot: o.resultsDir,
-    privateRoot: o.privateRoot,
-    symbolStore: o.symbolStore,
-    keyCustody: o.keyCustody ?? null,
+    resultsRoot: await canonicalPath(o.resultsDir),
+    privateRoot,
+    symbolStore: await canonicalPath(o.symbolStore),
+    keyCustody: o.keyCustody ? await canonicalPath(o.keyCustody) : null,
     executionId: id,
+    secretsDir: secrets,
   };
-  const work = join(o.privateRoot, "work", id);
-  const secrets = join(o.privateRoot, "secrets", `proof-${id}`);
   for (const d of ["workspace", "task", "config"]) {
     await Deno.mkdir(join(work, d), { recursive: true });
   }
@@ -86,6 +90,8 @@ async function main(argv: string[]) {
         "C:\\config\\sandbox-probe.ps1",
         "-Token",
         token,
+        "-Known",
+        "C:\\config\\known.txt",
       ],
       timeoutMs: 0,
       killGraceMs: 0,
@@ -98,16 +104,24 @@ async function main(argv: string[]) {
   const layout = mountProblems(args, roots);
   if (layout.length > 0) throw new Error(`mount layout: ${layout.join("; ")}`);
   const planted = await plantCanaries(roots, join(work, "workspace"), token);
+  // Sol r1 #6: the probe also opens every denied canary by its host path,
+  // so a folder that refuses listing but serves a known name still counts.
+  await Deno.writeTextFile(
+    join(work, "config", "known.txt"),
+    planted.filter((p) => !p.positive).map((p) => p.path).join("\r\n"),
+  );
   let detail: string;
   let pass = false;
   try {
     const r = await docker(args);
-    const hits = r.out.split(/\r?\n/).filter((l) => l.startsWith("HIT "))
-      .map((l) => l.slice(4).trim());
-    const done = r.out.split(/\r?\n/).find((l) => l.startsWith("DONE "));
+    const lines = r.out.split(/\r?\n/);
+    const hits = lines.filter((l) => /^(HIT|OPEN) /.test(l))
+      .map((l) => l.replace(/^(HIT|OPEN) /, "").trim());
+    const done = lines.find((l) => l.startsWith("DONE "));
     const j = judgeProbe(hits, token);
     pass = r.code === 0 && !!done && j.pass;
-    detail = `exit ${r.code}; ${done ?? "no DONE line"}; planted ${
+    const errs = lines.find((l) => l.startsWith("ERR ")) ?? "ERR ?";
+    detail = `exit ${r.code}; ${done ?? "no DONE line"}; ${errs}; planted ${
       planted.map((p) => p.path).join(", ")
     }; workspace canary ${j.positive ? "seen" : "NOT seen"}; leaks: ${
       j.leaks.join(", ") || "none"

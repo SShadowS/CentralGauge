@@ -10,10 +10,10 @@
  *     --private-root <dir> --symbol-store <dir> [--key-custody <dir>]
  */
 import { Command } from "@cliffy/command";
-import { join } from "@std/path";
+import { walk } from "@std/fs/walk";
 import { dockerContextEnv } from "../../../src/container/docker-context.ts";
 import { DEFAULT_COORD_ROOT } from "../../../src/harness/allocation.ts";
-import { serverMountProblems } from "./access.ts";
+import { canonicalPath, serverMountProblems } from "./access.ts";
 import { proofRoot, writeProofRecord } from "./lib.ts";
 
 async function main(argv: string[]) {
@@ -36,22 +36,30 @@ async function main(argv: string[]) {
   if (r.code !== 0) {
     throw new Error(`docker inspect: ${new TextDecoder().decode(r.stderr)}`);
   }
-  const mounts = JSON.parse(new TextDecoder().decode(r.stdout));
+  const raw: { Source: string; Destination: string; RW: boolean }[] = JSON
+    .parse(new TextDecoder().decode(r.stdout));
+  // Sol r1 #3: sources and roots by the filesystem's own name.
+  const mounts = await Promise.all(
+    raw.map(async (m) => ({ ...m, Source: await canonicalPath(m.Source) })),
+  );
   const problems = serverMountProblems(mounts, {
-    resultsRoot: o.resultsDir,
-    privateRoot: o.privateRoot,
-    symbolStore: o.symbolStore,
-    keyCustody: o.keyCustody ?? null,
+    resultsRoot: await canonicalPath(o.resultsDir),
+    privateRoot: await canonicalPath(o.privateRoot),
+    symbolStore: await canonicalPath(o.symbolStore),
+    keyCustody: o.keyCustody ? await canonicalPath(o.keyCustody) : null,
     executionId: "-",
   }, o.container);
-  const my = join(
-    "C:\\ProgramData\\BcContainerHelper\\Extensions",
-    o.container,
-    "my",
+  // Sol r1 #7: whatever is actually mapped to C:\Run\my, searched recursively.
+  const runMy = mounts.filter((m) =>
+    m.Destination.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase() ===
+      "c:\\run\\my"
   );
-  for await (const e of Deno.readDir(my)) {
-    if (e.isFile && e.name.toLowerCase().endsWith(".app")) {
-      problems.push(`${my}\\${e.name}: a package left in C:\\Run\\my`);
+  if (runMy.length === 0) problems.push("no mount maps C:\\Run\\my");
+  for (const m of runMy) {
+    for await (const e of walk(m.Source, { exts: [".app"] })) {
+      if (e.isFile || e.isSymlink) {
+        problems.push(`${e.path}: a package left in C:\\Run\\my`);
+      }
     }
   }
   const pass = problems.length === 0;

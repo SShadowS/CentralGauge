@@ -6,7 +6,7 @@
  * (sandbox-probe.ps1, run by lane-ops in the real image) checks the same
  * thing from inside.
  */
-import { join, normalize } from "@std/path";
+import { join, normalize, resolve } from "@std/path";
 
 export type Expect = "denied" | "not_present";
 
@@ -41,6 +41,8 @@ export interface AccessRoots {
   keyCustody?: string | null;
   /** The execution whose own work dir and secrets dir the sandbox mounts. */
   executionId: string;
+  /** Its own secrets dir (createSecretsDir); no other is accepted. */
+  secretsDir?: string;
 }
 
 /** Private root folders no sandbox mounts (execution.ts privatePaths, caches). */
@@ -79,8 +81,24 @@ export function deniedRoots(
   ];
 }
 
+// Sol r1 #3: absolute (a relative root is the cwd's), separators and case
+// folded. Links and short names are the callers' job: canonicalPath first.
 const key = (p: string) =>
-  normalize(p.replaceAll("/", "\\")).replace(/\\+$/, "").toLowerCase() + "\\";
+  normalize(resolve(p.replaceAll("/", "\\"))).replace(/\\+$/, "")
+    .toLowerCase() + "\\";
+
+/**
+ * The filesystem's own name for `p`: junctions, symlinks and 8.3 short names
+ * resolved (realPath), or the absolute path when it does not exist.
+ */
+export async function canonicalPath(p: string): Promise<string> {
+  try {
+    return await Deno.realPath(p);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return resolve(p);
+    throw err;
+  }
+}
 const within = (inner: string, outer: string) =>
   key(inner).startsWith(key(outer));
 
@@ -106,11 +124,7 @@ function mounts(args: string[]) {
 
 /** Why the sandbox's mounts break the access table; empty when they do not. */
 export function mountProblems(args: string[], r: AccessRoots): string[] {
-  const own = [
-    join(r.privateRoot, "work", r.executionId),
-    // createSecretsDir: one fresh dir directly under <private>/secrets
-    join(r.privateRoot, "secrets"),
-  ];
+  const own = join(r.privateRoot, "work", r.executionId);
   const problems: string[] = [];
   for (const m of mounts(args)) {
     const why = (s: string) => problems.push(`${m.src} -> ${m.dst}: ${s}`);
@@ -130,10 +144,9 @@ export function mountProblems(args: string[], r: AccessRoots): string[] {
       continue;
     }
     if (within(m.src, r.privateRoot)) {
-      const inWork = within(m.src, own[0]!);
-      const rel = key(m.src).slice(key(own[1]!).length).replace(/\\$/, "");
-      const ownSecrets = within(m.src, own[1]!) && rel.length > 0 &&
-        !rel.includes("\\");
+      const inWork = within(m.src, own);
+      // Sol r1 #2: exactly this execution's secrets dir, no sibling's.
+      const ownSecrets = !!r.secretsDir && key(m.src) === key(r.secretsDir);
       if (!inWork && !ownSecrets) {
         why("private root path outside this execution's work and secrets");
       }

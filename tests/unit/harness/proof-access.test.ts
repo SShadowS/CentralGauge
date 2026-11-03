@@ -1,11 +1,13 @@
 import { assert, assertEquals } from "@std/assert";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
+import { testTempDir } from "../../utils/temp-dir.ts";
 import { privatePaths } from "../../../src/harness/execution.ts";
 import { buildRunArgs } from "../../../src/harness/sandbox.ts";
 import { adapterFor } from "../../../src/harness/adapters/mod.ts";
 import {
   ACCESS_TABLE,
   type AccessRoots,
+  canonicalPath,
   deniedRoots,
   mountProblems,
   serverMountProblems,
@@ -17,6 +19,7 @@ const R: AccessRoots = {
   symbolStore: "D:\\cg-symbols",
   keyCustody: "D:\\cg-custody",
   executionId: "0b7c4c1e-1111-4111-8111-111111111111",
+  secretsDir: "D:\\cg-private\\secrets\\o-1a2b3c4d",
 };
 
 /** The sandbox spec as execution.ts lays it out for one execution. */
@@ -103,6 +106,56 @@ Deno.test("H-35c: a mount of, inside, or above any denied root is refused; anoth
   assertEquals(
     mountProblems(args([{ src: "d:/CG-PRIVATE/Custody", dst: "C:\\x" }]), R)
       .length,
+    1,
+  );
+  // Sol r1 #2: another execution's secrets dir is not this one's.
+  assertEquals(
+    mountProblems(
+      args([{ src: join(R.privateRoot, "secrets", "o-ffff"), dst: "C:\\x" }]),
+      R,
+    ).length,
+    1,
+  );
+  // Sol r1 #3: a relative root names the same place as its absolute path.
+  const rel = { ...R, resultsRoot: "results\\harness" };
+  assertEquals(
+    mountProblems(args([{ src: resolve("results"), dst: "C:\\x" }]), rel)
+      .length,
+    1,
+  );
+  assertEquals(
+    serverMountProblems(
+      [{
+        Source: resolve("results\\harness"),
+        Destination: "c:\\x",
+        RW: false,
+      }],
+      rel,
+      "Cronus285",
+    ).length,
+    1,
+  );
+});
+
+Deno.test("H-35c (Sol r1 #3): canonicalPath resolves a junction to its target, so an innocent-looking link into a denied root is caught", async () => {
+  const base = await Deno.realPath(await testTempDir());
+  const custody = join(base, "private", "custody");
+  await Deno.mkdir(custody, { recursive: true });
+  const link = join(base, "innocent");
+  try {
+    await Deno.symlink(custody, link, { type: "junction" });
+  } catch (err) {
+    console.warn(`[SKIP] no junction here: ${err}`);
+    return;
+  }
+  assertEquals(await canonicalPath(link), custody);
+  assertEquals(await canonicalPath(join(base, "absent")), join(base, "absent"));
+  const roots = { ...R, privateRoot: join(base, "private") };
+  assertEquals(
+    mountProblems(
+      args([{ src: await canonicalPath(link), dst: "C:\\x" }]),
+      roots,
+    ).length,
     1,
   );
 });
