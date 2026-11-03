@@ -4252,6 +4252,8 @@ export interface CellResult {
   withheld: string | null;
   /** Why no further automatic retry is allowed (Part 1 retryProblem, or an operator interrupt). */
   stopped: string | null;
+  /** H-53: an automatic retry is due but its pool label was parked meanwhile (env.accountUsable). */
+  yielded?: true;
 }
 
 /** One cell: run, judge per policy, automatic retries decided by ancestry (never in supervised mode). */
@@ -4360,7 +4362,13 @@ export async function runCell(
     // H-53: the pool label was parked meanwhile: the retry stays due, for
     // the scheduler to start on a free label.
     if (env.accountUsable && !env.accountUsable()) {
-      return { executions, pause: null, withheld: null, stopped: null };
+      return {
+        executions,
+        pause: null,
+        withheld: null,
+        stopped: null,
+        yielded: true,
+      };
     }
     at = next;
   }

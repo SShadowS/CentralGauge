@@ -423,9 +423,21 @@ Deno.test("pool (H-53, Sol r1): concurrency 2: once a label is parked no cell st
   }
   const [c] = await t.env.store.campaigns("pool");
   assertEquals(es.length, c!.blocks.length * 2 + 1);
+  // Exactly one completed execution per cell (block x arm).
+  for (const b of c!.blocks) {
+    for (const arm of b.order) {
+      assertEquals(
+        es.filter((e) =>
+          e.block === b.index && e.arm === arm && e.termination === "completed"
+        ).length,
+        1,
+        `${b.index} ${arm}`,
+      );
+    }
+  }
 });
 
-Deno.test("pool (H-53, Sol r1): a pooled --rerun takes a pool label; its limit parks the label without pausing, and the owed retry runs on a free label", async () => {
+Deno.test("pool (H-53, Sol r1): a pooled --rerun takes a pool label; its limit parks the label and its retry runs at once on a free label", async () => {
   // mock-crash exhausts its retries: an unscored cell, which --rerun accepts.
   const { t, limited } = await poolEnv(
     ["work", "maxpriv2"],
@@ -454,8 +466,7 @@ Deno.test("pool (H-53, Sol r1): a pooled --rerun takes a pool label; its limit p
     out.lines.some((l) => l.includes("[POOL] account work parked")),
     out.lines.join("\n"),
   );
-  // A plain resume runs its owed retry on maxpriv2.
-  await runCampaign(t.env, "pool", opts(), io());
+  // Its retry ran at once, in the same invocation, on maxpriv2.
   const retry = (await executions(t)).find((e) => e.retry_of === re.id)!;
   assertEquals([retry.account, retry.account_choice], [
     "maxpriv2",
@@ -515,6 +526,42 @@ Deno.test("pool (H-53, Sol r1): with every label parked the run waits for the ea
   // maxpriv2 resets first: about an hour, never two.
   assert(waits[0]! <= 3600_000 && waits[0]! > 3599_000, String(waits[0]));
   assert(now() > 0);
+});
+
+Deno.test("pool (H-53, Sol r2): after the wait the run goes on with the label that reset; a label with no reset stays parked through the wait", async () => {
+  const { t, limited, resetIn, tick } = await poolEnv(["work", "maxpriv2"], 1);
+  limited.add("work");
+  limited.add("maxpriv2");
+  resetIn.set("work", null);
+  resetIn.set("maxpriv2", 3600);
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      waits.push(ms);
+      // The limits lift; the clock passes maxpriv2's reset.
+      limited.clear();
+      tick(ms + 1000);
+      return Promise.resolve();
+    },
+  };
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({ maxPauseMs: 2 * 3600_000 }),
+    out,
+  );
+  assertEquals([s.paused, waits.length], [null, 1]);
+  const es = await executions(t);
+  assertEquals(es.slice(0, 2).map((e) => [e.account, e.termination]), [
+    ["work", "usage_limited"],
+    ["maxpriv2", "usage_limited"],
+  ]);
+  // Everything after the wait ran on maxpriv2: work's unknown reset holds for the run.
+  for (const e of es.slice(2)) {
+    assertEquals([e.account, e.termination], ["maxpriv2", "completed"]);
+  }
+  assertEquals(es.length, 4);
 });
 
 Deno.test("pool (H-53, Sol r1): three labels, equal start times: the next arm follows the retry's label, not the parked parent's", async () => {

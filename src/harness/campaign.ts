@@ -1456,15 +1456,22 @@ async function campaignInvocation(
     return null;
   };
   /**
-   * The block's label: its latest labelled execution's, by start time, then
-   * attempt and place in the block (ancestry decides a tie).
+   * The block's label for its arm `i`, by ancestry alone (never start times):
+   * the latest attempt of arm i's own chain if it has one, else of the
+   * nearest preceding arm that ran.
    */
-  const blockLabel = (all: ExecutionRecord[], block: Block) =>
-    all.filter((e) => e.block === block.index && e.account !== undefined)
-      .sort((a, b) =>
-        compareInstant(a.started_at, b.started_at) || a.attempt - b.attempt ||
-        a.order_in_block - b.order_in_block
-      ).at(-1)?.account ?? null;
+  const blockLabel = (all: ExecutionRecord[], block: Block, i: number) => {
+    for (let k = i; k >= 0; k--) {
+      const chain = all.filter((e) =>
+        e.block === block.index && e.order_in_block === k &&
+        e.account !== undefined
+      );
+      if (chain.length > 0) {
+        return chain.reduce((a, b) => b.attempt > a.attempt ? b : a).account!;
+      }
+    }
+    return null;
+  };
   /** Every label parked: the earliest reset ("unknown" only if all are). */
   const earliestReset = () => {
     const known = [...parked.values()].filter((r) => r !== "unknown")
@@ -1494,24 +1501,107 @@ async function campaignInvocation(
     accountChoice: choice,
     accountUsable: () => free(choice.label),
   });
+  const cellPrior = async (block: Block, arm: string) =>
+    (await env.store.executions(campaign.id)).filter((e) =>
+      e.block === block.index && e.arm === arm
+    );
+  /**
+   * H-53: one pooled cell from `first`, its automatic retries included. Each
+   * start takes a free label, picked after the last await before runCell; a
+   * limit parks that label and the retry goes on at once on the next free
+   * one; a yield (the label was parked by another cell) picks again. pause:
+   * every label is parked (the earliest reset); null: the cell is done, or
+   * `admit` refused (a stop or a halt).
+   */
+  const runPooled = async (
+    base: HarnessEnv,
+    block: Block,
+    arm: string,
+    i: number,
+    first: AttemptRef,
+    prior: ExecutionRecord[],
+    admit: () => Promise<boolean>,
+  ): Promise<{ executions: ExecutionRecord[]; pause: string | null }> => {
+    const executions: ExecutionRecord[] = [];
+    let at: AttemptRef | null = first;
+    let mine = prior;
+    while (at) {
+      const all = await env.store.executions(campaign.id);
+      if (!await admit()) break;
+      const retryOf = at.retryOf;
+      const parent = mine.find((e) => e.id === retryOf);
+      const choice = pickPooled(
+        blockLabel(all, block, i),
+        parent?.termination === "usage_limited",
+      );
+      if (!choice) return { executions, pause: earliestReset() };
+      const r = await runCell(
+        pooledEnv(base, choice),
+        cellRefFor(campaign, opened, block, arm, i),
+        at,
+        mine,
+      );
+      executions.push(...r.executions);
+      if (r.pause) park(choice.label, r.pause);
+      else if (!r.yielded) break;
+      mine = await cellPrior(block, arm);
+      at = nextAttempt(mine);
+    }
+    return { executions, pause: null };
+  };
+  if (rerun && pool) {
+    // H-53: the rerun cell's whole retry chain through the pool, waiting for
+    // the earliest reset under --max-pause-min like a plain run.
+    const arm = o.rerun!.arm;
+    const i = rerun.block.order.indexOf(arm);
+    const base = pooled ? agentEnv : runEnv;
+    const admit = async () =>
+      !await stopRequested() && !queue.failed() && !queue.starved();
+    const done: ExecutionRecord[] = [];
+    let r = await runPooled(
+      base,
+      rerun.block,
+      arm,
+      i,
+      rerun.at,
+      rerun.prior,
+      admit,
+    );
+    done.push(...r.executions);
+    while (r.pause !== null) {
+      const wait = r.pause === "unknown"
+        ? Infinity
+        : Date.parse(r.pause) - now();
+      if (wait > o.maxPauseMs) {
+        summary.paused = r.pause;
+        io.log(
+          `[PAUSE] usage limit on every account (${parkedNote()}); resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+        );
+        break;
+      }
+      io.log(
+        `[PAUSE] usage limit on every account (${parkedNote()}); waiting ${
+          Math.max(wait, 0)
+        } ms`,
+      );
+      await io.sleep(Math.max(wait, 0));
+      const mine = await cellPrior(rerun.block, arm);
+      const at = nextAttempt(mine);
+      if (!at) break;
+      r = await runPooled(base, rerun.block, arm, i, at, mine, admit);
+      done.push(...r.executions);
+    }
+    if (pooled) await queue.drain();
+    for (const e of done) {
+      summary.ran++;
+      await count(e);
+    }
+    return queue.starved() ? await starvedOut() : summary;
+  }
   if (rerun) {
     const arm = o.rerun!.arm;
-    const choice = pool
-      ? pickPooled(
-        blockLabel(await env.store.executions(campaign.id), rerun.block),
-        false,
-      )
-      : null;
-    if (pool && !choice) {
-      summary.paused = earliestReset();
-      io.log(
-        `[PAUSE] usage limit on every account (${parkedNote()}); resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
-      );
-      return summary;
-    }
-    const base = pooled ? agentEnv : runEnv;
     const r = await runCell(
-      choice ? pooledEnv(base, choice) : base,
+      pooled ? agentEnv : runEnv,
       cellRefFor(
         campaign,
         opened,
@@ -1527,15 +1617,7 @@ async function campaignInvocation(
       summary.ran++;
       await count(e);
     }
-    if (r.pause && choice) {
-      // H-53: its owed retry runs on a free label at the next plain resume.
-      if (!park(choice.label, r.pause)) {
-        summary.paused = earliestReset();
-        io.log(
-          `[PAUSE] usage limit on every account (${parkedNote()}); resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
-        );
-      }
-    } else if (r.pause) {
+    if (r.pause) {
       // Its owed retry waits for the reset; a plain resume runs it.
       summary.paused = r.pause;
       io.log(
@@ -1575,32 +1657,21 @@ async function campaignInvocation(
           let at = nextAttempt(prior);
           if (!at) continue;
           if (pool) {
-            if (await stopRequested()) break;
-            if (halted()) break;
-            // H-53: picked after the last await, so no other worker can park
-            // the label between the pick and the start.
-            const parentRec = prior.find((e) => e.id === at!.retryOf);
-            const choice = pickPooled(
-              blockLabel(all, block),
-              parentRec?.termination === "usage_limited",
-            );
-            if (!choice) {
-              paused = earliestReset();
-              break;
-            }
-            const r = await runCell(
-              pooledEnv(agentEnv, choice),
-              cellRefFor(campaign, opened, block, arm, i),
+            const r = await runPooled(
+              agentEnv,
+              block,
+              arm,
+              i,
               at,
               prior,
+              async () => !await stopRequested() && !halted(),
             );
             summary.ran += r.executions.length;
             ran.push(...r.executions);
-            if (r.pause) park(choice.label, r.pause);
-            // A limited cell, or one whose inner retry stopped because another
-            // worker parked its label, stays due: take it again now on a free
-            // label (each limit parks a label, so this ends once all are).
-            if (r.pause || !free(choice.label)) i--;
+            if (r.pause !== null) {
+              paused = earliestReset();
+              break;
+            }
             continue;
           }
           // A usage limit survives a restart: no retry before its reset.

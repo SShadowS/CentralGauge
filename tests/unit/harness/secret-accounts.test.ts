@@ -174,9 +174,30 @@ Deno.test("R-02 run 002: recovery records the interrupted attempt's own account,
 Deno.test("H-53: a pooled cell records the scheduler's label and choice; recovery keeps both, whatever command recovers", async () => {
   await using t = await makeEnv();
   const cell = await cellFor(t);
-  const dir = t.env.secretAccounts[0]!.dir;
+  // Two account dirs with distinct dummy tokens (test values, never real).
+  const base = t.env.secretAccounts[0]!.dir;
+  const dirs: string[] = [];
+  for (const tag of ["work", "maxpriv2"]) {
+    const d = await tempDir();
+    for await (const f of Deno.readDir(base)) {
+      const text = await Deno.readTextFile(join(base, f.name));
+      await Deno.writeTextFile(join(d, f.name), `${text}-dummy-${tag}`);
+    }
+    dirs.push(d);
+  }
+  const token = (d: string) => Deno.readTextFile(join(d, "claude-oauth-token"));
+  // The token the sandbox was given, read from its secrets mount.
+  let mounted: string | null = null;
+  const real = t.docker.behavior;
+  t.docker.behavior = async (call, io) => {
+    mounted = await token(call.mounts.get("C:\\cg-secrets")!.src);
+    return await real(call, io);
+  };
   // Block 0 would take "work" by index; the scheduler names "maxpriv2".
-  const pool = [{ label: "work", dir }, { label: "maxpriv2", dir }];
+  const pool = [{ label: "work", dir: dirs[0]! }, {
+    label: "maxpriv2",
+    dir: dirs[1]!,
+  }];
   const [ran] = (await runCell(
     {
       ...t.env,
@@ -190,6 +211,9 @@ Deno.test("H-53: a pooled cell records the scheduler's label and choice; recover
     "round_robin",
   ]);
   ExecutionRecordSchema.parse(ran);
+  // The sandbox got maxpriv2's directory's token, not work's.
+  assertEquals(mounted, await token(dirs[1]!));
+  assert(mounted !== await token(dirs[0]!));
   // A label outside this run's --secrets-dir is refused.
   await assertRejects(
     () =>
