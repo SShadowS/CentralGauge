@@ -2,6 +2,7 @@ import { assert, assertEquals, assertRejects } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { BcLane, type LockedSymbols } from "../../../src/harness/bc-lane.ts";
 import { hashFile } from "../../../src/harness/hash.ts";
+import { readAppGraph } from "../../../src/harness/staging.ts";
 import type { ResetMechanism } from "../../../src/harness/reset.ts";
 import {
   HTTP_BLOCKED_TEXT,
@@ -244,6 +245,48 @@ Deno.test("H-35c (design-r5 6.5 global app): a write step's `leave` ids stay pub
   await runControl(e, c, repo, await tmp());
   // The write's cleanup (the 2nd sync) removed the Test app only.
   assertEquals(e.bc.syncs[1]!.removeIds, [IDS.test]);
+});
+
+Deno.test("H-35c: every seeded fixture in the repo is well formed: steps parse, named test procedures exist, reset controls read, leave ids are write apps, app ids unique per fixture, all OnPrem CentralGauge apps", async () => {
+  const owner = new Map<string, string>();
+  for (const c of PROOF_CONTROLS.filter((c) => c.kind === "seeded")) {
+    const dir = join(REPO, c.dir);
+    const spec = JSON.parse(await Deno.readTextFile(join(dir, "proof.json")));
+    assertEquals(spec.read !== undefined, c.layer === "reset", c.name);
+    for (const s of ["write", "read"] as const) {
+      if (!spec[s]) continue;
+      const apps = await readAppGraph(join(dir, s));
+      assert(apps.length > 0, `${c.name}/${s}`);
+      for (const a of apps) {
+        assertEquals(a.publisher, "CentralGauge");
+        const raw = JSON.parse(
+          await Deno.readTextFile(join(dir, s, a.folder, "app.json")),
+        );
+        assertEquals(raw.target, "OnPrem", `${c.name}/${s}/${a.folder}`);
+        const prev = owner.get(a.id);
+        assert(!prev || prev === c.name, `${a.id} in ${prev} and ${c.name}`);
+        owner.set(a.id, c.name);
+      }
+      let al = "";
+      for (const a of apps) {
+        for await (const f of Deno.readDir(join(dir, s, a.folder, "src"))) {
+          al += await Deno.readTextFile(join(dir, s, a.folder, "src", f.name));
+        }
+      }
+      for (const t of spec[s].tests) {
+        assert(
+          al.includes(`codeunit ${t.codeunit} `),
+          `${c.name}/${s} ${t.codeunit}`,
+        );
+        for (const p of t.procedures) {
+          assert(al.includes(`procedure ${p}()`), `${c.name}/${s} ${p}`);
+        }
+      }
+      for (const id of spec[s].leave ?? []) {
+        assert(apps.some((a) => a.id === id), `${c.name}: leave ${id}`);
+      }
+    }
+  }
 });
 
 Deno.test("H-35c: proof records are written once and only under <coord>/tasks/H-35/proof, with proof provenance", async () => {

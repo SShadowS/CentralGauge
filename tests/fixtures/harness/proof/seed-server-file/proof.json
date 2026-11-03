@@ -1,0 +1,3 @@
+{
+  "write": { "tests": [{ "codeunit": 79650, "procedures": ["Seed"], "target": "candidate" }] }
+}
