@@ -220,8 +220,9 @@ nothing in flight. After a clear, run your start procedure again.
   stoppable this way (short, releases its claim in a finally), and a claim the close cannot
   prove released is kept with a `[WARN] in-use record of <c> kept` (or `... not removed`) line.
   A supervisor's RAM
-  guard follows `H:\cg-coord\tasks\H-59\sup.sh.proposed`: chain latch, then the private STOP,
-  wait; an emergency kill only below its last threshold or deadline, logged as an abort.
+  guard follows `H:\cg-coord\tasks\H-59\sup.sh.proposed` with `ram-guard-proc.ps1`: chain latch,
+  then the private STOP, wait; an emergency kill only below its last threshold or deadline, of
+  the recorded process only (pid and start time, through a held handle), logged as an abort.
 
 ## lane-admin specifics
 
