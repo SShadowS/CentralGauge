@@ -1,4 +1,4 @@
-codeunit 79600 "CG Proof Seed Global"
+codeunit 74900 "CG Proof Seed Global"
 {
     procedure Marker(): Text
     begin

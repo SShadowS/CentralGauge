@@ -1,4 +1,4 @@
-codeunit 79651 "CG Proof Seed Read Test"
+codeunit 84965 "CG Proof Seed Read Test"
 {
     Subtype = Test;
     TestPermissions = Disabled;

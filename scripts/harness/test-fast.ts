@@ -109,6 +109,10 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),
   [`${H}production-policy.test.ts`]: c(true, 0),
+  // H-35c: temp dirs, the in-process fake BC and repo fixture reads only.
+  [`${H}proof.test.ts`]: c(true, 2),
+  [`${H}proof-access.test.ts`]: c(true, 0),
+  [`${H}proof-canary.test.ts`]: c(true, 0),
   [`${H}publish-setup.test.ts`]: c(true, 1),
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),

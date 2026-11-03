@@ -1,3 +1,13 @@
 {
-  "write": { "tests": [{ "codeunit": 79650, "procedures": ["Seed"], "target": "candidate" }] }
+  "write": {
+    "tests": [
+      {
+        "codeunit": 84968,
+        "procedures": [
+          "Seed"
+        ],
+        "target": "candidate"
+      }
+    ]
+  }
 }

@@ -1,4 +1,4 @@
-codeunit 79601 "CG Proof Seed Probe"
+codeunit 74901 "CG Proof Seed Probe"
 {
     procedure Seeded(): Boolean
     begin

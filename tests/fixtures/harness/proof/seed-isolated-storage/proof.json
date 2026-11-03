@@ -1,4 +1,24 @@
 {
-  "write": { "tests": [{ "codeunit": 79650, "procedures": ["Seed"], "target": "candidate" }] },
-  "read": { "tests": [{ "codeunit": 79651, "procedures": ["Gone"], "target": "candidate" }] }
+  "write": {
+    "tests": [
+      {
+        "codeunit": 84960,
+        "procedures": [
+          "Seed"
+        ],
+        "target": "candidate"
+      }
+    ]
+  },
+  "read": {
+    "tests": [
+      {
+        "codeunit": 84961,
+        "procedures": [
+          "Gone"
+        ],
+        "target": "candidate"
+      }
+    ]
+  }
 }

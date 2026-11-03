@@ -1,4 +1,4 @@
-codeunit 79600 "CG Proof Seed Install"
+codeunit 74900 "CG Proof Seed Install"
 {
     Subtype = Install;
 
