@@ -259,6 +259,8 @@ async function runChunk(i: number, files: string[], logDir: string) {
   const log = join(logDir, `chunk-${i}.log`);
   const out = await new Deno.Command(Deno.execPath(), {
     args: ["test", "--allow-all", ...files],
+    // H-58: no test reads the real <coord>\bch-roots.json
+    env: { CG_BCH_ROOTS_FILE: "none" },
     stdout: "piped",
     stderr: "piped",
   }).output();

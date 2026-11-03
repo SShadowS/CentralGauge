@@ -27,6 +27,23 @@ export const SHARED_BCH_ROOT = "C:\\ProgramData\\BcContainerHelper";
 export const BCH_ROOTS_FILE = "bch-roots.json";
 /** Env var a spawned script receives with the root this process resolved (infra/harness-reset/reset-lib.ps1 checks it). */
 export const BCH_ROOT_ENV = "CG_BCH_ROOT";
+/**
+ * Env override for the file: a path, or `none` (nothing migrated). Every test
+ * task sets `none`, so no test ever reads the real coord file (orchestrator,
+ * H-58 review); reset-lib.ps1 honours it too.
+ */
+export const BCH_ROOTS_FILE_ENV = "CG_BCH_ROOTS_FILE";
+
+/** The file this process reads, or null (`CG_BCH_ROOTS_FILE=none`). */
+export function bchRootsFile(): string | null {
+  const override = Deno.env.get(BCH_ROOTS_FILE_ENV);
+  if (override === "none") return null;
+  if (override) return override;
+  return join(
+    Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
+    BCH_ROOTS_FILE,
+  );
+}
 
 const DEFAULT_COORD_ROOT = "H:\\cg-coord";
 // Safe in a Windows path and inside a PowerShell single-quoted string.
@@ -38,16 +55,15 @@ let migrated: Map<string, string> | null = null;
 
 function load(): Map<string, string> {
   if (migrated) return migrated;
-  const coord = Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT;
-  const path = join(coord, BCH_ROOTS_FILE);
-  let text: string | null;
+  const file = bchRootsFile();
+  const path = file ?? `${BCH_ROOTS_FILE_ENV}=none`;
+  let text: string | null = null;
   try {
-    text = Deno.readTextFileSync(path);
+    if (file !== null) text = Deno.readTextFileSync(file);
   } catch (err) {
     if (!(err instanceof Deno.errors.NotFound)) {
       throw new ConfigurationError(`cannot read ${path}: ${err}`, path);
     }
-    text = null;
   }
   const map = new Map<string, string>();
   if (text !== null) {

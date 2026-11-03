@@ -12,10 +12,11 @@
 $CgSharedBchRoot = 'C:\ProgramData\BcContainerHelper'
 function Get-CgBchMigrated {
   if ($null -ne $global:CgBchMigrated) { return $global:CgBchMigrated }
+  # CG_BCH_ROOTS_FILE overrides the file (a path, or 'none': nothing migrated; every test run sets 'none')
   $coord = if ($env:CG_COORD_ROOT) { $env:CG_COORD_ROOT } else { 'H:\cg-coord' }
-  $file = Join-Path $coord 'bch-roots.json'
+  $file = if ($env:CG_BCH_ROOTS_FILE) { $env:CG_BCH_ROOTS_FILE } else { Join-Path $coord 'bch-roots.json' }
   $map = @{}
-  if (Test-Path -LiteralPath $file) {
+  if ($file -cne 'none' -and (Test-Path -LiteralPath $file)) {
     # -NoEnumerate keeps a top-level array an array, so only an object passes (the TypeScript rule)
     $j = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
     $keys = @(if ($j -is [Management.Automation.PSCustomObject]) { $j.PSObject.Properties.Name })

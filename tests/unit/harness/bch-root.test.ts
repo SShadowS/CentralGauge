@@ -23,10 +23,12 @@ import {
   _resetBchRootsForTest,
   allBchRoots,
   BCH_ROOT_ENV,
+  BCH_ROOTS_FILE_ENV,
   bchPath,
   bchRootEnv,
   bchRootFor,
   bchRootLines,
+  bchRootsFile,
   SHARED_BCH_ROOT,
 } from "../../../src/container/bch-root.ts";
 import { bcchImport } from "../../../src/container/bcch-config.ts";
@@ -35,10 +37,15 @@ import { MockEnv } from "../../utils/test-helpers.ts";
 
 const OWN = "C:\\ProgramData\\BcContainerHelper-Cronus285";
 
-/** Points CG_COORD_ROOT at a temp coord root holding `body` (or nothing). */
+/**
+ * Points CG_COORD_ROOT at a temp coord root holding `body` (or nothing), and
+ * CG_BCH_ROOTS_FILE at its file (`viaCoord`: unset, so the default coord path
+ * is the one read).
+ */
 async function withRoots(
   body: string | null,
   fn: () => void | Promise<void>,
+  viaCoord = false,
 ) {
   const dir = await Deno.makeTempDir({ prefix: "cg-bch-root-" });
   const env = new MockEnv();
@@ -47,6 +54,8 @@ async function withRoots(
       await Deno.writeTextFile(join(dir, "bch-roots.json"), body);
     }
     env.set("CG_COORD_ROOT", dir);
+    if (viaCoord) env.delete(BCH_ROOTS_FILE_ENV);
+    else env.set(BCH_ROOTS_FILE_ENV, join(dir, "bch-roots.json"));
     _resetBchRootsForTest();
     await fn();
   } finally {
@@ -57,6 +66,38 @@ async function withRoots(
 }
 
 const MIGRATED = JSON.stringify({ migrated: ["Cronus285"] });
+
+// Orchestrator ruling (H-58 review): the suite gives the same result before and
+// after a container is listed in the real H:\cg-coord\bch-roots.json.
+Deno.test("bch-root: the test run never resolves the real coord file (run tests via deno task, which sets CG_BCH_ROOTS_FILE=none)", () => {
+  assertEquals(
+    Deno.env.get(BCH_ROOTS_FILE_ENV),
+    "none",
+    "tests must run with CG_BCH_ROOTS_FILE=none (deno task test:unit / test:harness:fast set it)",
+  );
+  _resetBchRootsForTest();
+  assertEquals(bchRootsFile(), null);
+  assertEquals(allBchRoots(), [SHARED_BCH_ROOT]);
+});
+
+Deno.test("bch-root: without the override the file is <CG_COORD_ROOT>\\bch-roots.json; CG_BCH_ROOTS_FILE=none means nothing is migrated", async () => {
+  await withRoots(MIGRATED, () => {
+    assertEquals(
+      bchRootsFile(),
+      join(Deno.env.get("CG_COORD_ROOT")!, "bch-roots.json"),
+    );
+    assertEquals(bchRootFor("Cronus285"), OWN);
+  }, true);
+  const env = new MockEnv();
+  try {
+    env.set(BCH_ROOTS_FILE_ENV, "none");
+    _resetBchRootsForTest();
+    assertEquals(bchRootFor("Cronus285"), SHARED_BCH_ROOT);
+  } finally {
+    env.restore();
+    _resetBchRootsForTest();
+  }
+});
 
 Deno.test("bch-root: no bch-roots.json means every container keeps the shared root and the import is unchanged", async () => {
   const before = bcchImport(null);
@@ -352,7 +393,11 @@ async function resetLib(
       "-Command",
       `$ErrorActionPreference = 'Stop'; . '${lib}'; ${expr}`,
     ],
-    env: { CG_COORD_ROOT: coord, ...env },
+    env: {
+      CG_COORD_ROOT: coord,
+      [BCH_ROOTS_FILE_ENV]: join(coord, "bch-roots.json"),
+      ...env,
+    },
     stdout: "piped",
     stderr: "piped",
   }).output();
