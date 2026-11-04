@@ -17,6 +17,7 @@ import {
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
+import { harnessRetireAccount } from "../../../cli/commands/harness-command.ts";
 import { liveRunMarker } from "../../../src/harness/results-root.ts";
 import { acquireBenchLock } from "../../../src/utils/bench-lock.ts";
 import {
@@ -927,6 +928,13 @@ Deno.test("retire (H-61): refused for an unknown label, a repeat, fewer than 2 l
     ConfigurationError,
     "no campaign",
   );
+  // A blank reason on a valid live label (3 live) is refused by reason validation.
+  await assertRejects(
+    () => retireAccount(t.env.store, { ...r("max"), campaign: c!.id }),
+    Error,
+    "reason",
+  );
+  assertEquals(await t.env.store.accountRetirements(c!.id), []);
   await go(c!.id, "work");
   await assertRejects(
     () => go(c!.id, "work"),
@@ -938,9 +946,6 @@ Deno.test("retire (H-61): refused for an unknown label, a repeat, fewer than 2 l
     () => go(c!.id, "maxpriv2"),
     ConfigurationError,
     "fewer than 2",
-  );
-  await assertRejects(
-    () => retireAccount(t.env.store, { ...r("max"), campaign: c!.id }),
   );
   assertEquals((await t.env.store.accountRetirements(c!.id)).length, 1);
   // A campaign created with one unlabelled --secrets-dir has no account to retire.
@@ -1003,18 +1008,48 @@ Deno.test("retire (H-61): an ordinary resume with cells owed runs them on the li
   }
 });
 
-Deno.test("retire (H-61): a live run's marker blocks the command's guard", async () => {
-  const root = await testTempDir();
-  const results = join(root, "results", "harness");
-  await Deno.mkdir(results, { recursive: true });
-  assertEquals(liveRunMarker(results, root), null);
-  const held = acquireBenchLock(join(root, "results"), { command: "t" });
+/** The command's body on a real 3-label campaign; `lockAt` picks where a run's marker sits. */
+async function liveGuard(
+  lockAt: (resultsRoot: string, repo: string) => string,
+) {
+  const { t } = await poolEnv(["work", "maxpriv2", "max"], 1);
+  await runCampaign(t.env, "pool", opts(), io());
+  const [c] = await t.env.store.campaigns("pool");
+  const repo = await testTempDir();
+  const resultsDir = t.env.resultsRoot;
+  const retireCmd = () =>
+    harnessRetireAccount({
+      campaign: c!.id,
+      label: "work",
+      reason: "r",
+      by: "b",
+      resultsDir,
+      repoRoot: repo,
+    });
+  const held = acquireBenchLock(lockAt(resultsDir, repo), { command: "run" });
   try {
-    assertStringIncludes(liveRunMarker(results, root)!, ".bench-running");
+    await assertRejects(retireCmd, ConfigurationError, "stop it first");
+    assertEquals(await t.env.store.accountRetirements(c!.id), []);
   } finally {
     held();
   }
-  assertEquals(liveRunMarker(results, root), null);
+  const r = await retireCmd();
+  assertEquals(r.label, "work");
+  assertEquals((await t.env.store.accountRetirements(c!.id)).length, 1);
+}
+
+Deno.test("retire (H-61): retire-account is refused, writing nothing, while a run's marker sits above the results dir", async () => {
+  await liveGuard((resultsDir) => resultsDir);
+});
+
+Deno.test("retire (H-61): retire-account finds a run's marker in --root when the results dir is elsewhere", async () => {
+  await liveGuard((_resultsDir, repo) => {
+    const dir = join(repo, "results");
+    Deno.mkdirSync(dir, { recursive: true });
+    return dir;
+  });
+  const none = await testTempDir();
+  assertEquals(liveRunMarker(join(none, "x"), none), null);
 });
 
 Deno.test("retire (H-61): a rerun omits the retired label too; its cell, earlier on the retired label, lands round_robin on a live one, its retry after a limit retry_after_limit", async () => {

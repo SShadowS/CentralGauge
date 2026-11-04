@@ -2534,6 +2534,28 @@ export async function harnessRejudge(
 }
 
 /**
+ * `harness campaign retire-account` (H-61): refused while a run's marker is
+ * fresh (a running invocation keeps the pool it started with), before any
+ * record is written.
+ */
+export async function harnessRetireAccount(o: {
+  campaign: string;
+  label: string;
+  reason: string;
+  by: string;
+  resultsDir: string;
+  repoRoot: string;
+}) {
+  const live = liveRunMarker(o.resultsDir, o.repoRoot);
+  if (live) {
+    throw new ConfigurationError(
+      `a harness run is live (fresh ${live}): stop it first (create its <private-dir>/STOP file), then retire the account`,
+    );
+  }
+  return await retireAccount(new RecordStore(o.resultsDir), o);
+}
+
+/**
  * `harness rederive` (R-10): re-derive stored executions from their raw.jsonl
  * with this checkout's parser, as write-once overlays (src/harness/rederive.ts).
  * The checkout must be clean under src/harness: the overlay names its commit.
@@ -3553,18 +3575,13 @@ export function registerHarnessCommand(
       .action((opts, campaign: string, label: string) =>
         fail(async () => {
           guardResultsDir(opts.resultsDir, join(coordRoot, "jobs"));
-          // A running invocation keeps the pool it started with.
-          const live = liveRunMarker(opts.resultsDir, opts.root);
-          if (live) {
-            throw new ConfigurationError(
-              `a harness run is live (fresh ${live}): stop it first (create its <private-dir>/STOP file), then retire the account`,
-            );
-          }
-          const r = await retireAccount(new RecordStore(opts.resultsDir), {
+          const r = await harnessRetireAccount({
             campaign,
             label,
             reason: opts.reason,
             by: opts.by,
+            resultsDir: opts.resultsDir,
+            repoRoot: opts.root,
           });
           console.log(
             `${

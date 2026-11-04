@@ -214,7 +214,7 @@ export async function loadCampaignData(
 /**
  * H-61: retire an account label from a campaign's pool (explicit; the only
  * way a label leaves). The campaign must be labelled, the label live in its
- * effective pool, and one other label must remain.
+ * effective pool, and two other labels must remain.
  */
 export async function retireAccount(
   store: RecordStore,
