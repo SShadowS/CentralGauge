@@ -103,6 +103,7 @@ import {
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
+  emptyNstUserTemp,
   fsDiff,
   type FsDiffEntry,
   fsLineRestored,
@@ -140,8 +141,17 @@ import {
 } from "../../src/utils/bench-lock.ts";
 import { setupContainers } from "./bench/container-setup.ts";
 
-/** Cronus28 hosts a foreign app on codeunit 80013; Cronus284 is untouched pending the owner. */
-export const REFUSED_CONTAINERS = ["Cronus28", "Cronus284"];
+/**
+ * Containers the harness never uses, with the reason. Cronus28 hosts a foreign app on
+ * codeunit 80013. (H-56: Cronus284 was refused pending the owner until 2026-11-03.)
+ */
+const REFUSED_CONTAINERS: Record<string, string> = {
+  cronus28: "Cronus28: codeunit 80013 collision",
+};
+
+/** Why the harness refuses container `c` (case-insensitive), or null. */
+export const refusedContainer = (c: string): string | null =>
+  REFUSED_CONTAINERS[c.toLowerCase()] ?? null;
 export const EGRESS_MARKER = MARKER_FILE;
 
 /** Host egress verification (M1-33) against the marker at markerPath. Returns problems; empty means verified. */
@@ -414,6 +424,15 @@ function unremediated(
     ...new Set(
       recorded.filter((e) => {
         const cur = now.get(e.path.toLowerCase());
+        // H-35c: an empty NST per-user TEMP dir is restored whatever its
+        // mtime (removing the seed's file moves it again); fsDiff's own rule
+        if (
+          cur &&
+          emptyNstUserTemp(
+            { path: e.path, before: e.before, after: cur },
+            now.keys(),
+          )
+        ) return false;
         // addendum 8b Q6: an F line field by field, its head to the
         // recorded width (a digest v3 record holds 2 bytes)
         return e.before === null
@@ -427,6 +446,59 @@ function unremediated(
 /** The F line's content sha256, or null for any other line. */
 const fileSha = (line: string | null) =>
   line?.startsWith("F|") ? line.split("|")[1] ?? null : null;
+
+/**
+ * H-35c: the entries a quarantine record shows were CREATED (no before line)
+ * that the current capture still holds exactly as recorded: a file with the
+ * recorded content, a directory as a directory. Never a pre-existing entry,
+ * a platform cache the lineage tolerates, a named stream, a reparse point or
+ * anything this capture cannot observe. Ordered for removal: deepest first,
+ * files before directories at the same depth.
+ */
+function createdToRemove(
+  recorded: readonly FsDiffEntry[],
+  capture: readonly string[],
+  m: ResetMechanism,
+): { path: string; kind: "F" | "D" }[] {
+  const roots = m.fsRoots ?? [];
+  const now = new Map(
+    fsDiff(capture, [], [], roots).diff.map((d) => [
+      d.path.toLowerCase(),
+      d.before,
+    ]),
+  );
+  const out = new Map<string, { path: string; kind: "F" | "D" }>();
+  for (const e of recorded) {
+    if (e.before !== null || e.after === null) continue;
+    if (e.path.indexOf(":", Math.max(e.path.lastIndexOf("\\") + 1, 2)) >= 0) {
+      continue; // a named stream goes with its file
+    }
+    if (cacheStillTolerated(e, capture, m)) continue;
+    if (unobservable([e], capture, roots).length > 0) continue;
+    const cur = now.get(e.path.toLowerCase());
+    if (!cur) continue; // already gone
+    const kind = cur[0] === "F" && e.after.startsWith("F|")
+      ? "F"
+      : cur[0] === "D" && e.after.startsWith("D|")
+      ? "D"
+      : null;
+    if (!kind) continue; // changed kind (or a reparse point): not ours
+    if (kind === "F" && fileSha(cur) !== fileSha(e.after)) continue;
+    out.set(e.path.toLowerCase(), { path: e.path, kind });
+  }
+  // A directory is removed only if everything the capture shows inside it is
+  // removed too (a non-recursive removal of a non-empty one would fail).
+  for (const [k, v] of [...out]) {
+    if (v.kind !== "D") continue;
+    const inside = [...now.keys()].filter((p) => p.startsWith(`${k}\\`));
+    if (inside.some((p) => !out.has(p))) out.delete(k);
+  }
+  const depth = (p: string) => p.split("\\").length;
+  return [...out.values()].sort((a, b) =>
+    depth(b.path) - depth(a.path) ||
+    (a.kind === b.kind ? 0 : a.kind === "F" ? -1 : 1)
+  );
+}
 
 /**
  * Addendum 6 (orch r005c HIGH): a recorded difference the recovery capture
@@ -707,11 +779,34 @@ async function recoverClaimed(
         "health",
       );
     }
-    let lines: string[];
-    try {
-      lines = await m.fsDigest(c);
-    } catch (err) {
-      lines = [`E|(fsDigest)|${err instanceof Error ? err.message : err}`];
+    const capture = async (): Promise<string[]> => {
+      try {
+        return await m.fsDigest!(c);
+      } catch (err) {
+        return [`E|(fsDigest)|${err instanceof Error ? err.message : err}`];
+      }
+    };
+    let lines = await capture();
+    // H-35c: what the record shows the deployment created (and the reset left)
+    // is removed, files then directories, deepest first, only while it is
+    // still exactly as recorded; then the checks below run on a new capture.
+    const created = createdToRemove(
+      found.flatMap((f) => f.record?.fs_diff ?? []),
+      lines,
+      m,
+    );
+    if (created.length > 0 && m.fsRemove) {
+      const r = await m.fsRemove(c, created);
+      if (r.errors.length > 0) {
+        throw new ContainerError(
+          `recover ${c}: removing what the deployment created failed: ${
+            r.errors.slice(0, 5).join("; ")
+          }; recreate the container or remove them`,
+          c,
+          "health",
+        );
+      }
+      lines = await capture();
     }
     // As right after a deployment's reset: the capture alone must be clean.
     const errors = fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? [])
@@ -988,13 +1083,13 @@ export async function openHarnessEnv(
     : UNCONFIGURED_RESET;
   const judges = o.judgeContainers ?? [];
   const refused = [...o.containers, ...judges].filter((c) =>
-    REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
+    refusedContainer(c)
   );
   if (refused.length > 0) {
     throw new ConfigurationError(
-      `harness refuses container(s) ${
-        refused.join(", ")
-      } (Cronus28: codeunit 80013 collision; Cronus284: owner pending)`,
+      `harness refuses container(s) ${refused.join(", ")} (${
+        [...new Set(refused.map(refusedContainer))].join("; ")
+      })`,
     );
   }
   // H-41 (Q1, section 10): `auto` judging needs a lineage (every admission
@@ -1399,8 +1494,8 @@ export async function openHarnessEnv(
         deps: {
           allocated: () => deps.allocatedAll(),
           excluded: (c) =>
-            REFUSED_CONTAINERS.some((r) => r.toLowerCase() === c.toLowerCase())
-              ? "refused by the harness (Cronus28, Cronus284)"
+            refusedContainer(c)
+              ? `refused by the harness (${refusedContainer(c)})`
               : containers.some((a) => a.toLowerCase() === c.toLowerCase())
               ? "an agent container of this run"
               : null,

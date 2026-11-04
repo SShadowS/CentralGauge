@@ -45,10 +45,8 @@ import {
   BC_RUNTIME_VERSION,
 } from "../constants.ts";
 import { compilerCacheKey } from "./compiler-cache-key.ts";
+import { bchRootFor } from "./bch-root.ts";
 import { inspectContainer } from "./docker-inspect.ts";
-
-/** Where BCH keeps its artifact-URL-keyed compiler caches. */
-const COMPILER_CACHE_ROOT = "C:\\ProgramData\\BcContainerHelper";
 
 export interface PlatformVersions {
   /** `platform` for a generated app.json, e.g. "28.0.0.0". */
@@ -199,7 +197,7 @@ export async function resolvePlatformVersions(
   }
 
   const key = await compilerCacheKey(artifactUrl);
-  const cacheDir = join(COMPILER_CACHE_ROOT, `compiler-cache-${key}`);
+  const cacheDir = join(bchRootFor(containerName), `compiler-cache-${key}`);
   const fromSymbols = await readFromSymbols(cacheDir);
   if (fromSymbols !== undefined) {
     const resolved: PlatformVersions = {

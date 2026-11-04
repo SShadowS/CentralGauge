@@ -40,7 +40,10 @@ $bchVersion = "$((Get-Command Invoke-ScriptInBcContainer -ErrorAction SilentlyCo
 if ($bchVersion -ne '6.1.14') { Fail 'lineage' "bccontainerhelper resolved to '$bchVersion', pinned 6.1.14" }
 try {
   $lin = Get-Content -Raw $Lineage | ConvertFrom-Json
-  $golden = $lin.golden_path_template.Replace('{container}', $Container)
+  # H-58: the template is the path INSIDE the container (BCH mounts the host root at C:\ProgramData\BcContainerHelper
+  # for every container); on the host a migrated container's golden sits under its own root
+  $goldenIn = $lin.golden_path_template.Replace('{container}', $Container)
+  $golden = Convert-CgBchPath $Container $goldenIn
   $invFile = Join-Path (Split-Path -Parent $Lineage) $lin.inventory.path
   if ((Get-FileHash $invFile -Algorithm SHA256).Hash.ToLower() -ne $lin.inventory.sha256) { throw "stored inventory sha mismatch ($invFile)" }
   $storedInventory = Get-Content $invFile
@@ -82,7 +85,7 @@ Step restore {
         $kind = if ($_.Type -eq 'L') { 'LOG' } else { 'ROWS' }
         "MOVE '$($_.LogicalName)' TO '$(($cur | Where-Object type_desc -eq $kind | Select-Object -First 1).physical_name)'" }) -join ', '
     Invoke-Sqlcmd -QueryTimeout 0 -Query "ALTER DATABASE [CRONUS] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; RESTORE DATABASE [CRONUS] FROM DISK = '$p' WITH REPLACE, $move; ALTER DATABASE [CRONUS] SET MULTI_USER"
-  } $golden
+  } $goldenIn
 }
 Step start { Invoke-InContainer $Container { Start-Service 'MicrosoftDynamicsNavServer$BC' } }
 Step healthy {

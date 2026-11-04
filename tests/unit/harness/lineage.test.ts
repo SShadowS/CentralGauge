@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { dirname, join } from "@std/path";
+import { bchRootEnv } from "../../../src/container/bch-root.ts";
 import { ConfigurationError } from "../../../src/errors.ts";
 import {
   lineageCompat,
@@ -489,7 +490,8 @@ Deno.test("H-35 S3.2 goldenReset: runs lane-ops' script per container with the l
       "-Lineage",
       lineagePath,
     ],
-    env: { DOCKER_CONTEXT: "desktop-windows" },
+    // H-58: the script also gets the BCH root this process resolved
+    env: { DOCKER_CONTEXT: "desktop-windows", ...bchRootEnv("Cronus283") },
   }]);
   // The script's own failure marker comes through.
   const failing = goldenReset({

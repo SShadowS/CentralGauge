@@ -197,11 +197,24 @@ nothing in flight. After a clear, run your start procedure again.
   Why: removed worktrees took their records with them. The R-03 smoke campaign 4947777c
   (accepted) is lost, and only the coord notes remain (H-54 survey). Coord-task copies under
   `H:\cg-coord\tasks\` are never archive sources.
-- Containers: only those allocated to this project in `H:\cg-coord\allocation.json` (owner
-  decision 2026-09-25: Cronus281, Cronus282, Cronus283; Cronus28 belongs to LethAL;
-  Cronus284/285 unallocated). `coord lease` refuses any other container.
+- Containers: only those allocated to this project in `H:\cg-coord\allocation.json` (since
+  2026-11-01: Cronus28 and Cronus281 to Cronus285). `coord lease` refuses any other container.
+  `harness` itself still refuses Cronus28 (codeunit 80013 collision); Cronus284 is usable
+  since H-56 (owner, 2026-11-03).
 - Sandbox containers you create are named `cg-harness-<id>-<runId>-...` so cleanup targets
   only your own run.
+- BCH helper root (H-58, owner ruling 2026-11-03 item 12): a container listed in
+  `H:\cg-coord\bch-roots.json` (`{"migrated": ["Cronus285"]}`, lane-ops writes it when it
+  recreates the container) uses `C:\ProgramData\BcContainerHelper-<container>` in every BCH
+  call (scripts, warm sessions, compiler folder and cache, `my`, the golden backup on the host,
+  sweep-shared). The file is read once per process; edit it only while no harness or bench
+  process runs. No file means the shared root for every container. A malformed file, or a
+  migrated container whose root is not mounted, fails the call. Write the entry right after
+  the recreate, before any harness call on that container: a container recreated with its own
+  root but not listed is not detected (accepted residual, orchestrator 2026-11-03).
+  Tests never read this file: the test tasks set `CG_BCH_ROOTS_FILE=none` and a guard test fails
+  without it, so run the container-free full suite as `deno task test:unit:no-container`, not a
+  bare `deno test`.
 - One harness process per `--private-dir` (M10-08c, owner 2026-10-13). Every `harness`
   command that runs at the same time as another one on this host gets its own
   `--private-dir`; the default directory is shared by every worktree. A second process on the

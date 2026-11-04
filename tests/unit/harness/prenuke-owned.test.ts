@@ -54,7 +54,7 @@ async function runPrenuke(
     [],
     "CG Test Harness",
     owned,
-  ).replace(bcchImport(), "").replace(bcchConfigInit(), "");
+  ).replace(bcchImport("Cronus281"), "").replace(bcchConfigInit(), "");
   const setup = `$global:apps = @(${
     apps.map((a) =>
       `[pscustomobject]@{ AppId = '${a.AppId}'; Name = '${a.Name}'; Publisher = 'CentralGauge'; Version = '1.0.25913.28211' }`

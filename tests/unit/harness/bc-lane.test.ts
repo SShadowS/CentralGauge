@@ -154,6 +154,27 @@ Deno.test("buildApps: dependency order, versions, workspace and locked symbols",
   );
 });
 
+Deno.test("H-55 buildApps: every compile's private output dir is removed once its app is copied out, a failed build's too", async () => {
+  const ws = await workspace();
+  await write(ws, "Test/src/T.al", "COMPILE_ERROR");
+  const bc = new FakeBc();
+  const built = await buildApps(bc, "C1", {
+    policy: DECLARED_POLICY,
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    outDir: await tmp(),
+    lock: await lock(),
+  });
+  assert(built[0]!.ok && built[1]!.ok && !built[2]!.ok);
+  assertEquals(bc.compileOuts.length, 2);
+  for (const d of bc.compileOuts) {
+    assertEquals(await Deno.stat(d).catch(() => null), null, d);
+  }
+  // The copied apps the caller publishes are still there.
+  assert(await Deno.stat(built[0]!.file!));
+});
+
 Deno.test("buildApps: an unlocked package after compile is refused", async () => {
   const ws = await workspace();
   const bc = new FakeBc();
@@ -2041,6 +2062,37 @@ Deno.test("H-35: the Cloud policy compiles every app with target Cloud in the ef
   });
   for (const b of declared) {
     assertEquals((await readApp(b.file!)).target, undefined);
+  }
+});
+
+Deno.test("H-35c: an OnPrem policy (the proof builder's) compiles every app with target OnPrem; its policy id is in the build key", async () => {
+  const ws = await workspace();
+  const bc = new FakeBc();
+  const o = {
+    srcDir: ws,
+    apps: await readAppGraph(ws),
+    versions: new Map(),
+    lock: await lock(),
+  };
+  const onPrem = await buildApps(bc, "C1", {
+    ...o,
+    outDir: await tmp(),
+    policy: { target: "OnPrem", id: "test-onprem@1" },
+  });
+  for (const b of onPrem) {
+    assertEquals((await readApp(b.file!)).target, "OnPrem");
+  }
+  const cloud = await buildApps(bc, "C1", {
+    ...o,
+    outDir: await tmp(),
+    policy: CLOUD_POLICY,
+  });
+  for (const [i, b] of onPrem.entries()) {
+    assert(b.build_key, `${b.folder}: no build key`);
+    assert(
+      b.build_key !== cloud[i]!.build_key,
+      `${b.folder}: key shared with Cloud`,
+    );
   }
 });
 

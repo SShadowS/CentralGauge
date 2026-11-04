@@ -86,7 +86,7 @@ Deno.test("usePsSessionForBc28 opt-in re-enables the PS7 remote session", () => 
 // different BCH runs underneath. bcchImport() must verify the version the
 // cmdlets actually resolve to and throw loudly on mismatch.
 Deno.test("bcchImport pins the module to BCCH_PINNED_VERSION", () => {
-  const script = bcchImport();
+  const script = bcchImport(null);
   assertStringIncludes(
     script,
     `Import-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION}`,
@@ -94,14 +94,14 @@ Deno.test("bcchImport pins the module to BCCH_PINNED_VERSION", () => {
 });
 
 Deno.test("bcchImport verifies the RESOLVED version, not the requested one", () => {
-  const script = bcchImport();
+  const script = bcchImport(null);
   // Get-Command resolves to the module the cmdlets will actually dispatch to,
   // which is the truth even when two versions are loaded side-by-side.
   assertStringIncludes(script, "Get-Command Invoke-ScriptInBcContainer");
 });
 
 Deno.test("bcchImport throws loudly on version mismatch", () => {
-  const script = bcchImport();
+  const script = bcchImport(null);
   assertStringIncludes(script, "throw");
   assertStringIncludes(script, "version mismatch");
   assertStringIncludes(script, BCCH_PINNED_VERSION);

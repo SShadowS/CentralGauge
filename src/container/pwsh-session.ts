@@ -6,6 +6,7 @@
 
 import { PwshSessionError } from "../errors.ts";
 import { bcchConfigInit, bcchImport } from "./bcch-config.ts";
+import { bchRootFor, SHARED_BCH_ROOT } from "./bch-root.ts";
 import { dockerContextEnv } from "./docker-context.ts";
 
 export interface PwshSessionOptions {
@@ -50,11 +51,12 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_BOOTSTRAP_TIMEOUT_MS = 60_000;
 // Built per-call so the usePwshForBc24 knob (see bcch-config.ts / GH #12) is
 // resolved from the env at session-spawn time, not frozen at module load.
-function defaultBootstrapScript(): string {
+// H-58: the session serves one container, so its BCH root is that container's.
+function defaultBootstrapScript(containerName: string): string {
   return `
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
-${bcchImport()}
+${bcchImport(containerName)}
 ${bcchConfigInit()}
 `.trim();
 }
@@ -83,7 +85,8 @@ export class PwshContainerSession {
     this._defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this._bootstrapTimeoutMs = options.bootstrapTimeoutMs ??
       DEFAULT_BOOTSTRAP_TIMEOUT_MS;
-    this._bootstrapScript = options.bootstrapScript ?? defaultBootstrapScript();
+    this._bootstrapScript = options.bootstrapScript ??
+      defaultBootstrapScript(containerName);
     this._spawnFactory = options.spawnFactory ?? defaultSpawnFactory;
     this._stderrSink = options.stderrSink ?? (() => {});
   }
@@ -150,11 +153,34 @@ export class PwshContainerSession {
 
     // Send the bootstrap script with a marker
     const token = crypto.randomUUID();
-    const wrapped =
-      `${this._bootstrapScript}\nWrite-Output "@@CG-DONE-${token}-EXIT-0@@"\n`;
+    // H-58 (Sol r1, r2): stdin runs the bootstrap statement by statement, so
+    // a throw would not stop the success marker. For a container with its own
+    // BCH root the bootstrap text, unchanged (base64, so comments, here-strings
+    // and continuations keep their meaning), is dot-sourced in one guarded
+    // line and a failed root (mount) check fails init. Every other bootstrap is
+    // sent exactly as before.
+    const guarded = bchRootFor(this.containerName) !== SHARED_BCH_ROOT;
+    const b64 = guarded
+      ? btoa(
+        Array.from(
+          new TextEncoder().encode(this._bootstrapScript),
+          (b) => String.fromCharCode(b),
+        ).join(""),
+      )
+      : "";
+    const wrapped = guarded
+      ? `$cgBootExit = 1; try { . ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')))); $cgBootExit = 0 } catch { Write-Output "CG_BOOTSTRAP_THREW: $($_.Exception.Message)" } finally { Write-Output "@@CG-DONE-${token}-EXIT-$cgBootExit@@" }\n`
+      : `${this._bootstrapScript}\nWrite-Output "@@CG-DONE-${token}-EXIT-0@@"\n`;
     try {
       await this.writeToStdin(wrapped);
-      await this.readUntilMarker(token, this._bootstrapTimeoutMs);
+      const boot = await this.readUntilMarker(token, this._bootstrapTimeoutMs);
+      if (boot.exitCode !== 0) {
+        throw new PwshSessionError(
+          `bootstrap failed: ${boot.output.trim()}`,
+          "session_init_failed",
+          { container: this.containerName },
+        );
+      }
     } catch (e) {
       await this.killProcess();
       if (e instanceof PwshSessionError) throw e;

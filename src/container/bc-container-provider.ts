@@ -45,7 +45,8 @@ const log = Logger.create("container:bc");
 
 /** Both redactors on the WHOLE output, before any cut (a cut key no longer matches). */
 const redactAll = (s: string) => redactPatternText(redactSensitive(s)).text;
-import { ContainerError } from "../errors.ts";
+import { ConfigurationError, ContainerError } from "../errors.ts";
+import { bchPath, bchRootFor, SHARED_BCH_ROOT } from "./bch-root.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import { ContainerSessionSlot } from "./session-slot.ts";
 import { CompileSessionPool } from "./compile-session-pool.ts";
@@ -573,7 +574,7 @@ export class BcContainerProvider implements ContainerProvider {
       `Light NST maintenance on ${containerName} (every ${every} tasks): FREEPROCCACHE + stale-session sweep`,
     );
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       try {
         $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
@@ -660,7 +661,7 @@ export class BcContainerProvider implements ContainerProvider {
     // Drop stale sessions first so nothing tries to reuse the dying container.
     await this.disposeContainerSlot(name);
     const script = `
-      ${bcchImport()}
+      ${bcchImport(name)}
       try {
         Restart-BcContainer -containerName "${name}" -ErrorAction Stop
         Write-Output "RESTART_OK:${name}"
@@ -1026,6 +1027,15 @@ ${script}
   }
 
   async setup(config: ContainerConfig): Promise<void> {
+    // H-58: a migrated container is created with its own BCH root by the
+    // H-57 recreate procedure; this generic create would mount the wrong one.
+    if (bchRootFor(config.name) !== SHARED_BCH_ROOT) {
+      throw new ConfigurationError(
+        `${config.name} has its own BcContainerHelper root (${
+          bchRootFor(config.name)
+        }); recreate it with the H-57 procedure, not setup()`,
+      );
+    }
     log.info(`Setting up container: ${config.name}`);
 
     // Store credentials if provided
@@ -1046,7 +1056,7 @@ ${script}
       log.info("Installing bccontainerhelper module...");
       const installResult = await this.executePowerShell(`
         Install-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION} -Force -AllowClobber -Scope CurrentUser
-        ${bcchImport()}
+        ${bcchImport(null)}
         Write-Output "MODULE_INSTALLED"
       `);
 
@@ -1063,7 +1073,7 @@ ${script}
 
     // Remove existing container if it exists
     await this.executePowerShell(`
-      ${bcchImport()}
+      ${bcchImport(config.name)}
       if (Get-BcContainer -containerName "${config.name}" -ErrorAction SilentlyContinue) {
         Write-Output "Removing existing container: ${config.name}"
         Remove-BcContainer -containerName "${config.name}"
@@ -1072,7 +1082,7 @@ ${script}
 
     // Create new container
     const setupScript = `
-      ${bcchImport()}
+      ${bcchImport(config.name)}
 
       Write-Output "Creating Business Central container: ${config.name}"
       New-BcContainer \`
@@ -1108,7 +1118,7 @@ ${script}
     log.info(`Starting container: ${containerName}`);
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Start-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} started"
     `;
@@ -1132,7 +1142,7 @@ ${script}
     log.info(`Stopping container: ${containerName}`);
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Stop-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} stopped"
     `;
@@ -1156,7 +1166,7 @@ ${script}
     log.info(`Removing container: ${containerName}`);
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Remove-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} removed"
     `;
@@ -1178,7 +1188,7 @@ ${script}
 
   async status(containerName: string): Promise<ContainerStatus> {
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
 
       # Check if container exists using Get-BcContainers (plural)
       $containers = Get-BcContainers
@@ -1303,11 +1313,13 @@ ${script}
     // NotFound and log a warning per container before correctly proceeding
     // unlocked. `recursive: true` is already a no-op on an existing dir; a
     // permission failure still lands on that same proceed-unlocked path.
-    await Deno.mkdir(BcContainerProvider.COMPILER_FOLDER_DIR, {
-      recursive: true,
-    }).catch(() => {});
-    const lockPath =
-      `${BcContainerProvider.COMPILER_FOLDER_DIR}\\.cg-${containerName}.lock`;
+    // H-58: under the container's own BCH root when it has one.
+    const compilerDir = bchPath(
+      containerName,
+      BcContainerProvider.COMPILER_FOLDER_DIR,
+    );
+    await Deno.mkdir(compilerDir, { recursive: true }).catch(() => {});
+    const lockPath = `${compilerDir}\\.cg-${containerName}.lock`;
     const lock = await acquireLock(lockPath);
     try {
       // Double-check under the lock: another process may have finished a
@@ -1354,7 +1366,9 @@ ${script}
    */
   private adoptableFolderPath(containerName: string): string | undefined {
     if (!this._compilerCacheEnabled) return undefined;
-    return `${BcContainerProvider.COMPILER_FOLDER_DIR}\\CentralGauge-${containerName}`;
+    return `${
+      bchPath(containerName, BcContainerProvider.COMPILER_FOLDER_DIR)
+    }\\CentralGauge-${containerName}`;
   }
 
   /**
@@ -1447,8 +1461,9 @@ ${script}
     let cacheKey: string | undefined;
     if (this._compilerCacheEnabled && artifactUrl) {
       cacheKey = await compilerCacheKey(artifactUrl);
-      const cacheFolder =
-        `${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-${cacheKey}`;
+      const cacheFolder = `${
+        bchRootFor(containerName)
+      }\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-${cacheKey}`;
       cacheParams =
         ` -containerName "CentralGauge-${containerName}" -cacheFolder "${cacheFolder}"`;
       // Logged before the script runs, so an operator diagnosing a failed
@@ -1468,7 +1483,7 @@ ${script}
       : `$artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"`;
 
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${artifactUrlLine}
       Write-Output "ARTIFACT_URL:$artifactUrl"
       # No -includeTestToolkit: BCH 6.1.14's New-BcCompilerFolder has no such
@@ -1555,7 +1570,7 @@ ${script}
     if (!this.isWindows()) return;
 
     const probeScript = (name: string) => `
-      ${bcchImport()}
+      ${bcchImport(name)}
       $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
         $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
         $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
@@ -1617,7 +1632,7 @@ ${script}
         const escapedProject = projectDir.replace(/\\/g, "\\\\");
         const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
-          ${bcchImport()}
+          ${bcchImport(name)}
           ${bcchConfigInit()}
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
@@ -1778,6 +1793,12 @@ ${script}
   ): Promise<CompilationResult> {
     const startTime = Date.now();
     const projectPath = project.path.replace(/\\/g, "\\\\");
+    // H-55: compile output goes to a private temp dir, never the compiler
+    // folder under the BCH shared folder every BC container mounts (the
+    // compile is host-side). A successful compile hands the dir to the caller
+    // (CompilationResult.outputDir); anything else removes it here.
+    let ownedOutput: string | undefined;
+    let handedOver = false;
 
     try {
       const compilerFolder = await this.getOrCreateCompilerFolder(
@@ -1785,21 +1806,15 @@ ${script}
       );
       const escapedCompilerFolder = compilerFolder.replace(/\\/g, "\\\\");
 
-      // Output to a subfolder of the compiler folder (which IS shared with container)
-      // Use a unique folder per project with a random suffix to avoid collisions
-      // when multiple compilations of the same project run in parallel
+      ownedOutput = await Deno.makeTempDir({ prefix: "cg-compile-" });
       const appJson = project.appJson as { name?: string };
-      const uniqueSuffix = crypto.randomUUID().slice(0, 8);
-      const projectName = `${
-        (appJson.name || "app").replace(/[^a-zA-Z0-9-_]/g, "_")
-      }_${uniqueSuffix}`;
-      const outputDir = `${compilerFolder}\\output\\${projectName}`.replace(
-        /\\/g,
-        "\\\\",
+      const projectName = (appJson.name || "app").replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_",
       );
-      await Deno.mkdir(`${compilerFolder}\\output\\${projectName}`, {
-        recursive: true,
-      });
+      const hostOutput = `${ownedOutput}\\${projectName}`;
+      await Deno.mkdir(hostOutput);
+      const outputDir = hostOutput.replace(/\\/g, "\\\\");
 
       const script = buildCompileScript(
         escapedCompilerFolder,
@@ -1818,12 +1833,15 @@ ${script}
         ? await pool.runScript(script)
         : await this.executePowerShell(script);
 
-      return this.buildCompilationResult(
+      const built = this.buildCompilationResult(
         result.output,
         Date.now() - startTime,
         contextLog,
         { analyzerCodes: project.analysis !== undefined },
       );
+      if (!built.success || !built.artifactPath) return built;
+      handedOver = true;
+      return { ...built, outputDir: ownedOutput };
     } catch (error) {
       // Infra-classified failures (container/session/queue faults) must
       // PROPAGATE so the compile-queue catch routes them through the inline
@@ -1849,6 +1867,10 @@ ${script}
         output: errorMessage,
         duration: Date.now() - startTime,
       };
+    } finally {
+      if (ownedOutput && !handedOver) {
+        await Deno.remove(ownedOutput, { recursive: true }).catch(() => {});
+      }
     }
   }
 
@@ -1861,8 +1883,7 @@ ${script}
     // Copy the app to the shared "my" folder which is mounted in the container
     const appFileName = appPath.split(/[/\\]/).pop()!;
     const uuid = crypto.randomUUID().slice(0, 8);
-    const sharedFolder =
-      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedFolder = this.harnessSharedFolder(containerName);
     const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
 
     await Deno.mkdir(sharedFolder, { recursive: true });
@@ -1881,7 +1902,7 @@ ${script}
       Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@${BCCH_PINNED_VERSION} usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-05-03-A"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
@@ -1947,17 +1968,17 @@ ${script}
     // Route through the persistent per-container session slot so the BCH
     // module-load + Windows-PowerShell sub-session spin-up (~120 s) is paid
     // once at session init, not per task. See BenchBattleplan.md Phase 2.
-    const result = await this.runScriptThroughSession(
-      containerName,
-      script,
-      "publish",
-    );
-
-    // Cleanup the copied file
+    // H-55: the staged copy sits on the shared folder every BC container
+    // mounts; it goes whatever the publish does (a throw included).
+    let result: { output: string; exitCode: number };
     try {
-      await Deno.remove(sharedAppPath);
-    } catch {
-      // Ignore cleanup errors
+      result = await this.runScriptThroughSession(
+        containerName,
+        script,
+        "publish",
+      );
+    } finally {
+      await Deno.remove(sharedAppPath).catch(() => {});
     }
 
     if (!result.output.includes("PUBLISH_SUCCESS")) {
@@ -2056,8 +2077,7 @@ ${script}
     // the container without changing the script's path scheme.
     const appFileName = appPath.split(/[/\\]/).pop()!;
     const uuid = crypto.randomUUID().slice(0, 8);
-    const sharedFolder =
-      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedFolder = this.harnessSharedFolder(containerName);
     const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
     await Deno.mkdir(sharedFolder, { recursive: true });
     await Deno.copyFile(appPath, sharedAppPath);
@@ -2179,7 +2199,10 @@ ${script}
 
   /** BCH shared "my" folder for app files. Overridden in unit tests. */
   protected harnessSharedFolder(containerName: string): string {
-    return `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    return bchPath(
+      containerName,
+      `${SHARED_BCH_ROOT}\\Extensions\\${containerName}\\my`,
+    );
   }
 
   /** H-35: the Target a compiled package's manifest records (host-side read). */
@@ -2398,25 +2421,51 @@ ${script}
     testCodeunitId?: number,
     options?: { label?: string },
   ): Promise<TestResult> {
+    if (appFilePath) {
+      return await this.runTestsWithApp(
+        containerName,
+        project,
+        appFilePath,
+        testCodeunitId,
+        options,
+      );
+    }
+    // Use a project-local app or compile one. H-55: a compile here owns a
+    // private output dir, removed whatever the test run does.
+    const compiled = await this.ensureCompiledApp(
+      containerName,
+      project,
+      Date.now(),
+    );
+    if (!compiled.success) return compiled.failureResult!;
+    try {
+      return await this.runTestsWithApp(
+        containerName,
+        project,
+        compiled.appFilePath!,
+        testCodeunitId,
+        options,
+      );
+    } finally {
+      if (compiled.outputDir) {
+        await Deno.remove(compiled.outputDir, { recursive: true })
+          .catch(() => {});
+      }
+    }
+  }
+
+  private async runTestsWithApp(
+    containerName: string,
+    project: ALProject,
+    actualAppFilePath: string,
+    testCodeunitId?: number,
+    options?: { label?: string },
+  ): Promise<TestResult> {
     const contextLog = options?.label ? log.child(options.label) : log;
     contextLog.info(`Running tests in container: ${containerName}`);
 
     const startTime = Date.now();
     const credentials = this.getCredentials(containerName);
-
-    // Use provided app file path or search for one
-    let actualAppFilePath = appFilePath;
-    if (!actualAppFilePath) {
-      const appFileResult = await this.ensureCompiledApp(
-        containerName,
-        project,
-        startTime,
-      );
-      if (!appFileResult.success) {
-        return appFileResult.failureResult!;
-      }
-      actualAppFilePath = appFileResult.appFilePath!;
-    }
 
     // Extract extensionId from app.json for test filtering
     const appJson = project.appJson as { id?: string };
@@ -2578,8 +2627,7 @@ ${script}
     // Copy main app to shared folder accessible by container
     const appFileName = actualAppFilePath.split(/[/\\]/).pop()!;
     const uuid = crypto.randomUUID().slice(0, 8);
-    const sharedFolder =
-      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedFolder = this.harnessSharedFolder(containerName);
     await ensureDir(sharedFolder);
     const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
     await Deno.copyFile(actualAppFilePath, sharedAppPath);
@@ -2592,28 +2640,28 @@ ${script}
       extensionId,
       testCodeunitId,
     );
-    const result = await getTracer().span(
-      "test.legacy.total",
-      {
-        tid: containerName,
-        cat: ["legacy", "test"],
-        args: {
-          taskId: extensionId,
-          container: containerName,
-          path: "legacy",
-        },
-      },
-      () => this.runScriptThroughSession(containerName, script, "test-legacy"),
-    );
-    const duration = Date.now() - startTime;
-
-    // Remove the staged candidate copy now so the publish-failure early
-    // return / infra throw below cannot leak it.
+    // H-55: the staged candidate copy goes whatever the script does (a throw
+    // included), before the publish-failure early return / infra throw below.
+    let result: { output: string; exitCode: number };
     try {
-      await Deno.remove(sharedAppPath);
-    } catch {
-      // Ignore cleanup errors
+      result = await getTracer().span(
+        "test.legacy.total",
+        {
+          tid: containerName,
+          cat: ["legacy", "test"],
+          args: {
+            taskId: extensionId,
+            container: containerName,
+            path: "legacy",
+          },
+        },
+        () =>
+          this.runScriptThroughSession(containerName, script, "test-legacy"),
+      );
+    } finally {
+      await Deno.remove(sharedAppPath).catch(() => {});
     }
+    const duration = Date.now() - startTime;
 
     // Publish-failure ownership (legacy path), TERMINAL — does NOT fall through.
     // model  -> failed TestResult (scored as a model failure, no retry)
@@ -2725,9 +2773,12 @@ ${script}
     success: boolean;
     appFilePath?: string;
     failureResult?: TestResult;
+    /** H-55: the compile's private output dir; the caller removes it. */
+    outputDir?: string;
   }> {
     // Try to find existing compiled app
     let appFilePath = await this.findCompiledAppFile(project);
+    let outputDir: string | undefined;
 
     if (!appFilePath) {
       log.warn("No compiled app found, compiling first...");
@@ -2742,6 +2793,7 @@ ${script}
         };
       }
       appFilePath = compileResult.artifactPath;
+      outputDir = compileResult.outputDir;
     }
 
     if (!appFilePath) {
@@ -2754,7 +2806,7 @@ ${script}
       };
     }
 
-    return { success: true, appFilePath };
+    return { success: true, appFilePath, ...(outputDir && { outputDir }) };
   }
 
   /** Find the first .app file in the project output directory */
@@ -2810,7 +2862,7 @@ ${script}
     containerPath: string,
   ): Promise<void> {
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Copy-ToNavContainer -containerName "${containerName}" -localPath "${localPath}" -containerPath "${containerPath}"
       Write-Output "Copied ${localPath} to ${containerName}:${containerPath}"
     `;
@@ -2834,7 +2886,7 @@ ${script}
     localPath: string,
   ): Promise<void> {
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       Copy-FromNavContainer -containerName "${containerName}" -containerPath "${containerPath}" -localPath "${localPath}"
       Write-Output "Copied ${containerName}:${containerPath} to ${localPath}"
     `;
@@ -2866,7 +2918,7 @@ ${script}
     // Expression runs it AS INTENDED inside the container (this method's
     // whole purpose is executing a caller-supplied command there).
     const script = `
-      ${bcchImport()}
+      ${bcchImport(containerName)}
       ${bcchConfigInit()}
       $cgExecCommand = '${escapeForPS(command)}'
       $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
@@ -2896,7 +2948,7 @@ ${script}
       if (inspection && !inspection.running) return false;
       if (opts?.signal?.aborted) return false;
       const script = `
-        ${bcchImport()}
+        ${bcchImport(containerName)}
         ${bcchConfigInit()}
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"

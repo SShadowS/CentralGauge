@@ -1184,6 +1184,34 @@ Deno.test("H-35: v2 consistency: measured is boolean, not_measured needs a faile
   assertThrows(() => JudgmentRecordSchema.parse({ ...empty, verdict: "fail" }));
 });
 
+Deno.test("H-35c (design-r3 11.3): proof provenance is a valid record shape, but the campaign store refuses it", async () => {
+  const j = await v2([{ name: "build", passed: true, state: M }]);
+  const proof = {
+    ...j,
+    verdict: "pass",
+    provenance: { ...j.provenance, proof: true },
+  };
+  assertEquals(
+    JudgmentRecordSchema.parse(proof).provenance?.proof,
+    true,
+  );
+  // Only `true`: the field is absent on every campaign judgment.
+  assertThrows(() =>
+    JudgmentRecordSchema.parse({
+      ...proof,
+      provenance: { ...j.provenance, proof: false },
+    })
+  );
+  const root = await testTempDir();
+  const store = new RecordStore(root);
+  await assertRejects(
+    () => store.writeJudgment(proof as never),
+    ValidationError,
+    "proof provenance",
+  );
+  await store.writeJudgment({ ...j, verdict: "pass" } as never);
+});
+
 Deno.test("H-35: a v1 judgment stays valid and carries no v2 field", async () => {
   const c = await campaign();
   const j = judgment(c, execution(c), true);

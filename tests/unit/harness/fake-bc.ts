@@ -95,6 +95,8 @@ export class FakeBc implements HarnessBc {
   errorsFor: ((folder: string) => CompilationError[]) | null = null;
   /** H-04: a crashed compile of this project path (failed, no diagnostic, no artifact). */
   crashFor: ((projectPath: string, container: string) => boolean) | null = null;
+  /** H-55: every compile's private output dir (the caller removes it). */
+  compileOuts: string[] = [];
   concurrentCompiles = 0;
   maxConcurrentCompiles = 0;
   syncs: { container: string; removeIds: string[]; publish: string[] }[] = [];
@@ -218,6 +220,7 @@ export class FakeBc implements HarnessBc {
         `.fake-out-${crypto.randomUUID().slice(0, 8)}`,
       );
       await Deno.mkdir(out, { recursive: true });
+      this.compileOuts.push(out);
       const artifactPath = join(
         out,
         `CentralGauge_${aj.name}_${aj.version}.app`,
@@ -245,6 +248,7 @@ export class FakeBc implements HarnessBc {
         output: "",
         duration: 1,
         artifactPath,
+        outputDir: out,
       };
     } finally {
       this.concurrentCompiles--;

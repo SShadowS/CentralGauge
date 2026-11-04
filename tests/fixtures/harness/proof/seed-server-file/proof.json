@@ -1,0 +1,14 @@
+{
+  "write": {
+    "tests": [
+      {
+        "codeunit": 84968,
+        "procedures": [
+          "Seed"
+        ],
+        "target": "candidate"
+      }
+    ],
+    "detect": "[\\\\/]cg-proof-seed\\.txt$"
+  }
+}

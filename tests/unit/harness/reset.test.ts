@@ -7,6 +7,7 @@ import {
   fsDiff,
   fsLineRestored,
   goldenReset,
+  parseFsRemoveOutput,
   parseResetOutput,
   parseVerifyOutput,
   RESET_PHASES,
@@ -222,6 +223,45 @@ Deno.test("H-35 S3 goldenReset.verifyClean runs verify-clean.ps1 with the lineag
   assertEquals([bad.ok, bad.error], [false, "spawn died"]);
 });
 
+Deno.test("H-35c goldenReset.fsRemove runs fs-remove.ps1 with the lineage and the items as a JSON file, in order; parseFsRemoveOutput fails closed", async () => {
+  const seen: { args: string[]; items: unknown }[] = [];
+  const m = goldenReset({
+    repoRoot: "R",
+    lineagePath: "L.json",
+    lineage: await loadLineage(
+      "infra/harness-reset/lineages/golden-o09-v2.json",
+    ),
+    dockerEnv: { DOCKER_CONTEXT: "desktop-windows" },
+    spawn: async (_cmd, args) => {
+      const file = args[args.indexOf("-Items") + 1]!;
+      seen.push({ args, items: JSON.parse(await Deno.readTextFile(file)) });
+      return { code: 0, stdout: "REMOVED|C:\\W\\d\\f.txt\nREMOVED|C:\\W\\d\n" };
+    },
+  });
+  const items = [
+    { path: "C:\\W\\d\\f.txt", kind: "F" as const },
+    { path: "C:\\W\\d", kind: "D" as const },
+  ];
+  const r = await m.fsRemove!("C1", items);
+  assertEquals(r, { removed: ["C:\\W\\d\\f.txt", "C:\\W\\d"], errors: [] });
+  assert(seen[0]!.args.some((a) => a.endsWith("fs-remove.ps1")));
+  assertEquals(seen[0]!.args.slice(-6, -2), [
+    "-Container",
+    "C1",
+    "-Lineage",
+    "L.json",
+  ]);
+  assertEquals(seen[0]!.items, items);
+  // A refusal, unexpected output or a nonzero exit is an error, never a removal.
+  const bad = parseFsRemoveOutput("REFUSED|C:\\W\\d|not empty\nnoise", 1);
+  assertEquals(bad.removed, []);
+  assertEquals(bad.errors, [
+    "C:\\W\\d|not empty",
+    "unexpected output: noise",
+    "fs-remove.ps1 exit 1",
+  ]);
+});
+
 // ---- H-35 S3 L4: fsDigest diff (decisions/2026-10-20-h-35-l4-scope.md) ----
 
 /** Windows paths written with "/" for readability. */
@@ -258,6 +298,76 @@ Deno.test("H-35 S3 L4 fsDiff: new, changed (content or metadata only) and remove
       [w("C:/W/b.txt"), true, false],
       [w("C:/W/new.txt"), false, true],
     ],
+  );
+});
+
+Deno.test("H-35c fsDiff: an EMPTY NST per-user TEMP dir that is new or changed only in time is no difference; a file inside it, another path, or changed attributes stay differences", () => {
+  const nav = w("C:/ProgramData/Microsoft/Microsoft Dynamics NAV");
+  const user = w(
+    `${nav}/280/Server/MicrosoftDynamicsNavServer$BC/users/default/0c41005d-7d40-49f9-94c0-b76bb6f52507`,
+  );
+  const tmp = `${user}\\TEMP`;
+  const D = (p: string, t = 1, a = 16) => `D|${a}|${t}|${p}`;
+  const base = [D(nav), D(user)];
+  const paths = (r: { diff: { path: string }[] }) => r.diff.map((d) => d.path);
+
+  // Pre-existing, emptied again: only its mtime moved.
+  assertEquals(
+    fsDiff(cap(...base, D(tmp, 1)), cap(...base, D(tmp, 2)), [], [nav]),
+    { diff: [], errors: [] },
+  );
+  // New and empty (its user dir already there).
+  assertEquals(
+    fsDiff(cap(...base), cap(...base, D(tmp, 2)), [], [nav]).diff,
+    [],
+  );
+  // A file inside: the file AND the directory are differences.
+  assertEquals(
+    paths(fsDiff(
+      cap(...base, D(tmp, 1)),
+      cap(...base, D(tmp, 2), F(`${tmp}/cg-proof-seed.txt`)),
+      [],
+      [nav],
+    )),
+    [tmp, `${tmp}\\cg-proof-seed.txt`],
+  );
+  // A stream on it is content too.
+  assertEquals(
+    paths(fsDiff(
+      cap(...base, D(tmp, 1)),
+      cap(...base, D(tmp, 2), `S|${"c".repeat(64)}|3|${tmp}:hid`),
+      [],
+      [nav],
+    )),
+    [tmp, `${tmp}:hid`],
+  );
+  // Changed attributes, another directory name, or a removed TEMP.
+  assertEquals(
+    paths(
+      fsDiff(cap(...base, D(tmp, 1)), cap(...base, D(tmp, 2, 18)), [], [nav]),
+    ),
+    [tmp],
+  );
+  const other = `${user}\\TEMP2`;
+  assertEquals(
+    paths(
+      fsDiff(cap(...base, D(other, 1)), cap(...base, D(other, 2)), [], [nav]),
+    ),
+    [other],
+  );
+  assertEquals(
+    paths(fsDiff(cap(...base, D(tmp, 1)), cap(...base), [], [nav])),
+    [tmp],
+  );
+  // An excluded file inside still makes it non-empty.
+  assertEquals(
+    paths(fsDiff(
+      cap(...base, D(tmp, 1)),
+      cap(...base, D(tmp, 2), F(`${tmp}/x.log`)),
+      [`${tmp}\\*`],
+      [nav],
+    )),
+    [tmp],
   );
 });
 

@@ -424,6 +424,10 @@ export async function validateCampaignRecords(
     }
     const time = timeProblem(j);
     if (time) problems.push(`judgment ${j.id}: ${time}`);
+    // H-35c (design-r3 11.3, 6.3): proof builds never count.
+    if (j.provenance?.proof) {
+      problems.push(`judgment ${j.id}: proof provenance in a campaign store`);
+    }
     const suite = suiteOf(j.scorer_versions);
     if (!suite) {
       problems.push(`judgment ${j.id}: unknown scorer suite`);

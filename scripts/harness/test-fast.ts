@@ -48,6 +48,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}bc-apps.test.ts`]: c(true, 0),
   [`${H}bc-lane.test.ts`]: c(true, 4),
   [`${H}bc-sync-provider.test.ts`]: c(true, 4),
+  [`${H}bch-root.test.ts`]: c(true, 4),
   [`${H}build-log.test.ts`]: c(true, 0),
   [`${H}campaign.test.ts`]: c(true, 138),
   [`${H}classify.test.ts`]: c(true, 0),
@@ -109,6 +110,12 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}prereg.test.ts`]: c(true, 6),
   [`${H}pricing.test.ts`]: c(true, 0),
   [`${H}production-policy.test.ts`]: c(true, 0),
+  // H-35c: temp dirs, the in-process fake BC and repo fixture reads only.
+  [`${H}proof.test.ts`]: c(true, 2),
+  [`${H}proof-access.test.ts`]: c(true, 0),
+  [`${H}proof-canary.test.ts`]: c(true, 0),
+  [`${H}compile-output.test.ts`]: c(true, 0),
+  [`${H}shared-sweep.test.ts`]: c(true, 0),
   [`${H}publish-setup.test.ts`]: c(true, 1),
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),
@@ -252,6 +259,8 @@ async function runChunk(i: number, files: string[], logDir: string) {
   const log = join(logDir, `chunk-${i}.log`);
   const out = await new Deno.Command(Deno.execPath(), {
     args: ["test", "--allow-all", ...files],
+    // H-58: no test reads the real <coord>\bch-roots.json
+    env: { CG_BCH_ROOTS_FILE: "none" },
     stdout: "piped",
     stderr: "piped",
   }).output();

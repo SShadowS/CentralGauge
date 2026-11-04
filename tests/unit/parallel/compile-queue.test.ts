@@ -13,6 +13,7 @@ import {
   QueueFullError,
   QueueTimeoutError,
 } from "../../../src/parallel/compile-queue.ts";
+import type { ALProject } from "../../../src/container/types.ts";
 import { ContainerError } from "../../../src/errors.ts";
 import { NoEligibleContainersError } from "../../../src/parallel/errors.ts";
 import {
@@ -140,6 +141,22 @@ describe({
         onRouted: (c) => (routed = c),
       });
       assertEquals(routed, "Cronus28");
+    });
+
+    it("H-55: removes each compile's private output dir once the task is done", async () => {
+      const queue = new CompileQueue(mockProvider, "test-container");
+      const out = await Deno.makeTempDir({ prefix: "cg-compile-test-" });
+      const real = mockProvider.compileProject.bind(mockProvider);
+      mockProvider.compileProject = async (c: string, p: ALProject) => ({
+        ...(await real(c, p)),
+        outputDir: out,
+      });
+      await queue.enqueue(createMockCompileWorkItem());
+      // The pipeline's finally runs after the result resolves.
+      for (let i = 0; i < 100 && await Deno.stat(out).catch(() => null); i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      assertEquals(await Deno.stat(out).catch(() => null), null);
     });
 
     it("should reject on compilation failure", async () => {
