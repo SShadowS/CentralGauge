@@ -238,6 +238,7 @@ import { renderEnvCheck } from "../../src/harness/environment.ts";
 import {
   archiveResults,
   guardResultsDir,
+  liveRunMarker,
 } from "../../src/harness/results-root.ts";
 import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import {
@@ -3548,9 +3549,17 @@ export function registerHarnessCommand(
       .option("--by <who:string>", "Who retires it (recorded)", {
         required: true,
       })
+      .option("--root <dir:string>", "Repository root", { default: "." })
       .action((opts, campaign: string, label: string) =>
         fail(async () => {
           guardResultsDir(opts.resultsDir, join(coordRoot, "jobs"));
+          // A running invocation keeps the pool it started with.
+          const live = liveRunMarker(opts.resultsDir, opts.root);
+          if (live) {
+            throw new ConfigurationError(
+              `a harness run is live (fresh ${live}): stop it first (create its <private-dir>/STOP file), then retire the account`,
+            );
+          }
           const r = await retireAccount(new RecordStore(opts.resultsDir), {
             campaign,
             label,

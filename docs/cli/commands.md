@@ -1360,8 +1360,12 @@ H-61: retires an account label from a labelled campaign's pool (explicit; nothin
 retires a label implicitly). It writes the write-once record
 `<results-dir>/account-retirements/<campaign>/<label>.json` (not under
 `account-pools/`) and prints `[OK]`. The label must be in the campaign's
-effective pool and not already retired, and at least one other label must stay
-live. A resume or `--rerun` then omits the retired label's `--secrets-dir`; the
+effective pool and not already retired, and at least two labels must stay live
+(a lone label would run unpooled). It is refused while a run's marker
+(`<repo>/results/.bench-running.json`, found above `--results-dir` or in
+`--root`) is fresh: stop the run first (its `<private-dir>/STOP` file). The check
+is per checkout; a run from another checkout on the same results dir is not
+seen. A resume or `--rerun` then omits the retired label's `--secrets-dir`; the
 remaining labels keep their pinned order, new labels still append with
 `--add-accounts-reason`/`--added-by`, and passing the retired label again is
 refused. A cell whose block was on the retired label takes the next free live

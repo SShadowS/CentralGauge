@@ -17,6 +17,8 @@ import {
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
 import { privatePaths, runCell } from "../../../src/harness/execution.ts";
+import { liveRunMarker } from "../../../src/harness/results-root.ts";
+import { acquireBenchLock } from "../../../src/utils/bench-lock.ts";
 import {
   type AccountAddition,
   AccountAdditionSchema,
@@ -837,6 +839,18 @@ Deno.test("pool (H-53, Sol r3): runCell yields an owed automatic retry when its 
 
 // ---- H-61: retiring an account ----
 
+/** path -> stored bytes, of every file under dir. */
+async function snapshot(dir: string): Promise<Map<string, Uint8Array>> {
+  const out = new Map<string, Uint8Array>();
+  for await (const e of Deno.readDir(dir)) {
+    const p = join(dir, e.name);
+    if (e.isDirectory) {
+      for (const [k, v] of await snapshot(p)) out.set(k, v);
+    } else out.set(p, await Deno.readFile(p));
+  }
+  return out;
+}
+
 const retire = async (t: TestEnv, label: string) => {
   const [c] = await t.env.store.campaigns("pool");
   return await retireAccount(t.env.store, {
@@ -850,7 +864,11 @@ const retire = async (t: TestEnv, label: string) => {
 Deno.test("retire (H-61): a resume omits the retired label; passing it, or reordering the rest, is refused; old executions stay as recorded", async () => {
   const { t, as } = await poolEnv(["work", "maxpriv2", "max"], 1);
   await runCampaign(t.env, "pool", opts(), io());
-  const before = JSON.stringify(await executions(t));
+  const [c0] = await t.env.store.campaigns("pool");
+  // No retirement: the loaded data has no `retirements` key (shape unchanged).
+  assert(!("retirements" in await loadCampaignData(t.env.store, c0!)));
+  const before = await snapshot(join(t.env.resultsRoot, "executions"));
+  assert(before.size > 0);
   const r = await retire(t, "work");
   assertEquals([r.label, r.by], ["work", "owner"]);
   as("work", "maxpriv2", "max");
@@ -868,8 +886,8 @@ Deno.test("retire (H-61): a resume omits the retired label; passing it, or reord
   );
   as("maxpriv2", "max");
   await runCampaign(t.env, "pool", opts(), io());
-  // The run found nothing owed; the records are byte-identical.
-  assertEquals(JSON.stringify(await executions(t)), before);
+  // The run found nothing owed; the stored execution files are byte-identical.
+  assertEquals(await snapshot(join(t.env.resultsRoot, "executions")), before);
   // New labels append after the live ones, with a reason; a retired label cannot be re-added.
   as("maxpriv2", "max", "maxpriv");
   await assertRejects(
@@ -897,8 +915,8 @@ Deno.test("retire (H-61): a resume omits the retired label; passing it, or reord
   assertStringIncludes(text, "every cell fails setup");
 });
 
-Deno.test("retire (H-61): refused for an unknown label, a repeat, the last live label, an unlabelled or unknown campaign", async () => {
-  const { t } = await poolEnv(["work", "maxpriv2"], 1);
+Deno.test("retire (H-61): refused for an unknown label, a repeat, fewer than 2 live labels left, a blank reason, an unlabelled or unknown campaign", async () => {
+  const { t } = await poolEnv(["work", "maxpriv2", "max"], 1);
   await runCampaign(t.env, "pool", opts(), io());
   const [c] = await t.env.store.campaigns("pool");
   const go = (campaign: string, label: string) =>
@@ -915,34 +933,88 @@ Deno.test("retire (H-61): refused for an unknown label, a repeat, the last live 
     ConfigurationError,
     "already retired",
   );
+  // Two live labels remain: a third retirement would leave one.
   await assertRejects(
     () => go(c!.id, "maxpriv2"),
     ConfigurationError,
-    "last live",
+    "fewer than 2",
   );
   await assertRejects(
-    () =>
-      retireAccount(t.env.store, {
-        campaign: c!.id,
-        label: "max",
-        reason: " ",
-        by: "b",
-      }),
+    () => retireAccount(t.env.store, { ...r("max"), campaign: c!.id }),
   );
-  const one = await poolEnv(["maxpriv2"], 1);
+  assertEquals((await t.env.store.accountRetirements(c!.id)).length, 1);
+  // A campaign created with one unlabelled --secrets-dir has no account to retire.
+  const one = await poolEnv(["x"], 1);
+  one.t.env.secretAccounts = [{
+    label: null,
+    dir: one.t.env.secretAccounts[0]!.dir,
+  }];
   await runCampaign(one.t.env, "pool", opts(), io());
   const [u] = await one.t.env.store.campaigns("pool");
+  assertEquals(u!.accounts, undefined);
   await assertRejects(
     () =>
       retireAccount(one.t.env.store, {
         campaign: u!.id,
-        label: "maxpriv2",
+        label: "x",
         reason: "r",
         by: "b",
       }),
     ConfigurationError,
-    "last live",
+    "unlabelled",
   );
+});
+const r = (label: string) => ({ label, reason: " ", by: "b", campaign: "" });
+
+Deno.test("retire (H-61): a label that joined by an account addition can be retired", async () => {
+  const { t, as } = await poolEnv(["work", "maxpriv2"], 1);
+  await runCampaign(t.env, "pool", opts(), io());
+  as("work", "maxpriv2", "max");
+  await runCampaign(t.env, "pool", opts({ addAccounts: ADD }), io());
+  await retire(t, "max");
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts(), io()),
+    ConfigurationError,
+    "retired",
+  );
+  as("work", "maxpriv2");
+  await runCampaign(t.env, "pool", opts(), io());
+});
+
+Deno.test("retire (H-61): an ordinary resume with cells owed runs them on the live labels only", async () => {
+  const { t, as, limited, tick } = await poolEnv(["work", "maxpriv2", "max"]);
+  for (const l of ["work", "maxpriv2", "max"]) limited.add(l);
+  const s = await runCampaign(t.env, "pool", opts(), io());
+  assert(s.paused !== null, "every label parked: cells are owed");
+  const first = await executions(t);
+  const prior = new Set(first.map((e) => e.id));
+  const onWork = first.filter((e) => e.account === "work");
+  await retire(t, "work");
+  limited.clear();
+  tick(2 * 3600_000);
+  as("maxpriv2", "max");
+  const done = await runCampaign(t.env, "pool", opts(), io());
+  assertEquals(done.paused, null);
+  const all = await executions(t);
+  assert(all.length > prior.size + 2, String(all.length));
+  assertEquals(all.filter((e) => e.account === "work").length, onWork.length);
+  for (const e of all.filter((e) => !prior.has(e.id))) {
+    assert(e.account === "maxpriv2" || e.account === "max", e.id);
+  }
+});
+
+Deno.test("retire (H-61): a live run's marker blocks the command's guard", async () => {
+  const root = await testTempDir();
+  const results = join(root, "results", "harness");
+  await Deno.mkdir(results, { recursive: true });
+  assertEquals(liveRunMarker(results, root), null);
+  const held = acquireBenchLock(join(root, "results"), { command: "t" });
+  try {
+    assertStringIncludes(liveRunMarker(results, root)!, ".bench-running");
+  } finally {
+    held();
+  }
+  assertEquals(liveRunMarker(results, root), null);
 });
 
 Deno.test("retire (H-61): a rerun omits the retired label too; its cell, earlier on the retired label, lands round_robin on a live one, its retry after a limit retry_after_limit", async () => {
@@ -993,20 +1065,14 @@ Deno.test("retire (H-61): a rerun omits the retired label too; its cell, earlier
   );
 });
 
-Deno.test("retire (H-61): one live label left runs unpooled on it (no account_choice)", async () => {
-  const { t, as } = await poolEnv(["work", "maxpriv2"], 1, "mock-crash");
+Deno.test("retire (H-61): a two-label pool cannot lose one (a lone label would run unpooled)", async () => {
+  const { t } = await poolEnv(["work", "maxpriv2"], 1);
   await runCampaign(t.env, "pool", opts(), io());
-  const es = await executions(t);
-  await retire(t, es[0]!.account!);
-  const live = ["work", "maxpriv2"].filter((l) => l !== es[0]!.account);
-  as(...live);
-  await runCampaign(
-    t.env,
-    "pool",
-    opts({ rerun: { task: es[0]!.task_id, repeat: 1, arm: "mock-crash" } }),
-    io(),
+  await assertRejects(
+    () => retire(t, "work"),
+    ConfigurationError,
+    "fewer than 2",
   );
-  const re = (await executions(t)).find((e) => e.run_kind === "manual_rerun")!;
-  assertEquals(re.account, live[0]);
-  assert(!("account_choice" in re), JSON.stringify(re));
+  const [c] = await t.env.store.campaigns("pool");
+  assertEquals(await t.env.store.accountRetirements(c!.id), []);
 });

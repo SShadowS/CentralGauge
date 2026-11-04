@@ -251,9 +251,13 @@ export async function retireAccount(
       }]`,
     );
   }
-  if (live.length < 2) {
+  // Two live labels stay: one alone would run unpooled, with no recorded
+  // account-wide parks (H-53) and no account_choice.
+  if (live.length < 3) {
     throw new ConfigurationError(
-      `account ${o.label} is the last live account of campaign ${c.id}: it cannot be retired`,
+      `campaign ${c.id} has ${live.length} live account(s) [${
+        live.join(", ")
+      }]: retiring ${o.label} would leave fewer than 2`,
     );
   }
   const r = AccountRetirementSchema.parse({
