@@ -1350,6 +1350,25 @@ prints one `account <label>: ...` line each, and `analyze-campaign` writes
 `per_account` (over every attempt) into `summary.json`, so an account-level
 anomaly stays visible.
 
+### harness campaign retire-account
+
+```bash
+centralgauge harness campaign retire-account <campaign> <label> --reason <text> --by <who> [--results-dir <dir>]
+```
+
+H-61: retires an account label from a labelled campaign's pool (explicit; nothing
+retires a label implicitly). It writes the write-once record
+`<results-dir>/account-retirements/<campaign>/<label>.json` (not under
+`account-pools/`) and prints `[OK]`. The label must be in the campaign's
+effective pool and not already retired, and at least one other label must stay
+live. A resume or `--rerun` then omits the retired label's `--secrets-dir`; the
+remaining labels keep their pinned order, new labels still append with
+`--add-accounts-reason`/`--added-by`, and passing the retired label again is
+refused. A cell whose block was on the retired label takes the next free live
+label (`account_choice` `round_robin`, or `retry_after_limit` after a limit).
+Existing executions keep their records and are not rejudged. `harness report`
+prints one `[RETIRED] account <label> (by, at): reason` line per retirement.
+
 ### harness pairing
 
 ```bash

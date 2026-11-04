@@ -137,6 +137,7 @@ import {
   placedConcurrencyRefusal,
   planCampaign,
   precheckCampaignPin,
+  retireAccount,
   runCampaign,
 } from "../../src/harness/campaign.ts";
 import {
@@ -3531,6 +3532,39 @@ export function registerHarnessCommand(
         console.log(`${done.length} execution(s) re-derived`);
       })
     );
+
+  parent.command(
+    "campaign",
+    new Command()
+      .description("Campaign maintenance")
+      .command(
+        "retire-account <campaign:string> <label:string>",
+        "H-61: retire an account label from a campaign's pool (write-once record account-retirements/<campaign>/<label>.json); a resume then omits its --secrets-dir. Existing executions are untouched",
+      )
+      .option("--results-dir <dir:string>", "Harness records root", {
+        default: "results/harness",
+      })
+      .option("--reason <text:string>", "Why (recorded)", { required: true })
+      .option("--by <who:string>", "Who retires it (recorded)", {
+        required: true,
+      })
+      .action((opts, campaign: string, label: string) =>
+        fail(async () => {
+          guardResultsDir(opts.resultsDir, join(coordRoot, "jobs"));
+          const r = await retireAccount(new RecordStore(opts.resultsDir), {
+            campaign,
+            label,
+            reason: opts.reason,
+            by: opts.by,
+          });
+          console.log(
+            `${
+              colors.green("[OK]")
+            } account ${r.label} retired from campaign ${r.campaign_id} (by ${r.by}): ${r.reason}`,
+          );
+        })
+      ),
+  );
 
   // Options shared by `cell` and `judge-fixture`.
   // deno-lint-ignore no-explicit-any
