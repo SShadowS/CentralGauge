@@ -174,7 +174,7 @@ deno task test        # Full test suite
 - Do NOT run `deno test` directly — it lacks the required permissions (`--allow-all`) for filesystem and environment access
 - Do NOT use `--parallel` — some tests share static state (e.g. `PricingService`) which causes false positives under parallel execution
 - After any code change, run `deno check`, `deno lint`, and `deno fmt` as well
-- **Never run the full `deno task test:unit` while a bench is live** — `tests/unit/container/` publishes/unpublishes on the real Cronus containers and corrupts the running bench's BC NST PSSession (stalls it). Use `deno test --allow-all --ignore=tests/unit/container tests/unit/`, or confirm the bench is stopped first.
+- **Never run the full `deno task test:unit` while a bench is live** — `tests/unit/container/` publishes/unpublishes on the real Cronus containers and corrupts the running bench's BC NST PSSession (stalls it). Use `deno task test:unit:no-container` (it also sets `CG_BCH_ROOTS_FILE=none`, so tests never read the real `bch-roots.json`), or confirm the bench is stopped first.
 - Deno 2.8 makes `Deno.Command` getter-only: mock subprocesses with `Object.defineProperty(Deno, "Command", { value: Mock, configurable: true })`, NOT `Deno.Command = Mock` (throws `which has only a getter`). Such mocks can pass in the full suite yet fail in isolation — they are test-order dependent. Shared helper: `tests/utils/command-mock.ts`.
 
 Do NOT run `deno fmt` on `site/` files — it converts quote style which
