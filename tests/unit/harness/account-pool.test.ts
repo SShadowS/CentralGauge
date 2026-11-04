@@ -12,6 +12,7 @@ import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import {
   loadCampaignData,
   nextAttempt,
+  retireAccount,
   runCampaign,
   type RunOptions,
 } from "../../../src/harness/campaign.ts";
@@ -20,8 +21,11 @@ import {
   type AccountAddition,
   AccountAdditionSchema,
   accountPool,
+  type AccountRetirement,
+  AccountRetirementSchema,
   type CampaignRecord,
   type ExecutionRecord,
+  liveAccountPool,
   RecordStore,
 } from "../../../src/harness/records.ts";
 import { buildReport, renderReport } from "../../../src/harness/report.ts";
@@ -143,6 +147,108 @@ Deno.test("account pool (H-53): additions are write-once records, read back in s
     JSON.stringify(addition("004", ["maxpriv"])),
   );
   await assertRejects(() => store.accountAdditions(CID), ValidationError);
+});
+
+const retirement = (
+  label: string,
+  over: Partial<AccountRetirement> = {},
+): AccountRetirement => ({
+  v: 1,
+  campaign_id: CID,
+  label,
+  by: "owner",
+  at: "2026-11-04T08:00:00.000Z",
+  reason: "every cell fails setup",
+  ...over,
+});
+
+Deno.test("account retirement (H-61): schema, write-once record outside account-pools, read back by label", async () => {
+  AccountRetirementSchema.parse(retirement("work"));
+  for (
+    const bad of [
+      retirement("work", { by: " " }),
+      retirement("work", { reason: "" }),
+      retirement("Work"),
+      { ...retirement("work"), extra: 1 },
+    ]
+  ) {
+    assertThrows(() => AccountRetirementSchema.parse(bad));
+  }
+  const root = await testTempDir();
+  const store = new RecordStore(root);
+  assertEquals(await store.accountRetirements(CID), []);
+  await store.writeAccountRetirement(retirement("work"));
+  await store.writeAccountRetirement(retirement("max"));
+  assertEquals(
+    (await store.accountRetirements(CID)).map((r) => r.label),
+    ["max", "work"],
+  );
+  assert(
+    (await Deno.stat(join(root, "account-retirements", CID, "work.json")))
+      .isFile,
+  );
+  // account-pools stays readable (a retirement never lives in it).
+  assertEquals(await store.accountAdditions(CID), []);
+  await assertRejects(
+    () => store.writeAccountRetirement(retirement("work", { by: "other" })),
+    ValidationError,
+    "immutable",
+  );
+  await Deno.writeTextFile(
+    join(root, "account-retirements", CID, "maxpriv.json"),
+    JSON.stringify(retirement("other")),
+  );
+  await assertRejects(() => store.accountRetirements(CID), ValidationError);
+});
+
+Deno.test("account retirement (H-61): the live pool drops retired labels in order; bad retirements are refused", () => {
+  const c = campaign(["maxpriv2", "work"]);
+  const adds = [addition("001", ["max"])];
+  assertEquals(
+    liveAccountPool(c, adds, [retirement("work")]),
+    ["maxpriv2", "max"],
+  );
+  assertEquals(liveAccountPool(c, adds, []), ["maxpriv2", "work", "max"]);
+  assertEquals(liveAccountPool(campaign(), [], []), null);
+  const cases: [string, () => unknown, string][] = [
+    [
+      "not in pool",
+      () => liveAccountPool(c, adds, [retirement("nope")]),
+      "not in the pool",
+    ],
+    [
+      "twice",
+      () => liveAccountPool(c, adds, [retirement("work"), retirement("work")]),
+      "twice",
+    ],
+    [
+      "all",
+      () =>
+        liveAccountPool(c, [], [retirement("work"), retirement("maxpriv2")]),
+      "every account",
+    ],
+    [
+      "unlabelled",
+      () => liveAccountPool(campaign(), [], [retirement("work")]),
+      "unlabelled",
+    ],
+    [
+      "other campaign",
+      () =>
+        liveAccountPool(c, [], [
+          retirement("work", {
+            campaign_id: "00000000-0000-4000-8000-0000000000c2",
+          }),
+        ]),
+      "campaign",
+    ],
+  ];
+  for (const [name, f, why] of cases) {
+    const err = assertThrows(f, ValidationError);
+    if (!err.message.includes(why)) {
+      throw new Error(`${name}: ${err.message} lacks "${why}"`);
+    }
+  }
 });
 
 // ---- campaign runs on the mock image ----
@@ -727,4 +833,180 @@ Deno.test("pool (H-53, Sol r3): runCell yields an owed automatic retry when its 
   }, await cellFor(u, "mock-crash"));
   assert(free.executions.length > 1, String(free.executions.length));
   assertEquals(free.yielded, undefined);
+});
+
+// ---- H-61: retiring an account ----
+
+const retire = async (t: TestEnv, label: string) => {
+  const [c] = await t.env.store.campaigns("pool");
+  return await retireAccount(t.env.store, {
+    campaign: c!.id,
+    label,
+    reason: "every cell fails setup",
+    by: "owner",
+  });
+};
+
+Deno.test("retire (H-61): a resume omits the retired label; passing it, or reordering the rest, is refused; old executions stay as recorded", async () => {
+  const { t, as } = await poolEnv(["work", "maxpriv2", "max"], 1);
+  await runCampaign(t.env, "pool", opts(), io());
+  const before = JSON.stringify(await executions(t));
+  const r = await retire(t, "work");
+  assertEquals([r.label, r.by], ["work", "owner"]);
+  as("work", "maxpriv2", "max");
+  const err = await assertRejects(
+    () => runCampaign(t.env, "pool", opts(), io()),
+    ConfigurationError,
+    "retired",
+  );
+  assertStringIncludes(err.message, "every cell fails setup");
+  as("max", "maxpriv2");
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts(), io()),
+    ConfigurationError,
+    "accounts",
+  );
+  as("maxpriv2", "max");
+  await runCampaign(t.env, "pool", opts(), io());
+  // The run found nothing owed; the records are byte-identical.
+  assertEquals(JSON.stringify(await executions(t)), before);
+  // New labels append after the live ones, with a reason; a retired label cannot be re-added.
+  as("maxpriv2", "max", "maxpriv");
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts(), io()),
+    ConfigurationError,
+    "--add-accounts-reason",
+  );
+  await runCampaign(t.env, "pool", opts({ addAccounts: ADD }), io());
+  const [c] = await t.env.store.campaigns("pool");
+  assertEquals(
+    (await t.env.store.accountAdditions(c!.id)).map((a) => a.added),
+    [["maxpriv"]],
+  );
+  as("maxpriv2", "max", "work");
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts({ addAccounts: ADD }), io()),
+    ConfigurationError,
+    "retired",
+  );
+  // The report names the retirement; executions on it still count.
+  const text = renderReport(
+    await buildReport(await loadCampaignData(t.env.store, c!)),
+  );
+  assertStringIncludes(text, "[RETIRED] account work (by owner");
+  assertStringIncludes(text, "every cell fails setup");
+});
+
+Deno.test("retire (H-61): refused for an unknown label, a repeat, the last live label, an unlabelled or unknown campaign", async () => {
+  const { t } = await poolEnv(["work", "maxpriv2"], 1);
+  await runCampaign(t.env, "pool", opts(), io());
+  const [c] = await t.env.store.campaigns("pool");
+  const go = (campaign: string, label: string) =>
+    retireAccount(t.env.store, { campaign, label, reason: "r", by: "b" });
+  await assertRejects(() => go(c!.id, "nope"), ConfigurationError, "not in");
+  await assertRejects(
+    () => go("no-such-id", "work"),
+    ConfigurationError,
+    "no campaign",
+  );
+  await go(c!.id, "work");
+  await assertRejects(
+    () => go(c!.id, "work"),
+    ConfigurationError,
+    "already retired",
+  );
+  await assertRejects(
+    () => go(c!.id, "maxpriv2"),
+    ConfigurationError,
+    "last live",
+  );
+  await assertRejects(
+    () =>
+      retireAccount(t.env.store, {
+        campaign: c!.id,
+        label: "max",
+        reason: " ",
+        by: "b",
+      }),
+  );
+  const one = await poolEnv(["maxpriv2"], 1);
+  await runCampaign(one.t.env, "pool", opts(), io());
+  const [u] = await one.t.env.store.campaigns("pool");
+  await assertRejects(
+    () =>
+      retireAccount(one.t.env.store, {
+        campaign: u!.id,
+        label: "maxpriv2",
+        reason: "r",
+        by: "b",
+      }),
+    ConfigurationError,
+    "last live",
+  );
+});
+
+Deno.test("retire (H-61): a rerun omits the retired label too; its cell, earlier on the retired label, lands round_robin on a live one, its retry after a limit retry_after_limit", async () => {
+  // mock-crash: an unscored cell on its block's label, which --rerun accepts.
+  const { t, as, limited } = await poolEnv(
+    ["work", "maxpriv2", "max"],
+    1,
+    "mock-crash",
+  );
+  await runCampaign(t.env, "pool", opts(), io());
+  const es = await executions(t);
+  const dead = es[0]!.account!;
+  assertEquals(new Set(es.map((e) => e.account)), new Set([dead]));
+  const live = ["work", "maxpriv2", "max"].filter((l) => l !== dead);
+  await retire(t, dead);
+  const rerun = {
+    task: es[0]!.task_id,
+    repeat: 1,
+    arm: "mock-crash",
+  };
+  as(dead, ...live);
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts({ rerun }), io()),
+    ConfigurationError,
+    "retired",
+  );
+  as(...[...live].reverse());
+  await assertRejects(
+    () => runCampaign(t.env, "pool", opts({ rerun }), io()),
+    ConfigurationError,
+    "accounts",
+  );
+  as(...live);
+  limited.add(live[0]!);
+  await runCampaign(t.env, "pool", opts({ rerun }), io());
+  const all = await executions(t);
+  const re = all.find((e) => e.run_kind === "manual_rerun")!;
+  assertEquals([re.account, re.account_choice], [live[0], "round_robin"]);
+  const retry = all.find((e) => e.retry_of === re.id)!;
+  assertEquals([retry.account, retry.account_choice], [
+    live[1],
+    "retry_after_limit",
+  ]);
+  // Nothing new ran on the retired label.
+  assertEquals(
+    all.filter((e) => e.account === dead).length,
+    es.length,
+  );
+});
+
+Deno.test("retire (H-61): one live label left runs unpooled on it (no account_choice)", async () => {
+  const { t, as } = await poolEnv(["work", "maxpriv2"], 1, "mock-crash");
+  await runCampaign(t.env, "pool", opts(), io());
+  const es = await executions(t);
+  await retire(t, es[0]!.account!);
+  const live = ["work", "maxpriv2"].filter((l) => l !== es[0]!.account);
+  as(...live);
+  await runCampaign(
+    t.env,
+    "pool",
+    opts({ rerun: { task: es[0]!.task_id, repeat: 1, arm: "mock-crash" } }),
+    io(),
+  );
+  const re = (await executions(t)).find((e) => e.run_kind === "manual_rerun")!;
+  assertEquals(re.account, live[0]);
+  assert(!("account_choice" in re), JSON.stringify(re));
 });

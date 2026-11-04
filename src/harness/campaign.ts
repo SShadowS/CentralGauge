@@ -56,6 +56,8 @@ import {
   type AccountAddition,
   AccountAdditionSchema,
   accountPool,
+  type AccountRetirement,
+  AccountRetirementSchema,
   type ArtifactRecord,
   type Block,
   type CampaignRecord,
@@ -64,6 +66,7 @@ import {
   type ExecutionRecord,
   experimentHash,
   type JudgmentRecord,
+  liveAccountPool,
   outcomePolicy,
   planBlocks,
   type RecordStore,
@@ -191,6 +194,7 @@ export async function loadCampaignData(
   c: CampaignRecord,
 ): Promise<CampaignRecords> {
   const executions = await store.executions(c.id);
+  const retirements = await store.accountRetirements(c.id);
   const artifacts: ArtifactRecord[] = [];
   const judgments: JudgmentRecord[] = [];
   for (const e of executions) {
@@ -198,7 +202,70 @@ export async function loadCampaignData(
     if (a) artifacts.push(a);
     judgments.push(...await store.judgments(e.id));
   }
-  return { campaign: c, executions, artifacts, judgments };
+  return {
+    campaign: c,
+    executions,
+    artifacts,
+    judgments,
+    ...(retirements.length > 0 ? { retirements } : {}),
+  };
+}
+
+/**
+ * H-61: retire an account label from a campaign's pool (explicit; the only
+ * way a label leaves). The campaign must be labelled, the label live in its
+ * effective pool, and one other label must remain.
+ */
+export async function retireAccount(
+  store: RecordStore,
+  o: {
+    campaign: string;
+    label: string;
+    reason: string;
+    by: string;
+    now?: () => Date;
+  },
+): Promise<AccountRetirement> {
+  const c = await store.campaignById(o.campaign);
+  if (!c) throw new ConfigurationError(`no campaign ${o.campaign}`);
+  if (!c.accounts) {
+    throw new ConfigurationError(
+      `campaign ${c.id} is unlabelled (one --secrets-dir): it has no account to retire`,
+    );
+  }
+  const retirements = await store.accountRetirements(c.id);
+  const live = liveAccountPool(
+    c,
+    await store.accountAdditions(c.id),
+    retirements,
+  )!;
+  if (retirements.some((r) => r.label === o.label)) {
+    throw new ConfigurationError(
+      `account ${o.label} is already retired from campaign ${c.id}`,
+    );
+  }
+  if (!live.includes(o.label)) {
+    throw new ConfigurationError(
+      `account ${o.label} is not in campaign ${c.id}'s pool [${
+        live.join(", ")
+      }]`,
+    );
+  }
+  if (live.length < 2) {
+    throw new ConfigurationError(
+      `account ${o.label} is the last live account of campaign ${c.id}: it cannot be retired`,
+    );
+  }
+  const r = AccountRetirementSchema.parse({
+    v: 1,
+    campaign_id: c.id,
+    label: o.label,
+    by: o.by,
+    at: (o.now ?? (() => new Date()))().toISOString(),
+    reason: o.reason,
+  });
+  await store.writeAccountRetirement(r);
+  return r;
 }
 
 /**
@@ -1177,7 +1244,16 @@ async function campaignInvocation(
     // campaign's labels plus each recorded addition; a resume may only append
     // new labels after it, with --add-accounts-reason and --added-by.
     const additions = await env.store.accountAdditions(c.id);
-    const pinned = accountPool(c, additions);
+    const retirements = await env.store.accountRetirements(c.id);
+    // H-61: a retired label is left out of the pin, and may not come back.
+    const pinned = liveAccountPool(c, additions, retirements);
+    for (const r of retirements) {
+      if (accountLabels?.includes(r.label)) {
+        throw new ConfigurationError(
+          `label ${r.label} was retired from campaign ${c.id} (${r.reason}): leave out its --secrets-dir`,
+        );
+      }
+    }
     const same = JSON.stringify(pinned) === JSON.stringify(accountLabels);
     const extends_ = pinned !== null && accountLabels !== null &&
       accountLabels.length > pinned.length &&
@@ -1218,6 +1294,7 @@ async function campaignInvocation(
       };
       // The full pool stays valid (a label twice is refused here too).
       accountPool(c, [...additions, AccountAdditionSchema.parse(addition)]);
+      // (a retired label re-added is refused above: it is in accountLabels.)
     }
     // H-13b: and its calibration waiver state.
     if ((c.calibration_waived ?? false) !== calibrationWaived) {
@@ -1438,7 +1515,8 @@ async function campaignInvocation(
     blockLabel: string | null,
     afterLimit: boolean,
   ): HarnessEnv["accountChoice"] | null => {
-    if (blockLabel !== null && free(blockLabel)) {
+    // H-61: a retired block label is not in the pool: fall to round-robin.
+    if (blockLabel !== null && pool!.includes(blockLabel) && free(blockLabel)) {
       return {
         label: blockLabel,
         choice: afterLimit ? "retry_after_limit" : "block_pair",

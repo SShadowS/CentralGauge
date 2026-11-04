@@ -18,6 +18,7 @@ import {
   manifestHash,
 } from "./manifest.ts";
 import {
+  type AccountRetirement,
   type ArtifactRecord,
   ArtifactRecordSchema,
   type CampaignRecord,
@@ -41,6 +42,8 @@ export interface CampaignRecords {
   executions: ExecutionRecord[];
   artifacts: ArtifactRecord[];
   judgments: JudgmentRecord[];
+  /** H-61: accounts retired from the campaign's pool (shown in the report). */
+  retirements?: AccountRetirement[];
 }
 
 /** Records built in memory are not trusted to have passed their schemas. */

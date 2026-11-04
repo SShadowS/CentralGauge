@@ -67,8 +67,25 @@ export const ACCOUNT_CHOICES = [
 ] as const;
 export type AccountChoice = (typeof ACCOUNT_CHOICES)[number];
 /** R-02: unique slug account labels (`--secrets-dir label=dir`). */
-const AccountLabels = z.array(z.string().regex(/^[a-z0-9][a-z0-9-]*$/)).min(1)
+const AccountLabel = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
+const AccountLabels = z.array(AccountLabel).min(1)
   .refine((xs) => new Set(xs).size === xs.length, "duplicate account label");
+
+/**
+ * H-61: a label retired from a campaign's pool, one write-once record per
+ * label (account-retirements/<campaign>/<label>.json; not under account-pools,
+ * whose reader refuses anything but additions). A resume then omits the
+ * label's --secrets-dir; its executions stay as recorded.
+ */
+export const AccountRetirementSchema = z.strictObject({
+  v: z.literal(1),
+  campaign_id: Uuid,
+  label: AccountLabel,
+  by: z.string().trim().min(1),
+  at: Iso,
+  reason: z.string().trim().min(1),
+});
+export type AccountRetirement = z.output<typeof AccountRetirementSchema>;
 
 /**
  * H-53: labels added to a campaign's account pool on a resume, one
@@ -131,6 +148,52 @@ export function accountPool(
     }
   }
   return pool;
+}
+
+/**
+ * H-61: the pool a run must pass: accountPool without the retired labels (order
+ * kept); null for an unlabelled campaign. A retirement of another campaign's,
+ * of a label not in the pool, a repeated one, one on an unlabelled campaign,
+ * or one that empties the pool is refused.
+ */
+export function liveAccountPool(
+  c: Pick<CampaignRecord, "id" | "accounts">,
+  additions: readonly AccountAddition[],
+  retirements: readonly AccountRetirement[],
+): string[] | null {
+  const pool = accountPool(c, additions);
+  const refuse = (msg: string): never => {
+    throw new ValidationError(msg, [msg]);
+  };
+  if (!pool) {
+    if (retirements.length > 0) {
+      refuse(
+        `campaign ${c.id} is unlabelled (one --secrets-dir): it has no account to retire`,
+      );
+    }
+    return null;
+  }
+  const gone = new Set<string>();
+  for (const r of retirements) {
+    if (r.campaign_id !== c.id) {
+      refuse(
+        `account retirement of ${r.label} belongs to campaign ${r.campaign_id}, not ${c.id}`,
+      );
+    }
+    if (!pool.includes(r.label) || gone.has(r.label)) {
+      refuse(
+        `campaign ${c.id}: account ${r.label} is ${
+          gone.has(r.label) ? "retired twice" : "not in the pool"
+        }`,
+      );
+    }
+    gone.add(r.label);
+  }
+  const live = pool.filter((l) => !gone.has(l));
+  if (live.length === 0) {
+    refuse(`campaign ${c.id}: every account is retired`);
+  }
+  return live;
 }
 
 export const TERMINATIONS = [
@@ -1158,6 +1221,38 @@ export class RecordStore {
       AccountAdditionSchema,
       (seq) => ({ seq, campaign_id }),
     )).sort((a, b) => a.seq < b.seq ? -1 : 1);
+  }
+
+  /** H-61: a campaign by id, or null. */
+  // ponytail: reads every campaign record; an id index if that ever matters.
+  async campaignById(id: string): Promise<CampaignRecord | null> {
+    const all = await readAll(
+      this.root,
+      join(this.root, "campaigns"),
+      CampaignRecordSchema,
+      (stem) => ({ id: stem }),
+    );
+    return all.find((c) => c.id === id) ?? null;
+  }
+
+  /** H-61: write-once, under its label. */
+  writeAccountRetirement(a: AccountRetirement): Promise<void> {
+    const r = AccountRetirementSchema.parse(a);
+    return publishOnce(
+      join(this.root, "account-retirements", r.campaign_id, `${r.label}.json`),
+      r,
+    );
+  }
+
+  /** H-61: a campaign's retirements, by label (liveAccountPool checks them). */
+  async accountRetirements(campaignId: string): Promise<AccountRetirement[]> {
+    const campaign_id = safeId(campaignId, "campaign");
+    return (await readAll(
+      this.root,
+      join(this.root, "account-retirements", campaign_id),
+      AccountRetirementSchema,
+      (label) => ({ label, campaign_id }),
+    )).sort((a, b) => a.label < b.label ? -1 : 1);
   }
 
   /** R-10: write-once; a later re-derivation never removes an earlier one. */
