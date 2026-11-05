@@ -17,6 +17,7 @@ import { ConfigurationError } from "../errors.ts";
 import { DEFAULT_COORD_ROOT } from "./allocation.ts";
 import {
   BENCH_LOCK_FILENAME,
+  DEFAULT_BENCH_LOCK_DIR,
   DEFAULT_STALE_AFTER_MS,
   isBenchRunning,
 } from "../utils/bench-lock.ts";
@@ -86,6 +87,26 @@ export function jobWorktreeOf(path: string, jobsRoot: string): string | null {
     dir = dirname(dir);
   }
   return null;
+}
+
+/**
+ * H-61: the fresh run marker (`.bench-running.json`) of a harness environment
+ * or bench that may be using this results root, or null. A run holds one
+ * marker per checkout (`<repo>/results`, finest granularity there is), found
+ * above the results dir or in the given repo root. A run from another checkout
+ * on the same results dir is not visible.
+ */
+export function liveRunMarker(
+  resultsDir: string,
+  repoRoot: string,
+): string | null {
+  const dirs = [join(resolve(repoRoot), DEFAULT_BENCH_LOCK_DIR)];
+  for (let d = resolve(resultsDir);; d = dirname(d)) {
+    dirs.push(d);
+    if (dirname(d) === d) break;
+  }
+  const hit = dirs.find((d) => isBenchRunning(d));
+  return hit ? join(hit, BENCH_LOCK_FILENAME) : null;
 }
 
 const isRecordRoot = (dir: string) =>

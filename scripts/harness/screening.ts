@@ -13,6 +13,7 @@ import { parse } from "@std/yaml";
 import { z } from "zod";
 import type { TaskIdentity } from "../../src/harness/identity.ts";
 import type {
+  AccountRetirement,
   CampaignRecord,
   ExecutionRecord,
   JudgmentRecord,
@@ -521,6 +522,8 @@ export interface ScreenCampaign {
   problems?: string[];
   /** H-53: executions and usage limits per account label. */
   accounts?: ReturnType<typeof accountCounts>;
+  /** H-61: accounts retired from the campaign's pool. */
+  retirements?: readonly AccountRetirement[];
 }
 
 /** H-53: per account label over every campaign (status prints it, triage reads it). */
@@ -534,10 +537,22 @@ export function accountLines(campaigns: readonly ScreenCampaign[]): string[] {
       all.set(l, t);
     }
   }
+  const retired = new Map(
+    campaigns.flatMap((c) => c.retirements ?? []).map((r) => [r.label, r]),
+  );
+  for (const l of retired.keys()) {
+    if (!all.has(l)) all.set(l, { executions: 0, usage_limited: 0 });
+  }
   return [...all].sort(([a], [b]) => a < b ? -1 : 1).map((
     [l, a],
   ) =>
-    `account ${l}: ${a.executions} execution(s), ${a.usage_limited} usage_limited`
+    `account ${l}: ${a.executions} execution(s), ${a.usage_limited} usage_limited${
+      retired.has(l)
+        ? ` [RETIRED by ${retired.get(l)!.by} ${retired.get(l)!.at}: ${
+          retired.get(l)!.reason
+        }]`
+        : ""
+    }`
   );
 }
 
@@ -1215,6 +1230,7 @@ export async function loadScreenCampaigns(
       excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
       accounts: accountCounts(data.executions),
+      retirements: data.retirements ?? [],
     });
     ran.set(c.id, c.task_set.tasks);
   }

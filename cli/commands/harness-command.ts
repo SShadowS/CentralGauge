@@ -137,6 +137,7 @@ import {
   placedConcurrencyRefusal,
   planCampaign,
   precheckCampaignPin,
+  retireAccount,
   runCampaign,
 } from "../../src/harness/campaign.ts";
 import {
@@ -237,6 +238,7 @@ import { renderEnvCheck } from "../../src/harness/environment.ts";
 import {
   archiveResults,
   guardResultsDir,
+  liveRunMarker,
 } from "../../src/harness/results-root.ts";
 import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import {
@@ -2532,6 +2534,28 @@ export async function harnessRejudge(
 }
 
 /**
+ * `harness campaign retire-account` (H-61): refused while a run's marker is
+ * fresh (a running invocation keeps the pool it started with), before any
+ * record is written.
+ */
+export async function harnessRetireAccount(o: {
+  campaign: string;
+  label: string;
+  reason: string;
+  by: string;
+  resultsDir: string;
+  repoRoot: string;
+}) {
+  const live = liveRunMarker(o.resultsDir, o.repoRoot);
+  if (live) {
+    throw new ConfigurationError(
+      `a harness run is live (fresh ${live}): stop it first (create its <private-dir>/STOP file), then retire the account`,
+    );
+  }
+  return await retireAccount(new RecordStore(o.resultsDir), o);
+}
+
+/**
  * `harness rederive` (R-10): re-derive stored executions from their raw.jsonl
  * with this checkout's parser, as write-once overlays (src/harness/rederive.ts).
  * The checkout must be clean under src/harness: the overlay names its commit.
@@ -3531,6 +3555,42 @@ export function registerHarnessCommand(
         console.log(`${done.length} execution(s) re-derived`);
       })
     );
+
+  parent.command(
+    "campaign",
+    new Command()
+      .description("Campaign maintenance")
+      .command(
+        "retire-account <campaign:string> <label:string>",
+        "H-61: retire an account label from a campaign's pool (write-once record account-retirements/<campaign>/<label>.json); a resume then omits its --secrets-dir. Existing executions are untouched",
+      )
+      .option("--results-dir <dir:string>", "Harness records root", {
+        default: "results/harness",
+      })
+      .option("--reason <text:string>", "Why (recorded)", { required: true })
+      .option("--by <who:string>", "Who retires it (recorded)", {
+        required: true,
+      })
+      .option("--root <dir:string>", "Repository root", { default: "." })
+      .action((opts, campaign: string, label: string) =>
+        fail(async () => {
+          guardResultsDir(opts.resultsDir, join(coordRoot, "jobs"));
+          const r = await harnessRetireAccount({
+            campaign,
+            label,
+            reason: opts.reason,
+            by: opts.by,
+            resultsDir: opts.resultsDir,
+            repoRoot: opts.root,
+          });
+          console.log(
+            `${
+              colors.green("[OK]")
+            } account ${r.label} retired from campaign ${r.campaign_id} (by ${r.by}): ${r.reason}`,
+          );
+        })
+      ),
+  );
 
   // Options shared by `cell` and `judge-fixture`.
   // deno-lint-ignore no-explicit-any

@@ -35,6 +35,7 @@ import {
 } from "./outcome.ts";
 import {
   type AccountChoice,
+  type AccountRetirement,
   type ExecutionRecord,
   incompleteObserved,
   type JudgmentRecord,
@@ -129,6 +130,8 @@ export interface HarnessReport {
    * execution has one), so an account-level anomaly stays visible.
    */
   accounts?: Record<string, AccountCount>;
+  /** H-61: labels retired from the campaign's pool (present when any). */
+  account_retirements?: AccountRetirement[];
   experiment: {
     id: string;
     hypothesis: string;
@@ -1258,6 +1261,9 @@ export async function buildReport(
       ? { usage_reset_ignored: { reasons: resetReasons } }
       : {}),
     ...(Object.keys(accounts).length > 0 ? { accounts } : {}),
+    ...(records.retirements?.length
+      ? { account_retirements: records.retirements }
+      : {}),
   };
 }
 
@@ -1372,6 +1378,13 @@ export function renderReport(r: HarnessReport): string {
         }`,
       );
     }
+  }
+  for (const a of r.account_retirements ?? []) {
+    out.push(
+      colors.yellow(
+        `[RETIRED] account ${a.label} (by ${a.by}, ${a.at}): ${a.reason}`,
+      ),
+    );
   }
   const conf = r.confirmatory && !("withheld" in r.confirmatory)
     ? r.confirmatory

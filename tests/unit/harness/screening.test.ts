@@ -1335,4 +1335,19 @@ Deno.test("accountLines (H-53): executions and usage limits per label, summed ov
     ],
   );
   assertEquals(accountLines([c({})]), []);
+  // H-61: a retired label is marked on its line (with or without executions).
+  const retired = {
+    ...c({ work: { executions: 3, usage_limited: 0, choices: {} } }),
+    retirements: [{
+      v: 1 as const,
+      campaign_id: "00000000-0000-4000-8000-0000000000c1",
+      label: "work",
+      by: "owner",
+      at: "2026-11-04T08:00:00.000Z",
+      reason: "setup fails",
+    }],
+  };
+  assertEquals(accountLines([retired]), [
+    "account work: 3 execution(s), 0 usage_limited [RETIRED by owner 2026-11-04T08:00:00.000Z: setup fails]",
+  ]);
 });
