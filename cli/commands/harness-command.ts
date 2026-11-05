@@ -1828,6 +1828,23 @@ export function parseRerunFile(text: string): RerunCell[] {
   return cells;
 }
 
+/** `--rerun` cells then the `--rerun-file` cells; an empty selection is refused (it would fall through to a normal run). */
+export function collectReruns(
+  flagCells: RerunCell[] | undefined,
+  file: string | undefined,
+): RerunCell[] {
+  const cells = [
+    ...(flagCells ?? []),
+    ...(file ? parseRerunFile(Deno.readTextFileSync(resolve(file))) : []),
+  ];
+  if (cells.length === 0) {
+    throw new ConfigurationError(
+      file ? `--rerun-file ${file} names no cell` : "--rerun names no cell",
+    );
+  }
+  return cells;
+}
+
 type Planner = (o: EnvOptions) => Promise<PlanEnv>;
 
 const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -3809,14 +3826,7 @@ export function registerHarnessCommand(
     ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
     ...(f.campaign ? { campaign: f.campaign } : {}),
     ...(f.rerun || f.rerunFile
-      ? {
-        reruns: [
-          ...(f.rerun ?? []),
-          ...(f.rerunFile
-            ? parseRerunFile(Deno.readTextFileSync(resolve(f.rerunFile)))
-            : []),
-        ],
-      }
+      ? { reruns: collectReruns(f.rerun, f.rerunFile) }
       : {}),
     ...(f.preregDecision ? { preregDecision: resolve(f.preregDecision) } : {}),
     ...(f.preregBDecision

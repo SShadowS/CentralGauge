@@ -663,6 +663,32 @@ type RerunItem = {
 };
 const rerunKey = (r: RerunCell) => `${r.task}:${r.repeat}:${r.arm}`;
 
+const skipReason = (status: string) =>
+  `cell is ${status} now${
+    status === "pending" ? " (a plain resume runs its owed retry)" : ""
+  }`;
+
+/** The status of a listed cell that is not unscored but already holds a manual_rerun; else null. */
+function rerunDoneStatus(
+  c: CampaignRecord,
+  data: CampaignRecords,
+  r: RerunCell,
+  scorer: string,
+): string | null {
+  const block = c.blocks.find((b) =>
+    b.task_id === r.task && b.repeat === r.repeat && b.order.includes(r.arm)
+  );
+  if (
+    !block ||
+    !data.executions.some((e) =>
+      e.block === block.index && e.arm === r.arm &&
+      e.run_kind === "manual_rerun"
+    )
+  ) return null;
+  const status = rerunCellStatus(c, data, r, scorer);
+  return status === "unscored" ? null : status;
+}
+
 /** The cell's status as the report shows it. */
 function rerunCellStatus(
   c: CampaignRecord,
@@ -962,6 +988,9 @@ async function campaignInvocation(
     throw placedConcurrencyRefusal(env.proxyIsolation, o.concurrency, early);
   }
   const rerunCells = [...(o.rerun ? [o.rerun] : []), ...(o.reruns ?? [])];
+  if (rerunCells.length === 0 && o.reruns !== undefined) {
+    throw new ConfigurationError("--rerun names no cell");
+  }
   if (
     rerunCells.length > 0 && (o.sample !== undefined || o.repeats !== undefined)
   ) {
@@ -1371,16 +1400,29 @@ async function campaignInvocation(
   let reruns: RerunItem[] | null = null;
   if (rerunCells.length > 0 && data) {
     const scorer = await currentScorerFingerprint();
-    reruns = rerunCells.map((r) => {
+    reruns = [];
+    for (const r of rerunCells) {
+      // H-62: a cell an earlier rerun invocation already finished is skipped
+      // (a relaunch on the same list is idempotent); any other non-unscored
+      // cell is refused by rerunTarget as before.
+      const done = rerunDoneStatus(c, data, r, scorer);
+      if (done !== null) {
+        io.log(
+          o.dryRun
+            ? `[DRY] rerun ${rerunKey(r)}: skipped, ${skipReason(done)}`
+            : `[SKIP] rerun ${rerunKey(r)}: ${skipReason(done)}`,
+        );
+        continue;
+      }
       const t = rerunTarget(c, data, r, scorer);
-      return {
+      reruns.push({
         r,
         key: rerunKey(r),
         block: t.block,
         at: t.at,
         i: t.block.order.indexOf(r.arm),
-      };
-    });
+      });
+    }
   }
   // H-53: the pool grows only once every resume refusal (env pin, rerun
   // target included) has passed.
@@ -1408,7 +1450,7 @@ async function campaignInvocation(
     campaignId: created || campaigns.includes(c) ? c.id : null,
     created,
     planned: reruns
-      ? reruns.length
+      ? rerunCells.length
       : blocks.reduce((n, b) => n + b.order.length, 0),
     ran: 0,
     judged: 0,
@@ -1692,7 +1734,7 @@ async function campaignInvocation(
     // H-62: the named cells through a worker pool at --concurrency. Cells of
     // one block run one after another on one worker (the matched pair), in
     // the given order; blocks go to workers in first-appearance order.
-    const base = pooled ? agentEnv : runEnv;
+    const base = agentEnv;
     let remaining = reruns;
     const kept = new Map<
       string,
@@ -1703,7 +1745,7 @@ async function campaignInvocation(
     const halt = () => crashed !== null || queue.failed() || queue.starved();
     const todo = () => remaining.map((x) => x.key).join(" ");
     const hint = (extra: string) =>
-      reruns.length > 1
+      rerunCells.length > 1
         ? `${extra}; cells still to do (relaunch the same --rerun list, finished cells are skipped): ${todo()}`
         : extra;
     for (;;) {
@@ -1737,13 +1779,7 @@ async function campaignInvocation(
                 await currentScorerFingerprint(),
               );
               if (status !== "unscored") {
-                io.log(
-                  `[SKIP] rerun ${x.key}: cell is ${status} now${
-                    status === "pending"
-                      ? " (a plain resume runs its owed retry)"
-                      : ""
-                  }`,
-                );
+                io.log(`[SKIP] rerun ${x.key}: ${skipReason(status)}`);
                 finish(x);
                 continue;
               }
@@ -1756,7 +1792,8 @@ async function campaignInvocation(
               target = { at: t.at, prior: t.prior };
             }
             if (await stopRequested()) break;
-            if (halt()) break;
+            // After the last await: the shared admission state, right before the start.
+            if (halt() || stalled || unpooledPause !== null) break;
             if (pool) {
               const r = await runPooled(
                 base,
@@ -1770,7 +1807,11 @@ async function campaignInvocation(
               );
               done.push(...r.executions);
               if (r.pause !== null && r.pending !== null) {
-                kept.set(x.key, r.pending);
+                // Only an owed automatic retry of a started rerun is kept;
+                // a manual attempt that never started is re-checked after the wait.
+                if (r.pending.at.runKind !== "manual_rerun") {
+                  kept.set(x.key, r.pending);
+                }
                 stalled = true;
                 break;
               }
@@ -1810,7 +1851,7 @@ async function campaignInvocation(
         );
         throw (crashed as { err: unknown }).err;
       }
-      if (pooled) await queue.drain();
+      await queue.drain();
       for (const e of done.splice(0)) {
         summary.ran++;
         await count(e);

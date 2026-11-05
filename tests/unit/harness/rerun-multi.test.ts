@@ -1,5 +1,6 @@
 // H-62: several --rerun cells in one invocation, through the normal scheduler.
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { join } from "@std/path";
 import { ConfigurationError, ValidationError } from "../../../src/errors.ts";
 import { runCampaign, type RunOptions } from "../../../src/harness/campaign.ts";
 import { parseRerunFile } from "../../../cli/commands/harness-command.ts";
@@ -87,15 +88,14 @@ const manual = async (t: TestEnv, id: string) =>
     e.run_kind === "manual_rerun"
   );
 
-Deno.test("rerun-multi: cells of different blocks overlap at --concurrency 2; cells of one block run in the given order, never overlapping; all are manual_rerun and judged", async () => {
-  const f = await crashy(["mock-positive"], 3);
-  // Make each block's mock-positive cell terminally unscored (rejudge budget spent).
-  for (const e of await f.t.env.store.executions(f.c.id)) {
+/** Make each block's mock-positive cell terminally unscored (rejudge budget spent). */
+async function spendBudget(t: TestEnv, campaignId: string) {
+  for (const e of await t.env.store.executions(campaignId)) {
     if (e.arm !== "mock-positive") continue;
-    const [j] = await f.t.env.store.judgments(e.id);
+    const [j] = await t.env.store.judgments(e.id);
     for (let i = 0; i < 3; i++) {
       const at = new Date(Date.now() + 1000 + i).toISOString();
-      await f.t.env.store.writeJudgment({
+      await t.env.store.writeJudgment({
         ...j!,
         id: crypto.randomUUID(),
         scorers: j!.scorers.map((s) => ({
@@ -109,6 +109,11 @@ Deno.test("rerun-multi: cells of different blocks overlap at --concurrency 2; ce
       });
     }
   }
+}
+
+Deno.test("rerun-multi: cells of different blocks overlap at --concurrency 2; cells of one block run in the given order, never overlapping; all are manual_rerun and judged", async () => {
+  const f = await crashy(["mock-positive"], 3);
+  await spendBudget(f.t, f.c.id);
   const cells = f.c.blocks.flatMap((b) =>
     [...b.order].reverse().map((arm) => cell(b.task_id, b.repeat, arm))
   );
@@ -266,6 +271,119 @@ Deno.test("rerun-multi: a cell that became scored between validation and its tur
   );
   // The first cell's rerun plus the injected one; the skipped cell ran nothing.
   assertEquals((await manual(f.t, f.c.id)).length, 2);
+});
+
+Deno.test("rerun-multi: an empty reruns list is refused, not run as a normal campaign", async () => {
+  const f = await crashy(["mock-positive"], 2);
+  const n = await count(f.t, f.c.id);
+  await assertRejects(
+    () => runCampaign(f.t.env, "rr", opts({ reruns: [] }), io()),
+    ConfigurationError,
+    "names no cell",
+  );
+  assertEquals(await count(f.t, f.c.id), n);
+});
+
+Deno.test("rerun-multi: a same-list relaunch skips the cells an earlier invocation finished (scored) and runs the rest", async () => {
+  const f = await crashy(["mock-positive"], 3);
+  await spendBudget(f.t, f.c.id);
+  const cells = f.c.blocks.map((b) =>
+    cell(b.task_id, b.repeat, "mock-positive")
+  );
+  // The first invocation stops before its second cell.
+  let calls = 0;
+  const first = await runCampaign(
+    f.t.env,
+    "rr",
+    opts({ reruns: cells, stopRequested: () => Promise.resolve(++calls >= 3) }),
+    io(),
+  );
+  assertEquals([first.stopped, (await manual(f.t, f.c.id)).length], [true, 1]);
+  const out = io();
+  const second = await runCampaign(f.t.env, "rr", opts({ reruns: cells }), out);
+  assertEquals(second.planned, 3);
+  const skips = out.lines.filter((l) => l.startsWith("[SKIP] rerun"));
+  assertEquals(skips.length, 1, out.lines.join("\n"));
+  assert(skips[0]!.includes(`${cells[0]!.task}:1:mock-positive`));
+  assert(skips[0]!.includes("is scored now"));
+  // Each cell holds exactly one manual rerun.
+  const man = await manual(f.t, f.c.id);
+  assertEquals(man.map((e) => e.block).sort(), f.c.blocks.map((b) => b.index));
+  // Any other non-unscored cell is still refused (scored without a manual rerun).
+  await assertRejects(
+    () =>
+      runCampaign(
+        f.t.env,
+        "rr",
+        opts({
+          reruns: [cell(cells[0]!.task, 1, "mock-crash"), {
+            ...cells[0]!,
+            arm: "mock-nope",
+          }],
+        }),
+        io(),
+      ),
+    ConfigurationError,
+    "no such cell",
+  );
+});
+
+Deno.test("rerun-multi: a cell still unscored after an earlier manual rerun runs again on a relaunch, as the next manual attempt", async () => {
+  const f = await crashy(["mock-positive"], 1);
+  const b = f.c.blocks[0]!;
+  const list = [cell(b.task_id, b.repeat, "mock-crash")];
+  const out = io();
+  await runCampaign(f.t.env, "rr", opts({ reruns: list }), out);
+  await runCampaign(f.t.env, "rr", opts({ reruns: list }), out);
+  assert(!out.lines.some((l) => l.startsWith("[SKIP]")), out.lines.join("\n"));
+  assertEquals(
+    (await manual(f.t, f.c.id)).map((e) => e.attempt).sort(),
+    [3, 5],
+  );
+});
+
+Deno.test("rerun-multi: an invalid cell refuses the invocation; recovery of an interrupted execution may publish its record, nothing else is written for the rerun cells", async () => {
+  const f = await crashy(["mock-positive"], 2);
+  const [b1] = f.c.blocks;
+  const good = cell(b1!.task_id, b1!.repeat, "mock-crash");
+  // A rerun whose container termination is unconfirmed leaves its intent behind.
+  const behave = f.t.docker.behavior!;
+  f.t.docker.behavior = (call, run) => {
+    f.t.docker.lingering.add(call.name);
+    return behave(call, run);
+  };
+  await assertRejects(
+    () => runCampaign(f.t.env, "rr", opts({ reruns: [good] }), io()),
+    Error,
+    "termination not confirmed",
+  );
+  f.t.docker.lingering.clear();
+  f.t.docker.behavior = behave;
+  const intents = join(f.t.env.privateRoot, "intents");
+  const left = [...Deno.readDirSync(intents)].map((e) => e.name);
+  assertEquals(left.length, 1);
+  const interrupted = left[0]!.replace(".json", "");
+  const before = (await f.t.env.store.executions(f.c.id)).map((e) => e.id);
+  const runs = f.t.docker.runs.length;
+  await assertRejects(
+    () =>
+      runCampaign(
+        f.t.env,
+        "rr",
+        opts({ reruns: [good, cell("HX-999", 1, "mock-crash")] }),
+        io(),
+      ),
+    ConfigurationError,
+    "no such cell",
+  );
+  const after = (await f.t.env.store.executions(f.c.id)).map((e) => e.id);
+  assertEquals(
+    after.filter((id) => !before.includes(id)),
+    [interrupted],
+    "only the recovered record appeared",
+  );
+  assertEquals(f.t.docker.runs.length, runs, "nothing was started");
+  assertEquals([...Deno.readDirSync(intents)].length, 0, "no new intent");
 });
 
 Deno.test("rerun-multi: --rerun-file parsing: comments and blanks ignored, a bad line refused with its number", () => {
