@@ -386,6 +386,128 @@ Deno.test("rerun-multi: an invalid cell refuses the invocation; recovery of an i
   assertEquals([...Deno.readDirSync(intents)].length, 0, "no new intent");
 });
 
+/** Polls until `ready()` or 20 s; then a short settle so the other worker's state lands. */
+async function until(ready: () => boolean) {
+  for (let i = 0; i < 2000 && !ready(); i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  await new Promise((r) => setTimeout(r, 100));
+}
+
+Deno.test("rerun-multi: a worker suspended inside the stop check does not start once the other worker has stopped the run", async () => {
+  const f = await crashy(["mock-positive"], 2);
+  const cells = f.c.blocks.map((b) => cell(b.task_id, b.repeat, "mock-crash"));
+  const n = await count(f.t, f.c.id);
+  let calls = 0;
+  let stopSeen = false;
+  const stopRequested = async () => {
+    const k = ++calls;
+    if (k === 2) return stopSeen = true; // worker A: the stop
+    if (k === 3) await until(() => stopSeen); // worker B: suspended, then "no stop"
+    return false;
+  };
+  const s = await runCampaign(
+    f.t.env,
+    "rr",
+    opts({ concurrency: 2, reruns: cells, stopRequested }),
+    io(),
+  );
+  assertEquals(s.stopped, true);
+  assertEquals(await count(f.t, f.c.id), n, "neither worker started a cell");
+});
+
+Deno.test("rerun-multi: one cell on a fixed judge keeps the legacy refusal message; several cells use the new one", async () => {
+  const f = await crashy(["mock-positive"], 2);
+  const [b1, b2] = f.c.blocks;
+  const one = cell(b1!.task_id, b1!.repeat, "mock-crash");
+  await assertRejects(
+    () => runCampaign(f.t.env, "rr", opts({ rerun: one, sample: 1 }), io()),
+    ConfigurationError,
+    "--rerun runs one cell: --sample and --repeats do not apply",
+  );
+  await assertRejects(
+    () =>
+      runCampaign(
+        f.t.env,
+        "rr",
+        opts({
+          rerun: one,
+          reruns: [cell(b2!.task_id, b2!.repeat, "mock-crash")],
+          sample: 1,
+        }),
+        io(),
+      ),
+    ConfigurationError,
+    "--rerun runs only the named cells",
+  );
+});
+
+Deno.test("rerun-multi: the judge queue fails during a multi-cell rerun: admission stops, the in-flight cell settles and the failure is rethrown", async () => {
+  const f = await crashy(["mock-positive"], 3);
+  await spendBudget(f.t, f.c.id);
+  const cells = f.c.blocks.map((b) =>
+    cell(b.task_id, b.repeat, "mock-positive")
+  );
+  let failed = false;
+  const lane = f.t.env.lane as unknown as Record<string, unknown>;
+  for (const k of ["compile", "compileOn", "exclusive"]) {
+    lane[k] = () => {
+      failed = true;
+      return Promise.reject(new Error("injected judge failure"));
+    };
+  }
+  let calls = 0;
+  const stopRequested = async () => {
+    // The third check is the one before the second cell: wait for the judge to fail.
+    if (++calls === 3) await until(() => failed);
+    return false;
+  };
+  await assertRejects(
+    () =>
+      runCampaign(f.t.env, "rr", opts({ reruns: cells, stopRequested }), io()),
+    Error,
+    "injected judge failure",
+  );
+  assert(failed, "the judge ran and failed");
+  assertEquals((await manual(f.t, f.c.id)).length, 1, "no new admission");
+});
+
+Deno.test("rerun-multi: a starved judge queue admits nothing new: a worker held at the admission barrier until starvation does not start", async () => {
+  const f = await crashy(["mock-positive"], 3);
+  await spendBudget(f.t, f.c.id);
+  const cells = f.c.blocks.map((b) =>
+    cell(b.task_id, b.repeat, "mock-positive")
+  );
+  let invalidated = false;
+  f.t.env.judgePooled = {
+    width: () => 0,
+    refresh: () => Promise.resolve(),
+    invalidate: () => void (invalidated = true),
+    poll: () => {},
+    bounds: { waitMs: 30, pollMs: 10 },
+  };
+  let calls = 0;
+  const stopRequested = async () => {
+    // The check before the second cell is held until the queue has starved.
+    if (++calls === 3) await until(() => invalidated);
+    return false;
+  };
+  const s = await runCampaign(
+    f.t.env,
+    "rr",
+    opts({ reruns: cells, stopRequested }),
+    io(),
+  );
+  assert(invalidated, "the queue starved");
+  assertEquals(s.starved, true);
+  assertEquals(
+    (await manual(f.t, f.c.id)).length,
+    1,
+    "no cell after starvation",
+  );
+  assertEquals(s.owed, 1);
+});
+
 Deno.test("rerun-multi: --rerun-file parsing: comments and blanks ignored, a bad line refused with its number", () => {
   assertEquals(
     parseRerunFile("# the list\n\nHX-001:1:mock-crash\r\n  \nHX-002:2:a\n"),

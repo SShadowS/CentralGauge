@@ -995,7 +995,9 @@ async function campaignInvocation(
     rerunCells.length > 0 && (o.sample !== undefined || o.repeats !== undefined)
   ) {
     throw new ConfigurationError(
-      "--rerun runs only the named cells: --sample and --repeats do not apply",
+      rerunCells.length === 1
+        ? "--rerun runs one cell: --sample and --repeats do not apply"
+        : "--rerun runs only the named cells: --sample and --repeats do not apply",
     );
   }
   const seenCells = new Set<string>();
@@ -1734,7 +1736,8 @@ async function campaignInvocation(
     // H-62: the named cells through a worker pool at --concurrency. Cells of
     // one block run one after another on one worker (the matched pair), in
     // the given order; blocks go to workers in first-appearance order.
-    const base = agentEnv;
+    // One cell on a fixed judge keeps the legacy inline judging (runEnv).
+    const base = rerunCells.length === 1 && !pooled ? runEnv : agentEnv;
     let remaining = reruns;
     const kept = new Map<
       string,
@@ -1742,7 +1745,8 @@ async function campaignInvocation(
     >();
     const done: ExecutionRecord[] = [];
     let crashed: { err: unknown } | null = null;
-    const halt = () => crashed !== null || queue.failed() || queue.starved();
+    const halt = () =>
+      crashed !== null || summary.stopped || queue.failed() || queue.starved();
     const todo = () => remaining.map((x) => x.key).join(" ");
     const hint = (extra: string) =>
       rerunCells.length > 1
