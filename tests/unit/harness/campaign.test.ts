@@ -1240,7 +1240,7 @@ Deno.test("--rerun composes with --campaign, --dry-run and --stop-file; refuses 
     await assertRejects(
       () => runCampaign(t.env, "crashy", opts({ rerun, ...over }), io()),
       ConfigurationError,
-      "--rerun runs one cell",
+      "--rerun runs only the named cells",
     );
   }
   await assertRejects(

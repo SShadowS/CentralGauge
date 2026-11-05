@@ -1770,6 +1770,8 @@ export interface RunCliOptions extends CellCliOptions {
   campaign?: string;
   /** run: rerun only this unscored cell as a manual_rerun. */
   rerun?: RerunCell;
+  /** H-62: further cells (`--rerun` repeated, `--rerun-file`). */
+  reruns?: RerunCell[];
   /** run (M11-10): the stage-A pre-registration decision file. */
   preregDecision?: string;
   /** run (M11-10): the stage-B pre-registration decision file. */
@@ -1804,6 +1806,26 @@ export function parseRerunCell(value: string): RerunCell {
     );
   }
   return { task: m[1]!, repeat: Number(m[2]), arm: m[3]! };
+}
+
+/** `--rerun-file`: one cell per line; blank lines and `#` lines are ignored; a bad line is refused with its number. */
+export function parseRerunFile(text: string): RerunCell[] {
+  const cells: RerunCell[] = [];
+  text.split(/\r?\n/).forEach((raw, n) => {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) return;
+    try {
+      cells.push(parseRerunCell(line));
+    } catch (e) {
+      throw new ValidationError(
+        `--rerun-file line ${n + 1}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+        [line],
+      );
+    }
+  });
+  return cells;
 }
 
 type Planner = (o: EnvOptions) => Promise<PlanEnv>;
@@ -1864,6 +1886,7 @@ export async function harnessRun(
     ...(o.stopFiles !== undefined ? { stopFiles: o.stopFiles } : {}),
     ...(o.campaign !== undefined ? { campaign: o.campaign } : {}),
     ...(o.rerun !== undefined ? { rerun: o.rerun } : {}),
+    ...(o.reruns !== undefined ? { reruns: o.reruns } : {}),
     ...(o.ignoreUsageReset !== undefined
       ? { ignoreUsageReset: o.ignoreUsageReset }
       : {}),
@@ -3753,7 +3776,8 @@ export function registerHarnessCommand(
     basis?: string;
     stopFile?: string[];
     campaign?: string;
-    rerun?: RerunCell;
+    rerun?: RerunCell[];
+    rerunFile?: string;
     preregDecision?: string;
     preregBDecision?: string;
     judgeContainers?: string;
@@ -3784,7 +3808,16 @@ export function registerHarnessCommand(
     ...(f.basis !== undefined ? { basis: f.basis } : {}),
     ...(f.stopFile ? { stopFiles: f.stopFile.map((p) => resolve(p)) } : {}),
     ...(f.campaign ? { campaign: f.campaign } : {}),
-    ...(f.rerun ? { rerun: f.rerun } : {}),
+    ...(f.rerun || f.rerunFile
+      ? {
+        reruns: [
+          ...(f.rerun ?? []),
+          ...(f.rerunFile
+            ? parseRerunFile(Deno.readTextFileSync(resolve(f.rerunFile)))
+            : []),
+        ],
+      }
+      : {}),
     ...(f.preregDecision ? { preregDecision: resolve(f.preregDecision) } : {}),
     ...(f.preregBDecision
       ? { preregBDecision: resolve(f.preregBDecision) }
@@ -3858,7 +3891,12 @@ export function registerHarnessCommand(
     .type("cell", ({ value }) => parseRerunCell(value))
     .option(
       "--rerun <cell:cell>",
-      "Rerun only this unscored cell (<task:repeat:arm>) as a manual rerun",
+      "Rerun this unscored cell (<task:repeat:arm>) as a manual rerun; repeatable, runs only the named cells",
+      { collect: true },
+    )
+    .option(
+      "--rerun-file <path:string>",
+      "Cells to rerun, one <task:repeat:arm> per line (blank lines and # comments ignored); adds to --rerun",
     )
     .option(
       "--prereg-decision <path:string>",

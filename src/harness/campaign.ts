@@ -97,6 +97,8 @@ export interface RunOptions {
   campaign?: string;
   /** Run exactly this unscored cell again as a manual_rerun; nothing else runs. */
   rerun?: { task: string; repeat: number; arm: string };
+  /** H-62: further cells to rerun in the same invocation (with `rerun`, after it). */
+  reruns?: { task: string; repeat: number; arm: string }[];
   /** M11-10: the stage-A decision file; required with a preregistration. */
   preregDecision?: string;
   /** M11-10: the stage-B decision file; required with a preregistration. */
@@ -651,6 +653,32 @@ function judgmentsByExecution(
   return byExecution;
 }
 
+type RerunCell = NonNullable<RunOptions["rerun"]>;
+type RerunItem = {
+  r: RerunCell;
+  key: string;
+  block: Block;
+  at: AttemptRef;
+  i: number;
+};
+const rerunKey = (r: RerunCell) => `${r.task}:${r.repeat}:${r.arm}`;
+
+/** The cell's status as the report shows it. */
+function rerunCellStatus(
+  c: CampaignRecord,
+  data: CampaignRecords,
+  r: RerunCell,
+  scorer: string,
+) {
+  return cellsFromRecords(
+    c,
+    data.executions,
+    judgmentsByExecution(data),
+    { ...campaignJudging(c), scorer },
+  ).find((x) => x.task === r.task && x.repeat === r.repeat && x.arm === r.arm)!
+    .status;
+}
+
 /**
  * A manual rerun's cell and attempt: only an unscored cell is rerun (a
  * manual rerun never replaces a scored result, and a pending or unrun cell
@@ -663,28 +691,17 @@ function rerunTarget(
   /** H-04b: the current scorer fingerprint, so a rejudge-budget cell reads as the report shows it. */
   scorer: string,
 ): { block: Block; at: AttemptRef; prior: ExecutionRecord[] } {
-  const label = `${r.task}:${r.repeat}:${r.arm}`;
+  const label = rerunKey(r);
   const block = c.blocks.find((b) =>
     b.task_id === r.task && b.repeat === r.repeat && b.order.includes(r.arm)
   );
   if (!block) {
     throw new ConfigurationError(`no such cell ${label} in campaign ${c.id}`);
   }
-  const cell = cellsFromRecords(
-    c,
-    data.executions,
-    judgmentsByExecution(data),
-    {
-      ...campaignJudging(c),
-      scorer,
-    },
-  )
-    .find((x) =>
-      x.task === r.task && x.repeat === r.repeat && x.arm === r.arm
-    )!;
-  if (cell.status !== "unscored") {
+  const status = rerunCellStatus(c, data, r, scorer);
+  if (status !== "unscored") {
     throw new ConfigurationError(
-      `cell ${label} is ${cell.status}: only an unscored cell is rerun (a manual rerun never replaces a scored result)`,
+      `cell ${label} is ${status}: only an unscored cell is rerun (a manual rerun never replaces a scored result)`,
     );
   }
   const prior = data.executions.filter((e) =>
@@ -944,10 +961,20 @@ async function campaignInvocation(
   if (early) {
     throw placedConcurrencyRefusal(env.proxyIsolation, o.concurrency, early);
   }
-  if (o.rerun && (o.sample !== undefined || o.repeats !== undefined)) {
+  const rerunCells = [...(o.rerun ? [o.rerun] : []), ...(o.reruns ?? [])];
+  if (
+    rerunCells.length > 0 && (o.sample !== undefined || o.repeats !== undefined)
+  ) {
     throw new ConfigurationError(
-      "--rerun runs one cell: --sample and --repeats do not apply",
+      "--rerun runs only the named cells: --sample and --repeats do not apply",
     );
+  }
+  const seenCells = new Set<string>();
+  for (const r of rerunCells) {
+    if (seenCells.has(rerunKey(r))) {
+      throw new ConfigurationError(`--rerun names cell ${rerunKey(r)} twice`);
+    }
+    seenCells.add(rerunKey(r));
   }
   const { experiment, configs } = await loadExperiment(
     env.harnessRoot,
@@ -1137,7 +1164,7 @@ async function campaignInvocation(
         problems.join("\n  ")
       }`,
     );
-  if (!c && o.rerun) {
+  if (!c && rerunCells.length > 0) {
     throw new ConfigurationError(
       `no campaign of experiment ${experimentId} matches the current experiment, task set and arm manifests: --rerun targets an existing campaign`,
     );
@@ -1340,9 +1367,21 @@ async function campaignInvocation(
   // H-41 (section 10): the campaign is final: its env pin, before the queue and any cell.
   if (!o.dryRun) await env.bindCampaign?.(c.id);
   // Refused before any container run (and in a dry run).
-  const rerun = o.rerun && data
-    ? rerunTarget(c, data, o.rerun, await currentScorerFingerprint())
-    : null;
+  // H-62: every named cell is validated before any claim or write.
+  let reruns: RerunItem[] | null = null;
+  if (rerunCells.length > 0 && data) {
+    const scorer = await currentScorerFingerprint();
+    reruns = rerunCells.map((r) => {
+      const t = rerunTarget(c, data, r, scorer);
+      return {
+        r,
+        key: rerunKey(r),
+        block: t.block,
+        at: t.at,
+        i: t.block.order.indexOf(r.arm),
+      };
+    });
+  }
   // H-53: the pool grows only once every resume refusal (env pin, rerun
   // target included) has passed.
   if (addition) {
@@ -1368,19 +1407,21 @@ async function campaignInvocation(
     // A dry run of a campaign that does not exist yet has no id.
     campaignId: created || campaigns.includes(c) ? c.id : null,
     created,
-    planned: rerun ? 1 : blocks.reduce((n, b) => n + b.order.length, 0),
+    planned: reruns
+      ? reruns.length
+      : blocks.reduce((n, b) => n + b.order.length, 0),
     ran: 0,
     judged: 0,
     unscored: 0,
     paused: null,
     stopped: false,
   };
-  if (o.dryRun && rerun) {
-    io.log(
-      `[DRY] rerun ${rerun.block.task_id}#${rerun.block.repeat} ${
-        o.rerun!.arm
-      } as attempt ${rerun.at.attempt} (manual_rerun)`,
-    );
+  if (o.dryRun && reruns) {
+    for (const x of reruns) {
+      io.log(
+        `[DRY] rerun ${x.block.task_id}#${x.block.repeat} ${x.r.arm} as attempt ${x.at.attempt} (manual_rerun)`,
+      );
+    }
     return summary;
   }
   if (o.dryRun) {
@@ -1647,35 +1688,158 @@ async function campaignInvocation(
     }
     return { executions, pause: null, pending: null };
   };
-  if (rerun && pool) {
-    // H-53: the rerun cell's whole retry chain through the pool, waiting for
-    // the earliest reset under --max-pause-min like a plain run.
-    const arm = o.rerun!.arm;
-    const i = rerun.block.order.indexOf(arm);
+  if (reruns) {
+    // H-62: the named cells through a worker pool at --concurrency. Cells of
+    // one block run one after another on one worker (the matched pair), in
+    // the given order; blocks go to workers in first-appearance order.
     const base = pooled ? agentEnv : runEnv;
-    const halt = () => queue.failed() || queue.starved();
+    let remaining = reruns;
+    const kept = new Map<
+      string,
+      { at: AttemptRef; prior: ExecutionRecord[] }
+    >();
     const done: ExecutionRecord[] = [];
-    let r = await runPooled(
-      base,
-      rerun.block,
-      arm,
-      i,
-      rerun.at,
-      rerun.prior,
-      stopRequested,
-      halt,
-    );
-    done.push(...r.executions);
-    while (r.pause !== null && r.pending !== null) {
-      const wait = r.pause === "unknown"
-        ? Infinity
-        : Date.parse(r.pause) - now();
-      if (wait > o.maxPauseMs) {
-        summary.paused = r.pause;
-        io.log(
-          `[PAUSE] usage limit on every account (${parkedNote()}); resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+    let crashed: { err: unknown } | null = null;
+    const halt = () => crashed !== null || queue.failed() || queue.starved();
+    const todo = () => remaining.map((x) => x.key).join(" ");
+    const hint = (extra: string) =>
+      reruns.length > 1
+        ? `${extra}; cells still to do (relaunch the same --rerun list, finished cells are skipped): ${todo()}`
+        : extra;
+    for (;;) {
+      let stalled = false;
+      let unpooledPause: string | null = null;
+      const groups: (typeof reruns)[] = [];
+      for (const x of remaining) {
+        const g = groups.find((g) => g[0]!.block.index === x.block.index);
+        if (g) g.push(x);
+        else groups.push([x]);
+      }
+      let next = 0;
+      const finish = (x: { key: string }) => {
+        remaining = remaining.filter((y) => y.key !== x.key);
+      };
+      const worker = async () => {
+        while (
+          !stalled && unpooledPause === null && !summary.stopped && !halt() &&
+          next < groups.length
+        ) {
+          for (const x of groups[next++]!) {
+            if (stalled || unpooledPause !== null || summary.stopped) break;
+            let target = kept.get(x.key) ?? null;
+            if (!target) {
+              // Still unscored at its turn? (an earlier invocation may have done it)
+              const fresh = await loadCampaignData(env.store, campaign);
+              const status = rerunCellStatus(
+                campaign,
+                fresh,
+                x.r,
+                await currentScorerFingerprint(),
+              );
+              if (status !== "unscored") {
+                io.log(
+                  `[SKIP] rerun ${x.key}: cell is ${status} now${
+                    status === "pending"
+                      ? " (a plain resume runs its owed retry)"
+                      : ""
+                  }`,
+                );
+                finish(x);
+                continue;
+              }
+              const t = rerunTarget(
+                campaign,
+                fresh,
+                x.r,
+                await currentScorerFingerprint(),
+              );
+              target = { at: t.at, prior: t.prior };
+            }
+            if (await stopRequested()) break;
+            if (halt()) break;
+            if (pool) {
+              const r = await runPooled(
+                base,
+                x.block,
+                x.r.arm,
+                x.i,
+                target.at,
+                target.prior,
+                stopRequested,
+                halt,
+              );
+              done.push(...r.executions);
+              if (r.pause !== null && r.pending !== null) {
+                kept.set(x.key, r.pending);
+                stalled = true;
+                break;
+              }
+              finish(x);
+              continue;
+            }
+            const r = await runCell(
+              base,
+              cellRefFor(campaign, opened, x.block, x.r.arm, x.i),
+              target.at,
+              target.prior,
+            );
+            done.push(...r.executions);
+            finish(x);
+            // Its owed retry waits for the reset; a plain resume runs it.
+            if (r.pause) unpooledPause = laterReset(unpooledPause, r.pause);
+          }
+        }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(o.concurrency, groups.length) },
+          () =>
+            worker().catch((err) => {
+              crashed ??= { err };
+              env.hooks?.workerThrew?.();
+            }),
+        ),
+      );
+      if (crashed !== null) {
+        await queue.drain().catch((err) =>
+          io.log(
+            `[WARN] judge queue failed as well (some judgments not written): ${
+              err instanceof Error ? err.message : err
+            }`,
+          )
         );
-        break;
+        throw (crashed as { err: unknown }).err;
+      }
+      if (pooled) await queue.drain();
+      for (const e of done.splice(0)) {
+        summary.ran++;
+        await count(e);
+      }
+      if (queue.starved()) return await starvedOut();
+      if (unpooledPause !== null) {
+        summary.paused = unpooledPause;
+        io.log(
+          `[PAUSE] ${
+            hint(
+              `usage limit until ${unpooledPause}; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+            )
+          }`,
+        );
+        return summary;
+      }
+      if (!stalled || summary.stopped) return summary;
+      const reset = earliestReset();
+      const wait = reset === "unknown" ? Infinity : Date.parse(reset) - now();
+      if (wait > o.maxPauseMs) {
+        summary.paused = reset;
+        io.log(
+          `[PAUSE] ${
+            hint(
+              `usage limit on every account (${parkedNote()}); resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
+            )
+          }`,
+        );
+        return summary;
       }
       io.log(
         `[PAUSE] usage limit on every account (${parkedNote()}); waiting ${
@@ -1683,53 +1847,7 @@ async function campaignInvocation(
         } ms`,
       );
       await io.sleep(Math.max(wait, 0));
-      // The attempt that waited (the manual rerun itself if none started).
-      r = await runPooled(
-        base,
-        rerun.block,
-        arm,
-        i,
-        r.pending.at,
-        r.pending.prior,
-        stopRequested,
-        halt,
-      );
-      done.push(...r.executions);
     }
-    if (pooled) await queue.drain();
-    for (const e of done) {
-      summary.ran++;
-      await count(e);
-    }
-    return queue.starved() ? await starvedOut() : summary;
-  }
-  if (rerun) {
-    const arm = o.rerun!.arm;
-    const r = await runCell(
-      pooled ? agentEnv : runEnv,
-      cellRefFor(
-        campaign,
-        opened,
-        rerun.block,
-        arm,
-        rerun.block.order.indexOf(arm),
-      ),
-      rerun.at,
-      rerun.prior,
-    );
-    if (pooled) await queue.drain();
-    for (const e of r.executions) {
-      summary.ran++;
-      await count(e);
-    }
-    if (r.pause) {
-      // Its owed retry waits for the reset; a plain resume runs it.
-      summary.paused = r.pause;
-      io.log(
-        `[PAUSE] usage limit until ${r.pause}; resume with: centralgauge harness run ${experimentId} --campaign ${campaign.id}`,
-      );
-    }
-    return queue.starved() ? await starvedOut() : summary;
   }
   for (const e of await env.store.executions(campaign.id)) {
     if (!await judgmentOwed(env, e)) continue;
