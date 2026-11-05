@@ -4265,6 +4265,83 @@ repeats: 1
   ]);
 });
 
+Deno.test("CLI (H-62): `--rerun-file` with no cell (empty or comments only) is refused before any environment opens and runs nothing", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await write(
+    t.harnessRoot,
+    "experiments/crashy.yml",
+    `id: crashy
+hypothesis: Mock contract.
+primary_metric: pass_rate
+baseline: mock-positive
+variants: [mock-crash]
+vary: [settings]
+tasks: "harness-tasks/tasks/*"
+repeats: 1
+`,
+  );
+  let opened = 0;
+  const open = () => {
+    opened++;
+    return opener(t)();
+  };
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, open);
+  const flags = [
+    "--secrets-dir",
+    t.env.privateRoot,
+    "--private-dir",
+    t.env.privateRoot,
+  ];
+  const empty = join(t.repo.root, "empty-rerun.txt");
+  const comments = join(t.repo.root, "comments-rerun.txt");
+  await Deno.writeTextFile(empty, "");
+  await Deno.writeTextFile(comments, "# nothing\n\n  \n# still nothing\n");
+  const cwd = Deno.cwd();
+  const c = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    await cli.parse(["harness", "run", "crashy", ...flags]);
+    Deno.exitCode = 0;
+    const runs = t.docker.runs.length;
+    const opens = opened;
+    assert(opens > 0);
+    for (const file of [empty, comments]) {
+      c.err.length = 0;
+      await cli.parse([
+        "harness",
+        "run",
+        "crashy",
+        "--rerun-file",
+        file,
+        ...flags,
+      ]);
+      assert(Deno.exitCode !== 0, "a failing exit code");
+      Deno.exitCode = 0;
+      assert(
+        c.err.concat(c.out).some((l) => l.includes("names no cell")),
+        c.err.join("\n"),
+      );
+    }
+    assertEquals(t.docker.runs.length, runs, "nothing ran");
+    assertEquals(opened, opens, "no environment opened");
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  const camp = (await t.env.store.campaigns("crashy"))[0]!;
+  assertEquals(
+    (await t.env.store.executions(camp.id)).filter((e) =>
+      e.run_kind === "manual_rerun"
+    ),
+    [],
+  );
+});
+
 // M1-34e: authorization judges the agent phase; the record-mode preflight's
 // own proxy lines must be exactly the expected ones.
 
@@ -10014,6 +10091,55 @@ Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution rec
     }
     await pool.close();
   }
+});
+
+Deno.test("run several --rerun cells with --judge-containers auto (H-62): no judge member: the queue starves, the run ends starved with every rerun's judgment owed", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.docker.behavior = mockImageBehavior();
+  await mockExperiment(t);
+  await runCampaign(t.env, "contract", {
+    dryRun: false,
+    concurrency: 1,
+    maxPauseMs: 0,
+  }, { log: () => {}, sleep: () => Promise.resolve(), catalog: CATALOG });
+  const c = (await t.env.store.campaigns("contract"))[0]!;
+  const es = await t.env.store.executions(c.id);
+  assertEquals(es.length, 2);
+  for (const e of es) await unscoredJudgments(t, e.id, 3);
+  const block = c.blocks[0]!;
+  const reruns = es
+    .map((e) => ({ e, i: block.order.indexOf(e.arm) }))
+    .sort((a, b) => a.i - b.i)
+    .map(({ e }) => ({
+      task: block.task_id,
+      repeat: block.repeat,
+      arm: e.arm,
+    }));
+  const { pool } = autoJudging(t, "judges", {
+    bounds: { pollMs: 20, waitMs: 150 },
+  });
+  const cap = captureAll();
+  let s;
+  try {
+    s = await harnessRun("contract", runOpts(t, { reruns }), opener(t));
+  } finally {
+    cap.restore();
+  }
+  assertEquals(s.starved, true);
+  const manual = (await t.env.store.executions(c.id)).filter((x) =>
+    x.run_kind === "manual_rerun"
+  );
+  // Starvation is detected after the wait bound, so how many cells were
+  // admitted before it is timing; the first always was and none is judged.
+  assert(manual.length >= 1 && manual.length <= 2);
+  assertEquals(manual[0]!.arm, reruns[0]!.arm);
+  for (const m of manual) {
+    assertEquals((await t.env.store.judgments(m.id)).length, 0);
+  }
+  assertEquals(s.owed, manual.length);
+  await pool.close();
 });
 
 Deno.test("run --rerun with --judge-containers auto (H-41 N4 b): the rerun cell runs on the agents' lane; with no judge member its judgment is owed and the run starves; after a join it is judged on the judge member", async () => {

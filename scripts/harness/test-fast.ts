@@ -135,6 +135,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}report-charts.test.ts`]: c(true, 0),
   [`${H}report-extras.test.ts`]: c(true, 0),
   [`${H}report.test.ts`]: c(true, 3),
+  // H-62: campaign runs on the mock image (makeEnv temp dirs, in-process fakes).
+  [`${H}rerun-multi.test.ts`]: c(true, 50),
   [`${H}reuse.test.ts`]: c(true, 16),
   [`${H}reset.test.ts`]: c(true, 0),
   [`${H}rollups.test.ts`]: c(true, 0),

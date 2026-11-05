@@ -1111,3 +1111,214 @@ Deno.test("retire (H-61): a two-label pool cannot lose one (a lone label would r
   const [c] = await t.env.store.campaigns("pool");
   assertEquals(await t.env.store.accountRetirements(c!.id), []);
 });
+
+// ---- H-62: several --rerun cells ----
+
+const crashCells = async (t: TestEnv) => {
+  const [c] = await t.env.store.campaigns("pool");
+  return c!.blocks.map((b) => ({
+    task: b.task_id,
+    repeat: b.repeat,
+    arm: "mock-crash",
+  }));
+};
+const manualReruns = async (t: TestEnv) =>
+  (await executions(t)).filter((e) => e.run_kind === "manual_rerun");
+
+Deno.test("pool (H-62): several pooled --rerun cells at concurrency 2: a limit parks one label, every cell runs once on the other", async () => {
+  const { t, limited } = await poolEnv(["work", "maxpriv2"], 3, "mock-crash");
+  await runCampaign(t.env, "pool", opts(), io());
+  const cells = await crashCells(t);
+  limited.add("work");
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({ concurrency: 2, reruns: cells }),
+    io(),
+  );
+  assertEquals([s.paused, s.planned], [null, 3]);
+  const re = await manualReruns(t);
+  assertEquals(re.length, 3);
+  assert(re.some((e) => e.account === "maxpriv2"));
+});
+
+Deno.test("pool (H-62): every label parked: the run waits within --max-pause, then the pending cell and the not-yet-started ones go on", async () => {
+  const { t, limited, tick } = await poolEnv(
+    ["work", "maxpriv2"],
+    2,
+    "mock-crash",
+  );
+  await runCampaign(t.env, "pool", opts(), io());
+  const cells = await crashCells(t);
+  limited.add("work");
+  limited.add("maxpriv2");
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: (ms: number) => {
+      waits.push(ms);
+      limited.clear();
+      tick(ms + 1000);
+      return Promise.resolve();
+    },
+  };
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({ reruns: cells, maxPauseMs: 2 * 3600_000 }),
+    out,
+  );
+  assertEquals([s.paused, waits.length], [null, 1]);
+  const all = await executions(t);
+  const [c] = await t.env.store.campaigns("pool");
+  for (const b of c!.blocks) {
+    const chain = all.filter((e) =>
+      e.block === b.index && e.arm === "mock-crash"
+    )
+      .sort((a, z) => a.attempt - z.attempt);
+    // No duplicate attempt number; the chain is consecutive; one manual rerun, attempt 3.
+    assertEquals(
+      chain.map((e) => e.attempt),
+      chain.map((_, i) => i + 1),
+    );
+    const man = chain.filter((e) => e.run_kind === "manual_rerun");
+    assertEquals(man.map((e) => e.attempt), [3]);
+  }
+});
+
+Deno.test("pool (H-62): a parked, never-started manual attempt is checked again after the wait: the cell scored meanwhile is skipped and never executed", async () => {
+  const { t, limited, tick } = await poolEnv(
+    ["work", "maxpriv2"],
+    2,
+    "mock-crash",
+  );
+  await runCampaign(t.env, "pool", opts(), io());
+  const [c] = await t.env.store.campaigns("pool");
+  const [b1, b2] = c!.blocks;
+  const cell = (b: typeof b1) => ({
+    task: b!.task_id,
+    repeat: b!.repeat,
+    arm: "mock-crash",
+  });
+  // Block 1's rerun hits the limit on both labels: both are parked from the records.
+  limited.add("work");
+  limited.add("maxpriv2");
+  const first = await runCampaign(
+    t.env,
+    "pool",
+    opts({ reruns: [cell(b1)] }),
+    io(),
+  );
+  assert(first.paused !== null);
+  limited.clear();
+  const before = (await executions(t)).length;
+  const all = await executions(t);
+  const donor = all.find((e) =>
+    e.block === b2!.index && e.arm === "mock-positive"
+  )!;
+  const target = all.filter((e) =>
+    e.block === b2!.index && e.arm === "mock-crash"
+  )
+    .sort((a, z) => z.attempt - a.attempt)[0]!;
+  const waits: number[] = [];
+  const out = {
+    ...io(),
+    sleep: async (ms: number) => {
+      waits.push(ms);
+      tick(ms + 1000);
+      // Meanwhile another invocation scores block 2's cell.
+      const copy = {
+        ...donor,
+        id: crypto.randomUUID(),
+        arm: target.arm,
+        order_in_block: target.order_in_block,
+        attempt: target.attempt + 1,
+        run_kind: "manual_rerun" as const,
+        retry_of: null,
+      };
+      await t.env.store.writeExecution(copy);
+      const [dj] = await t.env.store.judgments(donor.id);
+      await t.env.store.writeJudgment({
+        ...dj!,
+        id: crypto.randomUUID(),
+        execution_id: copy.id,
+      });
+    },
+  };
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({ reruns: [cell(b2)], maxPauseMs: 2 * 3600_000 }),
+    out,
+  );
+  assertEquals([s.paused, waits.length], [null, 1]);
+  assert(
+    out.lines.some((l) => l.startsWith("[SKIP] rerun") && l.includes("scored")),
+    out.lines.join("\n"),
+  );
+  // Only the injected record was added; the skipped cell never executed.
+  assertEquals((await executions(t)).length, before + 1);
+});
+
+Deno.test("pool (H-62): beyond --max-pause the run ends paused and the hint lists the cells still to do", async () => {
+  const { t, limited } = await poolEnv(["work", "maxpriv2"], 2, "mock-crash");
+  await runCampaign(t.env, "pool", opts(), io());
+  const cells = await crashCells(t);
+  limited.add("work");
+  limited.add("maxpriv2");
+  const out = io();
+  const s = await runCampaign(t.env, "pool", opts({ reruns: cells }), out);
+  assert(s.paused !== null);
+  const pause = out.lines.find((l) => l.startsWith("[PAUSE]"))!;
+  for (const c of cells) {
+    assertStringIncludes(pause, `${c.task}:${c.repeat}:${c.arm}`);
+  }
+  assertStringIncludes(pause, "cells still to do");
+});
+
+Deno.test("pool (H-62): unpooled pause at concurrency 2: a worker that was suspended before its start does not start once the other worker has paused the run", async () => {
+  const { t, limited } = await poolEnv(["work"], 2, "mock-crash");
+  await runCampaign(t.env, "pool", opts(), io());
+  const cells = await crashCells(t);
+  limited.add("work");
+  const [c] = await t.env.store.campaigns("pool");
+  // The second admission check (worker B) waits until worker A's cell has hit
+  // the limit and the run is paused, then reports no stop.
+  let calls = 0;
+  const stopRequested = async () => {
+    if (++calls !== 3) return false;
+    for (;;) {
+      const es = await t.env.store.executions(c!.id);
+      if (es.some((e) => e.termination === "usage_limited")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    return false;
+  };
+  const s = await runCampaign(
+    t.env,
+    "pool",
+    opts({ concurrency: 2, reruns: cells, stopRequested }),
+    io(),
+  );
+  assert(s.paused !== null);
+  assertEquals((await manualReruns(t)).length, 1, "worker B never started");
+});
+
+Deno.test("pool (H-62): unpooled pause: no new cell is admitted, the run ends with the hint naming the cells not started", async () => {
+  const { t, limited } = await poolEnv(["work"], 3, "mock-crash");
+  await runCampaign(t.env, "pool", opts(), io());
+  const cells = await crashCells(t);
+  limited.add("work");
+  const out = io();
+  const s = await runCampaign(t.env, "pool", opts({ reruns: cells }), out);
+  assert(s.paused !== null);
+  assertEquals((await manualReruns(t)).length, 1);
+  const pause = out.lines.find((l) => l.startsWith("[PAUSE]"))!;
+  assertStringIncludes(pause, "resume with");
+  assertStringIncludes(pause, "cells still to do");
+  const c1 = cells[1]!;
+  const c0 = cells[0]!;
+  assertStringIncludes(pause, `${c1.task}:${c1.repeat}:${c1.arm}`);
+  assert(!pause.includes(`${c0.task}:${c0.repeat}:${c0.arm}`));
+});

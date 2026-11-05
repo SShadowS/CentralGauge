@@ -1344,6 +1344,19 @@ With every label parked it waits for the earliest reset under
 `--max-pause-min` (the rerun itself included, if it has not started yet), then
 goes on. Otherwise it pauses.
 
+`--rerun <task:repeat:arm>` is repeatable and `--rerun-file <path>` reads one
+cell per line (blank lines and `#` lines ignored; file cells follow the flag
+cells). Every cell is validated before anything runs (unscored, in this
+campaign); one invalid or duplicate cell refuses the whole invocation, as do
+`--sample` and `--repeats`. The cells run as `manual_rerun` attempts at
+`--concurrency` through the pooled judge queue: cells of one block run one
+after another in the given order, blocks go to workers in first-appearance
+order. A `--rerun-file` with no cell is refused. A listed cell that is no
+longer unscored and already holds a manual rerun (done by an earlier
+invocation), up front or at its turn, is skipped with a `[SKIP]` line, so
+relaunching the same list is safe; a cell still unscored runs again as the next
+manual attempt, and any other non-unscored cell is refused. A pause ends with a hint listing the cells still to do.
+
 `harness report` lists executions, `usage_limited` counts and the
 `account_choice` spread per label under **Accounts**. `screening.ts status`
 prints one `account <label>: ...` line each, and `analyze-campaign` writes
