@@ -6,6 +6,7 @@ import {
 } from "@std/assert";
 import { type Cell, mulberry32 } from "../../../src/harness/stats.ts";
 import {
+  additiveFit,
   argsHashInput,
   calibrate,
   checkResumeHeader,
@@ -79,14 +80,24 @@ const cell = (
 });
 
 Deno.test("fitCells: log mean and unknown share from terminal cells", () => {
+  // H-65 r2: a second arm, since one arm leaves no task x arm df (that layout
+  // is now refused; see the zero-df test). Same cells per arm as before.
   const cs = [1, 2, 3, 4].flatMap((r) =>
-    ["t1", "t2"].map((t) =>
-      cell(t, "a", r, r % 2 === 0, r === 4 && t === "t2" ? null : 1)
+    ["t1", "t2"].flatMap((t) =>
+      ["a", "b"].map((a) =>
+        cell(
+          t,
+          a,
+          r,
+          r % 2 === 0,
+          r === 4 && t === "t2" && a === "a" ? null : 1,
+        )
+      )
     )
   );
   const f = fitCells(cs);
   assertAlmostEquals(f.log_mean, 0, 1e-12);
-  assertEquals(f.unknown_share, 1 / 8);
+  assertEquals(f.unknown_share, 1 / 16);
 });
 
 // H-65 (decision 2026-11-06-m11-sim-model-fix-and-mining.md): synthetic cell
@@ -160,14 +171,152 @@ Deno.test("fitCells (H-65): a pure arm offset is no task x arm noise", () => {
 });
 
 Deno.test("fitCells (H-65): cell_sd divides the within sum of squares by N - groups", () => {
-  // Two (task, arm) groups of logs {0, 2}: SS 4 over 4 - 2 = 2 df.
-  const cs = [
-    cell("t1", "cc-a", 1, true, 1),
-    cell("t1", "cc-a", 2, true, Math.exp(2)),
-    cell("t1", "cc-b", 1, true, 1),
-    cell("t1", "cc-b", 2, true, Math.exp(2)),
-  ];
+  // Four (task, arm) groups of logs {0, 2}: SS 8 over 8 - 4 = 4 df. (H-65 r2:
+  // two tasks, since one task leaves no task x arm df.)
+  const cs = ["t1", "t2"].flatMap((t) => [
+    cell(t, "cc-a", 1, true, 1),
+    cell(t, "cc-a", 2, true, Math.exp(2)),
+    cell(t, "cc-b", 1, true, 1),
+    cell(t, "cc-b", 2, true, Math.exp(2)),
+  ]);
   assertAlmostEquals(fitCells(cs).cell_sd, Math.sqrt(2), 1e-12);
+});
+
+// H-65 r2 (Sol r1, selfcheck-sol-r1.md): the exact leverage-weighted noise
+// term and the rank-aware residual df.
+const grp = (task: string, arm: string, n: number, m = 0) => ({
+  task,
+  arm,
+  n,
+  m,
+});
+
+Deno.test("additiveFit (H-65 r2): Sol's counterexample subtracts sigma^2/3, not 7 sigma^2/15", () => {
+  const f = additiveFit([
+    grp("t1", "a", 3),
+    grp("t1", "b", 3),
+    grp("t2", "a", 3),
+    grp("t2", "b", 3),
+    grp("t3", "a", 1),
+  ]);
+  assertEquals([f.rank, f.df], [4, 1]);
+  assertAlmostEquals(f.leverage[4]!, 1, 1e-12);
+  assertAlmostEquals(f.noise, 1 / 3, 1e-12);
+});
+
+Deno.test("additiveFit (H-65 r2): a complete layout reduces to df * mean(1/n), even with unequal repeats", () => {
+  const gs = ["t1", "t2", "t3", "t4"].flatMap((t, i) =>
+    ["a", "b", "c"].map((a, j) => grp(t, a, 1 + ((i + 2 * j) % 4), i - j))
+  );
+  const f = additiveFit(gs);
+  assertEquals(f.df, (4 - 1) * (3 - 1));
+  const meanInv = gs.reduce((s, g) => s + 1 / g.n, 0) / gs.length;
+  assertAlmostEquals(f.noise, f.df * meanInv, 1e-12);
+  for (const h of f.leverage) {
+    assertAlmostEquals(h, 1 / 4 + 1 / 3 - 1 / 12, 1e-12);
+  }
+});
+
+Deno.test("additiveFit (H-65 r2): a disconnected task-arm incidence has df G - T - K + C", () => {
+  // Tasks t1, t2 run arms a, b; tasks t3, t4 run arms c, d: C = 2 components.
+  const gs = [
+    ...["t1", "t2"].flatMap((t) => ["a", "b"].map((a) => grp(t, a, 3))),
+    ...["t3", "t4"].flatMap((t) => ["c", "d"].map((a) => grp(t, a, 3))),
+  ];
+  const f = additiveFit(gs);
+  assertEquals(f.rank, 4 + 4 - 2);
+  assertEquals(f.df, 8 - 4 - 4 + 2);
+});
+
+Deno.test("additiveFit (H-65 r2): residuals are the least-squares residuals of the additive model on a noisy layout with missing groups", () => {
+  const rand = mulberry32(7);
+  const gs = Array.from({ length: 30 }, (_, i) => `t${i}`).flatMap((t, i) =>
+    ["a", "b", "c"].filter((_, j) => (i + j) % 5 !== 0).map((a) =>
+      grp(t, a, 1 + (i % 3), rand())
+    )
+  );
+  const f = additiveFit(gs);
+  assert(f.residuals.reduce((a, r) => a + r * r, 0) > 0.1);
+  // The fitted values are additive: residuals are orthogonal to every task
+  // and arm indicator.
+  for (const key of ["task", "arm"] as const) {
+    for (const v of new Set(gs.map((g) => g[key]))) {
+      const s = gs.reduce(
+        (a, g, i) => a + (g[key] === v ? f.residuals[i]! : 0),
+        0,
+      );
+      assertAlmostEquals(s, 0, 1e-10);
+    }
+  }
+  // ... and the fitted values m - r are additive: every complete 2 x 2
+  // rectangle of (task, arm) groups has a zero interaction contrast.
+  const fit = new Map(
+    gs.map((g, i) => [`${g.task}|${g.arm}`, g.m - f.residuals[i]!]),
+  );
+  let rects = 0;
+  for (let i = 0; i < 29; i++) {
+    const [t, u] = [`t${i}`, `t${i + 1}`];
+    const v = ["a", "b", "c"].map((
+      a,
+    ) => [fit.get(`${t}|${a}`), fit.get(`${u}|${a}`)]);
+    for (let j = 0; j < 2; j++) {
+      const [p, q] = [v[j]!, v[j + 1]!];
+      if ([...p, ...q].some((x) => x === undefined)) continue;
+      rects++;
+      assertAlmostEquals(p[0]! - p[1]! - q[0]! + q[1]!, 0, 1e-10);
+    }
+  }
+  assert(rects > 10);
+});
+
+/** Groups with missing arms and uneven repeats: half the tasks run one arm once. */
+function synthMissing(seed: number, tau: number, sigma: number): Cell[] {
+  const rand = mulberry32(seed);
+  const z = () =>
+    Math.sqrt(-2 * Math.log(Math.max(rand(), 1e-12))) *
+    Math.cos(2 * Math.PI * rand());
+  const off: Record<string, number> = { "cc-a": -0.45, "cc-b": 0.45 };
+  const out: Cell[] = [];
+  for (let t = 0; t < 1600; t++) {
+    const mu = -0.5 + 0.5 * z();
+    const arms = t % 2 === 0
+      ? ["cc-a", "cc-b"]
+      : [t % 4 === 1 ? "cc-a" : "cc-b"];
+    for (const arm of arms) {
+      const dev = tau * z();
+      const n = arms.length === 1 ? 1 : 3;
+      for (let r = 1; r <= n; r++) {
+        out.push(
+          cell(
+            `t${t}`,
+            arm,
+            r,
+            true,
+            Math.exp(mu + off[arm]! + dev + sigma * z()),
+          ),
+        );
+      }
+    }
+  }
+  return out;
+}
+
+Deno.test("fitCells (H-65 r2): a noisy layout with missing groups recovers tau", () => {
+  const f = fitCells(synthMissing(651, 0.2, 0.5));
+  assertAlmostEquals(f.cell_sd, 0.5, 0.02);
+  assertAlmostEquals(f.arm_sd, 0.2, 0.05);
+});
+
+Deno.test("fitCells (H-65 r2): zero residual or within df is refused, never read as zero variance", () => {
+  const oneArm = [1, 2, 3].flatMap((r) =>
+    ["t1", "t2"].map((t) => cell(t, "cc-a", r, true, Math.exp(r)))
+  );
+  assertThrows(() => fitCells(oneArm), Error, "task x arm residual df is 0");
+  const singles = ["t1", "t2", "t3"].flatMap((t, i) =>
+    ["cc-a", "cc-b"].map((a, j) => cell(t, a, 1, true, Math.exp(i * j)))
+  );
+  assertThrows(() => fitCells(singles), Error, "within-cell df N - G is 0");
+  assertThrows(() => fitCells([]), Error, "df");
 });
 
 Deno.test("fitCells (H-65): unbalanced repeats and a missing (task, arm) group keep an exact additive fit", () => {

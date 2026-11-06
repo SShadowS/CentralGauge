@@ -166,6 +166,77 @@ export function restrictToTasks(cells: Cell[], ids: unknown): Cell[] {
 }
 
 /**
+ * H-65 r2 (selfcheck-sol-r1.md): the additive task + arm least-squares fit
+ * of G group means m_g, each group weighted alike. The design is the G x
+ * (T + K) indicator matrix. Its task columns are disjoint, so they are an
+ * orthogonal block taken in closed form (q_t = indicator / sqrt(c_t), c_t the
+ * task's groups; projecting onto them is the per-task mean). The arm columns
+ * are centred within task and orthonormalised by modified Gram-Schmidt, run
+ * twice per column, dropping a column whose remaining norm is below 1e-9 of
+ * its own (rank detection, no pseudo-inverse). Cost O(G K^2).
+ * - rank = |Q| (T + K - C for C connected components of the incidence)
+ * - df = G - rank (G - T - K + C)
+ * - leverage H_gg = sum_q q_g^2; residuals r = m - Q Q^T m
+ * - noise = sum_g (1 - H_gg) / n_g, so E[sum r^2] = df tau^2 + sigma^2 noise.
+ * For a complete layout H_gg = 1/T + 1/K - 1/(TK) and noise = df mean(1/n).
+ */
+export function additiveFit(
+  groups: { task: string; arm: string; n: number; m: number }[],
+): {
+  rank: number;
+  df: number;
+  leverage: number[];
+  residuals: number[];
+  noise: number;
+} {
+  const G = groups.length;
+  const dot = (a: number[], b: number[]) =>
+    a.reduce((s, x, i) => s + x * b[i]!, 0);
+  const count = new Map<string, number>();
+  for (const g of groups) count.set(g.task, (count.get(g.task) ?? 0) + 1);
+  // Removes the projection onto the task block: the per-task mean.
+  const centre = (v: number[]) => {
+    const sum = new Map<string, number>();
+    groups.forEach((g, i) => sum.set(g.task, (sum.get(g.task) ?? 0) + v[i]!));
+    return v.map((x, i) =>
+      x - sum.get(groups[i]!.task)! / count.get(groups[i]!.task)!
+    );
+  };
+  // Removes the task block and the arm basis, twice (reorthogonalisation).
+  const project = (v: number[], Q: number[][]) => {
+    let w = v;
+    for (let pass = 0; pass < 2; pass++) {
+      w = centre(w);
+      for (const q of Q) {
+        const c = dot(q, w);
+        w = w.map((x, i) => x - c * q[i]!);
+      }
+    }
+    return w;
+  };
+  const Q: number[][] = [];
+  for (const a of [...new Set(groups.map((g) => g.arm))].sort()) {
+    const col = groups.map((g) => (g.arm === a ? 1 : 0));
+    const norm0 = Math.sqrt(dot(col, col));
+    const v = project(col, Q);
+    const norm = Math.sqrt(dot(v, v));
+    if (norm > 1e-9 * norm0) Q.push(v.map((x) => x / norm));
+  }
+  const rank = count.size + Q.length;
+  const leverage = groups.map((g, i) =>
+    1 / count.get(g.task)! + Q.reduce((s, q) => s + q[i]! ** 2, 0)
+  );
+  const residuals = project(groups.map((g) => g.m), Q);
+  return {
+    rank,
+    df: G - rank,
+    leverage,
+    residuals,
+    noise: groups.reduce((s, g, i) => s + (1 - leverage[i]!) / g.n, 0),
+  };
+}
+
+/**
  * The nuisance model the generator draws from, fitted on log cost (H-65,
  * decision 2026-11-06-m11-sim-model-fix-and-mining.md):
  *
@@ -177,13 +248,13 @@ export function restrictToTasks(cells: Cell[], ids: unknown): Cell[] {
  *   o_a is the mean over tasks of m_ta minus the task mean).
  * - cell_sd = sigma: within-group SS over N - G (N known-cost cells, G groups).
  * - arm_sd = tau, the SD of the latent i.i.d. deviation the generator draws per
- *   task and arm. The residual r_ta = m_ta - mu_t - o_a has residual df
- *   G - T - (K - 1) ((T-1)(K-1) when balanced), and E[sum r^2] = df * (tau^2 +
- *   sigma^2 / n) for balanced n repeats, so the method-of-moments estimate is
- *     tau^2 = max(0, sum r^2 / df - sigma^2 * mean_ta(1 / n_ta)).
- *   For unbalanced n_ta, mean(1/n_ta) is an approximation (the exact weights
- *   are the residual leverages); a task with one arm group has r = 0 and adds
- *   one group and one parameter, so it adds nothing to df.
+ *   task and arm. With the residual projection M = I - H of the additive fit
+ *   (additiveFit: rank-aware, exact leverages H_gg), E[SS_res] = df tau^2 +
+ *   sigma^2 sum_g M_gg / n_g, df = G - rank, so the method-of-moments estimate
+ *   is (H-65 r2, selfcheck-sol-r1.md)
+ *     tau^2 = max(0, (SS_res - sigma^2 * sum_g (1 - H_gg) / n_g) / df).
+ *   For a complete layout this is SS/((T-1)(K-1)) - sigma^2 mean(1/n). A df
+ *   of 0 (residual or within) is refused: it identifies no variance.
  * - solved_ratio: solved vs unsolved log cost within a task, after o_a is
  *   removed (an arm that is dearer and solves less is not a solve effect).
  *
@@ -221,6 +292,18 @@ export function fitCells(cells: Cell[]): Fit {
   const byTask = by((g) => g.task);
   const byArm = by((g) => g.arm);
   const arms = [...byArm.keys()].sort();
+  const exact = additiveFit(groups);
+  const withinDf = known.length - groups.length;
+  if (exact.df <= 0) {
+    throw new Error(
+      `fitCells: the task x arm residual df is 0 (${groups.length} groups, rank ${exact.rank}): arm_sd is not identified`,
+    );
+  }
+  if (withinDf <= 0) {
+    throw new Error(
+      `fitCells: the within-cell df N - G is 0 (${known.length} cells in ${groups.length} groups): cell_sd is not identified`,
+    );
+  }
   const off = new Map(arms.map((a) => [a, 0]));
   const taskMeans = () =>
     new Map(
@@ -246,19 +329,19 @@ export function fitCells(cells: Cell[]): Fit {
     (a, g) => a + g.cs.reduce((b, c) => b + (log(c) - g.m) ** 2, 0),
     0,
   );
-  const withinDf = known.length - groups.length;
-  const sigma2 = withinDf > 0 ? withinSS / withinDf : 0;
-  const residSS = groups.reduce(
+  const sigma2 = withinSS / withinDf;
+  const residSS = exact.residuals.reduce((a, r) => a + r * r, 0);
+  // The backfitted offsets must give the same least-squares residuals.
+  const backSS = groups.reduce(
     (a, g) => a + (g.m - mu.get(g.task)! - off.get(g.arm)!) ** 2,
     0,
   );
-  const residDf = groups.length - byTask.size - (arms.length - 1);
-  const tau2 = residDf > 0
-    ? Math.max(
-      0,
-      residSS / residDf - sigma2 * mean(groups.map((g) => 1 / g.n)),
-    )
-    : 0;
+  if (Math.abs(backSS - residSS) > 1e-8 * (1 + residSS)) {
+    throw new Error(
+      `fitCells: backfitted residual SS ${backSS} differs from the QR fit ${residSS}`,
+    );
+  }
+  const tau2 = Math.max(0, (residSS - sigma2 * exact.noise) / exact.df);
   const adj = (c: Cell) => log(c) - off.get(c.arm)!;
   const solvedDiff = [...byTask.values()].flatMap((gs) => {
     const cs = gs.flatMap((g) => g.cs);
