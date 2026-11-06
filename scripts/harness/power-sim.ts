@@ -6,7 +6,8 @@
 //     [--rule-b-share 0.99] [--interaction exploratory|confirmatory] [--resume]
 //   Stage B: the same with --prereg harness/preregistration/<exp>.yml, which takes
 //     rule, family, alpha and every argument from the frozen stage A and refuses
-//     any flag that differs.
+//     any flag that differs. Stage B also needs --fit-tasks <ids.json> (H-65: a
+//     JSON array of the task ids that survive M8's select) and may take --grid.
 // Simulates the frozen v2 pipeline: M8 screening and selection, the campaign,
 // and the pre-registered inference (compareArms, compareInteraction, holm).
 
@@ -939,14 +940,15 @@ export function chooseDesign(
 
 // ---------------------------------------------------------------- CLI
 
-const GRID_DESIGNS: Design[] = [24, 30, 40].flatMap((tasks) =>
-  [3, 5, 8].map((repeats) => ({ tasks, repeats }))
-);
-
 export interface GridSpec {
   tasks: number[];
   repeats: number[];
 }
+
+const DEFAULT_GRID: GridSpec = { tasks: [24, 30, 40], repeats: [3, 5, 8] };
+const GRID_DESIGNS: Design[] = DEFAULT_GRID.tasks.flatMap((tasks) =>
+  DEFAULT_GRID.repeats.map((repeats) => ({ tasks, repeats }))
+);
 
 /** `--grid 40,50,60x8,12,16`: tasks x repeats, tasks outer (M11-13c). */
 export function parseGrid(s: string): Design[] {
@@ -991,21 +993,18 @@ export function parseEffect(v: unknown): number {
 }
 
 /**
- * Stage B never takes --grid or --effect: a non-default grid cannot be
- * pre-registered (PreregSchema simulation.args holds numbers only), and the
- * effect is the frozen one.
+ * Stage B never takes --effect: the effect is the frozen one. H-65 (decision
+ * 2026-11-06-m11-sim-model-fix-and-mining.md): it may take --grid (Fable's
+ * downward-extended grid), recorded in args.grid; a frozen args record holds
+ * numbers only, so preregProblems refuses such a run as the binding stage-B
+ * simulation (it is provisional, for sizing the mining wave).
  */
 export function stageBFlagProblem(
   flags: { grid?: unknown; effect?: unknown },
 ): string | null {
-  const bad = ["grid", "effect"].filter((f) =>
-    (flags as Record<string, unknown>)[f] !== undefined
-  );
-  return bad.length === 0
+  return flags.effect === undefined
     ? null
-    : `--${
-      bad.join(" and --")
-    } are refused in stage B (--prereg): the frozen pipeline uses the default grid and the pre-registered effect`;
+    : "--effect is refused in stage B (--prereg): the frozen pipeline uses the pre-registered effect";
 }
 
 /** Stage B effect: the frozen simulation.args.effect when present, else the default. */
@@ -1044,6 +1043,8 @@ export function argsHashInput(
     rule: ZeroSolveRule | null;
     inputs: { path: string; sha256: string }[];
     arm_prefix: string;
+    /** H-65: present only when --fit-tasks was given (older runs keep their exact shape). */
+    fit_tasks?: { path: string; sha256: string; tasks: string[] };
   },
   sweep: { effect: number; grid?: GridSpec | null },
 ) {
@@ -1230,6 +1231,7 @@ async function main(): Promise<void> {
       "rule-b-share",
       "grid",
       "effect",
+      "fit-tasks",
     ],
     boolean: ["resume"],
     collect: ["cells"],
@@ -1269,6 +1271,25 @@ async function main(): Promise<void> {
     stage = "B";
     const problem = stageBFlagProblem({ grid: a.grid, effect: a.effect });
     if (problem) bad(problem);
+    // H-65: the authorised model fits the eligible tasks only.
+    if (a["fit-tasks"] === undefined) {
+      bad(
+        "stage B needs --fit-tasks <file>: the fit population is the tasks that survive M8's select (decision 2026-11-06-m11-sim-model-fix-and-mining.md)",
+      );
+    }
+    if (flagged("grid")) {
+      try {
+        gridSpec = parseGridSpec(a.grid!);
+        gridDesigns = parseGrid(a.grid!);
+      } catch (e) {
+        bad((e as Error).message);
+      }
+      console.log(
+        colors.yellow(
+          "[WARN] --grid given in stage B: a provisional run, not the frozen pipeline",
+        ),
+      );
+    }
     const doc = PreregSchema.parse(parse(await Deno.readTextFile(a.prereg)));
     frozenRule = doc.zero_solve;
     alpha = doc.alpha;
@@ -1353,8 +1374,8 @@ async function main(): Promise<void> {
   }
 
   const sweep = { effect, grid: gridSpec };
-  const diagnostic = stage === "A" &&
-    (gridSpec !== null || effect !== EFFECT_DEFAULT);
+  const diagnostic = gridSpec !== null ||
+    (stage === "A" && effect !== EFFECT_DEFAULT);
 
   const out = a.out;
   const partial = `${out}.partial.jsonl`;
@@ -1380,8 +1401,28 @@ async function main(): Promise<void> {
     if (!Array.isArray(doc.cells)) bad(`${path} has no cells array`);
     files.push(doc.cells.filter((c) => c.arm.startsWith(prefix)));
   }
-  const cells = poolCells(files);
-  if (cells.length === 0) bad(`no cells with an arm starting ${prefix}`);
+  const pooled = poolCells(files);
+  if (pooled.length === 0) bad(`no cells with an arm starting ${prefix}`);
+  // H-65: the fit population is an explicit input (sha256 and ids recorded):
+  // the official survivor set needs seals, execution records and judgments
+  // that the report files do not carry.
+  let fitTasks: { path: string; sha256: string; tasks: string[] } | null = null;
+  let cells = pooled;
+  if (a["fit-tasks"] !== undefined) {
+    const path = a["fit-tasks"];
+    try {
+      const bytes = await Deno.readFile(path);
+      const ids: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      cells = restrictToTasks(pooled, ids);
+      fitTasks = {
+        path,
+        sha256: await sha256Hex(bytes),
+        tasks: [...(ids as string[])].sort(),
+      };
+    } catch (e) {
+      bad(`--fit-tasks ${path}: ${(e as Error).message}`);
+    }
+  }
   const fitted = fitCells(cells);
   const stress = {
     ...fitted,
@@ -1399,6 +1440,7 @@ async function main(): Promise<void> {
     rule: frozenRule,
     inputs,
     arm_prefix: prefix,
+    ...(fitTasks ? { fit_tasks: fitTasks } : {}),
   }, sweep));
   const done = new Map<string, DesignResult>();
   if (a.resume && await exists(partial)) {
@@ -1536,6 +1578,9 @@ async function main(): Promise<void> {
         alpha,
         family,
         inputs,
+        // H-65: the fit population and the grid this run evaluated.
+        fit_tasks: fitTasks,
+        grid: gridSpec ?? DEFAULT_GRID,
         fit: fitted,
         stress_fit: stress,
         results: [...done.values()],

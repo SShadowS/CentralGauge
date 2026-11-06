@@ -426,13 +426,24 @@ Deno.test("argsHashInput (M11-13c): no flags keeps today's exact shape; either f
     repeats: [8],
   });
   assert((await hashJson(grid)) !== (await hashJson(eff)));
+  // H-65: the fit-task list binds into the hash only when given.
+  const fit = { path: "fit.json", sha256: "cd", tasks: ["HX-016"] };
+  const withFit = argsHashInput({ ...parts, fit_tasks: fit }, {
+    effect: EFFECT_DEFAULT,
+  });
+  assertEquals(withFit as unknown, { ...today as object, fit_tasks: fit });
+  assert((await hashJson(withFit)) !== (await hashJson(today)));
 });
 
-Deno.test("stage B (M11-13c): --grid and --effect are refused; the effect comes from the frozen args or the default", () => {
+Deno.test("stage B (M11-13c, H-65): --effect is refused, --grid is taken; the effect comes from the frozen args or the default", () => {
   assertEquals(stageBFlagProblem({}), null);
-  for (const f of [{ grid: "40x8" }, { effect: "0.3" }]) {
+  // H-65 (decision 2026-11-06-m11-sim-model-fix-and-mining.md): a stage-B run
+  // may take a downward-extended grid; it is recorded in args.grid.
+  assertEquals(stageBFlagProblem({ grid: "8,12,16,20,24x3,5,8" }), null);
+  for (const f of [{ effect: "0.3" }, { grid: "16x8", effect: "0.3" }]) {
     const p = stageBFlagProblem(f);
     assert(p !== null && p.includes("stage B"), String(p));
+    assert(!p.includes("--grid"), p);
   }
   assertEquals(stageBEffect({ sims: 1000 }), EFFECT_DEFAULT);
   assertEquals(stageBEffect({ sims: 1000, effect: 0.3 }), 0.3);
