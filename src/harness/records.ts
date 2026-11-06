@@ -627,11 +627,22 @@ export const JudgmentRecordSchema = z.strictObject({
   /**
    * v2 only (and required there): what the judgment was made with. A field
    * not known yet is null (env_fp until the S3 lineage), never inferred.
+   * production_manifest is the digest of G's built production packages: null
+   * exactly when G was never built (build failure, policy violation, an
+   * unadmitted index, infra before G's build). env_fp covers every container
+   * the judgment compiled or deployed on; null means no lineage, or (with
+   * env_none) no container at all.
    */
   provenance: z.strictObject({
     harness_commit: z.string().nullable(),
     production_manifest: Sha256Hex.nullable(),
     env_fp: Sha256Hex.nullable(),
+    /**
+     * H-63: why the judgment has no environment because it touched no
+     * container (no compile, no deployment). Only with a null env_fp; absent
+     * on older records and whenever a container was touched.
+     */
+    env_none: z.string().min(1).optional(),
     /**
      * H-35c (design-r3 11.3): set only by the proof builders
      * (scripts/harness/proof/), whose records live under the coord's
@@ -649,6 +660,9 @@ export const JudgmentRecordSchema = z.strictObject({
   } else {
     if (!j.policy) issue("a v2 judgment has a policy block", ["policy"]);
     if (!j.provenance) issue("a v2 judgment has provenance", ["provenance"]);
+    if (j.provenance?.env_none !== undefined && j.provenance.env_fp !== null) {
+      issue("env_none only with a null env_fp", ["provenance", "env_none"]);
+    }
     if (j.policy && j.policy.passed === (j.policy.violations.length > 0)) {
       issue("the gate fails exactly when there is a violation", ["policy"]);
     }

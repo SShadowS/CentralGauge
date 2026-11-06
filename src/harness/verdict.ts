@@ -500,9 +500,12 @@ export interface JudgeContext {
   policy: PolicyViolation[];
   /** H-35: the digest of the judgment's production manifest, once built. */
   manifest: string | null;
+  /** H-63: every container a compile of this judgment ran on (env_fp input). */
+  compiled?: Set<string>;
 }
 
 function recordBuild(ctx: JudgeContext, prep: Prepared, label: string): void {
+  (ctx.compiled ??= new Set()).add(prep.container);
   ctx.log.spans.compile_ms += prep.compile_ms;
   ctx.log.per_app_compiles += prep.per_app_compiles;
   for (const b of prep.built) {
@@ -939,6 +942,7 @@ async function buildOracle(
   const [b] = await ctx.lane.compileOn(
     prep.container,
     async (c) => {
+      (ctx.compiled ??= new Set()).add(c);
       const r = await buildApps(ctx.lane.bc, c, {
         srcDir: ctx.i.task.dir,
         apps: [app],
@@ -1811,6 +1815,7 @@ export async function judge(
     onVerify: (v) => log.verifies!.push(v),
     onFsCheck: (f) => log.fs_checks!.push(f),
   };
+  const compiled = new Set<string>();
   const ctx: JudgeContext = {
     lane,
     i,
@@ -1819,6 +1824,7 @@ export async function judge(
     deploy,
     policy: [],
     manifest: null,
+    compiled,
   };
   // H-38 (design 6, Q4): the judge-entry preflight, before any scorer or
   // policy decision. Without this lock's OnPrem index nothing is judged: every
@@ -1858,6 +1864,9 @@ export async function judge(
   // H-35 S3.3 (design-r4 5.2): a judgment is of one environment. Routing
   // makes a mix impossible; until it does this is the fail-closed backstop.
   const envs = new Set((log.deployments ?? []).map((d) => d.env_fp ?? null));
+  // H-63: every container the judgment compiled on counts too, so a build
+  // failure or an infra error before the first deploy still has its env.
+  for (const c of compiled) envs.add(await envFp(ctx, c));
   if (envs.size > 1) {
     throw new Error(
       `harness bug: deployments of one judgment span environments (${
@@ -1873,6 +1882,17 @@ export async function judge(
       production_manifest: ctx.manifest,
       // Null with no deployment or no lineage; never inferred.
       env_fp: [...envs][0] ?? null,
+      // H-63: no compile and no deployment: say so, never leave it implicit.
+      ...(compiled.size === 0 && (log.deployments ?? []).length === 0
+        ? {
+          env_none: `no container touched: ${
+            log.error ??
+              (ctx.policy.some((p) => p.side === "production")
+                ? "production policy violation"
+                : "no compile or deployment")
+          }`,
+        }
+        : {}),
     },
     id: log.judgment_id,
     execution_id: i.executionId,

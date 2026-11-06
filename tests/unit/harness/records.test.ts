@@ -1223,3 +1223,27 @@ Deno.test("H-35: a v1 judgment stays valid and carries no v2 field", async () =>
     })
   );
 });
+
+Deno.test("H-63: env_none is an optional non-empty reason, allowed only with a null env_fp; an old record without it parses", async () => {
+  const base = await v2([{ name: "build", passed: true, state: M }]);
+  const withProv = (p: Record<string, unknown>) => ({
+    ...base,
+    verdict: "pass",
+    provenance: { ...base.provenance, ...p },
+  });
+  // Old record: no env_none.
+  JudgmentRecordSchema.parse(withProv({}));
+  const none = JudgmentRecordSchema.parse(
+    withProv({ env_none: "no container touched: production policy violation" }),
+  );
+  assertEquals(
+    none.provenance!.env_none,
+    "no container touched: production policy violation",
+  );
+  assertThrows(() =>
+    JudgmentRecordSchema.parse(
+      withProv({ env_none: "x", env_fp: "a".repeat(64) }),
+    )
+  );
+  assertThrows(() => JudgmentRecordSchema.parse(withProv({ env_none: "" })));
+});
