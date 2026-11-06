@@ -1199,3 +1199,122 @@ Deno.test("PreregSchema (H-18): test.p_value names the executed bootstrap-t; the
     ).some((p) => p.includes("declared test")),
   );
 });
+
+// H-65: the owner-authorised replacement of the frozen simulation script
+// (decisions/2026-11-06-m11-sim-model-fix-and-mining.md).
+const OLD_SIM =
+  "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2";
+const NEW_SIM = H("7");
+const SIM_DECISION = "decisions/2026-11-06-m11-sim-model-fix-and-mining.md";
+const STAGE_A_OLD = {
+  ...STAGE_A,
+  simulation: { ...STAGE_A.simulation, script_sha256: OLD_SIM },
+};
+const APPROVED_OLD = await protocolSha(PreregSchema.parse(STAGE_A_OLD));
+const simChange = (o: Record<string, unknown> = {}) => ({
+  kind: "simulation_script",
+  decision: SIM_DECISION,
+  from: OLD_SIM,
+  to: NEW_SIM,
+  reason: "nuisance-model fix: arm main effect, deconvolved arm_sd",
+  approval:
+    "OWNER-APPROVED: Authorise fix, then size mining (2026-11-06T20:40:00Z)",
+  ...o,
+});
+const docOld = async (changes?: unknown[]) =>
+  PreregSchema.parse({
+    ...(await stageB()),
+    simulation: STAGE_A_OLD.simulation,
+    stage_a: { sha256: APPROVED_OLD },
+    ...(changes ? { protocol_changes: changes } : {}),
+  });
+const ctxOld = (script: string, args: unknown = STAGE_A.simulation.args) =>
+  ctx({
+    anchor: {
+      approved_protocol_sha256: APPROVED_OLD,
+      tag_protocol_sha256: APPROVED_OLD,
+      tag_moved: false,
+    },
+    simulation: {
+      ...ctx().simulation,
+      json: { ...ctx().simulation.json, script_sha256: script, args },
+    },
+  });
+
+Deno.test("protocol change (H-65): the recorded simulation-script replacement is accepted and leaves stage A unchanged", async () => {
+  const doc = await docOld([simChange()]);
+  assertEquals(await protocolSha(doc), APPROVED_OLD);
+  assertEquals(await preregProblems(doc, ctxOld(NEW_SIM)), []);
+});
+
+Deno.test("protocol change (H-65): the superseded script and an unrecorded new script are refused", async () => {
+  const p = async (
+    doc: Promise<Parameters<typeof preregProblems>[0]>,
+    s: string,
+  ) => (await preregProblems(await doc, ctxOld(s))).join("\n");
+  // The old hash path: replaced by the decision, so it needs the record.
+  const old = await p(docOld(), OLD_SIM);
+  assert(old.includes(`was replaced by owner decision ${SIM_DECISION}`), old);
+  // The new hash with no record: not silently accepted.
+  const unrecorded = await p(docOld(), NEW_SIM);
+  assert(unrecorded.includes("was replaced by owner decision"), unrecorded);
+  assert(unrecorded.includes("frozen script and arguments"), unrecorded);
+  // The record present but the run used the old script.
+  const stale = await p(docOld([simChange()]), OLD_SIM);
+  assert(stale.includes("differs from the protocol change"), stale);
+});
+
+Deno.test("protocol change (H-65): another decision file, a wrong from or to, or two records are refused", async () => {
+  const p = async (changes: unknown[], s = NEW_SIM) =>
+    (await preregProblems(await docOld(changes), ctxOld(s))).join("\n");
+  const other = await p([
+    simChange({ decision: "decisions/2026-11-07-other.md" }),
+  ]);
+  assert(other.includes("not an owner decision authorising"), other);
+  const from = await p([simChange({ from: H("8") })]);
+  assert(from.includes("is not the frozen simulation.script_sha256"), from);
+  assert(from.includes("is not the script"), from);
+  const to = await p([simChange({ to: H("9") })]);
+  assert(to.includes("differs from the protocol change"), to);
+  const same = await p([simChange({ to: OLD_SIM })], OLD_SIM);
+  assert(same.includes("replaces the script with itself"), same);
+  const two = await p([simChange(), simChange()]);
+  assert(two.includes("at most one simulation-script protocol change"), two);
+});
+
+Deno.test("protocol change (H-65): the record schema is strict and the amendment keys stay design, family, confirmatory", async () => {
+  const b = await stageB();
+  const parses = (o: Record<string, unknown>) =>
+    PreregSchema.safeParse({ ...b, ...o }).success;
+  assert(parses({ protocol_changes: [simChange()] }));
+  assert(!parses({ protocol_changes: [simChange({ extra: 1 })] }));
+  assert(!parses({ protocol_changes: [simChange({ kind: "design" })] }));
+  assert(!parses({ protocol_changes: [simChange({ to: "d26a22f4" })] }));
+  assert(!parses({ protocol_changes: [simChange({ approval: "ok" })] }));
+  assert(!parses({ protocol_changes: [simChange({ reason: " " })] }));
+  const { kind: _k, ...noKind } = simChange();
+  assert(!parses({ protocol_changes: [noKind] }));
+  assert(
+    !parses({
+      amendments: [{
+        key: "simulation",
+        from: OLD_SIM,
+        to: NEW_SIM,
+        reason: "r",
+        approval: simChange().approval,
+      }],
+    }),
+  );
+});
+
+Deno.test("protocol change (H-65): a provisional stage-B run with a --grid is not the binding simulation", async () => {
+  const args = {
+    ...STAGE_A.simulation.args,
+    grid: { tasks: [8, 12, 16], repeats: [3, 5, 8] },
+  };
+  const p = await preregProblems(
+    await docOld([simChange()]),
+    ctxOld(NEW_SIM, args),
+  );
+  assert(p.some((x) => x.includes("frozen script and arguments")), p.join());
+});

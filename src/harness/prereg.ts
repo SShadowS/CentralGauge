@@ -143,6 +143,21 @@ export const PreregSchema = z.strictObject({
     reason: z.string().trim().min(1),
     approval: Approval,
   })),
+  /**
+   * H-65: owner-authorised protocol changes outside the amendment keys. The
+   * only kind replaces the frozen simulation.script_sha256 (from) with the
+   * script the stage-B simulation ran (to); `decision` must be listed in
+   * SIM_SCRIPT_CHANGES. Not part of stage A (stageAOf drops it), absent in
+   * files written before H-65.
+   */
+  protocol_changes: z.array(z.strictObject({
+    kind: z.literal("simulation_script"),
+    decision: z.string().min(1),
+    from: Sha256Hex,
+    to: Sha256Hex,
+    reason: z.string().trim().min(1),
+    approval: Approval,
+  })).optional(),
 }).superRefine((p, ctx) => {
   const inter = p.protocol.interaction?.status === "confirmatory";
   if (p.family.includes("interaction") !== (inter && p.confirmatory)) {
@@ -178,7 +193,68 @@ export function stageAOf(doc: Prereg): Prereg {
   for (const am of [...doc.amendments].reverse()) a[am.key] = am.from;
   for (const k of STAGE_B_KEYS) a[k] = null;
   a["amendments"] = [];
+  // Dropped, not emptied: stage A's projection hash stays the approved one.
+  delete a["protocol_changes"];
   return a as Prereg;
+}
+
+/**
+ * H-65: the owner decisions that authorise replacing a frozen simulation
+ * script, each with the script it replaces. A frozen script listed here is
+ * superseded: stage B needs a protocol_changes record naming the decision.
+ */
+export const SIM_SCRIPT_CHANGES: readonly { decision: string; from: string }[] =
+  [{
+    decision: "decisions/2026-11-06-m11-sim-model-fix-and-mining.md",
+    from: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2",
+  }];
+
+/** The script stage B must have run (frozen, or a recorded change's `to`) and the problems of the record. */
+function simScript(doc: Prereg): { script: string; problems: string[] } {
+  const frozen = doc.simulation.script_sha256;
+  const short = (h: string) => h.slice(0, 12);
+  const changes = doc.protocol_changes ?? [];
+  const out: string[] = [];
+  if (changes.length > 1) {
+    out.push("at most one simulation-script protocol change may be recorded");
+  }
+  const ch = changes[0];
+  if (!ch) {
+    const sup = SIM_SCRIPT_CHANGES.find((k) => k.from === frozen);
+    if (sup) {
+      out.push(
+        `simulation script ${
+          short(frozen)
+        } was replaced by owner decision ${sup.decision}: stage B needs a protocol_changes record (kind simulation_script, decision, from, to)`,
+      );
+    }
+    return { script: frozen, problems: out };
+  }
+  const known = SIM_SCRIPT_CHANGES.find((k) => k.decision === ch.decision);
+  if (!known) {
+    out.push(
+      `protocol change names ${ch.decision}, which is not an owner decision authorising a simulation-script change (${
+        SIM_SCRIPT_CHANGES.map((k) => k.decision).join(", ")
+      })`,
+    );
+  } else if (known.from !== ch.from) {
+    out.push(
+      `protocol change from ${
+        short(ch.from)
+      } is not the script ${known.decision} replaces (${short(known.from)})`,
+    );
+  }
+  if (ch.from !== frozen) {
+    out.push(
+      `protocol change from ${
+        short(ch.from)
+      } is not the frozen simulation.script_sha256 ${short(frozen)}`,
+    );
+  }
+  if (ch.to === ch.from) {
+    out.push("protocol change replaces the script with itself");
+  }
+  return { script: ch.to, problems: out };
 }
 
 export function protocolSha(doc: Prereg): Promise<string> {
@@ -431,12 +507,24 @@ export async function preregProblems(
     zero_solve?: unknown;
     decision?: { design?: unknown };
   } | undefined;
+  const script = simScript(doc);
+  out.push(...script.problems);
   if (
     !c.simulation || c.simulation.sha256 !== doc.power_simulation!.output.sha256
   ) out.push("simulation output does not match the pre-registration");
   else {
+    const changed = (doc.protocol_changes ?? []).length > 0;
+    if (changed && sim?.script_sha256 !== script.script) {
+      out.push(
+        `simulation script ${
+          String(sim?.script_sha256).slice(0, 12)
+        } differs from the protocol change's to (${
+          script.script.slice(0, 12)
+        })`,
+      );
+    }
     if (
-      sim?.script_sha256 !== doc.simulation.script_sha256 ||
+      sim?.script_sha256 !== script.script ||
       !same(sim?.args, doc.simulation.args)
     ) out.push("simulation was not run with the frozen script and arguments");
     if (!same(sim?.zero_solve, doc.zero_solve)) {
