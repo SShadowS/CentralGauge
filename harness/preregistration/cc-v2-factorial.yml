@@ -81,3 +81,16 @@ power_simulation: null
 compiler_identity: null
 stage_b_approval: null
 amendments: []
+protocol_changes:
+  - kind: simulation_script
+    decision: decisions/2026-11-06-m11-sim-model-fix-and-mining.md
+    from: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2"
+    from_eol: crlf
+    to: "bc4a1c466e718b4ebe5f1b64e132311f01af933f72c0edf52fe5253831798d55"
+    reason: >-
+      sim-b (frozen script) returned a null design because fitCells counted the fixed realistic-vs-plain cost offset as
+      random task x arm noise, divided cell_sd by N-1 instead of N - groups, did not deconvolve arm_sd of within-cell
+      noise, and fitted all pilot tasks instead of the select survivors (H:/cg-coord/m11/sim-b.md, reviews). H-65 fixes
+      the nuisance model and takes the fit population from --fit-tasks; effect, family, alpha, test and decision rule
+      are unchanged.
+    approval: "OWNER-APPROVED: Authorise fix, then size mining (recommended) (2026-11-06T20:40:00Z)"
