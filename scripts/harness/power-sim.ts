@@ -1198,6 +1198,26 @@ export function checkResumeHeader(
   }
 }
 
+/**
+ * The code fingerprint: the hash of the files' sha256 list. H-65: each file
+ * is hashed with CRLF normalized to LF, so an autocrlf checkout and an LF one
+ * of the same commit agree (the frozen d26a22f4 is 93737719's CRLF-checkout
+ * hash; that value is only compared, never recomputed).
+ */
+export async function scriptSha256(paths: string[]): Promise<string> {
+  return await hashJson(
+    await Promise.all(
+      paths.map(async (p) =>
+        await sha256Hex(
+          new TextEncoder().encode(
+            (await Deno.readTextFile(p)).replaceAll("\r\n", "\n"),
+          ),
+        )
+      ),
+    ),
+  );
+}
+
 function bad(msg: string): never {
   console.error(colors.red(`[FAIL] ${msg}`));
   Deno.exit(2);
@@ -1205,16 +1225,11 @@ function bad(msg: string): never {
 
 async function main(): Promise<void> {
   const here = (rel: string) => fromFileUrl(new URL(rel, import.meta.url));
-  const script_sha256 = await hashJson(
-    await Promise.all(
-      [
-        here("./power-sim.ts"),
-        here("./screening.ts"),
-        here("../../src/harness/stats.ts"),
-      ]
-        .map(async (p) => await sha256Hex(await Deno.readFile(p))),
-    ),
-  );
+  const script_sha256 = await scriptSha256([
+    here("./power-sim.ts"),
+    here("./screening.ts"),
+    here("../../src/harness/stats.ts"),
+  ]);
   const a = parseArgs(Deno.args, {
     string: [
       "out",

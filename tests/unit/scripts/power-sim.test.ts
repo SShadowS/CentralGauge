@@ -25,6 +25,7 @@ import {
   poolCells,
   restrictToTasks,
   resumeHeader,
+  scriptSha256,
   selectTasks,
   simulateCells,
   stageBContract,
@@ -776,6 +777,26 @@ Deno.test("poolCells: a later file's blocks stay aligned across arms even when t
   const later = pooled.slice(f1.length);
   // Both arms of file 2's block land on the same repeat, above every earlier one.
   assertEquals(later.map((c) => [c.arm, c.repeat]), [["a", 4], ["b", 4]]);
+});
+
+Deno.test("scriptSha256 (H-65): an LF and a CRLF checkout of the same files hash alike", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const write = async (name: string, text: string) => {
+      await Deno.writeTextFile(`${dir}/${name}`, text);
+      return `${dir}/${name}`;
+    };
+    const lf = [await write("a-lf", "x\ny\n"), await write("b-lf", "z\n")];
+    const crlf = [
+      await write("a-crlf", "x\r\ny\r\n"),
+      await write("b-crlf", "z\r\n"),
+    ];
+    assertEquals(await scriptSha256(lf), await scriptSha256(crlf));
+    const other = [await write("c", "x\ny\n"), await write("d", "q\n")];
+    assert((await scriptSha256(lf)) !== (await scriptSha256(other)));
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("checkResumeHeader: both the arguments and the code fingerprint must match", () => {
