@@ -345,19 +345,26 @@ export async function testManifestIn(dir: string): Promise<TestRef[]> {
 
 /**
  * Oracle object band of task HX-N: HX-001..HX-006 keep their v1 100 ids;
- * HX-007 onward own 20 ids from 85600 (v2 pool, spec 2026-10-03 section 3).
- * null past 89999 (HX-227 and up).
+ * HX-007..HX-099 own 20 ids from 85600 (v2 pool, spec 2026-10-03 section
+ * 3); H-67 (orch ruling 2026-11-07, option B): HX-100 onward own 15 ids from
+ * 87460, where HX-099's band ends, so nothing authored moves. null past
+ * 89999 (HX-269 and up): HX-268 is the last task with a band.
  */
 export function oracleBandOf(
   taskNo: number,
 ): readonly [number, number] | null {
   if (!Number.isInteger(taskNo) || taskNo < 1) return null;
-  const from = taskNo <= 6
-    ? 85000 + (taskNo - 1) * 100
-    : 85600 + (taskNo - 7) * 20;
-  const to = from + (taskNo <= 6 ? 99 : 19);
+  const [from, width] = taskNo <= 6
+    ? [85000 + (taskNo - 1) * 100, 100]
+    : taskNo <= 99
+    ? [85600 + (taskNo - 7) * 20, 20]
+    : [87460 + (taskNo - 100) * 15, 15];
+  const to = from + width - 1;
   return to > 89999 ? null : [from, to];
 }
+
+/** H-67: the last task number oracleBandOf gives a band (HX-268). */
+export const LAST_ORACLE_TASK = 268;
 
 async function subdirs(p: string): Promise<string[]> {
   if (!(await exists(p))) return [];
@@ -489,7 +496,11 @@ export async function checkTask(
 
   const taskNo = Number(task.id.slice(3));
   const band = oracleBandOf(taskNo);
-  if (!band) problems.push(`${task.id}: no oracle band inside 85000-89999`);
+  if (!band) {
+    problems.push(
+      `${task.id}: no oracle band inside 85000-89999 (the last task with a band is HX-${LAST_ORACLE_TASK})`,
+    );
+  }
   // An empty range when there is no band: every oracle id is reported.
   const oracleBand: readonly [number, number] = band ?? [85000, 84999];
   for (const f of all) {
