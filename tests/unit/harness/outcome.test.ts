@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import { ValidationError } from "../../../src/errors.ts";
+import { forcedRefusal } from "../../../src/harness/execution.ts";
 import {
   campaignJudging,
   type CellRecord,
@@ -19,6 +20,46 @@ import {
   SCORERS_V1_FP,
   telemetry,
 } from "./fixtures.ts";
+
+Deno.test("forcedRefusal (H-64): a second force on the same decision bytes is refused even when the recorded approval was redacted", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const oracle = c.task_set.tasks.find((t) => t.id === e.task_id)!.oracle;
+  const original = judgment(c, e, false);
+  const basis = {
+    kind: "decision" as const,
+    path: "d.md",
+    sha256: "a".repeat(64),
+    approval: "OWNER-APPROVED: force it (2026-11-06T12:00:00Z)",
+  };
+  // The stored approval went through the judge-output scrub; the bytes did not change.
+  const first = judgment(c, e, false, {
+    ended_at: "2026-10-01T10:20:00.000Z",
+    forced: {
+      reason: "r",
+      replaces: original.id,
+      basis: {
+        ...basis,
+        approval: "OWNER-APPROVED: [REDACTED] (2026-11-06T12:00:00Z)",
+      },
+    },
+  });
+  const js = [original, first];
+  assert(
+    forcedRefusal(e, js, oracle, { replaces: first.id, basis })?.includes(
+      "needs its own owner approval",
+    ),
+  );
+  const fresh = {
+    ...basis,
+    sha256: "b".repeat(64),
+    approval: "OWNER-APPROVED: force it again (2026-11-06T15:00:00Z)",
+  };
+  assertEquals(
+    forcedRefusal(e, js, oracle, { replaces: first.id, basis: fresh }),
+    null,
+  );
+});
 
 function index(js: JudgmentRecord[]): Map<string, JudgmentRecord[]> {
   const m = new Map<string, JudgmentRecord[]>();

@@ -983,10 +983,14 @@ export function forcedRefusal(
     if (replaces !== first.id) {
       return `execution ${e.id} already has forced judgment ${first.id}: a second forced rejudge must replace forced judgment ${first.id}`;
     }
-    if (forced.basis.approval === first.forced!.basis.approval) {
-      return `execution ${e.id} already has forced judgment ${first.id}: a second forced rejudge needs its own owner approval (its basis repeats "${
-        first.forced!.basis.approval
-      }")`;
+    // Same decision bytes (sha256, never scrubbed) or the same approval line:
+    // the stored approval may be redacted, so the sha256 alone also refuses.
+    const was = first.forced!.basis;
+    if (
+      forced.basis.sha256 === was.sha256 ||
+      forced.basis.approval === was.approval
+    ) {
+      return `execution ${e.id} already has forced judgment ${first.id}: a second forced rejudge needs its own owner approval (its basis repeats ${was.path} sha256 ${was.sha256} or "${was.approval}")`;
     }
   }
   const used = selectJudgment(e, existing, oracle);
