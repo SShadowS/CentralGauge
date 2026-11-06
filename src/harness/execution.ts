@@ -958,20 +958,36 @@ async function custodyBundle(
 
 /**
  * C-03 run 002: why a forced judgment of `e` may not be written, else null.
- * At most one forced judgment per execution; `replaces` must be the judgment
- * the report selects on `oracle` (the campaign's); with `candidate`, the new
- * judgment must become the selected one (else clock skew keeps the old).
+ * At most two forced judgments per execution (owner 2026-11-06: one more
+ * force may replace the first, on its own owner approval, e.g. when the
+ * first recorded no env_fp); `replaces` must be the judgment the report
+ * selects on `oracle` (the campaign's); with `candidate`, the new judgment
+ * must become the selected one (else clock skew keeps the old).
  */
 export function forcedRefusal(
   e: ExecutionRecord,
   existing: JudgmentRecord[],
   oracle: string,
-  replaces: string,
+  forced: Pick<NonNullable<JudgmentRecord["forced"]>, "replaces" | "basis">,
   candidate?: JudgmentRecord,
 ): string | null {
-  const prior = existing.find((j) => j.execution_id === e.id && j.forced);
-  if (prior) {
-    return `execution ${e.id} already has forced judgment ${prior.id} (at most one forced rejudge per execution)`;
+  const { replaces } = forced;
+  const prior = existing.filter((j) => j.execution_id === e.id && j.forced);
+  if (prior.length >= 2) {
+    return `execution ${e.id} already has forced judgments ${
+      prior.map((j) => j.id).join(", ")
+    } (at most two forced rejudges per execution)`;
+  }
+  const first = prior[0];
+  if (first) {
+    if (replaces !== first.id) {
+      return `execution ${e.id} already has forced judgment ${first.id}: a second forced rejudge must replace forced judgment ${first.id}`;
+    }
+    if (forced.basis.approval === first.forced!.basis.approval) {
+      return `execution ${e.id} already has forced judgment ${first.id}: a second forced rejudge needs its own owner approval (its basis repeats "${
+        first.forced!.basis.approval
+      }")`;
+    }
   }
   const used = selectJudgment(e, existing, oracle);
   if (used?.id !== replaces) {
@@ -3591,7 +3607,7 @@ export async function publishJudgment(
       e,
       await env.store.judgments(e.id),
       oracleHash,
-      judgment.forced.replaces,
+      judgment.forced,
       judgment,
     );
     if (why) throw new ConfigurationError(`${why}: nothing written`);
@@ -3783,7 +3799,7 @@ export async function judgeOnce(
             e,
             await env.store.judgments(e.id),
             judgment.task_oracle_hash,
-            judgment.forced.replaces,
+            judgment.forced,
             judgment,
           );
           if (why) throw new ConfigurationError(`${why}: nothing written`);
