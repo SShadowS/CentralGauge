@@ -62,7 +62,9 @@ export type Status =
   | "unscreenable"
   | "unscreened"
   | "unsealed"
-  | "held_out";
+  | "held_out"
+  /** H-68: a non-audited pre-screen reject of a filter round (prescreen.ts). */
+  | "provisionally_saturated";
 
 export const REGISTRY_PATH = "harness-tasks/v2/screening.yml";
 export const SEALS_PATH = "harness-tasks/v2/seals.yml";
@@ -111,11 +113,52 @@ export const CandidateSchema = z.strictObject({
 });
 export type Candidate = z.output<typeof CandidateSchema>;
 
+/**
+ * H-68: a protocol amendment (prescreen.ts). Each round names the seal whose
+ * candidates it covers; a round is fixed by the registry committed at that
+ * seal. Not part of `rules`, so appending it is no append-only problem.
+ */
+export const AmendmentSchema = z.strictObject({
+  id: z.literal("prescreen"),
+  decision: z.string().min(1),
+  rounds: z.array(z.strictObject({
+    seal: z.string().regex(/^harness-v2-screen-[a-z0-9-]+$/),
+    mode: z.enum(["calibration", "filter"]),
+  })),
+});
+export type Amendment = z.output<typeof AmendmentSchema>;
+
 export const ScreeningSchema = z.strictObject({
   v: z.literal(1),
   rules: RulesSchema,
   candidates: z.array(CandidateSchema).default([]),
+  amendments: z.array(AmendmentSchema).default([]),
 }).superRefine((s, ctx) => {
+  const aids = s.amendments.map((a) => a.id);
+  if (new Set(aids).size !== aids.length) {
+    ctx.addIssue({
+      code: "custom",
+      message: "duplicate amendment",
+      path: ["amendments"],
+    });
+  }
+  for (const a of s.amendments) {
+    const seals = a.rounds.map((r) => r.seal);
+    if (new Set(seals).size !== seals.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${a.id}: duplicate round seal`,
+        path: ["amendments"],
+      });
+    }
+    if (a.rounds.length > 0 && a.rounds[0]!.mode !== "calibration") {
+      ctx.addIssue({
+        code: "custom",
+        message: `${a.id}: the first round must be calibration`,
+        path: ["amendments"],
+      });
+    }
+  }
   const ids = s.candidates.map((c) => c.id);
   const dup = [...new Set(ids.filter((x, i) => ids.indexOf(x) !== i))];
   if (dup.length > 0) {
@@ -669,6 +712,8 @@ export function classify(
   heldOut: string[],
   tallies: Map<string, Tally>,
   screens: Map<string, number>,
+  /** H-68: non-audited pre-screen rejects of filter rounds (prescreen.ts). */
+  provisional: { has(id: string): boolean } = new Set(),
 ): Map<string, Status> {
   const total = s.rules.arms.length * s.rules.repeats;
   const status = new Map<string, Status>();
@@ -682,6 +727,8 @@ export function classify(
         ? "broken"
         : !sealed.has(c.id)
         ? "unsealed"
+        : provisional.has(c.id)
+        ? "provisionally_saturated"
         : !t
         ? "unscreened"
         : !t.complete
@@ -741,6 +788,8 @@ export function stratifyByEnv(
   heldOut: string[],
   cells: EnvCell[],
   screens: Map<string, number>,
+  /** H-68: as classify. */
+  provisional: { has(id: string): boolean } = new Set(),
 ): {
   status: Map<string, Status>;
   strata: Map<string, EnvStratum[]>;
@@ -752,6 +801,7 @@ export function stratifyByEnv(
     heldOut,
     tally(cells, s.rules),
     screens,
+    provisional,
   );
   const strata = new Map<string, EnvStratum[]>();
   const flagged = new Map<string, string>();
@@ -802,7 +852,12 @@ export function contaminationProblems(
   });
 }
 
-const REDESIGNABLE = new Set<Status>(["dead", "saturated", "broken"]);
+const REDESIGNABLE = new Set<Status>([
+  "dead",
+  "saturated",
+  "broken",
+  "provisionally_saturated",
+]);
 
 /** Only a dropped candidate may be redesigned (round 2 finding 2). */
 export function supersedeProblems(
@@ -962,7 +1017,7 @@ async function git(
 export const commitOf = async (root: string, rev: string): Promise<string> =>
   (await git(root, ["rev-parse", "--verify", `${rev}^{commit}`])).trim();
 
-async function yamlAt<T extends z.ZodType>(
+export async function yamlAt<T extends z.ZodType>(
   root: string,
   rev: string,
   path: string,
@@ -1177,6 +1232,10 @@ export async function loadScreenCampaigns(
   repoRoot = ".",
   /** H-51: cells carry their env_fp and a mix is stratified, not refused. */
   stratifyEnv = false,
+  /** H-68: the experiment prefix read (prescreen.ts reads PRESCREEN_PREFIX). */
+  prefix = SCREEN_PREFIX,
+  /** H-68: the repeats each campaign must run (a pre-screen runs 1). */
+  repeats = rules.repeats,
 ): Promise<{ campaigns: ScreenCampaign[]; ran: Map<string, TaskIdentity[]> }> {
   const store = new RecordStore(resultsDir);
   const campaigns: ScreenCampaign[] = [];
@@ -1196,14 +1255,14 @@ export async function loadScreenCampaigns(
     const c = CampaignRecordSchema.parse(
       JSON.parse(await Deno.readTextFile(join(dir, e.name))),
     );
-    if (!c.experiment.id.startsWith(SCREEN_PREFIX)) continue;
+    if (!c.experiment.id.startsWith(prefix)) continue;
     const arms = [c.experiment.baseline, ...c.experiment.variants].sort();
     if (
       arms.join() !== [...rules.arms].sort().join() ||
-      c.experiment.repeats !== rules.repeats
+      c.experiment.repeats !== repeats
     ) {
       throw new ValidationError(
-        `campaign ${c.id} (${c.experiment.id}) does not run the screening arms x ${rules.repeats}`,
+        `campaign ${c.id} (${c.experiment.id}) does not run the screening arms x ${repeats}`,
         [c.id],
       );
     }
@@ -1308,12 +1367,38 @@ async function main(): Promise<number> {
     root,
     a["stratify-env"],
   );
+  // H-68: the pre-screen (prescreen.ts, imported here only: it imports this
+  // module). Its campaigns never enter the history; it yields the filter
+  // rounds' provisional rejects and the candidates waiting for an audit.
+  const prescreen = await import("./prescreen.ts");
+  const pre = await loadScreenCampaigns(
+    a["results-dir"],
+    now.rules,
+    root,
+    a["stratify-env"],
+    prescreen.PRESCREEN_PREFIX,
+    1,
+  );
+  const ps = await prescreen.evaluatePrescreen({
+    now,
+    seals,
+    heldOut,
+    prescreens: pre.campaigns,
+    full: campaigns,
+  });
   const hist = screeningHistory(campaigns, now.rules);
   const tallies = tally(hist.cells, now.rules);
   // H-51: without --stratify-env, the pooled classify as before (a mixed
   // env_fp was refused above).
   const { status, strata, flagged } = a["stratify-env"]
-    ? stratifyByEnv(now, new Set(sealedIds), heldOut, hist.cells, hist.screens)
+    ? stratifyByEnv(
+      now,
+      new Set(sealedIds),
+      heldOut,
+      hist.cells,
+      hist.screens,
+      ps.provisional,
+    )
     : {
       status: classify(
         now,
@@ -1321,6 +1406,7 @@ async function main(): Promise<number> {
         heldOut,
         tallies,
         hist.screens,
+        ps.provisional,
       ),
       strata: new Map<string, EnvStratum[]>(),
       flagged: new Map<string, string>(),
@@ -1330,18 +1416,21 @@ async function main(): Promise<number> {
       ...appendOnlyProblems(s.tag, s.screening, now),
       ...treeProblems(s.tag, s.trees, headTrees),
     ]),
-    ...[...ran].flatMap(([id, t]) => identityProblems(id, t, current.tasks)),
+    ...[...ran, ...pre.ran].flatMap(([id, t]) =>
+      identityProblems(id, t, current.tasks)
+    ),
     ...chronologyProblems(
-      campaigns.map((c) => ({
+      [...campaigns, ...pre.campaigns].map((c) => ({
         id: c.id,
         created_at: c.created_at,
-        tasks: (ran.get(c.id) ?? []).map((t) => t.id),
+        tasks: (ran.get(c.id) ?? pre.ran.get(c.id) ?? []).map((t) => t.id),
       })),
       new Map([...firstSeal].map(([id, s]) => [id, s.round_time])),
     ),
     ...hist.problems,
     ...contaminationProblems(status, tallies.keys()),
     ...supersedeProblems(now, status),
+    ...ps.problems,
   ];
   for (const p of problems) console.error(colors.red(`[FAIL] ${p}`));
   if (problems.length > 0) return 1;
@@ -1361,7 +1450,17 @@ async function main(): Promise<number> {
   for (const [id, why] of flagged) {
     console.log(colors.yellow(`[FLAG] ${id}: ${why}; needs a ruling`));
   }
-  const rescreen = rescreenTasks(status, flagged);
+  if (ps.provisional.size > 0) {
+    console.log(`provisionally saturated: "${tasksGlob([...ps.provisional])}"`);
+  }
+  if (ps.waiting.size > 0) {
+    console.log(colors.yellow(
+      `[WAIT] pre-screen audit pending: "${tasksGlob([...ps.waiting])}"`,
+    ));
+  }
+  const rescreen = rescreenTasks(status, {
+    has: (id) => flagged.has(id) || ps.waiting.has(id),
+  });
   if (rescreen.length > 0) {
     console.log(`next screen tasks: "${tasksGlob(rescreen)}"`);
   }
@@ -1377,7 +1476,10 @@ async function main(): Promise<number> {
     console.error(colors.red("[FAIL] --n must be a positive integer"));
     return 1;
   }
-  if (rescreen.length > 0 || [...status.values()].includes("unsealed")) {
+  if (
+    rescreen.length > 0 || ps.waiting.size > 0 ||
+    [...status.values()].includes("unsealed")
+  ) {
     console.error(
       colors.red("[FAIL] select needs every candidate sealed and screened"),
     );

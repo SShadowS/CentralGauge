@@ -1362,3 +1362,171 @@ Deno.test("accountLines (H-53): executions and usage limits per label, summed ov
     "account work: 3 execution(s), 0 usage_limited [RETIRED by owner 2026-11-04T08:00:00.000Z: setup fails]",
   ]);
 });
+
+// ---- H-68: the pre-screen amendment (prescreen.ts holds its logic).
+
+import { ExperimentSchema } from "../../../src/harness/config.ts";
+import { SCREEN_PREFIX, STRATA } from "../../../scripts/harness/screening.ts";
+
+Deno.test("ScreeningSchema (H-68): amendments default to none; a prescreen record needs a calibration first round and distinct seals", async () => {
+  assertEquals(S([C("HX-007")]).amendments, []);
+  assertEquals((await readYaml(REGISTRY_PATH, ScreeningSchema)).amendments, []);
+  const amend = (a: unknown) =>
+    ScreeningSchema.safeParse({
+      v: 1,
+      rules: RULES,
+      candidates: [C("HX-007")],
+      amendments: [a],
+    }).success;
+  const rec = (rounds: unknown[], extra: object = {}) => ({
+    id: "prescreen",
+    decision: "decisions/2026-11-06-m8-wave2-round0-and-prescreen.md",
+    rounds,
+    ...extra,
+  });
+  const cal = { seal: "harness-v2-screen-w5", mode: "calibration" };
+  const fil = { seal: "harness-v2-screen-w6", mode: "filter" };
+  assert(amend(rec([cal, fil])));
+  assert(!amend(rec([fil])), "the first round must be calibration");
+  assert(!amend(rec([cal, { ...fil, seal: cal.seal }])), "duplicate seal");
+  assert(
+    !amend(rec([cal], { id: "other" })),
+    "the id is the literal prescreen",
+  );
+  assert(
+    !amend(rec([{ ...cal, seal: "w5" }])),
+    "a seal is a harness-v2-screen-* tag",
+  );
+  assert(
+    !amend(rec([{ ...cal, mode: "skip" }])),
+    "mode is calibration or filter",
+  );
+  assert(!amend(rec([cal], { extra: 1 })), "strict");
+  assert(
+    !ScreeningSchema.safeParse({
+      v: 1,
+      rules: RULES,
+      candidates: [],
+      amendments: [rec([cal]), rec([cal])],
+    }).success,
+    "one prescreen record",
+  );
+  // The amendment is not part of rules and is no append-only problem.
+  assertEquals(
+    appendOnlyProblems(
+      "harness-v2-screen-w5",
+      S([C("HX-007")]),
+      ScreeningSchema.parse({
+        v: 1,
+        rules: RULES,
+        candidates: [C("HX-007")],
+        amendments: [rec([cal])],
+      }),
+    ),
+    [],
+  );
+});
+
+Deno.test("classify (H-68): a provisional reject is provisionally_saturated; held-out, broken and unsealed still win; default unchanged", () => {
+  const s = S([
+    C("HX-007"),
+    C("HX-008"),
+    C("HX-009", { broken: "decisions/x.md" }),
+    C("HX-010"),
+    C("HX-011"),
+  ]);
+  const sealed = new Set(["HX-007", "HX-008", "HX-009", "HX-011"]);
+  const t = tally([...six("HX-008", 3), ...six("HX-011", 6)], RULES);
+  const all = new Set(["HX-007", "HX-008", "HX-009", "HX-010", "HX-011"]);
+  const st = classify(s, sealed, ["HX-007"], t, new Map(), all);
+  assertEquals([...st.values()], [
+    "held_out",
+    "provisionally_saturated",
+    "broken",
+    "unsealed",
+    "provisionally_saturated",
+  ]);
+  const plain = classify(s, sealed, ["HX-007"], t, new Map());
+  assertEquals(plain, classify(s, sealed, ["HX-007"], t, new Map(), new Set()));
+  assertEquals([...plain.values()], [
+    "held_out",
+    "intermediate",
+    "broken",
+    "unsealed",
+    "saturated",
+  ]);
+});
+
+Deno.test("classify (H-68): a provisional reject is never rescreened nor selectable, and may be redesigned", () => {
+  const s = S([
+    C("HX-007"),
+    C("HX-008"),
+    C("HX-009", { supersedes: "HX-007" }),
+  ]);
+  const st = classify(
+    s,
+    new Set(["HX-007", "HX-008", "HX-009"]),
+    [],
+    new Map(),
+    new Map(),
+    new Set(["HX-007"]),
+  );
+  assertEquals(st.get("HX-007"), "provisionally_saturated");
+  assertEquals(rescreenTasks(st), ["HX-008", "HX-009"]);
+  // The CLI's select pool takes STRATA statuses only.
+  assert(!(STRATA as readonly string[]).includes(st.get("HX-007")!));
+  assertEquals(supersedeProblems(s, st), []);
+});
+
+Deno.test("stratifyByEnv (H-68): a provisional reject keeps its status", () => {
+  const s = S([C("HX-007")]);
+  const r = stratifyByEnv(
+    s,
+    new Set(["HX-007"]),
+    [],
+    [],
+    new Map(),
+    new Set(["HX-007"]),
+  );
+  assertEquals(r.status.get("HX-007"), "provisionally_saturated");
+});
+
+Deno.test("loadScreenCampaigns (H-68): the default loader ignores v2-prescreen-* campaigns; the prefix and repeats parameters select them", async () => {
+  const { loadScreenCampaigns } = await import(
+    "../../../scripts/harness/screening.ts"
+  );
+  const { PRESCREEN_PREFIX } = await import(
+    "../../../scripts/harness/prescreen.ts"
+  );
+  assert(!PRESCREEN_PREFIX.startsWith(SCREEN_PREFIX));
+  const root = await Deno.makeTempDir();
+  try {
+    const c = await campaign({
+      experiment: ExperimentSchema.parse({
+        id: `${PRESCREEN_PREFIX}1`,
+        hypothesis: "pre-screen",
+        primary_metric: "cost_per_solved_task",
+        baseline: "plain",
+        variants: ["skills"],
+        vary: ["skills"],
+        tasks: "harness-tasks/tasks/*",
+        repeats: 1,
+      }),
+    });
+    await Deno.mkdir(`${root}/campaigns`);
+    await Deno.writeTextFile(
+      `${root}/campaigns/${c.id}.json`,
+      JSON.stringify(c),
+    );
+    const r = await loadScreenCampaigns(root, RULES);
+    assertEquals([r.campaigns, [...r.ran]], [[], []]);
+    // Read with the pre-screen prefix it is checked against arms x 1.
+    await assertRejects(
+      () => loadScreenCampaigns(root, RULES, ".", false, PRESCREEN_PREFIX, 1),
+      ValidationError,
+      "does not run the screening arms x 1",
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});

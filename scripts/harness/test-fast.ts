@@ -142,6 +142,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}rollups.test.ts`]: c(true, 0),
   [`${H}sandbox.test.ts`]: c(true, 4),
   [`${H}screening.test.ts`]: c(true, 5),
+  // H-68: in-memory fixtures only.
+  [`${H}prescreen.test.ts`]: c(true, 0),
   // T-09: runtime-fixture makeEnv (docker mock, temp dirs), like execution.
   [`${H}secret-accounts.test.ts`]: c(true, 16),
   // H-53: account pool records, plus campaign runs on the mock image.
