@@ -6,7 +6,8 @@
 //     [--rule-b-share 0.99] [--interaction exploratory|confirmatory] [--resume]
 //   Stage B: the same with --prereg harness/preregistration/<exp>.yml, which takes
 //     rule, family, alpha and every argument from the frozen stage A and refuses
-//     any flag that differs.
+//     any flag that differs. Stage B also needs --fit-tasks <ids.json> (H-65: a
+//     JSON array of the task ids that survive M8's select) and may take --grid.
 // Simulates the frozen v2 pipeline: M8 screening and selection, the campaign,
 // and the pre-registered inference (compareArms, compareInteraction, holm).
 
@@ -44,6 +45,7 @@ export interface Fit {
   arm_sd: number;
   solved_ratio: number;
   unknown_share: number;
+  arm_offsets?: Record<string, number>;
   /** Confirmation-only sensitivity (round 2 finding 2): skewed costs, arm-dependent missingness, wider solve heterogeneity. */
   sens?: "skew" | "arm_missing" | "hetero" | undefined;
 }
@@ -139,43 +141,225 @@ export function poolCells(files: Cell[][]): Cell[] {
   return out;
 }
 
+/**
+ * H-65: the cells of the fit population, the tasks listed in `ids` (the
+ * --fit-tasks file: the candidates that survive M8's select). Refuses a list
+ * that is empty, not unique strings, or names a task without cells.
+ */
+export function restrictToTasks(cells: Cell[], ids: unknown): Cell[] {
+  if (
+    !Array.isArray(ids) || ids.length === 0 ||
+    !ids.every((x) => typeof x === "string" && x !== "")
+  ) {
+    throw new Error("fit tasks must be a non-empty JSON array of task ids");
+  }
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("fit tasks list a task twice");
+  }
+  const have = new Set(cells.map((c) => c.task));
+  const missing = ids.filter((t) => !have.has(t));
+  if (missing.length > 0) {
+    throw new Error(`fit tasks without pilot cells: ${missing.join(", ")}`);
+  }
+  const keep = new Set<string>(ids);
+  return cells.filter((c) => keep.has(c.task));
+}
+
+/**
+ * H-65 r2 (selfcheck-sol-r1.md): the additive task + arm least-squares fit
+ * of G group means m_g, each group weighted alike. The design is the G x
+ * (T + K) indicator matrix. Its task columns are disjoint, so they are an
+ * orthogonal block taken in closed form (q_t = indicator / sqrt(c_t), c_t the
+ * task's groups; projecting onto them is the per-task mean). The arm columns
+ * are centred within task and orthonormalised by modified Gram-Schmidt, run
+ * twice per column, dropping a column whose remaining norm is below 1e-9 of
+ * its own (rank detection, no pseudo-inverse). Cost O(G K^2).
+ * - rank = |Q| (T + K - C for C connected components of the incidence)
+ * - df = G - rank (G - T - K + C)
+ * - leverage H_gg = sum_q q_g^2; residuals r = m - Q Q^T m
+ * - noise = sum_g (1 - H_gg) / n_g, so E[sum r^2] = df tau^2 + sigma^2 noise.
+ * For a complete layout H_gg = 1/T + 1/K - 1/(TK) and noise = df mean(1/n).
+ */
+export function additiveFit(
+  groups: { task: string; arm: string; n: number; m: number }[],
+): {
+  rank: number;
+  df: number;
+  leverage: number[];
+  residuals: number[];
+  noise: number;
+} {
+  const G = groups.length;
+  const dot = (a: number[], b: number[]) =>
+    a.reduce((s, x, i) => s + x * b[i]!, 0);
+  const count = new Map<string, number>();
+  for (const g of groups) count.set(g.task, (count.get(g.task) ?? 0) + 1);
+  // Removes the projection onto the task block: the per-task mean.
+  const centre = (v: number[]) => {
+    const sum = new Map<string, number>();
+    groups.forEach((g, i) => sum.set(g.task, (sum.get(g.task) ?? 0) + v[i]!));
+    return v.map((x, i) =>
+      x - sum.get(groups[i]!.task)! / count.get(groups[i]!.task)!
+    );
+  };
+  // Removes the task block and the arm basis, twice (reorthogonalisation).
+  const project = (v: number[], Q: number[][]) => {
+    let w = v;
+    for (let pass = 0; pass < 2; pass++) {
+      w = centre(w);
+      for (const q of Q) {
+        const c = dot(q, w);
+        w = w.map((x, i) => x - c * q[i]!);
+      }
+    }
+    return w;
+  };
+  const Q: number[][] = [];
+  for (const a of [...new Set(groups.map((g) => g.arm))].sort()) {
+    const col = groups.map((g) => (g.arm === a ? 1 : 0));
+    const norm0 = Math.sqrt(dot(col, col));
+    const v = project(col, Q);
+    const norm = Math.sqrt(dot(v, v));
+    if (norm > 1e-9 * norm0) Q.push(v.map((x) => x / norm));
+  }
+  const rank = count.size + Q.length;
+  const leverage = groups.map((g, i) =>
+    1 / count.get(g.task)! + Q.reduce((s, q) => s + q[i]! ** 2, 0)
+  );
+  const residuals = project(groups.map((g) => g.m), Q);
+  return {
+    rank,
+    df: G - rank,
+    leverage,
+    residuals,
+    noise: groups.reduce((s, g, i) => s + (1 - leverage[i]!) / g.n, 0),
+  };
+}
+
+/**
+ * The nuisance model the generator draws from, fitted on log cost (H-65,
+ * decision 2026-11-06-m11-sim-model-fix-and-mining.md):
+ *
+ *   y_tar = mu_t + o_a + d_ta + e_tar,  d_ta ~ N(0, tau^2), e_tar ~ N(0, sigma^2)
+ *
+ * - o_a (arm_offsets): a fixed per-arm offset, sum 0 over the pilot arms. Fitted
+ *   by an additive two-way fit on the (task, arm) group means m_ta, each group
+ *   weighted alike (backfitting; one pass when every task has every arm, where
+ *   o_a is the mean over tasks of m_ta minus the task mean).
+ * - cell_sd = sigma: within-group SS over N - G (N known-cost cells, G groups).
+ * - arm_sd = tau, the SD of the latent i.i.d. deviation the generator draws per
+ *   task and arm. With the residual projection M = I - H of the additive fit
+ *   (additiveFit: rank-aware, exact leverages H_gg), E[SS_res] = df tau^2 +
+ *   sigma^2 sum_g M_gg / n_g, df = G - rank, so the method-of-moments estimate
+ *   is (H-65 r2, selfcheck-sol-r1.md)
+ *     tau^2 = max(0, (SS_res - sigma^2 * sum_g (1 - H_gg) / n_g) / df).
+ *   For a complete layout this is SS/((T-1)(K-1)) - sigma^2 mean(1/n). A df
+ *   of 0 (residual or within) is refused: it identifies no variance.
+ * - solved_ratio: solved vs unsolved log cost within a task, after o_a is
+ *   removed (an arm that is dearer and solves less is not a solve effect).
+ *
+ * The offsets are recorded, NOT applied by the generator: the pilot ran only
+ * the diagonal arms (plain, realistic-lsp), whose offset is the C3-type
+ * realistic effect plus the LSP effect. The scenarios define the arm effects
+ * of the four SIM_ARMS; adding the pilot's offset would bake an observed
+ * effect into the null and the alternatives.
+ */
 export function fitCells(cells: Cell[]): Fit {
   checkCells(cells);
   const term = cells.filter((c) =>
     c.status === "scored" || c.status === "unscored"
   );
   const known = term.filter((c) => c.spend_usd !== null && c.spend_usd > 0);
-  const group = (k: (c: Cell) => string) => {
-    const m = new Map<string, Cell[]>();
-    for (const c of known) m.set(k(c), [...(m.get(k(c)) ?? []), c]);
-    return m;
+  const log = (c: Cell) => Math.log(c.spend_usd!);
+  const byKey = new Map<string, Cell[]>();
+  for (const c of known) {
+    const k = `${c.task}\u0000${c.arm}`;
+    byKey.set(k, [...(byKey.get(k) ?? []), c]);
+  }
+  const groups = [...byKey.values()].map((cs) => ({
+    task: cs[0]!.task,
+    arm: cs[0]!.arm,
+    cs,
+    n: cs.length,
+    m: mean(cs.map(log)),
+  }));
+  type Group = (typeof groups)[number];
+  const by = (k: (g: Group) => string) => {
+    const out = new Map<string, Group[]>();
+    for (const g of groups) out.set(k(g), [...(out.get(k(g)) ?? []), g]);
+    return out;
   };
-  const logs = (cs: Cell[]) => cs.map((c) => Math.log(c.spend_usd!));
-  const byTask = group((c) => c.task);
-  const byTaskArm = group((c) => `${c.task}\u0000${c.arm}`);
-  const taskMean = new Map([...byTask].map(([t, cs]) => [t, mean(logs(cs))]));
-  const within = [...byTaskArm.values()].flatMap((cs) => {
-    const m = mean(logs(cs));
-    return logs(cs).map((x) => x - m);
-  });
-  const armDev = [...byTaskArm.values()].map((cs) =>
-    mean(logs(cs)) - taskMean.get(cs[0]!.task)!
+  const byTask = by((g) => g.task);
+  const byArm = by((g) => g.arm);
+  const arms = [...byArm.keys()].sort();
+  const exact = additiveFit(groups);
+  const withinDf = known.length - groups.length;
+  if (exact.df <= 0) {
+    throw new Error(
+      `fitCells: the task x arm residual df is 0 (${groups.length} groups, rank ${exact.rank}): arm_sd is not identified`,
+    );
+  }
+  if (withinDf <= 0) {
+    throw new Error(
+      `fitCells: the within-cell df N - G is 0 (${known.length} cells in ${groups.length} groups): cell_sd is not identified`,
+    );
+  }
+  const off = new Map(arms.map((a) => [a, 0]));
+  const taskMeans = () =>
+    new Map(
+      [...byTask].map((
+        [t, gs],
+      ) => [t, mean(gs.map((g) => g.m - off.get(g.arm)!))]),
+    );
+  let mu = taskMeans();
+  for (let it = 0; it < 10000; it++) {
+    const raw = arms.map((a) =>
+      mean(byArm.get(a)!.map((g) => g.m - mu.get(g.task)!))
+    );
+    const centre = mean(raw);
+    let change = 0;
+    arms.forEach((a, i) => {
+      change = Math.max(change, Math.abs(raw[i]! - centre - off.get(a)!));
+      off.set(a, raw[i]! - centre);
+    });
+    mu = taskMeans();
+    if (change < 1e-14) break;
+  }
+  const withinSS = groups.reduce(
+    (a, g) => a + g.cs.reduce((b, c) => b + (log(c) - g.m) ** 2, 0),
+    0,
   );
-  const solvedDiff = [...byTask.values()].flatMap((cs) => {
+  const sigma2 = withinSS / withinDf;
+  const residSS = exact.residuals.reduce((a, r) => a + r * r, 0);
+  // The backfitted offsets must give the same least-squares residuals.
+  const backSS = groups.reduce(
+    (a, g) => a + (g.m - mu.get(g.task)! - off.get(g.arm)!) ** 2,
+    0,
+  );
+  if (Math.abs(backSS - residSS) > 1e-8 * (1 + residSS)) {
+    throw new Error(
+      `fitCells: backfitted residual SS ${backSS} differs from the QR fit ${residSS}`,
+    );
+  }
+  const tau2 = Math.max(0, (residSS - sigma2 * exact.noise) / exact.df);
+  const adj = (c: Cell) => log(c) - off.get(c.arm)!;
+  const solvedDiff = [...byTask.values()].flatMap((gs) => {
+    const cs = gs.flatMap((g) => g.cs);
     const s = cs.filter((c) => c.pass === true);
     const u = cs.filter((c) => c.pass !== true);
-    return s.length > 0 && u.length > 0 ? [mean(logs(s)) - mean(logs(u))] : [];
+    return s.length > 0 && u.length > 0
+      ? [mean(s.map(adj)) - mean(u.map(adj))]
+      : [];
   });
   return {
-    log_mean: mean([...taskMean.values()]),
-    task_sd: sd([...taskMean.values()]),
-    cell_sd: within.length < 2
-      ? 0
-      : Math.sqrt(within.reduce((a, x) => a + x * x, 0) / (within.length - 1)),
-    arm_sd: sd(armDev),
+    log_mean: mean([...mu.values()]),
+    task_sd: sd([...mu.values()]),
+    cell_sd: Math.sqrt(sigma2),
+    arm_sd: Math.sqrt(tau2),
     solved_ratio: solvedDiff.length === 0 ? 1 : Math.exp(mean(solvedDiff)),
     unknown_share: term.filter((c) => c.spend_usd === null).length /
       term.length,
+    arm_offsets: Object.fromEntries(arms.map((a) => [a, off.get(a)!])),
   };
 }
 
@@ -839,14 +1023,15 @@ export function chooseDesign(
 
 // ---------------------------------------------------------------- CLI
 
-const GRID_DESIGNS: Design[] = [24, 30, 40].flatMap((tasks) =>
-  [3, 5, 8].map((repeats) => ({ tasks, repeats }))
-);
-
 export interface GridSpec {
   tasks: number[];
   repeats: number[];
 }
+
+const DEFAULT_GRID: GridSpec = { tasks: [24, 30, 40], repeats: [3, 5, 8] };
+const GRID_DESIGNS: Design[] = DEFAULT_GRID.tasks.flatMap((tasks) =>
+  DEFAULT_GRID.repeats.map((repeats) => ({ tasks, repeats }))
+);
 
 /** `--grid 40,50,60x8,12,16`: tasks x repeats, tasks outer (M11-13c). */
 export function parseGrid(s: string): Design[] {
@@ -891,21 +1076,18 @@ export function parseEffect(v: unknown): number {
 }
 
 /**
- * Stage B never takes --grid or --effect: a non-default grid cannot be
- * pre-registered (PreregSchema simulation.args holds numbers only), and the
- * effect is the frozen one.
+ * Stage B never takes --effect: the effect is the frozen one. H-65 (decision
+ * 2026-11-06-m11-sim-model-fix-and-mining.md): it may take --grid (Fable's
+ * downward-extended grid), recorded in args.grid; a frozen args record holds
+ * numbers only, so preregProblems refuses such a run as the binding stage-B
+ * simulation (it is provisional, for sizing the mining wave).
  */
 export function stageBFlagProblem(
   flags: { grid?: unknown; effect?: unknown },
 ): string | null {
-  const bad = ["grid", "effect"].filter((f) =>
-    (flags as Record<string, unknown>)[f] !== undefined
-  );
-  return bad.length === 0
+  return flags.effect === undefined
     ? null
-    : `--${
-      bad.join(" and --")
-    } are refused in stage B (--prereg): the frozen pipeline uses the default grid and the pre-registered effect`;
+    : "--effect is refused in stage B (--prereg): the frozen pipeline uses the pre-registered effect";
 }
 
 /** Stage B effect: the frozen simulation.args.effect when present, else the default. */
@@ -944,6 +1126,8 @@ export function argsHashInput(
     rule: ZeroSolveRule | null;
     inputs: { path: string; sha256: string }[];
     arm_prefix: string;
+    /** H-65: present only when --fit-tasks was given (older runs keep their exact shape). */
+    fit_tasks?: { path: string; sha256: string; tasks: string[] };
   },
   sweep: { effect: number; grid?: GridSpec | null },
 ) {
@@ -1097,6 +1281,26 @@ export function checkResumeHeader(
   }
 }
 
+/**
+ * The code fingerprint: the hash of the files' sha256 list. H-65: each file
+ * is hashed with CRLF normalized to LF, so an autocrlf checkout and an LF one
+ * of the same commit agree (the frozen d26a22f4 is 93737719's CRLF-checkout
+ * hash; that value is only compared, never recomputed).
+ */
+export async function scriptSha256(paths: string[]): Promise<string> {
+  return await hashJson(
+    await Promise.all(
+      paths.map(async (p) =>
+        await sha256Hex(
+          new TextEncoder().encode(
+            (await Deno.readTextFile(p)).replaceAll("\r\n", "\n"),
+          ),
+        )
+      ),
+    ),
+  );
+}
+
 function bad(msg: string): never {
   console.error(colors.red(`[FAIL] ${msg}`));
   Deno.exit(2);
@@ -1104,16 +1308,11 @@ function bad(msg: string): never {
 
 async function main(): Promise<void> {
   const here = (rel: string) => fromFileUrl(new URL(rel, import.meta.url));
-  const script_sha256 = await hashJson(
-    await Promise.all(
-      [
-        here("./power-sim.ts"),
-        here("./screening.ts"),
-        here("../../src/harness/stats.ts"),
-      ]
-        .map(async (p) => await sha256Hex(await Deno.readFile(p))),
-    ),
-  );
+  const script_sha256 = await scriptSha256([
+    here("./power-sim.ts"),
+    here("./screening.ts"),
+    here("../../src/harness/stats.ts"),
+  ]);
   const a = parseArgs(Deno.args, {
     string: [
       "out",
@@ -1130,6 +1329,7 @@ async function main(): Promise<void> {
       "rule-b-share",
       "grid",
       "effect",
+      "fit-tasks",
     ],
     boolean: ["resume"],
     collect: ["cells"],
@@ -1169,6 +1369,25 @@ async function main(): Promise<void> {
     stage = "B";
     const problem = stageBFlagProblem({ grid: a.grid, effect: a.effect });
     if (problem) bad(problem);
+    // H-65: the authorised model fits the eligible tasks only.
+    if (a["fit-tasks"] === undefined) {
+      bad(
+        "stage B needs --fit-tasks <file>: the fit population is the tasks that survive M8's select (decision 2026-11-06-m11-sim-model-fix-and-mining.md)",
+      );
+    }
+    if (flagged("grid")) {
+      try {
+        gridSpec = parseGridSpec(a.grid!);
+        gridDesigns = parseGrid(a.grid!);
+      } catch (e) {
+        bad((e as Error).message);
+      }
+      console.log(
+        colors.yellow(
+          "[WARN] --grid given in stage B: a provisional run, not the frozen pipeline",
+        ),
+      );
+    }
     const doc = PreregSchema.parse(parse(await Deno.readTextFile(a.prereg)));
     frozenRule = doc.zero_solve;
     alpha = doc.alpha;
@@ -1253,8 +1472,8 @@ async function main(): Promise<void> {
   }
 
   const sweep = { effect, grid: gridSpec };
-  const diagnostic = stage === "A" &&
-    (gridSpec !== null || effect !== EFFECT_DEFAULT);
+  const diagnostic = gridSpec !== null ||
+    (stage === "A" && effect !== EFFECT_DEFAULT);
 
   const out = a.out;
   const partial = `${out}.partial.jsonl`;
@@ -1280,8 +1499,28 @@ async function main(): Promise<void> {
     if (!Array.isArray(doc.cells)) bad(`${path} has no cells array`);
     files.push(doc.cells.filter((c) => c.arm.startsWith(prefix)));
   }
-  const cells = poolCells(files);
-  if (cells.length === 0) bad(`no cells with an arm starting ${prefix}`);
+  const pooled = poolCells(files);
+  if (pooled.length === 0) bad(`no cells with an arm starting ${prefix}`);
+  // H-65: the fit population is an explicit input (sha256 and ids recorded):
+  // the official survivor set needs seals, execution records and judgments
+  // that the report files do not carry.
+  let fitTasks: { path: string; sha256: string; tasks: string[] } | null = null;
+  let cells = pooled;
+  if (a["fit-tasks"] !== undefined) {
+    const path = a["fit-tasks"];
+    try {
+      const bytes = await Deno.readFile(path);
+      const ids: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      cells = restrictToTasks(pooled, ids);
+      fitTasks = {
+        path,
+        sha256: await sha256Hex(bytes),
+        tasks: [...(ids as string[])].sort(),
+      };
+    } catch (e) {
+      bad(`--fit-tasks ${path}: ${(e as Error).message}`);
+    }
+  }
   const fitted = fitCells(cells);
   const stress = {
     ...fitted,
@@ -1299,6 +1538,7 @@ async function main(): Promise<void> {
     rule: frozenRule,
     inputs,
     arm_prefix: prefix,
+    ...(fitTasks ? { fit_tasks: fitTasks } : {}),
   }, sweep));
   const done = new Map<string, DesignResult>();
   if (a.resume && await exists(partial)) {
@@ -1436,6 +1676,9 @@ async function main(): Promise<void> {
         alpha,
         family,
         inputs,
+        // H-65: the fit population and the grid this run evaluated.
+        fit_tasks: fitTasks,
+        grid: gridSpec ?? DEFAULT_GRID,
         fit: fitted,
         stress_fit: stress,
         results: [...done.values()],
