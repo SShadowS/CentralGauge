@@ -223,6 +223,8 @@ export interface HarnessReport {
     sha256: string;
     protocol_sha256: string;
     amendments: Prereg["amendments"];
+    /** H-67: owner-authorised protocol changes; the key is absent when there are none. */
+    protocol_changes?: ProtocolChanges;
   };
   cells: CellRecord[];
   /**
@@ -284,9 +286,20 @@ export interface HarnessReport {
   };
 }
 
+type ProtocolChanges = NonNullable<Prereg["protocol_changes"]>;
+
+/** H-67: `{ protocol_changes }` when the prereg has records, else nothing (no key, no empty array). */
+function protocolChangesKey(
+  d: Prereg,
+): { protocol_changes?: ProtocolChanges } {
+  const c = d.protocol_changes ?? [];
+  return c.length > 0 ? { protocol_changes: c } : {};
+}
+
 export interface ContrastsAnalysis {
   preregistration: { path: string; sha256: string; protocol_sha256: string };
   amendments: Prereg["amendments"];
+  protocol_changes?: ProtocolChanges;
   alpha: number;
   family: string[];
   zero_solve: ZeroSolveRule;
@@ -930,6 +943,7 @@ export async function buildReport(
         protocol_sha256: pre!.protocol_sha256,
       },
       amendments: d!.amendments,
+      ...protocolChangesKey(d!),
       alpha: d!.alpha,
       family,
       zero_solve: d!.zero_solve,
@@ -1236,6 +1250,7 @@ export async function buildReport(
           sha256: pre.sha256,
           protocol_sha256: pre.protocol_sha256,
           amendments: d.amendments,
+          ...protocolChangesKey(d),
         },
       }
       : {}),
@@ -1431,6 +1446,17 @@ export function renderReport(r: HarnessReport): string {
         `pre-registration amended after screening: ${a.key} ${
           JSON.stringify(a.from)
         } -> ${JSON.stringify(a.to)} (${a.reason}; ${a.approval})`,
+      ),
+    );
+  }
+  for (const c of r.preregistration?.protocol_changes ?? []) {
+    out.push(
+      colors.yellow(
+        `pre-registration protocol change: ${c.kind} ${
+          c.from.slice(0, 12)
+        } (${c.from_eol}) -> ${
+          c.to.slice(0, 12)
+        } (${c.reason}; decision ${c.decision}; ${c.approval})`,
       ),
     );
   }

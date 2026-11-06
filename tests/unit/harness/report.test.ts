@@ -1806,6 +1806,59 @@ Deno.test("buildReport (M11 run 002): amendments stay disclosed in the header wh
   assertStringIncludes(text, "Confirmatory analysis withheld");
 });
 
+const SIM_CHANGE = {
+  kind: "simulation_script",
+  decision: "D-65",
+  from: H("a"),
+  from_eol: "crlf",
+  to: H("b"),
+  reason: "script fixed",
+  approval: "OWNER-APPROVED: sim (2026-10-29T12:00:00Z)",
+};
+
+Deno.test("renderReport (H-67): one protocol change is in the JSON and printed with its hashes, eol, decision and approval", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    protocol_changes: [SIM_CHANGE],
+  });
+  const r = await buildReport(recs, { prereg: preregOf(recs, doc) });
+  assertEquals(r.preregistration!.protocol_changes, [SIM_CHANGE]);
+  assertStringIncludes(
+    stripAnsiCode(renderReport(r)),
+    `pre-registration protocol change: simulation_script ${
+      H("a").slice(0, 12)
+    } (crlf) -> ${
+      H("b").slice(0, 12)
+    } (script fixed; decision D-65; OWNER-APPROVED: sim (2026-10-29T12:00:00Z))`,
+  );
+});
+
+Deno.test("renderReport (H-67): no protocol changes gives no key and no line", async () => {
+  const recs = await factorialRecords();
+  const r = await buildReport(recs, {
+    prereg: preregOf(recs, await stageBFor(recs.campaign)),
+  });
+  assert(!("protocol_changes" in r.preregistration!));
+  assert(!stripAnsiCode(renderReport(r)).includes("protocol change"));
+});
+
+Deno.test("buildReport (H-67): a protocol change stays disclosed when the confirmatory section is withheld", async () => {
+  const recs = await factorialRecords();
+  const doc = await stageBFor(recs.campaign, {
+    protocol_changes: [SIM_CHANGE],
+  });
+  const r = await buildReport(recs, {
+    prereg: preregOf(recs, doc),
+    repeats: 1,
+  });
+  assertEquals(Object.keys(r.confirmatory!), ["withheld"]);
+  assertEquals(r.preregistration!.protocol_changes, [SIM_CHANGE]);
+  assertStringIncludes(
+    stripAnsiCode(renderReport(r)),
+    "pre-registration protocol change: simulation_script",
+  );
+});
+
 import type { HostLogLine } from "../../../src/harness/backend.ts";
 
 const hostLine = (
