@@ -125,6 +125,8 @@ export interface HarnessReport {
   calibration_waived?: true;
   /** H-15: present when any execution ran before its parent's recorded usage reset. */
   usage_reset_ignored?: { reasons: string[] };
+  /** H-63: present when counted judgments touched no container (no env_fp, no mix). */
+  no_container?: { count: number; reasons: Record<string, number> };
   /**
    * H-53: executions and usage limits per account label (present when any
    * execution has one), so an account-level anomaly stays visible.
@@ -583,16 +585,32 @@ function oneScorerFingerprint(cells: CellRecord[]): string | null {
  * report is refused; `--stratify-env` is a follow-up. A v1 judgment's
  * env_fp is unavailable and makes no mix (old-vs-new comparisons go
  * through the frozen pairing, `harness pairing`, never pooled here).
+ *
+ * H-63: a v2 judgment that touched no container says so (`env_none`); it is
+ * not an environment and makes no mix, but it is returned (ids and reason
+ * counts) so the report shows it. A null env_fp without env_none is still
+ * "(none)" and still mixes.
  */
+export interface NoContainer {
+  ids: string[];
+  reasons: Record<string, number>;
+}
+
 export function checkOneEnvironment(
   cells: readonly { judgment_id: string | null }[],
   judgments: readonly JudgmentRecord[],
-): void {
+): NoContainer {
   const byId = new Map(judgments.map((j) => [j.id, j]));
   const envs = new Set<string>();
+  const noContainer: NoContainer = { ids: [], reasons: {} };
   for (const c of cells) {
     const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
-    if (j?.v === 2) envs.add(j.provenance?.env_fp ?? "(none)");
+    if (j?.v !== 2) continue;
+    const none = j.provenance?.env_fp ? undefined : j.provenance?.env_none;
+    if (none !== undefined) {
+      noContainer.ids.push(j.id);
+      noContainer.reasons[none] = (noContainer.reasons[none] ?? 0) + 1;
+    } else envs.add(j.provenance?.env_fp ?? "(none)");
   }
   if (envs.size > 1) {
     const list = [...envs].sort();
@@ -603,6 +621,7 @@ export function checkOneEnvironment(
       list,
     );
   }
+  return noContainer;
 }
 
 /**
@@ -804,7 +823,7 @@ export async function buildReport(
     );
   }
   const fingerprint = oneScorerFingerprint(cells);
-  checkOneEnvironment(cells, records.judgments);
+  const noContainer = checkOneEnvironment(cells, records.judgments);
   // The same complete map drives selection and the reported identity.
   const judgedTasks = campaign.task_set.tasks.map((t) => ({
     ...t,
@@ -1260,6 +1279,14 @@ export async function buildReport(
     ...(resetReasons.length > 0
       ? { usage_reset_ignored: { reasons: resetReasons } }
       : {}),
+    ...(noContainer.ids.length > 0
+      ? {
+        no_container: {
+          count: noContainer.ids.length,
+          reasons: noContainer.reasons,
+        },
+      }
+      : {}),
     ...(Object.keys(accounts).length > 0 ? { accounts } : {}),
     ...(records.retirements?.length
       ? { account_retirements: records.retirements }
@@ -1359,6 +1386,15 @@ export function renderReport(r: HarnessReport): string {
     out.push(colors.red(
       `[WARN] recorded usage resets ignored (owner override --ignore-usage-reset): ${
         r.usage_reset_ignored.reasons.join("; ")
+      }`,
+    ));
+  }
+  if (r.no_container) {
+    out.push(colors.yellow(
+      `[NOTE] ${r.no_container.count} judgment(s) touched no container (no env_fp): ${
+        Object.entries(r.no_container.reasons).sort(([a], [b]) =>
+          a < b ? -1 : 1
+        ).map(([why, n]) => `${why} x${n}`).join("; ")
       }`,
     ));
   }
