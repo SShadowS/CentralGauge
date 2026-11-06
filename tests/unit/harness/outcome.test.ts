@@ -45,11 +45,25 @@ Deno.test("forcedRefusal (H-64): a second force on the same decision bytes is re
     },
   });
   const js = [original, first];
-  assert(
-    forcedRefusal(e, js, oracle, { replaces: first.id, basis })?.includes(
-      "needs its own owner approval",
-    ),
-  );
+  // Same bytes; or the same approval line in edited bytes, raw or scrubbed
+  // in another environment (the stored redaction hides what it replaced).
+  for (
+    const b of [
+      basis,
+      { ...basis, sha256: "c".repeat(64) },
+      {
+        ...basis,
+        sha256: "c".repeat(64),
+        approval: "OWNER-APPROVED: [REDACTED:other] (2026-11-06T12:00:00Z)",
+      },
+    ]
+  ) {
+    assert(
+      forcedRefusal(e, js, oracle, { replaces: first.id, basis: b })?.includes(
+        "needs its own owner approval",
+      ),
+    );
+  }
   const fresh = {
     ...basis,
     sha256: "b".repeat(64),
