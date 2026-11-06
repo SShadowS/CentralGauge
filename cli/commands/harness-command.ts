@@ -2268,6 +2268,8 @@ export async function harnessRejudge(
 > {
   checkAuto(o, "rejudge");
   // M5-03 review: read-only, before any lock, sweep or recovery; again under the env.
+  // H-64: it also proves --execution is a full stored id, so the basis check below
+  // can never match a decision that names only a prefix.
   await rejudgeTarget(new RecordStore(o.resultsDir), experimentId, o);
   const decision = o.basis === undefined
     ? undefined
@@ -2431,7 +2433,7 @@ export async function harnessRejudge(
         e,
         js,
         byTask.get(e.task_id)!.oracle,
-        o.replaces!,
+        { replaces: o.replaces!, basis: decision! },
       );
       if (why) throw new ConfigurationError(`${why}: rejudge --force refused`);
       forced = {

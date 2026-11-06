@@ -17,6 +17,7 @@ import {
   exitError,
   introducedFindings,
   keepExecution,
+  latestJudgment,
   linkAlpackages,
   loadDone,
   type LossInput,
@@ -35,6 +36,20 @@ import {
   writeAtomic,
   writeDone,
 } from "../../../scripts/harness/analyze-campaign.ts";
+
+Deno.test("latestJudgment (H-64): the report's order, instants not strings, ties by id, whatever the read order", () => {
+  const old = { id: "b", ended_at: "2026-11-06T14:27:00Z" };
+  const later = { id: "a", ended_at: "2026-11-06T14:27:00.001Z" };
+  // As strings, "...00Z" sorts after "...00.001Z": the old one would win.
+  for (const js of [[old, later], [later, old]]) {
+    assertEquals(latestJudgment(js)?.id, "a");
+  }
+  const tie = { id: "c", ended_at: "2026-11-06T14:27:00.000Z" };
+  for (const js of [[old, tie], [tie, old]]) {
+    assertEquals(latestJudgment(js)?.id, "c");
+  }
+  assertEquals(latestJudgment([]), null);
+});
 
 Deno.test("missingFromShipped: a missing name the patch adds to a shipped test file, not one added elsewhere", () => {
   const patch = [

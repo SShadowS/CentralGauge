@@ -5296,7 +5296,7 @@ const forceOpts = (
     ...over,
   });
 
-Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same execution is refused, whichever judgment it names", async () => {
+Deno.test("rejudge --force (C-03 run 002): a second forced rejudge on the first one's approval is refused, whichever judgment it names", async () => {
   await using t = await makeEnv();
   await writeCatalog(t);
   const { c, e, oom } = await campaignWithOomJudgment(t);
@@ -5308,8 +5308,13 @@ Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same e
     ));
   const js = await t.env.store.judgments(e.id);
   const first = js.find((j) => j.forced)!;
-  // The forced one fails too (say a flaky host): no retry until it passes.
-  for (const replaces of [first.id, oom.id]) {
+  // The forced one fails too (say a flaky host): no retry on the same approval.
+  for (
+    const [replaces, why] of [
+      [first.id, "needs its own owner approval"],
+      [oom.id, `must replace forced judgment ${first.id}`],
+    ]
+  ) {
     await assertRejects(
       () =>
         approvedRejudge(
@@ -5321,9 +5326,138 @@ Deno.test("rejudge --force (C-03 run 002): a second forced rejudge of the same e
           },
         ),
       ConfigurationError,
-      `already has forced judgment ${first.id}`,
+      why,
     );
   }
+  assertEquals((await t.env.store.judgments(e.id)).length, 3);
+});
+
+/** approved(id, f) with another OWNER-APPROVED line: a second owner decision. */
+async function approvedAgain<T>(
+  id: string,
+  f: (basis: string) => Promise<T>,
+): Promise<T> {
+  let out: T | undefined;
+  await withCoordRoot({
+    "again.md": approvalText(id).replace(APPROVAL, APPROVAL_2),
+  }, async (root) => {
+    out = await f(join(root, "decisions", "again.md"));
+  });
+  return out as T;
+}
+
+const APPROVAL_2 =
+  "OWNER-APPROVED: force once more, the first force recorded no env_fp (2026-11-06T15:00:00Z)";
+
+Deno.test("rejudge --force (owner 2026-11-06): a second owner approval replaces the forced judgment once; a third force is refused", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  await approved(e.id, (basis) =>
+    harnessRejudge(
+      "contract",
+      forceOpts(t, c, e, { replaces: oom.id, basis }),
+      opener(t),
+    ));
+  const first = (await t.env.store.judgments(e.id)).find((j) => j.forced)!;
+  // A new approval must still replace the judgment the report uses.
+  await assertRejects(
+    () =>
+      approvedAgain(e.id, (basis) =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, e, { replaces: oom.id, basis }),
+          opener(t),
+        )),
+    ConfigurationError,
+    `must replace forced judgment ${first.id}`,
+  );
+  await approvedAgain(e.id, (basis) =>
+    harnessRejudge(
+      "contract",
+      forceOpts(t, c, e, { replaces: first.id, basis }),
+      opener(t),
+    ));
+  const js = await t.env.store.judgments(e.id);
+  // Append-only: the replaced forced judgment stays on disk.
+  assertEquals(js.length, 4);
+  assert(js.some((j) => j.id === first.id));
+  const second = js.find((j) => j.forced && j.id !== first.id)!;
+  assertEquals(second.forced!.replaces, first.id);
+  assertEquals(second.forced!.basis.approval, APPROVAL_2);
+  // The report counts the second forced judgment and lists both forces.
+  const report = await buildReport(await loadCampaignData(t.env.store, c), {
+    resamples: 10,
+    seed: 1,
+  });
+  const cell = report.cells.find((x) => x.used_execution === e.id)!;
+  assertEquals(cell.judgment_id, second.id);
+  assertEquals(
+    cell.forced_rejudges?.map((f) => [f.judgment_id, f.replaces]),
+    [[first.id, oom.id], [second.id, first.id]],
+  );
+  // No third force: not on the current one, the superseded one or the original.
+  for (const replaces of [second.id, first.id, oom.id]) {
+    for (const basisOf of [approved, approvedAgain]) {
+      await assertRejects(
+        () =>
+          basisOf(e.id, (basis) =>
+            harnessRejudge(
+              "contract",
+              forceOpts(t, c, e, { replaces, basis }),
+              opener(t),
+            )),
+        ConfigurationError,
+        "at most two forced rejudges per execution",
+      );
+    }
+  }
+  assertEquals((await t.env.store.judgments(e.id)).length, 4);
+});
+
+Deno.test("rejudge --force (owner 2026-11-06): the second force's basis must name the full execution id", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  const { c, e, oom } = await campaignWithOomJudgment(t);
+  await approved(e.id, (basis) =>
+    harnessRejudge(
+      "contract",
+      forceOpts(t, c, e, { replaces: oom.id, basis }),
+      opener(t),
+    ));
+  const first = (await t.env.store.judgments(e.id)).find((j) => j.forced)!;
+  const prefixOnly = approvalText(e.id.slice(0, 8)).replace(
+    APPROVAL,
+    APPROVAL_2,
+  );
+  await withCoordRoot({ "prefix.md": prefixOnly }, async () => {
+    // A short --execution never reaches the basis check: only a full stored id is in the campaign.
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, { id: e.id.slice(0, 8) }, {
+            replaces: first.id,
+            basis: "prefix.md",
+          }),
+          () => {
+            throw new Error("the environment must not open");
+          },
+        ),
+      ConfigurationError,
+      `execution ${e.id.slice(0, 8)} is not in campaign`,
+    );
+    await assertRejects(
+      () =>
+        harnessRejudge(
+          "contract",
+          forceOpts(t, c, e, { replaces: first.id, basis: "prefix.md" }),
+          opener(t),
+        ),
+      ConfigurationError,
+      `does not name execution ${e.id}`,
+    );
+  });
   assertEquals((await t.env.store.judgments(e.id)).length, 3);
 });
 

@@ -26,6 +26,7 @@ import { applyOverlay, TAR_BINARY } from "../../src/harness/staging.ts";
 import { loadTaskAt } from "../../src/harness/task-rev.ts";
 import { readTrace } from "../../src/harness/trace.ts";
 import {
+  compareInstant,
   type ExecutionRecord,
   RecordStore,
 } from "../../src/harness/records.ts";
@@ -1636,6 +1637,23 @@ export function alsemSummary(x: {
 }
 
 type J = Record<string, unknown>;
+
+/**
+ * H-64: an execution's latest judgment in the report's order (selectJudgment):
+ * the later ended_at as an instant, a tie by the larger id. Never by string,
+ * where "...00Z" sorts after "...00.001Z".
+ */
+export function latestJudgment<T extends J>(js: T[]): T | null {
+  let best: T | null = null;
+  for (const x of js) {
+    const d = best === null
+      ? 1
+      : compareInstant(String(x["ended_at"]), String(best["ended_at"]));
+    if (d > 0 || (d === 0 && String(x["id"]) > String(best!["id"]))) best = x;
+  }
+  return best;
+}
+
 const readJson = async (p: string): Promise<J> =>
   JSON.parse(await Deno.readTextFile(p)) as J;
 const readJsonOr = (p: string): Promise<J | null> =>
@@ -3218,14 +3236,12 @@ async function main() {
     const id = e["id"] as string;
     const task = e["task_id"] as string;
     if (++n % 20 === 0) console.error(`[A] ${n}/${cells.size}`);
-    // Judgment: the latest one filed for the execution.
-    let j: J | null = null;
+    // Judgment: the latest one filed for the execution (the report's order).
     const jdir = join(results, "judgments", id);
     const judged = await Array.fromAsync(Deno.readDir(jdir)).catch(() => []);
-    for (const f of judged) {
-      const x = await readJson(join(jdir, f.name));
-      if (!j || String(x["ended_at"]) > String(j["ended_at"])) j = x;
-    }
+    const j = latestJudgment(
+      await Promise.all(judged.map((f) => readJson(join(jdir, f.name)))),
+    );
     const vlog = j
       ? await readJsonOr(join(results, "verdicts", `${j["id"]}.json`))
       : null;
