@@ -2545,6 +2545,49 @@ Deno.test("H-63 r2 (e): two compile environments that differ with no deployment 
   );
 });
 
+/** An IdBc whose first identity read of `container` fails (infra). */
+function unreadableOnce(bc: IdBc, container: string) {
+  let first = true;
+  bc.idOf = (c) => {
+    if (c === container && first) {
+      first = false;
+      throw new ContainerError(`identity of ${c} unavailable`, c, "compile");
+    }
+    return `compiler-of-${c}`;
+  };
+}
+
+Deno.test("H-63 Sol r2 (1): an unknown compile env (C1) is not masked by a known one (C2 after a reroute): env_fp null, no env_none, no throw", async () => {
+  const bc = new IdBc(scripted);
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  // C1 goes down and is quarantined after its first compile: nothing deploys there.
+  let n = 0;
+  bc.onCompile = async () => {
+    if (++n === 1) {
+      bc.broken.add("C1");
+      await lane.quarantine("C1", "test");
+    }
+  };
+  unreadableOnce(bc, "C1");
+  const { input } = await setup("correct");
+  const { judgment } = await judge(lane, withLineage(input));
+  assertEquals(judgment.provenance!.env_fp, null);
+  assertEquals(judgment.provenance!.env_none, undefined);
+});
+
+Deno.test("H-63 Sol r2 (2): an unknown compile env plus a known deployment env: env_fp null, no env_none", async () => {
+  const bc = new IdBc(scripted);
+  unreadableOnce(bc, "C1");
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(
+    new BcLane(bc, ["C1"]),
+    withLineage(input),
+  );
+  assert((log.deployments ?? []).some((d) => FP64.test(d.env_fp ?? "")));
+  assertEquals(judgment.provenance!.env_fp, null);
+  assertEquals(judgment.provenance!.env_none, undefined);
+});
+
 Deno.test("H-63: a compile on one environment and a deployment on another in one judgment is a harness bug", async () => {
   class PerContainer extends FakeBc {
     override harnessCompilerIdentity(c: string): Promise<string> {

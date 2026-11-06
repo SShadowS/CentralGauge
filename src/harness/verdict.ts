@@ -1883,9 +1883,14 @@ export async function judge(
   // makes a mix impossible; until it does this is the fail-closed backstop.
   const envs = new Set((log.deployments ?? []).map((d) => d.env_fp ?? null));
   // H-63: every compile attempt's env, captured on entry of the attempt (no
-  // container is read here). An unreadable one (undefined) adds nothing, so
-  // the judgment is never exempted as container-free.
-  for (const e of compiled.values()) if (e !== undefined) envs.add(e);
+  // container is read here). An unreadable one (undefined) makes the whole
+  // judgment's env unknown (env_fp null, no env_none, so the report refuses
+  // it as "(none)"): a known env never masks an unknown attempt (Sol r2).
+  let unknown = false;
+  for (const e of compiled.values()) {
+    if (e === undefined) unknown = true;
+    else envs.add(e);
+  }
   if (envs.size > 1) {
     throw new Error(
       `harness bug: deployments of one judgment span environments (${
@@ -1899,8 +1904,8 @@ export async function judge(
     provenance: {
       harness_commit: i.harnessCommit ?? null,
       production_manifest: ctx.manifest,
-      // Null with no deployment or no lineage; never inferred.
-      env_fp: [...envs][0] ?? null,
+      // Null with no deployment, no lineage or an unknown attempt; never inferred.
+      env_fp: unknown ? null : [...envs][0] ?? null,
       // H-63: no compile and no deployment: say so, never leave it implicit.
       ...(compiled.size === 0 && (log.deployments ?? []).length === 0
         ? {
