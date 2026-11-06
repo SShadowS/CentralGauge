@@ -13,6 +13,7 @@ import { exists, validatedDir } from "../../../src/harness/fsutil.ts";
 import {
   buildRunArgs,
   captureStream,
+  currentUser,
   EXECUTION_LABEL,
   imageReadCreateArgs,
   LINGER_SNAPSHOT,
@@ -1736,4 +1737,49 @@ Deno.test({
     false,
     [],
   ]);
+});
+
+// H-66 (GitHub #31): an OpenSSH session on a workgroup host has
+// USERDOMAIN=WORKGROUP, which is no account; icacls then fails with 1332.
+// The account comes from whoami; the env pair is only the fallback.
+Deno.test("H-66 currentUser: whoami wins over USERDOMAIN=WORKGROUP", async () => {
+  const calls: string[] = [];
+  const env = (k: string) =>
+    ({ USERDOMAIN: "WORKGROUP", USERNAME: "bench" })[k];
+  const user = await currentUser((exe) => {
+    calls.push(exe);
+    return Promise.resolve({
+      code: 0,
+      stdout: "host01\\bench\r\n",
+      stderr: "",
+    });
+  }, env);
+  assertEquals([user, calls], ["host01\\bench", ["whoami.exe"]]);
+});
+
+Deno.test("H-66 currentUser: whoami failure falls back to the env pair", async () => {
+  const env = (k: string) => ({ USERDOMAIN: "CORP", USERNAME: "bench" })[k];
+  const fail = () =>
+    Promise.resolve({ code: 1, stdout: "", stderr: "access denied" });
+  assertEquals(await currentUser(fail, env), "CORP\\bench");
+  const odd = () =>
+    Promise.resolve({ code: 0, stdout: "not a name", stderr: "" });
+  assertEquals(await currentUser(odd, env), "CORP\\bench");
+});
+
+Deno.test("H-66 currentUser: whoami failure without the env pair still refuses", async () => {
+  const fail = () =>
+    Promise.resolve({ code: 1, stdout: "", stderr: "access denied" });
+  await assertRejects(
+    () => currentUser(fail, () => undefined),
+    ConfigurationError,
+    "cannot resolve the current user: access denied",
+  );
+  const runner = () =>
+    Promise.resolve({ code: 0, stdout: "a b\\c", stderr: "" });
+  await assertRejects(
+    () => currentUser(runner, (k) => (k === "USERNAME" ? "bench" : undefined)),
+    ConfigurationError,
+    "cannot resolve the current user: a b\\c",
+  );
 });

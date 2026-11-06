@@ -1083,19 +1083,26 @@ async function runTool(exe: string, args: string[]) {
   };
 }
 
-/** DOMAIN\\user of this process: USERDOMAIN and USERNAME, else whoami. */
-async function currentUser(): Promise<string> {
-  const d = Deno.env.get("USERDOMAIN");
-  const u = Deno.env.get("USERNAME");
-  if (d && u) return `${d}\\${u}`;
-  const r = await runTool("whoami.exe", []);
+/**
+ * DOMAIN\\user of this process: whoami, else USERDOMAIN and USERNAME.
+ * whoami reads the process token, so it names a real account on domain,
+ * workgroup and OpenSSH sessions alike; USERDOMAIN is only an env var, and an
+ * OpenSSH session on a workgroup host sets it to WORKGROUP, which icacls
+ * cannot map (1332, H-66 / GitHub #31).
+ */
+export async function currentUser(
+  run: typeof runTool = runTool,
+  env: (k: string) => string | undefined = (k) => Deno.env.get(k),
+): Promise<string> {
+  const r = await run("whoami.exe", []);
   const who = r.stdout.trim();
-  if (r.code !== 0 || !/^[^\\\s]+\\[^\\\s]+$/.test(who)) {
-    throw new ConfigurationError(
-      `cannot resolve the current user: ${who || r.stderr.trim()}`,
-    );
-  }
-  return who;
+  if (r.code === 0 && /^[^\\\s]+\\[^\\\s]+$/.test(who)) return who;
+  const d = env("USERDOMAIN");
+  const u = env("USERNAME");
+  if (d && u) return `${d}\\${u}`;
+  throw new ConfigurationError(
+    `cannot resolve the current user: ${who || r.stderr.trim()}`,
+  );
 }
 
 /**
