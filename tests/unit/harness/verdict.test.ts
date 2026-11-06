@@ -2317,3 +2317,297 @@ Deno.test("H-41 (5) control: genuine infra on the agent-added run next to a fail
   assertEquals(judgment.scorers[1]!.passed, false);
   assertEquals(judgment.verdict, "fail");
 });
+
+// ---- H-63: environment provenance without a deployment ----
+
+const FP64 = /^[0-9a-f]{64}$/;
+
+Deno.test("H-63: a build-fail judgment on a lineage carries the compile container's env_fp (the one a passing judgment on it has)", async () => {
+  const lineage = (i: Awaited<ReturnType<typeof setup>>["input"]) => ({
+    ...i,
+    deploy: { ...i.deploy, reset: LINEAGE_RESET },
+  });
+  const good = await setup("correct");
+  const ok = await judge(new BcLane(script(), ["C1"]), lineage(good.input));
+  const bad = await setup("correct", {
+    "Rental/src/Broken.al": "COMPILE_ERROR",
+  });
+  const { judgment, log } = await judge(
+    new BcLane(script(), ["C1"]),
+    lineage(bad.input),
+  );
+  assertEquals(log.deployments, []);
+  assertEquals(judgment.verdict, "fail");
+  assert(FP64.test(judgment.provenance!.env_fp ?? ""));
+  assertEquals(judgment.provenance!.env_fp, ok.judgment.provenance!.env_fp);
+  assertEquals(judgment.provenance!.env_none, undefined);
+  // Never built: no production manifest to digest.
+  assertEquals(judgment.provenance!.production_manifest, null);
+});
+
+Deno.test("H-63 (c0ec7dd0): build ok, infra before the first deploy: env_fp comes from the compile container", async () => {
+  const bc = script();
+  // The reset fails on the only container: no deployment ever starts.
+  const failing = {
+    ...LINEAGE_RESET,
+    reset: (container: string) =>
+      Promise.resolve({
+        container,
+        mechanism: "fake",
+        policy_version: 1,
+        ok: false as const,
+        failed_step: "restore",
+        error: "boom",
+        phases_ms: {},
+      }),
+  };
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(new BcLane(bc, ["C1"]), {
+    ...input,
+    deploy: { ...input.deploy, reset: failing },
+  });
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(log.deployments, []);
+  assert(bc.compiles.length > 0);
+  assert(FP64.test(judgment.provenance!.env_fp ?? ""));
+  assertEquals(judgment.provenance!.env_none, undefined);
+});
+
+Deno.test("H-63: a judgment that compiled with no lineage keeps env_fp null and records no env_none", async () => {
+  const { input } = await setup("correct", {
+    "Rental/src/Broken.al": "COMPILE_ERROR",
+  });
+  const { judgment } = await judge(new BcLane(script(), ["C1"]), input);
+  assertEquals(judgment.provenance!.env_fp, null);
+  assertEquals(judgment.provenance!.env_none, undefined);
+});
+
+Deno.test("H-63: a judgment that touched no container records env_none: policy violation, unadmitted index, infra before any compile", async () => {
+  const lineage = (i: Awaited<ReturnType<typeof setup>>["input"]) => ({
+    ...i,
+    deploy: { ...i.deploy, reset: LINEAGE_RESET },
+  });
+  const viol = await setup("correct", {
+    "Rental/app.json": appJson(IDS.rental, "CGR Rental Renamed", [
+      70200,
+      70299,
+    ], [{ id: IDS.core, name: "CGR Core" }]),
+  });
+  const v = await judge(new BcLane(script(), ["C1"]), lineage(viol.input));
+  assertEquals(v.judgment.provenance!.env_fp, null);
+  assertStringIncludes(
+    v.judgment.provenance!.env_none ?? "",
+    "no container touched: production policy violation",
+  );
+  const un = await setup("correct");
+  const u = await judge(new BcLane(script(), ["C1"]), {
+    ...lineage(un.input),
+    onPrem: undefined as unknown as typeof un.input.onPrem,
+  });
+  assertEquals(u.judgment.provenance!.env_fp, null);
+  assertStringIncludes(
+    u.judgment.provenance!.env_none ?? "",
+    "no container touched: onprem index",
+  );
+  const none = await setup("correct");
+  const lane = new BcLane(script(), ["C1"]);
+  await lane.quarantine("C1", "test");
+  const n = await judge(lane, lineage(none.input));
+  assertEquals(n.judgment.verdict, "unscored");
+  assertEquals(n.judgment.provenance!.env_fp, null);
+  assertStringIncludes(
+    n.judgment.provenance!.env_none ?? "",
+    "no container touched: ",
+  );
+});
+
+/** H-63 r2: a fake whose compiler identity is per container and can fail. */
+class IdBc extends FakeBc {
+  idOf: (c: string) => string = (c) => `compiler-of-${c}`;
+  override harnessCompilerIdentity(c: string): Promise<string> {
+    return Promise.resolve().then(() => this.idOf(c));
+  }
+}
+
+const withLineage = (i: Awaited<ReturnType<typeof setup>>["input"]) => ({
+  ...i,
+  deploy: { ...i.deploy, reset: LINEAGE_RESET },
+});
+
+Deno.test("H-63 r2 (a): a compile that starts and throws before returning Prepared, all attempts infra: no env_none; env_fp null when the environment is unreadable", async () => {
+  const bc = new IdBc(scripted);
+  bc.broken.add("C1");
+  bc.idOf = (c) => {
+    if (bc.broken.has(c)) {
+      throw new ContainerError(`identity of ${c} unavailable`, c, "compile");
+    }
+    return `compiler-of-${c}`;
+  };
+  const { input } = await setup("correct");
+  const { judgment } = await judge(
+    new BcLane(bc, ["C1"]),
+    withLineage(input),
+  );
+  assertEquals(judgment.verdict, "unscored");
+  assertEquals(judgment.provenance!.env_fp, null);
+  assertEquals(judgment.provenance!.env_none, undefined);
+  // With a readable environment the attempt gives the judgment its env_fp.
+  const ok = new IdBc(scripted);
+  ok.broken.add("C1");
+  const again = await setup("correct");
+  const r = await judge(new BcLane(ok, ["C1"]), withLineage(again.input));
+  assert(FP64.test(r.judgment.provenance!.env_fp ?? ""));
+  assertEquals(r.judgment.provenance!.env_none, undefined);
+});
+
+Deno.test("H-63 r2 (b): C1 compiles partially and fails with infra, C2 succeeds, different compiler identities: a harness bug", async () => {
+  const bc = new IdBc(scripted);
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  let n = 0;
+  bc.onCompile = async () => {
+    // The first app builds on C1, which then goes down mid-prepare and is
+    // quarantined, so no deployment ever starts there.
+    if (++n === 1) {
+      bc.broken.add("C1");
+      await lane.quarantine("C1", "test");
+    }
+  };
+  const { input } = await setup("correct");
+  await assertRejects(
+    () => judge(lane, withLineage(input)),
+    Error,
+    "span environments",
+  );
+});
+
+Deno.test("H-63 r2 (c): an agent Test preparation that exhausts its retries on another environment is still represented", async () => {
+  const bc = new IdBc(scripted);
+  bc.crashFor = (p) => p.includes("apps-agent");
+  const { input } = await setup("correct", {
+    "Test/src/Agent.Test.al": AGENT_TESTS,
+  });
+  await assertRejects(
+    () => judge(new BcLane(bc, ["C1", "C2"]), withLineage(input)),
+    Error,
+    "span environments",
+  );
+});
+
+Deno.test("H-63 r2 (d): the compiler identity becoming unavailable after the compile does not fail judge(): the captured provenance is used", async () => {
+  const bc = new IdBc(scripted);
+  let dead = false;
+  // The failing app is the last one built: nothing reads the identity after it.
+  bc.onCompile = (dir) => {
+    if (dir.replaceAll("\\", "/").endsWith("/Rental")) dead = true;
+    return Promise.resolve();
+  };
+  bc.idOf = (c) => {
+    if (dead) throw new Error("identity unavailable after quarantine");
+    return `compiler-of-${c}`;
+  };
+  const { input } = await setup("correct", {
+    "Rental/src/Broken.al": "COMPILE_ERROR",
+  });
+  const { judgment } = await judge(
+    new BcLane(bc, ["C1"]),
+    withLineage(input),
+  );
+  assertEquals(judgment.verdict, "fail");
+  assert(FP64.test(judgment.provenance!.env_fp ?? ""));
+});
+
+Deno.test("H-63 r2 (e): two compile environments that differ with no deployment at all: a harness bug", async () => {
+  const bc = new IdBc(scripted);
+  // C1's compiles crash (infra), C2 builds; no reset ever succeeds.
+  bc.crashFor = (_p, c) => c === "C1";
+  const failing = {
+    ...LINEAGE_RESET,
+    reset: (container: string) =>
+      Promise.resolve({
+        container,
+        mechanism: "fake",
+        policy_version: 1,
+        ok: false as const,
+        failed_step: "restore",
+        error: "boom",
+        phases_ms: {},
+      }),
+  };
+  const { input } = await setup("correct");
+  await assertRejects(
+    () =>
+      judge(new BcLane(bc, ["C1", "C2"]), {
+        ...input,
+        deploy: { ...input.deploy, reset: failing },
+      }),
+    Error,
+    "span environments",
+  );
+});
+
+/** An IdBc whose first identity read of `container` fails (infra). */
+function unreadableOnce(bc: IdBc, container: string) {
+  let first = true;
+  bc.idOf = (c) => {
+    if (c === container && first) {
+      first = false;
+      throw new ContainerError(`identity of ${c} unavailable`, c, "compile");
+    }
+    return `compiler-of-${c}`;
+  };
+}
+
+Deno.test("H-63 Sol r2 (1): an unknown compile env (C1) is not masked by a known one (C2 after a reroute): env_fp null, no env_none, no throw", async () => {
+  const bc = new IdBc(scripted);
+  const lane = new BcLane(bc, ["C1", "C2"]);
+  // C1 goes down and is quarantined after its first compile: nothing deploys there.
+  let n = 0;
+  bc.onCompile = async () => {
+    if (++n === 1) {
+      bc.broken.add("C1");
+      await lane.quarantine("C1", "test");
+    }
+  };
+  unreadableOnce(bc, "C1");
+  const { input } = await setup("correct");
+  const { judgment } = await judge(lane, withLineage(input));
+  assertEquals(judgment.provenance!.env_fp, null);
+  assertEquals(judgment.provenance!.env_none, undefined);
+});
+
+Deno.test("H-63 Sol r2 (2): an unknown compile env plus a known deployment env: env_fp null, no env_none", async () => {
+  const bc = new IdBc(scripted);
+  unreadableOnce(bc, "C1");
+  const { input } = await setup("correct");
+  const { judgment, log } = await judge(
+    new BcLane(bc, ["C1"]),
+    withLineage(input),
+  );
+  assert((log.deployments ?? []).some((d) => FP64.test(d.env_fp ?? "")));
+  assertEquals(judgment.provenance!.env_fp, null);
+  assertEquals(judgment.provenance!.env_none, undefined);
+});
+
+Deno.test("H-63: a compile on one environment and a deployment on another in one judgment is a harness bug", async () => {
+  class PerContainer extends FakeBc {
+    override harnessCompilerIdentity(c: string): Promise<string> {
+      return Promise.resolve(`compiler-of-${c}`);
+    }
+  }
+  const bc = new PerContainer(scripted);
+  // C1 compiles, then goes down: the deployment lands on C2.
+  bc.onCompile = () => {
+    bc.broken.add("C1");
+    return Promise.resolve();
+  };
+  const { input } = await setup("correct");
+  await assertRejects(
+    () =>
+      judge(new BcLane(bc, ["C1", "C2"]), {
+        ...input,
+        deploy: { ...input.deploy, reset: LINEAGE_RESET },
+      }),
+    Error,
+    "harness bug: ",
+  );
+});

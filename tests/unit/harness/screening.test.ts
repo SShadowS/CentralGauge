@@ -1225,15 +1225,26 @@ Deno.test("cellEnvs (H-51): a cell's env is its counted v2 judgment's env_fp, (v
   const ja = judgment(c, e1, true, v2(FP_A));
   const jn = judgment(c, e2, true, v2(null));
   const jv1 = judgment(c, e2, true);
+  // H-63: a judgment that touched no container is its own stratum.
+  const jnc = judgment(c, e1, true, {
+    ...v2(null),
+    provenance: {
+      harness_commit: null,
+      production_manifest: null,
+      env_fp: null,
+      env_none: "no container touched: production policy violation",
+    },
+  });
   const cells = [
     { ...cell("HX-001", "plain", 1, true), judgment_id: ja.id },
     { ...cell("HX-001", "skills", 1, true), judgment_id: jn.id },
     { ...cell("HX-001", "skills", 2, true), judgment_id: jv1.id },
     { ...cell("HX-001", "skills", 3, null), judgment_id: null },
+    { ...cell("HX-001", "plain", 2, true), judgment_id: jnc.id },
   ];
   assertEquals(
-    cellEnvs(cells, [ja, jn, jv1]).map((x) => x.env),
-    [FP_A, "(none)", "(v1)", null],
+    cellEnvs(cells, [ja, jn, jv1, jnc]).map((x) => x.env),
+    [FP_A, "(none)", "(v1)", null, "(no container)"],
   );
 });
 

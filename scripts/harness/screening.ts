@@ -694,7 +694,8 @@ export function classify(
 
 /**
  * H-51: a cell plus its environment, the counted v2 judgment's env_fp
- * ("(none)" when that is unknown, as checkOneEnvironment), "(v1)" for a
+ * ("(none)" when that is unknown, as checkOneEnvironment; "(no container)"
+ * when the judgment recorded env_none, H-63), "(v1)" for a
  * legacy judgment (no env_fp, so never pooled with one), null without a
  * counted judgment (such a cell is never scored).
  */
@@ -709,7 +710,10 @@ export function cellEnvs<T extends { judgment_id: string | null }>(
     const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
     return {
       ...c,
-      env: !j ? null : j.v === 2 ? j.provenance?.env_fp ?? "(none)" : "(v1)",
+      env: !j ? null : j.v === 2
+        ? j.provenance?.env_fp ??
+          (j.provenance?.env_none !== undefined ? "(no container)" : "(none)")
+        : "(v1)",
     };
   });
 }

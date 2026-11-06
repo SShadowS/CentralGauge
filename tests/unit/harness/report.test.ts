@@ -2306,3 +2306,58 @@ Deno.test("H-35 S3.3: a report whose counted v2 judgments mix env_fp is refused;
   const r = await buildReport(base, { resamples: 50 });
   assert(r.scoring !== undefined);
 });
+
+Deno.test("H-63: a judgment with env_none is no environment and no mix, but the report counts it and prints a [NOTE]; null env_fp without env_none still mixes", async () => {
+  const base = await records();
+  const fp = await scorerFingerprint(SCORER_SUITE);
+  const why = "no container touched: production policy violation";
+  const asV2 = (
+    j: CampaignRecords["judgments"][number],
+    env: string | null,
+    env_none?: string,
+  ): CampaignRecords["judgments"][number] => ({
+    ...j,
+    v: 2,
+    scorer_versions: SCORER_SUITE,
+    scorer_fingerprint: fp,
+    scorers: [{
+      name: "build",
+      passed: j.verdict === "pass",
+      state: "measured",
+      tests: [],
+    }],
+    policy: { passed: true, violations: [] },
+    provenance: {
+      harness_commit: null,
+      production_manifest: null,
+      env_fp: env,
+      ...(env_none ? { env_none } : {}),
+    },
+  });
+  const judgmentsOf = (none: boolean) =>
+    base.judgments.map((j, i) =>
+      i === 0 ? asV2(j, null, none ? why : undefined) : asV2(j, "a".repeat(64))
+    );
+  const judging = {
+    ...campaignJudging(base.campaign),
+    scorer: fp,
+  };
+  const ok = await buildReport({ ...base, judgments: judgmentsOf(true) }, {
+    resamples: 50,
+    judging,
+  });
+  assertEquals(ok.no_container, { count: 1, reasons: { [why]: 1 } });
+  assertStringIncludes(
+    stripAnsiCode(renderReport(ok)),
+    `[NOTE] 1 judgment(s) touched no container (no env_fp): ${why} x1`,
+  );
+  await assertRejects(
+    () =>
+      buildReport({ ...base, judgments: judgmentsOf(false) }, {
+        resamples: 50,
+        judging,
+      }),
+    ValidationError,
+    "mixes environments",
+  );
+});
