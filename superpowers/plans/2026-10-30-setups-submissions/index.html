@@ -1,0 +1,2493 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-10-30-setups-submissions/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>Setup Submissions Implementation Plan - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#setup-submissions-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Setup Submissions Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-focus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review Focus
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Review Focus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-migration-0025-for-submissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Migration 0025 for submissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-key-encryption-and-edit-tokens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Key encryption and edit tokens
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-turnstile-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Turnstile verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-submission-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Submission validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-5-create-submission-endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Create-submission endpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-6-edit-link-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: Edit-link endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-7-public-submit-and-edit-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Public submit and edit pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-8-admin-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8: Admin API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-9-admin-review-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9: Admin review pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-10-owner-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10: Owner runbook
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-in-this-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not in this plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-10-30-setups-submissions.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="setup-submissions-implementation-plan">Setup Submissions Implementation Plan<a class="headerlink" href="#setup-submissions-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> A public, private-by-default form where people submit an agent setup (form fields, one zip, an optional short-lived key), a secret edit link for later changes, and an admin-only page where the owner reviews submissions.</p>
+<p><strong>Architecture:</strong> Submissions live in a new D1 table, never exposed by any public read. The zip goes to the existing R2 bucket <code>BLOBS</code> under <code>setup-submissions/</code>. A submitter key is AES-GCM encrypted with a worker secret and stored apart from the zip. The public endpoints are protected by Turnstile, a per-IP daily cap and size caps. The admin API uses the existing <code>authenticateAdminRequest</code> (Cloudflare Access or signed CLI), and the admin pages sit under the existing <code>/admin</code> gate.</p>
+<p><strong>Tech Stack:</strong> SvelteKit (Svelte 5), Cloudflare Workers + D1 + R2, WebCrypto, Cloudflare Turnstile, vitest (pool-workers and jsdom), Playwright.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-10-30-setups-leaderboard-design.md</code> (section "Submissions", part 2 of the build order). Part 1 is merged in master (<code>bc097ae2</code>).</p>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Required fields: agent tool (exactly <code>claude-code</code>, <code>codex</code>, <code>pi</code>, <code>opencode</code>, <code>cursor</code>, <code>antigravity</code>), base model, instructions file (CLAUDE.md or AGENTS.md), description, visibility (<code>public</code> default, or <code>private</code>).</li>
+<li>Optional fields: a roles table (role, model, effort) and a free-text flow.</li>
+<li>Everything else comes as one zip in the tool's normal project layout.</li>
+<li>A key goes in a separate secret field, never in the zip. It should expire at most 7 days after submission. It is stored encrypted, apart from the zip, and deleted when the run finishes (the run-finish trigger is part 3; this plan provides the delete).</li>
+<li>The submitter gets a secret edit link: the only way to send a fresh key or change visibility. There are no accounts.</li>
+<li>The public upload is protected by Turnstile, a rate limit and a zip size cap.</li>
+<li>The owner reviews every submission and triggers runs by hand. There are no status notifications.</li>
+<li>The form accepts all six tools, including tools the harness cannot run yet.</li>
+<li>No submission data appears on any public page or public API, except to the holder of that submission's edit token.</li>
+<li>No <code>deno fmt</code> on <code>site/</code> files. No em dashes in UI copy.</li>
+<li>No prod deploy, D1 migration apply, <code>wrangler secret put</code> or ingest: those stay with the owner.</li>
+</ul>
+<p>Values decided while planning (Claude's calls, reviewable):
+- Zip cap: 10 MiB. Instructions file cap: 200 KiB. Description: 1 to 200 characters. Flow: up to 4000 characters. Roles: up to 12 rows.
+- Per-IP cap: 5 submissions per rolling 24 hours, counted in D1 by IP hash.
+- Key expiry: when a key is given, a "key expires on" date is required and must be no later than 7 days after submission.
+- Submission statuses: <code>new</code>, <code>approved</code>, <code>rejected</code>. Rejecting deletes the stored key.
+- The edit token travels in the URL fragment (<code>/submit/edit/&lt;id&gt;#&lt;token&gt;</code>), so it never reaches server logs. Only its SHA-256 hash is stored.</p>
+<h2 id="review-focus">Review Focus<a class="headerlink" href="#review-focus" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A forged or replayed edit token, or another submission's token, must never read or change a submission. (Task 6)</li>
+<li>An oversized or non-zip upload is rejected with 413/400 before anything is written to R2 or D1. (Task 5)</li>
+<li>A missing or failed Turnstile token rejects the submission, and Turnstile being unreachable fails closed. (Task 3, Task 5)</li>
+<li>The plaintext key never appears in any response, log line or D1 column, except in the audited admin reveal. (Tasks 2, 5, 6, 8)</li>
+<li>Missing worker secrets (<code>TURNSTILE_SECRET_KEY</code>, <code>SUBMISSION_KEY_SECRET</code>) give a clear 503 <code>submissions_unavailable</code>, never a 500 with a stack and never an unprotected accept. (Task 5)</li>
+</ul>
+<hr />
+<h3 id="task-1-migration-0025-for-submissions">Task 1: Migration 0025 for submissions<a class="headerlink" href="#task-1-migration-0025-for-submissions" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/migrations/0025_setup_submissions.sql</code>
+- Modify: <code>site/tests/utils/reset-db.ts</code>, <code>site/tests/migrations.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Produces:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">setup_submissions</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="n">ip_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="n">agent_tool</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">agent_tool</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'claude-code'</span><span class="p">,</span><span class="s1">'codex'</span><span class="p">,</span><span class="s1">'pi'</span><span class="p">,</span><span class="s1">'opencode'</span><span class="p">,</span><span class="s1">'cursor'</span><span class="p">,</span><span class="s1">'antigravity'</span><span class="p">)),</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="n">base_model</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="n">visibility</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'public'</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">visibility</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'public'</span><span class="p">,</span><span class="s1">'private'</span><span class="p">)),</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="n">instructions_name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">instructions_name</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'CLAUDE.md'</span><span class="p">,</span><span class="s1">'AGENTS.md'</span><span class="p">)),</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="n">instructions_md</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="n">roles_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'[]'</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="n">flow</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="n">zip_key</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">zip_bytes</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">zip_sha256</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="n">key_ciphertext</span><span class="w"> </span><span class="nb">BLOB</span><span class="p">,</span><span class="w"> </span><span class="n">key_iv</span><span class="w"> </span><span class="nb">BLOB</span><span class="p">,</span><span class="w"> </span><span class="n">key_expires_on</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">key_deleted_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="n">edit_token_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="n">status</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'new'</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">status</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'new'</span><span class="p">,</span><span class="s1">'approved'</span><span class="p">,</span><span class="s1">'rejected'</span><span class="p">)),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="n">review_note</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">reviewed_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="n">setup_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">setups</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="n">updated_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">);</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_setup_submissions_ip</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">setup_submissions</span><span class="p">(</span><span class="n">ip_hash</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">);</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_setup_submissions_status</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">setup_submissions</span><span class="p">(</span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">);</span>
+</code></pre></div>
+<p><code>setup_id</code> links a submission to its ranked setup; plan 3 fills it.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Add <code>setup_submissions</code> to the expected list in <code>tests/migrations.test.ts</code>. Add a test that inserting <code>instructions_name = 'README.md'</code> fails the CHECK.</li>
+<li>[ ] <strong>Step 2:</strong> <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/migrations.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Write the migration. Add <code>setup_submissions</code> to <code>resetDb()</code> before <code>setups</code> (it references <code>setups</code>).</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setup submissions table (migration 0025)</code>.</li>
+</ul>
+<h3 id="task-2-key-encryption-and-edit-tokens">Task 2: Key encryption and edit tokens<a class="headerlink" href="#task-2-key-encryption-and-edit-tokens" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/lib/server/submission-crypto.ts</code>, <code>site/tests/server/submission-crypto.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Produces:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">SealedKey</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ciphertext</span><span class="o">:</span><span class="w"> </span><span class="kt">Uint8Array</span><span class="p">;</span><span class="w"> </span><span class="nx">iv</span><span class="o">:</span><span class="w"> </span><span class="kt">Uint8Array</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">sealKey</span><span class="p">(</span><span class="nx">plaintext</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">secretB64</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">SealedKey</span><span class="o">&gt;</span><span class="p">;</span><span class="w">   </span><span class="c1">// AES-256-GCM, fresh 12-byte iv</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">openKey</span><span class="p">(</span><span class="nx">sealed</span><span class="o">:</span><span class="w"> </span><span class="kt">SealedKey</span><span class="p">,</span><span class="w"> </span><span class="nx">secretB64</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">newEditToken</span><span class="p">()</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                                                    </span><span class="c1">// 32 random bytes, base64url</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">hashToken</span><span class="p">(</span><span class="nx">token</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span><span class="w">                         </span><span class="c1">// sha256 hex</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">tokenMatches</span><span class="p">(</span><span class="nx">token</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">storedHash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">boolean</span><span class="o">&gt;</span><span class="p">;</span><span class="w"> </span><span class="c1">// constant-time compare of hashes</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">hashIp</span><span class="p">(</span><span class="nx">ip</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span><span class="w">                               </span><span class="c1">// sha256 hex of ip</span>
+</code></pre></div>
+<p><code>secretB64</code> is the worker secret <code>SUBMISSION_KEY_SECRET</code>: base64 of 32 random bytes. A secret that does not decode to 32 bytes throws <code>ApiError(503, 'submissions_unavailable', ...)</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing tests:</strong></li>
+<li><code>openKey(await sealKey('sk-test-123', S), S) === 'sk-test-123'</code>.</li>
+<li>Two seals of the same text give different <code>iv</code> and <code>ciphertext</code>.</li>
+<li><code>openKey</code> with a different secret rejects.</li>
+<li>A tampered ciphertext byte rejects.</li>
+<li>A 16-byte secret throws with code <code>submissions_unavailable</code>.</li>
+<li><code>newEditToken()</code> is 43 characters of <code>[A-Za-z0-9_-]</code>, and two calls differ.</li>
+<li><code>tokenMatches(t, await hashToken(t))</code> is true, and false for a different token.</li>
+<li>[ ] <strong>Step 2:</strong> <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/server/submission-crypto.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement with WebCrypto only (no new dependency).</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): submission key sealing and edit tokens</code>.</li>
+</ul>
+<h3 id="task-3-turnstile-verification">Task 3: Turnstile verification<a class="headerlink" href="#task-3-turnstile-verification" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/lib/server/turnstile.ts</code>, <code>site/tests/server/turnstile.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Produces: <code>export async function verifyTurnstile(token: string | null, secret: string, ip: string | null, fetchFn: typeof fetch = fetch): Promise&lt;boolean&gt;</code>. It POSTs form fields <code>secret</code>, <code>response</code>, and <code>remoteip</code> (when present) to <code>https://challenges.cloudflare.com/turnstile/v0/siteverify</code> and returns <code>json.success === true</code>. An empty or null token, a non-2xx response, a network error or invalid JSON all return <code>false</code> (fail closed).</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing tests</strong> with a stub <code>fetchFn</code>:</li>
+<li>success true gives true, and the stub received <code>secret</code>, <code>response</code> and <code>remoteip</code>;</li>
+<li>success false gives false;</li>
+<li>a null token gives false without calling fetch;</li>
+<li>a stub that throws gives false;</li>
+<li>a 500 response gives false.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>npx vitest run tests/server/turnstile.test.ts</code> (after build). Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): turnstile verification</code>.</li>
+</ul>
+<h3 id="task-4-submission-validation">Task 4: Submission validation<a class="headerlink" href="#task-4-submission-validation" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/lib/shared/setup-submission.ts</code>, <code>site/src/lib/shared/setup-submission.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>AGENT_TOOLS</code>, <code>Role</code> from <code>$lib/shared/setups</code>.
+- Produces:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">SUBMISSION_LIMITS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">zipBytes</span><span class="o">:</span><span class="w"> </span><span class="kt">10</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1024</span><span class="p">,</span><span class="w"> </span><span class="nx">instructionsBytes</span><span class="o">:</span><span class="w"> </span><span class="kt">200</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1024</span><span class="p">,</span><span class="w"> </span><span class="nx">descriptionMax</span><span class="o">:</span><span class="w"> </span><span class="kt">200</span><span class="p">,</span><span class="w"> </span><span class="nx">flowMax</span><span class="o">:</span><span class="w"> </span><span class="kt">4000</span><span class="p">,</span><span class="w"> </span><span class="nx">rolesMax</span><span class="o">:</span><span class="w"> </span><span class="kt">12</span><span class="p">,</span><span class="w"> </span><span class="nx">keyMaxDays</span><span class="o">:</span><span class="w"> </span><span class="kt">7</span><span class="p">,</span><span class="w"> </span><span class="nx">perIpPerDay</span><span class="o">:</span><span class="w"> </span><span class="kt">5</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">;</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">SubmissionFields</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nx">agent_tool</span><span class="o">:</span><span class="w"> </span><span class="kt">AgentTool</span><span class="p">;</span><span class="w"> </span><span class="nx">base_model</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">description</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">visibility</span><span class="o">:</span><span class="w"> </span><span class="s1">'public'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'private'</span><span class="p">;</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nx">instructions_name</span><span class="o">:</span><span class="w"> </span><span class="s1">'CLAUDE.md'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'AGENTS.md'</span><span class="p">;</span><span class="w"> </span><span class="nx">roles</span><span class="o">:</span><span class="w"> </span><span class="kt">Role</span><span class="p">[];</span><span class="w"> </span><span class="nx">flow</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nx">key</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">key_expires_on</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="c1">// YYYY-MM-DD</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">}</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">FieldErrors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">Partial</span><span class="o">&lt;</span><span class="nx">Record</span><span class="o">&lt;</span><span class="nx">keyof</span><span class="w"> </span><span class="nx">SubmissionFields</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'zip'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'instructions'</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;&gt;</span><span class="p">;</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">parseSubmissionFields</span><span class="p">(</span><span class="nx">raw</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="nx">today</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="cm">/* YYYY-MM-DD */</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ok</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">;</span><span class="w"> </span><span class="nx">value</span><span class="o">:</span><span class="w"> </span><span class="kt">SubmissionFields</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">ok</span><span class="o">:</span><span class="w"> </span><span class="kt">false</span><span class="p">;</span><span class="w"> </span><span class="nx">errors</span><span class="o">:</span><span class="w"> </span><span class="kt">FieldErrors</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">isZip</span><span class="p">(</span><span class="nx">bytes</span><span class="o">:</span><span class="w"> </span><span class="kt">Uint8Array</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="c1">// starts with PK\x03\x04 (or PK\x05\x06 for an empty zip)</span>
+</code></pre></div>
+<ul>
+<li>Raw roles arrive as <code>roles_json</code> (a JSON array of <code>{role, model, effort}</code>).</li>
+<li>Trim all strings.</li>
+<li><code>visibility</code> defaults to <code>public</code> when absent.</li>
+<li>A key without <code>key_expires_on</code>, or with an expiry before <code>today</code> or more than 7 days after it, is an error on <code>key_expires_on</code>.</li>
+<li>An expiry without a key is ignored (set to null).</li>
+<li>
+<p>Error messages are plain sentences with no em dashes.</p>
+</li>
+<li>
+<p>[ ] <strong>Step 1: Failing tests</strong> (one assertion group each):</p>
+</li>
+<li>a valid minimal input passes, with visibility defaulting to <code>public</code>;</li>
+<li>each required field missing gives an error on that field;</li>
+<li><code>agent_tool: 'vscode'</code> is an error;</li>
+<li><code>instructions_name: 'README.md'</code> is an error;</li>
+<li>a 201-character description is an error;</li>
+<li>13 roles is an error;</li>
+<li>malformed <code>roles_json</code> is an error on <code>roles</code>;</li>
+<li>a key with expiry <code>today + 8 days</code> is an error, and <code>today + 7</code> passes;</li>
+<li>a key without an expiry is an error;</li>
+<li><code>isZip</code> is true for <code>PK\x03\x04...</code> and false for <code>%PDF</code>.</li>
+<li>[ ] <strong>Step 2:</strong> <code>cd site &amp;&amp; npx vitest run --config vitest.unit.config.ts src/lib/shared/setup-submission.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): submission field validation</code>.</li>
+</ul>
+<h3 id="task-5-create-submission-endpoint">Task 5: Create-submission endpoint<a class="headerlink" href="#task-5-create-submission-endpoint" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/api/v1/setup-submissions/+server.ts</code>, <code>site/src/lib/server/setup-submissions.ts</code>, <code>site/tests/api/setup-submissions.test.ts</code>
+- Modify: <code>site/vitest.config.ts</code> (test bindings <code>TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA'</code>, plus <code>SUBMISSION_KEY_SECRET</code> set to a fixed base64 of 32 bytes), <code>site/wrangler.toml</code> (comment documenting the two new secrets, following the existing secret comments; add var <code>TURNSTILE_SITE_KEY</code> with Cloudflare's always-pass test site key <code>1x00000000000000000000AA</code> and a comment saying the owner replaces it).</p>
+<p><strong>Interfaces:</strong>
+- Consumes: Tasks 2, 3 and 4. <code>ApiError</code> and <code>errorResponse</code> from <code>src/lib/server/errors.ts</code>. <code>env.BLOBS</code>, <code>env.DB</code>.
+- Produces: <code>POST /api/v1/setup-submissions</code>, multipart, with:
+  - fields from <code>SubmissionFields</code>, sent as strings;
+  - <code>instructions</code> (file);
+  - <code>zip</code> (file);
+  - <code>cf-turnstile-response</code>.</p>
+<p>Response <code>201 { id, edit_path }</code>, where <code>edit_path = '/submit/edit/&lt;id&gt;#&lt;token&gt;'</code>.
+- Order, each failing early:
+  1. Secrets present (else 503 <code>submissions_unavailable</code>).
+  2. <code>content-length</code> over <code>zipBytes + instructionsBytes + 64 KiB</code> gives 413 <code>payload_too_large</code> before reading the body.
+  3. Turnstile fails: 403 <code>captcha_failed</code>.
+  4. More than 5 submissions from <code>hashIp(cf-connecting-ip)</code> in the last 24 h: 429 <code>submission_limit</code>.
+  5. Field errors: 400 <code>invalid_submission</code> with <code>details: FieldErrors</code>.
+  6. Instructions file over cap or not UTF-8 text: 400.
+  7. Zip over cap: 413. Not a zip: 400 on <code>zip</code>.
+  8. R2 put <code>setup-submissions/&lt;id&gt;.zip</code> (validate with <code>validateR2Key</code>).
+  9. D1 insert. A key, when given, is sealed into <code>key_ciphertext</code> and <code>key_iv</code>.
+- <code>id</code> = 16 random bytes as hex. <code>zip_sha256</code> = sha256 hex of the zip bytes.
+- Produces in <code>setup-submissions.ts</code>: <code>insertSubmission(db, row)</code>, <code>countRecentByIp(db, ipHash, sinceIso): Promise&lt;number&gt;</code>, <code>getSubmission(db, id)</code> (full row, server-only), <code>SubmissionRow</code> type. Later tasks add to this module.
+- Turnstile in tests: the test secret <code>1x...AA</code> always passes, but the worker test cannot rely on network access. Intercept the siteverify fetch with the mechanism this <code>@cloudflare/vitest-pool-workers</code> version supports (check <code>fetchMock</code> from <code>cloudflare:test</code> first). If none works, inject <code>verifyTurnstile</code> through a module the route imports, and test the route with the real module mocked at that seam. Never add an env flag that skips verification.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing tests</strong> (<code>SELF.fetch</code> with a same-origin <code>Origin</code> header; seed R2 in <code>beforeAll</code> where needed, per the deadlock note in <code>tests/api/transcripts.test.ts</code>):</li>
+<li>A valid submission gives 201. The D1 row exists with <code>status = 'new'</code>, the R2 object exists with the uploaded bytes, <code>edit_path</code> matches <code>/submit/edit/&lt;id&gt;#&lt;43 chars&gt;</code>, and <code>edit_token_hash</code> is not the token.</li>
+<li>With a key: <code>key_ciphertext</code> is not null, and no D1 column or response body contains the plaintext key.</li>
+<li>Turnstile failure gives 403, with nothing written to R2 or D1.</li>
+<li>The 6th submission from the same IP within 24 h gives 429.</li>
+<li>A <code>.pdf</code> as zip gives 400 with <code>details.zip</code>. An 11 MiB zip gives 413.</li>
+<li>Missing <code>SUBMISSION_KEY_SECRET</code>: cover through the unit seam if the env cannot be changed per test; 503 <code>submissions_unavailable</code>.</li>
+<li>A field error gives 400 with <code>details.description</code>.</li>
+<li>[ ] <strong>Step 2:</strong> <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/api/setup-submissions.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS. Then run <code>tests/rate-limit.test.ts</code> (unchanged, still green).</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): create setup submission endpoint</code>.</li>
+</ul>
+<h3 id="task-6-edit-link-endpoints">Task 6: Edit-link endpoints<a class="headerlink" href="#task-6-edit-link-endpoints" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/api/v1/setup-submissions/[id]/status/+server.ts</code>, <code>site/src/routes/api/v1/setup-submissions/[id]/edit/+server.ts</code>, <code>site/tests/api/setup-submission-edit.test.ts</code>
+- Modify: <code>site/src/lib/server/setup-submissions.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>tokenMatches</code>, <code>sealKey</code>, <code>parseSubmissionFields</code> rules for key and expiry, <code>bumpDataEpochStmt</code> (<code>src/lib/server/data-epoch.ts</code>).
+- Produces:
+  - <code>POST .../status</code> with JSON <code>{ token }</code> returns <code>200 { id, status, created_at, agent_tool, base_model, description, visibility, has_key: boolean, key_expires_on, setup_id }</code>. Never the key, never the instructions content.
+  - <code>POST .../edit</code> with JSON <code>{ token, visibility?, key?, key_expires_on? }</code> returns the same shape after the update.
+- Rules:
+  - A wrong token or unknown id gives 404 <code>not_found</code> for both: do not reveal which.
+  - A new key replaces the old sealed key and clears <code>key_deleted_at</code>. It needs a valid expiry, at most 7 days from today.
+  - A visibility change also updates <code>setups.visibility</code> when <code>setup_id</code> is set, in one <code>db.batch</code> with <code>bumpDataEpochStmt(db)</code>.
+  - <code>updated_at</code> is set on every edit.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing tests:</strong></li>
+<li>The right token gives 200 with <code>has_key</code>, and the body has no <code>instructions_md</code> or key.</li>
+<li>A wrong token gives 404. Submission A's token on submission B's id gives 404.</li>
+<li>Changing visibility to <code>private</code> persists.</li>
+<li>A new key with a valid expiry gives <code>has_key: true</code>, and the ciphertext changed.</li>
+<li>A key with expiry today + 8 gives 400.</li>
+<li>With <code>setup_id</code> linked to a seeded <code>setups</code> row, a visibility edit updates that row too.</li>
+<li>[ ] <strong>Step 2:</strong> Build, then <code>npx vitest run tests/api/setup-submission-edit.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): submission edit link endpoints</code>.</li>
+</ul>
+<h3 id="task-7-public-submit-and-edit-pages">Task 7: Public submit and edit pages<a class="headerlink" href="#task-7-public-submit-and-edit-pages" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/submit/+page.server.ts</code> (passes <code>TURNSTILE_SITE_KEY</code>), <code>site/src/routes/submit/+page.svelte</code>, <code>site/src/routes/submit/edit/[id]/+page.svelte</code>, <code>site/src/lib/components/domain/SubmitForm.svelte</code>, <code>site/src/lib/components/domain/SubmitForm.test.svelte.ts</code>, <code>site/tests/e2e/submit.spec.ts</code>
+- Modify: <code>site/src/lib/components/layout/Nav.svelte</code> (add "Submit" after "Setups"), <code>site/scripts/build-sitemap.ts</code> (<code>/submit</code>), the command-palette search index (as Task 6 of plan 1 did for <code>/setups</code>)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: the Task 5 and Task 6 endpoints; <code>SUBMISSION_LIMITS</code>; <code>AGENT_TOOLS</code>.
+- <code>SubmitForm</code> props: <code>{ siteKey: string; onsubmitted(result: { id: string; edit_path: string }): void }</code>. It renders:
+  - a select for agent tool with all six tools;
+  - base model and description text fields;
+  - a visibility radio, public by default, with one line explaining private: hidden from the chart unless a visitor turns it on, and the files are never shown;
+  - an instructions file input (accept <code>.md</code>) with a name select CLAUDE.md or AGENTS.md;
+  - a roles table with add and remove buttons;
+  - a flow textarea;
+  - a zip input (accept <code>.zip</code>) stating the 10 MiB limit;
+  - an optional key field (<code>type=password</code>, <code>autocomplete=off</code>) with an expiry date input and the sentence "Use a key that expires within 7 days. Setups that need no key are preferred.";
+  - the Turnstile widget (<code>https://challenges.cloudflare.com/turnstile/v0/api.js</code>, explicit render).
+- It posts <code>FormData</code> with <code>fetch</code>. Field errors from a 400 <code>details</code> show next to their fields.
+- After success the page shows the edit link as a full URL with a copy button and the sentence "Save this link. It is the only way to change visibility or send a fresh key, and it cannot be recovered."
+- <code>/submit/edit/[id]</code> reads the token from <code>location.hash</code> and loads status via POST. It shows the status, a visibility switch, and a fresh-key field with expiry. With no hash it shows "This link is missing its secret part."
+- Copy has no em dashes. Every input has a label.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing component tests:</strong></li>
+<li>all six tools appear in the select;</li>
+<li>submitting with a 400 whose <code>details.description</code> is set shows that message next to the description field;</li>
+<li>on 201, <code>onsubmitted</code> is called with the id and edit path;</li>
+<li>the key input has <code>type="password"</code>.</li>
+<li>[ ] <strong>Step 2:</strong> <code>npx vitest run --config vitest.unit.config.ts SubmitForm</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement the component, pages, nav entry, sitemap and search entries.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Then <code>npm run check</code> gives 0 errors. Then write <code>submit.spec.ts</code>: <code>/submit</code> renders the form and all six tools, the nav has "Submit", and axe on <code>/submit</code> finds no serious or critical issues. Run <code>npm run test:e2e:ci</code>. Clear <code>site/.wrangler/state/v3/cache</code> first, because wrangler serves stale asset hashes after a rebuild. Expected: the new spec passes.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): submit and edit pages</code>.</li>
+</ul>
+<h3 id="task-8-admin-api">Task 8: Admin API<a class="headerlink" href="#task-8-admin-api" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/api/v1/admin/setup-submissions/+server.ts</code> (list), and under <code>[id]/</code>: <code>+server.ts</code> (detail), <code>zip/+server.ts</code>, <code>key/+server.ts</code>, <code>review/+server.ts</code>, <code>delete-key/+server.ts</code>. Create <code>site/tests/api/admin-setup-submissions.test.ts</code>.
+- Modify: <code>site/src/lib/server/setup-submissions.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>authenticateAdminRequest</code>, <code>actorIdFromAuth</code> (<code>src/lib/server/cf-access.ts</code>), <code>openKey</code>. The audit mechanism used by <code>src/routes/api/v1/admin/runs/exclude/+server.ts</code>: use the same table and helper, with event names <code>submission.key_revealed</code>, <code>submission.reviewed</code> and <code>submission.key_deleted</code>.
+- All are POST with a JSON body, so the signed CLI path works. Copy the body-signature pattern from <code>admin/lifecycle/review/[id]/decide/+server.ts</code>.
+  - list <code>{ status?: 'new'|'approved'|'rejected' }</code> returns <code>{ submissions: [{ id, created_at, agent_tool, base_model, description, visibility, status, has_key, key_expires_on, zip_bytes }] }</code>, newest first, at most 200.
+  - detail returns the row without key columns, plus <code>instructions_md</code>, <code>roles</code>, <code>flow</code>, <code>zip_sha256</code> and <code>review_note</code>.
+  - zip streams the R2 object with <code>content-type: application/zip</code> and <code>content-disposition: attachment; filename="&lt;id&gt;.zip"</code>.
+  - key returns <code>{ key, key_expires_on }</code>, decrypted, and writes the audit event. It returns 404 <code>no_key</code> when there is none or it was deleted.
+  - review <code>{ status: 'approved'|'rejected', note? }</code> sets status, note and <code>reviewed_at</code>. Rejecting also deletes the key (nulls <code>key_ciphertext</code> and <code>key_iv</code>, sets <code>key_deleted_at</code>). Audited.
+  - delete-key nulls the key columns and sets <code>key_deleted_at</code>. It is idempotent. Audited. Plan 3 calls the same server function, <code>deleteSubmissionKey(db, id, actor)</code>, when a run finishes.
+- Unauthenticated calls give 401/403, per <code>authenticateAdminRequest</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing tests</strong> using the signed-payload pattern (<code>tests/fixtures/keys.ts</code> <code>createSignedPayload</code>, <code>registerMachineKey</code>, as in <code>tests/api/lifecycle-review-decide.test.ts</code>):</li>
+<li>an unsigned list call is rejected;</li>
+<li>signed list returns the seeded submissions, and no list entry has key or instructions fields;</li>
+<li>the key reveal returns the plaintext of a sealed seed key and writes one audit row;</li>
+<li>a review with <code>rejected</code> sets the status and deletes the key, after which the key reveal gives 404 <code>no_key</code>;</li>
+<li>delete-key twice gives 200 both times;</li>
+<li>zip returns the seeded bytes with the attachment header.</li>
+<li>[ ] <strong>Step 2:</strong> Build, then <code>npx vitest run tests/api/admin-setup-submissions.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): admin API for setup submissions</code>.</li>
+</ul>
+<h3 id="task-9-admin-review-pages">Task 9: Admin review pages<a class="headerlink" href="#task-9-admin-review-pages" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/admin/submissions/+page.server.ts</code>, <code>+page.svelte</code>, <code>site/src/routes/admin/submissions/[id]/+page.server.ts</code>, <code>+page.svelte</code>, <code>site/tests/api/admin-submissions-ssr-gate.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: the Task 8 endpoints. Copy the load and fetch pattern of <code>site/src/routes/admin/lifecycle/review/+page.server.ts</code> and <code>+page.svelte</code> exactly, including how the browser posts to the admin API.
+- The list page shows a status filter (new by default) and a table of id, date, tool, base model, description, visibility, key yes/no with expiry, and zip size, linking to the detail.
+- The detail page shows:
+  - all fields and the roles table;
+  - flow as escaped text;
+  - the instructions rendered with <code>MarkdownRenderer</code> (it sanitises);
+  - a "Download zip" link;
+  - a "Reveal key" button, which shows the key only after the click, with a note that the reveal is logged;
+  - "Approve" and "Reject" with a note box, plus "Delete key".
+- [ ] <strong>Step 1: Failing test:</strong> <code>GET /admin/submissions</code> and <code>GET /admin/submissions/x</code> without Access give 403 or 500 exactly as <code>tests/api/admin-ssr-gate.test.ts</code> asserts for lifecycle pages.
+- [ ] <strong>Step 2:</strong> Build, then run it. Expected: FAIL (404 before the routes exist).
+- [ ] <strong>Step 3:</strong> Implement both pages.
+- [ ] <strong>Step 4:</strong> Re-run, then <code>npm run check</code> gives 0 errors, then <code>npm test</code> passes in full.
+- [ ] <strong>Step 5:</strong> Commit <code>feat(site): admin review pages for setup submissions</code>.</p>
+<h3 id="task-10-owner-runbook">Task 10: Owner runbook<a class="headerlink" href="#task-10-owner-runbook" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>docs/site/setup-submissions.md</code></p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Write the operator note:</li>
+<li>Deploy order: apply migration 0025, then deploy. <code>wrangler secret put TURNSTILE_SECRET_KEY</code> and <code>wrangler secret put SUBMISSION_KEY_SECRET</code>; the latter is base64 of 32 random bytes, with the one-line <code>openssl rand -base64 32</code> command. Set <code>TURNSTILE_SITE_KEY</code> in <code>wrangler.toml</code> to the real site key, and create the Turnstile widget for <code>ai.sshadows.dk</code> in the Cloudflare dashboard.</li>
+<li>Review flow: list, detail, download zip, reveal key (logged), approve or reject.</li>
+<li>The hand translation from zip to run config is the owner's job (spec).</li>
+<li>Rotating <code>SUBMISSION_KEY_SECRET</code> makes stored keys unreadable, so delete keys first.</li>
+<li>No em dashes.</li>
+<li>[ ] <strong>Step 2:</strong> Commit <code>docs(site): setup submissions runbook</code>.</li>
+</ul>
+<h2 id="not-in-this-plan">Not in this plan<a class="headerlink" href="#not-in-this-plan" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Linking a submission to a ranked setup and deleting the key when its run finishes (plan 3, using <code>setup_id</code> and <code>deleteSubmissionKey</code>).</li>
+<li>Unpacking or inspecting the zip on the server (the owner reviews it by hand).</li>
+<li>Notifications to submitters (spec: none for now).</li>
+<li>Prod migration, secrets and deploy (owner).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>

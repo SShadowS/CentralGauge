@@ -1,0 +1,2482 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-10-30-setups-site-section/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>Setups Site Section Implementation Plan - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#setups-site-section-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Setups Site Section Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-focus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review Focus
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Review Focus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-migration-0024-for-setups" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Migration 0024 for setups
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-shared-setup-types-and-pure-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Shared setup types and pure logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-server-query-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Server query module
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-api-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: API endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-5-generalise-the-value-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Generalise the value map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-6-setups-ranking-page-archive-and-nav" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: Setups ranking page, archive and nav
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-7-setup-detail-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Setup detail page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-8-compare-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8: Compare page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-9-hx-task-pages-and-their-summaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9: HX task pages and their summaries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-10-end-to-end-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10: End-to-end check
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-in-this-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not in this plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-10-30-setups-site-section.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="setups-site-section-implementation-plan">Setups Site Section Implementation Plan<a class="headerlink" href="#setups-site-section-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Add a public Setups section to the site: ranking with value map, setup detail, compare two setups, archive of earlier HX task sets, and HX task pages showing only the human summary.</p>
+<p><strong>Architecture:</strong> New D1 tables hold published setup results (written later by plan 3; this plan seeds them in tests). A server module <code>site/src/lib/server/setups.ts</code> reads them; epoch-cached <code>/api/v1/setups*</code> and <code>/api/v1/hx-tasks/*</code> endpoints serve them; SvelteKit pages under <code>/setups</code> and <code>/hx-tasks</code> render them. Pure logic (ranking, task grid, repeat spread, ingredient diff) lives in <code>site/src/lib/shared/setups.ts</code>. The existing value map is generalised to take plain points.</p>
+<p><strong>Tech Stack:</strong> SvelteKit (Svelte 5 runes), Cloudflare Workers + D1, vitest (<code>@cloudflare/vitest-pool-workers</code> and jsdom configs), Playwright. Deno for the summary audit.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-10-30-setups-leaderboard-design.md</code> (part 1 of its build order).</p>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Agent tools, exactly: <code>claude-code</code>, <code>codex</code>, <code>pi</code>, <code>opencode</code>, <code>cursor</code>, <code>antigravity</code>.</li>
+<li>Only the <strong>current</strong> setup task set is ranked; earlier sets stay browsable (archive). The owner promotes a set (<code>is_current</code>).</li>
+<li>Score = the harness report's per-arm pass rate, stored as published (0..1). The site never recomputes it.</li>
+<li>Price per solved task may be null: show "price not available" plus the stored reason; leave the setup off the value map.</li>
+<li>Private setups: hidden from table and chart by default, shown with a toggle. They expose tool, models and roles, and the names of skills and MCP servers, never file contents (and, Claude's call, not the flow text).</li>
+<li>HX task pages show only the human summary, never the prompt or code, and say the full tasks are public on GitHub.</li>
+<li>Each setup's detail page shows its agent tool's known cost issue (text in Task 2).</li>
+<li>The Models section is unchanged.</li>
+<li>No <code>deno fmt</code> on <code>site/</code> files (prettier owns them). No em dashes in UI copy.</li>
+<li>No prod deploy, D1 migration apply or ingest; those stay with the owner (migration before deploy).</li>
+<li>Work on a branch from master, e.g. <code>feat/setups-leaderboard</code>.</li>
+</ul>
+<h2 id="review-focus">Review Focus<a class="headerlink" href="#review-focus" title="Permanent link">&para;</a></h2>
+<ul>
+<li>No current setup task set (fresh DB): ranking page and API return an empty state with 200, not a 500. (Task 4, Task 6)</li>
+<li>Private setup contents never leave the server: ranking with the toggle, detail, compare and HX task results. (Task 3)</li>
+<li>A setup with null price is ranked, shows "price not available", and the value map counts it as omitted. (Task 5, Task 6)</li>
+<li>Compare with fewer or more than 2 ids, an unknown id, or a duplicate id: empty state or 400/404, never 500. (Task 8)</li>
+<li>A task whose cells are all <code>env_blocked</code>/<code>infra</code> shows as blocked in the grid, not 0%; a repeat with no counted cells is left out of the spread. (Task 2)</li>
+</ul>
+<hr />
+<h3 id="task-1-migration-0024-for-setups">Task 1: Migration 0024 for setups<a class="headerlink" href="#task-1-migration-0024-for-setups" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/migrations/0024_setups.sql</code>
+- Modify: <code>site/tests/utils/reset-db.ts</code> (add the new tables, children first), <code>site/tests/migrations.test.ts:16-34</code> (expected table list)</p>
+<p><strong>Interfaces:</strong>
+- Produces tables (later tasks and plan 3 rely on these exact names):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">setup_task_sets</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="n">hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span><span class="w"> </span><span class="n">display_name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">task_count</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="n">is_current</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">promoted_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_setup_task_sets_current</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">setup_task_sets</span><span class="p">(</span><span class="n">is_current</span><span class="p">)</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">is_current</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">hx_tasks</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">setup_task_sets</span><span class="p">(</span><span class="n">hash</span><span class="p">),</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="n">task_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">description_sha</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">));</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">setups</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="n">agent_tool</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">agent_tool</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'claude-code'</span><span class="p">,</span><span class="s1">'codex'</span><span class="p">,</span><span class="s1">'pi'</span><span class="p">,</span><span class="s1">'opencode'</span><span class="p">,</span><span class="s1">'cursor'</span><span class="p">,</span><span class="s1">'antigravity'</span><span class="p">)),</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="n">base_model</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="n">visibility</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'public'</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">visibility</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'public'</span><span class="p">,</span><span class="s1">'private'</span><span class="p">)),</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="n">needs_key</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="n">roles_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'[]'</span><span class="p">,</span><span class="w"> </span><span class="n">flow</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="n">ingredients_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'{}'</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">);</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">setup_runs</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span><span class="n">setup_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">setups</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">setup_task_sets</span><span class="p">(</span><span class="n">hash</span><span class="p">),</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span><span class="n">tool_version</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">published_at</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span><span class="n">score</span><span class="w"> </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">score</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">score</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">  </span><span class="n">cost_per_solved_usd</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span><span class="w"> </span><span class="n">price_note</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">  </span><span class="n">excluded_cells</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_setup_runs_set</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">setup_runs</span><span class="p">(</span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">setup_id</span><span class="p">,</span><span class="w"> </span><span class="n">published_at</span><span class="p">);</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">setup_cells</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">  </span><span class="n">run_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">setup_runs</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">  </span><span class="n">task_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">repeat</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">  </span><span class="n">outcome</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">CHECK</span><span class="w"> </span><span class="p">(</span><span class="n">outcome</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'pass'</span><span class="p">,</span><span class="s1">'fail'</span><span class="p">,</span><span class="s1">'env_blocked'</span><span class="p">,</span><span class="s1">'infra'</span><span class="p">)),</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">  </span><span class="n">cost_usd</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span><span class="w"> </span><span class="n">duration_ms</span><span class="w"> </span><span class="nb">INTEGER</span><span class="p">,</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">  </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span><span class="w"> </span><span class="n">task_id</span><span class="p">,</span><span class="w"> </span><span class="n">repeat</span><span class="p">));</span>
+</code></pre></div>
+<p><code>roles_json</code> is <code>Role[]</code>, <code>ingredients_json</code> is <code>Ingredients</code> (Task 2).</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Add the five tables to the expected list in <code>tests/migrations.test.ts</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/migrations.test.ts</code>. Expected: FAIL (tables missing).</li>
+<li>[ ] <strong>Step 3:</strong> Write the migration above; add <code>setup_cells, setup_runs, hx_tasks, setups, setup_task_sets</code> (that order) to <code>resetDb()</code>.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run the test. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setups tables (migration 0024)</code>.</li>
+</ul>
+<h3 id="task-2-shared-setup-types-and-pure-logic">Task 2: Shared setup types and pure logic<a class="headerlink" href="#task-2-shared-setup-types-and-pure-logic" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/lib/shared/setups.ts</code>, <code>site/src/lib/shared/setups.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Produces:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">AGENT_TOOLS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s1">'claude-code'</span><span class="p">,</span><span class="s1">'codex'</span><span class="p">,</span><span class="s1">'pi'</span><span class="p">,</span><span class="s1">'opencode'</span><span class="p">,</span><span class="s1">'cursor'</span><span class="p">,</span><span class="s1">'antigravity'</span><span class="p">]</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="kd">const</span><span class="p">;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">AgentTool</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">typeof</span><span class="w"> </span><span class="nx">AGENT_TOOLS</span><span class="p">[</span><span class="kt">number</span><span class="p">];</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">export</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="nx">CellOutcome</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'pass'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'fail'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'env_blocked'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'infra'</span><span class="p">;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">Role</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">role</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">model</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">effort</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">NamedFile</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">content</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="c1">// content null = withheld</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">Ingredients</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nx">instructions</span><span class="o">:</span><span class="w"> </span><span class="kt">NamedFile</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">rules</span><span class="o">:</span><span class="w"> </span><span class="kt">NamedFile</span><span class="p">[];</span><span class="w"> </span><span class="nx">settings</span><span class="o">:</span><span class="w"> </span><span class="kt">NamedFile</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nx">skills</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">mcp</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">hooks</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">Cell</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">task_id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">repeat</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">outcome</span><span class="o">:</span><span class="w"> </span><span class="kt">CellOutcome</span><span class="p">;</span><span class="w"> </span><span class="nx">cost_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">duration_ms</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">SetupRow</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="nx">rank</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">description</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">agent_tool</span><span class="o">:</span><span class="w"> </span><span class="kt">AgentTool</span><span class="p">;</span><span class="w"> </span><span class="nx">base_model</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="nx">visibility</span><span class="o">:</span><span class="w"> </span><span class="s1">'public'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'private'</span><span class="p">;</span><span class="w"> </span><span class="nx">score</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">cost_per_solved_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nx">price_note</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">tool_version</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">needs_key</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="p">}</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="k">export</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="nx">KNOWN_ISSUES</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="nx">AgentTool</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">rankRows</span><span class="p">(</span><span class="nx">rows</span><span class="o">:</span><span class="w"> </span><span class="kt">Omit</span><span class="o">&lt;</span><span class="nx">SetupRow</span><span class="p">,</span><span class="w"> </span><span class="s1">'rank'</span><span class="o">&gt;</span><span class="p">[])</span><span class="o">:</span><span class="w"> </span><span class="nx">SetupRow</span><span class="p">[];</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">taskGrid</span><span class="p">(</span><span class="nx">cells</span><span class="o">:</span><span class="w"> </span><span class="kt">Cell</span><span class="p">[])</span><span class="o">:</span><span class="w"> </span><span class="nb">Map</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">passRate</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">blocked</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">}</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">repeatSpread</span><span class="p">(</span><span class="nx">cells</span><span class="o">:</span><span class="w"> </span><span class="kt">Cell</span><span class="p">[])</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">min</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">max</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">diffIngredients</span><span class="p">(</span><span class="nx">a</span><span class="o">:</span><span class="w"> </span><span class="kt">Ingredients</span><span class="p">,</span><span class="w"> </span><span class="nx">b</span><span class="o">:</span><span class="w"> </span><span class="kt">Ingredients</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">field</span><span class="o">:</span><span class="w"> </span><span class="kt">keyof</span><span class="w"> </span><span class="nx">Ingredients</span><span class="p">;</span><span class="w"> </span><span class="nx">a</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">b</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="nx">differs</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">}[];</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">withholdContents</span><span class="p">(</span><span class="nx">i</span><span class="o">:</span><span class="w"> </span><span class="kt">Ingredients</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Ingredients</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li><code>KNOWN_ISSUES</code>: copy the six "Known-issue lines" verbatim from the spec's Cost table "Known issue" column, as plain sentences.</li>
+<li><code>rankRows</code> (Claude's call): sort by score desc, then id asc. Public rows get competition ranks (1, 1, 3); private rows get <code>rank: null</code>.</li>
+<li><code>taskGrid</code>: per task, <code>passRate</code> = passes / (pass + fail) cells; if a task has no pass/fail cells, <code>passRate: null, blocked: true</code>.</li>
+<li><code>repeatSpread</code>: per repeat, passes / (pass + fail); repeats with no counted cells are skipped; null when none remain.</li>
+<li><code>diffIngredients</code>: compares by names (instructions/settings as <code>[name]</code>, rules by name, lists as sorted names).</li>
+<li>
+<p><code>withholdContents</code>: every <code>NamedFile.content</code> becomes null.</p>
+</li>
+<li>
+<p>[ ] <strong>Step 1: Write the failing tests</strong> in <code>setups.test.ts</code>:</p>
+</li>
+<li><code>rankRows</code> on scores <code>[0.8 pub, 0.8 pub, 0.7 pub, 0.9 priv]</code> gives ranks <code>[1, 1, 3]</code> for the public rows and <code>null</code> for the private one, private sorted first by score.</li>
+<li><code>taskGrid</code> with HX-001 cells <code>pass, fail</code> gives <code>{passRate: 0.5, blocked: false}</code>; HX-002 cells <code>env_blocked, infra</code> give <code>{passRate: null, blocked: true}</code>.</li>
+<li><code>repeatSpread</code> with repeat 1 <code>pass,pass</code>, repeat 2 <code>pass,fail</code>, repeat 3 <code>env_blocked</code> gives <code>{min: 0.5, max: 1}</code>; all-blocked input gives <code>null</code>.</li>
+<li><code>diffIngredients</code> marks <code>skills</code> differing for <code>['a']</code> vs <code>['a','b']</code> and <code>mcp</code> not differing for <code>['x']</code> vs <code>['x']</code>.</li>
+<li><code>withholdContents</code> leaves names and nulls every content.</li>
+<li><code>KNOWN_ISSUES</code> has a non-empty entry for each of <code>AGENT_TOOLS</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npx vitest run --config vitest.unit.config.ts src/lib/shared/setups.test.ts</code>. Expected: FAIL (module missing).</li>
+<li>[ ] <strong>Step 3:</strong> Implement <code>site/src/lib/shared/setups.ts</code>.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setup types, ranking, grid and spread logic</code>.</li>
+</ul>
+<h3 id="task-3-server-query-module">Task 3: Server query module<a class="headerlink" href="#task-3-server-query-module" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/lib/server/setups.ts</code>, <code>site/tests/server/setups.test.ts</code>, <code>site/tests/utils/seed-setups.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: Task 2 types, <code>rankRows</code>, <code>withholdContents</code>, <code>KNOWN_ISSUES</code>.
+- Produces:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">SetupTaskSet</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">hash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">display_name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">task_count</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">is_current</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="nx">promoted_at</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">tasks</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[];</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">SetupRunSummary</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">run_id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">task_set_hash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">task_set_name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">is_current</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="nx">tool_version</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">published_at</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">score</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">cost_per_solved_usd</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">price_note</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">excluded_cells</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">SetupDetail</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nx">setup</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">description</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">agent_tool</span><span class="o">:</span><span class="w"> </span><span class="kt">AgentTool</span><span class="p">;</span><span class="w"> </span><span class="nx">base_model</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">visibility</span><span class="o">:</span><span class="w"> </span><span class="s1">'public'</span><span class="o">|</span><span class="s1">'private'</span><span class="p">;</span><span class="w"> </span><span class="nx">needs_key</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="nx">roles</span><span class="o">:</span><span class="w"> </span><span class="kt">Role</span><span class="p">[];</span><span class="w"> </span><span class="nx">flow</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">ingredients</span><span class="o">:</span><span class="w"> </span><span class="kt">Ingredients</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nx">known_issue</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nx">runs</span><span class="o">:</span><span class="w"> </span><span class="kt">SetupRunSummary</span><span class="p">[];</span><span class="w">               </span><span class="c1">// newest first, all sets and tool versions</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nx">latest</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">run_id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">task_set_hash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">cells</span><span class="o">:</span><span class="w"> </span><span class="kt">Cell</span><span class="p">[]</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="c1">// newest run on the current set</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">}</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">listSetupTaskSets</span><span class="p">(</span><span class="nx">db</span><span class="o">:</span><span class="w"> </span><span class="kt">D1Database</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">SetupTaskSet</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">computeSetupRanking</span><span class="p">(</span><span class="nx">db</span><span class="o">:</span><span class="w"> </span><span class="kt">D1Database</span><span class="p">,</span><span class="w"> </span><span class="nx">setHash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">includePrivate</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">SetupRow</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">getSetupDetail</span><span class="p">(</span><span class="nx">db</span><span class="o">:</span><span class="w"> </span><span class="kt">D1Database</span><span class="p">,</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="nx">SetupDetail</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="k">export</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">getHxTaskResults</span><span class="p">(</span><span class="nx">db</span><span class="o">:</span><span class="w"> </span><span class="kt">D1Database</span><span class="p">,</span><span class="w"> </span><span class="nx">setHash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">taskId</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="p">{</span><span class="w"> </span><span class="nx">description_sha</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">results</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">setup_id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">description</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">agent_tool</span><span class="o">:</span><span class="w"> </span><span class="kt">AgentTool</span><span class="p">;</span><span class="w"> </span><span class="nx">passRate</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">blocked</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="p">}[]</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="o">&gt;</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li><code>computeSetupRanking</code> uses each setup's newest run (max <code>published_at</code>, then max <code>id</code>) on <code>setHash</code>.</li>
+<li>Private setups: <code>getSetupDetail</code> applies <code>withholdContents</code> and sets <code>flow: null</code>; <code>getHxTaskResults</code> includes public setups only.</li>
+<li>
+<p><code>seed-setups.ts</code> exports <code>seedSetups(db: D1Database): Promise&lt;void&gt;</code>: one current set <code>hx-cur</code> (HX-001, HX-002) and one old set <code>hx-old</code>; setups <code>cc-plain</code> (public, two runs on <code>hx-cur</code> with tool versions 2.1.300 and 2.1.314, the second newer), <code>pi-default</code> (public, null cost, <code>price_note</code> set), <code>cc-secret</code> (private, instructions content <code>SECRET-BODY</code>), <code>codex-old</code> (only on <code>hx-old</code>); cells covering pass, fail and env_blocked.</p>
+</li>
+<li>
+<p>[ ] <strong>Step 1: Write the failing tests</strong> (<code>beforeAll</code> applies migrations, <code>beforeEach</code> runs <code>resetDb()</code> and <code>seedSetups</code>):</p>
+</li>
+<li>ranking for <code>hx-cur</code>, <code>includePrivate=false</code>: ids <code>cc-plain, pi-default</code> only; <code>cc-plain</code> row has <code>tool_version: '2.1.314'</code>.</li>
+<li>ranking with <code>includePrivate=true</code> contains <code>cc-secret</code> with <code>rank: null</code>.</li>
+<li>ranking for <code>hx-cur</code> never contains <code>codex-old</code>; ranking for <code>hx-old</code> does.</li>
+<li><code>getSetupDetail('cc-secret')</code>: <code>JSON.stringify(result)</code> does not contain <code>SECRET-BODY</code>; <code>setup.flow</code> is null; skills names are present.</li>
+<li><code>getSetupDetail('cc-plain').runs</code> has 2 entries, newest first; <code>known_issue === KNOWN_ISSUES['claude-code']</code>.</li>
+<li><code>getSetupDetail('nope')</code> is null.</li>
+<li><code>getHxTaskResults('hx-cur','HX-001')</code> omits <code>cc-secret</code>; unknown task gives null.</li>
+<li><code>listSetupTaskSets</code> returns both sets, <code>hx-cur</code> with <code>is_current: true</code> and <code>tasks: ['HX-001','HX-002']</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npx vitest run tests/server/setups.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement <code>site/src/lib/server/setups.ts</code>.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setups query module</code>.</li>
+</ul>
+<h3 id="task-4-api-endpoints">Task 4: API endpoints<a class="headerlink" href="#task-4-api-endpoints" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/api/v1/setups/+server.ts</code>, <code>site/src/routes/api/v1/setups/[id]/+server.ts</code>, <code>site/src/routes/api/v1/setup-task-sets/+server.ts</code>, <code>site/src/routes/api/v1/hx-tasks/[id]/+server.ts</code>, <code>site/tests/api/setups.test.ts</code>
+- Modify: <code>site/src/lib/shared/api-types.ts</code> (response types below)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: Task 3 functions; <code>epochCachedJson</code> (<code>src/lib/server/shared-cache.ts:170</code>), cache name <code>cg-setups</code>, one namespace per endpoint; <code>cachedJson</code> for the response, as other routes do.
+- Produces:
+  - <code>GET /api/v1/setups?set=&lt;hash&gt;&amp;private=1</code> → <code>SetupsResponse { task_set: SetupTaskSet | null; rows: SetupRow[] }</code>. No <code>set</code> = current set; no current set → <code>{task_set: null, rows: []}</code> with 200. Unknown <code>set</code> → 404. <code>private</code> accepts only <code>1</code>/absent.
+  - <code>GET /api/v1/setups/[id]</code> → <code>SetupDetail</code>, 404 when null.
+  - <code>GET /api/v1/setup-task-sets</code> → <code>{ sets: SetupTaskSet[] }</code>.
+  - <code>GET /api/v1/hx-tasks/[id]?set=&lt;hash&gt;</code> → <code>HxTaskResponse { id; summary: string | null; task_set: SetupTaskSet; results: [...] }</code> (summary filled by Task 9; return <code>null</code> until then). 404 when the task is not in the set.</p>
+<ul>
+<li>[ ] <strong>Step 1: Write the failing tests</strong> via <code>SELF.fetch</code>, reusing <code>seedSetups</code>: each status code above; <code>rows</code> ids for default and <code>private=1</code>; an empty DB (no <code>seedSetups</code>) gives 200 with <code>task_set: null</code>; the private detail body has no <code>SECRET-BODY</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/api/setups.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement the four routes.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setups API</code>.</li>
+</ul>
+<h3 id="task-5-generalise-the-value-map">Task 5: Generalise the value map<a class="headerlink" href="#task-5-generalise-the-value-map" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>site/src/lib/shared/value-map.ts</code>, <code>site/src/lib/shared/value-map.test.ts</code>, <code>site/src/lib/components/domain/ValueMap.svelte</code>, <code>site/src/routes/+page.svelte:182</code></p>
+<p><strong>Interfaces:</strong>
+- Produces:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">ValueInput</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">slug</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">display_name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w"> </span><span class="nx">cost</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w"> </span><span class="nx">y</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="cm">/* 0..100 */</span><span class="p">;</span><span class="w"> </span><span class="nx">provisional</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">computeValueMapFrom</span><span class="p">(</span><span class="nx">items</span><span class="o">:</span><span class="w"> </span><span class="kt">ValueInput</span><span class="p">[],</span><span class="w"> </span><span class="nx">dims</span><span class="o">:</span><span class="w"> </span><span class="kt">ValueMapDims</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">ValueMapModel</span><span class="p">;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">leaderboardValueInputs</span><span class="p">(</span><span class="nx">rows</span><span class="o">:</span><span class="w"> </span><span class="kt">LeaderboardRow</span><span class="p">[])</span><span class="o">:</span><span class="w"> </span><span class="nx">ValueInput</span><span class="p">[];</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">computeValueMap</span><span class="p">(</span><span class="nx">rows</span><span class="o">:</span><span class="w"> </span><span class="kt">LeaderboardRow</span><span class="p">[],</span><span class="w"> </span><span class="nx">dims</span><span class="o">:</span><span class="w"> </span><span class="kt">ValueMapDims</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">ValueMapModel</span><span class="p">;</span><span class="w"> </span><span class="c1">// = computeValueMapFrom(leaderboardValueInputs(rows), dims)</span>
+</code></pre></div>
+<p><code>ValuePoint.auc</code> is renamed <code>y</code>. <code>ValueMap.svelte</code> props become <code>{ points: ValueInput[]; noun?: string /* 'model' */; yLabel?: string /* 'Solve AUC@2' */; width?; height? }</code>. Its labels use <code>noun</code> and <code>yLabel</code> (for example "1 setup with no cost data omitted"). The Models page passes <code>leaderboardValueInputs(data.leaderboard.data)</code> and renders exactly as before.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Add a test that <code>computeValueMapFrom</code> with one null-cost item and two priced items gives <code>omittedCount: 1</code> and a frontier through the priced ones. Keep the existing <code>computeValueMap</code> tests unchanged.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npx vitest run --config vitest.unit.config.ts src/lib/shared/value-map.test.ts</code>. Expected: the new test FAILs.</li>
+<li>[ ] <strong>Step 3:</strong> Refactor as specified; costs <code>&lt;= 0</code> or null count as omitted, as today.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run that test plus any <code>ValueMap</code> component tests (<code>npx vitest run --config vitest.unit.config.ts ValueMap</code>). Expected: PASS.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>refactor(site): value map takes plain points</code>.</li>
+</ul>
+<h3 id="task-6-setups-ranking-page-archive-and-nav">Task 6: Setups ranking page, archive and nav<a class="headerlink" href="#task-6-setups-ranking-page-archive-and-nav" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/setups/+page.server.ts</code>, <code>site/src/routes/setups/+page.svelte</code>, <code>site/src/routes/setups/archive/+page.server.ts</code>, <code>site/src/routes/setups/archive/+page.svelte</code>, <code>site/src/lib/components/domain/SetupsTable.svelte</code>, <code>site/src/lib/components/domain/SetupsTable.test.svelte.ts</code>
+- Modify: <code>site/src/lib/components/layout/Nav.svelte:49-57</code> (add "Setups" after the Models entries), <code>site/scripts/build-sitemap.ts</code> (add <code>/setups</code>, <code>/setups/archive</code>)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>GET /api/v1/setups</code>, <code>GET /api/v1/setup-task-sets</code>, <code>ValueMap</code> (Task 5).
+- <code>/setups</code> loader reads <code>?set=</code> and <code>?private=1</code> and passes them through. The page shows:
+  - a title naming the task set, and a "not current" banner linking to the current set when <code>task_set.is_current</code> is false;
+  - a table and value-map toggle;
+  - a "Show private setups" toggle that sets <code>?private=1</code>;
+  - a links row to each HX task in the set (<code>/hx-tasks/&lt;id&gt;?set=&lt;hash&gt;</code>).
+- <code>SetupsTable</code> props: <code>{ rows: SetupRow[]; selected: string[]; onselect(ids: string[]): void }</code>. Columns: checkbox, Rank ("private" for a null rank), Description (links to <code>/setups/&lt;id&gt;</code>), Agent, Score (<code>formatMetric(score,'rate')</code>), Price per solved task (<code>formatMetric(cost,'usd')</code>, or "price not available" with <code>price_note</code> as <code>title</code>).
+- With exactly two boxes ticked, a "Compare" link goes to <code>/setups/compare?ids=&lt;a&gt;,&lt;b&gt;</code>; a third tick replaces the oldest selection.
+- Value map: <code>points = rows.map(r =&gt; ({slug: r.id, display_name: r.description, cost: r.cost_per_solved_usd, y: r.score*100, provisional: false}))</code>, <code>noun="setup"</code>, <code>yLabel="Score"</code>.
+- <code>/setups/archive</code> lists every set (name, task count, promoted date, current marker) linking to <code>/setups?set=&lt;hash&gt;</code>.
+- Empty state when <code>task_set</code> is null: "No setups have been ranked yet."</p>
+<ul>
+<li>[ ] <strong>Step 1: Write failing component tests</strong> for <code>SetupsTable</code>: a null-rank row renders "private"; a null-cost row renders "price not available" with the note as title; ticking two rows calls <code>onselect</code> with both ids; ticking a third keeps the last two.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npx vitest run --config vitest.unit.config.ts SetupsTable</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement the component, pages, nav entry and sitemap entries.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run. Expected: PASS. Then <code>cd site &amp;&amp; npm run check</code>. Expected: 0 errors.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setups ranking page and archive</code>.</li>
+</ul>
+<h3 id="task-7-setup-detail-page">Task 7: Setup detail page<a class="headerlink" href="#task-7-setup-detail-page" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/setups/[id]/+page.server.ts</code>, <code>site/src/routes/setups/[id]/+page.svelte</code>, <code>site/src/lib/components/domain/SetupTaskGrid.svelte</code>, <code>site/src/lib/components/domain/SetupTaskGrid.test.svelte.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>GET /api/v1/setups/[id]</code> (404 → SvelteKit <code>error(404)</code>), <code>taskGrid</code>, <code>repeatSpread</code>, <code>formatMetric</code>, <code>MarkdownRenderer</code> (already used by <code>TaskDetailPanel.svelte</code>).
+- Produces: <code>SetupTaskGrid</code> props <code>{ rows: { label: string; cells: Cell[] }[]; tasks: string[]; set: string }</code>. One row per entry, one column per task linking to <code>/hx-tasks/&lt;task&gt;?set=&lt;set&gt;</code>. Cell colour by <code>passRate</code> (all pass, some, none), and a distinct "blocked" style with the text "blocked" for <code>blocked: true</code>. Each cell carries a text label, not colour only. Task 8 reuses it with two rows.
+- Page sections, in order:
+  1. Header with description, agent tool, base model, tool version, visibility and a "needs a submitter key" label.
+  2. Agents and roles table.
+  3. Flow (hidden when null).
+  4. Instructions and rules: rendered with <code>MarkdownRenderer</code> when the content is present, names only when withheld.
+  5. Skills, MCP servers, hooks and plugins, settings.
+  6. Results for the latest run on the current set: score, price (or "price not available" plus note), excluded cells, a spread line ("worst repeat X, best repeat Y"), and the grid.
+  7. Known cost issue for this tool.
+  8. History table of <code>runs</code>: set, tool version, published, score, price.</p>
+<ul>
+<li>[ ] <strong>Step 1: Write failing component tests</strong> for <code>SetupTaskGrid</code>: a blocked cell renders the text "blocked"; a 0.5 cell renders "50%"; each column header links to <code>/hx-tasks/HX-001?set=hx-cur</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npx vitest run --config vitest.unit.config.ts SetupTaskGrid</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement the component and page.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run, then <code>npm run check</code>. Expected: PASS, 0 errors.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): setup detail page</code>.</li>
+</ul>
+<h3 id="task-8-compare-page">Task 8: Compare page<a class="headerlink" href="#task-8-compare-page" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/src/routes/setups/compare/+page.server.ts</code>, <code>site/src/routes/setups/compare/+page.svelte</code>, <code>site/tests/api/setups-compare-page.test.ts</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>GET /api/v1/setups/[id]</code> for each id, <code>diffIngredients</code>, <code>SetupTaskGrid</code>, <code>repeatSpread</code>.
+- Loader: parse <code>?ids=a,b</code>. Fewer than 2 distinct ids → empty state ("Pick two setups on the ranking page"). More than 2 → <code>error(400)</code>. Any id 404 → <code>error(404)</code>.
+- Page sections:
+  1. Header numbers side by side: score, price, tool version.
+  2. Ingredient diff: roles and models plus <code>diffIngredients</code>; rows where <code>differs</code> is true are highlighted.
+  3. <code>SetupTaskGrid</code> with both setups' latest cells. When their latest runs are on different sets, show a notice instead of the grid.
+  4. Spread: for each setup, a bar from <code>min</code> to <code>max</code> with a dot at the score, on one shared 0..1 axis (inline SVG; each bar has a text label).</p>
+<ul>
+<li>[ ] <strong>Step 1: Write failing tests</strong> via <code>SELF.fetch('https://x/setups/compare?ids=...')</code> with <code>seedSetups</code>: <code>cc-plain,pi-default</code> gives 200 and the body contains both descriptions; <code>cc-plain</code> alone gives 200 with the empty-state text; <code>cc-plain,cc-plain</code> gives the empty state; three ids give 400; <code>cc-plain,nope</code> gives 404; <code>cc-plain,cc-secret</code> gives 200 and the body has no <code>SECRET-BODY</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/api/setups-compare-page.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement the page.</li>
+<li>[ ] <strong>Step 4:</strong> Rebuild and re-run, then <code>npm run check</code>. Expected: PASS, 0 errors.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): compare two setups</code>.</li>
+</ul>
+<h3 id="task-9-hx-task-pages-and-their-summaries">Task 9: HX task pages and their summaries<a class="headerlink" href="#task-9-hx-task-pages-and-their-summaries" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>site/catalog/hx-task-summaries.md</code> (header comment only; the owner writes the entries), <code>site/src/lib/server/hx-task-summaries.ts</code>, <code>site/src/routes/hx-tasks/[id]/+page.server.ts</code>, <code>site/src/routes/hx-tasks/[id]/+page.svelte</code>
+- Modify: <code>site/src/routes/api/v1/hx-tasks/[id]/+server.ts</code> (fill <code>summary</code>), <code>site/tests/api/setups.test.ts</code>, <code>scripts/audit-task-summaries.ts</code> and its test (cover HX)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>parseTaskSummaries</code> (<code>$lib/shared/task-summaries</code>), <code>getHxTaskResults</code>.
+- Produces: <code>export function hxTaskSummary(id: string, descriptionSha: string): string | null</code> in <code>hx-task-summaries.ts</code>. It bundles <code>../../../catalog/hx-task-summaries.md?raw</code> like <code>task-summaries.ts</code>, and returns the body only when the entry's sha equals <code>descriptionSha</code> from <code>hx_tasks</code>. The file format is the same as <code>task-summaries.md</code>; the HX <code>description_sha</code> is sha256 of <code>harness-tasks/tasks/&lt;id&gt;/prompt.md</code>.
+- The page shows the task id, the summary (or "No summary yet."), the fixed sentence "The full task is public in the CentralGauge GitHub repository.", and a results table of public setups on this task (setup link, agent, pass rate or "blocked"). It never shows the prompt.
+- Audit: <code>deno task summary-audit</code> also checks <code>site/catalog/hx-task-summaries.md</code> against <code>harness-tasks/tasks/*/prompt.md</code>, with the same rules (sha match, 600-character cap, no duplicates). It does not apply the baseline file: an HX task without a summary is allowed, so the page shows "No summary yet." <code>--print-sha HX-001</code> works for HX ids.</p>
+<ul>
+<li>[ ] <strong>Step 1: Write failing tests:</strong></li>
+<li>API: seed <code>hx_tasks</code> with the sha of a test summary body's entry; the response has <code>summary</code> equal to the body. A mismatched sha gives <code>summary: null</code>.</li>
+<li>Audit: an HX entry with a wrong sha is reported, and the CLI exits 1.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npm run build &amp;&amp; npx vitest run tests/api/setups.test.ts</code>, and <code>deno task test:unit</code> filtered to the audit test file (<code>deno test --allow-all tests/unit/scripts/audit-task-summaries.test.ts</code> if that is where the existing audit test lives; check first). Expected: FAIL.</li>
+<li>[ ] <strong>Step 3:</strong> Implement the module, the page and the audit extension.</li>
+<li>[ ] <strong>Step 4:</strong> Re-run both. Expected: PASS. Run <code>deno task summary-audit</code>. Expected: exit 0.</li>
+<li>[ ] <strong>Step 5:</strong> Commit <code>feat(site): HX task pages with human summaries</code>.</li>
+</ul>
+<h3 id="task-10-end-to-end-check">Task 10: End-to-end check<a class="headerlink" href="#task-10-end-to-end-check" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>site/scripts/seed-e2e.ts</code> (insert the Task 3 seed data as SQL)
+- Create: <code>site/tests/e2e/setups.spec.ts</code></p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Write the spec:</li>
+<li><code>/setups</code> shows <code>cc-plain</code> and <code>pi-default</code> and not <code>cc-secret</code>; the toggle shows <code>cc-secret</code> marked "private".</li>
+<li>Ticking two rows and following Compare lands on <code>/setups/compare?ids=...</code>.</li>
+<li>The detail page of <code>cc-plain</code> shows "Known cost issues" and two history rows.</li>
+<li><code>/hx-tasks/HX-001</code> shows "No summary yet." and no prompt text.</li>
+<li><code>/setups/archive</code> lists both sets.</li>
+<li>Run the existing axe check (<code>a11y.spec.ts</code> pattern) on <code>/setups</code> and <code>/setups/cc-plain</code>.</li>
+<li>[ ] <strong>Step 2:</strong> Run <code>cd site &amp;&amp; npm run test:e2e:ci -- setups</code>. Expected: PASS (the pages already exist; fix any real failure at its root).</li>
+<li>[ ] <strong>Step 3:</strong> Run the full site suite: <code>cd site &amp;&amp; npm test</code>. Expected: all green.</li>
+<li>[ ] <strong>Step 4:</strong> Commit <code>test(site): setups end-to-end</code>.</li>
+</ul>
+<h2 id="not-in-this-plan">Not in this plan<a class="headerlink" href="#not-in-this-plan" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The submission form and admin review page (plan 2).</li>
+<li>Writing <code>setups</code>, <code>setup_runs</code>, <code>setup_cells</code> and <code>hx_tasks</code> from harness runs, and promoting a setup task set (plan 3).</li>
+<li>Prod migration, deploy, and the human summaries for HX tasks (owner).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
