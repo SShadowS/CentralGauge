@@ -154,6 +154,8 @@ export const PreregSchema = z.strictObject({
     kind: z.literal("simulation_script"),
     decision: z.string().min(1),
     from: Sha256Hex,
+    /** The line endings `from` was hashed under (d26a22f4: a CRLF checkout); `to` is LF-normalised (scriptSha256). */
+    from_eol: z.enum(["crlf", "lf"]),
     to: Sha256Hex,
     reason: z.string().trim().min(1),
     approval: Approval,
@@ -203,11 +205,16 @@ export function stageAOf(doc: Prereg): Prereg {
  * script, each with the script it replaces. A frozen script listed here is
  * superseded: stage B needs a protocol_changes record naming the decision.
  */
-export const SIM_SCRIPT_CHANGES: readonly { decision: string; from: string }[] =
-  [{
-    decision: "decisions/2026-11-06-m11-sim-model-fix-and-mining.md",
-    from: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2",
-  }];
+export const SIM_SCRIPT_CHANGES: readonly {
+  decision: string;
+  from: string;
+  /** d26a22f4 is 93737719's CRLF-checkout hash: compared as recorded, never recomputed. */
+  from_eol: "crlf" | "lf";
+}[] = [{
+  decision: "decisions/2026-11-06-m11-sim-model-fix-and-mining.md",
+  from: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2",
+  from_eol: "crlf",
+}];
 
 /** The script stage B must have run (frozen, or a recorded change's `to`) and the problems of the record. */
 function simScript(doc: Prereg): { script: string; problems: string[] } {
@@ -242,6 +249,13 @@ function simScript(doc: Prereg): { script: string; problems: string[] } {
       `protocol change from ${
         short(ch.from)
       } is not the script ${known.decision} replaces (${short(known.from)})`,
+    );
+  }
+  if (known && known.from_eol !== ch.from_eol) {
+    out.push(
+      `protocol change from_eol ${ch.from_eol} is not the line-ending convention ${known.decision} records for ${
+        short(known.from)
+      } (${known.from_eol})`,
     );
   }
   if (ch.from !== frozen) {

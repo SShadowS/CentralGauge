@@ -1215,6 +1215,7 @@ const simChange = (o: Record<string, unknown> = {}) => ({
   kind: "simulation_script",
   decision: SIM_DECISION,
   from: OLD_SIM,
+  from_eol: "crlf",
   to: NEW_SIM,
   reason: "nuisance-model fix: arm main effect, deconvolved arm_sd",
   approval:
@@ -1244,6 +1245,14 @@ const ctxOld = (script: string, args: unknown = STAGE_A.simulation.args) =>
 Deno.test("protocol change (H-65): the recorded simulation-script replacement is accepted and leaves stage A unchanged", async () => {
   const doc = await docOld([simChange()]);
   assertEquals(await protocolSha(doc), APPROVED_OLD);
+  assertEquals(await preregProblems(doc, ctxOld(NEW_SIM)), []);
+});
+
+Deno.test("protocol change (H-65 r2): the CRLF-checkout d26a22f4 is compared as recorded, never recomputed under LF normalisation", async () => {
+  // d26a22f4 is not what scriptSha256 gives for 93737719 today (5c610fcf..., LF
+  // normalised); the record still matches the frozen value byte for byte.
+  const doc = await docOld([simChange({ from: OLD_SIM, from_eol: "crlf" })]);
+  assertEquals(doc.simulation.script_sha256, OLD_SIM);
   assertEquals(await preregProblems(doc, ctxOld(NEW_SIM)), []);
 });
 
@@ -1278,6 +1287,9 @@ Deno.test("protocol change (H-65): another decision file, a wrong from or to, or
   assert(to.includes("differs from the protocol change"), to);
   const same = await p([simChange({ to: OLD_SIM })], OLD_SIM);
   assert(same.includes("replaces the script with itself"), same);
+  // H-65 r2: d26a22f4 was hashed on a CRLF checkout; an lf claim is refused.
+  const eol = await p([simChange({ from_eol: "lf" })]);
+  assert(eol.includes("from_eol lf is not the line-ending convention"), eol);
   const two = await p([simChange(), simChange()]);
   assert(two.includes("at most one simulation-script protocol change"), two);
 });
@@ -1294,6 +1306,10 @@ Deno.test("protocol change (H-65): the record schema is strict and the amendment
   assert(!parses({ protocol_changes: [simChange({ reason: " " })] }));
   const { kind: _k, ...noKind } = simChange();
   assert(!parses({ protocol_changes: [noKind] }));
+  // H-65 r2: from_eol is required and is crlf or lf.
+  const { from_eol: _e, ...noEol } = simChange();
+  assert(!parses({ protocol_changes: [noEol] }));
+  assert(!parses({ protocol_changes: [simChange({ from_eol: "CRLF" })] }));
   assert(
     !parses({
       amendments: [{
