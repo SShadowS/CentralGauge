@@ -500,12 +500,28 @@ export interface JudgeContext {
   policy: PolicyViolation[];
   /** H-35: the digest of the judgment's production manifest, once built. */
   manifest: string | null;
-  /** H-63: every container a compile of this judgment ran on (env_fp input). */
-  compiled?: Set<string>;
+  /**
+   * H-63: every container a compile attempt of this judgment was dispatched
+   * to, with the env_fp captured on entry of the attempt (null: no lineage;
+   * undefined: the environment could not be read). Finalization only
+   * aggregates these, it never queries a container again.
+   */
+  compiled?: Map<string, string | null | undefined>;
+}
+
+/** H-63: captures one compile attempt's environment, once per container. */
+async function noteCompile(ctx: JudgeContext, container: string) {
+  const m = (ctx.compiled ??= new Map());
+  if (m.has(container)) return;
+  m.set(container, undefined);
+  try {
+    m.set(container, await envFp(ctx, container));
+  } catch {
+    // Stays undefined: attempted, environment unknown.
+  }
 }
 
 function recordBuild(ctx: JudgeContext, prep: Prepared, label: string): void {
-  (ctx.compiled ??= new Set()).add(prep.container);
   ctx.log.spans.compile_ms += prep.compile_ms;
   ctx.log.per_app_compiles += prep.per_app_compiles;
   for (const b of prep.built) {
@@ -942,7 +958,7 @@ async function buildOracle(
   const [b] = await ctx.lane.compileOn(
     prep.container,
     async (c) => {
-      (ctx.compiled ??= new Set()).add(c);
+      await noteCompile(ctx, c);
       const r = await buildApps(ctx.lane.bc, c, {
         srcDir: ctx.i.task.dir,
         apps: [app],
@@ -1067,6 +1083,7 @@ async function scoreChange(ctx: JudgeContext): Promise<void> {
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,
+      onAttempt: (c) => noteCompile(ctx, c),
       ...(production ? { production } : {}),
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
@@ -1466,6 +1483,7 @@ export async function scoreTestAuthoring(ctx: JudgeContext): Promise<void> {
       workDir: join(i.workDir, name),
       lock: i.lock,
       label,
+      onAttempt: (c) => noteCompile(ctx, c),
       ...(production ? { production } : {}),
       ...(i.buildCache ? { cache: i.buildCache } : {}),
     });
@@ -1815,7 +1833,7 @@ export async function judge(
     onVerify: (v) => log.verifies!.push(v),
     onFsCheck: (f) => log.fs_checks!.push(f),
   };
-  const compiled = new Set<string>();
+  const compiled = new Map<string, string | null | undefined>();
   const ctx: JudgeContext = {
     lane,
     i,
@@ -1864,9 +1882,10 @@ export async function judge(
   // H-35 S3.3 (design-r4 5.2): a judgment is of one environment. Routing
   // makes a mix impossible; until it does this is the fail-closed backstop.
   const envs = new Set((log.deployments ?? []).map((d) => d.env_fp ?? null));
-  // H-63: every container the judgment compiled on counts too, so a build
-  // failure or an infra error before the first deploy still has its env.
-  for (const c of compiled) envs.add(await envFp(ctx, c));
+  // H-63: every compile attempt's env, captured on entry of the attempt (no
+  // container is read here). An unreadable one (undefined) adds nothing, so
+  // the judgment is never exempted as container-free.
+  for (const e of compiled.values()) if (e !== undefined) envs.add(e);
   if (envs.size > 1) {
     throw new Error(
       `harness bug: deployments of one judgment span environments (${

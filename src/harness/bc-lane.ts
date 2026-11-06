@@ -1494,6 +1494,12 @@ export interface PrepareInput {
    * the manifest's files (G and A alike, with or without a cache).
    */
   production?: ProductionManifest;
+  /**
+   * H-63: called on entry of every compile attempt (a reroute calls it again
+   * for the next container), while the container is admitted and before any
+   * fallible build work, so even an attempt that throws is represented.
+   */
+  onAttempt?: (container: string) => void | Promise<void>;
 }
 
 /** H-35 (design-r3 3.2): one judgment's production builds, published by every deployment. */
@@ -1606,7 +1612,10 @@ export interface Prepared {
 }
 
 export function prepareApps(lane: BcLane, o: PrepareInput): Promise<Prepared> {
-  return lane.compile((container) => prepareOn(lane, container, o), o.signal);
+  return lane.compile(async (container) => {
+    await o.onAttempt?.(container);
+    return prepareOn(lane, container, o);
+  }, o.signal);
 }
 
 /**
