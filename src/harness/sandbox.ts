@@ -1088,18 +1088,28 @@ async function runTool(exe: string, args: string[]) {
  * whoami reads the process token, so it names a real account on domain,
  * workgroup and OpenSSH sessions alike; USERDOMAIN is only an env var, and an
  * OpenSSH session on a workgroup host sets it to WORKGROUP, which icacls
- * cannot map (1332, H-66 / GitHub #31).
+ * cannot map (1332, H-66 / GitHub #31). The env pair is used only when
+ * whoami gives no answer (it fails, cannot start or times out); an answer
+ * that is not a plain DOMAIN\\user (e.g. `nt authority\\system`) refuses, so a
+ * stale env pair never overrides the token.
  */
 export async function currentUser(
   run: typeof runTool = runTool,
   env: (k: string) => string | undefined = (k) => Deno.env.get(k),
 ): Promise<string> {
-  const r = await run("whoami.exe", []);
+  const r = await run("whoami.exe", []).catch((e: unknown) => ({
+    code: -1,
+    stdout: "",
+    stderr: e instanceof Error ? e.message : String(e),
+  }));
   const who = r.stdout.trim();
-  if (r.code === 0 && /^[^\\\s]+\\[^\\\s]+$/.test(who)) return who;
-  const d = env("USERDOMAIN");
-  const u = env("USERNAME");
-  if (d && u) return `${d}\\${u}`;
+  if (r.code === 0) {
+    if (/^[^\\\s]+\\[^\\\s]+$/.test(who)) return who;
+  } else {
+    const d = env("USERDOMAIN");
+    const u = env("USERNAME");
+    if (d && u) return `${d}\\${u}`;
+  }
   throw new ConfigurationError(
     `cannot resolve the current user: ${who || r.stderr.trim()}`,
   );
@@ -1117,6 +1127,9 @@ export function aclIsPrivate(
   /** "(oi)(ci)" for a directory (inherited by its files), "" for a file. */
   inherit = "(oi)(ci)",
 ): boolean {
+  // user SYSTEM would collapse the two required entries into one and let any
+  // second principal pass (H-66 Sol r1).
+  if (user.toLowerCase() === "nt authority\\system") return false;
   const lines = listing.split(/\r?\n/);
   const end = lines.indexOf("");
   if (end < 1 || !lines[0]!.startsWith(`${dir} `)) return false;

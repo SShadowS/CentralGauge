@@ -11,6 +11,7 @@ import { __setContextListerForTests } from "../../../src/container/docker-contex
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { exists, validatedDir } from "../../../src/harness/fsutil.ts";
 import {
+  aclIsPrivate,
   buildRunArgs,
   captureStream,
   currentUser,
@@ -1762,9 +1763,33 @@ Deno.test("H-66 currentUser: whoami failure falls back to the env pair", async (
   const fail = () =>
     Promise.resolve({ code: 1, stdout: "", stderr: "access denied" });
   assertEquals(await currentUser(fail, env), "CORP\\bench");
-  const odd = () =>
-    Promise.resolve({ code: 0, stdout: "not a name", stderr: "" });
-  assertEquals(await currentUser(odd, env), "CORP\\bench");
+  // A spawn error or timeout is a whoami failure too.
+  const reject = () => Promise.reject(new Error("timed out"));
+  assertEquals(await currentUser(reject, env), "CORP\\bench");
+});
+
+Deno.test("H-66 currentUser: a whoami answer it cannot use refuses, never falls back", async () => {
+  // whoami answered from the token: a stale env pair must not override it.
+  const env = (k: string) => ({ USERDOMAIN: "HOST", USERNAME: "other" })[k];
+  for (const out of ["nt authority\\system", "not a name"]) {
+    const run = () => Promise.resolve({ code: 0, stdout: out, stderr: "" });
+    await assertRejects(
+      () => currentUser(run, env),
+      ConfigurationError,
+      `cannot resolve the current user: ${out}`,
+    );
+  }
+});
+
+Deno.test("H-66 aclIsPrivate: user SYSTEM never makes SYSTEM + Everyone private", () => {
+  const dir = "C:\\s";
+  const listing = [
+    `${dir} NT AUTHORITY\\SYSTEM:(OI)(CI)(F)`,
+    "    Everyone:(OI)(CI)(F)",
+    "",
+    "Successfully processed 1 files; Failed processing 0 files",
+  ].join("\r\n");
+  assertEquals(aclIsPrivate(listing, dir, "NT AUTHORITY\\SYSTEM"), false);
 });
 
 Deno.test("H-66 currentUser: whoami failure without the env pair still refuses", async () => {
