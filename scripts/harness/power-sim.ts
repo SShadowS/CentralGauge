@@ -44,6 +44,7 @@ export interface Fit {
   arm_sd: number;
   solved_ratio: number;
   unknown_share: number;
+  arm_offsets?: Record<string, number>;
   /** Confirmation-only sensitivity (round 2 finding 2): skewed costs, arm-dependent missingness, wider solve heterogeneity. */
   sens?: "skew" | "arm_missing" | "hetero" | undefined;
 }
@@ -139,43 +140,142 @@ export function poolCells(files: Cell[][]): Cell[] {
   return out;
 }
 
+/**
+ * H-65: the cells of the fit population, the tasks listed in `ids` (the
+ * --fit-tasks file: the candidates that survive M8's select). Refuses a list
+ * that is empty, not unique strings, or names a task without cells.
+ */
+export function restrictToTasks(cells: Cell[], ids: unknown): Cell[] {
+  if (
+    !Array.isArray(ids) || ids.length === 0 ||
+    !ids.every((x) => typeof x === "string" && x !== "")
+  ) {
+    throw new Error("fit tasks must be a non-empty JSON array of task ids");
+  }
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("fit tasks list a task twice");
+  }
+  const have = new Set(cells.map((c) => c.task));
+  const missing = ids.filter((t) => !have.has(t));
+  if (missing.length > 0) {
+    throw new Error(`fit tasks without pilot cells: ${missing.join(", ")}`);
+  }
+  const keep = new Set<string>(ids);
+  return cells.filter((c) => keep.has(c.task));
+}
+
+/**
+ * The nuisance model the generator draws from, fitted on log cost (H-65,
+ * decision 2026-11-06-m11-sim-model-fix-and-mining.md):
+ *
+ *   y_tar = mu_t + o_a + d_ta + e_tar,  d_ta ~ N(0, tau^2), e_tar ~ N(0, sigma^2)
+ *
+ * - o_a (arm_offsets): a fixed per-arm offset, sum 0 over the pilot arms. Fitted
+ *   by an additive two-way fit on the (task, arm) group means m_ta, each group
+ *   weighted alike (backfitting; one pass when every task has every arm, where
+ *   o_a is the mean over tasks of m_ta minus the task mean).
+ * - cell_sd = sigma: within-group SS over N - G (N known-cost cells, G groups).
+ * - arm_sd = tau, the SD of the latent i.i.d. deviation the generator draws per
+ *   task and arm. The residual r_ta = m_ta - mu_t - o_a has residual df
+ *   G - T - (K - 1) ((T-1)(K-1) when balanced), and E[sum r^2] = df * (tau^2 +
+ *   sigma^2 / n) for balanced n repeats, so the method-of-moments estimate is
+ *     tau^2 = max(0, sum r^2 / df - sigma^2 * mean_ta(1 / n_ta)).
+ *   For unbalanced n_ta, mean(1/n_ta) is an approximation (the exact weights
+ *   are the residual leverages); a task with one arm group has r = 0 and adds
+ *   one group and one parameter, so it adds nothing to df.
+ * - solved_ratio: solved vs unsolved log cost within a task, after o_a is
+ *   removed (an arm that is dearer and solves less is not a solve effect).
+ *
+ * The offsets are recorded, NOT applied by the generator: the pilot ran only
+ * the diagonal arms (plain, realistic-lsp), whose offset is the C3-type
+ * realistic effect plus the LSP effect. The scenarios define the arm effects
+ * of the four SIM_ARMS; adding the pilot's offset would bake an observed
+ * effect into the null and the alternatives.
+ */
 export function fitCells(cells: Cell[]): Fit {
   checkCells(cells);
   const term = cells.filter((c) =>
     c.status === "scored" || c.status === "unscored"
   );
   const known = term.filter((c) => c.spend_usd !== null && c.spend_usd > 0);
-  const group = (k: (c: Cell) => string) => {
-    const m = new Map<string, Cell[]>();
-    for (const c of known) m.set(k(c), [...(m.get(k(c)) ?? []), c]);
-    return m;
+  const log = (c: Cell) => Math.log(c.spend_usd!);
+  const byKey = new Map<string, Cell[]>();
+  for (const c of known) {
+    const k = `${c.task}\u0000${c.arm}`;
+    byKey.set(k, [...(byKey.get(k) ?? []), c]);
+  }
+  const groups = [...byKey.values()].map((cs) => ({
+    task: cs[0]!.task,
+    arm: cs[0]!.arm,
+    cs,
+    n: cs.length,
+    m: mean(cs.map(log)),
+  }));
+  type Group = (typeof groups)[number];
+  const by = (k: (g: Group) => string) => {
+    const out = new Map<string, Group[]>();
+    for (const g of groups) out.set(k(g), [...(out.get(k(g)) ?? []), g]);
+    return out;
   };
-  const logs = (cs: Cell[]) => cs.map((c) => Math.log(c.spend_usd!));
-  const byTask = group((c) => c.task);
-  const byTaskArm = group((c) => `${c.task}\u0000${c.arm}`);
-  const taskMean = new Map([...byTask].map(([t, cs]) => [t, mean(logs(cs))]));
-  const within = [...byTaskArm.values()].flatMap((cs) => {
-    const m = mean(logs(cs));
-    return logs(cs).map((x) => x - m);
-  });
-  const armDev = [...byTaskArm.values()].map((cs) =>
-    mean(logs(cs)) - taskMean.get(cs[0]!.task)!
+  const byTask = by((g) => g.task);
+  const byArm = by((g) => g.arm);
+  const arms = [...byArm.keys()].sort();
+  const off = new Map(arms.map((a) => [a, 0]));
+  const taskMeans = () =>
+    new Map(
+      [...byTask].map((
+        [t, gs],
+      ) => [t, mean(gs.map((g) => g.m - off.get(g.arm)!))]),
+    );
+  let mu = taskMeans();
+  for (let it = 0; it < 10000; it++) {
+    const raw = arms.map((a) =>
+      mean(byArm.get(a)!.map((g) => g.m - mu.get(g.task)!))
+    );
+    const centre = mean(raw);
+    let change = 0;
+    arms.forEach((a, i) => {
+      change = Math.max(change, Math.abs(raw[i]! - centre - off.get(a)!));
+      off.set(a, raw[i]! - centre);
+    });
+    mu = taskMeans();
+    if (change < 1e-14) break;
+  }
+  const withinSS = groups.reduce(
+    (a, g) => a + g.cs.reduce((b, c) => b + (log(c) - g.m) ** 2, 0),
+    0,
   );
-  const solvedDiff = [...byTask.values()].flatMap((cs) => {
+  const withinDf = known.length - groups.length;
+  const sigma2 = withinDf > 0 ? withinSS / withinDf : 0;
+  const residSS = groups.reduce(
+    (a, g) => a + (g.m - mu.get(g.task)! - off.get(g.arm)!) ** 2,
+    0,
+  );
+  const residDf = groups.length - byTask.size - (arms.length - 1);
+  const tau2 = residDf > 0
+    ? Math.max(
+      0,
+      residSS / residDf - sigma2 * mean(groups.map((g) => 1 / g.n)),
+    )
+    : 0;
+  const adj = (c: Cell) => log(c) - off.get(c.arm)!;
+  const solvedDiff = [...byTask.values()].flatMap((gs) => {
+    const cs = gs.flatMap((g) => g.cs);
     const s = cs.filter((c) => c.pass === true);
     const u = cs.filter((c) => c.pass !== true);
-    return s.length > 0 && u.length > 0 ? [mean(logs(s)) - mean(logs(u))] : [];
+    return s.length > 0 && u.length > 0
+      ? [mean(s.map(adj)) - mean(u.map(adj))]
+      : [];
   });
   return {
-    log_mean: mean([...taskMean.values()]),
-    task_sd: sd([...taskMean.values()]),
-    cell_sd: within.length < 2
-      ? 0
-      : Math.sqrt(within.reduce((a, x) => a + x * x, 0) / (within.length - 1)),
-    arm_sd: sd(armDev),
+    log_mean: mean([...mu.values()]),
+    task_sd: sd([...mu.values()]),
+    cell_sd: Math.sqrt(sigma2),
+    arm_sd: Math.sqrt(tau2),
     solved_ratio: solvedDiff.length === 0 ? 1 : Math.exp(mean(solvedDiff)),
     unknown_share: term.filter((c) => c.spend_usd === null).length /
       term.length,
+    arm_offsets: Object.fromEntries(arms.map((a) => [a, off.get(a)!])),
   };
 }
 
