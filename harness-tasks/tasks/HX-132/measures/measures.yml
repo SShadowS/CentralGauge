@@ -1,22 +1,28 @@
 v: 1
 partial_credit:
   weights:
-    "87940/FailedCheckOutKeepsHold": 1
-    "87940/RefusedCheckOutKeepsHold": 1
-    "87940/RetriedCheckOutReusesHold": 1
-    "87940/CheckOutAuthorizesExpectedAmount": 1
-    "87940/FailedSwapReleasesNothing": 1
-    "87940/RefusedSwapReleasesNothing": 1
-    "87940/RetriedSwapUsesNewHold": 1
-    "87940/SwapReleasesOldHoldOnce": 1
-    "87940/CheaperSwapKeepsHold": 1
-    "87940/EqualRateSwapKeepsHold": 1
-    "87940/RetargetedSwapRequestsNewHold": 1
-    "87940/CheckOutAfterRateChangeRequestsNewHold": 1
-    "87940/RetargetedSwapLeavesOneOpenHold": 1
     "87940/CheaperSwapAfterFailedSwapReleasesUnusedHold": 1
+    "87940/FailedCheckOutKeepsHold": 1
+    "87940/FailedSwapReleasesNothing": 1
     "87940/RateChangedCheckOutReleasesReplacedHold": 1
-  hidden_regressions: []
+    "87940/RefusedCheckOutKeepsHold": 1
+    "87940/RefusedSwapReleasesNothing": 1
+    "87940/RetargetedSwapLeavesOneOpenHold": 1
+    "87940/RetargetedSwapRequestsNewHold": 1
+    "87940/RetriedCheckOutReusesHold": 1
+    "87940/RetriedSwapUsesNewHold": 1
+  hidden_regressions:
+    - "87940/CheckOutAuthorizesExpectedAmount"
+    - "87940/SwapReleasesOldHoldOnce"
+    - "87940/CheaperSwapKeepsHold"
+    - "87940/EqualRateSwapKeepsHold"
+    - "87940/CheckOutAfterRateChangeRequestsNewHold"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/checkout-only: { partial_credit: 0.4 }
+  naive/modify-no-commit: { partial_credit: 0.3 }
+  naive/release-after-overwrite: { partial_credit: 0.6 }
+  naive/release-at-request: { partial_credit: 0.5 }
+  naive/release-before-keybox: { partial_credit: 0.9 }
+  naive/request-last: { partial_credit: 0.7 }
