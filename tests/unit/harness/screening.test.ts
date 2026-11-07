@@ -1619,3 +1619,55 @@ Deno.test("nextScreenTasks / selectRefusal (H-68 r2): a missing calibration pre-
     "select needs every candidate sealed and screened",
   );
 });
+
+import { firstAttempts } from "../../../scripts/harness/screening.ts";
+
+Deno.test("firstAttempts (H-68 r3): each cell's first execution attempt, never a retry or a manual rerun", async () => {
+  const c = await campaign({ repeats: 2 });
+  const p1 = execution(c, { arm: "plain" });
+  const m1 = execution(c, {
+    arm: "plain",
+    attempt: 2,
+    run_kind: "manual_rerun",
+  });
+  const s1 = execution(c, { arm: "skills" }, {
+    termination: "setup_failed",
+    did_work: false,
+  });
+  const s2 = execution(c, {
+    arm: "skills",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: s1.id,
+  });
+  const p2 = execution(c, { task: "HX-002", arm: "plain" });
+  const crash = execution(c, { repeat: 2, arm: "plain" }, {
+    termination: "harness_crash",
+    did_work: true,
+  });
+  const unscored = execution(c, { repeat: 2, arm: "skills" });
+  const ex = [p1, m1, s1, s2, p2, crash, unscored];
+  const js = [
+    judgment(c, p1, true),
+    judgment(c, m1, false),
+    judgment(c, s2, true),
+    judgment(c, crash, true),
+    judgment(c, unscored, null),
+  ];
+  assertEquals(Object.fromEntries(firstAttempts(c, ex, js)), {
+    // judged pass; the manual rerun's fail is never read
+    "HX-001/1/plain": "pass",
+    // the first attempt failed setup; the automatic retry's pass is never read
+    "HX-001/1/skills": "fail",
+    // H-29: a crash-ended first attempt never counts
+    "HX-001/2/plain": "fail",
+    // judged unscored: awaiting a rejudge, as the cell itself
+    "HX-001/2/skills": "live",
+    // ended, not judged yet
+    "HX-002/1/plain": "live",
+    // not started
+    "HX-002/1/skills": "live",
+    "HX-002/2/plain": "live",
+    "HX-002/2/skills": "live",
+  });
+});

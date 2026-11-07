@@ -625,28 +625,41 @@ Deno.test("r1 fictitious calibration: a filter round needs an earlier calibratio
   });
 });
 
-Deno.test("r2 retry: a retried pre-screen cell makes its task eligible (the replacement never counts), pending while live, and is no problem", async () => {
-  const twice = (pass: boolean | null, status?: Cell["status"]) => ({
-    ...cell("HX-002", LSP, pass, 1, status),
-    attempts: 2,
-  });
+/** A cell as the loader builds it: `first` is its first execution attempt's outcome. */
+const at1 = (
+  c: Cell,
+  first: "pass" | "fail" | "live",
+  extra: { attempts?: number; manual_reruns?: number } = {},
+) => ({ ...c, first, manual_reruns: 0, ...extra });
+
+Deno.test("r3 first attempt: the verdict reads each cell's first execution attempt only; an automatic retry never changes it and is no problem", async () => {
   assertEquals(
     Object.fromEntries(prescreenVerdict([
-      cell("HX-002", PLAIN, true),
-      twice(true),
-      cell("HX-003", PLAIN, true),
-      { ...cell("HX-003", LSP, null, 1, "pending"), attempts: 2 },
-      cell("HX-004", PLAIN, false),
-      { ...cell("HX-004", LSP, true), attempts: 3 },
+      // first attempt passed; a later attempt (whatever it says) is ignored
+      at1(cell("HX-002", PLAIN, true), "pass"),
+      at1(cell("HX-002", LSP, false), "pass", { attempts: 2 }),
+      // first attempt crashed (infra), the automatic retry passed: eligible
+      at1(cell("HX-003", PLAIN, true), "pass"),
+      at1(cell("HX-003", LSP, true), "fail", { attempts: 2 }),
+      // the automatic retry is still running: the first attempt decided
+      at1(cell("HX-004", PLAIN, true), "pass"),
+      at1(cell("HX-004", LSP, null, 1, "pending"), "fail", { attempts: 2 }),
+      // the first attempt itself is still live
+      at1(cell("HX-005", PLAIN, true), "pass"),
+      at1(cell("HX-005", LSP, null, 1, "pending"), "live"),
     ], RULES)),
     {
-      "HX-002": "eligible",
-      "HX-003": "pending",
+      "HX-002": "provisionally_saturated",
+      "HX-003": "eligible",
       "HX-004": "eligible",
+      "HX-005": "pending",
     },
   );
   const r = await evaluatePrescreen(input([
-    camp("p1", AT(10), [cell("HX-002", PLAIN, true), twice(true)]),
+    camp("p1", AT(10), [
+      at1(cell("HX-002", PLAIN, true), "pass"),
+      at1(cell("HX-002", LSP, true), "fail", { attempts: 2 }),
+    ]),
   ]));
   assertEquals(r.problems, []);
   assertEquals(r.verdicts.get("HX-002"), "eligible");
@@ -655,9 +668,15 @@ Deno.test("r2 retry: a retried pre-screen cell makes its task eligible (the repl
   assertEquals(r.missing, new Set());
   const ok = prescreenReport([], new Map<string, Status>(), r);
   assert(
-    ok.out.includes("retried pre-screen -> eligible: HX-002"),
+    ok.out.includes(
+      "retried pre-screen (first attempt not scored) -> eligible: HX-002",
+    ),
     ok.out.join("\n"),
   );
+  const twice = (pass: boolean | null, status?: Cell["status"]) => ({
+    ...cell("HX-002", LSP, pass, 1, status),
+    attempts: 2,
+  });
   // A duplicate pre-screen campaign stays a problem.
   const dup = await evaluatePrescreen(input([
     camp("p1", AT(10), [cell("HX-002", PLAIN, true), twice(true)]),
@@ -776,4 +795,69 @@ Deno.test("r1 CLIs: screening.ts and prescreen.ts load as entry points and exit 
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+const W8 = "harness-v2-screen-w8";
+const SIX = ["HX-101", "HX-102", "HX-103", "HX-104", "HX-105", "HX-106"];
+const FIL8: Round = { seal: W8, mode: "filter" };
+/** start (HX-001), w5 calibration (HX-002), w8 filter (six candidates). */
+const SEALS8: SealView[] = [
+  { tag: START, seed: "seed-start", screening: S(["HX-001"]) },
+  { tag: W5, seed: "seed-w5", screening: S(["HX-001", "HX-002"], [CAL5]) },
+  {
+    tag: W8,
+    seed: "seed-w8",
+    screening: S(["HX-001", "HX-002", ...SIX], [CAL5, FIL8]),
+  },
+];
+const input8 = (cells: Cell[]) => ({
+  now: S(["HX-001", "HX-002", ...SIX], [CAL5, FIL8]),
+  seals: SEALS8,
+  heldOut: [],
+  prescreens: [camp("p1", AT(10), cells)],
+  full: [],
+});
+/** The six w8 candidates in audit-rank order (A lowest .. F highest). */
+const auditOrder = async () =>
+  [...await ranks("seed-w8:prescreen-audit", SIX)].sort(([, a], [, b]) =>
+    a < b ? -1 : 1
+  ).map(([id]) => id);
+const passing = (id: string) => [
+  at1(cell(id, PLAIN, true), "pass"),
+  at1(cell(id, LSP, true), "pass"),
+];
+
+Deno.test("r3 manual rerun: a manually rerun pre-screen cell is refused, scored or not; it cannot steer the audit", async () => {
+  const order = await auditOrder();
+  const [a, b, , , , f] = order;
+  const base = [...pre("HX-002", false, false), ...SIX.flatMap(passing)];
+  const ok = await evaluatePrescreen(input8(base));
+  assertEquals(ok.problems, []);
+  assertEquals(ok.audits.get(W8), { rejects: SIX, audited: [a!, b!].sort() });
+
+  // A manual rerun of F (whatever its replacement says) is a visible refusal.
+  for (const pass of [false, null]) {
+    const rerun = base.map((c) =>
+      c.task === f && c.arm === LSP
+        ? at1(cell(f!, LSP, pass), "pass", { attempts: 2, manual_reruns: 1 })
+        : c
+    );
+    const r = await evaluatePrescreen(input8(rerun));
+    assertEquals(r.problems, [
+      `pre-screen cell ${f}/1/${LSP} was manually rerun (no pre-screen rerun)`,
+    ]);
+    // Its first attempt passed, so F stays a reject: R and the audit hold.
+    assertEquals(r.audits.get(W8), { rejects: SIX, audited: [a!, b!].sort() });
+  }
+
+  // An automatic retry on a cell whose first attempt passed changes nothing.
+  const auto = base.map((c) =>
+    c.task === f && c.arm === LSP
+      ? at1(cell(f!, LSP, false), "pass", { attempts: 2 })
+      : c
+  );
+  const r = await evaluatePrescreen(input8(auto));
+  assertEquals(r.problems, []);
+  assertEquals(r.verdicts.get(f!), "provisionally_saturated");
+  assertEquals(r.audits.get(W8), { rejects: SIX, audited: [a!, b!].sort() });
 });

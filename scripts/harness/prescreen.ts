@@ -12,9 +12,10 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
-import type { Cell } from "../../src/harness/stats.ts";
 import type {
   Amendment,
+  EnvCell,
+  FirstAttempt,
   Rules,
   ScreenCampaign,
   Screening,
@@ -58,18 +59,29 @@ const prescreenOf = (s: Screening): Amendment | undefined =>
   s.amendments.find((a) => a.id === AMENDMENT_ID);
 
 /**
- * Per task: provisionally saturated exactly when both arms have a scored,
- * passing repeat-1 cell, none of them retried. A repeat-1 cell that is live
- * or not started (pending, unrun) makes it pending, whatever the other arm
- * did. r2: a retried cell (more than one execution attempt, manual or
- * automatic) makes it eligible once nothing is live, so a replacement
- * outcome never counts toward provisionally saturated. Otherwise it is
- * eligible: cells come after excludeCrashCells, so a crash, an unscored cell
- * or a missing arm is eligible (fail closed: it only adds a full screen). A
- * foreign arm throws.
+ * r3: a cell's first execution attempt (the loader's firstAttempts). A cell
+ * without it (a hand-built one) is read from its status: scored and passing
+ * is a pass, pending or unrun is live, anything else (a crash-excluded or
+ * unscored cell) a fail.
+ */
+const firstOf = (c: EnvCell): FirstAttempt =>
+  c.first ??
+    (c.status === "scored" && c.pass === true
+      ? "pass"
+      : c.status === "pending" || c.status === "unrun"
+      ? "live"
+      : "fail");
+
+/**
+ * Per task, from each repeat-1 cell's FIRST execution attempt only (r3): a
+ * later attempt, automatic retry or manual rerun, never changes it. Both
+ * arms' first attempts passed: provisionally saturated. Otherwise a live
+ * first attempt makes it pending, whatever the other arm did. Otherwise
+ * eligible: a crashed, unjudged or failed first attempt, or a missing arm
+ * (fail closed: it only adds a full screen). A foreign arm throws.
  */
 export function prescreenVerdict(
-  cells: Cell[],
+  cells: EnvCell[],
   rules: Rules,
 ): Map<string, Verdict> {
   const passed = new Map<string, Set<string>>();
@@ -82,31 +94,28 @@ export function prescreenVerdict(
       );
     }
     const p = passed.get(c.task) ?? new Set<string>();
-    if (c.repeat === 1 && c.status === "scored" && c.pass === true) {
-      p.add(c.arm);
-    }
-    if (c.repeat === 1 && (c.status === "pending" || c.status === "unrun")) {
-      live.add(c.task);
-    }
+    if (c.repeat === 1 && firstOf(c) === "pass") p.add(c.arm);
+    if (c.repeat === 1 && firstOf(c) === "live") live.add(c.task);
     passed.set(c.task, p);
   }
-  const retried = retriedTasks(cells);
   return new Map(
     [...passed].map(([t, p]) => [
       t,
-      live.has(t)
-        ? "pending"
-        : !retried.has(t) && rules.arms.every((a) => p.has(a))
+      rules.arms.every((a) => p.has(a))
         ? "provisionally_saturated"
+        : live.has(t)
+        ? "pending"
         : "eligible",
     ]),
   );
 }
 
-/** r2: tasks with a repeat-1 pre-screen cell of more than one execution attempt. */
-export const retriedTasks = (cells: Cell[]): Set<string> =>
+/** r3: tasks with an automatically retried repeat-1 cell (no manual rerun). */
+export const retriedTasks = (cells: EnvCell[]): Set<string> =>
   new Set(
-    cells.filter((c) => c.repeat === 1 && c.attempts > 1).map((c) => c.task),
+    cells.filter((c) =>
+      c.repeat === 1 && c.attempts > 1 && (c.manual_reruns ?? 0) === 0
+    ).map((c) => c.task),
   );
 
 /** HEAD's registry must carry a prescreen amendment naming a whitelisted decision. */
@@ -278,7 +287,10 @@ export interface PrescreenState {
    * refuses (r1), but the full screen may run first (r2).
    */
   missing: Set<string>;
-  /** r2: tasks whose pre-screen had a retried cell (eligible once finished). */
+  /**
+   * r3: tasks with an automatically retried pre-screen cell. Retries follow
+   * only an unjudged first attempt (retryProblem), so these are eligible.
+   */
   retried: Set<string>;
   problems: string[];
 }
@@ -312,7 +324,18 @@ export async function evaluatePrescreen(input: {
     if (prescreens.length > 0) out.problems.push(...gate);
     return out;
   }
-  for (const c of prescreens) out.problems.push(...(c.problems ?? []));
+  for (const c of prescreens) {
+    out.problems.push(...(c.problems ?? []));
+    // r3: a manual rerun (run_kind manual_rerun, as manualRerunProblems
+    // counts it) of a pre-screen cell is refused, scored or not.
+    for (const x of c.cells) {
+      if ((x.manual_reruns ?? 0) > 0) {
+        out.problems.push(
+          `pre-screen cell ${x.task}/${x.repeat}/${x.arm} was manually rerun (no pre-screen rerun)`,
+        );
+      }
+    }
+  }
   const byTask = new Map<string, ScreenCampaign[]>();
   for (const c of prescreens) {
     for (const t of new Set(c.cells.map((x) => x.task))) {
@@ -496,7 +519,11 @@ export function prescreenReport(
     ps.verdicts.get(id) === "eligible"
   ).sort();
   if (retried.length > 0) {
-    out.push(`retried pre-screen -> eligible: ${retried.join(", ")}`);
+    out.push(
+      `retried pre-screen (first attempt not scored) -> eligible: ${
+        retried.join(", ")
+      }`,
+    );
   }
   return { ok: true, out, err: [] };
 }

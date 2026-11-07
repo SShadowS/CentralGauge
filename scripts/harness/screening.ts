@@ -664,6 +664,57 @@ export function manualRerunProblems(
   );
 }
 
+/** H-68 r3: the outcome of a cell's first execution attempt. */
+export type FirstAttempt = "pass" | "fail" | "live";
+
+/**
+ * H-68 r3: per planned cell (`task/repeat/arm`), its first execution
+ * attempt's outcome (the planned root; an automatic retry or a manual rerun
+ * is never read). Not started, or ended and not yet judged (an unscored
+ * verdict awaits a rejudge, as in resolveChain without a scorer): live. A
+ * crash (H-29) or an unjudged ending (setup_failed, usage_limited): fail.
+ */
+export function firstAttempts(
+  c: CampaignRecord,
+  executions: ExecutionRecord[],
+  judgments: JudgmentRecord[],
+): Map<string, FirstAttempt> {
+  const oracle = campaignJudging(c).oracle;
+  const out = new Map<string, FirstAttempt>();
+  for (const b of c.blocks) {
+    for (const arm of b.order) {
+      const root = executions.find((e) =>
+        e.task_id === b.task_id && e.repeat === b.repeat && e.arm === arm &&
+        e.run_kind === "planned"
+      );
+      const key = `${b.task_id}/${b.repeat}/${arm}`;
+      if (!root) {
+        out.set(key, "live");
+      } else if (
+        root.termination === "harness_crash" ||
+        !outcomePolicy(root.termination, root.did_work).judge
+      ) {
+        out.set(key, "fail");
+      } else {
+        const j = selectJudgment(
+          root,
+          judgments,
+          oracle.get(root.task_id) ?? "",
+        );
+        out.set(
+          key,
+          !j || j.verdict === "unscored"
+            ? "live"
+            : j.verdict === "pass"
+            ? "pass"
+            : "fail",
+        );
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Every screening campaign, oldest first. One campaign per experiment, no
  * duplicate ids. A task may be screened again only while its previous screen
@@ -770,7 +821,13 @@ export function classify(
  * legacy judgment (no env_fp, so never pooled with one), null without a
  * counted judgment (such a cell is never scored).
  */
-export type EnvCell = Cell & { env?: string | null };
+export type EnvCell = Cell & {
+  env?: string | null;
+  /** H-68 r3: the loader's firstAttempts outcome (pre-screen verdicts read it). */
+  first?: FirstAttempt;
+  /** H-68 r3: manual reruns of the cell (CellRecord.manual_reruns). */
+  manual_reruns?: number;
+};
 
 export function cellEnvs<T extends { judgment_id: string | null }>(
   cells: T[],
@@ -1308,12 +1365,19 @@ export async function loadScreenCampaigns(
     judged.push(...data.judgments);
     const { cells, excluded } = excludeCrashCells(records, data.executions);
     const envs = cellEnvs(records, data.judgments);
+    const first = firstAttempts(c, data.executions, data.judgments);
     campaigns.push({
       id: c.id,
       experiment: c.experiment.id,
       created_at: c.created_at,
       // excludeCrashCells keeps order, so cells[i] is records[i].
-      cells: cells.map((x, i) => ({ ...x, env: envs[i]!.env })),
+      cells: cells.map((x, i) => ({
+        ...x,
+        env: envs[i]!.env,
+        // Both come from campaign.blocks, so every cell has an entry.
+        first: first.get(`${x.task}/${x.repeat}/${x.arm}`) ?? "live",
+        manual_reruns: records[i]!.manual_reruns,
+      })),
       excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
       accounts: accountCounts(data.executions),
