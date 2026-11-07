@@ -1,4 +1,4 @@
-codeunit 80173 "CGR Closer Naive Handler Tests"
+codeunit 80173 "CGR Closer Naive Few Tests"
 {
     Subtype = Test;
     TestPermissions = Disabled;
@@ -8,22 +8,21 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
         Lib: Codeunit "CGR Test Library";
 
     [Test]
-    [HandlerFunctions('AnswerConfirm,AnswerMessage,AnswerStrMenu')]
-    procedure NeverAsksAboutManyContracts()
+    procedure NeverAsksWhenClosingContracts()
     var
         Contract: Record "CGR Rental Contract";
         ContractCloser: Codeunit "CGR Contract Closer";
         Index: Integer;
     begin
-        HX131NaivePrepare();
-        for Index := 201 to 221 do
-            HX131NaiveContract(StrSubstNo('HX131-NM%1', Index), 20250410D);
+        HX131FewPrepare();
+        for Index := 201 to 203 do
+            HX131FewContract(StrSubstNo('HX131-NM%1', Index), 20250410D);
 
         Commit();
-        Assert.AreEqual(21, ContractCloser.CloseExpired(20250415D), 'All 21 expired contracts are closed');
+        Assert.AreEqual(3, ContractCloser.CloseExpired(20250415D), 'All 3 expired contracts are closed');
         Contract.SetFilter("Vehicle No.", 'HX131-NM*');
         Contract.SetRange(Status, Contract.Status::Closed);
-        Assert.AreEqual(21, Contract.Count(), 'All 21 contracts are closed');
+        Assert.AreEqual(3, Contract.Count(), 'All 3 contracts are closed');
     end;
 
     [Test]
@@ -34,9 +33,9 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
         EndedNo: Code[20];
         EndsOnAsOfNo: Code[20];
     begin
-        HX131NaivePrepare();
-        EndedNo := HX131NaiveContract('HX131-NA1', 20250410D);
-        EndsOnAsOfNo := HX131NaiveContract('HX131-NA2', 20250415D);
+        HX131FewPrepare();
+        EndedNo := HX131FewContract('HX131-NA1', 20250410D);
+        EndsOnAsOfNo := HX131FewContract('HX131-NA2', 20250415D);
 
         Commit();
         Assert.AreEqual(1, ContractCloser.CloseExpired(20250415D), 'One contract ended before AsOf');
@@ -52,16 +51,16 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
     var
         Contract: Record "CGR Rental Contract";
         Failure: Record "CGR Close Failure";
-        Spy: Codeunit "CGR Closer Naive Handler Spy";
+        Spy: Codeunit "CGR Closer Naive Few Spy";
         ContractCloser: Codeunit "CGR Contract Closer";
         GoodNo: Code[20];
         RefusedNo: Code[20];
         Closed: Integer;
     begin
-        HX131NaivePrepare();
-        GoodNo := HX131NaiveContract('HX131-NR1', 20250410D);
-        RefusedNo := HX131NaiveContract('HX131-NR2', 20250410D);
-        Spy.RefuseHandlerClosing(RefusedNo);
+        HX131FewPrepare();
+        GoodNo := HX131FewContract('HX131-NR1', 20250410D);
+        RefusedNo := HX131FewContract('HX131-NR2', 20250410D);
+        Spy.RefuseFewClosing(RefusedNo);
         BindSubscription(Spy);
 
         Commit();
@@ -75,7 +74,7 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
         Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'Refused contract not closed');
         Failure.SetRange("Contract No.", RefusedNo);
         Assert.IsTrue(Failure.FindFirst(), 'A failure row is logged');
-        Assert.AreEqual(Spy.HandlerRefusalText(RefusedNo), Failure."Error Text", 'The failure row has the error text');
+        Assert.AreEqual(Spy.FewRefusalText(RefusedNo), Failure."Error Text", 'The failure row has the error text');
     end;
 
     [Test]
@@ -85,8 +84,8 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
         ContractCloser: Codeunit "CGR Contract Closer";
         ContractNo: Code[20];
     begin
-        HX131NaivePrepare();
-        ContractNo := HX131NaiveContract('HX131-NP1', 20250410D);
+        HX131FewPrepare();
+        ContractNo := HX131FewContract('HX131-NP1', 20250410D);
         Commit();
         Contract.Get(ContractNo);
         Contract."Customer Name" := 'HX131 Naive Customer';
@@ -97,24 +96,7 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
         Assert.AreEqual('HX131 Naive Customer', Contract."Customer Name", 'The pending change is kept');
     end;
 
-    [ConfirmHandler]
-    procedure AnswerConfirm(Question: Text[1024]; var Reply: Boolean)
-    begin
-        Reply := true;
-    end;
-
-    [MessageHandler]
-    procedure AnswerMessage(Message: Text[1024])
-    begin
-    end;
-
-    [StrMenuHandler]
-    procedure AnswerStrMenu(Options: Text[1024]; var Choice: Integer; Instruction: Text[1024])
-    begin
-        Choice := 1;
-    end;
-
-    local procedure HX131NaivePrepare()
+    local procedure HX131FewPrepare()
     var
         Contract: Record "CGR Rental Contract";
     begin
@@ -125,7 +107,7 @@ codeunit 80173 "CGR Closer Naive Handler Tests"
         Contract.DeleteAll();
     end;
 
-    local procedure HX131NaiveContract(VehicleNo: Code[20]; EndDate: Date): Code[20]
+    local procedure HX131FewContract(VehicleNo: Code[20]; EndDate: Date): Code[20]
     begin
         Lib.CreateVehicle(VehicleNo, 1000, Enum::"CGR Maintenance Strategy"::Default);
         exit(Lib.CreateReturnedContract(VehicleNo, EndDate - 3, EndDate, 1100));

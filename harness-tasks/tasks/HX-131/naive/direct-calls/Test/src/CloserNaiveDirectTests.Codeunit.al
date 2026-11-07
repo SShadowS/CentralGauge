@@ -81,25 +81,6 @@ codeunit 80175 "CGR Closer Naive Direct Tests"
         Assert.AreEqual(Spy.DirectRefusalText(SecondNo), Failure."Error Text", 'The failure row has the error text');
     end;
 
-    [Test]
-    procedure PendingChangeIsCommittedDirect()
-    var
-        Contract: Record "CGR Rental Contract";
-        ContractCloser: Codeunit "CGR Contract Closer";
-        ContractNo: Code[20];
-    begin
-        HX131DirectPrepare();
-        ContractNo := HX131DirectContract('HX131-DP1', 20250410D);
-        Commit();
-        Contract.Get(ContractNo);
-        Contract."Customer Name" := 'HX131 Direct Customer';
-        Contract.Modify();
-
-        Assert.AreEqual(1, ContractCloser.CloseExpired(20250415D), 'The contract is closed');
-        Contract.Get(ContractNo);
-        Assert.AreEqual('HX131 Direct Customer', Contract."Customer Name", 'The pending change is kept');
-    end;
-
     local procedure HX131DirectPrepare()
     var
         Contract: Record "CGR Rental Contract";
