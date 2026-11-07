@@ -1326,6 +1326,39 @@ export async function loadScreenCampaigns(
   return { campaigns, ran };
 }
 
+/**
+ * The next full screen: rescreenTasks without candidates waiting for a
+ * ruling (H-51) or for a filter-round audit (H-68).
+ */
+export function nextScreenTasks(
+  status: Map<string, Status>,
+  flagged: { has(id: string): boolean },
+  ps: { waiting: { has(id: string): boolean } },
+): string[] {
+  return rescreenTasks(status, {
+    has: (id) => flagged.has(id) || ps.waiting.has(id),
+  });
+}
+
+/** Why select must not run yet, or null (the H-51 ruling check comes first). */
+export function selectRefusal(
+  rescreen: string[],
+  ps: { waiting: ReadonlySet<string>; missing: ReadonlySet<string> },
+  status: Map<string, Status>,
+): string | null {
+  if (
+    rescreen.length > 0 || ps.waiting.size > 0 ||
+    [...status.values()].includes("unsealed")
+  ) {
+    return "select needs every candidate sealed and screened";
+  }
+  return ps.missing.size > 0
+    ? `select needs a finished pre-screen of every calibration candidate: "${
+      tasksGlob([...ps.missing])
+    }"`
+    : null;
+}
+
 export interface Opened {
   /** Uncommitted harness-tasks or ledger problems; nothing else is loaded then. */
   problems: string[];
@@ -1538,12 +1571,15 @@ async function main(): Promise<number> {
   }
   if (ps.waiting.size > 0) {
     console.log(colors.yellow(
-      `[WAIT] pre-screen or its audit pending: "${tasksGlob([...ps.waiting])}"`,
+      `[WAIT] pre-screen audit pending: "${tasksGlob([...ps.waiting])}"`,
     ));
   }
-  const rescreen = rescreenTasks(status, {
-    has: (id) => flagged.has(id) || ps.waiting.has(id),
-  });
+  if (ps.missing.size > 0) {
+    console.log(colors.yellow(
+      `[WAIT] calibration pre-screen missing: "${tasksGlob([...ps.missing])}"`,
+    ));
+  }
+  const rescreen = nextScreenTasks(status, flagged, ps);
   if (rescreen.length > 0) {
     console.log(`next screen tasks: "${tasksGlob(rescreen)}"`);
   }
@@ -1559,13 +1595,9 @@ async function main(): Promise<number> {
     console.error(colors.red("[FAIL] --n must be a positive integer"));
     return 1;
   }
-  if (
-    rescreen.length > 0 || ps.waiting.size > 0 ||
-    [...status.values()].includes("unsealed")
-  ) {
-    console.error(
-      colors.red("[FAIL] select needs every candidate sealed and screened"),
-    );
+  const refusal = selectRefusal(rescreen, ps, status);
+  if (refusal !== null) {
+    console.error(colors.red(`[FAIL] ${refusal}`));
     return 1;
   }
   const pool: Eligible[] = [];

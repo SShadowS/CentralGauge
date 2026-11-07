@@ -59,11 +59,14 @@ const prescreenOf = (s: Screening): Amendment | undefined =>
 
 /**
  * Per task: provisionally saturated exactly when both arms have a scored,
- * passing repeat-1 cell. Otherwise a repeat-1 cell that is live or not
- * started (pending, unrun) makes it pending, whatever the other arm did.
- * Otherwise it is eligible: cells come after excludeCrashCells, so a crash,
- * an unscored cell or a missing arm is eligible (fail closed: it only adds a
- * full screen). A foreign arm throws.
+ * passing repeat-1 cell, none of them retried. A repeat-1 cell that is live
+ * or not started (pending, unrun) makes it pending, whatever the other arm
+ * did. r2: a retried cell (more than one execution attempt, manual or
+ * automatic) makes it eligible once nothing is live, so a replacement
+ * outcome never counts toward provisionally saturated. Otherwise it is
+ * eligible: cells come after excludeCrashCells, so a crash, an unscored cell
+ * or a missing arm is eligible (fail closed: it only adds a full screen). A
+ * foreign arm throws.
  */
 export function prescreenVerdict(
   cells: Cell[],
@@ -87,17 +90,24 @@ export function prescreenVerdict(
     }
     passed.set(c.task, p);
   }
+  const retried = retriedTasks(cells);
   return new Map(
     [...passed].map(([t, p]) => [
       t,
-      rules.arms.every((a) => p.has(a))
-        ? "provisionally_saturated"
-        : live.has(t)
+      live.has(t)
         ? "pending"
+        : !retried.has(t) && rules.arms.every((a) => p.has(a))
+        ? "provisionally_saturated"
         : "eligible",
     ]),
   );
 }
+
+/** r2: tasks with a repeat-1 pre-screen cell of more than one execution attempt. */
+export const retriedTasks = (cells: Cell[]): Set<string> =>
+  new Set(
+    cells.filter((c) => c.repeat === 1 && c.attempts > 1).map((c) => c.task),
+  );
 
 /** HEAD's registry must carry a prescreen amendment naming a whitelisted decision. */
 export function amendmentGate(
@@ -139,20 +149,21 @@ export type RoundOf = ({ ok: true } & Round) | { ok: false; problem: string };
 
 /**
  * The round of seal `s`, read from the registry committed at `s`; null when
- * it has none. r1: a filter round counts only after a calibration round of
- * the same record whose seal is in the ledger before `s` (a calibration entry
- * naming a seal that does not exist, or a later one, is no calibration).
+ * it has none. A filter round counts only after a real calibration round: an
+ * earlier ledger seal whose OWN frozen registry declares itself calibration
+ * (r1: a seal that does not exist or comes later is none; r2: an entry for
+ * an earlier seal that appears only in a later registry is none).
  */
 export function sealRound(s: SealView, seals: SealView[]): RoundOf | null {
-  const rounds = prescreenOf(s.screening)?.rounds ?? [];
-  const r = rounds.find((x) => x.seal === s.tag);
+  const own = (x: SealView) =>
+    prescreenOf(x.screening)?.rounds.find((r) => r.seal === x.tag);
+  const r = own(s);
   if (!r) return null;
-  const at = (tag: string) => seals.findIndex((x) => x.tag === tag);
-  const here = at(s.tag);
+  const here = seals.findIndex((x) => x.tag === s.tag);
   if (
     r.mode === "filter" &&
-    !rounds.some((c) =>
-      c.mode === "calibration" && at(c.seal) >= 0 && at(c.seal) < here
+    !seals.slice(0, Math.max(here, 0)).some((a) =>
+      own(a)?.mode === "calibration"
     )
   ) {
     return {
@@ -258,14 +269,17 @@ export interface PrescreenState {
   /** Non-audited rejects of filter rounds: classify's `provisional`. */
   provisional: Set<string>;
   /**
-   * Candidates select must wait for (it refuses while any is listed), kept
-   * out of the next full screen: filter-round candidates while their seal's
-   * audit is pending (all but the eligible ones), and calibration-round
-   * candidates without a finished pre-screen (`missing`).
+   * Filter-round candidates while their seal's audit is pending (all but the
+   * eligible ones): kept out of the next full screen, and select refuses.
    */
   waiting: Set<string>;
-  /** r1: calibration-round candidates without a finished pre-screen. */
+  /**
+   * Calibration-round candidates without a finished pre-screen: select
+   * refuses (r1), but the full screen may run first (r2).
+   */
   missing: Set<string>;
+  /** r2: tasks whose pre-screen had a retried cell (eligible once finished). */
+  retried: Set<string>;
   problems: string[];
 }
 
@@ -290,6 +304,7 @@ export async function evaluatePrescreen(input: {
     provisional: new Set(),
     waiting: new Set(),
     missing: new Set(),
+    retried: new Set(),
     problems: seals.flatMap((s) => amendmentProblems(s.tag, s.screening, now)),
   };
   const gate = amendmentGate(now, input.decisions);
@@ -297,17 +312,7 @@ export async function evaluatePrescreen(input: {
     if (prescreens.length > 0) out.problems.push(...gate);
     return out;
   }
-  for (const c of prescreens) {
-    out.problems.push(...(c.problems ?? []));
-    // r1: one attempt per cell; any rerun or retry, scored or not, is refused.
-    for (const x of c.cells) {
-      if (x.attempts > 1) {
-        out.problems.push(
-          `campaign ${c.id}: pre-screen cell ${x.task}/${x.repeat}/${x.arm} has ${x.attempts} execution attempts (no pre-screen rerun)`,
-        );
-      }
-    }
-  }
+  for (const c of prescreens) out.problems.push(...(c.problems ?? []));
   const byTask = new Map<string, ScreenCampaign[]>();
   for (const c of prescreens) {
     for (const t of new Set(c.cells.map((x) => x.task))) {
@@ -340,10 +345,11 @@ export async function evaluatePrescreen(input: {
     if (r.ok) out.rounds.set(t, { seal: r.seal, mode: r.mode });
     else out.problems.push(r.problem);
   }
-  out.verdicts = prescreenVerdict(
-    prescreens.flatMap((c) => c.cells).filter((x) => out.rounds.has(x.task)),
-    now.rules,
+  const counted = prescreens.flatMap((c) => c.cells).filter((x) =>
+    out.rounds.has(x.task)
   );
+  out.verdicts = prescreenVerdict(counted, now.rules);
+  out.retried = retriedTasks(counted);
   // Q8: in a filter round the pre-screen must come before any complete full
   // screen, judged by when that screen completed (its last counted judgment;
   // the campaign's creation when that is unknown).
@@ -381,10 +387,7 @@ export async function evaluatePrescreen(input: {
     );
     if (round.mode === "calibration") {
       for (const id of pop) {
-        if (!finalOf(out.verdicts.get(id))) {
-          out.missing.add(id);
-          out.waiting.add(id);
-        }
+        if (!finalOf(out.verdicts.get(id))) out.missing.add(id);
       }
       continue;
     }
@@ -488,6 +491,12 @@ export function prescreenReport(
   }
   if (ps.provisional.size > 0) {
     out.push(`provisionally saturated: "${tasksGlob([...ps.provisional])}"`);
+  }
+  const retried = [...ps.retried].filter((id) =>
+    ps.verdicts.get(id) === "eligible"
+  ).sort();
+  if (retried.length > 0) {
+    out.push(`retried pre-screen -> eligible: ${retried.join(", ")}`);
   }
   return { ok: true, out, err: [] };
 }

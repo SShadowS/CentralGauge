@@ -559,7 +559,8 @@ Deno.test("r1 calibration coverage: every non-held-out candidate of a calibratio
   const none = await evaluatePrescreen(input([]));
   assertEquals(none.problems, []);
   assertEquals(none.missing, new Set(["HX-002"]));
-  assert(none.waiting.has("HX-002"));
+  // r2: missing blocks select only; the full screen may run first.
+  assert(!none.waiting.has("HX-002"));
   const live = await evaluatePrescreen(input([
     camp("p1", AT(10), [
       cell("HX-002", PLAIN, true),
@@ -577,11 +578,13 @@ Deno.test("r1 calibration coverage: every non-held-out candidate of a calibratio
   assertEquals(held.missing, new Set());
 });
 
-/** w6's own registry with these rounds (start and w5 as in SEALS). */
+/** w6's own registry with these rounds; w5's has none (r2: no real calibration). */
 const withW6Rounds = (rounds: Round[]): SealView[] =>
   SEALS.map((s) =>
     s.tag === W6
       ? { ...s, screening: S(s.screening.candidates.map((c) => c.id), rounds) }
+      : s.tag === W5
+      ? { ...s, screening: S(s.screening.candidates.map((c) => c.id)) }
       : s
   );
 
@@ -622,14 +625,76 @@ Deno.test("r1 fictitious calibration: a filter round needs an earlier calibratio
   });
 });
 
-Deno.test("r1 no rerun: a second execution attempt of a pre-screen cell is refused, scored or not", async () => {
-  const twice = { ...cell("HX-002", LSP, true), attempts: 2 };
+Deno.test("r2 retry: a retried pre-screen cell makes its task eligible (the replacement never counts), pending while live, and is no problem", async () => {
+  const twice = (pass: boolean | null, status?: Cell["status"]) => ({
+    ...cell("HX-002", LSP, pass, 1, status),
+    attempts: 2,
+  });
+  assertEquals(
+    Object.fromEntries(prescreenVerdict([
+      cell("HX-002", PLAIN, true),
+      twice(true),
+      cell("HX-003", PLAIN, true),
+      { ...cell("HX-003", LSP, null, 1, "pending"), attempts: 2 },
+      cell("HX-004", PLAIN, false),
+      { ...cell("HX-004", LSP, true), attempts: 3 },
+    ], RULES)),
+    {
+      "HX-002": "eligible",
+      "HX-003": "pending",
+      "HX-004": "eligible",
+    },
+  );
   const r = await evaluatePrescreen(input([
-    camp("p1", AT(10), [cell("HX-002", PLAIN, true), twice]),
+    camp("p1", AT(10), [cell("HX-002", PLAIN, true), twice(true)]),
   ]));
-  assertEquals(r.problems, [
-    `campaign p1: pre-screen cell HX-002/1/${LSP} has 2 execution attempts (no pre-screen rerun)`,
+  assertEquals(r.problems, []);
+  assertEquals(r.verdicts.get("HX-002"), "eligible");
+  assertEquals(r.retried, new Set(["HX-002"]));
+  // A calibration candidate with a retried pre-screen is covered (finished).
+  assertEquals(r.missing, new Set());
+  const ok = prescreenReport([], new Map<string, Status>(), r);
+  assert(
+    ok.out.includes("retried pre-screen -> eligible: HX-002"),
+    ok.out.join("\n"),
+  );
+  // A duplicate pre-screen campaign stays a problem.
+  const dup = await evaluatePrescreen(input([
+    camp("p1", AT(10), [cell("HX-002", PLAIN, true), twice(true)]),
+    camp("p2", AT(11), pre("HX-002", true, true)),
+  ]));
+  assertEquals(dup.problems, [
+    "HX-002 pre-screened 2 times (no pre-screen rerun)",
   ]);
+});
+
+Deno.test("r2 calibration declared after the fact: the predecessor seal's own registry must declare its calibration round", async () => {
+  // Seal w5's frozen registry has no round; w6 appends [w5: calibration, w6: filter].
+  const seals = SEALS.map((s) =>
+    s.tag === W5
+      ? { ...s, screening: S(s.screening.candidates.map((c) => c.id)) }
+      : s
+  );
+  const problem =
+    `${W6}: a filter round needs an earlier calibration round on a sealed seal`;
+  assertEquals(roundOf("HX-003", seals), { ok: false, problem });
+  const r = await evaluatePrescreen(input([
+    camp("p1", AT(10), filterCells(pre("HX-006", true, true))),
+  ], { seals }));
+  assert(r.problems.includes(problem), r.problems.join("\n"));
+  assertEquals(r.audits.size, 0);
+  assertEquals(r.provisional, new Set());
+  // A genuine w5 calibration seal (its own registry declares it) stays valid.
+  assertEquals(roundOf("HX-003", SEALS), {
+    ok: true,
+    seal: W6,
+    mode: "filter",
+  });
+  const ok = await evaluatePrescreen(input([
+    camp("p1", AT(10), filterCells(pre("HX-006", true, true))),
+  ]));
+  assertEquals(ok.problems, []);
+  assertEquals(ok.audits.size, 1);
 });
 
 Deno.test("r1 Q8: the order is judged against the full screen's completion, not its creation", async () => {
@@ -659,6 +724,7 @@ Deno.test("r1 status report: with gate problems it prints them and no false-kill
     provisional: new Set<string>(),
     waiting: new Set<string>(),
     missing: new Set<string>(),
+    retried: new Set<string>(),
     problems: [],
   };
   const status = new Map<string, Status>([["HX-002", "saturated"]]);

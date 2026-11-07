@@ -1559,3 +1559,63 @@ Deno.test("completionTimes (H-68 r1): a task completes when its last counted jud
     { "HX-001": "2026-10-03T09:00:00.000Z" },
   );
 });
+
+import {
+  nextScreenTasks,
+  selectRefusal,
+} from "../../../scripts/harness/screening.ts";
+
+Deno.test("nextScreenTasks / selectRefusal (H-68 r2): a missing calibration pre-screen blocks select only; a pending audit blocks both", () => {
+  const status = new Map<string, Status>([
+    ["HX-007", "unscreened"],
+    ["HX-008", "unscreened"],
+    ["HX-009", "intermediate"],
+  ]);
+  const ps = (waiting: string[], missing: string[]) => ({
+    waiting: new Set(waiting),
+    missing: new Set(missing),
+  });
+  // HX-007 misses its calibration pre-screen: it still goes to the full screen.
+  assertEquals(nextScreenTasks(status, new Map(), ps([], ["HX-007"])), [
+    "HX-007",
+    "HX-008",
+  ]);
+  // HX-008 waits for a filter audit: it does not.
+  assertEquals(nextScreenTasks(status, new Map(), ps(["HX-008"], [])), [
+    "HX-007",
+  ]);
+  // A flagged candidate waits for a ruling, as before.
+  assertEquals(
+    nextScreenTasks(
+      status,
+      new Map([["HX-007", "strata disagree"]]),
+      ps([], []),
+    ),
+    ["HX-008"],
+  );
+  const done = new Map<string, Status>([["HX-007", "hard"], [
+    "HX-009",
+    "easy",
+  ]]);
+  assertEquals(selectRefusal([], ps([], []), done), null);
+  assertEquals(
+    selectRefusal([], ps([], ["HX-007"]), done),
+    'select needs a finished pre-screen of every calibration candidate: "harness-tasks/tasks/HX-007"',
+  );
+  assertEquals(
+    selectRefusal([], ps(["HX-009"], []), done),
+    "select needs every candidate sealed and screened",
+  );
+  assertEquals(
+    selectRefusal(["HX-008"], ps([], []), done),
+    "select needs every candidate sealed and screened",
+  );
+  assertEquals(
+    selectRefusal(
+      [],
+      ps([], []),
+      new Map<string, Status>([["HX-010", "unsealed"]]),
+    ),
+    "select needs every candidate sealed and screened",
+  );
+});
