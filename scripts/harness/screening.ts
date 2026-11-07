@@ -49,6 +49,10 @@ import {
   loadTask,
   TASK_KINDS,
 } from "../../src/harness/task.ts";
+// H-68: a static import cycle (prescreen.ts imports this module). Neither
+// module uses the other's bindings at top level, so evaluation order is safe;
+// a dynamic import inside main() deadlocked on this module's top-level await.
+import { evaluatePrescreen, PRESCREEN_PREFIX } from "./prescreen.ts";
 
 export type Kind = (typeof TASK_KINDS)[number];
 export const STRATA = ["easy", "intermediate", "hard"] as const;
@@ -62,7 +66,9 @@ export type Status =
   | "unscreenable"
   | "unscreened"
   | "unsealed"
-  | "held_out";
+  | "held_out"
+  /** H-68: a non-audited pre-screen reject of a filter round (prescreen.ts). */
+  | "provisionally_saturated";
 
 export const REGISTRY_PATH = "harness-tasks/v2/screening.yml";
 export const SEALS_PATH = "harness-tasks/v2/seals.yml";
@@ -111,11 +117,60 @@ export const CandidateSchema = z.strictObject({
 });
 export type Candidate = z.output<typeof CandidateSchema>;
 
+/**
+ * H-68: a protocol amendment (prescreen.ts). Each round names the seal whose
+ * candidates it covers; a round is fixed by the registry committed at that
+ * seal. Not part of `rules`, so appending it is no append-only problem.
+ */
+export const AmendmentSchema = z.strictObject({
+  id: z.literal("prescreen"),
+  decision: z.string().min(1),
+  rounds: z.array(z.strictObject({
+    seal: z.string().regex(/^harness-v2-screen-[a-z0-9-]+$/),
+    mode: z.enum(["calibration", "filter"]),
+  })),
+});
+export type Amendment = z.output<typeof AmendmentSchema>;
+
 export const ScreeningSchema = z.strictObject({
   v: z.literal(1),
   rules: RulesSchema,
   candidates: z.array(CandidateSchema).default([]),
+  amendments: z.array(AmendmentSchema).default([]),
 }).superRefine((s, ctx) => {
+  const aids = s.amendments.map((a) => a.id);
+  if (new Set(aids).size !== aids.length) {
+    ctx.addIssue({
+      code: "custom",
+      message: "duplicate amendment",
+      path: ["amendments"],
+    });
+  }
+  for (const a of s.amendments) {
+    const seals = a.rounds.map((r) => r.seal);
+    if (new Set(seals).size !== seals.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${a.id}: duplicate round seal`,
+        path: ["amendments"],
+      });
+    }
+    if (a.rounds.length > 0 && a.rounds[0]!.mode !== "calibration") {
+      ctx.addIssue({
+        code: "custom",
+        message: `${a.id}: the first round must be calibration`,
+        path: ["amendments"],
+      });
+    }
+    // H-68 run 002: calibration in round 1, filter from round 2 on.
+    if (a.rounds.slice(1).some((r) => r.mode !== "filter")) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${a.id}: every round after the first must be filter`,
+        path: ["amendments"],
+      });
+    }
+  }
   const ids = s.candidates.map((c) => c.id);
   const dup = [...new Set(ids.filter((x, i) => ids.indexOf(x) !== i))];
   if (dup.length > 0) {
@@ -524,6 +579,79 @@ export interface ScreenCampaign {
   accounts?: ReturnType<typeof accountCounts>;
   /** H-61: accounts retired from the campaign's pool. */
   retirements?: readonly AccountRetirement[];
+  /** H-68: per task, when its last counted judgment ended (completionTimes). */
+  completed_at?: Record<string, string>;
+  /** H-68 r5: firstAttempts problems; a pre-screen campaign's are refusals. */
+  first_problems?: string[];
+}
+
+/**
+ * H-68: per task, the FIRST instant at which every counted cell was scored at
+ * once. Each cell's judgment timeline (the judgments of its counted
+ * execution, same oracle) is replayed in ended_at order, then judgment id
+ * (run 003: a total order), across the task's cells; each judgment sets its
+ * cell scored or unscored. Judgments ending at the same instant apply in id
+ * order, and completeness is checked only after the whole instant (so the
+ * later id wins for a cell). That moment never moves: later rejudges
+ * cannot change it (run 002 follow-up). A task whose cells are never all
+ * scored at once has no entry.
+ *
+ * Run 003 follow-up: every REQUIRED cell is replayed, arms x repeats 1..n as
+ * tally counts them. The cells are the counted cells after excludeCrashCells
+ * (the ones tally reads): a required cell with no counted judgment, or a
+ * crash-excluded one, stays unscored, so its task never completes.
+ */
+export function completionTimes(
+  cells: readonly {
+    task: string;
+    repeat: number;
+    arm: string;
+    judgment_id: string | null;
+    reason?: string;
+  }[],
+  judgments: readonly JudgmentRecord[],
+  need: { arms: readonly string[]; repeats: number },
+): Record<string, string> {
+  const byId = new Map(judgments.map((j) => [j.id, j]));
+  const byTask = new Map<string, Map<string, JudgmentRecord>>();
+  for (const c of cells) {
+    const m = byTask.get(c.task) ?? new Map<string, JudgmentRecord>();
+    byTask.set(c.task, m);
+    if (c.reason === "harness_crash" || c.repeat > need.repeats) continue;
+    const counted = c.judgment_id ? byId.get(c.judgment_id) : undefined;
+    if (counted) m.set(`${c.repeat}/${c.arm}`, counted);
+  }
+  const required = need.arms.flatMap((arm) =>
+    Array.from({ length: need.repeats }, (_, i) => `${i + 1}/${arm}`)
+  );
+  const out: Record<string, string> = {};
+  for (const [task, m] of byTask) {
+    if (!required.every((k) => m.has(k))) continue;
+    const counted = required.map((k) => m.get(k)!);
+    const cellOf = (j: JudgmentRecord) =>
+      counted.findIndex((k) =>
+        k.execution_id === j.execution_id &&
+        k.task_oracle_hash === j.task_oracle_hash
+      );
+    // Run 003: a total order, ended_at then judgment id, so input order never
+    // matters; the completeness check runs after the whole instant.
+    const timeline = judgments.filter((j) => cellOf(j) >= 0).sort((a, b) =>
+      compareInstant(a.ended_at, b.ended_at) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    );
+    const scored = counted.map(() => false);
+    for (let i = 0; i < timeline.length; i++) {
+      const j = timeline[i]!;
+      scored[cellOf(j)] = j.verdict !== "unscored";
+      const next = timeline[i + 1];
+      if (next && compareInstant(next.ended_at, j.ended_at) === 0) continue;
+      if (scored.every(Boolean)) {
+        out[task] = j.ended_at;
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 /** H-53: per account label over every campaign (status prints it, triage reads it). */
@@ -595,6 +723,90 @@ export function manualRerunProblems(
         : [];
     },
   );
+}
+
+/** H-68 r3: the outcome of a cell's first execution attempt. */
+export type FirstAttempt = "pass" | "fail" | "live";
+
+/**
+ * H-68 r3: per planned cell (`task/repeat/arm`), its first execution
+ * attempt's outcome (the planned root; an automatic retry or a manual rerun
+ * is never read). Not started, or ended and not yet judged: live. r4: it
+ * freezes on the attempt's first judgment (pass, else fail; an unscored one
+ * is a fail, Q4), and a later rejudge never changes it. A crash (H-29) or an
+ * unjudged ending (setup_failed, usage_limited): fail.
+ *
+ * r5: a forced judgment (the owner-approved H-64 rejudge path) never counts.
+ * A judgment ending before its execution ended is a problem and never the
+ * first; two earliest judgments ending together that disagree are a problem
+ * (no id tie-break).
+ *
+ * Trust assumption: judgment records and their ended_at are written by the
+ * harness. Forging a record is outside the threat model, as it is for the
+ * full screen's own tally, which trusts judgment records too.
+ */
+export function firstAttempts(
+  c: CampaignRecord,
+  executions: ExecutionRecord[],
+  judgments: JudgmentRecord[],
+): { first: Map<string, FirstAttempt>; problems: string[] } {
+  const oracle = campaignJudging(c).oracle;
+  const out = new Map<string, FirstAttempt>();
+  const problems: string[] = [];
+  const outcome = (j: JudgmentRecord): FirstAttempt =>
+    j.verdict === "pass" ? "pass" : "fail";
+  for (const b of c.blocks) {
+    for (const arm of b.order) {
+      const root = executions.find((e) =>
+        e.task_id === b.task_id && e.repeat === b.repeat && e.arm === arm &&
+        e.run_kind === "planned"
+      );
+      const key = `${b.task_id}/${b.repeat}/${arm}`;
+      if (!root) {
+        out.set(key, "live");
+      } else if (
+        root.termination === "harness_crash" ||
+        !outcomePolicy(root.termination, root.did_work).judge
+      ) {
+        out.set(key, "fail");
+      } else {
+        // r4: the FIRST judgment, never the latest selectJudgment would
+        // count, so a rejudge cannot move it. r5: forced ones never count.
+        const o = oracle.get(root.task_id) ?? "";
+        const matching = judgments.filter((x) =>
+          x.execution_id === root.id && x.task_id === root.task_id &&
+          x.workspace_hash === root.workspace_hash &&
+          x.task_oracle_hash === o && x.forced === undefined
+        );
+        const early = matching.filter((x) =>
+          compareInstant(x.ended_at, root.ended_at) < 0
+        );
+        for (const x of early) {
+          problems.push(`judgment ${x.id} ends before its execution`);
+        }
+        const valid = matching.filter((x) => !early.includes(x)).sort((
+          a,
+          b,
+        ) => compareInstant(a.ended_at, b.ended_at));
+        const firsts = valid.filter((x) =>
+          compareInstant(x.ended_at, valid[0]!.ended_at) === 0
+        );
+        if (firsts.length === 0) {
+          out.set(key, "live");
+        } else if (new Set(firsts.map(outcome)).size > 1) {
+          problems.push(
+            `execution ${root.id}: ambiguous first judgment (${
+              firsts.map((x) => x.id).sort().join(", ")
+            } end together and disagree)`,
+          );
+          out.set(key, "fail");
+        } else {
+          out.set(key, outcome(firsts[0]!));
+        }
+      }
+    }
+  }
+  return { first: out, problems };
 }
 
 /**
@@ -669,6 +881,8 @@ export function classify(
   heldOut: string[],
   tallies: Map<string, Tally>,
   screens: Map<string, number>,
+  /** H-68: non-audited pre-screen rejects of filter rounds (prescreen.ts). */
+  provisional: { has(id: string): boolean } = new Set(),
 ): Map<string, Status> {
   const total = s.rules.arms.length * s.rules.repeats;
   const status = new Map<string, Status>();
@@ -682,6 +896,8 @@ export function classify(
         ? "broken"
         : !sealed.has(c.id)
         ? "unsealed"
+        : provisional.has(c.id)
+        ? "provisionally_saturated"
         : !t
         ? "unscreened"
         : !t.complete
@@ -699,7 +915,13 @@ export function classify(
  * legacy judgment (no env_fp, so never pooled with one), null without a
  * counted judgment (such a cell is never scored).
  */
-export type EnvCell = Cell & { env?: string | null };
+export type EnvCell = Cell & {
+  env?: string | null;
+  /** H-68 r3: the loader's firstAttempts outcome (pre-screen verdicts read it). */
+  first?: FirstAttempt;
+  /** H-68 r3: manual reruns of the cell (CellRecord.manual_reruns). */
+  manual_reruns?: number;
+};
 
 export function cellEnvs<T extends { judgment_id: string | null }>(
   cells: T[],
@@ -741,6 +963,8 @@ export function stratifyByEnv(
   heldOut: string[],
   cells: EnvCell[],
   screens: Map<string, number>,
+  /** H-68: as classify. */
+  provisional: { has(id: string): boolean } = new Set(),
 ): {
   status: Map<string, Status>;
   strata: Map<string, EnvStratum[]>;
@@ -752,6 +976,7 @@ export function stratifyByEnv(
     heldOut,
     tally(cells, s.rules),
     screens,
+    provisional,
   );
   const strata = new Map<string, EnvStratum[]>();
   const flagged = new Map<string, string>();
@@ -802,7 +1027,12 @@ export function contaminationProblems(
   });
 }
 
-const REDESIGNABLE = new Set<Status>(["dead", "saturated", "broken"]);
+const REDESIGNABLE = new Set<Status>([
+  "dead",
+  "saturated",
+  "broken",
+  "provisionally_saturated",
+]);
 
 /** Only a dropped candidate may be redesigned (round 2 finding 2). */
 export function supersedeProblems(
@@ -1177,6 +1407,10 @@ export async function loadScreenCampaigns(
   repoRoot = ".",
   /** H-51: cells carry their env_fp and a mix is stratified, not refused. */
   stratifyEnv = false,
+  /** H-68: the experiment prefix read (prescreen.ts reads PRESCREEN_PREFIX). */
+  prefix = SCREEN_PREFIX,
+  /** H-68: the repeats each campaign must run (a pre-screen runs 1). */
+  repeats = rules.repeats,
 ): Promise<{ campaigns: ScreenCampaign[]; ran: Map<string, TaskIdentity[]> }> {
   const store = new RecordStore(resultsDir);
   const campaigns: ScreenCampaign[] = [];
@@ -1196,14 +1430,14 @@ export async function loadScreenCampaigns(
     const c = CampaignRecordSchema.parse(
       JSON.parse(await Deno.readTextFile(join(dir, e.name))),
     );
-    if (!c.experiment.id.startsWith(SCREEN_PREFIX)) continue;
+    if (!c.experiment.id.startsWith(prefix)) continue;
     const arms = [c.experiment.baseline, ...c.experiment.variants].sort();
     if (
       arms.join() !== [...rules.arms].sort().join() ||
-      c.experiment.repeats !== rules.repeats
+      c.experiment.repeats !== repeats
     ) {
       throw new ValidationError(
-        `campaign ${c.id} (${c.experiment.id}) does not run the screening arms x ${rules.repeats}`,
+        `campaign ${c.id} (${c.experiment.id}) does not run the screening arms x ${repeats}`,
         [c.id],
       );
     }
@@ -1225,21 +1459,302 @@ export async function loadScreenCampaigns(
     judged.push(...data.judgments);
     const { cells, excluded } = excludeCrashCells(records, data.executions);
     const envs = cellEnvs(records, data.judgments);
+    const first = firstAttempts(c, data.executions, data.judgments);
     campaigns.push({
       id: c.id,
       experiment: c.experiment.id,
       created_at: c.created_at,
       // excludeCrashCells keeps order, so cells[i] is records[i].
-      cells: cells.map((x, i) => ({ ...x, env: envs[i]!.env })),
+      cells: cells.map((x, i) => ({
+        ...x,
+        env: envs[i]!.env,
+        // Both come from campaign.blocks, so every cell has an entry.
+        first: first.first.get(`${x.task}/${x.repeat}/${x.arm}`) ?? "live",
+        manual_reruns: records[i]!.manual_reruns,
+      })),
+      first_problems: first.problems,
       excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
       accounts: accountCounts(data.executions),
       retirements: data.retirements ?? [],
+      // Run 003 follow-up: the counted cells after excludeCrashCells (what
+      // tally reads; same order as records), every required cell.
+      completed_at: completionTimes(
+        cells.map((x, i) => ({ ...x, judgment_id: records[i]!.judgment_id })),
+        data.judgments,
+        { arms: rules.arms, repeats },
+      ),
     });
     ran.set(c.id, c.task_set.tasks);
   }
   if (!stratifyEnv) checkOneEnvironment(counted, judged);
   return { campaigns, ran };
+}
+
+/**
+ * The next full screen: rescreenTasks without candidates waiting for a
+ * ruling (H-51) or for a filter-round audit (H-68).
+ */
+export function nextScreenTasks(
+  status: Map<string, Status>,
+  flagged: { has(id: string): boolean },
+  ps: { waiting: { has(id: string): boolean } },
+): string[] {
+  return rescreenTasks(status, {
+    has: (id) => flagged.has(id) || ps.waiting.has(id),
+  });
+}
+
+/** Why select must not run yet, or null (the H-51 ruling check comes first). */
+export function selectRefusal(
+  rescreen: string[],
+  ps: { waiting: ReadonlySet<string>; missing: ReadonlySet<string> },
+  status: Map<string, Status>,
+): string | null {
+  if (
+    rescreen.length > 0 || ps.waiting.size > 0 ||
+    [...status.values()].includes("unsealed")
+  ) {
+    return "select needs every candidate sealed and screened";
+  }
+  return ps.missing.size > 0
+    ? `select needs a finished pre-screen of every calibration candidate: "${
+      tasksGlob([...ps.missing])
+    }"`
+    : null;
+}
+
+export interface Opened {
+  /** Uncommitted harness-tasks or ledger problems; nothing else is loaded then. */
+  problems: string[];
+  seals: SealState[];
+  heldOut: string[];
+  startIds: string[];
+}
+
+/** The committed state every command starts from: clean tree, verified ledger, held-out set. */
+export async function openScreening(root: string): Promise<Opened> {
+  const none = { seals: [], heldOut: [], startIds: [] };
+  if (
+    (await git(root, ["status", "--porcelain", "--", "harness-tasks"])).trim()
+  ) {
+    return { problems: ["harness-tasks has uncommitted changes"], ...none };
+  }
+  const { seals, problems } = await loadSeals(root);
+  if (problems.length > 0) return { problems, ...none };
+  const start = seals[0]!;
+  const startIds = start.screening.candidates.map((c) => c.id);
+  const heldOut = pickHeldOut(
+    await metaAt(root, start.commit, start.screening, startIds),
+    await ranks(start.seed, startIds),
+    start.screening.rules,
+  ).sort();
+  return { problems: [], seals, heldOut, startIds };
+}
+
+/**
+ * The full screening gate (status and select; H-68: prescreen.ts status
+ * too): loads both campaign kinds, classifies, and collects every problem.
+ */
+export async function screeningGate(
+  root: string,
+  { seals, heldOut }: Opened,
+  resultsDir: string,
+  stratifyEnv: boolean,
+): Promise<Gate> {
+  const head = await commitOf(root, "HEAD");
+  const now = await yamlAt(root, head, REGISTRY_PATH, ScreeningSchema);
+  const headTrees = await treesAt(root, head);
+  const sealedIds = [
+    ...new Set(seals.flatMap((s) => s.screening.candidates.map((c) => c.id))),
+  ];
+  const current = await taskSetIdentity(
+    root,
+    await Promise.all(
+      sealedIds.map((id) => loadTask(join(root, "harness-tasks", "tasks", id))),
+    ),
+    await loadSymbolsLock(root),
+  );
+  const full = await loadScreenCampaigns(
+    resultsDir,
+    now.rules,
+    root,
+    stratifyEnv,
+  );
+  // H-68: the pre-screen. Its campaigns never enter the history; it yields
+  // the filter rounds' provisional rejects and the candidates waiting for a
+  // pre-screen or an audit.
+  const pre = await loadScreenCampaigns(
+    resultsDir,
+    now.rules,
+    root,
+    stratifyEnv,
+    PRESCREEN_PREFIX,
+    1,
+  );
+  return gateOf({
+    head,
+    now,
+    seals,
+    heldOut,
+    headTrees,
+    current: current.tasks,
+    full,
+    pre,
+    stratifyEnv,
+  });
+}
+
+type Loaded = Awaited<ReturnType<typeof loadScreenCampaigns>>;
+
+/**
+ * H-68 run 002: the gate on loaded inputs (screeningGate does the I/O), so
+ * an integration test can run real campaign records through it.
+ */
+export async function gateOf(input: {
+  head: string;
+  now: Screening;
+  seals: SealState[];
+  heldOut: string[];
+  headTrees: Map<string, string>;
+  current: TaskIdentity[];
+  full: Loaded;
+  pre: Loaded;
+  stratifyEnv: boolean;
+}) {
+  const { head, now, seals, heldOut, headTrees, pre, stratifyEnv } = input;
+  const { campaigns, ran } = input.full;
+  const current = { tasks: input.current };
+  // The seal where each candidate first appears fixes its metadata and seed.
+  const firstSeal = new Map<string, SealState>();
+  for (const s of seals) {
+    for (const c of s.screening.candidates) {
+      if (!firstSeal.has(c.id)) firstSeal.set(c.id, s);
+    }
+  }
+  const sealedIds = [...firstSeal.keys()];
+  const ps = await evaluatePrescreen({
+    now,
+    seals,
+    heldOut,
+    prescreens: pre.campaigns,
+    full: campaigns,
+  });
+  const hist = screeningHistory(campaigns, now.rules);
+  const tallies = tally(hist.cells, now.rules);
+  // H-51: without --stratify-env, the pooled classify as before (a mixed
+  // env_fp was refused above).
+  const { status, strata, flagged } = stratifyEnv
+    ? stratifyByEnv(
+      now,
+      new Set(sealedIds),
+      heldOut,
+      hist.cells,
+      hist.screens,
+      ps.provisional,
+    )
+    : {
+      status: classify(
+        now,
+        new Set(sealedIds),
+        heldOut,
+        tallies,
+        hist.screens,
+        ps.provisional,
+      ),
+      strata: new Map<string, EnvStratum[]>(),
+      flagged: new Map<string, string>(),
+    };
+  const problems = [
+    ...seals.flatMap((s) => [
+      ...appendOnlyProblems(s.tag, s.screening, now),
+      ...treeProblems(s.tag, s.trees, headTrees),
+    ]),
+    ...[...ran, ...pre.ran].flatMap(([id, t]) =>
+      identityProblems(id, t, current.tasks)
+    ),
+    ...chronologyProblems(
+      [...campaigns, ...pre.campaigns].map((c) => ({
+        id: c.id,
+        created_at: c.created_at,
+        tasks: (ran.get(c.id) ?? pre.ran.get(c.id) ?? []).map((t) => t.id),
+      })),
+      new Map([...firstSeal].map(([id, s]) => [id, s.round_time])),
+    ),
+    ...hist.problems,
+    ...contaminationProblems(status, tallies.keys()),
+    ...supersedeProblems(now, status),
+    ...ps.problems,
+  ];
+  return {
+    head,
+    now,
+    firstSeal,
+    campaigns,
+    ps,
+    hist,
+    tallies,
+    status,
+    strata,
+    flagged,
+    problems,
+  };
+}
+export type Gate = Awaited<ReturnType<typeof gateOf>>;
+
+/**
+ * The `select` run and the selection.json text (main writes it). H-68 run
+ * 002: `meta` reads each seal's task metadata (metaAt in the CLI).
+ */
+export async function selectionDocument(
+  g: Gate,
+  o: {
+    seals: SealState[];
+    heldOut: string[];
+    n: number;
+    meta: (s: SealState, ids: string[]) => Promise<TaskMeta[]>;
+  },
+): Promise<{ text: string; ok: boolean; selection: Selection }> {
+  const { head, firstSeal, campaigns, status, tallies, now } = g;
+  const { seals, heldOut, n } = o;
+  const pool: Eligible[] = [];
+  const rank = new Map<string, string>();
+  for (const s of seals) {
+    const ids = s.screening.candidates.map((c) => c.id).filter((id) =>
+      firstSeal.get(id) === s &&
+      (STRATA as readonly string[]).includes(status.get(id)!)
+    );
+    for (const m of await o.meta(s, ids)) {
+      pool.push({ ...m, stratum: status.get(m.id) as Stratum });
+    }
+    for (const [id, k] of await ranks(s.seed, ids)) rank.set(id, k);
+  }
+  const selection = select(pool, n, now.rules, rank);
+  const ok = selection.shortfalls.length === 0;
+  const text = JSON.stringify(
+    {
+      v: 1,
+      status: ok ? "ok" : "too_few",
+      head,
+      seals: seals.map((s) => ({ tag: s.tag, commit: s.commit })),
+      campaigns: campaigns.map((c) => ({
+        id: c.id,
+        experiment: c.experiment,
+      })),
+      held_out: heldOut,
+      confirmatory_tasks: tasksGlob(selection.selected),
+      held_out_tasks: tasksGlob(heldOut),
+      candidates: Object.fromEntries(
+        [...status].map((
+          [id, s],
+        ) => [id, { status: s, ...(tallies.get(id) ?? {}) }]),
+      ),
+      selection,
+    },
+    null,
+    2,
+  ) + "\n";
+  return { text, ok, selection };
 }
 
 async function main(): Promise<number> {
@@ -1253,24 +1768,12 @@ async function main(): Promise<number> {
   });
   const cmd = String(a._[0] ?? "");
   const root = Deno.cwd();
-  if (
-    (await git(root, ["status", "--porcelain", "--", "harness-tasks"])).trim()
-  ) {
-    console.error(colors.red("[FAIL] harness-tasks has uncommitted changes"));
+  const opened = await openScreening(root);
+  if (opened.problems.length > 0) {
+    for (const p of opened.problems) console.error(colors.red(`[FAIL] ${p}`));
     return 1;
   }
-  const { seals, problems: ledgerIssues } = await loadSeals(root);
-  if (ledgerIssues.length > 0) {
-    for (const p of ledgerIssues) console.error(colors.red(`[FAIL] ${p}`));
-    return 1;
-  }
-  const start = seals[0]!;
-  const startIds = start.screening.candidates.map((c) => c.id);
-  const heldOut = pickHeldOut(
-    await metaAt(root, start.commit, start.screening, startIds),
-    await ranks(start.seed, startIds),
-    start.screening.rules,
-  ).sort();
+  const { seals, heldOut, startIds } = opened;
   if (cmd === "heldout") {
     console.log(`held_out: ${heldOut.join(", ")}`);
     console.log(
@@ -1284,65 +1787,13 @@ async function main(): Promise<number> {
     );
     return 1;
   }
-  const head = await commitOf(root, "HEAD");
-  const now = await yamlAt(root, head, REGISTRY_PATH, ScreeningSchema);
-  const headTrees = await treesAt(root, head);
-  // The seal where each candidate first appears fixes its metadata and seed.
-  const firstSeal = new Map<string, SealState>();
-  for (const s of seals) {
-    for (const c of s.screening.candidates) {
-      if (!firstSeal.has(c.id)) firstSeal.set(c.id, s);
-    }
-  }
-  const sealedIds = [...firstSeal.keys()];
-  const current = await taskSetIdentity(
+  const g = await screeningGate(
     root,
-    await Promise.all(
-      sealedIds.map((id) => loadTask(join(root, "harness-tasks", "tasks", id))),
-    ),
-    await loadSymbolsLock(root),
-  );
-  const { campaigns, ran } = await loadScreenCampaigns(
+    opened,
     a["results-dir"],
-    now.rules,
-    root,
     a["stratify-env"],
   );
-  const hist = screeningHistory(campaigns, now.rules);
-  const tallies = tally(hist.cells, now.rules);
-  // H-51: without --stratify-env, the pooled classify as before (a mixed
-  // env_fp was refused above).
-  const { status, strata, flagged } = a["stratify-env"]
-    ? stratifyByEnv(now, new Set(sealedIds), heldOut, hist.cells, hist.screens)
-    : {
-      status: classify(
-        now,
-        new Set(sealedIds),
-        heldOut,
-        tallies,
-        hist.screens,
-      ),
-      strata: new Map<string, EnvStratum[]>(),
-      flagged: new Map<string, string>(),
-    };
-  const problems = [
-    ...seals.flatMap((s) => [
-      ...appendOnlyProblems(s.tag, s.screening, now),
-      ...treeProblems(s.tag, s.trees, headTrees),
-    ]),
-    ...[...ran].flatMap(([id, t]) => identityProblems(id, t, current.tasks)),
-    ...chronologyProblems(
-      campaigns.map((c) => ({
-        id: c.id,
-        created_at: c.created_at,
-        tasks: (ran.get(c.id) ?? []).map((t) => t.id),
-      })),
-      new Map([...firstSeal].map(([id, s]) => [id, s.round_time])),
-    ),
-    ...hist.problems,
-    ...contaminationProblems(status, tallies.keys()),
-    ...supersedeProblems(now, status),
-  ];
+  const { campaigns, ps, hist, tallies, status, strata, flagged, problems } = g;
   for (const p of problems) console.error(colors.red(`[FAIL] ${p}`));
   if (problems.length > 0) return 1;
   for (const [id, s] of status) {
@@ -1361,7 +1812,20 @@ async function main(): Promise<number> {
   for (const [id, why] of flagged) {
     console.log(colors.yellow(`[FLAG] ${id}: ${why}; needs a ruling`));
   }
-  const rescreen = rescreenTasks(status, flagged);
+  if (ps.provisional.size > 0) {
+    console.log(`provisionally saturated: "${tasksGlob([...ps.provisional])}"`);
+  }
+  if (ps.waiting.size > 0) {
+    console.log(colors.yellow(
+      `[WAIT] pre-screen audit pending: "${tasksGlob([...ps.waiting])}"`,
+    ));
+  }
+  if (ps.missing.size > 0) {
+    console.log(colors.yellow(
+      `[WAIT] calibration pre-screen missing: "${tasksGlob([...ps.missing])}"`,
+    ));
+  }
+  const rescreen = nextScreenTasks(status, flagged, ps);
   if (rescreen.length > 0) {
     console.log(`next screen tasks: "${tasksGlob(rescreen)}"`);
   }
@@ -1377,52 +1841,18 @@ async function main(): Promise<number> {
     console.error(colors.red("[FAIL] --n must be a positive integer"));
     return 1;
   }
-  if (rescreen.length > 0 || [...status.values()].includes("unsealed")) {
-    console.error(
-      colors.red("[FAIL] select needs every candidate sealed and screened"),
-    );
+  const refusal = selectRefusal(rescreen, ps, status);
+  if (refusal !== null) {
+    console.error(colors.red(`[FAIL] ${refusal}`));
     return 1;
   }
-  const pool: Eligible[] = [];
-  const rank = new Map<string, string>();
-  for (const s of seals) {
-    const ids = s.screening.candidates.map((c) => c.id).filter((id) =>
-      firstSeal.get(id) === s &&
-      (STRATA as readonly string[]).includes(status.get(id)!)
-    );
-    for (const m of await metaAt(root, s.commit, s.screening, ids)) {
-      pool.push({ ...m, stratum: status.get(m.id) as Stratum });
-    }
-    for (const [id, k] of await ranks(s.seed, ids)) rank.set(id, k);
-  }
-  const selection = select(pool, n, now.rules, rank);
-  const ok = selection.shortfalls.length === 0;
-  await Deno.writeTextFile(
-    a.out,
-    JSON.stringify(
-      {
-        v: 1,
-        status: ok ? "ok" : "too_few",
-        head,
-        seals: seals.map((s) => ({ tag: s.tag, commit: s.commit })),
-        campaigns: campaigns.map((c) => ({
-          id: c.id,
-          experiment: c.experiment,
-        })),
-        held_out: heldOut,
-        confirmatory_tasks: tasksGlob(selection.selected),
-        held_out_tasks: tasksGlob(heldOut),
-        candidates: Object.fromEntries(
-          [...status].map((
-            [id, s],
-          ) => [id, { status: s, ...(tallies.get(id) ?? {}) }]),
-        ),
-        selection,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
+  const { text, ok, selection } = await selectionDocument(g, {
+    seals,
+    heldOut,
+    n,
+    meta: (s, ids) => metaAt(root, s.commit, s.screening, ids),
+  });
+  await Deno.writeTextFile(a.out, text);
   for (const d of selection.deviations) {
     console.log(colors.yellow(`[WARN] ${d}`));
   }

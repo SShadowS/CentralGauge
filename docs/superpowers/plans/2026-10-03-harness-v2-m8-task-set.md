@@ -28,7 +28,7 @@
 - lane-content never touches a container (host `gate-task.ts compile` is allowed). lane-ops owns `scripts/harness/gate-*.ts`. Every container job: bench-live check (`find results/.bench-running.json -mmin -2` prints nothing), a lease on Cronus281 to Cronus283 only, never kill a process by image name, only a PID you started.
 - Task authoring (CLAUDE.md): ticket-style prompts, no hints; oracles assert every requirement, boundaries on both sides, only what the prompt or a refapp contract states; never weakened. Measurement-only fixtures live in `fixture/<name>/`, never in `naive/`, so no oracle is bent to fit them.
 - M4 oracle rules carry over (own keys, Setup and work date per procedure; no state assertion after `asserterror` in the same procedure; no literal AutoIncrement; `Subtype = Test;`, `TestPermissions = Disabled;`).
-- Id bands: refapp modules as v1; visible tests 80000-84999 (never 80013); oracle of HX-N: N <= 6 keeps 85000+(N-1)*100 .. +99, N >= 7 owns `85600 + (N-7)*20 .. +19` (M8-01), last possible task HX-226. Oracle app id `c6a1e000-0000-4000-8001-000000000NNN`, name `CGR Oracle HX-NNN`.
+- Id bands: refapp modules as v1; visible tests 80000-84999 (never 80013); oracle of HX-N: N <= 6 keeps 85000+(N-1)*100 .. +99; 7 <= N <= 99 owns `85600 + (N-7)*20 .. +19` (M8-01); N >= 100 owns `87460 + (N-100)*15 .. +14` (H-67), last possible task HX-268. Oracle app id `c6a1e000-0000-4000-8001-000000000NNN`, name `CGR Oracle HX-NNN`.
 - Codeunit 80000 `"CGR Skeleton Tests"` keeps its five procedures.
 - Refapp frozen at the start seal: `git diff harness-v2-screen-start HEAD -- harness-tasks/refapp` stays empty to the freeze; later candidates are overlay-only.
 - Evidence under `H:\Temp3\harness-spike\M8\...`; gate reports stay where `gate-task.ts` writes them (`H:\Temp3\harness-spike\M4\<task>\`).
@@ -2078,7 +2078,7 @@ if (import.meta.main) Deno.exit(await main());
 
 ### Common procedure A: author one candidate
 
-For `HX-NNN` (oracle band `85600 + (NNN-7)*20 .. +19`):
+For `HX-NNN` (oracle band from oracleBandOf: `85600 + (NNN-7)*20 .. +19` up to HX-099, `87460 + (NNN-100)*15 .. +14` from HX-100):
 
 - [ ] **A1. Card** `H:\Temp3\harness-spike\M8\HX-NNN\card.md`, before any AL:
 

@@ -1362,3 +1362,780 @@ Deno.test("accountLines (H-53): executions and usage limits per label, summed ov
     "account work: 3 execution(s), 0 usage_limited [RETIRED by owner 2026-11-04T08:00:00.000Z: setup fails]",
   ]);
 });
+
+// ---- H-68: the pre-screen amendment (prescreen.ts holds its logic).
+
+import { ExperimentSchema } from "../../../src/harness/config.ts";
+import { SCREEN_PREFIX, STRATA } from "../../../scripts/harness/screening.ts";
+
+Deno.test("ScreeningSchema (H-68): amendments default to none; a prescreen record needs a calibration first round and distinct seals", async () => {
+  assertEquals(S([C("HX-007")]).amendments, []);
+  // H-68 r1: the committed registry carries the amendment record; the
+  // orchestrator appends its rounds when it seals.
+  assertEquals((await readYaml(REGISTRY_PATH, ScreeningSchema)).amendments, [{
+    id: "prescreen",
+    decision: "decisions/2026-11-06-m8-wave2-round0-and-prescreen.md",
+    rounds: [],
+  }]);
+  const amend = (a: unknown) =>
+    ScreeningSchema.safeParse({
+      v: 1,
+      rules: RULES,
+      candidates: [C("HX-007")],
+      amendments: [a],
+    }).success;
+  const rec = (rounds: unknown[], extra: object = {}) => ({
+    id: "prescreen",
+    decision: "decisions/2026-11-06-m8-wave2-round0-and-prescreen.md",
+    rounds,
+    ...extra,
+  });
+  const cal = { seal: "harness-v2-screen-w5", mode: "calibration" };
+  const fil = { seal: "harness-v2-screen-w6", mode: "filter" };
+  assert(amend(rec([cal, fil])));
+  assert(!amend(rec([fil])), "the first round must be calibration");
+  assert(!amend(rec([cal, { ...fil, seal: cal.seal }])), "duplicate seal");
+  assert(
+    !amend(rec([cal], { id: "other" })),
+    "the id is the literal prescreen",
+  );
+  assert(
+    !amend(rec([{ ...cal, seal: "w5" }])),
+    "a seal is a harness-v2-screen-* tag",
+  );
+  assert(
+    !amend(rec([{ ...cal, mode: "skip" }])),
+    "mode is calibration or filter",
+  );
+  assert(!amend(rec([cal], { extra: 1 })), "strict");
+  assert(
+    !ScreeningSchema.safeParse({
+      v: 1,
+      rules: RULES,
+      candidates: [],
+      amendments: [rec([cal]), rec([cal])],
+    }).success,
+    "one prescreen record",
+  );
+  // The amendment is not part of rules and is no append-only problem.
+  assertEquals(
+    appendOnlyProblems(
+      "harness-v2-screen-w5",
+      S([C("HX-007")]),
+      ScreeningSchema.parse({
+        v: 1,
+        rules: RULES,
+        candidates: [C("HX-007")],
+        amendments: [rec([cal])],
+      }),
+    ),
+    [],
+  );
+});
+
+Deno.test("classify (H-68): a provisional reject is provisionally_saturated; held-out, broken and unsealed still win; default unchanged", () => {
+  const s = S([
+    C("HX-007"),
+    C("HX-008"),
+    C("HX-009", { broken: "decisions/x.md" }),
+    C("HX-010"),
+    C("HX-011"),
+  ]);
+  const sealed = new Set(["HX-007", "HX-008", "HX-009", "HX-011"]);
+  const t = tally([...six("HX-008", 3), ...six("HX-011", 6)], RULES);
+  const all = new Set(["HX-007", "HX-008", "HX-009", "HX-010", "HX-011"]);
+  const st = classify(s, sealed, ["HX-007"], t, new Map(), all);
+  assertEquals([...st.values()], [
+    "held_out",
+    "provisionally_saturated",
+    "broken",
+    "unsealed",
+    "provisionally_saturated",
+  ]);
+  const plain = classify(s, sealed, ["HX-007"], t, new Map());
+  assertEquals(plain, classify(s, sealed, ["HX-007"], t, new Map(), new Set()));
+  assertEquals([...plain.values()], [
+    "held_out",
+    "intermediate",
+    "broken",
+    "unsealed",
+    "saturated",
+  ]);
+});
+
+Deno.test("classify (H-68): a provisional reject is never rescreened nor selectable, and may be redesigned", () => {
+  const s = S([
+    C("HX-007"),
+    C("HX-008"),
+    C("HX-009", { supersedes: "HX-007" }),
+  ]);
+  const st = classify(
+    s,
+    new Set(["HX-007", "HX-008", "HX-009"]),
+    [],
+    new Map(),
+    new Map(),
+    new Set(["HX-007"]),
+  );
+  assertEquals(st.get("HX-007"), "provisionally_saturated");
+  assertEquals(rescreenTasks(st), ["HX-008", "HX-009"]);
+  // The CLI's select pool takes STRATA statuses only.
+  assert(!(STRATA as readonly string[]).includes(st.get("HX-007")!));
+  assertEquals(supersedeProblems(s, st), []);
+});
+
+Deno.test("stratifyByEnv (H-68): a provisional reject keeps its status", () => {
+  const s = S([C("HX-007")]);
+  const r = stratifyByEnv(
+    s,
+    new Set(["HX-007"]),
+    [],
+    [],
+    new Map(),
+    new Set(["HX-007"]),
+  );
+  assertEquals(r.status.get("HX-007"), "provisionally_saturated");
+});
+
+Deno.test("loadScreenCampaigns (H-68): the default loader ignores v2-prescreen-* campaigns; the prefix and repeats parameters select them", async () => {
+  const { loadScreenCampaigns } = await import(
+    "../../../scripts/harness/screening.ts"
+  );
+  const { PRESCREEN_PREFIX } = await import(
+    "../../../scripts/harness/prescreen.ts"
+  );
+  assert(!PRESCREEN_PREFIX.startsWith(SCREEN_PREFIX));
+  const root = await Deno.makeTempDir();
+  try {
+    const c = await campaign({
+      experiment: ExperimentSchema.parse({
+        id: `${PRESCREEN_PREFIX}1`,
+        hypothesis: "pre-screen",
+        primary_metric: "cost_per_solved_task",
+        baseline: "plain",
+        variants: ["skills"],
+        vary: ["skills"],
+        tasks: "harness-tasks/tasks/*",
+        repeats: 1,
+      }),
+    });
+    await Deno.mkdir(`${root}/campaigns`);
+    await Deno.writeTextFile(
+      `${root}/campaigns/${c.id}.json`,
+      JSON.stringify(c),
+    );
+    const r = await loadScreenCampaigns(root, RULES);
+    assertEquals([r.campaigns, [...r.ran]], [[], []]);
+    // Read with the pre-screen prefix it is checked against arms x 1.
+    await assertRejects(
+      () => loadScreenCampaigns(root, RULES, ".", false, PRESCREEN_PREFIX, 1),
+      ValidationError,
+      "does not run the screening arms x 1",
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+import { completionTimes } from "../../../scripts/harness/screening.ts";
+
+/** Required cells of the plain-vs-skills fixture campaign at one repeat. */
+const NEED1 = { arms: ["plain", "skills"], repeats: 1 };
+
+Deno.test("completionTimes (H-68 r1): a task completes when its last counted judgment ended", async () => {
+  const c = await campaign();
+  const e1 = execution(c, { arm: "plain" });
+  const e2 = execution(c, { arm: "skills" });
+  const j1 = { ...judgment(c, e1, true), ended_at: "2026-10-02T10:00:00.000Z" };
+  const j2 = { ...judgment(c, e2, true), ended_at: "2026-10-03T09:00:00.000Z" };
+  const old = {
+    ...judgment(c, e1, true),
+    id: "old",
+    ended_at: "2026-10-09T00:00:00.000Z",
+  };
+  assertEquals(
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: j1.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: j2.id },
+        { task: "HX-002", repeat: 1, arm: "plain", judgment_id: null },
+      ],
+      [j1, j2, old],
+      NEED1,
+    ),
+    { "HX-001": "2026-10-03T09:00:00.000Z" },
+  );
+});
+
+import {
+  nextScreenTasks,
+  selectRefusal,
+} from "../../../scripts/harness/screening.ts";
+
+Deno.test("nextScreenTasks / selectRefusal (H-68 r2): a missing calibration pre-screen blocks select only; a pending audit blocks both", () => {
+  const status = new Map<string, Status>([
+    ["HX-007", "unscreened"],
+    ["HX-008", "unscreened"],
+    ["HX-009", "intermediate"],
+  ]);
+  const ps = (waiting: string[], missing: string[]) => ({
+    waiting: new Set(waiting),
+    missing: new Set(missing),
+  });
+  // HX-007 misses its calibration pre-screen: it still goes to the full screen.
+  assertEquals(nextScreenTasks(status, new Map(), ps([], ["HX-007"])), [
+    "HX-007",
+    "HX-008",
+  ]);
+  // HX-008 waits for a filter audit: it does not.
+  assertEquals(nextScreenTasks(status, new Map(), ps(["HX-008"], [])), [
+    "HX-007",
+  ]);
+  // A flagged candidate waits for a ruling, as before.
+  assertEquals(
+    nextScreenTasks(
+      status,
+      new Map([["HX-007", "strata disagree"]]),
+      ps([], []),
+    ),
+    ["HX-008"],
+  );
+  const done = new Map<string, Status>([["HX-007", "hard"], [
+    "HX-009",
+    "easy",
+  ]]);
+  assertEquals(selectRefusal([], ps([], []), done), null);
+  assertEquals(
+    selectRefusal([], ps([], ["HX-007"]), done),
+    'select needs a finished pre-screen of every calibration candidate: "harness-tasks/tasks/HX-007"',
+  );
+  assertEquals(
+    selectRefusal([], ps(["HX-009"], []), done),
+    "select needs every candidate sealed and screened",
+  );
+  assertEquals(
+    selectRefusal(["HX-008"], ps([], []), done),
+    "select needs every candidate sealed and screened",
+  );
+  assertEquals(
+    selectRefusal(
+      [],
+      ps([], []),
+      new Map<string, Status>([["HX-010", "unsealed"]]),
+    ),
+    "select needs every candidate sealed and screened",
+  );
+});
+
+import { firstAttempts } from "../../../scripts/harness/screening.ts";
+
+Deno.test("firstAttempts (H-68 r3): each cell's first execution attempt, never a retry or a manual rerun", async () => {
+  const c = await campaign({ repeats: 2 });
+  const p1 = execution(c, { arm: "plain" });
+  const m1 = execution(c, {
+    arm: "plain",
+    attempt: 2,
+    run_kind: "manual_rerun",
+  });
+  const s1 = execution(c, { arm: "skills" }, {
+    termination: "setup_failed",
+    did_work: false,
+  });
+  const s2 = execution(c, {
+    arm: "skills",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: s1.id,
+  });
+  const p2 = execution(c, { task: "HX-002", arm: "plain" });
+  const crash = execution(c, { repeat: 2, arm: "plain" }, {
+    termination: "harness_crash",
+    did_work: true,
+  });
+  const unscored = execution(c, { repeat: 2, arm: "skills" });
+  const ex = [p1, m1, s1, s2, p2, crash, unscored];
+  const js = [
+    judgment(c, p1, true),
+    judgment(c, m1, false),
+    judgment(c, s2, true),
+    judgment(c, crash, true),
+    judgment(c, unscored, null),
+  ];
+  assertEquals(Object.fromEntries(firstAttempts(c, ex, js).first), {
+    // judged pass; the manual rerun's fail is never read
+    "HX-001/1/plain": "pass",
+    // the first attempt failed setup; the automatic retry's pass is never read
+    "HX-001/1/skills": "fail",
+    // H-29: a crash-ended first attempt never counts
+    "HX-001/2/plain": "fail",
+    // r4: a first judgment that is unscored is a fail (Q4: eligible)
+    "HX-001/2/skills": "fail",
+    // ended, not judged yet
+    "HX-002/1/plain": "live",
+    // not started
+    "HX-002/1/skills": "live",
+    "HX-002/2/plain": "live",
+    "HX-002/2/skills": "live",
+  });
+});
+
+Deno.test("firstAttempts (H-68 r4): the first attempt freezes on its first judgment; a later rejudge never changes it", async () => {
+  const c = await campaign();
+  const unscored = execution(c, { arm: "plain" });
+  const passed = execution(c, { arm: "skills" });
+  const waiting = execution(c, { task: "HX-002", arm: "plain" });
+  const ex = [unscored, passed, waiting];
+  const at = (h: number) => ({
+    started_at: `2026-10-01T${h}:00:00.000Z`,
+    ended_at: `2026-10-01T${h}:30:00.000Z`,
+  });
+  const first = [
+    judgment(c, unscored, null, at(11)),
+    judgment(c, passed, true, at(11)),
+  ];
+  const before = Object.fromEntries(firstAttempts(c, ex, first).first);
+  assertEquals(
+    [before["HX-001/1/plain"], before["HX-001/1/skills"]],
+    ["fail", "pass"],
+  );
+  // (c) no judgment yet: live (a pending verdict)
+  assertEquals(before["HX-002/1/plain"], "live");
+  // (a) a passing rejudge of the unscored one and (b) a failing rejudge of
+  // the pass change nothing, so R and the audit sample cannot move.
+  const rejudged = [
+    ...first,
+    judgment(c, unscored, true, at(13)),
+    judgment(c, passed, false, at(13)),
+  ];
+  assertEquals(
+    Object.fromEntries(firstAttempts(c, ex, rejudged).first),
+    before,
+  );
+  // Input order is irrelevant: the earliest judgment is the first.
+  assertEquals(
+    Object.fromEntries(firstAttempts(c, ex, [...rejudged].reverse()).first),
+    before,
+  );
+});
+
+Deno.test("firstAttempts (H-68 r5): forced judgments never count; a judgment before its execution's end or an ambiguous first judgment is a problem", async () => {
+  const c = await campaign();
+  // Executions end 10:11 (fixture default).
+  const e = execution(c, { arm: "plain" });
+  const time = (hm: string) => ({
+    started_at: `2026-10-01T${hm}:00.000Z`,
+    ended_at: `2026-10-01T${hm}:00.000Z`,
+  });
+  const pass = judgment(c, e, true, time("10:20"));
+  const forced = judgment(c, e, false, {
+    ...time("10:15"),
+    forced: {
+      reason: "verdict build starved of memory",
+      replaces: pass.id,
+      basis: {
+        kind: "decision",
+        path: "2026-10-30-x.md",
+        sha256: "a".repeat(64),
+        approval: "OWNER-APPROVED: rejudge (2026-10-30T10:00:00Z)",
+      },
+    },
+  });
+  // A forced failing judgment backdated before the original pass: still a
+  // pass, no problem, so R is unchanged.
+  const f = firstAttempts(c, [e], [pass, forced]);
+  assertEquals(f.first.get("HX-001/1/plain"), "pass");
+  assertEquals(f.problems, []);
+  // A judgment ending before its execution is a problem, never the first.
+  const early = judgment(c, e, false, time("10:05"));
+  const g = firstAttempts(c, [e], [pass, early]);
+  assertEquals(g.problems, [
+    `judgment ${early.id} ends before its execution`,
+  ]);
+  assertEquals(g.first.get("HX-001/1/plain"), "pass");
+  // Two earliest judgments at the same instant that disagree: a problem.
+  const tie = judgment(c, e, false, time("10:20"));
+  assertEquals(firstAttempts(c, [e], [pass, tie]).problems, [
+    `execution ${e.id}: ambiguous first judgment (${
+      [pass.id, tie.id].sort().join(", ")
+    } end together and disagree)`,
+  ]);
+  // The same instant and the same outcome is fine.
+  const same = judgment(c, e, true, time("10:20"));
+  const h = firstAttempts(c, [e], [pass, same]);
+  assertEquals(h.problems, []);
+  assertEquals(h.first.get("HX-001/1/plain"), "pass");
+});
+
+Deno.test("completionTimes (H-68 run 002 item 1): the FIRST time the full screen was complete; a later rejudge cannot move it", async () => {
+  const c = await campaign();
+  const e1 = execution(c, { arm: "plain" });
+  const e2 = execution(c, { arm: "skills" });
+  const t = (d: string) => ({ ended_at: `2026-10-${d}T00:00:00.000Z` });
+  const j1 = judgment(c, e1, true, t("02"));
+  const j2 = judgment(c, e2, false, t("03"));
+  // A valid rejudge of e2 at T3: now the counted judgment of that cell.
+  const rejudge = judgment(c, e2, false, t("09"));
+  assertEquals(
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: j1.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: rejudge.id },
+      ],
+      [j1, j2, rejudge],
+      NEED1,
+    ),
+    { "HX-001": "2026-10-03T00:00:00.000Z" },
+  );
+  // An unscored judgment never made the cell complete.
+  const unscored = judgment(c, e1, null, t("01"));
+  assertEquals(
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: j1.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: j2.id },
+      ],
+      [unscored, j1, j2],
+      NEED1,
+    ),
+    { "HX-001": "2026-10-03T00:00:00.000Z" },
+  );
+});
+
+Deno.test("completionTimes (H-68 run 002 follow-up): the first instant at which every counted cell is scored at once", async () => {
+  const c = await campaign();
+  const a = execution(c, { arm: "plain" });
+  const b = execution(c, { arm: "skills" });
+  const t = (d: string) => ({ ended_at: `2026-10-${d}T00:00:00.000Z` });
+  // A scored at T1, A unscored at T2, B first scored at T3, A scored at T5.
+  const a1 = judgment(c, a, true, t("01"));
+  const a2 = judgment(c, a, null, t("02"));
+  const b3 = judgment(c, b, false, t("03"));
+  const a5 = judgment(c, a, true, t("05"));
+  // Complete only at T5, so a pre-screen created at T4 is not after a
+  // complete full screen.
+  assertEquals(
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: a5.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: b3.id },
+      ],
+      [a5, b3, a2, a1],
+      NEED1,
+    ),
+    { "HX-001": "2026-10-05T00:00:00.000Z" },
+  );
+});
+
+Deno.test("completionTimes (H-68 run 003 a): the replay order is total (ended_at, then judgment id), so input order never changes the completion", async () => {
+  const c = await campaign();
+  const a = execution(c, { arm: "plain" });
+  const b = execution(c, { arm: "skills" });
+  const t = (d: string) => ({ ended_at: `2026-10-${d}T00:00:00.000Z` });
+  const b3 = judgment(c, b, true, t("03"));
+  // One cell, a scored and an unscored judgment ending at the same instant:
+  // ordered by id, the later id (unscored) applies last, so T5 is not complete.
+  const a5 = judgment(c, a, true, t("05"));
+  const a5u = judgment(c, a, null, t("05"));
+  assert(a5.id < a5u.id);
+  const a7 = judgment(c, a, true, t("07"));
+  const cells = [
+    { task: "HX-001", repeat: 1, arm: "plain", judgment_id: a7.id },
+    { task: "HX-001", repeat: 1, arm: "skills", judgment_id: b3.id },
+  ];
+  const perms = <T>(xs: T[]): T[][] =>
+    xs.length <= 1
+      ? [xs]
+      : xs.flatMap((x, i) =>
+        perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p])
+      );
+  const all = perms([b3, a5, a5u, a7]);
+  assertEquals(all.length, 24);
+  for (const js of all) {
+    assertEquals(completionTimes(cells, js, NEED1), {
+      "HX-001": "2026-10-07T00:00:00.000Z",
+    }, js.map((j) => j.id).join(" "));
+  }
+});
+
+import { RecordStore } from "../../../src/harness/records.ts";
+import {
+  gateOf,
+  loadScreenCampaigns,
+  type ScreenCampaign,
+  type SealState,
+  selectionDocument,
+} from "../../../scripts/harness/screening.ts";
+
+Deno.test("H-68 run 002 item 4: valid full-screen and pre-screen campaigns through the gate and select leave tallies and selection.json byte-identical", async () => {
+  const { PRESCREEN_PREFIX, PRESCREEN_DECISIONS } = await import(
+    "../../../scripts/harness/prescreen.ts"
+  );
+  const dir = await tempDir({ prefix: "cg-h68-integ-" });
+  const store = new RecordStore(dir);
+  const rules: Rules = {
+    ...RULES,
+    arms: ["plain", "skills"],
+    kind_min: 0,
+    // Room for both kinds in a selection of two (it must succeed).
+    kind_max_share: 1,
+    required_coupling: ["single-instance"],
+    large_min_share: 0,
+  };
+  const exp = (id: string, repeats: number) =>
+    ExperimentSchema.parse({
+      id,
+      hypothesis: "screen",
+      primary_metric: "cost_per_solved_task",
+      baseline: "plain",
+      variants: ["skills"],
+      vary: ["skills"],
+      tasks: "harness-tasks/tasks/*",
+      repeats,
+    });
+  /** Writes a campaign with one judged execution per planned cell. */
+  const write = async (
+    id: string,
+    experiment: string,
+    repeats: number,
+    pass: (task: string, repeat: number, arm: string) => boolean,
+  ) => {
+    const c = await campaign({
+      id,
+      repeats,
+      experiment: exp(experiment, repeats),
+    });
+    await store.writeCampaign(c);
+    for (const b of c.blocks) {
+      for (const arm of b.order) {
+        const e = execution(c, { task: b.task_id, repeat: b.repeat, arm });
+        await store.writeExecution(e);
+        await store.writeJudgment(
+          judgment(c, e, pass(b.task_id, b.repeat, arm)),
+        );
+      }
+    }
+    return c;
+  };
+  // Full screen: HX-001 solved 4/6 (intermediate), HX-002 1/6 (hard).
+  const solved: Record<string, number> = { "HX-001": 4, "HX-002": 1 };
+  const full = await write(
+    "00000000-0000-4000-8000-0000000000f1",
+    "v2-screen-1",
+    3,
+    (t, r, arm) => (r - 1) * 2 + (arm === "plain" ? 0 : 1) < solved[t]!,
+  );
+  // Pre-screen (calibration): both arms pass for both tasks.
+  await write(
+    "00000000-0000-4000-8000-0000000000a1",
+    `${PRESCREEN_PREFIX}1`,
+    1,
+    () => true,
+  );
+  try {
+    const loadFull = await loadScreenCampaigns(dir, rules);
+    const loadPre = await loadScreenCampaigns(
+      dir,
+      rules,
+      ".",
+      false,
+      PRESCREEN_PREFIX,
+      1,
+    );
+    // The default loader never reads the pre-screen; the prefix loader does.
+    assertEquals(loadFull.campaigns.map((c) => c.experiment), ["v2-screen-1"]);
+    assertEquals(loadPre.campaigns.map((c) => c.experiment), [
+      `${PRESCREEN_PREFIX}1`,
+    ]);
+    const ids = [C("HX-001"), C("HX-002")];
+    const registry = (amendments: unknown[]) =>
+      ScreeningSchema.parse({ v: 1, rules, candidates: ids, amendments });
+    const seal = (screening: Screening): SealState => ({
+      tag: START,
+      commit: "c".repeat(40),
+      seed: "seed-start",
+      round_time: "2026-09-30T00:00:00.000Z",
+      screening,
+      trees: new Map([["HX-001", "t1"], ["HX-002", "t2"]]),
+    });
+    const run = async (now: Screening, pre: typeof loadPre) => {
+      const seals = [seal(now)];
+      const g = await gateOf({
+        head: "h".repeat(40),
+        now,
+        seals,
+        heldOut: [],
+        headTrees: new Map([["HX-001", "t1"], ["HX-002", "t2"]]),
+        current: full.task_set.tasks,
+        full: loadFull,
+        pre,
+        stratifyEnv: false,
+      });
+      assertEquals(g.problems, []);
+      const doc = await selectionDocument(g, {
+        seals,
+        heldOut: [],
+        n: 2,
+        meta: (_s, wanted) =>
+          Promise.resolve(wanted.map((id) => ({
+            id,
+            kind: id === "HX-001" ? "feature" as const : "bugfix" as const,
+            coupling: ["single-instance"],
+            large: false,
+          }))),
+      });
+      return { g, doc };
+    };
+    const a = await run(registry([]), { campaigns: [], ran: new Map() });
+    const b = await run(
+      registry([{
+        id: "prescreen",
+        decision: PRESCREEN_DECISIONS[0],
+        rounds: [{ seal: START, mode: "calibration" }],
+      }]),
+      loadPre,
+    );
+    // The pre-screen was really evaluated (not vacuous): both verdicts, no gap.
+    assertEquals(Object.fromEntries(b.g.ps.verdicts), {
+      "HX-001": "provisionally_saturated",
+      "HX-002": "provisionally_saturated",
+    });
+    assertEquals(b.g.ps.missing, new Set());
+    assertEquals([...a.g.tallies], [...b.g.tallies]);
+    assertEquals(Object.fromEntries(a.g.status), {
+      "HX-001": "intermediate",
+      "HX-002": "hard",
+    });
+    // Not two identical empty documents: the selection succeeds with both.
+    assertEquals(a.doc.ok, true);
+    assertEquals(a.doc.selection.selected, ["HX-001", "HX-002"]);
+    assertEquals(JSON.parse(a.doc.text).status, "ok");
+    assertEquals(b.doc.text, a.doc.text);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+// ---- H-68 run 003 follow-up: completed_at derived through the loader.
+
+/**
+ * A v2-screen-1 full screen of HX-001/HX-002 (plain vs skills, x3) written
+ * as real records, every cell judged passing, with two hooks: `skip` cells
+ * get an execution and no judgment, `crash` cells end in harness_crash
+ * (judged, did work). Returns the loaded full-screen campaign.
+ */
+async function loadedFullScreen(o: {
+  skip?: string[];
+  crash?: string[];
+}) {
+  const dir = await tempDir({ prefix: "cg-h68-done-" });
+  const store = new RecordStore(dir);
+  const rules: Rules = { ...RULES, arms: ["plain", "skills"] };
+  const c = await campaign({
+    id: "00000000-0000-4000-8000-0000000000f2",
+    repeats: 3,
+    experiment: ExperimentSchema.parse({
+      id: "v2-screen-1",
+      hypothesis: "screen",
+      primary_metric: "cost_per_solved_task",
+      baseline: "plain",
+      variants: ["skills"],
+      vary: ["skills"],
+      tasks: "harness-tasks/tasks/*",
+      repeats: 3,
+    }),
+  });
+  await store.writeCampaign(c);
+  for (const b of c.blocks) {
+    for (const arm of b.order) {
+      const key = `${b.task_id}/${b.repeat}/${arm}`;
+      const e = execution(
+        c,
+        { task: b.task_id, repeat: b.repeat, arm },
+        o.crash?.includes(key)
+          ? { termination: "harness_crash", did_work: true }
+          : {},
+      );
+      await store.writeExecution(e);
+      if (!o.skip?.includes(key)) {
+        await store.writeJudgment(judgment(c, e, true));
+      }
+    }
+  }
+  try {
+    const r = await loadScreenCampaigns(dir, rules);
+    return { full: r.campaigns[0]!, rules };
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+/** Is a later filter-round pre-screen of HX-001 refused after this full screen? */
+async function refusedAfter(full: ScreenCampaign, rules: Rules) {
+  const { evaluatePrescreen, PRESCREEN_DECISIONS } = await import(
+    "../../../scripts/harness/prescreen.ts"
+  );
+  const W5 = "harness-v2-screen-w5", W6 = "harness-v2-screen-w6";
+  const reg = (ids: string[], rounds: unknown[]) =>
+    ScreeningSchema.parse({
+      v: 1,
+      rules,
+      candidates: ids.map((id) => C(id)),
+      amendments: [{
+        id: "prescreen",
+        decision: PRESCREEN_DECISIONS[0],
+        rounds,
+      }],
+    });
+  const cal = { seal: W5, mode: "calibration" };
+  const fil = { seal: W6, mode: "filter" };
+  const seals = [
+    { tag: START, seed: "s0", screening: reg(["HX-009"], []) },
+    { tag: W5, seed: "s5", screening: reg(["HX-009", "HX-008"], [cal]) },
+    {
+      tag: W6,
+      seed: "s6",
+      screening: reg(["HX-009", "HX-008", "HX-001", "HX-002"], [cal, fil]),
+    },
+  ];
+  const cell = (arm: string): Cell => ({
+    task: "HX-001",
+    arm,
+    repeat: 1,
+    status: "scored",
+    pass: true,
+    spend_usd: 0,
+    known_spend_usd: 0,
+    attempts: 1,
+  });
+  const r = await evaluatePrescreen({
+    now: seals[2]!.screening,
+    seals,
+    heldOut: [],
+    prescreens: [{
+      id: "p1",
+      experiment: "v2-prescreen-1",
+      created_at: "2026-11-01T00:00:00.000Z",
+      cells: [cell("plain"), cell("skills")],
+    }],
+    full: [full],
+  });
+  return r.problems.some((p) => p.includes("after a complete full screen"));
+}
+
+Deno.test("completionTimes via the loader (H-68 run 003 follow-up 1): five scored cells and one never-judged cell are no completion, so a later pre-screen is not refused", async () => {
+  const { full, rules } = await loadedFullScreen({ skip: ["HX-001/3/skills"] });
+  assertEquals(full.completed_at?.["HX-001"], undefined);
+  // HX-002 (all six judged) does complete: the loader really derives it.
+  assert(full.completed_at?.["HX-002"] !== undefined);
+  assertEquals(await refusedAfter(full, rules), false);
+  // Control: with every cell judged, the same pre-screen is refused.
+  const done = await loadedFullScreen({});
+  assertEquals(await refusedAfter(done.full, done.rules), true);
+});
+
+Deno.test("completionTimes via the loader (H-68 run 003 follow-up 2): a scored judgment on a crash-excluded execution never makes a completion", async () => {
+  const { full, rules } = await loadedFullScreen({ crash: ["HX-001/2/plain"] });
+  assertEquals(full.excluded?.map((x) => x.task), ["HX-001"]);
+  assertEquals(full.completed_at?.["HX-001"], undefined);
+  assertEquals(await refusedAfter(full, rules), false);
+});
