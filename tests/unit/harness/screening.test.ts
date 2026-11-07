@@ -1807,6 +1807,37 @@ Deno.test("completionTimes (H-68 run 002 follow-up): the first instant at which 
   );
 });
 
+Deno.test("completionTimes (H-68 run 003 a): the replay order is total (ended_at, then judgment id), so input order never changes the completion", async () => {
+  const c = await campaign();
+  const a = execution(c, { arm: "plain" });
+  const b = execution(c, { arm: "skills" });
+  const t = (d: string) => ({ ended_at: `2026-10-${d}T00:00:00.000Z` });
+  const b3 = judgment(c, b, true, t("03"));
+  // One cell, a scored and an unscored judgment ending at the same instant:
+  // ordered by id, the later id (unscored) applies last, so T5 is not complete.
+  const a5 = judgment(c, a, true, t("05"));
+  const a5u = judgment(c, a, null, t("05"));
+  assert(a5.id < a5u.id);
+  const a7 = judgment(c, a, true, t("07"));
+  const cells = [
+    { task: "HX-001", judgment_id: a7.id },
+    { task: "HX-001", judgment_id: b3.id },
+  ];
+  const perms = <T>(xs: T[]): T[][] =>
+    xs.length <= 1
+      ? [xs]
+      : xs.flatMap((x, i) =>
+        perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p])
+      );
+  const all = perms([b3, a5, a5u, a7]);
+  assertEquals(all.length, 24);
+  for (const js of all) {
+    assertEquals(completionTimes(cells, js), {
+      "HX-001": "2026-10-07T00:00:00.000Z",
+    }, js.map((j) => j.id).join(" "));
+  }
+});
+
 import { RecordStore } from "../../../src/harness/records.ts";
 import {
   gateOf,

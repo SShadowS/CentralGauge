@@ -748,6 +748,29 @@ Deno.test("r1 Q8: the order is judged against the full screen's completion, not 
   );
 });
 
+Deno.test("run 003 b: once the full screen was ever complete, a later pre-screen is refused even if a rejudge made the current tally incomplete", async () => {
+  // Complete at T1 (AT(5)); an unscored rejudge at T3 leaves a cell pending
+  // now; the pre-screen was created at T2 (AT(10)).
+  const cells = six("HX-003", 6).map((x, i) =>
+    i === 5 ? { ...x, status: "pending" as const, pass: null } : x
+  );
+  const full = [{
+    ...camp("f1", AT(1), cells, "v2-screen-9"),
+    completed_at: { "HX-003": AT(5) },
+  }];
+  const r = await evaluatePrescreen(input([
+    camp("p1", AT(10), pre("HX-003", true, true)),
+  ], { full }));
+  assertEquals(r.problems, [
+    "HX-003 pre-screened in v2-prescreen-p1 after a complete full screen in v2-screen-9",
+  ]);
+  // Never complete before the pre-screen: no refusal.
+  const later = await evaluatePrescreen(input([
+    camp("p1", AT(10), pre("HX-003", true, true)),
+  ], { full: [{ ...full[0]!, completed_at: { "HX-003": AT(12) } }] }));
+  assertEquals(later.problems, []);
+});
+
 Deno.test("r1 status report: with gate problems it prints them and no false-kill or audit numbers", () => {
   const ps = {
     verdicts: new Map([["HX-002", "provisionally_saturated" as const]]),

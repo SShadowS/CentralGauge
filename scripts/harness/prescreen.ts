@@ -392,16 +392,22 @@ export async function evaluatePrescreen(input: {
   out.verdicts = prescreenVerdict(counted, now.rules);
   out.retried = retriedTasks(counted);
   // Q8: in a filter round the pre-screen must come before any complete full
-  // screen, judged by when that screen completed (its last counted judgment;
-  // the campaign's creation when that is unknown).
+  // screen. Run 003: judged on the FIRST completion time alone
+  // (completionTimes), so once the screen was ever complete the refusal
+  // holds even if a later unscored rejudge leaves the current tally
+  // incomplete. Without a completion time (a hand-built campaign), the
+  // current tally and the campaign's creation decide.
+  const completeBefore = (f: ScreenCampaign, t: string, at: string) => {
+    const first = f.completed_at?.[t];
+    return first !== undefined
+      ? compareInstant(first, at) < 0
+      : tally(f.cells.filter((x) => x.task === t), now.rules).get(t)
+            ?.complete === true && compareInstant(f.created_at, at) < 0;
+  };
   for (const [t, r] of out.rounds) {
     if (r.mode !== "filter") continue;
     for (const p of byTask.get(t)!) {
-      const f = full.find((f) =>
-        tally(f.cells.filter((x) => x.task === t), now.rules).get(t)
-          ?.complete &&
-        compareInstant(f.completed_at?.[t] ?? f.created_at, p.created_at) < 0
-      );
+      const f = full.find((f) => completeBefore(f, t, p.created_at));
       if (f) {
         out.problems.push(
           `${t} pre-screened in ${p.experiment} after a complete full screen in ${f.experiment}`,

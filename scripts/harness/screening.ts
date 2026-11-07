@@ -588,9 +588,11 @@ export interface ScreenCampaign {
 /**
  * H-68: per task, the FIRST instant at which every counted cell was scored at
  * once. Each cell's judgment timeline (the judgments of its counted
- * execution, same oracle) is replayed in ended_at order across the task's
- * cells; each judgment sets its cell scored or unscored. Judgments ending at
- * the same instant apply together. That moment never moves: later rejudges
+ * execution, same oracle) is replayed in ended_at order, then judgment id
+ * (run 003: a total order), across the task's cells; each judgment sets its
+ * cell scored or unscored. Judgments ending at the same instant apply in id
+ * order, and completeness is checked only after the whole instant (so the
+ * later id wins for a cell). That moment never moves: later rejudges
  * cannot change it (run 002 follow-up). A task whose cells are never all
  * scored at once has no entry.
  */
@@ -612,8 +614,11 @@ export function completionTimes(
         k.execution_id === j.execution_id &&
         k.task_oracle_hash === j.task_oracle_hash
       );
+    // Run 003: a total order, ended_at then judgment id, so input order never
+    // matters; the completeness check runs after the whole instant.
     const timeline = judgments.filter((j) => cellOf(j) >= 0).sort((a, b) =>
-      compareInstant(a.ended_at, b.ended_at)
+      compareInstant(a.ended_at, b.ended_at) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     );
     const scored = counted.map(() => false);
     for (let i = 0; i < timeline.length; i++) {
