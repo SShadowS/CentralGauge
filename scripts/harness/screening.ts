@@ -595,20 +595,39 @@ export interface ScreenCampaign {
  * later id wins for a cell). That moment never moves: later rejudges
  * cannot change it (run 002 follow-up). A task whose cells are never all
  * scored at once has no entry.
+ *
+ * Run 003 follow-up: every REQUIRED cell is replayed, arms x repeats 1..n as
+ * tally counts them. The cells are the counted cells after excludeCrashCells
+ * (the ones tally reads): a required cell with no counted judgment, or a
+ * crash-excluded one, stays unscored, so its task never completes.
  */
 export function completionTimes(
-  cells: readonly { task: string; judgment_id: string | null }[],
+  cells: readonly {
+    task: string;
+    repeat: number;
+    arm: string;
+    judgment_id: string | null;
+    reason?: string;
+  }[],
   judgments: readonly JudgmentRecord[],
+  need: { arms: readonly string[]; repeats: number },
 ): Record<string, string> {
   const byId = new Map(judgments.map((j) => [j.id, j]));
-  const byTask = new Map<string, JudgmentRecord[]>();
+  const byTask = new Map<string, Map<string, JudgmentRecord>>();
   for (const c of cells) {
+    const m = byTask.get(c.task) ?? new Map<string, JudgmentRecord>();
+    byTask.set(c.task, m);
+    if (c.reason === "harness_crash" || c.repeat > need.repeats) continue;
     const counted = c.judgment_id ? byId.get(c.judgment_id) : undefined;
-    if (!counted) continue;
-    byTask.set(c.task, [...(byTask.get(c.task) ?? []), counted]);
+    if (counted) m.set(`${c.repeat}/${c.arm}`, counted);
   }
+  const required = need.arms.flatMap((arm) =>
+    Array.from({ length: need.repeats }, (_, i) => `${i + 1}/${arm}`)
+  );
   const out: Record<string, string> = {};
-  for (const [task, counted] of byTask) {
+  for (const [task, m] of byTask) {
+    if (!required.every((k) => m.has(k))) continue;
+    const counted = required.map((k) => m.get(k)!);
     const cellOf = (j: JudgmentRecord) =>
       counted.findIndex((k) =>
         k.execution_id === j.execution_id &&
@@ -1458,7 +1477,13 @@ export async function loadScreenCampaigns(
       problems: manualRerunProblems(c, data.executions, data.judgments),
       accounts: accountCounts(data.executions),
       retirements: data.retirements ?? [],
-      completed_at: completionTimes(records, data.judgments),
+      // Run 003 follow-up: the counted cells after excludeCrashCells (what
+      // tally reads; same order as records), every required cell.
+      completed_at: completionTimes(
+        cells.map((x, i) => ({ ...x, judgment_id: records[i]!.judgment_id })),
+        data.judgments,
+        { arms: rules.arms, repeats },
+      ),
     });
     ran.set(c.id, c.task_set.tasks);
   }

@@ -1539,6 +1539,9 @@ Deno.test("loadScreenCampaigns (H-68): the default loader ignores v2-prescreen-*
 
 import { completionTimes } from "../../../scripts/harness/screening.ts";
 
+/** Required cells of the plain-vs-skills fixture campaign at one repeat. */
+const NEED1 = { arms: ["plain", "skills"], repeats: 1 };
+
 Deno.test("completionTimes (H-68 r1): a task completes when its last counted judgment ended", async () => {
   const c = await campaign();
   const e1 = execution(c, { arm: "plain" });
@@ -1551,11 +1554,15 @@ Deno.test("completionTimes (H-68 r1): a task completes when its last counted jud
     ended_at: "2026-10-09T00:00:00.000Z",
   };
   assertEquals(
-    completionTimes([
-      { task: "HX-001", judgment_id: j1.id },
-      { task: "HX-001", judgment_id: j2.id },
-      { task: "HX-002", judgment_id: null },
-    ], [j1, j2, old]),
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: j1.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: j2.id },
+        { task: "HX-002", repeat: 1, arm: "plain", judgment_id: null },
+      ],
+      [j1, j2, old],
+      NEED1,
+    ),
     { "HX-001": "2026-10-03T09:00:00.000Z" },
   );
 });
@@ -1769,19 +1776,27 @@ Deno.test("completionTimes (H-68 run 002 item 1): the FIRST time the full screen
   // A valid rejudge of e2 at T3: now the counted judgment of that cell.
   const rejudge = judgment(c, e2, false, t("09"));
   assertEquals(
-    completionTimes([
-      { task: "HX-001", judgment_id: j1.id },
-      { task: "HX-001", judgment_id: rejudge.id },
-    ], [j1, j2, rejudge]),
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: j1.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: rejudge.id },
+      ],
+      [j1, j2, rejudge],
+      NEED1,
+    ),
     { "HX-001": "2026-10-03T00:00:00.000Z" },
   );
   // An unscored judgment never made the cell complete.
   const unscored = judgment(c, e1, null, t("01"));
   assertEquals(
-    completionTimes([
-      { task: "HX-001", judgment_id: j1.id },
-      { task: "HX-001", judgment_id: j2.id },
-    ], [unscored, j1, j2]),
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: j1.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: j2.id },
+      ],
+      [unscored, j1, j2],
+      NEED1,
+    ),
     { "HX-001": "2026-10-03T00:00:00.000Z" },
   );
 });
@@ -1799,10 +1814,14 @@ Deno.test("completionTimes (H-68 run 002 follow-up): the first instant at which 
   // Complete only at T5, so a pre-screen created at T4 is not after a
   // complete full screen.
   assertEquals(
-    completionTimes([
-      { task: "HX-001", judgment_id: a5.id },
-      { task: "HX-001", judgment_id: b3.id },
-    ], [a5, b3, a2, a1]),
+    completionTimes(
+      [
+        { task: "HX-001", repeat: 1, arm: "plain", judgment_id: a5.id },
+        { task: "HX-001", repeat: 1, arm: "skills", judgment_id: b3.id },
+      ],
+      [a5, b3, a2, a1],
+      NEED1,
+    ),
     { "HX-001": "2026-10-05T00:00:00.000Z" },
   );
 });
@@ -1820,8 +1839,8 @@ Deno.test("completionTimes (H-68 run 003 a): the replay order is total (ended_at
   assert(a5.id < a5u.id);
   const a7 = judgment(c, a, true, t("07"));
   const cells = [
-    { task: "HX-001", judgment_id: a7.id },
-    { task: "HX-001", judgment_id: b3.id },
+    { task: "HX-001", repeat: 1, arm: "plain", judgment_id: a7.id },
+    { task: "HX-001", repeat: 1, arm: "skills", judgment_id: b3.id },
   ];
   const perms = <T>(xs: T[]): T[][] =>
     xs.length <= 1
@@ -1832,7 +1851,7 @@ Deno.test("completionTimes (H-68 run 003 a): the replay order is total (ended_at
   const all = perms([b3, a5, a5u, a7]);
   assertEquals(all.length, 24);
   for (const js of all) {
-    assertEquals(completionTimes(cells, js), {
+    assertEquals(completionTimes(cells, js, NEED1), {
       "HX-001": "2026-10-07T00:00:00.000Z",
     }, js.map((j) => j.id).join(" "));
   }
@@ -1842,6 +1861,7 @@ import { RecordStore } from "../../../src/harness/records.ts";
 import {
   gateOf,
   loadScreenCampaigns,
+  type ScreenCampaign,
   type SealState,
   selectionDocument,
 } from "../../../scripts/harness/screening.ts";
@@ -1993,4 +2013,129 @@ Deno.test("H-68 run 002 item 4: valid full-screen and pre-screen campaigns throu
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+// ---- H-68 run 003 follow-up: completed_at derived through the loader.
+
+/**
+ * A v2-screen-1 full screen of HX-001/HX-002 (plain vs skills, x3) written
+ * as real records, every cell judged passing, with two hooks: `skip` cells
+ * get an execution and no judgment, `crash` cells end in harness_crash
+ * (judged, did work). Returns the loaded full-screen campaign.
+ */
+async function loadedFullScreen(o: {
+  skip?: string[];
+  crash?: string[];
+}) {
+  const dir = await tempDir({ prefix: "cg-h68-done-" });
+  const store = new RecordStore(dir);
+  const rules: Rules = { ...RULES, arms: ["plain", "skills"] };
+  const c = await campaign({
+    id: "00000000-0000-4000-8000-0000000000f2",
+    repeats: 3,
+    experiment: ExperimentSchema.parse({
+      id: "v2-screen-1",
+      hypothesis: "screen",
+      primary_metric: "cost_per_solved_task",
+      baseline: "plain",
+      variants: ["skills"],
+      vary: ["skills"],
+      tasks: "harness-tasks/tasks/*",
+      repeats: 3,
+    }),
+  });
+  await store.writeCampaign(c);
+  for (const b of c.blocks) {
+    for (const arm of b.order) {
+      const key = `${b.task_id}/${b.repeat}/${arm}`;
+      const e = execution(
+        c,
+        { task: b.task_id, repeat: b.repeat, arm },
+        o.crash?.includes(key)
+          ? { termination: "harness_crash", did_work: true }
+          : {},
+      );
+      await store.writeExecution(e);
+      if (!o.skip?.includes(key)) {
+        await store.writeJudgment(judgment(c, e, true));
+      }
+    }
+  }
+  try {
+    const r = await loadScreenCampaigns(dir, rules);
+    return { full: r.campaigns[0]!, rules };
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+/** Is a later filter-round pre-screen of HX-001 refused after this full screen? */
+async function refusedAfter(full: ScreenCampaign, rules: Rules) {
+  const { evaluatePrescreen, PRESCREEN_DECISIONS } = await import(
+    "../../../scripts/harness/prescreen.ts"
+  );
+  const W5 = "harness-v2-screen-w5", W6 = "harness-v2-screen-w6";
+  const reg = (ids: string[], rounds: unknown[]) =>
+    ScreeningSchema.parse({
+      v: 1,
+      rules,
+      candidates: ids.map((id) => C(id)),
+      amendments: [{
+        id: "prescreen",
+        decision: PRESCREEN_DECISIONS[0],
+        rounds,
+      }],
+    });
+  const cal = { seal: W5, mode: "calibration" };
+  const fil = { seal: W6, mode: "filter" };
+  const seals = [
+    { tag: START, seed: "s0", screening: reg(["HX-009"], []) },
+    { tag: W5, seed: "s5", screening: reg(["HX-009", "HX-008"], [cal]) },
+    {
+      tag: W6,
+      seed: "s6",
+      screening: reg(["HX-009", "HX-008", "HX-001", "HX-002"], [cal, fil]),
+    },
+  ];
+  const cell = (arm: string): Cell => ({
+    task: "HX-001",
+    arm,
+    repeat: 1,
+    status: "scored",
+    pass: true,
+    spend_usd: 0,
+    known_spend_usd: 0,
+    attempts: 1,
+  });
+  const r = await evaluatePrescreen({
+    now: seals[2]!.screening,
+    seals,
+    heldOut: [],
+    prescreens: [{
+      id: "p1",
+      experiment: "v2-prescreen-1",
+      created_at: "2026-11-01T00:00:00.000Z",
+      cells: [cell("plain"), cell("skills")],
+    }],
+    full: [full],
+  });
+  return r.problems.some((p) => p.includes("after a complete full screen"));
+}
+
+Deno.test("completionTimes via the loader (H-68 run 003 follow-up 1): five scored cells and one never-judged cell are no completion, so a later pre-screen is not refused", async () => {
+  const { full, rules } = await loadedFullScreen({ skip: ["HX-001/3/skills"] });
+  assertEquals(full.completed_at?.["HX-001"], undefined);
+  // HX-002 (all six judged) does complete: the loader really derives it.
+  assert(full.completed_at?.["HX-002"] !== undefined);
+  assertEquals(await refusedAfter(full, rules), false);
+  // Control: with every cell judged, the same pre-screen is refused.
+  const done = await loadedFullScreen({});
+  assertEquals(await refusedAfter(done.full, done.rules), true);
+});
+
+Deno.test("completionTimes via the loader (H-68 run 003 follow-up 2): a scored judgment on a crash-excluded execution never makes a completion", async () => {
+  const { full, rules } = await loadedFullScreen({ crash: ["HX-001/2/plain"] });
+  assertEquals(full.excluded?.map((x) => x.task), ["HX-001"]);
+  assertEquals(full.completed_at?.["HX-001"], undefined);
+  assertEquals(await refusedAfter(full, rules), false);
 });
