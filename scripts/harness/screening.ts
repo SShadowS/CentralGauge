@@ -162,11 +162,12 @@ export const ScreeningSchema = z.strictObject({
         path: ["amendments"],
       });
     }
-    // H-68 run 002: calibration in round 1, filter from round 2 on.
-    if (a.rounds.slice(1).some((r) => r.mode !== "filter")) {
+    // H-69: one or more calibration rounds, then zero or more filter rounds.
+    const f = a.rounds.findIndex((r) => r.mode === "filter");
+    if (f >= 0 && a.rounds.slice(f).some((r) => r.mode !== "filter")) {
       ctx.addIssue({
         code: "custom",
-        message: `${a.id}: every round after the first must be filter`,
+        message: `${a.id}: a calibration round may not follow a filter round`,
         path: ["amendments"],
       });
     }

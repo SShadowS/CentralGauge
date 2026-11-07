@@ -906,7 +906,7 @@ Deno.test("r5 first-judgment problems from the loader are pre-screen problems", 
   assertEquals(r.problems, ["judgment j1 ends before its execution"]);
 });
 
-Deno.test("run 002 item 2: round 1 is calibration, every later round is filter; a mode-only edit to a sealed round is refused", () => {
+Deno.test("H-69: rounds are one or more calibration rounds, then filter rounds; calibration after a filter is refused; a mode-only edit to a sealed round is refused", () => {
   const parses = (rounds: Round[]) =>
     ScreeningSchema.safeParse({
       v: 1,
@@ -914,14 +914,15 @@ Deno.test("run 002 item 2: round 1 is calibration, every later round is filter; 
       candidates: [],
       amendments: [{ id: "prescreen", decision: DECISION, rounds }],
     }).success;
+  const CAL6: Round = { seal: W6, mode: "calibration" };
+  const FIL7: Round = { seal: W7, mode: "filter" };
   assert(parses([CAL5, FIL6]));
-  assert(
-    !parses([CAL5, { seal: W6, mode: "calibration" }]),
-    "a calibration round after round 1",
-  );
+  assert(parses([CAL5, CAL6]), "[cal, cal]");
+  assert(parses([CAL5, CAL6, FIL7]), "[cal, cal, filter]");
+  assert(!parses([FIL6]), "the first round must be calibration");
   assert(
     !parses([CAL5, FIL6, { seal: W7, mode: "calibration" }]),
-    "a calibration round as round 3",
+    "[cal, filter, cal]: calibration after a filter",
   );
   // A mode-only edit of a sealed round (built without the schema, which
   // would already refuse it) is an amendment change.
@@ -988,4 +989,41 @@ Deno.test("run 002 item 3: a broken candidate is a separate 'broken, never resol
     out.join("\n"),
   );
   assert(out.includes("  broken, never resolvable: 2"), out.join("\n"));
+});
+
+Deno.test("H-69: the calibration false-kill rate pools every calibration seal; each seal's table is still printed", () => {
+  const CAL6: Round = { seal: W6, mode: "calibration" };
+  const verdicts = new Map([
+    ["HX-001", "provisionally_saturated" as const],
+    ["HX-002", "provisionally_saturated" as const],
+    ["HX-003", "provisionally_saturated" as const],
+  ]);
+  // w5: one false kill of one; w6: none of two. Pooled: 1/3.
+  const status = new Map<string, Status>([
+    ["HX-001", "dead"],
+    ["HX-002", "saturated"],
+    ["HX-003", "saturated"],
+  ]);
+  const ps = {
+    verdicts,
+    rounds: new Map([
+      ["HX-001", CAL5],
+      ["HX-002", CAL6],
+      ["HX-003", CAL6],
+    ]),
+    audits: new Map(),
+    provisional: new Set<string>(),
+    waiting: new Set<string>(),
+    missing: new Set<string>(),
+    retried: new Set<string>(),
+    problems: [],
+  };
+  const out = prescreenReport([], status, ps).out;
+  const has = (l: string) => assert(out.includes(l), `${l}\n${out.join("\n")}`);
+  has("calibration false-kill: 1/3 (pending 0), missing pre-screen: 0");
+  has(`calibration ${W5} false-kill: 1/1 (pending 0)`);
+  has(`calibration ${W6} false-kill: 0/2 (pending 0)`);
+  has(
+    "  pre-screen provisionally_saturated: full saturated 2, other 0, pending 0",
+  );
 });
