@@ -436,16 +436,18 @@ codeunit 87940 "HX132 Card Hold Oracle"
     begin
         Prepare();
         CreateVehicle('HX132-15V', 1000, 40, false);
-        CreateVehicle('HX132-15N', 2500, 70, true);
+        CreateVehicle('HX132-15N', 2500, 70, false);
         CreateVehicle('HX132-15C', 4000, 20, false);
         ContractNo := CreateContract('HX132-15V');
         SeedCheckedOut(ContractNo, 'HX132-15V', 'HX132-15-OLD', 120);
         Spy.Init('HX132-15');
+        Spy.SetRefuseKeys(true);
         BindSubscription(Spy);
         Commit();
         asserterror RentalMgt.SwapVehicle(ContractNo, 'HX132-15N');
-        Assert.ExpectedError(StrSubstNo(NotAvailableTxt, 'HX132-15N'));
+        Assert.ExpectedError(Spy.RefusalText(ContractNo));
 
+        Spy.SetRefuseKeys(false);
         RentalMgt.SwapVehicle(ContractNo, 'HX132-15C');
 
         Assert.AreEqual(1, Spy.RequestCount(), 'The cheaper swap places no hold of its own');
