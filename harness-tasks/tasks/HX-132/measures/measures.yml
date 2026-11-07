@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "87940/FailedCheckOutKeepsHold": 1
+    "87940/RefusedCheckOutKeepsHold": 1
+    "87940/RetriedCheckOutReusesHold": 1
+    "87940/CheckOutAuthorizesExpectedAmount": 1
+    "87940/FailedSwapReleasesNothing": 1
+    "87940/RefusedSwapReleasesNothing": 1
+    "87940/RetriedSwapUsesNewHold": 1
+    "87940/SwapReleasesOldHoldOnce": 1
+    "87940/CheaperSwapKeepsHold": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
