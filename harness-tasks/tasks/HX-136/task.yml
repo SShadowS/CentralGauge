@@ -1,0 +1,15 @@
+id: HX-136
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Core, Test]
+coupling: [single-instance, events, commit-behavior]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80050, procedures: [CurrentBranchFallsBackToSetupDefault, NewContractTakesCurrentBranch] }
+fail_to_pass: null
+mutants: [modify-branch, no-zero, no-end-date, keep-on-refusal, reset-after]
+contamination: null
+limits: { timeout_min: 30 }
