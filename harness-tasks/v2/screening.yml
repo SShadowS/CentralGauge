@@ -280,3 +280,6 @@ candidates:
   - id: HX-103
     prior: hard
     size: { objects: 2, files: 2, reuse: "CGR Lease Mgt.CreateSchedule", traces: "CGR Lease Rate Review.OnProposeLeaseRate" }
+  - id: HX-131
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Close Contract.OnBeforeCloseContract" }
