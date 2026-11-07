@@ -1,6 +1,6 @@
 // H-68: the screening pre-screen (design note H-68, decision
-// 2026-11-06-m8-wave2-round0-and-prescreen). Pure logic only: no git, no
-// results dir, nothing read from the coordination share.
+// 2026-11-06-m8-wave2-round0-and-prescreen). Pure logic, plus one spawn of
+// each CLI in a temp dir; nothing read from the coordination share.
 
 import {
   assert,
@@ -8,6 +8,7 @@ import {
   assertNotEquals,
   assertThrows,
 } from "@std/assert";
+import { fromFileUrl } from "@std/path";
 import type { Cell } from "../../../src/harness/stats.ts";
 import type {
   Candidate,
@@ -25,6 +26,7 @@ import {
   falseKill,
   PRESCREEN_DECISIONS,
   PRESCREEN_PREFIX,
+  prescreenReport,
   prescreenVerdict,
   roundOf,
   type SealView,
@@ -159,7 +161,7 @@ Deno.test("prefixes: pre-screen and screen experiment prefixes are disjoint", ()
   assert(!SCREEN_PREFIX.startsWith(PRESCREEN_PREFIX));
 });
 
-Deno.test("prescreenVerdict: both arms scored and passing is provisionally saturated; anything else is eligible", () => {
+Deno.test("prescreenVerdict: both arms scored and passing is provisionally saturated; a finished attempt otherwise is eligible; an unfinished one is pending", () => {
   const v = prescreenVerdict([
     ...pre("HX-001", true, true),
     ...pre("HX-002", true, false),
@@ -170,7 +172,8 @@ Deno.test("prescreenVerdict: both arms scored and passing is provisionally satur
     cell("HX-005", LSP, null, 1, "unscored"),
     // a missing arm
     cell("HX-006", PLAIN, true),
-    // not yet run
+    // H-68 r1: live (pending) or not started (unrun) is no verdict yet,
+    // even beside a finished failure
     cell("HX-007", PLAIN, true),
     cell("HX-007", LSP, null, 1, "pending"),
     // repeat 2 is never read: a pre-screen is repeat 1 only
@@ -178,6 +181,12 @@ Deno.test("prescreenVerdict: both arms scored and passing is provisionally satur
     cell("HX-008", LSP, false, 2),
     cell("HX-009", PLAIN, true, 2),
     cell("HX-009", LSP, true, 2),
+    cell("HX-010", PLAIN, true),
+    cell("HX-010", LSP, null, 1, "unrun"),
+    cell("HX-011", PLAIN, false),
+    cell("HX-011", LSP, null, 1, "pending"),
+    cell("HX-012", PLAIN, true),
+    cell("HX-012", LSP, null, 2, "pending"),
   ], RULES);
   assertEquals(Object.fromEntries(v), {
     "HX-001": "provisionally_saturated",
@@ -186,9 +195,12 @@ Deno.test("prescreenVerdict: both arms scored and passing is provisionally satur
     "HX-004": "eligible",
     "HX-005": "eligible",
     "HX-006": "eligible",
-    "HX-007": "eligible",
+    "HX-007": "pending",
     "HX-008": "provisionally_saturated",
     "HX-009": "eligible",
+    "HX-010": "pending",
+    "HX-011": "pending",
+    "HX-012": "eligible",
   });
 });
 
@@ -484,4 +496,218 @@ Deno.test("evaluatePrescreen: a filter round holds back its rejects until every 
   );
   assertEquals(done.waiting, new Set());
   assertEquals(done.rounds.get("HX-002"), { seal: W5, mode: "calibration" });
+});
+
+// ---- H-68 Sol self-check r1.
+
+/** w6 filter candidates HX-003..HX-006 all pre-screened (HX-007 is held out). */
+const filterCells = (hx006: Cell[]): Cell[] => [
+  ...pre("HX-003", true, true),
+  ...pre("HX-004", true, true),
+  ...pre("HX-005", true, false),
+  ...pre("HX-002", true, true),
+  ...hx006,
+];
+
+Deno.test("r1 audit: a live or unrun attempt is no verdict, so a running campaign cannot finalize the sample", async () => {
+  const ps = new Map([
+    ["HX-101", "provisionally_saturated" as const],
+    ["HX-102", "pending" as const],
+  ]);
+  assertEquals(await auditSample("s", ["HX-101", "HX-102"], ps), null);
+  for (const status of ["pending", "unrun"] as const) {
+    const live = await evaluatePrescreen(input([
+      camp(
+        "p1",
+        AT(10),
+        filterCells([
+          cell("HX-006", PLAIN, true),
+          cell("HX-006", LSP, null, 1, status),
+        ]),
+      ),
+    ]));
+    assertEquals(live.problems, []);
+    assertEquals(live.verdicts.get("HX-006"), "pending");
+    assertEquals(live.audits.get(W6), null, status);
+    assertEquals(live.provisional, new Set());
+    assertEquals(live.waiting, new Set(["HX-003", "HX-004", "HX-006"]));
+  }
+  // The same attempt, finished, draws the sample.
+  const done = await evaluatePrescreen(input([
+    camp("p1", AT(10), filterCells(pre("HX-006", true, true))),
+  ]));
+  assert(done.audits.get(W6) !== null);
+});
+
+Deno.test("r1 falseKill: a pending pre-screen is not counted", () => {
+  const fk = falseKill(
+    ["HX-001", "HX-002"],
+    new Map([
+      ["HX-001", "pending" as const],
+      ["HX-002", "provisionally_saturated" as const],
+    ]),
+    new Map<string, Status>([["HX-001", "intermediate"], [
+      "HX-002",
+      "saturated",
+    ]]),
+  );
+  assertEquals([fk.k, fk.n, fk.pending], [0, 1, 0]);
+});
+
+Deno.test("r1 calibration coverage: every non-held-out candidate of a calibration seal needs a finished pre-screen before select", async () => {
+  // w5 (calibration) holds HX-002.
+  const none = await evaluatePrescreen(input([]));
+  assertEquals(none.problems, []);
+  assertEquals(none.missing, new Set(["HX-002"]));
+  assert(none.waiting.has("HX-002"));
+  const live = await evaluatePrescreen(input([
+    camp("p1", AT(10), [
+      cell("HX-002", PLAIN, true),
+      cell("HX-002", LSP, null, 1, "pending"),
+    ]),
+  ]));
+  assertEquals(live.missing, new Set(["HX-002"]));
+  const done = await evaluatePrescreen(input([
+    camp("p1", AT(10), pre("HX-002", false, false)),
+  ]));
+  assertEquals(done.missing, new Set());
+  assert(!done.waiting.has("HX-002"));
+  // A held-out candidate of a calibration seal is never missing.
+  const held = await evaluatePrescreen(input([], { heldOut: ["HX-002"] }));
+  assertEquals(held.missing, new Set());
+});
+
+/** w6's own registry with these rounds (start and w5 as in SEALS). */
+const withW6Rounds = (rounds: Round[]): SealView[] =>
+  SEALS.map((s) =>
+    s.tag === W6
+      ? { ...s, screening: S(s.screening.candidates.map((c) => c.id), rounds) }
+      : s
+  );
+
+Deno.test("r1 fictitious calibration: a filter round needs an earlier calibration round on a seal of the ledger", async () => {
+  const ghost = "harness-v2-screen-ghost";
+  for (
+    const rounds of [
+      // a calibration entry naming a seal that does not exist
+      [{ seal: ghost, mode: "calibration" as const }, FIL6],
+      // a real calibration seal that comes after the filter seal
+      [{ seal: W7, mode: "calibration" as const }, FIL6],
+    ]
+  ) {
+    const seals = withW6Rounds(rounds);
+    const now = S([...ALL, "HX-010"], rounds);
+    assertEquals(roundOf("HX-003", seals), {
+      ok: false,
+      problem:
+        `${W6}: a filter round needs an earlier calibration round on a sealed seal`,
+    });
+    const r = await evaluatePrescreen(input([
+      camp("p1", AT(10), filterCells(pre("HX-006", true, true))),
+    ], { seals, now }));
+    assertEquals(r.audits.size, 0);
+    assertEquals(r.provisional, new Set());
+    assert(
+      r.problems.includes(
+        `${W6}: a filter round needs an earlier calibration round on a sealed seal`,
+      ),
+      r.problems.join("\n"),
+    );
+  }
+  // The real ledger (calibration at w5 before w6) is valid.
+  assertEquals(roundOf("HX-003", SEALS), {
+    ok: true,
+    seal: W6,
+    mode: "filter",
+  });
+});
+
+Deno.test("r1 no rerun: a second execution attempt of a pre-screen cell is refused, scored or not", async () => {
+  const twice = { ...cell("HX-002", LSP, true), attempts: 2 };
+  const r = await evaluatePrescreen(input([
+    camp("p1", AT(10), [cell("HX-002", PLAIN, true), twice]),
+  ]));
+  assertEquals(r.problems, [
+    `campaign p1: pre-screen cell HX-002/1/${LSP} has 2 execution attempts (no pre-screen rerun)`,
+  ]);
+});
+
+Deno.test("r1 Q8: the order is judged against the full screen's completion, not its creation", async () => {
+  const full = (completed: string) => [{
+    ...camp("f1", AT(5), six("HX-003", 6), "v2-screen-9"),
+    completed_at: { "HX-003": completed },
+  }];
+  const p = [camp("p1", AT(10), pre("HX-003", true, true))];
+  // Created before the pre-screen but completed after it: fine.
+  assertEquals(
+    (await evaluatePrescreen(input(p, { full: full(AT(12)) }))).problems,
+    [],
+  );
+  assertEquals(
+    (await evaluatePrescreen(input(p, { full: full(AT(8)) }))).problems,
+    [
+      "HX-003 pre-screened in v2-prescreen-p1 after a complete full screen in v2-screen-9",
+    ],
+  );
+});
+
+Deno.test("r1 status report: with gate problems it prints them and no false-kill or audit numbers", () => {
+  const ps = {
+    verdicts: new Map([["HX-002", "provisionally_saturated" as const]]),
+    rounds: new Map([["HX-002", CAL5]]),
+    audits: new Map(),
+    provisional: new Set<string>(),
+    waiting: new Set<string>(),
+    missing: new Set<string>(),
+    problems: [],
+  };
+  const status = new Map<string, Status>([["HX-002", "saturated"]]);
+  const bad = prescreenReport(
+    ["HX-002 screened 3 times (at most one rescreen)"],
+    status,
+    ps,
+  );
+  assertEquals(bad.ok, false);
+  assertEquals(bad.err, ["HX-002 screened 3 times (at most one rescreen)"]);
+  assertEquals(bad.out, []);
+  const good = prescreenReport([], status, ps);
+  assertEquals(good.ok, true);
+  assert(
+    good.out.includes(
+      "calibration false-kill: 0/1 (pending 0), missing pre-screen: 0",
+    ),
+  );
+});
+
+Deno.test("r1 CLIs: screening.ts and prescreen.ts load as entry points and exit (no module cycle hang)", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const run = async (script: string, args: string[]) => {
+      const out = await new Deno.Command(Deno.execPath(), {
+        args: [
+          "run",
+          "--allow-all",
+          fromFileUrl(new URL(script, import.meta.url)),
+          ...args,
+        ],
+        cwd: dir,
+        stdout: "piped",
+        stderr: "piped",
+        signal: AbortSignal.timeout(60_000),
+      }).output();
+      return { code: out.code, err: new TextDecoder().decode(out.stderr) };
+    };
+    const pre = await run("../../../scripts/harness/prescreen.ts", []);
+    assertEquals(pre.code, 1);
+    assert(pre.err.includes("usage: prescreen.ts status"), pre.err);
+    // Outside a git repository both fail fast on git, never on module load.
+    for (const script of ["screening.ts", "prescreen.ts"]) {
+      const r = await run(`../../../scripts/harness/${script}`, ["status"]);
+      assertNotEquals(r.code, 0);
+      assert(!/ReferenceError|before initialization/.test(r.err), r.err);
+      assert(r.err.includes("git "), r.err);
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });

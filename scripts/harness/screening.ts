@@ -49,6 +49,10 @@ import {
   loadTask,
   TASK_KINDS,
 } from "../../src/harness/task.ts";
+// H-68: a static import cycle (prescreen.ts imports this module). Neither
+// module uses the other's bindings at top level, so evaluation order is safe;
+// a dynamic import inside main() deadlocked on this module's top-level await.
+import { evaluatePrescreen, PRESCREEN_PREFIX } from "./prescreen.ts";
 
 export type Kind = (typeof TASK_KINDS)[number];
 export const STRATA = ["easy", "intermediate", "hard"] as const;
@@ -567,6 +571,26 @@ export interface ScreenCampaign {
   accounts?: ReturnType<typeof accountCounts>;
   /** H-61: accounts retired from the campaign's pool. */
   retirements?: readonly AccountRetirement[];
+  /** H-68: per task, when its last counted judgment ended (completionTimes). */
+  completed_at?: Record<string, string>;
+}
+
+/** H-68: per task, the latest end of a counted judgment of its cells. */
+export function completionTimes(
+  cells: readonly { task: string; judgment_id: string | null }[],
+  judgments: readonly JudgmentRecord[],
+): Record<string, string> {
+  const byId = new Map(judgments.map((j) => [j.id, j]));
+  const out: Record<string, string> = {};
+  for (const c of cells) {
+    const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
+    if (!j) continue;
+    const prev = out[c.task];
+    if (prev === undefined || compareInstant(prev, j.ended_at) < 0) {
+      out[c.task] = j.ended_at;
+    }
+  }
+  return out;
 }
 
 /** H-53: per account label over every campaign (status prints it, triage reads it). */
@@ -1017,7 +1041,7 @@ async function git(
 export const commitOf = async (root: string, rev: string): Promise<string> =>
   (await git(root, ["rev-parse", "--verify", `${rev}^{commit}`])).trim();
 
-export async function yamlAt<T extends z.ZodType>(
+async function yamlAt<T extends z.ZodType>(
   root: string,
   rev: string,
   path: string,
@@ -1294,6 +1318,7 @@ export async function loadScreenCampaigns(
       problems: manualRerunProblems(c, data.executions, data.judgments),
       accounts: accountCounts(data.executions),
       retirements: data.retirements ?? [],
+      completed_at: completionTimes(records, data.judgments),
     });
     ran.set(c.id, c.task_set.tasks);
   }
@@ -1301,28 +1326,24 @@ export async function loadScreenCampaigns(
   return { campaigns, ran };
 }
 
-async function main(): Promise<number> {
-  const a = parseArgs(Deno.args, {
-    string: ["results-dir", "out", "n"],
-    boolean: ["stratify-env"],
-    default: {
-      "results-dir": "results/harness",
-      out: "harness-tasks/v2/selection.json",
-    },
-  });
-  const cmd = String(a._[0] ?? "");
-  const root = Deno.cwd();
+export interface Opened {
+  /** Uncommitted harness-tasks or ledger problems; nothing else is loaded then. */
+  problems: string[];
+  seals: SealState[];
+  heldOut: string[];
+  startIds: string[];
+}
+
+/** The committed state every command starts from: clean tree, verified ledger, held-out set. */
+export async function openScreening(root: string): Promise<Opened> {
+  const none = { seals: [], heldOut: [], startIds: [] };
   if (
     (await git(root, ["status", "--porcelain", "--", "harness-tasks"])).trim()
   ) {
-    console.error(colors.red("[FAIL] harness-tasks has uncommitted changes"));
-    return 1;
+    return { problems: ["harness-tasks has uncommitted changes"], ...none };
   }
-  const { seals, problems: ledgerIssues } = await loadSeals(root);
-  if (ledgerIssues.length > 0) {
-    for (const p of ledgerIssues) console.error(colors.red(`[FAIL] ${p}`));
-    return 1;
-  }
+  const { seals, problems } = await loadSeals(root);
+  if (problems.length > 0) return { problems, ...none };
   const start = seals[0]!;
   const startIds = start.screening.candidates.map((c) => c.id);
   const heldOut = pickHeldOut(
@@ -1330,19 +1351,19 @@ async function main(): Promise<number> {
     await ranks(start.seed, startIds),
     start.screening.rules,
   ).sort();
-  if (cmd === "heldout") {
-    console.log(`held_out: ${heldOut.join(", ")}`);
-    console.log(
-      `tasks: "${tasksGlob(startIds.filter((id) => !heldOut.includes(id)))}"`,
-    );
-    return 0;
-  }
-  if (cmd !== "status" && cmd !== "select") {
-    console.error(
-      "usage: screening.ts heldout | status [--stratify-env] | select --n <N> [--stratify-env]",
-    );
-    return 1;
-  }
+  return { problems: [], seals, heldOut, startIds };
+}
+
+/**
+ * The full screening gate (status and select; H-68: prescreen.ts status
+ * too): loads both campaign kinds, classifies, and collects every problem.
+ */
+export async function screeningGate(
+  root: string,
+  { seals, heldOut }: Opened,
+  resultsDir: string,
+  stratifyEnv: boolean,
+) {
   const head = await commitOf(root, "HEAD");
   const now = await yamlAt(root, head, REGISTRY_PATH, ScreeningSchema);
   const headTrees = await treesAt(root, head);
@@ -1362,24 +1383,23 @@ async function main(): Promise<number> {
     await loadSymbolsLock(root),
   );
   const { campaigns, ran } = await loadScreenCampaigns(
-    a["results-dir"],
+    resultsDir,
     now.rules,
     root,
-    a["stratify-env"],
+    stratifyEnv,
   );
-  // H-68: the pre-screen (prescreen.ts, imported here only: it imports this
-  // module). Its campaigns never enter the history; it yields the filter
-  // rounds' provisional rejects and the candidates waiting for an audit.
-  const prescreen = await import("./prescreen.ts");
+  // H-68: the pre-screen. Its campaigns never enter the history; it yields
+  // the filter rounds' provisional rejects and the candidates waiting for a
+  // pre-screen or an audit.
   const pre = await loadScreenCampaigns(
-    a["results-dir"],
+    resultsDir,
     now.rules,
     root,
-    a["stratify-env"],
-    prescreen.PRESCREEN_PREFIX,
+    stratifyEnv,
+    PRESCREEN_PREFIX,
     1,
   );
-  const ps = await prescreen.evaluatePrescreen({
+  const ps = await evaluatePrescreen({
     now,
     seals,
     heldOut,
@@ -1390,7 +1410,7 @@ async function main(): Promise<number> {
   const tallies = tally(hist.cells, now.rules);
   // H-51: without --stratify-env, the pooled classify as before (a mixed
   // env_fp was refused above).
-  const { status, strata, flagged } = a["stratify-env"]
+  const { status, strata, flagged } = stratifyEnv
     ? stratifyByEnv(
       now,
       new Set(sealedIds),
@@ -1432,6 +1452,69 @@ async function main(): Promise<number> {
     ...supersedeProblems(now, status),
     ...ps.problems,
   ];
+  return {
+    head,
+    now,
+    firstSeal,
+    campaigns,
+    ps,
+    hist,
+    tallies,
+    status,
+    strata,
+    flagged,
+    problems,
+  };
+}
+
+async function main(): Promise<number> {
+  const a = parseArgs(Deno.args, {
+    string: ["results-dir", "out", "n"],
+    boolean: ["stratify-env"],
+    default: {
+      "results-dir": "results/harness",
+      out: "harness-tasks/v2/selection.json",
+    },
+  });
+  const cmd = String(a._[0] ?? "");
+  const root = Deno.cwd();
+  const opened = await openScreening(root);
+  if (opened.problems.length > 0) {
+    for (const p of opened.problems) console.error(colors.red(`[FAIL] ${p}`));
+    return 1;
+  }
+  const { seals, heldOut, startIds } = opened;
+  if (cmd === "heldout") {
+    console.log(`held_out: ${heldOut.join(", ")}`);
+    console.log(
+      `tasks: "${tasksGlob(startIds.filter((id) => !heldOut.includes(id)))}"`,
+    );
+    return 0;
+  }
+  if (cmd !== "status" && cmd !== "select") {
+    console.error(
+      "usage: screening.ts heldout | status [--stratify-env] | select --n <N> [--stratify-env]",
+    );
+    return 1;
+  }
+  const {
+    head,
+    now,
+    firstSeal,
+    campaigns,
+    ps,
+    hist,
+    tallies,
+    status,
+    strata,
+    flagged,
+    problems,
+  } = await screeningGate(
+    root,
+    opened,
+    a["results-dir"],
+    a["stratify-env"],
+  );
   for (const p of problems) console.error(colors.red(`[FAIL] ${p}`));
   if (problems.length > 0) return 1;
   for (const [id, s] of status) {
@@ -1455,7 +1538,7 @@ async function main(): Promise<number> {
   }
   if (ps.waiting.size > 0) {
     console.log(colors.yellow(
-      `[WAIT] pre-screen audit pending: "${tasksGlob([...ps.waiting])}"`,
+      `[WAIT] pre-screen or its audit pending: "${tasksGlob([...ps.waiting])}"`,
     ));
   }
   const rescreen = rescreenTasks(status, {

@@ -1370,7 +1370,13 @@ import { SCREEN_PREFIX, STRATA } from "../../../scripts/harness/screening.ts";
 
 Deno.test("ScreeningSchema (H-68): amendments default to none; a prescreen record needs a calibration first round and distinct seals", async () => {
   assertEquals(S([C("HX-007")]).amendments, []);
-  assertEquals((await readYaml(REGISTRY_PATH, ScreeningSchema)).amendments, []);
+  // H-68 r1: the committed registry carries the amendment record; the
+  // orchestrator appends its rounds when it seals.
+  assertEquals((await readYaml(REGISTRY_PATH, ScreeningSchema)).amendments, [{
+    id: "prescreen",
+    decision: "decisions/2026-11-06-m8-wave2-round0-and-prescreen.md",
+    rounds: [],
+  }]);
   const amend = (a: unknown) =>
     ScreeningSchema.safeParse({
       v: 1,
@@ -1529,4 +1535,27 @@ Deno.test("loadScreenCampaigns (H-68): the default loader ignores v2-prescreen-*
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+import { completionTimes } from "../../../scripts/harness/screening.ts";
+
+Deno.test("completionTimes (H-68 r1): a task completes when its last counted judgment ended", async () => {
+  const c = await campaign();
+  const e1 = execution(c, { arm: "plain" });
+  const e2 = execution(c, { arm: "skills" });
+  const j1 = { ...judgment(c, e1, true), ended_at: "2026-10-02T10:00:00.000Z" };
+  const j2 = { ...judgment(c, e2, true), ended_at: "2026-10-03T09:00:00.000Z" };
+  const old = {
+    ...judgment(c, e1, true),
+    id: "old",
+    ended_at: "2026-10-09T00:00:00.000Z",
+  };
+  assertEquals(
+    completionTimes([
+      { task: "HX-001", judgment_id: j1.id },
+      { task: "HX-001", judgment_id: j2.id },
+      { task: "HX-002", judgment_id: null },
+    ], [j1, j2, old]),
+    { "HX-001": "2026-10-03T09:00:00.000Z" },
+  );
 });

@@ -12,7 +12,6 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
-import { join } from "@std/path";
 import type { Cell } from "../../src/harness/stats.ts";
 import type {
   Amendment,
@@ -23,30 +22,15 @@ import type {
   Status,
 } from "./screening.ts";
 import { ValidationError } from "../../src/errors.ts";
-import {
-  loadSymbolsLock,
-  taskSetIdentity,
-} from "../../src/harness/identity.ts";
 import { compareInstant } from "../../src/harness/records.ts";
-import { loadTask } from "../../src/harness/task.ts";
 import {
-  chronologyProblems,
-  classify,
-  commitOf,
   contaminationProblems,
-  identityProblems,
-  loadScreenCampaigns,
-  loadSeals,
-  metaAt,
-  pickHeldOut,
+  openScreening,
   ranks,
-  REGISTRY_PATH,
-  screeningHistory,
-  ScreeningSchema,
+  screeningGate,
   STRATA,
   tally,
   tasksGlob,
-  yamlAt,
 } from "./screening.ts";
 
 export const PRESCREEN_PREFIX = "v2-prescreen-";
@@ -57,7 +41,12 @@ export const PRESCREEN_DECISIONS: readonly string[] = [
 ];
 export const AUDIT_SHARE = 0.2;
 
-export type Verdict = "provisionally_saturated" | "eligible";
+/** "pending": an attempt is live or not started, so no verdict yet (r1). */
+export type Verdict = "provisionally_saturated" | "eligible" | "pending";
+/** A verdict that will not change: what an audit and the false-kill rate count. */
+type Final = Exclude<Verdict, "pending">;
+const finalOf = (v: Verdict | undefined): Final | undefined =>
+  v === "pending" ? undefined : v;
 export type Mode = Amendment["rounds"][number]["mode"];
 export interface Round {
   seal: string;
@@ -70,15 +59,18 @@ const prescreenOf = (s: Screening): Amendment | undefined =>
 
 /**
  * Per task: provisionally saturated exactly when both arms have a scored,
- * passing repeat-1 cell. Cells come after excludeCrashCells, so a crash, an
- * unscored or unrun cell or a missing arm is eligible (fail closed: it only
- * adds a full screen). A foreign arm throws.
+ * passing repeat-1 cell. Otherwise a repeat-1 cell that is live or not
+ * started (pending, unrun) makes it pending, whatever the other arm did.
+ * Otherwise it is eligible: cells come after excludeCrashCells, so a crash,
+ * an unscored cell or a missing arm is eligible (fail closed: it only adds a
+ * full screen). A foreign arm throws.
  */
 export function prescreenVerdict(
   cells: Cell[],
   rules: Rules,
 ): Map<string, Verdict> {
   const passed = new Map<string, Set<string>>();
+  const live = new Set<string>();
   for (const c of cells) {
     if (!rules.arms.includes(c.arm)) {
       throw new ValidationError(
@@ -90,6 +82,9 @@ export function prescreenVerdict(
     if (c.repeat === 1 && c.status === "scored" && c.pass === true) {
       p.add(c.arm);
     }
+    if (c.repeat === 1 && (c.status === "pending" || c.status === "unrun")) {
+      live.add(c.task);
+    }
     passed.set(c.task, p);
   }
   return new Map(
@@ -97,6 +92,8 @@ export function prescreenVerdict(
       t,
       rules.arms.every((a) => p.has(a))
         ? "provisionally_saturated"
+        : live.has(t)
+        ? "pending"
         : "eligible",
     ]),
   );
@@ -141,19 +138,42 @@ export function amendmentProblems(
 export type RoundOf = ({ ok: true } & Round) | { ok: false; problem: string };
 
 /**
- * A candidate's round is its first seal; its mode is read from the registry
- * committed at that seal, so it is fixed before any outcome exists. A round
- * added later (HEAD only) is ignored.
+ * The round of seal `s`, read from the registry committed at `s`; null when
+ * it has none. r1: a filter round counts only after a calibration round of
+ * the same record whose seal is in the ledger before `s` (a calibration entry
+ * naming a seal that does not exist, or a later one, is no calibration).
+ */
+export function sealRound(s: SealView, seals: SealView[]): RoundOf | null {
+  const rounds = prescreenOf(s.screening)?.rounds ?? [];
+  const r = rounds.find((x) => x.seal === s.tag);
+  if (!r) return null;
+  const at = (tag: string) => seals.findIndex((x) => x.tag === tag);
+  const here = at(s.tag);
+  if (
+    r.mode === "filter" &&
+    !rounds.some((c) =>
+      c.mode === "calibration" && at(c.seal) >= 0 && at(c.seal) < here
+    )
+  ) {
+    return {
+      ok: false,
+      problem:
+        `${s.tag}: a filter round needs an earlier calibration round on a sealed seal`,
+    };
+  }
+  return { ok: true, seal: r.seal, mode: r.mode };
+}
+
+/**
+ * A candidate's round is its first seal's (sealRound), so it is fixed before
+ * any outcome exists. A round added later (HEAD only) is ignored.
  */
 export function roundOf(id: string, seals: SealView[]): RoundOf {
   const first = seals.find((s) =>
     s.screening.candidates.some((c) => c.id === id)
   );
   if (!first) return { ok: false, problem: `${id} is not sealed` };
-  const r = prescreenOf(first.screening)?.rounds.find((x) =>
-    x.seal === first.tag
-  );
-  return r ? { ok: true, seal: r.seal, mode: r.mode } : {
+  return sealRound(first, seals) ?? {
     ok: false,
     problem: `${id}: its first seal ${first.tag} has no pre-screen round`,
   };
@@ -168,15 +188,16 @@ export interface Audit {
 
 /**
  * The filter-round audit of one seal: null (pending) until every candidate
- * has a verdict. The rank seed carries a domain tag, so the audit is not
- * select()'s rank order (which would audit exactly the best-ranked rejects).
+ * has a final verdict (a pending one is none). The rank seed carries a domain
+ * tag, so the audit is not select()'s rank order (which would audit exactly
+ * the best-ranked rejects).
  */
 export async function auditSample(
   seed: string,
   candidates: string[],
   verdicts: Map<string, Verdict>,
 ): Promise<Audit | null> {
-  if (candidates.some((id) => !verdicts.has(id))) return null;
+  if (candidates.some((id) => !finalOf(verdicts.get(id)))) return null;
   const rejects = candidates.filter((id) =>
     verdicts.get(id) === "provisionally_saturated"
   ).sort();
@@ -188,7 +209,11 @@ export async function auditSample(
   return { rejects, audited };
 }
 
-const RESOLVED = new Set<Status>([...STRATA, "dead", "saturated"]);
+// A function, not a top-level Set: this module is evaluated before
+// screening.ts when screening.ts is the entry point (import cycle).
+const resolved = (s: Status | undefined): boolean =>
+  s === "dead" || s === "saturated" ||
+  (STRATA as readonly (Status | undefined)[]).includes(s);
 
 export interface FalseKill {
   /** Resolved provisional rejects whose full screen is not saturated. */
@@ -197,7 +222,7 @@ export interface FalseKill {
   n: number;
   /** Provisional rejects whose full screen has not resolved. */
   pending: number;
-  table: Record<Verdict, { saturated: number; other: number; pending: number }>;
+  table: Record<Final, { saturated: number; other: number; pending: number }>;
 }
 
 /**
@@ -213,15 +238,11 @@ export function falseKill(
   const row = () => ({ saturated: 0, other: 0, pending: 0 });
   const table = { provisionally_saturated: row(), eligible: row() };
   for (const id of ids) {
-    const v = verdicts.get(id);
+    const v = finalOf(verdicts.get(id));
     if (v === undefined) continue;
     const s = status.get(id);
     table[v][
-      s === "saturated"
-        ? "saturated"
-        : s !== undefined && RESOLVED.has(s)
-        ? "other"
-        : "pending"
+      s === "saturated" ? "saturated" : resolved(s) ? "other" : "pending"
     ]++;
   }
   const p = table.provisionally_saturated;
@@ -236,8 +257,15 @@ export interface PrescreenState {
   audits: Map<string, Audit | null>;
   /** Non-audited rejects of filter rounds: classify's `provisional`. */
   provisional: Set<string>;
-  /** Filter-round candidates the full screen must not run yet (audit pending). */
+  /**
+   * Candidates select must wait for (it refuses while any is listed), kept
+   * out of the next full screen: filter-round candidates while their seal's
+   * audit is pending (all but the eligible ones), and calibration-round
+   * candidates without a finished pre-screen (`missing`).
+   */
   waiting: Set<string>;
+  /** r1: calibration-round candidates without a finished pre-screen. */
+  missing: Set<string>;
   problems: string[];
 }
 
@@ -261,6 +289,7 @@ export async function evaluatePrescreen(input: {
     audits: new Map(),
     provisional: new Set(),
     waiting: new Set(),
+    missing: new Set(),
     problems: seals.flatMap((s) => amendmentProblems(s.tag, s.screening, now)),
   };
   const gate = amendmentGate(now, input.decisions);
@@ -268,7 +297,17 @@ export async function evaluatePrescreen(input: {
     if (prescreens.length > 0) out.problems.push(...gate);
     return out;
   }
-  for (const c of prescreens) out.problems.push(...(c.problems ?? []));
+  for (const c of prescreens) {
+    out.problems.push(...(c.problems ?? []));
+    // r1: one attempt per cell; any rerun or retry, scored or not, is refused.
+    for (const x of c.cells) {
+      if (x.attempts > 1) {
+        out.problems.push(
+          `campaign ${c.id}: pre-screen cell ${x.task}/${x.repeat}/${x.arm} has ${x.attempts} execution attempts (no pre-screen rerun)`,
+        );
+      }
+    }
+  }
   const byTask = new Map<string, ScreenCampaign[]>();
   for (const c of prescreens) {
     for (const t of new Set(c.cells.map((x) => x.task))) {
@@ -305,13 +344,16 @@ export async function evaluatePrescreen(input: {
     prescreens.flatMap((c) => c.cells).filter((x) => out.rounds.has(x.task)),
     now.rules,
   );
-  // Q8: in a filter round the pre-screen must come before any complete full screen.
+  // Q8: in a filter round the pre-screen must come before any complete full
+  // screen, judged by when that screen completed (its last counted judgment;
+  // the campaign's creation when that is unknown).
   for (const [t, r] of out.rounds) {
     if (r.mode !== "filter") continue;
     for (const p of byTask.get(t)!) {
       const f = full.find((f) =>
-        compareInstant(f.created_at, p.created_at) < 0 &&
-        tally(f.cells.filter((x) => x.task === t), now.rules).get(t)?.complete
+        tally(f.cells.filter((x) => x.task === t), now.rules).get(t)
+          ?.complete &&
+        compareInstant(f.completed_at?.[t] ?? f.created_at, p.created_at) < 0
       );
       if (f) {
         out.problems.push(
@@ -327,13 +369,25 @@ export async function evaluatePrescreen(input: {
     }
   }
   for (const s of seals) {
-    const round = prescreenOf(s.screening)?.rounds.find((r) =>
-      r.seal === s.tag
-    );
-    if (round?.mode !== "filter") continue;
+    const round = sealRound(s, seals);
+    if (round === null) continue;
+    // r1: an invalid round is a problem and filters nothing.
+    if (!round.ok) {
+      out.problems.push(round.problem);
+      continue;
+    }
     const pop = s.screening.candidates.map((c) => c.id).filter((id) =>
       firstSeal.get(id) === s.tag && !heldOut.includes(id)
     );
+    if (round.mode === "calibration") {
+      for (const id of pop) {
+        if (!finalOf(out.verdicts.get(id))) {
+          out.missing.add(id);
+          out.waiting.add(id);
+        }
+      }
+      continue;
+    }
     const audit = await auditSample(s.seed, pop, out.verdicts);
     out.audits.set(s.tag, audit);
     for (const id of pop) {
@@ -344,11 +398,12 @@ export async function evaluatePrescreen(input: {
       }
     }
   }
+  out.problems = [...new Set(out.problems)];
   return out;
 }
 
-const fkLines = (label: string, fk: FalseKill): string[] => [
-  `${label} false-kill: ${fk.k}/${fk.n} (pending ${fk.pending})`,
+const fkLines = (label: string, fk: FalseKill, extra = ""): string[] => [
+  `${label} false-kill: ${fk.k}/${fk.n} (pending ${fk.pending})${extra}`,
   ...(["provisionally_saturated", "eligible"] as const).map((v) =>
     `  pre-screen ${v}: full saturated ${fk.table[v].saturated}, other ${
       fk.table[v].other
@@ -370,102 +425,56 @@ async function main(): Promise<number> {
     return 1;
   }
   const root = Deno.cwd();
-  const { seals, problems: ledgerIssues } = await loadSeals(root);
-  const now = await yamlAt(
+  // r1: the same gate as `screening.ts status` (uncommitted tree, ledger,
+  // append-only, trees, identities, chronology, screening history,
+  // --stratify-env strata, contamination, pre-screen problems).
+  const opened = await openScreening(root);
+  const g = opened.problems.length > 0 ? null : await screeningGate(
     root,
-    await commitOf(root, "HEAD"),
-    REGISTRY_PATH,
-    ScreeningSchema,
+    opened,
+    a["results-dir"],
+    a["stratify-env"],
   );
-  const start = seals[0]!;
-  const startIds = start.screening.candidates.map((c) => c.id);
-  const heldOut = pickHeldOut(
-    await metaAt(root, start.commit, start.screening, startIds),
-    await ranks(start.seed, startIds),
-    start.screening.rules,
-  ).sort();
-  const sealedIds = [
-    ...new Set(seals.flatMap((s) => s.screening.candidates.map((c) => c.id))),
-  ];
-  const firstRound = new Map<string, string>();
-  for (const s of seals) {
-    for (const c of s.screening.candidates) {
-      if (!firstRound.has(c.id)) firstRound.set(c.id, s.round_time);
-    }
+  const r = g === null
+    ? prescreenReport(opened.problems, new Map(), null)
+    : prescreenReport(g.problems, g.status, g.ps);
+  for (const p of r.err) console.error(colors.red(`[FAIL] ${p}`));
+  for (const l of r.out) console.log(l);
+  return r.ok ? 0 : 1;
+}
+
+/**
+ * The `status` output. With any gate problem, only the problems: no verdict,
+ * false-kill or audit line is printed from outcomes the gate refuses.
+ */
+export function prescreenReport(
+  problems: string[],
+  status: Map<string, Status>,
+  ps: PrescreenState | null,
+): { ok: boolean; out: string[]; err: string[] } {
+  if (problems.length > 0 || ps === null) {
+    return { ok: false, out: [], err: problems };
   }
-  const current = await taskSetIdentity(
-    root,
-    await Promise.all(
-      sealedIds.map((id) => loadTask(join(root, "harness-tasks", "tasks", id))),
-    ),
-    await loadSymbolsLock(root),
-  );
-  const load = (prefix?: string, repeats?: number) =>
-    loadScreenCampaigns(
-      a["results-dir"],
-      now.rules,
-      root,
-      a["stratify-env"],
-      prefix,
-      repeats,
-    );
-  const full = await load();
-  const pre = await load(PRESCREEN_PREFIX, 1);
-  const ps = await evaluatePrescreen({
-    now,
-    seals,
-    heldOut,
-    prescreens: pre.campaigns,
-    full: full.campaigns,
-  });
-  const hist = screeningHistory(full.campaigns, now.rules);
-  const status = classify(
-    now,
-    new Set(sealedIds),
-    heldOut,
-    tally(hist.cells, now.rules),
-    hist.screens,
-    ps.provisional,
-  );
-  const problems = [
-    ...ledgerIssues,
-    ...[...pre.ran].flatMap(([id, t]) =>
-      identityProblems(id, t, current.tasks)
-    ),
-    ...chronologyProblems(
-      pre.campaigns.map((c) => ({
-        id: c.id,
-        created_at: c.created_at,
-        tasks: (pre.ran.get(c.id) ?? []).map((t) => t.id),
-      })),
-      firstRound,
-    ),
-    ...ps.problems,
-  ];
-  for (const p of problems) console.error(colors.red(`[FAIL] ${p}`));
-  if (problems.length > 0) return 1;
+  const out: string[] = [];
   for (
     const [id, v] of [...ps.verdicts].sort(([x], [y]) => x.localeCompare(y))
   ) {
     const r = ps.rounds.get(id)!;
-    console.log(`${id} ${v} ${r.mode} ${r.seal} full: ${status.get(id)}`);
+    out.push(`${id} ${v} ${r.mode} ${r.seal} full: ${status.get(id)}`);
   }
   const ids = (mode: Mode) =>
     [...ps.rounds].filter(([, r]) => r.mode === mode).map(([id]) => id);
-  for (
-    const l of fkLines(
+  out.push(
+    ...fkLines(
       "calibration",
       falseKill(ids("calibration"), ps.verdicts, status),
-    )
-  ) {
-    console.log(l);
-  }
+      `, missing pre-screen: ${ps.missing.size}`,
+    ),
+  );
   for (const [seal, audit] of ps.audits) {
-    console.log(
+    out.push(
       audit === null
-        ? colors.yellow(
-          `[WAIT] filter ${seal}: audit pending until every candidate has a pre-screen verdict`,
-        )
+        ? `[WAIT] filter ${seal}: audit pending until every candidate has a finished pre-screen`
         : `filter ${seal}: ${audit.audited.length} of ${audit.rejects.length} rejects audited${
           audit.audited.length > 0 ? `: "${tasksGlob(audit.audited)}"` : ""
         }`,
@@ -473,19 +482,14 @@ async function main(): Promise<number> {
   }
   const audited = [...ps.audits.values()].flatMap((x) => x?.audited ?? []);
   if (ps.audits.size > 0) {
-    for (
-      const l of fkLines(
-        "filter (audited)",
-        falseKill(audited, ps.verdicts, status),
-      )
-    ) {
-      console.log(l);
-    }
+    out.push(
+      ...fkLines("filter (audited)", falseKill(audited, ps.verdicts, status)),
+    );
   }
   if (ps.provisional.size > 0) {
-    console.log(`provisionally saturated: "${tasksGlob([...ps.provisional])}"`);
+    out.push(`provisionally saturated: "${tasksGlob([...ps.provisional])}"`);
   }
-  return 0;
+  return { ok: true, out, err: [] };
 }
 
 if (import.meta.main) Deno.exit(await main());
