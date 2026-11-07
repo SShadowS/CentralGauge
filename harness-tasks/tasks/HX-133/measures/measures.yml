@@ -14,3 +14,8 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/bind-silencer: { partial_credit: 0.7777777777777778 }
+  naive/drop-import-skip: { partial_credit: 0.8888888888888888 }
+  naive/modify-false: { partial_credit: 0.6666666666666666 }
+  naive/no-release: { partial_credit: 0.8888888888888888 }
+  naive/try-modify: { partial_credit: 0.2222222222222222 }
