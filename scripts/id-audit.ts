@@ -28,7 +28,7 @@
  */
 import { dirname, fromFileUrl, join, relative } from "@std/path";
 import * as colors from "@std/fmt/colors";
-import { oracleBandOf } from "./harness/gate-stage.ts";
+import { LAST_ORACLE_TASK, oracleBandOf } from "./harness/gate-stage.ts";
 import {
   BENCHMARK_APP_ID_BUFFER,
   BENCHMARK_APP_ID_RANGE,
@@ -178,7 +178,12 @@ function oracleBand(taskId: string): Band {
   const band = m ? oracleBandOf(Number(m[1])) : null;
   const label = `harness oracle ${taskId}`;
   if (!band) {
-    return { label: `${label} (no band inside 85000-89999)`, start: 1, end: 0 };
+    return {
+      label:
+        `${label} (no band inside 85000-89999; the last task with a band is HX-${LAST_ORACLE_TASK})`,
+      start: 1,
+      end: 0,
+    };
   }
   return { label, start: band[0], end: band[1] };
 }

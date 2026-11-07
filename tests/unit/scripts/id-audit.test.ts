@@ -479,10 +479,20 @@ Deno.test("harness-tasks v2: oracle bands, test-authoring suites, fixtures", asy
     assertEquals(auditObjects([f(oracle("007"), 85599)]).problems.length, 1);
   });
 
-  await t.step("HX-227 has no oracle band", () => {
-    const p = auditObjects([f(oracle("227"), 89999)]).problems;
+  await t.step("HX-100+ oracle owns a 15-wide band (H-67)", () => {
+    assertEquals(auditObjects([f(oracle("100"), 87460)]).problems, []);
+    assertEquals(auditObjects([f(oracle("100"), 87474)]).problems, []);
+    const p = auditObjects([f(oracle("100"), 87475)]).problems;
+    assertEquals(p.length, 1);
+    assertStringIncludes(p[0]!, "87460-87474");
+    assertEquals(auditObjects([f(oracle("268"), 89994)]).problems, []);
+  });
+
+  await t.step("HX-269 has no oracle band", () => {
+    const p = auditObjects([f(oracle("269"), 89995)]).problems;
     assertEquals(p.length, 1);
     assertStringIncludes(p[0]!, "no band");
+    assertStringIncludes(p[0]!, "HX-268");
   });
 
   await t.step(

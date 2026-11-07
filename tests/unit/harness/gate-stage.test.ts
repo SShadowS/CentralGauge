@@ -10,6 +10,7 @@ import {
   checkTask,
   exportSource,
   GATE_TMP,
+  LAST_ORACLE_TASK,
   oracleBandOf,
   stageWorkspace,
   testManifestIn,
@@ -984,14 +985,33 @@ Deno.test("run 003 fix 3: exportSource refuses a path that is not valid UTF-8", 
   );
 });
 
-Deno.test("oracleBandOf: v1 keeps 100 ids, HX-007 on own 20 up to HX-226", () => {
+Deno.test("oracleBandOf: v1 keeps 100 ids, HX-007..099 own 20, HX-100..268 own 15 (H-67)", () => {
   assertEquals(oracleBandOf(1), [85000, 85099]);
   assertEquals(oracleBandOf(6), [85500, 85599]);
   assertEquals(oracleBandOf(7), [85600, 85619]);
   assertEquals(oracleBandOf(51), [86480, 86499]);
-  assertEquals(oracleBandOf(226), [89980, 89999]);
-  assertEquals(oracleBandOf(227), null);
+  // H-67: nothing authored moves; HX-099 ends where the 15-id bands begin.
+  assertEquals(oracleBandOf(99), [87440, 87459]);
+  assertEquals(oracleBandOf(100), [87460, 87474]);
+  assertEquals(oracleBandOf(101), [87475, 87489]);
+  assertEquals(oracleBandOf(226), [89350, 89364]);
+  assertEquals(oracleBandOf(268), [89980, 89994]);
+  assertEquals(oracleBandOf(269), null);
   assertEquals(oracleBandOf(0), null);
+});
+
+Deno.test("oracleBandOf: bands are disjoint and contiguous from HX-007 to HX-268 (H-67)", () => {
+  let next = 85600;
+  for (let n = 7; n <= 268; n++) {
+    const b = oracleBandOf(n)!;
+    assertEquals(b[0], next, `HX-${n} starts where HX-${n - 1} ended`);
+    assertEquals(b[1] - b[0] + 1, n <= 99 ? 20 : 15, `HX-${n} width`);
+    next = b[1] + 1;
+  }
+  assert(next - 1 <= 89999);
+  // The diagnostics' LAST_ORACLE_TASK cannot drift from the arithmetic.
+  assert(oracleBandOf(LAST_ORACLE_TASK) !== null);
+  assertEquals(oracleBandOf(LAST_ORACLE_TASK + 1), null);
 });
 
 Deno.test("checkTask: HX-051 oracle lives in its own 20-id band", async () => {
