@@ -1,0 +1,19 @@
+id: HX-133
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Integration, Rental]
+coupling: [events, single-instance, facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, SwapMovesContractToFreeVehicle, PostCreatesLedgerEntry] }
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Integration]
+  tests:
+    - { codeunit: 87955, procedures: [RepricesOpenContracts, NoContractChangedWhileRepricing, OneRatesChangedPerBranch, SaveSideEffectsKept, BlockedVehicleFails, ChangeAfterFailedRepricingQueues, ChangeAfterRepricingQueues, NothingOpenNothingQueued, BookingImportSkipsBlockCheck] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
