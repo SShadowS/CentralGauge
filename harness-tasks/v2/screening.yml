@@ -292,3 +292,6 @@ candidates:
   - id: HX-134
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
+  - id: HX-136
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Rental Mgt.OnAfterCreateContract" }
