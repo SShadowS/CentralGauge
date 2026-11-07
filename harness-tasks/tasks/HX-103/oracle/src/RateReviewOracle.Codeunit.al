@@ -181,6 +181,56 @@ codeunit 87505 "HX103 Rate Review Oracle"
         HX103AssertLetters('HX103-7', 1);
     end;
 
+    [Test]
+    procedure LeaseOutsideFilterUntouched()
+    var
+        Advisor: Codeunit "HX103 Advisor App";
+        L8a, L8b : Code[20];
+        Result: Integer;
+    begin
+        HX103Prepare();
+        L8a := HX103NewLease('HX103-8A', 1000);
+        L8b := HX103NewLease('HX103-8B', 1000);
+        Advisor.HX103Propose(L8a, 1050, false, false);
+        Advisor.HX103Propose(L8b, 1050, false, false);
+        BindSubscription(Advisor);
+
+        Assert.IsTrue(HX103RunReview(L8a, Result), StrSubstNo('The review succeeds: %1', GetLastErrorText()));
+
+        Assert.AreEqual(1, Result, 'Only the lease in the filter is reviewed and counted');
+        HX103AssertRate(L8a, 1050);
+        HX103AssertScheduleFor(L8a, 1050);
+        HX103AssertLetters('HX103-8A', 1);
+        HX103AssertRate(L8b, 1000);
+        HX103AssertScheduleFor(L8b, 1000);
+        HX103AssertLetters('HX103-8B', 0);
+    end;
+
+    [Test]
+    procedure LowerBandEdge()
+    var
+        Advisor: Codeunit "HX103 Advisor App";
+        L9a, L9b : Code[20];
+        Result: Integer;
+    begin
+        HX103Prepare();
+        L9a := HX103NewLease('HX103-9A', 1000);
+        L9b := HX103NewLease('HX103-9B', 1000);
+        Advisor.HX103Propose(L9a, 850, false, false);
+        Advisor.HX103Propose(L9b, 900, false, false);
+        BindSubscription(Advisor);
+
+        Assert.IsTrue(HX103RunReview(StrSubstNo('%1|%2', L9a, L9b), Result), StrSubstNo('The review succeeds: %1', GetLastErrorText()));
+
+        Assert.AreEqual(1, Result, 'A proposal 15% below the rate is declined, exactly 10% below is accepted');
+        HX103AssertRate(L9a, 1000);
+        HX103AssertScheduleFor(L9a, 1000);
+        HX103AssertLetters('HX103-9A', 0);
+        HX103AssertRate(L9b, 900);
+        HX103AssertScheduleFor(L9b, 900);
+        HX103AssertLetters('HX103-9B', 1);
+    end;
+
     local procedure HX103Prepare()
     var
         Setup: Record "CGR Setup";

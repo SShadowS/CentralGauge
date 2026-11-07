@@ -8,6 +8,8 @@ partial_credit:
     "87505/CommittingAdvisorAcceptedKeepsLetter": 1
     "87505/FailingAdvisorDoesNotStopReview": 1
     "87505/EqualRateCounts": 1
+    "87505/LeaseOutsideFilterUntouched": 1
+    "87505/LowerBandEdge": 1
   hidden_regressions: []
 reuse:
   targets:

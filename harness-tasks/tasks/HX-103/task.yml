@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Leasing, Integration]
   tests:
-    - { codeunit: 87505, procedures: [AcceptedProposalApplied, DeclinedProposalKeepsNoLetter, MixedLeasesReviewedOnTheirOwn, CommittingAdvisorDeclinedKeepsNothing, CommittingAdvisorAcceptedKeepsLetter, FailingAdvisorDoesNotStopReview, EqualRateCounts] }
+    - { codeunit: 87505, procedures: [AcceptedProposalApplied, DeclinedProposalKeepsNoLetter, MixedLeasesReviewedOnTheirOwn, CommittingAdvisorDeclinedKeepsNothing, CommittingAdvisorAcceptedKeepsLetter, FailingAdvisorDoesNotStopReview, EqualRateCounts, LeaseOutsideFilterUntouched, LowerBandEdge] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
