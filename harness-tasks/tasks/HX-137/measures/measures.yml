@@ -6,10 +6,13 @@ partial_credit:
     "88015/CopyAndCreateShareThePool": 1
     "88015/RefusedContractNumberNotReused": 1
     "88015/RefusalThenNextSessionNoDuplicate": 1
-    "88015/FailedBookingKeepsNothing": 1
     "88015/FailedBookingNumberNotReused": 1
     "88015/RefusedCopyNumberNotReused": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88015/FailedBookingKeepsNothing"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/commit-reservation: { partial_credit: 1 }
+  naive/number-sequence: { partial_credit: 0.14285714285714285 }
+  naive/plus-one-only: { partial_credit: 0.42857142857142855 }
