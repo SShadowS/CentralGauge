@@ -29,6 +29,7 @@ import {
   prescreenReport,
   prescreenVerdict,
   roundOf,
+  sealRound,
   type SealView,
 } from "../../../scripts/harness/prescreen.ts";
 import {
@@ -780,6 +781,7 @@ Deno.test("r1 status report: with gate problems it prints them and no false-kill
     waiting: new Set<string>(),
     missing: new Set<string>(),
     retried: new Set<string>(),
+    calibrations: new Map(),
     problems: [],
   };
   const status = new Map<string, Status>([["HX-002", "saturated"]]);
@@ -979,6 +981,7 @@ Deno.test("run 002 item 3: a broken candidate is a separate 'broken, never resol
     waiting: new Set<string>(),
     missing: new Set<string>(),
     retried: new Set<string>(),
+    calibrations: new Map(),
     problems: [],
   };
   const out = prescreenReport([], status, ps).out;
@@ -1055,14 +1058,69 @@ Deno.test("H-69: the calibration false-kill rate pools every calibration seal; e
     waiting: new Set<string>(),
     missing: new Set<string>(),
     retried: new Set<string>(),
+    calibrations: new Map([[W5, ["HX-001"]], [W6, ["HX-002", "HX-003"]]]),
     problems: [],
   };
   const out = prescreenReport([], status, ps).out;
   const has = (l: string) => assert(out.includes(l), `${l}\n${out.join("\n")}`);
   has("calibration false-kill: 1/3 (pending 0), missing pre-screen: 0");
-  has(`calibration ${W5} false-kill: 1/1 (pending 0)`);
-  has(`calibration ${W6} false-kill: 0/2 (pending 0)`);
+  has(
+    `calibration ${W5} false-kill: 1/1 (pending 0), missing pre-screen: 0`,
+  );
+  has(
+    `calibration ${W6} false-kill: 0/2 (pending 0), missing pre-screen: 0`,
+  );
   has(
     "  pre-screen provisionally_saturated: full saturated 2, other 0, pending 0",
   );
+});
+
+Deno.test("H-69b item 1: a declared calibration seal with no pre-screen records yet still prints its (empty) table", async () => {
+  const CAL6: Round = { seal: W6, mode: "calibration" };
+  const seals: SealView[] = [
+    { tag: START, seed: "s0", screening: S(["HX-001"]) },
+    { tag: W5, seed: "s5", screening: S(["HX-001", "HX-002"], [CAL5]) },
+    {
+      tag: W6,
+      seed: "s6",
+      screening: S(["HX-001", "HX-002", "HX-003", "HX-004"], [CAL5, CAL6]),
+    },
+  ];
+  // Only w5's candidate is pre-screened; w6 has no record.
+  const ps = await evaluatePrescreen({
+    now: seals[2]!.screening,
+    seals,
+    heldOut: [],
+    prescreens: [camp("p1", AT(10), pre("HX-002", true, true))],
+    full: [],
+  });
+  assertEquals(ps.problems, []);
+  assertEquals(
+    ps.calibrations,
+    new Map([[W5, ["HX-002"]], [W6, ["HX-003", "HX-004"]]]),
+  );
+  const out = prescreenReport([], new Map<string, Status>(), ps).out;
+  assert(
+    out.includes(
+      `calibration ${W6} false-kill: 0/0 (pending 0), missing pre-screen: 2`,
+    ),
+    out.join("\n"),
+  );
+});
+
+Deno.test("H-69b item 2: sealRound refuses a seal that is not in the ledger list", () => {
+  const CAL6: Round = { seal: W6, mode: "calibration" };
+  const seals: SealView[] = [
+    { tag: START, seed: "s0", screening: S(["HX-001"]) },
+    { tag: W5, seed: "s5", screening: S(["HX-001", "HX-002"], [CAL5]) },
+  ];
+  const foreign: SealView = {
+    tag: W6,
+    seed: "s6",
+    screening: S(["HX-001", "HX-002", "HX-003"], [CAL5, CAL6]),
+  };
+  assertEquals(sealRound(foreign, seals), {
+    ok: false,
+    problem: `${W6} is not a ledger seal`,
+  });
 });
