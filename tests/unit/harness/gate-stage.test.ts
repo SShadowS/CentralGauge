@@ -10,6 +10,7 @@ import {
   checkTask,
   exportSource,
   GATE_TMP,
+  LAST_ORACLE_TASK,
   oracleBandOf,
   stageWorkspace,
   testManifestIn,
@@ -1008,6 +1009,9 @@ Deno.test("oracleBandOf: bands are disjoint and contiguous from HX-007 to HX-268
     next = b[1] + 1;
   }
   assert(next - 1 <= 89999);
+  // The diagnostics' LAST_ORACLE_TASK cannot drift from the arithmetic.
+  assert(oracleBandOf(LAST_ORACLE_TASK) !== null);
+  assertEquals(oracleBandOf(LAST_ORACLE_TASK + 1), null);
 });
 
 Deno.test("checkTask: HX-051 oracle lives in its own 20-id band", async () => {
