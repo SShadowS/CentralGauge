@@ -586,31 +586,45 @@ export interface ScreenCampaign {
 }
 
 /**
- * H-68: per task, the FIRST time its full screen was complete (run 002): for
- * each counted cell the earliest scored judgment of its counted execution
- * (same oracle), then the latest of those over the task's cells. A later
- * rejudge cannot move it.
+ * H-68: per task, the FIRST instant at which every counted cell was scored at
+ * once. Each cell's judgment timeline (the judgments of its counted
+ * execution, same oracle) is replayed in ended_at order across the task's
+ * cells; each judgment sets its cell scored or unscored. Judgments ending at
+ * the same instant apply together. That moment never moves: later rejudges
+ * cannot change it (run 002 follow-up). A task whose cells are never all
+ * scored at once has no entry.
  */
 export function completionTimes(
   cells: readonly { task: string; judgment_id: string | null }[],
   judgments: readonly JudgmentRecord[],
 ): Record<string, string> {
   const byId = new Map(judgments.map((j) => [j.id, j]));
-  const out: Record<string, string> = {};
+  const byTask = new Map<string, JudgmentRecord[]>();
   for (const c of cells) {
     const counted = c.judgment_id ? byId.get(c.judgment_id) : undefined;
     if (!counted) continue;
-    const firstScored = judgments.filter((j) =>
-      j.execution_id === counted.execution_id &&
-      j.task_oracle_hash === counted.task_oracle_hash &&
-      j.verdict !== "unscored"
-    ).map((j) =>
-      j.ended_at
-    ).sort(compareInstant)[0];
-    if (firstScored === undefined) continue;
-    const prev = out[c.task];
-    if (prev === undefined || compareInstant(prev, firstScored) < 0) {
-      out[c.task] = firstScored;
+    byTask.set(c.task, [...(byTask.get(c.task) ?? []), counted]);
+  }
+  const out: Record<string, string> = {};
+  for (const [task, counted] of byTask) {
+    const cellOf = (j: JudgmentRecord) =>
+      counted.findIndex((k) =>
+        k.execution_id === j.execution_id &&
+        k.task_oracle_hash === j.task_oracle_hash
+      );
+    const timeline = judgments.filter((j) => cellOf(j) >= 0).sort((a, b) =>
+      compareInstant(a.ended_at, b.ended_at)
+    );
+    const scored = counted.map(() => false);
+    for (let i = 0; i < timeline.length; i++) {
+      const j = timeline[i]!;
+      scored[cellOf(j)] = j.verdict !== "unscored";
+      const next = timeline[i + 1];
+      if (next && compareInstant(next.ended_at, j.ended_at) === 0) continue;
+      if (scored.every(Boolean)) {
+        out[task] = j.ended_at;
+        break;
+      }
     }
   }
   return out;

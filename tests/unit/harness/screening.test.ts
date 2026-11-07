@@ -1786,6 +1786,27 @@ Deno.test("completionTimes (H-68 run 002 item 1): the FIRST time the full screen
   );
 });
 
+Deno.test("completionTimes (H-68 run 002 follow-up): the first instant at which every counted cell is scored at once", async () => {
+  const c = await campaign();
+  const a = execution(c, { arm: "plain" });
+  const b = execution(c, { arm: "skills" });
+  const t = (d: string) => ({ ended_at: `2026-10-${d}T00:00:00.000Z` });
+  // A scored at T1, A unscored at T2, B first scored at T3, A scored at T5.
+  const a1 = judgment(c, a, true, t("01"));
+  const a2 = judgment(c, a, null, t("02"));
+  const b3 = judgment(c, b, false, t("03"));
+  const a5 = judgment(c, a, true, t("05"));
+  // Complete only at T5, so a pre-screen created at T4 is not after a
+  // complete full screen.
+  assertEquals(
+    completionTimes([
+      { task: "HX-001", judgment_id: a5.id },
+      { task: "HX-001", judgment_id: b3.id },
+    ], [a5, b3, a2, a1]),
+    { "HX-001": "2026-10-05T00:00:00.000Z" },
+  );
+});
+
 import { RecordStore } from "../../../src/harness/records.ts";
 import {
   gateOf,
@@ -1804,6 +1825,8 @@ Deno.test("H-68 run 002 item 4: valid full-screen and pre-screen campaigns throu
     ...RULES,
     arms: ["plain", "skills"],
     kind_min: 0,
+    // Room for both kinds in a selection of two (it must succeed).
+    kind_max_share: 1,
     required_coupling: ["single-instance"],
     large_min_share: 0,
   };
@@ -1931,6 +1954,10 @@ Deno.test("H-68 run 002 item 4: valid full-screen and pre-screen campaigns throu
       "HX-001": "intermediate",
       "HX-002": "hard",
     });
+    // Not two identical empty documents: the selection succeeds with both.
+    assertEquals(a.doc.ok, true);
+    assertEquals(a.doc.selection.selected, ["HX-001", "HX-002"]);
+    assertEquals(JSON.parse(a.doc.text).status, "ok");
     assertEquals(b.doc.text, a.doc.text);
   } finally {
     await Deno.remove(dir, { recursive: true });
