@@ -170,16 +170,21 @@ export function sealRound(s: SealView, seals: SealView[]): RoundOf | null {
   const r = own(s);
   if (!r) return null;
   const here = seals.findIndex((x) => x.tag === s.tag);
-  if (
-    r.mode === "filter" &&
-    !seals.slice(0, Math.max(here, 0)).some((a) =>
-      own(a)?.mode === "calibration"
-    )
-  ) {
+  const earlier = seals.slice(0, Math.max(here, 0)).map((a) => own(a)?.mode);
+  if (r.mode === "filter" && !earlier.includes("calibration")) {
     return {
       ok: false,
       problem:
         `${s.tag}: a filter round needs an earlier calibration round on a sealed seal`,
+    };
+  }
+  // H-69 Sol r1: seal order, not registry order, decides; the schema only
+  // sees the registry's array order.
+  if (r.mode === "calibration" && earlier.includes("filter")) {
+    return {
+      ok: false,
+      problem:
+        `${s.tag}: a calibration round may not follow a sealed filter round`,
     };
   }
   return { ok: true, seal: r.seal, mode: r.mode };

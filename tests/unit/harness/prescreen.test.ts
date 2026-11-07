@@ -991,6 +991,45 @@ Deno.test("run 002 item 3: a broken candidate is a separate 'broken, never resol
   assert(out.includes("  broken, never resolvable: 2"), out.join("\n"));
 });
 
+Deno.test("H-69 Sol r1: a calibration seal sealed after a filter seal is refused, even when the registry lists it before the filter", async () => {
+  // Registry order [w5 cal, w7 cal, w6 filter] is schema-valid, but the
+  // ledger seals w5, then w6 (filter), then w7 (calibration).
+  const CAL7: Round = { seal: W7, mode: "calibration" };
+  const rounds = [CAL5, CAL7, FIL6];
+  const seals: SealView[] = [
+    { tag: START, seed: "s0", screening: S(["HX-001"]) },
+    { tag: W5, seed: "s5", screening: S(["HX-001", "HX-002"], [CAL5]) },
+    {
+      tag: W6,
+      seed: "s6",
+      screening: S(["HX-001", "HX-002", "HX-003"], rounds),
+    },
+    {
+      tag: W7,
+      seed: "s7",
+      screening: S(["HX-001", "HX-002", "HX-003", "HX-004"], rounds),
+    },
+  ];
+  assertEquals(roundOf("HX-003", seals), { ok: true, ...FIL6 });
+  assertEquals(roundOf("HX-004", seals), {
+    ok: false,
+    problem: `${W7}: a calibration round may not follow a sealed filter round`,
+  });
+  const r = await evaluatePrescreen({
+    now: seals[3]!.screening,
+    seals,
+    heldOut: [],
+    prescreens: [],
+    full: [],
+  });
+  assert(
+    r.problems.includes(
+      `${W7}: a calibration round may not follow a sealed filter round`,
+    ),
+    r.problems.join("\n"),
+  );
+});
+
 Deno.test("H-69: the calibration false-kill rate pools every calibration seal; each seal's table is still printed", () => {
   const CAL6: Round = { seal: W6, mode: "calibration" };
   const verdicts = new Map([
