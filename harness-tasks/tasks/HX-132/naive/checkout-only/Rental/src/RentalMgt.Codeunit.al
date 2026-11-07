@@ -30,6 +30,7 @@ codeunit 70200 "CGR Rental Mgt"
         FleetMgt: Codeunit "CGR Fleet Mgt";
         CoreEvents: Codeunit "CGR Core Events";
         AuthCode: Text[50];
+        StaleAuthCode: Text[50];
         Amount: Decimal;
     begin
         Contract.Get(ContractNo);
@@ -38,11 +39,14 @@ codeunit 70200 "CGR Rental Mgt"
 
         Amount := ExpectedAmount(Contract);
         if (Contract."Payment Auth Code" = '') or (Contract."Authorized Amount" <> Amount) then begin
+            StaleAuthCode := Contract."Payment Auth Code";
             OnRequestPreAuthorization(Contract, Amount, AuthCode);
             Contract."Payment Auth Code" := AuthCode;
             Contract."Authorized Amount" := Amount;
             Contract.Modify(true);
             Commit(); // the hold exists at the provider from here on
+            if StaleAuthCode <> '' then
+                OnReleasePreAuthorization(StaleAuthCode); // the replaced hold was only on record here
         end;
 
         if not FleetMgt.IsAvailable(Contract."Vehicle No.") then
