@@ -1661,8 +1661,8 @@ Deno.test("firstAttempts (H-68 r3): each cell's first execution attempt, never a
     "HX-001/1/skills": "fail",
     // H-29: a crash-ended first attempt never counts
     "HX-001/2/plain": "fail",
-    // judged unscored: awaiting a rejudge, as the cell itself
-    "HX-001/2/skills": "live",
+    // r4: a first judgment that is unscored is a fail (Q4: eligible)
+    "HX-001/2/skills": "fail",
     // ended, not judged yet
     "HX-002/1/plain": "live",
     // not started
@@ -1670,4 +1670,40 @@ Deno.test("firstAttempts (H-68 r3): each cell's first execution attempt, never a
     "HX-002/2/plain": "live",
     "HX-002/2/skills": "live",
   });
+});
+
+Deno.test("firstAttempts (H-68 r4): the first attempt freezes on its first judgment; a later rejudge never changes it", async () => {
+  const c = await campaign();
+  const unscored = execution(c, { arm: "plain" });
+  const passed = execution(c, { arm: "skills" });
+  const waiting = execution(c, { task: "HX-002", arm: "plain" });
+  const ex = [unscored, passed, waiting];
+  const at = (h: number) => ({
+    started_at: `2026-10-01T${h}:00:00.000Z`,
+    ended_at: `2026-10-01T${h}:30:00.000Z`,
+  });
+  const first = [
+    judgment(c, unscored, null, at(11)),
+    judgment(c, passed, true, at(11)),
+  ];
+  const before = Object.fromEntries(firstAttempts(c, ex, first));
+  assertEquals(
+    [before["HX-001/1/plain"], before["HX-001/1/skills"]],
+    ["fail", "pass"],
+  );
+  // (c) no judgment yet: live (a pending verdict)
+  assertEquals(before["HX-002/1/plain"], "live");
+  // (a) a passing rejudge of the unscored one and (b) a failing rejudge of
+  // the pass change nothing, so R and the audit sample cannot move.
+  const rejudged = [
+    ...first,
+    judgment(c, unscored, true, at(13)),
+    judgment(c, passed, false, at(13)),
+  ];
+  assertEquals(Object.fromEntries(firstAttempts(c, ex, rejudged)), before);
+  // Input order is irrelevant: the earliest judgment is the first.
+  assertEquals(
+    Object.fromEntries(firstAttempts(c, ex, [...rejudged].reverse())),
+    before,
+  );
 });

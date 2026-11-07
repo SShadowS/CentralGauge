@@ -670,9 +670,10 @@ export type FirstAttempt = "pass" | "fail" | "live";
 /**
  * H-68 r3: per planned cell (`task/repeat/arm`), its first execution
  * attempt's outcome (the planned root; an automatic retry or a manual rerun
- * is never read). Not started, or ended and not yet judged (an unscored
- * verdict awaits a rejudge, as in resolveChain without a scorer): live. A
- * crash (H-29) or an unjudged ending (setup_failed, usage_limited): fail.
+ * is never read). Not started, or ended and not yet judged: live. r4: it
+ * freezes on the attempt's first judgment (pass, else fail; an unscored one
+ * is a fail, Q4), and a later rejudge never changes it. A crash (H-29) or an
+ * unjudged ending (setup_failed, usage_limited): fail.
  */
 export function firstAttempts(
   c: CampaignRecord,
@@ -696,18 +697,18 @@ export function firstAttempts(
       ) {
         out.set(key, "fail");
       } else {
-        const j = selectJudgment(
-          root,
-          judgments,
-          oracle.get(root.task_id) ?? "",
-        );
+        // r4: the FIRST judgment (earliest ended_at, then id), never the
+        // latest selectJudgment would count, so a rejudge cannot move it.
+        const o = oracle.get(root.task_id) ?? "";
+        const j = judgments.filter((x) =>
+          x.execution_id === root.id && x.task_id === root.task_id &&
+          x.workspace_hash === root.workspace_hash && x.task_oracle_hash === o
+        ).sort((a, b) =>
+          compareInstant(a.ended_at, b.ended_at) || (a.id < b.id ? -1 : 1)
+        )[0];
         out.set(
           key,
-          !j || j.verdict === "unscored"
-            ? "live"
-            : j.verdict === "pass"
-            ? "pass"
-            : "fail",
+          !j ? "live" : j.verdict === "pass" ? "pass" : "fail",
         );
       }
     }
