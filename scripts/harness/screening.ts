@@ -573,6 +573,8 @@ export interface ScreenCampaign {
   retirements?: readonly AccountRetirement[];
   /** H-68: per task, when its last counted judgment ended (completionTimes). */
   completed_at?: Record<string, string>;
+  /** H-68 r5: firstAttempts problems; a pre-screen campaign's are refusals. */
+  first_problems?: string[];
 }
 
 /** H-68: per task, the latest end of a counted judgment of its cells. */
@@ -674,14 +676,26 @@ export type FirstAttempt = "pass" | "fail" | "live";
  * freezes on the attempt's first judgment (pass, else fail; an unscored one
  * is a fail, Q4), and a later rejudge never changes it. A crash (H-29) or an
  * unjudged ending (setup_failed, usage_limited): fail.
+ *
+ * r5: a forced judgment (the owner-approved H-64 rejudge path) never counts.
+ * A judgment ending before its execution ended is a problem and never the
+ * first; two earliest judgments ending together that disagree are a problem
+ * (no id tie-break).
+ *
+ * Trust assumption: judgment records and their ended_at are written by the
+ * harness. Forging a record is outside the threat model, as it is for the
+ * full screen's own tally, which trusts judgment records too.
  */
 export function firstAttempts(
   c: CampaignRecord,
   executions: ExecutionRecord[],
   judgments: JudgmentRecord[],
-): Map<string, FirstAttempt> {
+): { first: Map<string, FirstAttempt>; problems: string[] } {
   const oracle = campaignJudging(c).oracle;
   const out = new Map<string, FirstAttempt>();
+  const problems: string[] = [];
+  const outcome = (j: JudgmentRecord): FirstAttempt =>
+    j.verdict === "pass" ? "pass" : "fail";
   for (const b of c.blocks) {
     for (const arm of b.order) {
       const root = executions.find((e) =>
@@ -697,23 +711,43 @@ export function firstAttempts(
       ) {
         out.set(key, "fail");
       } else {
-        // r4: the FIRST judgment (earliest ended_at, then id), never the
-        // latest selectJudgment would count, so a rejudge cannot move it.
+        // r4: the FIRST judgment, never the latest selectJudgment would
+        // count, so a rejudge cannot move it. r5: forced ones never count.
         const o = oracle.get(root.task_id) ?? "";
-        const j = judgments.filter((x) =>
+        const matching = judgments.filter((x) =>
           x.execution_id === root.id && x.task_id === root.task_id &&
-          x.workspace_hash === root.workspace_hash && x.task_oracle_hash === o
-        ).sort((a, b) =>
-          compareInstant(a.ended_at, b.ended_at) || (a.id < b.id ? -1 : 1)
-        )[0];
-        out.set(
-          key,
-          !j ? "live" : j.verdict === "pass" ? "pass" : "fail",
+          x.workspace_hash === root.workspace_hash &&
+          x.task_oracle_hash === o && x.forced === undefined
         );
+        const early = matching.filter((x) =>
+          compareInstant(x.ended_at, root.ended_at) < 0
+        );
+        for (const x of early) {
+          problems.push(`judgment ${x.id} ends before its execution`);
+        }
+        const valid = matching.filter((x) => !early.includes(x)).sort((
+          a,
+          b,
+        ) => compareInstant(a.ended_at, b.ended_at));
+        const firsts = valid.filter((x) =>
+          compareInstant(x.ended_at, valid[0]!.ended_at) === 0
+        );
+        if (firsts.length === 0) {
+          out.set(key, "live");
+        } else if (new Set(firsts.map(outcome)).size > 1) {
+          problems.push(
+            `execution ${root.id}: ambiguous first judgment (${
+              firsts.map((x) => x.id).sort().join(", ")
+            } end together and disagree)`,
+          );
+          out.set(key, "fail");
+        } else {
+          out.set(key, outcome(firsts[0]!));
+        }
       }
     }
   }
-  return out;
+  return { first: out, problems };
 }
 
 /**
@@ -1376,9 +1410,10 @@ export async function loadScreenCampaigns(
         ...x,
         env: envs[i]!.env,
         // Both come from campaign.blocks, so every cell has an entry.
-        first: first.get(`${x.task}/${x.repeat}/${x.arm}`) ?? "live",
+        first: first.first.get(`${x.task}/${x.repeat}/${x.arm}`) ?? "live",
         manual_reruns: records[i]!.manual_reruns,
       })),
+      first_problems: first.problems,
       excluded,
       problems: manualRerunProblems(c, data.executions, data.judgments),
       accounts: accountCounts(data.executions),

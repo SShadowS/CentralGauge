@@ -325,7 +325,7 @@ export async function evaluatePrescreen(input: {
     return out;
   }
   for (const c of prescreens) {
-    out.problems.push(...(c.problems ?? []));
+    out.problems.push(...(c.problems ?? []), ...(c.first_problems ?? []));
     // r3: a manual rerun (run_kind manual_rerun, as manualRerunProblems
     // counts it) of a pre-screen cell is refused, scored or not.
     for (const x of c.cells) {

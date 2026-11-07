@@ -1654,7 +1654,7 @@ Deno.test("firstAttempts (H-68 r3): each cell's first execution attempt, never a
     judgment(c, crash, true),
     judgment(c, unscored, null),
   ];
-  assertEquals(Object.fromEntries(firstAttempts(c, ex, js)), {
+  assertEquals(Object.fromEntries(firstAttempts(c, ex, js).first), {
     // judged pass; the manual rerun's fail is never read
     "HX-001/1/plain": "pass",
     // the first attempt failed setup; the automatic retry's pass is never read
@@ -1686,7 +1686,7 @@ Deno.test("firstAttempts (H-68 r4): the first attempt freezes on its first judgm
     judgment(c, unscored, null, at(11)),
     judgment(c, passed, true, at(11)),
   ];
-  const before = Object.fromEntries(firstAttempts(c, ex, first));
+  const before = Object.fromEntries(firstAttempts(c, ex, first).first);
   assertEquals(
     [before["HX-001/1/plain"], before["HX-001/1/skills"]],
     ["fail", "pass"],
@@ -1700,10 +1700,61 @@ Deno.test("firstAttempts (H-68 r4): the first attempt freezes on its first judgm
     judgment(c, unscored, true, at(13)),
     judgment(c, passed, false, at(13)),
   ];
-  assertEquals(Object.fromEntries(firstAttempts(c, ex, rejudged)), before);
-  // Input order is irrelevant: the earliest judgment is the first.
   assertEquals(
-    Object.fromEntries(firstAttempts(c, ex, [...rejudged].reverse())),
+    Object.fromEntries(firstAttempts(c, ex, rejudged).first),
     before,
   );
+  // Input order is irrelevant: the earliest judgment is the first.
+  assertEquals(
+    Object.fromEntries(firstAttempts(c, ex, [...rejudged].reverse()).first),
+    before,
+  );
+});
+
+Deno.test("firstAttempts (H-68 r5): forced judgments never count; a judgment before its execution's end or an ambiguous first judgment is a problem", async () => {
+  const c = await campaign();
+  // Executions end 10:11 (fixture default).
+  const e = execution(c, { arm: "plain" });
+  const time = (hm: string) => ({
+    started_at: `2026-10-01T${hm}:00.000Z`,
+    ended_at: `2026-10-01T${hm}:00.000Z`,
+  });
+  const pass = judgment(c, e, true, time("10:20"));
+  const forced = judgment(c, e, false, {
+    ...time("10:15"),
+    forced: {
+      reason: "verdict build starved of memory",
+      replaces: pass.id,
+      basis: {
+        kind: "decision",
+        path: "2026-10-30-x.md",
+        sha256: "a".repeat(64),
+        approval: "OWNER-APPROVED: rejudge (2026-10-30T10:00:00Z)",
+      },
+    },
+  });
+  // A forced failing judgment backdated before the original pass: still a
+  // pass, no problem, so R is unchanged.
+  const f = firstAttempts(c, [e], [pass, forced]);
+  assertEquals(f.first.get("HX-001/1/plain"), "pass");
+  assertEquals(f.problems, []);
+  // A judgment ending before its execution is a problem, never the first.
+  const early = judgment(c, e, false, time("10:05"));
+  const g = firstAttempts(c, [e], [pass, early]);
+  assertEquals(g.problems, [
+    `judgment ${early.id} ends before its execution`,
+  ]);
+  assertEquals(g.first.get("HX-001/1/plain"), "pass");
+  // Two earliest judgments at the same instant that disagree: a problem.
+  const tie = judgment(c, e, false, time("10:20"));
+  assertEquals(firstAttempts(c, [e], [pass, tie]).problems, [
+    `execution ${e.id}: ambiguous first judgment (${
+      [pass.id, tie.id].sort().join(", ")
+    } end together and disagree)`,
+  ]);
+  // The same instant and the same outcome is fine.
+  const same = judgment(c, e, true, time("10:20"));
+  const h = firstAttempts(c, [e], [pass, same]);
+  assertEquals(h.problems, []);
+  assertEquals(h.first.get("HX-001/1/plain"), "pass");
 });

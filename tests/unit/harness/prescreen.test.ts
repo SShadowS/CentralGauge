@@ -861,3 +861,11 @@ Deno.test("r3 manual rerun: a manually rerun pre-screen cell is refused, scored 
   assertEquals(r.verdicts.get(f!), "provisionally_saturated");
   assertEquals(r.audits.get(W8), { rejects: SIX, audited: [a!, b!].sort() });
 });
+
+Deno.test("r5 first-judgment problems from the loader are pre-screen problems", async () => {
+  const r = await evaluatePrescreen(input([{
+    ...camp("p1", AT(10), pre("HX-002", true, true)),
+    first_problems: ["judgment j1 ends before its execution"],
+  }]));
+  assertEquals(r.problems, ["judgment j1 ends before its execution"]);
+});
