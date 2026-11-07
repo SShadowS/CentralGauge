@@ -289,3 +289,6 @@ candidates:
   - id: HX-133
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Integration Silencer.OnBeforeQuietContractSave" }
+  - id: HX-134
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
