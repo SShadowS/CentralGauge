@@ -355,9 +355,15 @@ Deno.test("falseKill: k/n over resolved provisional rejects, pending counted apa
     k: 1,
     n: 3,
     pending: 1,
+    broken: 0,
     table: {
-      provisionally_saturated: { saturated: 2, other: 1, pending: 1 },
-      eligible: { saturated: 1, other: 1, pending: 1 },
+      provisionally_saturated: {
+        saturated: 2,
+        other: 1,
+        pending: 1,
+        broken: 0,
+      },
+      eligible: { saturated: 1, other: 1, pending: 1, broken: 0 },
     },
   });
 });
@@ -536,7 +542,14 @@ Deno.test("r1 audit: a live or unrun attempt is no verdict, so a running campaig
   const done = await evaluatePrescreen(input([
     camp("p1", AT(10), filterCells(pre("HX-006", true, true))),
   ]));
-  assert(done.audits.get(W6) !== null);
+  // run 002 item 5: the exact audit, never just "not null" (undefined passes that).
+  const w6 = ["HX-003", "HX-004", "HX-005", "HX-006"];
+  assertEquals(
+    done.audits.get(W6),
+    await auditSample("seed-w6", w6, done.verdicts),
+  );
+  assertEquals(done.audits.get(W6)!.rejects, ["HX-003", "HX-004", "HX-006"]);
+  assertEquals(done.audits.get(W6)!.audited.length, 1);
 });
 
 Deno.test("r1 falseKill: a pending pre-screen is not counted", () => {
@@ -868,4 +881,88 @@ Deno.test("r5 first-judgment problems from the loader are pre-screen problems", 
     first_problems: ["judgment j1 ends before its execution"],
   }]));
   assertEquals(r.problems, ["judgment j1 ends before its execution"]);
+});
+
+Deno.test("run 002 item 2: round 1 is calibration, every later round is filter; a mode-only edit to a sealed round is refused", () => {
+  const parses = (rounds: Round[]) =>
+    ScreeningSchema.safeParse({
+      v: 1,
+      rules: RULES,
+      candidates: [],
+      amendments: [{ id: "prescreen", decision: DECISION, rounds }],
+    }).success;
+  assert(parses([CAL5, FIL6]));
+  assert(
+    !parses([CAL5, { seal: W6, mode: "calibration" }]),
+    "a calibration round after round 1",
+  );
+  assert(
+    !parses([CAL5, FIL6, { seal: W7, mode: "calibration" }]),
+    "a calibration round as round 3",
+  );
+  // A mode-only edit of a sealed round (built without the schema, which
+  // would already refuse it) is an amendment change.
+  const sealed = S(ALL, [CAL5, FIL6]);
+  const edited: Screening = {
+    ...sealed,
+    amendments: [{
+      id: "prescreen",
+      decision: DECISION,
+      rounds: [CAL5, { seal: W6, mode: "calibration" }],
+    }],
+  };
+  assertEquals(amendmentProblems(W6, sealed, edited), [
+    `prescreen amendment changed after ${W6} (rounds may only be appended)`,
+  ]);
+});
+
+Deno.test("run 002 item 3: a broken candidate is a separate 'broken, never resolvable' FK line, never pending", () => {
+  const verdicts = new Map([
+    ["HX-001", "provisionally_saturated" as const],
+    ["HX-002", "provisionally_saturated" as const],
+    ["HX-003", "eligible" as const],
+  ]);
+  const status = new Map<string, Status>([
+    ["HX-001", "saturated"],
+    ["HX-002", "broken"],
+    ["HX-003", "broken"],
+  ]);
+  const fk = falseKill(["HX-001", "HX-002", "HX-003"], verdicts, status);
+  assertEquals(fk, {
+    k: 0,
+    n: 1,
+    pending: 0,
+    broken: 1,
+    table: {
+      provisionally_saturated: {
+        saturated: 1,
+        other: 0,
+        pending: 0,
+        broken: 1,
+      },
+      eligible: { saturated: 0, other: 0, pending: 0, broken: 1 },
+    },
+  });
+  const ps = {
+    verdicts,
+    rounds: new Map([
+      ["HX-001", CAL5],
+      ["HX-002", CAL5],
+      ["HX-003", CAL5],
+    ]),
+    audits: new Map(),
+    provisional: new Set<string>(),
+    waiting: new Set<string>(),
+    missing: new Set<string>(),
+    retried: new Set<string>(),
+    problems: [],
+  };
+  const out = prescreenReport([], status, ps).out;
+  assert(
+    out.includes(
+      "calibration false-kill: 0/1 (pending 0), missing pre-screen: 0",
+    ),
+    out.join("\n"),
+  );
+  assert(out.includes("  broken, never resolvable: 2"), out.join("\n"));
 });

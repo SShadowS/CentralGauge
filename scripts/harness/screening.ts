@@ -162,6 +162,14 @@ export const ScreeningSchema = z.strictObject({
         path: ["amendments"],
       });
     }
+    // H-68 run 002: calibration in round 1, filter from round 2 on.
+    if (a.rounds.slice(1).some((r) => r.mode !== "filter")) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${a.id}: every round after the first must be filter`,
+        path: ["amendments"],
+      });
+    }
   }
   const ids = s.candidates.map((c) => c.id);
   const dup = [...new Set(ids.filter((x, i) => ids.indexOf(x) !== i))];
@@ -577,7 +585,12 @@ export interface ScreenCampaign {
   first_problems?: string[];
 }
 
-/** H-68: per task, the latest end of a counted judgment of its cells. */
+/**
+ * H-68: per task, the FIRST time its full screen was complete (run 002): for
+ * each counted cell the earliest scored judgment of its counted execution
+ * (same oracle), then the latest of those over the task's cells. A later
+ * rejudge cannot move it.
+ */
 export function completionTimes(
   cells: readonly { task: string; judgment_id: string | null }[],
   judgments: readonly JudgmentRecord[],
@@ -585,11 +598,19 @@ export function completionTimes(
   const byId = new Map(judgments.map((j) => [j.id, j]));
   const out: Record<string, string> = {};
   for (const c of cells) {
-    const j = c.judgment_id ? byId.get(c.judgment_id) : undefined;
-    if (!j) continue;
+    const counted = c.judgment_id ? byId.get(c.judgment_id) : undefined;
+    if (!counted) continue;
+    const firstScored = judgments.filter((j) =>
+      j.execution_id === counted.execution_id &&
+      j.task_oracle_hash === counted.task_oracle_hash &&
+      j.verdict !== "unscored"
+    ).map((j) =>
+      j.ended_at
+    ).sort(compareInstant)[0];
+    if (firstScored === undefined) continue;
     const prev = out[c.task];
-    if (prev === undefined || compareInstant(prev, j.ended_at) < 0) {
-      out[c.task] = j.ended_at;
+    if (prev === undefined || compareInstant(prev, firstScored) < 0) {
+      out[c.task] = firstScored;
     }
   }
   return out;
@@ -1496,18 +1517,13 @@ export async function screeningGate(
   { seals, heldOut }: Opened,
   resultsDir: string,
   stratifyEnv: boolean,
-) {
+): Promise<Gate> {
   const head = await commitOf(root, "HEAD");
   const now = await yamlAt(root, head, REGISTRY_PATH, ScreeningSchema);
   const headTrees = await treesAt(root, head);
-  // The seal where each candidate first appears fixes its metadata and seed.
-  const firstSeal = new Map<string, SealState>();
-  for (const s of seals) {
-    for (const c of s.screening.candidates) {
-      if (!firstSeal.has(c.id)) firstSeal.set(c.id, s);
-    }
-  }
-  const sealedIds = [...firstSeal.keys()];
+  const sealedIds = [
+    ...new Set(seals.flatMap((s) => s.screening.candidates.map((c) => c.id))),
+  ];
   const current = await taskSetIdentity(
     root,
     await Promise.all(
@@ -1515,7 +1531,7 @@ export async function screeningGate(
     ),
     await loadSymbolsLock(root),
   );
-  const { campaigns, ran } = await loadScreenCampaigns(
+  const full = await loadScreenCampaigns(
     resultsDir,
     now.rules,
     root,
@@ -1532,6 +1548,47 @@ export async function screeningGate(
     PRESCREEN_PREFIX,
     1,
   );
+  return gateOf({
+    head,
+    now,
+    seals,
+    heldOut,
+    headTrees,
+    current: current.tasks,
+    full,
+    pre,
+    stratifyEnv,
+  });
+}
+
+type Loaded = Awaited<ReturnType<typeof loadScreenCampaigns>>;
+
+/**
+ * H-68 run 002: the gate on loaded inputs (screeningGate does the I/O), so
+ * an integration test can run real campaign records through it.
+ */
+export async function gateOf(input: {
+  head: string;
+  now: Screening;
+  seals: SealState[];
+  heldOut: string[];
+  headTrees: Map<string, string>;
+  current: TaskIdentity[];
+  full: Loaded;
+  pre: Loaded;
+  stratifyEnv: boolean;
+}) {
+  const { head, now, seals, heldOut, headTrees, pre, stratifyEnv } = input;
+  const { campaigns, ran } = input.full;
+  const current = { tasks: input.current };
+  // The seal where each candidate first appears fixes its metadata and seed.
+  const firstSeal = new Map<string, SealState>();
+  for (const s of seals) {
+    for (const c of s.screening.candidates) {
+      if (!firstSeal.has(c.id)) firstSeal.set(c.id, s);
+    }
+  }
+  const sealedIds = [...firstSeal.keys()];
   const ps = await evaluatePrescreen({
     now,
     seals,
@@ -1599,6 +1656,62 @@ export async function screeningGate(
     problems,
   };
 }
+export type Gate = Awaited<ReturnType<typeof gateOf>>;
+
+/**
+ * The `select` run and the selection.json text (main writes it). H-68 run
+ * 002: `meta` reads each seal's task metadata (metaAt in the CLI).
+ */
+export async function selectionDocument(
+  g: Gate,
+  o: {
+    seals: SealState[];
+    heldOut: string[];
+    n: number;
+    meta: (s: SealState, ids: string[]) => Promise<TaskMeta[]>;
+  },
+): Promise<{ text: string; ok: boolean; selection: Selection }> {
+  const { head, firstSeal, campaigns, status, tallies, now } = g;
+  const { seals, heldOut, n } = o;
+  const pool: Eligible[] = [];
+  const rank = new Map<string, string>();
+  for (const s of seals) {
+    const ids = s.screening.candidates.map((c) => c.id).filter((id) =>
+      firstSeal.get(id) === s &&
+      (STRATA as readonly string[]).includes(status.get(id)!)
+    );
+    for (const m of await o.meta(s, ids)) {
+      pool.push({ ...m, stratum: status.get(m.id) as Stratum });
+    }
+    for (const [id, k] of await ranks(s.seed, ids)) rank.set(id, k);
+  }
+  const selection = select(pool, n, now.rules, rank);
+  const ok = selection.shortfalls.length === 0;
+  const text = JSON.stringify(
+    {
+      v: 1,
+      status: ok ? "ok" : "too_few",
+      head,
+      seals: seals.map((s) => ({ tag: s.tag, commit: s.commit })),
+      campaigns: campaigns.map((c) => ({
+        id: c.id,
+        experiment: c.experiment,
+      })),
+      held_out: heldOut,
+      confirmatory_tasks: tasksGlob(selection.selected),
+      held_out_tasks: tasksGlob(heldOut),
+      candidates: Object.fromEntries(
+        [...status].map((
+          [id, s],
+        ) => [id, { status: s, ...(tallies.get(id) ?? {}) }]),
+      ),
+      selection,
+    },
+    null,
+    2,
+  ) + "\n";
+  return { text, ok, selection };
+}
 
 async function main(): Promise<number> {
   const a = parseArgs(Deno.args, {
@@ -1630,24 +1743,13 @@ async function main(): Promise<number> {
     );
     return 1;
   }
-  const {
-    head,
-    now,
-    firstSeal,
-    campaigns,
-    ps,
-    hist,
-    tallies,
-    status,
-    strata,
-    flagged,
-    problems,
-  } = await screeningGate(
+  const g = await screeningGate(
     root,
     opened,
     a["results-dir"],
     a["stratify-env"],
   );
+  const { campaigns, ps, hist, tallies, status, strata, flagged, problems } = g;
   for (const p of problems) console.error(colors.red(`[FAIL] ${p}`));
   if (problems.length > 0) return 1;
   for (const [id, s] of status) {
@@ -1700,46 +1802,13 @@ async function main(): Promise<number> {
     console.error(colors.red(`[FAIL] ${refusal}`));
     return 1;
   }
-  const pool: Eligible[] = [];
-  const rank = new Map<string, string>();
-  for (const s of seals) {
-    const ids = s.screening.candidates.map((c) => c.id).filter((id) =>
-      firstSeal.get(id) === s &&
-      (STRATA as readonly string[]).includes(status.get(id)!)
-    );
-    for (const m of await metaAt(root, s.commit, s.screening, ids)) {
-      pool.push({ ...m, stratum: status.get(m.id) as Stratum });
-    }
-    for (const [id, k] of await ranks(s.seed, ids)) rank.set(id, k);
-  }
-  const selection = select(pool, n, now.rules, rank);
-  const ok = selection.shortfalls.length === 0;
-  await Deno.writeTextFile(
-    a.out,
-    JSON.stringify(
-      {
-        v: 1,
-        status: ok ? "ok" : "too_few",
-        head,
-        seals: seals.map((s) => ({ tag: s.tag, commit: s.commit })),
-        campaigns: campaigns.map((c) => ({
-          id: c.id,
-          experiment: c.experiment,
-        })),
-        held_out: heldOut,
-        confirmatory_tasks: tasksGlob(selection.selected),
-        held_out_tasks: tasksGlob(heldOut),
-        candidates: Object.fromEntries(
-          [...status].map((
-            [id, s],
-          ) => [id, { status: s, ...(tallies.get(id) ?? {}) }]),
-        ),
-        selection,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
+  const { text, ok, selection } = await selectionDocument(g, {
+    seals,
+    heldOut,
+    n,
+    meta: (s, ids) => metaAt(root, s.commit, s.screening, ids),
+  });
+  await Deno.writeTextFile(a.out, text);
   for (const d of selection.deviations) {
     console.log(colors.yellow(`[WARN] ${d}`));
   }

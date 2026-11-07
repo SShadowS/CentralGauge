@@ -240,33 +240,51 @@ export interface FalseKill {
   k: number;
   /** Resolved provisional rejects. */
   n: number;
-  /** Provisional rejects whose full screen has not resolved. */
+  /** Provisional rejects whose full screen has not resolved (broken excluded). */
   pending: number;
-  table: Record<Final, { saturated: number; other: number; pending: number }>;
+  /** Provisional rejects that are broken: never full-screened, never resolvable. */
+  broken: number;
+  table: Record<
+    Final,
+    { saturated: number; other: number; pending: number; broken: number }
+  >;
 }
 
 /**
  * The false-kill rate over `ids` (those without a verdict are skipped): a
- * full screen is resolved when its status is a stratum, dead or saturated;
- * any other status is pending.
+ * full screen is resolved when its status is a stratum, dead or saturated.
+ * Run 002: a broken candidate stays in the population but is counted apart
+ * (never resolvable), not as pending; any other status is pending.
  */
 export function falseKill(
   ids: string[],
   verdicts: Map<string, Verdict>,
   status: Map<string, Status>,
 ): FalseKill {
-  const row = () => ({ saturated: 0, other: 0, pending: 0 });
+  const row = () => ({ saturated: 0, other: 0, pending: 0, broken: 0 });
   const table = { provisionally_saturated: row(), eligible: row() };
   for (const id of ids) {
     const v = finalOf(verdicts.get(id));
     if (v === undefined) continue;
     const s = status.get(id);
     table[v][
-      s === "saturated" ? "saturated" : resolved(s) ? "other" : "pending"
+      s === "saturated"
+        ? "saturated"
+        : resolved(s)
+        ? "other"
+        : s === "broken"
+        ? "broken"
+        : "pending"
     ]++;
   }
   const p = table.provisionally_saturated;
-  return { k: p.other, n: p.saturated + p.other, pending: p.pending, table };
+  return {
+    k: p.other,
+    n: p.saturated + p.other,
+    pending: p.pending,
+    broken: p.broken,
+    table,
+  };
 }
 
 export interface PrescreenState {
@@ -435,6 +453,9 @@ const fkLines = (label: string, fk: FalseKill, extra = ""): string[] => [
       fk.table[v].other
     }, pending ${fk.table[v].pending}`
   ),
+  `  broken, never resolvable: ${
+    fk.table.provisionally_saturated.broken + fk.table.eligible.broken
+  }`,
 ];
 
 /** `prescreen.ts status`: verdicts, rounds, audits and the false-kill rate. */
