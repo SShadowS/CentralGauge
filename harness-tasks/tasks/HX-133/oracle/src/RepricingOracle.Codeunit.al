@@ -200,22 +200,19 @@ codeunit 87955 "HX133 Repricing Oracle"
     procedure BookingImportSkipsBlockCheck()
     var
         Contract: Record "CGR Rental Contract";
-        PartnerContract: Record "CGR Rental Contract" temporary;
-        BookingImport: Codeunit "CGR Booking Import";
-        Applied: Integer;
+        ImportRunner: Codeunit "HX133 Import Runner";
+        Ok: Boolean;
     begin
         InitHX133();
         MakeVehicleHX133('HX133-V9A', 100, true);
         MakeContractHX133('HX133-9A', 'HX133-V9A', 'HX133B9A', Enum::"CGR Rental Status"::Open, 1);
         Commit();
 
-        PartnerContract.Init();
-        PartnerContract."No." := 'HX133-9A';
-        PartnerContract."End Date" := 20270320D;
-        PartnerContract.Insert();
-        Applied := BookingImport.ApplyPartnerEndDates(PartnerContract);
+        ImportRunner.SetHX133Partner('HX133-9A', 20270320D);
+        Ok := ImportRunner.Run();
 
-        Assert.AreEqual(1, Applied, 'The booking import applies the partner change');
+        Assert.IsTrue(Ok, 'The booking import works as today: ' + GetLastErrorText());
+        Assert.AreEqual(1, ImportRunner.HX133AppliedCount(), 'The booking import applies the partner change');
         Contract.Get('HX133-9A');
         Assert.AreEqual(20270320D, Contract."End Date", 'The booking import changes a contract on a blocked vehicle as today');
         Assert.AreEqual(0, CountMessagesHX133('contractChanged', 'HX133-V9A'), 'The booking import stays quiet as today');
