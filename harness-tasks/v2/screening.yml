@@ -273,3 +273,7 @@ candidates:
   - id: HX-090
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+  - id: HX-100
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+    supersedes: HX-090
