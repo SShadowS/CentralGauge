@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "87865/RentalScopeKept": 1
+    "87865/RentalUserFiltersCleared": 1
+    "87865/RentalUserFilterReads": 1
+    "87865/RentalOrderKept": 1
+    "87865/LeaseScopeKept": 1
+    "87865/CreatedLaterIsIn": 1
+    "87865/SaveTwiceReplaces": 1
+    "87865/UnknownCode": 1
+    "87865/PartnerScope": 1
+    "87865/BothFamiliesOneInstance": 1
+    "87865/EmptyScope": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

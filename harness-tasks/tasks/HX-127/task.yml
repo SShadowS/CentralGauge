@@ -1,0 +1,19 @@
+id: HX-127
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Core, Rental, Leasing]
+coupling: [core-facade]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, PostCreatesLedgerEntry] }
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing]
+  tests:
+    - { codeunit: 87865, procedures: [RentalScopeKept, RentalUserFiltersCleared, RentalUserFilterReads, RentalOrderKept, LeaseScopeKept, CreatedLaterIsIn, SaveTwiceReplaces, UnknownCode, PartnerScope, BothFamiliesOneInstance, EmptyScope] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
