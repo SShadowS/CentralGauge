@@ -298,6 +298,100 @@ codeunit 87940 "HX132 Card Hold Oracle"
         AssertContractVehicle(ContractNo, 'HX132-9C', 3000);
     end;
 
+    [Test]
+    procedure EqualRateSwapKeepsHold()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Spy: Codeunit "HX132 Card Provider Spy";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        CreateVehicle('HX132-10V', 1000, 40, false);
+        CreateVehicle('HX132-10E', 3000, 40, false);
+        ContractNo := CreateContract('HX132-10V');
+        SeedCheckedOut(ContractNo, 'HX132-10V', 'HX132-10-OLD', 120);
+        Spy.Init('HX132-10');
+        BindSubscription(Spy);
+
+        RentalMgt.SwapVehicle(ContractNo, 'HX132-10E');
+
+        Assert.AreEqual(0, Spy.RequestCount(), 'A swap to a vehicle with the same rate places no hold');
+        Assert.AreEqual(0, Spy.ReleaseCount(), 'A swap to a vehicle with the same rate releases nothing');
+        Contract.Get(ContractNo);
+        Assert.AreEqual('HX132-10-OLD', Contract."Payment Auth Code", 'The contract keeps its hold');
+        Assert.AreEqual(120, Contract."Authorized Amount", 'The contract keeps its authorized amount');
+        AssertContractVehicle(ContractNo, 'HX132-10E', 3000);
+    end;
+
+    [Test]
+    procedure RetargetedSwapRequestsNewHold()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Spy: Codeunit "HX132 Card Provider Spy";
+        ContractNo: Code[20];
+        LastHold: Integer;
+    begin
+        Prepare();
+        CreateVehicle('HX132-11V', 1000, 40, false);
+        CreateVehicle('HX132-11N', 2500, 70, true);
+        CreateVehicle('HX132-11M', 3500, 90, false);
+        ContractNo := CreateContract('HX132-11V');
+        SeedCheckedOut(ContractNo, 'HX132-11V', 'HX132-11-OLD', 120);
+        Spy.Init('HX132-11');
+        BindSubscription(Spy);
+        Commit();
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX132-11N');
+        Assert.ExpectedError(StrSubstNo(NotAvailableTxt, 'HX132-11N'));
+        Assert.IsTrue(Spy.RequestCount() <= 1, 'A failed swap places at most one hold');
+
+        RentalMgt.SwapVehicle(ContractNo, 'HX132-11M');
+
+        LastHold := Spy.RequestCount();
+        Assert.IsTrue(LastHold >= 1, 'A swap to a vehicle with another price places a hold');
+        Assert.AreEqual(270, Spy.IssuedAmount(LastHold), 'The last hold is for the amount of the vehicle swapped to');
+        Assert.AreEqual(1, Spy.TimesReleased('HX132-11-OLD'), 'The old hold is released exactly once');
+        Assert.AreEqual(0, Spy.TimesReleased(Spy.IssuedCode(LastHold)), 'The hold the contract now carries is not released');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Spy.IssuedCode(LastHold), Contract."Payment Auth Code", 'The contract carries the hold for the new amount');
+        Assert.AreEqual(270, Contract."Authorized Amount", 'The contract carries the new amount');
+        AssertContractVehicle(ContractNo, 'HX132-11M', 3500);
+        AssertVehicleCheckedOut('HX132-11V', false);
+        AssertVehicleCheckedOut('HX132-11N', false);
+        AssertVehicleCheckedOut('HX132-11M', true);
+    end;
+
+    [Test]
+    procedure CheckOutAfterRateChangeRequestsNewHold()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Spy: Codeunit "HX132 Card Provider Spy";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        CreateVehicle('HX132-12V', 1000, 40, false);
+        ContractNo := CreateContract('HX132-12V');
+        Contract.Get(ContractNo);
+        Contract."Payment Auth Code" := 'HX132-12-STALE';
+        Contract."Authorized Amount" := 100;
+        Contract.Modify();
+        Spy.Init('HX132-12');
+        BindSubscription(Spy);
+
+        RentalMgt.CheckOut(ContractNo);
+
+        Assert.AreEqual(1, Spy.RequestCount(), 'A hold for another amount is not reused');
+        Assert.AreEqual(120, Spy.IssuedAmount(1), 'The new hold is for the expected amount');
+        Assert.AreEqual(1, Spy.RequestsBeforeKeyBox(1), 'The card is authorized before the keys are handed out');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Spy.IssuedCode(1), Contract."Payment Auth Code", 'The contract carries the new hold');
+        Assert.AreEqual(120, Contract."Authorized Amount", 'The contract carries the expected amount');
+        Assert.AreEqual(Contract.Status::"Checked Out", Contract.Status, 'The contract is checked out');
+        AssertVehicleCheckedOut('HX132-12V', true);
+    end;
+
     local procedure Prepare()
     var
         Setup: Record "CGR Setup";

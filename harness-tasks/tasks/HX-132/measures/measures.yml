@@ -10,6 +10,9 @@ partial_credit:
     "87940/RetriedSwapUsesNewHold": 1
     "87940/SwapReleasesOldHoldOnce": 1
     "87940/CheaperSwapKeepsHold": 1
+    "87940/EqualRateSwapKeepsHold": 1
+    "87940/RetargetedSwapRequestsNewHold": 1
+    "87940/CheckOutAfterRateChangeRequestsNewHold": 1
   hidden_regressions: []
 reuse: null
 expect:

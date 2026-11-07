@@ -58,6 +58,17 @@ codeunit 87941 "HX132 Card Provider Spy"
         exit(ReleasedCodes.Get(Index));
     end;
 
+    procedure TimesReleased(AuthCode: Text): Integer
+    var
+        ReleasedCode: Text;
+        Total: Integer;
+    begin
+        foreach ReleasedCode in ReleasedCodes do
+            if ReleasedCode = AuthCode then
+                Total += 1;
+        exit(Total);
+    end;
+
     procedure KeyBoxCount(): Integer
     begin
         exit(RequestsAtKeyBox.Count());
