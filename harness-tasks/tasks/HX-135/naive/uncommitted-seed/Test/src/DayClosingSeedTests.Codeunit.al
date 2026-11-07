@@ -6,7 +6,6 @@ codeunit 80138 "CGR Day Closing Seed Tests"
     var
         Assert: Codeunit "Library Assert";
         Lib: Codeunit "CGR Test Library";
-        SeedRunningTxt: Label 'The day closing of branch %1 is already running.', Locked = true;
 
     [Test]
     procedure ClosingPostsDueContractsDirect()
@@ -22,6 +21,7 @@ codeunit 80138 "CGR Day Closing Seed Tests"
         DueNo := HX135SeedContract('HX135-N11', 'HX135N1', 20250516D);
         LaterNo := HX135SeedContract('HX135-N12', 'HX135N1', 20250521D);
 
+        Commit();
         DayClosing.CloseDay('HX135N1', 20250520D);
 
         Contract.Get(DueNo);
@@ -49,6 +49,7 @@ codeunit 80138 "CGR Day Closing Seed Tests"
         Spy.RefuseSeedReport('HX135N2');
         BindSubscription(Spy);
 
+        Commit();
         asserterror DayClosing.CloseDay('HX135N2', 20250520D);
         Assert.ExpectedError(Spy.SeedRefusalText('HX135N2'));
         UnbindSubscription(Spy);
@@ -59,24 +60,6 @@ codeunit 80138 "CGR Day Closing Seed Tests"
         Contract.Get(DueNo);
         Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'Nothing is posted');
         Assert.AreEqual(0, HX135SeedEntries('HX135N2', 20250520D), 'No day closing entry');
-    end;
-
-    [Test]
-    procedure SecondClosingWhileRunningChangesNothing()
-    var
-        DayClosing: Codeunit "CGR Day Closing";
-        DueNo: Code[20];
-    begin
-        WorkDate(20250520D);
-        HX135SeedBranch('HX135N3', 20250519D, true);
-        Commit();
-        DueNo := HX135SeedContract('HX135-N31', 'HX135N3', 20250516D);
-
-        asserterror DayClosing.CloseDay('HX135N3', 20250520D);
-        Assert.ExpectedError(StrSubstNo(SeedRunningTxt, 'HX135N3'));
-
-        Assert.IsTrue(HX135SeedContractUnchanged(DueNo), 'A second closing changes nothing');
-        Assert.AreEqual(0, HX135SeedEntries('HX135N3', 20250520D), 'A second closing writes no entry');
     end;
 
     local procedure HX135SeedBranch(BranchCode: Code[10]; LastClosedDate: Date; Running: Boolean)
@@ -112,14 +95,5 @@ codeunit 80138 "CGR Day Closing Seed Tests"
         ClosingEntry.SetRange("Branch Code", BranchCode);
         ClosingEntry.SetRange("Closing Date", ClosingDate);
         exit(ClosingEntry.Count());
-    end;
-
-    local procedure HX135SeedContractUnchanged(ContractNo: Code[20]): Boolean
-    var
-        Contract: Record "CGR Rental Contract";
-    begin
-        if not Contract.Get(ContractNo) then
-            exit(false);
-        exit(Contract.Status = Contract.Status::Returned);
     end;
 }

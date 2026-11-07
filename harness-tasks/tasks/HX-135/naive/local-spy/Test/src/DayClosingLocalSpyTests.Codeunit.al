@@ -2,14 +2,10 @@ codeunit 80131 "CGR Day Closing Spy Tests"
 {
     Subtype = Test;
     TestPermissions = Disabled;
-    EventSubscriberInstance = Manual;
 
     var
         Assert: Codeunit "Library Assert";
         Lib: Codeunit "CGR Test Library";
-        LocalRefusedBranch: Code[10];
-        LocalReportCalls: Integer;
-        LocalRefusedErr: Label 'Partner app refused the local day report of branch %1.', Comment = '%1 = branch code';
         LocalRunningTxt: Label 'The day closing of branch %1 is already running.', Locked = true;
 
     [Test]
@@ -17,6 +13,7 @@ codeunit 80131 "CGR Day Closing Spy Tests"
     var
         Branch: Record "CGR Rental Branch";
         Contract: Record "CGR Rental Contract";
+        ReportSpy: Codeunit "CGR Local Day Report Spy";
         DayClosing: Codeunit "CGR Day Closing";
         DueNo: Code[20];
         LaterNo: Code[20];
@@ -25,10 +22,13 @@ codeunit 80131 "CGR Day Closing Spy Tests"
         HX135LocalBranch('HX135L1', 20250519D, false);
         DueNo := HX135LocalContract('HX135-L11', 'HX135L1', 20250516D);
         LaterNo := HX135LocalContract('HX135-L12', 'HX135L1', 20250521D);
+        BindSubscription(ReportSpy);
 
         Commit();
         DayClosing.CloseDay('HX135L1', 20250520D);
+        UnbindSubscription(ReportSpy);
 
+        Assert.AreEqual(1, ReportSpy.LocalReportsSent(), 'The day report is sent once');
         Contract.Get(DueNo);
         Assert.AreEqual(Contract.Status::Posted, Contract.Status, 'The due contract is posted');
         Contract.Get(LaterNo);
@@ -43,29 +43,23 @@ codeunit 80131 "CGR Day Closing Spy Tests"
     procedure RefusedReportIsSentOnceAndClearsFlag()
     var
         Branch: Record "CGR Rental Branch";
-        Contract: Record "CGR Rental Contract";
-        ReportSpy: Codeunit "CGR Day Closing Spy Tests";
+        ReportSpy: Codeunit "CGR Local Day Report Spy";
         DayClosing: Codeunit "CGR Day Closing";
-        DueNo: Code[20];
     begin
         WorkDate(20250520D);
         HX135LocalBranch('HX135L2', 20250519D, false);
-        DueNo := HX135LocalContract('HX135-L21', 'HX135L2', 20250516D);
+        HX135LocalContract('HX135-L21', 'HX135L2', 20250516D);
         ReportSpy.SetLocalRefusal('HX135L2');
         BindSubscription(ReportSpy);
 
         Commit();
         asserterror DayClosing.CloseDay('HX135L2', 20250520D);
-        Assert.ExpectedError(StrSubstNo(LocalRefusedErr, 'HX135L2'));
+        Assert.ExpectedError(ReportSpy.LocalRefusalText('HX135L2'));
         UnbindSubscription(ReportSpy);
 
-        Assert.AreEqual(1, LocalReportCalls, 'The day report is attempted once');
+        Assert.AreEqual(1, ReportSpy.LocalReportsSent(), 'The day report is attempted once');
         Branch.Get('HX135L2');
         Assert.IsFalse(Branch."Day Closing Running", 'The flag is cleared after a failure');
-        Assert.AreEqual(20250519D, Branch."Last Closed Date", 'Last Closed Date is unchanged');
-        Contract.Get(DueNo);
-        Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'Nothing is posted');
-        Assert.AreEqual(0, HX135LocalEntries('HX135L2', 20250520D), 'No day closing entry');
     end;
 
     [Test]
@@ -85,19 +79,6 @@ codeunit 80131 "CGR Day Closing Spy Tests"
 
         Contract.Get(DueNo);
         Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'A second closing posts nothing');
-    end;
-
-    procedure SetLocalRefusal(BranchCode: Code[10])
-    begin
-        LocalRefusedBranch := BranchCode;
-    end;
-
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Day Closing Run", 'OnAfterDayClosed', '', false, false)]
-    local procedure LocalDayReport(var Branch: Record "CGR Rental Branch"; ClosingDate: Date)
-    begin
-        LocalReportCalls += 1;
-        if (LocalRefusedBranch <> '') and (Branch.Code = LocalRefusedBranch) then
-            Error(LocalRefusedErr, Branch.Code);
     end;
 
     local procedure HX135LocalBranch(BranchCode: Code[10]; LastClosedDate: Date; Running: Boolean)

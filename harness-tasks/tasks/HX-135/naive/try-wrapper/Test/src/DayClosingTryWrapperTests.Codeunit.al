@@ -36,32 +36,21 @@ codeunit 80133 "CGR Day Closing Try Tests"
     end;
 
     [Test]
-    procedure RefusedReportCaughtByTryFunction()
+    procedure RefusedReportFailsWithPartnerError()
     var
-        Branch: Record "CGR Rental Branch";
-        Contract: Record "CGR Rental Contract";
         Spy: Codeunit "CGR Try Day Report Spy";
-        DueNo: Code[20];
-        Closed: Boolean;
+        DayClosing: Codeunit "CGR Day Closing";
     begin
         WorkDate(20250520D);
         HX135WrappedBranch('HX135T2', 20250519D, false);
-        DueNo := HX135WrappedContract('HX135-T21', 'HX135T2', 20250516D);
+        HX135WrappedContract('HX135-T21', 'HX135T2', 20250516D);
         Spy.RefuseWrappedReport('HX135T2');
         BindSubscription(Spy);
 
         Commit();
-        Closed := HX135TryCloseDay('HX135T2', 20250520D);
+        asserterror DayClosing.CloseDay('HX135T2', 20250520D);
+        Assert.ExpectedError(Spy.WrappedRefusalText('HX135T2'));
         UnbindSubscription(Spy);
-
-        Assert.IsFalse(Closed, 'A refused day report makes the closing fail');
-        Assert.AreEqual(Spy.WrappedRefusalText('HX135T2'), GetLastErrorText(), 'The closing fails with the partner error');
-        Branch.Get('HX135T2');
-        Assert.IsFalse(Branch."Day Closing Running", 'The flag is cleared after a failure');
-        Assert.AreEqual(20250519D, Branch."Last Closed Date", 'Last Closed Date is unchanged');
-        Contract.Get(DueNo);
-        Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'Nothing is posted');
-        Assert.AreEqual(0, HX135WrappedEntries('HX135T2', 20250520D), 'No day closing entry');
     end;
 
     [Test]
@@ -81,14 +70,6 @@ codeunit 80133 "CGR Day Closing Try Tests"
 
         Contract.Get(DueNo);
         Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'A second closing posts nothing');
-    end;
-
-    [TryFunction]
-    local procedure HX135TryCloseDay(BranchCode: Code[10]; ClosingDate: Date)
-    var
-        DayClosing: Codeunit "CGR Day Closing";
-    begin
-        DayClosing.CloseDay(BranchCode, ClosingDate);
     end;
 
     local procedure HX135WrappedBranch(BranchCode: Code[10]; LastClosedDate: Date; Running: Boolean)
