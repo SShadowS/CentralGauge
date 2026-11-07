@@ -22,6 +22,8 @@ codeunit 87955 "HX133 Repricing Oracle"
         MakeContractHX133('HX133-1B', 'HX133-V1B', 'HX133B1A', Enum::"CGR Rental Status"::Open, 2);
         MakeContractHX133('HX133-1C', 'HX133-V1C', 'HX133B1B', Enum::"CGR Rental Status"::Open, 3);
         MakeContractHX133('HX133-1D', 'HX133-V1D', 'HX133B1C', Enum::"CGR Rental Status"::Returned, 10);
+        MakeVehicleHX133('HX133-V1E', 90, false);
+        MakeContractHX133('HX133-1E', 'HX133-V1E', 'HX133B1D', Enum::"CGR Rental Status"::"Checked Out", 20);
         Commit();
 
         Repriced := Repricing.RepriceOpenContracts(1.1);
@@ -31,6 +33,7 @@ codeunit 87955 "HX133 Repricing Oracle"
         Assert.AreEqual(88.00, AgreedRateHX133('HX133-1B'), 'Daily Rate 80 times 1.1');
         Assert.AreEqual(55.55, AgreedRateHX133('HX133-1C'), 'Daily Rate 50.5 times 1.1');
         Assert.AreEqual(10, AgreedRateHX133('HX133-1D'), 'A contract that is not Open is not re-priced');
+        Assert.AreEqual(20, AgreedRateHX133('HX133-1E'), 'A Checked Out contract is not re-priced');
     end;
 
     [Test]
