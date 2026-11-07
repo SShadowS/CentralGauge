@@ -423,7 +423,8 @@ Outputs in `<out>`: `packets/`, `key/key.json` (never show the judge), `pairs.js
 2. **Summary**: 3 to 6 numbered findings, most important first, each with its numbers.
    Then **What to decide** (questions for the owner or orchestrator, if any).
 3. **Caveats**: repeats and task count, the report's intervals, egress override, calibration
-   waiver, cells with unknown cost, retries, unreadable traces, `harness measure` skipped (and
+   waiver, the report's protocol-change line quoted verbatim when `harness report` prints one
+   (H-67: pre-registration protocol_changes), cells with unknown cost, retries, unreadable traces, `harness measure` skipped (and
    why), the blind review's limits (one judge, sample size, partial blinding), anything the data
    cannot show.
 4. **What the variant changes**: the per-arm medians table from `summary.json`, sub-agent use.
