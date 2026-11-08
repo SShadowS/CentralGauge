@@ -406,6 +406,93 @@ Deno.test("CLI: `harness report --json` parses through cliffy and prints the JSO
   assertEquals(report.repeats, { planned: 1, reported: 1 });
 });
 
+Deno.test("CLI: `harness progress --json` prints the progress with its estimate labels", async () => {
+  const dir = await storeWithOneCell();
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "progress",
+      "skills-vs-plain",
+      "--results-dir",
+      dir,
+      "--json",
+      "--concurrency",
+      "3",
+    ]);
+  } finally {
+    log.restore();
+  }
+  const p = JSON.parse(printed.join("\n"));
+  assertEquals(p.campaign_id, CAMPAIGN_ID);
+  assertEquals(p.eta.source, "flag");
+  assertEquals(p.eta.concurrency, 3);
+  assertEquals(p.started.estimate, true);
+});
+
+Deno.test("CLI: `harness progress --json` on an unreadable campaign prints the unavailable snapshot", async () => {
+  const dir = await storeWithOneCell();
+  await Deno.writeTextFile(join(dir, "campaigns", `${CAMPAIGN_ID}.json`), "{");
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "progress",
+      CAMPAIGN_ID,
+      "--results-dir",
+      dir,
+      "--json",
+    ]);
+  } finally {
+    log.restore();
+  }
+  const p = JSON.parse(printed.join("\n"));
+  assertEquals(p.campaign_id, CAMPAIGN_ID);
+  assertEquals(
+    p.campaign_unreadable.path.endsWith(`${CAMPAIGN_ID}.json`),
+    true,
+  );
+  assertEquals(p.unreadable.length, 1);
+  assertEquals("planned_cells" in p, false);
+});
+
+Deno.test("CLI: `harness progress --concurrency 0` is refused", async () => {
+  const dir = await storeWithOneCell();
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const errors: string[] = [];
+  const err = stub(console, "error", (...a: unknown[]) => {
+    errors.push(a.join(" "));
+  });
+  const before = Deno.exitCode;
+  try {
+    await cli.parse([
+      "harness",
+      "progress",
+      "skills-vs-plain",
+      "--results-dir",
+      dir,
+      "--concurrency",
+      "0",
+    ]);
+    assertEquals(Deno.exitCode, 1);
+  } finally {
+    err.restore();
+    Deno.exitCode = before;
+  }
+  assertEquals(errors.join("\n").includes("concurrency"), true);
+});
+
 Deno.test("CLI: `harness report --repeats` reaches buildReport; above the plan is refused", async () => {
   const dir = await storeWithOneCell();
   await assertRejects(

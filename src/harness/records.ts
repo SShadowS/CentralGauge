@@ -476,7 +476,7 @@ export type ExecutionRecord = z.output<typeof ExecutionRecordSchema>;
  * only ever set by RecordStore when it applies an overlay, so a file that
  * carries it (a copied overlaid record) is refused before any overlay.
  */
-const StoredExecutionSchema = ExecutionRecordSchema.refine(
+export const StoredExecutionSchema = ExecutionRecordSchema.refine(
   (e) => e.rederived === undefined,
   {
     message:
@@ -965,7 +965,7 @@ export function planBlocks(
   return blocks;
 }
 
-const TMP = ".tmp-";
+export const TMP = ".tmp-";
 
 export { TEMP_SWEEP_AGE_MS };
 
@@ -1155,7 +1155,7 @@ export function compareInstant(a: string, b: string): number {
 }
 
 /** Ascending by exact instant, then id. */
-function byInstant<R extends { id: string }>(at: (r: R) => string) {
+export function byInstant<R extends { id: string }>(at: (r: R) => string) {
   return (a: R, b: R) =>
     compareInstant(at(a), at(b)) ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -1294,7 +1294,7 @@ export class RecordStore {
    * must belong to it (campaign, from_termination, after it ended) and match
    * the raw.jsonl it was derived from; otherwise the read is refused.
    */
-  private async withRederivation(e: ExecutionRecord): Promise<ExecutionRecord> {
+  async applyRederivation(e: ExecutionRecord): Promise<ExecutionRecord> {
     const all = await this.rederivations(e.id);
     if (all.length === 0) return e;
     const refuse = (msg: string) => {
@@ -1357,7 +1357,7 @@ export class RecordStore {
       (id) => ({ id, campaign_id }),
     );
     const out: ExecutionRecord[] = [];
-    for (const e of stored) out.push(await this.withRederivation(e));
+    for (const e of stored) out.push(await this.applyRederivation(e));
     return out.sort(byInstant((e) => e.started_at));
   }
 
@@ -1391,7 +1391,7 @@ export class RecordStore {
         if (err instanceof Deno.errors.NotFound) continue;
         throw err;
       }
-      return await this.withRederivation(e);
+      return await this.applyRederivation(e);
     }
     return null;
   }

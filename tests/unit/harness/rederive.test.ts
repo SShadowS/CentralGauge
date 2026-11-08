@@ -16,7 +16,14 @@ import {
 } from "../../../src/harness/rederive.ts";
 import { deriveOutcome } from "../../../src/harness/execution.ts";
 import { recordCellProblems } from "../../../src/harness/egress.ts";
-import { campaign, execution, manifest, telemetry } from "./fixtures.ts";
+import { buildProgress } from "../../../src/harness/progress.ts";
+import {
+  campaign,
+  execution,
+  judgment,
+  manifest,
+  telemetry,
+} from "./fixtures.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
 const PROBE = "tests/fixtures/harness/claude-code/probe.jsonl";
@@ -171,6 +178,60 @@ const sha256 = async (path: string) =>
       await crypto.subtle.digest("SHA-256", await Deno.readFile(path)),
     ),
   ].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+Deno.test("progress (H-78): a re-derivation's termination and cost are shown; a refused overlay is listed, not counted, and its cell stays finished", async () => {
+  const s = await stored(await forkProbe());
+  await s.store.writeCampaign(s.c);
+  const before = await buildProgress(s.root, s.c.id);
+  assertEquals(before.terminations, { harness_crash: 1 });
+  await rederive(s.store, (await s.store.executions(s.c.id))[0]!);
+  const p = await buildProgress(s.root, s.c.id);
+  assertEquals(p.terminations, { completed: 1 });
+  assert(p.arms["plain"]!.cost_usd > 0);
+  assertEquals(p.unreadable, []);
+  // The raw log changes after the re-derivation: the overlay is refused.
+  await Deno.writeTextFile(join(s.run, "raw.jsonl"), "{}\n");
+  const q = await buildProgress(s.root, s.c.id);
+  assertEquals(q.finished_cells, 1);
+  assertEquals(q.terminations, { unknown: 1 });
+  assertEquals(q.arms["plain"]!.cost_usd, 0);
+  assertEquals(q.arms["plain"]!.cost_missing, 1);
+  assertEquals(q.unreadable.length, 1);
+  assert(q.unreadable[0]!.reason.startsWith("re-derivation: "));
+});
+
+Deno.test("progress (H-78 r2 #13): a judgment decides the cell even when the overlay is refused; without one a refused overlay is unknown", async () => {
+  const s = await stored(
+    await forkProbe(),
+    0,
+    null,
+    undefined,
+    false,
+    { did_work: false },
+  );
+  await s.store.writeCampaign(s.c);
+  const e = (await s.store.executions(s.c.id))[0]!;
+  await rederive(s.store, e);
+  await s.store.writeJudgment(judgment(s.c, e, true));
+  await Deno.writeTextFile(join(s.run, "raw.jsonl"), "{}\n");
+  const p = await buildProgress(s.root, s.c.id);
+  assertEquals(
+    [p.judged_cells, p.pass_cells, p.unscored_policy_cells, p.unknown_cells],
+    [1, 1, 0, 0],
+  );
+  // The same refused overlay with no judgment: the outcome is unknown.
+  await Deno.remove(join(s.root, "judgments", e.id), { recursive: true });
+  const q = await buildProgress(s.root, s.c.id);
+  assertEquals(
+    [
+      q.judged_cells,
+      q.unscored_policy_cells,
+      q.awaiting_judgment_cells,
+      q.unknown_cells,
+    ],
+    [0, 0, 0, 1],
+  );
+});
 
 Deno.test("rederive (R-10): a stored fork run re-derives to completed with cost and a trace; the execution file is untouched and the store applies the overlay with its provenance", async () => {
   const s = await stored(await forkProbe());

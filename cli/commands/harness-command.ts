@@ -50,6 +50,10 @@ import type { EnvOptions, OpenEnv } from "./harness-env.ts";
 import type { EgressState, MarkerState } from "../../src/harness/egress.ts";
 import { canonicalJSON } from "../../shared/canonical.ts";
 import {
+  progressSnapshot,
+  renderProgress,
+} from "../../src/harness/progress.ts";
+import {
   CentralGaugeError,
   ConfigurationError,
   ValidationError,
@@ -3484,6 +3488,30 @@ export function registerHarnessCommand(
         console.log(
           opts.json ? JSON.stringify(report, null, 2) : renderReport(report),
         );
+      })
+    );
+
+  parent
+    .command(
+      "progress <id:string>",
+      "Live progress of a campaign or an experiment's newest campaign (read-only, results store only)",
+    )
+    .option("--results-dir <dir:string>", "Harness records root", {
+      default: "results/harness",
+    })
+    .option("--campaign <id:string>", "Campaign id (with an experiment id)")
+    .option(
+      "--concurrency <n:integer>",
+      "Concurrency for the ETA (default: observed)",
+    )
+    .option("--json", "Print the progress as JSON")
+    .action((opts, id: string) =>
+      fail(async () => {
+        const p = await progressSnapshot(opts.resultsDir, id, {
+          campaign: opts.campaign,
+          concurrency: opts.concurrency,
+        });
+        console.log(opts.json ? JSON.stringify(p, null, 2) : renderProgress(p));
       })
     );
 
