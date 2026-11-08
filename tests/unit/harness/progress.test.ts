@@ -1,6 +1,9 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
-import { RecordStore } from "../../../src/harness/records.ts";
+import {
+  type ExecutionRecord,
+  RecordStore,
+} from "../../../src/harness/records.ts";
 import {
   buildProgress,
   renderProgress,
@@ -23,8 +26,11 @@ async function tree(root: string): Promise<string[]> {
   const walk = async (d: string) => {
     for await (const e of Deno.readDir(d)) {
       const p = join(d, e.name);
+      const st = await Deno.stat(p);
+      out.push(
+        `${p}:${e.isDirectory ? "dir" : st.size}:${st.mtime?.getTime()}`,
+      );
       if (e.isDirectory) await walk(p);
-      else out.push(`${p}:${(await Deno.stat(p)).size}`);
     }
   };
   await walk(root);
@@ -171,4 +177,203 @@ Deno.test("progress: a missing results dir creates nothing", async () => {
   const root = join(await testTempDir(), "absent");
   await assertRejects(() => buildProgress(root, "x"), Error);
   assertEquals(await Deno.stat(root).then(() => true, () => false), false);
+});
+
+const writeAll = async (store: RecordStore, es: ExecutionRecord[]) => {
+  for (const e of es) await store.writeExecution(e);
+};
+
+Deno.test("progress (r2 #1): a truncated or vanished requested campaign is named, not 'unknown'", async () => {
+  const { root, c } = await setup();
+  await Deno.writeTextFile(join(root, "campaigns", `${c.id}.json`), '{"v":1,');
+  const err = await assertRejects(() => buildProgress(root, c.id), Error);
+  assertStringIncludes(err.message, `campaign ${c.id} unreadable`);
+  assertEquals((err as { code?: string }).code !== "HARNESS_NO_CAMPAIGN", true);
+  await Deno.remove(join(root, "campaigns", `${c.id}.json`));
+  await assertRejects(() => buildProgress(root, c.id), Error, "No campaign");
+});
+
+Deno.test("progress (r2 #2): null cost is counted as missing, not as zero spend", async () => {
+  const { root, store, c } = await setup();
+  await writeAll(store, [
+    execution(c, { arm: "plain" }, {
+      telemetry: telemetry(null),
+      validity: {
+        incomplete_telemetry: ["cost_usd"],
+        incomplete_observed: [],
+        infra_exposed: false,
+      },
+    }),
+    execution(c, { arm: "skills" }, { telemetry: telemetry(2) }),
+  ]);
+  const p = await buildProgress(root, c.id);
+  assertEquals(p.arms["plain"]!.cost_missing, 1);
+  assertEquals(p.arms["skills"]!.cost_missing, 0);
+  const text = renderProgress(p);
+  assertStringIncludes(text, "estimated");
+  assertStringIncludes(text, "(1 without cost)");
+});
+
+Deno.test("progress (r2 #4): executions that do not fit the plan are skipped and listed", async () => {
+  const { root, store, c } = await setup();
+  await writeAll(store, [
+    execution(c, { task: "HX-001" }, { block: 99 }),
+    execution(c, { task: "HX-001" }, { task_id: "HX-002" }),
+    execution(c, { task: "HX-001" }, { arm: "toString" }),
+    execution(c, { task: "HX-001", arm: "skills" }),
+  ]);
+  const p = await buildProgress(root, c.id);
+  assertEquals(p.finished_cells, 1);
+  assertEquals(p.started.executions, 1);
+  assertEquals(p.unreadable.length, 3);
+  assertEquals(p.tasks["HX-001"], { plain: 0, skills: 1 });
+});
+
+Deno.test("progress (r2 #5): the latest judgment is the one RecordStore orders last (started_at)", async () => {
+  const { root, store, c } = await setup();
+  const e = execution(c);
+  await store.writeExecution(e);
+  await store.writeJudgment(
+    judgment(c, e, true, { started_at: at(12), ended_at: at(30) }),
+  );
+  await store.writeJudgment(
+    judgment(c, e, false, { started_at: at(20), ended_at: at(25) }),
+  );
+  const p = await buildProgress(root, c.id);
+  assertEquals([p.pass_cells, p.fail_cells], [0, 1]);
+});
+
+Deno.test("progress (r2 #6): policy-unscored latest execution is unscored; a retry replaces it", async () => {
+  const { root, store, c } = await setup();
+  const bad = execution(c, {}, {
+    termination: "setup_failed",
+    did_work: false,
+    started_at: at(1),
+    ended_at: at(2),
+  });
+  await store.writeExecution(bad);
+  let p = await buildProgress(root, c.id);
+  assertEquals(
+    [p.unscored_policy_cells, p.unscored_cells, p.awaiting_judgment_cells],
+    [1, 1, 0],
+  );
+  await store.writeExecution(
+    execution(c, { attempt: 2, run_kind: "auto_retry", retry_of: bad.id }, {
+      started_at: at(3),
+      ended_at: at(4),
+    }),
+  );
+  p = await buildProgress(root, c.id);
+  assertEquals(
+    [p.unscored_policy_cells, p.unscored_cells, p.awaiting_judgment_cells],
+    [0, 0, 1],
+  );
+});
+
+Deno.test("progress (r2 #7): concurrency must be a positive integer", async () => {
+  const { root, c } = await setup();
+  for (const n of [0, -1, 1.5, NaN]) {
+    await assertRejects(
+      () => buildProgress(root, c.id, { concurrency: n }),
+      Error,
+      "concurrency",
+    );
+  }
+});
+
+Deno.test("progress (r2 #9): sub-millisecond overlap counts as concurrent", async () => {
+  const { root, store, c } = await setup();
+  const t = (f: string) => `2026-10-01T10:00:00.${f}Z`;
+  await writeAll(store, [
+    execution(c, { arm: "plain" }, {
+      started_at: t("000100"),
+      ended_at: t("000900"),
+    }),
+    execution(c, { arm: "skills" }, {
+      started_at: t("000500"),
+      ended_at: t("000700"),
+    }),
+  ]);
+  assertEquals((await buildProgress(root, c.id)).eta.concurrency, 2);
+});
+
+Deno.test("progress (r2 #11): a manual rerun replaces a judged pass with an awaiting cell", async () => {
+  const { root, store, c } = await setup();
+  const first = execution(c, {}, { started_at: at(1), ended_at: at(2) });
+  await store.writeExecution(first);
+  await store.writeJudgment(judgment(c, first, true));
+  let p = await buildProgress(root, c.id);
+  assertEquals([p.pass_cells, p.awaiting_judgment_cells], [1, 0]);
+  await store.writeExecution(
+    execution(c, { run_kind: "manual_rerun", attempt: 2 }, {
+      started_at: at(5),
+      ended_at: at(6),
+    }),
+  );
+  p = await buildProgress(root, c.id);
+  assertEquals([p.pass_cells, p.awaiting_judgment_cells], [0, 1]);
+  assertEquals(p.finished_cells, 1);
+  assertEquals(p.executions.by_run_kind.manual_rerun, 1);
+});
+
+Deno.test("progress (r2 #11): several repeats and the null wall_ms fallback", async () => {
+  const root = await testTempDir();
+  const store = new RecordStore(root);
+  const c = await campaign({ repeats: 2 });
+  await store.writeCampaign(c);
+  await writeAll(store, [
+    execution(c, { task: "HX-001", repeat: 1 }),
+    execution(c, { task: "HX-001", repeat: 2 }),
+  ]);
+  const p = await buildProgress(root, c.id);
+  assertEquals(p.planned_cells, 8);
+  assertEquals(p.tasks_planned["HX-001"], 2);
+  assertEquals(p.tasks["HX-001"], { plain: 2, skills: 0 });
+  assertEquals(p.arms["plain"]!.planned, 4);
+  // fixture wall_ms is null: started 10:01, ended 10:11
+  assertEquals(p.arms["plain"]!.mean_wall_ms, 600000);
+});
+
+Deno.test("progress (r2 #12): --campaign must belong to the experiment and exist", async () => {
+  const { root, store, c } = await setup();
+  const other = await campaign({
+    id: "00000000-0000-4000-8000-000000000009",
+    experiment: { ...c.experiment, id: "other-exp" },
+  });
+  await store.writeCampaign(other);
+  await assertRejects(
+    () => buildProgress(root, "skills-vs-plain", { campaign: other.id }),
+    Error,
+  );
+  await assertRejects(
+    () =>
+      buildProgress(root, "skills-vs-plain", {
+        campaign: "00000000-0000-4000-8000-0000000000aa",
+      }),
+    Error,
+  );
+});
+
+Deno.test("progress (r2 #12): the JSON top-level contract", async () => {
+  const { root, c } = await setup();
+  assertEquals(Object.keys(await buildProgress(root, c.id)).sort(), [
+    "arms",
+    "awaiting_judgment_cells",
+    "campaign_id",
+    "eta",
+    "executions",
+    "experiment_id",
+    "fail_cells",
+    "finished_cells",
+    "judged_cells",
+    "pass_cells",
+    "planned_cells",
+    "started",
+    "tasks",
+    "tasks_planned",
+    "terminations",
+    "unreadable",
+    "unscored_cells",
+    "unscored_policy_cells",
+  ]);
 });

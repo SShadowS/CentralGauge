@@ -435,6 +435,33 @@ Deno.test("CLI: `harness progress --json` prints the progress with its estimate 
   assertEquals(p.started.estimate, true);
 });
 
+Deno.test("CLI: `harness progress --concurrency 0` is refused", async () => {
+  const dir = await storeWithOneCell();
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const errors: string[] = [];
+  const err = stub(console, "error", (...a: unknown[]) => {
+    errors.push(a.join(" "));
+  });
+  const before = Deno.exitCode;
+  try {
+    await cli.parse([
+      "harness",
+      "progress",
+      "skills-vs-plain",
+      "--results-dir",
+      dir,
+      "--concurrency",
+      "0",
+    ]);
+    assertEquals(Deno.exitCode, 1);
+  } finally {
+    err.restore();
+    Deno.exitCode = before;
+  }
+  assertEquals(errors.join("\n").includes("concurrency"), true);
+});
+
 Deno.test("CLI: `harness report --repeats` reaches buildReport; above the plan is refused", async () => {
   const dir = await storeWithOneCell();
   await assertRejects(

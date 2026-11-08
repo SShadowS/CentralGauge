@@ -1155,7 +1155,7 @@ export function compareInstant(a: string, b: string): number {
 }
 
 /** Ascending by exact instant, then id. */
-function byInstant<R extends { id: string }>(at: (r: R) => string) {
+export function byInstant<R extends { id: string }>(at: (r: R) => string) {
   return (a: R, b: R) =>
     compareInstant(at(a), at(b)) ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);

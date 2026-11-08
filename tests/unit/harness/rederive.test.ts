@@ -187,8 +187,9 @@ Deno.test("progress (H-78): a re-derivation's termination and cost are shown; a 
   await Deno.writeTextFile(join(s.run, "raw.jsonl"), "{}\n");
   const q = await buildProgress(s.root, s.c.id);
   assertEquals(q.finished_cells, 1);
-  assertEquals(q.terminations, {});
+  assertEquals(q.terminations, { unknown: 1 });
   assertEquals(q.arms["plain"]!.cost_usd, 0);
+  assertEquals(q.arms["plain"]!.cost_missing, 1);
   assertEquals(q.unreadable.length, 1);
   assert(q.unreadable[0]!.reason.startsWith("re-derivation: "));
 });
