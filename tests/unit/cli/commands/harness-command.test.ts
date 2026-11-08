@@ -406,6 +406,35 @@ Deno.test("CLI: `harness report --json` parses through cliffy and prints the JSO
   assertEquals(report.repeats, { planned: 1, reported: 1 });
 });
 
+Deno.test("CLI: `harness progress --json` prints the progress with its estimate labels", async () => {
+  const dir = await storeWithOneCell();
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "progress",
+      "skills-vs-plain",
+      "--results-dir",
+      dir,
+      "--json",
+      "--concurrency",
+      "3",
+    ]);
+  } finally {
+    log.restore();
+  }
+  const p = JSON.parse(printed.join("\n"));
+  assertEquals(p.campaign_id, CAMPAIGN_ID);
+  assertEquals(p.eta.source, "flag");
+  assertEquals(p.eta.concurrency, 3);
+  assertEquals(p.started.estimate, true);
+});
+
 Deno.test("CLI: `harness report --repeats` reaches buildReport; above the plan is refused", async () => {
   const dir = await storeWithOneCell();
   await assertRejects(
