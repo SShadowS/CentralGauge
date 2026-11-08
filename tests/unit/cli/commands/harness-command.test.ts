@@ -11696,6 +11696,8 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
     quarantineDir: () => qDir,
     containerFacts: () => Promise.resolve({ ...facts }),
     bchRoot: () => own,
+    // Sol r3: the fake mount sources do not exist on this host: as given
+    realPath: (p) => Promise.resolve(p),
     // Sol r2: whether the old container still exists (renamed, not removed)
     containerIdExists: (x) => {
       assertEquals(x, oldId);
@@ -11767,6 +11769,25 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
   oldStillThere = true;
   await refused(`its container (id ${oldId}) still exists`);
   oldStillThere = false;
+  // Sol r3: an evidence dir inside the records dir (the archive would be
+  // read as records again)
+  calls.length = 0;
+  await assertRejects(
+    () =>
+      recoverContainer(
+        { ...o, recreated: join(qDir, "archive") },
+        d,
+        mechanism,
+      ),
+    ConfigurationError,
+    "is inside the records dir",
+  );
+  assertEquals(calls.filter((c) => c === "reset"), []);
+  assertEquals(await Deno.readTextFile(oldFile), oldText);
+  // Sol r3: a trailing-dot alias of the shared root is the shared root
+  facts.mounts = [OWN, "C:\\ProgramData\\BcContainerHelper."];
+  await refused("mounts another BCH root than its own");
+  facts.mounts = [OWN];
   // all proofs: archived, removed from the records, a new manifest
   calls.length = 0;
   const m = await recoverContainer(o, d, mechanism);

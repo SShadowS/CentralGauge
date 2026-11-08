@@ -135,6 +135,7 @@ import {
   type ContainerFacts,
   containerIdExists,
   inspectContainerFacts,
+  normWinPath,
   recreatedProblems,
 } from "../../src/harness/recreated.ts";
 import { bchRootFor, SHARED_BCH_ROOT } from "../../src/container/bch-root.ts";
@@ -258,6 +259,8 @@ export interface EnvDeps {
   bchRoot?(name: string): string | null;
   /** H-77 Sol r2: a container with this Docker id exists (default: containerIdExists); throws when unknown. */
   containerIdExists?(id: string): Promise<boolean>;
+  /** H-77 Sol r3: a host path's real path (default: Deno.realPath: junctions, 8.3 names, aliases). */
+  realPath?(path: string): Promise<string>;
   /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
   processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
@@ -786,6 +789,33 @@ async function recoverRecreated(
     const r = bchRootFor(n);
     return r === SHARED_BCH_ROOT ? null : r;
   }))(c);
+  // Sol r3: compare real host paths (a junction, an 8.3 name or a trailing
+  // dot is the same directory); a named pipe is no directory; an
+  // unresolvable source refuses
+  const real = deps.realPath ?? Deno.realPath;
+  const resolveHost = async (p: string): Promise<string> => {
+    try {
+      return await real(p);
+    } catch (err) {
+      throw refuse(`host path ${p} cannot be resolved: ${msg(err)}`);
+    }
+  };
+  const mounts: string[] = [];
+  for (const s of facts.mounts) {
+    if (/^\\\\[.?]\\pipe\\/i.test(s)) continue;
+    mounts.push(await resolveHost(s));
+  }
+  const ownReal = own === null ? null : await resolveHost(own);
+  const sharedReal = await resolveHost(SHARED_BCH_ROOT);
+  // Sol r3: the archive never lands where records are read
+  await Deno.mkdir(evidenceDir, { recursive: true });
+  const ev = normWinPath(await resolveHost(evidenceDir));
+  const qd = normWinPath(await resolveHost(qDir));
+  if (ev === qd || ev.startsWith(`${qd}\\`)) {
+    throw refuse(
+      `the evidence dir ${evidenceDir} is inside the records dir ${qDir}`,
+    );
+  }
   const manifestBefore = await readInstanceManifest(x.inputs.resultsRoot, c);
   // Sol r2: every old id must be gone as a container (unknown refuses)
   const exists = deps.containerIdExists ?? containerIdExists;
@@ -813,9 +843,9 @@ async function recoverRecreated(
     currentId: id,
     found,
     created: facts.created,
-    mounts: facts.mounts,
-    ownRoot: own,
-    sharedRoot: SHARED_BCH_ROOT,
+    mounts,
+    ownRoot: ownReal,
+    sharedRoot: sharedReal,
     manifest: manifestBefore,
     lineageId: x.lineage.id,
     abandon,

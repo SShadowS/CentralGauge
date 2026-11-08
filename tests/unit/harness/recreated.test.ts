@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import {
   dockerTime,
+  normWinPath,
   parseContainerFacts,
   type RecreatedInput,
   recreatedProblems,
@@ -168,6 +169,32 @@ Deno.test("H-77 Sol r1 recreatedProblems: an in-use record of the old container 
     1,
   );
   assertEquals(recreatedProblems({ ...ok, found: [live], abandon: t }), []);
+});
+
+Deno.test("H-77 Sol r3 normWinPath: trailing dots and spaces per component, . and .., \\\\?\\, slashes and case all collapse to one spelling", () => {
+  const want = "c:\\programdata\\bccontainerhelper";
+  for (
+    const p of [
+      "C:\\ProgramData\\BcContainerHelper.",
+      "C:\\ProgramData\\BcContainerHelper. . ",
+      "C:\\ProgramData.\\BcContainerHelper",
+      "C:\\ProgramData\\x\\..\\BcContainerHelper",
+      "C:\\ProgramData\\.\\BcContainerHelper\\",
+      "\\\\?\\C:\\ProgramData\\BcContainerHelper",
+      "c:/programdata/bccontainerhelper/",
+    ]
+  ) assertEquals(normWinPath(p), want, p);
+  assertEquals(normWinPath("C:\\"), "c:");
+  assertEquals(normWinPath("C:\\.."), "c:", "never above the drive");
+  for (
+    const leak of [
+      "C:\\ProgramData\\BcContainerHelper.",
+      "C:\\ProgramData\\x\\..\\BcContainerHelper-Cronus282",
+    ]
+  ) {
+    const p = recreatedProblems({ ...ok, mounts: [OWN, leak] });
+    assertEquals(p.length, 1, leak);
+  }
 });
 
 Deno.test("H-77 Sol r2 recreatedProblems: an old container that still exists (renamed) refuses", () => {

@@ -115,10 +115,27 @@ export interface RecreatedInput {
   liveOldIds?: readonly string[];
 }
 
-/** Sol r1: one spelling for a Windows path: backslashes, no \\?\ prefix or trailing separator, lower case. */
-const norm = (p: string) =>
-  p.trim().replace(/\//g, "\\").replace(/^\\\\\?\\/, "").replace(/\\+$/, "")
-    .toLowerCase();
+/**
+ * Sol r1/r3: one spelling for a Windows path: backslashes, no \\?\ prefix,
+ * `.` and `..` resolved, each component's trailing dots and spaces dropped
+ * (Win32 ignores them), no trailing separator, lower case. The caller also
+ * resolves each source on the host (realPath: junctions, 8.3 names).
+ */
+export function normWinPath(p: string): string {
+  const s = p.trim().replace(/\//g, "\\").replace(/^\\\\\?\\/, "");
+  const parts: string[] = [];
+  for (const raw of s.split("\\")) {
+    const c = raw === "." || raw === ".." ? raw : raw.replace(/[. ]+$/, "");
+    if (c === "" || c === ".") continue;
+    if (c === "..") {
+      if (parts.length > 1) parts.pop();
+      continue;
+    }
+    parts.push(c);
+  }
+  return parts.join("\\").toLowerCase();
+}
+const norm = normWinPath;
 const under = (p: string, root: string) =>
   p === root || p.startsWith(`${root}\\`);
 
