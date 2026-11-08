@@ -793,7 +793,8 @@ Deno.test({
   ...quick,
 }, async () => {
   const d = new FakeDocker();
-  d.startGate = new Promise(() => {});
+  let release!: () => void;
+  d.startGate = new Promise((res) => (release = res));
   const t0 = performance.now();
   const r = await runSandbox(
     d,
@@ -803,6 +804,7 @@ Deno.test({
   assert(performance.now() - t0 < 2_000);
   assertEquals([r.started, r.confirmedGone], [false, false]);
   assertStringIncludes(r.cleanup, "did not stop");
+  release(); // lets the fake finish and close its capture handle
   // Settling inside the bounded wait confirms it, and the late container is removed.
   const l = new FakeDocker();
   let open!: () => void;
@@ -817,6 +819,8 @@ Deno.test({
     setTimeout(open, 10);
   });
   const rl = await runSandbox(l, s, [], stop.signal);
+  // The stop trigger is the interrupt, not the timeout.
+  assertEquals([rl.interrupted, rl.timedOut], [true, false]);
   assertEquals([rl.started, rl.confirmedGone, l.removed], [true, true, [
     s.name,
   ]]);
