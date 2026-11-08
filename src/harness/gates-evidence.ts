@@ -194,9 +194,14 @@ export function liveTree(
 export interface ProcessRow {
   pid: number;
   ppid: number;
-  /** The command line ("" when the OS does not show it). */
-  cmd: string;
+  /** The executable's name (e.g. docker.exe). */
+  name: string;
+  /** The command line; null when the OS does not show it. */
+  cmd: string | null;
 }
+
+/** Sol r4: the tools the harness runs against a container (docker, pwsh). */
+const CONTAINER_TOOL = /^(docker|com\.docker\.cli|pwsh|powershell)(\.exe)?$/i;
 
 /**
  * H-76 Sol r3: the live processes that may still act on the container:
@@ -226,7 +231,12 @@ export function liveHolders(
   );
   const out = new Set(liveTree(table, pid));
   for (const p of table) {
-    if (named.some((re) => re.test(p.cmd))) out.add(p.pid);
+    // Sol r4: a container tool whose command line cannot be read may be
+    // acting on it (unknown is never absence)
+    const hit = p.cmd === null
+      ? CONTAINER_TOOL.test(p.name)
+      : named.some((re) => re.test(p.cmd!));
+    if (hit) out.add(p.pid);
   }
   return [...out].filter((p) => !mine.has(p)).sort((a, b) => a - b);
 }
@@ -249,9 +259,9 @@ export async function processHolders(
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine | ConvertTo-Json -Compress",
       ]
-      : ["-A", "-o", "pid=,ppid=,args="],
+      : ["-A", "-o", "pid=,ppid=,comm=,args="],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -262,17 +272,26 @@ export async function processHolders(
     const rows = [JSON.parse(text)].flat() as {
       ProcessId: number;
       ParentProcessId: number;
+      Name: string | null;
       CommandLine: string | null;
     }[];
     table = rows.map((r) => ({
       pid: r.ProcessId,
       ppid: r.ParentProcessId,
-      cmd: r.CommandLine ?? "",
+      name: r.Name ?? "",
+      cmd: r.CommandLine ?? null,
     }));
   } else {
     table = text.split(/\r?\n/).flatMap((l) => {
-      const m = l.trim().match(/^(\d+)\s+(\d+)\s*(.*)$/);
-      return m ? [{ pid: Number(m[1]), ppid: Number(m[2]), cmd: m[3]! }] : [];
+      const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
+      return m
+        ? [{
+          pid: Number(m[1]),
+          ppid: Number(m[2]),
+          name: m[3]!,
+          cmd: m[4] || null,
+        }]
+        : [];
     });
   }
   // this very process must be listed, or the table is not trustworthy

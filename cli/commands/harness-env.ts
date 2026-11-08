@@ -747,7 +747,7 @@ async function refuseLiveGates(
   id: string,
   c: string,
   why: string,
-  g: { token: string; host: string; pid: number },
+  g: { token: string; host: string; pid: number; container: string },
   abandon: string | null | undefined,
 ): Promise<void> {
   if (abandon === g.token) return;
@@ -758,11 +758,12 @@ async function refuseLiveGates(
     try {
       // Sol r3: also any live process naming the container (an orphaned
       // `docker exec` whose pwsh parent died is cut off from gates' tree)
-      const live = await (deps.processHolders ?? processHolders)(g.pid, [
-        c,
-        id,
-        id.slice(0, 12),
-      ]);
+      // Sol r4: the record's own name too (a renamed container's orphans)
+      const names = [...new Set([c, g.container, id, id.slice(0, 12)])];
+      const live = await (deps.processHolders ?? processHolders)(
+        g.pid,
+        names,
+      );
       problem = live.length > 0
         ? `process ${g.pid}, its workers or a process naming ${c} still run (${
           live.join(", ")

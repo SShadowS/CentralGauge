@@ -233,30 +233,55 @@ Deno.test("H-76 Sol r2 liveTree: the pid and every live process reachable throug
 
 Deno.test("H-76 Sol r3 liveHolders: the gates tree plus any live process naming the container or its id (an orphaned docker exec), whole words only, never recover's own tree or its ancestors", () => {
   const ID64 = "c".repeat(64);
+  const row = (pid: number, ppid: number, cmd: string | null, name = "x") => ({
+    pid,
+    ppid,
+    name,
+    cmd,
+  });
   const table = [
-    { pid: 1, ppid: 0, cmd: "System" },
+    row(1, 0, null, "System"), // unreadable, not a container tool
     // the shell that ran recover, and recover itself with a child
-    { pid: 10, ppid: 1, cmd: "bash -c deno task harness recover Cronus281" },
-    { pid: 11, ppid: 10, cmd: "deno run main.ts harness recover Cronus281" },
-    { pid: 12, ppid: 11, cmd: "docker inspect Cronus281" },
+    row(10, 1, "bash -c deno task harness recover Cronus281"),
+    row(11, 10, "deno run main.ts harness recover Cronus281"),
+    row(12, 11, "docker inspect Cronus281"),
+    row(13, 11, null, "pwsh.exe"), // recover's own probe, unreadable
     // gates (pid 9) is dead; its pwsh died too; a docker exec lives on
-    { pid: 30, ppid: 25, cmd: "docker exec Cronus281 pwsh -c Unpublish" },
-    { pid: 31, ppid: 25, cmd: `docker exec ${ID64.slice(0, 12)} x` },
+    row(30, 25, "docker exec Cronus281 pwsh -c Unpublish"),
+    row(31, 25, `docker exec ${ID64.slice(0, 12)} x`),
     // another container whose name extends this one, and an unrelated one
-    { pid: 40, ppid: 1, cmd: "docker exec Cronus2810 x" },
-    { pid: 41, ppid: 1, cmd: "docker exec Cronus282 x" },
+    row(40, 1, "docker exec Cronus2810 x"),
+    row(41, 1, "docker exec Cronus282 x"),
   ];
   const names = ["Cronus281", ID64, ID64.slice(0, 12)];
   assertEquals(liveHolders(table, 9, names, 11), [30, 31]);
   // the gates pid alive with a child: both count
-  const live = [...table, { pid: 9, ppid: 1, cmd: "deno gate-task gates" }, {
-    pid: 50,
-    ppid: 9,
-    cmd: "pwsh -NoExit -Command -",
-  }];
+  const live = [
+    ...table,
+    row(9, 1, "deno gate-task gates"),
+    row(50, 9, "pwsh -NoExit -Command -"),
+  ];
   assertEquals(liveHolders(live, 9, names, 11), [9, 30, 31, 50]);
+  // Sol r4: a docker or pwsh whose command line cannot be read counts
+  const hidden = [
+    ...table.slice(0, 5),
+    row(60, 1, null, "docker.exe"),
+    row(61, 1, null, "powershell.exe"),
+    row(62, 1, null, "svchost.exe"),
+  ];
+  assertEquals(liveHolders(hidden, 9, names, 11), [60, 61]);
+  // Sol r4: the record's old name matches too (a renamed container)
+  assertEquals(
+    liveHolders(
+      [...table.slice(0, 5), row(70, 1, "docker exec OldName x")],
+      9,
+      [...names, "OldName"],
+      11,
+    ),
+    [70],
+  );
   // nothing names it and the tree is gone: none
-  assertEquals(liveHolders(table.slice(0, 3), 9, names, 11), []);
+  assertEquals(liveHolders(table.slice(0, 5), 9, names, 11), []);
 });
 
 Deno.test("H-76 Sol r1-r3 processHolders: reads this host's table; recover's own process never counts; a bad pid throws", async () => {
@@ -266,14 +291,19 @@ Deno.test("H-76 Sol r1-r3 processHolders: reads this host's table; recover's own
     stderr: "null",
   }).spawn();
   const pid = child.pid;
+  // The live host table also holds other sessions' processes (a docker or
+  // pwsh starting or exiting has no readable command line for an instant
+  // and counts): assert on our own processes only.
   try {
     // our own child is in our (recover's) tree: excluded
-    assertEquals(await processHolders(pid, ["CgH76NoSuchContainer"]), []);
+    const h = await processHolders(pid, ["CgH76NoSuchContainer"]);
+    assert(!h.includes(pid) && !h.includes(Deno.pid), `${h}`);
   } finally {
     child.kill();
     await child.status;
   }
-  assertEquals(await processHolders(pid, ["CgH76NoSuchContainer"]), []);
+  const after = await processHolders(pid, ["CgH76NoSuchContainer"]);
+  assert(!after.includes(pid) && !after.includes(Deno.pid), `${after}`);
   let threw = false;
   try {
     await processHolders(0, []);
