@@ -1152,13 +1152,27 @@ Deno.test("H-71: with the flag, a missing or other value, and Restrictive in ora
   await write(dir, "overlay/Test/src/O.al", RESTRICTIVE_CU(80103));
   const band = oracleBandOf(2)![0];
   await write(dir, "oracle/src/O.al", RESTRICTIVE_CU(band));
+  // Sol r1 LOW: correct/, a naive outside Test/, Restrictive only in a comment.
+  await write(dir, "correct/Core/src/C.al", RESTRICTIVE_CU(70051));
+  await write(dir, "naive/x/Core/src/M.al", RESTRICTIVE_CU(70052));
+  await write(
+    dir,
+    "reference-tests/Test/src/K.al",
+    RESTRICTIVE_CU(80104, "").replace(
+      "Subtype = Test;",
+      "Subtype = Test;\n    // TestPermissions = Restrictive;",
+    ),
+  );
   const got = (await permissionProblems(dir)).map((p) => p.split(":")[0])
     .sort();
   assertEquals(got, [
+    "correct/Core/src/C.al",
+    "naive/x/Core/src/M.al",
     "naive/x/Test/src/N.al",
     "naive/y/Test/src/N.al",
     "oracle/src/O.al",
     "overlay/Test/src/O.al",
+    "reference-tests/Test/src/K.al",
     "reference-tests/Test/src/R.al",
   ]);
 });
