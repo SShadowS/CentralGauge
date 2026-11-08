@@ -90,9 +90,14 @@ export interface RecreatedInput {
   /** The instance manifest's lineage and creation time; null when none. */
   manifest: { lineage_id: string; created_at: string } | null;
   lineageId: string;
+  /** Sol r1: `--abandon <token>`, the one in-use record (of the old container) attested gone. */
+  abandon?: string | null;
 }
 
-const norm = (p: string) => p.trim().replace(/[\\/]+$/, "").toLowerCase();
+/** Sol r1: one spelling for a Windows path: backslashes, no \\?\ prefix or trailing separator, lower case. */
+const norm = (p: string) =>
+  p.trim().replace(/\//g, "\\").replace(/^\\\\\?\\/, "").replace(/\\+$/, "")
+    .toLowerCase();
 const under = (p: string, root: string) =>
   p === root || p.startsWith(`${root}\\`);
 
@@ -116,6 +121,13 @@ export function recreatedProblems(o: RecreatedInput): string[] {
       );
       continue;
     }
+    // Sol r1: an in-use claim (a run or a recover) may belong to a live
+    // owner still addressing the container by name: only an attested one
+    if (r.state === "in_use" && r.token !== o.abandon) {
+      out.push(
+        `${f.file}: in use by ${r.by} (pid ${r.pid}, token ${r.token}): a live run may hold it; if it is gone, pass --abandon ${r.token}`,
+      );
+    }
     const at = Date.parse(r.at);
     if (!(at < created)) {
       out.push(
@@ -132,7 +144,9 @@ export function recreatedProblems(o: RecreatedInput): string[] {
     const mounts = o.mounts.map(norm);
     const bch = o.mounts.filter((m) => {
       const n = norm(m);
-      return under(n, shared) || n.startsWith(`${shared}-`);
+      // inside a BCH root, or (Sol r1) an ancestor of them all (C:\ProgramData, C:\)
+      return under(n, shared) || n.startsWith(`${shared}-`) ||
+        shared.startsWith(`${n}\\`);
     });
     const foreign = bch.filter((m) => !under(norm(m), own));
     if (foreign.length > 0) {

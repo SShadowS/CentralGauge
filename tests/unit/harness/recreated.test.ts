@@ -133,3 +133,39 @@ Deno.test("H-77 recreatedProblems: each missing proof refuses with its reason", 
     [],
   );
 });
+
+Deno.test("H-77 Sol r1 recreatedProblems: an ancestor of the BCH roots refuses (C:\\ProgramData, C:\\, any spelling); \\\\?\\ and forward-slash spellings of the own root pass", () => {
+  for (
+    const leak of [
+      "C:\\ProgramData",
+      "C:\\",
+      "c:/programdata/",
+      "\\\\?\\C:\\ProgramData",
+    ]
+  ) {
+    const p = recreatedProblems({ ...ok, mounts: [OWN, leak] });
+    assertEquals(p.length, 1, leak);
+    assertStringIncludes(p[0]!, "mounts another BCH root", leak);
+  }
+  assertEquals(
+    recreatedProblems({
+      ...ok,
+      mounts: [`\\\\?\\${OWN}`, OWN.replace(/\\/g, "/") + "/Extensions"],
+    }),
+    [],
+  );
+});
+
+Deno.test("H-77 Sol r1 recreatedProblems: an in-use record of the old container (a run or a recover claim) refuses unless --abandon names its token", () => {
+  const t = crypto.randomUUID();
+  const live = rec({ state: "in_use", token: t, reason: undefined });
+  const p = recreatedProblems({ ...ok, found: [live] });
+  assertEquals(p.length, 1);
+  assertStringIncludes(p[0]!, `pass --abandon ${t}`);
+  assertEquals(
+    recreatedProblems({ ...ok, found: [live], abandon: crypto.randomUUID() })
+      .length,
+    1,
+  );
+  assertEquals(recreatedProblems({ ...ok, found: [live], abandon: t }), []);
+});

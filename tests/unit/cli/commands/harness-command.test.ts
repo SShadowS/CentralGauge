@@ -11702,7 +11702,8 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
     containers: ["Cronus281"],
     lineage,
     symbolStore: t.repo.symbolStore,
-    bcEgressOverride: "no NST firewall rule in the image",
+    // Sol r1: the CLI passes no egress override to recover (only the
+    // container's own env check row counts)
     recreated: evidence,
   };
   const resultsRoot = join(t.repo.root, "results", "harness");
@@ -11736,7 +11737,11 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
   await refused("no baseline of Cronus281");
   // a baseline, but the recreate is not after the record
   await tick();
-  await baselineCreate(o, d, mechanism);
+  await baselineCreate(
+    { ...o, bcEgressOverride: "no NST firewall rule in the image" },
+    d,
+    mechanism,
+  );
   facts.created = new Date(at - 1_000).toISOString();
   await refused("the container was not created after it");
   facts.created = new Date(at + 1).toISOString();

@@ -730,7 +730,7 @@ export async function recoverContainer(
     }
     try {
       return o.recreated
-        ? await recoverRecreated(o.recreated, deps, x, c, id, token)
+        ? await recoverRecreated(o.recreated, abandon, deps, x, c, id, token)
         : await recoverClaimed({ ...o, abandon }, deps, x, c, id, token);
     } finally {
       await releaseOwned(qDir, id, token, { recover: true }).catch((err) =>
@@ -751,14 +751,16 @@ export async function recoverContainer(
  * container's records (another Docker id, same name) go only when the
  * container was created after every one of them, mounts only its own
  * bch-roots.json root, and has a baseline of this lineage made after the
- * recreate whose env_fp the env check confirms (recreatedProblems + the env
- * check), all before any reset. Then the normal reset, inventory check and a
- * clean capture write a new manifest; each record is copied byte for byte
- * into the evidence dir (create-new) with a note, and only then removed if
- * unchanged. Never a record of the current container.
+ * recreate whose env_fp the env check's row confirms, all before any reset;
+ * an in-use record of the old container needs --abandon <its token>. Then
+ * the normal reset, inventory check and a clean capture write a new
+ * manifest; each record is MOVED into the evidence dir (atomic, never over a
+ * file, never deleted) and a note written. Never a record of the current
+ * container.
  */
 async function recoverRecreated(
   evidenceDir: string,
+  abandon: string | null,
   deps: EnvDeps,
   x: Awaited<ReturnType<typeof lineageContext>>,
   c: string,
@@ -792,19 +794,21 @@ async function recoverRecreated(
     sharedRoot: SHARED_BCH_ROOT,
     manifest: manifestBefore,
     lineageId: x.lineage.id,
+    abandon,
   });
   if (problems.length === 0) {
-    // the baseline's env_fp is the live one and the lineage is admissible
+    // Sol r1: this container's row only (its manifest is of the lineage and
+    // its env_fp is the live one); a lineage-wide refusal such as NST egress
+    // is a judging question, not this record's
     const ch = await checkEnvironments(
       deps.inspect(),
       x.mechanism,
       [c],
       x.inputs,
     );
-    if (!ch.admissible) {
-      problems.push(
-        `env check: ${ch.refusal ?? ch.rows[0]?.why ?? "not admissible"}`,
-      );
+    const row = ch.rows[0];
+    if (!row || row.why) {
+      problems.push(`env check: ${row?.why ?? "no row"}`);
     }
   }
   if (problems.length > 0) throw refuse(problems.join("; "));
@@ -850,14 +854,46 @@ async function recoverRecreated(
         "health",
       );
     }
-    // archive: byte-for-byte copies, never over an existing file
+    // Sol r1: archive by an atomic move (the record as it is at that
+    // moment, never deleted), never over an existing file; a record that
+    // changed since the check is restored (create-new) and refuses
     await Deno.mkdir(evidenceDir, { recursive: true });
     for (const f of found) {
+      const target = join(evidenceDir, basename(f.file));
+      if (await Deno.stat(target).then(() => true, () => false)) {
+        throw refuse(`${target} exists already: nothing archived`);
+      }
+    }
+    const changed: string[] = [];
+    for (const f of found) {
       const name = basename(f.file);
-      await Deno.writeTextFile(join(evidenceDir, name), f.text!, {
-        createNew: true,
-      });
+      const target = join(evidenceDir, name);
+      try {
+        await Deno.rename(f.file, target);
+      } catch (err) {
+        throw refuse(
+          `moving ${f.file} to ${target} failed (the evidence dir must be on the records' volume): ${
+            msg(err)
+          }`,
+        );
+      }
       archived.push(name);
+      const now = await Deno.readTextFile(target);
+      if (now !== f.text) {
+        changed.push(f.file);
+        await Deno.writeTextFile(f.file, now, { createNew: true }).catch(
+          (err) => {
+            if (!(err instanceof Deno.errors.AlreadyExists)) throw err;
+          },
+        );
+      }
+    }
+    if (changed.length > 0) {
+      throw refuse(
+        `record(s) changed after the check, archived as found and restored: ${
+          changed.join(", ")
+        }; run harness recover again`,
+      );
     }
     const at = new Date().toISOString();
     await Deno.writeTextFile(
@@ -885,15 +921,6 @@ async function recoverRecreated(
   } catch (err) {
     await dropManifest();
     throw err;
-  }
-  const changed = await removeUnchanged(found);
-  if (changed.length > 0) {
-    await dropManifest();
-    throw refuse(
-      `record(s) changed during recovery, kept (their earlier copies are in ${evidenceDir}): ${
-        changed.join(", ")
-      }; run harness recover again`,
-    );
   }
   return made;
 }
