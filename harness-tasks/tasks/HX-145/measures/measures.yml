@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "88135/BranchRerateRoundsToCents": 1
+    "88135/BranchRerateQueuesOnlyRatesChanged": 1
+    "88135/NightRerateRoundsEveryBranch": 1
+    "88135/NightRerateQueuesNoContractChanged": 1
+    "88135/PlainContractChangeQueuesNotification": 1
+    "88135/ContractChangeQueuesAfterNightRerate": 1
+    "88135/ContractChangeQueuesAfterFailedNight": 1
+    "88135/NightRerateRunsAgainAfterFailure": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
