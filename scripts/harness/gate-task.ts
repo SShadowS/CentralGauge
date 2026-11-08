@@ -493,11 +493,15 @@ export async function runGate(o: {
       2,
     ),
   );
-  // H-74 Sol r1: a failed final cleanup keeps the gates hold's in-use record
+  // H-74 Sol r1/r2: the gates hold's in-use record is kept after a failed
+  // final cleanup and after any infra end (a timed-out SOAP run may still
+  // execute on the NST). `clean` guards exclusivity only: the final prenuke
+  // is best-effort, and a lent judge's cleanliness comes from the campaign
+  // (lineage reset before every hold, env_fp checked on rejoin).
   return {
     file,
     code: infra ? 3 : promoted ? 0 : 1,
-    clean: cleanupError === null,
+    clean: !infra && cleanupError === null,
   };
 }
 

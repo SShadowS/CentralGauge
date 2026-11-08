@@ -348,6 +348,23 @@ Deno.test("runGate: a staging exception still cleans up and writes an infra repo
   );
 });
 
+Deno.test("runGate (H-74 Sol r2): an infra end is never clean, even with a clean final cleanup", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  await Deno.remove(join(source.refappDir, "Reporting"), { recursive: true });
+  const r = await runGate({
+    bc: mockBc({}),
+    loaded,
+    source,
+    container: "Mock",
+    outDir: await tmp(),
+    tmpRoot,
+    tagTree: null,
+  });
+  assertEquals([r.code, r.clean], [3, false]);
+  const report = JSON.parse(await Deno.readTextFile(r.file));
+  assertEquals(report.cleanup_error, null);
+});
+
 Deno.test("runGate (H-74 Sol r1): clean is true after a clean final cleanup and false when the final prenuke fails, whatever the exit code", async () => {
   const { loaded, source, tmpRoot } = await fixture();
   const run = async (bc: GateBc) =>

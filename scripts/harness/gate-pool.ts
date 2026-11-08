@@ -10,8 +10,9 @@ export interface GateOutcome {
   code: number;
   file: string | null;
   /**
-   * H-74 Sol r1: false when the gate touched the container and its final
-   * cleanup (prenuke, dispose) failed; absent or true otherwise.
+   * H-74 Sol r1/r2: false when the gate touched the container and then
+   * ended infra or its final cleanup (prenuke, dispose) failed; absent or
+   * true otherwise (e.g. the container was never touched).
    */
   clean?: boolean;
 }
