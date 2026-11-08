@@ -117,6 +117,9 @@ export class FakeDocker implements DockerCli {
   runError: Error | null = null;
   /** Holds run() at the spawn, after the capture files exist (a slow spawn). */
   startGate: Promise<void> | null = null;
+  private markCaptured: () => void = () => {};
+  /** Resolves once run() has created both capture files (then it waits on startGate). */
+  capturesCreated: Promise<void> = new Promise((r) => (this.markCaptured = r));
   /** Fails after the spawn (capture broke mid-run). */
   failAfterStart: Error | null = null;
   behavior: RunBehavior = () => Promise.resolve(0);
@@ -189,9 +192,10 @@ export class FakeDocker implements DockerCli {
     if (this.runError) throw this.runError;
     const out = await Deno.open(c.stdoutPath, { write: true, createNew: true });
     await Deno.writeTextFile(c.stderrPath, "", { createNew: true });
-    // After the capture files, like the real spawn: once the gate opens only
-    // microtasks remain, so a bounded wait for the start cannot lose a race
-    // against slow file I/O under suite load.
+    // After the capture files, like the real spawn. A test opens the gate only
+    // after capturesCreated, so once it opens only microtasks remain and a
+    // bounded wait for the start cannot lose a race against slow file I/O.
+    this.markCaptured();
     if (this.startGate) await this.startGate;
     const call = parseRunArgs(args);
     this.lastCapture = c;
