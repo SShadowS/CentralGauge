@@ -13,10 +13,11 @@ import {
   CampaignRecordSchema,
   compareInstant,
   type ExecutionRecord,
-  ExecutionRecordSchema,
   JudgmentRecordSchema,
   readRecord,
+  RecordStore,
   type RunKind,
+  StoredExecutionSchema,
 } from "./records.ts";
 
 export interface Unreadable {
@@ -161,13 +162,30 @@ export async function buildProgress(
 ): Promise<Progress> {
   const unreadable: Unreadable[] = [];
   const c = await resolveCampaign(root, id, opts.campaign, unreadable);
-  const execs = await readTolerant(
+  const stored = await readTolerant(
     root,
     join(root, "executions", c.id),
-    ExecutionRecordSchema,
+    StoredExecutionSchema,
     (stem) => ({ id: stem, campaign_id: c.id }),
     unreadable,
   );
+  // R-10: apply re-derivations as `report` does. A refused overlay keeps the
+  // stored record (its cell is still finished) but is listed and not costed.
+  const store = new RecordStore(root);
+  const refused = new Set<string>();
+  const execs: ExecutionRecord[] = [];
+  for (const s of stored) {
+    try {
+      execs.push(await store.applyRederivation(s));
+    } catch (err) {
+      refused.add(s.id);
+      execs.push(s);
+      unreadable.push({
+        path: join(root, "executions", c.id, `${s.id}.json`),
+        reason: `re-derivation: ${reason(err).split("\n")[0]}`,
+      });
+    }
+  }
 
   const latest = new Map<string, ExecutionRecord>();
   for (const e of execs) {
@@ -202,6 +220,7 @@ export async function buildProgress(
   const terminations: Record<string, number> = {};
   for (const e of execs) {
     by_run_kind[e.run_kind]++;
+    if (refused.has(e.id)) continue; // overlay refused: no cost, no termination
     terminations[e.termination] = (terminations[e.termination] ?? 0) + 1;
     const s = arms[e.arm];
     if (!s) continue;
