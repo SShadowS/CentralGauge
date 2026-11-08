@@ -535,3 +535,88 @@ Deno.test("H-74 recordHolds: --wait-free 0 refuses a busy container at once", as
   assert("why" in h);
   assertStringIncludes(h.why, "in use by campaign");
 });
+
+// ---- H-76: evidence, heartbeat and the token check ----
+
+Deno.test("H-76 recordHolds: afterClaim runs once the record is ours; when it throws (no heartbeat) the untouched claim is released and the container refused; done reports released or kept", async () => {
+  const recs = fakeRecords();
+  const ends: string[] = [];
+  const hold = recordHolds({
+    claim: recs.claim("gates"),
+    release: recs.release,
+    waitMs: 0,
+    afterClaim: (c, id) => {
+      recs.events.push(`after:${c}:${id}`);
+      return c === "Cronus283"
+        ? Promise.reject(new Error("heartbeat not written"))
+        : Promise.resolve();
+    },
+    done: (c, _id, released) => {
+      ends.push(`${c}:${released}`);
+      return Promise.resolve();
+    },
+    log: () => {},
+  });
+  const bad = await hold("Cronus283");
+  assert("why" in bad);
+  assertStringIncludes(bad.why, "heartbeat not written");
+  assertEquals(recs.held.has("Cronus283"), false, "released untouched");
+  const a = await hold("Cronus281"), b = await hold("Cronus282");
+  assert("release" in a && "release" in b);
+  assert(recs.events.includes("after:Cronus281:id-Cronus281-2"));
+  await a.release(true);
+  await b.release(false);
+  assertEquals(ends, ["Cronus283:true", "Cronus281:true", "Cronus282:false"]);
+  assertEquals(recs.held.get("Cronus282"), "gates");
+});
+
+Deno.test("H-76 gates: the record is rechecked before every job; once it is no longer this run's, no further job runs there, the task goes elsewhere and nothing is released", async () => {
+  const recs = fakeRecords();
+  const lines: string[] = [];
+  const ran: string[] = [];
+  const ends: string[] = [];
+  const r = await runGatePool({
+    containers: ["Cronus281", "Cronus282"],
+    tasks: ["HX-101", "HX-102", "HX-103"],
+    gate: async (c, t) => {
+      ran.push(`${t}@${c}`);
+      // recover takes 281 over after its first job
+      if (c === "Cronus281") recs.held.set(c, "recover");
+      await tick();
+      return { code: 0, file: t };
+    },
+    admit: admitAll,
+    hold: recordHolds({
+      claim: recs.claim("gates"),
+      release: recs.release,
+      waitMs: 0,
+      owned: (c) => Promise.resolve(recs.held.get(c) === "gates"),
+      done: (c, _id, released) => {
+        ends.push(`${c}:${released}`);
+        return Promise.resolve();
+      },
+      log: quiet(lines),
+    }),
+    log: quiet(lines),
+  });
+  // the lost hold is stopped (heartbeat) without a release
+  assertEquals(ends.sort(), ["Cronus281:false", "Cronus282:true"]);
+  assertEquals(ran.filter((x) => x.endsWith("@Cronus281")).length, 1);
+  assertEquals(r.jobs.map((j) => j.task).sort(), [
+    "HX-101",
+    "HX-102",
+    "HX-103",
+  ]);
+  assert(r.jobs.every((j) => j.code === 0));
+  assertEquals(recs.held.get("Cronus281"), "recover", "never released");
+  assert(
+    !recs.events.some((e) => e.startsWith("release:Cronus281")),
+    recs.events.join(","),
+  );
+  assert(
+    lines.some((l) =>
+      l.startsWith("[FAIL] Cronus281") && l.includes("no longer this run's")
+    ),
+    lines.join("\n"),
+  );
+});
