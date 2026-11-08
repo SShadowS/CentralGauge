@@ -191,12 +191,56 @@ export function liveTree(
   return [...out].sort((a, b) => a - b);
 }
 
+export interface ProcessRow {
+  pid: number;
+  ppid: number;
+  /** The command line ("" when the OS does not show it). */
+  cmd: string;
+}
+
 /**
- * The live process tree of `pid` on this host (liveTree over the process
- * table: Win32_Process on Windows, `ps -A` elsewhere). Throws when the table
- * cannot be read (Sol r2: an unknown result is never "gone").
+ * H-76 Sol r3: the live processes that may still act on the container:
+ * the gates pid's tree (liveTree), plus every live process whose command
+ * line names the container or its Docker id (a `docker exec` grandchild
+ * whose pwsh parent died has no ancestry back to gates). This process's own
+ * tree and its ancestors (recover, and the shell that ran it, whose command
+ * line names the container too) are never counted.
  */
-export async function processTree(pid: number): Promise<number[]> {
+export function liveHolders(
+  table: readonly ProcessRow[],
+  pid: number,
+  names: readonly string[],
+  self: number,
+): number[] {
+  const mine = new Set(liveTree(table, self));
+  for (
+    let p = table.find((r) => r.pid === self);
+    p && !mine.has(p.ppid);
+    p = table.find((r) => r.pid === p!.ppid)
+  ) {
+    mine.add(p.ppid);
+  }
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = names.filter((n) => n.length > 0).map((n) =>
+    new RegExp(`(^|[^A-Za-z0-9])${esc(n)}([^A-Za-z0-9]|$)`, "i")
+  );
+  const out = new Set(liveTree(table, pid));
+  for (const p of table) {
+    if (named.some((re) => re.test(p.cmd))) out.add(p.pid);
+  }
+  return [...out].filter((p) => !mine.has(p)).sort((a, b) => a - b);
+}
+
+/**
+ * liveHolders over this host's process table (Win32_Process with command
+ * lines via pwsh on Windows, `ps -A -o pid=,ppid=,args=` elsewhere). Throws
+ * when the table cannot be read or does not list this process (Sol r2: an
+ * unknown result is never "gone").
+ */
+export async function processHolders(
+  pid: number,
+  names: readonly string[],
+): Promise<number[]> {
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`bad pid ${pid}`);
   const windows = Deno.build.os === "windows";
   const out = await new Deno.Command(windows ? "pwsh" : "ps", {
@@ -205,24 +249,37 @@ export async function processTree(pid: number): Promise<number[]> {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.ParentProcessId }",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress",
       ]
-      : ["-A", "-o", "pid=,ppid="],
+      : ["-A", "-o", "pid=,ppid=,args="],
     stdout: "piped",
     stderr: "piped",
   }).output();
-  if (out.code !== 0) {
-    throw new Error(`process table: exit ${out.code}`);
+  if (out.code !== 0) throw new Error(`process table: exit ${out.code}`);
+  const text = new TextDecoder().decode(out.stdout);
+  let table: ProcessRow[];
+  if (windows) {
+    const rows = [JSON.parse(text)].flat() as {
+      ProcessId: number;
+      ParentProcessId: number;
+      CommandLine: string | null;
+    }[];
+    table = rows.map((r) => ({
+      pid: r.ProcessId,
+      ppid: r.ParentProcessId,
+      cmd: r.CommandLine ?? "",
+    }));
+  } else {
+    table = text.split(/\r?\n/).flatMap((l) => {
+      const m = l.trim().match(/^(\d+)\s+(\d+)\s*(.*)$/);
+      return m ? [{ pid: Number(m[1]), ppid: Number(m[2]), cmd: m[3]! }] : [];
+    });
   }
-  const table = new TextDecoder().decode(out.stdout).split(/\r?\n/)
-    .map((l) => l.trim().split(/\s+/).map(Number))
-    .filter((p) => p.length === 2 && p.every(Number.isInteger))
-    .map(([p, pp]) => ({ pid: p!, ppid: pp! }));
   // this very process must be listed, or the table is not trustworthy
   if (!table.some((p) => p.pid === Deno.pid)) {
     throw new Error(`process table incomplete (${table.length} rows)`);
   }
-  return liveTree(table, pid);
+  return liveHolders(table, pid, names, Deno.pid);
 }
 
 /** Remove this token's evidence and heartbeat (gone already is fine). */
@@ -254,7 +311,8 @@ export async function removeGatesFiles(
  * `evidence` (--lineage), one before-capture. A capture that fails or has
  * errors keeps no evidence (a dirty end then needs a recreate); the hold
  * goes on. done: the heartbeat stops; a release also removes the files.
- * owned: this run's in-use record is the container's only record.
+ * owned: this run's in-use record is the container's only record (a
+ * recover claim aside).
  */
 export function gatesHooks(o: {
   dir: string;
@@ -335,7 +393,12 @@ export function gatesHooks(o: {
      * means a recovery is under way or done.
      */
     owned: async (c: string, id: string): Promise<boolean> => {
-      const found = await findRecords(o.dir, { name: c, id });
+      // Sol r3: a recover claim alone does not stop a hold (recover proceeds
+      // only once this run's whole process tree is gone, or on an operator's
+      // --abandon; a refused recover must not strand a live hold)
+      const found = (await findRecords(o.dir, { name: c, id })).filter((f) =>
+        !f.file.endsWith(".recover.json")
+      );
       return found.length === 1 && found[0]!.record?.token === o.token &&
         found[0]!.record.state === "in_use";
     },

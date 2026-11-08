@@ -126,7 +126,7 @@ import {
   type Evidence,
   isGatesRecord,
   ownerGone,
-  processTree,
+  processHolders,
   readEvidence,
   removeGatesFiles,
 } from "../../src/harness/gates-evidence.ts";
@@ -244,8 +244,8 @@ export interface EnvDeps {
   running(name: string): Promise<boolean>;
   /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
   poolBounds?: Partial<PoolBounds>;
-  /** H-76 Sol r1/r2: the live process tree of this pid on this host (default: processTree); throws when unknown. */
-  processTree?(pid: number): Promise<number[]>;
+  /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
+  processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
   containerId(name: string): Promise<string>;
   resolveHost(): Promise<string>;
@@ -756,9 +756,17 @@ async function refuseLiveGates(
     problem = `recorded on host ${g.host}, not this one (${deps.owner()})`;
   } else {
     try {
-      const live = await (deps.processTree ?? processTree)(g.pid);
+      // Sol r3: also any live process naming the container (an orphaned
+      // `docker exec` whose pwsh parent died is cut off from gates' tree)
+      const live = await (deps.processHolders ?? processHolders)(g.pid, [
+        c,
+        id,
+        id.slice(0, 12),
+      ]);
       problem = live.length > 0
-        ? `process ${g.pid} or its workers still run (${live.join(", ")})`
+        ? `process ${g.pid}, its workers or a process naming ${c} still run (${
+          live.join(", ")
+        })`
         : null;
     } catch (err) {
       problem = `whether process ${g.pid} or its workers run is unknown: ${

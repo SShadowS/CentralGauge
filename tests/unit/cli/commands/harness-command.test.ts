@@ -11691,8 +11691,13 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   const d: EnvDeps = {
     ...deps(order),
     quarantineDir: () => qDir,
-    processTree: async (pid) => {
+    processHolders: async (pid, names) => {
       assertEquals(pid, 9);
+      assertEquals(names, [
+        "Cronus281",
+        fakeId("Cronus281"),
+        fakeId("Cronus281").slice(0, 12),
+      ]);
       if (firstCheck) {
         firstCheck = false;
         assertEquals(
@@ -11770,7 +11775,9 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   await evidence();
   await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));
   tree = [9];
-  await refused("process 9 or its workers still run (9)");
+  await refused(
+    "process 9, its workers or a process naming Cronus281 still run (9)",
+  );
   // Sol r2: the gates process died but a pwsh worker it spawned lives on
   tree = [4711];
   await refused("still run (4711)");

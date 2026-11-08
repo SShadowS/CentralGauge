@@ -5,9 +5,10 @@ import {
   gatesHooks,
   heartbeatPath,
   isGatesRecord,
+  liveHolders,
   liveTree,
   ownerGone,
-  processTree,
+  processHolders,
   readEvidence,
   removeGatesFiles,
   writeEvidence,
@@ -138,10 +139,22 @@ Deno.test("H-76 gatesHooks: afterClaim writes the heartbeat first (and keeps it 
   const later = JSON.parse(await Deno.readTextFile(heartbeatPath(dir, ID))).at;
   assert(later > first, "the heartbeat is rewritten");
   assert(await h.owned("Cronus281", ID));
-  // Sol r1: a recover claim beside our record: no longer ours
+  // Sol r3: a recover claim beside our record does not stop the hold (a
+  // refused recover must not strand it); any other record does
   assert(await claimRecord(dir, rec(T2), { recover: true }));
-  assert(!await h.owned("Cronus281", ID));
+  assert(await h.owned("Cronus281", ID));
   await releaseOwned(dir, ID, T2, { recover: true });
+  const other = "b".repeat(64);
+  assert(
+    await claimRecord(dir, {
+      ...rec(T2),
+      id: other,
+      state: "quarantined",
+      reason: "x",
+    }),
+  );
+  assert(!await h.owned("Cronus281", ID), "a record under the name");
+  await Deno.remove(join(dir, `${other}.json`));
   assert(await h.owned("Cronus281", ID));
   // kept (dirty end): heartbeat stops, files stay
   await h.done("Cronus281", ID, false);
@@ -218,23 +231,52 @@ Deno.test("H-76 Sol r2 liveTree: the pid and every live process reachable throug
   assertEquals(liveTree(table, 70), [70, 71]);
 });
 
-Deno.test("H-76 Sol r1/r2 processTree: this process runs, with a live child in its tree; a pid that exited has none; a bad pid throws", async () => {
+Deno.test("H-76 Sol r3 liveHolders: the gates tree plus any live process naming the container or its id (an orphaned docker exec), whole words only, never recover's own tree or its ancestors", () => {
+  const ID64 = "c".repeat(64);
+  const table = [
+    { pid: 1, ppid: 0, cmd: "System" },
+    // the shell that ran recover, and recover itself with a child
+    { pid: 10, ppid: 1, cmd: "bash -c deno task harness recover Cronus281" },
+    { pid: 11, ppid: 10, cmd: "deno run main.ts harness recover Cronus281" },
+    { pid: 12, ppid: 11, cmd: "docker inspect Cronus281" },
+    // gates (pid 9) is dead; its pwsh died too; a docker exec lives on
+    { pid: 30, ppid: 25, cmd: "docker exec Cronus281 pwsh -c Unpublish" },
+    { pid: 31, ppid: 25, cmd: `docker exec ${ID64.slice(0, 12)} x` },
+    // another container whose name extends this one, and an unrelated one
+    { pid: 40, ppid: 1, cmd: "docker exec Cronus2810 x" },
+    { pid: 41, ppid: 1, cmd: "docker exec Cronus282 x" },
+  ];
+  const names = ["Cronus281", ID64, ID64.slice(0, 12)];
+  assertEquals(liveHolders(table, 9, names, 11), [30, 31]);
+  // the gates pid alive with a child: both count
+  const live = [...table, { pid: 9, ppid: 1, cmd: "deno gate-task gates" }, {
+    pid: 50,
+    ppid: 9,
+    cmd: "pwsh -NoExit -Command -",
+  }];
+  assertEquals(liveHolders(live, 9, names, 11), [9, 30, 31, 50]);
+  // nothing names it and the tree is gone: none
+  assertEquals(liveHolders(table.slice(0, 3), 9, names, 11), []);
+});
+
+Deno.test("H-76 Sol r1-r3 processHolders: reads this host's table; recover's own process never counts; a bad pid throws", async () => {
   const child = new Deno.Command(Deno.execPath(), {
     args: ["eval", "await new Promise((r) => setTimeout(r, 30000))"],
     stdout: "null",
     stderr: "null",
   }).spawn();
+  const pid = child.pid;
   try {
-    const mine = await processTree(Deno.pid);
-    assert(mine.includes(Deno.pid) && mine.includes(child.pid), `${mine}`);
+    // our own child is in our (recover's) tree: excluded
+    assertEquals(await processHolders(pid, ["CgH76NoSuchContainer"]), []);
   } finally {
     child.kill();
     await child.status;
   }
-  assertEquals(await processTree(child.pid), []);
+  assertEquals(await processHolders(pid, ["CgH76NoSuchContainer"]), []);
   let threw = false;
   try {
-    await processTree(0);
+    await processHolders(0, []);
   } catch {
     threw = true;
   }
