@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import {
+  claimExclusive,
   claimRecord,
   type ContainerRecord,
   evidenceProblem,
@@ -241,5 +242,62 @@ Deno.test("H-35 run 004 Sol r2 N4 evidenceProblem: only a quarantine with a comp
     const got = evidenceProblem(r);
     if (want === null) assertEquals(got, null, what);
     else assertStringIncludes(got ?? "(null)", want, what);
+  }
+});
+
+Deno.test("H-74 claimExclusive: a free container is claimed; another environment's in-use record is busy (waitable); a quarantine, a recover claim, a name match or an unreadable record refuses for good and leaves no claim of ours", async () => {
+  const key = { name: "Cronus281", id: ID };
+  const mine = rec({ token: T2, by: "HOST2 gate-task gates" });
+  // free: claimed, the record is ours
+  let dir = join(await testTempDir(), "q");
+  assertEquals(await claimExclusive(dir, mine), { id: ID });
+  assertEquals((await findRecords(dir, key))[0]!.record!.token, T2);
+  // another environment's in-use record (the campaign's): busy, untouched
+  dir = join(await testTempDir(), "q");
+  assert(await claimRecord(dir, rec({ token: T1 })));
+  let r = await claimExclusive(dir, mine);
+  assert("why" in r && r.busy, JSON.stringify(r));
+  assertStringIncludes(r.why, `token ${T1}`);
+  assertEquals((await findRecords(dir, key)).map((f) => f.record?.token), [
+    T1,
+  ]);
+  // once it is released the next try wins
+  assert(await releaseOwned(dir, ID, T1));
+  assertEquals(await claimExclusive(dir, mine), { id: ID });
+  // refusals for good: each leaves only the refusing record
+  const cases: [string, (d: string) => Promise<unknown>, string][] = [
+    [
+      "quarantined",
+      (d) => claimRecord(d, rec({ state: "quarantined", reason: "L4 on C" })),
+      "quarantined (L4 on C)",
+    ],
+    [
+      "recover claim",
+      (d) => claimRecord(d, rec({ token: T1 }), { recover: true }),
+      "in use by",
+    ],
+    [
+      "name match",
+      (d) =>
+        claimRecord(d, rec({ id: ID2, state: "quarantined", reason: "x" })),
+      "quarantined (x)",
+    ],
+    [
+      "unreadable",
+      async (d) => {
+        await Deno.mkdir(d, { recursive: true });
+        await Deno.writeTextFile(recordFile(d, ID), "{bad");
+      },
+      "unreadable record",
+    ],
+  ];
+  for (const [what, seed, want] of cases) {
+    dir = join(await testTempDir(), "q");
+    await seed(dir);
+    r = await claimExclusive(dir, mine);
+    assert("why" in r && !r.busy, `${what}: ${JSON.stringify(r)}`);
+    assertStringIncludes(r.why, want, what);
+    const left = await findRecords(dir, key);
+    assert(left.every((f) => f.record?.token !== T2), `${what}: ours left`);
   }
 });

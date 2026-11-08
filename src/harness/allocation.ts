@@ -46,11 +46,10 @@ export function poolAdmit(
   own: ReadonlyMap<string, string>,
   coordRoot = defaultRoot(),
 ): (c: string) => Promise<string | null> {
-  // Read on first use, once.
-  let allocated: Promise<string[]> | undefined;
+  // H-74 Sol r2: read on every call (gates rechecks after a --wait-free wait).
   return async (c) =>
     admitContainer(c, {
-      allocated: await (allocated ??= allocatedContainers(coordRoot)),
+      allocated: await allocatedContainers(coordRoot),
       running: async (x) => (await inspectContainer(x))?.running === true,
       leaseBlock: (x) => coordLeaseBlock(coordRoot, own, x),
     });

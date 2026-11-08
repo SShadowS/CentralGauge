@@ -33,10 +33,12 @@ function mockBc(o: {
         ? Promise.reject(new Error("SYNC_CLEAN_FAILED"))
         : Promise.resolve();
     },
-    prenuke: (owned = []) => {
+    prenuke: (owned = [], strict = false) => {
       o.events?.push(
         owned.length > 0
           ? `prenuke ${owned.map((a) => a.name).join(",")}`
+          : strict
+          ? "prenuke strict"
           : "prenuke",
       );
       prenukes++;
@@ -346,6 +348,49 @@ Deno.test("runGate: a staging exception still cleans up and writes an infra repo
   assert(
     report.reasons.some((x: string) => x.includes("refapp module missing")),
   );
+});
+
+Deno.test("runGate (H-74 Sol r2): an infra end is never clean, even with a clean final cleanup", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  await Deno.remove(join(source.refappDir, "Reporting"), { recursive: true });
+  const r = await runGate({
+    bc: mockBc({}),
+    loaded,
+    source,
+    container: "Mock",
+    outDir: await tmp(),
+    tmpRoot,
+    tagTree: null,
+  });
+  assertEquals([r.code, r.clean], [3, false]);
+  const report = JSON.parse(await Deno.readTextFile(r.file));
+  assertEquals(report.cleanup_error, null);
+});
+
+Deno.test("runGate (H-74 Sol r1): clean is true after a clean final cleanup and false when the final prenuke fails, whatever the exit code", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const run = async (bc: GateBc) =>
+    runGate({
+      bc,
+      loaded,
+      source,
+      container: "Mock",
+      outDir: await tmp(),
+      tmpRoot,
+      tagTree: null,
+    });
+  const events: string[] = [];
+  const ok = await run(mockBc({ events }));
+  assertEquals(ok.clean, true);
+  const prenukes = events.filter((e) => e.startsWith("prenuke")).length;
+  // H-74 Sol r3: the final cleanup is strict (a swallowed timeout would let
+  // the hold go while the uninstall still runs)
+  assertEquals(events.at(-1), "prenuke strict");
+  // every prenuke before the final one passes; the final cleanup fails
+  const dirty = await run(mockBc({ prenukeThrowsAfter: prenukes - 1 }));
+  assertEquals([dirty.code, dirty.clean], [ok.code, false]);
+  const report = JSON.parse(await Deno.readTextFile(dirty.file));
+  assertStringIncludes(report.cleanup_error, "prenuke failed");
 });
 
 Deno.test("runGate: tag mismatch blocks promotion", async () => {

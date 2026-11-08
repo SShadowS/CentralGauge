@@ -709,8 +709,16 @@ export class BcContainerProvider implements ContainerProvider {
      * ContainerError (infra), so nothing is published onto kept data.
      */
     owned: { id: string; name: string }[] = [],
+    /**
+     * H-74 Sol r3: not best-effort even without owned apps (the gate's
+     * final cleanup): a failed or timed-out call, an incomplete sweep or a
+     * missing PREREQ_CLEANUP_DONE throws, so `gates` keeps its claim while
+     * an uninstall may still run in the container.
+     */
+    strictWithoutOwned = false,
   ): Promise<void> {
     if (!this.isWindows()) return;
+    const strict = owned.length > 0 || strictWithoutOwned;
     await Promise.all(
       containerNames.map(async (name) => {
         // Reuse the in-container prereq-cleanup script with an EMPTY expected
@@ -749,7 +757,7 @@ export class BcContainerProvider implements ContainerProvider {
             });
           }
           if (
-            owned.length > 0 &&
+            strict &&
             (result.output.includes("PREREQ_CLEANUP_CLEAN_FAILED") ||
               result.output.includes("PREREQ_CLEANUP_CLEAN_REFUSED") ||
               // A sweep that left apps behind is a failure even with DONE.
@@ -757,15 +765,15 @@ export class BcContainerProvider implements ContainerProvider {
               !result.output.includes("PREREQ_CLEANUP_DONE"))
           ) {
             throw new ContainerError(
-              `prenuke on ${name} did not clean the owned apps' data: ${
-                lines || result.output.slice(-300)
-              }`,
+              `prenuke on ${name} did not ${
+                owned.length > 0 ? "clean the owned apps' data" : "complete"
+              }: ${lines || result.output.slice(-300)}`,
               name,
               "setup",
             );
           }
         } catch (e) {
-          if (owned.length > 0) throw e;
+          if (strict) throw e;
           log.warn(`prenukeCentralGaugeApps failed for ${name}`, {
             error: e instanceof Error ? e.message : String(e),
           });

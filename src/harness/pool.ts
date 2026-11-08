@@ -138,6 +138,38 @@ export class JudgePool implements JudgeGate {
   async bind(campaign: string): Promise<void> {
     await this.deps.pinned(campaign);
     this.campaign = campaign;
+    // H-74 (b+): a blocked member (a judge lent to `gates` by a drain marker)
+    // leaves on this tick even while no judge work is queued, so its record
+    // is released promptly. It never joins anything (refresh does that).
+    // Sol r1 LOW: a close() that finished during the pin check installs nothing.
+    if (!this.closed) {
+      this.idle ??= setInterval(() => this.leaveBlocked(), this.bounds.pollMs);
+    }
+  }
+
+  private idle: ReturnType<typeof setInterval> | undefined;
+
+  /**
+   * H-74 (b+): the leave half of a refresh pass, for members with an
+   * answered block only (a drain marker, a foreign coord lease). An
+   * unreadable state is left to refresh and the terminal reconcile (H-41
+   * section 14's unanswered rules).
+   */
+  private leaveBlocked(): void {
+    if (this.campaign === null || this.closed) return;
+    for (const c of [...this.joined.keys()]) {
+      if (
+        this.leaving.has(c) || this.kept.has(c) ||
+        this.lane.quarantined.has(c)
+      ) continue;
+      let why: string | null;
+      try {
+        why = this.deps.blocked(c);
+      } catch {
+        continue;
+      }
+      if (why) this.track(this.release(c, why));
+    }
   }
 
   width(): number {
@@ -190,6 +222,8 @@ export class JudgePool implements JudgeGate {
   private async shut(): Promise<void> {
     this.closed = true;
     this.poll(null);
+    clearInterval(this.idle);
+    this.idle = undefined;
     this.epoch++;
     let t: ReturnType<typeof setTimeout> | undefined;
     const late = await Promise.race([
@@ -225,7 +259,10 @@ export class JudgePool implements JudgeGate {
     const allocated = (c: string) => alloc.some((a) => same(a, c));
     // Leaves first: a member blocked, unallocated or retired by the lane.
     for (const c of [...this.joined.keys()]) {
-      if (this.leaving.has(c) || this.lane.quarantined.has(c)) continue;
+      if (
+        this.leaving.has(c) || this.kept.has(c) ||
+        this.lane.quarantined.has(c)
+      ) continue;
       const why = !this.lane.containers.includes(c)
         ? "left the lane"
         : !allocated(c)
@@ -387,11 +424,22 @@ export class JudgePool implements JudgeGate {
       console.log(`${colors.cyan("[LEAVE]")} judging pool: ${c}: ${why}`);
       await this.lane.quiesced(c);
       const m = this.joined.get(c);
-      if (!m || this.abandoned.has(c)) return;
+      // H-74 Sol r1: a kept record is final (never released by a later leave)
+      if (!m || this.abandoned.has(c) || this.kept.has(c)) return;
       try {
         await m.dispose();
       } catch (err) {
         this.keep(c, `dispose failed: ${msg(err)}`);
+        return;
+      }
+      // H-74 Sol r1: quarantined by the hold it waited for (whose record
+      // write may have failed, leaving our in-use record as the only
+      // refusal): never released. Abandoned at close meanwhile: untouched.
+      if (this.abandoned.has(c)) return;
+      const q = this.lane.quarantined.get(c);
+      if (q !== undefined) {
+        this.joined.delete(c);
+        this.keep(c, `quarantined while leaving: ${q}`);
         return;
       }
       await this.drop(c, m.id);
