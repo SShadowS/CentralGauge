@@ -450,6 +450,21 @@ Deno.test("H-35 (design-r3 7): production_allow enters the oracle hash only when
   assertEquals(t!.task.production_allow, undefined);
 });
 
+Deno.test("H-71: test_permissions enters the oracle hash only when present", async () => {
+  const root = await fixtureRepo();
+  const [t] = await loadTaskSet(join(root, "harness-tasks", "tasks"));
+  const base = await oracleHash(t!);
+  assertEquals(t!.task.test_permissions, undefined);
+  assertEquals(await oracleHash({ ...t!, task: { ...t!.task } }), base);
+  assertNotEquals(
+    await oracleHash({
+      ...t!,
+      task: { ...t!.task, test_permissions: "restrictive" },
+    }),
+    base,
+  );
+});
+
 Deno.test("H-35 orch Sol r1 #6: harnessCommitOf gives HEAD, marked +dirty when tracked harness code differs; null outside a repository", async () => {
   const repo = await Deno.realPath(await testTempDir());
   const g = (...args: string[]) =>

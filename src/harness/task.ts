@@ -87,6 +87,12 @@ export const HarnessTaskSchema = z.strictObject({
     objects: z.array(z.string().regex(/^(table|codeunit):\d+$/)).optional(),
     dynamic: z.array(z.string().min(1)).optional(),
   }).optional(),
+  /**
+   * H-71: lets reference-tests/ and naive/ Test codeunits state
+   * `TestPermissions = Restrictive;` (gate M4 rule). test-authoring only; in
+   * the oracle hash only when present.
+   */
+  test_permissions: z.literal("restrictive").optional(),
 }).superRefine((t, ctx) => {
   const has = (s: (typeof SCORERS)[number]) => t.scorers.includes(s);
   const issue = (message: string, path: string[]) =>
@@ -113,6 +119,11 @@ export const HarnessTaskSchema = z.strictObject({
   }
   if (!testAuthoring && t.mutants.length > 0) {
     issue("mutants are for kind test-authoring only", ["mutants"]);
+  }
+  if (!testAuthoring && t.test_permissions !== undefined) {
+    issue("test_permissions is for kind test-authoring only", [
+      "test_permissions",
+    ]);
   }
 });
 
