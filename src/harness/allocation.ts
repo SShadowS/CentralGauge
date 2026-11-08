@@ -11,6 +11,12 @@ import { ValidationError } from "../errors.ts";
 
 export const DEFAULT_COORD_ROOT = "H:\\cg-coord";
 
+/**
+ * H-70: the container pool when --containers is absent (owner decision
+ * 2026-11-08-m8-scale-up.md ruling 3). Allocation still decides admission.
+ */
+export const DEFAULT_POOL = ["Cronus281", "Cronus282", "Cronus283"] as const;
+
 const Coord = z.object({ campaign: z.string().min(1) });
 const Allocation = z.record(z.string(), z.array(z.string().min(1)));
 
