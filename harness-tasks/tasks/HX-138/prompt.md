@@ -9,6 +9,6 @@ Before anyone changes the purge we want automated tests that pin down how it mus
 How the purge must behave (`CGR Outbox Purge` in Integration, procedure `PurgeSent(OlderThan: DateTime): Integer`, event `OnBeforePurgeEntry(Entry: Record "CGR Outbox Entry")`):
 
 - It deletes every outbox entry that is Sent and was created before OlderThan, except entries of vehicles whose `"Hold Outbox"` is set. Unsent and failed entries are never deleted.
-- Partner apps may veto the deletion of an entry by raising an error in OnBeforePurgeEntry. Then the purge stops with that error; entries deleted before the vetoed one stay deleted if at least 500 deletions were made before it (the purge saves its work after every 500 deletions); the deletions after the last save are undone.
+- Partner apps may veto the deletion of an entry by raising an error in OnBeforePurgeEntry. Then the purge stops with that error; entries deleted before the vetoed one stay deleted if at least 500 deletions were made before it (the purge commits after every 500 deletions); the deletions after the last commit are undone.
 - The result is the number of entries deleted.
 - Started by a user, the purge tells the user how many entries were deleted (`%1 outbox entries were deleted.`). Started without a user interface (job queue), it shows nothing.

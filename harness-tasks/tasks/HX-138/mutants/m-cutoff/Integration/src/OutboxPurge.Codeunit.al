@@ -11,6 +11,7 @@ codeunit 70462 "CGR Outbox Purge"
         Deleted: Integer;
     begin
         Entry.SetRange(Sent, true);
+        Entry.SetRange(Failed, false);
         Entry.SetFilter("Created At", '<=%1', OlderThan);
         if Entry.FindSet() then
             repeat

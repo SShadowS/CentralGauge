@@ -15,6 +15,7 @@ codeunit 80460 "CGR Outbox Purge Tests"
         SentNo: Integer;
         UnsentNo: Integer;
         FailedNo: Integer;
+        SentFailedNo: Integer;
         Deleted: Integer;
     begin
         HX138Prepare();
@@ -22,6 +23,7 @@ codeunit 80460 "CGR Outbox Purge Tests"
         SentNo := HX138Entry('HX138-U1', HX138OldTime(), true, false);
         UnsentNo := HX138Entry('HX138-U1', HX138OldTime(), false, false);
         FailedNo := HX138Entry('HX138-U1', HX138OldTime(), false, true);
+        SentFailedNo := HX138Entry('HX138-U1', HX138OldTime(), true, true);
 
         Commit();
         Deleted := OutboxPurge.PurgeSent(HX138Cutoff());
@@ -30,6 +32,7 @@ codeunit 80460 "CGR Outbox Purge Tests"
         Assert.IsFalse(Entry.Get(SentNo), 'The old sent entry is deleted');
         Assert.IsTrue(Entry.Get(UnsentNo), 'An unsent entry is never deleted');
         Assert.IsTrue(Entry.Get(FailedNo), 'A failed entry is never deleted');
+        Assert.IsTrue(Entry.Get(SentFailedNo), 'A failed entry is never deleted, also when it is marked sent');
     end;
 
     [Test]
