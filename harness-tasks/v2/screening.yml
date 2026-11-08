@@ -316,6 +316,9 @@ candidates:
   - id: HX-142
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "OnBeforeChargeOverdueFee" }
+  - id: HX-144
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnAfterVehicleCheckedOut" }
   - id: HX-145
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: null }
