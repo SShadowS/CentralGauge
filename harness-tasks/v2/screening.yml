@@ -334,6 +334,9 @@ candidates:
   - id: HX-148
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "OnAfterPostRentalContract" }
+  - id: HX-149
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnExportDamage" }
   - id: HX-150
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: null }
