@@ -20,6 +20,7 @@ import {
   RecordStore,
   type RunKind,
   StoredExecutionSchema,
+  TMP,
 } from "./records.ts";
 
 export interface Unreadable {
@@ -76,6 +77,40 @@ export interface Progress {
     estimate: true;
   };
   unreadable: Unreadable[];
+}
+
+/** No numbers: the requested campaign record itself does not read. */
+export interface UnavailableProgress {
+  campaign_id: string;
+  campaign_unreadable: Unreadable;
+  unreadable: Unreadable[];
+}
+
+class CampaignUnreadable extends CentralGaugeError {
+  constructor(readonly campaignId: string, readonly entry: Unreadable) {
+    super(
+      `campaign ${campaignId} unreadable: ${entry.reason} (${entry.path})`,
+      "HARNESS_CAMPAIGN_UNREADABLE",
+    );
+  }
+}
+
+/** buildProgress, but an unreadable requested campaign id gives a snapshot. */
+export async function progressSnapshot(
+  root: string,
+  id: string,
+  opts: Parameters<typeof buildProgress>[2] = {},
+): Promise<Progress | UnavailableProgress> {
+  try {
+    return await buildProgress(root, id, opts);
+  } catch (err) {
+    if (!(err instanceof CampaignUnreadable)) throw err;
+    return {
+      campaign_id: err.campaignId,
+      campaign_unreadable: err.entry,
+      unreadable: [err.entry],
+    };
+  }
 }
 
 const reason = (e: unknown) => e instanceof Error ? e.message : String(e);
@@ -164,17 +199,18 @@ async function resolveCampaign(
   // A requested campaign whose file exists but does not read is not "unknown".
   for (const want of [campaignOpt ?? id]) {
     const u = bad.find((b) => b.path === join(dir, `${want}.json`));
-    if (u) {
-      throw new CentralGaugeError(
-        `campaign ${want} unreadable: ${u.reason} (${u.path})`,
-        "HARNESS_CAMPAIGN_UNREADABLE",
-      );
-    }
+    if (u) throw new CampaignUnreadable(want, u);
   }
   throw new CentralGaugeError(
     `No campaign or experiment ${id}${
       campaignOpt ? ` (campaign ${campaignOpt})` : ""
-    } in ${root}`,
+    } in ${root}${
+      bad.length > 0
+        ? `; unreadable: ${
+          bad.map((b) => `${b.path} (${b.reason})`).join("; ")
+        }`
+        : ""
+    }`,
     "HARNESS_NO_CAMPAIGN",
   );
 }
@@ -242,6 +278,22 @@ export async function buildProgress(
     if (misfit) {
       unreadable.push({ path, reason: `not in the plan: ${misfit}` });
       continue;
+    }
+    // Overlay temp files are never applied by RecordStore; say so.
+    const rdir = join(root, "rederivations", s.id);
+    try {
+      for await (const f of Deno.readDir(rdir)) {
+        if (f.name.includes(TMP)) {
+          unreadable.push({
+            path: join(rdir, f.name),
+            reason: "temp file (not applied)",
+          });
+        }
+      }
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        unreadable.push({ path: rdir, reason: first(err) });
+      }
     }
     // R-10: re-derivations as `report` applies them. A refused overlay keeps
     // the stored record (its cell is finished) but its outcome is unknown.
@@ -364,7 +416,13 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 const secs = (ms: number | null) =>
   ms === null ? "n/a" : `${(ms / 1000).toFixed(1)}s`;
 
-export function renderProgress(p: Progress): string {
+export function renderProgress(p: Progress | UnavailableProgress): string {
+  if ("campaign_unreadable" in p) {
+    const u = p.campaign_unreadable;
+    return `${colors.cyan("[Progress]")} campaign ${p.campaign_id}\n${
+      colors.yellow("[WARN]")
+    } campaign record unreadable, no numbers: ${u.path}: ${u.reason}`;
+  }
   const L: string[] = [];
   L.push(
     `${

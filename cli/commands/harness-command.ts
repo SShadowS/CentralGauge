@@ -49,7 +49,10 @@ import type { DockerCli } from "../../src/harness/sandbox.ts";
 import type { EnvOptions, OpenEnv } from "./harness-env.ts";
 import type { EgressState, MarkerState } from "../../src/harness/egress.ts";
 import { canonicalJSON } from "../../shared/canonical.ts";
-import { buildProgress, renderProgress } from "../../src/harness/progress.ts";
+import {
+  progressSnapshot,
+  renderProgress,
+} from "../../src/harness/progress.ts";
 import {
   CentralGaugeError,
   ConfigurationError,
@@ -3504,7 +3507,7 @@ export function registerHarnessCommand(
     .option("--json", "Print the progress as JSON")
     .action((opts, id: string) =>
       fail(async () => {
-        const p = await buildProgress(opts.resultsDir, id, {
+        const p = await progressSnapshot(opts.resultsDir, id, {
           campaign: opts.campaign,
           concurrency: opts.concurrency,
         });

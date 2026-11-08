@@ -435,6 +435,37 @@ Deno.test("CLI: `harness progress --json` prints the progress with its estimate 
   assertEquals(p.started.estimate, true);
 });
 
+Deno.test("CLI: `harness progress --json` on an unreadable campaign prints the unavailable snapshot", async () => {
+  const dir = await storeWithOneCell();
+  await Deno.writeTextFile(join(dir, "campaigns", `${CAMPAIGN_ID}.json`), "{");
+  const cli = new Command().name("centralgauge");
+  registerHarnessCommand(cli);
+  const printed: string[] = [];
+  const log = stub(console, "log", (...args: unknown[]) => {
+    printed.push(args.join(" "));
+  });
+  try {
+    await cli.parse([
+      "harness",
+      "progress",
+      CAMPAIGN_ID,
+      "--results-dir",
+      dir,
+      "--json",
+    ]);
+  } finally {
+    log.restore();
+  }
+  const p = JSON.parse(printed.join("\n"));
+  assertEquals(p.campaign_id, CAMPAIGN_ID);
+  assertEquals(
+    p.campaign_unreadable.path.endsWith(`${CAMPAIGN_ID}.json`),
+    true,
+  );
+  assertEquals(p.unreadable.length, 1);
+  assertEquals("planned_cells" in p, false);
+});
+
 Deno.test("CLI: `harness progress --concurrency 0` is refused", async () => {
   const dir = await storeWithOneCell();
   const cli = new Command().name("centralgauge");

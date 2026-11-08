@@ -965,7 +965,7 @@ export function planBlocks(
   return blocks;
 }
 
-const TMP = ".tmp-";
+export const TMP = ".tmp-";
 
 export { TEMP_SWEEP_AGE_MS };
 

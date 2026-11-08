@@ -6,6 +6,7 @@ import {
 } from "../../../src/harness/records.ts";
 import {
   buildProgress,
+  progressSnapshot,
   renderProgress,
 } from "../../../src/harness/progress.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
@@ -191,8 +192,39 @@ Deno.test("progress (r2 #1): a truncated or vanished requested campaign is named
   const err = await assertRejects(() => buildProgress(root, c.id), Error);
   assertStringIncludes(err.message, `campaign ${c.id} unreadable`);
   assertEquals((err as { code?: string }).code !== "HARNESS_NO_CAMPAIGN", true);
+  // r3: the campaign-id path returns a snapshot with the reason, no numbers.
+  const snap = await progressSnapshot(root, c.id);
+  assertEquals("campaign_unreadable" in snap, true);
+  if (!("campaign_unreadable" in snap)) return;
+  assertEquals(snap.campaign_id, c.id);
+  assertStringIncludes(snap.campaign_unreadable.reason, "Invalid record");
+  assertEquals(snap.unreadable[0], snap.campaign_unreadable);
+  const text = renderProgress(snap);
+  assertStringIncludes(text, "[WARN]");
+  assertEquals(text.includes("planned"), false);
+  // An experiment id whose campaigns are all unreadable keeps the error and lists them.
+  await assertRejects(
+    () => buildProgress(root, "skills-vs-plain"),
+    Error,
+    `${c.id}.json`,
+  );
   await Deno.remove(join(root, "campaigns", `${c.id}.json`));
   await assertRejects(() => buildProgress(root, c.id), Error, "No campaign");
+  await assertRejects(() => progressSnapshot(root, c.id), Error, "No campaign");
+});
+
+Deno.test("progress (r3): re-derivation temp files are listed, not applied", async () => {
+  const { root, store, c } = await setup();
+  const e = execution(c);
+  await store.writeExecution(e);
+  const dir = join(root, "rederivations", e.id);
+  await Deno.mkdir(dir, { recursive: true });
+  await Deno.writeTextFile(join(dir, "r.json.tmp-abc"), "{}");
+  const p = await buildProgress(root, c.id);
+  assertEquals(p.unreadable.length, 1);
+  assertEquals(p.unreadable[0]!.reason, "temp file (not applied)");
+  assertEquals(p.unreadable[0]!.path, join(dir, "r.json.tmp-abc"));
+  assertEquals(p.finished_cells, 1);
 });
 
 Deno.test("progress (r2 #2): null cost is counted as missing, not as zero spend", async () => {
