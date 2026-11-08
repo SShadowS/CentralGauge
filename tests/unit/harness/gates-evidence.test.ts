@@ -5,8 +5,9 @@ import {
   gatesHooks,
   heartbeatPath,
   isGatesRecord,
+  liveTree,
   ownerGone,
-  processAlive,
+  processTree,
   readEvidence,
   removeGatesFiles,
   writeEvidence,
@@ -202,19 +203,38 @@ Deno.test("H-76 gatesHooks: a capture with errors or a failing capture keeps no 
   await bad.stopAll();
 });
 
-Deno.test("H-76 Sol r1 processAlive: this process runs; a pid that exited does not; a bad pid throws", async () => {
-  assert(await processAlive(Deno.pid));
+Deno.test("H-76 Sol r2 liveTree: the pid and every live process reachable through parent links, including orphans of a dead parent; never a cycle twice", () => {
+  const table = [
+    { pid: 1, ppid: 0 },
+    { pid: 50, ppid: 9 }, // an orphan pwsh worker of dead gates pid 9
+    { pid: 51, ppid: 50 },
+    { pid: 60, ppid: 1 },
+    { pid: 70, ppid: 71 }, // a cycle (pid reuse)
+    { pid: 71, ppid: 70 },
+  ];
+  assertEquals(liveTree(table, 9), [50, 51]);
+  assertEquals(liveTree(table, 60), [60]);
+  assertEquals(liveTree(table, 99), []);
+  assertEquals(liveTree(table, 70), [70, 71]);
+});
+
+Deno.test("H-76 Sol r1/r2 processTree: this process runs, with a live child in its tree; a pid that exited has none; a bad pid throws", async () => {
   const child = new Deno.Command(Deno.execPath(), {
-    args: ["eval", "0"],
+    args: ["eval", "await new Promise((r) => setTimeout(r, 30000))"],
     stdout: "null",
     stderr: "null",
   }).spawn();
-  const pid = child.pid;
-  await child.status;
-  assertEquals(await processAlive(pid), false);
+  try {
+    const mine = await processTree(Deno.pid);
+    assert(mine.includes(Deno.pid) && mine.includes(child.pid), `${mine}`);
+  } finally {
+    child.kill();
+    await child.status;
+  }
+  assertEquals(await processTree(child.pid), []);
   let threw = false;
   try {
-    await processAlive(0);
+    await processTree(0);
   } catch {
     threw = true;
   }

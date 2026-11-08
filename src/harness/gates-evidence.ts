@@ -165,27 +165,64 @@ export async function ownerGone(
 }
 
 /**
- * H-76 Sol r1: a process with `pid` runs on this host (tasklist on Windows,
- * `ps -p` elsewhere). A reused pid reads as alive, which only refuses more.
- * Throws when it cannot tell.
+ * H-76 Sol r1/r2: the live processes of `pid`'s tree on this host: `pid`
+ * itself and every live process reachable through parent links from it. A
+ * dead parent's orphans keep its pid as their parent id (Windows), so the
+ * gates process's leftover pwsh workers are found after it died. A reused
+ * pid reads as alive, which only refuses more.
  */
-export async function processAlive(pid: number): Promise<boolean> {
-  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`bad pid ${pid}`);
-  if (Deno.build.os === "windows") {
-    const out = await new Deno.Command("tasklist", {
-      args: ["/FI", `PID eq ${pid}`, "/NH", "/FO", "CSV"],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-    if (out.code !== 0) throw new Error(`tasklist exit ${out.code}`);
-    return new TextDecoder().decode(out.stdout).includes(`","${pid}",`);
+export function liveTree(
+  table: readonly { pid: number; ppid: number }[],
+  pid: number,
+): number[] {
+  const out = new Set<number>();
+  if (table.some((p) => p.pid === pid)) out.add(pid);
+  const seen = new Set<number>([pid]);
+  const todo = [pid];
+  while (todo.length > 0) {
+    const parent = todo.pop()!;
+    for (const p of table) {
+      if (p.ppid !== parent || seen.has(p.pid)) continue;
+      seen.add(p.pid);
+      out.add(p.pid);
+      todo.push(p.pid);
+    }
   }
-  const out = await new Deno.Command("ps", {
-    args: ["-p", String(pid)],
-    stdout: "null",
-    stderr: "null",
+  return [...out].sort((a, b) => a - b);
+}
+
+/**
+ * The live process tree of `pid` on this host (liveTree over the process
+ * table: Win32_Process on Windows, `ps -A` elsewhere). Throws when the table
+ * cannot be read (Sol r2: an unknown result is never "gone").
+ */
+export async function processTree(pid: number): Promise<number[]> {
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`bad pid ${pid}`);
+  const windows = Deno.build.os === "windows";
+  const out = await new Deno.Command(windows ? "pwsh" : "ps", {
+    args: windows
+      ? [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.ParentProcessId }",
+      ]
+      : ["-A", "-o", "pid=,ppid="],
+    stdout: "piped",
+    stderr: "piped",
   }).output();
-  return out.code === 0;
+  if (out.code !== 0) {
+    throw new Error(`process table: exit ${out.code}`);
+  }
+  const table = new TextDecoder().decode(out.stdout).split(/\r?\n/)
+    .map((l) => l.trim().split(/\s+/).map(Number))
+    .filter((p) => p.length === 2 && p.every(Number.isInteger))
+    .map(([p, pp]) => ({ pid: p!, ppid: pp! }));
+  // this very process must be listed, or the table is not trustworthy
+  if (!table.some((p) => p.pid === Deno.pid)) {
+    throw new Error(`process table incomplete (${table.length} rows)`);
+  }
+  return liveTree(table, pid);
 }
 
 /** Remove this token's evidence and heartbeat (gone already is fine). */

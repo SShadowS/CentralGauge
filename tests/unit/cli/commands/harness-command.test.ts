@@ -11684,14 +11684,27 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   const l = await loadLineage(lineage);
   const roots = l.fs!.roots;
   const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
-  // Sol r1: the gates process (pid 9) on this host (HOST1), alive or not
-  let pidAlive = false;
+  // Sol r1/r2: the gates process (pid 9) on this host (HOST1): its live
+  // tree (itself or a leftover worker), checked before recover's own claim
+  let tree: number[] = [];
+  let firstCheck = true;
   const d: EnvDeps = {
     ...deps(order),
     quarantineDir: () => qDir,
-    processAlive: (pid) => {
+    processTree: async (pid) => {
       assertEquals(pid, 9);
-      return Promise.resolve(pidAlive);
+      if (firstCheck) {
+        firstCheck = false;
+        assertEquals(
+          await Deno.stat(recordFile(qDir, fakeId("Cronus281"), true)).then(
+            () => "exists",
+            () => "none",
+          ),
+          "none",
+          "liveness is checked before recover claims",
+        );
+      }
+      return tree;
     },
   };
   const o = {
@@ -11756,9 +11769,12 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   await gates();
   await evidence();
   await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));
-  pidAlive = true;
-  await refused("process 9 is still running");
-  pidAlive = false;
+  tree = [9];
+  await refused("process 9 or its workers still run (9)");
+  // Sol r2: the gates process died but a pwsh worker it spawned lives on
+  tree = [4711];
+  await refused("still run (4711)");
+  tree = [];
   await gates("HOST7");
   await evidence();
   await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));

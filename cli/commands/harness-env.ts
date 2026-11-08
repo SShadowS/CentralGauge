@@ -126,7 +126,7 @@ import {
   type Evidence,
   isGatesRecord,
   ownerGone,
-  processAlive,
+  processTree,
   readEvidence,
   removeGatesFiles,
 } from "../../src/harness/gates-evidence.ts";
@@ -244,8 +244,8 @@ export interface EnvDeps {
   running(name: string): Promise<boolean>;
   /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
   poolBounds?: Partial<PoolBounds>;
-  /** H-76 Sol r1: a process with this pid runs on this host (default: tasklist / ps); throws when unknown. */
-  processAlive?(pid: number): Promise<boolean>;
+  /** H-76 Sol r1/r2: the live process tree of this pid on this host (default: processTree); throws when unknown. */
+  processTree?(pid: number): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
   containerId(name: string): Promise<string>;
   resolveHost(): Promise<string>;
@@ -685,6 +685,14 @@ export async function recoverContainer(
         pid: Deno.pid,
         host: deps.owner(),
       }, { recover: true });
+    // H-76 Sol r2: a live gates hold is refused BEFORE recover's claim
+    // exists (a live gates seeing a recover claim drops its hold); the check
+    // runs again under the claim
+    const before = await findRecords(qDir, { name: c, id });
+    const pre = gatesRecordOf(before);
+    if (pre) {
+      await refuseLiveGates(deps, qDir, id, c, before[0]!.why, pre, o.abandon);
+    }
     // H-35 run 004 Sol r2 N2: one recover per physical container
     let abandon = o.abandon ?? null;
     if (!await claim()) {
@@ -721,6 +729,54 @@ export async function recoverContainer(
   }
 }
 
+/** H-76: the container's only record, when it is a gates hold's in-use record. */
+function gatesRecordOf(found: FoundRecord[]) {
+  const r = found.length === 1 ? found[0]!.record : null;
+  return r?.state === "in_use" && isGatesRecord(r) ? r : null;
+}
+
+/**
+ * H-76: throws unless the gates hold's run is provably gone: --abandon
+ * <its token>, or on this host no live process in its pid's tree (Sol r1/r2:
+ * a suspended gates keeps its pid, its pwsh workers can outlive it) and its
+ * heartbeat 120 s stale. A record of another host needs --abandon.
+ */
+async function refuseLiveGates(
+  deps: EnvDeps,
+  qDir: string,
+  id: string,
+  c: string,
+  why: string,
+  g: { token: string; host: string; pid: number },
+  abandon: string | null | undefined,
+): Promise<void> {
+  if (abandon === g.token) return;
+  let problem: string | null;
+  if (g.host !== deps.owner()) {
+    problem = `recorded on host ${g.host}, not this one (${deps.owner()})`;
+  } else {
+    try {
+      const live = await (deps.processTree ?? processTree)(g.pid);
+      problem = live.length > 0
+        ? `process ${g.pid} or its workers still run (${live.join(", ")})`
+        : null;
+    } catch (err) {
+      problem = `whether process ${g.pid} or its workers run is unknown: ${
+        msg(err)
+      }`;
+    }
+    if (problem === null) {
+      const hb = await ownerGone(qDir, id, g.token);
+      problem = hb.gone ? null : hb.why;
+    }
+  }
+  if (problem) {
+    throw new ConfigurationError(
+      `recover ${c}: ${why}: a live gates run may hold it (${problem}); if it is gone, pass --abandon ${g.token}`,
+    );
+  }
+}
+
 async function recoverClaimed(
   o: LineageCommandOptions & { abandon?: string | null },
   deps: EnvDeps,
@@ -744,43 +800,10 @@ async function recoverClaimed(
   // H-76: a gates hold's in-use record, alone: recoverable once its run is
   // provably gone (a 120 s stale heartbeat, or --abandon <its token>) and
   // with its before-capture evidence, which the post-reset capture must equal.
-  const g = found.length === 1 && found[0]!.record?.state === "in_use" &&
-      isGatesRecord(found[0]!.record)
-    ? found[0]!.record
-    : null;
+  const g = gatesRecordOf(found);
   let evidence: Evidence | null = null;
   if (g) {
-    // Sol r1: a stale heartbeat alone is no proof (a suspended process keeps
-    // its pid and may resume): on this host its pid must be gone too; a
-    // record of another host needs --abandon.
-    const alive = deps.processAlive ?? processAlive;
-    const pidGone = async (): Promise<string | null> => {
-      if (g.host !== deps.owner()) {
-        return `recorded on host ${g.host}, not this one (${deps.owner()})`;
-      }
-      try {
-        return await alive(g.pid) ? `process ${g.pid} is still running` : null;
-      } catch (err) {
-        return `whether process ${g.pid} runs is unknown: ${msg(err)}`;
-      }
-    };
-    const owner = o.abandon === g.token
-      ? { gone: true as const }
-      : await (async () => {
-        const p = await pidGone();
-        return p ? { gone: false as const, why: p } : await ownerGone(
-          qDir,
-          id,
-          g.token,
-        );
-      })();
-    if (!owner.gone) {
-      throw new ConfigurationError(
-        `recover ${c}: ${
-          found[0]!.why
-        }: a live gates run may hold it (${owner.why}); if it is gone, pass --abandon ${g.token}`,
-      );
-    }
+    await refuseLiveGates(deps, qDir, id, c, found[0]!.why, g, o.abandon);
     const e = await readEvidence(qDir, id);
     const why = "why" in e
       ? e.why
