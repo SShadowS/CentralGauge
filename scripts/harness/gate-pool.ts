@@ -19,6 +19,22 @@ export interface GateJob extends GateOutcome {
 
 export const INFRA = 3;
 
+/**
+ * `f`, one call at a time in call order (a rejection does not stop the
+ * chain). Sol r1: each job's containerBc runs ensureTestHarness, which builds
+ * in one shared directory, so concurrent jobs open their container in turn.
+ */
+export function serialized<A extends unknown[], R>(
+  f: (...a: A) => Promise<R>,
+): (...a: A) => Promise<R> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (...a) => {
+    const run = tail.then(() => f(...a));
+    tail = run.catch(() => {});
+    return run;
+  };
+}
+
 export async function runGatePool(o: {
   containers: string[];
   tasks: string[];
@@ -29,7 +45,13 @@ export async function runGatePool(o: {
   log: (line: string) => void;
 }): Promise<{ code: number; jobs: GateJob[] }> {
   const admitted = await admittedPool(o.containers, o.admit, o.log);
-  const queue = o.tasks.map((task) => ({ task, retried: false }));
+  const tasks = [...new Set(o.tasks)];
+  for (const t of tasks) {
+    if (o.tasks.filter((x) => x === t).length > 1) {
+      o.log(`[WARN] ${t} listed twice; gated once`);
+    }
+  }
+  const queue = tasks.map((task) => ({ task, retried: false }));
   const jobs: GateJob[] = [];
   let inFlight = 0;
   let wake: () => void = () => {};

@@ -80,7 +80,10 @@ export async function admittedPool(
 ): Promise<string[]> {
   const out: string[] = [];
   for (const c of containers) {
-    const why = await admit(c);
+    // Sol r1: a second worker on one container would break exclusivity.
+    const why = out.some((x) => x.toLowerCase() === c.toLowerCase())
+      ? "listed twice"
+      : await admit(c);
     if (why === null) out.push(c);
     else warn(`[WARN] ${c} skipped: ${why}`);
   }

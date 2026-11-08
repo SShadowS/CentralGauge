@@ -8,6 +8,7 @@ import {
 import {
   type GateOutcome,
   runGatePool,
+  serialized,
 } from "../../../scripts/harness/gate-pool.ts";
 
 const POOL = ["Cronus281", "Cronus282", "Cronus283"];
@@ -221,6 +222,65 @@ Deno.test("H-70 withDefaultPool: run without --containers gets the admitted pool
     ),
     { containers: ["Cronus285"] },
   );
+});
+
+Deno.test("H-70 Sol r1: a container named twice (any case) gets one worker; its retry never lands on it again", async () => {
+  const lines: string[] = [];
+  assertEquals(
+    await admittedPool(
+      ["Cronus281", "cronus281", "Cronus282"],
+      () => Promise.resolve(null),
+      quiet(lines),
+    ),
+    ["Cronus281", "Cronus282"],
+  );
+  assertEquals(lines, ["[WARN] cronus281 skipped: listed twice"]);
+  const f = fakeGate((c) => (c === "Cronus281" ? 3 : 0));
+  const r = await runGatePool({
+    containers: ["Cronus281", "Cronus281"],
+    tasks: ["HX-101", "HX-102"],
+    gate: f.gate,
+    admit: admitAll,
+    log: () => {},
+  });
+  assertEquals(f.calls.filter((c) => c.endsWith("@Cronus281")).length, 1);
+  assertEquals(r.code, 3);
+});
+
+Deno.test("H-70 Sol r1 LOW: a task listed twice is gated once", async () => {
+  const f = fakeGate(() => 0);
+  const lines: string[] = [];
+  const r = await runGatePool({
+    containers: POOL,
+    tasks: ["HX-101", "HX-101", "HX-102"],
+    gate: f.gate,
+    admit: admitAll,
+    log: quiet(lines),
+  });
+  assertEquals(f.calls.length, 2);
+  assertEquals(r.jobs.map((j) => j.task).sort(), ["HX-101", "HX-102"]);
+  assert(
+    lines.includes("[WARN] HX-101 listed twice; gated once"),
+    lines.join("\n"),
+  );
+});
+
+Deno.test("H-70 Sol r1: serialized() runs its calls one at a time, in order, and survives a rejection", async () => {
+  let live = 0, peak = 0;
+  const order: number[] = [];
+  const one = serialized(async (n: number) => {
+    live++;
+    peak = Math.max(peak, live);
+    await tick();
+    order.push(n);
+    live--;
+    if (n === 2) throw new Error("boom");
+    return n;
+  });
+  const r = await Promise.allSettled([one(1), one(2), one(3)]);
+  assertEquals(peak, 1);
+  assertEquals(order, [1, 2, 3]);
+  assertEquals(r.map((x) => x.status), ["fulfilled", "rejected", "fulfilled"]);
 });
 
 Deno.test("H-70 gates: a gate that throws is infra for that container", async () => {

@@ -50,7 +50,7 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "./gate-stage.ts";
-import { runGatePool } from "./gate-pool.ts";
+import { runGatePool, serialized } from "./gate-pool.ts";
 
 const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
 const TMP_ROOT = Deno.env.get("CG_GATE_TMP") ?? join(EVIDENCE_ROOT, "tmp");
@@ -564,21 +564,34 @@ async function main(): Promise<number> {
     });
     return await exportSource(repo, a.rev, taskId, out);
   };
+  const openBc = serialized(containerBc);
   /** One task's gate on one container: `gate`, and each job of `gates`. */
   const gateOne = async (
     container: string,
     taskId: string,
   ): Promise<GateOutcome> => {
-    const src = await exported(taskId);
-    const loaded = await loadTask(src.taskDir);
-    const { problems } = await checkTask(loaded, src.refappDir, repo, {
-      drift: false,
-    });
-    if (problems.length > 0) {
-      for (const p of problems) console.log(`${colors.red("[FAIL]")} ${p}`);
+    // Sol r1: a task that cannot be prepared is the task's failure (1), as
+    // in a serial `gate`, never the container's (3, which drops it).
+    let src: Source, loaded: LoadedTask;
+    try {
+      src = await exported(taskId);
+      loaded = await loadTask(src.taskDir);
+      const { problems } = await checkTask(loaded, src.refappDir, repo, {
+        drift: false,
+      });
+      if (problems.length > 0) {
+        for (const p of problems) console.log(`${colors.red("[FAIL]")} ${p}`);
+        return { code: 1, file: null };
+      }
+    } catch (err) {
+      console.error(
+        `${colors.red("[FAIL]")} ${taskId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
       return { code: 1, file: null };
     }
-    const bc = await containerBc(container, credentials);
+    const bc = await openBc(container, credentials);
     if (!bc) {
       console.error(
         `${
