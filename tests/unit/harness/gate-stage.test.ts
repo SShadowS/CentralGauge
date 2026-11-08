@@ -1096,6 +1096,88 @@ Deno.test("checkTask: a fixture's Oracle file does not satisfy fail_to_pass", as
   );
 });
 
+const RESTRICTIVE_CU = (id: number, value = "Restrictive") =>
+  TEST_CU(id, "Role").replace(
+    "TestPermissions = Disabled;",
+    value === "" ? "" : `TestPermissions = ${value};`,
+  );
+
+/** H-71: a test-authoring task, optionally with `test_permissions: restrictive`. */
+async function restrictiveTask(flag: boolean): Promise<string> {
+  const root = await tmp();
+  const dir = await testAuthoringTask(root);
+  if (flag) {
+    await Deno.writeTextFile(
+      join(dir, "task.yml"),
+      "test_permissions: restrictive\n",
+      { append: true },
+    );
+  }
+  await write(dir, "reference-tests/Test/src/R.al", RESTRICTIVE_CU(80100));
+  await write(dir, "naive/x/Test/src/N.al", RESTRICTIVE_CU(80101));
+  return dir;
+}
+
+const permissionProblems = async (dir: string) =>
+  (await checkTask(
+    await loadTask(dir),
+    join(dir, "../../refapp"),
+    join(dir, "../../.."),
+  )).problems.filter((p) => p.includes("TestPermissions"));
+
+Deno.test("H-71: with test_permissions: restrictive, reference-tests/ and naive/ Test codeunits may state TestPermissions = Restrictive", async () => {
+  assertEquals(await permissionProblems(await restrictiveTask(true)), []);
+});
+
+Deno.test("H-71: without the flag, Restrictive is refused and the problem names the flag", async () => {
+  assertEquals(await permissionProblems(await restrictiveTask(false)), [
+    "reference-tests/Test/src/R.al: codeunit 80100 without TestPermissions = Disabled (task.yml test_permissions: restrictive allows Restrictive in reference-tests/ and naive/)",
+    "naive/x/Test/src/N.al: codeunit 80101 without TestPermissions = Disabled (task.yml test_permissions: restrictive allows Restrictive in reference-tests/ and naive/)",
+  ]);
+});
+
+Deno.test("H-71: with the flag, a missing or other value, and Restrictive in oracle/ or overlay, are still refused", async () => {
+  const dir = await restrictiveTask(true);
+  await write(dir, "reference-tests/Test/src/R.al", RESTRICTIVE_CU(80100, ""));
+  await write(
+    dir,
+    "naive/x/Test/src/N.al",
+    RESTRICTIVE_CU(80101, "RestrictiveIndirect"),
+  );
+  await write(
+    dir,
+    "naive/y/Test/src/N.al",
+    RESTRICTIVE_CU(80102, "NonRestrictive"),
+  );
+  await write(dir, "overlay/Test/src/O.al", RESTRICTIVE_CU(80103));
+  const band = oracleBandOf(2)![0];
+  await write(dir, "oracle/src/O.al", RESTRICTIVE_CU(band));
+  const got = (await permissionProblems(dir)).map((p) => p.split(":")[0])
+    .sort();
+  assertEquals(got, [
+    "naive/x/Test/src/N.al",
+    "naive/y/Test/src/N.al",
+    "oracle/src/O.al",
+    "overlay/Test/src/O.al",
+    "reference-tests/Test/src/R.al",
+  ]);
+});
+
+Deno.test("H-71: test_permissions is for kind test-authoring only", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  await Deno.writeTextFile(
+    join(dir, "task.yml"),
+    "test_permissions: restrictive\n",
+    { append: true },
+  );
+  const err = await assertRejects(() => loadTask(dir));
+  assertStringIncludes(
+    String(err),
+    "test_permissions is for kind test-authoring only",
+  );
+});
+
 Deno.test("checkTask: a fixture's Oracle files are band-checked like the oracle", async () => {
   const root = await tmp();
   const dir = await writeTask(root, "HX-007", "# Bug\n");

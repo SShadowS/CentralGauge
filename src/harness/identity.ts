@@ -389,6 +389,10 @@ export async function oraclePreimage(
     ...(task.production_allow
       ? { production_allow: task.production_allow }
       : {}),
+    // H-71: absent stays absent, like production_allow.
+    ...(task.test_permissions
+      ? { test_permissions: task.test_permissions }
+      : {}),
   };
 }
 
