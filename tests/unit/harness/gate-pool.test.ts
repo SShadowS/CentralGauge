@@ -535,3 +535,127 @@ Deno.test("H-74 recordHolds: --wait-free 0 refuses a busy container at once", as
   assert("why" in h);
   assertStringIncludes(h.why, "in use by campaign");
 });
+
+// ---- H-76: evidence, heartbeat and the token check ----
+
+Deno.test("H-76 Sol r1 gates: the hold's setup (afterClaim) runs only after the admission recheck; a refused recheck never sets it up; a failing setup releases the untouched claim; done runs before every release and on a keep", async () => {
+  const recs = fakeRecords();
+  const lines: string[] = [];
+  let leased = false;
+  const r = await runGatePool({
+    containers: POOL,
+    tasks: ["HX-101", "HX-102"],
+    gate: (c) =>
+      Promise.resolve({
+        code: 0,
+        file: c,
+        clean: c !== "Cronus282",
+      }),
+    admit: (c) => {
+      recs.events.push(`admit:${c}`);
+      return Promise.resolve(
+        c === "Cronus281" && leased ? "coord lease held by lane-x" : null,
+      );
+    },
+    hold: (c) => {
+      if (c === "Cronus281") leased = true; // taken while the hold waited
+      return recordHolds({
+        claim: recs.claim("gates"),
+        release: recs.release,
+        waitMs: 0,
+        afterClaim: (c, id) => {
+          recs.events.push(`after:${c}:${id}`);
+          return c === "Cronus283"
+            ? Promise.reject(new Error("heartbeat not written"))
+            : Promise.resolve();
+        },
+        done: (c, _id, released) => {
+          recs.events.push(`done:${c}:${released}`);
+          return Promise.resolve();
+        },
+        log: quiet(lines),
+      })(c);
+    },
+    log: quiet(lines),
+  });
+  const ev = recs.events;
+  // 281: recheck refused, never set up; released untouched
+  assert(!ev.some((e) => e.startsWith("after:Cronus281")), ev.join(","));
+  // 283: set up after its recheck, setup failed, released (done first)
+  assert(
+    ev.indexOf("admit:Cronus283", ev.indexOf("claim:Cronus283:gates")) <
+      ev.findIndex((e) => e.startsWith("after:Cronus283")),
+    ev.join(","),
+  );
+  assert(
+    lines.some((l) =>
+      l.startsWith("[WARN] Cronus283 skipped: hold setup failed")
+    ),
+    lines.join("\n"),
+  );
+  for (const c of ["Cronus281", "Cronus283"]) {
+    assertEquals(recs.held.has(c), false, `${c} released`);
+    assert(
+      ev.indexOf(`done:${c}:true`) <
+        ev.findIndex((e) => e.startsWith(`release:${c}`)),
+      `${c}: done before release: ${ev.join(",")}`,
+    );
+  }
+  // 282 ran one task, ended dirty and left the pool: the record is kept
+  // (done, no release); nothing else was left to run the other task
+  assertEquals(r.jobs.map((j) => j.container).sort(), ["Cronus282", null]);
+  assertEquals(recs.held.get("Cronus282"), "gates");
+  assert(ev.includes("done:Cronus282:false"), ev.join(","));
+  assert(!ev.some((e) => e.startsWith("release:Cronus282")));
+});
+
+Deno.test("H-76 gates: the record is rechecked before every job; once it is no longer this run's, no further job runs there, the task goes elsewhere and nothing is released", async () => {
+  const recs = fakeRecords();
+  const lines: string[] = [];
+  const ran: string[] = [];
+  const ends: string[] = [];
+  const r = await runGatePool({
+    containers: ["Cronus281", "Cronus282"],
+    tasks: ["HX-101", "HX-102", "HX-103"],
+    gate: async (c, t) => {
+      ran.push(`${t}@${c}`);
+      // recover takes 281 over after its first job
+      if (c === "Cronus281") recs.held.set(c, "recover");
+      await tick();
+      return { code: 0, file: t };
+    },
+    admit: admitAll,
+    hold: recordHolds({
+      claim: recs.claim("gates"),
+      release: recs.release,
+      waitMs: 0,
+      owned: (c) => Promise.resolve(recs.held.get(c) === "gates"),
+      done: (c, _id, released) => {
+        ends.push(`${c}:${released}`);
+        return Promise.resolve();
+      },
+      log: quiet(lines),
+    }),
+    log: quiet(lines),
+  });
+  // the lost hold is stopped (heartbeat) without a release
+  assertEquals(ends.sort(), ["Cronus281:false", "Cronus282:true"]);
+  assertEquals(ran.filter((x) => x.endsWith("@Cronus281")).length, 1);
+  assertEquals(r.jobs.map((j) => j.task).sort(), [
+    "HX-101",
+    "HX-102",
+    "HX-103",
+  ]);
+  assert(r.jobs.every((j) => j.code === 0));
+  assertEquals(recs.held.get("Cronus281"), "recover", "never released");
+  assert(
+    !recs.events.some((e) => e.startsWith("release:Cronus281")),
+    recs.events.join(","),
+  );
+  assert(
+    lines.some((l) =>
+      l.startsWith("[FAIL] Cronus281") && l.includes("no longer this run's")
+    ),
+    lines.join("\n"),
+  );
+});

@@ -73,6 +73,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}gate-pool.test.ts`]: c(true, 0),
   [`${H}gate-stage.test.ts`]: c(true, 8),
   [`${H}gate-task.test.ts`]: c(true, 3),
+  [`${H}gates-evidence.test.ts`]: c(true, 0),
   [`${H}hash.test.ts`]: c(true, 0),
   [`${H}identity.test.ts`]: c(true, 21),
   [`${H}images.test.ts`]: c(true, 0),

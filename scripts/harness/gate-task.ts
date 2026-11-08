@@ -13,6 +13,9 @@
 //                                             MIN (0-120, default 0) for
 //                                             another run's in-use record to go
 //                                             (a judge a campaign lends)
+//         [--lineage FILE]                    H-76: a before-capture per
+//                                             hold, so harness recover can
+//                                             clear a dirty hold's record
 //   judge <container> <taskId> <ws> [--rev R] pilot scoring, developmental
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
@@ -31,6 +34,10 @@ import {
 } from "../../src/harness/allocation.ts";
 import { containerId } from "../../src/container/docker-inspect.ts";
 import { claimExclusive, releaseOwned } from "../../src/harness/quarantine.ts";
+import { gatesHooks } from "../../src/harness/gates-evidence.ts";
+import { loadLineage } from "../../src/harness/lineage.ts";
+import { fsDiff, goldenReset } from "../../src/harness/reset.ts";
+import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import { parseCoordLease } from "../../cli/commands/harness-command.ts";
 import {
   resolveSoapTimeoutMs,
@@ -571,7 +578,7 @@ async function hostCompile(
 
 async function main(): Promise<number> {
   const a = parseArgs(Deno.args, {
-    string: ["rev", "containers", "coord-lease", "wait-free"],
+    string: ["rev", "containers", "coord-lease", "wait-free", "lineage"],
     collect: ["coord-lease"],
     default: { rev: "HEAD" },
   });
@@ -713,8 +720,45 @@ async function main(): Promise<number> {
       );
       const token = crypto.randomUUID();
       const host = Deno.hostname();
+      // H-76: heartbeat always; the before-capture with --lineage
+      let evidence: Parameters<typeof gatesHooks>[0]["evidence"];
+      if (a.lineage) {
+        const lineage = await loadLineage(a.lineage);
+        const m = goldenReset({
+          repoRoot: repo,
+          lineagePath: a.lineage,
+          lineage,
+          dockerEnv: dockerContextEnv(),
+        });
+        const fsDigest = m.fsDigest;
+        if (!fsDigest) {
+          console.error(
+            `${
+              colors.red("[FAIL]")
+            } lineage ${lineage.id} has no fs section: no before-capture`,
+          );
+          return 2;
+        }
+        evidence = {
+          lineageId: lineage.id,
+          capture: (c) => fsDigest(c),
+          // recover's own test: a capture alone, read as the before side
+          clean: (lines) =>
+            !fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? []).errors
+              .some((e) => e.startsWith("before: ")),
+        };
+      }
+      const hooks = gatesHooks({
+        dir: qDir,
+        token,
+        ...(evidence ? { evidence } : {}),
+        log: (l) => console.log(l),
+      });
       const r = await runGatePool({
         hold: recordHolds({
+          afterClaim: hooks.afterClaim,
+          done: hooks.done,
+          owned: hooks.owned,
           claim: async (c) =>
             claimExclusive(qDir, {
               state: "in_use",
@@ -738,7 +782,7 @@ async function main(): Promise<number> {
           new Map(a["coord-lease"].map(parseCoordLease)),
         ),
         log: (l) => console.log(l),
-      });
+      }).finally(() => hooks.stopAll());
       for (const j of r.jobs) {
         console.log(
           `${j.task} ${j.code} ${j.container ?? "-"} ${j.file ?? "-"}`,

@@ -122,6 +122,14 @@ import {
   removeUnchanged,
   rewriteOwned,
 } from "../../src/harness/quarantine.ts";
+import {
+  type Evidence,
+  isGatesRecord,
+  ownerGone,
+  processHolders,
+  readEvidence,
+  removeGatesFiles,
+} from "../../src/harness/gates-evidence.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import {
   containerId,
@@ -236,6 +244,8 @@ export interface EnvDeps {
   running(name: string): Promise<boolean>;
   /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
   poolBounds?: Partial<PoolBounds>;
+  /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
+  processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
   containerId(name: string): Promise<string>;
   resolveHost(): Promise<string>;
@@ -675,6 +685,14 @@ export async function recoverContainer(
         pid: Deno.pid,
         host: deps.owner(),
       }, { recover: true });
+    // H-76 Sol r2: a live gates hold is refused BEFORE recover's claim
+    // exists (a live gates seeing a recover claim drops its hold); the check
+    // runs again under the claim
+    const before = await findRecords(qDir, { name: c, id });
+    const pre = gatesRecordOf(before);
+    if (pre) {
+      await refuseLiveGates(deps, qDir, id, c, before[0]!.why, pre, o.abandon);
+    }
     // H-35 run 004 Sol r2 N2: one recover per physical container
     let abandon = o.abandon ?? null;
     if (!await claim()) {
@@ -711,6 +729,63 @@ export async function recoverContainer(
   }
 }
 
+/** H-76: the container's only record, when it is a gates hold's in-use record. */
+function gatesRecordOf(found: FoundRecord[]) {
+  const r = found.length === 1 ? found[0]!.record : null;
+  return r?.state === "in_use" && isGatesRecord(r) ? r : null;
+}
+
+/**
+ * H-76: throws unless the gates hold's run is provably gone: --abandon
+ * <its token>, or on this host no live process in its pid's tree (Sol r1/r2:
+ * a suspended gates keeps its pid, its pwsh workers can outlive it) and its
+ * heartbeat 120 s stale. A record of another host needs --abandon.
+ */
+async function refuseLiveGates(
+  deps: EnvDeps,
+  qDir: string,
+  id: string,
+  c: string,
+  why: string,
+  g: { token: string; host: string; pid: number; container: string },
+  abandon: string | null | undefined,
+): Promise<void> {
+  if (abandon === g.token) return;
+  let problem: string | null;
+  if (g.host !== deps.owner()) {
+    problem = `recorded on host ${g.host}, not this one (${deps.owner()})`;
+  } else {
+    try {
+      // Sol r3: also any live process naming the container (an orphaned
+      // `docker exec` whose pwsh parent died is cut off from gates' tree)
+      // Sol r4: the record's own name too (a renamed container's orphans)
+      const names = [...new Set([c, g.container, id, id.slice(0, 12)])];
+      const live = await (deps.processHolders ?? processHolders)(
+        g.pid,
+        names,
+      );
+      problem = live.length > 0
+        ? `process ${g.pid}, its workers or a process naming ${c} still run (${
+          live.join(", ")
+        })`
+        : null;
+    } catch (err) {
+      problem = `whether process ${g.pid} or its workers run is unknown: ${
+        msg(err)
+      }`;
+    }
+    if (problem === null) {
+      const hb = await ownerGone(qDir, id, g.token);
+      problem = hb.gone ? null : hb.why;
+    }
+  }
+  if (problem) {
+    throw new ConfigurationError(
+      `recover ${c}: ${why}: a live gates run may hold it (${problem}); if it is gone, pass --abandon ${g.token}`,
+    );
+  }
+}
+
 async function recoverClaimed(
   o: LineageCommandOptions & { abandon?: string | null },
   deps: EnvDeps,
@@ -731,8 +806,36 @@ async function recoverClaimed(
       );
     }
   }
+  // H-76: a gates hold's in-use record, alone: recoverable once its run is
+  // provably gone (a 120 s stale heartbeat, or --abandon <its token>) and
+  // with its before-capture evidence, which the post-reset capture must equal.
+  const g = gatesRecordOf(found);
+  let evidence: Evidence | null = null;
+  if (g) {
+    await refuseLiveGates(deps, qDir, id, c, found[0]!.why, g, o.abandon);
+    const e = await readEvidence(qDir, id);
+    const why = "why" in e
+      ? e.why
+      : e.token !== g.token
+      ? `gates evidence of another hold (token ${e.token})`
+      : e.lineage_id !== x.lineage.id
+      ? `gates evidence of lineage ${e.lineage_id}, not ${x.lineage.id}`
+      : fsDiff(
+          e.lines,
+          [],
+          x.mechanism.fsExclude ?? [],
+          x.mechanism.fsRoots ?? [],
+        )
+          .errors.some((l) => l.startsWith("before: "))
+      ? "the gates before-capture has errors"
+      : null;
+    if (why || "why" in e) {
+      throw new ConfigurationError(`recover ${c}: ${RECREATE} (${why})`);
+    }
+    evidence = e;
+  }
   // a live claim (an environment, or an abandoned recover) needs --abandon <its token>
-  for (const f of found) {
+  for (const f of g ? [] : found) {
     const r = f.record;
     if (r?.state === "in_use" && r.token !== o.abandon) {
       throw new ConfigurationError(
@@ -745,8 +848,9 @@ async function recoverClaimed(
       `recover ${c}: --abandon ${o.abandon} names no record of this container`,
     );
   }
-  // H-35 run 004 Sol r2 N4: evidence before any reset
-  for (const f of found) {
+  // H-35 run 004 Sol r2 N4: evidence before any reset (H-76: a gates
+  // record's evidence is its before-capture, checked above)
+  for (const f of g ? [] : found) {
     const p = evidenceProblem(f.record);
     if (p) {
       throw new ConfigurationError(
@@ -820,6 +924,26 @@ async function recoverClaimed(
         "health",
       );
     }
+    // H-76: the post-reset capture equals the gates before-capture, or the
+    // container is recreated (nothing is removed on this path)
+    if (evidence) {
+      const d = fsDiff(
+        evidence.lines,
+        lines,
+        m.fsExclude ?? [],
+        m.fsRoots ?? [],
+        m.fsCaches ?? [],
+      );
+      if (d.diff.length > 0 || d.errors.length > 0) {
+        throw new ContainerError(
+          `recover ${c}: ${RECREATE}: filesystem differs from the gates before-capture: ${
+            [...d.errors, ...d.diff.map((e) => e.path)].slice(0, 5).join("; ")
+          }`,
+          c,
+          "health",
+        );
+      }
+    }
     const recordedAll = found.flatMap((f) => f.record?.fs_diff ?? []);
     // H-35 run 004 Sol r2 N5: absence counts only where this capture looks;
     // every recorded entry, cache-shaped or not (orch r005c HIGH)
@@ -867,6 +991,7 @@ async function recoverClaimed(
       }; run harness recover again`,
     );
   }
+  if (g) await removeGatesFiles(qDir, id, g.token);
   return made;
 }
 
