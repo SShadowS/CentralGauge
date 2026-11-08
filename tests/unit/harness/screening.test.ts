@@ -1371,12 +1371,20 @@ import { SCREEN_PREFIX, STRATA } from "../../../scripts/harness/screening.ts";
 Deno.test("ScreeningSchema (H-68): amendments default to none; a prescreen record needs a calibration first round and distinct seals", async () => {
   assertEquals(S([C("HX-007")]).amendments, []);
   // H-68 r1: the committed registry carries the amendment record; the
-  // orchestrator appends its rounds when it seals.
-  assertEquals((await readYaml(REGISTRY_PATH, ScreeningSchema)).amendments, [{
-    id: "prescreen",
-    decision: "decisions/2026-11-06-m8-wave2-round0-and-prescreen.md",
-    rounds: [],
-  }]);
+  // orchestrator appends its rounds when it seals (first: wave-2 round 1).
+  const committed = (await readYaml(REGISTRY_PATH, ScreeningSchema)).amendments;
+  assertEquals(committed.length, 1);
+  const record = committed[0];
+  if (!record) throw new Error("expected the prescreen amendment record");
+  assertEquals(record.id, "prescreen");
+  assertEquals(
+    record.decision,
+    "decisions/2026-11-06-m8-wave2-round0-and-prescreen.md",
+  );
+  assertEquals(record.rounds[0], {
+    seal: "harness-v2-screen-w2r1",
+    mode: "calibration",
+  });
   const amend = (a: unknown) =>
     ScreeningSchema.safeParse({
       v: 1,
