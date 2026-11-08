@@ -17,13 +17,7 @@ import type { GateRun, RunResult, TestRef, Variant } from "./gate-core.ts";
 import type { Source } from "./gate-stage.ts";
 import type { GateOutcome } from "./gate-pool.ts";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
-import { inspectContainer } from "../../src/container/docker-inspect.ts";
-import {
-  allocatedContainers,
-  DEFAULT_COORD_ROOT,
-  DEFAULT_POOL,
-} from "../../src/harness/allocation.ts";
-import { coordLeaseBlock } from "../../src/harness/coord-lease.ts";
+import { DEFAULT_POOL, poolAdmit } from "../../src/harness/allocation.ts";
 import { parseCoordLease } from "../../cli/commands/harness-command.ts";
 import {
   resolveSoapTimeoutMs,
@@ -56,7 +50,7 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "./gate-stage.ts";
-import { admitContainer, runGatePool } from "./gate-pool.ts";
+import { runGatePool } from "./gate-pool.ts";
 
 const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
 const TMP_ROOT = Deno.env.get("CG_GATE_TMP") ?? join(EVIDENCE_ROOT, "tmp");
@@ -663,21 +657,15 @@ async function main(): Promise<number> {
       return (await gateOne(rest[0]!, rest[1]!)).code;
     }
     if (cmd === "gates" && rest.length > 0) {
-      const coordRoot = Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT;
-      const own = new Map(a["coord-lease"].map(parseCoordLease));
-      const allocated = await allocatedContainers(coordRoot);
       const r = await runGatePool({
         containers: a.containers === undefined
           ? [...DEFAULT_POOL]
           : a.containers.split(",").map((c) => c.trim()).filter(Boolean),
         tasks: rest,
         gate: gateOne,
-        admit: (c) =>
-          admitContainer(c, {
-            allocated,
-            running: async (x) => (await inspectContainer(x))?.running === true,
-            leaseBlock: (x) => coordLeaseBlock(coordRoot, own, x),
-          }),
+        admit: poolAdmit(
+          new Map(a["coord-lease"].map(parseCoordLease)),
+        ),
         log: (l) => console.log(l),
       });
       for (const j of r.jobs) {

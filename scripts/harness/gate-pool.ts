@@ -4,6 +4,7 @@
 // next task; each task's gate is unchanged, so its evidence equals a serial
 // run's. Exit 3 (infra) sends the task back once for another container, and
 // that container leaves the pool. Owner: lane-infra2.
+import { admittedPool } from "../../src/harness/allocation.ts";
 
 export interface GateOutcome {
   code: number;
@@ -18,27 +19,6 @@ export interface GateJob extends GateOutcome {
 
 export const INFRA = 3;
 
-/**
- * Why `container` may not join the pool, or null: it must be allocated,
- * running (a stopped one is never started here) and free of a coord lease
- * held by another (lane-ops passes its own with --coord-lease).
- */
-export async function admitContainer(
-  container: string,
-  d: {
-    allocated: string[];
-    running: (c: string) => Promise<boolean>;
-    leaseBlock: (c: string) => string | null;
-  },
-): Promise<string | null> {
-  if (!d.allocated.some((a) => a.toLowerCase() === container.toLowerCase())) {
-    return `not allocated (allowed: ${d.allocated.join(", ")})`;
-  }
-  const lease = d.leaseBlock(container);
-  if (lease !== null) return lease;
-  return (await d.running(container)) ? null : "not running";
-}
-
 export async function runGatePool(o: {
   containers: string[];
   tasks: string[];
@@ -48,12 +28,7 @@ export async function runGatePool(o: {
   admit: (container: string) => Promise<string | null>;
   log: (line: string) => void;
 }): Promise<{ code: number; jobs: GateJob[] }> {
-  const admitted: string[] = [];
-  for (const c of o.containers) {
-    const why = await o.admit(c);
-    if (why === null) admitted.push(c);
-    else o.log(`[WARN] ${c} skipped: ${why}`);
-  }
+  const admitted = await admittedPool(o.containers, o.admit, o.log);
   const queue = o.tasks.map((task) => ({ task, retried: false }));
   const jobs: GateJob[] = [];
   let inFlight = 0;

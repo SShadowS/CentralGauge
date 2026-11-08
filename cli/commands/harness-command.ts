@@ -240,7 +240,11 @@ import {
   guardResultsDir,
   liveRunMarker,
 } from "../../src/harness/results-root.ts";
-import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
+import {
+  DEFAULT_COORD_ROOT,
+  poolAdmit,
+  withDefaultPool,
+} from "../../src/harness/allocation.ts";
 import {
   baselineCreate,
   envCheck,
@@ -1632,7 +1636,8 @@ export async function harnessSymbolsLock(
 
 interface CellCliFlags {
   resultsDir: string;
-  containers: string;
+  /** Absent: Cronus281, or the H-70 pool for `run` (withDefaultPool). */
+  containers?: string;
   backendHost?: string;
   backendPort: number;
   secretsDir: string[];
@@ -1719,7 +1724,8 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
   return {
     root: cwd,
     resultsDir: abs(f.resultsDir),
-    containers: f.containers.split(",").map((c) => c.trim()).filter(Boolean),
+    containers: (f.containers ?? "Cronus281").split(",").map((c) => c.trim())
+      .filter(Boolean),
     backendHost: f.backendHost,
     backendPort: f.backendPort,
     secretAccounts: parseSecretsDirs(f.secretsDir),
@@ -3643,8 +3649,7 @@ export function registerHarnessCommand(
       })
       .option(
         "--containers <names:string>",
-        "BC containers (comma-separated; must be allocated to the campaign)",
-        { default: "Cronus281" },
+        "BC containers (comma-separated; must be allocated to the campaign). Default Cronus281; H-70: `run` defaults to the Cronus281-283 pool, minus containers not allocated, not running or leased by another",
       )
       .option(
         "--backend-host <ip:string>",
@@ -3936,7 +3941,17 @@ export function registerHarnessCommand(
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => {
-        const s = await harnessRun(experiment, runOpts(opts), open);
+        const o = runOpts(opts);
+        const s = await harnessRun(
+          experiment,
+          await withDefaultPool(
+            o,
+            opts.containers,
+            poolAdmit(o.coordLeases ?? new Map()),
+            (l) => console.log(colors.yellow(l)),
+          ),
+          open,
+        );
         // H-41 (Q6): starved (or W's unanswered-container bound): EX_TEMPFAIL
         if (s.starved) Deno.exitCode = EXIT_POOL_STARVED;
       })

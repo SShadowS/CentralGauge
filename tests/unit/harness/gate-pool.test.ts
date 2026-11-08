@@ -1,6 +1,11 @@
 import { assert, assertEquals } from "@std/assert";
 import {
   admitContainer,
+  admittedPool,
+  DEFAULT_POOL,
+  withDefaultPool,
+} from "../../../src/harness/allocation.ts";
+import {
   type GateOutcome,
   runGatePool,
 } from "../../../scripts/harness/gate-pool.ts";
@@ -178,6 +183,43 @@ Deno.test("H-70 admitContainer: allocated, not leased by another, running; never
   assertEquals(
     await admitContainer("Cronus28", d),
     `not allocated (allowed: ${POOL.join(", ")})`,
+  );
+});
+
+Deno.test("H-70 admittedPool: keeps the admitted containers in order and warns for each skipped one", async () => {
+  const lines: string[] = [];
+  const pool = await admittedPool(
+    [...DEFAULT_POOL],
+    (c) => Promise.resolve(c === "Cronus282" ? "not running" : null),
+    quiet(lines),
+  );
+  assertEquals(pool, ["Cronus281", "Cronus283"]);
+  assertEquals(lines, ["[WARN] Cronus282 skipped: not running"]);
+  assertEquals([...DEFAULT_POOL], POOL);
+});
+
+Deno.test("H-70 withDefaultPool: run without --containers gets the admitted pool; with --containers nothing changes", async () => {
+  const admit = (c: string) =>
+    Promise.resolve(c === "Cronus283" ? "not running" : null);
+  const lines: string[] = [];
+  assertEquals(
+    await withDefaultPool(
+      { containers: ["Cronus281"], x: 1 },
+      undefined,
+      admit,
+      quiet(lines),
+    ),
+    { containers: ["Cronus281", "Cronus282"], x: 1 },
+  );
+  assertEquals(lines, ["[WARN] Cronus283 skipped: not running"]);
+  assertEquals(
+    await withDefaultPool(
+      { containers: ["Cronus285"] },
+      "Cronus285",
+      admit,
+      () => {},
+    ),
+    { containers: ["Cronus285"] },
   );
 });
 
