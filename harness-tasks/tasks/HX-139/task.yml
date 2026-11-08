@@ -1,0 +1,16 @@
+id: HX-139
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Fleet, Test]
+coupling: [internal]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [ReturnWithoutDamageReleasesVehicle, ExcessKmCharged] }
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle] }
+fail_to_pass: null
+mutants: [m-confirm-unguarded, m-msg-guarded, m-msg-count, m-allowance, m-charge-within]
+contamination: null
+limits: { timeout_min: 30 }

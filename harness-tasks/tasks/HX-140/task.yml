@@ -1,0 +1,15 @@
+id: HX-140
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Test]
+coupling: [events, single-instance]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+fail_to_pass: null
+mutants: [m-helper-bind, m-swallow, m-completed, m-blocked, m-single-batch]
+contamination: null
+limits: { timeout_min: 30 }

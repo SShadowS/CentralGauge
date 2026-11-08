@@ -304,6 +304,36 @@ candidates:
   - id: HX-138
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Outbox Purge.OnBeforePurgeEntry" }
+  - id: HX-139
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-140
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnSendVehicle, OnBatchCompleted" }
+  - id: HX-141
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR SMS Send.OnSendSms" }
+  - id: HX-142
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnBeforeChargeOverdueFee" }
+  - id: HX-143
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnAfterImportBooking" }
+  - id: HX-144
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnAfterVehicleCheckedOut" }
+  - id: HX-145
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-146
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-147
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Redelivery Send.OnRedeliverEntry" }
+  - id: HX-148
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnAfterPostRentalContract" }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:

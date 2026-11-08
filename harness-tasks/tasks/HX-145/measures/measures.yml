@@ -1,0 +1,19 @@
+v: 1
+partial_credit:
+  weights:
+    "88135/BranchRerateRoundsToCents": 1
+    "88135/NightRerateRoundsEveryBranch": 1
+    "88135/NightRerateQueuesNoContractChanged": 1
+    "88135/NightRerateRunsAgainAfterFailure": 1
+  hidden_regressions:
+    - "88135/BranchRerateQueuesOnlyRatesChanged"
+    - "88135/PlainContractChangeQueuesNotification"
+    - "88135/ContractChangeQueuesAfterNightRerate"
+    - "88135/ContractChangeQueuesAfterFailedNight"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/binding-only: { partial_credit: 0.25 }
+  naive/keep-alive-si: { partial_credit: 0.75 }
+  naive/rounding-only: { partial_credit: 0.5 }
+  naive/try-wrapper: { partial_credit: 0 }

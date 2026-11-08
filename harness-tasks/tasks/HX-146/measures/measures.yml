@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "88150/RentedVehicleSums": 1
+    "88150/NotRentedVehicleListed": 1
+    "88150/RentedOutsideOnlyListed": 1
+    "88150/MixedFleetOneFill": 1
+    "88150/SecondFillReplacesFirst": 1
+  hidden_regressions:
+    - "88150/BlockedVehicleNotListed"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/no-entries-only: { partial_credit: 0.6 }
+  naive/null-date-filter: { partial_credit: 0.6 }
+  naive/swap-only: { partial_credit: 0.2 }
