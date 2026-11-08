@@ -4,6 +4,8 @@ import { join } from "@std/path";
 import { parse } from "@std/yaml";
 import {
   entryHash,
+  ledgerProblems,
+  loadLedgerAnchors,
   ScreeningSchema,
   type SealEntry,
   SealsSchema,
@@ -58,10 +60,13 @@ async function startEntry(): Promise<SealEntry> {
 
 /**
  * Scratch repo + bare origin (nothing leaves the machine): the real
- * screening.yml (its prescreen amendment has the w2r1 calibration round), a
- * one-entry seals.yml, a refapp file, the start tag pushed.
+ * screening.yml with its calibration round renamed to the start seal (so a
+ * sealed calibration round exists; `unsealedRound` keeps w2r1, a round no
+ * seal has), a refapp file, the start seal and its -ledger tag, all pushed.
  */
-async function sealRepo(o: { eol?: "\n" | "\r\n" } = {}) {
+async function sealRepo(
+  o: { eol?: "\n" | "\r\n"; unsealedRound?: boolean } = {},
+) {
   const dir = await tempDir({ prefix: "cg-seal-" });
   const origin = join(dir, "origin.git");
   const repo = join(dir, "repo");
@@ -79,9 +84,19 @@ async function sealRepo(o: { eol?: "\n" | "\r\n" } = {}) {
   );
   await Deno.writeTextFile(
     join(repo, "harness-tasks", "v2", "screening.yml"),
-    lf.replace(/\n/g, eol),
+    (o.unsealedRound ? lf : lf.replace("harness-v2-screen-w2r1", START))
+      .replace(/\n/g, eol),
   );
-  const e = await startEntry();
+  await Deno.writeTextFile(join(repo, "harness-tasks", "refapp", "a.al"), "x");
+  await sh(repo, "add", "-A");
+  await sh(repo, "commit", "-q", "-m", "base");
+  await sh(repo, "tag", "-a", "-m", "s", START);
+  await sh(repo, "push", "-q", "origin", "master", START);
+  const e: SealEntry = {
+    ...await startEntry(),
+    tag_object: await sh(repo, "rev-parse", `refs/tags/${START}`),
+    commit: await sh(repo, "rev-parse", `${START}^{commit}`),
+  };
   const seals = [
     "# ledger",
     "v: 2",
@@ -101,11 +116,10 @@ async function sealRepo(o: { eol?: "\n" | "\r\n" } = {}) {
     join(repo, "harness-tasks", "v2", "seals.yml"),
     seals,
   );
-  await Deno.writeTextFile(join(repo, "harness-tasks", "refapp", "a.al"), "x");
   await sh(repo, "add", "-A");
-  await sh(repo, "commit", "-q", "-m", "base");
-  await sh(repo, "tag", "-a", "-m", "s", START);
-  await sh(repo, "push", "-q", "origin", "master", START);
+  await sh(repo, "commit", "-q", "-m", "ledger");
+  await sh(repo, "tag", "-a", "-m", "l", `${START}-ledger`);
+  await sh(repo, "push", "-q", "origin", "master", `${START}-ledger`);
   return { repo, origin, start: e };
 }
 
@@ -279,8 +293,13 @@ const refusals: [
   [
     "a calibration round after a filter round (H-69)",
     async (r) => {
+      // A sealed, ledgered filter round first.
+      const w = "harness-v2-screen-w2r9";
       const f = await fakeIo(r.repo);
-      assertEquals(await prepare(f.io, "harness-v2-screen-w2r9", "filter"), 0);
+      assertEquals(await prepare(f.io, w, "filter"), 0);
+      await sh(r.repo, "push", "-q", "origin", "master", w);
+      const g = await fakeIo(r.repo, { now: Date.now() });
+      assertEquals(await ledger(g.io, w), 0);
     },
     TAG,
     "a calibration round may not follow a filter round",
@@ -302,17 +321,30 @@ const refusals: [
   ],
   ["the start tag", () => Promise.resolve(), START, "already exists", "filter"],
   [
-    "a seal already in the ledger",
-    () => Promise.resolve(),
-    "harness-v2-screen-w2r1",
-    "already exists",
-    "calibration",
+    "an earlier seal without a ledger entry (Sol r1)",
+    ({ repo }) => sh(repo, "tag", "-a", "-m", "x", "harness-v2-screen-w2r8"),
+    TAG,
+    "seal harness-v2-screen-w2r8 has no ledger entry yet",
+    "filter",
+  ],
+  [
+    "a filter round whose only calibration round was declared after its seal (sealRound, Sol r1)",
+    async ({ repo }) => {
+      const p = join(repo, "harness-tasks/v2/screening.yml");
+      const t = await Deno.readTextFile(p);
+      await Deno.writeTextFile(p, t.replace("harness-v2-screen-w2r1", START));
+      await sh(repo, "commit", "-q", "-am", "late round");
+    },
+    TAG,
+    "a filter round needs an earlier calibration round on a sealed seal",
+    "filter",
   ],
 ];
 
 for (const [name, arrange, tag, why, mode] of refusals) {
   Deno.test(`H-72 prepare refuses: ${name}`, async () => {
-    const r = await sealRepo();
+    // The sealRound case needs a start seal whose own registry has no round.
+    const r = await sealRepo({ unsealedRound: name.includes("sealRound") });
     await arrange(r);
     const base = await head(r.repo);
     const tags = await tagsOf(r.repo);
@@ -391,7 +423,13 @@ for (const eol of ["\n", "\r\n"] as const) {
       "tag",
     );
     assertEquals(f.statusRuns, [
-      ["scripts/harness/screening.ts", "status", "--results-dir", "R:/results"],
+      [
+        "scripts/harness/screening.ts",
+        "status",
+        "--stratify-env",
+        "--results-dir",
+        "R:/results",
+      ],
       [
         "scripts/harness/prescreen.ts",
         "status",
@@ -404,10 +442,20 @@ for (const eol of ["\n", "\r\n"] as const) {
     const out = f.lines.join("\n");
     assertStringIncludes(out, `git push origin master ${TAG}-ledger`);
     assertStringIncludes(out, `${want.commit}:${want.randomness}`);
+    // After the operator's push, screening.ts's own ledger check is clean.
+    await sh(r.repo, "push", "-q", "origin", "master", `${TAG}-ledger`);
+    const ledgerNow = SealsSchema.parse(parse(after)).seals;
+    assertEquals(
+      await ledgerProblems(
+        ledgerNow,
+        await loadLedgerAnchors(r.repo, ledgerNow),
+      ),
+      [],
+    );
   });
 }
 
-Deno.test("H-72 ledger is deterministic: a rerun after a refused fetch draws the same round", async () => {
+Deno.test("H-72 ledger is deterministic: a rerun after a refused fetch, even past the round time, draws the same round (Sol r1: first confirmation kept)", async () => {
   const r = await prepared();
   const fail = await fakeIo(r.repo, {
     now: r.tagger + 1_000,
@@ -416,8 +464,13 @@ Deno.test("H-72 ledger is deterministic: a rerun after a refused fetch draws the
     },
   });
   assertEquals(await ledger(fail.io, TAG), 1);
-  const f = await fakeIo(r.repo, { now: r.tagger + 60_000 });
+  // Real time has moved past round_time by the retry.
+  const f = await fakeIo(r.repo, { now: fail.clock() + 3_600_000 });
   assertEquals(await ledger(f.io, TAG), 0);
+  assertEquals(f.urls.map((u) => u.split("/").at(-1)), [
+    String(beaconRound(Date.parse(pushedAt(r.tagger))).round),
+    String(beaconRound(Date.parse(pushedAt(r.tagger))).round),
+  ]);
   assertEquals(
     fail.urls.map((u) => u.split("/").at(-1)),
     [String(beaconRound(Date.parse(pushedAt(r.tagger))).round)],
@@ -519,6 +572,12 @@ const ledgerRefusals: [
     {},
     "harness-tasks is not clean",
   ],
+  [
+    "its -ledger tag already exists (Sol r1: refused before any write)",
+    (r) => sh(r.repo, "tag", "-a", "-m", "x", `${TAG}-ledger`),
+    {},
+    `tag ${TAG}-ledger already exists`,
+  ],
 ];
 
 for (const [name, arrange, opts, why] of ledgerRefusals) {
@@ -541,6 +600,26 @@ for (const [name, arrange, opts, why] of ledgerRefusals) {
     assertEquals(f.statusRuns, []);
   });
 }
+
+Deno.test("H-72 ledger (Sol r1): a seal tagged before an earlier seal was ledgered is refused, before any write", async () => {
+  const r = await prepared();
+  // B tagged by hand while A (TAG) has no ledger entry: B's commit holds the
+  // ledger without A.
+  const b = "harness-v2-screen-w2r3";
+  await sh(r.repo, "tag", "-a", "-m", "b", b);
+  await sh(r.repo, "push", "-q", "origin", b);
+  const f = await fakeIo(r.repo, { now: r.tagger });
+  assertEquals(await ledger(f.io, TAG), 0);
+  const base = await head(r.repo);
+  const g = await fakeIo(r.repo, { now: r.tagger });
+  assertEquals(await ledger(g.io, b), 1);
+  assertStringIncludes(
+    g.lines.join("\n"),
+    `the ledger committed at ${b} differs from HEAD's`,
+  );
+  assertEquals(await head(r.repo), base);
+  assertEquals(g.urls, []);
+});
 
 Deno.test("H-72 ledger refuses a seal already in the ledger", async () => {
   const r = await prepared();

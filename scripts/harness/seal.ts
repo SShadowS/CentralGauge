@@ -32,6 +32,7 @@ import {
   SealsSchema,
   START_TAG,
 } from "./screening.ts";
+import { sealRound, type SealView } from "./prescreen.ts";
 
 /** League of Entropy mainnet (the chain of every ledger entry so far). */
 export const DRAND_CHAIN =
@@ -125,14 +126,82 @@ async function originTag(root: string, tag: string): Promise<string | null> {
 const branchOf = (root: string) =>
   git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
 
+const localTag = (root: string, tag: string) =>
+  tryGit(root, ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]);
+
+/** Seal tags (not -ledger) found locally or on origin. */
+async function sealTags(root: string): Promise<string[]> {
+  const local = (await git(root, ["tag", "-l", "harness-v2-screen-*"]))
+    .split("\n");
+  const remote = (await git(root, [
+    "ls-remote",
+    "--tags",
+    "origin",
+    "refs/tags/harness-v2-screen-*",
+  ])).split("\n").map((l) =>
+    l.trim().split("\t")[1]?.replace(/^refs\/tags\//, "")
+  );
+  return [...new Set([...local, ...remote])]
+    .filter((t): t is string =>
+      !!t && SEAL_TAG.test(t) && !t.endsWith("-ledger")
+    );
+}
+
+/** Each ledger seal with the registry committed at it (sealRound's input). */
+async function ledgerViews(
+  root: string,
+  seals: SealEntry[],
+): Promise<SealView[]> {
+  const out: SealView[] = [];
+  for (const e of seals) {
+    const text = await git(root, ["show", `${e.commit}:${REGISTRY_PATH}`]);
+    out.push({
+      tag: e.tag,
+      seed: "",
+      screening: ScreeningSchema.parse(parse(text)),
+    });
+  }
+  return out;
+}
+
+const readSeals = async (root: string) =>
+  SealsSchema.parse(parse(await Deno.readTextFile(join(root, SEALS_PATH))))
+    .seals;
+
+/** Write `text` to `rel` and commit it alone; on a failed commit the file is restored and unstaged. */
+async function commitFile(
+  root: string,
+  rel: string,
+  text: string,
+  msg: string,
+) {
+  const path = join(root, rel);
+  const before = await Deno.readTextFile(path);
+  await Deno.writeTextFile(path, text);
+  try {
+    await git(root, ["add", "--", rel]);
+    await git(root, ["commit", "-q", "-m", msg, "--", rel]);
+  } catch (e) {
+    await Deno.writeTextFile(path, before);
+    await tryGit(root, ["reset", "-q", "--", rel]);
+    throw e;
+  }
+}
+
 const eolOf = (text: string) => text.includes("\r\n") ? "\r\n" : "\n";
 
 /**
  * screening.yml with `{ seal, mode }` appended to the prescreen rounds, as
  * text (comments and line endings kept); refused unless it parses to exactly
- * the old registry plus that round, valid under ScreeningSchema (H-69).
+ * the old registry plus that round, valid under ScreeningSchema (H-69), and
+ * the new seal's round is valid in seal order (sealRound over `views`).
  */
-function withRound(text: string, tag: string, mode: Mode): string {
+function withRound(
+  text: string,
+  tag: string,
+  mode: Mode,
+  views: SealView[],
+): string {
   const raw = parse(text) as {
     amendments?: { id: string; rounds: unknown[] }[];
   };
@@ -148,6 +217,10 @@ function withRound(text: string, tag: string, mode: Mode): string {
   });
   const v = ScreeningSchema.safeParse(want);
   if (!v.success) refuse(v.error.issues.map((i) => i.message).join("; "));
+  // Sol r1: the schema sees registry order only; sealRound decides by seals.
+  const me: SealView = { tag, seed: "", screening: v.data! };
+  const order = sealRound(me, [...views, me]);
+  if (order && !order.ok) refuse(order.problem);
 
   const eol = eolOf(text);
   const lines = text.split(eol);
@@ -198,34 +271,40 @@ export function prepare(io: SealIo, tag: string, mode?: Mode): Promise<number> {
       "harness-tasks/refapp",
     ]);
     if (refapp) refuse(`harness-tasks/refapp differs from ${START_TAG}`);
-    if (
-      await tryGit(root, [
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        `refs/tags/${tag}`,
-      ]) !== null
-    ) {
+    if (await localTag(root, tag) !== null) {
       refuse(`tag ${tag} already exists`);
     }
     if (await originTag(root, tag) !== null) {
       refuse(`tag ${tag} already exists on origin`);
     }
-    const path = join(root, REGISTRY_PATH);
+    // Sol r1: every earlier seal is ledgered first, so this seal's commit
+    // carries the whole ledger before it (ledgerProblems' prefix rule).
+    const seals = await readSeals(root);
+    const ledgered = new Set(seals.map((e) => e.tag));
+    for (const t of await sealTags(root)) {
+      if (!ledgered.has(t)) {
+        refuse(
+          `seal ${t} has no ledger entry yet; run seal.ts ledger ${t} first`,
+        );
+      }
+    }
+    const text = await Deno.readTextFile(join(root, REGISTRY_PATH));
+    const declared = ScreeningSchema.parse(parse(text)).amendments
+      .flatMap((a) => a.rounds.map((r) => r.seal));
+    for (const s of declared) {
+      if (!ledgered.has(s)) {
+        refuse(
+          `round ${s} is declared in ${REGISTRY_PATH} but is not in the ledger`,
+        );
+      }
+    }
     if (mode) {
-      await Deno.writeTextFile(
-        path,
-        withRound(await Deno.readTextFile(path), tag, mode),
-      );
-      await git(root, ["add", "--", REGISTRY_PATH]);
-      await git(root, [
-        "commit",
-        "-q",
-        "-m",
-        `chore(harness-tasks): ${tag} pre-screen round (${mode})`,
-        "--",
+      await commitFile(
+        root,
         REGISTRY_PATH,
-      ]);
+        withRound(text, tag, mode, await ledgerViews(root, seals)),
+        `chore(harness-tasks): ${tag} pre-screen round (${mode})`,
+      );
     } else {
       io.log(colors.yellow(
         `[WARN] no --round: ${tag} has no pre-screen round; its candidates can never be pre-screened`,
@@ -252,19 +331,13 @@ export function ledger(
       refuse(`${tag} is not a seal tag`);
     }
     await cleanTasks(root);
-    const path = join(root, SEALS_PATH);
-    const text = await Deno.readTextFile(path);
+    const text = await Deno.readTextFile(join(root, SEALS_PATH));
     const seals = SealsSchema.parse(parse(text)).seals;
     if (seals.some((e) => e.tag === tag)) {
       refuse(`${tag} is already in the ledger`);
     }
 
-    const obj = await tryGit(root, [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      `refs/tags/${tag}`,
-    ]);
+    const obj = await localTag(root, tag);
     if (obj === null) refuse(`no local tag ${tag}`);
     if (await git(root, ["cat-file", "-t", obj!]) !== "tag") {
       refuse(`${tag} is not an annotated tag`);
@@ -280,7 +353,39 @@ export function ledger(
     if (remote !== obj) {
       refuse(`local tag object ${obj} differs from origin ${remote}`);
     }
-    const seen = io.now();
+    // Sol r1: ledgerProblems wants the ledger at the seal's commit to be
+    // exactly the entries before it, and the -ledger tag still free.
+    const atSeal = await tryGit(root, [
+      "show",
+      `${tag}^{commit}:${SEALS_PATH}`,
+    ]);
+    if (
+      atSeal === null ||
+      JSON.stringify(SealsSchema.parse(parse(atSeal)).seals) !==
+        JSON.stringify(seals)
+    ) {
+      refuse(
+        `the ledger committed at ${tag} differs from HEAD's; every earlier seal must be ledgered before ${tag} is prepared`,
+      );
+    }
+    if (
+      await localTag(root, `${tag}-ledger`) !== null ||
+      await originTag(root, `${tag}-ledger`) !== null
+    ) refuse(`tag ${tag}-ledger already exists`);
+
+    // Sol r1: the first confirmation on origin is kept, so a rerun after a
+    // failed fetch (past round_time) is not refused.
+    const marker = join(
+      await git(root, ["rev-parse", "--absolute-git-dir"]),
+      `cg-seal-seen-${tag}.json`,
+    );
+    let seen = io.now();
+    try {
+      const m = JSON.parse(await Deno.readTextFile(marker));
+      if (m.tag_object === obj && typeof m.seen === "number") seen = m.seen;
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound)) throw e;
+    }
     const tagger = Date.parse(
       await git(root, [
         "for-each-ref",
@@ -297,6 +402,10 @@ export function ledger(
         }, after the beacon round ${round} (${round_time}): the beacon may predate the push`,
       );
     }
+    await Deno.writeTextFile(
+      marker,
+      JSON.stringify({ tag_object: obj, seen }),
+    );
     io.log(`[WAIT] drand round ${round} at ${round_time}`);
     while (io.now() < Date.parse(round_time) + 1000) {
       await io.sleep(Date.parse(round_time) + 1000 - io.now());
@@ -347,16 +456,12 @@ export function ledger(
       JSON.stringify(SealsSchema.parse(parse(out)).seals) !==
         JSON.stringify(want)
     ) refuse(`could not append to ${SEALS_PATH}`);
-    await Deno.writeTextFile(path, out);
-    await git(root, ["add", "--", SEALS_PATH]);
-    await git(root, [
-      "commit",
-      "-q",
-      "-m",
-      `chore(harness-tasks): ${tag} seal ledger entry`,
-      "--",
+    await commitFile(
+      root,
       SEALS_PATH,
-    ]);
+      out,
+      `chore(harness-tasks): ${tag} seal ledger entry`,
+    );
     await git(root, [
       "tag",
       "-a",
@@ -369,7 +474,12 @@ export function ledger(
 
     const rd = resultsDir ? ["--results-dir", resultsDir] : [];
     const codes = [
-      await io.status(["scripts/harness/screening.ts", "status", ...rd]),
+      await io.status([
+        "scripts/harness/screening.ts",
+        "status",
+        "--stratify-env",
+        ...rd,
+      ]),
       await io.status([
         "scripts/harness/prescreen.ts",
         "status",
