@@ -8,7 +8,7 @@
  */
 
 import * as colors from "@std/fmt/colors";
-import { join, resolve } from "@std/path";
+import { basename, join, resolve } from "@std/path";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
 import type { PlanEnv } from "../../src/harness/campaign.ts";
@@ -100,6 +100,7 @@ import {
   type EnvCheck,
   type InstanceManifest,
   instanceManifestPath,
+  readInstanceManifest,
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
@@ -130,6 +131,12 @@ import {
   readEvidence,
   removeGatesFiles,
 } from "../../src/harness/gates-evidence.ts";
+import {
+  type ContainerFacts,
+  inspectContainerFacts,
+  recreatedProblems,
+} from "../../src/harness/recreated.ts";
+import { bchRootFor, SHARED_BCH_ROOT } from "../../src/container/bch-root.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import {
   containerId,
@@ -244,6 +251,10 @@ export interface EnvDeps {
   running(name: string): Promise<boolean>;
   /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
   poolBounds?: Partial<PoolBounds>;
+  /** H-77: docker inspect's id, creation time and mount sources (default: inspectContainerFacts). */
+  containerFacts?(name: string): Promise<ContainerFacts>;
+  /** H-77: the container's own root from bch-roots.json, or null when not listed (default: bchRootFor). */
+  bchRoot?(name: string): string | null;
   /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
   processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
@@ -657,7 +668,11 @@ export async function baselineCreate(
  * evidence, or with a recorded path this capture cannot observe, it refuses.
  */
 export async function recoverContainer(
-  o: LineageCommandOptions & { abandon?: string | null },
+  o: LineageCommandOptions & {
+    abandon?: string | null;
+    /** H-77: the evidence dir of an owner-approved recreate (archives the old records). */
+    recreated?: string | null;
+  },
   deps: EnvDeps = REAL_DEPS,
   resetFor: ResetFor = goldenResetFor(o.repoRoot),
 ): Promise<InstanceManifest> {
@@ -690,7 +705,7 @@ export async function recoverContainer(
     // runs again under the claim
     const before = await findRecords(qDir, { name: c, id });
     const pre = gatesRecordOf(before);
-    if (pre) {
+    if (pre && !o.recreated) {
       await refuseLiveGates(deps, qDir, id, c, before[0]!.why, pre, o.abandon);
     }
     // H-35 run 004 Sol r2 N2: one recover per physical container
@@ -714,7 +729,9 @@ export async function recoverContainer(
       abandon = null; // spent on that claim
     }
     try {
-      return await recoverClaimed({ ...o, abandon }, deps, x, c, id, token);
+      return o.recreated
+        ? await recoverRecreated(o.recreated, deps, x, c, id, token)
+        : await recoverClaimed({ ...o, abandon }, deps, x, c, id, token);
     } finally {
       await releaseOwned(qDir, id, token, { recover: true }).catch((err) =>
         console.error(
@@ -727,6 +744,158 @@ export async function recoverContainer(
   } finally {
     await release();
   }
+}
+
+/**
+ * H-77: `harness recover <c> --recreated <evidence-dir>`. The old
+ * container's records (another Docker id, same name) go only when the
+ * container was created after every one of them, mounts only its own
+ * bch-roots.json root, and has a baseline of this lineage made after the
+ * recreate whose env_fp the env check confirms (recreatedProblems + the env
+ * check), all before any reset. Then the normal reset, inventory check and a
+ * clean capture write a new manifest; each record is copied byte for byte
+ * into the evidence dir (create-new) with a note, and only then removed if
+ * unchanged. Never a record of the current container.
+ */
+async function recoverRecreated(
+  evidenceDir: string,
+  deps: EnvDeps,
+  x: Awaited<ReturnType<typeof lineageContext>>,
+  c: string,
+  id: string,
+  token: string,
+): Promise<InstanceManifest> {
+  const qDir = deps.quarantineDir();
+  const found = (await findRecords(qDir, { name: c, id })).filter((f) =>
+    f.record?.token !== token
+  );
+  const facts = await (deps.containerFacts ?? inspectContainerFacts)(c);
+  const refuse = (why: string) =>
+    new ConfigurationError(`recover ${c} --recreated: ${why}`);
+  if (facts.id.toLowerCase() !== id.toLowerCase()) {
+    throw refuse(
+      `docker inspect ${c} (id ${facts.id}) is not the container recover claimed (id ${id})`,
+    );
+  }
+  const own = (deps.bchRoot ?? ((n: string) => {
+    const r = bchRootFor(n);
+    return r === SHARED_BCH_ROOT ? null : r;
+  }))(c);
+  const manifestBefore = await readInstanceManifest(x.inputs.resultsRoot, c);
+  const problems = recreatedProblems({
+    container: c,
+    currentId: id,
+    found,
+    created: facts.created,
+    mounts: facts.mounts,
+    ownRoot: own,
+    sharedRoot: SHARED_BCH_ROOT,
+    manifest: manifestBefore,
+    lineageId: x.lineage.id,
+  });
+  if (problems.length === 0) {
+    // the baseline's env_fp is the live one and the lineage is admissible
+    const ch = await checkEnvironments(
+      deps.inspect(),
+      x.mechanism,
+      [c],
+      x.inputs,
+    );
+    if (!ch.admissible) {
+      problems.push(
+        `env check: ${ch.refusal ?? ch.rows[0]?.why ?? "not admissible"}`,
+      );
+    }
+  }
+  if (problems.length > 0) throw refuse(problems.join("; "));
+  const m = x.mechanism;
+  if (!m.verifyClean || !m.fsDigest) {
+    throw refuse(
+      `lineage ${x.lineage.id} has no inventory check or fs section: a recovery cannot be verified`,
+    );
+  }
+  const manifest = instanceManifestPath(x.inputs.resultsRoot, c);
+  const dropManifest = () =>
+    Deno.remove(manifest).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  await dropManifest();
+  const made = await createBaseline(deps.inspect(), m, c, x.inputs);
+  const archived: string[] = [];
+  try {
+    const v = await m.verifyClean(c);
+    if (!v.ok) {
+      throw new ContainerError(
+        `recover ${c}: post-reset inventory check failed: ${
+          v.error ?? v.diff.slice(0, 5).join("; ")
+        }`,
+        c,
+        "health",
+      );
+    }
+    let lines: string[];
+    try {
+      lines = await m.fsDigest(c);
+    } catch (err) {
+      lines = [`E|(fsDigest)|${msg(err)}`];
+    }
+    const errors = fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? [])
+      .errors.filter((e) => e.startsWith("before: "));
+    if (errors.length > 0) {
+      throw new ContainerError(
+        `recover ${c}: fsDigest capture not clean: ${
+          errors.slice(0, 5).join("; ")
+        }`,
+        c,
+        "health",
+      );
+    }
+    // archive: byte-for-byte copies, never over an existing file
+    await Deno.mkdir(evidenceDir, { recursive: true });
+    for (const f of found) {
+      const name = basename(f.file);
+      await Deno.writeTextFile(join(evidenceDir, name), f.text!, {
+        createNew: true,
+      });
+      archived.push(name);
+    }
+    const at = new Date().toISOString();
+    await Deno.writeTextFile(
+      join(evidenceDir, `recreated-${c}-${at.replace(/[:.]/g, "-")}.json`),
+      JSON.stringify(
+        {
+          container: c,
+          new_id: id,
+          created: facts.created,
+          mounts: facts.mounts,
+          own_root: own,
+          baseline_before: manifestBefore,
+          manifest: made,
+          archived,
+          old_ids: [...new Set(found.map((f) => f.record!.id))],
+          old_tokens: found.map((f) => f.record!.token),
+          by: `${deps.owner()} harness recover --recreated`,
+          at,
+        },
+        null,
+        2,
+      ),
+      { createNew: true },
+    );
+  } catch (err) {
+    await dropManifest();
+    throw err;
+  }
+  const changed = await removeUnchanged(found);
+  if (changed.length > 0) {
+    await dropManifest();
+    throw refuse(
+      `record(s) changed during recovery, kept (their earlier copies are in ${evidenceDir}): ${
+        changed.join(", ")
+      }; run harness recover again`,
+    );
+  }
+  return made;
 }
 
 /** H-76: the container's only record, when it is a gates hold's in-use record. */

@@ -1,0 +1,135 @@
+import { assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  dockerTime,
+  parseContainerFacts,
+  type RecreatedInput,
+  recreatedProblems,
+} from "../../../src/harness/recreated.ts";
+
+const OLD = "a".repeat(64), NEW = "b".repeat(64);
+const SHARED = "C:\\ProgramData\\BcContainerHelper";
+const OWN = `${SHARED}-Cronus281`;
+const rec = (over: Record<string, unknown> = {}) => ({
+  file: `q\\${OLD}.json`,
+  record: {
+    v: 3 as const,
+    state: "quarantined" as const,
+    container: "Cronus281",
+    id: OLD,
+    token: crypto.randomUUID(),
+    by: "HOST1 harness run",
+    pid: 7,
+    host: "HOST1",
+    at: "2026-11-08T08:00:00.000Z",
+    reason: "L4 on Cronus281: x",
+    ...over,
+  },
+});
+const ok: RecreatedInput = {
+  container: "Cronus281",
+  currentId: NEW,
+  found: [rec()],
+  created: "2026-11-08T09:00:00.123456789Z",
+  mounts: [OWN, "C:\\bcartifacts.cache", `${OWN}\\Extensions`],
+  ownRoot: OWN,
+  sharedRoot: SHARED,
+  manifest: {
+    lineage_id: "golden-o09-v2",
+    created_at: "2026-11-08T09:30:00.000Z",
+  },
+  lineageId: "golden-o09-v2",
+};
+
+Deno.test("H-77 dockerTime: Docker's nanosecond RFC 3339 times parse to ms; garbage is NaN", () => {
+  assertEquals(
+    dockerTime("2026-11-08T09:00:00.123456789Z"),
+    Date.parse("2026-11-08T09:00:00.123Z"),
+  );
+  assertEquals(
+    dockerTime("2026-11-08T09:00:00Z"),
+    Date.parse("2026-11-08T09:00:00Z"),
+  );
+  assertEquals(Number.isNaN(dockerTime("yesterday")), true);
+});
+
+Deno.test("H-77 parseContainerFacts: the id, creation time and mount sources from docker inspect", () => {
+  const raw = JSON.stringify([{
+    Id: NEW,
+    Created: "2026-11-08T09:00:00.1Z",
+    Mounts: [{ Source: OWN, Destination: "c:\\x" }, {
+      Source: "C:\\bcartifacts.cache",
+    }],
+  }]);
+  assertEquals(parseContainerFacts(raw), {
+    id: NEW,
+    created: "2026-11-08T09:00:00.1Z",
+    mounts: [OWN, "C:\\bcartifacts.cache"],
+  });
+  assertEquals(parseContainerFacts("[]"), null);
+  assertEquals(parseContainerFacts("{bad"), null);
+  assertEquals(parseContainerFacts(JSON.stringify([{ Id: NEW }])), null);
+});
+
+Deno.test("H-77 recreatedProblems: a recreate after every record, own-root mounts only and a baseline of the lineage made after the recreate pass", () => {
+  assertEquals(recreatedProblems(ok), []);
+});
+
+Deno.test("H-77 recreatedProblems: each missing proof refuses with its reason", () => {
+  const cases: [string, Partial<RecreatedInput>, string][] = [
+    ["no record", { found: [] }, "no record"],
+    [
+      "unreadable record",
+      { found: [{ file: "q\\x.json", record: null }] },
+      "unreadable",
+    ],
+    [
+      "a record of this very container",
+      { found: [rec({ id: NEW })] },
+      "the current container",
+    ],
+    [
+      "created before the record",
+      { created: "2026-11-08T07:59:59Z" },
+      "not created after",
+    ],
+    ["bad creation time", { created: "?" }, "creation time"],
+    ["not migrated", { ownRoot: null }, "bch-roots.json"],
+    ["shared root mounted", { mounts: [OWN, SHARED] }, SHARED],
+    [
+      "another container's root mounted",
+      { mounts: [OWN, `${SHARED}-Cronus282`] },
+      `${SHARED}-Cronus282`,
+    ],
+    [
+      "under the shared root",
+      { mounts: [OWN, `${SHARED}\\Extensions`] },
+      `${SHARED}\\Extensions`,
+    ],
+    [
+      "own root not mounted",
+      { mounts: ["C:\\bcartifacts.cache"] },
+      "not mounted",
+    ],
+    ["no baseline", { manifest: null }, "no baseline"],
+    [
+      "baseline of another lineage",
+      { manifest: { ...ok.manifest!, lineage_id: "old" } },
+      "lineage old",
+    ],
+    [
+      "baseline before the recreate",
+      { manifest: { ...ok.manifest!, created_at: "2026-11-08T08:59:00Z" } },
+      "before the recreate",
+    ],
+  ];
+  for (const [what, over, want] of cases) {
+    const p = recreatedProblems({ ...ok, ...over });
+    assertEquals(p.length >= 1, true, what);
+    assertStringIncludes(p.join("; "), want, what);
+  }
+  // mount paths compare case-insensitively, a trailing slash aside
+  assertEquals(
+    recreatedProblems({ ...ok, mounts: [`${OWN.toLowerCase()}\\`] }),
+    [],
+  );
+});

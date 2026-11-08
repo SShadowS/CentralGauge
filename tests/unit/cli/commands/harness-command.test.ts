@@ -11675,6 +11675,126 @@ Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the contain
   );
 });
 
+Deno.test("H-77 recover --recreated archives the old container's records into the evidence dir (never deletes them) and writes a new manifest, only after a recreate after the record, own-root mounts only and a baseline of the lineage made after the recreate; each missing proof refuses before any reset", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const evidence = join(await testTempDir(), "evidence");
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const OWN = "C:\\ProgramData\\BcContainerHelper-Cronus281";
+  const oldId = fakeId("old-Cronus281");
+  const newId = fakeId("Cronus281");
+  const facts = {
+    id: newId,
+    created: "",
+    mounts: [OWN, "C:\\bcartifacts.cache"],
+  };
+  let own: string | null = OWN;
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    containerFacts: () => Promise.resolve({ ...facts }),
+    bchRoot: () => own,
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+    recreated: evidence,
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  // the old container's quarantine (another Docker id, same name), no L4 evidence
+  const oldToken = await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: oldId,
+    reason: "reset of Cronus281 failed at restore: boom",
+    by: "test",
+    pid: 1,
+    fs_captured: false,
+  });
+  const oldFile = recordFile(qDir, oldId);
+  const oldText = await Deno.readTextFile(oldFile);
+  const at = Date.parse(JSON.parse(oldText).at);
+  // recreated 1 ms after the record; the baseline below comes later still
+  facts.created = new Date(at + 1).toISOString();
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+  const refused = async (why: string) => {
+    calls.length = 0;
+    await assertRejects(
+      () => recoverContainer(o, d, mechanism),
+      ConfigurationError,
+      why,
+    );
+    assertEquals(calls.filter((c) => c === "reset"), [], `${why}: no reset`);
+    assertEquals(await Deno.readTextFile(oldFile), oldText, `${why}: kept`);
+  };
+  // no baseline after the recreate yet
+  await refused("no baseline of Cronus281");
+  // a baseline, but the recreate is not after the record
+  await tick();
+  await baselineCreate(o, d, mechanism);
+  facts.created = new Date(at - 1_000).toISOString();
+  await refused("the container was not created after it");
+  facts.created = new Date(at + 1).toISOString();
+  // the shared BCH root still mounted
+  facts.mounts = [OWN, "C:\\ProgramData\\BcContainerHelper"];
+  await refused("mounts another BCH root than its own");
+  facts.mounts = [OWN];
+  // not listed in bch-roots.json
+  own = null;
+  await refused("not listed in bch-roots.json");
+  own = OWN;
+  // the container changed under the command
+  facts.id = fakeId("third");
+  await refused("is not the container");
+  facts.id = newId;
+  // all proofs: archived, removed from the records, a new manifest
+  calls.length = 0;
+  const m = await recoverContainer(o, d, mechanism);
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(await findRecords(qDir, { name: "Cronus281", id: newId }), []);
+  assertEquals(
+    await Deno.readTextFile(join(evidence, `${oldId}.json`)),
+    oldText,
+    "archived byte for byte",
+  );
+  const notes: string[] = [];
+  for await (const e of Deno.readDir(evidence)) {
+    if (e.name.startsWith("recreated-Cronus281-")) notes.push(e.name);
+  }
+  assertEquals(notes.length, 1);
+  const note = JSON.parse(await Deno.readTextFile(join(evidence, notes[0]!)));
+  assertEquals(
+    [
+      note.container,
+      note.new_id,
+      note.created,
+      note.archived,
+      note.manifest.env_fp,
+    ],
+    ["Cronus281", newId, facts.created, [`${oldId}.json`], m.env_fp],
+  );
+  assertEquals(note.old_tokens, [oldToken]);
+  assertEquals(
+    (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
+    m.env_fp,
+  );
+  // nothing left to clear: refused (the archived copy stays)
+  await assertRejects(
+    () => recoverContainer(o, d, mechanism),
+    ConfigurationError,
+    "no record of Cronus281 to clear",
+  );
+  assertEquals(
+    await Deno.readTextFile(join(evidence, `${oldId}.json`)),
+    oldText,
+  );
+});
+
 Deno.test("H-76 recover clears a gates in-use record only with its owner provably gone (stale heartbeat or --abandon) and its before-capture evidence equal to the post-reset capture; anything else keeps it", async () => {
   await using t = await makeEnv();
   const calls: string[] = [];
