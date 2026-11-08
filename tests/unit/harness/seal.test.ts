@@ -530,6 +530,31 @@ Deno.test("H-72 ledger (Sol r2): a failing -ledger tag rolls the entry commit ba
   assertStringIncludes(g.lines.join("\n"), "after the beacon round");
 });
 
+Deno.test("H-72 ledger (Sol r4): when another process switches branch while the -ledger tag fails, the original branch is rolled back, the other branch and the working tree are left alone", async () => {
+  const r = await prepared();
+  const base = await head(r.repo);
+  // The "signing program" switches to a new branch at the entry commit, then fails.
+  const script = join(r.repo, "..", "switch-then-fail.sh");
+  await Deno.writeTextFile(
+    script,
+    "#!/bin/sh\ngit switch -q -c rescue\nexit 1\n",
+  );
+  await Deno.chmod(script, 0o755).catch(() => {});
+  await sh(r.repo, "config", "tag.gpgSign", "true");
+  await sh(r.repo, "config", "gpg.program", script.replaceAll("\\", "/"));
+  const f = await fakeIo(r.repo, { now: r.tagger });
+  assertEquals(await ledger(f.io, TAG), 1);
+  assertStringIncludes(
+    f.lines.join("\n"),
+    "but HEAD is no longer refs/heads/master",
+  );
+  assertEquals(await sh(r.repo, "rev-parse", "refs/heads/master"), base);
+  const rescue = await sh(r.repo, "rev-parse", "refs/heads/rescue");
+  assertEquals(await sh(r.repo, "rev-parse", `${rescue}^`), base);
+  assertEquals(await sh(r.repo, "status", "--porcelain"), "");
+  assertEquals(await sh(r.repo, "tag", "-l", `${TAG}-ledger`), "");
+});
+
 Deno.test("H-72 ledger: a failing status check is exit 1 after the entry and tag are written", async () => {
   const r = await prepared();
   const f = await fakeIo(r.repo, { now: r.tagger, status: 1 });

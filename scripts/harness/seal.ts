@@ -183,6 +183,9 @@ async function commitAndTag(
   tagMsg: string,
 ) {
   const prev = await git(root, ["rev-parse", "HEAD"]);
+  // Sol r4: the rollback moves this branch, whatever HEAD names later.
+  const branch = await tryGit(root, ["symbolic-ref", "-q", "HEAD"]);
+  if (change && branch === null) refuse("HEAD is detached; check out a branch");
   const path = change && join(root, change.rel);
   const before = path && await Deno.readTextFile(path);
   let owned: string | null = null;
@@ -201,25 +204,31 @@ async function commitAndTag(
     }
     await git(root, ["tag", "-a", "-m", tagMsg, tag, owned ?? prev]);
   } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
     if (owned !== null) {
       const back = await tryGit(root, [
         "update-ref",
         "-m",
         "seal.ts rollback",
-        "HEAD",
+        branch!,
         prev,
         owned,
       ]);
       if (back === null) {
         refuse(
-          `${
-            e instanceof Error ? e.message : String(e)
-          }; HEAD moved past ${owned}, so it was not rolled back: undo ${owned} by hand`,
+          `${why}; ${branch} moved past ${owned}, so it was not rolled back: undo ${owned} by hand`,
         );
       }
     }
-    // Restore unless a commit is left in place (HEAD moved under it).
+    // Restore only while this branch is still checked out and no commit of
+    // ours is left in place (the working tree belongs to the checkout).
+    const still = await tryGit(root, ["symbolic-ref", "-q", "HEAD"]) === branch;
     if (change && (!committed || owned !== null)) {
+      if (!still) {
+        refuse(
+          `${why}; ${branch} rolled back to ${prev}, but HEAD is no longer ${branch}: ${change.rel} left as is`,
+        );
+      }
       await Deno.writeTextFile(path!, before!);
       await tryGit(root, ["reset", "-q", "--", change.rel]);
     }
