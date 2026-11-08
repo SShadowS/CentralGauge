@@ -1,0 +1,16 @@
+id: HX-144
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Integration, Test]
+coupling: [commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+  - { codeunit: 80040, procedures: [OutboxQueuesCheckout] }
+fail_to_pass: null
+mutants: [m-damage, m-desk-posts, m-desk-delete, m-backoffice, m-setup]
+contamination: null
+limits: { timeout_min: 30 }
