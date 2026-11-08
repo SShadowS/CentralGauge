@@ -1410,6 +1410,35 @@ changed since it was frozen is refused. `--results-dir` defaults to
 `results/harness`; `--root` (default `.`) is the repository whose history
 recovers legacy task descriptors.
 
+### harness progress
+
+```bash
+centralgauge harness progress <campaign-id|experiment-id> [--campaign <id>] [--concurrency <n>] [--results-dir <dir>] [--json]
+```
+
+Read-only progress of a campaign, safe to run while it is live. It reads the
+results store only: no container, no lease, no lock, no write. A campaign id is
+used directly; an experiment id takes its newest campaign, or the one named by
+`--campaign`. It prints:
+
+- planned cells (tasks x arms x repeats), executions by run kind, and cells
+  finished, judged (pass, fail, unscored), policy-unscored, awaiting judgment
+  and unknown,
+- terminations by kind (`unknown` for an execution whose re-derivation is
+  refused),
+- estimated and reported cost by arm, with the count of executions without a
+  cost, and the mean wall time per finished cell by arm,
+- per task, the cells done per arm,
+- an ETA from the remaining cells, the mean wall time and the concurrency.
+
+The results store holds finished executions only, so "started" counts published
+executions and both it and the ETA are labelled `estimate`. The concurrency is
+`--concurrency` (a positive integer) or, without it, the observed overlap of
+finished executions. A file that cannot be read (a partial write, a temp file,
+a record that does not match the plan) is skipped and listed as a warning; a
+requested campaign whose own record is unreadable gives a snapshot with the
+warnings and no numbers. `--results-dir` defaults to `results/harness`.
+
 ### harness archive
 
 ```bash
