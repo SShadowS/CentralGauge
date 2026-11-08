@@ -5,6 +5,7 @@ import {
   commandReset,
   fsCaptureTiming,
   fsDiff,
+  fsHoldTiming,
   fsLineRestored,
   goldenReset,
   parseFsRemoveOutput,
@@ -410,6 +411,43 @@ Deno.test("R-09: the T| marker may carry the capture's timing as JSON; its count
   }
   assertEquals(fsCaptureTiming([...body, `T|2|${timing}`])?.held_ms, 31234);
   assertEquals(fsCaptureTiming(cap(...body)), null);
+});
+
+Deno.test("H-79: a capture that exits non-zero keeps its T| timing; it still fails closed with its own errors and the exit, never as an incomplete capture", () => {
+  const body = [w("D|16|5|C:/W"), F("C:/W/a.txt")];
+  const hold =
+    "E|(fs-capture)|the NST hold did not hold: marker reads 'expired 1 2 detached=True' after the walk";
+  const failed = [
+    ...body,
+    hold,
+    'T|3|{"held_ms":39000,"bound_s":38}',
+    "E|(fs-capture)|exit 1",
+  ];
+  assertEquals(fsCaptureTiming(failed)?.held_ms, 39000);
+  assertEquals(fsHoldTiming(failed), { held_ms: 39000, bound_s: 38 });
+  const errs = fsDiff(cap(...body), failed, [], [w("C:/W")]).errors;
+  assertEquals(errs, [
+    "after: capture failed with exit 1",
+    "after: (fs-capture): the NST hold did not hold: marker reads 'expired 1 2 detached=True' after the walk",
+  ]);
+  // the count stays exact: the exit line is not one of the script's lines
+  assert(
+    fsDiff(cap(...body), [...body, hold, "T|2", "E|(fs-capture)|exit 1"], [], [
+      w("C:/W"),
+    ]).errors.some((e) => e.includes("does not match the count 3")),
+  );
+  // a failed capture without its T| line is still incomplete, and fails
+  assertEquals(
+    fsDiff(cap(...body), [...body, "E|(fs-capture)|exit 1"], [], [w("C:/W")])
+      .errors[0],
+    "after: no T| marker as the last line (incomplete capture)",
+  );
+  assertEquals(fsCaptureTiming([...body, "E|(fs-capture)|exit 1"]), null);
+  // the exit line excuses the T| position only as the one line after it
+  assert(
+    fsDiff(cap(...body), [...failed, "E|(fs-capture)|exit 1"], [], [w("C:/W")])
+      .errors[0]!.includes("no T| marker"),
+  );
 });
 
 Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong count, malformed fields, a duplicate key, or a declared root it does not cover is an error (fail closed); empty captures never compare clean", () => {

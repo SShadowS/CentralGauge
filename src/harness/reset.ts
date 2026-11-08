@@ -756,11 +756,29 @@ function parseMark(
   }
 }
 
-/** R-09: the timing on a capture's last line (its T| marker), or null. */
+/** The line fsDigest appends after the script's output on a non-zero exit. */
+const FS_EXIT = /^E\|\(fs-capture\)\|exit (-?\d+)$/;
+
+/**
+ * H-79: a capture's non-empty lines without fsDigest's one trailing exit
+ * line, and that line's exit code (null: the capture exited 0).
+ */
+function splitExit(
+  raw: readonly string[],
+): { lines: string[]; exit: string | null } {
+  const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
+  const exit = FS_EXIT.exec(lines.at(-1) ?? "")?.[1] ?? null;
+  return { lines: exit === null ? lines : lines.slice(0, -1), exit };
+}
+
+/**
+ * R-09: the timing on a capture's last line (its T| marker), or null.
+ * H-79: a failed capture's exit line after it does not hide it.
+ */
 export function fsCaptureTiming(
-  lines: readonly string[],
+  raw: readonly string[],
 ): FsCaptureTiming | null {
-  const last = lines.map((l) => l.trimEnd()).filter((l) => l !== "").at(-1);
+  const last = splitExit(raw).lines.at(-1);
   return last?.startsWith("T|") ? parseMark(last)?.timing ?? null : null;
 }
 
@@ -770,7 +788,8 @@ export function fsCaptureTiming(
  * attributes, last-write time, a stream, a link target) outside the
  * exclusions is a difference; E lines and unparsable lines on either side are
  * errors, and an error fails closed like a difference. Sol S3 r1 #5: each
- * capture must end with exactly one `T|<n>` (n = its other lines), hold no
+ * capture must end with exactly one `T|<n>` (n = its other lines; H-79: a
+ * failed capture's exit line may follow it, and is an error), hold no
  * entry twice, and cover every declared root (a D, L or E line for it).
  * `caches`: platform_cache folders (cacheTolerates); every other difference
  * there stays one.
@@ -794,7 +813,9 @@ export function fsDiff(
   }));
   const index = (side: string, raw: readonly string[]) => {
     const m = new Map<string, string>();
-    const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
+    // H-79: fsDigest's exit line follows the script's T| marker; it is no
+    // line of the script's count, and fails the capture on its own.
+    const { lines, exit } = splitExit(raw);
     const marks = lines.filter((l) => l.startsWith("T|"));
     const entries = lines.filter((l) => !l.startsWith("T|"));
     const mark = marks.length === 1 ? parseMark(marks[0]!) : null;
@@ -809,6 +830,7 @@ export function fsDiff(
         `${side}: T|${mark.count} does not match the count ${entries.length}`,
       );
     }
+    if (exit !== null) errors.push(`${side}: capture failed with exit ${exit}`);
     const seen = new Set<string>();
     // Sol S3 r2: a root is covered only by its own D, L or E line
     const rootSeen = new Set<string>();
