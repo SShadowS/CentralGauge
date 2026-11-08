@@ -233,11 +233,13 @@ Deno.test("H-76 Sol r2 liveTree: the pid and every live process reachable throug
 
 Deno.test("H-76 Sol r3 liveHolders: the gates tree plus any live process naming the container or its id (an orphaned docker exec), whole words only, never recover's own tree or its ancestors", () => {
   const ID64 = "c".repeat(64);
+  // creation order follows the pid here (a parent is always older)
   const row = (pid: number, ppid: number, cmd: string | null, name = "x") => ({
     pid,
     ppid,
     name,
     cmd,
+    created: pid,
   });
   const table = [
     row(1, 0, null, "System"), // unreadable, not a container tool
@@ -282,6 +284,39 @@ Deno.test("H-76 Sol r3 liveHolders: the gates tree plus any live process naming 
   );
   // nothing names it and the tree is gone: none
   assertEquals(liveHolders(table.slice(0, 5), 9, names, 11), []);
+});
+
+Deno.test("H-76 Sol r5 liveHolders: a reused pid never adopts its former owner's orphans (recover's own tree follows only links whose child is not older than its parent)", () => {
+  const r = (
+    pid: number,
+    ppid: number,
+    created: number | undefined,
+    cmd: string,
+  ) => ({
+    pid,
+    ppid,
+    name: "x",
+    cmd,
+    ...(created === undefined ? {} : { created }),
+  });
+  // gates was pid 9 and died; its suspended pwsh worker 50 (created at 100)
+  // keeps ppid 9; recover now runs AS pid 9 (created at 500)
+  const table = [
+    r(1, 0, 0, "System"),
+    r(8, 1, 400, "bash -c harness recover Cronus281"),
+    r(9, 8, 500, "deno harness recover Cronus281"),
+    r(50, 9, 100, "pwsh -NoExit -Command -"),
+    r(51, 9, 600, "pwsh probe"), // recover's own probe
+  ];
+  assertEquals(liveHolders(table, 9, ["Cronus281"], 9), [50]);
+  // a child with no known creation time is not recover's either
+  assertEquals(
+    liveHolders([...table, r(52, 9, undefined, "pwsh")], 9, ["Cronus281"], 9),
+    [50, 52],
+  );
+  // liveTree unverified (the gates tree) keeps every link
+  assertEquals(liveTree(table, 9), [9, 50, 51]);
+  assertEquals(liveTree(table, 9, true), [9, 51]);
 });
 
 Deno.test("H-76 Sol r1-r3 processHolders: reads this host's table; recover's own process never counts; a bad pid throws", async () => {

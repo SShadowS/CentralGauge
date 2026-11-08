@@ -169,11 +169,15 @@ export async function ownerGone(
  * itself and every live process reachable through parent links from it. A
  * dead parent's orphans keep its pid as their parent id (Windows), so the
  * gates process's leftover pwsh workers are found after it died. A reused
- * pid reads as alive, which only refuses more.
+ * pid reads as alive, which only refuses more. Sol r5: `verified` (for
+ * recover's OWN tree, which is excluded) follows a parent link only when
+ * both creation times are known and the child is not older than the parent:
+ * a reused pid never adopts its former owner's orphans.
  */
 export function liveTree(
-  table: readonly { pid: number; ppid: number }[],
+  table: readonly { pid: number; ppid: number; created?: number }[],
   pid: number,
+  verified = false,
 ): number[] {
   const out = new Set<number>();
   if (table.some((p) => p.pid === pid)) out.add(pid);
@@ -181,8 +185,13 @@ export function liveTree(
   const todo = [pid];
   while (todo.length > 0) {
     const parent = todo.pop()!;
+    const pc = table.find((r) => r.pid === parent)?.created;
     for (const p of table) {
       if (p.ppid !== parent || seen.has(p.pid)) continue;
+      if (
+        verified &&
+        (pc === undefined || p.created === undefined || p.created < pc)
+      ) continue;
       seen.add(p.pid);
       out.add(p.pid);
       todo.push(p.pid);
@@ -198,6 +207,8 @@ export interface ProcessRow {
   name: string;
   /** The command line; null when the OS does not show it. */
   cmd: string | null;
+  /** Sol r5: creation time (comparable within one table), when known. */
+  created?: number;
 }
 
 /** Sol r4: the tools the harness runs against a container (docker, pwsh). */
@@ -217,13 +228,17 @@ export function liveHolders(
   names: readonly string[],
   self: number,
 ): number[] {
-  const mine = new Set(liveTree(table, self));
-  for (
-    let p = table.find((r) => r.pid === self);
-    p && !mine.has(p.ppid);
-    p = table.find((r) => r.pid === p!.ppid)
-  ) {
-    mine.add(p.ppid);
+  // Sol r5: only verified links (creation order) make recover's own tree and
+  // ancestors, so a reused pid never hides another process's workers
+  const mine = new Set(liveTree(table, self, true));
+  for (let p = table.find((r) => r.pid === self); p;) {
+    const parent = table.find((r) => r.pid === p!.ppid);
+    if (
+      !parent || mine.has(parent.pid) || parent.created === undefined ||
+      p.created === undefined || parent.created > p.created
+    ) break;
+    mine.add(parent.pid);
+    p = parent;
   }
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const named = names.filter((n) => n.length > 0).map((n) =>
@@ -259,9 +274,9 @@ export async function processHolders(
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine | ConvertTo-Json -Compress",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine, @{ n = 'Created'; e = { if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { $null } } } | ConvertTo-Json -Compress",
       ]
-      : ["-A", "-o", "pid=,ppid=,comm=,args="],
+      : ["-A", "-o", "pid=,ppid=,etimes=,comm=,args="],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -274,22 +289,26 @@ export async function processHolders(
       ParentProcessId: number;
       Name: string | null;
       CommandLine: string | null;
+      Created: number | null;
     }[];
     table = rows.map((r) => ({
       pid: r.ProcessId,
       ppid: r.ParentProcessId,
       name: r.Name ?? "",
       cmd: r.CommandLine ?? null,
+      ...(typeof r.Created === "number" ? { created: r.Created } : {}),
     }));
   } else {
+    // etimes (elapsed seconds): a larger value is an older process
     table = text.split(/\r?\n/).flatMap((l) => {
-      const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
+      const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
       return m
         ? [{
           pid: Number(m[1]),
           ppid: Number(m[2]),
-          name: m[3]!,
-          cmd: m[4] || null,
+          created: -Number(m[3]),
+          name: m[4]!,
+          cmd: m[5] || null,
         }]
         : [];
     });
