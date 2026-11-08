@@ -10230,8 +10230,14 @@ Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution rec
   for (const member of [null, "J1"]) {
     await using t = await makeEnv();
     const c = await interruptedCampaign(t);
+    // The starve bound is under test only with no member: that case needs a
+    // short one. The J1 case asserts the joining member is judged; its
+    // admission does real file I/O (env pin) and the starve timer is armed
+    // before it finishes, so a short bound races the disk. 30 s cannot be
+    // raced; a member that never joins still ends starved/owed (failing the
+    // asserts below) after it.
     const { w, pool } = autoJudging(t, "judges", {
-      bounds: { pollMs: 20, waitMs: 150 },
+      bounds: { pollMs: 20, waitMs: member ? 30_000 : 150 },
     });
     if (member) w.alloc = [member];
     const agents = laneUse(t.env.lane);
@@ -10328,8 +10334,9 @@ Deno.test("run --rerun with --judge-containers auto (H-41 N4 b): the rerun cell 
     const p = (await t.env.store.executions(c.id))[0]!;
     await unscoredJudgments(t, p.id, 3);
     const block = c.blocks[p.block]!;
+    // Short bound only for the no-member case (see H-41 N4 a above).
     const { w, pool } = autoJudging(t, "judges", {
-      bounds: { pollMs: 20, waitMs: 150 },
+      bounds: { pollMs: 20, waitMs: member ? 30_000 : 150 },
     });
     if (member) w.alloc = [member];
     const agents = laneUse(t.env.lane);
