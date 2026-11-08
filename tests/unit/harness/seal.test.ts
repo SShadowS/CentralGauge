@@ -512,7 +512,7 @@ Deno.test("H-72 prepare (Sol r2): a failing tag rolls the round commit back; not
   assertEquals(await sh(repo, "tag", "-l", TAG), "");
 });
 
-Deno.test("H-72 ledger (Sol r2): a failing -ledger tag rolls the entry commit back; a rerun after fixing it succeeds", async () => {
+Deno.test("H-72 ledger (Sol r2): a failing -ledger tag rolls the entry commit back; a rerun (now past the round time) is refused", async () => {
   const r = await prepared();
   await breakTagging(r.repo);
   const base = await head(r.repo);
@@ -523,9 +523,11 @@ Deno.test("H-72 ledger (Sol r2): a failing -ledger tag rolls the entry commit ba
   assertEquals(await head(r.repo), base);
   assertEquals(await Deno.readTextFile(p), before);
   assertEquals(await sh(r.repo, "status", "--porcelain"), "");
+  // Sol r3 LOW: time does not rewind; the retry comes after the beacon.
   await sh(r.repo, "config", "tag.gpgSign", "false");
-  const g = await fakeIo(r.repo, { now: r.tagger });
-  assertEquals(await ledger(g.io, TAG), 0);
+  const g = await fakeIo(r.repo, { now: f.clock() });
+  assertEquals(await ledger(g.io, TAG), 1);
+  assertStringIncludes(g.lines.join("\n"), "after the beacon round");
 });
 
 Deno.test("H-72 ledger: a failing status check is exit 1 after the entry and tag are written", async () => {

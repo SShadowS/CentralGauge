@@ -172,8 +172,9 @@ const readSeals = async (root: string) =>
 
 /**
  * Commit `change` (one file, alone) when given, then the annotated `tag` on
- * HEAD. Sol r2: on any failure, including the tag's, HEAD moves back to where
- * it was (compare-and-swap) and the file is restored and unstaged.
+ * that commit. Sol r2: on any failure, including the tag's, HEAD moves back
+ * from the commit this call made (compare-and-swap; Sol r3: never past
+ * another writer's commit) and the file is restored and unstaged.
  */
 async function commitAndTag(
   root: string,
@@ -184,26 +185,41 @@ async function commitAndTag(
   const prev = await git(root, ["rev-parse", "HEAD"]);
   const path = change && join(root, change.rel);
   const before = path && await Deno.readTextFile(path);
+  let owned: string | null = null;
+  let committed = false;
   try {
     if (change) {
       await Deno.writeTextFile(path!, change.text);
       await git(root, ["add", "--", change.rel]);
       await git(root, ["commit", "-q", "-m", change.msg, "--", change.rel]);
-    }
-    await git(root, ["tag", "-a", "-m", tagMsg, tag, "HEAD"]);
-  } catch (e) {
-    if (change) {
-      const now = await git(root, ["rev-parse", "HEAD"]);
-      if (now !== prev) {
-        await git(root, [
-          "update-ref",
-          "-m",
-          "seal.ts rollback",
-          "HEAD",
-          prev,
-          now,
-        ]);
+      committed = true;
+      const head = await git(root, ["rev-parse", "HEAD"]);
+      if (await git(root, ["rev-parse", `${head}^`]) !== prev) {
+        refuse(`HEAD moved during the commit (now ${head}); check it by hand`);
       }
+      owned = head;
+    }
+    await git(root, ["tag", "-a", "-m", tagMsg, tag, owned ?? prev]);
+  } catch (e) {
+    if (owned !== null) {
+      const back = await tryGit(root, [
+        "update-ref",
+        "-m",
+        "seal.ts rollback",
+        "HEAD",
+        prev,
+        owned,
+      ]);
+      if (back === null) {
+        refuse(
+          `${
+            e instanceof Error ? e.message : String(e)
+          }; HEAD moved past ${owned}, so it was not rolled back: undo ${owned} by hand`,
+        );
+      }
+    }
+    // Restore unless a commit is left in place (HEAD moved under it).
+    if (change && (!committed || owned !== null)) {
       await Deno.writeTextFile(path!, before!);
       await tryGit(root, ["reset", "-q", "--", change.rel]);
     }
