@@ -170,7 +170,8 @@ export function sealRound(s: SealView, seals: SealView[]): RoundOf | null {
   const r = own(s);
   if (!r) return null;
   const here = seals.findIndex((x) => x.tag === s.tag);
-  const earlier = seals.slice(0, Math.max(here, 0)).map((a) => own(a)?.mode);
+  if (here < 0) return { ok: false, problem: `${s.tag} is not a ledger seal` };
+  const earlier = seals.slice(0, here).map((a) => own(a)?.mode);
   if (r.mode === "filter" && !earlier.includes("calibration")) {
     return {
       ok: false,
@@ -316,6 +317,12 @@ export interface PrescreenState {
    * only an unjudged first attempt (retryProblem), so these are eligible.
    */
   retried: Set<string>;
+  /**
+   * H-69b: every valid calibration seal and its candidates (first sealed
+   * there, not held out), pre-screened or not, so the report prints a table
+   * for a seal with no pre-screen records yet.
+   */
+  calibrations: Map<string, string[]>;
   problems: string[];
 }
 
@@ -341,6 +348,7 @@ export async function evaluatePrescreen(input: {
     waiting: new Set(),
     missing: new Set(),
     retried: new Set(),
+    calibrations: new Map(),
     problems: seals.flatMap((s) => amendmentProblems(s.tag, s.screening, now)),
   };
   const gate = amendmentGate(now, input.decisions);
@@ -439,6 +447,7 @@ export async function evaluatePrescreen(input: {
       firstSeal.get(id) === s.tag && !heldOut.includes(id)
     );
     if (round.mode === "calibration") {
+      out.calibrations.set(s.tag, pop);
       for (const id of pop) {
         if (!finalOf(out.verdicts.get(id))) out.missing.add(id);
       }
@@ -521,11 +530,10 @@ export function prescreenReport(
     const r = ps.rounds.get(id)!;
     out.push(`${id} ${v} ${r.mode} ${r.seal} full: ${status.get(id)}`);
   }
-  const ids = (mode: Mode, seal?: string) =>
-    [...ps.rounds].filter(([, r]) =>
-      r.mode === mode && (seal === undefined || r.seal === seal)
-    ).map(([id]) => id);
-  // H-69: the rate pools every calibration round; each seal's table follows.
+  const ids = (mode: Mode) =>
+    [...ps.rounds].filter(([, r]) => r.mode === mode).map(([id]) => id);
+  // H-69: the rate pools every calibration round; each seal's table follows
+  // (H-69b: every declared calibration seal, pre-screened or not).
   out.push(
     ...fkLines(
       "calibration",
@@ -533,18 +541,18 @@ export function prescreenReport(
       `, missing pre-screen: ${ps.missing.size}`,
     ),
   );
-  const calSeals = [
-    ...new Set(
-      [...ps.rounds.values()].filter((r) => r.mode === "calibration").map((
-        r,
-      ) => r.seal),
-    ),
-  ].sort();
-  for (const seal of calSeals) {
+  for (
+    const [seal, pop] of [...ps.calibrations].sort(([a], [b]) =>
+      a.localeCompare(b)
+    )
+  ) {
     out.push(
       ...fkLines(
         `calibration ${seal}`,
-        falseKill(ids("calibration", seal), ps.verdicts, status),
+        falseKill(pop, ps.verdicts, status),
+        `, missing pre-screen: ${
+          pop.filter((id) => ps.missing.has(id)).length
+        }`,
       ),
     );
   }
