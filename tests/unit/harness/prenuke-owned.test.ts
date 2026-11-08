@@ -261,3 +261,28 @@ Deno.test({
     await provider.prenukeCentralGaugeApps(["Cronus281"]);
   },
 });
+
+Deno.test({
+  name:
+    "prenukeCentralGaugeApps (H-74 Sol r3): strict without owned apps (the gate's final cleanup) throws on a failed call, an incomplete sweep or a missing DONE; a clean sweep passes",
+  ignore: !isWindows,
+  fn: async () => {
+    for (
+      const output of [
+        "PREREQ_CLEANUP_FOUND:2\nPREREQ_CLEANUP_INCOMPLETE:1\nPREREQ_CLEANUP_DONE\n",
+        "PREREQ_CLEANUP_FOUND:1\n",
+        new Error("session timed out; the uninstall may still run"),
+      ]
+    ) {
+      const { provider } = stubbedProvider(output);
+      await assertRejects(
+        () => provider.prenukeCentralGaugeApps(["Cronus281"], [], true),
+        Error,
+      );
+    }
+    const ok = stubbedProvider(
+      "PREREQ_CLEANUP_FOUND:1\nPREREQ_CLEANUP_DONE\n",
+    );
+    await ok.provider.prenukeCentralGaugeApps(["Cronus281"], [], true);
+  },
+});

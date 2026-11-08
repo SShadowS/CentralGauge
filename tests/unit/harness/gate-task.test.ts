@@ -33,10 +33,12 @@ function mockBc(o: {
         ? Promise.reject(new Error("SYNC_CLEAN_FAILED"))
         : Promise.resolve();
     },
-    prenuke: (owned = []) => {
+    prenuke: (owned = [], strict = false) => {
       o.events?.push(
         owned.length > 0
           ? `prenuke ${owned.map((a) => a.name).join(",")}`
+          : strict
+          ? "prenuke strict"
           : "prenuke",
       );
       prenukes++;
@@ -381,6 +383,9 @@ Deno.test("runGate (H-74 Sol r1): clean is true after a clean final cleanup and 
   const ok = await run(mockBc({ events }));
   assertEquals(ok.clean, true);
   const prenukes = events.filter((e) => e.startsWith("prenuke")).length;
+  // H-74 Sol r3: the final cleanup is strict (a swallowed timeout would let
+  // the hold go while the uninstall still runs)
+  assertEquals(events.at(-1), "prenuke strict");
   // every prenuke before the final one passes; the final cleanup fails
   const dirty = await run(mockBc({ prenukeThrowsAfter: prenukes - 1 }));
   assertEquals([dirty.code, dirty.clean], [ok.code, false]);

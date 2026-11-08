@@ -81,7 +81,11 @@ export interface GateBc {
    * H-05 run 002: `owned` (trusted id + exact name) are removed without their
    * data and cleaned; with any, a failed clean throws (infra).
    */
-  prenuke(owned?: { id: string; name: string }[]): Promise<void>;
+  prenuke(
+    owned?: { id: string; name: string }[],
+    /** H-74 Sol r3: throw on any failure even without owned apps (the final cleanup). */
+    strict?: boolean,
+  ): Promise<void>;
   /**
    * H-05: purge the kept tenant data of these CGR apps (unpublished, data
    * left by harness cells at stamped versions 1.0.n.m), so the gate's
@@ -116,7 +120,8 @@ export async function containerBc(
     timeoutMs: resolveSoapTimeoutMs(undefined),
   };
   return {
-    prenuke: (owned) => provider.prenukeCentralGaugeApps([container], owned),
+    prenuke: (owned, strict) =>
+      provider.prenukeCentralGaugeApps([container], owned, strict),
     cleanData: async (apps, allow) => {
       if (apps.length === 0) return;
       const r = await provider.syncHarnessApps(container, {
@@ -437,7 +442,7 @@ export async function runGate(o: {
   }
   let cleanupError: string | null = null;
   try {
-    await o.bc.prenuke();
+    await o.bc.prenuke([], true);
   } catch (err) {
     cleanupError = err instanceof Error ? err.message : String(err);
   }
