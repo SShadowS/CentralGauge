@@ -51,6 +51,8 @@ export interface Progress {
   unscored_policy_cells: number;
   /** Finished cells the policy sends to judging that have no judgment yet. */
   awaiting_judgment_cells: number;
+  /** No judgment and the outcome is unknown (re-derivation refused). */
+  unknown_cells: number;
   pass_cells: number;
   fail_cells: number;
   /** ponytail: the store has no in-flight records; started = published. */
@@ -283,16 +285,16 @@ export async function buildProgress(
   }
 
   const walls = new Map<string, number[]>(armIds.map((a) => [a, []]));
-  let judged = 0, unscoredPolicy = 0, unscoredVerdict = 0, awaiting = 0;
+  let judged = 0,
+    unscoredPolicy = 0,
+    unscoredVerdict = 0,
+    awaiting = 0,
+    unknown = 0;
   let pass = 0, fail = 0;
   for (const e of latest.values()) {
     arms.get(e.arm)!.finished++;
     walls.get(e.arm)!.push(wallOf(e));
     tasks.get(e.task_id)!.set(e.arm, tasks.get(e.task_id)!.get(e.arm)! + 1);
-    if (!outcomePolicy(e.termination, e.did_work).judge) {
-      unscoredPolicy++;
-      continue;
-    }
     const js = await readTolerant(
       root,
       join(root, "judgments", e.id),
@@ -303,7 +305,11 @@ export async function buildProgress(
     // RecordStore.judgments order: started_at, then id; the last is latest.
     const j = js.sort(byInstant((x) => x.started_at)).at(-1);
     if (!j) {
-      awaiting++;
+      // No judgment: an unvalidated outcome is unknown, never guessed from policy.
+      if (refused.has(e.id)) unknown++;
+      else if (!outcomePolicy(e.termination, e.did_work).judge) {
+        unscoredPolicy++;
+      } else awaiting++;
       continue;
     }
     judged++;
@@ -326,6 +332,7 @@ export async function buildProgress(
     unscored_cells: unscoredPolicy + unscoredVerdict,
     unscored_policy_cells: unscoredPolicy,
     awaiting_judgment_cells: awaiting,
+    unknown_cells: unknown,
     pass_cells: pass,
     fail_cells: fail,
     started: {
@@ -367,7 +374,7 @@ export function renderProgress(p: Progress): string {
   L.push(
     `${
       colors.cyan("[Cells]")
-    } planned ${p.planned_cells}, finished ${p.finished_cells}, judged ${p.judged_cells} (pass ${p.pass_cells}, fail ${p.fail_cells}), unscored ${p.unscored_cells} (${p.unscored_policy_cells} by policy), awaiting judgment ${p.awaiting_judgment_cells}`,
+    } planned ${p.planned_cells}, finished ${p.finished_cells}, judged ${p.judged_cells} (pass ${p.pass_cells}, fail ${p.fail_cells}), unscored ${p.unscored_cells} (${p.unscored_policy_cells} by policy), awaiting judgment ${p.awaiting_judgment_cells}, unknown ${p.unknown_cells}`,
   );
   const k = p.executions.by_run_kind;
   L.push(

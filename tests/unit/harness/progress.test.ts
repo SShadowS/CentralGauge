@@ -33,6 +33,8 @@ async function tree(root: string): Promise<string[]> {
       if (e.isDirectory) await walk(p);
     }
   };
+  const rst = await Deno.stat(root);
+  out.push(`${root}:root:${rst.mtime?.getTime()}`);
   await walk(root);
   return out.sort();
 }
@@ -372,6 +374,7 @@ Deno.test("progress (r2 #12): the JSON top-level contract", async () => {
     "tasks",
     "tasks_planned",
     "terminations",
+    "unknown_cells",
     "unreadable",
     "unscored_cells",
     "unscored_policy_cells",
