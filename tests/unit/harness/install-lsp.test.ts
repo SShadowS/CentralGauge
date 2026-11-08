@@ -111,8 +111,11 @@ async function assertPresent(...paths: string[]) {
 // b.exe, a small non-PE file with an .exe name. Assert-ExeManifest only sees .exe names and hashes,
 // so each fixture is the bytes of a different Microsoft-signed System32 executable instead: real,
 // signed PE files that Defender trusts, with distinct hashes. Never add a Defender exclusion.
-const SYSTEM32 = join(Deno.env.get("SystemRoot") ?? "C:\\Windows", "System32");
-const signedExe = (name: string) => Deno.readFile(join(SYSTEM32, name));
+// Resolved per call, so a non-Windows run (where these tests are ignored) never reads it.
+const signedExe = (name: string) =>
+  Deno.readFile(
+    join(Deno.env.get("SystemRoot") ?? "C:\\Windows", "System32", name),
+  );
 
 async function tree(t: string) {
   const root = join(t, "lsp");
