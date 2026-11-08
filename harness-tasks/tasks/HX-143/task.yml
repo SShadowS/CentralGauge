@@ -1,0 +1,15 @@
+id: HX-143
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Test]
+coupling: [commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
+fail_to_pass: null
+mutants: [m-log-in-try, m-direct-create, m-keep-on-refusal, m-no-log, m-dates]
+contamination: null
+limits: { timeout_min: 30 }
