@@ -21,12 +21,13 @@ function fakeGate(
 ) {
   const busy = new Set<string>();
   const calls: string[] = [];
+  const clashes: string[] = [];
   let live = 0, peak = 0;
   const gate = async (
     container: string,
     task: string,
   ): Promise<GateOutcome> => {
-    assert(!busy.has(container), `two jobs at once on ${container}`);
+    if (busy.has(container)) clashes.push(container);
     busy.add(container);
     live++;
     peak = Math.max(peak, live);
@@ -37,7 +38,7 @@ function fakeGate(
     const n = calls.filter((c) => c.startsWith(`${task}@`)).length;
     return { code: code(container, task, n), file: `${task}-${n}.json` };
   };
-  return { gate, calls, peak: () => peak };
+  return { gate, calls, peak: () => peak, clashes };
 }
 
 const admitAll = () => Promise.resolve(null);
@@ -55,6 +56,7 @@ Deno.test("H-70 gates: one job per container, the three in parallel, every task 
   assertEquals(r.code, 1);
   assertEquals(f.calls.length, 5);
   assertEquals(f.peak(), 3);
+  assertEquals(f.clashes, []);
   assertEquals(
     r.jobs.map((j) => [j.task, j.code]).sort(),
     TASKS.map((t) => [t, t === "HX-103" ? 1 : 0]).sort(),
@@ -244,6 +246,7 @@ Deno.test("H-70 Sol r1: a container named twice (any case) gets one worker; its 
     log: () => {},
   });
   assertEquals(f.calls.filter((c) => c.endsWith("@Cronus281")).length, 1);
+  assertEquals(f.clashes, []);
   assertEquals(r.code, 3);
 });
 
