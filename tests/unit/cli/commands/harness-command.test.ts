@@ -10246,7 +10246,7 @@ async function interruptedCampaign(t: TestEnv) {
   return (await t.env.store.campaigns("contract"))[0]!;
 }
 
-Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member joining it is judged once there", async () => {
+Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member admitted at bind it is judged once there (a later join: pool.test.ts H-41 (9) drain/poll)", async () => {
   for (const member of [null, "J1"]) {
     await using t = await makeEnv();
     const c = await interruptedCampaign(t);
