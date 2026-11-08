@@ -330,9 +330,6 @@ export function judgeQueue(
   };
   const starveNow = () => {
     starve = undefined;
-    // A member being admitted right now is not "no member": the refresh's
-    // own finally runs pump(false), which re-arms this timer if it joined none.
-    if (refreshing) return;
     if (
       !gate || stopped || failure !== null || active > 0 ||
       jobs.length === 0 || gate.width() > 0
