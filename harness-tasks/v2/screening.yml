@@ -316,6 +316,12 @@ candidates:
   - id: HX-142
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "OnBeforeChargeOverdueFee" }
+  - id: HX-145
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-146
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:
