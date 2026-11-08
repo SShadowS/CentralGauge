@@ -9949,6 +9949,26 @@ function autoJudging(
   return r;
 }
 
+/**
+ * With an allocated member: after the real bind (before the judge queue has
+ * any work) await the pool's admission, so the queue's first pump already sees
+ * the member and the starve timer never arms. Admission does real file I/O
+ * (env pin); awaiting it, not a longer wait bound, keeps the test off the disk's
+ * speed. With no member: unchanged (the short starve bound is under test).
+ */
+function admitAtBind(
+  t: TestEnv,
+  pool: { refresh(): Promise<void> },
+  member: boolean,
+) {
+  if (!member) return;
+  const bind = t.env.bindCampaign!;
+  t.env.bindCampaign = async (id) => {
+    await bind(id);
+    await pool.refresh();
+  };
+}
+
 /** Every lane call (compile, compileOn, exclusive) on `lane`. */
 function laneUse(lane: TestEnv["env"]["lane"]) {
   const n = { calls: 0 };
@@ -10226,7 +10246,7 @@ async function interruptedCampaign(t: TestEnv) {
   return (await t.env.store.campaigns("contract"))[0]!;
 }
 
-Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member joining it is judged once there", async () => {
+Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member admitted at bind it is judged once there (a later join: pool.test.ts H-41 (9) drain/poll)", async () => {
   for (const member of [null, "J1"]) {
     await using t = await makeEnv();
     const c = await interruptedCampaign(t);
@@ -10234,6 +10254,7 @@ Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution rec
       bounds: { pollMs: 20, waitMs: 150 },
     });
     if (member) w.alloc = [member];
+    admitAtBind(t, pool, member !== null);
     const agents = laneUse(t.env.lane);
     const cap = captureAll();
     let s;
@@ -10332,6 +10353,7 @@ Deno.test("run --rerun with --judge-containers auto (H-41 N4 b): the rerun cell 
       bounds: { pollMs: 20, waitMs: 150 },
     });
     if (member) w.alloc = [member];
+    admitAtBind(t, pool, member !== null);
     const agents = laneUse(t.env.lane);
     const cap = captureAll();
     let s;
