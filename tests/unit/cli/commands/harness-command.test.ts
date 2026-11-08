@@ -54,6 +54,14 @@ import {
   recordFile,
 } from "../../../../src/harness/quarantine.ts";
 import {
+  evidencePath,
+  heartbeatPath,
+  ownerGone,
+  readEvidence,
+  writeEvidence,
+  writeHeartbeat,
+} from "../../../../src/harness/gates-evidence.ts";
+import {
   authorizedRecordedHosts,
   BACKEND_PORT,
   cellEgressProblems,
@@ -9949,6 +9957,26 @@ function autoJudging(
   return r;
 }
 
+/**
+ * With an allocated member: after the real bind (before the judge queue has
+ * any work) await the pool's admission, so the queue's first pump already sees
+ * the member and the starve timer never arms. Admission does real file I/O
+ * (env pin); awaiting it, not a longer wait bound, keeps the test off the disk's
+ * speed. With no member: unchanged (the short starve bound is under test).
+ */
+function admitAtBind(
+  t: TestEnv,
+  pool: { refresh(): Promise<void> },
+  member: boolean,
+) {
+  if (!member) return;
+  const bind = t.env.bindCampaign!;
+  t.env.bindCampaign = async (id) => {
+    await bind(id);
+    await pool.refresh();
+  };
+}
+
 /** Every lane call (compile, compileOn, exclusive) on `lane`. */
 function laneUse(lane: TestEnv["env"]["lane"]) {
   const n = { calls: 0 };
@@ -10226,7 +10254,7 @@ async function interruptedCampaign(t: TestEnv) {
   return (await t.env.store.campaigns("contract"))[0]!;
 }
 
-Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member joining it is judged once there", async () => {
+Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution recovered with no judge member is never judged on the agents' lane: owed ([INFO]), a starve with owed 1; with a member admitted at bind it is judged once there (a later join: pool.test.ts H-41 (9) drain/poll)", async () => {
   for (const member of [null, "J1"]) {
     await using t = await makeEnv();
     const c = await interruptedCampaign(t);
@@ -10234,6 +10262,7 @@ Deno.test("run --judge-containers auto (H-41 N4 a): an interrupted execution rec
       bounds: { pollMs: 20, waitMs: 150 },
     });
     if (member) w.alloc = [member];
+    admitAtBind(t, pool, member !== null);
     const agents = laneUse(t.env.lane);
     const cap = captureAll();
     let s;
@@ -10332,6 +10361,7 @@ Deno.test("run --rerun with --judge-containers auto (H-41 N4 b): the rerun cell 
       bounds: { pollMs: 20, waitMs: 150 },
     });
     if (member) w.alloc = [member];
+    admitAtBind(t, pool, member !== null);
     const agents = laneUse(t.env.lane);
     const cap = captureAll();
     let s;
@@ -11643,6 +11673,335 @@ Deno.test("H-35 run 004 #3 a persisted quarantine: env check reports the contain
     [live],
     "kept; recover's own claim is gone",
   );
+});
+
+Deno.test("H-77 recover --recreated archives the old container's records into the evidence dir (never deletes them) and writes a new manifest, only after a recreate after the record, own-root mounts only and a baseline of the lineage made after the recreate; each missing proof refuses before any reset", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const evidence = join(await testTempDir(), "evidence");
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const OWN = "C:\\ProgramData\\BcContainerHelper-Cronus281";
+  const oldId = fakeId("old-Cronus281");
+  const newId = fakeId("Cronus281");
+  const facts = {
+    id: newId,
+    created: "",
+    mounts: [OWN, "C:\\bcartifacts.cache"],
+  };
+  let own: string | null = OWN;
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    containerFacts: () => Promise.resolve({ ...facts }),
+    bchRoot: () => own,
+    // Sol r3: the fake mount sources do not exist on this host: as given
+    realPath: (p) => Promise.resolve(p),
+    // Sol r4: the known BCH roots, never the real bch-roots.json
+    bchRoots: () => [
+      "C:\\ProgramData\\BcContainerHelper",
+      OWN,
+      "C:\\ProgramData\\BcContainerHelper-Cronus282",
+    ],
+    // Sol r2: whether the old container still exists (renamed, not removed)
+    containerIdExists: (x) => {
+      assertEquals(x, oldId);
+      return Promise.resolve(oldStillThere);
+    },
+  };
+  let oldStillThere = false;
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    // Sol r1: the CLI passes no egress override to recover (only the
+    // container's own env check row counts)
+    recreated: evidence,
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  // the old container's quarantine (another Docker id, same name), no L4 evidence
+  const oldToken = await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: oldId,
+    reason: "reset of Cronus281 failed at restore: boom",
+    by: "test",
+    pid: 1,
+    fs_captured: false,
+  });
+  const oldFile = recordFile(qDir, oldId);
+  const oldText = await Deno.readTextFile(oldFile);
+  const at = Date.parse(JSON.parse(oldText).at);
+  // recreated 1 ms after the record; the baseline below comes later still
+  facts.created = new Date(at + 1).toISOString();
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+  const refused = async (why: string) => {
+    calls.length = 0;
+    await assertRejects(
+      () => recoverContainer(o, d, mechanism),
+      ConfigurationError,
+      why,
+    );
+    assertEquals(calls.filter((c) => c === "reset"), [], `${why}: no reset`);
+    assertEquals(await Deno.readTextFile(oldFile), oldText, `${why}: kept`);
+  };
+  // no baseline after the recreate yet
+  await refused("no baseline of Cronus281");
+  // a baseline, but the recreate is not after the record
+  await tick();
+  await baselineCreate(
+    { ...o, bcEgressOverride: "no NST firewall rule in the image" },
+    d,
+    mechanism,
+  );
+  facts.created = new Date(at - 1_000).toISOString();
+  await refused("the container was not created after it");
+  facts.created = new Date(at + 1).toISOString();
+  // the shared BCH root still mounted
+  facts.mounts = [OWN, "C:\\ProgramData\\BcContainerHelper"];
+  await refused("mounts another BCH root than its own");
+  facts.mounts = [OWN];
+  // not listed in bch-roots.json
+  own = null;
+  await refused("not listed in bch-roots.json");
+  own = OWN;
+  // the container changed under the command
+  facts.id = fakeId("third");
+  await refused("is not the container");
+  facts.id = newId;
+  // Sol r2: the old container renamed, not removed
+  oldStillThere = true;
+  await refused(`its container (id ${oldId}) still exists`);
+  oldStillThere = false;
+  // Sol r3: an evidence dir inside the records dir (the archive would be
+  // read as records again)
+  calls.length = 0;
+  await assertRejects(
+    () =>
+      recoverContainer(
+        { ...o, recreated: join(qDir, "archive") },
+        d,
+        mechanism,
+      ),
+    ConfigurationError,
+    "is inside the records dir",
+  );
+  assertEquals(calls.filter((c) => c === "reset"), []);
+  assertEquals(await Deno.readTextFile(oldFile), oldText);
+  // Sol r3: a trailing-dot alias of the shared root is the shared root
+  facts.mounts = [OWN, "C:\\ProgramData\\BcContainerHelper."];
+  await refused("mounts another BCH root than its own");
+  facts.mounts = [OWN];
+  // all proofs: archived, removed from the records, a new manifest
+  calls.length = 0;
+  const m = await recoverContainer(o, d, mechanism);
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(await findRecords(qDir, { name: "Cronus281", id: newId }), []);
+  const files: string[] = [];
+  for await (const e of Deno.readDir(evidence)) files.push(e.name);
+  const notes = files.filter((n) => n.startsWith("recreated-Cronus281-"));
+  const copies = files.filter((n) => n.startsWith(`${oldId}.`));
+  assertEquals([notes.length, copies.length], [1, 1], files.join(", "));
+  assertEquals(
+    await Deno.readTextFile(join(evidence, copies[0]!)),
+    oldText,
+    "archived byte for byte",
+  );
+  const note = JSON.parse(await Deno.readTextFile(join(evidence, notes[0]!)));
+  assertEquals(
+    [
+      note.container,
+      note.new_id,
+      note.created,
+      note.archived,
+      note.manifest.env_fp,
+    ],
+    [
+      "Cronus281",
+      newId,
+      facts.created,
+      [{ from: oldFile, to: copies[0] }],
+      m.env_fp,
+    ],
+  );
+  assertEquals(note.old_tokens, [oldToken]);
+  assertEquals(
+    (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
+    m.env_fp,
+  );
+  // nothing left to clear: refused (the archived copy stays)
+  await assertRejects(
+    () => recoverContainer(o, d, mechanism),
+    ConfigurationError,
+    "no record of Cronus281 to clear",
+  );
+  assertEquals(
+    await Deno.readTextFile(join(evidence, copies[0]!)),
+    oldText,
+  );
+});
+
+Deno.test("H-76 recover clears a gates in-use record only with its owner provably gone (stale heartbeat or --abandon) and its before-capture evidence equal to the post-reset capture; anything else keeps it", async () => {
+  await using t = await makeEnv();
+  const calls: string[] = [];
+  const order: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const { lineage, mechanism } = await fakedGolden(calls);
+  const l = await loadLineage(lineage);
+  const roots = l.fs!.roots;
+  const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
+  // Sol r1/r2: the gates process (pid 9) on this host (HOST1): its live
+  // tree (itself or a leftover worker), checked before recover's own claim
+  let tree: number[] = [];
+  let firstCheck = true;
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    processHolders: async (pid, names) => {
+      assertEquals(pid, 9);
+      assertEquals(names, [
+        "Cronus281",
+        fakeId("Cronus281"),
+        fakeId("Cronus281").slice(0, 12),
+      ]);
+      if (firstCheck) {
+        firstCheck = false;
+        assertEquals(
+          await Deno.stat(recordFile(qDir, fakeId("Cronus281"), true)).then(
+            () => "exists",
+            () => "none",
+          ),
+          "none",
+          "liveness is checked before recover claims",
+        );
+      }
+      return tree;
+    },
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    bcEgressOverride: "no NST firewall rule in the image",
+  };
+  const resultsRoot = join(t.repo.root, "results", "harness");
+  const key = { name: "Cronus281", id: fakeId("Cronus281") };
+  const gates = async (host = "HOST1") => {
+    for (const f of await findRecords(qDir, key)) await Deno.remove(f.file);
+    for (const p of [evidencePath, heartbeatPath]) {
+      await Deno.remove(p(qDir, key.id)).catch(() => {});
+    }
+    assert(
+      await claimRecord(qDir, {
+        id: key.id,
+        container: "Cronus281",
+        state: "in_use",
+        by: `${host} gate-task gates`,
+        pid: 9,
+        host,
+        token,
+      }),
+    );
+  };
+  const evidence = (over: Record<string, unknown> = {}) =>
+    writeEvidence(qDir, {
+      token,
+      container: "Cronus281",
+      id: key.id,
+      lineage_id: l.id,
+      lines: clean,
+      ...over,
+    });
+  const stale = new Date(Date.now() - 121_000);
+  const refused = async (why: string, abandon: string | null = null) => {
+    calls.length = 0;
+    await assertRejects(
+      () => recoverContainer({ ...o, abandon }, d, mechanism),
+      Error,
+      why,
+    );
+    assertEquals(
+      (await findRecords(qDir, key)).map((f) => f.record?.token),
+      [token],
+      `${why}: the gates record is kept`,
+    );
+    assertEquals(await readInstanceManifest(resultsRoot, "Cronus281"), null);
+  };
+  const token = crypto.randomUUID();
+  // 1. a fresh heartbeat: the owner may be live (before any reset)
+  await gates();
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token);
+  await refused(`a live gates run may hold it`);
+  assertEquals(calls, []);
+  // 1b. Sol r1: a stale heartbeat is no proof while the pid still runs
+  // (a suspended gates), nor for a record of another host
+  await gates();
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));
+  tree = [9];
+  await refused(
+    "process 9, its workers or a process naming Cronus281 still run (9)",
+  );
+  // Sol r2: the gates process died but a pwsh worker it spawned lives on
+  tree = [4711];
+  await refused("still run (4711)");
+  tree = [];
+  await gates("HOST7");
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));
+  await refused("recorded on host HOST7");
+  assertEquals(calls, []);
+  // 2. owner gone, no evidence: recreate, before any reset
+  await gates();
+  await refused("no trustworthy filesystem evidence");
+  assertEquals(calls, []);
+  // 3. evidence of another lineage or token: recreate, before any reset
+  for (
+    const bad of [
+      { lineage_id: "other-lineage" },
+      { token: crypto.randomUUID() },
+      { lines: [...clean.slice(0, -1), "E|C:\\Run\\my|denied"] },
+    ]
+  ) {
+    await gates();
+    await evidence(bad);
+    await writeHeartbeat(qDir, key.id, token, stale);
+    await refused("no trustworthy filesystem evidence");
+    assertEquals(calls, []);
+  }
+  // 4. a difference after the reset (a file the reset did not undo)
+  await gates();
+  await evidence({
+    lines: [...roots.map((r) => `D|16|7|${r}`), `T|${roots.length}`],
+  });
+  await writeHeartbeat(qDir, key.id, token, stale);
+  await refused("filesystem differs from the gates before-capture");
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assert(!("why" in await readEvidence(qDir, key.id)), "evidence kept");
+  // 5. owner gone (stale heartbeat), evidence equal: recovered
+  await gates();
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token, stale);
+  calls.length = 0;
+  const m = await recoverContainer(o, d, mechanism);
+  assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(await findRecords(qDir, key), []);
+  assert("why" in await readEvidence(qDir, key.id), "evidence removed");
+  assertEquals(await ownerGone(qDir, key.id, token), { gone: true });
+  assertEquals(
+    (await readInstanceManifest(resultsRoot, "Cronus281"))?.env_fp,
+    m.env_fp,
+  );
+  // 6. a fresh heartbeat but --abandon names the token: recovered
+  await gates();
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token);
+  await recoverContainer({ ...o, abandon: token }, d, mechanism);
+  assertEquals(await findRecords(qDir, key), []);
 });
 
 Deno.test("H-35 run 004 Sol r1 H4 in-use records: written once per container (agent and judge lanes) before setup, deleted on a normal close, left while unclosed (a crash) and refusing every other environment", async () => {

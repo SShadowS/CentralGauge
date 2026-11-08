@@ -107,15 +107,22 @@ async function assertPresent(...paths: string[]) {
   }
 }
 
-// Plainly textual content so ML scanners do not mistake the .exe-named fixtures for stub binaries.
-const FIXTURE_A = "CentralGauge test fixture a: not an executable\n";
-const FIXTURE_B = "CentralGauge test fixture b: not an executable\n";
+// H-73: Defender's ML heuristic (Trojan:Win32/Bearfoos.A!ml) quarantined the earlier plain-text
+// b.exe, a small non-PE file with an .exe name. Assert-ExeManifest only sees .exe names and hashes,
+// so each fixture is the bytes of a different Microsoft-signed System32 executable instead: real,
+// signed PE files that Defender trusts, with distinct hashes. Never add a Defender exclusion.
+// Resolved per call, so a non-Windows run (where these tests are ignored) never reads it.
+const signedExe = (name: string) =>
+  Deno.readFile(
+    join(Deno.env.get("SystemRoot") ?? "C:\\Windows", "System32", name),
+  );
 
 async function tree(t: string) {
   const root = join(t, "lsp");
   await Deno.mkdir(join(root, "bin"), { recursive: true });
-  const a = new TextEncoder().encode(FIXTURE_A);
-  const b = new TextEncoder().encode(FIXTURE_B);
+  const a = await signedExe("hostname.exe");
+  const b = await signedExe("whoami.exe");
+  assert((await sha(a)) !== (await sha(b)), "fixtures a and b must differ");
   await Deno.writeFile(join(root, "bin", "a.exe"), a);
   await Deno.writeFile(join(root, "b.exe"), b);
   await Deno.writeTextFile(join(root, "x.dll"), "dlls are not in the manifest");
@@ -124,7 +131,7 @@ async function tree(t: string) {
     manifest,
     JSON.stringify({ "bin\\a.exe": await sha(a), "b.exe": await sha(b) }),
   );
-  return { root, manifest };
+  return { root, manifest, a };
 }
 
 Deno.test({
@@ -133,25 +140,23 @@ Deno.test({
   ignore: !WIN,
   async fn() {
     await withTemp(async (t, run) => {
-      const { root, manifest } = await tree(t);
+      const { root, manifest, a } = await tree(t);
       const aExe = join(root, "bin", "a.exe");
       await assertPresent(aExe, join(root, "b.exe"), manifest);
       const ok = await run("exes", root, manifest);
       assertEquals([ok.code, ok.out.trim()], [0, "OK"]);
 
-      await Deno.writeTextFile(aExe, "CentralGauge test fixture a: tampered\n");
+      // Tampered: another signed executable's bytes under a's name.
+      await Deno.writeFile(aExe, await signedExe("where.exe"));
       await assertPresent(aExe);
       const bad = await run("exes", root, manifest);
       assertEquals(bad.code, 3);
       assertStringIncludes(bad.out, "hash mismatch for bin\\a.exe");
-      await Deno.writeTextFile(aExe, FIXTURE_A);
+      await Deno.writeFile(aExe, a);
 
       await Deno.mkdir(join(root, "deep", "er"), { recursive: true });
       const evil = join(root, "deep", "er", "evil.EXE");
-      await Deno.writeTextFile(
-        evil,
-        "CentralGauge test fixture: extra, not an executable\n",
-      );
+      await Deno.writeFile(evil, await signedExe("find.exe"));
       await assertPresent(aExe, join(root, "b.exe"), evil);
       const extra = await run("exes", root, manifest);
       assertEquals(extra.code, 3);

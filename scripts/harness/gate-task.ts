@@ -4,8 +4,18 @@
 //   stage <taskId> <outDir> [--rev R]         baseline workspace for the pilot
 //   gate <container> <taskId> [--rev R]       container job
 //   gates <taskId>... [--containers a,b,c] [--coord-lease c=token]... [--rev R]
-//                                             H-70: one job per container in
-//                                             parallel (gate-pool.ts)
+//         [--wait-free MIN]                   H-70: one job per container in
+//                                             parallel (gate-pool.ts). H-74:
+//                                             each container is held by an
+//                                             in-use record (a quarantined or
+//                                             otherwise recorded one is
+//                                             skipped); --wait-free waits up to
+//                                             MIN (0-120, default 0) for
+//                                             another run's in-use record to go
+//                                             (a judge a campaign lends)
+//         [--lineage FILE]                    H-76: a before-capture per
+//                                             hold, so harness recover can
+//                                             clear a dirty hold's record
 //   judge <container> <taskId> <ws> [--rev R] pilot scoring, developmental
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
@@ -17,7 +27,17 @@ import type { GateRun, RunResult, TestRef, Variant } from "./gate-core.ts";
 import type { Source } from "./gate-stage.ts";
 import type { GateOutcome } from "./gate-pool.ts";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
-import { DEFAULT_POOL, poolAdmit } from "../../src/harness/allocation.ts";
+import {
+  DEFAULT_COORD_ROOT,
+  DEFAULT_POOL,
+  poolAdmit,
+} from "../../src/harness/allocation.ts";
+import { containerId } from "../../src/container/docker-inspect.ts";
+import { claimExclusive, releaseOwned } from "../../src/harness/quarantine.ts";
+import { gatesHooks } from "../../src/harness/gates-evidence.ts";
+import { loadLineage } from "../../src/harness/lineage.ts";
+import { fsDiff, goldenReset } from "../../src/harness/reset.ts";
+import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import { parseCoordLease } from "../../cli/commands/harness-command.ts";
 import {
   resolveSoapTimeoutMs,
@@ -50,7 +70,7 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "./gate-stage.ts";
-import { runGatePool, serialized } from "./gate-pool.ts";
+import { recordHolds, runGatePool, serialized } from "./gate-pool.ts";
 
 const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
 const TMP_ROOT = Deno.env.get("CG_GATE_TMP") ?? join(EVIDENCE_ROOT, "tmp");
@@ -68,7 +88,11 @@ export interface GateBc {
    * H-05 run 002: `owned` (trusted id + exact name) are removed without their
    * data and cleaned; with any, a failed clean throws (infra).
    */
-  prenuke(owned?: { id: string; name: string }[]): Promise<void>;
+  prenuke(
+    owned?: { id: string; name: string }[],
+    /** H-74 Sol r3: throw on any failure even without owned apps (the final cleanup). */
+    strict?: boolean,
+  ): Promise<void>;
   /**
    * H-05: purge the kept tenant data of these CGR apps (unpublished, data
    * left by harness cells at stamped versions 1.0.n.m), so the gate's
@@ -103,7 +127,8 @@ export async function containerBc(
     timeoutMs: resolveSoapTimeoutMs(undefined),
   };
   return {
-    prenuke: (owned) => provider.prenukeCentralGaugeApps([container], owned),
+    prenuke: (owned, strict) =>
+      provider.prenukeCentralGaugeApps([container], owned, strict),
     cleanData: async (apps, allow) => {
       if (apps.length === 0) return;
       const r = await provider.syncHarnessApps(container, {
@@ -381,7 +406,7 @@ export async function runGate(o: {
   outDir: string;
   tmpRoot: string;
   tagTree: string | null;
-}): Promise<{ file: string; code: number }> {
+}): Promise<{ file: string; code: number; clean: boolean }> {
   const { task } = o.loaded;
   const naive: string[] = [];
   if (await exists(join(o.source.taskDir, "naive"))) {
@@ -424,7 +449,7 @@ export async function runGate(o: {
   }
   let cleanupError: string | null = null;
   try {
-    await o.bc.prenuke();
+    await o.bc.prenuke([], true);
   } catch (err) {
     cleanupError = err instanceof Error ? err.message : String(err);
   }
@@ -480,7 +505,16 @@ export async function runGate(o: {
       2,
     ),
   );
-  return { file, code: infra ? 3 : promoted ? 0 : 1 };
+  // H-74 Sol r1/r2: the gates hold's in-use record is kept after a failed
+  // final cleanup and after any infra end (a timed-out SOAP run may still
+  // execute on the NST). `clean` guards exclusivity only: the final prenuke
+  // is best-effort, and a lent judge's cleanliness comes from the campaign
+  // (lineage reset before every hold, env_fp checked on rejoin).
+  return {
+    file,
+    code: infra ? 3 : promoted ? 0 : 1,
+    clean: !infra && cleanupError === null,
+  };
 }
 
 async function hostCompile(
@@ -544,7 +578,7 @@ async function hostCompile(
 
 async function main(): Promise<number> {
   const a = parseArgs(Deno.args, {
-    string: ["rev", "containers", "coord-lease"],
+    string: ["rev", "containers", "coord-lease", "wait-free", "lineage"],
     collect: ["coord-lease"],
     default: { rev: "HEAD" },
   });
@@ -608,7 +642,7 @@ async function main(): Promise<number> {
       "-q",
       `${loaded.task.refapp_version}:harness-tasks/refapp`,
     ]);
-    const { file, code } = await runGate({
+    const { file, code, clean } = await runGate({
       bc,
       loaded,
       source: src,
@@ -622,7 +656,7 @@ async function main(): Promise<number> {
         code === 0 ? colors.green("[OK]") : colors.red("[FAIL]")
       } ${loaded.task.id} gate -> ${file}`,
     );
-    return { code, file };
+    return { code, file, clean };
   };
   try {
     if (cmd === "check" && rest.length > 0) {
@@ -670,7 +704,75 @@ async function main(): Promise<number> {
       return (await gateOne(rest[0]!, rest[1]!)).code;
     }
     if (cmd === "gates" && rest.length > 0) {
+      const waitMin = Number(a["wait-free"] ?? "0");
+      if (!Number.isFinite(waitMin) || waitMin < 0 || waitMin > 120) {
+        console.error(
+          `${colors.red("[FAIL]")} --wait-free must be 0 to 120 minutes: ${
+            a["wait-free"]
+          }`,
+        );
+        return 2;
+      }
+      // H-74: the in-use records every harness environment honours.
+      const qDir = join(
+        Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
+        "harness-quarantine",
+      );
+      const token = crypto.randomUUID();
+      const host = Deno.hostname();
+      // H-76: heartbeat always; the before-capture with --lineage
+      let evidence: Parameters<typeof gatesHooks>[0]["evidence"];
+      if (a.lineage) {
+        const lineage = await loadLineage(a.lineage);
+        const m = goldenReset({
+          repoRoot: repo,
+          lineagePath: a.lineage,
+          lineage,
+          dockerEnv: dockerContextEnv(),
+        });
+        const fsDigest = m.fsDigest;
+        if (!fsDigest) {
+          console.error(
+            `${
+              colors.red("[FAIL]")
+            } lineage ${lineage.id} has no fs section: no before-capture`,
+          );
+          return 2;
+        }
+        evidence = {
+          lineageId: lineage.id,
+          capture: (c) => fsDigest(c),
+          // recover's own test: a capture alone, read as the before side
+          clean: (lines) =>
+            !fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? []).errors
+              .some((e) => e.startsWith("before: ")),
+        };
+      }
+      const hooks = gatesHooks({
+        dir: qDir,
+        token,
+        ...(evidence ? { evidence } : {}),
+        log: (l) => console.log(l),
+      });
       const r = await runGatePool({
+        hold: recordHolds({
+          afterClaim: hooks.afterClaim,
+          done: hooks.done,
+          owned: hooks.owned,
+          claim: async (c) =>
+            claimExclusive(qDir, {
+              state: "in_use",
+              container: c,
+              id: await containerId(c),
+              token,
+              by: `${host} gate-task gates`,
+              pid: Deno.pid,
+              host,
+            }),
+          release: async (_c, id) => void await releaseOwned(qDir, id, token),
+          waitMs: waitMin * 60_000,
+          log: (l) => console.log(l),
+        }),
         containers: a.containers === undefined
           ? [...DEFAULT_POOL]
           : a.containers.split(",").map((c) => c.trim()).filter(Boolean),
@@ -680,7 +782,7 @@ async function main(): Promise<number> {
           new Map(a["coord-lease"].map(parseCoordLease)),
         ),
         log: (l) => console.log(l),
-      });
+      }).finally(() => hooks.stopAll());
       for (const j of r.jobs) {
         console.log(
           `${j.task} ${j.code} ${j.container ?? "-"} ${j.file ?? "-"}`,

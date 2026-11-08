@@ -73,6 +73,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}gate-pool.test.ts`]: c(true, 0),
   [`${H}gate-stage.test.ts`]: c(true, 8),
   [`${H}gate-task.test.ts`]: c(true, 3),
+  [`${H}gates-evidence.test.ts`]: c(true, 0),
+  [`${H}recreated.test.ts`]: c(true, 0),
   [`${H}hash.test.ts`]: c(true, 0),
   [`${H}identity.test.ts`]: c(true, 21),
   [`${H}images.test.ts`]: c(true, 0),
@@ -145,6 +147,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}screening.test.ts`]: c(true, 5),
   // H-68: in-memory fixtures only.
   [`${H}prescreen.test.ts`]: c(true, 0),
+  // H-72: scratch git repos with a local bare origin, fake drand and clock.
+  [`${H}seal.test.ts`]: c(true, 32),
   // T-09: runtime-fixture makeEnv (docker mock, temp dirs), like execution.
   [`${H}secret-accounts.test.ts`]: c(true, 16),
   // H-53: account pool records, plus campaign runs on the mock image.

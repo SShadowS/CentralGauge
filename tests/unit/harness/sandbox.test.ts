@@ -793,7 +793,8 @@ Deno.test({
   ...quick,
 }, async () => {
   const d = new FakeDocker();
-  d.startGate = new Promise(() => {});
+  let release!: () => void;
+  d.startGate = new Promise((res) => (release = res));
   const t0 = performance.now();
   const r = await runSandbox(
     d,
@@ -803,13 +804,23 @@ Deno.test({
   assert(performance.now() - t0 < 2_000);
   assertEquals([r.started, r.confirmedGone], [false, false]);
   assertStringIncludes(r.cleanup, "did not stop");
+  release(); // lets the fake finish and close its capture handle
   // Settling inside the bounded wait confirms it, and the late container is removed.
   const l = new FakeDocker();
   let open!: () => void;
   l.startGate = new Promise((res) => (open = res));
-  const s = await spec({ timeoutMs: 20, killGraceMs: 50 });
-  setTimeout(() => open(), 40);
-  const rl = await runSandbox(l, s, []);
+  const s = await spec({ timeoutMs: 60_000, killGraceMs: 50 });
+  // Stop (an interrupt) only once the capture files exist, and open the start
+  // 10 ms later: the capture file I/O never counts against the bounded wait,
+  // so slow disks cannot race it (a fixed timeout/gate timer could).
+  const stop = new AbortController();
+  void l.capturesCreated.then(() => {
+    stop.abort();
+    setTimeout(open, 10);
+  });
+  const rl = await runSandbox(l, s, [], stop.signal);
+  // The stop trigger is the interrupt, not the timeout.
+  assertEquals([rl.interrupted, rl.timedOut], [true, false]);
   assertEquals([rl.started, rl.confirmedGone, l.removed], [true, true, [
     s.name,
   ]]);
