@@ -1,0 +1,16 @@
+id: HX-135
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Test]
+coupling: [commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+  - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
+fail_to_pass: null
+mutants: [no-reraise, try-closing, reset-uncommitted, no-isolation, no-running-check, last-closed-on-failure]
+contamination: null
+limits: { timeout_min: 30 }

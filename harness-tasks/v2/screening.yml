@@ -273,6 +273,34 @@ candidates:
   - id: HX-090
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+  - id: HX-100
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+    supersedes: HX-090
+  - id: HX-103
+    prior: hard
+    size: { objects: 2, files: 2, reuse: "CGR Lease Mgt.CreateSchedule", traces: "CGR Lease Rate Review.OnProposeLeaseRate" }
+  - id: HX-131
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Close Contract.OnBeforeCloseContract" }
+  - id: HX-132
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Rental Mgt.OnAfterSwapVehicle" }
+  - id: HX-133
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Integration Silencer.OnBeforeQuietContractSave" }
+  - id: HX-134
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental-Post.OnAfterPostRentalContract" }
+  - id: HX-135
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Day Closing Run.OnAfterDayClosed" }
+  - id: HX-136
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Rental Mgt.OnAfterCreateContract" }
+  - id: HX-137
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:

@@ -1,0 +1,76 @@
+codeunit 70042 "CGR Desk Selection Store"
+{
+    var
+        NoSelectionErr: Label 'There is no saved selection %1.', Comment = '%1 = selection code';
+
+    procedure SaveSelection(SelectionCode: Code[20]; var Selection: RecordRef)
+    var
+        Saved: Record "CGR Saved Desk Selection";
+        ScopeFilter: Record "CGR Saved Desk Scope Filter";
+        FldRef: FieldRef;
+        PrevGroup: Integer;
+        Grp: Integer;
+        i: Integer;
+    begin
+        if Saved.Get(SelectionCode) then
+            Saved.Delete();
+        ScopeFilter.SetRange("Selection Code", SelectionCode);
+        ScopeFilter.DeleteAll();
+
+        PrevGroup := Selection.FilterGroup();
+        Selection.FilterGroup(0);
+        Saved.Init();
+        Saved."Selection Code" := SelectionCode;
+        Saved."Table No." := Selection.Number();
+        Saved."View Text" := CopyStr(Selection.GetView(), 1, MaxStrLen(Saved."View Text"));
+        Saved."Key Index" := Selection.CurrentKeyIndex();
+        Saved."Ascending Order" := Selection.Ascending();
+        Saved.Insert();
+
+        // Rental desk scopes by branch (field 11), Lease desk by start date (field 4).
+        Grp := 2;
+        i := 0;
+        case Selection.Number() of
+            70200:
+                i := 11;
+            70300:
+                i := 4;
+        end;
+        if i <> 0 then begin
+            Selection.FilterGroup(Grp);
+            FldRef := Selection.Field(i);
+            if FldRef.GetFilter() <> '' then begin
+                ScopeFilter.Init();
+                ScopeFilter."Selection Code" := SelectionCode;
+                ScopeFilter."Filter Group" := Grp;
+                ScopeFilter."Field No." := FldRef.Number();
+                ScopeFilter."Filter Text" := CopyStr(FldRef.GetFilter(), 1, MaxStrLen(ScopeFilter."Filter Text"));
+                ScopeFilter.Insert();
+            end;
+        end;
+        Selection.FilterGroup(PrevGroup);
+    end;
+
+    procedure OpenSelection(SelectionCode: Code[20]; var Selection: RecordRef)
+    var
+        Saved: Record "CGR Saved Desk Selection";
+        ScopeFilter: Record "CGR Saved Desk Scope Filter";
+    begin
+        if not Saved.Get(SelectionCode) then
+            Error(NoSelectionErr, SelectionCode);
+
+        Selection.Open(Saved."Table No.");
+        Selection.FilterGroup(0);
+        Selection.SetView(Saved."View Text");
+        Selection.CurrentKeyIndex(Saved."Key Index");
+        Selection.Ascending(Saved."Ascending Order");
+
+        ScopeFilter.SetRange("Selection Code", SelectionCode);
+        if ScopeFilter.FindSet() then
+            repeat
+                Selection.FilterGroup(ScopeFilter."Filter Group");
+                Selection.Field(ScopeFilter."Field No.").SetFilter(ScopeFilter."Filter Text");
+            until ScopeFilter.Next() = 0;
+        Selection.FilterGroup(0);
+    end;
+}

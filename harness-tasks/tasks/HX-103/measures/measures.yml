@@ -1,0 +1,24 @@
+v: 1
+partial_credit:
+  weights:
+    "87505/CommittingAdvisorDeclinedKeepsNothing": 1
+    "87505/DeclinedProposalKeepsNoLetter": 1
+    "87505/FailingAdvisorDoesNotStopReview": 1
+    "87505/LowerBandEdge": 1
+    "87505/MixedLeasesReviewedOnTheirOwn": 1
+  hidden_regressions:
+    - "87505/AcceptedProposalApplied"
+    - "87505/CommittingAdvisorAcceptedKeepsLetter"
+    - "87505/EqualRateCounts"
+    - "87505/LeaseOutsideFilterUntouched"
+reuse:
+  targets:
+    - { codeunit: 70300, procedure: CreateSchedule, signature: '(ContractNo: Code[20])', file: Leasing/src/LeaseMgt.Codeunit.al, perturb: "exit;" }
+  tests:
+    - { codeunit: 87505, procedures: [AcceptedProposalApplied, EqualRateCounts] }
+expect:
+  correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
+  naive/declined-returns-normally: { partial_credit: 0.2 }
+  naive/decline-error-unisolated: { partial_credit: 0 }
+  naive/unit-drops-ignore: { partial_credit: 0.8 }
+  naive/error-scope-raise: { partial_credit: 1 }

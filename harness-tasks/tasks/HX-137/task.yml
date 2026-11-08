@@ -1,0 +1,18 @@
+id: HX-137
+refapp_version: refapp-v2
+kind: bugfix
+prompt: prompt.md
+touches: [Core, Rental]
+coupling: [single-instance, commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, SwapMovesContractToFreeVehicle, PostCreatesLedgerEntry] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 88015, procedures: [TwelveContractsNumberedInOrder, SetupCounterAdvancesPerBlock, CopyAndCreateShareThePool, RefusedContractNumberNotReused, RefusalThenNextSessionNoDuplicate, FailedBookingKeepsNothing, FailedBookingNumberNotReused, RefusedCopyNumberNotReused] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
