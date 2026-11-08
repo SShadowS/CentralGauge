@@ -14,6 +14,25 @@
 import type { ContainerRecord } from "./quarantine.ts";
 import { dockerContextEnv } from "../container/docker-context.ts";
 
+/**
+ * Sol r2: whether a container with this Docker id still exists (a renamed
+ * old container is not gone). Throws when Docker cannot tell.
+ */
+export async function containerIdExists(id: string): Promise<boolean> {
+  const out = await new Deno.Command("docker", {
+    args: ["inspect", "--type", "container", "-f", "{{.Id}}", id],
+    env: dockerContextEnv(),
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (out.code === 0) return true;
+  const err = new TextDecoder().decode(out.stderr);
+  if (/no such (container|object)/i.test(err)) return false;
+  throw new Error(
+    `docker inspect ${id} (exit ${out.code}): ${err.trim().slice(0, 300)}`,
+  );
+}
+
 /** `docker inspect <c>` under the pinned context; throws when absent or unreadable. */
 export async function inspectContainerFacts(
   container: string,
@@ -92,6 +111,8 @@ export interface RecreatedInput {
   lineageId: string;
   /** Sol r1: `--abandon <token>`, the one in-use record (of the old container) attested gone. */
   abandon?: string | null;
+  /** Sol r2: the old Docker ids that still exist as containers (a renamed old container). */
+  liveOldIds?: readonly string[];
 }
 
 /** Sol r1: one spelling for a Windows path: backslashes, no \\?\ prefix or trailing separator, lower case. */
@@ -120,6 +141,12 @@ export function recreatedProblems(o: RecreatedInput): string[] {
         `${f.file} is a record of the current container (id ${r.id}): not a recreate; use harness recover without --recreated`,
       );
       continue;
+    }
+    // Sol r2: a different id is no proof the old container is gone
+    if (o.liveOldIds?.some((x) => x.toLowerCase() === r.id.toLowerCase())) {
+      out.push(
+        `${f.file}: its container (id ${r.id}) still exists (renamed?): remove it first`,
+      );
     }
     // Sol r1: an in-use claim (a run or a recover) may belong to a live
     // owner still addressing the container by name: only an attested one

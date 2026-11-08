@@ -11696,7 +11696,13 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
     quarantineDir: () => qDir,
     containerFacts: () => Promise.resolve({ ...facts }),
     bchRoot: () => own,
+    // Sol r2: whether the old container still exists (renamed, not removed)
+    containerIdExists: (x) => {
+      assertEquals(x, oldId);
+      return Promise.resolve(oldStillThere);
+    },
   };
+  let oldStillThere = false;
   const o = {
     repoRoot: t.repo.root,
     containers: ["Cronus281"],
@@ -11757,21 +11763,25 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
   facts.id = fakeId("third");
   await refused("is not the container");
   facts.id = newId;
+  // Sol r2: the old container renamed, not removed
+  oldStillThere = true;
+  await refused(`its container (id ${oldId}) still exists`);
+  oldStillThere = false;
   // all proofs: archived, removed from the records, a new manifest
   calls.length = 0;
   const m = await recoverContainer(o, d, mechanism);
   assertEquals(calls, ["reset", "verifyClean", "fsDigest"]);
   assertEquals(await findRecords(qDir, { name: "Cronus281", id: newId }), []);
+  const files: string[] = [];
+  for await (const e of Deno.readDir(evidence)) files.push(e.name);
+  const notes = files.filter((n) => n.startsWith("recreated-Cronus281-"));
+  const copies = files.filter((n) => n.startsWith(`${oldId}.`));
+  assertEquals([notes.length, copies.length], [1, 1], files.join(", "));
   assertEquals(
-    await Deno.readTextFile(join(evidence, `${oldId}.json`)),
+    await Deno.readTextFile(join(evidence, copies[0]!)),
     oldText,
     "archived byte for byte",
   );
-  const notes: string[] = [];
-  for await (const e of Deno.readDir(evidence)) {
-    if (e.name.startsWith("recreated-Cronus281-")) notes.push(e.name);
-  }
-  assertEquals(notes.length, 1);
   const note = JSON.parse(await Deno.readTextFile(join(evidence, notes[0]!)));
   assertEquals(
     [
@@ -11781,7 +11791,13 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
       note.archived,
       note.manifest.env_fp,
     ],
-    ["Cronus281", newId, facts.created, [`${oldId}.json`], m.env_fp],
+    [
+      "Cronus281",
+      newId,
+      facts.created,
+      [{ from: oldFile, to: copies[0] }],
+      m.env_fp,
+    ],
   );
   assertEquals(note.old_tokens, [oldToken]);
   assertEquals(
@@ -11795,7 +11811,7 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
     "no record of Cronus281 to clear",
   );
   assertEquals(
-    await Deno.readTextFile(join(evidence, `${oldId}.json`)),
+    await Deno.readTextFile(join(evidence, copies[0]!)),
     oldText,
   );
 });

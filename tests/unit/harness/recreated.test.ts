@@ -169,3 +169,10 @@ Deno.test("H-77 Sol r1 recreatedProblems: an in-use record of the old container 
   );
   assertEquals(recreatedProblems({ ...ok, found: [live], abandon: t }), []);
 });
+
+Deno.test("H-77 Sol r2 recreatedProblems: an old container that still exists (renamed) refuses", () => {
+  const p = recreatedProblems({ ...ok, liveOldIds: [OLD.toUpperCase()] });
+  assertEquals(p.length, 1);
+  assertStringIncludes(p[0]!, "still exists");
+  assertEquals(recreatedProblems({ ...ok, liveOldIds: [NEW] }), []);
+});

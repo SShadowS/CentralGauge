@@ -133,6 +133,7 @@ import {
 } from "../../src/harness/gates-evidence.ts";
 import {
   type ContainerFacts,
+  containerIdExists,
   inspectContainerFacts,
   recreatedProblems,
 } from "../../src/harness/recreated.ts";
@@ -255,6 +256,8 @@ export interface EnvDeps {
   containerFacts?(name: string): Promise<ContainerFacts>;
   /** H-77: the container's own root from bch-roots.json, or null when not listed (default: bchRootFor). */
   bchRoot?(name: string): string | null;
+  /** H-77 Sol r2: a container with this Docker id exists (default: containerIdExists); throws when unknown. */
+  containerIdExists?(id: string): Promise<boolean>;
   /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
   processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
@@ -784,7 +787,28 @@ async function recoverRecreated(
     return r === SHARED_BCH_ROOT ? null : r;
   }))(c);
   const manifestBefore = await readInstanceManifest(x.inputs.resultsRoot, c);
+  // Sol r2: every old id must be gone as a container (unknown refuses)
+  const exists = deps.containerIdExists ?? containerIdExists;
+  const liveOldIds: string[] = [];
+  for (
+    const oldId of new Set(
+      found.flatMap((f) =>
+        f.record && f.record.id.toLowerCase() !== id.toLowerCase()
+          ? [f.record.id]
+          : []
+      ),
+    )
+  ) {
+    try {
+      if (await exists(oldId)) liveOldIds.push(oldId);
+    } catch (err) {
+      throw refuse(
+        `whether container ${oldId} still exists is unknown: ${msg(err)}`,
+      );
+    }
+  }
   const problems = recreatedProblems({
+    liveOldIds,
     container: c,
     currentId: id,
     found,
@@ -854,20 +878,45 @@ async function recoverRecreated(
         "health",
       );
     }
-    // Sol r1: archive by an atomic move (the record as it is at that
-    // moment, never deleted), never over an existing file; a record that
-    // changed since the check is restored (create-new) and refuses
+    // Sol r1/r2: the note first (create-new: a failure moves nothing), then
+    // each record MOVED (atomic, never deleted) under a name no other file
+    // can have (record name, time, random suffix: a rename never replaces
+    // an archive); a record that changed since the check is restored
+    // (create-new) and refuses
     await Deno.mkdir(evidenceDir, { recursive: true });
-    for (const f of found) {
-      const target = join(evidenceDir, basename(f.file));
-      if (await Deno.stat(target).then(() => true, () => false)) {
-        throw refuse(`${target} exists already: nothing archived`);
-      }
-    }
+    const at = new Date().toISOString();
+    const stamp = at.replace(/[:.]/g, "-");
+    const names = found.map((f) =>
+      `${basename(f.file, ".json")}.${stamp}.${
+        crypto.randomUUID().slice(0, 8)
+      }.json`
+    );
+    archived.push(...names);
+    await Deno.writeTextFile(
+      join(evidenceDir, `recreated-${c}-${stamp}.json`),
+      JSON.stringify(
+        {
+          container: c,
+          new_id: id,
+          created: facts.created,
+          mounts: facts.mounts,
+          own_root: own,
+          baseline_before: manifestBefore,
+          manifest: made,
+          archived: found.map((f, k) => ({ from: f.file, to: names[k] })),
+          old_ids: [...new Set(found.map((f) => f.record!.id))],
+          old_tokens: found.map((f) => f.record!.token),
+          by: `${deps.owner()} harness recover --recreated`,
+          at,
+        },
+        null,
+        2,
+      ),
+      { createNew: true },
+    );
     const changed: string[] = [];
-    for (const f of found) {
-      const name = basename(f.file);
-      const target = join(evidenceDir, name);
+    for (const [k, f] of found.entries()) {
+      const target = join(evidenceDir, names[k]!);
       try {
         await Deno.rename(f.file, target);
       } catch (err) {
@@ -877,7 +926,6 @@ async function recoverRecreated(
           }`,
         );
       }
-      archived.push(name);
       const now = await Deno.readTextFile(target);
       if (now !== f.text) {
         changed.push(f.file);
@@ -895,29 +943,6 @@ async function recoverRecreated(
         }; run harness recover again`,
       );
     }
-    const at = new Date().toISOString();
-    await Deno.writeTextFile(
-      join(evidenceDir, `recreated-${c}-${at.replace(/[:.]/g, "-")}.json`),
-      JSON.stringify(
-        {
-          container: c,
-          new_id: id,
-          created: facts.created,
-          mounts: facts.mounts,
-          own_root: own,
-          baseline_before: manifestBefore,
-          manifest: made,
-          archived,
-          old_ids: [...new Set(found.map((f) => f.record!.id))],
-          old_tokens: found.map((f) => f.record!.token),
-          by: `${deps.owner()} harness recover --recreated`,
-          at,
-        },
-        null,
-        2,
-      ),
-      { createNew: true },
-    );
   } catch (err) {
     await dropManifest();
     throw err;
