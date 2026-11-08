@@ -87,7 +87,12 @@ export interface UnavailableProgress {
 }
 
 class CampaignUnreadable extends CentralGaugeError {
-  constructor(readonly campaignId: string, readonly entry: Unreadable) {
+  constructor(
+    readonly campaignId: string,
+    readonly entry: Unreadable,
+    /** Every diagnostic collected during resolution (includes `entry`). */
+    readonly all: Unreadable[],
+  ) {
     super(
       `campaign ${campaignId} unreadable: ${entry.reason} (${entry.path})`,
       "HARNESS_CAMPAIGN_UNREADABLE",
@@ -108,7 +113,7 @@ export async function progressSnapshot(
     return {
       campaign_id: err.campaignId,
       campaign_unreadable: err.entry,
-      unreadable: [err.entry],
+      unreadable: err.all,
     };
   }
 }
@@ -199,7 +204,7 @@ async function resolveCampaign(
   // A requested campaign whose file exists but does not read is not "unknown".
   for (const want of [campaignOpt ?? id]) {
     const u = bad.find((b) => b.path === join(dir, `${want}.json`));
-    if (u) throw new CampaignUnreadable(want, u);
+    if (u) throw new CampaignUnreadable(want, u, [...bad]);
   }
   throw new CentralGaugeError(
     `No campaign or experiment ${id}${
@@ -418,10 +423,16 @@ const secs = (ms: number | null) =>
 
 export function renderProgress(p: Progress | UnavailableProgress): string {
   if ("campaign_unreadable" in p) {
-    const u = p.campaign_unreadable;
-    return `${colors.cyan("[Progress]")} campaign ${p.campaign_id}\n${
-      colors.yellow("[WARN]")
-    } campaign record unreadable, no numbers: ${u.path}: ${u.reason}`;
+    return [
+      `${colors.cyan("[Progress]")} campaign ${p.campaign_id}`,
+      ...p.unreadable.map((u) =>
+        `${colors.yellow("[WARN]")} ${
+          u === p.campaign_unreadable
+            ? "campaign record unreadable, no numbers: "
+            : "unreadable "
+        }${u.path}: ${u.reason}`
+      ),
+    ].join("\n");
   }
   const L: string[] = [];
   L.push(

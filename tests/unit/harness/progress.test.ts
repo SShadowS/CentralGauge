@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
+import { stripAnsiCode } from "@std/fmt/colors";
 import {
   type ExecutionRecord,
   RecordStore,
@@ -211,6 +212,25 @@ Deno.test("progress (r2 #1): a truncated or vanished requested campaign is named
   await Deno.remove(join(root, "campaigns", `${c.id}.json`));
   await assertRejects(() => buildProgress(root, c.id), Error, "No campaign");
   await assertRejects(() => progressSnapshot(root, c.id), Error, "No campaign");
+});
+
+Deno.test("progress (r4): an unavailable snapshot carries every diagnostic, in JSON and text", async () => {
+  const { root, c } = await setup();
+  const dir = join(root, "campaigns");
+  await Deno.writeTextFile(join(dir, `${c.id}.json`), '{"v":1,');
+  await Deno.writeTextFile(join(dir, "other.json"), "not json");
+  await Deno.writeTextFile(join(dir, "x.json.tmp-1"), "{}");
+  const snap = await progressSnapshot(root, c.id);
+  if (!("campaign_unreadable" in snap)) throw new Error("expected snapshot");
+  assertEquals(snap.unreadable.length, 3);
+  const text = stripAnsiCode(renderProgress(snap));
+  assertEquals(
+    text.split("\n").filter((l) => l.startsWith("[WARN]")).length,
+    3,
+  );
+  for (const n of [`${c.id}.json`, "other.json", "x.json.tmp-1"]) {
+    assertStringIncludes(text, n);
+  }
 });
 
 Deno.test("progress (r3): re-derivation temp files are listed, not applied", async () => {
