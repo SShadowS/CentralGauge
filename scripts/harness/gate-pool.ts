@@ -48,6 +48,11 @@ export interface Hold {
   owned?(): Promise<boolean>;
   /** H-76: the record is no longer ours: stop (heartbeat), release nothing. */
   lost?(): Promise<void>;
+  /**
+   * H-76 Sol r1: the hold's setup (heartbeat, before-capture), run only
+   * after the admission recheck; a throw means the caller releases it.
+   */
+  prepare?(): Promise<void>;
 }
 
 /**
@@ -58,10 +63,12 @@ export interface Hold {
  * refusal is final at once. Sol r1: a hold is released exactly when every
  * gate on it ended with a clean final cleanup (an environment releases its
  * claims after a clean teardown the same way); a dirty one keeps the in-use
- * record. H-76: `afterClaim` (heartbeat, before-capture evidence) runs once
- * the record is ours; when it throws, the untouched claim is released and the
- * container refused. `done` follows every release or keep. `owned` is the
- * token check runGatePool makes before each job and before the release.
+ * record. H-76: `afterClaim` (heartbeat, before-capture evidence) is the
+ * hold's `prepare`, which runGatePool runs after the admission recheck (Sol
+ * r1: never on a container another lease took meanwhile). `done` runs before
+ * every release (Sol r1: the files go while the record is still ours) and on
+ * every keep or loss. `owned` is the token check runGatePool makes before
+ * each job and before the release.
  */
 export function recordHolds(o: {
   claim: (
@@ -90,32 +97,21 @@ export function recordHolds(o: {
         const id = r.id;
         const done = (released: boolean) =>
           o.done?.(c, id, released) ?? Promise.resolve();
-        try {
-          await o.afterClaim?.(c, id);
-        } catch (err) {
-          // Nothing touched the container yet: the claim goes at once.
-          await o.release(c, id);
-          await done(true);
-          return {
-            why: `hold setup failed: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          };
-        }
-        const owned = o.owned;
+        const owned = o.owned, after = o.afterClaim;
         return {
           ...(owned ? { owned: () => owned(c, id) } : {}),
+          ...(after ? { prepare: () => after(c, id) } : {}),
           lost: () => done(false),
           release: async (clean) => {
             if (!clean) {
               o.log(
-                `[WARN] ${c}: in-use record ${id} kept (a gate on it ended infra, its final cleanup failed or it threw); it refuses ${c} in every harness run. harness recover clears it once this run is gone (heartbeat 120 s stale) only with this hold's --lineage before-capture and an identical post-reset capture; otherwise recreate ${c}`,
+                `[WARN] ${c}: in-use record ${id} kept (a gate on it ended infra, its final cleanup failed or it threw); it refuses ${c} in every harness run. harness recover clears it once this run's process is gone only with this hold's --lineage before-capture and an identical post-reset capture; otherwise recreate ${c}`,
               );
               await done(false);
               return;
             }
-            await o.release(c, id);
             await done(true);
+            await o.release(c, id);
           },
         };
       }
@@ -179,6 +175,16 @@ export async function runGatePool(o: {
         again = await o.admit(c);
       } catch (err) {
         again = err instanceof Error ? err.message : String(err);
+      }
+      // H-76: the hold's setup only now (heartbeat, before-capture)
+      if (again === null && h.prepare) {
+        try {
+          await h.prepare();
+        } catch (err) {
+          again = `hold setup failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`;
+        }
       }
       if (again !== null) {
         o.log(`[WARN] ${c} skipped: ${again} (rechecked once held)`);

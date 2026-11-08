@@ -11684,7 +11684,16 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   const l = await loadLineage(lineage);
   const roots = l.fs!.roots;
   const clean = [...roots.map((r) => `D|16|0|${r}`), `T|${roots.length}`];
-  const d: EnvDeps = { ...deps(order), quarantineDir: () => qDir };
+  // Sol r1: the gates process (pid 9) on this host (HOST1), alive or not
+  let pidAlive = false;
+  const d: EnvDeps = {
+    ...deps(order),
+    quarantineDir: () => qDir,
+    processAlive: (pid) => {
+      assertEquals(pid, 9);
+      return Promise.resolve(pidAlive);
+    },
+  };
   const o = {
     repoRoot: t.repo.root,
     containers: ["Cronus281"],
@@ -11694,19 +11703,22 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   };
   const resultsRoot = join(t.repo.root, "results", "harness");
   const key = { name: "Cronus281", id: fakeId("Cronus281") };
-  const gates = async () => {
+  const gates = async (host = "HOST1") => {
     for (const f of await findRecords(qDir, key)) await Deno.remove(f.file);
     for (const p of [evidencePath, heartbeatPath]) {
       await Deno.remove(p(qDir, key.id)).catch(() => {});
     }
-    await plantRecord(qDir, {
-      id: key.id,
-      container: "Cronus281",
-      state: "in_use",
-      by: "HOST1 gate-task gates",
-      pid: 9,
-      token,
-    });
+    assert(
+      await claimRecord(qDir, {
+        id: key.id,
+        container: "Cronus281",
+        state: "in_use",
+        by: `${host} gate-task gates`,
+        pid: 9,
+        host,
+        token,
+      }),
+    );
   };
   const evidence = (over: Record<string, unknown> = {}) =>
     writeEvidence(qDir, {
@@ -11738,6 +11750,19 @@ Deno.test("H-76 recover clears a gates in-use record only with its owner provabl
   await evidence();
   await writeHeartbeat(qDir, key.id, token);
   await refused(`a live gates run may hold it`);
+  assertEquals(calls, []);
+  // 1b. Sol r1: a stale heartbeat is no proof while the pid still runs
+  // (a suspended gates), nor for a record of another host
+  await gates();
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));
+  pidAlive = true;
+  await refused("process 9 is still running");
+  pidAlive = false;
+  await gates("HOST7");
+  await evidence();
+  await writeHeartbeat(qDir, key.id, token, new Date(Date.now() - 121_000));
+  await refused("recorded on host HOST7");
   assertEquals(calls, []);
   // 2. owner gone, no evidence: recreate, before any reset
   await gates();

@@ -538,36 +538,75 @@ Deno.test("H-74 recordHolds: --wait-free 0 refuses a busy container at once", as
 
 // ---- H-76: evidence, heartbeat and the token check ----
 
-Deno.test("H-76 recordHolds: afterClaim runs once the record is ours; when it throws (no heartbeat) the untouched claim is released and the container refused; done reports released or kept", async () => {
+Deno.test("H-76 Sol r1 gates: the hold's setup (afterClaim) runs only after the admission recheck; a refused recheck never sets it up; a failing setup releases the untouched claim; done runs before every release and on a keep", async () => {
   const recs = fakeRecords();
-  const ends: string[] = [];
-  const hold = recordHolds({
-    claim: recs.claim("gates"),
-    release: recs.release,
-    waitMs: 0,
-    afterClaim: (c, id) => {
-      recs.events.push(`after:${c}:${id}`);
-      return c === "Cronus283"
-        ? Promise.reject(new Error("heartbeat not written"))
-        : Promise.resolve();
+  const lines: string[] = [];
+  let leased = false;
+  const r = await runGatePool({
+    containers: POOL,
+    tasks: ["HX-101", "HX-102"],
+    gate: (c) =>
+      Promise.resolve({
+        code: 0,
+        file: c,
+        clean: c !== "Cronus282",
+      }),
+    admit: (c) => {
+      recs.events.push(`admit:${c}`);
+      return Promise.resolve(
+        c === "Cronus281" && leased ? "coord lease held by lane-x" : null,
+      );
     },
-    done: (c, _id, released) => {
-      ends.push(`${c}:${released}`);
-      return Promise.resolve();
+    hold: (c) => {
+      if (c === "Cronus281") leased = true; // taken while the hold waited
+      return recordHolds({
+        claim: recs.claim("gates"),
+        release: recs.release,
+        waitMs: 0,
+        afterClaim: (c, id) => {
+          recs.events.push(`after:${c}:${id}`);
+          return c === "Cronus283"
+            ? Promise.reject(new Error("heartbeat not written"))
+            : Promise.resolve();
+        },
+        done: (c, _id, released) => {
+          recs.events.push(`done:${c}:${released}`);
+          return Promise.resolve();
+        },
+        log: quiet(lines),
+      })(c);
     },
-    log: () => {},
+    log: quiet(lines),
   });
-  const bad = await hold("Cronus283");
-  assert("why" in bad);
-  assertStringIncludes(bad.why, "heartbeat not written");
-  assertEquals(recs.held.has("Cronus283"), false, "released untouched");
-  const a = await hold("Cronus281"), b = await hold("Cronus282");
-  assert("release" in a && "release" in b);
-  assert(recs.events.includes("after:Cronus281:id-Cronus281-2"));
-  await a.release(true);
-  await b.release(false);
-  assertEquals(ends, ["Cronus283:true", "Cronus281:true", "Cronus282:false"]);
+  const ev = recs.events;
+  // 281: recheck refused, never set up; released untouched
+  assert(!ev.some((e) => e.startsWith("after:Cronus281")), ev.join(","));
+  // 283: set up after its recheck, setup failed, released (done first)
+  assert(
+    ev.indexOf("admit:Cronus283", ev.indexOf("claim:Cronus283:gates")) <
+      ev.findIndex((e) => e.startsWith("after:Cronus283")),
+    ev.join(","),
+  );
+  assert(
+    lines.some((l) =>
+      l.startsWith("[WARN] Cronus283 skipped: hold setup failed")
+    ),
+    lines.join("\n"),
+  );
+  for (const c of ["Cronus281", "Cronus283"]) {
+    assertEquals(recs.held.has(c), false, `${c} released`);
+    assert(
+      ev.indexOf(`done:${c}:true`) <
+        ev.findIndex((e) => e.startsWith(`release:${c}`)),
+      `${c}: done before release: ${ev.join(",")}`,
+    );
+  }
+  // 282 ran one task, ended dirty and left the pool: the record is kept
+  // (done, no release); nothing else was left to run the other task
+  assertEquals(r.jobs.map((j) => j.container).sort(), ["Cronus282", null]);
   assertEquals(recs.held.get("Cronus282"), "gates");
+  assert(ev.includes("done:Cronus282:false"), ev.join(","));
+  assert(!ev.some((e) => e.startsWith("release:Cronus282")));
 });
 
 Deno.test("H-76 gates: the record is rechecked before every job; once it is no longer this run's, no further job runs there, the task goes elsewhere and nothing is released", async () => {

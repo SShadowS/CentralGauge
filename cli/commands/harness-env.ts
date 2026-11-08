@@ -126,6 +126,7 @@ import {
   type Evidence,
   isGatesRecord,
   ownerGone,
+  processAlive,
   readEvidence,
   removeGatesFiles,
 } from "../../src/harness/gates-evidence.ts";
@@ -243,6 +244,8 @@ export interface EnvDeps {
   running(name: string): Promise<boolean>;
   /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
   poolBounds?: Partial<PoolBounds>;
+  /** H-76 Sol r1: a process with this pid runs on this host (default: tasklist / ps); throws when unknown. */
+  processAlive?(pid: number): Promise<boolean>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
   containerId(name: string): Promise<string>;
   resolveHost(): Promise<string>;
@@ -747,9 +750,30 @@ async function recoverClaimed(
     : null;
   let evidence: Evidence | null = null;
   if (g) {
+    // Sol r1: a stale heartbeat alone is no proof (a suspended process keeps
+    // its pid and may resume): on this host its pid must be gone too; a
+    // record of another host needs --abandon.
+    const alive = deps.processAlive ?? processAlive;
+    const pidGone = async (): Promise<string | null> => {
+      if (g.host !== deps.owner()) {
+        return `recorded on host ${g.host}, not this one (${deps.owner()})`;
+      }
+      try {
+        return await alive(g.pid) ? `process ${g.pid} is still running` : null;
+      } catch (err) {
+        return `whether process ${g.pid} runs is unknown: ${msg(err)}`;
+      }
+    };
     const owner = o.abandon === g.token
       ? { gone: true as const }
-      : await ownerGone(qDir, id, g.token);
+      : await (async () => {
+        const p = await pidGone();
+        return p ? { gone: false as const, why: p } : await ownerGone(
+          qDir,
+          id,
+          g.token,
+        );
+      })();
     if (!owner.gone) {
       throw new ConfigurationError(
         `recover ${c}: ${

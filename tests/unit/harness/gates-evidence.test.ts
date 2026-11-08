@@ -6,6 +6,7 @@ import {
   heartbeatPath,
   isGatesRecord,
   ownerGone,
+  processAlive,
   readEvidence,
   removeGatesFiles,
   writeEvidence,
@@ -136,6 +137,11 @@ Deno.test("H-76 gatesHooks: afterClaim writes the heartbeat first (and keeps it 
   const later = JSON.parse(await Deno.readTextFile(heartbeatPath(dir, ID))).at;
   assert(later > first, "the heartbeat is rewritten");
   assert(await h.owned("Cronus281", ID));
+  // Sol r1: a recover claim beside our record: no longer ours
+  assert(await claimRecord(dir, rec(T2), { recover: true }));
+  assert(!await h.owned("Cronus281", ID));
+  await releaseOwned(dir, ID, T2, { recover: true });
+  assert(await h.owned("Cronus281", ID));
   // kept (dirty end): heartbeat stops, files stay
   await h.done("Cronus281", ID, false);
   const stopped = await Deno.readTextFile(heartbeatPath(dir, ID));
@@ -193,7 +199,26 @@ Deno.test("H-76 gatesHooks: a capture with errors or a failing capture keeps no 
     threw = true;
   }
   assert(threw);
-  bad.stopAll();
+  await bad.stopAll();
+});
+
+Deno.test("H-76 Sol r1 processAlive: this process runs; a pid that exited does not; a bad pid throws", async () => {
+  assert(await processAlive(Deno.pid));
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["eval", "0"],
+    stdout: "null",
+    stderr: "null",
+  }).spawn();
+  const pid = child.pid;
+  await child.status;
+  assertEquals(await processAlive(pid), false);
+  let threw = false;
+  try {
+    await processAlive(0);
+  } catch {
+    threw = true;
+  }
+  assert(threw);
 });
 
 Deno.test("H-76 isGatesRecord: by `<host> gate-task gates` only", () => {

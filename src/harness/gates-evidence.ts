@@ -164,6 +164,30 @@ export async function ownerGone(
   return { gone: true };
 }
 
+/**
+ * H-76 Sol r1: a process with `pid` runs on this host (tasklist on Windows,
+ * `ps -p` elsewhere). A reused pid reads as alive, which only refuses more.
+ * Throws when it cannot tell.
+ */
+export async function processAlive(pid: number): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`bad pid ${pid}`);
+  if (Deno.build.os === "windows") {
+    const out = await new Deno.Command("tasklist", {
+      args: ["/FI", `PID eq ${pid}`, "/NH", "/FO", "CSV"],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (out.code !== 0) throw new Error(`tasklist exit ${out.code}`);
+    return new TextDecoder().decode(out.stdout).includes(`","${pid}",`);
+  }
+  const out = await new Deno.Command("ps", {
+    args: ["-p", String(pid)],
+    stdout: "null",
+    stderr: "null",
+  }).output();
+  return out.code === 0;
+}
+
 /** Remove this token's evidence and heartbeat (gone already is fine). */
 export async function removeGatesFiles(
   dir: string,
@@ -193,7 +217,7 @@ export async function removeGatesFiles(
  * `evidence` (--lineage), one before-capture. A capture that fails or has
  * errors keeps no evidence (a dirty end then needs a recreate); the hold
  * goes on. done: the heartbeat stops; a release also removes the files.
- * owned: the container's in-use record still carries this run's token.
+ * owned: this run's in-use record is the container's only record.
  */
 export function gatesHooks(o: {
   dir: string;
@@ -207,10 +231,18 @@ export function gatesHooks(o: {
   };
   log: (line: string) => void;
 }) {
-  const beats = new Map<string, ReturnType<typeof setInterval>>();
-  const stop = (id: string) => {
-    clearInterval(beats.get(id));
+  // Sol r1: each heartbeat's timer and its write in flight, drained on stop
+  // so no late write lands after the files are gone or another hold's.
+  const beats = new Map<
+    string,
+    { timer: ReturnType<typeof setInterval>; pending: Promise<void> }
+  >();
+  const stop = async (id: string) => {
+    const b = beats.get(id);
+    if (!b) return;
+    clearInterval(b.timer);
     beats.delete(id);
+    await b.pending;
   };
   const none = (c: string, why: string) =>
     o.log(
@@ -219,16 +251,17 @@ export function gatesHooks(o: {
   return {
     afterClaim: async (c: string, id: string): Promise<void> => {
       await writeHeartbeat(o.dir, id, o.token);
-      beats.set(
-        id,
-        setInterval(
-          () =>
-            void writeHeartbeat(o.dir, id, o.token).catch((err) =>
+      const b = {
+        pending: Promise.resolve(),
+        timer: setInterval(() => {
+          b.pending = b.pending.then(() =>
+            writeHeartbeat(o.dir, id, o.token).catch((err) =>
               o.log(`[WARN] ${c}: heartbeat not written: ${msg(err)}`)
-            ),
-          o.heartbeatMs ?? HEARTBEAT_MS,
-        ),
-      );
+            )
+          );
+        }, o.heartbeatMs ?? HEARTBEAT_MS),
+      };
+      beats.set(id, b);
       const ev = o.evidence;
       if (!ev) return;
       let lines: string[];
@@ -250,17 +283,28 @@ export function gatesHooks(o: {
         none(c, `not written: ${msg(err)}`);
       }
     },
+    /**
+     * Sol r1: runs BEFORE a release (the record is still ours, so no other
+     * hold's files exist yet): the heartbeat stops and drains, then a
+     * release removes this hold's files.
+     */
     done: async (_c: string, id: string, released: boolean): Promise<void> => {
-      stop(id);
+      await stop(id);
       if (released) await removeGatesFiles(o.dir, id, o.token);
     },
-    owned: async (c: string, id: string): Promise<boolean> =>
-      (await findRecords(o.dir, { name: c, id })).some((f) =>
-        f.record?.token === o.token && f.record.state === "in_use"
-      ),
-    /** Every heartbeat stops (the run's end, whatever happened). */
-    stopAll: () => {
-      for (const id of [...beats.keys()]) stop(id);
+    /**
+     * Sol r1: ours only while our in-use record is the container's ONLY
+     * record: a recover claim (`<id>.recover.json`) or any other record
+     * means a recovery is under way or done.
+     */
+    owned: async (c: string, id: string): Promise<boolean> => {
+      const found = await findRecords(o.dir, { name: c, id });
+      return found.length === 1 && found[0]!.record?.token === o.token &&
+        found[0]!.record.state === "in_use";
+    },
+    /** Every heartbeat stops and drains (the run's end, whatever happened). */
+    stopAll: async () => {
+      for (const id of [...beats.keys()]) await stop(id);
     },
   };
 }
