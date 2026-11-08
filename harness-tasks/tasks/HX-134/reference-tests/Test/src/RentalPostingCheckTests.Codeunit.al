@@ -153,6 +153,36 @@ codeunit 80340 "CGR Rental Posting Check Tests"
         Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'The batch check changes no status');
     end;
 
+    [Test]
+    procedure BatchKeepsCallersStatusFilter()
+    var
+        Contract: Record "CGR Rental Contract";
+        LedgerEntry: Record "CGR Rental Ledger Entry";
+        PostingCheck: Codeunit "CGR Rental Posting Check";
+        Results: Dictionary of [Code[20], Text];
+        ReturnedNo: Code[20];
+        OpenNo: Code[20];
+        WouldPost: Integer;
+    begin
+        HX134Arrange('HX134-VF');
+        ReturnedNo := HX134ReturnedContract('HX134-VF', 1100);
+        OpenNo := Lib.CreateContract('HX134-VF');
+        Contract.SetRange("Vehicle No.", 'HX134-VF');
+        Contract.SetRange(Status, Contract.Status::Open);
+
+        Commit();
+        WouldPost := PostingCheck.CheckBatch(Contract, Results);
+
+        Assert.AreEqual(0, WouldPost, 'A filter on Open contracts holds no Returned contract, so none would post');
+        Assert.AreEqual(0, Results.Count(), 'No contract is checked, so Results is empty');
+        Assert.IsFalse(Results.ContainsKey(OpenNo), 'The open contract is not checked');
+        LedgerEntry.SetRange("Vehicle No.", 'HX134-VF');
+        Assert.AreEqual(0, LedgerEntry.Count(), 'The batch check keeps no ledger entry');
+        Contract.Reset();
+        Contract.Get(ReturnedNo);
+        Assert.AreEqual(Contract.Status::Returned, Contract.Status, 'The returned contract outside the filter is untouched');
+    end;
+
     local procedure HX134Arrange(VehicleNo: Code[20])
     begin
         WorkDate(20270310D);

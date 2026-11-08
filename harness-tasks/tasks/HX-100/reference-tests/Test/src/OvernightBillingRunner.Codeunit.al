@@ -6,6 +6,8 @@ codeunit 80162 "CGR Overnight Billing Runner"
         NewCustomerName: Text[100];
         FailedLeases: List of [Code[20]];
         OvernightInvoiced: Integer;
+        StopAfterBilling: Boolean;
+        StopAfterBillingErr: Label 'HX100 runner stops after the overnight billing.';
 
     trigger OnRun()
     var
@@ -20,6 +22,18 @@ codeunit 80162 "CGR Overnight Billing Runner"
         Lease.Reset();
         Lease.SetFilter("No.", LeaseFilterText);
         OvernightInvoiced := OvernightBilling.BillLeasesOvernight(Lease, FailedLeases);
+        if StopAfterBilling then
+            Error(StopAfterBillingErr);
+    end;
+
+    procedure SetStopAfterBilling()
+    begin
+        StopAfterBilling := true;
+    end;
+
+    procedure StopAfterBillingText(): Text
+    begin
+        exit(StopAfterBillingErr);
     end;
 
     procedure SetOvernightBilling(NewLeaseFilter: Text; LeaseNoToRename: Code[20]; CustomerName: Text[100])

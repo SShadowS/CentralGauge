@@ -15,6 +15,7 @@ codeunit 70350 "CGR Lease Overnight Billing"
         Invoiced: Integer;
     begin
         Lease.CopyFilters(LeaseFilter);
+        Commit();
         if Lease.FindSet() then
             repeat
                 LeaseNos.Add(Lease."No.");

@@ -392,6 +392,101 @@ codeunit 87940 "HX132 Card Hold Oracle"
         AssertVehicleCheckedOut('HX132-12V', true);
     end;
 
+    [Test]
+    procedure RetargetedSwapLeavesOneOpenHold()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Spy: Codeunit "HX132 Card Provider Spy";
+        ContractNo: Code[20];
+        i: Integer;
+        OpenHolds: Integer;
+    begin
+        Prepare();
+        CreateVehicle('HX132-13V', 1000, 40, false);
+        CreateVehicle('HX132-13N', 2500, 70, true);
+        CreateVehicle('HX132-13M', 3500, 90, false);
+        ContractNo := CreateContract('HX132-13V');
+        SeedCheckedOut(ContractNo, 'HX132-13V', 'HX132-13-OLD', 120);
+        Spy.Init('HX132-13');
+        BindSubscription(Spy);
+        Commit();
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX132-13N');
+        Assert.ExpectedError(StrSubstNo(NotAvailableTxt, 'HX132-13N'));
+
+        RentalMgt.SwapVehicle(ContractNo, 'HX132-13M');
+
+        for i := 1 to Spy.RequestCount() do
+            if Spy.TimesReleased(Spy.IssuedCode(i)) = 0 then
+                OpenHolds += 1;
+        Assert.AreEqual(1, OpenHolds, 'Every hold the provider returned is released or carried by the contract: exactly one stays open');
+        Assert.AreEqual(1, Spy.TimesReleased('HX132-13-OLD'), 'The old hold is released exactly once');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(0, Spy.TimesReleased(Contract."Payment Auth Code"), 'The hold the contract carries stays open');
+        Assert.AreEqual(270, Contract."Authorized Amount", 'The contract carries the amount of the vehicle swapped to');
+    end;
+
+    [Test]
+    procedure CheaperSwapAfterFailedSwapReleasesUnusedHold()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Spy: Codeunit "HX132 Card Provider Spy";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        CreateVehicle('HX132-15V', 1000, 40, false);
+        CreateVehicle('HX132-15N', 2500, 70, false);
+        CreateVehicle('HX132-15C', 4000, 20, false);
+        ContractNo := CreateContract('HX132-15V');
+        SeedCheckedOut(ContractNo, 'HX132-15V', 'HX132-15-OLD', 120);
+        Spy.Init('HX132-15');
+        Spy.SetRefuseKeys(true);
+        BindSubscription(Spy);
+        Commit();
+        asserterror RentalMgt.SwapVehicle(ContractNo, 'HX132-15N');
+        Assert.ExpectedError(Spy.RefusalText(ContractNo));
+
+        Spy.SetRefuseKeys(false);
+        RentalMgt.SwapVehicle(ContractNo, 'HX132-15C');
+
+        Assert.AreEqual(1, Spy.RequestCount(), 'The cheaper swap places no hold of its own');
+        Assert.AreEqual(1, Spy.TimesReleased(Spy.IssuedCode(1)), 'The hold placed for the failed swap is released, not lost');
+        Assert.AreEqual(0, Spy.TimesReleased('HX132-15-OLD'), 'The hold that covers the cheaper vehicle stays');
+        Contract.Get(ContractNo);
+        Assert.AreEqual('HX132-15-OLD', Contract."Payment Auth Code", 'The contract keeps its hold');
+        Assert.AreEqual(120, Contract."Authorized Amount", 'The contract keeps its amount');
+        AssertContractVehicle(ContractNo, 'HX132-15C', 4000);
+    end;
+
+    [Test]
+    procedure RateChangedCheckOutReleasesReplacedHold()
+    var
+        Contract: Record "CGR Rental Contract";
+        RentalMgt: Codeunit "CGR Rental Mgt";
+        Spy: Codeunit "HX132 Card Provider Spy";
+        ContractNo: Code[20];
+    begin
+        Prepare();
+        CreateVehicle('HX132-14V', 1000, 40, false);
+        ContractNo := CreateContract('HX132-14V');
+        Contract.Get(ContractNo);
+        Contract."Payment Auth Code" := 'HX132-14-STALE';
+        Contract."Authorized Amount" := 100;
+        Contract.Modify();
+        Spy.Init('HX132-14');
+        BindSubscription(Spy);
+        Commit();
+
+        RentalMgt.CheckOut(ContractNo);
+
+        Assert.AreEqual(1, Spy.RequestCount(), 'A hold for another amount is not reused');
+        Assert.AreEqual(1, Spy.TimesReleased('HX132-14-STALE'), 'The hold the contract no longer carries is released, not lost');
+        Assert.AreEqual(0, Spy.TimesReleased(Spy.IssuedCode(1)), 'The new hold stays open');
+        Contract.Get(ContractNo);
+        Assert.AreEqual(Spy.IssuedCode(1), Contract."Payment Auth Code", 'The contract carries the new hold');
+    end;
+
     local procedure Prepare()
     var
         Setup: Record "CGR Setup";

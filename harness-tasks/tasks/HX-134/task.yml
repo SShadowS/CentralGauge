@@ -11,6 +11,6 @@ pass_to_pass:
   - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
   - { codeunit: 80054, procedures: [PostsEveryReturnedContractInFilter, FailedContractIsRolledBackAndLogged] }
 fail_to_pass: null
-mutants: [no-sentinel, sentinel-as-failure, swallow-failure, batch-any-status, batch-counts-all]
+mutants: [no-sentinel, sentinel-as-failure, swallow-failure, batch-any-status, batch-counts-all, status-overwrite]
 contamination: null
 limits: { timeout_min: 30 }

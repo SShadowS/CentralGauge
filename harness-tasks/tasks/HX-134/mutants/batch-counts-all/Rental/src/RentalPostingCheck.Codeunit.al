@@ -29,10 +29,10 @@ codeunit 70247 "CGR Rental Posting Check"
     begin
         Clear(Results);
         Contract.CopyFilters(ContractFilter);
-        Contract.SetRange(Status, Contract.Status::Returned);
         if Contract.FindSet() then
             repeat
-                ContractNos.Add(Contract."No.");
+                if Contract.Status = Contract.Status::Returned then
+                    ContractNos.Add(Contract."No.");
             until Contract.Next() = 0;
         foreach ContractNo in ContractNos do begin
             if not CheckPosting(ContractNo, ErrorText) then

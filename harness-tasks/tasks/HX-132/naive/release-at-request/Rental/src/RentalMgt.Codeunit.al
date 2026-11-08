@@ -30,6 +30,7 @@ codeunit 70200 "CGR Rental Mgt"
         FleetMgt: Codeunit "CGR Fleet Mgt";
         CoreEvents: Codeunit "CGR Core Events";
         AuthCode: Text[50];
+        StaleAuthCode: Text[50];
         Amount: Decimal;
     begin
         Contract.Get(ContractNo);
@@ -38,11 +39,14 @@ codeunit 70200 "CGR Rental Mgt"
 
         Amount := ExpectedAmount(Contract);
         if (Contract."Payment Auth Code" = '') or (Contract."Authorized Amount" <> Amount) then begin
+            StaleAuthCode := Contract."Payment Auth Code";
             OnRequestPreAuthorization(Contract, Amount, AuthCode);
             Contract."Payment Auth Code" := AuthCode;
             Contract."Authorized Amount" := Amount;
             Contract.Modify(true);
             Commit(); // the hold exists at the provider from here on
+            if StaleAuthCode <> '' then
+                OnReleasePreAuthorization(StaleAuthCode); // the replaced hold was only on record here
         end;
 
         if not FleetMgt.IsAvailable(Contract."Vehicle No.") then
@@ -64,6 +68,8 @@ codeunit 70200 "CGR Rental Mgt"
         OldVehicleNo: Code[20];
         OldAuthCode: Text[50];
         AuthCode: Text[50];
+        StaleAuthCode: Text[50];
+        UnusedAuthCode: Text[50];
         NewAmount: Decimal;
     begin
         Contract.Get(ContractNo);
@@ -76,11 +82,14 @@ codeunit 70200 "CGR Rental Mgt"
         NewAmount := ExpectedAmount(Priced);
         if NewAmount > Contract."Authorized Amount" then begin
             if (Contract."Pending Auth Code" = '') or (Contract."Pending Auth Amount" <> NewAmount) then begin
+                StaleAuthCode := Contract."Pending Auth Code";
                 OnRequestPreAuthorization(Priced, NewAmount, AuthCode);
                 Contract."Pending Auth Code" := AuthCode;
                 Contract."Pending Auth Amount" := NewAmount;
                 Contract.Modify(true);
                 Commit();
+                if StaleAuthCode <> '' then
+                    OnReleasePreAuthorization(StaleAuthCode);
                 OnReleasePreAuthorization(Contract."Payment Auth Code");
             end;
             OldAuthCode := Contract."Payment Auth Code";
@@ -88,7 +97,12 @@ codeunit 70200 "CGR Rental Mgt"
             Contract."Authorized Amount" := Contract."Pending Auth Amount";
             Contract."Pending Auth Code" := '';
             Contract."Pending Auth Amount" := 0;
-        end;
+        end else
+            if Contract."Pending Auth Code" <> '' then begin
+                UnusedAuthCode := Contract."Pending Auth Code";
+                Contract."Pending Auth Code" := '';
+                Contract."Pending Auth Amount" := 0;
+            end;
         if NewVehicle."Checked Out" or NewVehicle.Blocked then
             Error(NotAvailableErr, NewVehicleNo);
         if OldVehicle.Get(OldVehicleNo) then begin
@@ -101,6 +115,8 @@ codeunit 70200 "CGR Rental Mgt"
         Contract."Start Km" := NewVehicle.Mileage;
         Contract.Modify(true);
         OnAfterSwapVehicle(Contract);
+        if UnusedAuthCode <> '' then
+            OnReleasePreAuthorization(UnusedAuthCode);
     end;
 
     procedure Return(ContractNo: Code[20]; ReturnKm: Integer; DamageDescription: Text[100])

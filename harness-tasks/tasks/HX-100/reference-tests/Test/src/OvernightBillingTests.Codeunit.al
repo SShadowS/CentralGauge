@@ -171,6 +171,31 @@ codeunit 80160 "CGR Overnight Billing Tests"
         Assert.AreEqual(0, InvoiceLine.Count(), 'The lease with nothing due gets no invoice line');
     end;
 
+    [Test]
+    procedure CallersChangeIsCommittedWhenNoLeaseIsInFilter()
+    var
+        Lease: Record "CGR Lease Contract";
+        Runner: Codeunit "CGR Overnight Billing Runner";
+        Ok: Boolean;
+    begin
+        WorkDate(20250415D);
+        Lib.SetV2Setup(0.01, '', 3);
+        Lib.ClearNonWorkingDays(20250301D, 20250531D);
+        HX100NewLease('HX100-E1', 20250301D);
+        if Lease.Get('HX100-NOLEASE') then
+            Lease.Delete();
+        Runner.SetOvernightBilling('HX100-NOLEASE', 'HX100-E1', 'HX100 Renamed Customer');
+        Runner.SetStopAfterBilling();
+
+        Commit();
+        Ok := Runner.Run();
+        Assert.IsFalse(Ok, 'Precondition: the caller stops after the overnight billing');
+        Assert.AreEqual(Runner.StopAfterBillingText(), GetLastErrorText(), 'The caller stops with its own error');
+        Assert.AreEqual(0, Runner.InvoicedLeases(), 'No lease is in the filter, so none is invoiced');
+        Lease.Get('HX100-E1');
+        Assert.AreEqual('HX100 Renamed Customer', Lease."Customer Name", 'The caller''s change was committed by the overnight billing although no lease was in the filter');
+    end;
+
     local procedure HX100NewLease(LeaseNo: Code[20]; StartDate: Date)
     var
         Lease: Record "CGR Lease Contract";
