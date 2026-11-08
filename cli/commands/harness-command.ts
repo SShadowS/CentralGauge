@@ -240,11 +240,7 @@ import {
   guardResultsDir,
   liveRunMarker,
 } from "../../src/harness/results-root.ts";
-import {
-  DEFAULT_COORD_ROOT,
-  poolAdmit,
-  withDefaultPool,
-} from "../../src/harness/allocation.ts";
+import { DEFAULT_COORD_ROOT } from "../../src/harness/allocation.ts";
 import {
   baselineCreate,
   envCheck,
@@ -562,6 +558,8 @@ export interface CellCliOptions {
   root: string;
   resultsDir: string;
   containers: string[];
+  /** H-70: `run` without --containers (EnvOptions.defaultPool). */
+  defaultPool?: true;
   backendHost?: string | undefined;
   backendPort: number;
   secretAccounts: SecretAccount[];
@@ -678,6 +676,7 @@ function envOptions(
     ...(o.lineage ? { lineage: o.lineage } : {}),
     ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
     ...(o.coordLeases ? { coordLeases: o.coordLeases } : {}),
+    ...(o.defaultPool ? { defaultPool: true } : {}),
     ...(o.keyCustody ? { keyCustody: o.keyCustody } : {}),
     ...(o.lane !== undefined ? { lane: o.lane } : {}),
     // H-49: the marker, baselines and bc-ledger follow --results-dir.
@@ -1636,7 +1635,7 @@ export async function harnessSymbolsLock(
 
 interface CellCliFlags {
   resultsDir: string;
-  /** Absent: Cronus281, or the H-70 pool for `run` (withDefaultPool). */
+  /** Absent: Cronus281, or the H-70 pool for `run` (EnvOptions.defaultPool). */
   containers?: string;
   backendHost?: string;
   backendPort: number;
@@ -3941,15 +3940,12 @@ export function registerHarnessCommand(
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => {
-        const o = runOpts(opts);
+        // H-70: without --containers the environment's start admits the pool.
         const s = await harnessRun(
           experiment,
-          await withDefaultPool(
-            o,
-            opts.containers,
-            poolAdmit(o.coordLeases ?? new Map()),
-            (l) => console.log(colors.yellow(l)),
-          ),
+          opts.containers === undefined
+            ? { ...runOpts(opts), containers: [], defaultPool: true as const }
+            : runOpts(opts),
           open,
         );
         // H-41 (Q6): starved (or W's unanswered-container bound): EX_TEMPFAIL

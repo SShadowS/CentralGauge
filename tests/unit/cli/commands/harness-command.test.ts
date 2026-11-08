@@ -11041,12 +11041,21 @@ Deno.test("CLI (H-41): rejudge --containers auto and run --judge-containers auto
   assertEquals(
     seen.map((
       eo,
-    ) => [eo.auto, eo.containers, eo.judgeContainers, eo.poolWaitMin]),
-    [["containers", [], undefined, 10], [
+    ) => [
+      eo.auto,
+      eo.containers,
+      eo.judgeContainers,
+      eo.poolWaitMin,
+      eo.defaultPool,
+    ]),
+    // H-70: `run` without --containers asks the start for the default pool;
+    // rejudge (an explicit `auto` list) does not.
+    [["containers", [], undefined, 10, undefined], [
       "judges",
-      ["Cronus281"],
+      [],
       undefined,
       3,
+      true,
     ]],
   );
   for (const eo of seen) {

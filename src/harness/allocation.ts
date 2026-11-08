@@ -7,7 +7,7 @@
 
 import { join } from "@std/path";
 import { z } from "zod";
-import { ValidationError } from "../errors.ts";
+import { ConfigurationError, ValidationError } from "../errors.ts";
 import { inspectContainer } from "../container/docker-inspect.ts";
 import { coordLeaseBlock } from "./coord-lease.ts";
 
@@ -56,20 +56,48 @@ export function poolAdmit(
 }
 
 /**
- * H-70: `harness run` without --containers runs on the admitted DEFAULT_POOL;
- * with --containers (`flag`), the options are unchanged.
+ * H-70: `harness run` without --containers (`defaultPool`) runs on the
+ * admitted DEFAULT_POOL, read through the environment's deps (openHarnessEnv),
+ * so a test's fake opener never reaches docker. None usable is a refusal.
  */
-export async function withDefaultPool<T extends { containers: string[] }>(
-  opts: T,
-  flag: string | undefined,
-  admit: (c: string) => Promise<string | null>,
+export async function resolveDefaultPool<
+  T extends {
+    containers: string[];
+    defaultPool?: true;
+    coordLeases?: ReadonlyMap<string, string>;
+  },
+>(
+  o: T,
+  deps: {
+    allocatedAll(): Promise<string[]>;
+    running(name: string): Promise<boolean>;
+    coordRoot(): string;
+  },
   warn: (line: string) => void,
-): Promise<T> {
-  if (flag !== undefined) return opts;
-  return {
-    ...opts,
-    containers: await admittedPool([...DEFAULT_POOL], admit, warn),
-  };
+  leaseBlock: typeof coordLeaseBlock = coordLeaseBlock,
+): Promise<Omit<T, "defaultPool">> {
+  const { defaultPool, ...rest } = o;
+  if (!defaultPool) return rest;
+  const allocated = await deps.allocatedAll();
+  const own = o.coordLeases ?? new Map<string, string>();
+  const containers = await admittedPool(
+    [...DEFAULT_POOL],
+    (c) =>
+      admitContainer(c, {
+        allocated,
+        running: (x) => deps.running(x),
+        leaseBlock: (x) => leaseBlock(deps.coordRoot(), own, x),
+      }),
+    warn,
+  );
+  if (containers.length === 0) {
+    throw new ConfigurationError(
+      `no container of the default pool (${
+        DEFAULT_POOL.join(", ")
+      }) is usable; pass --containers`,
+    );
+  }
+  return { ...rest, containers };
 }
 
 /** H-70: the admitted containers, in order; a `[WARN]` line for each skipped one. */
