@@ -40,6 +40,8 @@ export const DRAND_CHAIN =
 const DRAND_GENESIS = 1595431050;
 const DRAND_PERIOD = 30;
 const DELAY_S = 600;
+/** Fetch attempts per endpoint, 30 s apart, within one run. */
+const FETCH_TRIES = 10;
 const DRAND_URLS = (round: number) => [
   `https://api.drand.sh/public/${round}`,
   `https://api.drand.sh/${DRAND_CHAIN}/public/${round}`,
@@ -168,22 +170,43 @@ const readSeals = async (root: string) =>
   SealsSchema.parse(parse(await Deno.readTextFile(join(root, SEALS_PATH))))
     .seals;
 
-/** Write `text` to `rel` and commit it alone; on a failed commit the file is restored and unstaged. */
-async function commitFile(
+/**
+ * Commit `change` (one file, alone) when given, then the annotated `tag` on
+ * HEAD. Sol r2: on any failure, including the tag's, HEAD moves back to where
+ * it was (compare-and-swap) and the file is restored and unstaged.
+ */
+async function commitAndTag(
   root: string,
-  rel: string,
-  text: string,
-  msg: string,
+  change: { rel: string; text: string; msg: string } | null,
+  tag: string,
+  tagMsg: string,
 ) {
-  const path = join(root, rel);
-  const before = await Deno.readTextFile(path);
-  await Deno.writeTextFile(path, text);
+  const prev = await git(root, ["rev-parse", "HEAD"]);
+  const path = change && join(root, change.rel);
+  const before = path && await Deno.readTextFile(path);
   try {
-    await git(root, ["add", "--", rel]);
-    await git(root, ["commit", "-q", "-m", msg, "--", rel]);
+    if (change) {
+      await Deno.writeTextFile(path!, change.text);
+      await git(root, ["add", "--", change.rel]);
+      await git(root, ["commit", "-q", "-m", change.msg, "--", change.rel]);
+    }
+    await git(root, ["tag", "-a", "-m", tagMsg, tag, "HEAD"]);
   } catch (e) {
-    await Deno.writeTextFile(path, before);
-    await tryGit(root, ["reset", "-q", "--", rel]);
+    if (change) {
+      const now = await git(root, ["rev-parse", "HEAD"]);
+      if (now !== prev) {
+        await git(root, [
+          "update-ref",
+          "-m",
+          "seal.ts rollback",
+          "HEAD",
+          prev,
+          now,
+        ]);
+      }
+      await Deno.writeTextFile(path!, before!);
+      await tryGit(root, ["reset", "-q", "--", change.rel]);
+    }
     throw e;
   }
 }
@@ -298,19 +321,23 @@ export function prepare(io: SealIo, tag: string, mode?: Mode): Promise<number> {
         );
       }
     }
-    if (mode) {
-      await commitFile(
-        root,
-        REGISTRY_PATH,
-        withRound(text, tag, mode, await ledgerViews(root, seals)),
-        `chore(harness-tasks): ${tag} pre-screen round (${mode})`,
-      );
-    } else {
+    if (!mode) {
       io.log(colors.yellow(
         `[WARN] no --round: ${tag} has no pre-screen round; its candidates can never be pre-screened`,
       ));
     }
-    await git(root, ["tag", "-a", "-m", `${tag} seal`, tag, "HEAD"]);
+    await commitAndTag(
+      root,
+      mode
+        ? {
+          rel: REGISTRY_PATH,
+          text: withRound(text, tag, mode, await ledgerViews(root, seals)),
+          msg: `chore(harness-tasks): ${tag} pre-screen round (${mode})`,
+        }
+        : null,
+      tag,
+      `${tag} seal`,
+    );
     const commit = await git(root, ["rev-parse", `${tag}^{commit}`]);
     io.log(`[OK] ${tag} -> ${commit}`);
     io.log(`push: git push origin ${await branchOf(root)} ${tag}`);
@@ -373,19 +400,10 @@ export function ledger(
       await originTag(root, `${tag}-ledger`) !== null
     ) refuse(`tag ${tag}-ledger already exists`);
 
-    // Sol r1: the first confirmation on origin is kept, so a rerun after a
-    // failed fetch (past round_time) is not refused.
-    const marker = join(
-      await git(root, ["rev-parse", "--absolute-git-dir"]),
-      `cg-seal-seen-${tag}.json`,
-    );
-    let seen = io.now();
-    try {
-      const m = JSON.parse(await Deno.readTextFile(marker));
-      if (m.tag_object === obj && typeof m.seen === "number") seen = m.seen;
-    } catch (e) {
-      if (!(e instanceof Deno.errors.NotFound)) throw e;
-    }
+    // Sol r2: no persisted confirmation (the operator could write one). A
+    // fetch is retried within this run instead; a run that starts after the
+    // round time is refused.
+    const seen = io.now();
     const tagger = Date.parse(
       await git(root, [
         "for-each-ref",
@@ -402,22 +420,27 @@ export function ledger(
         }, after the beacon round ${round} (${round_time}): the beacon may predate the push`,
       );
     }
-    await Deno.writeTextFile(
-      marker,
-      JSON.stringify({ tag_object: obj, seen }),
-    );
     io.log(`[WAIT] drand round ${round} at ${round_time}`);
     while (io.now() < Date.parse(round_time) + 1000) {
       await io.sleep(Date.parse(round_time) + 1000 - io.now());
     }
     const beacons = [];
     for (const url of DRAND_URLS(round)) {
-      let b;
-      try {
-        b = Beacon.parse(await io.fetchJson(url));
-      } catch (e) {
-        refuse(`${url}: ${e instanceof Error ? e.message : String(e)}`);
+      let raw: unknown;
+      for (let i = 1;; i++) {
+        try {
+          raw = await io.fetchJson(url);
+          break;
+        } catch (e) {
+          const why = e instanceof Error ? e.message : String(e);
+          if (i >= FETCH_TRIES) refuse(`${url}: ${why} (${i} tries)`);
+          io.log(colors.yellow(`[WARN] ${url}: ${why}; retry in 30 s`));
+          await io.sleep(30_000);
+        }
       }
+      const parsed = Beacon.safeParse(raw);
+      if (!parsed.success) refuse(`${url}: not a drand beacon`);
+      const b = parsed.data;
       if (b!.round !== round) refuse(`${url} answered round ${b!.round}`);
       if (await sha256Hex(decodeHex(b!.signature)) !== b!.randomness) {
         refuse(`${url}: randomness is not sha256(signature)`);
@@ -456,20 +479,16 @@ export function ledger(
       JSON.stringify(SealsSchema.parse(parse(out)).seals) !==
         JSON.stringify(want)
     ) refuse(`could not append to ${SEALS_PATH}`);
-    await commitFile(
+    await commitAndTag(
       root,
-      SEALS_PATH,
-      out,
-      `chore(harness-tasks): ${tag} seal ledger entry`,
-    );
-    await git(root, [
-      "tag",
-      "-a",
-      "-m",
-      `${tag} ledger`,
+      {
+        rel: SEALS_PATH,
+        text: out,
+        msg: `chore(harness-tasks): ${tag} seal ledger entry`,
+      },
       `${tag}-ledger`,
-      "HEAD",
-    ]);
+      `${tag} ledger`,
+    );
     io.log(`[OK] ${tag}-ledger -> ${await git(root, ["rev-parse", "HEAD"])}`);
 
     const rd = resultsDir ? ["--results-dir", resultsDir] : [];

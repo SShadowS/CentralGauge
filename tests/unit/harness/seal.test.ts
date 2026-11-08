@@ -455,7 +455,25 @@ for (const eol of ["\n", "\r\n"] as const) {
   });
 }
 
-Deno.test("H-72 ledger is deterministic: a rerun after a refused fetch, even past the round time, draws the same round (Sol r1: first confirmation kept)", async () => {
+Deno.test("H-72 ledger (Sol r2): a failing fetch is retried within the run, on the same round", async () => {
+  const r = await prepared();
+  const round = String(beaconRound(Date.parse(pushedAt(r.tagger))).round);
+  let calls = 0;
+  const randomness = await sha256Hex(decodeHex(SIG));
+  const f = await fakeIo(r.repo, {
+    now: r.tagger + 1_000,
+    beacon: (_u, n) => {
+      if (++calls <= 3) throw new Error("offline");
+      return { round: n, randomness, signature: SIG };
+    },
+  });
+  assertEquals(await ledger(f.io, TAG), 0);
+  assertEquals(f.urls.length, 5);
+  assert(f.urls.every((u) => u.endsWith(`/${round}`)));
+  assertEquals(f.lines.filter((l) => l.includes("retry in 30 s")).length, 3);
+});
+
+Deno.test("H-72 ledger (Sol r2): a fetch that keeps failing is refused after 10 tries, and a rerun past the round time is refused (nothing persisted)", async () => {
   const r = await prepared();
   const fail = await fakeIo(r.repo, {
     now: r.tagger + 1_000,
@@ -463,18 +481,51 @@ Deno.test("H-72 ledger is deterministic: a rerun after a refused fetch, even pas
       throw new Error("offline");
     },
   });
+  const base = await head(r.repo);
   assertEquals(await ledger(fail.io, TAG), 1);
-  // Real time has moved past round_time by the retry.
-  const f = await fakeIo(r.repo, { now: fail.clock() + 3_600_000 });
-  assertEquals(await ledger(f.io, TAG), 0);
-  assertEquals(f.urls.map((u) => u.split("/").at(-1)), [
-    String(beaconRound(Date.parse(pushedAt(r.tagger))).round),
-    String(beaconRound(Date.parse(pushedAt(r.tagger))).round),
-  ]);
-  assertEquals(
-    fail.urls.map((u) => u.split("/").at(-1)),
-    [String(beaconRound(Date.parse(pushedAt(r.tagger))).round)],
-  );
+  assertEquals(fail.urls.length, 10);
+  assertStringIncludes(fail.lines.join("\n"), "offline (10 tries)");
+  assertEquals(await head(r.repo), base);
+  const late = await fakeIo(r.repo, { now: fail.clock() });
+  assertEquals(await ledger(late.io, TAG), 1);
+  assertStringIncludes(late.lines.join("\n"), "after the beacon round");
+  assertEquals(late.urls, []);
+});
+
+/** Tagging fails: signing is on and the signing program does not exist. */
+const breakTagging = async (repo: string) => {
+  await sh(repo, "config", "tag.gpgSign", "true");
+  await sh(repo, "config", "gpg.program", "cg-no-such-gpg-program");
+};
+
+Deno.test("H-72 prepare (Sol r2): a failing tag rolls the round commit back; nothing is left", async () => {
+  const { repo } = await sealRepo();
+  await breakTagging(repo);
+  const base = await head(repo);
+  const p = join(repo, "harness-tasks/v2/screening.yml");
+  const before = await Deno.readTextFile(p);
+  const f = await fakeIo(repo);
+  assertEquals(await prepare(f.io, TAG, "filter"), 1);
+  assertEquals(await head(repo), base);
+  assertEquals(await Deno.readTextFile(p), before);
+  assertEquals(await sh(repo, "status", "--porcelain"), "");
+  assertEquals(await sh(repo, "tag", "-l", TAG), "");
+});
+
+Deno.test("H-72 ledger (Sol r2): a failing -ledger tag rolls the entry commit back; a rerun after fixing it succeeds", async () => {
+  const r = await prepared();
+  await breakTagging(r.repo);
+  const base = await head(r.repo);
+  const p = join(r.repo, "harness-tasks/v2/seals.yml");
+  const before = await Deno.readTextFile(p);
+  const f = await fakeIo(r.repo, { now: r.tagger });
+  assertEquals(await ledger(f.io, TAG), 1);
+  assertEquals(await head(r.repo), base);
+  assertEquals(await Deno.readTextFile(p), before);
+  assertEquals(await sh(r.repo, "status", "--porcelain"), "");
+  await sh(r.repo, "config", "tag.gpgSign", "false");
+  const g = await fakeIo(r.repo, { now: r.tagger });
+  assertEquals(await ledger(g.io, TAG), 0);
 });
 
 Deno.test("H-72 ledger: a failing status check is exit 1 after the entry and tag are written", async () => {
