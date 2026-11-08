@@ -306,4 +306,5 @@ candidates:
 amendments:
   - id: prescreen
     decision: decisions/2026-11-06-m8-wave2-round0-and-prescreen.md
-    rounds: []
+    rounds:
+      - { seal: harness-v2-screen-w2r1, mode: calibration }
