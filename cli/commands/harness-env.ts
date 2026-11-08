@@ -867,6 +867,7 @@ async function recoverRecreated(
     rawMounts: facts.mounts.filter((s) => !/^\\\\[.?]\\pipe\\/i.test(s)),
     otherRoots,
     ownRoot: ownReal,
+    ownRootRaw: own,
     sharedRoot: sharedReal,
     manifest: manifestBefore,
     lineageId: x.lineage.id,

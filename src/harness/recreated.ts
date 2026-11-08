@@ -122,6 +122,8 @@ export interface RecreatedInput {
   otherRoots?: readonly string[];
   /** Sol r4: the mount sources as Docker reported them (before resolving). */
   rawMounts?: readonly string[];
+  /** Sol r5: the own root as named in bch-roots.json (`ownRoot` is resolved). */
+  ownRootRaw?: string | null;
 }
 
 /**
@@ -197,12 +199,13 @@ export function recreatedProblems(o: RecreatedInput): string[] {
     const mounts = o.mounts.map(norm);
     // Sol r4: related = equal, inside, or containing
     const related = (a: string, b: string) => under(a, b) || under(b, a);
-    // the shared root is always another root (an own root resolving onto
-    // it is the junction case, never a reason to drop it)
-    const others = [
-      shared,
-      ...(o.otherRoots ?? []).map(norm).filter((r) => r !== own),
-    ];
+    // the shared root and every other root always count, even one equal to
+    // the own root (a junction sharing its storage: Sol r5); the caller
+    // leaves out only the own root as named
+    const others = [shared, ...(o.otherRoots ?? []).map(norm)];
+    // Sol r5: a mount is the own root as named or as resolved
+    const ownNames = [own, ...(o.ownRootRaw ? [norm(o.ownRootRaw)] : [])];
+    const isOwn = (n: string) => ownNames.some((x) => under(n, x));
     const overlap = others.filter((r) => related(own, r));
     if (overlap.length > 0) {
       out.push(
@@ -218,7 +221,7 @@ export function recreatedProblems(o: RecreatedInput): string[] {
       // as named or resolved (Sol r4)
       const named = under(n, shared) || n.startsWith(`${shared}-`) ||
         shared.startsWith(`${n}\\`);
-      return (named && !under(n, own)) || others.some((r) => related(n, r));
+      return (named && !isOwn(n)) || others.some((r) => related(n, r));
     });
     if (foreign.length > 0) {
       out.push(

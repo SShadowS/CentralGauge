@@ -225,6 +225,25 @@ Deno.test("H-77 Sol r4 recreatedProblems: a mount resolving onto any other known
     true,
     q.join("; "),
   );
+  // Sol r5: another root that is a junction onto the own root (shared storage)
+  assertEquals(
+    recreatedProblems({ ...ok, otherRoots: [other282, OWN] }).some((x) =>
+      x.includes("overlaps another BCH root")
+    ),
+    true,
+  );
+  // Sol r5: an own root relocated by a junction (D:\BCH281), mounted as named
+  assertEquals(
+    recreatedProblems({
+      ...ok,
+      ownRoot: "D:\\BCH281",
+      ownRootRaw: OWN,
+      mounts: ["D:\\BCH281"],
+      rawMounts: [OWN],
+      otherRoots: [other282],
+    }),
+    [],
+  );
   // the proper layout with all roots known still passes
   assertEquals(
     recreatedProblems({ ...ok, rawMounts: ok.mounts, otherRoots: [other282] }),
