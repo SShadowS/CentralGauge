@@ -15,4 +15,4 @@ What the roles must allow (`CGR Rental Mgt` in Rental):
 - A desk agent cannot delete a rental contract.
 - A back-office user (`CGR BACKOFFICE` only) can post a returned contract: it gets status Posted and one rental ledger entry.
 
-Write the test codeunit and explain briefly which fault each test catches.
+Write the test codeunit.
