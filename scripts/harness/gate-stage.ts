@@ -535,8 +535,21 @@ export async function checkTask(
       }
       if (!isTestObject(o)) continue;
       if (!/\bTestPermissions\s*=\s*Disabled\s*;/i.test(o.body)) {
+        // H-71: a test-authoring task's suites may opt in to Restrictive.
+        const suite = f.module === "Test" &&
+          (f.source === "reference-tests" || f.source.startsWith("naive/"));
+        const restrictive = /\bTestPermissions\s*=\s*Restrictive\s*;/i.test(
+          o.body,
+        );
+        if (suite && restrictive && task.test_permissions === "restrictive") {
+          continue;
+        }
         problems.push(
-          `${where}: codeunit ${o.id} without TestPermissions = Disabled`,
+          `${where}: codeunit ${o.id} without TestPermissions = Disabled${
+            suite && restrictive
+              ? " (task.yml test_permissions: restrictive allows Restrictive in reference-tests/ and naive/)"
+              : ""
+          }`,
         );
       }
     }
