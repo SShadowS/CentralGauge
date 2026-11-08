@@ -3,6 +3,9 @@
 //   compile <taskDir> <variant>               host al compile, no container
 //   stage <taskId> <outDir> [--rev R]         baseline workspace for the pilot
 //   gate <container> <taskId> [--rev R]       container job
+//   gates <taskId>... [--containers a,b,c] [--coord-lease c=token]... [--rev R]
+//                                             H-70: one job per container in
+//                                             parallel (gate-pool.ts)
 //   judge <container> <taskId> <ws> [--rev R] pilot scoring, developmental
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
@@ -12,7 +15,10 @@ import type { ALProject, TestResult } from "../../src/container/types.ts";
 import type { HarnessTask, LoadedTask } from "../../src/harness/task.ts";
 import type { GateRun, RunResult, TestRef, Variant } from "./gate-core.ts";
 import type { Source } from "./gate-stage.ts";
+import type { GateOutcome } from "./gate-pool.ts";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
+import { DEFAULT_POOL, poolAdmit } from "../../src/harness/allocation.ts";
+import { parseCoordLease } from "../../cli/commands/harness-command.ts";
 import {
   resolveSoapTimeoutMs,
   runTestsViaSoap,
@@ -44,6 +50,7 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "./gate-stage.ts";
+import { runGatePool, serialized } from "./gate-pool.ts";
 
 const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
 const TMP_ROOT = Deno.env.get("CG_GATE_TMP") ?? join(EVIDENCE_ROOT, "tmp");
@@ -536,7 +543,11 @@ async function hostCompile(
 }
 
 async function main(): Promise<number> {
-  const a = parseArgs(Deno.args, { string: ["rev"], default: { rev: "HEAD" } });
+  const a = parseArgs(Deno.args, {
+    string: ["rev", "containers", "coord-lease"],
+    collect: ["coord-lease"],
+    default: { rev: "HEAD" },
+  });
   const [cmd, ...rest] = a._.map(String);
   const repo = (await git(Deno.cwd(), ["rev-parse", "--show-toplevel"])).out
     .trim();
@@ -552,6 +563,66 @@ async function main(): Promise<number> {
       prefix: `src-${taskId}-`,
     });
     return await exportSource(repo, a.rev, taskId, out);
+  };
+  const openBc = serialized(containerBc);
+  /** One task's gate on one container: `gate`, and each job of `gates`. */
+  const gateOne = async (
+    container: string,
+    taskId: string,
+  ): Promise<GateOutcome> => {
+    // Sol r1: a task that cannot be prepared is the task's failure (1), as
+    // in a serial `gate`, never the container's (3, which drops it).
+    let src: Source, loaded: LoadedTask;
+    try {
+      src = await exported(taskId);
+      loaded = await loadTask(src.taskDir);
+      const { problems } = await checkTask(loaded, src.refappDir, repo, {
+        drift: false,
+      });
+      if (problems.length > 0) {
+        for (const p of problems) console.log(`${colors.red("[FAIL]")} ${p}`);
+        return { code: 1, file: null };
+      }
+    } catch (err) {
+      console.error(
+        `${colors.red("[FAIL]")} ${taskId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return { code: 1, file: null };
+    }
+    const bc = await openBc(container, credentials);
+    if (!bc) {
+      console.error(
+        `${
+          colors.red("[INFRA]")
+        } ${container} not healthy or not visible under DOCKER_CONTEXT=${
+          Deno.env.get("DOCKER_CONTEXT") ?? "(inherited)"
+        }`,
+      );
+      return { code: 3, file: null };
+    }
+    const tag = await git(repo, [
+      "rev-parse",
+      "--verify",
+      "-q",
+      `${loaded.task.refapp_version}:harness-tasks/refapp`,
+    ]);
+    const { file, code } = await runGate({
+      bc,
+      loaded,
+      source: src,
+      container,
+      outDir: join(EVIDENCE_ROOT, loaded.task.id),
+      tmpRoot: TMP_ROOT,
+      tagTree: tag.ok ? tag.out.trim() : null,
+    });
+    console.log(
+      `${
+        code === 0 ? colors.green("[OK]") : colors.red("[FAIL]")
+      } ${loaded.task.id} gate -> ${file}`,
+    );
+    return { code, file };
   };
   try {
     if (cmd === "check" && rest.length > 0) {
@@ -595,10 +666,29 @@ async function main(): Promise<number> {
       );
       return 0;
     }
-    if (
-      (cmd === "gate" && rest.length === 2) ||
-      (cmd === "judge" && rest.length === 3)
-    ) {
+    if (cmd === "gate" && rest.length === 2) {
+      return (await gateOne(rest[0]!, rest[1]!)).code;
+    }
+    if (cmd === "gates" && rest.length > 0) {
+      const r = await runGatePool({
+        containers: a.containers === undefined
+          ? [...DEFAULT_POOL]
+          : a.containers.split(",").map((c) => c.trim()).filter(Boolean),
+        tasks: rest,
+        gate: gateOne,
+        admit: poolAdmit(
+          new Map(a["coord-lease"].map(parseCoordLease)),
+        ),
+        log: (l) => console.log(l),
+      });
+      for (const j of r.jobs) {
+        console.log(
+          `${j.task} ${j.code} ${j.container ?? "-"} ${j.file ?? "-"}`,
+        );
+      }
+      return r.code;
+    }
+    if (cmd === "judge" && rest.length === 3) {
       const src = await exported(rest[1]!);
       const loaded = await loadTask(src.taskDir);
       const { problems } = await checkTask(loaded, src.refappDir, repo, {
@@ -619,31 +709,13 @@ async function main(): Promise<number> {
         );
         return 3;
       }
-      const outDir = join(EVIDENCE_ROOT, loaded.task.id);
-      if (cmd === "gate") {
-        const tag = await git(repo, [
-          "rev-parse",
-          "--verify",
-          "-q",
-          `${loaded.task.refapp_version}:harness-tasks/refapp`,
-        ]);
-        const { file, code } = await runGate({
-          bc,
-          loaded,
-          source: src,
-          container: rest[0]!,
-          outDir,
-          tmpRoot: TMP_ROOT,
-          tagTree: tag.ok ? tag.out.trim() : null,
-        });
-        console.log(
-          `${
-            code === 0 ? colors.green("[OK]") : colors.red("[FAIL]")
-          } ${loaded.task.id} gate -> ${file}`,
-        );
-        return code;
-      }
-      return await judge(bc, loaded, src, rest[2]!, outDir);
+      return await judge(
+        bc,
+        loaded,
+        src,
+        rest[2]!,
+        join(EVIDENCE_ROOT, loaded.task.id),
+      );
     }
   } catch (err) {
     console.error(
@@ -654,7 +726,7 @@ async function main(): Promise<number> {
     return 1;
   }
   console.error(
-    "usage: gate-task.ts check|compile|stage|gate|judge (see header)",
+    "usage: gate-task.ts check|compile|stage|gate|gates|judge (see header)",
   );
   return 2;
 }

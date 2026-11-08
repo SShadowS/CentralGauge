@@ -70,6 +70,7 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}frozen-tasks-drop.test.ts`]: c(true, 6),
   [`${H}fsutil.test.ts`]: c(true, 3),
   [`${H}gate-core.test.ts`]: c(true, 0),
+  [`${H}gate-pool.test.ts`]: c(true, 0),
   [`${H}gate-stage.test.ts`]: c(true, 8),
   [`${H}gate-task.test.ts`]: c(true, 3),
   [`${H}hash.test.ts`]: c(true, 0),

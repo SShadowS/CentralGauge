@@ -2390,6 +2390,42 @@ Deno.test("H-49: --lane sets the lane over CG_LANE; run and cell take it", async
   }
 });
 
+Deno.test('H-70 run 002: `run` without --containers still resolves to ["Cronus281"] (the gates pool is not its default)', async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const seen: string[][] = [];
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, (eo) => {
+    seen.push(eo.containers);
+    return Promise.reject(new Error("captured"));
+  });
+  const cwd = Deno.cwd();
+  const c = captureAll();
+  try {
+    Deno.chdir(t.repo.root);
+    await assertRejects(
+      () =>
+        cli.parse([
+          "harness",
+          "run",
+          "contract",
+          "--secrets-dir",
+          t.env.privateRoot,
+          "--private-dir",
+          t.env.privateRoot,
+        ]),
+      Error,
+      "captured",
+    );
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  assertEquals(seen, [["Cronus281"]], c.lines.join("\n"));
+});
+
 Deno.test("H-49: the run's environment reads the shared results from --results-dir, not <repoRoot>/results/harness", async () => {
   await using t = await makeEnv();
   await writeCatalog(t);

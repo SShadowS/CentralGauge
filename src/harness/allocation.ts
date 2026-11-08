@@ -8,8 +8,71 @@
 import { join } from "@std/path";
 import { z } from "zod";
 import { ValidationError } from "../errors.ts";
+import { inspectContainer } from "../container/docker-inspect.ts";
+import { coordLeaseBlock } from "./coord-lease.ts";
 
 export const DEFAULT_COORD_ROOT = "H:\\cg-coord";
+
+/**
+ * H-70: the `gate-task.ts gates` pool when --containers is absent (owner
+ * decision 2026-11-08-m8-scale-up.md ruling 3). Allocation still decides
+ * admission. `harness run` keeps its own default, Cronus281 (run 002).
+ */
+export const DEFAULT_POOL = ["Cronus281", "Cronus282", "Cronus283"] as const;
+
+/**
+ * H-70: why `container` may not join a pool, or null: it must be allocated,
+ * running (a stopped one is never started here) and free of a coord lease
+ * held by another (lane-ops passes its own with --coord-lease).
+ */
+export async function admitContainer(
+  container: string,
+  d: {
+    allocated: string[];
+    running: (c: string) => Promise<boolean>;
+    leaseBlock: (c: string) => string | null;
+  },
+): Promise<string | null> {
+  if (!d.allocated.some((a) => a.toLowerCase() === container.toLowerCase())) {
+    return `not allocated (allowed: ${d.allocated.join(", ")})`;
+  }
+  const lease = d.leaseBlock(container);
+  if (lease !== null) return lease;
+  return (await d.running(container)) ? null : "not running";
+}
+
+/** H-70: admitContainer against allocation.json, docker and the coord leases (`own`: --coord-lease). */
+export function poolAdmit(
+  own: ReadonlyMap<string, string>,
+  coordRoot = defaultRoot(),
+): (c: string) => Promise<string | null> {
+  // Read on first use, once.
+  let allocated: Promise<string[]> | undefined;
+  return async (c) =>
+    admitContainer(c, {
+      allocated: await (allocated ??= allocatedContainers(coordRoot)),
+      running: async (x) => (await inspectContainer(x))?.running === true,
+      leaseBlock: (x) => coordLeaseBlock(coordRoot, own, x),
+    });
+}
+
+/** H-70: the admitted containers, in order; a `[WARN]` line for each skipped one. */
+export async function admittedPool(
+  containers: string[],
+  admit: (c: string) => Promise<string | null>,
+  warn: (line: string) => void,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const c of containers) {
+    // Sol r1: a second worker on one container would break exclusivity.
+    const why = out.some((x) => x.toLowerCase() === c.toLowerCase())
+      ? "listed twice"
+      : await admit(c);
+    if (why === null) out.push(c);
+    else warn(`[WARN] ${c} skipped: ${why}`);
+  }
+  return out;
+}
 
 const Coord = z.object({ campaign: z.string().min(1) });
 const Allocation = z.record(z.string(), z.array(z.string().min(1)));
