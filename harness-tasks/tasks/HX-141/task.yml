@@ -1,0 +1,16 @@
+id: HX-141
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Core, Test]
+coupling: [commit-behavior, events, single-instance, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, CheckOutTwiceFails] }
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo] }
+fail_to_pass: null
+mutants: [m-keep-sent, m-escape, m-drop-refused, m-count, m-reset]
+contamination: null
+limits: { timeout_min: 30 }
