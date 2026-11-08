@@ -1,0 +1,11 @@
+# W2-10: wave 2 round 1 full screen (seal harness-v2-screen-w2r1) plus the owed rescreens of HX-056 and HX-066.
+# Copy of v2-screen-2; tasks = the `next screen tasks:` line of `screening.ts status --stratify-env` after the seal
+# (seal-w2r1\seal.md S5). Developmental, never confirmatory.
+id: v2-screen-3
+hypothesis: "Screening pilot of the v2 wave 2 round 1 candidates and the owed rescreens on the plain and realistic+LSP arms; developmental, excluded from every confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-plain
+variants: [cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-056,HX-066,HX-100,HX-103,HX-131,HX-132,HX-133,HX-134,HX-135,HX-136,HX-137}"
+repeats: 3

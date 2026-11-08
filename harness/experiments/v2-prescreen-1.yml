@@ -1,0 +1,10 @@
+# H-68 calibration round (seal harness-v2-screen-w2r1): one attempt per arm; never pooled into screening,
+# selection or any confirmatory result (screening.ts loads only v2-screen-*).
+id: v2-prescreen-1
+hypothesis: "Pre-screen of the wave-2 round-1 candidates, calibration round: one attempt per arm, measured against the full screen for the false-kill rate; developmental only."
+primary_metric: pass_rate
+baseline: cc-v2-plain
+variants: [cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-100,HX-103,HX-131,HX-132,HX-133,HX-134,HX-135,HX-136,HX-137}"
+repeats: 1
