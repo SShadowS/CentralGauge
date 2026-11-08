@@ -9,6 +9,11 @@ import { admittedPool } from "../../src/harness/allocation.ts";
 export interface GateOutcome {
   code: number;
   file: string | null;
+  /**
+   * H-74 Sol r1: false when the gate touched the container and its final
+   * cleanup (prenuke, dispose) failed; absent or true otherwise.
+   */
+  clean?: boolean;
 }
 
 export interface GateJob extends GateOutcome {
@@ -45,8 +50,11 @@ export interface Hold {
  * the claim every harness environment honours. A busy container (another
  * run's in-use record, e.g. a campaign pool releasing a lent judge after its
  * hold) is polled every `pollMs` for up to `waitMs` (--wait-free); any other
- * refusal is final at once. A hold whose container saw an infra end keeps
- * its record (dirty unless proven clean): harness recover clears it.
+ * refusal is final at once. Sol r1: a hold is released exactly when every
+ * gate on it ended with a clean final cleanup (an environment releases its
+ * claims after a clean teardown the same way); a dirty one keeps the in-use
+ * record, which harness recover refuses too (no filesystem evidence): the
+ * container is recreated or the owner removes the record.
  */
 export function recordHolds(o: {
   claim: (
@@ -74,7 +82,7 @@ export function recordHolds(o: {
           release: async (clean) => {
             if (!clean) {
               o.log(
-                `[WARN] ${c}: in-use record ${id} kept (a gate on it ended infra); it refuses ${c} until harness recover`,
+                `[WARN] ${c}: in-use record ${id} kept (a gate's cleanup on it failed or its gate threw); it refuses ${c} in every harness run, and harness recover refuses an in-use record: recreate ${c} or the owner removes the record`,
               );
               return;
             }
@@ -131,11 +139,31 @@ export async function runGatePool(o: {
     );
     for (const [k, c] of listed.entries()) {
       const h = got[k]!;
-      if ("why" in h) o.log(`[WARN] ${c} skipped: ${h.why}`);
-      else {
-        holds.set(c, h);
-        admitted.push(c);
+      if ("why" in h) {
+        o.log(`[WARN] ${c} skipped: ${h.why}`);
+        continue;
       }
+      // Sol r1: the lease may have changed hands while the hold waited;
+      // nothing touched the container yet, so a refused one is released.
+      let again: string | null;
+      try {
+        again = await o.admit(c);
+      } catch (err) {
+        again = err instanceof Error ? err.message : String(err);
+      }
+      if (again !== null) {
+        o.log(`[WARN] ${c} skipped: ${again} (rechecked once held)`);
+        await h.release(true).catch((err) =>
+          o.log(
+            `[WARN] ${c}: in-use record not released (it refuses ${c}): ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          )
+        );
+        continue;
+      }
+      holds.set(c, h);
+      admitted.push(c);
     }
   }
   const tasks = [...new Set(o.tasks)];
@@ -155,7 +183,7 @@ export async function runGatePool(o: {
   };
   let live = admitted.length;
 
-  /** True when no job on `container` ended infra (its hold is released clean). */
+  /** True when every gate on `container` ended with a clean final cleanup (its hold is released). */
   const work = async (container: string): Promise<boolean> => {
     while (true) {
       const item = queue.shift();
@@ -175,9 +203,17 @@ export async function runGatePool(o: {
             err instanceof Error ? err.message : String(err)
           }`,
         );
-        out = { code: INFRA, file: null };
+        // Thrown: what it did to the container is unknown (dirty).
+        out = { code: INFRA, file: null, clean: false };
       }
       inFlight--;
+      const clean = out.clean !== false;
+      const job = {
+        task: item.task,
+        container,
+        code: out.code,
+        file: out.file,
+      };
       if (out.code === INFRA) {
         o.log(
           `[INFRA] ${item.task} on ${container}; ${container} leaves the pool`,
@@ -186,12 +222,21 @@ export async function runGatePool(o: {
         if (!item.retried && live > 0) {
           queue.push({ task: item.task, retried: true });
         } else {
-          jobs.push({ task: item.task, container, ...out });
+          jobs.push(job);
         }
+        notify();
+        return clean;
+      }
+      jobs.push(job);
+      if (!clean) {
+        // Sol r1: a failed final cleanup: no further job on it
+        o.log(
+          `[WARN] ${item.task} on ${container}: cleanup failed; ${container} leaves the pool`,
+        );
+        live--;
         notify();
         return false;
       }
-      jobs.push({ task: item.task, container, ...out });
       notify();
     }
   };
@@ -201,7 +246,7 @@ export async function runGatePool(o: {
       await holds.get(container)?.release(clean);
     } catch (err) {
       o.log(
-        `[WARN] ${container}: in-use record not released (it refuses ${container} until harness recover): ${
+        `[WARN] ${container}: in-use record not released (it refuses ${container}): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

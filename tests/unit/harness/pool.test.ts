@@ -517,6 +517,76 @@ Deno.test("H-74 (b+): the idle tick acts on an answered block only; an unreadabl
   await pool.close();
 });
 
+Deno.test("H-74 Sol r1: a member quarantined by the hold its leave waited for keeps its record (never released, even when the quarantine write failed)", async () => {
+  const bc = new FakeBc();
+  const { w, pool } = poolWorld(bc);
+  await pool.bind("c");
+  await logged(() => pool.refresh());
+  const held = gate();
+  let entered = false;
+  const call = pool.lane.compile(async () => {
+    entered = true;
+    await held.p;
+  });
+  await until(() => entered, 2_000, "the compile on C1");
+  w.blocked.set("C1", "drain marker drain-C1");
+  await logged(async () => {
+    await until(() => pool.lane.members().length === 0, 2_000, "retired");
+    // the hold quarantines C1 (its record write failed: no persist here)
+    await pool.lane.quarantine("C1", "post-cleanup check on C1 failed: x");
+    held.open();
+    await call;
+    await until(() => w.kept.has("C1"), 2_000, "the kept record");
+  });
+  assert(!w.events.includes("release:C1"), w.events.join(","));
+  assertEquals(w.records.get("C1"), "id-C1");
+  assertStringIncludes(w.kept.get("C1")!, "quarantined while leaving");
+  await pool.close();
+});
+
+Deno.test("H-74 Sol r1: a record kept after a failed dispose is final: a later leave never releases it", async () => {
+  const bc = new FakeBc();
+  const { w, pool } = poolWorld(bc);
+  let fail = true;
+  w.setup = (c) =>
+    Promise.resolve({
+      bc,
+      dispose: () => {
+        w.events.push(`dispose:${c}`);
+        return fail
+          ? Promise.reject(new Error("slot stuck"))
+          : Promise.resolve();
+      },
+    });
+  await pool.bind("c");
+  await logged(() => pool.refresh());
+  w.blocked.set("C1", "drain marker drain-C1");
+  await logged(() => until(() => w.kept.has("C1"), 2_000, "kept"));
+  fail = false;
+  await logged(async () => {
+    await pool.refresh();
+    await new Promise((r) => setTimeout(r, 100));
+  });
+  assert(!w.events.includes("release:C1"), w.events.join(","));
+  assertEquals(w.events.filter((e) => e === "dispose:C1").length, 1);
+  await pool.close();
+});
+
+Deno.test("H-74 Sol r1 LOW: a bind that completes after close installs no tick", async () => {
+  const bc = new FakeBc();
+  const { w, pool, deps } = poolWorld(bc);
+  const pin = gate<string | null>();
+  deps.pinned = () => pin.p;
+  const bound = pool.bind("c");
+  await pool.close();
+  pin.open(null);
+  await bound;
+  w.blocked.set("C1", "drain marker drain-C1");
+  await new Promise((r) => setTimeout(r, 100));
+  assertEquals(w.events, []);
+  // the test sanitizer fails this test on a live interval
+});
+
 Deno.test("H-74 (b+): an unbound pool has no tick; a busy member blocked mid-hold leaves only after its call ends", async () => {
   const bc = new FakeBc();
   const { w, pool } = poolWorld(bc);

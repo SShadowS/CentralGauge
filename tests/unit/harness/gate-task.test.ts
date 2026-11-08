@@ -348,6 +348,29 @@ Deno.test("runGate: a staging exception still cleans up and writes an infra repo
   );
 });
 
+Deno.test("runGate (H-74 Sol r1): clean is true after a clean final cleanup and false when the final prenuke fails, whatever the exit code", async () => {
+  const { loaded, source, tmpRoot } = await fixture();
+  const run = async (bc: GateBc) =>
+    runGate({
+      bc,
+      loaded,
+      source,
+      container: "Mock",
+      outDir: await tmp(),
+      tmpRoot,
+      tagTree: null,
+    });
+  const events: string[] = [];
+  const ok = await run(mockBc({ events }));
+  assertEquals(ok.clean, true);
+  const prenukes = events.filter((e) => e.startsWith("prenuke")).length;
+  // every prenuke before the final one passes; the final cleanup fails
+  const dirty = await run(mockBc({ prenukeThrowsAfter: prenukes - 1 }));
+  assertEquals([dirty.code, dirty.clean], [ok.code, false]);
+  const report = JSON.parse(await Deno.readTextFile(dirty.file));
+  assertStringIncludes(report.cleanup_error, "prenuke failed");
+});
+
 Deno.test("runGate: tag mismatch blocks promotion", async () => {
   const { loaded, source, tmpRoot } = await fixture();
   const { file } = await runGate({

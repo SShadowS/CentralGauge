@@ -316,7 +316,89 @@ function fakeRecords(refuse: Record<string, string> = {}) {
   };
 }
 
-Deno.test("H-74 gates: a container whose record refuses it is skipped with a WARN; each admitted container is held before its first job and released after its last; an infra end keeps the record", async () => {
+Deno.test("H-74 Sol r1 gates: a hold is released exactly when every gate on it cleaned up: an infra end with a clean cleanup releases, a failed cleanup keeps the record and takes the container out of the pool, a thrown gate keeps it", async () => {
+  const recs = fakeRecords();
+  const lines: string[] = [];
+  const ran: string[] = [];
+  const r = await runGatePool({
+    containers: POOL,
+    tasks: ["HX-101", "HX-102", "HX-103", "HX-104", "HX-105"],
+    gate: async (c, t) => {
+      ran.push(`${t}@${c}`);
+      await tick();
+      if (c === "Cronus281") return { code: INFRA, file: null, clean: true };
+      if (c === "Cronus282") {
+        return { code: 0, file: `${t}.json`, clean: false };
+      }
+      throw new Error("lost the session");
+    },
+    admit: admitAll,
+    hold: recordHolds({
+      claim: recs.claim("gates"),
+      release: recs.release,
+      waitMs: 0,
+      log: quiet(lines),
+    }),
+    log: quiet(lines),
+  });
+  assertEquals(recs.held.has("Cronus281"), false, "infra, clean: released");
+  assertEquals(recs.held.get("Cronus282"), "gates", "dirty: kept");
+  assertEquals(recs.held.get("Cronus283"), "gates", "thrown: kept");
+  for (const c of ["Cronus282", "Cronus283"]) {
+    assertEquals(ran.filter((x) => x.endsWith(`@${c}`)).length, 1, c);
+    assert(
+      lines.some((l) =>
+        l.includes(`${c}: in-use record`) && l.includes("kept") &&
+        l.includes("recreate")
+      ),
+      lines.join("\n"),
+    );
+  }
+  // the dirty gate's verdict stands; nothing left runs on a container
+  const j = r.jobs.find((x) => x.container === "Cronus282")!;
+  assertEquals([j.code, j.file], [0, `${j.task}.json`]);
+  assertEquals(Object.keys(j).sort(), ["code", "container", "file", "task"]);
+});
+
+Deno.test("H-74 Sol r1 gates: admission is rechecked once a container is held; a lease taken meanwhile releases the hold untouched", async () => {
+  const recs = fakeRecords();
+  const lines: string[] = [];
+  let leased = false;
+  const r = await runGatePool({
+    containers: ["Cronus281", "Cronus282"],
+    tasks: ["HX-101"],
+    gate: (c) => Promise.resolve({ code: 0, file: c }),
+    admit: (c) =>
+      Promise.resolve(
+        c === "Cronus281" && leased ? "coord lease held by lane-x" : null,
+      ),
+    hold: (c) => {
+      if (c === "Cronus281") leased = true; // taken while the hold waited
+      return recordHolds({
+        claim: recs.claim("gates"),
+        release: recs.release,
+        waitMs: 0,
+        log: () => {},
+      })(c);
+    },
+    log: quiet(lines),
+  });
+  assertEquals(r.jobs.map((j) => j.container), ["Cronus282"]);
+  assertEquals(recs.held.size, 0);
+  assert(
+    recs.events.includes("release:Cronus281:id-Cronus281-1"),
+    recs.events.join(","),
+  );
+  assert(
+    lines.some((l) =>
+      l.startsWith("[WARN] Cronus281 skipped: coord lease") &&
+      l.includes("rechecked")
+    ),
+    lines.join("\n"),
+  );
+});
+
+Deno.test("H-74 gates: a container whose record refuses it is skipped with a WARN; each admitted container is held before its first job and released after its last", async () => {
   const recs = fakeRecords({ Cronus283: "Cronus283 (quarantined (L4))" });
   const lines: string[] = [];
   const order: string[] = [];
@@ -348,22 +430,14 @@ Deno.test("H-74 gates: a container whose record refuses it is skipped with a WAR
     lines.join("\n"),
   );
   assert(!order.some((o) => o.endsWith("@Cronus283")), "283 never ran");
-  // 281 clean: released; 282 ended infra: kept (still held), loudly
-  assertEquals(recs.held.has("Cronus281"), false);
-  assertEquals(recs.held.get("Cronus282"), "gates");
-  assert(
-    lines.some((l) =>
-      l.includes("Cronus282") && l.includes("kept") &&
-      l.includes("harness recover")
-    ),
-    lines.join("\n"),
-  );
+  // both held containers cleaned up (282's infra end included): released
+  assertEquals(recs.held.size, 0);
   assertEquals(r.jobs.filter((j) => j.code === 0).length, 3);
   assertEquals(
     recs.events.filter((e) => e.startsWith("release:")).map((e) =>
       e.split(":")[1]
-    ),
-    ["Cronus281"],
+    ).sort(),
+    ["Cronus281", "Cronus282"],
   );
 });
 

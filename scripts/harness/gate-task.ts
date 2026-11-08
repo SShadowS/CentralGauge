@@ -394,7 +394,7 @@ export async function runGate(o: {
   outDir: string;
   tmpRoot: string;
   tagTree: string | null;
-}): Promise<{ file: string; code: number }> {
+}): Promise<{ file: string; code: number; clean: boolean }> {
   const { task } = o.loaded;
   const naive: string[] = [];
   if (await exists(join(o.source.taskDir, "naive"))) {
@@ -493,7 +493,12 @@ export async function runGate(o: {
       2,
     ),
   );
-  return { file, code: infra ? 3 : promoted ? 0 : 1 };
+  // H-74 Sol r1: a failed final cleanup keeps the gates hold's in-use record
+  return {
+    file,
+    code: infra ? 3 : promoted ? 0 : 1,
+    clean: cleanupError === null,
+  };
 }
 
 async function hostCompile(
@@ -621,7 +626,7 @@ async function main(): Promise<number> {
       "-q",
       `${loaded.task.refapp_version}:harness-tasks/refapp`,
     ]);
-    const { file, code } = await runGate({
+    const { file, code, clean } = await runGate({
       bc,
       loaded,
       source: src,
@@ -635,7 +640,7 @@ async function main(): Promise<number> {
         code === 0 ? colors.green("[OK]") : colors.red("[FAIL]")
       } ${loaded.task.id} gate -> ${file}`,
     );
-    return { code, file };
+    return { code, file, clean };
   };
   try {
     if (cmd === "check" && rest.length > 0) {
