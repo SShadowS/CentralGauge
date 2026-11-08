@@ -4,8 +4,15 @@
 //   stage <taskId> <outDir> [--rev R]         baseline workspace for the pilot
 //   gate <container> <taskId> [--rev R]       container job
 //   gates <taskId>... [--containers a,b,c] [--coord-lease c=token]... [--rev R]
-//                                             H-70: one job per container in
-//                                             parallel (gate-pool.ts)
+//         [--wait-free MIN]                   H-70: one job per container in
+//                                             parallel (gate-pool.ts). H-74:
+//                                             each container is held by an
+//                                             in-use record (a quarantined or
+//                                             otherwise recorded one is
+//                                             skipped); --wait-free waits up to
+//                                             MIN (0-120, default 0) for
+//                                             another run's in-use record to go
+//                                             (a judge a campaign lends)
 //   judge <container> <taskId> <ws> [--rev R] pilot scoring, developmental
 import { parseArgs } from "@std/cli/parse-args";
 import * as colors from "@std/fmt/colors";
@@ -17,7 +24,13 @@ import type { GateRun, RunResult, TestRef, Variant } from "./gate-core.ts";
 import type { Source } from "./gate-stage.ts";
 import type { GateOutcome } from "./gate-pool.ts";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
-import { DEFAULT_POOL, poolAdmit } from "../../src/harness/allocation.ts";
+import {
+  DEFAULT_COORD_ROOT,
+  DEFAULT_POOL,
+  poolAdmit,
+} from "../../src/harness/allocation.ts";
+import { containerId } from "../../src/container/docker-inspect.ts";
+import { claimExclusive, releaseOwned } from "../../src/harness/quarantine.ts";
 import { parseCoordLease } from "../../cli/commands/harness-command.ts";
 import {
   resolveSoapTimeoutMs,
@@ -50,7 +63,7 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "./gate-stage.ts";
-import { runGatePool, serialized } from "./gate-pool.ts";
+import { recordHolds, runGatePool, serialized } from "./gate-pool.ts";
 
 const EVIDENCE_ROOT = "H:\\Temp3\\harness-spike\\M4";
 const TMP_ROOT = Deno.env.get("CG_GATE_TMP") ?? join(EVIDENCE_ROOT, "tmp");
@@ -544,7 +557,7 @@ async function hostCompile(
 
 async function main(): Promise<number> {
   const a = parseArgs(Deno.args, {
-    string: ["rev", "containers", "coord-lease"],
+    string: ["rev", "containers", "coord-lease", "wait-free"],
     collect: ["coord-lease"],
     default: { rev: "HEAD" },
   });
@@ -670,7 +683,38 @@ async function main(): Promise<number> {
       return (await gateOne(rest[0]!, rest[1]!)).code;
     }
     if (cmd === "gates" && rest.length > 0) {
+      const waitMin = Number(a["wait-free"] ?? "0");
+      if (!Number.isFinite(waitMin) || waitMin < 0 || waitMin > 120) {
+        console.error(
+          `${colors.red("[FAIL]")} --wait-free must be 0 to 120 minutes: ${
+            a["wait-free"]
+          }`,
+        );
+        return 2;
+      }
+      // H-74: the in-use records every harness environment honours.
+      const qDir = join(
+        Deno.env.get("CG_COORD_ROOT") || DEFAULT_COORD_ROOT,
+        "harness-quarantine",
+      );
+      const token = crypto.randomUUID();
+      const host = Deno.hostname();
       const r = await runGatePool({
+        hold: recordHolds({
+          claim: async (c) =>
+            claimExclusive(qDir, {
+              state: "in_use",
+              container: c,
+              id: await containerId(c),
+              token,
+              by: `${host} gate-task gates`,
+              pid: Deno.pid,
+              host,
+            }),
+          release: async (_c, id) => void await releaseOwned(qDir, id, token),
+          waitMs: waitMin * 60_000,
+          log: (l) => console.log(l),
+        }),
         containers: a.containers === undefined
           ? [...DEFAULT_POOL]
           : a.containers.split(",").map((c) => c.trim()).filter(Boolean),

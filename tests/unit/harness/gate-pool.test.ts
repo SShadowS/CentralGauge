@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
   admitContainer,
   admittedPool,
@@ -6,6 +6,8 @@ import {
 } from "../../../src/harness/allocation.ts";
 import {
   type GateOutcome,
+  INFRA,
+  recordHolds,
   runGatePool,
   serialized,
 } from "../../../scripts/harness/gate-pool.ts";
@@ -282,4 +284,180 @@ Deno.test("H-70 gates: a gate that throws is infra for that container", async ()
     code: 0,
     file: "ok.json",
   }]);
+});
+
+// ---- H-74: in-use records (shared pool across processes) ----
+
+/** A fake record store: container -> holder; `refuse` = records that refuse for good. */
+function fakeRecords(refuse: Record<string, string> = {}) {
+  const held = new Map<string, string>();
+  const events: string[] = [];
+  let n = 0;
+  return {
+    held,
+    events,
+    claim: (who: string) => (c: string) => {
+      if (refuse[c]) {
+        return Promise.resolve({ why: refuse[c]!, busy: false });
+      }
+      const h = held.get(c);
+      if (h !== undefined) {
+        return Promise.resolve({ why: `in use by ${h}`, busy: true });
+      }
+      held.set(c, who);
+      events.push(`claim:${c}:${who}`);
+      return Promise.resolve({ id: `id-${c}-${++n}` });
+    },
+    release: (c: string, id: string) => {
+      held.delete(c);
+      events.push(`release:${c}:${id}`);
+      return Promise.resolve();
+    },
+  };
+}
+
+Deno.test("H-74 gates: a container whose record refuses it is skipped with a WARN; each admitted container is held before its first job and released after its last; an infra end keeps the record", async () => {
+  const recs = fakeRecords({ Cronus283: "Cronus283 (quarantined (L4))" });
+  const lines: string[] = [];
+  const order: string[] = [];
+  const hold = recordHolds({
+    claim: recs.claim("gates"),
+    release: recs.release,
+    waitMs: 0,
+    log: quiet(lines),
+  });
+  const r = await runGatePool({
+    containers: POOL,
+    tasks: ["HX-101", "HX-102", "HX-103"],
+    gate: (c, t) => {
+      order.push(`gate:${t}@${c}`);
+      assert(recs.held.get(c) === "gates", `${t} ran on ${c} unheld`);
+      return Promise.resolve({
+        code: c === "Cronus282" ? INFRA : 0,
+        file: `${t}.json`,
+      });
+    },
+    admit: admitAll,
+    hold,
+    log: quiet(lines),
+  });
+  assert(
+    lines.some((l) =>
+      l.startsWith("[WARN] Cronus283 skipped: ") && l.includes("L4")
+    ),
+    lines.join("\n"),
+  );
+  assert(!order.some((o) => o.endsWith("@Cronus283")), "283 never ran");
+  // 281 clean: released; 282 ended infra: kept (still held), loudly
+  assertEquals(recs.held.has("Cronus281"), false);
+  assertEquals(recs.held.get("Cronus282"), "gates");
+  assert(
+    lines.some((l) =>
+      l.includes("Cronus282") && l.includes("kept") &&
+      l.includes("harness recover")
+    ),
+    lines.join("\n"),
+  );
+  assertEquals(r.jobs.filter((j) => j.code === 0).length, 3);
+  assertEquals(
+    recs.events.filter((e) => e.startsWith("release:")).map((e) =>
+      e.split(":")[1]
+    ),
+    ["Cronus281"],
+  );
+});
+
+Deno.test("H-74 gates: two gates runs never share a container (the record is the cross-process claim)", async () => {
+  const recs = fakeRecords();
+  const busy = new Set<string>();
+  const clashes: string[] = [];
+  const run = (who: string, tasks: string[]) =>
+    runGatePool({
+      containers: POOL,
+      tasks,
+      gate: async (c) => {
+        if (busy.has(c)) clashes.push(c);
+        busy.add(c);
+        await tick();
+        busy.delete(c);
+        return { code: 0, file: null };
+      },
+      admit: admitAll,
+      hold: recordHolds({
+        claim: recs.claim(who),
+        release: recs.release,
+        waitMs: 0,
+        log: () => {},
+      }),
+      log: () => {},
+    });
+  const [a, b] = await Promise.all([
+    run("A", ["HX-101", "HX-102"]),
+    run("B", ["HX-103", "HX-104"]),
+  ]);
+  assertEquals(clashes, []);
+  const used = (r: typeof a) => new Set(r.jobs.map((j) => j.container));
+  for (const c of used(a)) assert(!used(b).has(c), `${c} in both`);
+  assertEquals(recs.held.size, 0, "every record released");
+});
+
+Deno.test("H-74 recordHolds --wait-free: a busy container (another run's in-use record) is polled until free, then held; past the bound it is refused; a refusal for good never waits", async () => {
+  const recs = fakeRecords({ Cronus283: "quarantined" });
+  recs.held.set("Cronus281", "campaign");
+  let t = 0;
+  const slept: number[] = [];
+  const lines: string[] = [];
+  const hold = recordHolds({
+    claim: recs.claim("gates"),
+    release: recs.release,
+    waitMs: 60_000,
+    pollMs: 10_000,
+    now: () => t,
+    sleep: (ms) => {
+      slept.push(ms);
+      t += ms;
+      // the campaign's pool releases 281 on the third poll
+      if (slept.length === 3) recs.held.delete("Cronus281");
+      return Promise.resolve();
+    },
+    log: quiet(lines),
+  });
+  const h = await hold("Cronus281");
+  assert("release" in h, JSON.stringify(h));
+  assertEquals(slept, [10_000, 10_000, 10_000]);
+  assertEquals(
+    lines.filter((l) => l.startsWith("[WAIT] Cronus281")).length,
+    1,
+    lines.join("\n"),
+  );
+  await h.release(true);
+  assertEquals(recs.held.has("Cronus281"), false);
+  // never freed: refused once the bound passes
+  recs.held.set("Cronus282", "campaign");
+  slept.length = 0;
+  const late = await hold("Cronus282");
+  assert("why" in late);
+  assertStringIncludes(late.why, "in use by campaign");
+  assertStringIncludes(late.why, "waited 1 min");
+  assertEquals(slept.length, 6);
+  // a quarantine: no wait at all
+  slept.length = 0;
+  const q = await hold("Cronus283");
+  assert("why" in q);
+  assertEquals([q.why, slept.length], ["quarantined", 0]);
+});
+
+Deno.test("H-74 recordHolds: --wait-free 0 refuses a busy container at once", async () => {
+  const recs = fakeRecords();
+  recs.held.set("Cronus281", "campaign");
+  const hold = recordHolds({
+    claim: recs.claim("gates"),
+    release: recs.release,
+    waitMs: 0,
+    sleep: () => Promise.reject(new Error("never sleeps")),
+    log: () => {},
+  });
+  const h = await hold("Cronus281");
+  assert("why" in h);
+  assertStringIncludes(h.why, "in use by campaign");
 });

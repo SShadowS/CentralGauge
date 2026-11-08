@@ -193,6 +193,37 @@ export async function releaseOwned(
 }
 
 /**
+ * H-74: claim the container (atomic create-new of its id's record), then
+ * refuse it if any other record matches it by id or name; a refused claim of
+ * ours is released at once. `busy`: only another claimant's in-use record
+ * (or one that vanished mid-claim) refuses it, so it may free up (a campaign
+ * pool releasing a lent judge); a quarantine, a recover claim or an
+ * unreadable record refuses for good.
+ */
+export async function claimExclusive(
+  dir: string,
+  r: NewRecord,
+): Promise<{ id: string } | { why: string; busy: boolean }> {
+  const won = await claimRecord(dir, r);
+  const others = (await findRecords(dir, { name: r.container, id: r.id }))
+    .filter((f) => f.record?.token !== r.token);
+  if (won && others.length === 0) return { id: r.id };
+  if (won) await releaseOwned(dir, r.id, r.token);
+  if (others.length === 0) {
+    return {
+      why: `${r.container} (record ${recordFile(dir, r.id)} changed mid-claim)`,
+      busy: true,
+    };
+  }
+  return {
+    why: others.map((f) => `${r.container} (${f.why})`).join("; "),
+    busy: others.every((f) =>
+      f.record?.state === "in_use" && f.file === recordFile(dir, r.id)
+    ),
+  };
+}
+
+/**
  * Sol r2 N2: remove found records whose file still holds exactly what was
  * read (gone already is fine). Returns the files that changed (kept).
  * Only `harness recover` calls it.

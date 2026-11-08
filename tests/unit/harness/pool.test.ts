@@ -478,3 +478,68 @@ Deno.test("H-41 (14): an unanswered-only pool loss requeues W at most 3 times; t
   assertStringIncludes(stop[0]!, "1 stay owed");
   await pool.close();
 });
+
+Deno.test("H-74 (b+): with no judge work queued, a member blocked by a drain marker leaves on the pool's own poll (record released), an idle tick joins nothing, and a closed pool's tick stops", async () => {
+  const bc = new FakeBc();
+  const { w, pool } = poolWorld(bc, { alloc: ["C1"] });
+  await pool.bind("c");
+  await logged(() => pool.refresh());
+  assertEquals(pool.lane.members(), ["C1"]);
+  // No refresh, no queue: only the pool's own tick may notice.
+  w.alloc.push("C2");
+  w.blocked.set("C1", "drain marker drain-C1");
+  await logged(() =>
+    until(() => w.events.includes("release:C1"), 2_000, "the idle release")
+  );
+  assertEquals(w.records.has("C1"), false);
+  assertEquals(pool.lane.members(), []);
+  await new Promise((r) => setTimeout(r, 100));
+  assert(!w.events.includes("claim:C2"), "an idle tick never joins");
+  await pool.close();
+  // closed: a later block is never acted on
+  const n = w.events.length;
+  await new Promise((r) => setTimeout(r, 100));
+  assertEquals(w.events.length, n);
+});
+
+Deno.test("H-74 (b+): the idle tick acts on an answered block only; an unreadable coord state is left to refresh and the terminal reconcile", async () => {
+  const bc = new FakeBc();
+  const { w, pool, deps } = poolWorld(bc);
+  await pool.bind("c");
+  await logged(() => pool.refresh());
+  assertEquals(pool.lane.members(), ["C1"]);
+  deps.blocked = () => {
+    throw new Error("coord: lease C1/001 unreadable");
+  };
+  await new Promise((r) => setTimeout(r, 150));
+  assert(!w.events.includes("release:C1"), w.events.join(","));
+  assertEquals(pool.lane.members(), ["C1"]);
+  await pool.close();
+});
+
+Deno.test("H-74 (b+): an unbound pool has no tick; a busy member blocked mid-hold leaves only after its call ends", async () => {
+  const bc = new FakeBc();
+  const { w, pool } = poolWorld(bc);
+  w.blocked.set("C1", "drain marker drain-C1");
+  await new Promise((r) => setTimeout(r, 100));
+  assertEquals(w.events, [], "unbound: inert");
+  w.blocked.delete("C1");
+  await pool.bind("c");
+  await logged(() => pool.refresh());
+  const held = gate();
+  let entered = false;
+  const call = pool.lane.compile(async () => {
+    entered = true;
+    await held.p;
+  });
+  await until(() => entered, 2_000, "the compile on C1");
+  w.blocked.set("C1", "drain marker drain-C1");
+  await logged(async () => {
+    await new Promise((r) => setTimeout(r, 150));
+    assert(!w.events.includes("release:C1"), "released while in use");
+    held.open();
+    await call;
+    await until(() => w.events.includes("release:C1"), 2_000, "the release");
+  });
+  await pool.close();
+});

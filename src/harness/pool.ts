@@ -138,6 +138,35 @@ export class JudgePool implements JudgeGate {
   async bind(campaign: string): Promise<void> {
     await this.deps.pinned(campaign);
     this.campaign = campaign;
+    // H-74 (b+): a blocked member (a judge lent to `gates` by a drain marker)
+    // leaves on this tick even while no judge work is queued, so its record
+    // is released promptly. It never joins anything (refresh does that).
+    this.idle ??= setInterval(() => this.leaveBlocked(), this.bounds.pollMs);
+  }
+
+  private idle: ReturnType<typeof setInterval> | undefined;
+
+  /**
+   * H-74 (b+): the leave half of a refresh pass, for members with an
+   * answered block only (a drain marker, a foreign coord lease). An
+   * unreadable state is left to refresh and the terminal reconcile (H-41
+   * section 14's unanswered rules).
+   */
+  private leaveBlocked(): void {
+    if (this.campaign === null || this.closed) return;
+    for (const c of [...this.joined.keys()]) {
+      if (
+        this.leaving.has(c) || this.kept.has(c) ||
+        this.lane.quarantined.has(c)
+      ) continue;
+      let why: string | null;
+      try {
+        why = this.deps.blocked(c);
+      } catch {
+        continue;
+      }
+      if (why) this.track(this.release(c, why));
+    }
   }
 
   width(): number {
@@ -190,6 +219,8 @@ export class JudgePool implements JudgeGate {
   private async shut(): Promise<void> {
     this.closed = true;
     this.poll(null);
+    clearInterval(this.idle);
+    this.idle = undefined;
     this.epoch++;
     let t: ReturnType<typeof setTimeout> | undefined;
     const late = await Promise.race([
