@@ -138,7 +138,11 @@ import {
   normWinPath,
   recreatedProblems,
 } from "../../src/harness/recreated.ts";
-import { bchRootFor, SHARED_BCH_ROOT } from "../../src/container/bch-root.ts";
+import {
+  allBchRoots,
+  bchRootFor,
+  SHARED_BCH_ROOT,
+} from "../../src/container/bch-root.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import {
   containerId,
@@ -261,6 +265,8 @@ export interface EnvDeps {
   containerIdExists?(id: string): Promise<boolean>;
   /** H-77 Sol r3: a host path's real path (default: Deno.realPath: junctions, 8.3 names, aliases). */
   realPath?(path: string): Promise<string>;
+  /** H-77 Sol r4: every BCH root, shared and migrated (default: allBchRoots from bch-roots.json). */
+  bchRoots?(): string[];
   /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
   processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
@@ -807,6 +813,20 @@ async function recoverRecreated(
   }
   const ownReal = own === null ? null : await resolveHost(own);
   const sharedReal = await resolveHost(SHARED_BCH_ROOT);
+  // Sol r4: every other BCH root, as named and as resolved (a root that
+  // does not exist on this host is kept as named only)
+  const otherRoots: string[] = [];
+  for (const r of (deps.bchRoots ?? allBchRoots)()) {
+    if (own !== null && normWinPath(r) === normWinPath(own)) continue;
+    otherRoots.push(r);
+    try {
+      otherRoots.push(await real(r));
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        throw refuse(`host path ${r} cannot be resolved: ${msg(err)}`);
+      }
+    }
+  }
   // Sol r3: the archive never lands where records are read
   await Deno.mkdir(evidenceDir, { recursive: true });
   const ev = normWinPath(await resolveHost(evidenceDir));
@@ -844,6 +864,8 @@ async function recoverRecreated(
     found,
     created: facts.created,
     mounts,
+    rawMounts: facts.mounts.filter((s) => !/^\\\\[.?]\\pipe\\/i.test(s)),
+    otherRoots,
     ownRoot: ownReal,
     sharedRoot: sharedReal,
     manifest: manifestBefore,

@@ -197,6 +197,41 @@ Deno.test("H-77 Sol r3 normWinPath: trailing dots and spaces per component, . an
   }
 });
 
+Deno.test("H-77 Sol r4 recreatedProblems: a mount resolving onto any other known BCH root (a relocated foreign root behind a junction) refuses; an own root that resolves onto another root refuses", () => {
+  const other282 = `${SHARED}-Cronus282`;
+  // Cronus282's root is a junction to D:\BCH282; a mount E:\link resolves there
+  const p = recreatedProblems({
+    ...ok,
+    mounts: [OWN, "D:\\BCH282"],
+    rawMounts: [OWN, "E:\\link"],
+    otherRoots: [other282, "D:\\BCH282"],
+  });
+  assertEquals(p.length, 1, p.join("; "));
+  assertStringIncludes(p[0]!, "D:\\BCH282");
+  // a mount containing a relocated root counts too
+  assertEquals(
+    recreatedProblems({
+      ...ok,
+      mounts: [OWN, "D:\\"],
+      otherRoots: ["D:\\BCH282"],
+    })
+      .length,
+    1,
+  );
+  // the own root resolving onto the shared root (a junction)
+  const q = recreatedProblems({ ...ok, ownRoot: SHARED, mounts: [SHARED] });
+  assertEquals(
+    q.some((x) => x.includes("overlaps another BCH root")),
+    true,
+    q.join("; "),
+  );
+  // the proper layout with all roots known still passes
+  assertEquals(
+    recreatedProblems({ ...ok, rawMounts: ok.mounts, otherRoots: [other282] }),
+    [],
+  );
+});
+
 Deno.test("H-77 Sol r2 recreatedProblems: an old container that still exists (renamed) refuses", () => {
   const p = recreatedProblems({ ...ok, liveOldIds: [OLD.toUpperCase()] });
   assertEquals(p.length, 1);

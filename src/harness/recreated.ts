@@ -113,6 +113,15 @@ export interface RecreatedInput {
   abandon?: string | null;
   /** Sol r2: the old Docker ids that still exist as containers (a renamed old container). */
   liveOldIds?: readonly string[];
+  /**
+   * Sol r4: every other BCH root (the shared one and each other migrated
+   * container's), as named AND as resolved on the host; a mount related to
+   * any of them (equal, inside, or containing it) is foreign, and so is an
+   * own root that resolves onto one of them.
+   */
+  otherRoots?: readonly string[];
+  /** Sol r4: the mount sources as Docker reported them (before resolving). */
+  rawMounts?: readonly string[];
 }
 
 /**
@@ -186,17 +195,35 @@ export function recreatedProblems(o: RecreatedInput): string[] {
   } else {
     const own = norm(o.ownRoot), shared = norm(o.sharedRoot);
     const mounts = o.mounts.map(norm);
-    const bch = o.mounts.filter((m) => {
+    // Sol r4: related = equal, inside, or containing
+    const related = (a: string, b: string) => under(a, b) || under(b, a);
+    // the shared root is always another root (an own root resolving onto
+    // it is the junction case, never a reason to drop it)
+    const others = [
+      shared,
+      ...(o.otherRoots ?? []).map(norm).filter((r) => r !== own),
+    ];
+    const overlap = others.filter((r) => related(own, r));
+    if (overlap.length > 0) {
+      out.push(
+        `its own root ${o.ownRoot} overlaps another BCH root: ${
+          overlap.join(", ")
+        }`,
+      );
+    }
+    const foreign = [...o.mounts, ...(o.rawMounts ?? [])].filter((m) => {
       const n = norm(m);
-      // inside a BCH root, or (Sol r1) an ancestor of them all (C:\ProgramData, C:\)
-      return under(n, shared) || n.startsWith(`${shared}-`) ||
+      // named under the BCH naming (inside a root, a sibling root, or an
+      // ancestor of them all: Sol r1), or related to any other known root
+      // as named or resolved (Sol r4)
+      const named = under(n, shared) || n.startsWith(`${shared}-`) ||
         shared.startsWith(`${n}\\`);
+      return (named && !under(n, own)) || others.some((r) => related(n, r));
     });
-    const foreign = bch.filter((m) => !under(norm(m), own));
     if (foreign.length > 0) {
       out.push(
         `mounts another BCH root than its own ${o.ownRoot}: ${
-          foreign.join(", ")
+          [...new Set(foreign)].join(", ")
         }`,
       );
     }

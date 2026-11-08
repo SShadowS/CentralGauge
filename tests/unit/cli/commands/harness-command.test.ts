@@ -11698,6 +11698,12 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
     bchRoot: () => own,
     // Sol r3: the fake mount sources do not exist on this host: as given
     realPath: (p) => Promise.resolve(p),
+    // Sol r4: the known BCH roots, never the real bch-roots.json
+    bchRoots: () => [
+      "C:\\ProgramData\\BcContainerHelper",
+      OWN,
+      "C:\\ProgramData\\BcContainerHelper-Cronus282",
+    ],
     // Sol r2: whether the old container still exists (renamed, not removed)
     containerIdExists: (x) => {
       assertEquals(x, oldId);
