@@ -8,7 +8,7 @@
  */
 
 import * as colors from "@std/fmt/colors";
-import { join, resolve } from "@std/path";
+import { basename, join, resolve } from "@std/path";
 import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 import type { HarnessBc, HealthView } from "../../src/harness/bc-lane.ts";
 import type { PlanEnv } from "../../src/harness/campaign.ts";
@@ -100,6 +100,7 @@ import {
   type EnvCheck,
   type InstanceManifest,
   instanceManifestPath,
+  readInstanceManifest,
   renderEnvCheck,
 } from "../../src/harness/environment.ts";
 import {
@@ -130,6 +131,18 @@ import {
   readEvidence,
   removeGatesFiles,
 } from "../../src/harness/gates-evidence.ts";
+import {
+  type ContainerFacts,
+  containerIdExists,
+  inspectContainerFacts,
+  normWinPath,
+  recreatedProblems,
+} from "../../src/harness/recreated.ts";
+import {
+  allBchRoots,
+  bchRootFor,
+  SHARED_BCH_ROOT,
+} from "../../src/container/bch-root.ts";
 import { dockerContextEnv } from "../../src/container/docker-context.ts";
 import {
   containerId,
@@ -244,6 +257,16 @@ export interface EnvDeps {
   running(name: string): Promise<boolean>;
   /** H-41 test seam: the `auto` pool's bounds (default POOL_BOUNDS). */
   poolBounds?: Partial<PoolBounds>;
+  /** H-77: docker inspect's id, creation time and mount sources (default: inspectContainerFacts). */
+  containerFacts?(name: string): Promise<ContainerFacts>;
+  /** H-77: the container's own root from bch-roots.json, or null when not listed (default: bchRootFor). */
+  bchRoot?(name: string): string | null;
+  /** H-77 Sol r2: a container with this Docker id exists (default: containerIdExists); throws when unknown. */
+  containerIdExists?(id: string): Promise<boolean>;
+  /** H-77 Sol r3: a host path's real path (default: Deno.realPath: junctions, 8.3 names, aliases). */
+  realPath?(path: string): Promise<string>;
+  /** H-77 Sol r4: every BCH root, shared and migrated (default: allBchRoots from bch-roots.json). */
+  bchRoots?(): string[];
   /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
   processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
@@ -657,7 +680,11 @@ export async function baselineCreate(
  * evidence, or with a recorded path this capture cannot observe, it refuses.
  */
 export async function recoverContainer(
-  o: LineageCommandOptions & { abandon?: string | null },
+  o: LineageCommandOptions & {
+    abandon?: string | null;
+    /** H-77: the evidence dir of an owner-approved recreate (archives the old records). */
+    recreated?: string | null;
+  },
   deps: EnvDeps = REAL_DEPS,
   resetFor: ResetFor = goldenResetFor(o.repoRoot),
 ): Promise<InstanceManifest> {
@@ -690,7 +717,7 @@ export async function recoverContainer(
     // runs again under the claim
     const before = await findRecords(qDir, { name: c, id });
     const pre = gatesRecordOf(before);
-    if (pre) {
+    if (pre && !o.recreated) {
       await refuseLiveGates(deps, qDir, id, c, before[0]!.why, pre, o.abandon);
     }
     // H-35 run 004 Sol r2 N2: one recover per physical container
@@ -714,7 +741,9 @@ export async function recoverContainer(
       abandon = null; // spent on that claim
     }
     try {
-      return await recoverClaimed({ ...o, abandon }, deps, x, c, id, token);
+      return o.recreated
+        ? await recoverRecreated(o.recreated, abandon, deps, x, c, id, token)
+        : await recoverClaimed({ ...o, abandon }, deps, x, c, id, token);
     } finally {
       await releaseOwned(qDir, id, token, { recover: true }).catch((err) =>
         console.error(
@@ -727,6 +756,251 @@ export async function recoverContainer(
   } finally {
     await release();
   }
+}
+
+/**
+ * H-77: `harness recover <c> --recreated <evidence-dir>`. The old
+ * container's records (another Docker id, same name) go only when the
+ * container was created after every one of them, mounts only its own
+ * bch-roots.json root, and has a baseline of this lineage made after the
+ * recreate whose env_fp the env check's row confirms, all before any reset;
+ * an in-use record of the old container needs --abandon <its token>. Then
+ * the normal reset, inventory check and a clean capture write a new
+ * manifest; each record is MOVED into the evidence dir (atomic, never over a
+ * file, never deleted) and a note written. Never a record of the current
+ * container.
+ */
+async function recoverRecreated(
+  evidenceDir: string,
+  abandon: string | null,
+  deps: EnvDeps,
+  x: Awaited<ReturnType<typeof lineageContext>>,
+  c: string,
+  id: string,
+  token: string,
+): Promise<InstanceManifest> {
+  const qDir = deps.quarantineDir();
+  const found = (await findRecords(qDir, { name: c, id })).filter((f) =>
+    f.record?.token !== token
+  );
+  const facts = await (deps.containerFacts ?? inspectContainerFacts)(c);
+  const refuse = (why: string) =>
+    new ConfigurationError(`recover ${c} --recreated: ${why}`);
+  if (facts.id.toLowerCase() !== id.toLowerCase()) {
+    throw refuse(
+      `docker inspect ${c} (id ${facts.id}) is not the container recover claimed (id ${id})`,
+    );
+  }
+  const own = (deps.bchRoot ?? ((n: string) => {
+    const r = bchRootFor(n);
+    return r === SHARED_BCH_ROOT ? null : r;
+  }))(c);
+  // Sol r3: compare real host paths (a junction, an 8.3 name or a trailing
+  // dot is the same directory); a named pipe is no directory; an
+  // unresolvable source refuses
+  const real = deps.realPath ?? Deno.realPath;
+  const resolveHost = async (p: string): Promise<string> => {
+    try {
+      return await real(p);
+    } catch (err) {
+      throw refuse(`host path ${p} cannot be resolved: ${msg(err)}`);
+    }
+  };
+  const mounts: string[] = [];
+  for (const s of facts.mounts) {
+    if (/^\\\\[.?]\\pipe\\/i.test(s)) continue;
+    mounts.push(await resolveHost(s));
+  }
+  const ownReal = own === null ? null : await resolveHost(own);
+  const sharedReal = await resolveHost(SHARED_BCH_ROOT);
+  // Sol r4: every other BCH root, as named and as resolved (a root that
+  // does not exist on this host is kept as named only)
+  const otherRoots: string[] = [];
+  for (const r of (deps.bchRoots ?? allBchRoots)()) {
+    if (own !== null && normWinPath(r) === normWinPath(own)) continue;
+    otherRoots.push(r);
+    try {
+      otherRoots.push(await real(r));
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) {
+        throw refuse(`host path ${r} cannot be resolved: ${msg(err)}`);
+      }
+    }
+  }
+  // Sol r3: the archive never lands where records are read
+  await Deno.mkdir(evidenceDir, { recursive: true });
+  const ev = normWinPath(await resolveHost(evidenceDir));
+  const qd = normWinPath(await resolveHost(qDir));
+  if (ev === qd || ev.startsWith(`${qd}\\`)) {
+    throw refuse(
+      `the evidence dir ${evidenceDir} is inside the records dir ${qDir}`,
+    );
+  }
+  const manifestBefore = await readInstanceManifest(x.inputs.resultsRoot, c);
+  // Sol r2: every old id must be gone as a container (unknown refuses)
+  const exists = deps.containerIdExists ?? containerIdExists;
+  const liveOldIds: string[] = [];
+  for (
+    const oldId of new Set(
+      found.flatMap((f) =>
+        f.record && f.record.id.toLowerCase() !== id.toLowerCase()
+          ? [f.record.id]
+          : []
+      ),
+    )
+  ) {
+    try {
+      if (await exists(oldId)) liveOldIds.push(oldId);
+    } catch (err) {
+      throw refuse(
+        `whether container ${oldId} still exists is unknown: ${msg(err)}`,
+      );
+    }
+  }
+  const problems = recreatedProblems({
+    liveOldIds,
+    container: c,
+    currentId: id,
+    found,
+    created: facts.created,
+    mounts,
+    rawMounts: facts.mounts.filter((s) => !/^\\\\[.?]\\pipe\\/i.test(s)),
+    otherRoots,
+    ownRoot: ownReal,
+    ownRootRaw: own,
+    sharedRoot: sharedReal,
+    manifest: manifestBefore,
+    lineageId: x.lineage.id,
+    abandon,
+  });
+  if (problems.length === 0) {
+    // Sol r1: this container's row only (its manifest is of the lineage and
+    // its env_fp is the live one); a lineage-wide refusal such as NST egress
+    // is a judging question, not this record's
+    const ch = await checkEnvironments(
+      deps.inspect(),
+      x.mechanism,
+      [c],
+      x.inputs,
+    );
+    const row = ch.rows[0];
+    if (!row || row.why) {
+      problems.push(`env check: ${row?.why ?? "no row"}`);
+    }
+  }
+  if (problems.length > 0) throw refuse(problems.join("; "));
+  const m = x.mechanism;
+  if (!m.verifyClean || !m.fsDigest) {
+    throw refuse(
+      `lineage ${x.lineage.id} has no inventory check or fs section: a recovery cannot be verified`,
+    );
+  }
+  const manifest = instanceManifestPath(x.inputs.resultsRoot, c);
+  const dropManifest = () =>
+    Deno.remove(manifest).catch((err) => {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    });
+  await dropManifest();
+  const made = await createBaseline(deps.inspect(), m, c, x.inputs);
+  const archived: string[] = [];
+  try {
+    const v = await m.verifyClean(c);
+    if (!v.ok) {
+      throw new ContainerError(
+        `recover ${c}: post-reset inventory check failed: ${
+          v.error ?? v.diff.slice(0, 5).join("; ")
+        }`,
+        c,
+        "health",
+      );
+    }
+    let lines: string[];
+    try {
+      lines = await m.fsDigest(c);
+    } catch (err) {
+      lines = [`E|(fsDigest)|${msg(err)}`];
+    }
+    const errors = fsDiff(lines, [], m.fsExclude ?? [], m.fsRoots ?? [])
+      .errors.filter((e) => e.startsWith("before: "));
+    if (errors.length > 0) {
+      throw new ContainerError(
+        `recover ${c}: fsDigest capture not clean: ${
+          errors.slice(0, 5).join("; ")
+        }`,
+        c,
+        "health",
+      );
+    }
+    // Sol r1/r2: the note first (create-new: a failure moves nothing), then
+    // each record MOVED (atomic, never deleted) under a name no other file
+    // can have (record name, time, random suffix: a rename never replaces
+    // an archive); a record that changed since the check is restored
+    // (create-new) and refuses
+    await Deno.mkdir(evidenceDir, { recursive: true });
+    const at = new Date().toISOString();
+    const stamp = at.replace(/[:.]/g, "-");
+    const names = found.map((f) =>
+      `${basename(f.file, ".json")}.${stamp}.${
+        crypto.randomUUID().slice(0, 8)
+      }.json`
+    );
+    archived.push(...names);
+    await Deno.writeTextFile(
+      join(evidenceDir, `recreated-${c}-${stamp}.json`),
+      JSON.stringify(
+        {
+          container: c,
+          new_id: id,
+          created: facts.created,
+          mounts: facts.mounts,
+          own_root: own,
+          baseline_before: manifestBefore,
+          manifest: made,
+          archived: found.map((f, k) => ({ from: f.file, to: names[k] })),
+          old_ids: [...new Set(found.map((f) => f.record!.id))],
+          old_tokens: found.map((f) => f.record!.token),
+          by: `${deps.owner()} harness recover --recreated`,
+          at,
+        },
+        null,
+        2,
+      ),
+      { createNew: true },
+    );
+    const changed: string[] = [];
+    for (const [k, f] of found.entries()) {
+      const target = join(evidenceDir, names[k]!);
+      try {
+        await Deno.rename(f.file, target);
+      } catch (err) {
+        throw refuse(
+          `moving ${f.file} to ${target} failed (the evidence dir must be on the records' volume): ${
+            msg(err)
+          }`,
+        );
+      }
+      const now = await Deno.readTextFile(target);
+      if (now !== f.text) {
+        changed.push(f.file);
+        await Deno.writeTextFile(f.file, now, { createNew: true }).catch(
+          (err) => {
+            if (!(err instanceof Deno.errors.AlreadyExists)) throw err;
+          },
+        );
+      }
+    }
+    if (changed.length > 0) {
+      throw refuse(
+        `record(s) changed after the check, archived as found and restored: ${
+          changed.join(", ")
+        }; run harness recover again`,
+      );
+    }
+  } catch (err) {
+    await dropManifest();
+    throw err;
+  }
+  return made;
 }
 
 /** H-76: the container's only record, when it is a gates hold's in-use record. */
