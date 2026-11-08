@@ -1,10 +1,8 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
-import { ConfigurationError } from "../../../src/errors.ts";
+import { assert, assertEquals } from "@std/assert";
 import {
   admitContainer,
   admittedPool,
   DEFAULT_POOL,
-  resolveDefaultPool,
 } from "../../../src/harness/allocation.ts";
 import {
   type GateOutcome,
@@ -200,40 +198,6 @@ Deno.test("H-70 admittedPool: keeps the admitted containers in order and warns f
   assertEquals(pool, ["Cronus281", "Cronus283"]);
   assertEquals(lines, ["[WARN] Cronus282 skipped: not running"]);
   assertEquals([...DEFAULT_POOL], POOL);
-});
-
-Deno.test("H-70 resolveDefaultPool: `run` without --containers gets the admitted pool from the env deps; none usable is a refusal; with a list nothing changes", async () => {
-  const deps = (running: string[]) => ({
-    allocatedAll: () => Promise.resolve([...POOL, "Cronus285"]),
-    running: (c: string) => Promise.resolve(running.includes(c)),
-    coordRoot: () => "H:\\no-such-coord-root",
-  });
-  const lines: string[] = [];
-  const o = { containers: [], defaultPool: true as const, x: 1 };
-  // An unreadable coord root blocks every container (fail closed), so admit
-  // leases as unread here; the lease path is coordLeaseBlock's own tests.
-  const free = (_root: string, _own: ReadonlyMap<string, string>, _c: string) =>
-    null;
-  assertEquals(
-    await resolveDefaultPool(
-      o,
-      deps(["Cronus281", "Cronus282"]),
-      quiet(lines),
-      free,
-    ),
-    { containers: ["Cronus281", "Cronus282"], x: 1 },
-  );
-  assertEquals(lines, ["[WARN] Cronus283 skipped: not running"]);
-  await assertRejects(
-    () => resolveDefaultPool(o, deps([]), () => {}, free),
-    ConfigurationError,
-    "no container of the default pool",
-  );
-  const listed = { containers: ["Cronus285"], x: 1 };
-  assertEquals(
-    await resolveDefaultPool(listed, deps([]), () => {}, free),
-    listed,
-  );
 });
 
 Deno.test("H-70 Sol r1: a container named twice (any case) gets one worker; its retry never lands on it again", async () => {

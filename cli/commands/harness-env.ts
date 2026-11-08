@@ -25,7 +25,6 @@ import {
   allocatedContainer,
   allocatedContainers,
   DEFAULT_COORD_ROOT,
-  resolveDefaultPool,
 } from "../../src/harness/allocation.ts";
 import {
   coordLeaseBlock,
@@ -165,8 +164,6 @@ export interface EnvOptions {
   /** Records root of this command (results/harness, or .../cells, .../fixtures). */
   resultsDir: string;
   containers: string[];
-  /** H-70: `run` without --containers: the start replaces `containers` with the admitted DEFAULT_POOL. */
-  defaultPool?: true;
   /** H-09: the judges' containers (their own lane), disjoint from `containers`. */
   judgeContainers?: string[];
   backendHost?: string | undefined;
@@ -1073,15 +1070,10 @@ export async function openPlanEnv(
 }
 
 export async function openHarnessEnv(
-  opts: EnvOptions,
+  o: EnvOptions,
   deps: EnvDeps = REAL_DEPS,
 ): Promise<OpenEnv> {
-  guardEnvResults(opts, deps);
-  const o: EnvOptions = await resolveDefaultPool(
-    opts,
-    deps,
-    (l) => console.log(colors.yellow(l)),
-  );
+  guardEnvResults(o, deps);
   // H-35 S3.2: an unproven lineage stops the start, before anything opens.
   const lineage = o.lineage ? await loadLineage(o.lineage) : null;
   // run 004 #4: a test seam; the mechanism's live checks (NST config, fs)

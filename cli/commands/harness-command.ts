@@ -558,8 +558,6 @@ export interface CellCliOptions {
   root: string;
   resultsDir: string;
   containers: string[];
-  /** H-70: `run` without --containers (EnvOptions.defaultPool). */
-  defaultPool?: true;
   backendHost?: string | undefined;
   backendPort: number;
   secretAccounts: SecretAccount[];
@@ -676,7 +674,6 @@ function envOptions(
     ...(o.lineage ? { lineage: o.lineage } : {}),
     ...(o.bcEgressOverride ? { bcEgressOverride: o.bcEgressOverride } : {}),
     ...(o.coordLeases ? { coordLeases: o.coordLeases } : {}),
-    ...(o.defaultPool ? { defaultPool: true } : {}),
     ...(o.keyCustody ? { keyCustody: o.keyCustody } : {}),
     ...(o.lane !== undefined ? { lane: o.lane } : {}),
     // H-49: the marker, baselines and bc-ledger follow --results-dir.
@@ -1635,8 +1632,7 @@ export async function harnessSymbolsLock(
 
 interface CellCliFlags {
   resultsDir: string;
-  /** Absent: Cronus281, or the H-70 pool for `run` (EnvOptions.defaultPool). */
-  containers?: string;
+  containers: string;
   backendHost?: string;
   backendPort: number;
   secretsDir: string[];
@@ -1723,8 +1719,7 @@ function cliOpts(f: CellCliFlags): CellCliOptions {
   return {
     root: cwd,
     resultsDir: abs(f.resultsDir),
-    containers: (f.containers ?? "Cronus281").split(",").map((c) => c.trim())
-      .filter(Boolean),
+    containers: f.containers.split(",").map((c) => c.trim()).filter(Boolean),
     backendHost: f.backendHost,
     backendPort: f.backendPort,
     secretAccounts: parseSecretsDirs(f.secretsDir),
@@ -3648,7 +3643,8 @@ export function registerHarnessCommand(
       })
       .option(
         "--containers <names:string>",
-        "BC containers (comma-separated; must be allocated to the campaign). Default Cronus281; H-70: `run` defaults to the Cronus281-283 pool, minus containers not allocated, not running or leased by another",
+        "BC containers (comma-separated; must be allocated to the campaign)",
+        { default: "Cronus281" },
       )
       .option(
         "--backend-host <ip:string>",
@@ -3940,14 +3936,7 @@ export function registerHarnessCommand(
     )
     .action((opts: RunFlags, experiment: string) =>
       fail(async () => {
-        // H-70: without --containers the environment's start admits the pool.
-        const s = await harnessRun(
-          experiment,
-          opts.containers === undefined
-            ? { ...runOpts(opts), containers: [], defaultPool: true as const }
-            : runOpts(opts),
-          open,
-        );
+        const s = await harnessRun(experiment, runOpts(opts), open);
         // H-41 (Q6): starved (or W's unanswered-container bound): EX_TEMPFAIL
         if (s.starved) Deno.exitCode = EXIT_POOL_STARVED;
       })

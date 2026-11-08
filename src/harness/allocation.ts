@@ -7,15 +7,16 @@
 
 import { join } from "@std/path";
 import { z } from "zod";
-import { ConfigurationError, ValidationError } from "../errors.ts";
+import { ValidationError } from "../errors.ts";
 import { inspectContainer } from "../container/docker-inspect.ts";
 import { coordLeaseBlock } from "./coord-lease.ts";
 
 export const DEFAULT_COORD_ROOT = "H:\\cg-coord";
 
 /**
- * H-70: the container pool when --containers is absent (owner decision
- * 2026-11-08-m8-scale-up.md ruling 3). Allocation still decides admission.
+ * H-70: the `gate-task.ts gates` pool when --containers is absent (owner
+ * decision 2026-11-08-m8-scale-up.md ruling 3). Allocation still decides
+ * admission. `harness run` keeps its own default, Cronus281 (run 002).
  */
 export const DEFAULT_POOL = ["Cronus281", "Cronus282", "Cronus283"] as const;
 
@@ -45,7 +46,7 @@ export function poolAdmit(
   own: ReadonlyMap<string, string>,
   coordRoot = defaultRoot(),
 ): (c: string) => Promise<string | null> {
-  // Read on first use: `run --containers X` never calls it.
+  // Read on first use, once.
   let allocated: Promise<string[]> | undefined;
   return async (c) =>
     admitContainer(c, {
@@ -53,51 +54,6 @@ export function poolAdmit(
       running: async (x) => (await inspectContainer(x))?.running === true,
       leaseBlock: (x) => coordLeaseBlock(coordRoot, own, x),
     });
-}
-
-/**
- * H-70: `harness run` without --containers (`defaultPool`) runs on the
- * admitted DEFAULT_POOL, read through the environment's deps (openHarnessEnv),
- * so a test's fake opener never reaches docker. None usable is a refusal.
- */
-export async function resolveDefaultPool<
-  T extends {
-    containers: string[];
-    defaultPool?: true;
-    coordLeases?: ReadonlyMap<string, string>;
-  },
->(
-  o: T,
-  deps: {
-    allocatedAll(): Promise<string[]>;
-    running(name: string): Promise<boolean>;
-    coordRoot(): string;
-  },
-  warn: (line: string) => void,
-  leaseBlock: typeof coordLeaseBlock = coordLeaseBlock,
-): Promise<Omit<T, "defaultPool">> {
-  const { defaultPool, ...rest } = o;
-  if (!defaultPool) return rest;
-  const allocated = await deps.allocatedAll();
-  const own = o.coordLeases ?? new Map<string, string>();
-  const containers = await admittedPool(
-    [...DEFAULT_POOL],
-    (c) =>
-      admitContainer(c, {
-        allocated,
-        running: (x) => deps.running(x),
-        leaseBlock: (x) => leaseBlock(deps.coordRoot(), own, x),
-      }),
-    warn,
-  );
-  if (containers.length === 0) {
-    throw new ConfigurationError(
-      `no container of the default pool (${
-        DEFAULT_POOL.join(", ")
-      }) is usable; pass --containers`,
-    );
-  }
-  return { ...rest, containers };
 }
 
 /** H-70: the admitted containers, in order; a `[WARN]` line for each skipped one. */
