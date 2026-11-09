@@ -319,6 +319,92 @@ Deno.test("H-76 Sol r5 liveHolders: a reused pid never adopts its former owner's
   assertEquals(liveTree(table, 9, true), [9, 51]);
 });
 
+Deno.test("H-82 liveHolders: a docker events watcher naming the container does not count; a live worker and anything else that names it still does", () => {
+  const WATCHER =
+    `docker --context desktop-windows events --format "{{json .}}" --filter type=container --filter container=Cronus28 --filter container=Cronus281 --filter container=Cronus282`;
+  const DOCKER =
+    `"C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe"`;
+  const holders = (cmd: string, name: string) =>
+    liveHolders(
+      [{ pid: 30, ppid: 25, name, cmd }],
+      9,
+      ["Cronus281"],
+      11,
+    );
+  // the 2026-11-09 false match: kraken-bridge's permanent watcher
+  assertEquals(holders(WATCHER, "docker.exe"), []);
+  // the same command in its other spellings
+  for (
+    const cmd of [
+      "docker events --filter container=Cronus281",
+      "docker --context=desktop-windows events --filter container=Cronus281",
+      `${DOCKER} events --filter container=Cronus281`,
+    ]
+  ) assertEquals(holders(cmd, "docker.exe"), [], cmd);
+  // a real worker (the shape on this host) and the gates process itself
+  for (
+    const [cmd, name] of [
+      [`${DOCKER} exec Cronus281 powershell C:\\x\\a.ps1`, "docker.exe"],
+      ["docker --context desktop-windows exec Cronus281 x", "docker.exe"],
+      ["docker cp a Cronus281:/b", "docker"],
+      ["pwsh -NoExit -Command Enter-PSSession Cronus281", "pwsh.exe"],
+      ["deno run -A cli/centralgauge.ts harness gates Cronus281", "deno.exe"],
+    ] as const
+  ) assertEquals(holders(cmd, name), [30], cmd);
+  // Sol r1: a read-only docker command may be a live worker's current step
+  for (
+    const cmd of [
+      "docker inspect Cronus281",
+      "docker logs -f Cronus281",
+      "docker --context desktop-windows stats Cronus281",
+    ]
+  ) assertEquals(holders(cmd, "docker.exe"), [30], cmd);
+  // Sol r1: a wrapper or an unknown program can be a worker
+  for (
+    const [cmd, name] of [
+      ['cmd.exe /d /s /c "docker exec Cronus281 x"', "cmd.exe"],
+      ["bash -c docker exec Cronus281 x", "bash.exe"],
+      ["custom-worker.exe Cronus281", "custom-worker.exe"],
+      ["something Cronus281", ""],
+    ] as const
+  ) assertEquals(holders(cmd, name), [30], cmd);
+  // "events" counts as the watcher only when it is docker's own subcommand
+  for (
+    const [cmd, name] of [
+      ["docker exec Cronus281 docker events", "docker.exe"],
+      ['pwsh -c "docker events --filter container=Cronus281"', "pwsh.exe"],
+      ["deno run x.ts events Cronus281", "deno.exe"],
+      ["docker events Cronus281", "other.exe"],
+      ["docker --new-flag events Cronus281", "docker.exe"],
+      // Sol r1: a quoted flag value holding the word (the real command is exec)
+      [
+        `${DOCKER} --config="C:\\Docker events config" exec Cronus281 x`,
+        "docker.exe",
+      ],
+      [`docker --context "a events" exec Cronus281 x`, "docker.exe"],
+      // a Program Files path without quotes cannot be split reliably
+      ["C:\\Program Files\\Docker\\docker.exe events Cronus281", "docker.exe"],
+    ] as const
+  ) assertEquals(holders(cmd, name), [30], cmd);
+  // run 002: a blank command line is unknown, like null: a container tool
+  // counts, anything else does not
+  for (const cmd of ["", "   ", "\t"]) {
+    assertEquals(holders(cmd, "docker.exe"), [30], `docker ${cmd}`);
+    assertEquals(holders(cmd, "pwsh.exe"), [30], `pwsh ${cmd}`);
+    assertEquals(holders(cmd, "svchost.exe"), [], `svchost ${cmd}`);
+  }
+  // the gates tree counts whatever it runs, the watcher's command included
+  assertEquals(
+    liveHolders(
+      [{ pid: 50, ppid: 9, name: "docker.exe", cmd: WATCHER }],
+      9,
+      ["Cronus281"],
+      11,
+    ),
+    [50],
+  );
+});
+
 Deno.test("H-76 Sol r1-r3 processHolders: reads this host's table; recover's own process never counts; a bad pid throws", async () => {
   const child = new Deno.Command(Deno.execPath(), {
     args: ["eval", "await new Promise((r) => setTimeout(r, 30000))"],
