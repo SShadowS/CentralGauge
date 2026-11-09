@@ -3,6 +3,7 @@ import {
   assertEquals,
   assertRejects,
   assertStringIncludes,
+  assertThrows,
 } from "@std/assert";
 import { basename, isAbsolute, join } from "@std/path";
 import { ValidationError } from "../../../src/errors.ts";
@@ -12,15 +13,18 @@ import {
   agentVisibleMetadata,
   loadSymbolsLock,
   resolveRefapp,
+  type SymbolPackage,
 } from "../../../src/harness/identity.ts";
 import {
   applyOverlay,
+  checkTestManifestOverlay,
   readAppGraph,
   readAppJson,
   readAppJsonRaw,
   stageRefappTask,
   TAR_BINARY,
   TASK_SOURCES,
+  verifyShippedTests,
 } from "../../../src/harness/staging.ts";
 import {
   altoolReader,
@@ -451,6 +455,342 @@ Deno.test("stageRefappTask: shipped tests are compared by raw bytes (CRLF vs LF 
     ValidationError,
     "shipped tests differ",
   );
+});
+
+// H-86: an overlay may add the one allowed dependency to Test/app.json.
+const LIB = {
+  id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+  name: "Tests-TestLibraries",
+  publisher: "Microsoft",
+  version: "28.4.53241.53758",
+};
+const LIB_LOCK: SymbolPackage[] = [{
+  app_id: LIB.id,
+  name: LIB.name,
+  publisher: LIB.publisher,
+  version: LIB.version,
+  file: "lib.app",
+  sha256: "0".repeat(64),
+}];
+const entry = (e: Record<string, string> = LIB) =>
+  `{ ${
+    Object.entries(e).map(([k, v]) => `${JSON.stringify(k)}: "${v}"`).join(", ")
+  } }`;
+/** `text` with `ins` right after the last entry of the trailing array. */
+const insertAtEnd = (text: string, ins: string) => {
+  const k = text.lastIndexOf("}", text.lastIndexOf("]")) + 1;
+  return text.slice(0, k) + ins + text.slice(k);
+};
+const withLib = (text: string) => insertAtEnd(text, `,\n    ${entry()}`);
+const utf8 = (s: string) => new TextEncoder().encode(s);
+const repoFile = async (rel: string) =>
+  await Deno.readTextFile(new URL(`../../../${rel}`, import.meta.url));
+const SHIPPED = (await repoFile("harness-tasks/refapp/Test/app.json"))
+  .replaceAll("\r\n", "\n");
+const checkText = (overlay: string, lock = LIB_LOCK) =>
+  checkTestManifestOverlay(utf8(SHIPPED), utf8(overlay), lock);
+
+Deno.test("H-86 checkTestManifestOverlay accepts the one allowed addition", async (t) => {
+  const accepted: [string, string][] = [
+    [
+      "HX-144's real manifest",
+      await repoFile("harness-tasks/tasks/HX-144/overlay/Test/app.json"),
+    ],
+    ["LF", withLib(SHIPPED)],
+    ["CRLF", withLib(SHIPPED).replaceAll("\n", "\r\n")],
+    ["a BOM", "﻿" + withLib(SHIPPED)],
+  ];
+  for (const [name, text] of accepted) {
+    await t.step(name, () => checkText(text));
+  }
+  await t.step("a shipped manifest with a BOM or CRLF", () => {
+    checkTestManifestOverlay(
+      utf8("﻿" + SHIPPED.replaceAll("\n", "\r\n")),
+      utf8(withLib(SHIPPED)),
+      LIB_LOCK,
+    );
+  });
+});
+
+Deno.test("H-86 checkTestManifestOverlay refuses everything else", async (t) => {
+  const firstDep = SHIPPED.indexOf("{", SHIPPED.indexOf('"dependencies"'));
+  const afterFirstDep = SHIPPED.indexOf("}", firstDep) + 1;
+  const ranges = SHIPPED.indexOf("}", SHIPPED.indexOf('"idRanges"')) + 1;
+  const at = (k: number, ins: string) =>
+    SHIPPED.slice(0, k) + ins + SHIPPED.slice(k);
+  const noDep = SHIPPED.replace(
+    /,\s*\{[^{}]*"Library Assert"[^{}]*\}/,
+    "",
+  );
+  const cases: [string, string][] = [
+    ["no change", SHIPPED],
+    ["a changed field", withLib(SHIPPED).replace('"OnPrem"', '"Cloud"')],
+    [
+      "a changed field, with a BOM",
+      "﻿" + withLib(SHIPPED).replace('"OnPrem"', '"Cloud"'),
+    ],
+    ["a new top-level field", withLib(SHIPPED).replace("{", '{\n  "x": 1,')],
+    ["an existing dependency removed", withLib(noDep)],
+    [
+      "an existing dependency changed",
+      withLib(SHIPPED).replace('"28.0.0.0" }', '"28.0.0.1" }'),
+    ],
+    ["the entry before an existing one", at(afterFirstDep, `, ${entry()}`)],
+    ["the entry in another array", at(ranges, `, ${entry()}`)],
+    [
+      "an array break-out",
+      insertAtEnd(SHIPPED, `, ${entry()}], "x": [${entry()}`),
+    ],
+    ["a second entry", withLib(withLib(SHIPPED))],
+    [
+      "an extra key",
+      insertAtEnd(SHIPPED, `, ${entry({ ...LIB, extra: "1" })}`),
+    ],
+    [
+      "a duplicate key",
+      insertAtEnd(
+        SHIPPED,
+        `, { "id": "x", "id": "${LIB.id}", "name": "${LIB.name}", "publisher": "${LIB.publisher}", "version": "${LIB.version}" }`,
+      ),
+    ],
+    [
+      "an escaped value",
+      insertAtEnd(
+        SHIPPED,
+        `, ${entry({ ...LIB, name: "Tests\\u002dTestLibraries" })}`,
+      ),
+    ],
+    [
+      "a raw newline in a value",
+      insertAtEnd(
+        SHIPPED,
+        `, ${entry({ ...LIB, name: "Tests\nTestLibraries" })}`,
+      ),
+    ],
+    [
+      "another app",
+      insertAtEnd(
+        SHIPPED,
+        `, ${entry({ ...LIB, id: "23de40a6-dfe8-4f80-80db-d70f83ce8caf" })}`,
+      ),
+    ],
+    [
+      "a version other than the lock's",
+      insertAtEnd(SHIPPED, `, ${entry({ ...LIB, version: "28.0.0.0" })}`),
+    ],
+    [
+      "a name other than the lock's",
+      insertAtEnd(SHIPPED, `, ${entry({ ...LIB, name: "Other" })}`),
+    ],
+    [
+      "a publisher other than the lock's",
+      insertAtEnd(SHIPPED, `, ${entry({ ...LIB, publisher: "Other" })}`),
+    ],
+    ["two BOMs", "﻿﻿" + withLib(SHIPPED)],
+  ];
+  for (const [name, text] of cases) {
+    await t.step(name, () => {
+      assertThrows(() => checkText(text), ValidationError);
+    });
+  }
+  await t.step("malformed UTF-8", () => {
+    const bytes = utf8(withLib(SHIPPED));
+    bytes[bytes.indexOf(0x4f)] = 0xff; // the first "O"
+    assertThrows(
+      () => checkTestManifestOverlay(utf8(SHIPPED), bytes, LIB_LOCK),
+      ValidationError,
+    );
+  });
+  await t.step("the app absent from the lock", () => {
+    assertThrows(() => checkText(withLib(SHIPPED), []), ValidationError);
+  });
+});
+
+/** The fixture with Tests-TestLibraries in its store and lock. */
+async function repoWithLib(): Promise<
+  Awaited<ReturnType<typeof makeRefappRepo>>
+> {
+  const repo = await makeRefappRepo();
+  const tmpFile = join(repo.symbolStore, "lib.tmp");
+  await Deno.writeTextFile(tmpFile, "lib-symbols");
+  const sha256 = await hashFile(repo.symbolStore, tmpFile);
+  await Deno.rename(tmpFile, join(repo.symbolStore, `${sha256}.app`));
+  repo.symbols.push({ ...LIB_LOCK[0]!, sha256 });
+  return repo;
+}
+const fixtureManifest = (repo: { root: string }) =>
+  Deno.readTextFile(join(repo.root, "harness-tasks/refapp/Test/app.json"));
+const overlayManifest = async (repo: { root: string; tasksDir: string }) =>
+  await write(
+    repo.tasksDir,
+    "HX-001/overlay/Test/app.json",
+    withLib(await fixtureManifest(repo)),
+  );
+
+Deno.test("H-86 stageRefappTask: the allowed addition is staged, and the rest of Test/ is still the commit's", async () => {
+  await using repo = await repoWithLib();
+  await overlayManifest(repo);
+  const { staged } = await stage(repo);
+  const a = await readAppJson(join(staged.pristine, "Test", "app.json"));
+  assert(a.dependencies.some((d) => d.id === LIB.id));
+  const test = staged.apps.find((x) => x.folder === "Test")!;
+  assert(test.external.includes(LIB.id));
+  assertStringIncludes(
+    await Deno.readTextFile(
+      join(staged.pristine, "Test", "src", "Shipped.Test.al"),
+    ),
+    "procedure ShippedPasses()",
+  );
+});
+
+Deno.test("H-86 stageRefappTask: everything else under Test/ is refused as before", async (t) => {
+  const cases: [string, string, string][] = [
+    [
+      "a shipped test beside the manifest",
+      "HX-001/overlay/Test/src/Shipped.Test.al",
+      "codeunit 80010 X {}",
+    ],
+    [
+      "a new test beside the manifest",
+      "HX-001/overlay/Test/src/New.Test.al",
+      "codeunit 80011 Y {}",
+    ],
+    ["deleting the manifest", "HX-001/overlay/.delete", "Test/app.json\n"],
+    [
+      "deleting a shipped test",
+      "HX-001/overlay/.delete",
+      "Test/src/Shipped.Test.al\n",
+    ],
+  ];
+  for (const [name, rel, text] of cases) {
+    await t.step(name, async () => {
+      await using repo = await repoWithLib();
+      await overlayManifest(repo);
+      await write(repo.tasksDir, rel, text);
+      await assertRejects(() => stage(repo), ValidationError, "shipped test");
+    });
+  }
+  for (const rel of ["test/app.json", "Test/App.json", "Test/app.json/x"]) {
+    await t.step(rel, async () => {
+      await using repo = await repoWithLib();
+      await write(
+        repo.tasksDir,
+        `HX-001/overlay/${rel}`,
+        withLib(await fixtureManifest(repo)),
+      );
+      await assertRejects(() => stage(repo), ValidationError, "shipped test");
+    });
+  }
+  await t.step("the Test/ folder with no manifest", async () => {
+    await using repo = await repoWithLib();
+    await Deno.mkdir(join(repo.tasksDir, "HX-001/overlay/Test"));
+    await assertRejects(() => stage(repo), ValidationError, "shipped test");
+  });
+  await t.step("a manifest that changes more than dependencies", async () => {
+    await using repo = await repoWithLib();
+    await write(
+      repo.tasksDir,
+      "HX-001/overlay/Test/app.json",
+      withLib(await fixtureManifest(repo)).replace('"17.0"', '"18.0"'),
+    );
+    await assertRejects(() => stage(repo), ValidationError, "Test/app.json");
+  });
+  await t.step("the app missing from the lock", async () => {
+    await using repo = await makeRefappRepo();
+    await overlayManifest(repo);
+    await assertRejects(() => stage(repo), ValidationError, "Test/app.json");
+  });
+});
+
+const commitEol = async (repo: { root: string }, attrs: string) => {
+  await write(repo.root, ".gitattributes", attrs);
+  await git(repo.root, "add", ".");
+  await git(repo.root, "commit", "-q", "-m", "eol");
+  await git(repo.root, "tag", "-f", "refapp-v1");
+};
+
+Deno.test("H-86 step 5: a shipped test differing beside an accepted manifest still fails", async () => {
+  await using repo = await repoWithLib();
+  await overlayManifest(repo);
+  await commitEol(repo, "*.al text eol=crlf\n");
+  await assertRejects(
+    () => stage(repo),
+    ValidationError,
+    "shipped tests differ",
+  );
+});
+
+Deno.test("H-86 step 5: a staged manifest differing with no overlay manifest still fails", async () => {
+  await using repo = await repoWithLib();
+  await commitEol(repo, "*.json text eol=crlf\n");
+  await assertRejects(
+    () => stage(repo),
+    ValidationError,
+    "shipped tests differ",
+  );
+});
+
+Deno.test("H-86 step 5: the exemption is bound to the bytes the overlay check accepted", async (t) => {
+  await using repo = await repoWithLib();
+  await overlayManifest(repo);
+  const { task, staged } = await stage(repo);
+  const refapp = await resolveRefapp(repo.root, "refapp-v1");
+  const o = {
+    repoRoot: repo.root,
+    task,
+    refapp,
+    symbols: repo.symbols,
+    symbolStore: repo.symbolStore,
+    out: "",
+  };
+  const path = join(staged.pristine, "Test", "app.json");
+  const bytes = await Deno.readFile(path);
+  await verifyShippedTests(o, staged.pristine, bytes);
+  await t.step("no accepted manifest, no exemption", async () => {
+    await assertRejects(
+      () => verifyShippedTests(o, staged.pristine, null),
+      ValidationError,
+      "shipped tests differ",
+    );
+  });
+  await t.step("staged bytes other than the accepted ones", async () => {
+    await Deno.writeTextFile(
+      path,
+      new TextDecoder().decode(bytes).replaceAll("\n", "\r\n"),
+    );
+    await assertRejects(
+      () => verifyShippedTests(o, staged.pristine, bytes),
+      ValidationError,
+      "Test/app.json",
+    );
+    await Deno.writeFile(path, bytes);
+  });
+  await t.step(
+    "accepted bytes the commit's manifest does not allow",
+    async () => {
+      const other = utf8(
+        new TextDecoder().decode(bytes).replace('"17.0"', '"18.0"'),
+      );
+      await Deno.writeFile(path, other);
+      await assertRejects(
+        () => verifyShippedTests(o, staged.pristine, other),
+        ValidationError,
+        "Test/app.json",
+      );
+      await Deno.writeFile(path, bytes);
+    },
+  );
+  await t.step("a shipped test changed beside it", async () => {
+    await Deno.writeTextFile(
+      join(staged.pristine, "Test", "src", "Shipped.Test.al"),
+      "x",
+    );
+    await assertRejects(
+      () => verifyShippedTests(o, staged.pristine, bytes),
+      ValidationError,
+      "shipped tests differ",
+    );
+  });
 });
 
 Deno.test("lockMicrosoftSymbols: locks Microsoft apps only, reports the rest, refuses none", async () => {
