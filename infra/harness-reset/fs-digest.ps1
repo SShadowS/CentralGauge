@@ -285,7 +285,8 @@ function Invoke-FsCaptureCore([string]$Container, [string[]]$Roots) {
     Assert-NstFreezeHeld $Container $held
     $timing.assert_ms = $phase.ElapsedMilliseconds
   } catch {
-    $lines = @("E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))")
+    # H-79 Sol r1 #1: keep what the walk printed (its own E| lines too) and add this failure; never replace them
+    $lines = @($lines) + "E|(fs-capture)|$((($_.Exception.Message -replace '[\r\n|]+', ' ').Trim()))"
   } finally {
     if ($hold) { $timing.held_ms = $hold.ElapsedMilliseconds }
     $timing.roots = @($script:FsDigestRoots)
