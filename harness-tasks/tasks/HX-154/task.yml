@@ -1,0 +1,15 @@
+id: HX-154
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Test]
+coupling: [commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+fail_to_pass: null
+mutants: [m-plus-one, m-grace, m-discount, m-refused-true, m-twice, m-try]
+contamination: null
+limits: { timeout_min: 30 }
