@@ -136,6 +136,7 @@ import {
   containerIdExists,
   inspectContainerFacts,
   normWinPath,
+  type RecreatedInput,
   recreatedProblems,
 } from "../../src/harness/recreated.ts";
 import {
@@ -267,6 +268,8 @@ export interface EnvDeps {
   realPath?(path: string): Promise<string>;
   /** H-77 Sol r4: every BCH root, shared and migrated (default: allBchRoots from bch-roots.json). */
   bchRoots?(): string[];
+  /** H-80: a folder's creation time, null when the host gives none (default: Deno.stat); throws when unreadable. */
+  folderBirthtime?(path: string): Promise<Date | null>;
   /** H-76 Sol r1-r3: live processes of this pid's tree or naming the container (default: processHolders); throws when unknown. */
   processHolders?(pid: number, names: readonly string[]): Promise<number[]>;
   /** H-35 run 004 Sol r1 H5: the container's immutable Docker id (read-only); throws when unreadable. */
@@ -762,7 +765,8 @@ export async function recoverContainer(
  * H-77: `harness recover <c> --recreated <evidence-dir>`. The old
  * container's records (another Docker id, same name) go only when the
  * container was created after every one of them, mounts only its own
- * bch-roots.json root, and has a baseline of this lineage made after the
+ * bch-roots.json root (H-80: or, not listed, shows the shared-root proof of
+ * recreatedProblems), and has a baseline of this lineage made after the
  * recreate whose env_fp the env check's row confirms, all before any reset;
  * an in-use record of the old container needs --abandon <its token>. Then
  * the normal reset, inventory check and a clean capture write a new
@@ -813,11 +817,34 @@ async function recoverRecreated(
   }
   const ownReal = own === null ? null : await resolveHost(own);
   const sharedReal = await resolveHost(SHARED_BCH_ROOT);
+  // H-80: not listed, so the proof is the folder BCH rebuilds on every create
+  let sharedExtensions: RecreatedInput["sharedExtensions"];
+  if (own === null) {
+    const path = `${SHARED_BCH_ROOT}\\Extensions\\${c}`;
+    const folder = await resolveHost(path);
+    try {
+      const t = await (deps.folderBirthtime ??
+        (async (p: string) => (await Deno.stat(p)).birthtime))(folder);
+      sharedExtensions = {
+        path,
+        real: folder,
+        birthtime: t && t.toISOString(),
+      };
+    } catch (err) {
+      throw refuse(
+        `${c} is not listed in bch-roots.json and its folder ${path} cannot be read: ${
+          msg(err)
+        }`,
+      );
+    }
+  }
   // Sol r4: every other BCH root, as named and as resolved (a root that
-  // does not exist on this host is kept as named only)
+  // does not exist on this host is kept as named only). H-80: on the shared
+  // path only the shared root AS NAMED is left out: a migrated root that
+  // resolves onto it must stay
   const otherRoots: string[] = [];
   for (const r of (deps.bchRoots ?? allBchRoots)()) {
-    if (own !== null && normWinPath(r) === normWinPath(own)) continue;
+    if (normWinPath(r) === normWinPath(own ?? SHARED_BCH_ROOT)) continue;
     otherRoots.push(r);
     try {
       otherRoots.push(await real(r));
@@ -869,6 +896,8 @@ async function recoverRecreated(
     ownRoot: ownReal,
     ownRootRaw: own,
     sharedRoot: sharedReal,
+    sharedRootRaw: SHARED_BCH_ROOT,
+    ...(sharedExtensions ? { sharedExtensions } : {}),
     manifest: manifestBefore,
     lineageId: x.lineage.id,
     abandon,
@@ -954,6 +983,8 @@ async function recoverRecreated(
           created: facts.created,
           mounts: facts.mounts,
           own_root: own,
+          bch_root: own === null ? "shared" : "own",
+          shared_extensions: sharedExtensions ?? null,
           baseline_before: manifestBefore,
           manifest: made,
           archived: found.map((f, k) => ({ from: f.file, to: names[k] })),

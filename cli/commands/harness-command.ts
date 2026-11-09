@@ -4214,7 +4214,7 @@ export function registerHarnessCommand(
       "H-35 run 004 Sol r2 N2: the token of an in-use claim (environment or recover) whose owner is gone",
     ).option(
       "--recreated <evidence-dir:string>",
-      "H-77: after an owner-approved recreate: archive the old container's records into this dir (never deleted) once the container was created after them, mounts only its own bch-roots.json root and has a baseline of the lineage made after the recreate",
+      "H-77: after an owner-approved recreate: archive the old container's records into this dir (never deleted) once the container was created after them, mounts only its own bch-roots.json root (H-80: or, not listed, its shared root with a per-container folder rebuilt after them) and has a baseline of the lineage made after the recreate",
     ).action((opts, container: string) =>
       fail(async () => {
         const m = await recoverContainer({
