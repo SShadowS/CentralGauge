@@ -4,7 +4,7 @@ Reported by IT security.
 
 Desk agents post their returned contracts at the end of the shift. The auditors require that desk agents write rental ledger entries only through the posting routine, never directly. Since the desk permission set `CGR DESK AGENT` (Reporting app) went live, desk posting stops with a permission error.
 
-Before anyone changes the permissions we want automated tests that pin down what desk agents can and cannot do. Put them in a new test codeunit in the Test app. Do not fix anything in this task: your tests will be run against the corrected objects, where they must pass, and against the current ones and other faulty versions, where they must catch the fault. A faulty version counts as caught only when one of your tests fails on an assertion; a test that stops with an error does not catch it.
+Before anyone changes the permissions we want automated tests that pin down what desk agents can and cannot do. Put them in a new test codeunit in the Test app. Do not fix anything in this task: your tests will be run against the corrected objects, where they must pass, and against the current ones and other faulty versions, where they must catch the fault. A faulty version counts as caught only when one of your tests fails on an assertion; a test that stops with an error does not catch it. A faulty version may stop with an error where the correct one does not; such a fault counts as caught only if a test fails on an assertion.
 
 What a desk agent (`CGR DESK AGENT` only) must and must not be able to do:
 

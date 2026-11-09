@@ -4,7 +4,7 @@ Reported by Customer service.
 
 Vehicles are blocked with `CGR Vehicle Blocking`.`BlockVehicle`, from the vehicle card and, since last month, by the maintenance robot, which runs without a user interface. Last week the robot blocked a car and silently deleted three customer bookings on it.
 
-Before anyone changes the blocking we want automated tests that pin down how it must behave. Put them in a new test codeunit in the Test app. Do not fix the code in this task: your tests will be run against the corrected code, where they must pass, and against the current code and other faulty versions of it, where they must catch the fault. A faulty version counts as caught only when one of your tests fails on an assertion; a test that stops with an error does not catch it.
+Before anyone changes the blocking we want automated tests that pin down how it must behave. Put them in a new test codeunit in the Test app. Do not fix the code in this task: your tests will be run against the corrected code, where they must pass, and against the current code and other faulty versions of it, where they must catch the fault. A faulty version counts as caught only when one of your tests fails on an assertion; a test that stops with an error does not catch it. A faulty version may stop with an error where the correct one does not; such a fault counts as caught only if a test fails on an assertion.
 
 How blocking must behave (`CGR Vehicle Blocking` in Reporting, procedure `BlockVehicle(VehicleNo: Code[20]; Reason: Text[100])`; event `OnAfterBlockVehicle(Vehicle: Record "CGR Vehicle")`):
 
