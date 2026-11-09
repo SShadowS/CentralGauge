@@ -630,6 +630,18 @@ Deno.test("H-86 checkTestManifestOverlay refuses everything else", async (t) => 
   await t.step("the app absent from the lock", () => {
     assertThrows(() => checkText(withLib(SHIPPED), []), ValidationError);
   });
+  await t.step("another app, with its exact lock entry", () => {
+    const other = { ...LIB, id: "23de40a6-dfe8-4f80-80db-d70f83ce8caf" };
+    assertThrows(
+      () =>
+        checkText(insertAtEnd(SHIPPED, `, ${entry(other)}`), [
+          ...LIB_LOCK,
+          { ...LIB_LOCK[0]!, app_id: other.id },
+        ]),
+      ValidationError,
+      `app ${other.id} is not allowed`,
+    );
+  });
 });
 
 /** The fixture with Tests-TestLibraries in its store and lock. */
@@ -697,30 +709,41 @@ Deno.test("H-86 the overlay's original bytes are what is staged, with a BOM and 
 });
 
 Deno.test("H-86 stageRefappTask: everything else under Test/ is refused as before", async (t) => {
-  const cases: [string, string, string][] = [
+  // The full messages: step 5's fallback ("shipped tests differ") must not satisfy these.
+  const writes = "overlay writes a shipped test path";
+  const removes = "removes a shipped test path";
+  const cases: [string, string, string, string][] = [
     [
       "a shipped test beside the manifest",
       "HX-001/overlay/Test/src/Shipped.Test.al",
       "codeunit 80010 X {}",
+      writes,
     ],
     [
       "a new test beside the manifest",
       "HX-001/overlay/Test/src/New.Test.al",
       "codeunit 80011 Y {}",
+      writes,
     ],
-    ["deleting the manifest", "HX-001/overlay/.delete", "Test/app.json\n"],
+    [
+      "deleting the manifest",
+      "HX-001/overlay/.delete",
+      "Test/app.json\n",
+      removes,
+    ],
     [
       "deleting a shipped test",
       "HX-001/overlay/.delete",
       "Test/src/Shipped.Test.al\n",
+      removes,
     ],
   ];
-  for (const [name, rel, text] of cases) {
+  for (const [name, rel, text, want] of cases) {
     await t.step(name, async () => {
       await using repo = await repoWithLib();
       await overlayManifest(repo);
       await write(repo.tasksDir, rel, text);
-      await assertRejects(() => stage(repo), ValidationError, "shipped test");
+      await assertRejects(() => stage(repo), ValidationError, want);
     });
   }
   for (const rel of ["test/app.json", "Test/App.json", "Test/app.json/x"]) {
@@ -731,13 +754,13 @@ Deno.test("H-86 stageRefappTask: everything else under Test/ is refused as befor
         `HX-001/overlay/${rel}`,
         withLib(await fixtureManifest(repo)),
       );
-      await assertRejects(() => stage(repo), ValidationError, "shipped test");
+      await assertRejects(() => stage(repo), ValidationError, writes);
     });
   }
   await t.step("the Test/ folder with no manifest", async () => {
     await using repo = await repoWithLib();
     await Deno.mkdir(join(repo.tasksDir, "HX-001/overlay/Test"));
-    await assertRejects(() => stage(repo), ValidationError, "shipped test");
+    await assertRejects(() => stage(repo), ValidationError, writes);
   });
   await t.step("a manifest that changes more than dependencies", async () => {
     await using repo = await repoWithLib();
