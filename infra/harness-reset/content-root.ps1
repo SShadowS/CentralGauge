@@ -42,6 +42,25 @@ CLOSE c; DEALLOCATE c;
 SELECT t, n, h, ms, err FROM @r ORDER BY t;
 '@
 
+# H-84, owner 2026-11-09 (decisions\2026-11-09-h42-taskscheduling.md): the platform purges this table's finished row about
+# a minute after a restore, so a read after the purge sees 'empty' where the lineage records the row. Known cost: a row
+# altered and then purged before the read is not caught. This list is not in env_fp: changing it needs the owner.
+$ContentRootEmptyPolicy = @{ id = 'h84-taskscheduling-empty'; table = '$ndo$taskscheduling' }
+
+# When the root differs: the policy's record if the only difference is that table, observed 'empty' while the lineage
+# records a row; else $null. The lineage root binds $Stored's hash, so a wrong sidecar line cannot pass.
+function Get-ContentRootTolerance($Tables, [string[]]$Exclude, [hashtable]$Stored, [string]$Root) {
+  $name = $ContentRootEmptyPolicy.table
+  $row = @($Tables | Where-Object { $_.t -ceq $name })
+  $recorded = $Stored[$name]
+  if ($row.Count -ne 1 -or $row[0].h -cne 'empty' -or -not $recorded -or $recorded -ceq 'empty') { return $null }
+  $normal = @($Tables | ForEach-Object {
+      if ($_.t -ceq $name) { [pscustomobject]@{ t = $_.t; n = $_.n; h = $recorded; ms = $_.ms; err = $_.err } } else { $_ }
+    })
+  if ((Get-GoldenContentRoot $normal $Exclude) -cne $Root) { return $null }
+  [pscustomobject]@{ policy = $ContentRootEmptyPolicy.id; table = $name; observed = 'empty' }
+}
+
 # Per-table rows: t (table), n (row count), h (hash hex or 'empty'), ms, err.
 function Get-GoldenContentTables([string]$Container) {
   Invoke-InContainer $Container { param($q)
