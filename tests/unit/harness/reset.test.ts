@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
+import { join } from "@std/path";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { LineageSchema, loadLineage } from "../../../src/harness/lineage.ts";
 import {
@@ -208,6 +209,59 @@ Deno.test("H-79 part 4: a failure reason keeps its full text with ANSI escapes s
     }).ok,
     false,
   );
+});
+
+Deno.test({
+  name:
+    "H-79 part 4 root cause: reset-golden.ps1 Fail, run in a real pwsh with PlainText rendering, keeps a ConciseView error's message (its 300-char cap counts text, not escape codes)",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const src = await Deno.readTextFile(
+      join(Deno.cwd(), "infra", "harness-reset", "reset-golden.ps1"),
+    );
+    const fail = /^function Fail\(.*?^\}$/ms.exec(src)?.[0];
+    assert(fail, "reset-golden.ps1 has no Fail function");
+    // pwsh 7 ConciseView's coloured render of the Cronus282 quiesce error
+    const real =
+      "The session 7 could not be removed because it is still active.";
+    const script = `${fail}
+$E = [char]27
+$t = '~' * 35
+$reason = @(
+  "$E[31;1mRemove-NAVServerSession: $E[0m",
+  "$E[31;1m$E[0m$E[36;1mLine |$E[0m",
+  "$E[31;1m$E[0m$E[36;1m$E[36;1m  15 | $E[0m     \`$output = $E[36;1mRemove-NAVServerSession @cmdletArgs$E[0m;$E[0m",
+  "$E[31;1m$E[0m$E[36;1m$E[36;1m$E[0m$E[36;1m$E[0m$E[36;1m     | $E[31;1m               $t$E[0m",
+  "$E[31;1m$E[0m$E[36;1m$E[36;1m$E[0m$E[36;1m$E[0m$E[36;1m$E[31;1m$E[31;1m$E[36;1m     | $E[31;1m${real}$E[0m"
+) -join "\`r\`n"
+Fail quiesce $reason
+`;
+    const file = await Deno.makeTempFile({ suffix: ".ps1" });
+    try {
+      await Deno.writeTextFile(file, script);
+      // NO_COLOR: pwsh renders PlainText and strips complete escapes on output
+      const out = await new Deno.Command("pwsh", {
+        args: ["-NoProfile", "-NonInteractive", "-File", file],
+        env: { NO_COLOR: "1" },
+        stdin: "null",
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const r = parseResetOutput("C1", MECH, {
+        code: out.code,
+        stdout: new TextDecoder().decode(out.stdout),
+      });
+      assertEquals(r.failed_step, "quiesce");
+      assertEquals(
+        r.error,
+        `Remove-NAVServerSession:  Line |   15 |      $output = Remove-NAVServerSession @cmdletArgs;      |                ${
+          "~".repeat(35)
+        }      | ${real}`,
+      );
+    } finally {
+      await Deno.remove(file);
+    }
+  },
 });
 
 Deno.test("H-35 S3 parseVerifyOutput: VERIFY_OK with exit 0 is clean; VERIFY_DIRTY carries its diff lines; anything else is a failed check", () => {
