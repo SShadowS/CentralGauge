@@ -215,12 +215,21 @@ export interface ProcessRow {
 const CONTAINER_TOOL = /^(docker|com\.docker\.cli|pwsh|powershell)(\.exe)?$/i;
 
 /**
+ * H-82: `docker events`, whole command line, with at most --context before
+ * it. Neither the harness nor BcContainerHelper runs it, so such a process
+ * is an outside watcher (kraken-bridge filters on every container). Anything
+ * this does not match counts.
+ */
+const DOCKER_EVENTS =
+  /^(?:"[^"]*[\\/]docker(?:\.exe)?"|(?:[^\s"]*[\\/])?docker(?:\.exe)?)\s+(?:--context[\s=]\s*[^\s"]+\s+)?events(?:\s|$)/i;
+
+/**
  * H-76 Sol r3: the live processes that may still act on the container:
  * the gates pid's tree (liveTree), plus every live process whose command
- * line names the container or its Docker id (a `docker exec` grandchild
- * whose pwsh parent died has no ancestry back to gates). This process's own
- * tree and its ancestors (recover, and the shell that ran it, whose command
- * line names the container too) are never counted.
+ * line names the container or its Docker id, bar a watcher (H-82) (a `docker
+ * exec` grandchild whose pwsh parent died has no ancestry back to gates).
+ * This process's own tree and its ancestors (recover, and the shell that ran
+ * it, whose command line names the container too) are never counted.
  */
 export function liveHolders(
   table: readonly ProcessRow[],
@@ -248,9 +257,10 @@ export function liveHolders(
   for (const p of table) {
     // Sol r4: a container tool whose command line cannot be read may be
     // acting on it (unknown is never absence)
-    const hit = p.cmd === null
+    const hit = !p.cmd?.trim()
       ? CONTAINER_TOOL.test(p.name)
-      : named.some((re) => re.test(p.cmd!));
+      : named.some((re) => re.test(p.cmd!)) &&
+        !(/^docker(\.exe)?$/i.test(p.name) && DOCKER_EVENTS.test(p.cmd));
     if (hit) out.add(p.pid);
   }
   return [...out].filter((p) => !mine.has(p)).sort((a, b) => a - b);
