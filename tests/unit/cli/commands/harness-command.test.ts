@@ -130,9 +130,11 @@ import { lockDigestOf } from "../../../../src/harness/bc-lane.ts";
 import { poolBlocked } from "../../../../src/harness/coord-lease.ts";
 import {
   createBaseline,
+  instanceManifestPath,
   readInstanceManifest,
   renderEnvCheck,
 } from "../../../../src/harness/environment.ts";
+import { parseContainerFacts } from "../../../../src/harness/recreated.ts";
 import { lineageCompat, loadLineage } from "../../../../src/harness/lineage.ts";
 import {
   type FsDiffEntry,
@@ -11927,6 +11929,316 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
   assertEquals(
     await Deno.readTextFile(join(evidence, copies[0]!)),
     oldText,
+  );
+});
+
+// H-80: a recreate that kept the shared BCH root (not in bch-roots.json)
+const H80_SHARED = "C:\\ProgramData\\BcContainerHelper";
+const H80_EXT = `${H80_SHARED}\\Extensions\\Cronus281`;
+const H80_MY = `${H80_EXT}\\my`;
+const H80_CACHE = "C:\\bcartifacts.cache";
+const H80_OTHER = `${H80_SHARED}-Cronus282`;
+
+/** Every proof in place; a test breaks one through `seam` or `facts`. */
+async function sharedRecreate(
+  t: { repo: { root: string; symbolStore: string } },
+) {
+  const calls: string[] = [];
+  const qDir = join(await testTempDir(), "q");
+  const evidence = join(await testTempDir(), "evidence");
+  const { lineage, step, mechanism } = await fakedGolden(calls);
+  const oldId = fakeId("old-Cronus281");
+  const newId = fakeId("Cronus281");
+  const facts = {
+    id: newId,
+    created: "",
+    mounts: [H80_SHARED, H80_MY, H80_CACHE],
+  };
+  const seam = {
+    facts: () => Promise.resolve({ ...facts }),
+    real: (p: string) => Promise.resolve(p),
+    birth: (_: string): Promise<Date | null> => Promise.resolve(born),
+    gone: () => Promise.resolve(false),
+  };
+  const d: EnvDeps = {
+    ...deps([]),
+    quarantineDir: () => qDir,
+    containerFacts: () => seam.facts(),
+    bchRoot: () => null,
+    realPath: (p) => seam.real(p),
+    folderBirthtime: (p) => seam.birth(p),
+    bchRoots: () => [H80_SHARED, H80_OTHER],
+    containerIdExists: () => seam.gone(),
+  };
+  const o = {
+    repoRoot: t.repo.root,
+    containers: ["Cronus281"],
+    lineage,
+    symbolStore: t.repo.symbolStore,
+    recreated: evidence,
+  };
+  await plantRecord(qDir, {
+    state: "quarantined",
+    container: "Cronus281",
+    id: oldId,
+    reason: "reset of Cronus281 failed at restore: boom",
+    by: "test",
+    pid: 1,
+    fs_captured: false,
+  });
+  const oldFile = recordFile(qDir, oldId);
+  const oldText = await Deno.readTextFile(oldFile);
+  const at = Date.parse(JSON.parse(oldText).at);
+  const born: Date = new Date(at + 1);
+  facts.created = new Date(at + 1).toISOString();
+  await new Promise((r) => setTimeout(r, 10));
+  await baselineCreate(
+    { ...o, bcEgressOverride: "no NST firewall rule in the image" },
+    d,
+    mechanism,
+  );
+  calls.length = 0;
+  const manifestPath = instanceManifestPath(
+    join(t.repo.root, "results", "harness"),
+    "Cronus281",
+  );
+  return {
+    calls,
+    d,
+    evidence,
+    facts,
+    manifestPath,
+    mechanism,
+    newId,
+    o,
+    oldFile,
+    oldId,
+    oldText,
+    at,
+    seam,
+    step,
+  };
+}
+
+const H80_FAIL_ON =
+  (path: string, err: Error = new Error("denied")) => (p: string) =>
+    p === path ? Promise.reject(err) : Promise.resolve(p);
+
+for (
+  const [name, breakIt, why, reset] of [
+    [
+      "malformed mount evidence (a mount with no Source)",
+      (f) => {
+        f.seam.facts = () => {
+          const p = parseContainerFacts(JSON.stringify([{
+            Id: f.newId,
+            Created: f.facts.created,
+            Mounts: [{ Source: null }],
+          }]));
+          return p
+            ? Promise.resolve(p)
+            : Promise.reject(new Error("docker inspect Cronus281 failed"));
+        };
+      },
+      "docker inspect Cronus281 failed",
+    ],
+    [
+      "the folder is missing",
+      (f) => {
+        f.seam.real = H80_FAIL_ON(H80_EXT, new Deno.errors.NotFound("gone"));
+      },
+      `host path ${H80_EXT} cannot be resolved`,
+    ],
+    [
+      "the folder's stat fails",
+      (f) => {
+        f.seam.birth = () => Promise.reject(new Error("stat denied"));
+      },
+      "cannot be read: stat denied",
+    ],
+    [
+      "the folder's time is an invalid Date",
+      (f) => {
+        f.seam.birth = () => Promise.resolve(new Date(NaN));
+      },
+      "cannot be read",
+    ],
+    [
+      "the folder's time is not available",
+      (f) => {
+        f.seam.birth = () => Promise.resolve(null);
+      },
+      "creation time",
+    ],
+    [
+      "the folder predates the record",
+      (f) => {
+        f.seam.birth = () => Promise.resolve(new Date(f.at));
+      },
+      "outlived the old container",
+    ],
+    [
+      "the shared root cannot be resolved",
+      (f) => {
+        f.seam.real = H80_FAIL_ON(H80_SHARED);
+      },
+      `host path ${H80_SHARED} cannot be resolved`,
+    ],
+    [
+      "a mount cannot be resolved (an ordinary path is not skipped)",
+      (f) => {
+        f.seam.real = H80_FAIL_ON(H80_CACHE);
+      },
+      `host path ${H80_CACHE} cannot be resolved`,
+    ],
+    [
+      "a migrated root cannot be resolved",
+      (f) => {
+        f.seam.real = H80_FAIL_ON(H80_OTHER);
+      },
+      `host path ${H80_OTHER} cannot be resolved`,
+    ],
+    [
+      "a migrated root is a junction onto the shared root (kept in otherRoots)",
+      (f) => {
+        f.seam.real = (p) => Promise.resolve(p === H80_OTHER ? H80_SHARED : p);
+      },
+      "overlaps the shared root",
+    ],
+    [
+      "the env row refuses: the manifest is gone at the env check",
+      (f) => {
+        f.seam.gone = async () => {
+          await Deno.remove(f.manifestPath);
+          return false;
+        };
+      },
+      "env check: no instance manifest",
+    ],
+    [
+      "the env row refuses: wrong env_fp",
+      async (f) => {
+        const m = JSON.parse(await Deno.readTextFile(f.manifestPath));
+        await Deno.writeTextFile(
+          f.manifestPath,
+          JSON.stringify({ ...m, env_fp: "f".repeat(64) }),
+        );
+      },
+      "env check: env_fp",
+    ],
+    [
+      "the inventory check fails",
+      (f) => {
+        f.step.verify = false;
+      },
+      "post-reset inventory check failed",
+      true,
+    ],
+    [
+      "the capture is not clean",
+      (f) => {
+        f.step.fs = false;
+      },
+      "fsDigest capture not clean",
+      true,
+    ],
+  ] as [
+    string,
+    (f: Awaited<ReturnType<typeof sharedRecreate>>) => void | Promise<void>,
+    string,
+    boolean?,
+  ][]
+) {
+  Deno.test(`H-80 recover --recreated of a shared-root container refuses and moves no record: ${name}`, async () => {
+    await using t = await makeEnv();
+    const f = await sharedRecreate(t);
+    await breakIt(f);
+    await assertRejects(
+      () => recoverContainer(f.o, f.d, f.mechanism),
+      Error,
+      why,
+    );
+    assertEquals(f.calls.filter((c) => c === "reset").length, reset ? 1 : 0);
+    assertEquals(await Deno.readTextFile(f.oldFile), f.oldText, "kept");
+    const moved: string[] = [];
+    if (await exists(f.evidence)) {
+      for await (const e of Deno.readDir(f.evidence)) {
+        if (e.name.startsWith(f.oldId)) moved.push(e.name);
+      }
+    }
+    assertEquals(moved, []);
+  });
+}
+
+Deno.test("H-80 recover --recreated of a shared-root container: every proof archives the records and notes bch_root shared with the folder evidence; the shared root as named is not a foreign root", async () => {
+  await using t = await makeEnv();
+  const f = await sharedRecreate(t);
+  const m = await recoverContainer(f.o, f.d, f.mechanism);
+  assertEquals(f.calls, ["reset", "verifyClean", "fsDigest"]);
+  assertEquals(
+    await findRecords(f.d.quarantineDir(), { name: "Cronus281", id: f.newId }),
+    [],
+  );
+  const files: string[] = [];
+  for await (const e of Deno.readDir(f.evidence)) files.push(e.name);
+  const notes = files.filter((n) => n.startsWith("recreated-Cronus281-"));
+  const copies = files.filter((n) => n.startsWith(`${f.oldId}.`));
+  assertEquals([notes.length, copies.length], [1, 1], files.join(", "));
+  assertEquals(
+    await Deno.readTextFile(join(f.evidence, copies[0]!)),
+    f.oldText,
+  );
+  const note = JSON.parse(
+    await Deno.readTextFile(join(f.evidence, notes[0]!)),
+  );
+  assertEquals(
+    [
+      note.bch_root,
+      note.own_root,
+      note.shared_extensions,
+      note.manifest.env_fp,
+    ],
+    ["shared", null, {
+      path: H80_EXT,
+      real: H80_EXT,
+      birthtime: new Date(f.at + 1).toISOString(),
+    }, m.env_fp],
+  );
+});
+
+Deno.test("H-80 recover --recreated of a shared-root container: a named pipe mount is skipped, never resolved", async () => {
+  await using t = await makeEnv();
+  const f = await sharedRecreate(t);
+  const pipe = "\\\\.\\pipe\\docker_engine";
+  f.facts.mounts.push(pipe);
+  f.seam.real = H80_FAIL_ON(pipe);
+  await recoverContainer(f.o, f.d, f.mechanism);
+  assertEquals(
+    await findRecords(f.d.quarantineDir(), { name: "Cronus281", id: f.newId }),
+    [],
+  );
+});
+
+Deno.test("H-80 recover --recreated: a shared root relocated by a junction passes on its raw name and resolved target, and the time is read from the resolved folder", async () => {
+  await using t = await makeEnv();
+  const f = await sharedRecreate(t);
+  f.seam.real = (p) =>
+    Promise.resolve(
+      p.startsWith(H80_SHARED) && !p.startsWith(`${H80_SHARED}-`)
+        ? `D:\\BCH${p.slice(H80_SHARED.length)}`
+        : p,
+    );
+  const asked: string[] = [];
+  const birth = f.seam.birth;
+  f.seam.birth = (p) => {
+    asked.push(p);
+    return birth(p);
+  };
+  await recoverContainer(f.o, f.d, f.mechanism);
+  assertEquals(asked, ["D:\\BCH\\Extensions\\Cronus281"]);
+  assertEquals(
+    await findRecords(f.d.quarantineDir(), { name: "Cronus281", id: f.newId }),
+    [],
   );
 });
 
