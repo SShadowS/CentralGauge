@@ -349,6 +349,9 @@ candidates:
   - id: HX-153
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Due Line Run.OnAfterInvoiceLine" }
+  - id: HX-154
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnGetHourlyDiscount, OnAfterBillHourly" }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:
