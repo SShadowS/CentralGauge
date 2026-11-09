@@ -105,6 +105,9 @@ function Run([hashtable]$o) {
   function script:Assert-NstFreezeHeld($c, $t) {
     $script:calls.Add('held?')
     if ($script:o.heldFails) { throw 'the NST hold did not hold: the NST used CPU time while held (1 -> 2 ticks)' }
+    if ($script:o.heldExpired) {
+      throw "the NST hold did not hold: marker reads 'expired|1|2|detached=True', not this hold's (expired or failed)"
+    }
   }
   function script:Disable-NstFreeze($c, $t) {
     $script:calls.Add('release')
@@ -129,6 +132,7 @@ function Run([hashtable]$o) {
     if ($script:o.walkThrows) { throw 'docker exec died' }
     $script:FsDigestRoots = @([ordered]@{ root = 'C:\W'; entries = 1; ms = 7 })
     'D|16|1|C:\W'
+    if ($script:o.walkErr) { 'E|C:\W\locked.dat|access denied' }
   }
   $out = @(Invoke-FsCaptureCore 'x' @('C:\W'))
   [pscustomobject]@{ out = $out; calls = @($script:calls) }
@@ -153,7 +157,7 @@ Assert ($t.bound_s -eq 38) "timing bound_s: $($r.out[-1])"
 Assert (@($t.roots).Count -eq 1 -and $t.roots[0].root -eq 'C:\W' -and $t.roots[0].entries -eq 1 -and $t.roots[0].ms -eq 7) "timing roots: $($r.out[-1])"
 # a hold that did not last the walk fails the capture; the release still runs
 $r = Run @{ heldFails = $true }
-Assert ($r.out[0] -like 'E|(fs-capture)|*did not hold*') "held error: $($r.out -join ';')"
+Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|*did not hold*' }) "held error: $($r.out -join ';')"
 Assert ($r.calls -contains 'release') 'release after a broken hold'
 # R-09: an expired hold still fails closed, and its capture says how long it was held
 $t = Timing $r.out
@@ -189,7 +193,15 @@ Assert ($r.calls -contains 'release') 'release after a failed watermark read'
 Assert ($r.out[0] -like 'E|(fs-capture)|*Execution Timeout*') "watermark read error: $($r.out -join ';')"
 $r = Run @{ wmMoves = $true }
 Assert ($r.calls -contains 'release') 'release after a moved watermark'
-Assert ($r.out[0] -like 'E|(fs-capture)|*moved while held*') "watermark moved: $($r.out -join ';')"
+Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|*moved while held*' }) "watermark moved: $($r.out -join ';')"
+# H-79 Sol r1 #1: a failure after the walk keeps the walk's lines (a walk E| line too) and adds its own E| line
+$r = Run @{ walkErr = $true; heldExpired = $true }
+$want = @('D|16|1|C:\W', 'E|C:\W\locked.dat|access denied',
+  "E|(fs-capture)|the NST hold did not hold: marker reads 'expired 1 2 detached=True', not this hold's (expired or failed)")
+Assert ((@($r.out | Select-Object -First 3) -join ';') -eq ($want -join ';')) "walk error kept: $($r.out -join ';')"
+$null = Timing $r.out
+$r = Run @{ wmMoves = $true }
+Assert ($r.out[0] -eq 'D|16|1|C:\W') "walk lines kept on a moved watermark: $($r.out -join ';')"
 # after the release: a busy or unreadable NST fails closed
 $r = Run @{ busyAfter = $true }
 Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|NST not quiescent after*' }) 'busy after'
