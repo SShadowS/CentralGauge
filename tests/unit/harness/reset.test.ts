@@ -20,6 +20,50 @@ import {
 
 const MECH = { id: "golden-restore", policyVersion: 1 };
 
+Deno.test("H-84 parseResetOutput: the accepted-empty marker lands in the record; a reset without one has no such field; a bad, repeated or late marker is a protocol failure; a failed reset never claims it", () => {
+  const phases = RESET_PHASES.map((p) => `RESET_STEP ${p} 1`);
+  const root = "a".repeat(64);
+  const mark = `RESET_TOLERANCE h84-x $ndo$taskscheduling empty ${root}`;
+  const parse = (lines: string[], code = 0) =>
+    parseResetOutput("C1", MECH, { code, stdout: lines.join("\n") });
+  const ok = parse([...phases, mark, "RESET_OK"]);
+  assertEquals(ok.ok, true);
+  assertEquals(ok.content_root_tolerance, {
+    policy: "h84-x",
+    table: "$ndo$taskscheduling",
+    observed: "empty",
+    raw_root: root,
+  });
+  assert(!("content_root_tolerance" in parse([...phases, "RESET_OK"])));
+  // only this observed state, a full root
+  for (
+    const bad of [
+      `RESET_TOLERANCE h84-x $ndo$taskscheduling row ${root}`,
+      `RESET_TOLERANCE h84-x $ndo$taskscheduling empty abc`,
+      `RESET_TOLERANCE h84-x empty ${root}`,
+    ]
+  ) {
+    const r = parse([...phases, bad, "RESET_OK"]);
+    assertEquals([r.ok, r.failed_step], [false, "protocol"], bad);
+  }
+  for (
+    const lines of [
+      [...phases, mark, mark, "RESET_OK"],
+      [...phases, "RESET_OK", mark],
+    ]
+  ) {
+    const r = parse(lines);
+    assertEquals([r.ok, r.failed_step], [false, "protocol"]);
+  }
+  const failed = parse([
+    ...phases.slice(0, 2),
+    mark,
+    "RESET_FAILED postconditions no",
+  ], 1);
+  assertEquals([failed.ok, failed.failed_step], [false, "postconditions"]);
+  assert(!("content_root_tolerance" in failed));
+});
+
 Deno.test("H-35 S3 parseResetOutput: RESET_OK with exit 0 is a reset, phases timed", () => {
   const r = parseResetOutput("C1", MECH, {
     code: 0,

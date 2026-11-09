@@ -52,6 +52,16 @@ export interface ResetRecord {
   failed_step: string | null;
   error: string | null;
   phases_ms: Record<string, number>;
+  /**
+   * H-84 (owner 2026-11-09): the content root matched only by accepting a
+   * purged table as its recorded state. Absent when it matched as observed.
+   */
+  content_root_tolerance?: {
+    policy: string;
+    table: string;
+    observed: "empty";
+    raw_root: string;
+  };
 }
 
 export interface ResetMechanism {
@@ -271,6 +281,7 @@ export function parseResetOutput(
   // Run 002 Sol r3 #1: no phase may follow the success marker.
   let stepAfterOk = false;
   const failed: { step: string; reason: string }[] = [];
+  const tolerances: NonNullable<ResetRecord["content_root_tolerance"]>[] = [];
   // Orch Sol r1 #1: every line in the reserved RESET_ namespace must be one
   // well-formed marker; any other such line is a protocol failure.
   const malformed: string[] = [];
@@ -280,7 +291,18 @@ export function parseResetOutput(
     // A phase name is one identifier (Sol r3 #1).
     const step = /^RESET_STEP ([a-z_]+) (\d+)$/.exec(line);
     const f = /^RESET_FAILED ([a-z_]+) (\S.*)$/.exec(line);
-    if (step) {
+    const t = /^RESET_TOLERANCE ([a-z0-9-]+) (\S+) empty ([0-9a-f]{64})$/.exec(
+      line,
+    );
+    if (t) {
+      if (oks > 0) stepAfterOk = true;
+      tolerances.push({
+        policy: t[1]!,
+        table: t[2]!,
+        observed: "empty",
+        raw_root: t[3]!,
+      });
+    } else if (step) {
       if (oks > 0) stepAfterOk = true;
       seen.push(step[1]!);
       phases_ms[step[1]!] = Number(step[2]);
@@ -305,6 +327,7 @@ export function parseResetOutput(
     return protocol(`malformed marker line: ${malformed[0]!.slice(0, 200)}`);
   }
   if (failed.length > 1) return protocol("more than one RESET_FAILED");
+  if (tolerances.length > 1) return protocol("more than one RESET_TOLERANCE");
   if (failed.length === 1) {
     return {
       ...base,
@@ -326,7 +349,13 @@ export function parseResetOutput(
       `phases ${seen.join(",") || "(none)"}, want ${RESET_PHASES.join(",")}`,
     );
   }
-  return { ...base, ok: true, failed_step: null, error: null };
+  return {
+    ...base,
+    ok: true,
+    failed_step: null,
+    error: null,
+    ...(tolerances[0] ? { content_root_tolerance: tolerances[0] } : {}),
+  };
 }
 
 /**

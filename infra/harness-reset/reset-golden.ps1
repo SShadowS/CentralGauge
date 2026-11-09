@@ -148,6 +148,9 @@ Step postconditions {
     if ($root -ne $cr.root) {
       $stored = @{}
       foreach ($l in Get-Content (Join-Path (Split-Path -Parent $Lineage) $cr.path)) { $p = $l -split '\|', 2; $stored[$p[0]] = $p[1] }
+      # H-84: printed after the step, which swallows its body's output
+      $tol = Get-ContentRootTolerance $tables $exclude $stored $cr.root
+      if ($tol) { $script:ContentRootTolerance = "RESET_TOLERANCE $($tol.policy) $($tol.table) $($tol.observed) $root"; return }
       $live = @($tables | Where-Object { $t = $_.t; -not ($exclude | Where-Object { $t -like $_ }) })
       $diff = @($live | Where-Object { $stored[$_.t] -ne $_.h } | ForEach-Object { $_.t }) +
         @($stored.Keys | Where-Object { $k = $_; -not ($live | Where-Object { $_.t -eq $k }) })
@@ -155,5 +158,6 @@ Step postconditions {
     }
   }
 }
+if ($script:ContentRootTolerance) { Write-Output $script:ContentRootTolerance }
 Write-Output 'RESET_OK'
 exit 0
