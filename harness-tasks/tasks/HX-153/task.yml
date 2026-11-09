@@ -1,0 +1,15 @@
+id: HX-153
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Leasing, Core, Test]
+coupling: [commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass: null
+mutants: [m-msg-unguarded, m-due, m-count, m-refused-counted, m-invoice-row, m-future]
+contamination: null
+limits: { timeout_min: 30 }
