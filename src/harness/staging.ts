@@ -14,7 +14,13 @@ import {
   type RefappRef,
   type SymbolPackage,
 } from "./identity.ts";
-import { exists, safeCopyTree, validatedDest, validatedDir } from "./fsutil.ts";
+import {
+  type CopyLimits,
+  exists,
+  safeCopyTree,
+  validatedDest,
+  validatedDir,
+} from "./fsutil.ts";
 import { restoreSymbols } from "./symbols.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
 
@@ -300,13 +306,18 @@ export async function applyOverlay(
      * (it throws otherwise); given the bytes there now and the overlay's.
      */
     testManifest?: (current: Uint8Array, incoming: Uint8Array) => void;
+    /** Where the private copy goes; the OS temp dir by default. */
+    scratchDir?: string;
   } = {},
 ): Promise<Uint8Array | null> {
   if (!await exists(overlayDir)) return null;
   let accepted: Uint8Array | null = null;
   const root = await validatedDir(target);
   // 1. Hostile copy into fresh private scratch (the strict new-or-empty API is unchanged).
-  const tmp = await Deno.makeTempDir({ prefix: "cg-overlay-" });
+  const tmp = await Deno.makeTempDir({
+    prefix: "cg-overlay-",
+    ...(opts.scratchDir ? { dir: opts.scratchDir } : {}),
+  });
   try {
     const artifacts: string[] = [];
     const guarded: string[] = [];
@@ -465,23 +476,28 @@ export const applyTaskOverlay = (
   overlayDir: string,
   workspace: string,
   symbols: readonly SymbolPackage[],
+  scratchDir?: string,
 ): Promise<Uint8Array | null> =>
   applyOverlay(overlayDir, workspace, {
+    ...(scratchDir ? { scratchDir } : {}),
     protect: isShippedTestPath,
     testManifest: (current, incoming) =>
       checkTestManifestOverlay(current, incoming, symbols),
   });
 
 /**
- * H-85: everything a task's overlay can make stageRefappTask refuse, run on a
- * scratch copy of the refapp under `scratchRoot`, so the authoring gate and
- * staging apply one rule. Throws ValidationError.
+ * H-85: staging's overlay step, the merged tree's copy limits and app graph,
+ * run on a scratch copy of the refapp under `scratchRoot`, so the authoring
+ * gate and staging apply one rule. Not covered: the symbol store, the commit
+ * checks, and an overlay near the limits that only the symbols push over.
+ * Throws ValidationError.
  */
 export async function checkTaskOverlay(
   refappDir: string,
   overlayDir: string,
   symbols: readonly SymbolPackage[],
   scratchRoot: string,
+  limits?: CopyLimits,
 ): Promise<void> {
   await Deno.mkdir(scratchRoot, { recursive: true });
   const tmp = await Deno.realPath(
@@ -492,7 +508,12 @@ export async function checkTaskOverlay(
     await safeCopyTree(resolve(refappDir), workspace, {
       skip: isTaskBuildArtifact,
     });
-    await applyTaskOverlay(resolve(overlayDir), workspace, symbols);
+    await applyTaskOverlay(resolve(overlayDir), workspace, symbols, tmp);
+    await safeCopyTree(
+      workspace,
+      join(tmp, "pristine"),
+      limits ? { limits } : {},
+    );
     await readAppGraph(workspace);
   } finally {
     await Deno.remove(tmp, { recursive: true }).catch(() => {});

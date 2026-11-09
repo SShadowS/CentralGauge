@@ -15,6 +15,12 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "../../../scripts/harness/gate-stage.ts";
+import {
+  CopyLimitError,
+  DEFAULT_COPY_LIMITS,
+} from "../../../src/harness/fsutil.ts";
+import { hashTree } from "../../../src/harness/hash.ts";
+import { checkTaskOverlay } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   TEST_CU,
@@ -1257,6 +1263,15 @@ const manifestCase = (overlay: string) => async (d: string, refapp: string) => {
 
 Deno.test("H-85: the gate accepts the one Test/app.json addition staging accepts", async () => {
   assertEquals(await stagingProblems(manifestCase(withEntry(LIB))), []);
+  // The whole gate check, not only the overlay rule.
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const refapp = join(root, "harness-tasks/refapp");
+  await manifestCase(withEntry(LIB))(dir, refapp);
+  assertEquals(
+    (await checkTask(await loadTask(dir), refapp, root)).problems,
+    [],
+  );
 });
 
 Deno.test("H-85: the gate refuses a Test/app.json staging refuses", async (t) => {
@@ -1329,17 +1344,33 @@ Deno.test("H-85: the check refuses the overlay's other staging refusals", async 
 
 Deno.test("H-85: the check does not change the refapp or the task", async () => {
   await stagingProblems(async (dir, refapp) => {
+    const before = [
+      await hashTree(refapp, "task"),
+      await hashTree(dir, "task"),
+    ];
     const { problems } = await checkTask(
       await loadTask(dir),
       refapp,
       join(dir, "../../.."),
     );
     assertEquals(problems.filter((p) => p.startsWith("overlay: ")), []);
-    assertStringIncludes(
-      await Deno.readTextFile(join(refapp, "Core/src/A.al")),
-      'codeunit 70000 "A"\n{\n}\n',
+    assertEquals(
+      [await hashTree(refapp, "task"), await hashTree(dir, "task")],
+      before,
     );
   });
+});
+
+Deno.test("H-85: the merged tree is held to staging's copy limits", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const refapp = join(root, "harness-tasks/refapp");
+  const limits = { ...DEFAULT_COPY_LIMITS, maxFiles: 9 };
+  const check = () =>
+    checkTaskOverlay(refapp, join(dir, "overlay"), [], GATE_TMP, limits);
+  await check(); // the refapp's 9 files, the overlay replacing one of them
+  await write(dir, "overlay/Core/new.txt", "x");
+  await assertRejects(check, CopyLimitError, "more than 9 files");
 });
 
 Deno.test("H-71: test_permissions is for kind test-authoring only", async () => {
