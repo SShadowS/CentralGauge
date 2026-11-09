@@ -1007,6 +1007,58 @@ phase timings. A failed reset writes no manifest. Run it under a lease on the
 container (lane-ops). It prints `[OK] <container>: baseline of <lineage id>,
 env_fp <first 12 hex>`.
 
+### harness recover --recreated
+
+```bash
+centralgauge harness recover <container> --lineage <path> --recreated <evidence-dir> [--abandon <token>]
+```
+
+Clears the quarantine and in-use records an owner-approved recreate left
+behind. Each record (another Docker id, same name) is moved into the evidence
+dir and a note `recreated-<container>-<time>.json` is written, after the normal
+reset, inventory check and a clean capture. Anything unreadable or ambiguous
+refuses, and a refusal moves no record.
+
+Every recreate must show all of these: each record is readable, is not the
+current container's and is older than docker `Created`; no container with an
+old record's Docker id still exists; an in-use record is attested with
+`--abandon <its token>`; a baseline of the current lineage was made after the
+recreate and the env check's row for the container is clean. Any mount with no
+readable source refuses. Then `bch-roots.json` picks the path; there is no flag
+to choose one.
+
+**Listed in `bch-roots.json` (own root).** The container mounts its own root
+and no other BCH root.
+
+**Not listed (shared root).** A shared-root container cannot prove separation
+by its root, so the proof is its folder `<shared>\Extensions\<container>`, which
+BCH rebuilds on every create. All of these must hold (paths compare as named
+and as resolved):
+
+- No migrated root is equal to, inside or containing the shared root.
+- The shared root and exactly `<shared>\Extensions\<container>\my` are mounted.
+- No other mount is under the BCH naming (inside the shared root, a
+  `BcContainerHelper-*` sibling, an ancestor of the shared root) or related to a
+  migrated root, unless it is inside `<shared>\Extensions\<container>`.
+- The folder resolves to exactly `<resolved shared>\Extensions\<container>`.
+- Its creation time is readable, strictly after the newest of ALL records
+  (in-use ones too) and no later than docker `Created` plus 5 s. A folder at or
+  before a record outlived the old container, so the recreate did not go through
+  BCH.
+
+Supported configuration: an artifact-based create with BCH's default `my` folder
+and an artifact cache outside the shared root. Legacy DVD images
+(`<shared>\<version>-Files`), `UseVolumeForMyFolder` and an artifact cache under
+the shared root refuse.
+
+Residual: on the shared-root path the checks do not prove BCH built the
+container. A BCH create that failed after the folder was made, followed by a
+`docker run` not done by BCH that supplies both the shared-root and
+`Extensions\<container>\my` mounts, still passes. The path guards against
+leftover state from a sloppy recreate, not a hostile host operator. It also
+gives no own-root isolation: the container still sees the shared compiler
+folders, caches and every other container's `Extensions\<name>`.
+
 ### What a judge deployment does
 
 In order (`deployAndTest` in `src/harness/bc-lane.ts`, `src/harness/reset.ts`):
