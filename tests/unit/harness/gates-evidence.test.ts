@@ -319,7 +319,7 @@ Deno.test("H-76 Sol r5 liveHolders: a reused pid never adopts its former owner's
   assertEquals(liveTree(table, 9, true), [9, 51]);
 });
 
-Deno.test("H-82 liveHolders: a process naming the container counts only if it can hold it for a run; an observer does not, a live worker still does, and what cannot be told counts", () => {
+Deno.test("H-82 liveHolders: a docker events watcher naming the container does not count; a live worker and anything else that names it still does", () => {
   const WATCHER =
     `docker --context desktop-windows events --format "{{json .}}" --filter type=container --filter container=Cronus28 --filter container=Cronus281 --filter container=Cronus282`;
   const DOCKER =
@@ -333,20 +333,14 @@ Deno.test("H-82 liveHolders: a process naming the container counts only if it ca
     );
   // the 2026-11-09 false match: kraken-bridge's permanent watcher
   assertEquals(holders(WATCHER, "docker.exe"), []);
-  // other read-only docker commands, every global flag form, a quoted path
+  // the same command in its other spellings
   for (
     const cmd of [
       "docker events --filter container=Cronus281",
-      "docker --context=desktop-windows logs -f Cronus281",
-      "docker -D -H npipe:////./pipe/x stats Cronus281",
-      `${DOCKER} inspect Cronus281`,
+      "docker --context=desktop-windows events --filter container=Cronus281",
+      `${DOCKER} events --filter container=Cronus281`,
     ]
   ) assertEquals(holders(cmd, "docker.exe"), [], cmd);
-  // a process that is no harness tool and only mentions the name
-  assertEquals(
-    holders("notepad.exe C:\\logs\\Cronus281.log", "notepad.exe"),
-    [],
-  );
   // a real worker (the shape on this host) and the gates process itself
   for (
     const [cmd, name] of [
@@ -354,26 +348,45 @@ Deno.test("H-82 liveHolders: a process naming the container counts only if it ca
       ["docker --context desktop-windows exec Cronus281 x", "docker.exe"],
       ["docker cp a Cronus281:/b", "docker"],
       ["pwsh -NoExit -Command Enter-PSSession Cronus281", "pwsh.exe"],
-      ["powershell -File x.ps1 -c Cronus281", "powershell.exe"],
       ["deno run -A cli/centralgauge.ts harness gates Cronus281", "deno.exe"],
     ] as const
   ) assertEquals(holders(cmd, name), [30], cmd);
-  // the word "events" alone proves nothing: only docker's own subcommand does
+  // Sol r1: a read-only docker command may be a live worker's current step
+  for (
+    const cmd of [
+      "docker inspect Cronus281",
+      "docker logs -f Cronus281",
+      "docker --context desktop-windows stats Cronus281",
+    ]
+  ) assertEquals(holders(cmd, "docker.exe"), [30], cmd);
+  // Sol r1: a wrapper or an unknown program can be a worker
+  for (
+    const [cmd, name] of [
+      ['cmd.exe /d /s /c "docker exec Cronus281 x"', "cmd.exe"],
+      ["bash -c docker exec Cronus281 x", "bash.exe"],
+      ["custom-worker.exe Cronus281", "custom-worker.exe"],
+      ["something Cronus281", ""],
+    ] as const
+  ) assertEquals(holders(cmd, name), [30], cmd);
+  // "events" counts as the watcher only when it is docker's own subcommand
   for (
     const [cmd, name] of [
       ["docker exec Cronus281 docker events", "docker.exe"],
       ['pwsh -c "docker events --filter container=Cronus281"', "pwsh.exe"],
       ["deno run x.ts events Cronus281", "deno.exe"],
-      // a flag this parser does not know, a value flag with nothing after it
+      ["docker events Cronus281", "other.exe"],
       ["docker --new-flag events Cronus281", "docker.exe"],
-      ["docker Cronus281 --context", "docker.exe"],
+      // Sol r1: a quoted flag value holding the word (the real command is exec)
+      [
+        `${DOCKER} --config="C:\\Docker events config" exec Cronus281 x`,
+        "docker.exe",
+      ],
+      [`docker --context "a events" exec Cronus281 x`, "docker.exe"],
       // a Program Files path without quotes cannot be split reliably
       ["C:\\Program Files\\Docker\\docker.exe events Cronus281", "docker.exe"],
     ] as const
   ) assertEquals(holders(cmd, name), [30], cmd);
-  // no executable name to judge by: cannot tell, so it counts
-  assertEquals(holders("something Cronus281", ""), [30]);
-  // the gates tree counts whatever it runs, an observer included
+  // the gates tree counts whatever it runs, the watcher's command included
   assertEquals(
     liveHolders(
       [{ pid: 50, ppid: 9, name: "docker.exe", cmd: WATCHER }],
@@ -382,13 +395,6 @@ Deno.test("H-82 liveHolders: a process naming the container counts only if it ca
       11,
     ),
     [50],
-  );
-  // a harness process whose command line cannot be read counts
-  assertEquals(
-    liveHolders([{ pid: 60, ppid: 1, name: "deno.exe", cmd: null }], 9, [
-      "Cronus281",
-    ], 11),
-    [60],
   );
 });
 

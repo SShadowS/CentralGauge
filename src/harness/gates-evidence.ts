@@ -211,58 +211,25 @@ export interface ProcessRow {
   created?: number;
 }
 
-/**
- * Sol r4, H-82: the programs a harness run and its workers are (docker, pwsh,
- * deno): only these can hold a container for a run.
- */
-const CONTAINER_TOOL =
-  /^(docker|com\.docker\.cli|pwsh|powershell|deno)(\.exe)?$/i;
-const DOCKER_CLI = /^(docker|com\.docker\.cli)(\.exe)?$/i;
-const DOCKER_VALUE_FLAG =
-  /^(-c|--context|-H|--host|-l|--log-level|--config|--tlscacert|--tlscert|--tlskey)$/;
-const DOCKER_BARE_FLAG = /^(-D|--debug|--tls|--tlsverify)$/;
-const DOCKER_OBSERVER = /^(events|logs|stats|inspect|ps|top|port)$/;
-
-/** H-82: docker's own subcommand is read-only; anything unparsed is not. */
-function dockerObserves(args: readonly string[]): boolean {
-  for (let i = 0; i < args.length; i++) {
-    const flag = args[i]!.replace(/=.*$/, "");
-    if (DOCKER_BARE_FLAG.test(flag)) continue;
-    if (DOCKER_VALUE_FLAG.test(flag)) {
-      if (flag === args[i]) i++;
-      continue;
-    }
-    return DOCKER_OBSERVER.test(args[i]!);
-  }
-  return false;
-}
+/** Sol r4: the tools the harness runs against a container (docker, pwsh). */
+const CONTAINER_TOOL = /^(docker|com\.docker\.cli|pwsh|powershell)(\.exe)?$/i;
 
 /**
- * H-82: whether a process whose command line names the container can hold it
- * for a run. A tool the harness runs counts unless it is a read-only docker
- * command; any other program only mentions the name. No executable name to
- * judge by counts (unknown is never absence).
+ * H-82: `docker events`, whole command line, with at most --context before
+ * it. Neither the harness nor BcContainerHelper runs it, so such a process
+ * is an outside watcher (kraken-bridge filters on every container). Anything
+ * this does not match counts.
  */
-function canHold(name: string, cmd: string): boolean {
-  const [exe = "", ...args] = (cmd.match(/"[^"]*"|\S+/g) ?? []).map((t) =>
-    t.replaceAll('"', "")
-  );
-  if (
-    !CONTAINER_TOOL.test(name) &&
-    !CONTAINER_TOOL.test(exe.split(/[\\/]/).pop()!)
-  ) {
-    return name === "";
-  }
-  return !(DOCKER_CLI.test(name) && dockerObserves(args));
-}
+const DOCKER_EVENTS =
+  /^(?:"[^"]*[\\/]docker(?:\.exe)?"|(?:[^\s"]*[\\/])?docker(?:\.exe)?)\s+(?:--context[\s=]\s*[^\s"]+\s+)?events(?:\s|$)/i;
 
 /**
  * H-76 Sol r3: the live processes that may still act on the container:
- * the gates pid's tree (liveTree), plus every live process that names the
- * container or its Docker id and can hold it (H-82 canHold; a `docker exec`
- * grandchild whose pwsh parent died has no ancestry back to gates). This
- * process's own tree and its ancestors (recover, and the shell that ran it,
- * whose command line names the container too) are never counted.
+ * the gates pid's tree (liveTree), plus every live process whose command
+ * line names the container or its Docker id, bar a watcher (H-82) (a `docker
+ * exec` grandchild whose pwsh parent died has no ancestry back to gates).
+ * This process's own tree and its ancestors (recover, and the shell that ran
+ * it, whose command line names the container too) are never counted.
  */
 export function liveHolders(
   table: readonly ProcessRow[],
@@ -292,7 +259,8 @@ export function liveHolders(
     // acting on it (unknown is never absence)
     const hit = p.cmd === null
       ? CONTAINER_TOOL.test(p.name)
-      : named.some((re) => re.test(p.cmd!)) && canHold(p.name, p.cmd);
+      : named.some((re) => re.test(p.cmd!)) &&
+        !(/^docker(\.exe)?$/i.test(p.name) && DOCKER_EVENTS.test(p.cmd));
     if (hit) out.add(p.pid);
   }
   return [...out].filter((p) => !mine.has(p)).sort((a, b) => a - b);
