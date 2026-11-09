@@ -11,10 +11,24 @@
  * with RESET_OK. Anything else is a `protocol` failure.
  */
 
+import { stripAnsiCode } from "@std/fmt/colors";
 import { join } from "@std/path";
 import { type Lineage, lineageCompat } from "./lineage.ts";
 import { ConfigurationError, ContainerError } from "../errors.ts";
 import { bchRootEnv } from "../container/bch-root.ts";
+
+/** An escape sequence a cut left incomplete at the end (`ESC`, `ESC[31;`). */
+// deno-lint-ignore no-control-regex -- ESC is the point
+const ANSI_TAIL = new RegExp("\\u001b(?:\\[[0-?]*[ -/]*)?$");
+
+/**
+ * H-79 part 4: a script's failure reason as plain text for the records:
+ * complete ANSI escapes (CSI, OSC) stripped, an incomplete one at the end
+ * dropped, the rest kept whole (never cut at an escape).
+ */
+function plainReason(s: string): string {
+  return stripAnsiCode(s).replace(ANSI_TAIL, "").trim();
+}
 
 /** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
 export const RESET_PHASES = [
@@ -188,7 +202,7 @@ export function parseVerifyOutput(
     if (d) diff.push(d[1]!);
     else if (line === "VERIFY_OK") ends.push("ok");
     else if (dirty) (ends.push("dirty"), dirtyN = Number(dirty[1]));
-    else if (f) (ends.push("failed"), failed = f[1]!.trim());
+    else if (f) (ends.push("failed"), failed = plainReason(f[1]!));
     else bad.push(line);
   }
   const fail = (error: string): VerifyRecord => ({
@@ -270,7 +284,7 @@ export function parseResetOutput(
       if (oks > 0) stepAfterOk = true;
       seen.push(step[1]!);
       phases_ms[step[1]!] = Number(step[2]);
-    } else if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
+    } else if (f) failed.push({ step: f[1]!, reason: plainReason(f[2]!) });
     // Run 002 Sol r2 #1: a success marker is exactly the bare line.
     else if (line === "RESET_OK") oks++;
     else malformed.push(line);
@@ -368,7 +382,7 @@ export function failedReset(
     policy_version: m.policyVersion,
     ok: false,
     failed_step: step,
-    error: err instanceof Error ? err.message : String(err),
+    error: plainReason(err instanceof Error ? err.message : String(err)),
     phases_ms: {},
   };
 }

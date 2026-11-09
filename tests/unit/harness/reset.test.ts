@@ -3,6 +3,7 @@ import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { LineageSchema, loadLineage } from "../../../src/harness/lineage.ts";
 import {
   commandReset,
+  failedReset,
   fsCaptureTiming,
   fsDiff,
   fsHoldExpiredOnly,
@@ -171,6 +172,43 @@ Deno.test("H-35 orch Sol r1 #1: any malformed reserved-marker line is a protocol
 });
 
 // ---- H-35 S3: the post-cleanup inventory check protocol ----
+
+Deno.test("H-79 part 4: a failure reason keeps its full text with ANSI escapes stripped (before and after the real error), never cut at an escape", () => {
+  const e = "\x1b";
+  // the Cronus282 quiesce failure's shape: PS7 ConciseView, newlines
+  // collapsed by reset-golden.ps1 Fail, colour codes around the message
+  const real = "The session 7 could not be removed because it is still active.";
+  const reason =
+    `${e}[31;1mRemove-NAVServerSession: ${e}[0m Line |   15 |      $output = Remove-NAVServerSession @cmdletArgs;      |                ~~~~~~~~~~~ ${e}[31;1m${e}[31;1m${real}${e}[0m${e}]0;pwsh\x07 (exit 1)${e}[`;
+  const want =
+    `Remove-NAVServerSession:  Line |   15 |      $output = Remove-NAVServerSession @cmdletArgs;      |                ~~~~~~~~~~~ ${real} (exit 1)`;
+  const r = parseResetOutput("C1", MECH, {
+    code: 1,
+    stdout: `RESET_STEP snapshot_guard 5\r\nRESET_FAILED quiesce ${reason}\r\n`,
+  });
+  assertEquals([r.failed_step, r.error], ["quiesce", want]);
+  assertEquals(
+    new ResetFailedError(r).message,
+    `reset of C1 failed at quiesce: ${want}`,
+  );
+  assertEquals(
+    parseVerifyOutput("C1", { code: 1, stdout: `VERIFY_FAILED ${reason}` })
+      .error,
+    want,
+  );
+  assertEquals(
+    failedReset("C1", MECH, "threw", new Error(reason)).error,
+    want,
+  );
+  // the marker itself stays strict: a coloured RESET_OK is no success
+  assertEquals(
+    parseResetOutput("C1", MECH, {
+      code: 0,
+      stdout: [...FULL, `${e}[32mRESET_OK${e}[0m`].join("\n"),
+    }).ok,
+    false,
+  );
+});
 
 Deno.test("H-35 S3 parseVerifyOutput: VERIFY_OK with exit 0 is clean; VERIFY_DIRTY carries its diff lines; anything else is a failed check", () => {
   assertEquals(
