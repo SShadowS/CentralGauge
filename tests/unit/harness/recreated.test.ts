@@ -501,6 +501,26 @@ for (
       },
       NOT_ALLOWED,
     ],
+    [
+      // H-80 orchestrator Sol r1: foreign only by its raw spelling, so this
+      // fails if sharedRootRaw leaves the shared-path comparisons
+      "a relocated shared root with a raw-only foreign alias mounted",
+      {
+        sharedRoot: "D:\\BCH",
+        mounts: [
+          "D:\\BCH",
+          "D:\\BCH\\Extensions\\Cronus281\\my",
+          "E:\\stale-compiler",
+        ],
+        rawMounts: [SHARED, MY, `${SHARED}\\compiler\\x`],
+        sharedExtensions: {
+          path: EXT,
+          real: "D:\\BCH\\Extensions\\Cronus281",
+          birthtime: "2026-11-08T08:30:00.000Z",
+        },
+      },
+      NOT_ALLOWED,
+    ],
     // the three configurations the shared-root path does not support
     [
       "unsupported: legacy DVD image (<shared>\\<ver>-Files mounted)",

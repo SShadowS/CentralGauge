@@ -170,7 +170,7 @@ $t = Timing $r.out
 foreach ($k in 'hold_setup_ms', 'held_ms', 'w1_ms', 'walk_ms', 'w2_ms', 'assert_ms') {
   Assert ($t.$k -is [int] -or $t.$k -is [long]) "timing $k is a count of ms: $($r.out[-1])"
 }
-Assert ($t.bound_s -eq 38) "timing bound_s: $($r.out[-1])"
+Assert ($t.bound_s -eq 55) "timing bound_s: $($r.out[-1])"
 Assert (@($t.roots).Count -eq 1 -and $t.roots[0].root -eq 'C:\W' -and $t.roots[0].entries -eq 1 -and $t.roots[0].ms -eq 7) "timing roots: $($r.out[-1])"
 # a hold that did not last the walk fails the capture; the release still runs
 $r = Run @{ heldFails = $true }
