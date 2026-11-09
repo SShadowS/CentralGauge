@@ -1177,6 +1177,87 @@ Deno.test("H-71: with the flag, a missing or other value, and Restrictive in ora
   ]);
 });
 
+/** H-85: checkTask's staging problems for an overlay written by `edit`. */
+async function stagingProblems(
+  edit: (dir: string, refapp: string) => Promise<void>,
+): Promise<string[]> {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const refapp = join(root, "harness-tasks/refapp");
+  await edit(dir, refapp);
+  const { problems } = await checkTask(await loadTask(dir), refapp, root);
+  return problems.filter((p) => p.startsWith("overlay: "));
+}
+
+Deno.test("H-85: a normal overlay passes the staging check", async () => {
+  assertEquals(await stagingProblems(() => Promise.resolve()), []);
+});
+
+Deno.test("H-85: an overlay writing Test/ fails the gate check, as it fails staging", async () => {
+  for (const rel of ["overlay/Test/app.json", "overlay/test/src/New.al"]) {
+    const got = await stagingProblems((dir) => write(dir, rel, "{}"));
+    assertEquals(got.length, 1, rel);
+    assertStringIncludes(got[0]!, "overlay writes a shipped test path");
+  }
+});
+
+Deno.test("H-85: the check refuses the overlay's other staging refusals", async (t) => {
+  const cases: [string, (d: string, r: string) => Promise<void>, string][] = [
+    [
+      "a build artifact the gate would skip",
+      (d) => write(d, "overlay/Core/x.app", "bin"),
+      "build artifacts",
+    ],
+    [
+      "a case alias of a refapp folder",
+      (d) => write(d, "overlay/Core/SRC/A2.al", 'codeunit 70001 "B"\n{\n}\n'),
+      "case alias",
+    ],
+    [
+      "a case alias of a refapp file",
+      (d) => write(d, "overlay/Core/src/a.al", 'codeunit 70000 "A"\n{\n}\n'),
+      "case alias",
+    ],
+    [
+      "a manifest staging cannot read",
+      (d) => write(d, "overlay/Core/app.json", '{"id":"not-a-guid"}'),
+      "Invalid app.json",
+    ],
+    [
+      "two apps with one id",
+      async (d, r) =>
+        await write(
+          d,
+          "overlay/Core/app.json",
+          await Deno.readTextFile(join(r, "Fleet/app.json")),
+        ),
+      "same app id",
+    ],
+  ];
+  for (const [name, edit, want] of cases) {
+    await t.step(name, async () => {
+      const got = await stagingProblems(edit);
+      assertEquals(got.length, 1, got.join("; "));
+      assertStringIncludes(got[0]!, want);
+    });
+  }
+});
+
+Deno.test("H-85: the check does not change the refapp or the task", async () => {
+  await stagingProblems(async (dir, refapp) => {
+    const { problems } = await checkTask(
+      await loadTask(dir),
+      refapp,
+      join(dir, "../../.."),
+    );
+    assertEquals(problems.filter((p) => p.startsWith("overlay: ")), []);
+    assertStringIncludes(
+      await Deno.readTextFile(join(refapp, "Core/src/A.al")),
+      'codeunit 70000 "A"\n{\n}\n',
+    );
+  });
+});
+
 Deno.test("H-71: test_permissions is for kind test-authoring only", async () => {
   const root = await tmp();
   const dir = await writeTask(root, "HX-001", "# Bug\n");
