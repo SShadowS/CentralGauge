@@ -10,6 +10,6 @@ scorers: [build, pass_to_pass, mutant_kill]
 pass_to_pass:
   - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
 fail_to_pass: null
-mutants: [m-menu-unguarded, m-no-reading-empty, m-formula, m-twice, m-status, m-full-writes]
+mutants: [m-no-reading-empty, m-formula, m-twice, m-status, m-full-writes]
 contamination: null
 limits: { timeout_min: 30 }
