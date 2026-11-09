@@ -17,6 +17,7 @@ import {
 } from "../../../src/harness/identity.ts";
 import {
   applyOverlay,
+  applyTaskOverlay,
   checkTestManifestOverlay,
   readAppGraph,
   readAppJson,
@@ -522,6 +523,10 @@ Deno.test("H-86 checkTestManifestOverlay refuses everything else", async (t) => 
     /,\s*\{[^{}]*"Library Assert"[^{}]*\}/,
     "",
   );
+  const [depA, depB] = [...SHIPPED.matchAll(/\{ "id": "c6a1[^{}]*\}/g)]
+    .map((x) => x[0]);
+  const swapped = SHIPPED.replace(depA!, "@@").replace(depB!, depA!)
+    .replace("@@", depB!);
   const cases: [string, string][] = [
     ["no change", SHIPPED],
     ["a changed field", withLib(SHIPPED).replace('"OnPrem"', '"Cloud"')],
@@ -587,7 +592,28 @@ Deno.test("H-86 checkTestManifestOverlay refuses everything else", async (t) => 
       insertAtEnd(SHIPPED, `, ${entry({ ...LIB, publisher: "Other" })}`),
     ],
     ["two BOMs", "﻿﻿" + withLib(SHIPPED)],
+    ["existing dependencies reordered", withLib(swapped)],
+    [
+      "a duplicate key outside the insertion",
+      withLib(SHIPPED).replace(
+        '"runtime": "17.0"',
+        '"runtime": "18.0", "runtime": "17.0"',
+      ),
+    ],
+    ["trailing content", withLib(SHIPPED) + "\n{}"],
   ];
+  await t.step("the mutations are real", () => {
+    assert(swapped !== SHIPPED);
+    assert(cases.every(([, text]) => text !== withLib(SHIPPED)));
+  });
+  await t.step("an insertion only the full JSON parse can refuse", () => {
+    // U+FEFF is \s to the regex but not JSON whitespace; the entry itself is valid.
+    assertThrows(
+      () => checkText(insertAtEnd(SHIPPED, `,﻿${entry()}`)),
+      ValidationError,
+      "not JSON",
+    );
+  });
   for (const [name, text] of cases) {
     await t.step(name, () => {
       assertThrows(() => checkText(text), ValidationError);
@@ -640,6 +666,33 @@ Deno.test("H-86 stageRefappTask: the allowed addition is staged, and the rest of
       join(staged.pristine, "Test", "src", "Shipped.Test.al"),
     ),
     "procedure ShippedPasses()",
+  );
+});
+
+Deno.test("H-86 the overlay's original bytes are what is staged, with a BOM and CRLF", async () => {
+  await using repo = await repoWithLib();
+  const shipped = await fixtureManifest(repo);
+  const bytes = utf8("﻿" + withLib(shipped).replaceAll("\n", "\r\n"));
+  const rel = join(repo.tasksDir, "HX-001", "overlay", "Test", "app.json");
+  await Deno.mkdir(join(rel, ".."), { recursive: true });
+  await Deno.writeFile(rel, bytes);
+  const { staged } = await stage(repo);
+  assertEquals(
+    await Deno.readFile(join(staged.workspace, "Test", "app.json")),
+    bytes,
+  );
+  assertEquals(
+    await Deno.readFile(join(staged.pristine, "Test", "app.json")),
+    bytes,
+  );
+  const target = await Deno.realPath(await testTempDir());
+  await write(target, "Test/app.json", shipped);
+  const overlay = await Deno.realPath(await testTempDir());
+  await Deno.mkdir(join(overlay, "Test"));
+  await Deno.writeFile(join(overlay, "Test", "app.json"), bytes);
+  assertEquals(
+    await applyTaskOverlay(overlay, target, repo.symbols),
+    bytes,
   );
 });
 
@@ -780,6 +833,27 @@ Deno.test("H-86 step 5: the exemption is bound to the bytes the overlay check ac
       await Deno.writeFile(path, bytes);
     },
   );
+  await t.step("a file added beside it", async () => {
+    const extra = join(staged.pristine, "Test", "unexpected.txt");
+    await Deno.writeTextFile(extra, "x");
+    await assertRejects(
+      () => verifyShippedTests(o, staged.pristine, bytes),
+      ValidationError,
+      "shipped tests differ",
+    );
+    await Deno.remove(extra);
+  });
+  await t.step("a shipped test removed beside it", async () => {
+    const file = join(staged.pristine, "Test", "src", "Shipped.Test.al");
+    const kept = await Deno.readFile(file);
+    await Deno.remove(file);
+    await assertRejects(
+      () => verifyShippedTests(o, staged.pristine, bytes),
+      ValidationError,
+      "shipped tests differ",
+    );
+    await Deno.writeFile(file, kept);
+  });
   await t.step("a shipped test changed beside it", async () => {
     await Deno.writeTextFile(
       join(staged.pristine, "Test", "src", "Shipped.Test.al"),
