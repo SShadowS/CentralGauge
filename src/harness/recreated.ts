@@ -5,7 +5,9 @@
  * - every one of them is readable, is not the current container's, and is
  *   older than the container's creation time (docker inspect Created);
  * - the container is listed in bch-roots.json and its mounts show its own
- *   BCH root and no other BCH root (the shared one or another container's);
+ *   BCH root and no other BCH root (the shared one or another container's),
+ *   or (H-80) it is not listed and its rebuilt per-container folder
+ *   `<shared>\Extensions\<c>` ties it to this recreate (recreatedProblems);
  * - a baseline of the current lineage was created after the recreate (the
  *   instance manifest; recover's env check proves its env_fp separately).
  * Pure: the caller reads Docker, the records and the manifest.
@@ -84,13 +86,13 @@ export function parseContainerFacts(raw: string): ContainerFacts | null {
     !e || typeof e.Id !== "string" || typeof e.Created !== "string" ||
     !Array.isArray(e.Mounts)
   ) return null;
-  return {
-    id: e.Id,
-    created: e.Created,
-    mounts: (e.Mounts as { Source?: unknown }[]).flatMap((m) =>
-      typeof m?.Source === "string" ? [m.Source] : []
-    ),
-  };
+  // Sol r1 #2: a mount with no usable source is unknown evidence, never dropped
+  const mounts: string[] = [];
+  for (const m of e.Mounts as ({ Source?: unknown } | null)[]) {
+    if (typeof m?.Source !== "string" || m.Source.trim() === "") return null;
+    mounts.push(m.Source);
+  }
+  return { id: e.Id, created: e.Created, mounts };
 }
 
 export interface RecreatedInput {
@@ -124,7 +126,14 @@ export interface RecreatedInput {
   rawMounts?: readonly string[];
   /** Sol r5: the own root as named in bch-roots.json (`ownRoot` is resolved). */
   ownRootRaw?: string | null;
+  /** H-80: the shared root as named (`sharedRoot` is resolved). */
+  sharedRootRaw?: string | null;
+  /** H-80: `<shared>\Extensions\<c>` of a container not listed: as named, resolved, and its creation time (null when the host gave none). */
+  sharedExtensions?: { path: string; real: string; birthtime: string | null };
 }
+
+/** H-80: how far past docker Created the folder's time may read (timestamp granularity only: the folder normally precedes Created). */
+const FOLDER_TOLERANCE_MS = 5_000;
 
 /**
  * Sol r1/r3: one spelling for a Windows path: backslashes, no \\?\ prefix,
@@ -149,6 +158,8 @@ export function normWinPath(p: string): string {
 const norm = normWinPath;
 const under = (p: string, root: string) =>
   p === root || p.startsWith(`${root}\\`);
+// Sol r4: related = equal, inside, or containing
+const related = (a: string, b: string) => under(a, b) || under(b, a);
 
 /** Why the recreate does not prove the records stale ([] when it does). */
 export function recreatedProblems(o: RecreatedInput): string[] {
@@ -190,15 +201,95 @@ export function recreatedProblems(o: RecreatedInput): string[] {
       );
     }
   }
-  if (o.ownRoot === null) {
+  if (o.ownRoot === null && !o.sharedExtensions) {
     out.push(
       `${o.container} is not listed in bch-roots.json (no own BCH root)`,
     );
+  } else if (o.ownRoot === null) {
+    // H-80: no own root to prove separation by, so the proof is the folder
+    // BCH rebuilds on every create: one made after the records, mounted by
+    // this container, and no other container's root. It does NOT prove BCH
+    // built the container.
+    const ext = o.sharedExtensions!;
+    const c = norm(o.container);
+    const shared = norm(o.sharedRoot);
+    // the shared root as named AND as resolved
+    const shareds = [
+      shared,
+      ...(o.sharedRootRaw ? [norm(o.sharedRootRaw)] : []),
+    ];
+    const others = (o.otherRoots ?? []).map(norm);
+    // Rule 1: a migrated root on the shared storage separates nothing (H-77 r4/r5)
+    const overlap = others.filter((r) => shareds.some((s) => related(s, r)));
+    if (overlap.length > 0) {
+      out.push(
+        `another BCH root overlaps the shared root ${o.sharedRoot}: ${
+          overlap.join(", ")
+        }`,
+      );
+    }
+    const sources = [...o.mounts, ...(o.rawMounts ?? [])];
+    const norms = sources.map(norm);
+    // Rule 2: `my` ties this container to the rebuilt folder (Sol r1 #1)
+    if (!norms.some((n) => shareds.includes(n))) {
+      out.push(
+        `${o.container} is not listed in bch-roots.json and the shared root ${o.sharedRoot} is not mounted`,
+      );
+    }
+    const folders = shareds.map((s) => `${s}\\extensions\\${c}`);
+    if (!norms.some((n) => folders.some((f) => n === `${f}\\my`))) {
+      out.push(`${ext.path}\\my is not mounted`);
+    }
+    // Rule 3: under the BCH naming or related to a known root, only the
+    // shared root itself or something inside this container's folder may be
+    // mounted
+    const foreign = sources.filter((m) => {
+      const n = norm(m);
+      const named = shareds.some((s) =>
+        under(n, s) || n.startsWith(`${s}-`) || s.startsWith(`${n}\\`)
+      );
+      const own = shareds.includes(n) ||
+        folders.some((f) => n.startsWith(`${f}\\`));
+      return !own && (named || others.some((r) => related(n, r)));
+    });
+    if (foreign.length > 0) {
+      out.push(
+        `mounts a BCH path or another root that is not this container's own: ${
+          [...new Set(foreign)].join(", ")
+        }`,
+      );
+    }
+    // Rule 4: a junction elsewhere is some other folder's history
+    if (norm(ext.real) !== `${shared}\\extensions\\${c}`) {
+      out.push(
+        `${ext.path} resolves to ${ext.real}, not into the shared root ${o.sharedRoot}`,
+      );
+    }
+    // Rule 5: every record bounds the folder, in-use ones too (Sol r1 #4); an
+    // unreadable record time has already refused above
+    const birth = ext.birthtime === null ? NaN : Date.parse(ext.birthtime);
+    const newest = Math.max(
+      ...o.found.flatMap((f) => f.record ? [Date.parse(f.record.at)] : [])
+        .filter(Number.isFinite),
+    );
+    if (Number.isNaN(birth)) {
+      out.push(
+        `${ext.path}: its creation time is unreadable (${ext.birthtime})`,
+      );
+    } else if (!(birth > newest)) {
+      out.push(
+        `${ext.path} (created ${ext.birthtime}) is not after the newest record (${
+          new Date(newest).toISOString()
+        }): the folder outlived the old container, so the recreate did not go through BCH`,
+      );
+    } else if (!(birth <= created + FOLDER_TOLERANCE_MS)) {
+      out.push(
+        `${ext.path} (created ${ext.birthtime}) is later than docker Created (${o.created}) + 5 s: the folder was made after the container`,
+      );
+    }
   } else {
     const own = norm(o.ownRoot), shared = norm(o.sharedRoot);
     const mounts = o.mounts.map(norm);
-    // Sol r4: related = equal, inside, or containing
-    const related = (a: string, b: string) => under(a, b) || under(b, a);
     // the shared root and every other root always count, even one equal to
     // the own root (a junction sharing its storage: Sol r5); the caller
     // leaves out only the own root as named
