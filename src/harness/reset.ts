@@ -797,16 +797,30 @@ function splitExit(
  * Disable-NstFreeze: the marker reads expired at the release. An expiry whose
  * detach failed (detached=False) is not one: the NST may still be held.
  */
-const FS_HOLD_EXPIRED = [
-  /^before: \(fs-capture\): the NST hold did not hold: marker reads 'expired \d+ \d+(?: detached=True)?', not this hold's \(expired or failed\)$/,
-  /^before: \(fs-capture\): NST release: expired: the hold bound elapsed before the release$/,
-];
+const FS_EXPIRY_REASON = [
+  String
+    .raw`the NST hold did not hold: marker reads 'expired \d+ \d+(?: detached=True)?', not this hold's \(expired or failed\)`,
+  String.raw`NST release: expired: the hold bound elapsed before the release`,
+].join("|");
+/** fsDiff's error for one expiry line of a before side. */
+const FS_HOLD_EXPIRED = new RegExp(
+  String.raw`^before: \(fs-capture\): (?:${FS_EXPIRY_REASON})$`,
+);
+/**
+ * Sol r2: the raw line itself, path field exactly `(fs-capture)` (fsDiff's
+ * error joins path and reason, so it alone cannot tell them apart).
+ */
+const FS_HOLD_EXPIRED_LINE = new RegExp(
+  String.raw`^E\|\(fs-capture\)\|(?:${FS_EXPIRY_REASON})$`,
+);
 
 /**
  * H-79 part 2 (Sol r1 #2): fsDiff's own checks of this capture as a before
  * side (T| marker and count, parsable lines, no entry twice, every declared
  * root covered, every E| line) report nothing but fsDigest's exit and at
- * least one hold expiry. Only such a capture is retried.
+ * least one hold expiry, and (Sol r2) every raw E| line but the trailing
+ * exit line is one of the two expiry lines exactly as fs-digest.ps1 prints
+ * it. Only such a capture is retried.
  */
 export function fsHoldExpiredOnly(
   raw: readonly string[],
@@ -814,12 +828,14 @@ export function fsHoldExpiredOnly(
   roots: readonly string[] = [],
   caches: readonly FsPlatformCache[] = [],
 ): boolean {
+  const rawErrors = splitExit(raw).lines.filter((l) => l.startsWith("E|"));
+  if (!rawErrors.every((l) => FS_HOLD_EXPIRED_LINE.test(l))) return false;
   const errors = fsDiff(raw, [], exclude, roots, caches).errors
     .filter((e) => e.startsWith("before: "));
   const exits = errors.filter((e) =>
     /^before: capture failed with exit \d+$/.test(e)
   );
-  const expiries = errors.filter((e) => FS_HOLD_EXPIRED.some((r) => r.test(e)));
+  const expiries = errors.filter((e) => FS_HOLD_EXPIRED.test(e));
   return exits.length === 1 && expiries.length > 0 &&
     exits.length + expiries.length === errors.length;
 }

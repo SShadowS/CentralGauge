@@ -581,6 +581,16 @@ Deno.test("H-79 part 2: a capture retries only when the hold's bound elapsing is
       R,
     ),
   );
+  // Sol r2: a raw line whose path and reason only join into an expiry text
+  // (path "(fs-capture): NST release") is no expiry
+  for (
+    const spoof of [
+      "E|(fs-capture): NST release|expired: the hold bound elapsed before the release",
+      "E|(fs-capture): the NST hold did not hold|marker reads 'expired 12 34 detached=True', not this hold's (expired or failed)",
+    ]
+  ) {
+    assert(!fsHoldExpiredOnly(failedCap(...body, spoof), [], R), spoof);
+  }
   // Sol r1 #1: a walk error kept ahead of the expiry is no retry
   assert(
     !fsHoldExpiredOnly(
