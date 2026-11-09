@@ -386,6 +386,13 @@ Deno.test("H-82 liveHolders: a docker events watcher naming the container does n
       ["C:\\Program Files\\Docker\\docker.exe events Cronus281", "docker.exe"],
     ] as const
   ) assertEquals(holders(cmd, name), [30], cmd);
+  // run 002: a blank command line is unknown, like null: a container tool
+  // counts, anything else does not
+  for (const cmd of ["", "   ", "\t"]) {
+    assertEquals(holders(cmd, "docker.exe"), [30], `docker ${cmd}`);
+    assertEquals(holders(cmd, "pwsh.exe"), [30], `pwsh ${cmd}`);
+    assertEquals(holders(cmd, "svchost.exe"), [], `svchost ${cmd}`);
+  }
   // the gates tree counts whatever it runs, the watcher's command included
   assertEquals(
     liveHolders(

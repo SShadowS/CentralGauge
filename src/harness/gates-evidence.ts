@@ -257,7 +257,7 @@ export function liveHolders(
   for (const p of table) {
     // Sol r4: a container tool whose command line cannot be read may be
     // acting on it (unknown is never absence)
-    const hit = p.cmd === null
+    const hit = !p.cmd?.trim()
       ? CONTAINER_TOOL.test(p.name)
       : named.some((re) => re.test(p.cmd!)) &&
         !(/^docker(\.exe)?$/i.test(p.name) && DOCKER_EVENTS.test(p.cmd));
