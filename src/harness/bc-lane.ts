@@ -57,6 +57,8 @@ import {
   type FsCheckRecord,
   fsDiff,
   type FsDiffEntry,
+  fsHoldExpiredOnly,
+  type FsHoldTiming,
   fsHoldTiming,
   HostDirtyError,
   HttpBlockFailedError,
@@ -2243,7 +2245,7 @@ export async function deployAndTest(
   // capture that throws fails closed as an error line.
   let fsBefore: string[] | null = null;
   let fsCheck: FsCheckRecord | null = null;
-  const capture = async (m: ResetMechanism): Promise<string[]> => {
+  const captureOnce = async (m: ResetMechanism): Promise<string[]> => {
     try {
       return await m.fsDigest!(container);
     } catch (err) {
@@ -2251,14 +2253,43 @@ export async function deployAndTest(
       return [`E|(fsDigest)|${why.replace(/[\r\n|]+/g, " ")}`];
     }
   };
+  // H-79 part 2: a capture whose only failure is the hold's bound elapsing
+  // runs once more in full (a fresh hold and walk); the second run is the
+  // capture, whatever it holds. Its first run's timing is kept per side.
+  const fsFirst: { before?: FsHoldTiming | null; after?: FsHoldTiming | null } =
+    {};
+  const capture = async (
+    m: ResetMechanism,
+    side: "before" | "after",
+  ): Promise<string[]> => {
+    const first = await captureOnce(m);
+    if (!fsHoldExpiredOnly(first)) return first;
+    const t = fsFirst[side] = fsHoldTiming(first);
+    console.warn(
+      `[WARN] [fs] ${container}: L4 ${side} capture's NST hold expired (held ${
+        t?.held_ms ?? "?"
+      } ms of ${t?.bound_s ?? "?"} s); retrying once with a fresh hold`,
+    );
+    return await captureOnce(m);
+  };
+  const withRetry = (side: "before" | "after", t: FsHoldTiming | null) =>
+    side in fsFirst
+      ? {
+        ...(t ?? { held_ms: null, bound_s: null }),
+        retry: { reason: "hold expired" as const, first: fsFirst[side]! },
+      }
+      : t;
   const fsChecked = (
     diff: FsDiffEntry[],
     errors: string[],
     after: string[] | null = null,
   ) => {
     // R-09: the walk timing of both captures, when either carried one
-    const before = fsBefore ? fsHoldTiming(fsBefore) : null;
-    const afterT = after ? fsHoldTiming(after) : null;
+    const before = withRetry(
+      "before",
+      fsBefore ? fsHoldTiming(fsBefore) : null,
+    );
+    const afterT = withRetry("after", after ? fsHoldTiming(after) : null);
     fsCheck = {
       container,
       ok: diff.length === 0 && errors.length === 0,
@@ -2295,7 +2326,7 @@ export async function deployAndTest(
     // Sol S3 r1 #1: the second capture whatever the cleanup's outcome, so a
     // dirty host is never scored behind a cleanup failure.
     if (fsBefore && m.fsDigest) {
-      const after = await capture(m);
+      const after = await capture(m, "after");
       const d = fsDiff(
         fsBefore,
         after,
@@ -2326,7 +2357,7 @@ export async function deployAndTest(
     // The restored container holds the baseline only: no harness app owned.
     await saveLedger(i.ctx.ledgerRoot, container, {});
     if (m.fsDigest) {
-      fsBefore = await capture(m);
+      fsBefore = await capture(m, "before");
       // Unobservable right after the reset: nothing deployed, fail closed.
       const pre = fsDiff(fsBefore, [], m.fsExclude ?? [], m.fsRoots ?? []);
       const errors = pre.errors.filter((e) => e.startsWith("before: "));

@@ -5,6 +5,7 @@ import {
   commandReset,
   fsCaptureTiming,
   fsDiff,
+  fsHoldExpiredOnly,
   fsHoldTiming,
   fsLineRestored,
   goldenReset,
@@ -448,6 +449,69 @@ Deno.test("H-79: a capture that exits non-zero keeps its T| timing; it still fai
     fsDiff(cap(...body), [...failed, "E|(fs-capture)|exit 1"], [], [w("C:/W")])
       .errors[0]!.includes("no T| marker"),
   );
+});
+
+/** H-79 part 2: fs-digest.ps1's exact expiry lines (after its `[\r\n|]+` -> ' '). */
+const HELD_EXPIRED = (m = "expired 12 34 detached=True") =>
+  `E|(fs-capture)|the NST hold did not hold: marker reads '${m}', not this hold's (expired or failed)`;
+const RELEASE_EXPIRED =
+  "E|(fs-capture)|NST release: expired: the hold bound elapsed before the release";
+const failedCap = (...lines: string[]) => [
+  ...lines,
+  `T|${lines.length}|{"held_ms":39000,"bound_s":38}`,
+  "E|(fs-capture)|exit 1",
+];
+
+Deno.test("H-79 part 2: a capture retries only when the hold's bound elapsing is its only failure", () => {
+  const body = [w("D|16|5|C:/W"), F("C:/W/a.txt")];
+  // (a) expiry only: the held-check, the release, or both
+  assert(fsHoldExpiredOnly(failedCap(HELD_EXPIRED(), RELEASE_EXPIRED)));
+  assert(fsHoldExpiredOnly(failedCap(HELD_EXPIRED("expired 12 34"))));
+  assert(fsHoldExpiredOnly(failedCap(...body, RELEASE_EXPIRED)));
+  // (b) expiry plus any other E| line
+  for (
+    const other of [
+      "E|(fs-capture)|the NST session log moved while held (1 -> 2)",
+      "E|(fs-capture)|NST not quiescent after the scan",
+      w("E|C:/W|access denied"),
+    ]
+  ) {
+    assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED(), other)), other);
+    assert(!fsHoldExpiredOnly(failedCap(...body, RELEASE_EXPIRED, other)));
+  }
+  // (d) a non-expiry failure
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap("E|(fs-capture)|NST not quiescent before the scan"),
+    ),
+  );
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap("E|(fs-capture)|NST release: marker reads ''"),
+    ),
+  );
+  // (e) a marker that is not an expiry, or an expiry whose detach failed
+  for (
+    const m of [
+      "failed 12 boom",
+      "frozen 12 5 34 100 200",
+      "released 12 34 detached=True",
+      "expired 12 34 detached=False",
+      "expired 12 34' x '",
+    ]
+  ) {
+    assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED(m))), m);
+  }
+  // only a failed, complete, parsable capture: exit 0, no T|, a wrong count,
+  // an unparsable line, or no expiry line at all is no retry
+  assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED()).slice(0, -1)));
+  assert(!fsHoldExpiredOnly([HELD_EXPIRED(), "E|(fs-capture)|exit 1"]));
+  assert(
+    !fsHoldExpiredOnly([HELD_EXPIRED(), "T|2", "E|(fs-capture)|exit 1"]),
+  );
+  assert(!fsHoldExpiredOnly(failedCap("garbage", RELEASE_EXPIRED)));
+  assert(!fsHoldExpiredOnly(failedCap(...body)));
+  assert(!fsHoldExpiredOnly([]));
 });
 
 Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong count, malformed fields, a duplicate key, or a declared root it does not cover is an error (fail closed); empty captures never compare clean", () => {

@@ -103,6 +103,11 @@ export interface FsCheckRecord {
 export interface FsHoldTiming {
   held_ms: number | null;
   bound_s: number | null;
+  /**
+   * H-79: the capture was run a second time because its first run's hold
+   * expired (and nothing else failed); this record is the second run's.
+   */
+  retry?: { reason: "hold expired"; first: FsHoldTiming | null };
 }
 
 /** R-09: held_ms and bound_s of a capture's T| marker, or null. */
@@ -769,6 +774,35 @@ function splitExit(
   const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
   const exit = FS_EXIT.exec(lines.at(-1) ?? "")?.[1] ?? null;
   return { lines: exit === null ? lines : lines.slice(0, -1), exit };
+}
+
+/**
+ * H-79 part 2: fs-digest.ps1's two hold-expiry lines, exactly as it prints
+ * them (its `[\r\n|]+` -> ' ' makes the marker `expired|<pid>|<pid>[|detached=True]`
+ * read space-separated). Assert-NstFreezeHeld: the marker reads expired;
+ * Disable-NstFreeze: the marker reads expired at the release. An expiry whose
+ * detach failed (detached=False) is not one: the NST may still be held.
+ */
+const FS_HOLD_EXPIRED = [
+  /^E\|\(fs-capture\)\|the NST hold did not hold: marker reads 'expired \d+ \d+(?: detached=True)?', not this hold's \(expired or failed\)$/,
+  /^E\|\(fs-capture\)\|NST release: expired: the hold bound elapsed before the release$/,
+];
+
+/**
+ * H-79 part 2: the capture failed (fsDigest's exit line), is otherwise
+ * complete and parsable (one T| marker, last, its count exact), and its only
+ * E| lines are hold expiries (at least one). Only such a capture is retried.
+ */
+export function fsHoldExpiredOnly(raw: readonly string[]): boolean {
+  const { lines, exit } = splitExit(raw);
+  const last = lines.at(-1);
+  if (exit === null || !last?.startsWith("T|")) return false;
+  const entries = lines.slice(0, -1);
+  if (parseMark(last)?.count !== entries.length) return false;
+  const errs = entries.filter((l) => l.startsWith("E|"));
+  return errs.length > 0 &&
+    errs.every((l) => FS_HOLD_EXPIRED.some((r) => r.test(l))) &&
+    entries.every((l) => l.startsWith("E|") || fsKey(l) !== null);
 }
 
 /**

@@ -2906,6 +2906,149 @@ Deno.test("H-35 S3 L4: an error line in the post-reset capture fails closed befo
   assertEquals(r.checks.map((x) => x.ok), [false]);
 });
 
+// ---- H-79 part 2: one retry of a capture whose only failure is the hold expiring ----
+
+const HOLD_EXPIRED =
+  "E|(fs-capture)|the NST hold did not hold: marker reads 'expired 12 34 detached=True', not this hold's (expired or failed)";
+const RELEASE_EXPIRED =
+  "E|(fs-capture)|NST release: expired: the hold bound elapsed before the release";
+/** A capture as fsDigest returns it: script lines, T| with held_ms, exit line. */
+const rawCap = (held: number, exit: number, ...lines: string[]) => [
+  ...lines,
+  `T|${lines.length}|${JSON.stringify({ held_ms: held, bound_s: 38 })}`,
+  ...(exit === 0 ? [] : [`E|(fs-capture)|exit ${exit}`]),
+];
+
+/** fakeReset whose n-th capture is `caps[n]` verbatim (fsDigest's output). */
+function rawDigestReset(bc: FakeBc, caps: string[][]) {
+  const base = fakeReset(bc);
+  const checks: FsCheckRecord[] = [];
+  let n = 0;
+  const mechanism: ResetMechanism = {
+    ...base.mechanism,
+    fsExclude: [],
+    fsRoots: [],
+    fsDigest: () => Promise.resolve(caps[n++] ?? ["E|(test)|no capture"]),
+  };
+  return { mechanism, checks, runs: () => n };
+}
+
+async function digestRun(bc: FakeBc, caps: string[][]) {
+  const p = await prep(bc, new BcLane(bc, ["C1"]));
+  const r = rawDigestReset(bc, caps);
+  const warns: string[] = [];
+  const warn = stub(console, "warn", (...a: unknown[]) => {
+    warns.push(a.join(" "));
+  });
+  try {
+    const out = await deployAndTest(bc, "C1", {
+      wanted: p.wanted,
+      tests: [{ codeunit: 80010, procedures: ["Works"], target: "candidate" }],
+      cleanupIds: [IDS.test],
+      ctx: {
+        ledgerRoot: await tmp(),
+        trustedRoots: [p.pristine],
+        reset: r.mechanism,
+        onFsCheck: (f) => r.checks.push(f),
+      },
+    }).then((v) => ({ v, err: null }), (err: unknown) => ({ v: null, err }));
+    return { ...out, r, warns: warns.filter((w) => w.includes("[fs]")) };
+  } finally {
+    warn.restore();
+  }
+}
+
+const okBc = () =>
+  new FakeBc((cu) => cu === 80010 ? result({ Works: true }) : result({}));
+const A = FS_LINE("C:/W/a.txt");
+
+Deno.test("H-79 part 2 (a): a capture whose only failure is the hold expiring runs once more in full; the retry's capture is used and both timings are logged", async () => {
+  const { v, err, r, warns } = await digestRun(okBc(), [
+    rawCap(13000, 0, A),
+    rawCap(39000, 1, HOLD_EXPIRED, RELEASE_EXPIRED),
+    rawCap(21000, 0, A),
+  ]);
+  assertEquals(err, null);
+  assertEquals(r.runs(), 3);
+  assertEquals(v?.fsCheck?.ok, true);
+  const timing = {
+    before: { held_ms: 13000, bound_s: 38 },
+    after: {
+      held_ms: 21000,
+      bound_s: 38,
+      retry: {
+        reason: "hold expired" as const,
+        first: { held_ms: 39000, bound_s: 38 },
+      },
+    },
+  };
+  assertEquals(v?.fsCheck?.timing, timing);
+  assertEquals(r.checks[0]?.timing, timing);
+  assertEquals(warns.length, 1);
+  assertStringIncludes(warns[0]!, "C1");
+  assertStringIncludes(warns[0]!, "after");
+  assertStringIncludes(warns[0]!, "39000");
+});
+
+Deno.test("H-79 part 2 (b): an expiry plus any other error line is not retried and fails closed", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(
+      39000,
+      1,
+      HOLD_EXPIRED,
+      "E|(fs-capture)|the NST session log moved while held (1 -> 2)",
+    ),
+    rawCap(13000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertStringIncludes(String(err), "session log moved");
+  assertEquals(r.runs(), 1);
+  assertEquals(warns, []);
+});
+
+Deno.test("H-79 part 2 (c): a second expiry fails closed after exactly two runs", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(39000, 1, HOLD_EXPIRED, RELEASE_EXPIRED),
+    rawCap(39500, 1, HOLD_EXPIRED, RELEASE_EXPIRED),
+    rawCap(13000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertStringIncludes(String(err), "did not hold");
+  assertEquals(r.runs(), 2);
+  assertEquals(warns.length, 1);
+  assertEquals(r.checks[0]?.timing?.before, {
+    held_ms: 39500,
+    bound_s: 38,
+    retry: { reason: "hold expired", first: { held_ms: 39000, bound_s: 38 } },
+  });
+});
+
+Deno.test("H-79 part 2 (d): a failure that is not an expiry is not retried", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(0, 1, "E|(fs-capture)|NST not quiescent before the scan"),
+    rawCap(13000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertEquals(r.runs(), 1);
+  assertEquals(warns, []);
+});
+
+Deno.test("H-79 part 2 (e): a held-check whose marker reads failed|... or frozen|... is not an expiry, so no retry", async () => {
+  for (const m of ["failed 12 boom", "frozen 12 5 34 100 200"]) {
+    const { err, r, warns } = await digestRun(okBc(), [
+      rawCap(
+        39000,
+        1,
+        `E|(fs-capture)|the NST hold did not hold: marker reads '${m}', not this hold's (expired or failed)`,
+      ),
+      rawCap(13000, 0, A),
+    ]);
+    assert(err instanceof HostDirtyError, `${m}: ${err}`);
+    assertEquals(r.runs(), 1, m);
+    assertEquals(warns, [], m);
+  }
+});
+
 // ---- H-35 S3 L2a: no outbound HttpClient for agent extensions (design-r5 2.2) ----
 
 Deno.test("H-35 S3 L2a deployAndTest: in a judge deployment every candidate gets Allow HttpClient Requests = false after the publish and before the tests; prerequisites are left alone", async () => {
