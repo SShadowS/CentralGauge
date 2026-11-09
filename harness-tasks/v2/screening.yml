@@ -346,9 +346,6 @@ candidates:
   - id: HX-152
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "OnAfterBlockVehicle" }
-  - id: HX-153
-    prior: hard
-    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Due Line Run.OnAfterInvoiceLine" }
   - id: HX-154
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "OnGetHourlyDiscount, OnAfterBillHourly" }
