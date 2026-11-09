@@ -4,7 +4,10 @@ import { walk } from "@std/fs";
 import { dirname, join, relative, resolve } from "@std/path";
 import type { Layer, TestRef } from "./gate-core.ts";
 import type { LoadedTask } from "../../src/harness/task.ts";
+import { ValidationError } from "../../src/errors.ts";
 import { hashTree } from "../../src/harness/hash.ts";
+import { loadSymbolsLock } from "../../src/harness/identity.ts";
+import { checkTaskOverlay } from "../../src/harness/staging.ts";
 import {
   alObjects,
   BUILD_ORDER,
@@ -422,6 +425,19 @@ export async function checkTask(
   }
   if (testAuthoring && !(await exists(join(dir, "reference-tests")))) {
     problems.push("test-authoring needs reference-tests/");
+  }
+  // H-85: what staging refuses for every agent cell must not pass the gate.
+  // The lock is the one beside this refapp, so both come from the same revision.
+  try {
+    await checkTaskOverlay(
+      refappDir,
+      join(dir, "overlay"),
+      await loadSymbolsLock(resolve(refappDir, "../..")) ?? [],
+      GATE_TMP,
+    );
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err;
+    problems.push(`overlay: ${err.message}`);
   }
 
   // fixture/<name>/ (measurement-only, appendix section 7) gets the static

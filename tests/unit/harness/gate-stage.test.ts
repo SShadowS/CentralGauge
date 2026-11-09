@@ -15,6 +15,12 @@ import {
   stageWorkspace,
   testManifestIn,
 } from "../../../scripts/harness/gate-stage.ts";
+import {
+  CopyLimitError,
+  DEFAULT_COPY_LIMITS,
+} from "../../../src/harness/fsutil.ts";
+import { hashTree } from "../../../src/harness/hash.ts";
+import { checkTaskOverlay } from "../../../src/harness/staging.ts";
 import { loadTask } from "../../../src/harness/task.ts";
 import {
   TEST_CU,
@@ -1175,6 +1181,213 @@ Deno.test("H-71: with the flag, a missing or other value, and Restrictive in ora
     "reference-tests/Test/src/K.al",
     "reference-tests/Test/src/R.al",
   ]);
+});
+
+/** H-85: checkTask's staging problems for an overlay written by `edit`. */
+async function stagingProblems(
+  edit: (dir: string, refapp: string) => Promise<void>,
+): Promise<string[]> {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const refapp = join(root, "harness-tasks/refapp");
+  await edit(dir, refapp);
+  const { problems } = await checkTask(await loadTask(dir), refapp, root);
+  return problems.filter((p) => p.startsWith("overlay: "));
+}
+
+Deno.test("H-85: a normal overlay passes the staging check", async () => {
+  assertEquals(await stagingProblems(() => Promise.resolve()), []);
+});
+
+Deno.test("H-85: an overlay writing Test/ fails the gate check, as it fails staging", async () => {
+  for (
+    const rel of [
+      "overlay/Test/src/New.al",
+      "overlay/test/src/New.al",
+      "overlay/test/app.json",
+    ]
+  ) {
+    const got = await stagingProblems((dir) => write(dir, rel, "{}"));
+    assertEquals(got.length, 1, rel);
+    assertStringIncludes(got[0]!, "overlay writes a shipped test path");
+  }
+  const del = await stagingProblems((dir) =>
+    write(dir, "overlay/.delete", "Test/src/V.al\n")
+  );
+  assertEquals(del.length, 1);
+  assertStringIncludes(del[0]!, "removes a shipped test path");
+});
+
+// H-86's rule, reached through the gate: the same code as staging.
+const LIB = {
+  id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+  name: "Tests-TestLibraries",
+  publisher: "Microsoft",
+  version: "28.4.53241.53758",
+};
+const TEST_MANIFEST = JSON.stringify({
+  id: "c6a1e000-0000-4000-8000-000000000007",
+  name: "CGR Test",
+  publisher: "CentralGauge",
+  version: "1.0.0.0",
+  idRanges: [{ from: 80000, to: 84999 }],
+  dependencies: [{
+    id: "c6a1e000-0000-4000-8000-000000000001",
+    name: "CGR Core",
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+  }],
+});
+const withEntry = (e: typeof LIB) =>
+  TEST_MANIFEST.replace(/\}\]\}$/, `},${JSON.stringify(e)}]}`);
+/** A task whose refapp Test manifest can take the entry, and whose lock has it. */
+const manifestCase = (overlay: string) => async (d: string, refapp: string) => {
+  await write(refapp, "Test/app.json", TEST_MANIFEST);
+  await write(
+    join(refapp, "../.."),
+    "harness-tasks/symbols.lock.json",
+    JSON.stringify({
+      v: 1,
+      packages: [{
+        app_id: LIB.id,
+        name: LIB.name,
+        publisher: LIB.publisher,
+        version: LIB.version,
+        file: "lib.app",
+        sha256: "0".repeat(64),
+      }],
+    }),
+  );
+  await write(d, "overlay/Test/app.json", overlay);
+};
+
+Deno.test("H-85: the gate accepts the one Test/app.json addition staging accepts", async () => {
+  assertEquals(await stagingProblems(manifestCase(withEntry(LIB))), []);
+  // The whole gate check, not only the overlay rule.
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const refapp = join(root, "harness-tasks/refapp");
+  await manifestCase(withEntry(LIB))(dir, refapp);
+  assertEquals(
+    (await checkTask(await loadTask(dir), refapp, root)).problems,
+    [],
+  );
+});
+
+Deno.test("H-85: the gate refuses a Test/app.json staging refuses", async (t) => {
+  const cases: [string, string][] = [
+    ["not the shipped manifest", "{}"],
+    ["no addition", TEST_MANIFEST],
+    ["another version", withEntry({ ...LIB, version: "28.0.0.0" })],
+    [
+      "another field changed",
+      withEntry(LIB).replace('"CGR Test"', '"CGR Tests"'),
+    ],
+  ];
+  for (const [name, text] of cases) {
+    await t.step(name, async () => {
+      const got = await stagingProblems(manifestCase(text));
+      assertEquals(got.length, 1, got.join("; "));
+      assertStringIncludes(got[0]!, "Test/app.json may only add");
+    });
+  }
+  await t.step("no symbols lock", async () => {
+    const got = await stagingProblems(async (d, refapp) => {
+      await write(refapp, "Test/app.json", TEST_MANIFEST);
+      await write(d, "overlay/Test/app.json", withEntry(LIB));
+    });
+    assertEquals(got.length, 1, got.join("; "));
+    assertStringIncludes(got[0]!, "symbols lock");
+  });
+});
+
+Deno.test("H-85: the check refuses the overlay's other staging refusals", async (t) => {
+  const cases: [string, (d: string, r: string) => Promise<void>, string][] = [
+    [
+      "a build artifact the gate would skip",
+      (d) => write(d, "overlay/Core/x.app", "bin"),
+      "build artifacts",
+    ],
+    [
+      "a case alias of a refapp file",
+      // The fixture's own overlay/Core/src/A.al would absorb the spelling on NTFS.
+      async (d) => {
+        await Deno.remove(join(d, "overlay/Core"), { recursive: true });
+        await write(d, "overlay/Core/src/a.al", 'codeunit 70000 "A"\n{\n}\n');
+      },
+      "case alias",
+    ],
+    [
+      "a manifest staging cannot read",
+      (d) => write(d, "overlay/Core/app.json", '{"id":"not-a-guid"}'),
+      "Invalid app.json",
+    ],
+    [
+      "two apps with one id",
+      async (d, r) =>
+        await write(
+          d,
+          "overlay/Core/app.json",
+          await Deno.readTextFile(join(r, "Fleet/app.json")),
+        ),
+      "same app id",
+    ],
+  ];
+  for (const [name, edit, want] of cases) {
+    await t.step(name, async () => {
+      const got = await stagingProblems(edit);
+      assertEquals(got.length, 1, got.join("; "));
+      assertStringIncludes(got[0]!, want);
+    });
+  }
+});
+
+Deno.test("H-85: the check does not change the refapp or the task", async () => {
+  await stagingProblems(async (dir, refapp) => {
+    const before = [
+      await hashTree(refapp, "task"),
+      await hashTree(dir, "task"),
+    ];
+    const { problems } = await checkTask(
+      await loadTask(dir),
+      refapp,
+      join(dir, "../../.."),
+    );
+    assertEquals(problems.filter((p) => p.startsWith("overlay: ")), []);
+    assertEquals(
+      [await hashTree(refapp, "task"), await hashTree(dir, "task")],
+      before,
+    );
+  });
+});
+
+Deno.test("H-85: the merged tree is held to staging's copy limits", async () => {
+  const root = await tmp();
+  const dir = await writeTask(root, "HX-001", "# Bug\n");
+  const refapp = join(root, "harness-tasks/refapp");
+  const limits = { ...DEFAULT_COPY_LIMITS, maxFiles: 9 };
+  const check = () =>
+    checkTaskOverlay(refapp, join(dir, "overlay"), [], GATE_TMP, limits);
+  await check(); // the refapp's 9 files, the overlay replacing one of them
+  await write(dir, "overlay/Core/new.txt", "x");
+  await assertRejects(check, CopyLimitError, "more than 9 files");
+  // Room is kept for the symbol files staging restores before its copy.
+  const ten = { ...DEFAULT_COPY_LIMITS, maxFiles: 10 };
+  await checkTaskOverlay(refapp, join(dir, "overlay"), [], GATE_TMP, ten);
+  const symbol = {
+    app_id: LIB.id,
+    name: LIB.name,
+    publisher: LIB.publisher,
+    version: LIB.version,
+    file: "lib.app",
+    sha256: "0".repeat(64),
+  };
+  await assertRejects(
+    () =>
+      checkTaskOverlay(refapp, join(dir, "overlay"), [symbol], GATE_TMP, ten),
+    CopyLimitError,
+    "more than 9 files",
+  );
 });
 
 Deno.test("H-71: test_permissions is for kind test-authoring only", async () => {
