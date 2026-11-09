@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88405/TwoLeasesOneVehicleSeparateRows": 1
+    "88405/AmountAndCountStopAtAsOf": 1
+    "88405/InvoiceDatedOnAsOfCounted": 1
+    "88405/UninvoicedLeaseListedAtZero": 1
+    "88405/LeaseInvoicedAfterAsOfListedAtZero": 1
+    "88405/SecondAsOfGivesOwnBalances": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

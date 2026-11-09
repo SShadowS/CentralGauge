@@ -370,6 +370,9 @@ candidates:
   - id: HX-161
     prior: hard
     size: { objects: 3, files: 3, reuse: null, traces: "CGR Credit Check Run.OnCheckCredit" }
+  - id: HX-163
+    prior: hard
+    size: { objects: 2, files: 2, reuse: null, traces: null }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:
