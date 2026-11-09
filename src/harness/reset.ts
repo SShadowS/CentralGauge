@@ -798,25 +798,30 @@ function splitExit(
  * detach failed (detached=False) is not one: the NST may still be held.
  */
 const FS_HOLD_EXPIRED = [
-  /^E\|\(fs-capture\)\|the NST hold did not hold: marker reads 'expired \d+ \d+(?: detached=True)?', not this hold's \(expired or failed\)$/,
-  /^E\|\(fs-capture\)\|NST release: expired: the hold bound elapsed before the release$/,
+  /^before: \(fs-capture\): the NST hold did not hold: marker reads 'expired \d+ \d+(?: detached=True)?', not this hold's \(expired or failed\)$/,
+  /^before: \(fs-capture\): NST release: expired: the hold bound elapsed before the release$/,
 ];
 
 /**
- * H-79 part 2: the capture failed (fsDigest's exit line), is otherwise
- * complete and parsable (one T| marker, last, its count exact), and its only
- * E| lines are hold expiries (at least one). Only such a capture is retried.
+ * H-79 part 2 (Sol r1 #2): fsDiff's own checks of this capture as a before
+ * side (T| marker and count, parsable lines, no entry twice, every declared
+ * root covered, every E| line) report nothing but fsDigest's exit and at
+ * least one hold expiry. Only such a capture is retried.
  */
-export function fsHoldExpiredOnly(raw: readonly string[]): boolean {
-  const { lines, exit } = splitExit(raw);
-  const last = lines.at(-1);
-  if (exit === null || !last?.startsWith("T|")) return false;
-  const entries = lines.slice(0, -1);
-  if (parseMark(last)?.count !== entries.length) return false;
-  const errs = entries.filter((l) => l.startsWith("E|"));
-  return errs.length > 0 &&
-    errs.every((l) => FS_HOLD_EXPIRED.some((r) => r.test(l))) &&
-    entries.every((l) => l.startsWith("E|") || fsKey(l) !== null);
+export function fsHoldExpiredOnly(
+  raw: readonly string[],
+  exclude: readonly string[] = [],
+  roots: readonly string[] = [],
+  caches: readonly FsPlatformCache[] = [],
+): boolean {
+  const errors = fsDiff(raw, [], exclude, roots, caches).errors
+    .filter((e) => e.startsWith("before: "));
+  const exits = errors.filter((e) =>
+    /^before: capture failed with exit \d+$/.test(e)
+  );
+  const expiries = errors.filter((e) => FS_HOLD_EXPIRED.some((r) => r.test(e)));
+  return exits.length === 1 && expiries.length > 0 &&
+    exits.length + expiries.length === errors.length;
 }
 
 /**

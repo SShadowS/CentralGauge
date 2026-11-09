@@ -2964,30 +2964,77 @@ const A = FS_LINE("C:/W/a.txt");
 
 Deno.test("H-79 part 2 (a): a capture whose only failure is the hold expiring runs once more in full; the retry's capture is used and both timings are logged", async () => {
   const { v, err, r, warns } = await digestRun(okBc(), [
+    rawCap(39000, 1, A, HOLD_EXPIRED, RELEASE_EXPIRED),
     rawCap(13000, 0, A),
-    rawCap(39000, 1, HOLD_EXPIRED, RELEASE_EXPIRED),
     rawCap(21000, 0, A),
   ]);
   assertEquals(err, null);
   assertEquals(r.runs(), 3);
   assertEquals(v?.fsCheck?.ok, true);
   const timing = {
-    before: { held_ms: 13000, bound_s: 38 },
-    after: {
-      held_ms: 21000,
+    before: {
+      held_ms: 13000,
       bound_s: 38,
       retry: {
         reason: "hold expired" as const,
         first: { held_ms: 39000, bound_s: 38 },
       },
     },
+    after: { held_ms: 21000, bound_s: 38 },
   };
   assertEquals(v?.fsCheck?.timing, timing);
   assertEquals(r.checks[0]?.timing, timing);
   assertEquals(warns.length, 1);
   assertStringIncludes(warns[0]!, "C1");
-  assertStringIncludes(warns[0]!, "after");
+  assertStringIncludes(warns[0]!, "before");
   assertStringIncludes(warns[0]!, "39000");
+});
+
+Deno.test("H-79 Sol r1 #3: an AFTER capture whose hold expired (release only) is never retried; it fails closed", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(13000, 0, A),
+    rawCap(39000, 1, A, RELEASE_EXPIRED),
+    rawCap(21000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertStringIncludes(String(err), "the hold bound elapsed");
+  assertEquals(r.runs(), 2);
+  assertEquals(warns, []);
+  assertEquals(r.checks[0]?.timing?.after, { held_ms: 39000, bound_s: 38 });
+});
+
+Deno.test("H-79 Sol r1 #4: a BEFORE retry whose second run fails otherwise fails closed with that error", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(39000, 1, A, HOLD_EXPIRED),
+    rawCap(0, 1, "E|(fs-capture)|NST not quiescent before the scan"),
+    rawCap(13000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertStringIncludes(String(err), "NST not quiescent before the scan");
+  assertEquals(r.runs(), 2);
+  assertEquals(warns.length, 1);
+});
+
+Deno.test("H-79 Sol r1 #4: the BEFORE retry's own capture is the baseline; nothing of the first run enters the diff", async () => {
+  const B = FS_LINE("C:/W/b.txt");
+  const { v, err, r } = await digestRun(okBc(), [
+    // the first, expired run saw b.txt; the retry does not
+    rawCap(39000, 1, A, B, HOLD_EXPIRED),
+    rawCap(13000, 0, A),
+    rawCap(21000, 0, A),
+  ]);
+  assertEquals(err, null);
+  assertEquals(r.runs(), 3);
+  assertEquals(v?.fsCheck?.ok, true);
+  assertEquals(v?.fsCheck?.diff, []);
+  // and the other way round: what only the retry saw is the baseline too
+  const second = await digestRun(okBc(), [
+    rawCap(39000, 1, A, HOLD_EXPIRED),
+    rawCap(13000, 0, A, B),
+    rawCap(21000, 0, A),
+  ]);
+  assert(second.err instanceof HostDirtyError, String(second.err));
+  assertEquals(second.r.checks[0]?.diff.map((d) => d.path), ["C:/W/b.txt"]);
 });
 
 Deno.test("H-79 part 2 (b): an expiry plus any other error line is not retried and fails closed", async () => {

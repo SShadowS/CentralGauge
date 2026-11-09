@@ -556,10 +556,39 @@ const failedCap = (...lines: string[]) => [
 
 Deno.test("H-79 part 2: a capture retries only when the hold's bound elapsing is its only failure", () => {
   const body = [w("D|16|5|C:/W"), F("C:/W/a.txt")];
-  // (a) expiry only: the held-check, the release, or both
-  assert(fsHoldExpiredOnly(failedCap(HELD_EXPIRED(), RELEASE_EXPIRED)));
-  assert(fsHoldExpiredOnly(failedCap(HELD_EXPIRED("expired 12 34"))));
-  assert(fsHoldExpiredOnly(failedCap(...body, RELEASE_EXPIRED)));
+  const R = [w("C:/W")];
+  // (a) expiry only, with the complete walk (fs-digest.ps1 keeps it, Sol r1
+  // #1): the held-check, the release, or both
+  assert(
+    fsHoldExpiredOnly(
+      failedCap(...body, HELD_EXPIRED(), RELEASE_EXPIRED),
+      [],
+      R,
+    ),
+  );
+  assert(
+    fsHoldExpiredOnly(failedCap(...body, HELD_EXPIRED("expired 12 34")), [], R),
+  );
+  assert(fsHoldExpiredOnly(failedCap(...body, RELEASE_EXPIRED), [], R));
+  // Sol r1 #2: fsDiff's structural checks of the side hold too: a declared
+  // root the capture does not cover (only the expiry line), or an entry
+  // twice, is no retry
+  assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED()), [], R));
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap(w("D|16|5|C:/W"), w("D|16|5|C:/W"), HELD_EXPIRED()),
+      [],
+      R,
+    ),
+  );
+  // Sol r1 #1: a walk error kept ahead of the expiry is no retry
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap(...body, w("E|C:/W/locked.dat|access denied"), HELD_EXPIRED()),
+      [],
+      R,
+    ),
+  );
   // (b) expiry plus any other E| line
   for (
     const other of [
