@@ -12043,6 +12043,13 @@ for (
       "docker inspect Cronus281 failed",
     ],
     [
+      "Sol r1: my is a junction outside every root",
+      (f) => {
+        f.seam.real = (p) => Promise.resolve(p === H80_MY ? "D:\\stale-my" : p);
+      },
+      "\\my is not mounted",
+    ],
+    [
       "the folder is missing",
       (f) => {
         f.seam.real = H80_FAIL_ON(H80_EXT, new Deno.errors.NotFound("gone"));

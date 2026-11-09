@@ -397,6 +397,24 @@ for (
       "is not mounted",
     ],
     [
+      "Sol r1: my resolves outside every root (only the raw name matches)",
+      { mounts: [SHARED, "D:\\stale-my", CACHE] },
+      "\\my is not mounted",
+    ],
+    [
+      "Sol r1: the resolved shared root is not mounted (only the raw name matches)",
+      {
+        sharedRoot: "D:\\BCH",
+        mounts: ["E:\\stale-root", "D:\\BCH\\Extensions\\Cronus281\\my", CACHE],
+        sharedExtensions: {
+          path: EXT,
+          real: "D:\\BCH\\Extensions\\Cronus281",
+          birthtime: "2026-11-08T08:30:00.000Z",
+        },
+      },
+      "the shared root D:\\BCH is not mounted",
+    ],
+    [
       "shared root not mounted",
       { mounts: [MY], rawMounts: [MY] },
       "not mounted",
