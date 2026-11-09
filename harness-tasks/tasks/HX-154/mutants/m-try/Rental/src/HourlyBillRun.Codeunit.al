@@ -13,20 +13,30 @@ codeunit 70289 "CGR Hourly Bill Run"
     end;
 
     trigger OnRun()
+    var
+        Bill: Record "CGR Hourly Bill";
     begin
-        WriteHourlyBill();
+        WriteHourlyBill(Bill);
+        OnAfterBillHourly(Bill);
+    end;
+
+    procedure TryWriteHourlyBill(): Boolean
+    var
+        Bill: Record "CGR Hourly Bill";
+    begin
+        WriteHourlyBill(Bill);
+        exit(TryAnnounceHourlyBill(Bill));
     end;
 
     [TryFunction]
-    procedure TryWriteHourlyBill()
+    local procedure TryAnnounceHourlyBill(Bill: Record "CGR Hourly Bill")
     begin
-        WriteHourlyBill();
+        OnAfterBillHourly(Bill);
     end;
 
-    local procedure WriteHourlyBill()
+    local procedure WriteHourlyBill(var Bill: Record "CGR Hourly Bill")
     var
         Vehicle: Record "CGR Vehicle";
-        Bill: Record "CGR Hourly Bill";
     begin
         Vehicle.Get(BillContract."Vehicle No.");
         Bill.Init();
@@ -34,7 +44,6 @@ codeunit 70289 "CGR Hourly Bill Run"
         Bill.Hours := BillHours;
         Bill.Amount := Round(BillHours * Vehicle."Hourly Rate" * (100 - BillDiscountPct) / 100, 0.01);
         Bill.Insert(true);
-        OnAfterBillHourly(Bill);
     end;
 
     [IntegrationEvent(false, false)]
