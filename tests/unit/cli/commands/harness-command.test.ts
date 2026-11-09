@@ -11785,6 +11785,8 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
     quarantineDir: () => qDir,
     containerFacts: () => Promise.resolve({ ...facts }),
     bchRoot: () => own,
+    // H-80 Sol r1: never the real host's folder (the not-listed step below)
+    folderBirthtime: () => Promise.resolve(new Date(at + 1)),
     // Sol r3: the fake mount sources do not exist on this host: as given
     realPath: (p) => Promise.resolve(p),
     // Sol r4: the known BCH roots, never the real bch-roots.json
@@ -11854,7 +11856,12 @@ Deno.test("H-77 recover --recreated archives the old container's records into th
   facts.mounts = [OWN];
   // not listed in bch-roots.json
   own = null;
-  await refused("not listed in bch-roots.json");
+  // H-80 Sol r1: an unlisted container mounting an own-root sibling: the
+  // shared-root path refuses on the mounts, not on an unreadable folder
+  await refused(
+    "is not listed in bch-roots.json and the shared root C:\\ProgramData\\BcContainerHelper is not mounted",
+  );
+  await refused(`not this container's own: ${OWN}`);
   own = OWN;
   // the container changed under the command
   facts.id = fakeId("third");
