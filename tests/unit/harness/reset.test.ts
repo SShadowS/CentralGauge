@@ -1,10 +1,14 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
+import { join } from "@std/path";
 import { ConfigurationError, ContainerError } from "../../../src/errors.ts";
 import { LineageSchema, loadLineage } from "../../../src/harness/lineage.ts";
 import {
   commandReset,
+  failedReset,
   fsCaptureTiming,
   fsDiff,
+  fsHoldExpiredOnly,
+  fsHoldTiming,
   fsLineRestored,
   goldenReset,
   parseFsRemoveOutput,
@@ -169,6 +173,96 @@ Deno.test("H-35 orch Sol r1 #1: any malformed reserved-marker line is a protocol
 });
 
 // ---- H-35 S3: the post-cleanup inventory check protocol ----
+
+Deno.test("H-79 part 4: a failure reason keeps its full text with ANSI escapes stripped (before and after the real error), never cut at an escape", () => {
+  const e = "\x1b";
+  // the Cronus282 quiesce failure's shape: PS7 ConciseView, newlines
+  // collapsed by reset-golden.ps1 Fail, colour codes around the message
+  const real = "The session 7 could not be removed because it is still active.";
+  const reason =
+    `${e}[31;1mRemove-NAVServerSession: ${e}[0m Line |   15 |      $output = Remove-NAVServerSession @cmdletArgs;      |                ~~~~~~~~~~~ ${e}[31;1m${e}[31;1m${real}${e}[0m${e}]0;pwsh\x07 (exit 1)${e}[`;
+  const want =
+    `Remove-NAVServerSession:  Line |   15 |      $output = Remove-NAVServerSession @cmdletArgs;      |                ~~~~~~~~~~~ ${real} (exit 1)`;
+  const r = parseResetOutput("C1", MECH, {
+    code: 1,
+    stdout: `RESET_STEP snapshot_guard 5\r\nRESET_FAILED quiesce ${reason}\r\n`,
+  });
+  assertEquals([r.failed_step, r.error], ["quiesce", want]);
+  assertEquals(
+    new ResetFailedError(r).message,
+    `reset of C1 failed at quiesce: ${want}`,
+  );
+  assertEquals(
+    parseVerifyOutput("C1", { code: 1, stdout: `VERIFY_FAILED ${reason}` })
+      .error,
+    want,
+  );
+  assertEquals(
+    failedReset("C1", MECH, "threw", new Error(reason)).error,
+    want,
+  );
+  // the marker itself stays strict: a coloured RESET_OK is no success
+  assertEquals(
+    parseResetOutput("C1", MECH, {
+      code: 0,
+      stdout: [...FULL, `${e}[32mRESET_OK${e}[0m`].join("\n"),
+    }).ok,
+    false,
+  );
+});
+
+Deno.test({
+  name:
+    "H-79 part 4 root cause: reset-golden.ps1 Fail, run in a real pwsh with PlainText rendering, keeps a ConciseView error's message (its 300-char cap counts text, not escape codes)",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const src = await Deno.readTextFile(
+      join(Deno.cwd(), "infra", "harness-reset", "reset-golden.ps1"),
+    );
+    const fail = /^function Fail\(.*?^\}$/ms.exec(src)?.[0];
+    assert(fail, "reset-golden.ps1 has no Fail function");
+    // pwsh 7 ConciseView's coloured render of the Cronus282 quiesce error
+    const real =
+      "The session 7 could not be removed because it is still active.";
+    const script = `${fail}
+$E = [char]27
+$t = '~' * 35
+$reason = @(
+  "$E[31;1mRemove-NAVServerSession: $E[0m",
+  "$E[31;1m$E[0m$E[36;1mLine |$E[0m",
+  "$E[31;1m$E[0m$E[36;1m$E[36;1m  15 | $E[0m     \`$output = $E[36;1mRemove-NAVServerSession @cmdletArgs$E[0m;$E[0m",
+  "$E[31;1m$E[0m$E[36;1m$E[36;1m$E[0m$E[36;1m$E[0m$E[36;1m     | $E[31;1m               $t$E[0m",
+  "$E[31;1m$E[0m$E[36;1m$E[36;1m$E[0m$E[36;1m$E[0m$E[36;1m$E[31;1m$E[31;1m$E[36;1m     | $E[31;1m${real}$E[0m"
+) -join "\`r\`n"
+Fail quiesce $reason
+`;
+    const file = await Deno.makeTempFile({ suffix: ".ps1" });
+    try {
+      await Deno.writeTextFile(file, script);
+      // NO_COLOR: pwsh renders PlainText and strips complete escapes on output
+      const out = await new Deno.Command("pwsh", {
+        args: ["-NoProfile", "-NonInteractive", "-File", file],
+        env: { NO_COLOR: "1" },
+        stdin: "null",
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const r = parseResetOutput("C1", MECH, {
+        code: out.code,
+        stdout: new TextDecoder().decode(out.stdout),
+      });
+      assertEquals(r.failed_step, "quiesce");
+      assertEquals(
+        r.error,
+        `Remove-NAVServerSession:  Line |   15 |      $output = Remove-NAVServerSession @cmdletArgs;      |                ${
+          "~".repeat(35)
+        }      | ${real}`,
+      );
+    } finally {
+      await Deno.remove(file);
+    }
+  },
+});
 
 Deno.test("H-35 S3 parseVerifyOutput: VERIFY_OK with exit 0 is clean; VERIFY_DIRTY carries its diff lines; anything else is a failed check", () => {
   assertEquals(
@@ -410,6 +504,145 @@ Deno.test("R-09: the T| marker may carry the capture's timing as JSON; its count
   }
   assertEquals(fsCaptureTiming([...body, `T|2|${timing}`])?.held_ms, 31234);
   assertEquals(fsCaptureTiming(cap(...body)), null);
+});
+
+Deno.test("H-79: a capture that exits non-zero keeps its T| timing; it still fails closed with its own errors and the exit, never as an incomplete capture", () => {
+  const body = [w("D|16|5|C:/W"), F("C:/W/a.txt")];
+  const hold =
+    "E|(fs-capture)|the NST hold did not hold: marker reads 'expired 1 2 detached=True' after the walk";
+  const failed = [
+    ...body,
+    hold,
+    'T|3|{"held_ms":39000,"bound_s":38}',
+    "E|(fs-capture)|exit 1",
+  ];
+  assertEquals(fsCaptureTiming(failed)?.held_ms, 39000);
+  assertEquals(fsHoldTiming(failed), { held_ms: 39000, bound_s: 38 });
+  const errs = fsDiff(cap(...body), failed, [], [w("C:/W")]).errors;
+  assertEquals(errs, [
+    "after: capture failed with exit 1",
+    "after: (fs-capture): the NST hold did not hold: marker reads 'expired 1 2 detached=True' after the walk",
+  ]);
+  // the count stays exact: the exit line is not one of the script's lines
+  assert(
+    fsDiff(cap(...body), [...body, hold, "T|2", "E|(fs-capture)|exit 1"], [], [
+      w("C:/W"),
+    ]).errors.some((e) => e.includes("does not match the count 3")),
+  );
+  // a failed capture without its T| line is still incomplete, and fails
+  assertEquals(
+    fsDiff(cap(...body), [...body, "E|(fs-capture)|exit 1"], [], [w("C:/W")])
+      .errors[0],
+    "after: no T| marker as the last line (incomplete capture)",
+  );
+  assertEquals(fsCaptureTiming([...body, "E|(fs-capture)|exit 1"]), null);
+  // the exit line excuses the T| position only as the one line after it
+  assert(
+    fsDiff(cap(...body), [...failed, "E|(fs-capture)|exit 1"], [], [w("C:/W")])
+      .errors[0]!.includes("no T| marker"),
+  );
+});
+
+/** H-79 part 2: fs-digest.ps1's exact expiry lines (after its `[\r\n|]+` -> ' '). */
+const HELD_EXPIRED = (m = "expired 12 34 detached=True") =>
+  `E|(fs-capture)|the NST hold did not hold: marker reads '${m}', not this hold's (expired or failed)`;
+const RELEASE_EXPIRED =
+  "E|(fs-capture)|NST release: expired: the hold bound elapsed before the release";
+const failedCap = (...lines: string[]) => [
+  ...lines,
+  `T|${lines.length}|{"held_ms":39000,"bound_s":38}`,
+  "E|(fs-capture)|exit 1",
+];
+
+Deno.test("H-79 part 2: a capture retries only when the hold's bound elapsing is its only failure", () => {
+  const body = [w("D|16|5|C:/W"), F("C:/W/a.txt")];
+  const R = [w("C:/W")];
+  // (a) expiry only, with the complete walk (fs-digest.ps1 keeps it, Sol r1
+  // #1): the held-check, the release, or both
+  assert(
+    fsHoldExpiredOnly(
+      failedCap(...body, HELD_EXPIRED(), RELEASE_EXPIRED),
+      [],
+      R,
+    ),
+  );
+  assert(
+    fsHoldExpiredOnly(failedCap(...body, HELD_EXPIRED("expired 12 34")), [], R),
+  );
+  assert(fsHoldExpiredOnly(failedCap(...body, RELEASE_EXPIRED), [], R));
+  // Sol r1 #2: fsDiff's structural checks of the side hold too: a declared
+  // root the capture does not cover (only the expiry line), or an entry
+  // twice, is no retry
+  assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED()), [], R));
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap(w("D|16|5|C:/W"), w("D|16|5|C:/W"), HELD_EXPIRED()),
+      [],
+      R,
+    ),
+  );
+  // Sol r2: a raw line whose path and reason only join into an expiry text
+  // (path "(fs-capture): NST release") is no expiry
+  for (
+    const spoof of [
+      "E|(fs-capture): NST release|expired: the hold bound elapsed before the release",
+      "E|(fs-capture): the NST hold did not hold|marker reads 'expired 12 34 detached=True', not this hold's (expired or failed)",
+    ]
+  ) {
+    assert(!fsHoldExpiredOnly(failedCap(...body, spoof), [], R), spoof);
+  }
+  // Sol r1 #1: a walk error kept ahead of the expiry is no retry
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap(...body, w("E|C:/W/locked.dat|access denied"), HELD_EXPIRED()),
+      [],
+      R,
+    ),
+  );
+  // (b) expiry plus any other E| line
+  for (
+    const other of [
+      "E|(fs-capture)|the NST session log moved while held (1 -> 2)",
+      "E|(fs-capture)|NST not quiescent after the scan",
+      w("E|C:/W|access denied"),
+    ]
+  ) {
+    assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED(), other)), other);
+    assert(!fsHoldExpiredOnly(failedCap(...body, RELEASE_EXPIRED, other)));
+  }
+  // (d) a non-expiry failure
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap("E|(fs-capture)|NST not quiescent before the scan"),
+    ),
+  );
+  assert(
+    !fsHoldExpiredOnly(
+      failedCap("E|(fs-capture)|NST release: marker reads ''"),
+    ),
+  );
+  // (e) a marker that is not an expiry, or an expiry whose detach failed
+  for (
+    const m of [
+      "failed 12 boom",
+      "frozen 12 5 34 100 200",
+      "released 12 34 detached=True",
+      "expired 12 34 detached=False",
+      "expired 12 34' x '",
+    ]
+  ) {
+    assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED(m))), m);
+  }
+  // only a failed, complete, parsable capture: exit 0, no T|, a wrong count,
+  // an unparsable line, or no expiry line at all is no retry
+  assert(!fsHoldExpiredOnly(failedCap(HELD_EXPIRED()).slice(0, -1)));
+  assert(!fsHoldExpiredOnly([HELD_EXPIRED(), "E|(fs-capture)|exit 1"]));
+  assert(
+    !fsHoldExpiredOnly([HELD_EXPIRED(), "T|2", "E|(fs-capture)|exit 1"]),
+  );
+  assert(!fsHoldExpiredOnly(failedCap("garbage", RELEASE_EXPIRED)));
+  assert(!fsHoldExpiredOnly(failedCap(...body)));
+  assert(!fsHoldExpiredOnly([]));
 });
 
 Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong count, malformed fields, a duplicate key, or a declared root it does not cover is an error (fail closed); empty captures never compare clean", () => {

@@ -25,7 +25,9 @@ Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyC
 . (Join-Path $PSScriptRoot 'fs-digest.ps1')
 
 function Fail([string]$step, [string]$reason) {
-  $one = ($reason -replace '[\r\n]+', ' ').Trim()
+  # H-79 part 4: ANSI escapes (CSI, OSC) out before the cap, so it counts text and never cuts inside one
+  $plain = $reason -replace '\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', ''
+  $one = ($plain -replace '[\r\n]+', ' ').Trim()
   if ($one.Length -gt 300) { $one = $one.Substring(0, 300) }
   Write-Output "RESET_FAILED $step $one"
   exit 1
