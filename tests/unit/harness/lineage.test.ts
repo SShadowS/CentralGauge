@@ -12,6 +12,7 @@ import {
   goldenReset,
   RESET_PHASES,
 } from "../../../src/harness/reset.ts";
+import { envFpOf } from "../../../src/harness/environment.ts";
 import { sha256Hex } from "../../../src/harness/hash.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
 
@@ -366,6 +367,49 @@ Deno.test("H-40 addendum 8b Q5: a platform_cache entry with both in_place and in
     await copyLineage((j) => {
       j["fs"] = v2.fs;
     }),
+  );
+});
+
+Deno.test("H-84 the v2 lineage's identity is pinned: accepting an empty $ndo$taskscheduling moves no env_fp, root or exclude[]; an exclusion would", async () => {
+  const l = await loadLineage(
+    "infra/harness-reset/lineages/golden-o09-v2.json",
+  );
+  const cr = l.content_root!;
+  assertEquals(
+    cr.root,
+    "8a0df4d681416442069b2d7aff64c2c228efa64aea6fe9a60bae62b39be56e08",
+  );
+  assertEquals(cr.exclude.map((e) => e.pattern), [
+    "$ndo$cachesync",
+    "Active Session",
+    "Server Instance",
+    "Session Event",
+    "*$AL Test Suite$*",
+  ]);
+  assertEquals(l.reset_policy_version, 2);
+  const fp = (lineage: typeof l) =>
+    envFpOf({
+      compat: { lineage: lineageCompat(lineage) },
+      mechanism: "golden-restore",
+      lockDigest: "lock",
+      compiler: "compiler",
+    });
+  assertEquals(
+    await fp(l),
+    "37abfbbffbc061be0c554fe31541db2837b76082372610f85c714ef57e758340",
+  );
+  // the pin is sensitive: an exclusion instead of the tolerance moves it
+  assert(
+    await fp({
+      ...l,
+      content_root: {
+        ...cr,
+        exclude: [...cr.exclude, {
+          pattern: "$ndo$taskscheduling",
+          reason: "x",
+        }],
+      },
+    }) !== await fp(l),
   );
 });
 

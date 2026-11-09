@@ -79,8 +79,10 @@ function Test-NstSuspended([string]$Container) {
 # (DebugBreakProcess) and never continues a debug event, so every thread, including one created later, stays
 # stopped. It holds until the capture asks for the release or its bound elapses, then detaches. A killed coordinator:
 # the bound ends the hold. A killed holder: the system detaches (kill-on-exit off) and the NST runs on. So no
-# separate watchdog. The bound (default 38 s) stays below one healthcheck interval plus its timeout (30 s + 10 s), so
-# a hold costs at most one failing healthcheck; a walk that outlasts it fails closed (expired).
+# separate watchdog. The bound (default 55 s, H-81) stays below two healthcheck intervals (30 s each: docker starts a
+# probe one interval after the previous one ends, so a third probe starts at least 60 s in): at most two probes overlap
+# one hold, under docker's 3 retries. A later probe has to succeed to clear the streak; the release alone does not. A
+# walk that outlasts the bound fails closed (expired).
 # Generation G names this hold's files: <dir>\nst-freeze.<G> (the marker) and <dir>\nst-freeze.<G>.release. A
 # holder only ever reads and writes its own files and ends only its own debug session, so a stale holder cannot touch
 # a later hold (and a second debugger cannot attach while one holds). Marker values:
@@ -90,7 +92,7 @@ function Test-NstSuspended([string]$Container) {
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
 # C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
 $NstFreezeDir = 'C:\ProgramData\cg-harness'
-$NstHoldSeconds = 38
+$NstHoldSeconds = 55
 function Enable-NstFreeze([string]$Container, [int]$Seconds = $NstHoldSeconds, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
   $t = Invoke-InContainer $Container { param($s, $dir, $tpid)
     New-Item -ItemType Directory -Force (Join-Path $dir 'tmp') | Out-Null
