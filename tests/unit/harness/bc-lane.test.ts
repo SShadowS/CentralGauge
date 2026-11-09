@@ -2924,13 +2924,18 @@ function rawDigestReset(bc: FakeBc, caps: string[][]) {
   const base = fakeReset(bc);
   const checks: FsCheckRecord[] = [];
   let n = 0;
+  /** Every fsDigest call's arguments, in order. */
+  const args: unknown[][] = [];
   const mechanism: ResetMechanism = {
     ...base.mechanism,
     fsExclude: [],
     fsRoots: [],
-    fsDigest: () => Promise.resolve(caps[n++] ?? ["E|(test)|no capture"]),
+    fsDigest: (...a: unknown[]) => {
+      args.push(a);
+      return Promise.resolve(caps[n++] ?? ["E|(test)|no capture"]);
+    },
   };
-  return { mechanism, checks, runs: () => n };
+  return { mechanism, checks, runs: () => n, args };
 }
 
 async function digestRun(bc: FakeBc, caps: string[][]) {
@@ -2970,6 +2975,9 @@ Deno.test("H-79 part 2 (a): a capture whose only failure is the hold expiring ru
   ]);
   assertEquals(err, null);
   assertEquals(r.runs(), 3);
+  // H-79 Sol r3: the retry is a second fsDigest call (fs-capture.ps1 spawned
+  // again) with the container only; nothing of the first attempt is passed
+  assertEquals(r.args, [["C1"], ["C1"], ["C1"]]);
   assertEquals(v?.fsCheck?.ok, true);
   const timing = {
     before: {

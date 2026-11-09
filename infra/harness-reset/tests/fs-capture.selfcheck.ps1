@@ -86,6 +86,11 @@ try {
   Throws { Get-NstSessionCount 'x' 0 10 "'x'" -OnHost } 'unreadable' 'an unreadable count'
 } finally { Remove-Item -Recurse -Force $qd -ErrorAction SilentlyContinue }
 
+# across runs (H-79 Sol r3): every hold token, released token and walked root set, in order
+$script:holdN = 0
+$script:holds = [Collections.Generic.List[string]]::new()
+$script:released = [Collections.Generic.List[string]]::new()
+$script:walked = [Collections.Generic.List[string]]::new()
 function Run([hashtable]$o) {
   $script:calls = [Collections.Generic.List[string]]::new()
   $script:o = $o
@@ -100,7 +105,11 @@ function Run([hashtable]$o) {
     $script:calls.Add('hold')
     if ($script:o.holdFails) { throw 'NST freeze failed: failed|1|DebugActiveProcess: error 5' }
     $script:heldNow = $true
-    "$('a' * 32)|1|C:\m"
+    # H-79 Sol r3: a new generation per hold, as the real holder's guid
+    $script:holdN++
+    $tok = "$('{0:x32}' -f $script:holdN)|1|C:\m"
+    $script:holds.Add($tok)
+    $tok
   }
   function script:Assert-NstFreezeHeld($c, $t) {
     $script:calls.Add('held?')
@@ -111,6 +120,7 @@ function Run([hashtable]$o) {
   }
   function script:Disable-NstFreeze($c, $t) {
     $script:calls.Add('release')
+    $script:released.Add($t)
     $script:heldNow = $false
     if ($script:o.releaseFails) { throw 'NST release: expired: the hold bound elapsed before the release' }
   }
@@ -130,11 +140,18 @@ function Run([hashtable]$o) {
   function script:Get-FsDigest($c, $r) {
     $script:calls.Add('walk')
     if ($script:o.walkThrows) { throw 'docker exec died' }
+    $script:walked.Add(@($r) -join ';')
+    if ($script:o.roots) {
+      $script:FsDigestRoots = @(foreach ($x in $r) { [ordered]@{ root = $x; entries = 1; ms = 7 } })
+      foreach ($x in $r) { "D|16|1|$x" }
+      return
+    }
     $script:FsDigestRoots = @([ordered]@{ root = 'C:\W'; entries = 1; ms = 7 })
     'D|16|1|C:\W'
     if ($script:o.walkErr) { 'E|C:\W\locked.dat|access denied' }
   }
-  $out = @(Invoke-FsCaptureCore 'x' @('C:\W'))
+  $roots = if ($o.roots) { $o.roots } else { @('C:\W') }
+  $out = @(Invoke-FsCaptureCore 'x' $roots)
   [pscustomobject]@{ out = $out; calls = @($script:calls) }
 }
 # R-09: the T| marker carries the capture's timing as JSON (src/harness/reset.ts fsCaptureTiming)
@@ -202,6 +219,18 @@ Assert ((@($r.out | Select-Object -First 3) -join ';') -eq ($want -join ';')) "w
 $null = Timing $r.out
 $r = Run @{ wmMoves = $true }
 Assert ($r.out[0] -eq 'D|16|1|C:\W') "walk lines kept on a moved watermark: $($r.out -join ';')"
+# H-79 Sol r3: the retry (a second fs-capture.ps1 process) takes a fresh hold and walks every root again; the first
+# run expires at the held-check, the second succeeds
+$script:holds.Clear(); $script:released.Clear(); $script:walked.Clear()
+$roots = @('C:\W', 'C:\X')
+$r1 = Run @{ roots = $roots; heldExpired = $true }
+$r2 = Run @{ roots = $roots }
+Assert ($r1.out | Where-Object { $_ -like 'E|(fs-capture)|*did not hold*' }) "first run expires: $($r1.out -join ';')"
+Assert (-not ($r2.out | Where-Object { $_ -like 'E|*' })) "second run clean: $($r2.out -join ';')"
+Assert ($script:holds.Count -eq 2 -and $script:holds[0] -ne $script:holds[1]) "two distinct holds: $($script:holds -join ', ')"
+Assert (($script:released -join ',') -eq ($script:holds -join ',')) "each hold released: $($script:released -join ', ')"
+Assert ($script:walked.Count -eq 2 -and $script:walked[0] -eq ($roots -join ';') -and $script:walked[1] -eq ($roots -join ';')) "every root walked in each run: $($script:walked -join ' / ')"
+Assert ((@($r2.out | Select-Object -First 2) -join ';') -eq 'D|16|1|C:\W;D|16|1|C:\X') "second run's walk: $($r2.out -join ';')"
 # after the release: a busy or unreadable NST fails closed
 $r = Run @{ busyAfter = $true }
 Assert ($r.out | Where-Object { $_ -like 'E|(fs-capture)|NST not quiescent after*' }) 'busy after'
