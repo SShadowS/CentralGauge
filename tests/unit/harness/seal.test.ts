@@ -78,10 +78,11 @@ async function sealRepo(
   await sh(repo, "config", "user.email", "t@example.invalid");
   await sh(repo, "remote", "add", "origin", origin);
   const eol = o.eol ?? "\n";
-  const lf = (await realFile("harness-tasks/v2/screening.yml")).replace(
-    /\r\n/g,
-    "\n",
-  );
+  // Keep only the w2r1 round: later real seals (w2r2, ...) must not leak into
+  // the fixture, whose ledger holds the start seal alone.
+  const lf = (await realFile("harness-tasks/v2/screening.yml"))
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s*- \{ seal: (?!harness-v2-screen-w2r1\b)[^}]*\}\n/gm, "");
   await Deno.writeTextFile(
     join(repo, "harness-tasks", "v2", "screening.yml"),
     (o.unsealedRound ? lf : lf.replace("harness-v2-screen-w2r1", START))
