@@ -11,10 +11,24 @@
  * with RESET_OK. Anything else is a `protocol` failure.
  */
 
+import { stripAnsiCode } from "@std/fmt/colors";
 import { join } from "@std/path";
 import { type Lineage, lineageCompat } from "./lineage.ts";
 import { ConfigurationError, ContainerError } from "../errors.ts";
 import { bchRootEnv } from "../container/bch-root.ts";
+
+/** An escape sequence a cut left incomplete at the end (`ESC`, `ESC[31;`). */
+// deno-lint-ignore no-control-regex -- ESC is the point
+const ANSI_TAIL = new RegExp("\\u001b(?:\\[[0-?]*[ -/]*)?$");
+
+/**
+ * H-79 part 4: a script's failure reason as plain text for the records:
+ * complete ANSI escapes (CSI, OSC) stripped, an incomplete one at the end
+ * dropped, the rest kept whole (never cut at an escape).
+ */
+function plainReason(s: string): string {
+  return stripAnsiCode(s).replace(ANSI_TAIL, "").trim();
+}
 
 /** The agreed phases, in order (lane-ops' reset-golden.ps1); all of them make a success. */
 export const RESET_PHASES = [
@@ -103,6 +117,11 @@ export interface FsCheckRecord {
 export interface FsHoldTiming {
   held_ms: number | null;
   bound_s: number | null;
+  /**
+   * H-79: the capture was run a second time because its first run's hold
+   * expired (and nothing else failed); this record is the second run's.
+   */
+  retry?: { reason: "hold expired"; first: FsHoldTiming | null };
 }
 
 /** R-09: held_ms and bound_s of a capture's T| marker, or null. */
@@ -183,7 +202,7 @@ export function parseVerifyOutput(
     if (d) diff.push(d[1]!);
     else if (line === "VERIFY_OK") ends.push("ok");
     else if (dirty) (ends.push("dirty"), dirtyN = Number(dirty[1]));
-    else if (f) (ends.push("failed"), failed = f[1]!.trim());
+    else if (f) (ends.push("failed"), failed = plainReason(f[1]!));
     else bad.push(line);
   }
   const fail = (error: string): VerifyRecord => ({
@@ -265,7 +284,7 @@ export function parseResetOutput(
       if (oks > 0) stepAfterOk = true;
       seen.push(step[1]!);
       phases_ms[step[1]!] = Number(step[2]);
-    } else if (f) failed.push({ step: f[1]!, reason: f[2]!.trim() });
+    } else if (f) failed.push({ step: f[1]!, reason: plainReason(f[2]!) });
     // Run 002 Sol r2 #1: a success marker is exactly the bare line.
     else if (line === "RESET_OK") oks++;
     else malformed.push(line);
@@ -363,7 +382,7 @@ export function failedReset(
     policy_version: m.policyVersion,
     ok: false,
     failed_step: step,
-    error: err instanceof Error ? err.message : String(err),
+    error: plainReason(err instanceof Error ? err.message : String(err)),
     phases_ms: {},
   };
 }
@@ -756,11 +775,79 @@ function parseMark(
   }
 }
 
-/** R-09: the timing on a capture's last line (its T| marker), or null. */
+/** The line fsDigest appends after the script's output on a non-zero exit. */
+const FS_EXIT = /^E\|\(fs-capture\)\|exit (-?\d+)$/;
+
+/**
+ * H-79: a capture's non-empty lines without fsDigest's one trailing exit
+ * line, and that line's exit code (null: the capture exited 0).
+ */
+function splitExit(
+  raw: readonly string[],
+): { lines: string[]; exit: string | null } {
+  const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
+  const exit = FS_EXIT.exec(lines.at(-1) ?? "")?.[1] ?? null;
+  return { lines: exit === null ? lines : lines.slice(0, -1), exit };
+}
+
+/**
+ * H-79 part 2: fs-digest.ps1's two hold-expiry lines, exactly as it prints
+ * them (its `[\r\n|]+` -> ' ' makes the marker `expired|<pid>|<pid>[|detached=True]`
+ * read space-separated). Assert-NstFreezeHeld: the marker reads expired;
+ * Disable-NstFreeze: the marker reads expired at the release. An expiry whose
+ * detach failed (detached=False) is not one: the NST may still be held.
+ */
+const FS_EXPIRY_REASON = [
+  String
+    .raw`the NST hold did not hold: marker reads 'expired \d+ \d+(?: detached=True)?', not this hold's \(expired or failed\)`,
+  String.raw`NST release: expired: the hold bound elapsed before the release`,
+].join("|");
+/** fsDiff's error for one expiry line of a before side. */
+const FS_HOLD_EXPIRED = new RegExp(
+  String.raw`^before: \(fs-capture\): (?:${FS_EXPIRY_REASON})$`,
+);
+/**
+ * Sol r2: the raw line itself, path field exactly `(fs-capture)` (fsDiff's
+ * error joins path and reason, so it alone cannot tell them apart).
+ */
+const FS_HOLD_EXPIRED_LINE = new RegExp(
+  String.raw`^E\|\(fs-capture\)\|(?:${FS_EXPIRY_REASON})$`,
+);
+
+/**
+ * H-79 part 2 (Sol r1 #2): fsDiff's own checks of this capture as a before
+ * side (T| marker and count, parsable lines, no entry twice, every declared
+ * root covered, every E| line) report nothing but fsDigest's exit and at
+ * least one hold expiry, and (Sol r2) every raw E| line but the trailing
+ * exit line is one of the two expiry lines exactly as fs-digest.ps1 prints
+ * it. Only such a capture is retried.
+ */
+export function fsHoldExpiredOnly(
+  raw: readonly string[],
+  exclude: readonly string[] = [],
+  roots: readonly string[] = [],
+  caches: readonly FsPlatformCache[] = [],
+): boolean {
+  const rawErrors = splitExit(raw).lines.filter((l) => l.startsWith("E|"));
+  if (!rawErrors.every((l) => FS_HOLD_EXPIRED_LINE.test(l))) return false;
+  const errors = fsDiff(raw, [], exclude, roots, caches).errors
+    .filter((e) => e.startsWith("before: "));
+  const exits = errors.filter((e) =>
+    /^before: capture failed with exit \d+$/.test(e)
+  );
+  const expiries = errors.filter((e) => FS_HOLD_EXPIRED.test(e));
+  return exits.length === 1 && expiries.length > 0 &&
+    exits.length + expiries.length === errors.length;
+}
+
+/**
+ * R-09: the timing on a capture's last line (its T| marker), or null.
+ * H-79: a failed capture's exit line after it does not hide it.
+ */
 export function fsCaptureTiming(
-  lines: readonly string[],
+  raw: readonly string[],
 ): FsCaptureTiming | null {
-  const last = lines.map((l) => l.trimEnd()).filter((l) => l !== "").at(-1);
+  const last = splitExit(raw).lines.at(-1);
   return last?.startsWith("T|") ? parseMark(last)?.timing ?? null : null;
 }
 
@@ -770,7 +857,8 @@ export function fsCaptureTiming(
  * attributes, last-write time, a stream, a link target) outside the
  * exclusions is a difference; E lines and unparsable lines on either side are
  * errors, and an error fails closed like a difference. Sol S3 r1 #5: each
- * capture must end with exactly one `T|<n>` (n = its other lines), hold no
+ * capture must end with exactly one `T|<n>` (n = its other lines; H-79: a
+ * failed capture's exit line may follow it, and is an error), hold no
  * entry twice, and cover every declared root (a D, L or E line for it).
  * `caches`: platform_cache folders (cacheTolerates); every other difference
  * there stays one.
@@ -794,7 +882,9 @@ export function fsDiff(
   }));
   const index = (side: string, raw: readonly string[]) => {
     const m = new Map<string, string>();
-    const lines = raw.map((l) => l.trimEnd()).filter((l) => l !== "");
+    // H-79: fsDigest's exit line follows the script's T| marker; it is no
+    // line of the script's count, and fails the capture on its own.
+    const { lines, exit } = splitExit(raw);
     const marks = lines.filter((l) => l.startsWith("T|"));
     const entries = lines.filter((l) => !l.startsWith("T|"));
     const mark = marks.length === 1 ? parseMark(marks[0]!) : null;
@@ -809,6 +899,7 @@ export function fsDiff(
         `${side}: T|${mark.count} does not match the count ${entries.length}`,
       );
     }
+    if (exit !== null) errors.push(`${side}: capture failed with exit ${exit}`);
     const seen = new Set<string>();
     // Sol S3 r2: a root is covered only by its own D, L or E line
     const rootSeen = new Set<string>();
