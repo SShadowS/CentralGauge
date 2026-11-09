@@ -1033,10 +1033,12 @@ and no other BCH root.
 **Not listed (shared root).** A shared-root container cannot prove separation
 by its root, so the proof is its folder `<shared>\Extensions\<container>`, which
 BCH rebuilds on every create. All of these must hold (paths compare as named
-and as resolved):
+and as resolved, unless a rule says resolved only):
 
 - No migrated root is equal to, inside or containing the shared root.
-- The shared root and exactly `<shared>\Extensions\<container>\my` are mounted.
+- Resolved mount sources include the resolved shared root and exactly its
+  `Extensions\<container>\my`. A raw name does not count: a `my` that is a
+  junction elsewhere refuses.
 - No other mount is under the BCH naming (inside the shared root, a
   `BcContainerHelper-*` sibling, an ancestor of the shared root) or related to a
   migrated root, unless it is inside `<shared>\Extensions\<container>`.

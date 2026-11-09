@@ -229,16 +229,19 @@ export function recreatedProblems(o: RecreatedInput): string[] {
       );
     }
     const sources = [...o.mounts, ...(o.rawMounts ?? [])];
-    const norms = sources.map(norm);
-    // Rule 2: `my` ties this container to the rebuilt folder (Sol r1 #1)
-    if (!norms.some((n) => shareds.includes(n))) {
+    const resolved = o.mounts.map(norm);
+    // Rule 2: `my` ties this container to the rebuilt folder (Sol r1 #1).
+    // Resolved sources only: a raw name says nothing about its storage (H-80
+    // Sol r1: a `my` junction to old storage matched by name)
+    if (!resolved.includes(shared)) {
       out.push(
         `${o.container} is not listed in bch-roots.json and the shared root ${o.sharedRoot} is not mounted`,
       );
     }
     const folders = shareds.map((s) => `${s}\\extensions\\${c}`);
-    if (!norms.some((n) => folders.some((f) => n === `${f}\\my`))) {
-      out.push(`${ext.path}\\my is not mounted`);
+    const my = `${shared}\\extensions\\${c}\\my`;
+    if (!resolved.includes(my)) {
+      out.push(`${ext.path}\\my is not mounted at its resolved path ${my}`);
     }
     // Rule 3: under the BCH naming or related to a known root, only the
     // shared root itself or something inside this container's folder may be
