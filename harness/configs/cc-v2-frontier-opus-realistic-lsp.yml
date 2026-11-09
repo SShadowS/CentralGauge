@@ -1,0 +1,16 @@
+# W2-16 frontier-hard pool (owner, decisions\2026-11-09-frontier-hard-pool.md): cc-v2-realistic-lsp with Opus 5.5, model changed only.
+# Never part of selection, screening status or the confirmatory analysis.
+id: cc-v2-frontier-opus-realistic-lsp
+harness: claude-code
+harness_version: "latest"
+image_revision: "3"
+models:
+  main: anthropic/claude-opus-5-5
+settings: {}
+components:
+  instructions: bundles/realistic/instructions
+  skills: bundles/realistic/skills
+  agents: bundles/realistic/agents
+  mcp: [al-tools]
+  lsp: [al]
+limits: { timeout_min: 60, max_budget_usd: 5 }

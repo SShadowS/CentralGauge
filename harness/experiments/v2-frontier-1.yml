@@ -1,0 +1,11 @@
+# W2-16 frontier-hard pool, first run (owner, decisions\2026-11-09-frontier-hard-pool.md). Modelled on cc-ado1-frontier.
+# Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
+# prescreen.ts status, selection and the confirmatory analysis.
+id: v2-frontier-1
+hypothesis: "Exploratory: how hard HX-100, HX-131, HX-134 and HX-137 are for Opus 5.5 on the plain and realistic+LSP setups; never a screening or confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-frontier-opus-plain
+variants: [cc-v2-frontier-opus-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-100,HX-131,HX-134,HX-137}"
+repeats: 3
