@@ -322,7 +322,6 @@ candidates:
   - id: HX-144
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "OnAfterVehicleCheckedOut" }
-    broken: 'H:/cg-coord/decisions/2026-11-09-hx144-staging-defect.md'
   - id: HX-145
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: null }
