@@ -1194,11 +1194,96 @@ Deno.test("H-85: a normal overlay passes the staging check", async () => {
 });
 
 Deno.test("H-85: an overlay writing Test/ fails the gate check, as it fails staging", async () => {
-  for (const rel of ["overlay/Test/app.json", "overlay/test/src/New.al"]) {
+  for (
+    const rel of [
+      "overlay/Test/src/New.al",
+      "overlay/test/src/New.al",
+      "overlay/test/app.json",
+    ]
+  ) {
     const got = await stagingProblems((dir) => write(dir, rel, "{}"));
     assertEquals(got.length, 1, rel);
     assertStringIncludes(got[0]!, "overlay writes a shipped test path");
   }
+  const del = await stagingProblems((dir) =>
+    write(dir, "overlay/.delete", "Test/src/V.al\n")
+  );
+  assertEquals(del.length, 1);
+  assertStringIncludes(del[0]!, "removes a shipped test path");
+});
+
+// H-86's rule, reached through the gate: the same code as staging.
+const LIB = {
+  id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+  name: "Tests-TestLibraries",
+  publisher: "Microsoft",
+  version: "28.4.53241.53758",
+};
+const TEST_MANIFEST = JSON.stringify({
+  id: "c6a1e000-0000-4000-8000-000000000007",
+  name: "CGR Test",
+  publisher: "CentralGauge",
+  version: "1.0.0.0",
+  idRanges: [{ from: 80000, to: 84999 }],
+  dependencies: [{
+    id: "c6a1e000-0000-4000-8000-000000000001",
+    name: "CGR Core",
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+  }],
+});
+const withEntry = (e: typeof LIB) =>
+  TEST_MANIFEST.replace(/\}\]\}$/, `},${JSON.stringify(e)}]}`);
+/** A task whose refapp Test manifest can take the entry, and whose lock has it. */
+const manifestCase = (overlay: string) => async (d: string, refapp: string) => {
+  await write(refapp, "Test/app.json", TEST_MANIFEST);
+  await write(
+    join(refapp, "../.."),
+    "harness-tasks/symbols.lock.json",
+    JSON.stringify({
+      v: 1,
+      packages: [{
+        app_id: LIB.id,
+        name: LIB.name,
+        publisher: LIB.publisher,
+        version: LIB.version,
+        file: "lib.app",
+        sha256: "0".repeat(64),
+      }],
+    }),
+  );
+  await write(d, "overlay/Test/app.json", overlay);
+};
+
+Deno.test("H-85: the gate accepts the one Test/app.json addition staging accepts", async () => {
+  assertEquals(await stagingProblems(manifestCase(withEntry(LIB))), []);
+});
+
+Deno.test("H-85: the gate refuses a Test/app.json staging refuses", async (t) => {
+  const cases: [string, string][] = [
+    ["not the shipped manifest", "{}"],
+    ["no addition", TEST_MANIFEST],
+    ["another version", withEntry({ ...LIB, version: "28.0.0.0" })],
+    [
+      "another field changed",
+      withEntry(LIB).replace('"CGR Test"', '"CGR Tests"'),
+    ],
+  ];
+  for (const [name, text] of cases) {
+    await t.step(name, async () => {
+      const got = await stagingProblems(manifestCase(text));
+      assertEquals(got.length, 1, got.join("; "));
+      assertStringIncludes(got[0]!, "Test/app.json may only add");
+    });
+  }
+  await t.step("no symbols lock", async () => {
+    const got = await stagingProblems(async (d, refapp) => {
+      await write(refapp, "Test/app.json", TEST_MANIFEST);
+      await write(d, "overlay/Test/app.json", withEntry(LIB));
+    });
+    assertEquals(got.length, 1, got.join("; "));
+    assertStringIncludes(got[0]!, "symbols lock");
+  });
 });
 
 Deno.test("H-85: the check refuses the overlay's other staging refusals", async (t) => {
@@ -1209,13 +1294,12 @@ Deno.test("H-85: the check refuses the overlay's other staging refusals", async 
       "build artifacts",
     ],
     [
-      "a case alias of a refapp folder",
-      (d) => write(d, "overlay/Core/SRC/A2.al", 'codeunit 70001 "B"\n{\n}\n'),
-      "case alias",
-    ],
-    [
       "a case alias of a refapp file",
-      (d) => write(d, "overlay/Core/src/a.al", 'codeunit 70000 "A"\n{\n}\n'),
+      // The fixture's own overlay/Core/src/A.al would absorb the spelling on NTFS.
+      async (d) => {
+        await Deno.remove(join(d, "overlay/Core"), { recursive: true });
+        await write(d, "overlay/Core/src/a.al", 'codeunit 70000 "A"\n{\n}\n');
+      },
       "case alias",
     ],
     [

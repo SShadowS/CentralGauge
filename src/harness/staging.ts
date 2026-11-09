@@ -4,7 +4,7 @@
  * only source in 1a; `git` (BC-Bench style) plugs in through TASK_SOURCES.
  */
 
-import { isAbsolute, join } from "@std/path";
+import { isAbsolute, join, resolve } from "@std/path";
 import { z } from "zod";
 import { ValidationError } from "../errors.ts";
 import { isTaskBuildArtifact, listTree } from "./hash.ts";
@@ -471,6 +471,33 @@ export const applyTaskOverlay = (
     testManifest: (current, incoming) =>
       checkTestManifestOverlay(current, incoming, symbols),
   });
+
+/**
+ * H-85: everything a task's overlay can make stageRefappTask refuse, run on a
+ * scratch copy of the refapp under `scratchRoot`, so the authoring gate and
+ * staging apply one rule. Throws ValidationError.
+ */
+export async function checkTaskOverlay(
+  refappDir: string,
+  overlayDir: string,
+  symbols: readonly SymbolPackage[],
+  scratchRoot: string,
+): Promise<void> {
+  await Deno.mkdir(scratchRoot, { recursive: true });
+  const tmp = await Deno.realPath(
+    await Deno.makeTempDir({ dir: scratchRoot, prefix: "cg-overlay-check-" }),
+  );
+  try {
+    const workspace = join(tmp, "w");
+    await safeCopyTree(resolve(refappDir), workspace, {
+      skip: isTaskBuildArtifact,
+    });
+    await applyTaskOverlay(resolve(overlayDir), workspace, symbols);
+    await readAppGraph(workspace);
+  } finally {
+    await Deno.remove(tmp, { recursive: true }).catch(() => {});
+  }
+}
 
 const STAGE_CHILDREN = [
   "workspace",
