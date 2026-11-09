@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88390/LineGroupedAmountPadded": 1
+    "88390/LineHalfAmountPadded": 1
+    "88390/LineRoundsToCents": 1
+    "88390/LineNegativeCorrection": 1
+    "88390/LineLateDateTwoDigitMonth": 1
+    "88390/FileTwoEntriesInOrder": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
