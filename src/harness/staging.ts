@@ -16,6 +16,7 @@ import {
 } from "./identity.ts";
 import {
   type CopyLimits,
+  DEFAULT_COPY_LIMITS,
   exists,
   safeCopyTree,
   validatedDest,
@@ -489,7 +490,7 @@ export const applyTaskOverlay = (
  * H-85: staging's overlay step, the merged tree's copy limits and app graph,
  * run on a scratch copy of the refapp under `scratchRoot`, so the authoring
  * gate and staging apply one rule. Not covered: the symbol store, the commit
- * checks, and an overlay near the limits that only the symbols push over.
+ * checks, and the byte limit's share of the symbols (the lock has no sizes).
  * Throws ValidationError.
  */
 export async function checkTaskOverlay(
@@ -497,7 +498,7 @@ export async function checkTaskOverlay(
   overlayDir: string,
   symbols: readonly SymbolPackage[],
   scratchRoot: string,
-  limits?: CopyLimits,
+  limits: CopyLimits = DEFAULT_COPY_LIMITS,
 ): Promise<void> {
   await Deno.mkdir(scratchRoot, { recursive: true });
   const tmp = await Deno.realPath(
@@ -512,7 +513,15 @@ export async function checkTaskOverlay(
     await safeCopyTree(
       workspace,
       join(tmp, "pristine"),
-      limits ? { limits } : {},
+      // Staging's copy also holds .alpackages with one file per locked symbol.
+      {
+        limits: {
+          ...limits,
+          maxFiles: limits.maxFiles - symbols.length,
+          maxDirs: limits.maxDirs - 1,
+          maxEntries: limits.maxEntries - symbols.length - 1,
+        },
+      },
     );
     await readAppGraph(workspace);
   } finally {

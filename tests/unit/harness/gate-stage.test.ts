@@ -1371,6 +1371,23 @@ Deno.test("H-85: the merged tree is held to staging's copy limits", async () => 
   await check(); // the refapp's 9 files, the overlay replacing one of them
   await write(dir, "overlay/Core/new.txt", "x");
   await assertRejects(check, CopyLimitError, "more than 9 files");
+  // Room is kept for the symbol files staging restores before its copy.
+  const ten = { ...DEFAULT_COPY_LIMITS, maxFiles: 10 };
+  await checkTaskOverlay(refapp, join(dir, "overlay"), [], GATE_TMP, ten);
+  const symbol = {
+    app_id: LIB.id,
+    name: LIB.name,
+    publisher: LIB.publisher,
+    version: LIB.version,
+    file: "lib.app",
+    sha256: "0".repeat(64),
+  };
+  await assertRejects(
+    () =>
+      checkTaskOverlay(refapp, join(dir, "overlay"), [symbol], GATE_TMP, ten),
+    CopyLimitError,
+    "more than 9 files",
+  );
 });
 
 Deno.test("H-71: test_permissions is for kind test-authoring only", async () => {
