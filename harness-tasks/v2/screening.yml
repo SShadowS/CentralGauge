@@ -352,6 +352,24 @@ candidates:
   - id: HX-155
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: "CGR Fuel Charge.OnGetFuelLevel" }
+  - id: HX-156
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnAfterEstimateApplied" }
+  - id: HX-157
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: "OnVehicleClearOfFindings" }
+  - id: HX-158
+    prior: hard
+    size: { objects: 4, files: 4, reuse: null, traces: "OnAfterCancellationWritten, OnAfterCancellationCompleted" }
+  - id: HX-159
+    prior: hard
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-160
+    prior: hard
+    size: { objects: 4, files: 4, reuse: null, traces: "CGR Core Events.OnAfterVehicleReturned, Damage Entry OnAfterDeleteEvent" }
+  - id: HX-161
+    prior: hard
+    size: { objects: 3, files: 3, reuse: null, traces: "CGR Credit Check Run.OnCheckCredit" }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:

@@ -1,0 +1,15 @@
+id: HX-156
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Test]
+coupling: [single-instance, temporary-table, commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+fail_to_pass: null
+mutants: [m-no-entry-no, m-rowcopy, m-no-trigger, m-clear-first, m-keep-after]
+contamination: null
+limits: { timeout_min: 30 }

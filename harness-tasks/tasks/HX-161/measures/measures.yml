@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "88375/AgencyApprovalGivesTrue": 1
+    "88375/AgencyRefusalGivesFalse": 1
+    "88375/AgencyErrorGivesFalseWithoutRaising": 1
+    "88375/DeskContractRecordsApproval": 1
+    "88375/DeskContractRecordsRefusal": 1
+    "88375/AgencyDownStillCreatesContract": 1
+    "88375/ContractInCallerTransactionRecordsApproval": 1
+    "88375/CallerFailureRollsBackContractAndRow": 1
+    "88375/AgencyDownInCallerTransactionKeepsRow": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

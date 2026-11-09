@@ -1,0 +1,18 @@
+v: 1
+partial_credit:
+  weights:
+    "88360/RepairingLastDamageUnblocks": 1
+    "88360/RepairOneOfTwoStaysBlocked": 1
+    "88360/ReturnWithDamageBlocksAndCounts": 1
+    "88360/ReturnWithoutDamageKeepsCounters": 1
+    "88360/ArchiveAppDeleteWithoutTriggers": 1
+    "88360/ArchiveAppBulkDelete": 1
+    "88360/ArchiveAppDeleteWithTriggers": 1
+    "88360/ArchiveDeleteOfRepairedKeepsCounter": 1
+    "88360/ArchiveDeleteLeavesOtherVehicle": 1
+    "88360/CleanupKeepsCounterAndStampsVehicle": 1
+    "88360/CleanupLeavesUnpurgedVehicleBlank": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

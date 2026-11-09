@@ -1,0 +1,15 @@
+id: HX-159
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Leasing, Test]
+coupling: [internal]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80030, procedures: [LeaseRateUsesCoreInternal] }
+fail_to_pass: null
+mutants: [m-post-rewinds, m-other-leases, m-rewind-to-blank, m-count-existing, m-upto-exclusive, m-invoiced-again]
+contamination: null
+limits: { timeout_min: 30 }
