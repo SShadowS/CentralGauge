@@ -2,12 +2,15 @@ v: 1
 partial_credit:
   weights:
     "88405/TwoLeasesOneVehicleSeparateRows": 1
-    "88405/AmountAndCountStopAtAsOf": 1
-    "88405/InvoiceDatedOnAsOfCounted": 1
     "88405/UninvoicedLeaseListedAtZero": 1
     "88405/LeaseInvoicedAfterAsOfListedAtZero": 1
     "88405/SecondAsOfGivesOwnBalances": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88405/AmountAndCountStopAtAsOf"
+    - "88405/InvoiceDatedOnAsOfCounted"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/left-outer-join: { partial_credit: 0.5 }
+  naive/rekey-only: { partial_credit: 0.5 }
+  naive/vehicle-key-merge: { partial_credit: 0.25 }
