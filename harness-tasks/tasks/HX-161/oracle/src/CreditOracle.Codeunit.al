@@ -8,6 +8,7 @@ codeunit 88375 "HX161 Credit Oracle"
         GoodCustomerTxt: Label 'HX161 Good Customer', Locked = true;
         RefusedCustomerTxt: Label 'HX161 Refused Customer', Locked = true;
         DownCustomerTxt: Label 'HX161 Down Customer', Locked = true;
+        LateTimeoutCustomerTxt: Label 'HX161 Late Timeout Customer', Locked = true;
 
     [Test]
     procedure AgencyApprovalGivesTrue()
@@ -61,6 +62,24 @@ codeunit 88375 "HX161 Credit Oracle"
 
         Assert.IsTrue(Ok, 'CheckCustomer never raises the agency error to its caller: ' + GetLastErrorText());
         Assert.IsFalse(Runner.ResultHX161(), 'CheckCustomer is false when the agency raises an error');
+    end;
+
+    [Test]
+    procedure AgencyTimeoutAfterApprovalGivesFalse()
+    var
+        Spy: Codeunit "HX161 Agency Spy";
+        Runner: Codeunit "HX161 Create Runner";
+        Ok: Boolean;
+    begin
+        InitHX161();
+        BindSubscription(Spy);
+
+        Runner.SetCheckHX161(LateTimeoutCustomerTxt);
+        Commit();
+        Ok := Runner.Run();
+
+        Assert.IsTrue(Ok, 'CheckCustomer never raises the agency error to its caller: ' + GetLastErrorText());
+        Assert.IsFalse(Runner.ResultHX161(), 'CheckCustomer is false when the agency raises an error, whatever it answered first');
     end;
 
     [Test]

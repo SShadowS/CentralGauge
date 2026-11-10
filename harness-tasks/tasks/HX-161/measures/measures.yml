@@ -2,6 +2,7 @@ v: 1
 partial_credit:
   weights:
     "88375/AgencyErrorGivesFalseWithoutRaising": 1
+    "88375/AgencyTimeoutAfterApprovalGivesFalse": 1
     "88375/DeskContractRecordsApproval": 1
     "88375/ContractInCallerTransactionRecordsApproval": 1
     "88375/CallerFailureRollsBackContractAndRow": 1
