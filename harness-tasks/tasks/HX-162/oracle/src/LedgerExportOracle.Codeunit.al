@@ -78,7 +78,7 @@ codeunit 88390 "HX162 Ledger Export Oracle"
         InsertEntryHX162('HX162-C6', 'HX162-V7', 20270302D, 12.35, 20);
 
         Entry.SetRange("Contract No.", 'HX162-C6');
-        Lines := NonEmptyLinesHX162(LedgerExport.BuildFile(Entry));
+        Lines := FileLinesHX162(LedgerExport.BuildFile(Entry));
 
         Assert.AreEqual(2, Lines.Count(), 'One line per ledger entry');
         Assert.AreEqual('HX162-C6;HX162-V6;2027-03-01;103.50;1500', Lines.Get(1), 'First line is the first entry');
@@ -108,16 +108,23 @@ codeunit 88390 "HX162 Ledger Export Oracle"
         exit(Entry."Entry No.");
     end;
 
-    local procedure NonEmptyLinesHX162(Body: Text) Lines: List of [Text]
+    local procedure FileLinesHX162(Body: Text) Lines: List of [Text]
     var
+        Parts: List of [Text];
         Part: Text;
         Cr: Text[1];
         Lf: Text[1];
+        Index: Integer;
     begin
         Cr[1] := 13;
         Lf[1] := 10;
-        foreach Part in DelChr(Body, '=', Cr).Split(Lf) do
-            if Part.Trim() <> '' then
-                Lines.Add(Part.Trim());
+        Parts := Body.Split(Lf);
+        for Index := 1 to Parts.Count() do begin
+            Part := Parts.Get(Index);
+            if Part.EndsWith(Cr) then
+                Part := CopyStr(Part, 1, StrLen(Part) - 1);
+            if (Index < Parts.Count()) or (Part <> '') then
+                Lines.Add(Part);
+        end;
     end;
 }

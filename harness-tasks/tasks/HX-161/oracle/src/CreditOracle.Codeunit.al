@@ -83,6 +83,22 @@ codeunit 88375 "HX161 Credit Oracle"
     end;
 
     [Test]
+    procedure NoAgencyAnswerGivesFalse()
+    var
+        Runner: Codeunit "HX161 Create Runner";
+        Ok: Boolean;
+    begin
+        InitHX161();
+
+        Runner.SetCheckHX161(GoodCustomerTxt);
+        Commit();
+        Ok := Runner.Run();
+
+        Assert.IsTrue(Ok, 'CheckCustomer does not raise: ' + GetLastErrorText());
+        Assert.IsFalse(Runner.ResultHX161(), 'CheckCustomer is true only when the agency approves, and no agency answered');
+    end;
+
+    [Test]
     procedure DeskContractRecordsApproval()
     var
         Spy: Codeunit "HX161 Agency Spy";
