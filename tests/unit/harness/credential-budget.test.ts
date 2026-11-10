@@ -14,18 +14,18 @@ const r = {
   purpose: "M1-29 gate",
 };
 
-Deno.test("reserveCredentialRun: fifteen hundred across all lanes (H-25), then refused; concurrent callers serialize", async () => {
-  assertEquals(CREDENTIAL_RUN_LIMIT, 1500);
+Deno.test("reserveCredentialRun: three thousand across all lanes (H-87), then refused; concurrent callers serialize", async () => {
+  assertEquals(CREDENTIAL_RUN_LIMIT, 3000);
   const ledger = join(
     await Deno.realPath(await testTempDir()),
     "credential-runs.jsonl",
   );
-  // 1495 earlier reservations, then 7 racing callers: exactly 5 fit (1496-1500).
-  // (1502 live racers would outlast the 60 s lock wait, not test the limit.)
+  // 2995 earlier reservations, then 7 racing callers: exactly 5 fit (2996-3000).
+  // (3002 live racers would outlast the 60 s lock wait, not test the limit.)
   await Deno.writeTextFile(
     ledger,
     Array.from(
-      { length: 1495 },
+      { length: 2995 },
       (_, i) => JSON.stringify({ v: 1, ordinal: i + 1, lane: "M4-17" }),
     ).join("\n") + "\n",
   );
@@ -43,16 +43,16 @@ Deno.test("reserveCredentialRun: fifteen hundred across all lanes (H-25), then r
     results.filter((x) => x.status === "fulfilled").map((x) =>
       (x as PromiseFulfilledResult<number>).value
     ).sort(),
-    [1496, 1497, 1498, 1499, 1500],
+    [2996, 2997, 2998, 2999, 3000],
   );
   assertEquals(
     (await Deno.readTextFile(ledger)).trim().split("\n").length,
-    1500,
+    3000,
   );
   await assertRejects(
     () => reserveCredentialRun(ledger, r),
     ConfigurationError,
-    "1500 supervised",
+    "3000 supervised",
   );
 });
 
@@ -76,12 +76,12 @@ Deno.test("reserveCredentialRun: an unreadable ledger refuses; partial lines sti
   const partial = join(dir, "partial.jsonl");
   await Deno.writeTextFile(
     partial,
-    '{"v":1}\n{"trunc\n' + "x\n".repeat(1498),
+    '{"v":1}\n{"trunc\n' + "x\n".repeat(2998),
   );
   await assertRejects(
     () => reserveCredentialRun(partial, r),
     ConfigurationError,
-    "1500 supervised",
+    "3000 supervised",
   );
 });
 
