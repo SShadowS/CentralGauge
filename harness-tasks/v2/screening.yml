@@ -387,3 +387,4 @@ amendments:
     rounds:
       - { seal: harness-v2-screen-w2r1, mode: calibration }
       - { seal: harness-v2-screen-w2r2, mode: calibration }
+      - { seal: harness-v2-screen-w2r3, mode: calibration }
