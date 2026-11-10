@@ -39,3 +39,12 @@ seals:
     round_time: "2026-11-08T22:39:00Z"
     randomness: "25c6893c44bdca90a46a81668acd4701d70b2c1977619b5c5e4ae1993764b32e"
     prev: "e6500b13f6202d539e8249a3ba510e40c4138aa657886cedc682c2d60c3aa801"
+  - tag: harness-v2-screen-w2r3
+    tag_object: "ec0dee8607a08b3fe507aeec5024d8f529c9b1df"
+    commit: "88d08e9c413332f8ddd35931f7cc0cc21cbaa9d7"
+    pushed_at: "2026-11-10T13:48:00Z"
+    drand_chain: "8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce"
+    drand_round: 6629602
+    round_time: "2026-11-10T13:58:00Z"
+    randomness: "d935c2ba4a34821fd9e7fc7f51ffddc6d792b631e484fdc8bf7cad053b701aa6"
+    prev: "16d378a91f05ce551a5459779a753435ddf292b899130724af4a1f161ff936a5"
