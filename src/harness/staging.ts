@@ -4,7 +4,7 @@
  * only source in 1a; `git` (BC-Bench style) plugs in through TASK_SOURCES.
  */
 
-import { isAbsolute, join } from "@std/path";
+import { isAbsolute, join, resolve } from "@std/path";
 import { z } from "zod";
 import { ValidationError } from "../errors.ts";
 import { isTaskBuildArtifact, listTree } from "./hash.ts";
@@ -14,7 +14,14 @@ import {
   type RefappRef,
   type SymbolPackage,
 } from "./identity.ts";
-import { exists, safeCopyTree, validatedDest, validatedDir } from "./fsutil.ts";
+import {
+  type CopyLimits,
+  DEFAULT_COPY_LIMITS,
+  exists,
+  safeCopyTree,
+  validatedDest,
+  validatedDir,
+} from "./fsutil.ts";
 import { restoreSymbols } from "./symbols.ts";
 import type { HarnessTask, LoadedTask } from "./task.ts";
 
@@ -209,7 +216,85 @@ async function deleteTarget(
   return p;
 }
 
-/** Copy an overlay onto target, then apply its `.delete` list. */
+const TEST_MANIFEST = "Test/app.json";
+/** H-86, owner ruling: the one dependency an overlay may add (Tests-TestLibraries). */
+const ADDABLE_TEST_DEPENDENCY = "5d86850b-0d76-4eca-bd7b-951ad998e997";
+/** One object, exactly these keys in order, plain strings: no duplicate, escape or nesting. */
+const ADDED_DEPENDENCY =
+  /^,\s*\{\s*"id"\s*:\s*"([^"\\]*)"\s*,\s*"name"\s*:\s*"([^"\\]*)"\s*,\s*"publisher"\s*:\s*"([^"\\]*)"\s*,\s*"version"\s*:\s*"([^"\\]*)"\s*\}\s*$/;
+
+/**
+ * H-86: `overlay` is `shipped` with the allowed dependency appended to the
+ * top-level `dependencies` and no other difference. Only one BOM and CRLF are
+ * normalized (the refapp is exported LF, the overlay comes from a checkout).
+ * Throws ValidationError.
+ */
+export function checkTestManifestOverlay(
+  shipped: Uint8Array,
+  overlay: Uint8Array,
+  symbols: readonly SymbolPackage[],
+): void {
+  const refuse = (why: string) =>
+    new ValidationError(
+      `overlay ${TEST_MANIFEST} may only add ${ADDABLE_TEST_DEPENDENCY} to dependencies: ${why}`,
+      [why],
+    );
+  const text = (bytes: Uint8Array) => {
+    let t: string;
+    try {
+      // ignoreBOM keeps the BOM, so exactly one is removed here.
+      t = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+        .decode(bytes);
+    } catch {
+      throw refuse("not UTF-8");
+    }
+    return (t.charCodeAt(0) === 0xfeff ? t.slice(1) : t)
+      .replaceAll("\r\n", "\n");
+  };
+  const parse = (t: string) => {
+    try {
+      return JSON.parse(t) as Record<string, unknown>;
+    } catch {
+      throw refuse("not JSON");
+    }
+  };
+  const [was, now] = [text(shipped), text(overlay)];
+  let p = 0;
+  while (p < was.length && was[p] === now[p]) p++;
+  const end = now.length - (was.length - p);
+  if (end < p || now.slice(end) !== was.slice(p)) {
+    throw refuse("more than one insertion");
+  }
+  const m = ADDED_DEPENDENCY.exec(now.slice(p, end));
+  if (!m) throw refuse("the insertion is not one plain dependency entry");
+  const [, id, name, publisher, version] = m as unknown as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  if (id !== ADDABLE_TEST_DEPENDENCY) throw refuse(`app ${id} is not allowed`);
+  const locked = symbols.find((s) => s.app_id.toLowerCase() === id);
+  if (
+    !locked || locked.name !== name || locked.publisher !== publisher ||
+    locked.version !== version
+  ) {
+    throw refuse("the entry does not match the symbols lock");
+  }
+  const { dependencies: before, ...restBefore } = parse(was);
+  const { dependencies: after, ...restAfter } = parse(now);
+  if (
+    JSON.stringify(restAfter) !== JSON.stringify(restBefore) ||
+    !Array.isArray(before) ||
+    JSON.stringify(after) !==
+      JSON.stringify([...before, { id, name, publisher, version }])
+  ) {
+    throw refuse("the entry is not the last of the top-level dependencies");
+  }
+}
+
+/** Copy an overlay onto target, then apply its `.delete` list. Returns the Test/app.json it had accepted, if any. */
 export async function applyOverlay(
   overlayDir: string,
   target: string,
@@ -217,24 +302,41 @@ export async function applyOverlay(
     exclude?: (rel: string) => boolean;
     /** Paths the overlay may neither write nor delete (shipped tests). */
     protect?: (rel: string) => boolean;
+    /**
+     * H-86: makes the exact path Test/app.json writable, if this accepts it
+     * (it throws otherwise); given the bytes there now and the overlay's.
+     */
+    testManifest?: (current: Uint8Array, incoming: Uint8Array) => void;
+    /** Where the private copy goes; the OS temp dir by default. */
+    scratchDir?: string;
   } = {},
-): Promise<void> {
-  if (!await exists(overlayDir)) return;
+): Promise<Uint8Array | null> {
+  if (!await exists(overlayDir)) return null;
+  let accepted: Uint8Array | null = null;
   const root = await validatedDir(target);
   // 1. Hostile copy into fresh private scratch (the strict new-or-empty API is unchanged).
-  const tmp = await Deno.makeTempDir({ prefix: "cg-overlay-" });
+  const tmp = await Deno.makeTempDir({
+    prefix: "cg-overlay-",
+    ...(opts.scratchDir ? { dir: opts.scratchDir } : {}),
+  });
   try {
     const artifacts: string[] = [];
     const guarded: string[] = [];
+    let manifestSeen = false;
+    let testDirSeen = false;
     const r = await safeCopyTree(overlayDir, join(tmp, "o"), {
       skip: (rel) => {
         // The visible-input hash excludes build artifacts, so an overlay may
         // not stage one (refused, not skipped); case-insensitive.
         if (isTaskBuildArtifact(rel.toLowerCase())) artifacts.push(rel);
+        else if (opts.testManifest && rel === TEST_MANIFEST) {
+          manifestSeen = true;
+        } else if (opts.testManifest && rel === "Test/") testDirSeen = true;
         else if (opts.protect?.(rel)) guarded.push(rel);
         return rel === DELETE_LIST || (opts.exclude?.(rel) ?? false);
       },
     });
+    if (testDirSeen && !manifestSeen) guarded.push("Test/");
     if (artifacts.length > 0) {
       throw new ValidationError(
         `build artifacts in ${overlayDir}: ${artifacts.join(", ")}`,
@@ -293,13 +395,18 @@ export async function applyOverlay(
           );
         }
       }
+      if (opts.testManifest && rel === TEST_MANIFEST) {
+        const incoming = await Deno.readFile(join(r.dst, ...parts));
+        opts.testManifest(await Deno.readFile(dest), incoming);
+        accepted = incoming;
+      }
       await Deno.copyFile(join(r.dst, ...parts), dest);
     }
   } finally {
     await Deno.remove(tmp, { recursive: true }).catch(() => {});
   }
   const list = join(overlayDir, DELETE_LIST);
-  if (!await exists(list)) return;
+  if (!await exists(list)) return accepted;
   for (const raw of (await Deno.readTextFile(list)).split(/\r?\n/)) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
@@ -317,6 +424,7 @@ export async function applyOverlay(
       recursive: true,
     });
   }
+  return accepted;
 }
 
 export interface StageOptions {
@@ -364,6 +472,63 @@ const isShippedTestPath = (rel: string) => {
   return l === "test" || l.startsWith("test/");
 };
 
+/** Staging's task overlay step, with its guards (shared with the gate, H-85). */
+export const applyTaskOverlay = (
+  overlayDir: string,
+  workspace: string,
+  symbols: readonly SymbolPackage[],
+  scratchDir?: string,
+): Promise<Uint8Array | null> =>
+  applyOverlay(overlayDir, workspace, {
+    ...(scratchDir ? { scratchDir } : {}),
+    protect: isShippedTestPath,
+    testManifest: (current, incoming) =>
+      checkTestManifestOverlay(current, incoming, symbols),
+  });
+
+/**
+ * H-85: staging's overlay step, the merged tree's copy limits and app graph,
+ * run on a scratch copy of the refapp under `scratchRoot`, so the authoring
+ * gate and staging apply one rule. Not covered: the symbol store, the commit
+ * checks, and the byte limit's share of the symbols (the lock has no sizes).
+ * Throws ValidationError.
+ */
+export async function checkTaskOverlay(
+  refappDir: string,
+  overlayDir: string,
+  symbols: readonly SymbolPackage[],
+  scratchRoot: string,
+  limits: CopyLimits = DEFAULT_COPY_LIMITS,
+): Promise<void> {
+  await Deno.mkdir(scratchRoot, { recursive: true });
+  const tmp = await Deno.realPath(
+    await Deno.makeTempDir({ dir: scratchRoot, prefix: "cg-overlay-check-" }),
+  );
+  try {
+    const workspace = join(tmp, "w");
+    await safeCopyTree(resolve(refappDir), workspace, {
+      skip: isTaskBuildArtifact,
+    });
+    await applyTaskOverlay(resolve(overlayDir), workspace, symbols, tmp);
+    await safeCopyTree(
+      workspace,
+      join(tmp, "pristine"),
+      // Staging's copy also holds .alpackages with one file per locked symbol.
+      {
+        limits: {
+          ...limits,
+          maxFiles: limits.maxFiles - symbols.length,
+          maxDirs: limits.maxDirs - 1,
+          maxEntries: limits.maxEntries - symbols.length - 1,
+        },
+      },
+    );
+    await readAppGraph(workspace);
+  } finally {
+    await Deno.remove(tmp, { recursive: true }).catch(() => {});
+  }
+}
+
 const STAGE_CHILDREN = [
   "workspace",
   "pristine",
@@ -398,7 +563,9 @@ async function rawSha256(bytes: Uint8Array): Promise<string> {
  * normalization), keyed by path relative to the refapp; build artifacts are
  * left out as staging drops them.
  */
-async function commitShippedTests(o: StageOptions): Promise<string> {
+async function commitShippedTests(
+  o: StageOptions,
+): Promise<[string, string][]> {
   const list = new TextDecoder().decode(
     await gitBytes(o.repoRoot, [
       "ls-tree",
@@ -428,13 +595,11 @@ async function commitShippedTests(o: StageOptions): Promise<string> {
       await rawSha256(await gitBytes(o.repoRoot, ["cat-file", "blob", oid!])),
     ]);
   }
-  return JSON.stringify(
-    out.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0),
-  );
+  return out.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
 }
 
 /** Raw-byte sha256 of a staged tree's shipped test files, same shape. */
-async function stagedShippedTests(dir: string): Promise<string> {
+async function stagedShippedTests(dir: string): Promise<[string, string][]> {
   const out: [string, string][] = [];
   for (const e of await listTree(dir, "task")) {
     if (!isShippedTestPath(e.path)) continue;
@@ -443,9 +608,50 @@ async function stagedShippedTests(dir: string): Promise<string> {
       await rawSha256(await Deno.readFile(join(dir, ...e.path.split("/")))),
     ]);
   }
-  return JSON.stringify(
-    out.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0),
-  );
+  return out.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+}
+
+/**
+ * The staged shipped tests are byte-identical to the commit's. H-86: the one
+ * exemption is Test/app.json, when it is exactly the bytes the overlay check
+ * accepted and those bytes also pass that check against the commit's blob.
+ */
+export async function verifyShippedTests(
+  o: StageOptions,
+  pristine: string,
+  accepted: Uint8Array | null,
+): Promise<void> {
+  let [staged, commit] = [
+    await stagedShippedTests(pristine),
+    await commitShippedTests(o),
+  ];
+  if (accepted) {
+    const bytes = await Deno.readFile(join(pristine, "Test", "app.json"));
+    if (await rawSha256(bytes) !== await rawSha256(accepted)) {
+      throw new ValidationError(
+        `staged ${TEST_MANIFEST} is not the overlay's accepted file`,
+        [TEST_MANIFEST],
+      );
+    }
+    checkTestManifestOverlay(
+      await gitBytes(o.repoRoot, [
+        "cat-file",
+        "blob",
+        `${o.refapp.commit}:${REFAPP_PATH}/${TEST_MANIFEST}`,
+      ]),
+      bytes,
+      o.symbols,
+    );
+    const others = (rows: [string, string][]) =>
+      rows.filter(([p]) => p !== TEST_MANIFEST);
+    [staged, commit] = [others(staged), others(commit)];
+  }
+  if (JSON.stringify(staged) !== JSON.stringify(commit)) {
+    throw new ValidationError(
+      `staged shipped tests differ from ${o.refapp.version} (${o.refapp.commit})`,
+      [o.refapp.commit],
+    );
+  }
 }
 
 export async function stageRefappTask(
@@ -531,9 +737,11 @@ async function stageInto(
   }
   // 2. Task overlay (injected bug, stub, removed feature); shipped tests are
   //    out of its reach.
-  await applyOverlay(join(o.task.dir, "overlay"), workspace, {
-    protect: isShippedTestPath,
-  });
+  const accepted = await applyTaskOverlay(
+    join(o.task.dir, "overlay"),
+    workspace,
+    o.symbols,
+  );
   // 3. Pre-seeded symbols, verified against the lock.
   await restoreSymbols(
     o.symbolStore,
@@ -558,12 +766,7 @@ async function stageInto(
   //    must be byte-identical (raw bytes, no CRLF normalization) to the
   //    commit's blobs.
   await safeCopyTree(workspace, pristine);
-  if (await stagedShippedTests(pristine) !== await commitShippedTests(o)) {
-    throw new ValidationError(
-      `staged shipped tests differ from ${o.refapp.version} (${o.refapp.commit})`,
-      [o.refapp.commit],
-    );
-  }
+  await verifyShippedTests(o, pristine, accepted);
   return { workspace, pristine, taskDir, apps: await readAppGraph(workspace) };
 }
 
