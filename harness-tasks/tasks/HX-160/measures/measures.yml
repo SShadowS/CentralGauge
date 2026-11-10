@@ -4,15 +4,22 @@ partial_credit:
     "88360/RepairingLastDamageUnblocks": 1
     "88360/RepairOneOfTwoStaysBlocked": 1
     "88360/ReturnWithDamageBlocksAndCounts": 1
-    "88360/ReturnWithoutDamageKeepsCounters": 1
     "88360/ArchiveAppDeleteWithoutTriggers": 1
-    "88360/ArchiveAppBulkDelete": 1
     "88360/ArchiveAppDeleteWithTriggers": 1
     "88360/ArchiveDeleteOfRepairedKeepsCounter": 1
     "88360/ArchiveDeleteLeavesOtherVehicle": 1
     "88360/CleanupKeepsCounterAndStampsVehicle": 1
-    "88360/CleanupLeavesUnpurgedVehicleBlank": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88360/ReturnWithoutDamageKeepsCounters"
+    - "88360/ArchiveAppBulkDelete"
+    - "88360/CleanupLeavesUnpurgedVehicleBlank"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/flowfield-counter: { partial_credit: 0.125 }
+  naive/ondelete-trigger: { partial_credit: 0.75 }
+  naive/primary-only: { partial_credit: 0.375 }
+  naive/recount-in-purge: { partial_credit: 0.625 }
+  naive/return-unfixed: { partial_credit: 0.875 }
+  naive/runtrigger-guard: { partial_credit: 0.75 }
+  naive/subscriber-no-cleanup: { partial_credit: 0.875 }

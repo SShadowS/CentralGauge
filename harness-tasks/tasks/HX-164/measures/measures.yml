@@ -1,15 +1,18 @@
 v: 1
 partial_credit:
   weights:
-    "88420/AllPositiveTotalMatchesWorkshop": 1
     "88420/AllPositiveNonDeductibleFollowsSetup": 1
-    "88420/GoodwillTotalMatchesWorkshop": 1
     "88420/GoodwillNonDeductibleFollowsSetup": 1
     "88420/GoodwillDownwardDifferenceMatches": 1
-    "88420/NoNonDeductibleMatchesTotal": 1
-    "88420/DifferenceAboveMaximumRefused": 1
-    "88420/DifferenceAtMaximumMatched": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88420/AllPositiveTotalMatchesWorkshop"
+    - "88420/GoodwillTotalMatchesWorkshop"
+    - "88420/NoNonDeductibleMatchesTotal"
+    - "88420/DifferenceAboveMaximumRefused"
+    - "88420/DifferenceAtMaximumMatched"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/skip-negative-net-base: { partial_credit: 0.3333333333333333 }
+  naive/stale-negative-share: { partial_credit: 0.3333333333333333 }
+  naive/validate-every-group: { partial_credit: 0.3333333333333333 }

@@ -1,16 +1,20 @@
 v: 1
 partial_credit:
   weights:
-    "88375/AgencyApprovalGivesTrue": 1
-    "88375/AgencyRefusalGivesFalse": 1
     "88375/AgencyErrorGivesFalseWithoutRaising": 1
     "88375/DeskContractRecordsApproval": 1
-    "88375/DeskContractRecordsRefusal": 1
-    "88375/AgencyDownStillCreatesContract": 1
     "88375/ContractInCallerTransactionRecordsApproval": 1
     "88375/CallerFailureRollsBackContractAndRow": 1
-    "88375/AgencyDownInCallerTransactionKeepsRow": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88375/AgencyApprovalGivesTrue"
+    - "88375/AgencyRefusalGivesFalse"
+    - "88375/DeskContractRecordsRefusal"
+    - "88375/AgencyDownStillCreatesContract"
+    - "88375/AgencyDownInCallerTransactionKeepsRow"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/check-before-number: { partial_credit: 0.5 }
+  naive/commit-before-check: { partial_credit: 0.75 }
+  naive/no-isolation: { partial_credit: 0.75 }
+  naive/returning-run: { partial_credit: 0.25 }
