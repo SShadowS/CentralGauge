@@ -15,7 +15,8 @@ partial_credit:
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
-  naive/check-before-number: { partial_credit: 0.5 }
-  naive/commit-before-check: { partial_credit: 0.75 }
-  naive/no-isolation: { partial_credit: 0.75 }
-  naive/returning-run: { partial_credit: 0.25 }
+  naive/approved-after-catch: { partial_credit: 0.8 }
+  naive/check-before-number: { partial_credit: 0.6 }
+  naive/commit-before-check: { partial_credit: 0.8 }
+  naive/no-isolation: { partial_credit: 0.6 }
+  naive/returning-run: { partial_credit: 0.4 }
