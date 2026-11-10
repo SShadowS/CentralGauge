@@ -1,0 +1,19 @@
+id: HX-160
+refapp_version: refapp-v2
+kind: bugfix
+prompt: prompt.md
+touches: [Fleet, Rental]
+coupling: [events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle] }
+  - { codeunit: 80010, procedures: [ReturnWithoutDamageReleasesVehicle] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 88360, procedures: [RepairingLastDamageUnblocks, RepairOneOfTwoStaysBlocked, ReturnWithDamageBlocksAndCounts, ReturnWithoutDamageKeepsCounters, ArchiveAppDeleteWithoutTriggers, ArchiveAppBulkDelete, ArchiveAppDeleteWithTriggers, ArchiveDeleteOfRepairedKeepsCounter, ArchiveDeleteLeavesOtherVehicle, CleanupKeepsCounterAndStampsVehicle, CleanupLeavesUnpurgedVehicleBlank] }
+mutants: []
+contamination: null
+limits: { timeout_min: 45 }

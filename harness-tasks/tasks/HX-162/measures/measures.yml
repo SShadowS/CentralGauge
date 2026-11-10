@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "88390/LineGroupedAmountPadded": 1
+    "88390/LineHalfAmountPadded": 1
+    "88390/LineRoundsToCents": 1
+    "88390/LineNegativeCorrection": 1
+    "88390/LineLateDateTwoDigitMonth": 1
+    "88390/FileTwoEntriesInOrder": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/amount-left-bare: { partial_credit: 0.3333333333333333 }
+  naive/format-9-amount: { partial_credit: 0.3333333333333333 }
+  naive/precision-standard-0: { partial_credit: 0.8333333333333334 }

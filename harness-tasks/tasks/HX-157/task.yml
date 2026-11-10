@@ -1,0 +1,15 @@
+id: HX-157
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Fleet, Test]
+coupling: [events, commit-behavior]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+fail_to_pass: null
+mutants: [m-delete-guard, m-temp-counted, m-closed-insert, m-closed-delete, m-partner-every, m-commit-before-partner]
+contamination: null
+limits: { timeout_min: 30 }

@@ -1,0 +1,15 @@
+id: HX-158
+refapp_version: refapp-v2
+kind: test-authoring
+prompt: prompt.md
+touches: [Rental, Reporting, Test]
+coupling: [commit-behavior, events, queries]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, mutant_kill]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [PostCreatesLedgerEntry] }
+fail_to_pass: null
+mutants: [m-fee-charged, m-ledger-written, m-message-queued, m-totals-counted, m-ledger-before-run, m-boundary, m-zero-no-ledger, m-zero-no-message, m-zero-not-counted]
+contamination: null
+limits: { timeout_min: 45 }
