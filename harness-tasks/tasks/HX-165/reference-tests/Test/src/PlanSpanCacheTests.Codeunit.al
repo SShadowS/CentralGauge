@@ -38,7 +38,7 @@ codeunit 80720 "CGR Plan Span Cache Tests"
         SpanCache.PlanSpanMonths('PSC-REP');
         CommitAndDropServerReads();
 
-        Assert.AreEqual(0, StatementsOfLookup('PSC-REP', Months), 'A repeat lookup is answered from memory');
+        Assert.IsTrue(StatementsOfLookup('PSC-REP', Months) = 0, 'A repeat lookup is answered from memory');
         Assert.AreEqual(9, Months, 'Repeat lookup value');
     end;
 
@@ -121,7 +121,7 @@ codeunit 80720 "CGR Plan Span Cache Tests"
         SetMonths('PSC-OTH-A', 6, true);
         CommitAndDropServerReads();
 
-        Assert.AreEqual(0, StatementsOfLookup('PSC-OTH-B', Months), 'A change to plan A leaves plan B in memory');
+        Assert.IsTrue(StatementsOfLookup('PSC-OTH-B', Months) = 0, 'A change to plan A leaves plan B in memory');
         Assert.AreEqual(3, Months, 'Plan B value');
     end;
 
