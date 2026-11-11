@@ -50,7 +50,7 @@ codeunit 80722 "CGR Plan Span Warm Tests"
         Before := SessionInformation.SqlStatementsExecuted;
         SpanCache.PlanSpanMonths('PSW-REP');
 
-        Assert.AreEqual(0, SessionInformation.SqlStatementsExecuted - Before, 'Repeat lookup issues no statement');
+        Assert.IsTrue(SessionInformation.SqlStatementsExecuted - Before = 0, 'Repeat lookup issues no statement');
     end;
 
     [Test]
@@ -73,7 +73,7 @@ codeunit 80722 "CGR Plan Span Warm Tests"
         Before := SessionInformation.SqlStatementsExecuted;
         SpanCache.PlanSpanMonths('PSW-OTH-B');
 
-        Assert.AreEqual(0, SessionInformation.SqlStatementsExecuted - Before, 'Other plan issues no statement');
+        Assert.IsTrue(SessionInformation.SqlStatementsExecuted - Before = 0, 'Other plan issues no statement');
     end;
 
     local procedure DropPlan(PlanCode: Code[20])

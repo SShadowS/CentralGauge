@@ -48,7 +48,7 @@ codeunit 80724 "CGR Plan Span Reread Tests"
         Before := SessionInformation.SqlStatementsExecuted;
         SpanCache.PlanSpanMonths('PSR-REP');
 
-        Assert.AreEqual(0, SessionInformation.SqlStatementsExecuted - Before, 'Repeat lookup issues no statement');
+        Assert.IsTrue(SessionInformation.SqlStatementsExecuted - Before = 0, 'Repeat lookup issues no statement');
     end;
 
     [Test]
