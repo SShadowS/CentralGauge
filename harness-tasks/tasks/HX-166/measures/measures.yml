@@ -4,18 +4,25 @@ partial_credit:
     "88450/ZeroValueVehiclePaysNothing": 1
     "88450/SevenEqualSharesStayWithinCent": 1
     "88450/EntryOrderDoesNotChangeShares": 1
-    "88450/NoInsuredValueLeftUnchanged": 1
     "88450/ExactlyFifteenHundredOverIsStandard": 1
-    "88450/TariffBandsAroundBoundary": 1
     "88450/FirstReadingsOpenAtFirstKm": 1
-    "88450/OpeningKmStopsAtFourHundredDays": 1
     "88450/SelectionOnlyIsSettled": 1
-    "88450/NoReadingInPeriodIsNotSettled": 1
-    "88450/SettlingAgainReplacesCharge": 1
     "88450/MixedFileAcceptsGoodLinesOnly": 1
     "88450/RepeatedEntryCodesCountOnce": 1
     "88450/ImportStaysInCallerTransaction": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88450/NoInsuredValueLeftUnchanged"
+    - "88450/TariffBandsAroundBoundary"
+    - "88450/OpeningKmStopsAtFourHundredDays"
+    - "88450/NoReadingInPeriodIsNotSettled"
+    - "88450/SettlingAgainReplacesCharge"
 reuse: null
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/band-widened: { partial_credit: 0.8888888888888888 }
+  naive/commit-per-line: { partial_credit: 0.8888888888888888 }
+  naive/insert-no-duplicate-check: { partial_credit: 0.8888888888888888 }
+  naive/remainder-ties-line: { partial_credit: 0.8888888888888888 }
+  naive/residual-largest: { partial_credit: 0.8888888888888888 }
+  naive/silent-two: { partial_credit: 0.7777777777777778 }
+  naive/wrong-side-guard: { partial_credit: 0.8888888888888888 }
