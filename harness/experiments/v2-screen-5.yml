@@ -1,0 +1,12 @@
+# W2-19: wave 2 round 3 full screen (seal harness-v2-screen-w2r3). Built like v2-screen-4. Tasks = the `next screen
+# tasks:` line of `screening.ts status --stratify-env` after v2-prescreen-3 and W2-17 ended (2026-11-11 ~15:30Z): the 15
+# w2r3 candidates plus HX-142..145, incomplete in v2-screen-4 (ruling decisions\2026-11-10-hx142-145-incomplete.md).
+# Developmental, never confirmatory.
+id: v2-screen-5
+hypothesis: "Screening pilot of the v2 wave 2 round 3 candidates (plus the four v2-screen-4 incompletes) on the plain and realistic+LSP arms; developmental, excluded from every confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-plain
+variants: [cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-142,HX-143,HX-144,HX-145,HX-149,HX-150,HX-151,HX-152,HX-154,HX-155,HX-156,HX-157,HX-158,HX-159,HX-160,HX-161,HX-162,HX-163,HX-164}"
+repeats: 3
