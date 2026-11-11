@@ -1,0 +1,12 @@
+# W2-17 frontier-hard pool, Opus filter (owner, decisions\2026-11-09-frontier-hard-pool.md item 5). Built like v2-frontier-1, one repeat.
+# Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
+# prescreen.ts status, selection and the confirmatory analysis.
+id: v2-frontier-2
+hypothesis: "Exploratory: which Sonnet 5 dead or hard screening tasks are also hard for Opus 5.5 on the plain and realistic+LSP setups; never a screening or confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-frontier-opus-plain
+variants: [cc-v2-frontier-opus-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+# 2026-11-10: + HX-138, 139, 141, 147, 148 (dead in v2-screen-4, orchestrator); 17 tasks.
+tasks: "harness-tasks/tasks/{HX-016,HX-017,HX-021,HX-029,HX-035,HX-042,HX-054,HX-064,HX-065,HX-076,HX-087,HX-132,HX-138,HX-139,HX-141,HX-147,HX-148}"
+repeats: 1
