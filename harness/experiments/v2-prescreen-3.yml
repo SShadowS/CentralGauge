@@ -1,0 +1,12 @@
+# W2-19: H-68 calibration round (seal harness-v2-screen-w2r3): one attempt per arm; never pooled into screening,
+# selection or any confirmatory result (screening.ts loads only v2-screen-*). Tasks = the 15 w2r3 candidates
+# (HX-149..152, HX-154..164) that `prescreen.ts status` lists as missing a pre-screen after the seal. The w2r2 tasks
+# HX-142..145 stay out (pre-screened in their own round, decisions\2026-11-10-hx142-145-incomplete.md).
+id: v2-prescreen-3
+hypothesis: "Pre-screen of the wave-2 round-3 candidates, calibration round: one attempt per arm, measured against the full screen for the false-kill rate; developmental only."
+primary_metric: pass_rate
+baseline: cc-v2-plain
+variants: [cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-149,HX-150,HX-151,HX-152,HX-154,HX-155,HX-156,HX-157,HX-158,HX-159,HX-160,HX-161,HX-162,HX-163,HX-164}"
+repeats: 1
