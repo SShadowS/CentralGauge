@@ -9,9 +9,9 @@ Before anyone changes the cache we want automated tests that pin down how it mus
 How the cache must behave (`CGR Plan Span Cache` in Fleet, procedures `PlanSpanMonths(PlanCode: Code[20]): Integer` and `ForgetPlanSpans()`):
 
 - PlanSpanMonths returns the plan's "Interval Months". A plan that does not exist answers 0.
-- Within one session, the first lookup of a plan may read the database. Every later lookup of that plan, as long as the plan has not changed, is answered from memory: it issues no database statement (`SessionInformation.SqlStatementsExecuted` does not move).
+- Within one session, the first lookup of a plan code may read the database. Every later lookup of that code, as long as the plan has not changed, is answered from memory, also when no plan has that code: it issues no database statement (`SessionInformation.SqlStatementsExecuted` does not move).
 - A plan that is inserted, changed (with or without table triggers), deleted or renamed is seen by the very next lookup in the same session. After a delete, or after a rename under the old code, the lookup answers 0.
-- A change to one plan touches nothing else: lookups of other plans that were already answered from memory stay answered from memory, without a database statement.
+- Inserting, changing, deleting or renaming one plan touches nothing else: lookups of other plan codes that were already answered from memory stay answered from memory, without a database statement.
 - ForgetPlanSpans empties the session's memory.
 
 ```al

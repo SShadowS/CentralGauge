@@ -126,6 +126,76 @@ codeunit 80720 "CGR Plan Span Cache Tests"
     end;
 
     [Test]
+    procedure RenameOntoAnsweredCodeIsSeen()
+    var
+        ServicePlan: Record "CGR Service Plan";
+    begin
+        Reset();
+        DropPlan('PSC-ONTO-NEW');
+        Assert.AreEqual(0, SpanCache.PlanSpanMonths('PSC-ONTO-NEW'), 'No plan has the new code yet');
+        CreatePlan('PSC-ONTO-OLD', 7);
+        SpanCache.PlanSpanMonths('PSC-ONTO-OLD');
+
+        ServicePlan.Get('PSC-ONTO-OLD');
+        ServicePlan.Rename('PSC-ONTO-NEW');
+
+        Assert.AreEqual(7, SpanCache.PlanSpanMonths('PSC-ONTO-NEW'), 'A rename onto a code answered before is seen by the next lookup');
+    end;
+
+    [Test]
+    procedure DeleteLeavesOtherPlanInMemory()
+    var
+        Months: Integer;
+    begin
+        Reset();
+        CreatePlan('PSC-DOTH-A', 12);
+        CreatePlan('PSC-DOTH-B', 4);
+        SpanCache.PlanSpanMonths('PSC-DOTH-A');
+        SpanCache.PlanSpanMonths('PSC-DOTH-B');
+
+        DropPlan('PSC-DOTH-A');
+        CommitAndDropServerReads();
+
+        Assert.IsTrue(StatementsOfLookup('PSC-DOTH-B', Months) = 0, 'Deleting plan A leaves plan B in memory');
+        Assert.AreEqual(4, Months, 'Plan B value');
+    end;
+
+    [Test]
+    procedure RenameLeavesOtherPlanInMemory()
+    var
+        ServicePlan: Record "CGR Service Plan";
+        Months: Integer;
+    begin
+        Reset();
+        DropPlan('PSC-ROTH-A2');
+        CreatePlan('PSC-ROTH-A', 12);
+        CreatePlan('PSC-ROTH-B', 5);
+        SpanCache.PlanSpanMonths('PSC-ROTH-A');
+        SpanCache.PlanSpanMonths('PSC-ROTH-B');
+
+        ServicePlan.Get('PSC-ROTH-A');
+        ServicePlan.Rename('PSC-ROTH-A2');
+        CommitAndDropServerReads();
+
+        Assert.IsTrue(StatementsOfLookup('PSC-ROTH-B', Months) = 0, 'Renaming plan A leaves plan B in memory');
+        Assert.AreEqual(5, Months, 'Plan B value');
+    end;
+
+    [Test]
+    procedure RepeatMissingLookupIssuesNoStatement()
+    var
+        Months: Integer;
+    begin
+        Reset();
+        DropPlan('PSC-NONE-REP');
+        SpanCache.PlanSpanMonths('PSC-NONE-REP');
+        CommitAndDropServerReads();
+
+        Assert.IsTrue(StatementsOfLookup('PSC-NONE-REP', Months) = 0, 'A repeat lookup of a code with no plan is answered from memory');
+        Assert.AreEqual(0, Months, 'A plan that does not exist answers 0');
+    end;
+
+    [Test]
     procedure ForgetEmptiesMemory()
     var
         Months: Integer;
