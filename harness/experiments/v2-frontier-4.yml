@@ -1,0 +1,12 @@
+# W2-22 follow-up: Opus 5.5 cells for HX-165 (tree cf872ffe, promoted by the 2026-11-12 10:37Z gate at 91ba7b64).
+# Built like v2-frontier-3, one repeat, Cronus283 only (orchestrator).
+# Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
+# prescreen.ts status, selection and the confirmatory analysis.
+id: v2-frontier-4
+hypothesis: "Exploratory: whether Opus 5.5 solves the round 8 card HX-165 on the plain and realistic+LSP setups; never a screening or confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-frontier-opus-plain
+variants: [cc-v2-frontier-opus-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-165}"
+repeats: 1
