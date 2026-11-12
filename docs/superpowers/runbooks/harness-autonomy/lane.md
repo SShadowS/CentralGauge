@@ -236,6 +236,22 @@ nothing in flight. After a clear, run your start procedure again.
   guard follows `H:\cg-coord\tasks\H-59\sup.sh.proposed` with `ram-guard-proc.ps1`: chain latch,
   then the private STOP, wait; an emergency kill only below its last threshold or deadline, of
   the recorded process only (pid and start time, through a held handle), logged as an abort.
+- Memory watchers (H-89, fail-safe: when a watcher cannot tell memory is fine, it stops work).
+  One host watcher, `scripts/harness/ops/hostwatch.sh`, runs detached (Start-Process) for every
+  campaign and gate pool in its registry (`<stop prefix> <integer priority>` per line; it refuses
+  to start on a missing, empty or malformed one). Register a campaign before starting it. It
+  writes `<prefix>.host-low` to the lowest-priority targets under 6 GB commit headroom, 8 GB free
+  RAM, a nonpaged-pool rise of more than 1.5 GB in 15 min, no good reading for 90 s, or a failed
+  comparison, and `<prefix>.host-all` to every target under 3 GB headroom, 4 GB free or no good
+  reading for 180 s. Stop it with `STOP-hostwatch` (it writes host-low first). The per-campaign
+  `scripts/harness/ops/watch.sh` writes `<prefix>.watch` for the RAM floor, no good reading for
+  90 s, a hostwatch heartbeat older than 180 s or missing, the campaign missing from the
+  registry, or a quarantined pool. Writers use only the names in `scripts/harness/ops/stops.sh`;
+  pass them to the run with `stop_args` (one `--stop-file` each). Active stops are the prefix and
+  every `<prefix>.*` except `<prefix>.cleared-*`, so a resume chain refuses while
+  `active_stops <prefix>` prints anything. A planned pause writes `<prefix>.planned`. Clear a
+  stop only on the orchestrator's go, by renaming it to `<prefix>.cleared-<UTC stamp>`. Dry
+  test: `scripts/harness/ops/hostwatch-dry-test.sh <scratch dir>` (dummy targets only).
 
 ## lane-admin specifics
 
