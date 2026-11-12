@@ -42,10 +42,10 @@ codeunit 80722 "CGR Plan Span Warm Tests"
         Before: BigInteger;
     begin
         SpanCache.ForgetPlanSpans();
-        Lib.CreateServicePlan('PSW-REP', Enum::"CGR Maintenance Strategy"::Default, 9);
-        SpanCache.PlanSpanMonths('PSW-REP');
         Commit();
         SelectLatestVersion();
+        Lib.CreateServicePlan('PSW-REP', Enum::"CGR Maintenance Strategy"::Default, 9);
+        SpanCache.PlanSpanMonths('PSW-REP');
 
         Before := SessionInformation.SqlStatementsExecuted;
         SpanCache.PlanSpanMonths('PSW-REP');
@@ -60,10 +60,10 @@ codeunit 80722 "CGR Plan Span Warm Tests"
         Before: BigInteger;
     begin
         SpanCache.ForgetPlanSpans();
-        Lib.CreateServicePlan('PSW-OTH-A', Enum::"CGR Maintenance Strategy"::Default, 12);
-        Lib.CreateServicePlan('PSW-OTH-B', Enum::"CGR Maintenance Strategy"::Default, 3);
         Commit();
         SelectLatestVersion();
+        Lib.CreateServicePlan('PSW-OTH-A', Enum::"CGR Maintenance Strategy"::Default, 12);
+        Lib.CreateServicePlan('PSW-OTH-B', Enum::"CGR Maintenance Strategy"::Default, 3);
         SpanCache.PlanSpanMonths('PSW-OTH-A');
         SpanCache.PlanSpanMonths('PSW-OTH-B');
         ServicePlan.Get('PSW-OTH-A');
