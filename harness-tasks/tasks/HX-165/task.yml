@@ -10,6 +10,6 @@ scorers: [build, pass_to_pass, mutant_kill]
 pass_to_pass:
   - { codeunit: 80055, procedures: [AssignPlanSetsStrategy, NextServiceDateFromPlanInterval] }
 fail_to_pass: null
-mutants: [m-no-cache, m-forget-all, m-keep-on-delete, m-keep-on-rename, m-keep-missing]
+mutants: [m-no-cache, m-forget-all, m-keep-on-delete, m-keep-on-rename, m-keep-missing, m-rename-keeps-new, m-delete-forgets-all, m-rename-forgets-all, m-missing-not-kept]
 contamination: null
 limits: { timeout_min: 30 }

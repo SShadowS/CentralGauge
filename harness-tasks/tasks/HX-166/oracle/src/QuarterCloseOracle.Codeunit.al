@@ -21,7 +21,7 @@ codeunit 88450 "HX166 Quarter Close Oracle"
         Allocator.AllocatePremium('HX166-ZERO');
 
         Assert.AreEqual(0, ShareOfHX166('HX166-ZERO', 'HX166-D'), 'A vehicle with no insured value pays nothing when another vehicle has insured value');
-        Assert.AreEqual(100, Allocator.PremiumSharedTotal('HX166-ZERO'), 'Shares add up exactly to the premium''s Total Amount');
+        Assert.AreEqual(100, SharedTotalHX166('HX166-ZERO'), 'Shares add up exactly to the premium''s Total Amount');
         Premium.Get('HX166-ZERO');
         Assert.IsTrue(Premium.Allocated, 'A premium that was shared is flagged Allocated');
     end;
@@ -43,7 +43,7 @@ codeunit 88450 "HX166 Quarter Close Oracle"
             Amount := ShareOfHX166('HX166-SEVEN', 'HX166-S' + Format(Index));
             Assert.IsTrue(Amount in [14.28, 14.29], 'A share is less than one cent away from 100/7, got ' + Format(Amount));
         end;
-        Assert.AreEqual(100, Allocator.PremiumSharedTotal('HX166-SEVEN'), 'Shares add up exactly to the premium''s Total Amount');
+        Assert.AreEqual(100, SharedTotalHX166('HX166-SEVEN'), 'Shares add up exactly to the premium''s Total Amount');
     end;
 
     [Test]
@@ -81,8 +81,8 @@ codeunit 88450 "HX166 Quarter Close Oracle"
             Assert.AreEqual(Round(Amount, 0.01), Amount, 'Shares are whole cents');
             Assert.IsTrue(Abs(Amount - 10 * Values[Index] / 13) < 0.01, 'A share is less than one cent away from its exact proportional amount: ' + Vehicles[Index]);
         end;
-        Assert.AreEqual(10, Allocator.PremiumSharedTotal('HX166-ORDER1'), 'Shares add up exactly to the premium''s Total Amount');
-        Assert.AreEqual(10, Allocator.PremiumSharedTotal('HX166-ORDER2'), 'Shares add up exactly to the premium''s Total Amount');
+        Assert.AreEqual(10, SharedTotalHX166('HX166-ORDER1'), 'Shares add up exactly to the premium''s Total Amount');
+        Assert.AreEqual(10, SharedTotalHX166('HX166-ORDER2'), 'Shares add up exactly to the premium''s Total Amount');
     end;
 
     [Test]
@@ -180,6 +180,20 @@ codeunit 88450 "HX166 Quarter Close Oracle"
 
         AssertChargeHX166('HX166-IN400', 20160101D, 500, 0, 'NONE', 0);
         AssertChargeHX166('HX166-OUT401', 20160101D, 300, 0, 'NONE', 0);
+    end;
+
+    [Test]
+    procedure LatestEarlierReadingOpens()
+    begin
+        NewVehicleHX166('HX166-LATEST');
+        AddReadingHX166('HX166-LATEST', 20210101D - 300, 400);
+        AddReadingHX166('HX166-LATEST', 20210101D - 10, 600);
+        AddReadingHX166('HX166-LATEST', 20210110D, 800);
+        AddReadingHX166('HX166-LATEST', 20210320D, 1000);
+
+        SettleOneHX166('HX166-LATEST', 20210101D, 20210331D, 10000);
+
+        AssertChargeHX166('HX166-LATEST', 20210101D, 400, 0, 'NONE', 0);
     end;
 
     [Test]
@@ -282,6 +296,30 @@ codeunit 88450 "HX166 Quarter Close Oracle"
         Assert.IsFalse(FuelLine.Get('HX166-GBAD'), 'A malformed amount leaves no row');
         Assert.IsFalse(FuelLine.Get('HX166-GNEG'), 'A negative amount leaves no row');
         Assert.IsFalse(FuelLine.Get('HX166-GUNK'), 'An unknown vehicle leaves no row');
+    end;
+
+    [Test]
+    procedure ZeroAmountIsAccepted()
+    var
+        FuelLine: Record "CGR Fuel Card Line";
+        Runner: Codeunit "HX166 Feed Runner";
+        Codes: List of [Code[20]];
+        Vehicles: List of [Code[20]];
+        Amounts: List of [Text];
+        Ok: Boolean;
+    begin
+        ClearFuelLinesHX166('HX166-Z*');
+        NewVehicleHX166('HX166-F4');
+        AddFileLineHX166(Codes, Vehicles, Amounts, 'HX166-Z1', 'HX166-F4', '0');
+
+        Runner.SetFileHX166(Codes, Vehicles, Amounts);
+        Commit();
+        Ok := Runner.Run();
+
+        Assert.IsTrue(Ok, 'A zero amount raises nothing to the caller: ' + GetLastErrorText());
+        Assert.AreEqual(1, Runner.ResultHX166(), 'A zero amount is not negative and is accepted');
+        Assert.IsTrue(FuelLine.Get('HX166-Z1'), 'An accepted zero amount leaves one fuel-card row');
+        Assert.AreEqual(0, FuelLine.Amount, 'The accepted amount');
     end;
 
     [Test]
@@ -398,6 +436,19 @@ codeunit 88450 "HX166 Quarter Close Oracle"
         Share.SetRange("Vehicle No.", VehicleNo);
         Share.FindFirst();
         exit(Share."Share Amount");
+    end;
+
+    local procedure SharedTotalHX166(PremiumNo: Code[20]): Decimal
+    var
+        Share: Record "CGR Premium Share";
+        Total: Decimal;
+    begin
+        Share.SetRange("Premium No.", PremiumNo);
+        if Share.FindSet() then
+            repeat
+                Total += Share."Share Amount";
+            until Share.Next() = 0;
+        exit(Total);
     end;
 
     local procedure DeleteVehicleHX166(VehicleNo: Code[20])
