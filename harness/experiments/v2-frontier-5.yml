@@ -1,0 +1,13 @@
+# W2-22 follow-up after W2-21 run 002 (oracle-strengthening fixes): Opus 5.5 cells on the new trees. HX-165 tree ffa0b6c9
+# (gate promoted 2026-11-12 13:32Z at 2df87324), HX-166 tree a8efb65b (gate promoted 11:47Z at 2df87324, A9 33385806).
+# Built like v2-frontier-3, one repeat, Cronus283 only (orchestrator).
+# Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
+# prescreen.ts status, selection and the confirmatory analysis.
+id: v2-frontier-5
+hypothesis: "Exploratory: whether Opus 5.5 solves the round 8 cards HX-165 and HX-166 (strengthened oracles) on the plain and realistic+LSP setups; never a screening or confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-frontier-opus-plain
+variants: [cc-v2-frontier-opus-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-165,HX-166}"
+repeats: 1
