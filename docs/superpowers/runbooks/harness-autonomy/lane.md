@@ -236,6 +236,19 @@ nothing in flight. After a clear, run your start procedure again.
   guard follows `H:\cg-coord\tasks\H-59\sup.sh.proposed` with `ram-guard-proc.ps1`: chain latch,
   then the private STOP, wait; an emergency kill only below its last threshold or deadline, of
   the recorded process only (pid and start time, through a held handle), logged as an abort.
+- Memory watchers (H-89): one host watcher, `scripts/harness/ops/hostwatch.sh`, runs detached
+  for every campaign and gate pool listed in its registry (`<stop prefix> <priority>`; add a line
+  when a campaign starts, remove it when it ends). It writes `<prefix>.host-low` to the
+  lowest-priority targets under 6 GB commit headroom, 8 GB free RAM, a nonpaged-pool rise of
+  more than 1.5 GB in 15 min or 2 stalled readings, and `<prefix>.host-all` to every target under
+  3 GB headroom, 4 GB free or 5 stalled readings. The per-campaign `scripts/harness/ops/watch.sh`
+  keeps the RAM floor, the pool-quarantined stop and cost logging, as `<prefix>.watch`. Every
+  writer owns its own named stop (`scripts/harness/ops/stops.sh`), so none is skipped because
+  another stop exists. Pass every name to the run with `stop_args` (one `--stop-file` each). A
+  resume chain refuses while `active_stops <prefix>` prints anything. A planned pause writes
+  `<prefix>.planned`. Clear a stop only on the orchestrator's go, and archive it with a dated
+  suffix (`.cleared-<UTC stamp>`), which `active_stops` ignores. Dry test:
+  `scripts/harness/ops/hostwatch-dry-test.sh <scratch dir>` (fed readings, dummy targets only).
 
 ## lane-admin specifics
 

@@ -14,3 +14,5 @@ infra/harness-reset/lineages/*.content.txt -text
 infra/harness-reset/lineages/*.survey.json -text
 # Vendored BCQuality release tree (R-02): byte-exact as upstream git archive, never converted
 harness/bundles/bcquality/** -text
+# Ops watchers run under Git Bash, which refuses CRLF (H-89): LF on every checkout
+scripts/harness/ops/*.sh text eol=lf
