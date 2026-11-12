@@ -1,13 +1,13 @@
-# W2-22: Opus 5.5 cells for W2-21's gated HX-165 (tree a781b58a) plus the HX-054 plain rerun owed from W2-17 (its
-# realistic-lsp cell comes along, accepted by the orchestrator). Built like v2-frontier-2, one repeat. HX-166 follows after
-# lane-content's A9 commit, as a second campaign or v2-frontier-4.
+# W2-22: Opus 5.5 cells for W2-21's gated HX-166 (A9 tree 66a7572b, promoted) plus the HX-054 plain rerun owed from W2-17
+# (its realistic-lsp cell comes along, accepted by the orchestrator). Built like v2-frontier-2, one repeat. HX-165 is out:
+# its 2026-11-12 re-gate at 71365de3 did not promote (naive/flush-before-warm leaves no mutant alive).
 # Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
 # prescreen.ts status, selection and the confirmatory analysis.
 id: v2-frontier-3
-hypothesis: "Exploratory: whether Opus 5.5 solves the round 8 card HX-165 on the plain and realistic+LSP setups, plus a valid plain cell for HX-054; never a screening or confirmatory result."
+hypothesis: "Exploratory: whether Opus 5.5 solves the round 8 card HX-166 on the plain and realistic+LSP setups, plus a valid plain cell for HX-054; never a screening or confirmatory result."
 primary_metric: pass_rate
 baseline: cc-v2-frontier-opus-plain
 variants: [cc-v2-frontier-opus-realistic-lsp]
 vary: [instructions, skills, agents, mcp, lsp]
-tasks: "harness-tasks/tasks/{HX-054,HX-165}"
+tasks: "harness-tasks/tasks/{HX-054,HX-166}"
 repeats: 1
