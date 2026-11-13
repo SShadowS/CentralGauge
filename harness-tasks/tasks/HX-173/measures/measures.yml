@@ -1,0 +1,20 @@
+v: 1
+partial_credit:
+  weights:
+    "88555/ServiceDueGetsServiceLine": 1
+    "88555/UnrepairedDamageGetsRepairLine": 1
+    "88555/NothingToDoAddsNothing": 1
+    "88555/ServiceAndTwoDamagesThreeLines": 1
+    "88555/SecondVehicleAddsAfterFirst": 1
+    "88555/DueByPlanDateOnAtDate": 1
+    "88555/NotYetDueByPlanAddsNothing": 1
+    "88555/AcceptPlansProposalInListOrder": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/autoincrement-key: { partial_credit: 0.625 }
+  naive/restart-numbering: { partial_credit: 0.75 }
+  naive/clear-proposal: { partial_credit: 0.625 }
+  naive/all-damages: { partial_credit: 0.625 }
+  naive/workdate-not-atdate: { partial_credit: 0.75 }

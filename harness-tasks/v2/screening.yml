@@ -379,6 +379,30 @@ candidates:
   - id: HX-164
     prior: hard
     size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-167
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-168
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "OnAfterInsertEvent/OnAfterModifyEvent/OnAfterDeleteEvent on CGR Desk Rate" }
+  - id: HX-169
+    prior: easy
+    size: { objects: 1, files: 1, reuse: "CGR Lease Exposure.OpenLeaseBalance", traces: "CGR Lease Exposure.OnAfterOpenLeaseBalance" }
+  - id: HX-170
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoicing.OnAfterCreateInvoiceLine" }
+  - id: HX-171
+    prior: intermediate
+    size: { objects: 2, files: 2, reuse: null, traces: "CGR Collection Line Check.OnAfterCollectionLineAdded" }
+  - id: HX-172
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-173
+    prior: easy
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-174
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:

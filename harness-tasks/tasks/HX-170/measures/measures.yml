@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "88510/DueOnRunDateIsInvoiced": 1
+    "88510/LineStaysInvoiced": 1
+    "88510/BilledAmountIsTheInvoiceLinesAmount": 1
+    "88510/HandledLineHasZeroBilledAmount": 1
+    "88510/SubscriberInsertedLineIsNotBilled": 1
+    "88510/HandledLinesAreNotInvoicedAgain": 1
+    "88510/InvoicedLineKeepsAccountingRef": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

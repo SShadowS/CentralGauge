@@ -1,0 +1,68 @@
+codeunit 70311 "CGR Lease Invoicing"
+{
+    procedure InvoiceDueLines(ContractNo: Code[20]; UpToDate: Date): Integer
+    var
+        Contract: Record "CGR Lease Contract";
+        ScheduleLine: Record "CGR Lease Schedule Line";
+        BilledLine: Record "CGR Lease Schedule Line";
+        LeaseMgt: Codeunit "CGR Lease Mgt";
+        BilledAmount: Decimal;
+        Invoiced: Integer;
+    begin
+        Contract.Get(ContractNo);
+        ScheduleLine.SetRange("Contract No.", ContractNo);
+        ScheduleLine.SetRange(Invoiced, false);
+        ScheduleLine.SetRange("Due Date", 0D, UpToDate);
+        if ScheduleLine.FindSet() then
+            repeat
+                BilledAmount := CreateInvoiceLine(Contract, ScheduleLine);
+                LeaseMgt.InvoiceLine(ContractNo, ScheduleLine."Line No.");
+                BilledLine.Get(ContractNo, ScheduleLine."Line No.");
+                BilledLine."Billed Amount" := BilledAmount;
+                BilledLine.Modify(true);
+                Invoiced += 1;
+            until ScheduleLine.Next() = 0;
+        exit(Invoiced);
+    end;
+
+    procedure InvoiceDate(DueDate: Date): Date
+    var
+        WorkingDays: Codeunit "CGR Working Days";
+    begin
+        if WorkingDays.IsWorkingDay(DueDate) then
+            exit(DueDate);
+        exit(WorkingDays.NextWorkingDay(DueDate));
+    end;
+
+    local procedure CreateInvoiceLine(Contract: Record "CGR Lease Contract"; ScheduleLine: Record "CGR Lease Schedule Line"): Decimal
+    var
+        InvoiceLine: Record "CGR Lease Invoice Line";
+        AmountRounding: Codeunit "CGR Amount Rounding";
+        IsHandled: Boolean;
+    begin
+        InvoiceLine.Init();
+        InvoiceLine."Contract No." := Contract."No.";
+        InvoiceLine."Schedule Line No." := ScheduleLine."Line No.";
+        InvoiceLine."Vehicle No." := Contract."Vehicle No.";
+        InvoiceLine."Customer Name" := Contract."Customer Name";
+        InvoiceLine."Due Date" := ScheduleLine."Due Date";
+        InvoiceLine."Invoice Date" := InvoiceDate(ScheduleLine."Due Date");
+        InvoiceLine.Amount := AmountRounding.RoundAmount(ScheduleLine.Amount);
+        OnBeforeCreateInvoiceLine(ScheduleLine, InvoiceLine, IsHandled);
+        if IsHandled then
+            exit(0);
+        InvoiceLine.Insert(true);
+        OnAfterCreateInvoiceLine(ScheduleLine, InvoiceLine);
+        exit(InvoiceLine.Amount);
+    end;
+
+    [IntegrationEvent(false, false)]
+    local procedure OnBeforeCreateInvoiceLine(ScheduleLine: Record "CGR Lease Schedule Line"; var InvoiceLine: Record "CGR Lease Invoice Line"; var IsHandled: Boolean)
+    begin
+    end;
+
+    [IntegrationEvent(false, false)]
+    local procedure OnAfterCreateInvoiceLine(ScheduleLine: Record "CGR Lease Schedule Line"; var InvoiceLine: Record "CGR Lease Invoice Line")
+    begin
+    end;
+}

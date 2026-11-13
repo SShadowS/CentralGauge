@@ -1,0 +1,19 @@
+id: HX-173
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Fleet]
+coupling: [temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+  - { codeunit: 80055, procedures: [DueByKmWithoutPlan, NextServiceDateFromPlanInterval] }
+fail_to_pass:
+  depends_on: [Core, Fleet]
+  tests:
+    - { codeunit: 88555, procedures: [ServiceDueGetsServiceLine, UnrepairedDamageGetsRepairLine, NothingToDoAddsNothing, ServiceAndTwoDamagesThreeLines, SecondVehicleAddsAfterFirst, DueByPlanDateOnAtDate, NotYetDueByPlanAddsNothing, AcceptPlansProposalInListOrder] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

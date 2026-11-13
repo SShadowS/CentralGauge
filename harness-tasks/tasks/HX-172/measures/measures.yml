@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88540/VehiclesFollowNewCode": 1
+    "88540/VisitsFollowNewCode": 1
+    "88540/PlanKeepsItsData": 1
+    "88540/VehiclesKeepTheirData": 1
+    "88540/OtherPlansUntouched": 1
+    "88540/TakenCodeRefused": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
