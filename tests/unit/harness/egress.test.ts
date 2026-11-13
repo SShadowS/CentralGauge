@@ -2296,6 +2296,56 @@ const H90 = {
   hnsId: "hns1",
 };
 
+/** Review r1 H1: the no-flag apply's guard, the only lines it gains over the pre-H-90 script. */
+const ALLOW_GUARD = [
+  "# Without --keep-inbound every inbound default becomes Allow: refuse on a host where an enabled profile defaults inbound to anything else (GH #33).",
+  `$active = @(Get-NetFirewallProfile -PolicyStore ActiveStore); $closed = @($active | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.DefaultInboundAction -ne 'Allow' }); if ($active.Count -ne 3 -or $closed.Count -gt 0) { throw "this apply sets every inbound default to Allow, but the effective profiles are $(($active | ForEach-Object { "$($_.Name)=$($_.DefaultInboundAction) Enabled=$($_.Enabled)" }) -join ', '): on a host whose inbound default is Block, generate the apply with --keep-inbound" }`,
+] as const;
+
+/**
+ * Run an apply script's guard line in Windows PowerShell against fake
+ * profiles: a function named Get-NetFirewallProfile shadows the cmdlet, so
+ * nothing reads or changes the host firewall. One result line per case.
+ */
+async function runGuard(
+  guard: string,
+  cases: [string, string][][],
+): Promise<string[]> {
+  const dir = await testTempDir();
+  try {
+    const fake = cases.map((c) =>
+      "@(" +
+      c.map(([inb, en], i) =>
+        `[pscustomobject]@{ Name = '${
+          ["Domain", "Private", "Public"][i]
+        }'; DefaultInboundAction = '${inb}'; Enabled = '${en}' }`
+      ).join(", ") + ")"
+    );
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      "function Get-NetFirewallProfile { param($PolicyStore) if ($PolicyStore -ne 'ActiveStore') { throw 'not ActiveStore' }; $script:fake }",
+      "$cases = @()",
+      ...fake.map((f) => `$cases += ,${f}`),
+      "foreach ($c in $cases) {",
+      "  $script:fake = $c",
+      `  try { ${guard}; 'PASS' } catch { 'REFUSE ' + $_.Exception.Message }`,
+      "}",
+    ].join("\r\n");
+    const file = join(dir, "guard.ps1");
+    await Deno.writeTextFile(file, "﻿" + script);
+    const out = await new Deno.Command("powershell.exe", {
+      args: ["-NoProfile", "-NonInteractive", "-File", file],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    const text = new TextDecoder().decode(out.stdout);
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr));
+    return text.split(/\r?\n/).filter((l) => l !== "");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
 /** A Block-default host after the keep-inbound apply: Block profiles, the block plan plus the allow rules. */
 function blockHostState(blocked = ["Domain", "Private", "Public"]) {
   const s = goodState();
@@ -2333,6 +2383,8 @@ Deno.test("applyScript (H-90): without keepInbound the script is today's; keepIn
   const a = allow.split("\r\n");
   const k = keep.split("\r\n");
   assertEquals(a.filter((l) => !k.includes(l)), [
+    ALLOW_GUARD[0],
+    ALLOW_GUARD[1],
     "$record = [ordered]@{ invocation = 'inv1'; snapshot = $snapshot; created = $created }",
     "  Set-NetFirewallProfile -All -DefaultInboundAction Allow -DefaultOutboundAction Allow",
     `  Write-Output "[OK] 256 rules created in ${RULE_GROUP}"`,
@@ -2374,6 +2426,74 @@ Deno.test("applyScript (H-90): without keepInbound the script is today's; keepIn
     "the allow rules come after every block rule",
   );
   assert(at("-Action Allow") < at("} catch {"), "inside the rolled-back block");
+});
+
+Deno.test("applyScript (H-90 review r1 H1): the no-flag apply refuses on an inbound-Block host before any change, naming --keep-inbound", () => {
+  const s = applyScript(firewallPlan(IDX), H90);
+  const lines = s.split("\r\n");
+  const g = lines.indexOf(ALLOW_GUARD[1]);
+  assertEquals(lines[g - 1], ALLOW_GUARD[0]);
+  assertEquals(lines.filter((l) => l === ALLOW_GUARD[1]).length, 1);
+  const at = (x: string) => s.indexOf(x);
+  const guard = at(ALLOW_GUARD[1]);
+  for (
+    const change of [
+      "Save-JsonAtomic (Join-Path $dir 'fw-snapshot-inv1.json')",
+      "Save-JsonAtomic $applied $record",
+      "Set-NetFirewallProfile",
+      "New-NetFirewallRule",
+    ]
+  ) {
+    assert(guard < at(change), `the guard comes before ${change}`);
+  }
+  assert(guard > at("throw 'group cg-harness-egress exists: revert first'"));
+});
+
+Deno.test({
+  name:
+    "apply guards (H-90): run in Windows PowerShell against fake profiles, each host state gets exactly one apply that runs",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const keepGuard = applyScript(firewallPlan(IDX), {
+      ...H90,
+      keepInbound: true,
+    }).split("\r\n").find((l) => l.startsWith("$active = "))!;
+    const T = "True", F = "False";
+    const states: [string, [string, string][]][] = [
+      ["inbound Allow host", [["Allow", T], ["Allow", T], ["Allow", T]]],
+      ["Block host", [["Block", T], ["Block", T], ["Block", T]]],
+      ["Public Block only", [["Allow", T], ["Allow", T], ["Block", T]]],
+      ["firewall off (Block, disabled)", [["Block", F], ["Block", F], [
+        "Block",
+        F,
+      ]]],
+      ["one disabled Block profile", [["Block", T], ["Block", F], [
+        "Block",
+        T,
+      ]]],
+      ["NotConfigured", [["NotConfigured", T], ["Block", T], ["Block", T]]],
+    ];
+    const allow = await runGuard(ALLOW_GUARD[1], states.map(([, p]) => p));
+    const keep = await runGuard(keepGuard, states.map(([, p]) => p));
+    const verdict = (l: string) => l.startsWith("PASS") ? "PASS" : "REFUSE";
+    assertEquals(
+      states.map(([n], i) => [n, verdict(allow[i]!), verdict(keep[i]!)]),
+      [
+        ["inbound Allow host", "PASS", "REFUSE"],
+        ["Block host", "REFUSE", "PASS"],
+        ["Public Block only", "REFUSE", "PASS"],
+        ["firewall off (Block, disabled)", "PASS", "REFUSE"],
+        ["one disabled Block profile", "REFUSE", "REFUSE"],
+        ["NotConfigured", "REFUSE", "REFUSE"],
+      ],
+    );
+    assertEquals(allow.length, states.length, allow.join("\n"));
+    assertEquals(
+      allow[1],
+      "REFUSE this apply sets every inbound default to Allow, but the effective profiles are Domain=Block Enabled=True, Private=Block Enabled=True, Public=Block Enabled=True: on a host whose inbound default is Block, generate the apply with --keep-inbound",
+    );
+    assertStringIncludes(keep[0]!, "without --keep-inbound");
+  },
 });
 
 Deno.test("verifyEgressState (H-90): inbound Block passes with the scoped allow rules, on every profile or some", () => {
