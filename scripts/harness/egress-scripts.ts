@@ -2,8 +2,13 @@
  * Generate the elevated firewall scripts ops run in M1-34 (M1-33). This
  * script only writes files; it never runs PowerShell or touches the host.
  * Usage:
- *   deno run --allow-all scripts/harness/egress-scripts.ts apply --invocation <id> --dir <dir> --interface-index <n> --interface-alias <alias> --hns-id <id> --out <apply.ps1>
+ *   deno run --allow-all scripts/harness/egress-scripts.ts apply --invocation <id> --dir <dir> --interface-index <n> --interface-alias <alias> --hns-id <id> --out <apply.ps1> [--keep-inbound]
  *   deno run --allow-all scripts/harness/egress-scripts.ts revert --dir <dir> --out <revert.ps1> [--restore-profiles]
+ * Without --keep-inbound the apply sets every profile's inbound default to
+ * Allow (the inbound-Allow host). On a host whose inbound default is Block
+ * (the Windows default) pass --keep-inbound (H-90, GH #33): the default stays
+ * Block and the apply adds scoped allows for 3128 and 3210 on the gateway; it
+ * refuses before any change unless the effective state is such a host.
  * The revert removes only the cg-harness-egress rules and archives the
  * records; it never changes the firewall profiles unless --restore-profiles
  * is given, and then refuses if the profiles changed since the apply (C-04).
@@ -20,7 +25,14 @@ import {
   revertScript,
 } from "../../src/harness/egress.ts";
 
+// A mistyped flag (say --keep-inbond) must refuse, never yield the inbound-Allow apply.
+const unknown: string[] = [];
 const a = parseArgs(Deno.args, {
+  unknown: (arg) => {
+    if (!arg.startsWith("-")) return true;
+    unknown.push(arg);
+    return false;
+  },
   string: [
     "invocation",
     "dir",
@@ -29,10 +41,11 @@ const a = parseArgs(Deno.args, {
     "hns-id",
     "out",
   ],
-  boolean: ["restore-profiles"],
+  boolean: ["restore-profiles", "keep-inbound"],
 });
 try {
   const [verb] = a._;
+  if (unknown.length > 0) throw new Error(`unknown option ${unknown[0]}`);
   if (!a.dir || !a.out) throw new Error("--dir and --out are required");
   let text: string;
   if (verb === "apply") {
@@ -47,6 +60,7 @@ try {
       dir: a.dir,
       interfaceAlias: a["interface-alias"],
       hnsId: a["hns-id"],
+      keepInbound: a["keep-inbound"],
     });
   } else if (verb === "revert") {
     text = revertScript(a.dir, { restoreProfiles: a["restore-profiles"] });
