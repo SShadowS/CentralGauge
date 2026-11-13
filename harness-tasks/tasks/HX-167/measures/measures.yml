@@ -8,10 +8,10 @@ partial_credit:
     "88465/OnlyPeriodEntriesOfTheVehicleAreListed": 1
   hidden_regressions: []
 reuse: null
-# Provisional until A9. The oracle calls the new WriteOwnerLedgerFile, so it does not compile against the
-# baseline: every row fails there and all five stay weighted.
-# Predicted: write-zero-bytes and no-final-line-end each lose OwnerFileMatchesTodayBytes, DanishCustomerNameIsUtf8,
-# EmptyPeriodHasHeaderOnly, MissingContractLeavesCustomerEmpty; default-encoding loses DanishCustomerNameIsUtf8.
-# Every naive keeps OnlyPeriodEntriesOfTheVehicleAreListed.
+# A9 from gate-2026-11-13T11-29-27-444Z.json (tree b45bfbb5). The oracle does not compile against the
+# baseline (AL0132, new WriteOwnerLedgerFile), so every row fails there and all five are weighted.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/default-encoding: { partial_credit: 0.8 }
+  naive/no-final-line-end: { partial_credit: 0.2 }
+  naive/write-zero-bytes: { partial_credit: 0.2 }
