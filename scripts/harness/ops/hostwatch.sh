@@ -26,20 +26,24 @@
 # exits. A second instance refuses while the first is alive (stops.sh lock_take).
 # Test hooks: HW_DIR, HW_REG, HW_INTERVAL, HW_ITER (readings, 0 = forever), HW_FEED (file with one
 # "free commit np" line per reading, "STALL" = no answer), HW_STEP (fake clock: seconds per
-# reading), HW_PS_TIMEOUT (default 45).
+# reading), HW_PS_TIMEOUT (default 45), HW_STALL_LOW / HW_STALL_ALL (default 90 / 180).
+# H-89b: the stall age uses a monotonic clock (/proc/uptime, seconds since boot), never the wall
+# clock, so a backward clock jump cannot hide a stall. A stop that cannot be written is retried
+# once, then logged as an ALERT and written to every other target as well.
 set -uo pipefail
 export LC_ALL=C
 . "$(dirname "$0")/stops.sh"
 DIR=${HW_DIR:-/h/cg-coord/jobs/W2-10/hostwatch}; REG=${HW_REG:-$DIR/targets.tsv}; LOG=$DIR/hostwatch.log
 INTERVAL=${HW_INTERVAL:-60}; ITER=${HW_ITER:-0}; PST=${HW_PS_TIMEOUT:-45}
-LOW_COMMIT=6 LOW_FREE=8 ALL_COMMIT=3 ALL_FREE=4 NP_RISE=1.5 NP_WINDOW=15 STALL_LOW=90 STALL_ALL=180
+LOW_COMMIT=6 LOW_FREE=8 ALL_COMMIT=3 ALL_FREE=4 NP_RISE=1.5 NP_WINDOW=15
+STALL_LOW=${HW_STALL_LOW:-90} STALL_ALL=${HW_STALL_ALL:-180}
 mkdir -p "$DIR" || exit 2
 say() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
 
-if ! err=$(parse_reg "$REG" 2>&1); then
-  echo "hostwatch refuses to start: $err" >&2; say "REFUSED to start: $err"; exit 2
+# One checked parse at startup (H-89b item 6): what is validated is what gets stored.
+if ! parse_reg "$REG" 2> "$DIR/reg.err"; then
+  err=$(cat "$DIR/reg.err"); echo "hostwatch refuses to start: $err" >&2; say "REFUSED to start: $err"; exit 2
 fi
-parse_reg "$REG"
 GOOD_P=("${TGT_P[@]}"); GOOD_N=("${TGT_N[@]}"); reg_ok=1
 
 lock_take "$DIR/lock" 2>> "$LOG"; rc=$?
@@ -47,8 +51,14 @@ lock_take "$DIR/lock" 2>> "$LOG"; rc=$?
 trap 'lock_release "$DIR/lock"' EXIT
 say "started (pid $$), ${#GOOD_P[@]} targets"
 
-k=0; T0=$(date +%s)
-now() { if [ -n "${HW_STEP:-}" ]; then echo $((T0 + k * HW_STEP)); else date +%s; fi; }
+k=0
+# Monotonic seconds: /proc/uptime (Cygwin/MSYS: time since boot), falling back to bash's SECONDS.
+# HW_STEP replaces it with a fake clock of k * HW_STEP seconds (dry tests).
+now() {
+  if [ -n "${HW_STEP:-}" ]; then echo $((k * HW_STEP)); return; fi
+  local u; read -r u _ < /proc/uptime 2> /dev/null && [[ "$u" =~ ^[0-9]+ ]] && { echo "${BASH_REMATCH[0]}"; return; }
+  echo "$SECONDS"
+}
 read_mem() {
   if [ -n "${HW_FEED:-}" ]; then
     local l; l=$(sed -n "${k}p" "$HW_FEED")
@@ -59,12 +69,25 @@ read_mem() {
 }
 
 hit() { # <host-low|host-all> <why>: write it into the matching targets of the last good registry
-  local i min=""
+  local i min="" rc failed=()
   for i in "${!GOOD_N[@]}"; do [ -z "$min" ] || [ "${GOOD_N[$i]}" -lt "$min" ] && min=${GOOD_N[$i]}; done
   for i in "${!GOOD_P[@]}"; do
     [ "$1" = host-low ] && [ "${GOOD_N[$i]}" != "$min" ] && continue
-    stop_write "${GOOD_P[$i]}" "$1" "$2" && say "ALERT $1 -> ${GOOD_P[$i]}.$1 ($2)"
+    stop_write "${GOOD_P[$i]}" "$1" "$2"; rc=$?
+    if [ $rc = 2 ]; then sleep 1; stop_write "${GOOD_P[$i]}" "$1" "$2"; rc=$?; fi
+    case $rc in
+      0) say "ALERT $1 -> ${GOOD_P[$i]}.$1 ($2)" ;;
+      2) say "ALERT stop write FAILED twice: ${GOOD_P[$i]}.$1 ($2)"; failed+=("$i") ;;
+    esac
   done
+  # A target that could not be stopped: the same stop goes to every other target too (H-89b item 4).
+  if [ ${#failed[@]} -gt 0 ]; then
+    for i in "${!GOOD_P[@]}"; do
+      [[ " ${failed[*]} " == *" $i "* ]] && continue
+      stop_write "${GOOD_P[$i]}" "$1" "escalated: a stop write to another target failed; $2" &&
+        say "ALERT $1 -> ${GOOD_P[$i]}.$1 (escalated after a failed write)"
+    done
+  fi
   return 0
 }
 
@@ -81,7 +104,7 @@ while :; do
     reg_ok=0; say "ALERT registry malformed, keeping the last good copy: $(cat "$DIR/reg.err")"
   fi
   out=$(read_mem); rc=$?
-  t=$(now)  # after the read, so a hung read counts toward the stall age
+  t=$(now)  # after the read, so a hung read counts toward the stall age; monotonic, see now()
   if [ $rc = 0 ] && [[ "$out" =~ ^$num\ $num\ $num$ ]]; then
     read -r FREE COMMIT NP <<< "$out"
     last_good=$t; nps+=("$NP"); [ ${#nps[@]} -gt $NP_WINDOW ] && nps=("${nps[@]: -$NP_WINDOW}")

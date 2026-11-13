@@ -24,7 +24,11 @@ HREG=${WATCH_REG:-/h/cg-coord/jobs/W2-10/hostwatch/targets.tsv}
 INTERVAL=${WATCH_INTERVAL:-60}; ITER=${WATCH_ITER:-0}; PST=${WATCH_PS_TIMEOUT:-45}
 FLOOR=4; STALL=${WATCH_STALL:-90}; HB_MAX=180; STEP=5; next=$STEP
 note() { echo "[watch] $(date -u +%FT%TZ) $*" | tee -a "$J/watch.log"; }
-stop() { stop_write "$P" watch "$1" && note "$P.watch written ($1)"; }
+stop() {
+  stop_write "$P" watch "$1"; local rc=$?
+  [ $rc = 2 ] && { sleep 1; stop_write "$P" watch "$1"; rc=$?; }
+  case $rc in 0) note "$P.watch written ($1)" ;; 2) note "ALERT could not write $P.watch twice ($1)" ;; esac
+}
 
 lock_take "$J/watch.lock" 2>> "$J/watch.log" || { echo "watch.sh: another watcher holds $J/watch.lock" >&2; exit 3; }
 trap 'lock_release "$J/watch.lock"' EXIT
@@ -38,33 +42,25 @@ cost() {
      by_arm: (group_by(.arm) | map({(.[0].arm): {n: length, usd: ((map(usd) | add) * 100 | round / 100)}}) | add),
      terminations: (group_by(.termination) | map({(.[0].termination): length}) | add)}'
 }
-registered() { # is P listed in the hostwatch registry (case-insensitive, slash form)?
-  local i me; me=$(stop_path "$P"); parse_reg "$HREG" 2> /dev/null || return 1
-  shopt -s nocasematch
-  for i in "${TGT_P[@]}"; do [[ "$i" == "$me" ]] && { shopt -u nocasematch; return 0; }; done
-  shopt -u nocasematch; return 1
-}
+# H-89b: monotonic seconds for the stall age (see hostwatch.sh now()), pipeline status checked.
+mono() { local u; read -r u _ < /proc/uptime 2> /dev/null && [[ "$u" =~ ^[0-9]+ ]] && { echo "${BASH_REMATCH[0]}"; return; }; echo "$SECONDS"; }
+set -o pipefail
 
-last_good=$(date +%s); k=0
+last_good=$(mono); k=0
 while true; do
   k=$((k + 1))
-  free=$(timeout -k 10 "$PST" powershell -NoProfile -Command "[string]::Format([cultureinfo]::InvariantCulture,'{0:F1}',(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB)" | tr -d '\r')
-  t=$(date +%s)  # after the read, so a hung read counts toward the stall age
-  if [[ "$free" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  free=$(timeout -k 10 "$PST" powershell -NoProfile -Command "[string]::Format([cultureinfo]::InvariantCulture,'{0:F1}',(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB)" | tr -d '\r'); prc=$?
+  t=$(mono)  # after the read, so a hung read counts toward the stall age
+  if [ $prc = 0 ] && [[ "$free" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
     last_good=$t
     v=$(awk -v f="$free" -v m="$FLOOR" 'BEGIN { print (f < m) ? "LOW" : "OK" }')
     [ "$v" = OK ] || stop "free RAM $free GB, floor $FLOOR GB (verdict '${v:-none}')"
   else
-    note "bad RAM reading '$free', $((t - last_good))s since the last good one"
+    note "bad RAM reading (rc $prc, '$free'), $((t - last_good))s since the last good one"
     [ $((t - last_good)) -gt $STALL ] && stop "no good RAM reading for $((t - last_good))s"
   fi
-  if [ -f "$HB" ]; then
-    age=$((t - $(stat -c %Y "$HB" 2> /dev/null || echo 0)))
-    [ $age -gt $HB_MAX ] && stop "hostwatch heartbeat ${age}s old ($HB)"
-  else
-    stop "hostwatch heartbeat missing ($HB)"
-  fi
-  registered || stop "not listed in the hostwatch registry $HREG (or it cannot be read)"
+  r=$(hb_check "$HB" "$HB_MAX"); [ -n "$r" ] && stop "$r"
+  reg_lists "$HREG" "$P" || stop "not listed in the hostwatch registry $HREG (or it cannot be read)"
   # Standing grant 1: stop when every container of the pool is quarantined (cells after that only burn subscription).
   q=$(jq -r 'select(.state=="quarantined").container' "$QD"/*.json 2>/dev/null |
     sort -u | grep -cxF -f <(tr ' ' '\n' <<< "$POOL"))

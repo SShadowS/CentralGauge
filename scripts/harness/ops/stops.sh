@@ -31,11 +31,14 @@ stop_args() {
   for n in "${STOP_NAMES[@]}"; do printf '%s\n' --stop-file "$1.$n"; done
 }
 
-# Every active stop of target P, one path per line (empty when none).
+# Every active stop of target P, one path per line (empty when none). Fail-safe (H-89b item 5): when
+# P cannot be resolved, or its directory is missing or unreadable, it prints "<P> (unknown: ...)", so
+# a caller that refuses on any output also refuses when it cannot tell.
 active_stops() {
   local p d b f n
-  p=$(stop_path "$1"); d=$(dirname "$p"); b=$(basename "$p")
-  [ -d "$d" ] || return 0
+  p=$(stop_path "$1") && [ -n "$p" ] || { echo "$1 (unknown: path not resolvable)"; return 0; }
+  d=$(dirname "$p"); b=$(basename "$p")
+  [ -d "$d" ] && [ -r "$d" ] && [ -x "$d" ] || { echo "$p (unknown: directory missing or unreadable)"; return 0; }
   shopt -s nullglob nocaseglob nocasematch
   for f in "$d"/*; do
     n=${f##*/}
@@ -46,11 +49,15 @@ active_stops() {
   return 0
 }
 
-# Write P.<name> with a reason, atomically and once (noclobber: exclusive create). Returns 0 only
-# when this call created the file.
+# Write P.<name> with a reason, atomically and once (noclobber: exclusive create). Returns 0 when this
+# call created the file, 1 when it already existed, 2 when it could not be written (H-89b item 4: a
+# failed delivery is told apart from an existing stop, so the caller can retry and escalate).
 stop_write() {
-  local p; p=$(stop_path "$1")
-  (set -C; echo "$2 $(date -u +%FT%TZ): $3" > "$p.$2") 2> /dev/null
+  local p; p=$(stop_path "$1") && [ -n "$p" ] || return 2
+  [ -e "$p.$2" ] && return 1
+  (set -C; echo "$2 $(date -u +%FT%TZ): $3" > "$p.$2") 2> /dev/null && return 0
+  [ -e "$p.$2" ] && return 1
+  return 2
 }
 
 # Hostwatch registry -> TGT_P[] / TGT_N[] (prefix in slash form, priority). Returns non-zero with
@@ -64,22 +71,52 @@ parse_reg() {
     line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
     case "$line" in '' | '#'*) continue ;; esac
     n=${line##*[[:space:]]}; p="${line%[[:space:]]*}"; p="${p%"${p##*[![:space:]]}"}"
-    [[ "$n" =~ ^[0-9]+$ ]] && [ -n "$p" ] && [ "$p" != "$line" ] ||
-      { echo "registry $1 line $ln malformed: '$line' (want '<stop prefix> <integer priority>')" >&2; return 1; }
-    TGT_P+=("$(stop_path "$p")"); TGT_N+=("$n")
+    [[ "$n" =~ ^[0-9]{1,6}$ ]] && [ -n "$p" ] && [ "$p" != "$line" ] ||
+      { echo "registry $1 line $ln malformed: '$line' (want '<stop prefix> <integer priority 0-999999>')" >&2; return 1; }
+    TGT_P+=("$(stop_path "$p")"); TGT_N+=("$((10#$n))")  # 01 and 1 are the same priority
   done < "$1"
   [ ${#TGT_P[@]} -gt 0 ] || { echo "registry $1 has no targets" >&2; return 1; }
 }
 
+# Hostwatch liveness, for every consumer (watch.sh, gates-on.sh): prints why the heartbeat file is
+# not trustworthy, or nothing when it is. Unsafe: missing, unreadable, older than <max> s (default
+# 180), or more than 60 s in the future (a clock moved back after it was written; H-89b item 2).
+hb_check() {
+  local hb=$1 max=${2:-180} m now age
+  [ -f "$hb" ] || { echo "hostwatch heartbeat missing ($hb)"; return 0; }
+  m=$(stat -c %Y "$hb" 2> /dev/null) && [[ "$m" =~ ^[0-9]+$ ]] || { echo "hostwatch heartbeat unreadable ($hb)"; return 0; }
+  now=$(date +%s); age=$((now - m))
+  [ $age -gt "$max" ] && { echo "hostwatch heartbeat ${age}s old ($hb)"; return 0; }
+  [ $age -lt -60 ] && { echo "hostwatch heartbeat $((-age))s in the future ($hb; clock moved?)"; return 0; }
+  return 0
+}
+
+# Is prefix P listed in the hostwatch registry? 0 yes, 1 no or the registry cannot be read.
+reg_lists() {
+  local i me; me=$(stop_path "$2") || return 1; parse_reg "$1" 2> /dev/null || return 1
+  shopt -s nocasematch
+  for i in "${TGT_P[@]}"; do [[ "$i" == "$me" ]] && { shopt -u nocasematch; return 0; }; done
+  shopt -u nocasematch; return 1
+}
+
 # Watcher lock: an atomic mkdir holding "pid starttime" (from /proc). It is taken over only when the
-# recorded process is verifiably gone: no such pid, or that pid now has another start time. A lock
-# without an owner file is never taken over: lock_take waits up to 10 s for the owner to write it,
-# then fails. Takeover renames the old lock aside (atomic, so only one taker wins), then retries.
+# recorded process is verifiably gone: no /proc entry for that pid, or the pid now has another start
+# time. A /proc entry that exists but cannot be read means "unknown": no takeover (H-89b item 3). A
+# lock without an owner file is never taken over: lock_take waits up to 10 s for the owner to write
+# it, then fails. Takeover renames the lock aside to a name of our own, then checks that the renamed
+# lock still has the owner we inspected; if another taker replaced it meanwhile, it is renamed back
+# and we stop, so two takers end with one owner.
 # usage: lock_take <dir> || exit 3; trap 'lock_release <dir>' EXIT
+proc_state() { # <pid> <start>: prints dead | live | unknown
+  local f
+  [ -e "/proc/$1" ] || { echo dead; return; }
+  read -r -a f < "/proc/$1/stat" 2> /dev/null && [ -n "${f[21]:-}" ] || { echo unknown; return; }
+  [ "${f[21]}" = "$2" ] && echo live || echo dead
+}
 proc_start() { local f; read -r -a f < "/proc/$1/stat" 2> /dev/null || return 1; echo "${f[21]}"; }
 LOCK_ME=""
 lock_take() {
-  local L=$1 i o pid st now
+  local L=$1 i o pid st state side
   LOCK_ME="$$ $(proc_start $$)"
   for i in 1 2 3; do
     if mkdir "$L" 2> /dev/null; then
@@ -91,8 +128,18 @@ lock_take() {
     o=$(cat "$L/owner" 2> /dev/null)
     [ -n "$o" ] || { echo "lock: $L has no owner after 10 s; not taking it over" >&2; return 1; }
     read -r pid st <<< "$o"
-    now=$(proc_start "$pid") && [ "$now" = "$st" ] && { echo "lock: held by live pid $pid" >&2; return 3; }
-    mv "$L" "$L.stale-$$" 2> /dev/null && { echo "lock: took over from dead owner '$o'" >&2; rm -rf "$L.stale-$$"; }
+    state=$(proc_state "$pid" "$st")
+    case "$state" in
+      live) echo "lock: held by live pid $pid" >&2; return 3 ;;
+      unknown) echo "lock: owner pid $pid state unknown (/proc unreadable); not taking it over" >&2; return 1 ;;
+    esac
+    side="$L.stale-$$-$i"
+    mv "$L" "$side" 2> /dev/null || continue
+    if [ "$(cat "$side/owner" 2> /dev/null)" != "$o" ]; then
+      mv "$side" "$L" 2> /dev/null || echo "lock: race: renamed a newer lock aside as $side and could not put it back" >&2
+      echo "lock: another taker replaced the stale lock first; not taking it" >&2; return 3
+    fi
+    echo "lock: took over from dead owner '$o'" >&2; rm -rf "$side"
   done
   echo "lock: could not take $L" >&2; return 1
 }

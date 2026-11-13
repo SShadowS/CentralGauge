@@ -17,10 +17,14 @@ eq() { [ "$1" = "$2" ]; }
 none() { inactive "$D/A/STOP" && inactive "$D/B/STOP" && inactive "$D/G/STOP-gates-Cronus999"; }
 
 # Fake tools: powershell answering "30.0" (watch.sh RAM read), a hanging powershell, a failing awk.
-mkdir -p "$W/bin-ok" "$W/bin-hang" "$W/bin-awkfail"
+mkdir -p "$W/bin-ok" "$W/bin-hang" "$W/bin-awkfail" "$W/bin-numhang" "$W/bin-datejump"
 printf '#!/usr/bin/env bash\necho 30.0\n' > "$W/bin-ok/powershell"
 printf '#!/usr/bin/env bash\nsleep 600\n' > "$W/bin-hang/powershell"
 printf '#!/usr/bin/env bash\nexit 2\n' > "$W/bin-awkfail/awk"
+# H-89b: numeric answer, then a hang (timeout rc 124 with numeric stdout); a wall clock that jumps
+# back 1000 s on every `date +%s` call (other date calls pass through).
+printf '#!/usr/bin/env bash\necho 30.0\nsleep 600\n' > "$W/bin-numhang/powershell"
+printf '#!/usr/bin/env bash\nif [ "$1" = +%%s ]; then f=%s/datejump.n; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n+1)) > "$f"; echo $((2000000000 - n * 1000)); else exec /usr/bin/date "$@"; fi\n' "$W" > "$W/bin-datejump/date"
 chmod +x "$W"/bin-*/*
 
 # A fresh case dir with three dummy targets: campaign A (priority 1), campaign B (2), gate pool G (1).
@@ -175,6 +179,80 @@ check "8 concurrent stop_write calls: exactly one creates the file" eq "$(wc -l 
 echo "== real PowerShell timeout boundary (no CIM, Start-Sleep only)"
 s=$(date +%s); timeout -k 5 3 powershell -NoProfile -Command 'Start-Sleep 120' > /dev/null 2>&1; rc=$?; e=$(( $(date +%s) - s ))
 check "timeout -k 5 3 powershell Start-Sleep 120: rc 124 within 15 s (rc $rc, ${e}s)" [ $rc = 124 -a $e -lt 15 ]
+
+echo "== H-89b item 2: time, not count (feed steps of 30 s and 90 s tell them apart)"
+setup step30-3; STEP=30 feed STALL STALL STALL
+check "30 s steps, 3 stalls = 90 s (not > 90): no stop (counting would have stopped at 2)" none
+setup step30-4; STEP=30 feed STALL STALL STALL STALL
+check "30 s steps, 4 stalls = 120 s: host-low" has "$D/A/STOP.host-low"
+check "30 s steps, 4 stalls = 120 s: not host-all" hasnt "$D/A/STOP.host-all"
+setup step90-2; STEP=90 feed STALL STALL
+check "90 s steps, 2 stalls = 180 s (not > 180): host-low present" has "$D/A/STOP.host-low"
+check "90 s steps, 2 stalls = 180 s: no host-all" hasnt "$D/A/STOP.host-all"
+setup step90-3; STEP=90 feed STALL STALL STALL
+check "90 s steps, 3 stalls = 270 s: host-all (counting needed 5)" has "$D/A/STOP.host-all" "$D/B/STOP.host-all"
+
+echo "== H-89b item 2: a backward wall-clock jump cannot hide a stall (real monotonic clock, fake date)"
+setup clockjump; printf 'STALL\n%.0s' 1 2 3 4 > "$D/feed"
+PATH="$W/bin-datejump:$PATH" HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_INTERVAL=1 HW_ITER=4 \
+  HW_STALL_LOW=2 HW_STALL_ALL=100 bash "$H/hostwatch.sh" > "$D/out" 2>&1
+check "wall clock jumping back 1000 s per call, 4 stalls 1 s apart: host-low still written" has "$D/A/STOP.host-low"
+setup hb-future; date -u > "$D/heartbeat"; touch -d '+10 minutes' "$D/heartbeat"
+check "a heartbeat 10 min in the future (clock moved back) is unsafe" [ -n "$(hb_check "$D/heartbeat")" ]
+date -u > "$D/heartbeat"
+check "a fresh heartbeat is safe" [ -z "$(hb_check "$D/heartbeat")" ]
+
+echo "== H-89b item 3: lock takeover"
+setup lock-race; mkdir "$D/lock"; echo "999999 1" > "$D/lock/owner"
+for i in 1 2 3; do (. "$H/stops.sh"; lock_take "$D/lock" 2>> "$D/race.err" && { echo "won $i" >> "$D/won"; sleep 3; }) & done; wait
+check "3 takers of one dead owner's lock: exactly one owner" eq "$(wc -l < "$D/won" 2> /dev/null)" 1
+check "proc_state of a missing pid is dead" eq "$(proc_state 999999 1)" dead
+check "proc_state of this shell with its own start time is live" eq "$(proc_state $$ "$(proc_start $$)")" live
+
+echo "== H-89b item 4: a failed stop write is retried, logged and escalated"
+setup write-fail; printf '%s 1\n%s 2\n' "$D/gone/STOP" "$D/B/STOP" > "$D/targets.tsv"
+feed "30.0 5.5 7.00"
+check "target dir missing: ALERT 'stop write FAILED twice' logged" logged "$D/hostwatch.log" "stop write FAILED twice"
+check "the failed host-low goes to every other target too (B, priority 2)" has "$D/B/STOP.host-low"
+
+echo "== H-89b item 5: active_stops is fail-safe"
+check "missing stops directory: reported as active (unknown)" active "$W/no-such-dir/STOP"
+setup newname; touch "$D/A/STOP.emergency_2"
+check "unknown P.emergency_2 (digits, underscore: the old regex missed it) is active" active "$D/A/STOP"
+
+echo "== H-89b item 7: a real resume chain refuses"
+setup chain
+printf '#!/usr/bin/env bash\n. %s/stops.sh\ns=$(active_stops "$1")\n[ -z "$s" ] || { echo "refused: $s"; exit 3; }\ntouch "$2"\n' "$H" > "$D/chain.sh"
+touch "$D/A/STOP.host-low"; bash "$D/chain.sh" "$D/A/STOP" "$D/started" > "$D/chain.out"; rc=$?
+check "chain refuses while STOP.host-low is active (exit 3, nothing started)" eq "$rc $(test -e "$D/started" && echo started || echo no)" "3 no"
+mv "$D/A/STOP.host-low" "$D/A/STOP.cleared-20261113T0900Z"; bash "$D/chain.sh" "$D/A/STOP" "$D/started" > "$D/chain.out"; rc=$?
+check "chain starts once the stop is archived (exit 0, started)" eq "$rc $(test -e "$D/started" && echo started || echo no)" "0 started"
+
+echo "== H-89b item 1: gates-on.sh fail-safe (fake powershell, fake gate task, dummy dirs)"
+gsetup() {
+  setup "$1"; mkdir -p "$D/q" "$D/wd"; echo '{"token":"dummy"}' > "$D/lease.json"
+  printf '%s 1\n' "$D/G/STOP-gates-Cronus999" > "$D/targets.tsv"; date -u > "$D/heartbeat"
+  printf '#!/usr/bin/env bash\necho "ran $1" >> %s/ran\n' "$D" > "$D/task.sh"; chmod +x "$D/task.sh"
+}
+g() { GATES_J=$D/G GATES_HB=$D/heartbeat GATES_REG=$D/targets.tsv GATES_QDIR=$D/q GATES_WORKDIR=$D/wd \
+  GATES_TASK_CMD=$D/task.sh GATES_PS_TIMEOUT=${PT:-45} bash "$H/gates-on.sh" Cronus999 "$D/lease.json" deadbeef HX-T1 > "$D/gout" 2>&1; }
+gsetup g-ok; PATH="$W/bin-ok:$PATH" g
+check "gates: fresh heartbeat, registered, RAM fine: the task runs" eq "$(cat "$D/ran" 2> /dev/null)" "ran HX-T1"
+gsetup g-stale; touch -d '-200 seconds' "$D/heartbeat"; PATH="$W/bin-ok:$PATH" g
+check "gates: heartbeat 200 s old: STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+check "gates: heartbeat 200 s old: task not run" hasnt "$D/ran"
+gsetup g-nohb; rm "$D/heartbeat"; PATH="$W/bin-ok:$PATH" g
+check "gates: heartbeat missing: STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+gsetup g-unlisted; printf '%s 1\n' "$D/A/STOP" > "$D/targets.tsv"; PATH="$W/bin-ok:$PATH" g
+check "gates: prefix not in the registry: STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+check "gates: prefix not in the registry: task not run" hasnt "$D/ran"
+gsetup g-awk; PATH="$W/bin-awkfail:$W/bin-ok:$PATH" g
+check "gates: awk fails on a valid reading: STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+check "gates: awk fails: task not run" hasnt "$D/ran"
+gsetup g-numhang; PATH="$W/bin-numhang:$PATH" PT=2 g
+check "gates: numeric answer then timeout (rc 124): STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+gsetup g-stop; touch "$D/G/STOP-gates-Cronus999.host-all"; PATH="$W/bin-ok:$PATH" g
+check "gates: an active host-all stop: task not run" hasnt "$D/ran"
 
 echo "dry test: $pass passed, $fail failed (work dir $W)"
 [ $fail = 0 ]
