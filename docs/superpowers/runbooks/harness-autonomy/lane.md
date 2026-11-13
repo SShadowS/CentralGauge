@@ -250,8 +250,12 @@ nothing in flight. After a clear, run your start procedure again.
   pass them to the run with `stop_args` (one `--stop-file` each). Active stops are the prefix and
   every `<prefix>.*` except `<prefix>.cleared-*`, so a resume chain refuses while
   `active_stops <prefix>` prints anything. A planned pause writes `<prefix>.planned`. Clear a
-  stop only on the orchestrator's go, by renaming it to `<prefix>.cleared-<UTC stamp>`. Dry
-  test: `scripts/harness/ops/hostwatch-dry-test.sh <scratch dir>` (dummy targets only).
+  stop only on the orchestrator's go, by renaming it to `<prefix>.cleared-<UTC stamp>`. H-89b:
+  `scripts/harness/ops/gates-on.sh` makes the same checks as `watch.sh` before each gate task
+  (heartbeat, registry listing, RAM read status and verdict) and writes `STOP-gates-<C>.watch`;
+  stall ages use a monotonic clock; a stop that cannot be written is retried, logged as an ALERT
+  and sent to every other target too; `active_stops` reports a missing or unreadable directory as
+  active. Dry test: `scripts/harness/ops/hostwatch-dry-test.sh <scratch dir>` (dummy targets only).
 
 ## lane-admin specifics
 
