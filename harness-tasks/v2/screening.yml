@@ -395,10 +395,10 @@ candidates:
     prior: intermediate
     size: { objects: 2, files: 2, reuse: null, traces: "CGR Collection Line Check.OnAfterCollectionLineAdded" }
   - id: HX-172
-    prior: intermediate
+    prior: easy
     size: { objects: 1, files: 1, reuse: null, traces: null }
   - id: HX-173
-    prior: intermediate
+    prior: easy
     size: { objects: 1, files: 1, reuse: null, traces: null }
   - id: HX-174
     prior: intermediate
