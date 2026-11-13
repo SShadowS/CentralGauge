@@ -4,14 +4,23 @@ partial_credit:
     "88525/OpenDueLinesListed": 1
     "88525/LeaseWithNothingDueHasNoLine": 1
     "88525/FailedLeaseListsNoScheduleLines": 1
-    "88525/FailedLeaseShowsCheckError": 1
     "88525/PassingLeasesKeepTheirLines": 1
-    "88525/SelectionOnlyIsPreviewed": 1
     "88525/PartnerRefusalLeavesNoLines": 1
     "88525/PartnerSeesLineInBuffer": 1
-    "88525/PartnerAdjustmentPersists": 1
-    "88525/MidMonthCutoffIsInclusive": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88525/FailedLeaseShowsCheckError"
+    - "88525/SelectionOnlyIsPreviewed"
+    - "88525/PartnerAdjustmentPersists"
+    - "88525/MidMonthCutoffIsInclusive"
 reuse: null
+# A9 from gate-2026-11-13T13-16-30-876Z.json (tree 5867fc5d): weights = the 6 rows baseline#1 fails by
+# assertion; the 4 rows baseline passes are hidden regressions. workdate-cutoff loses only the hidden
+# regression MidMonthCutoffIsInclusive, so its weighted partial credit is 1.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/check-before-insert: { partial_credit: 0.8333333333333334 }
+  naive/clear-all-on-failure: { partial_credit: 0.5 }
+  naive/error-then-delete: { partial_credit: 0.6666666666666666 }
+  naive/event-before-insert: { partial_credit: 0.8333333333333334 }
+  naive/trust-rollback: { partial_credit: 0.6666666666666666 }
+  naive/workdate-cutoff: { partial_credit: 1 }
