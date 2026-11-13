@@ -11,6 +11,8 @@ partial_credit:
     "88555/AcceptPlansProposalInListOrder": 1
   hidden_regressions: []
 reuse: null
+# A9 from gate-2026-11-13T14-06-07-014Z.json (tree f5d0a6eb). The oracle does not compile against the
+# baseline (AL0132, new ProposeWorkshopTasks), so every row fails there and all eight are weighted.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
   naive/autoincrement-key: { partial_credit: 0.625 }
