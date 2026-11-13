@@ -13,7 +13,7 @@
 set -o pipefail
 export LC_ALL=C
 C=$1; LF=$2; REV=$3; shift 3
-. "$(dirname "$0")/stops.sh"
+. "${GATES_STOPS_LIB:-$(dirname "$0")/stops.sh}"  # GATES_STOPS_LIB: dry tests inject failing helpers
 J=${GATES_J:-/h/cg-coord/jobs/W2-12}
 HB=${GATES_HB:-/h/cg-coord/jobs/W2-10/hostwatch/heartbeat}
 HREG=${GATES_REG:-/h/cg-coord/jobs/W2-10/hostwatch/targets.tsv}
@@ -34,9 +34,8 @@ halt() { # <reason>: write the batch's own named stop and log it
 }
 n=0
 for t in "$@"; do
-  s=$(active_stops "$STOPF" | tr '\n' ' ')
-  [ -n "$s" ] && { echo "[stop] $(date -u +%FT%TZ) $s, not starting $t" >> "$LOG"; break; }
-  r=$(hb_check "$HB"); [ -n "$r" ] && { halt "$r" "$t"; break; }
+  stops_clear "$STOPF" || { echo "[stop] $(date -u +%FT%TZ) not clear: '$(active_stops "$STOPF" | tr '\n' ' ')', not starting $t" >> "$LOG"; break; }
+  hb_ok "$HB" || { halt "$HB_WHY" "$t"; break; }
   reg_lists "$HREG" "$STOPF" || { halt "gate prefix $STOPF not listed in the hostwatch registry $HREG (or it cannot be read)" "$t"; break; }
   free=$(timeout -k 10 "$PST" powershell -NoProfile -Command "[string]::Format([cultureinfo]::InvariantCulture,'{0:F1}',(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB)" | tr -d '\r'); prc=$?
   [ $prc = 0 ] && [[ "$free" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { halt "RAM read failed (rc $prc, '$free')" "$t"; break; }
@@ -47,9 +46,8 @@ for t in "$@"; do
   fi
   # Stops written, or the heartbeat going stale, while the checks above ran (the RAM read can take
   # up to 55 s) still count: both are checked again at the launch decision.
-  s=$(active_stops "$STOPF" | tr '\n' ' ')
-  [ -n "$s" ] && { echo "[stop] $(date -u +%FT%TZ) $s, not starting $t" >> "$LOG"; break; }
-  r=$(hb_check "$HB"); [ -n "$r" ] && { halt "$r (at launch)" "$t"; break; }
+  stops_clear "$STOPF" || { echo "[stop] $(date -u +%FT%TZ) not clear at launch: '$(active_stops "$STOPF" | tr '\n' ' ')', not starting $t" >> "$LOG"; break; }
+  hb_ok "$HB" || { halt "$HB_WHY (at launch)" "$t"; break; }
   echo "--- [$(date -u +%FT%TZ)] $t (free ${free} GB)" >> "$LOG"
   if [ -n "${GATES_TASK_CMD:-}" ]; then
     "$GATES_TASK_CMD" "$t" >> "$LOG" 2>&1

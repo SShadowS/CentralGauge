@@ -10,8 +10,11 @@ pass=0; fail=0
 check() { local d=$1; shift; if "$@"; then pass=$((pass + 1)); echo "[OK]   $d"; else fail=$((fail + 1)); echo "[FAIL] $d"; fi; }
 has() { local f; for f; do [ -f "$f" ] || return 1; done; }
 hasnt() { local f; for f; do [ ! -e "$f" ] || return 1; done; }
-active() { [ -n "$(active_stops "$1")" ]; }
-inactive() { [ -z "$(active_stops "$1")" ]; }
+# stops_clear / hb_ok are the H-89b run 002 contract; the fallbacks keep this file runnable against
+# older stops.sh (no sentinels), so a run on old code fails only on the cases that test new behaviour.
+inactive() { if type stops_clear > /dev/null 2>&1; then stops_clear "$1"; else [ -z "$(active_stops "$1")" ]; fi; }
+active() { ! inactive "$1"; }
+hb_safe() { if type hb_ok > /dev/null 2>&1; then hb_ok "$@"; else [ -z "$(hb_check "$@")" ]; fi; }
 logged() { grep -q -- "$2" "$1" 2> /dev/null; }
 eq() { [ "$1" = "$2" ]; }
 none() { inactive "$D/A/STOP" && inactive "$D/B/STOP" && inactive "$D/G/STOP-gates-Cronus999"; }
@@ -202,9 +205,9 @@ PATH="$W/bin-datejump:$PATH" HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_
   HW_STALL_LOW=2 HW_STALL_ALL=100 bash "$H/hostwatch.sh" > "$D/out" 2>&1
 check "wall clock jumping back 1000 s per call, 4 stalls 1 s apart: host-low still written" has "$D/A/STOP.host-low"
 setup hb-future; date -u > "$D/heartbeat"; touch -d '+10 minutes' "$D/heartbeat"
-check "a heartbeat 10 min in the future (clock moved back) is unsafe" [ -n "$(hb_check "$D/heartbeat")" ]
+check "a heartbeat 10 min in the future (clock moved back) is unsafe" eval '! hb_safe "$D/heartbeat"'
 date -u > "$D/heartbeat"
-check "a fresh heartbeat is safe" [ -z "$(hb_check "$D/heartbeat")" ]
+check "a fresh heartbeat is safe" hb_safe "$D/heartbeat"
 
 echo "== H-89b item 3: lock takeover"
 setup lock-race; mkdir "$D/lock"; echo "999999 1" > "$D/lock/owner"
@@ -250,7 +253,9 @@ check "unknown P.emergency_2 (digits, underscore: the old regex missed it) is ac
 
 echo "== H-89b item 7: a real resume chain refuses"
 setup chain
-printf '#!/usr/bin/env bash\n. "%s/stops.sh"\ns=$(active_stops "$1")\n[ -z "$s" ] || { echo "refused: $s"; exit 3; }\ntouch "$2"\n' "$H" > "$D/chain.sh"
+# The chain uses the documented contract (stops_clear), with the old-code fallback; $3 = an optional
+# replacement library (to inject a failing active_stops).
+printf '#!/usr/bin/env bash\n. "${3:-%s/stops.sh}"\nif type stops_clear > /dev/null 2>&1; then stops_clear "$1"; else [ -z "$(active_stops "$1")" ]; fi || { echo "refused"; exit 3; }\ntouch "$2"\n' "$H" > "$D/chain.sh"
 touch "$D/A/STOP.host-low"; bash "$D/chain.sh" "$D/A/STOP" "$D/started" > "$D/chain.out"; rc=$?
 check "chain refuses while STOP.host-low is active (exit 3, nothing started)" eq "$rc $(test -e "$D/started" && echo started || echo no)" "3 no"
 mv "$D/A/STOP.host-low" "$D/A/STOP.cleared-20261113T0900Z"; bash "$D/chain.sh" "$D/A/STOP" "$D/started" > "$D/chain.out"; rc=$?
@@ -287,6 +292,31 @@ check "gates: awk prints OK then exits 2: task not run" hasnt "$D/ran"
 gsetup g-hblaunch; touch -d '-179 seconds' "$D/heartbeat"; PATH="$W/bin-slow:$PATH" g
 check "gates: heartbeat 179 s old at the first check, stale after a 3 s RAM read: halted at launch" logged "$D/G/gates-Cronus999.log" "(at launch)"
 check "gates: stale at launch: task not run" hasnt "$D/ran"
+
+echo "== H-89b run 002: a failed fork or empty substitution is unsafe"
+# Replacement libraries: the real stops.sh, then one helper redefined to print nothing.
+printf '. "%s/stops.sh"\nactive_stops() { :; }\n' "$H" > "$W/lib-stops-empty.sh"
+printf '. "%s/stops.sh"\nactive_stops() { return 1; }\n' "$H" > "$W/lib-stops-fail.sh"
+printf '. "%s/stops.sh"\nhb_check() { :; }\n' "$H" > "$W/lib-hb-empty.sh"
+setup lock-procempty; mkdir "$D/lock"; echo "$$ $(proc_start $$)" > "$D/lock/owner"; cp "$D/lock/owner" "$D/owner.before"
+(. "$H/stops.sh"; proc_state() { :; }; lock_take "$D/lock" 2> "$D/t.err"); rc=$?
+check "proc_state prints nothing (rc 0): live lock left alone, no takeover" eq "$rc $([ -d "$D/lock" ] && cmp -s "$D/lock/owner" "$D/owner.before" && echo kept)" "1 kept"
+(. "$H/stops.sh"; proc_state() { return 1; }; lock_take "$D/lock" 2> "$D/t.err"); rc=$?
+check "proc_state fails (rc 1, no output): live lock left alone, no takeover" eq "$rc $([ -d "$D/lock" ] && cmp -s "$D/lock/owner" "$D/owner.before" && echo kept)" "1 kept"
+gsetup g-stops-empty; PATH="$W/bin-ok:$PATH" GATES_STOPS_LIB=$W/lib-stops-empty.sh g
+check "gates: active_stops prints nothing (failed fork): task not run" hasnt "$D/ran"
+gsetup g-stops-fail; PATH="$W/bin-ok:$PATH" GATES_STOPS_LIB=$W/lib-stops-fail.sh g
+check "gates: active_stops fails (rc 1): task not run" hasnt "$D/ran"
+gsetup g-hb-empty; PATH="$W/bin-ok:$PATH" GATES_STOPS_LIB=$W/lib-hb-empty.sh g
+check "gates: hb_check prints nothing: STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+check "gates: hb_check prints nothing: task not run" hasnt "$D/ran"
+wsetup w-hb-empty; PATH="$W/bin-ok:$PATH" WATCH_STOPS_LIB=$W/lib-hb-empty.sh w
+check "watch.sh: hb_check prints nothing: P.watch written" has "$D/A/STOP.watch"
+setup chain-fail; bash "$D/../chain/chain.sh" "$D/A/STOP" "$D/started" "$W/lib-stops-empty.sh" > "$D/chain.out" 2>&1; rc=$?
+check "resume chain: active_stops prints nothing: refuses (exit 3), nothing started" eq "$rc $(test -e "$D/started" && echo started || echo no)" "3 no"
+setup neg-all; printf '%s\n' 1000 500 500 500 500 > "$D/now"; printf '30.0 25.0 7.00\nSTALL\nSTALL\nSTALL\nSTALL\n' > "$D/feed"
+HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_NOW_FEED=$D/now HW_MIN_STEP=60 HW_INTERVAL=0 HW_ITER=5 bash "$H/hostwatch.sh" > "$D/out" 2>&1
+check "stall clock back 500 s, 4 bad readings (floor 240 s > 180 s): host-all reaches every target" has "$D/A/STOP.host-all" "$D/B/STOP.host-all" "$D/G/STOP-gates-Cronus999.host-all"
 
 echo "dry test: $pass passed, $fail failed (work dir $W)"
 [ $fail = 0 ]

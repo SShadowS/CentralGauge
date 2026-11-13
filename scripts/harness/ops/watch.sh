@@ -16,7 +16,7 @@ export LC_ALL=C
 EXP=$1; LOG=$2; POOL=${3:-Cronus281}
 J=${WATCH_DIR:-/h/cg-coord/jobs/W2-12}  # holds the run's STOP prefix, watch.log and cost.log
 P=$J/STOP
-. "$(dirname "$0")/stops.sh"
+. "${WATCH_STOPS_LIB:-$(dirname "$0")/stops.sh}"  # WATCH_STOPS_LIB: dry tests inject failing helpers
 R=${WATCH_RESULTS:-/h/cg-coord/jobs/M8-16a/results/harness}
 QD=${WATCH_QDIR:-/h/cg-coord/harness-quarantine}
 HB=${WATCH_HB:-/h/cg-coord/jobs/W2-10/hostwatch/heartbeat}
@@ -57,12 +57,13 @@ while true; do
     v=$(awk -v f="$free" -v m="$FLOOR" 'BEGIN { print (f < m) ? "LOW" : "OK" }'); vrc=$?
     [ $vrc = 0 ] && [ "$v" = OK ] || stop "free RAM $free GB, floor $FLOOR GB (verdict '${v:-none}', awk rc $vrc)"
   else
-    bad_n=$((bad_n + 1)); age=$((t - last_good)); [ $age -ge 0 ] && [ $((bad_n * INTERVAL)) -gt $age ] && age=$((bad_n * INTERVAL))
-    note "bad RAM reading (rc $prc, '$free'), ${age}s since the last good one"
-    if [ $age -lt 0 ]; then stop "no good RAM reading and the stall clock went backwards"
-    elif [ $age -gt $STALL ]; then stop "no good RAM reading for ${age}s"; fi
+    bad_n=$((bad_n + 1)); age=$((t - last_good)); floor=$((bad_n * INTERVAL)); back=""
+    [ $age -lt 0 ] && { back=" (stall clock went backwards by $((-age))s)"; age=$floor; }
+    [ $floor -gt $age ] && age=$floor
+    note "bad RAM reading (rc $prc, '$free'), ${age}s since the last good one$back"
+    if [ $age -gt $STALL ] || [ -n "$back" ]; then stop "no good RAM reading for ${age}s$back"; fi
   fi
-  r=$(hb_check "$HB" "$HB_MAX"); [ -n "$r" ] && stop "$r"
+  hb_ok "$HB" "$HB_MAX" || stop "$HB_WHY"
   reg_lists "$HREG" "$P" || stop "not listed in the hostwatch registry $HREG (or it cannot be read)"
   # Standing grant 1: stop when every container of the pool is quarantined (cells after that only burn subscription).
   q=$(jq -r 'select(.state=="quarantined").container' "$QD"/*.json 2>/dev/null |

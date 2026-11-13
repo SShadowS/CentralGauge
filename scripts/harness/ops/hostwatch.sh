@@ -134,12 +134,14 @@ while :; do
     elif [ "$verdict" = LOW ]; then hit host-low "$why"
     elif [ "$verdict" != OK ]; then hit host-low "unexpected verdict '$verdict': $why"; fi
   else
-    bad_n=$((bad_n + 1)); age=$((t - last_good)); floor=$((bad_n * MIN_STEP))
-    [ $age -ge 0 ] && [ $floor -gt $age ] && age=$floor
-    say "bad reading (rc $rc, '$out'), ${age}s since the last good one"
-    if [ $age -lt 0 ]; then hit host-low "no good reading and the stall clock went backwards (${age}s)"
-    elif [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s"
-    elif [ $age -gt $STALL_LOW ]; then hit host-low "no good reading for ${age}s"; fi
+    # A negative age (the clock went backwards) is replaced by the floor and goes through the same
+    # tiers, host-all included, and gets at least host-low (H-89b run 002 item 3).
+    bad_n=$((bad_n + 1)); age=$((t - last_good)); floor=$((bad_n * MIN_STEP)); back=""
+    [ $age -lt 0 ] && { back=" (stall clock went backwards by $((-age))s)"; age=$floor; }
+    [ $floor -gt $age ] && age=$floor
+    say "bad reading (rc $rc, '$out'), ${age}s since the last good one$back"
+    if [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s$back"
+    elif [ $age -gt $STALL_LOW ] || [ -n "$back" ]; then hit host-low "no good reading for ${age}s$back"; fi
   fi
   if [ $DELIVERY_FAILED = 1 ]; then
     say "heartbeat NOT refreshed: a stop could not be delivered (consumers stop themselves after 180 s)"
