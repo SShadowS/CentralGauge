@@ -1,0 +1,21 @@
+v: 1
+partial_credit:
+  weights:
+    "88480/QuoteAddsSeasonSurcharge": 1
+    "88480/RepeatQuoteIssuesNoStatement": 1
+    "88480/ForgetDropsRememberedQuotes": 1
+    "88480/SavedRateChangeIsQuoted": 1
+    "88480/RejectedRateIsNeverQuoted": 1
+    "88480/FailedCallerChangeIsNeverQuoted": 1
+    "88480/DirectEditIsQuoted": 1
+    "88480/DeletedRateHasNoQuote": 1
+  hidden_regressions: []
+reuse: null
+# Provisional until A9. The oracle calls the new ForgetDeskQuotes, so it does not compile against the
+# baseline: every row fails there and all eight stay weighted.
+# Predicted: no-cache loses RepeatQuoteIssuesNoStatement; forget-keeps-dictionary loses
+# ForgetDropsRememberedQuotes; never-invalidated loses SavedRateChangeIsQuoted, RejectedRateIsNeverQuoted,
+# DirectEditIsQuoted, DeletedRateHasNoQuote; evict-and-refill and refresh-from-event lose
+# RejectedRateIsNeverQuoted and FailedCallerChangeIsNeverQuoted.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

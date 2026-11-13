@@ -1,0 +1,19 @@
+id: HX-171
+refapp_version: refapp-v2
+kind: bugfix
+prompt: prompt.md
+touches: [Reporting, Leasing]
+coupling: [temporary-table, commit-behavior, events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate] }
+  - { codeunit: 80058, procedures: [RevenueGroupedByMonth, VehiclesAreSeparateRows] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 88525, procedures: [OpenDueLinesListed, LeaseWithNothingDueHasNoLine, FailedLeaseListsNoScheduleLines, FailedLeaseShowsCheckError, PassingLeasesKeepTheirLines, SelectionOnlyIsPreviewed, PartnerRefusalLeavesNoLines, PartnerSeesLineInBuffer, PartnerAdjustmentPersists] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

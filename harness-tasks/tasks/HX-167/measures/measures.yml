@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "88465/OwnerFileMatchesTodayBytes": 1
+    "88465/DanishCustomerNameIsUtf8": 1
+    "88465/EmptyPeriodHasHeaderOnly": 1
+    "88465/OnlyPeriodEntriesOfTheVehicleAreListed": 1
+  hidden_regressions: []
+reuse: null
+# Provisional until A9. The oracle calls the new WriteOwnerLedgerFile, so it does not compile against the
+# baseline: every row fails there and all four stay weighted.
+# Predicted: write-zero-bytes loses OwnerFileMatchesTodayBytes, DanishCustomerNameIsUtf8, EmptyPeriodHasHeaderOnly;
+# default-encoding loses DanishCustomerNameIsUtf8; no-final-line-end loses OwnerFileMatchesTodayBytes,
+# DanishCustomerNameIsUtf8, EmptyPeriodHasHeaderOnly. Every naive keeps OnlyPeriodEntriesOfTheVehicleAreListed.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

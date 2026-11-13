@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "88525/OpenDueLinesListed": 1
+    "88525/LeaseWithNothingDueHasNoLine": 1
+    "88525/FailedLeaseListsNoScheduleLines": 1
+    "88525/FailedLeaseShowsCheckError": 1
+    "88525/PassingLeasesKeepTheirLines": 1
+    "88525/SelectionOnlyIsPreviewed": 1
+    "88525/PartnerRefusalLeavesNoLines": 1
+    "88525/PartnerSeesLineInBuffer": 1
+    "88525/PartnerAdjustmentPersists": 1
+  hidden_regressions: []
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

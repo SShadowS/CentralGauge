@@ -1,0 +1,15 @@
+v: 1
+partial_credit:
+  weights:
+    "88495/GroupLinesUseEachCompanysLeases": 1
+    "88495/CompanyLineUsesOwnLeases": 1
+    "88495/GroupRaisesBalanceForEveryLease": 1
+    "88495/CompanyRaisesBalanceForEveryLease": 1
+  hidden_regressions: []
+reuse: null
+# Provisional until A9. Predicted baseline: GroupRaisesBalanceForEveryLease fails (the inline copy raises
+# no event); the other three pass and move to hidden_regressions at A9.
+# Predicted: helper-own-record and changed-record-by-value lose GroupLinesUseEachCompanysLeases and
+# GroupRaisesBalanceForEveryLease; stamps-session-company loses GroupLinesUseEachCompanysLeases.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

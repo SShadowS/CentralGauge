@@ -1,0 +1,18 @@
+id: HX-168
+refapp_version: refapp-v2
+kind: refactor
+prompt: prompt.md
+touches: [Rental]
+coupling: [events, single-instance]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80010, procedures: [CheckOutMarksVehicleCheckedOut, DailyPriceWithWeekendSurcharge] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental]
+  tests:
+    - { codeunit: 88480, procedures: [QuoteAddsSeasonSurcharge, RepeatQuoteIssuesNoStatement, ForgetDropsRememberedQuotes, SavedRateChangeIsQuoted, RejectedRateIsNeverQuoted, FailedCallerChangeIsNeverQuoted, DirectEditIsQuoted, DeletedRateHasNoQuote] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
