@@ -26,20 +26,25 @@
 # exits. A second instance refuses while the first is alive (stops.sh lock_take).
 # Test hooks: HW_DIR, HW_REG, HW_INTERVAL, HW_ITER (readings, 0 = forever), HW_FEED (file with one
 # "free commit np" line per reading, "STALL" = no answer), HW_STEP (fake clock: seconds per
-# reading), HW_PS_TIMEOUT (default 45).
+# reading), HW_PS_TIMEOUT (default 45), HW_STALL_LOW / HW_STALL_ALL (default 90 / 180).
+# H-89b: the stall age uses bash's $SECONDS on one basis (see now()), never `date` or file times,
+# and a negative age counts as unsafe, so a backward clock jump cannot hide a stall. A stop that
+# cannot be written is retried once, then logged as an ALERT and written to every other target as
+# well; if any write still fails, the heartbeat is no longer refreshed.
 set -uo pipefail
 export LC_ALL=C
 . "$(dirname "$0")/stops.sh"
 DIR=${HW_DIR:-/h/cg-coord/jobs/W2-10/hostwatch}; REG=${HW_REG:-$DIR/targets.tsv}; LOG=$DIR/hostwatch.log
 INTERVAL=${HW_INTERVAL:-60}; ITER=${HW_ITER:-0}; PST=${HW_PS_TIMEOUT:-45}
-LOW_COMMIT=6 LOW_FREE=8 ALL_COMMIT=3 ALL_FREE=4 NP_RISE=1.5 NP_WINDOW=15 STALL_LOW=90 STALL_ALL=180
+LOW_COMMIT=6 LOW_FREE=8 ALL_COMMIT=3 ALL_FREE=4 NP_RISE=1.5 NP_WINDOW=15
+STALL_LOW=${HW_STALL_LOW:-90} STALL_ALL=${HW_STALL_ALL:-180}
 mkdir -p "$DIR" || exit 2
 say() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
 
-if ! err=$(parse_reg "$REG" 2>&1); then
-  echo "hostwatch refuses to start: $err" >&2; say "REFUSED to start: $err"; exit 2
+# One checked parse at startup (H-89b item 6): what is validated is what gets stored.
+if ! parse_reg "$REG" 2> "$DIR/reg.err"; then
+  err=$(cat "$DIR/reg.err"); echo "hostwatch refuses to start: $err" >&2; say "REFUSED to start: $err"; exit 2
 fi
-parse_reg "$REG"
 GOOD_P=("${TGT_P[@]}"); GOOD_N=("${TGT_N[@]}"); reg_ok=1
 
 lock_take "$DIR/lock" 2>> "$LOG"; rc=$?
@@ -47,8 +52,15 @@ lock_take "$DIR/lock" 2>> "$LOG"; rc=$?
 trap 'lock_release "$DIR/lock"' EXIT
 say "started (pid $$), ${#GOOD_P[@]} targets"
 
-k=0; T0=$(date +%s)
-now() { if [ -n "${HW_STEP:-}" ]; then echo $((T0 + k * HW_STEP)); else date +%s; fi; }
+k=0
+# Stall clock (H-89b item 2): bash's $SECONDS, one basis for the whole run (never mixed with another
+# clock), so `date` and file times cannot move it. A negative age (the clock went backwards) is itself
+# unsafe. HW_STEP replaces it with k * HW_STEP; HW_NOW_FEED with one time per reading (dry tests).
+now() {
+  if [ -n "${HW_NOW_FEED:-}" ]; then sed -n "$((k > 0 ? k : 1))p" "$HW_NOW_FEED"; return; fi
+  if [ -n "${HW_STEP:-}" ]; then echo $((k * HW_STEP)); return; fi
+  echo "$SECONDS"
+}
 read_mem() {
   if [ -n "${HW_FEED:-}" ]; then
     local l; l=$(sed -n "${k}p" "$HW_FEED")
@@ -59,17 +71,41 @@ read_mem() {
 }
 
 hit() { # <host-low|host-all> <why>: write it into the matching targets of the last good registry
-  local i min=""
+  local i min="" rc failed=()
   for i in "${!GOOD_N[@]}"; do [ -z "$min" ] || [ "${GOOD_N[$i]}" -lt "$min" ] && min=${GOOD_N[$i]}; done
   for i in "${!GOOD_P[@]}"; do
     [ "$1" = host-low ] && [ "${GOOD_N[$i]}" != "$min" ] && continue
-    stop_write "${GOOD_P[$i]}" "$1" "$2" && say "ALERT $1 -> ${GOOD_P[$i]}.$1 ($2)"
+    stop_write "${GOOD_P[$i]}" "$1" "$2"; rc=$?
+    if [ $rc = 2 ]; then sleep 1; stop_write "${GOOD_P[$i]}" "$1" "$2"; rc=$?; fi
+    case $rc in
+      0) say "ALERT $1 -> ${GOOD_P[$i]}.$1 ($2)" ;;
+      2) say "ALERT stop write FAILED twice: ${GOOD_P[$i]}.$1 ($2)"; failed+=("$i") ;;
+    esac
   done
+  # A target that could not be stopped: the same stop goes to every other target too (H-89b item 4),
+  # with the same retry and ALERT. Any write that still fails sets DELIVERY_FAILED, which stops the
+  # heartbeat refresh for the rest of the run, so every consumer then stops itself (fail-safe).
+  if [ ${#failed[@]} -gt 0 ]; then
+    DELIVERY_FAILED=1
+    for i in "${!GOOD_P[@]}"; do
+      [[ " ${failed[*]} " == *" $i "* ]] && continue
+      stop_write "${GOOD_P[$i]}" "$1" "escalated: a stop write to another target failed; $2"; rc=$?
+      if [ $rc = 2 ]; then sleep 1; stop_write "${GOOD_P[$i]}" "$1" "escalated: a stop write to another target failed; $2"; rc=$?; fi
+      case $rc in
+        0) say "ALERT $1 -> ${GOOD_P[$i]}.$1 (escalated after a failed write)" ;;
+        2) say "ALERT escalated stop write FAILED twice: ${GOOD_P[$i]}.$1" ;;
+      esac
+    done
+  fi
   return 0
 }
+DELIVERY_FAILED=0
 
 num='[0-9]+(\.[0-9]+)?'
-nps=(); last_good=$(now)
+# bad_n: bad readings since the last good one. Each loop sleeps INTERVAL (HW_MIN_STEP in tests), so
+# bad_n * INTERVAL is a lower bound on the real stall time that no clock change can lower; the stall
+# age is the larger of it and the $SECONDS age (Sol self-check r2: $SECONDS may follow the wall clock).
+nps=(); last_good=$(now); bad_n=0; MIN_STEP=${HW_MIN_STEP:-$INTERVAL}
 while :; do
   k=$((k + 1))
   if [ -f "$DIR/STOP-hostwatch" ]; then
@@ -81,10 +117,10 @@ while :; do
     reg_ok=0; say "ALERT registry malformed, keeping the last good copy: $(cat "$DIR/reg.err")"
   fi
   out=$(read_mem); rc=$?
-  t=$(now)  # after the read, so a hung read counts toward the stall age
+  t=$(now)  # after the read, so a hung read counts toward the stall age; monotonic, see now()
   if [ $rc = 0 ] && [[ "$out" =~ ^$num\ $num\ $num$ ]]; then
     read -r FREE COMMIT NP <<< "$out"
-    last_good=$t; nps+=("$NP"); [ ${#nps[@]} -gt $NP_WINDOW ] && nps=("${nps[@]: -$NP_WINDOW}")
+    last_good=$t; bad_n=0; nps+=("$NP"); [ ${#nps[@]} -gt $NP_WINDOW ] && nps=("${nps[@]: -$NP_WINDOW}")
     v=$(awk -v f="$FREE" -v c="$COMMIT" -v n="$NP" -v w="${nps[*]}" -v ac=$ALL_COMMIT -v af=$ALL_FREE \
       -v lc=$LOW_COMMIT -v lf=$LOW_FREE -v r=$NP_RISE 'BEGIN {
         k = split(w, a, " "); lo = a[1]; for (i = 2; i <= k; i++) if (a[i] + 0 < lo + 0) lo = a[i]
@@ -98,12 +134,22 @@ while :; do
     elif [ "$verdict" = LOW ]; then hit host-low "$why"
     elif [ "$verdict" != OK ]; then hit host-low "unexpected verdict '$verdict': $why"; fi
   else
-    age=$((t - last_good))
-    say "bad reading (rc $rc, '$out'), ${age}s since the last good one"
-    if [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s"
-    elif [ $age -gt $STALL_LOW ]; then hit host-low "no good reading for ${age}s"; fi
+    # A negative age (the clock went backwards) is replaced by the floor and goes through the same
+    # tiers, host-all included, and gets at least host-low (H-89b run 002 item 3).
+    bad_n=$((bad_n + 1)); age=$((t - last_good)); floor=$((bad_n * MIN_STEP)); back=""
+    [ $age -lt 0 ] && { back=" (stall clock went backwards by $((-age))s)"; age=$floor; }
+    [ $floor -gt $age ] && age=$floor
+    say "bad reading (rc $rc, '$out'), ${age}s since the last good one$back"
+    if [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s$back"
+    elif [ $age -gt $STALL_LOW ] || [ -n "$back" ]; then hit host-low "no good reading for ${age}s$back"; fi
   fi
-  date -u +%FT%TZ > "$DIR/heartbeat" || say "ALERT heartbeat write failed"
+  if [ $DELIVERY_FAILED = 1 ]; then
+    say "heartbeat NOT refreshed: a stop could not be delivered (consumers stop themselves after 180 s)"
+  else
+    # Atomic publication: a failed write never leaves a fresh-looking (truncated) heartbeat.
+    { date -u +%FT%TZ > "$DIR/heartbeat.tmp" && [ -s "$DIR/heartbeat.tmp" ] && mv -f "$DIR/heartbeat.tmp" "$DIR/heartbeat"; } ||
+      say "ALERT heartbeat write failed"
+  fi
   [ "$ITER" -gt 0 ] && [ $k -ge "$ITER" ] && break
   sleep "$INTERVAL"
 done
