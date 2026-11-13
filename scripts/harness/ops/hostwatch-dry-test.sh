@@ -3,7 +3,7 @@
 # readings (HW_FEED), a fake clock (HW_STEP) and fake powershell/awk on PATH where a case needs them.
 # No real campaign, gate, registry or STOP path is touched. usage: hostwatch-dry-test.sh [work dir]
 # Exit 0 when every check passes.
-H=$(cd "$(dirname "$0")" && pwd)
+H=$(cd "$(dirname "$0")" && pwd); command -v cygpath > /dev/null && H=$(cygpath -u "$H")
 . "$H/stops.sh"
 W=${1:-$(mktemp -d)}; command -v cygpath > /dev/null && W=$(cygpath -u "$W"); mkdir -p "$W"
 pass=0; fail=0
@@ -222,7 +222,7 @@ check "unknown P.emergency_2 (digits, underscore: the old regex missed it) is ac
 
 echo "== H-89b item 7: a real resume chain refuses"
 setup chain
-printf '#!/usr/bin/env bash\n. %s/stops.sh\ns=$(active_stops "$1")\n[ -z "$s" ] || { echo "refused: $s"; exit 3; }\ntouch "$2"\n' "$H" > "$D/chain.sh"
+printf '#!/usr/bin/env bash\n. "%s/stops.sh"\ns=$(active_stops "$1")\n[ -z "$s" ] || { echo "refused: $s"; exit 3; }\ntouch "$2"\n' "$H" > "$D/chain.sh"
 touch "$D/A/STOP.host-low"; bash "$D/chain.sh" "$D/A/STOP" "$D/started" > "$D/chain.out"; rc=$?
 check "chain refuses while STOP.host-low is active (exit 3, nothing started)" eq "$rc $(test -e "$D/started" && echo started || echo no)" "3 no"
 mv "$D/A/STOP.host-low" "$D/A/STOP.cleared-20261113T0900Z"; bash "$D/chain.sh" "$D/A/STOP" "$D/started" > "$D/chain.out"; rc=$?
