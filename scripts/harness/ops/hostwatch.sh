@@ -27,9 +27,10 @@
 # Test hooks: HW_DIR, HW_REG, HW_INTERVAL, HW_ITER (readings, 0 = forever), HW_FEED (file with one
 # "free commit np" line per reading, "STALL" = no answer), HW_STEP (fake clock: seconds per
 # reading), HW_PS_TIMEOUT (default 45), HW_STALL_LOW / HW_STALL_ALL (default 90 / 180).
-# H-89b: the stall age uses a monotonic clock (/proc/uptime, seconds since boot), never the wall
-# clock, so a backward clock jump cannot hide a stall. A stop that cannot be written is retried
-# once, then logged as an ALERT and written to every other target as well.
+# H-89b: the stall age uses bash's $SECONDS on one basis (see now()), never `date` or file times,
+# and a negative age counts as unsafe, so a backward clock jump cannot hide a stall. A stop that
+# cannot be written is retried once, then logged as an ALERT and written to every other target as
+# well; if any write still fails, the heartbeat is no longer refreshed.
 set -uo pipefail
 export LC_ALL=C
 . "$(dirname "$0")/stops.sh"
@@ -52,11 +53,12 @@ trap 'lock_release "$DIR/lock"' EXIT
 say "started (pid $$), ${#GOOD_P[@]} targets"
 
 k=0
-# Monotonic seconds: /proc/uptime (Cygwin/MSYS: time since boot), falling back to bash's SECONDS.
-# HW_STEP replaces it with a fake clock of k * HW_STEP seconds (dry tests).
+# Stall clock (H-89b item 2): bash's $SECONDS, one basis for the whole run (never mixed with another
+# clock), so `date` and file times cannot move it. A negative age (the clock went backwards) is itself
+# unsafe. HW_STEP replaces it with k * HW_STEP; HW_NOW_FEED with one time per reading (dry tests).
 now() {
+  if [ -n "${HW_NOW_FEED:-}" ]; then sed -n "$((k > 0 ? k : 1))p" "$HW_NOW_FEED"; return; fi
   if [ -n "${HW_STEP:-}" ]; then echo $((k * HW_STEP)); return; fi
-  local u; read -r u _ < /proc/uptime 2> /dev/null && [[ "$u" =~ ^[0-9]+ ]] && { echo "${BASH_REMATCH[0]}"; return; }
   echo "$SECONDS"
 }
 read_mem() {
@@ -80,16 +82,24 @@ hit() { # <host-low|host-all> <why>: write it into the matching targets of the l
       2) say "ALERT stop write FAILED twice: ${GOOD_P[$i]}.$1 ($2)"; failed+=("$i") ;;
     esac
   done
-  # A target that could not be stopped: the same stop goes to every other target too (H-89b item 4).
+  # A target that could not be stopped: the same stop goes to every other target too (H-89b item 4),
+  # with the same retry and ALERT. Any write that still fails sets DELIVERY_FAILED, which stops the
+  # heartbeat refresh for the rest of the run, so every consumer then stops itself (fail-safe).
   if [ ${#failed[@]} -gt 0 ]; then
+    DELIVERY_FAILED=1
     for i in "${!GOOD_P[@]}"; do
       [[ " ${failed[*]} " == *" $i "* ]] && continue
-      stop_write "${GOOD_P[$i]}" "$1" "escalated: a stop write to another target failed; $2" &&
-        say "ALERT $1 -> ${GOOD_P[$i]}.$1 (escalated after a failed write)"
+      stop_write "${GOOD_P[$i]}" "$1" "escalated: a stop write to another target failed; $2"; rc=$?
+      if [ $rc = 2 ]; then sleep 1; stop_write "${GOOD_P[$i]}" "$1" "escalated: a stop write to another target failed; $2"; rc=$?; fi
+      case $rc in
+        0) say "ALERT $1 -> ${GOOD_P[$i]}.$1 (escalated after a failed write)" ;;
+        2) say "ALERT escalated stop write FAILED twice: ${GOOD_P[$i]}.$1" ;;
+      esac
     done
   fi
   return 0
 }
+DELIVERY_FAILED=0
 
 num='[0-9]+(\.[0-9]+)?'
 nps=(); last_good=$(now)
@@ -123,10 +133,15 @@ while :; do
   else
     age=$((t - last_good))
     say "bad reading (rc $rc, '$out'), ${age}s since the last good one"
-    if [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s"
+    if [ $age -lt 0 ]; then hit host-low "no good reading and the stall clock went backwards (${age}s)"
+    elif [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s"
     elif [ $age -gt $STALL_LOW ]; then hit host-low "no good reading for ${age}s"; fi
   fi
-  date -u +%FT%TZ > "$DIR/heartbeat" || say "ALERT heartbeat write failed"
+  if [ $DELIVERY_FAILED = 1 ]; then
+    say "heartbeat NOT refreshed: a stop could not be delivered (consumers stop themselves after 180 s)"
+  else
+    date -u +%FT%TZ > "$DIR/heartbeat" || say "ALERT heartbeat write failed"
+  fi
   [ "$ITER" -gt 0 ] && [ $k -ge "$ITER" ] && break
   sleep "$INTERVAL"
 done

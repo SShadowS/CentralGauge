@@ -42,8 +42,9 @@ cost() {
      by_arm: (group_by(.arm) | map({(.[0].arm): {n: length, usd: ((map(usd) | add) * 100 | round / 100)}}) | add),
      terminations: (group_by(.termination) | map({(.[0].termination): length}) | add)}'
 }
-# H-89b: monotonic seconds for the stall age (see hostwatch.sh now()), pipeline status checked.
-mono() { local u; read -r u _ < /proc/uptime 2> /dev/null && [[ "$u" =~ ^[0-9]+ ]] && { echo "${BASH_REMATCH[0]}"; return; }; echo "$SECONDS"; }
+# H-89b: the stall age uses bash's $SECONDS on one basis (as hostwatch.sh now()); a negative age is
+# unsafe; the PowerShell pipeline status and the awk status are both checked.
+mono() { echo "$SECONDS"; }
 set -o pipefail
 
 last_good=$(mono); k=0
@@ -53,11 +54,12 @@ while true; do
   t=$(mono)  # after the read, so a hung read counts toward the stall age
   if [ $prc = 0 ] && [[ "$free" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
     last_good=$t
-    v=$(awk -v f="$free" -v m="$FLOOR" 'BEGIN { print (f < m) ? "LOW" : "OK" }')
-    [ "$v" = OK ] || stop "free RAM $free GB, floor $FLOOR GB (verdict '${v:-none}')"
+    v=$(awk -v f="$free" -v m="$FLOOR" 'BEGIN { print (f < m) ? "LOW" : "OK" }'); vrc=$?
+    [ $vrc = 0 ] && [ "$v" = OK ] || stop "free RAM $free GB, floor $FLOOR GB (verdict '${v:-none}', awk rc $vrc)"
   else
     note "bad RAM reading (rc $prc, '$free'), $((t - last_good))s since the last good one"
-    [ $((t - last_good)) -gt $STALL ] && stop "no good RAM reading for $((t - last_good))s"
+    if [ $((t - last_good)) -lt 0 ]; then stop "no good RAM reading and the stall clock went backwards"
+    elif [ $((t - last_good)) -gt $STALL ]; then stop "no good RAM reading for $((t - last_good))s"; fi
   fi
   r=$(hb_check "$HB" "$HB_MAX"); [ -n "$r" ] && stop "$r"
   reg_lists "$HREG" "$P" || stop "not listed in the hostwatch registry $HREG (or it cannot be read)"

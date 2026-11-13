@@ -71,9 +71,9 @@ parse_reg() {
     line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
     case "$line" in '' | '#'*) continue ;; esac
     n=${line##*[[:space:]]}; p="${line%[[:space:]]*}"; p="${p%"${p##*[![:space:]]}"}"
-    [[ "$n" =~ ^[0-9]{1,6}$ ]] && [ -n "$p" ] && [ "$p" != "$line" ] ||
-      { echo "registry $1 line $ln malformed: '$line' (want '<stop prefix> <integer priority 0-999999>')" >&2; return 1; }
-    TGT_P+=("$(stop_path "$p")"); TGT_N+=("$((10#$n))")  # 01 and 1 are the same priority
+    [[ "$n" =~ ^0*([0-9]{1,9})$ ]] && [ -n "$p" ] && [ "$p" != "$line" ] ||
+      { echo "registry $1 line $ln malformed: '$line' (want '<stop prefix> <integer priority, at most 9 digits after leading zeros>')" >&2; return 1; }
+    TGT_P+=("$(stop_path "$p")"); TGT_N+=("$((10#${BASH_REMATCH[1]}))")  # 01 and 1 are the same priority
   done < "$1"
   [ ${#TGT_P[@]} -gt 0 ] || { echo "registry $1 has no targets" >&2; return 1; }
 }
@@ -103,9 +103,9 @@ reg_lists() {
 # recorded process is verifiably gone: no /proc entry for that pid, or the pid now has another start
 # time. A /proc entry that exists but cannot be read means "unknown": no takeover (H-89b item 3). A
 # lock without an owner file is never taken over: lock_take waits up to 10 s for the owner to write
-# it, then fails. Takeover renames the lock aside to a name of our own, then checks that the renamed
-# lock still has the owner we inspected; if another taker replaced it meanwhile, it is renamed back
-# and we stop, so two takers end with one owner.
+# it, then fails. Takeover is serialised by a ticket (<dir>.takeover, atomic mkdir): the holder
+# re-reads the owner and moves the lock aside only if it is still the dead owner it inspected, then
+# retries the plain mkdir, which only one process can win. So two takers end with one owner.
 # usage: lock_take <dir> || exit 3; trap 'lock_release <dir>' EXIT
 proc_state() { # <pid> <start>: prints dead | live | unknown
   local f
@@ -133,13 +133,16 @@ lock_take() {
       live) echo "lock: held by live pid $pid" >&2; return 3 ;;
       unknown) echo "lock: owner pid $pid state unknown (/proc unreadable); not taking it over" >&2; return 1 ;;
     esac
-    side="$L.stale-$$-$i"
-    mv "$L" "$side" 2> /dev/null || continue
-    if [ "$(cat "$side/owner" 2> /dev/null)" != "$o" ]; then
-      mv "$side" "$L" 2> /dev/null || echo "lock: race: renamed a newer lock aside as $side and could not put it back" >&2
-      echo "lock: another taker replaced the stale lock first; not taking it" >&2; return 3
+    # Only the holder of the takeover ticket (an atomic mkdir) may move the lock, and it re-checks the
+    # owner while holding it, so a lock that another taker already replaced is never moved. A ticket
+    # left by a taker that died blocks further takeovers visibly (fail-closed): remove it by hand.
+    mkdir "$L.takeover" 2> /dev/null ||
+      { echo "lock: another takeover of $L is in progress (or a stale $L.takeover; remove it by hand)" >&2; return 3; }
+    if [ "$(cat "$L/owner" 2> /dev/null)" = "$o" ]; then
+      side="$L.stale-$$-$i"
+      mv -T "$L" "$side" 2> /dev/null && { echo "lock: took over from dead owner '$o'" >&2; rm -rf "$side"; }
     fi
-    echo "lock: took over from dead owner '$o'" >&2; rm -rf "$side"
+    rmdir "$L.takeover" 2> /dev/null
   done
   echo "lock: could not take $L" >&2; return 1
 }

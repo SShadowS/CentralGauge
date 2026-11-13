@@ -24,6 +24,10 @@ printf '#!/usr/bin/env bash\nexit 2\n' > "$W/bin-awkfail/awk"
 # H-89b: numeric answer, then a hang (timeout rc 124 with numeric stdout); a wall clock that jumps
 # back 1000 s on every `date +%s` call (other date calls pass through).
 printf '#!/usr/bin/env bash\necho 30.0\nsleep 600\n' > "$W/bin-numhang/powershell"
+# Self-check r1: an awk that prints OK and then fails; a powershell that answers after 3 s.
+mkdir -p "$W/bin-awkok" "$W/bin-slow"
+printf '#!/usr/bin/env bash\necho OK\nexit 2\n' > "$W/bin-awkok/awk"
+printf '#!/usr/bin/env bash\nsleep 3\necho 30.0\n' > "$W/bin-slow/powershell"
 printf '#!/usr/bin/env bash\nif [ "$1" = +%%s ]; then f=%s/datejump.n; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n+1)) > "$f"; echo $((2000000000 - n * 1000)); else exec /usr/bin/date "$@"; fi\n' "$W" > "$W/bin-datejump/date"
 chmod +x "$W"/bin-*/*
 
@@ -204,8 +208,13 @@ check "a fresh heartbeat is safe" [ -z "$(hb_check "$D/heartbeat")" ]
 
 echo "== H-89b item 3: lock takeover"
 setup lock-race; mkdir "$D/lock"; echo "999999 1" > "$D/lock/owner"
-for i in 1 2 3; do (. "$H/stops.sh"; lock_take "$D/lock" 2>> "$D/race.err" && { echo "won $i" >> "$D/won"; sleep 3; }) & done; wait
-check "3 takers of one dead owner's lock: exactly one owner" eq "$(wc -l < "$D/won" 2> /dev/null)" 1
+printf '#!/usr/bin/env bash\n. "%s/stops.sh"\nlock_take "%s/lock" 2>> "%s/race.err" && { echo "won $$" >> "%s/won"; sleep 4; lock_release "%s/lock"; }\n' "$H" "$D" "$D" "$D" "$D" > "$D/taker.sh"
+for i in 1 2 3 4; do bash "$D/taker.sh" & done; wait
+check "4 separate processes take one dead owner's lock: exactly one owner" eq "$(wc -l < "$D/won" 2> /dev/null)" 1
+check "takeover ticket released afterwards" hasnt "$D/lock.takeover"
+setup lock-ticket; mkdir "$D/lock" "$D/lock.takeover"; echo "999999 1" > "$D/lock/owner"
+(. "$H/stops.sh"; lock_take "$D/lock" 2> "$D/t.err"); rc=$?
+check "a stale takeover ticket blocks takeover visibly (exit 3, lock untouched)" eq "$rc $(cat "$D/lock/owner")" "3 999999 1"
 check "proc_state of a missing pid is dead" eq "$(proc_state 999999 1)" dead
 check "proc_state of this shell with its own start time is live" eq "$(proc_state $$ "$(proc_start $$)")" live
 
@@ -214,6 +223,22 @@ setup write-fail; printf '%s 1\n%s 2\n' "$D/gone/STOP" "$D/B/STOP" > "$D/targets
 feed "30.0 5.5 7.00"
 check "target dir missing: ALERT 'stop write FAILED twice' logged" logged "$D/hostwatch.log" "stop write FAILED twice"
 check "the failed host-low goes to every other target too (B, priority 2)" has "$D/B/STOP.host-low"
+setup write-fail-all; printf '%s 1\n%s 2\n' "$D/gone/STOP" "$D/gone2/STOP" > "$D/targets.tsv"
+feed "30.0 5.5 7.00"
+check "escalated write also fails: ALERT 'escalated stop write FAILED twice'" logged "$D/hostwatch.log" "escalated stop write FAILED twice"
+check "a stop that could not be delivered anywhere: heartbeat not refreshed" hasnt "$D/heartbeat"
+
+echo "== self-check r1: clock going backwards, awk OK-then-fail, priorities"
+setup clock-back; printf '%s\n' 100 50 > "$D/now"; printf 'STALL\nSTALL\n' > "$D/feed"
+HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_NOW_FEED=$D/now HW_INTERVAL=0 HW_ITER=2 bash "$H/hostwatch.sh" > "$D/out" 2>&1
+check "stall clock goes back (100 -> 50) during a stall: host-low" has "$D/A/STOP.host-low"
+setup awk-okfail; printf '30.0 25.0 7.00\n' > "$D/feed"
+PATH="$W/bin-awkok:$PATH" HW_ITER=1 hw > "$D/out" 2>&1
+check "hostwatch: awk prints OK then exits 2: host-low" has "$D/A/STOP.host-low"
+setup prio-big; printf '%s 1000000\n%s 0000001\n' "$D/B/STOP" "$D/A/STOP" > "$D/targets.tsv"; printf '30.0 5.5 7.00\n' > "$D/feed"
+HW_ITER=1 hw > "$D/out" 2>&1; rc=$?
+check "priorities 1000000 and 0000001 are accepted (exit 0)" eq "$rc" 0
+check "0000001 is the lowest priority: A gets host-low, B does not" eq "$(test -f "$D/A/STOP.host-low" && echo A)$(test -f "$D/B/STOP.host-low" && echo B)" A
 
 echo "== H-89b item 5: active_stops is fail-safe"
 check "missing stops directory: reported as active (unknown)" active "$W/no-such-dir/STOP"
@@ -253,6 +278,12 @@ gsetup g-numhang; PATH="$W/bin-numhang:$PATH" PT=2 g
 check "gates: numeric answer then timeout (rc 124): STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
 gsetup g-stop; touch "$D/G/STOP-gates-Cronus999.host-all"; PATH="$W/bin-ok:$PATH" g
 check "gates: an active host-all stop: task not run" hasnt "$D/ran"
+gsetup g-awkok; PATH="$W/bin-awkok:$W/bin-ok:$PATH" g
+check "gates: awk prints OK then exits 2: STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+check "gates: awk prints OK then exits 2: task not run" hasnt "$D/ran"
+gsetup g-hblaunch; touch -d '-179 seconds' "$D/heartbeat"; PATH="$W/bin-slow:$PATH" g
+check "gates: heartbeat 179 s old at the first check, stale after a 3 s RAM read: halted at launch" logged "$D/G/gates-Cronus999.log" "(at launch)"
+check "gates: stale at launch: task not run" hasnt "$D/ran"
 
 echo "dry test: $pass passed, $fail failed (work dir $W)"
 [ $fail = 0 ]
