@@ -331,6 +331,9 @@ gsetup g-quar; echo '{"state":"quarantined","container":"Cronus999"}' > "$D/q/re
 check "gates: the container is quarantined: task not run" hasnt "$D/ran"
 wsetup w-jqfail; echo '{"state":"active","container":"Cronus999"}' > "$D/q/rec.json"; PATH="$W/bin-jqfail:$W/bin-ok:$PATH" w
 check "watch.sh: quarantine records unreadable: P.watch written" has "$D/A/STOP.watch"
+printf '. "%s/stops.sh"\nquarantined_count() { :; }\n' "$H" > "$W/lib-quar-empty.sh"
+wsetup w-quar-empty; PATH="$W/bin-ok:$PATH" WATCH_STOPS_LIB=$W/lib-quar-empty.sh w
+check "watch.sh: quarantined_count prints nothing (rc 0): treated as quarantined, P.watch written" has "$D/A/STOP.watch"
 setup reg-unresolved; (. "$H/stops.sh"; stop_path() { :; }; parse_reg "$D/targets.tsv" 2> /dev/null); rc=$?
 check "parse_reg: a prefix that cannot be resolved (empty conversion) makes the registry malformed" [ $rc != 0 ]
 setup hb-empty; : > "$D/heartbeat"
