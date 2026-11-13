@@ -10,5 +10,9 @@ partial_credit:
     "88510/InvoicedLineKeepsAccountingRef": 1
   hidden_regressions: []
 reuse: null
+# A9 from gate-2026-11-13T12-42-52-279Z.json (tree fdad0d6a): baseline#1 fails all 7 rows by assertion.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/amount-before-subscribers: { partial_credit: 0.42857142857142855 }
+  naive/primary-only: { partial_credit: 0.5714285714285714 }
+  naive/stale-loop-buffer: { partial_credit: 0.8571428571428571 }

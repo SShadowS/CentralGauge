@@ -15,8 +15,17 @@ partial_credit:
     "88480/DeletedRateHasNoQuote": 1
   hidden_regressions: []
 reuse: null
-# Provisional until A9. The oracle calls the new ForgetDeskQuotes, so it does not compile against the
-# baseline: every row fails there and all twelve stay weighted. Predicted losses per naive: card.md,
-# round 2.
+# A9 from gate-2026-11-13T12-21-42-891Z.json (tree e0e277bf). The oracle does not compile against the
+# baseline (AL0132, new ForgetDeskQuotes), so every row fails there and all twelve are weighted.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/evict-and-refill: { partial_credit: 0.6666666666666666 }
+  naive/forget-clears-protection: { partial_credit: 0.9166666666666666 }
+  naive/forget-keeps-dictionary: { partial_credit: 0.9166666666666666 }
+  naive/never-invalidated: { partial_credit: 0.5 }
+  naive/no-cache: { partial_credit: 0.8333333333333334 }
+  naive/no-insert-subscriber: { partial_credit: 0.9166666666666666 }
+  naive/no-rounding: { partial_credit: 0.9166666666666666 }
+  naive/refresh-from-event: { partial_credit: 0.6666666666666666 }
+  naive/single-slot: { partial_credit: 0.9166666666666666 }
+  naive/touched-kept-forever: { partial_credit: 0.8333333333333334 }

@@ -1,26 +1,27 @@
 v: 1
 partial_credit:
   weights:
-    "88495/GroupLinesUseEachCompanysLeases": 1
-    "88495/GroupLineOfOtherCompanyUsesItsLeases": 1
-    "88495/CompanyLineUsesOwnLeases": 1
     "88495/GroupRaisesBalanceForEveryLease": 1
-    "88495/CompanyRaisesBalanceForEveryLease": 1
-    "88495/LeaseBalanceUnchanged": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88495/GroupLinesUseEachCompanysLeases"
+    - "88495/GroupLineOfOtherCompanyUsesItsLeases"
+    - "88495/CompanyLineUsesOwnLeases"
+    - "88495/CompanyRaisesBalanceForEveryLease"
+    - "88495/LeaseBalanceUnchanged"
 reuse:
   targets:
     - { codeunit: 70388, procedure: OpenLeaseBalanceFrom, signature: '(var ScheduleLine: Record "CGR Lease Schedule Line"; ContractNo: Code[20]): Decimal', file: Leasing/src/LeaseBalance.Codeunit.al, perturb: "exit(1000);" }
   tests:
     - { codeunit: 88495, procedures: [GroupLineOfOtherCompanyUsesItsLeases] }
-# Provisional until A9; partial_credit below is over the six provisional weights and is recomputed at A9
-# from the gate report. Predicted baseline: GroupRaisesBalanceForEveryLease fails; the other five pass.
-# The reuse test reads only the other company's line, so a helper used for our own company only cannot score reuse.
+# A9 from gate-2026-11-13T14-47-19-880Z.json (tree 07daa906). A refactor: baseline#1 passes 5 of 6 rows
+# (behaviour unchanged) and fails only GroupRaisesBalanceForEveryLease (the structure row), so that row is
+# the one weight and the other five are hidden regressions. stamps-session-company loses only hidden rows.
+# The reuse and fixture expectations are not run by the gate; `harness qualify` checks them at freeze.
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
-  naive/helper-own-record: { partial_credit: 0.5 }
-  naive/changed-record-by-value: { partial_credit: 0.5 }
-  naive/stamps-session-company: { partial_credit: 0.6666666666666666 }
-  naive/inline-copy-raises-event: { partial_credit: 0.8333333333333334 }
-  naive/copy-plus-own-company-call: { partial_credit: 0.8333333333333334 }
+  naive/helper-own-record: { partial_credit: 0 }
+  naive/changed-record-by-value: { partial_credit: 0 }
+  naive/stamps-session-company: { partial_credit: 1 }
+  naive/inline-copy-raises-event: { partial_credit: 0 }
+  naive/copy-plus-own-company-call: { partial_credit: 0 }
   fixture/copy-plus-discarded-call: { partial_credit: 1, reuse_executed: true, reuse: false }
