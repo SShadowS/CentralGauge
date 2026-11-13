@@ -18,6 +18,7 @@ codeunit 88495 "HX169 Lease Exposure Oracle"
 
         LeaseExposure.GroupExposure(ExposureLine);
 
+        ExposureLine.Reset();
         Assert.AreEqual(Company.Count(), ExposureLine.Count(), 'GroupExposure gives one line for every company in the database');
         ExposureLine.SetRange("Company Name", Other);
         Assert.IsTrue(ExposureLine.FindFirst(), 'GroupExposure has a line named after the other company');
@@ -30,6 +31,24 @@ codeunit 88495 "HX169 Lease Exposure Oracle"
     end;
 
     [Test]
+    procedure GroupLineOfOtherCompanyUsesItsLeases()
+    var
+        ExposureLine: Record "CGR Lease Exposure Line" temporary;
+        LeaseExposure: Codeunit "CGR Lease Exposure";
+        Other: Text[30];
+    begin
+        Other := ArrangeHX169();
+
+        LeaseExposure.GroupExposure(ExposureLine);
+
+        ExposureLine.Reset();
+        ExposureLine.SetRange("Company Name", Other);
+        Assert.IsTrue(ExposureLine.FindFirst(), 'GroupExposure has a line named after the other company');
+        Assert.AreEqual(4, ExposureLine."Open Leases", 'The other company has four open leases in its own data: A, B, C and D (D is below 0)');
+        Assert.AreEqual(305, ExposureLine."Open Balance", 'The other company''s open balance comes from its own schedule lines: 300 + 25 + 40 - 60');
+    end;
+
+    [Test]
     procedure CompanyLineUsesOwnLeases()
     var
         ExposureLine: Record "CGR Lease Exposure Line" temporary;
@@ -39,6 +58,7 @@ codeunit 88495 "HX169 Lease Exposure Oracle"
 
         LeaseExposure.CompanyExposure(ExposureLine);
 
+        ExposureLine.Reset();
         Assert.AreEqual(1, ExposureLine.Count(), 'CompanyExposure gives one line');
         Assert.IsTrue(ExposureLine.FindFirst(), 'CompanyExposure line exists');
         Assert.AreEqual(CompanyName(), ExposureLine."Company Name", 'CompanyExposure names our own company');

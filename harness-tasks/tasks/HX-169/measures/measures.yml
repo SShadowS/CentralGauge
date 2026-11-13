@@ -2,6 +2,7 @@ v: 1
 partial_credit:
   weights:
     "88495/GroupLinesUseEachCompanysLeases": 1
+    "88495/GroupLineOfOtherCompanyUsesItsLeases": 1
     "88495/CompanyLineUsesOwnLeases": 1
     "88495/GroupRaisesBalanceForEveryLease": 1
     "88495/CompanyRaisesBalanceForEveryLease": 1
@@ -11,14 +12,15 @@ reuse:
   targets:
     - { codeunit: 70388, procedure: OpenLeaseBalanceFrom, signature: '(var ScheduleLine: Record "CGR Lease Schedule Line"; ContractNo: Code[20]): Decimal', file: Leasing/src/LeaseBalance.Codeunit.al, perturb: "exit(1000);" }
   tests:
-    - { codeunit: 88495, procedures: [GroupLinesUseEachCompanysLeases] }
-# Provisional until A9; partial_credit below is over the five provisional weights and is recomputed at A9
-# from the gate report. Predicted baseline: GroupRaisesBalanceForEveryLease fails; the other four pass.
+    - { codeunit: 88495, procedures: [GroupLineOfOtherCompanyUsesItsLeases] }
+# Provisional until A9; partial_credit below is over the six provisional weights and is recomputed at A9
+# from the gate report. Predicted baseline: GroupRaisesBalanceForEveryLease fails; the other five pass.
+# The reuse test reads only the other company's line, so a helper used for our own company only cannot score reuse.
 expect:
   correct: { partial_credit: 1, final_errors: 0, reuse_executed: true, reuse: true }
-  naive/helper-own-record: { partial_credit: 0.6 }
-  naive/changed-record-by-value: { partial_credit: 0.6 }
-  naive/stamps-session-company: { partial_credit: 0.8 }
-  naive/inline-copy-raises-event: { partial_credit: 0.8 }
-  naive/copy-plus-own-company-call: { partial_credit: 0.8 }
+  naive/helper-own-record: { partial_credit: 0.5 }
+  naive/changed-record-by-value: { partial_credit: 0.5 }
+  naive/stamps-session-company: { partial_credit: 0.6666666666666666 }
+  naive/inline-copy-raises-event: { partial_credit: 0.8333333333333334 }
+  naive/copy-plus-own-company-call: { partial_credit: 0.8333333333333334 }
   fixture/copy-plus-discarded-call: { partial_credit: 1, reuse_executed: true, reuse: false }
