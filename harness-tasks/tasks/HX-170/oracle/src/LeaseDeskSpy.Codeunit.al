@@ -8,6 +8,25 @@ codeunit 88511 "HX170 Lease Desk Spy"
         RepricedAmount: Decimal;
         HandledLineNo: Integer;
         StampRefs: Boolean;
+        OwnLineNo: Integer;
+        OwnLineAmount: Decimal;
+        BeforeEvents: Integer;
+
+    procedure InsertOwnInvoiceLine(LineNo: Integer; OwnAmount: Decimal)
+    begin
+        OwnLineNo := LineNo;
+        OwnLineAmount := OwnAmount;
+    end;
+
+    procedure BeforeEventCount(): Integer
+    begin
+        exit(BeforeEvents);
+    end;
+
+    procedure ResetCounts()
+    begin
+        BeforeEvents := 0;
+    end;
 
     procedure WatchLease(LeaseNo: Code[20])
     begin
@@ -40,6 +59,13 @@ codeunit 88511 "HX170 Lease Desk Spy"
     begin
         if InvoiceLine."Contract No." <> WatchedLease then
             exit;
+        BeforeEvents += 1;
+        if (OwnLineNo <> 0) and (InvoiceLine."Schedule Line No." = OwnLineNo) then begin
+            InvoiceLine.Amount := OwnLineAmount;
+            InvoiceLine.Insert();
+            IsHandled := true;
+            exit;
+        end;
         if (RepricedLineNo <> 0) and (InvoiceLine."Schedule Line No." = RepricedLineNo) then
             InvoiceLine.Amount := RepricedAmount;
         if (HandledLineNo <> 0) and (InvoiceLine."Schedule Line No." = HandledLineNo) then

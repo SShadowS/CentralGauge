@@ -30,14 +30,53 @@ codeunit 88570 "HX174 Tariff Index Oracle"
         ResetHX174Tariffs();
         AddHX174Tariff('HX174-B1', 100);
         AddHX174Tariff('HX174-B2', 101);
-        AddHX174Tariff('HX174-B3', 102.03);
+        AddHX174Tariff('HX174-B3', 102.07);
 
         Assert.AreEqual(3, TariffIndexation.IndexDailyRates(10, 200), 'Every tariff below the ceiling is raised and counted once');
 
         AssertHX174Rate('HX174-B1', 110, 'B1 is raised once by 10 percent');
         AssertHX174Rate('HX174-B2', 111.1, 'B2 is raised once by 10 percent');
-        AssertHX174Rate('HX174-B3', 112.23, 'B3 is raised once by 10 percent, rounded to the amount precision');
+        AssertHX174Rate('HX174-B3', 112.28, 'B3 is raised once by 10 percent, 112.277 rounded up to the cent');
         AssertHX174EntryCount(3);
+        AssertHX174Entry(1, 'HX174-B1', 100, 110);
+        AssertHX174Entry(2, 'HX174-B2', 101, 111.1);
+        AssertHX174Entry(3, 'HX174-B3', 102.07, 112.28);
+    end;
+
+    [Test]
+    procedure IndexFollowsPrecisionAndParameters()
+    begin
+        ResetHX174TariffsAt(0.05);
+        AddHX174Tariff('HX174-E1', 47.3);
+        AddHX174Tariff('HX174-E2', 120.1);
+        AddHX174Tariff('HX174-E3', 146);
+        AddHX174Tariff('HX174-E4', 150);
+
+        Assert.AreEqual(3, TariffIndexation.IndexDailyRates(4, 150), 'The tariffs below a ceiling of 150 are raised');
+
+        AssertHX174Rate('HX174-E1', 49.2, '47.30 plus 4 percent is 49.192, rounded up to 0.05');
+        AssertHX174Rate('HX174-E2', 124.9, '120.10 plus 4 percent is 124.904, rounded down to 0.05');
+        AssertHX174Rate('HX174-E3', 150, '146 plus 4 percent is 151.84, capped at the ceiling of 150');
+        AssertHX174Rate('HX174-E4', 150, 'A tariff at the ceiling of 150 keeps its rate');
+        AssertHX174EntryCount(3);
+        AssertHX174Entry(1, 'HX174-E1', 47.3, 49.2);
+        AssertHX174Entry(2, 'HX174-E2', 120.1, 124.9);
+        AssertHX174Entry(3, 'HX174-E3', 146, 150);
+    end;
+
+    [Test]
+    procedure SecondRunRaisesAgain()
+    begin
+        ResetHX174Tariffs();
+        AddHX174Tariff('HX174-F1', 100);
+
+        Assert.AreEqual(1, TariffIndexation.IndexDailyRates(10, 200), 'The first run raises the tariff');
+        Assert.AreEqual(1, TariffIndexation.IndexDailyRates(10, 200), 'The second run raises the tariff again');
+
+        AssertHX174Rate('HX174-F1', 121, 'Two runs raise the rate twice, the second from 110');
+        AssertHX174EntryCount(2);
+        AssertHX174Entry(1, 'HX174-F1', 100, 110);
+        AssertHX174Entry(2, 'HX174-F1', 110, 121);
     end;
 
     [Test]
@@ -74,6 +113,11 @@ codeunit 88570 "HX174 Tariff Index Oracle"
     end;
 
     local procedure ResetHX174Tariffs()
+    begin
+        ResetHX174TariffsAt(0.01);
+    end;
+
+    local procedure ResetHX174TariffsAt(RoundingPrecision: Decimal)
     var
         Setup: Record "CGR Setup";
         Tariff: Record "CGR Rental Tariff";
@@ -82,7 +126,7 @@ codeunit 88570 "HX174 Tariff Index Oracle"
     begin
         WorkDate(20240301D);
         Setup.GetOrCreate();
-        Setup."Amount Rounding Precision" := 0.01;
+        Setup."Amount Rounding Precision" := RoundingPrecision;
         Setup.Modify();
         SessionContext.Reset();
         IndexEntry.DeleteAll();

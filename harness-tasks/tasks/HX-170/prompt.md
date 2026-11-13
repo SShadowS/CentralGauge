@@ -6,7 +6,7 @@ The lease invoicing run (`CGR Lease Invoicing`.`InvoiceDueLines`, Leasing) creat
 
 Observed: lines that fall due on the run date are left out of the run, and "Billed Amount" is 0 on every invoiced line.
 
-Expected: a run invoices every line that is not invoiced and is due on or before UpToDate, and returns how many lines it processed. "Billed Amount" holds the amount of the line's invoice line; a line whose invoice line a subscriber handled itself is marked invoiced as before and has "Billed Amount" 0. Every invoiced line carries the journal reference the accounting app recorded for it.
+Expected: a run invoices every line that is not invoiced and is due on or before UpToDate, and returns how many lines it processed; a second run for the same date processes nothing. "Billed Amount" holds the amount of the line's invoice line; a line whose invoice line a subscriber handled itself, whether or not that subscriber inserted one of its own, is marked invoiced as before and has "Billed Amount" 0. Every invoiced line carries the journal reference the accounting app recorded for it.
 
 Keep the public procedures and events of `CGR Lease Invoicing` and `CGR Lease Mgt`.
 

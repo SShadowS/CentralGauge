@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet, Rental, Leasing, Reporting]
   tests:
-    - { codeunit: 88525, procedures: [OpenDueLinesListed, LeaseWithNothingDueHasNoLine, FailedLeaseListsNoScheduleLines, FailedLeaseShowsCheckError, PassingLeasesKeepTheirLines, SelectionOnlyIsPreviewed, PartnerRefusalLeavesNoLines, PartnerSeesLineInBuffer, PartnerAdjustmentPersists] }
+    - { codeunit: 88525, procedures: [OpenDueLinesListed, LeaseWithNothingDueHasNoLine, FailedLeaseListsNoScheduleLines, FailedLeaseShowsCheckError, PassingLeasesKeepTheirLines, SelectionOnlyIsPreviewed, PartnerRefusalLeavesNoLines, PartnerSeesLineInBuffer, PartnerAdjustmentPersists, MidMonthCutoffIsInclusive] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

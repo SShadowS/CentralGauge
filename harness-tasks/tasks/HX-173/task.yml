@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet]
   tests:
-    - { codeunit: 88555, procedures: [ServiceDueGetsServiceLine, UnrepairedDamageGetsRepairLine, NothingToDoAddsNothing, ServiceAndTwoDamagesThreeLines, SecondVehicleAddsAfterFirst] }
+    - { codeunit: 88555, procedures: [ServiceDueGetsServiceLine, UnrepairedDamageGetsRepairLine, NothingToDoAddsNothing, ServiceAndTwoDamagesThreeLines, SecondVehicleAddsAfterFirst, DueByPlanDateOnAtDate, NotYetDueByPlanAddsNothing, AcceptPlansProposalInListOrder] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

@@ -118,6 +118,8 @@ codeunit 88525 "HX171 Collection Oracle"
         Assert.AreEqual(0, Preview.Count(), 'Lease B is not in the selection');
         Preview.SetRange("Contract No.", 'HX171-E');
         Assert.AreEqual(0, Preview.Count(), 'Lease E is not in the selection');
+        Preview.SetRange("Contract No.", 'HX171-D');
+        Assert.AreEqual(0, Preview.Count(), 'Lease D, which has due lines, is not in the selection');
         Preview.Reset();
         Assert.IsTrue(Preview.Get('HX171-C', 10000), 'Lease C in the selection is listed');
         Assert.IsTrue(Preview.Get('HX171-A', 30000), 'Lease A in the selection is listed');
@@ -187,6 +189,29 @@ codeunit 88525 "HX171 Collection Oracle"
         Assert.IsFalse(Preview.Get('HX171-C', 0), 'Adjusting a line does not fail the lease');
     end;
 
+    [Test]
+    procedure MidMonthCutoffIsInclusive()
+    var
+        Preview: Record "CGR Collection Preview Line" temporary;
+        Lease: Record "CGR Lease Contract";
+    begin
+        SeedHX171Fixture();
+        Commit();
+
+        // WorkDate stays 2027-03-31; the caller's cutoff is 2027-03-01.
+        Lease.SetFilter("No.", 'HX171-A|HX171-F');
+        CollectionPreview.BuildCollectionPreview(Lease, 20270301D, Preview);
+
+        Preview.Reset();
+        Assert.IsTrue(Preview.Get('HX171-F', 10000), 'Lease F line due exactly on the 1 March cutoff is listed');
+        Assert.AreEqual(500, Preview.Amount, 'Lease F 1 March amount');
+        Assert.IsFalse(Preview.Get('HX171-F', 20000), 'Lease F line due the day after the cutoff is not listed');
+        Assert.IsTrue(Preview.Get('HX171-A', 20000), 'Lease A February line is due before the cutoff');
+        Assert.IsFalse(Preview.Get('HX171-A', 30000), 'Lease A 15 March line is due after the cutoff');
+        Preview.SetRange("Contract No.", 'HX171-F');
+        Assert.AreEqual(1, Preview.Count(), 'Lease F has one line up to the cutoff');
+    end;
+
     local procedure RunHX171Preview(LeaseFilter: Text; var Preview: Record "CGR Collection Preview Line" temporary)
     var
         Lease: Record "CGR Lease Contract";
@@ -213,6 +238,9 @@ codeunit 88525 "HX171 Collection Oracle"
         AddHX171Lease('HX171-D');
         AddHX171Line('HX171-D', 10000, 20270201D, 400, false);
         AddHX171Line('HX171-D', 20000, 20270301D, 410, false);
+        AddHX171Lease('HX171-F');
+        AddHX171Line('HX171-F', 10000, 20270301D, 500, false);
+        AddHX171Line('HX171-F', 20000, 20270302D, 510, false);
         AddHX171Lease('HX171-E');
         AddHX171Line('HX171-E', 10000, 20270115D, 50, true);
         AddHX171Line('HX171-E', 20000, 20270515D, 60, false);

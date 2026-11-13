@@ -13,7 +13,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Leasing]
   tests:
-    - { codeunit: 88495, procedures: [GroupLinesUseEachCompanysLeases, CompanyLineUsesOwnLeases, GroupRaisesBalanceForEveryLease, CompanyRaisesBalanceForEveryLease] }
+    - { codeunit: 88495, procedures: [GroupLinesUseEachCompanysLeases, CompanyLineUsesOwnLeases, GroupRaisesBalanceForEveryLease, CompanyRaisesBalanceForEveryLease, LeaseBalanceUnchanged] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }

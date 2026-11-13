@@ -4,6 +4,8 @@ partial_credit:
     "88570/RaiseStopsAtCeiling": 1
     "88570/EveryTariffRaisedOnce": 1
     "88570/EntriesFollowOldRates": 1
+    "88570/IndexFollowsPrecisionAndParameters": 1
+    "88570/SecondRunRaisesAgain": 1
   hidden_regressions:
     - "88570/CeilingTariffsKeepRates"
 reuse: null

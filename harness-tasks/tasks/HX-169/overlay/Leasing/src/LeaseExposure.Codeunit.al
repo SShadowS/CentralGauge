@@ -1,23 +1,9 @@
 codeunit 70387 "CGR Lease Exposure"
 {
-    procedure OpenLeaseBalance(ContractNo: Code[20]): Decimal
-    var
-        ScheduleLine: Record "CGR Lease Schedule Line";
-        OpenBalance: Decimal;
-    begin
-        ScheduleLine.SetRange("Contract No.", ContractNo);
-        ScheduleLine.SetRange(Invoiced, false);
-        if ScheduleLine.FindSet() then
-            repeat
-                OpenBalance += ScheduleLine.Amount;
-            until ScheduleLine.Next() = 0;
-        OnAfterOpenLeaseBalance(ContractNo, OpenBalance);
-        exit(OpenBalance);
-    end;
-
     procedure CompanyExposure(var ExposureLine: Record "CGR Lease Exposure Line" temporary)
     var
         Contract: Record "CGR Lease Contract";
+        LeaseBalance: Codeunit "CGR Lease Balance";
         OpenBalance: Decimal;
     begin
         ExposureLine.Reset();
@@ -27,7 +13,7 @@ codeunit 70387 "CGR Lease Exposure"
         ExposureLine."Company Name" := CopyStr(CompanyName(), 1, MaxStrLen(ExposureLine."Company Name"));
         if Contract.FindSet() then
             repeat
-                OpenBalance := OpenLeaseBalance(Contract."No.");
+                OpenBalance := LeaseBalance.OpenLeaseBalance(Contract."No.");
                 if OpenBalance <> 0 then begin
                     ExposureLine."Open Leases" += 1;
                     ExposureLine."Open Balance" += OpenBalance;
@@ -70,10 +56,5 @@ codeunit 70387 "CGR Lease Exposure"
                     until Contract.Next() = 0;
                 ExposureLine.Insert();
             until Company.Next() = 0;
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterOpenLeaseBalance(ContractNo: Code[20]; OpenBalance: Decimal)
-    begin
     end;
 }

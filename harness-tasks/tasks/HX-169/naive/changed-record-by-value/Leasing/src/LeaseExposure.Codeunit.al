@@ -1,12 +1,5 @@
 codeunit 70387 "CGR Lease Exposure"
 {
-    procedure OpenLeaseBalance(ContractNo: Code[20]): Decimal
-    var
-        ScheduleLine: Record "CGR Lease Schedule Line";
-    begin
-        exit(SumOpenScheduleLines(ScheduleLine, ContractNo));
-    end;
-
     procedure CompanyExposure(var ExposureLine: Record "CGR Lease Exposure Line" temporary)
     var
         Contract: Record "CGR Lease Contract";
@@ -37,6 +30,7 @@ codeunit 70387 "CGR Lease Exposure"
 
     local procedure AddExposureLine(var ExposureLine: Record "CGR Lease Exposure Line" temporary; LineNo: Integer; ExposureCompany: Text[30]; var Contract: Record "CGR Lease Contract"; ScheduleLine: Record "CGR Lease Schedule Line")
     var
+        LeaseBalance: Codeunit "CGR Lease Balance";
         OpenBalance: Decimal;
     begin
         ExposureLine.Init();
@@ -44,31 +38,12 @@ codeunit 70387 "CGR Lease Exposure"
         ExposureLine."Company Name" := ExposureCompany;
         if Contract.FindSet() then
             repeat
-                OpenBalance := SumOpenScheduleLines(ScheduleLine, Contract."No.");
+                OpenBalance := LeaseBalance.OpenLeaseBalanceFrom(ScheduleLine, Contract."No.");
                 if OpenBalance <> 0 then begin
                     ExposureLine."Open Leases" += 1;
                     ExposureLine."Open Balance" += OpenBalance;
                 end;
             until Contract.Next() = 0;
         ExposureLine.Insert();
-    end;
-
-    local procedure SumOpenScheduleLines(ScheduleLine: Record "CGR Lease Schedule Line"; ContractNo: Code[20]): Decimal
-    var
-        OpenBalance: Decimal;
-    begin
-        ScheduleLine.SetRange("Contract No.", ContractNo);
-        ScheduleLine.SetRange(Invoiced, false);
-        if ScheduleLine.FindSet() then
-            repeat
-                OpenBalance += ScheduleLine.Amount;
-            until ScheduleLine.Next() = 0;
-        OnAfterOpenLeaseBalance(ContractNo, OpenBalance);
-        exit(OpenBalance);
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterOpenLeaseBalance(ContractNo: Code[20]; OpenBalance: Decimal)
-    begin
     end;
 }

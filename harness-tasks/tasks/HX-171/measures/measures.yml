@@ -10,6 +10,7 @@ partial_credit:
     "88525/PartnerRefusalLeavesNoLines": 1
     "88525/PartnerSeesLineInBuffer": 1
     "88525/PartnerAdjustmentPersists": 1
+    "88525/MidMonthCutoffIsInclusive": 1
   hidden_regressions: []
 reuse: null
 expect:

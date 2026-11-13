@@ -23,6 +23,86 @@ codeunit 88480 "HX168 Desk Quote Oracle"
     end;
 
     [Test]
+    procedure QuoteRoundsToCent()
+    begin
+        StartHX168();
+        NewDeskRateHX168('HX168-RND-UP', 33.33, 7.5, 0);
+        NewDeskRateHX168('HX168-RND-DN', 10.01, 12.5, 0);
+        ReadyHX168();
+
+        Assert.AreEqual(35.83, RateQuote.QuoteDeskRate('HX168-RND-UP'), '33.33 at 7.5% is quoted rounded to the cent');
+        Assert.AreEqual(11.26, RateQuote.QuoteDeskRate('HX168-RND-DN'), '10.01 at 12.5% is quoted rounded to the cent');
+        Assert.AreEqual(35.83, RateQuote.QuoteDeskRate('HX168-RND-UP'), 'Repeat quote stays rounded');
+    end;
+
+    [Test]
+    procedure TwoRatesStayRemembered()
+    var
+        WarmQuote: Codeunit "CGR Desk Rate Quote";
+        Quote: Decimal;
+    begin
+        StartHX168();
+        NewDeskRateHX168('HX168-TWO-A', 40, 10, 0);
+        NewDeskRateHX168('HX168-TWO-B', 70, 20, 0);
+        ReadyHX168();
+        WarmQuote.QuoteDeskRate('HX168-TWO-A');
+        WarmQuote.QuoteDeskRate('HX168-TWO-B');
+        Commit();
+        SelectLatestVersion();
+
+        Assert.IsTrue(StatementsOfQuoteHX168('HX168-TWO-A', Quote) = 0, 'Revisiting rate A after rate B issues no database statement');
+        Assert.AreEqual(44, Quote, 'Rate A value');
+        Assert.IsTrue(StatementsOfQuoteHX168('HX168-TWO-B', Quote) = 0, 'Revisiting rate B after rate A issues no database statement');
+        Assert.AreEqual(84, Quote, 'Rate B value');
+    end;
+
+    [Test]
+    procedure ForgetMidTransactionIsNeverQuoted()
+    var
+        DeskRate: Record "CGR Desk Rate";
+        Runner: Codeunit "HX168 Rate Change Runner";
+        Ok: Boolean;
+    begin
+        StartHX168();
+        NewDeskRateHX168('HX168-FMID', 100, 5, 0);
+        ReadyHX168();
+        Assert.AreEqual(105, RateQuote.QuoteDeskRate('HX168-FMID'), 'Quote before the change');
+        Commit();
+
+        Runner.SetChangeForgetThenFailHX168('HX168-FMID', 200);
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'The caller failed after the change');
+        Assert.AreEqual(CallerFailedTxt, GetLastErrorText(), 'Caller error text');
+        DeskRate.Get('HX168-FMID');
+        Assert.AreEqual(100, DeskRate."Day Rate", 'Nothing of the failed transaction is kept');
+        Assert.AreEqual(105, RateQuote.QuoteDeskRate('HX168-FMID'), 'A change whose transaction failed is never quoted, also when ForgetDeskQuotes ran inside that transaction');
+    end;
+
+    [Test]
+    procedure InsertedRateRolledBack()
+    var
+        DeskRate: Record "CGR Desk Rate";
+        Runner: Codeunit "HX168 Rate Change Runner";
+        Quote: Decimal;
+        Ok: Boolean;
+    begin
+        StartHX168();
+        if DeskRate.Get('HX168-INS') then
+            DeskRate.Delete();
+        ReadyHX168();
+
+        Runner.SetInsertThenFailHX168('HX168-INS', 100);
+        Ok := Runner.Run();
+
+        Assert.IsFalse(Ok, 'The caller failed after creating the rate');
+        Assert.AreEqual(CallerFailedTxt, GetLastErrorText(), 'Caller error text');
+        Assert.IsFalse(DeskRate.Get('HX168-INS'), 'The rate created in the failed transaction is not kept');
+        Assert.IsFalse(TryQuoteHX168('HX168-INS', Quote), 'A rate whose creation was rolled back has no quote');
+        Assert.IsTrue(StrPos(GetLastErrorText(), 'does not exist') > 0, 'The quote fails with the not-found error, got: ' + GetLastErrorText());
+    end;
+
+    [Test]
     procedure RepeatQuoteIssuesNoStatement()
     var
         WarmQuote: Codeunit "CGR Desk Rate Quote";

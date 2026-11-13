@@ -15,6 +15,7 @@ codeunit 70253 "CGR Desk Rate Quote"
             exit(Quote);
         DeskRate.Get(RateCode);
         Quote := Round(DeskRate."Day Rate" * (100 + DeskRate."Season Surcharge %") / 100, 0.01);
+        // A rate touched in this session may still be rolled back, and memory is not.
         if not TouchedRateCodes.Contains(RateCode) then
             DeskQuotes.Add(RateCode, Quote);
         exit(Quote);
@@ -22,7 +23,8 @@ codeunit 70253 "CGR Desk Rate Quote"
 
     procedure ForgetDeskQuotes()
     begin
-        Clear(TouchedRateCodes);
+        if not Database.IsInWriteTransaction() then
+            Clear(TouchedRateCodes);
     end;
 
     local procedure ForgetDeskQuote(RateCode: Code[20])

@@ -78,6 +78,50 @@ codeunit 88510 "HX170 Lease Billed Oracle"
     end;
 
     [Test]
+    procedure SubscriberInsertedLineIsNotBilled()
+    var
+        InvoiceLine: Record "CGR Lease Invoice Line";
+        Spy: Codeunit "HX170 Lease Desk Spy";
+    begin
+        NewHX170Lease('HX170-G');
+        Spy.WatchLease('HX170-G');
+        Spy.InsertOwnInvoiceLine(20000, 250);
+        BindSubscription(Spy);
+
+        Assert.AreEqual(2, LeaseInvoicing.InvoiceDueLines('HX170-G', 20240401D), 'A line the subscriber invoiced itself counts as processed');
+        UnbindSubscription(Spy);
+
+        InvoiceLine.Get('HX170-G', 20000);
+        Assert.AreEqual(250, InvoiceLine.Amount, 'The subscriber inserted its own invoice line');
+        AssertHX170Invoiced('HX170-G', 20000, true, 'A line the subscriber invoiced itself');
+        AssertHX170Billed('HX170-G', 20000, 0, 'A line the subscriber invoiced itself bills nothing');
+        AssertHX170Invoiced('HX170-G', 10000, true, 'The line we invoiced');
+        AssertHX170Billed('HX170-G', 10000, 100.0, 'The line we invoiced bills its invoice line amount');
+    end;
+
+    [Test]
+    procedure HandledLinesAreNotInvoicedAgain()
+    var
+        InvoiceLine: Record "CGR Lease Invoice Line";
+        Spy: Codeunit "HX170 Lease Desk Spy";
+    begin
+        NewHX170Lease('HX170-H');
+        Spy.WatchLease('HX170-H');
+        Spy.HandleLine(20000);
+        BindSubscription(Spy);
+        LeaseInvoicing.InvoiceDueLines('HX170-H', 20240401D);
+        Spy.ResetCounts();
+
+        Assert.AreEqual(0, LeaseInvoicing.InvoiceDueLines('HX170-H', 20240401D), 'A second run for the same date processes nothing');
+        UnbindSubscription(Spy);
+
+        Assert.AreEqual(0, Spy.BeforeEventCount(), 'No line, handled or not, is offered for invoicing again');
+        Assert.IsFalse(InvoiceLine.Get('HX170-H', 20000), 'The handled line still has no invoice line from us');
+        AssertHX170Invoiced('HX170-H', 20000, true, 'The handled line after the second run');
+        AssertHX170Billed('HX170-H', 20000, 0, 'The handled line after the second run bills nothing');
+    end;
+
+    [Test]
     procedure InvoicedLineKeepsAccountingRef()
     var
         ScheduleLine: Record "CGR Lease Schedule Line";

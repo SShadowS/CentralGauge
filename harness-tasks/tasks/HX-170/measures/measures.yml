@@ -5,6 +5,8 @@ partial_credit:
     "88510/LineStaysInvoiced": 1
     "88510/BilledAmountIsTheInvoiceLinesAmount": 1
     "88510/HandledLineHasZeroBilledAmount": 1
+    "88510/SubscriberInsertedLineIsNotBilled": 1
+    "88510/HandledLinesAreNotInvoicedAgain": 1
     "88510/InvoicedLineKeepsAccountingRef": 1
   hidden_regressions: []
 reuse: null

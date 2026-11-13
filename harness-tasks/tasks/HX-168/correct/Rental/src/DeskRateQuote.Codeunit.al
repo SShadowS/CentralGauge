@@ -24,7 +24,9 @@ codeunit 70253 "CGR Desk Rate Quote"
     procedure ForgetDeskQuotes()
     begin
         Clear(DeskQuotes);
-        Clear(TouchedRateCodes);
+        // A change still pending in this transaction may roll back: keep it protected.
+        if not Database.IsInWriteTransaction() then
+            Clear(TouchedRateCodes);
     end;
 
     local procedure ForgetDeskQuote(RateCode: Code[20])

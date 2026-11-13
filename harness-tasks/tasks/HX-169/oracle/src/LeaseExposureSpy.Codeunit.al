@@ -5,7 +5,7 @@ codeunit 88496 "HX169 Lease Balance Spy"
     var
         SeenBalances: List of [Text];
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Lease Exposure", 'OnAfterOpenLeaseBalance', '', false, false)]
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CGR Lease Balance", 'OnAfterOpenLeaseBalance', '', false, false)]
     local procedure RecordHX169Balance(ContractNo: Code[20]; OpenBalance: Decimal)
     begin
         SeenBalances.Add(ContractNo + '=' + Format(OpenBalance, 0, 9));

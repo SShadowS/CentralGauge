@@ -63,6 +63,28 @@ codeunit 88465 "HX167 Owner File Oracle"
     end;
 
     [Test]
+    procedure MissingContractLeavesCustomerEmpty()
+    var
+        Contract: Record "CGR Rental Contract";
+        Expected: List of [Integer];
+        ContractNo: Code[20];
+    begin
+        StartHX167('HX167-GON');
+        if Contract.Get('HX167-GONE') then
+            Contract.Delete();
+        ContractNo := NewContractHX167('HX167-GON', 'Still Here');
+        AddEntryHX167('HX167-GON', 'HX167-GONE', 20250108D, 19.5);
+        AddEntryHX167('HX167-GON', ContractNo, 20250109D, 20);
+
+        AddLineHX167(Expected, 'Contract;Customer;Posting Date;Amount');
+        AddLineHX167(Expected, 'HX167-GONE;;' + Format(20250108D, 0, 9) + ';' + Format(19.5, 0, 9));
+        AddLineHX167(Expected, ContractNo + ';Still Here;' + Format(20250109D, 0, 9) + ';' + Format(20, 0, 9));
+
+        Assert.AreEqual(ByteListTextHX167(Expected), ByteListTextHX167(FileBytesHX167('HX167-GON', 20250101D, 20250131D)),
+          'An entry whose rental contract no longer exists is listed as today, with an empty customer name');
+    end;
+
+    [Test]
     procedure OnlyPeriodEntriesOfTheVehicleAreListed()
     var
         ContractNo: Code[20];

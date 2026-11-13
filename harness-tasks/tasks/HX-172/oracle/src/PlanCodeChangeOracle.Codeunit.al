@@ -35,6 +35,7 @@ codeunit 88540 "HX172 Plan Code Change Oracle"
     [Test]
     procedure VisitsFollowNewCode()
     var
+        Vehicle: Record "CGR Vehicle";
         ServiceVisit: Record "CGR Service Visit";
         ServicePlanMgt: Codeunit "CGR Service Plan Mgt";
         FirstVisit: Integer;
@@ -46,7 +47,7 @@ codeunit 88540 "HX172 Plan Code Change Oracle"
         NewPlan('HX172-2O', Enum::"CGR Maintenance Strategy"::Default, 12, 'HX172 plan two');
         NewPlan('HX172-2X', Enum::"CGR Maintenance Strategy"::Default, 6, 'HX172 plan two other');
         NewVehicle('HX172-2A', 'HX172-2O', Enum::"CGR Maintenance Strategy"::Default);
-        NewVehicle('HX172-2B', 'HX172-2X', Enum::"CGR Maintenance Strategy"::Default);
+        NewVehicle('HX172-2B', 'HX172-2X', Enum::"CGR Maintenance Strategy"::"Heavy Duty");
         FirstVisit := InsertVisit('HX172-2A', 'HX172-2O', 20260310D, 15000);
         SecondVisit := InsertVisit('HX172-2A', 'HX172-2O', 20260915D, 30000);
         MovedVisit := InsertVisit('HX172-2B', 'HX172-2O', 20260520D, 22000);
@@ -62,6 +63,12 @@ codeunit 88540 "HX172 Plan Code Change Oracle"
         ServiceVisit.Reset();
         ServiceVisit.SetRange("Service Plan Code", 'HX172-2O');
         Assert.AreEqual(0, ServiceVisit.Count(), 'No visit is left under the old code');
+        Vehicle.Get('HX172-2B');
+        Assert.AreEqual('HX172-2X', Vehicle."Service Plan Code", 'A vehicle that has moved to another plan stays on that plan');
+        Assert.AreEqual(Enum::"CGR Maintenance Strategy"::"Heavy Duty", Vehicle.Strategy, 'The moved vehicle keeps its strategy');
+        Assert.AreEqual(50000, Vehicle.Mileage, 'The moved vehicle keeps its mileage');
+        Vehicle.Get('HX172-2A');
+        Assert.AreEqual('HX172-2N', Vehicle."Service Plan Code", 'The vehicle on the plan carries the new code');
     end;
 
     [Test]
@@ -144,8 +151,13 @@ codeunit 88540 "HX172 Plan Code Change Oracle"
         Assert.AreEqual(Enum::"CGR Maintenance Strategy"::"Heavy Duty", ServicePlan.Strategy, 'The other plan keeps its strategy');
         Vehicle.Get('HX172-5B');
         Assert.AreEqual('HX172-5X', Vehicle."Service Plan Code", 'The vehicle on the other plan keeps its plan');
+        Assert.AreEqual(Enum::"CGR Maintenance Strategy"::"Heavy Duty", Vehicle.Strategy, 'The vehicle on the other plan keeps its strategy');
+        Assert.AreEqual(50000, Vehicle.Mileage, 'The vehicle on the other plan keeps its mileage');
         ServiceVisit.Get(OtherVisit);
         Assert.AreEqual('HX172-5X', ServiceVisit."Service Plan Code", 'The visit under the other plan keeps its plan');
+        Assert.AreEqual('HX172-5B', ServiceVisit."Vehicle No.", 'The visit under the other plan keeps its vehicle');
+        Assert.AreEqual(20260412D, ServiceVisit."Service Date", 'The visit under the other plan keeps its date');
+        Assert.AreEqual(18000, ServiceVisit."Service Km", 'The visit under the other plan keeps its km');
     end;
 
     [Test]
@@ -160,8 +172,8 @@ codeunit 88540 "HX172 Plan Code Change Oracle"
     begin
         InitRun();
         NewPlan('HX172-6O', Enum::"CGR Maintenance Strategy"::Default, 12, 'HX172 plan six');
-        NewPlan('HX172-6N', Enum::"CGR Maintenance Strategy"::Default, 3, 'HX172 plan six taken');
-        NewVehicle('HX172-6A', 'HX172-6O', Enum::"CGR Maintenance Strategy"::Default);
+        NewPlan('HX172-6N', Enum::"CGR Maintenance Strategy"::"Heavy Duty", 3, 'HX172 plan six taken');
+        NewVehicle('HX172-6A', 'HX172-6O', Enum::"CGR Maintenance Strategy"::"Heavy Duty");
         VisitNo := InsertVisit('HX172-6A', 'HX172-6O', 20260601D, 9000);
         Commit();
 
@@ -169,14 +181,23 @@ codeunit 88540 "HX172 Plan Code Change Oracle"
         Ok := Runner.Run();
 
         Assert.IsFalse(Ok, 'Changing to a code that is already a plan fails');
+        Assert.AreEqual('Service plan HX172-6N already exists.', GetLastErrorText(), 'The error text is exact');
         Assert.ExpectedError('Service plan HX172-6N already exists.');
         Assert.IsTrue(ServicePlan.Get('HX172-6O'), 'The plan keeps its old code');
+        Assert.AreEqual('HX172 plan six', ServicePlan.Description, 'The plan keeps its description');
+        Assert.AreEqual(12, ServicePlan."Interval Months", 'The plan keeps its interval');
+        Assert.AreEqual(Enum::"CGR Maintenance Strategy"::Default, ServicePlan.Strategy, 'The plan keeps its strategy');
         ServicePlan.Get('HX172-6N');
-        Assert.AreEqual(3, ServicePlan."Interval Months", 'The existing plan is unchanged');
+        Assert.AreEqual(3, ServicePlan."Interval Months", 'The existing plan keeps its interval');
+        Assert.AreEqual('HX172 plan six taken', ServicePlan.Description, 'The existing plan keeps its description');
+        Assert.AreEqual(Enum::"CGR Maintenance Strategy"::"Heavy Duty", ServicePlan.Strategy, 'The existing plan keeps its strategy');
         Vehicle.Get('HX172-6A');
         Assert.AreEqual('HX172-6O', Vehicle."Service Plan Code", 'The vehicle keeps the old code');
+        Assert.AreEqual(Enum::"CGR Maintenance Strategy"::"Heavy Duty", Vehicle.Strategy, 'The vehicle keeps its strategy');
         ServiceVisit.Get(VisitNo);
         Assert.AreEqual('HX172-6O', ServiceVisit."Service Plan Code", 'The visit keeps the old code');
+        Assert.AreEqual(20260601D, ServiceVisit."Service Date", 'The visit keeps its date');
+        Assert.AreEqual(9000, ServiceVisit."Service Km", 'The visit keeps its km');
     end;
 
     local procedure InitRun()
