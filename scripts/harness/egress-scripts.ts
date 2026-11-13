@@ -25,7 +25,14 @@ import {
   revertScript,
 } from "../../src/harness/egress.ts";
 
+// A mistyped flag (say --keep-inbond) must refuse, never yield the inbound-Allow apply.
+const unknown: string[] = [];
 const a = parseArgs(Deno.args, {
+  unknown: (arg) => {
+    if (!arg.startsWith("-")) return true;
+    unknown.push(arg);
+    return false;
+  },
   string: [
     "invocation",
     "dir",
@@ -38,6 +45,7 @@ const a = parseArgs(Deno.args, {
 });
 try {
   const [verb] = a._;
+  if (unknown.length > 0) throw new Error(`unknown option ${unknown[0]}`);
   if (!a.dir || !a.out) throw new Error("--dir and --out are required");
   let text: string;
   if (verb === "apply") {

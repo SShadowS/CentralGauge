@@ -544,8 +544,8 @@ export function applyScript(
     `if ($foreign.Count -gt 0) { throw "owner decision required: $($foreign.Count) effective block rules exist outside ${RULE_GROUP}; see ${`fw-block-inventory-${o.invocation}.json`}" }`,
     ...(o.keepInbound
       ? [
-        "# Generated with --keep-inbound: the effective inbound default must be Block on at least one profile and Allow or Block on each.",
-        `$active = @(Get-NetFirewallProfile -PolicyStore ActiveStore); $odd = @($active | Where-Object { @('Allow', 'Block') -notcontains [string]$_.DefaultInboundAction }); $blocked = @($active | Where-Object { [string]$_.DefaultInboundAction -eq 'Block' }); if ($active.Count -ne 3 -or $odd.Count -gt 0 -or $blocked.Count -eq 0) { throw "this apply keeps an inbound Block default, but the effective profiles are $(($active | ForEach-Object { "$($_.Name)=$($_.DefaultInboundAction)" }) -join ', '): regenerate the scripts (without --keep-inbound for an inbound-Allow host)" }`,
+        "# Generated with --keep-inbound: the effective inbound default must be Block on at least one profile and Allow or Block on each; a disabled Block profile refuses (enabling it would block the host).",
+        `$active = @(Get-NetFirewallProfile -PolicyStore ActiveStore); $odd = @($active | Where-Object { @('Allow', 'Block') -notcontains [string]$_.DefaultInboundAction -or ([string]$_.DefaultInboundAction -eq 'Block' -and [string]$_.Enabled -ne 'True') }); $blocked = @($active | Where-Object { [string]$_.DefaultInboundAction -eq 'Block' }); if ($active.Count -ne 3 -or $odd.Count -gt 0 -or $blocked.Count -eq 0) { throw "this apply keeps an inbound Block default, but the effective profiles are $(($active | ForEach-Object { "$($_.Name)=$($_.DefaultInboundAction) Enabled=$($_.Enabled)" }) -join ', '): regenerate the scripts (without --keep-inbound for an inbound-Allow host)" }`,
       ]
       : []),
     `$snapshot = @(Get-NetFirewallProfile | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Enabled = [string]$_.Enabled; DefaultInboundAction = [string]$_.DefaultInboundAction; DefaultOutboundAction = [string]$_.DefaultOutboundAction } })`,

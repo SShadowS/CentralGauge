@@ -2353,14 +2353,12 @@ Deno.test("applyScript (H-90): without keepInbound the script is today's; keepIn
   assertEquals(keep.match(/New-NetFirewallRule/g)!.length, 258);
   const at = (x: string) => keep.indexOf(x);
   // The guard refuses before any change unless at least one effective profile
-  // is Block and every one is Allow or Block.
-  const guard = added.slice(0, 2).join("\n");
-  assertStringIncludes(
-    guard,
-    "Get-NetFirewallProfile -PolicyStore ActiveStore",
-  );
-  assertStringIncludes(guard, "--keep-inbound");
-  assertStringIncludes(guard, "@('Allow', 'Block') -notcontains");
+  // is Block, every one is Allow or Block, and every Block one is enabled
+  // (review r1 M1: enabling a disabled Block profile would block the host).
+  assertEquals(added.slice(0, 2), [
+    "# Generated with --keep-inbound: the effective inbound default must be Block on at least one profile and Allow or Block on each; a disabled Block profile refuses (enabling it would block the host).",
+    `$active = @(Get-NetFirewallProfile -PolicyStore ActiveStore); $odd = @($active | Where-Object { @('Allow', 'Block') -notcontains [string]$_.DefaultInboundAction -or ([string]$_.DefaultInboundAction -eq 'Block' -and [string]$_.Enabled -ne 'True') }); $blocked = @($active | Where-Object { [string]$_.DefaultInboundAction -eq 'Block' }); if ($active.Count -ne 3 -or $odd.Count -gt 0 -or $blocked.Count -eq 0) { throw "this apply keeps an inbound Block default, but the effective profiles are $(($active | ForEach-Object { "$($_.Name)=$($_.DefaultInboundAction) Enabled=$($_.Enabled)" }) -join ', '): regenerate the scripts (without --keep-inbound for an inbound-Allow host)" }`,
+  ]);
   assert(at(added[1]!) < at("$snapshot = @(Get-NetFirewallProfile"));
   assert(
     at(added[0]!) >
@@ -2563,6 +2561,9 @@ Deno.test("egress-scripts.ts apply (H-90): --keep-inbound gives the keep-inbound
       await gen("a2.ps1", ["--keep-inbound"]),
       "\uFEFF" + applyScript(firewallPlan(IDX), { ...H90, keepInbound: true }),
     );
+    // Review r1 H1: a mistyped flag refuses and writes nothing.
+    await assertRejects(() => gen("a3.ps1", ["--keep-inbond"]));
+    await assertRejects(() => Deno.stat(join(dir, "a3.ps1")));
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
