@@ -1,0 +1,13 @@
+# W2-23: HX-166 (tree a8efb65b) failed once (plain) in its 2 Opus cells in v2-frontier-5 (W2-22). Under the frontier-hard
+# pool rule (decisions\2026-11-09-frontier-hard-pool.md) it gets a 6-cell measure: 2 more repeats per arm here, so 3 per arm
+# together with v2-frontier-5. Built like v2-frontier-5, one container.
+# Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
+# prescreen.ts status, selection and the confirmatory analysis.
+id: v2-frontier-6
+hypothesis: "Exploratory: how often Opus 5.5 solves the round 8 card HX-166 (strengthened oracle) on the plain and realistic+LSP setups; never a screening or confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-frontier-opus-plain
+variants: [cc-v2-frontier-opus-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-166}"
+repeats: 2
