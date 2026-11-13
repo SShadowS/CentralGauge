@@ -66,9 +66,10 @@ while true; do
   hb_ok "$HB" "$HB_MAX" || stop "$HB_WHY"
   reg_lists "$HREG" "$P" || stop "not listed in the hostwatch registry $HREG (or it cannot be read)"
   # Standing grant 1: stop when every container of the pool is quarantined (cells after that only burn subscription).
-  q=$(jq -r 'select(.state=="quarantined").container' "$QD"/*.json 2>/dev/null |
-    sort -u | grep -cxF -f <(tr ' ' '\n' <<< "$POOL"))
-  [ "$q" -eq "$(echo $POOL | wc -w)" ] && stop "every pool container quarantined ($POOL)"
+  q=$(quarantined_count "$QD" $POOL) || q=ERR
+  set -- $POOL
+  if [ "$q" = ERR ]; then stop "quarantine records unreadable (a failed jq or fork)"
+  elif [ "$q" -ge $# ]; then stop "every pool container quarantined ($POOL)"; fi
   c=$(cid)
   if [ -n "$c" ]; then
     n=$(ls "$R/executions/$c"/*.json 2>/dev/null | wc -l)

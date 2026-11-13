@@ -24,7 +24,10 @@ stop_path() {
 }
 
 # The --stop-file arguments for a harness run, one per line:
-#   mapfile -t STOPS < <(stop_args "$T\\STOP"); deno task start harness run ... "${STOPS[@]}"
+#   mapfile -t STOPS < <(stop_args "$T\\STOP")
+#   [ ${#STOPS[@]} = $((2 * (1 + ${#STOP_NAMES[@]}))) ] || { echo "stop_args failed"; exit 3; }   # a failed
+#   process substitution leaves STOPS empty while mapfile succeeds, so check the count before launching
+#   deno task start harness run ... "${STOPS[@]}"
 stop_args() {
   local n
   printf '%s\n' --stop-file "$1"
@@ -39,7 +42,7 @@ stop_args() {
 active_stops() {
   local p d b f n found=0
   p=$(stop_path "$1") && [ -n "$p" ] || { echo "$1 (unknown: path not resolvable)"; return 0; }
-  d=${p%/*}; b=${p##*/}; [ "$d" = "$p" ] && d=.
+  d=${p%/*}; b=${p##*/}; [ "$d" = "$p" ] && d=.; [ -z "$d" ] && d=/
   [ -d "$d" ] && [ -r "$d" ] && [ -x "$d" ] || { echo "$p (unknown: directory missing or unreadable)"; return 0; }
   shopt -s nullglob nocaseglob nocasematch
   for f in "$d"/*; do
@@ -71,7 +74,7 @@ stop_write() {
 # Hostwatch registry -> TGT_P[] / TGT_N[] (prefix in slash form, priority). Returns non-zero with
 # the reason on stderr when the file is missing, has no targets, or has a malformed line.
 parse_reg() {
-  local line ln=0 p n
+  local line ln=0 p n q
   TGT_P=(); TGT_N=()
   [ -f "$1" ] || { echo "registry $1 missing" >&2; return 1; }
   while IFS= read -r line || [ -n "$line" ]; do
@@ -81,7 +84,9 @@ parse_reg() {
     n=${line##*[[:space:]]}; p="${line%[[:space:]]*}"; p="${p%"${p##*[![:space:]]}"}"
     [[ "$n" =~ ^0*([0-9]{1,9})$ ]] && [ -n "$p" ] && [ "$p" != "$line" ] ||
       { echo "registry $1 line $ln malformed: '$line' (want '<stop prefix> <integer priority, at most 9 digits after leading zeros>')" >&2; return 1; }
-    TGT_P+=("$(stop_path "$p")"); TGT_N+=("$((10#${BASH_REMATCH[1]}))")  # 01 and 1 are the same priority
+    n=$((10#${BASH_REMATCH[1]}))  # 01 and 1 are the same priority
+    q=$(stop_path "$p") && [ -n "$q" ] || { echo "registry $1 line $ln: prefix '$p' could not be resolved" >&2; return 1; }
+    TGT_P+=("$q"); TGT_N+=("$n")
   done < "$1"
   [ ${#TGT_P[@]} -gt 0 ] || { echo "registry $1 has no targets" >&2; return 1; }
 }
@@ -94,6 +99,7 @@ parse_reg() {
 hb_check() {
   local hb=$1 max=${2:-180} m now age
   [ -f "$hb" ] || { echo "hostwatch heartbeat missing ($hb)"; return 0; }
+  [ -s "$hb" ] || { echo "hostwatch heartbeat empty ($hb; a failed write?)"; return 0; }
   m=$(stat -c %Y "$hb" 2> /dev/null) && [[ "$m" =~ ^[0-9]+$ ]] || { echo "hostwatch heartbeat unreadable ($hb)"; return 0; }
   now=$(date +%s) && [[ "$now" =~ ^[0-9]+$ ]] || { echo "clock unreadable while checking $hb"; return 0; }
   age=$((now - m))
@@ -105,9 +111,21 @@ hb_check() {
 # 0 only when hb_check ran successfully and printed exactly OK; HB_WHY holds its text either way.
 hb_ok() { HB_WHY=$(hb_check "$@") && [ "$HB_WHY" = OK ] || { HB_WHY=${HB_WHY:-"heartbeat check failed (no output)"}; return 1; }; }
 
+# Quarantined containers among <names...> in quarantine dir <qdir>: prints the count, or "ERR" when
+# the records cannot be read (a failed jq or fork is never "none quarantined").
+quarantined_count() {
+  local qd=$1 n files; shift
+  shopt -s nullglob; files=("$qd"/*.json); shopt -u nullglob
+  [ -d "$qd" ] || { echo ERR; return 0; }
+  [ ${#files[@]} -eq 0 ] && { echo 0; return 0; }
+  n=$(jq -s --arg c "$*" '($c | split(" ")) as $want | [.[] | select(.state=="quarantined") | .container] | unique | map(select(. as $x | $want | index($x))) | length' "${files[@]}" 2> /dev/null) &&
+    [[ "$n" =~ ^[0-9]+$ ]] && { echo "$n"; return 0; }
+  echo ERR
+}
+
 # Is prefix P listed in the hostwatch registry? 0 yes, 1 no or the registry cannot be read.
 reg_lists() {
-  local i me; me=$(stop_path "$2") || return 1; parse_reg "$1" 2> /dev/null || return 1
+  local i me; me=$(stop_path "$2") && [ -n "$me" ] || return 1; parse_reg "$1" 2> /dev/null || return 1
   shopt -s nocasematch
   for i in "${TGT_P[@]}"; do [[ "$i" == "$me" ]] && { shopt -u nocasematch; return 0; }; done
   shopt -u nocasematch; return 1

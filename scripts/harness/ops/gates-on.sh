@@ -41,9 +41,8 @@ for t in "$@"; do
   [ $prc = 0 ] && [[ "$free" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { halt "RAM read failed (rc $prc, '$free')" "$t"; break; }
   v=$(awk -v f="$free" -v m="$FLOOR" 'BEGIN { print (f < m) ? "LOW" : "OK" }'); vrc=$?
   [ $vrc = 0 ] && [ "$v" = OK ] || { halt "free RAM $free GB, floor $FLOOR GB (verdict '${v:-none}', awk rc $vrc)" "$t"; break; }
-  if jq -e --arg c "$C" 'select(.state=="quarantined" and .container==$c)' "$QD"/*.json > /dev/null 2>&1; then
-    echo "[stop] $(date -u +%FT%TZ) $C quarantined, not starting $t" >> "$LOG"; break
-  fi
+  qn=$(quarantined_count "$QD" "$C") || qn=ERR
+  [ "$qn" = 0 ] || { halt "$C quarantined or quarantine records unreadable ('$qn')" "$t"; break; }
   # Stops written, or the heartbeat going stale, while the checks above ran (the RAM read can take
   # up to 55 s) still count: both are checked again at the launch decision.
   stops_clear "$STOPF" || { echo "[stop] $(date -u +%FT%TZ) not clear at launch: '$(active_stops "$STOPF" | tr '\n' ' ')', not starting $t" >> "$LOG"; break; }

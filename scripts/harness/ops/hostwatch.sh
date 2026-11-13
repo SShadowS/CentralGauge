@@ -146,7 +146,9 @@ while :; do
   if [ $DELIVERY_FAILED = 1 ]; then
     say "heartbeat NOT refreshed: a stop could not be delivered (consumers stop themselves after 180 s)"
   else
-    date -u +%FT%TZ > "$DIR/heartbeat" || say "ALERT heartbeat write failed"
+    # Atomic publication: a failed write never leaves a fresh-looking (truncated) heartbeat.
+    { date -u +%FT%TZ > "$DIR/heartbeat.tmp" && [ -s "$DIR/heartbeat.tmp" ] && mv -f "$DIR/heartbeat.tmp" "$DIR/heartbeat"; } ||
+      say "ALERT heartbeat write failed"
   fi
   [ "$ITER" -gt 0 ] && [ $k -ge "$ITER" ] && break
   sleep "$INTERVAL"

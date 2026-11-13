@@ -318,5 +318,24 @@ setup neg-all; printf '%s\n' 1000 500 500 500 500 > "$D/now"; printf '30.0 25.0 
 HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_NOW_FEED=$D/now HW_MIN_STEP=60 HW_INTERVAL=0 HW_ITER=5 bash "$H/hostwatch.sh" > "$D/out" 2>&1
 check "stall clock back 500 s, 4 bad readings (floor 240 s > 180 s): host-all reaches every target" has "$D/A/STOP.host-all" "$D/B/STOP.host-all" "$D/G/STOP-gates-Cronus999.host-all"
 
+echo "== run 002 self-check: quarantine read, registry conversion, heartbeat publication, root prefix"
+mkdir -p "$W/bin-jqfail"; printf '#!/usr/bin/env bash\nexit 2\n' > "$W/bin-jqfail/jq"; chmod +x "$W/bin-jqfail/jq"
+gsetup g-jqfail; echo '{"state":"active","container":"Cronus999"}' > "$D/q/rec.json"; PATH="$W/bin-ok:$PATH" g
+check "gates: control with a readable non-quarantine record: the task runs" eq "$(cat "$D/ran" 2> /dev/null)" "ran HX-T1"
+gsetup g-jqfail2; echo '{"state":"active","container":"Cronus999"}' > "$D/q/rec.json"
+printf '#!/usr/bin/env bash\nif [ "$1" = -s ]; then exit 2; fi\nexec %s "$@"\n' "$(command -v jq)" > "$W/bin-jqfail/jq"
+PATH="$W/bin-jqfail:$W/bin-ok:$PATH" g
+check "gates: quarantine records unreadable (jq -s fails): STOP-gates.watch, task not run" has "$D/G/STOP-gates-Cronus999.watch"
+check "gates: quarantine unreadable: task not run" hasnt "$D/ran"
+gsetup g-quar; echo '{"state":"quarantined","container":"Cronus999"}' > "$D/q/rec.json"; PATH="$W/bin-ok:$PATH" g
+check "gates: the container is quarantined: task not run" hasnt "$D/ran"
+wsetup w-jqfail; echo '{"state":"active","container":"Cronus999"}' > "$D/q/rec.json"; PATH="$W/bin-jqfail:$W/bin-ok:$PATH" w
+check "watch.sh: quarantine records unreadable: P.watch written" has "$D/A/STOP.watch"
+setup reg-unresolved; (. "$H/stops.sh"; stop_path() { :; }; parse_reg "$D/targets.tsv" 2> /dev/null); rc=$?
+check "parse_reg: a prefix that cannot be resolved (empty conversion) makes the registry malformed" [ $rc != 0 ]
+setup hb-empty; : > "$D/heartbeat"
+check "an empty heartbeat file (truncated by a failed write) is unsafe" eval '! hb_safe "$D/heartbeat"'
+check "a root-level prefix with no stops is clear (/ is readable)" inactive "/h89b-no-such-prefix-$$"
+
 echo "dry test: $pass passed, $fail failed (work dir $W)"
 [ $fail = 0 ]
