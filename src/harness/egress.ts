@@ -4,7 +4,9 @@
  * network with no uplink; the host's firewall keeps default Allow on every
  * profile plus inbound Block rules on the sandbox vEthernet only (TCP as
  * ranges around the proxy and backend ports, every other IP protocol
- * whole); an allowlisting proxy per execution; the effective policy is
+ * whole); a host whose inbound default is Block keeps it and gets scoped
+ * allows for those two ports instead (H-90); an allowlisting proxy per
+ * execution; the effective policy is
  * verified, never assumed, and every incomplete observation fails closed.
  * The harness never elevates: it generates the scripts ops run elevated
  * (M1-34) and only reads the host state.
@@ -425,6 +427,22 @@ export function firewallPlan(interfaceIndex: number): FirewallRule[] {
   return rules;
 }
 
+/**
+ * H-90 (GH #33): on a host whose inbound default is Block, the proxy and the
+ * backend need their own inbound allows; scoped to the gateway address on the
+ * same interface as the block rules. Absent on an inbound-Allow host.
+ */
+export function allowPlan(interfaceIndex: number): FirewallRule[] {
+  const [block] = firewallPlan(interfaceIndex);
+  return [PROXY_PORT, BACKEND_PORT].map((port) => ({
+    ...block!,
+    name: `${RULE_GROUP}-allow-${port}`,
+    action: "Allow" as const,
+    localPorts: [`${port}`],
+    localAddress: SANDBOX_NETWORK.gateway,
+  }));
+}
+
 /** A PowerShell single-quoted literal; refuses what cannot be one line. */
 function psq(s: string, what: string): string {
   if (/[\r\n\0]/.test(s) || s === "") {
@@ -456,7 +474,19 @@ const PS_HEAD = [
  */
 export function applyScript(
   plan: FirewallRule[],
-  o: { invocation: string; dir: string; interfaceAlias: string; hnsId: string },
+  o: {
+    invocation: string;
+    dir: string;
+    interfaceAlias: string;
+    hnsId: string;
+    /**
+     * H-90: for a host whose inbound default is Block. Keeps each profile's
+     * inbound default (never forces Allow) and adds allowPlan's rules; the
+     * script refuses before any change unless the effective state is such a
+     * host. Without it the script is the inbound-Allow host's, unchanged.
+     */
+    keepInbound?: boolean;
+  },
 ): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(o.invocation)) {
     throw new ConfigurationError(
@@ -512,30 +542,45 @@ export function applyScript(
     "Assert-NotFoundOnly $e 'the effective block rules'",
     `Save-Json ${f("block-inventory")} $foreign`,
     `if ($foreign.Count -gt 0) { throw "owner decision required: $($foreign.Count) effective block rules exist outside ${RULE_GROUP}; see ${`fw-block-inventory-${o.invocation}.json`}" }`,
+    ...(o.keepInbound
+      ? [
+        "# Generated with --keep-inbound: the effective inbound default must be Block on at least one profile and Allow or Block on each.",
+        `$active = @(Get-NetFirewallProfile -PolicyStore ActiveStore); $odd = @($active | Where-Object { @('Allow', 'Block') -notcontains [string]$_.DefaultInboundAction }); $blocked = @($active | Where-Object { [string]$_.DefaultInboundAction -eq 'Block' }); if ($active.Count -ne 3 -or $odd.Count -gt 0 -or $blocked.Count -eq 0) { throw "this apply keeps an inbound Block default, but the effective profiles are $(($active | ForEach-Object { "$($_.Name)=$($_.DefaultInboundAction)" }) -join ', '): regenerate the scripts (without --keep-inbound for an inbound-Allow host)" }`,
+      ]
+      : []),
     `$snapshot = @(Get-NetFirewallProfile | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Enabled = [string]$_.Enabled; DefaultInboundAction = [string]$_.DefaultInboundAction; DefaultOutboundAction = [string]$_.DefaultOutboundAction } })`,
     'if ($snapshot.Count -ne 3) { throw "expected 3 firewall profiles, found $($snapshot.Count)" }',
     `Save-JsonAtomic ${f("snapshot")} $snapshot`,
     "# The apply record carries the snapshot and exists before any change: an interrupted apply is revertible.",
     "$created = @()",
-    `$record = [ordered]@{ invocation = '${o.invocation}'; snapshot = $snapshot; created = $created }`,
+    // keptInbound tells the opt-in revert that the inbound defaults were left as the snapshot holds them.
+    `$record = [ordered]@{ invocation = '${o.invocation}'; snapshot = $snapshot; created = $created${
+      o.keepInbound ? "; keptInbound = $true" : ""
+    } }`,
     `$applied = ${f("apply")}`,
     "Save-JsonAtomic $applied $record",
     "$changedProfiles = $false",
     "try {",
     "  $changedProfiles = $true",
-    "  Set-NetFirewallProfile -All -DefaultInboundAction Allow -DefaultOutboundAction Allow",
+    o.keepInbound
+      ? "  Set-NetFirewallProfile -All -DefaultOutboundAction Allow"
+      : "  Set-NetFirewallProfile -All -DefaultInboundAction Allow -DefaultOutboundAction Allow",
     "  Set-NetFirewallProfile -All -Enabled True",
   ];
-  for (const r of plan) {
+  const rules = o.keepInbound ? [...plan, ...allowPlan(idx!)] : plan;
+  for (const r of rules) {
     const ports = r.localPorts === "Any"
       ? ""
       : ` -LocalPort @(${r.localPorts.map((p) => `'${p}'`).join(", ")})`;
+    const local = r.localAddress === "Any"
+      ? ""
+      : ` -LocalAddress ${psq(r.localAddress, "local address")}`;
     lines.push(
-      `  New-NetFirewallRule -Group '${RULE_GROUP}' -Name '${r.name}' -DisplayName '${r.name}' -Enabled True -Direction Inbound -Action Block -Profile Any -Protocol ${r.protocol}${ports} -InterfaceAlias $alias | Out-Null; $created += '${r.name}'; $record.created = $created; Save-JsonAtomic $applied $record`,
+      `  New-NetFirewallRule -Group '${RULE_GROUP}' -Name '${r.name}' -DisplayName '${r.name}' -Enabled True -Direction Inbound -Action ${r.action} -Profile Any -Protocol ${r.protocol}${ports}${local} -InterfaceAlias $alias | Out-Null; $created += '${r.name}'; $record.created = $created; Save-JsonAtomic $applied $record`,
     );
   }
   lines.push(
-    `  Write-Output "[OK] ${plan.length} rules created in ${RULE_GROUP}"`,
+    `  Write-Output "[OK] ${rules.length} rules created in ${RULE_GROUP}"`,
     "} catch {",
     "  $failure = $_",
     "  # Roll back only what this invocation did; a rollback problem never hides the failure.",
@@ -564,7 +609,8 @@ const QUOTE_PROFILES =
  * (C-04: the apply-time snapshot may be stale, and restoring it is a
  * host-wide change). With `restoreProfiles` it also restores the profiles
  * from that invocation's snapshot, but refuses before any change when the
- * profiles no longer hold what the apply set (Enabled, Allow, Allow). If an
+ * profiles no longer hold what the apply set (Enabled, Allow, Allow; after a
+ * keep-inbound apply, H-90: Enabled, the snapshot's inbound, Allow). If an
  * opt-in restore fails part way, the rules are gone and the records stay; a
  * second opt-in run then refuses on the half-restored profiles, and the
  * rules-only revert is the way out. The profiles and the group's rule count
@@ -629,8 +675,9 @@ function restoreProfilesCheck(): string[] {
   return [
     "# Windows PowerShell 5.1: assign ConvertFrom-Json first, then enumerate.",
     "$profiles = $null",
+    "$keptInbound = $false",
     '$recordPath = Join-Path $dir "fw-apply-$inv.json"',
-    "if (Test-Path -LiteralPath $recordPath) { try { $record = ConvertFrom-Json (Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8); $profiles = @($record.snapshot); if ($profiles.Count -ne 3) { $profiles = $null } } catch { $profiles = $null } }",
+    "if (Test-Path -LiteralPath $recordPath) { try { $record = ConvertFrom-Json (Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8); $profiles = @($record.snapshot); if ($profiles.Count -ne 3) { $profiles = $null } else { $keptInbound = [bool]$record.keptInbound } } catch { $profiles = $null; $keptInbound = $false } }",
     "if ($null -eq $profiles) {",
     '  $snap = Join-Path $dir "fw-snapshot-$inv.json"',
     "  $v = ConvertFrom-Json (Get-Content -LiteralPath $snap -Raw -Encoding UTF8)",
@@ -641,8 +688,16 @@ function restoreProfilesCheck(): string[] {
     "# Someone changed the profiles since the apply: restoring its snapshot would undo their change.",
     "$current = @(Get-NetFirewallProfile)",
     'if ($current.Count -ne 3) { throw "expected 3 firewall profiles, found $($current.Count); refusing to restore" }',
-    "$drift = @($current | Where-Object { [string]$_.Enabled -ne 'True' -or [string]$_.DefaultInboundAction -ne 'Allow' -or [string]$_.DefaultOutboundAction -ne 'Allow' } | ForEach-Object { \"$($_.Name) Enabled=$($_.Enabled) Inbound=$($_.DefaultInboundAction) Outbound=$($_.DefaultOutboundAction)\" })",
-    "if ($drift.Count -gt 0) { throw \"profiles changed since the apply (it set Enabled=True Inbound=Allow Outbound=Allow), now $($drift -join '; '); refusing to restore the snapshot; nothing was changed (generate the revert without --restore-profiles for rules only)\" }",
+    "# A keep-inbound apply (H-90) left each inbound default as the snapshot holds it; any other apply set Allow.",
+    "$set = 'Enabled=True Inbound=Allow Outbound=Allow'",
+    "if ($keptInbound) {",
+    "  $set = 'Enabled=True, Inbound as in the snapshot, Outbound=Allow'",
+    "  $wantIn = @{}; foreach ($p in $profiles) { $wantIn[[string]$p.Name] = [string]$p.DefaultInboundAction }",
+    "  $drift = @($current | Where-Object { [string]$_.Enabled -ne 'True' -or [string]$_.DefaultInboundAction -ne $wantIn[[string]$_.Name] -or [string]$_.DefaultOutboundAction -ne 'Allow' } | ForEach-Object { \"$($_.Name) Enabled=$($_.Enabled) Inbound=$($_.DefaultInboundAction) Outbound=$($_.DefaultOutboundAction)\" })",
+    "} else {",
+    "  $drift = @($current | Where-Object { [string]$_.Enabled -ne 'True' -or [string]$_.DefaultInboundAction -ne 'Allow' -or [string]$_.DefaultOutboundAction -ne 'Allow' } | ForEach-Object { \"$($_.Name) Enabled=$($_.Enabled) Inbound=$($_.DefaultInboundAction) Outbound=$($_.DefaultOutboundAction)\" })",
+    "}",
+    "if ($drift.Count -gt 0) { throw \"profiles changed since the apply (it set $set), now $($drift -join '; '); refusing to restore the snapshot; nothing was changed (generate the revert without --restore-profiles for rules only)\" }",
   ];
 }
 
@@ -769,7 +824,21 @@ export function verifyEgressState(s: EgressState): string[] {
       "network recreated since verification (network id or interface index changed): regenerate and reapply the rules",
     );
   }
-  const plan = s.gatewayAdapter ? firewallPlan(s.gatewayAdapter.index) : [];
+  // H-90: a profile defaulting inbound to Block needs the scoped allows; with
+  // none, they are extra rules.
+  const keepsBlock = s.profiles.some((x) => x.inbound === "Block");
+  const allow = s.gatewayAdapter ? allowPlan(s.gatewayAdapter.index) : [];
+  const plan = s.gatewayAdapter
+    ? [...firewallPlan(s.gatewayAdapter.index), ...(keepsBlock ? allow : [])]
+    : [];
+  const allowsOk = allow.length > 0 &&
+    allow.every((want) => {
+      const got = s.groupRules.filter((r) => r.name === want.name);
+      return got.length === 1 &&
+        FIELDS.every((f) =>
+          JSON.stringify(got[0]![f]) === JSON.stringify(want[f])
+        );
+    });
   const byName = new Map(s.groupRules.map((r) => [r.name, r]));
   for (const want of plan) {
     const got = byName.get(want.name);
@@ -808,7 +877,13 @@ export function verifyEgressState(s: EgressState): string[] {
   }
   for (const pr of s.profiles) {
     if (!pr.enabled) p.push(`firewall profile ${pr.name} disabled`);
-    if (pr.inbound !== "Allow") {
+    if (pr.inbound === "Block") {
+      if (!allowsOk) {
+        p.push(
+          `profile ${pr.name}: default inbound is Block without the ${RULE_GROUP} allow rules for ${PROXY_PORT} and ${BACKEND_PORT}`,
+        );
+      }
+    } else if (pr.inbound !== "Allow") {
       p.push(`profile ${pr.name}: default inbound is ${pr.inbound}`);
     }
     if (pr.outbound !== "Allow") {
