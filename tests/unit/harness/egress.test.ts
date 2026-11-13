@@ -2334,7 +2334,14 @@ async function runGuard(
     const file = join(dir, "guard.ps1");
     await Deno.writeTextFile(file, "﻿" + script);
     const out = await new Deno.Command("powershell.exe", {
-      args: ["-NoProfile", "-NonInteractive", "-File", file],
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        file,
+      ],
       stdout: "piped",
       stderr: "piped",
     }).output();
@@ -2488,6 +2495,11 @@ Deno.test({
       ],
     );
     assertEquals(allow.length, states.length, allow.join("\n"));
+    assertEquals(keep.length, states.length, keep.join("\n"));
+    // Review r2 N3: a refusal is the guard's own throw, never another error.
+    for (const l of [...allow, ...keep]) {
+      assert(l === "PASS" || l.startsWith("REFUSE this apply "), l);
+    }
     assertEquals(
       allow[1],
       "REFUSE this apply sets every inbound default to Allow, but the effective profiles are Domain=Block Enabled=True, Private=Block Enabled=True, Public=Block Enabled=True: on a host whose inbound default is Block, generate the apply with --keep-inbound",
