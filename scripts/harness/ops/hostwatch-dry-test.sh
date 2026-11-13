@@ -232,6 +232,9 @@ echo "== self-check r1: clock going backwards, awk OK-then-fail, priorities"
 setup clock-back; printf '%s\n' 100 50 > "$D/now"; printf 'STALL\nSTALL\n' > "$D/feed"
 HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_NOW_FEED=$D/now HW_INTERVAL=0 HW_ITER=2 bash "$H/hostwatch.sh" > "$D/out" 2>&1
 check "stall clock goes back (100 -> 50) during a stall: host-low" has "$D/A/STOP.host-low"
+setup clock-partial-back; printf '%s\n' 100 180 150 > "$D/now"; printf '30.0 25.0 7.00\nSTALL\nSTALL\n' > "$D/feed"
+HW_DIR=$D HW_REG=$D/targets.tsv HW_FEED=$D/feed HW_NOW_FEED=$D/now HW_MIN_STEP=60 HW_INTERVAL=0 HW_ITER=3 bash "$H/hostwatch.sh" > "$D/out" 2>&1
+check "clock steps back but stays above last_good (100, 180, 150): the bad-reading floor (2 x 60 s) still gives host-low" has "$D/A/STOP.host-low"
 setup awk-okfail; printf '30.0 25.0 7.00\n' > "$D/feed"
 PATH="$W/bin-awkok:$PATH" HW_ITER=1 hw > "$D/out" 2>&1
 check "hostwatch: awk prints OK then exits 2: host-low" has "$D/A/STOP.host-low"

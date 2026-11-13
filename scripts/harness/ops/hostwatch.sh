@@ -102,7 +102,10 @@ hit() { # <host-low|host-all> <why>: write it into the matching targets of the l
 DELIVERY_FAILED=0
 
 num='[0-9]+(\.[0-9]+)?'
-nps=(); last_good=$(now)
+# bad_n: bad readings since the last good one. Each loop sleeps INTERVAL (HW_MIN_STEP in tests), so
+# bad_n * INTERVAL is a lower bound on the real stall time that no clock change can lower; the stall
+# age is the larger of it and the $SECONDS age (Sol self-check r2: $SECONDS may follow the wall clock).
+nps=(); last_good=$(now); bad_n=0; MIN_STEP=${HW_MIN_STEP:-$INTERVAL}
 while :; do
   k=$((k + 1))
   if [ -f "$DIR/STOP-hostwatch" ]; then
@@ -117,7 +120,7 @@ while :; do
   t=$(now)  # after the read, so a hung read counts toward the stall age; monotonic, see now()
   if [ $rc = 0 ] && [[ "$out" =~ ^$num\ $num\ $num$ ]]; then
     read -r FREE COMMIT NP <<< "$out"
-    last_good=$t; nps+=("$NP"); [ ${#nps[@]} -gt $NP_WINDOW ] && nps=("${nps[@]: -$NP_WINDOW}")
+    last_good=$t; bad_n=0; nps+=("$NP"); [ ${#nps[@]} -gt $NP_WINDOW ] && nps=("${nps[@]: -$NP_WINDOW}")
     v=$(awk -v f="$FREE" -v c="$COMMIT" -v n="$NP" -v w="${nps[*]}" -v ac=$ALL_COMMIT -v af=$ALL_FREE \
       -v lc=$LOW_COMMIT -v lf=$LOW_FREE -v r=$NP_RISE 'BEGIN {
         k = split(w, a, " "); lo = a[1]; for (i = 2; i <= k; i++) if (a[i] + 0 < lo + 0) lo = a[i]
@@ -131,7 +134,8 @@ while :; do
     elif [ "$verdict" = LOW ]; then hit host-low "$why"
     elif [ "$verdict" != OK ]; then hit host-low "unexpected verdict '$verdict': $why"; fi
   else
-    age=$((t - last_good))
+    bad_n=$((bad_n + 1)); age=$((t - last_good)); floor=$((bad_n * MIN_STEP))
+    [ $age -ge 0 ] && [ $floor -gt $age ] && age=$floor
     say "bad reading (rc $rc, '$out'), ${age}s since the last good one"
     if [ $age -lt 0 ]; then hit host-low "no good reading and the stall clock went backwards (${age}s)"
     elif [ $age -gt $STALL_ALL ]; then hit host-all "no good reading for ${age}s"

@@ -47,19 +47,20 @@ cost() {
 mono() { echo "$SECONDS"; }
 set -o pipefail
 
-last_good=$(mono); k=0
+last_good=$(mono); k=0; bad_n=0  # bad_n * INTERVAL: a stall-time floor no clock change can lower
 while true; do
   k=$((k + 1))
   free=$(timeout -k 10 "$PST" powershell -NoProfile -Command "[string]::Format([cultureinfo]::InvariantCulture,'{0:F1}',(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB)" | tr -d '\r'); prc=$?
   t=$(mono)  # after the read, so a hung read counts toward the stall age
   if [ $prc = 0 ] && [[ "$free" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-    last_good=$t
+    last_good=$t; bad_n=0
     v=$(awk -v f="$free" -v m="$FLOOR" 'BEGIN { print (f < m) ? "LOW" : "OK" }'); vrc=$?
     [ $vrc = 0 ] && [ "$v" = OK ] || stop "free RAM $free GB, floor $FLOOR GB (verdict '${v:-none}', awk rc $vrc)"
   else
-    note "bad RAM reading (rc $prc, '$free'), $((t - last_good))s since the last good one"
-    if [ $((t - last_good)) -lt 0 ]; then stop "no good RAM reading and the stall clock went backwards"
-    elif [ $((t - last_good)) -gt $STALL ]; then stop "no good RAM reading for $((t - last_good))s"; fi
+    bad_n=$((bad_n + 1)); age=$((t - last_good)); [ $age -ge 0 ] && [ $((bad_n * INTERVAL)) -gt $age ] && age=$((bad_n * INTERVAL))
+    note "bad RAM reading (rc $prc, '$free'), ${age}s since the last good one"
+    if [ $age -lt 0 ]; then stop "no good RAM reading and the stall clock went backwards"
+    elif [ $age -gt $STALL ]; then stop "no good RAM reading for ${age}s"; fi
   fi
   r=$(hb_check "$HB" "$HB_MAX"); [ -n "$r" ] && stop "$r"
   reg_lists "$HREG" "$P" || stop "not listed in the hostwatch registry $HREG (or it cannot be read)"
