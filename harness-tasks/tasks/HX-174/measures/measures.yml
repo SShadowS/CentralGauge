@@ -9,5 +9,10 @@ partial_credit:
   hidden_regressions:
     - "88570/CeilingTariffsKeepRates"
 reuse: null
+# A9 from gate-2026-11-13T14-23-28-533Z.json (tree a6f550a5): baseline#1 fails the 5 weighted rows by
+# assertion and passes CeilingTariffsKeepRates (hidden regression).
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/code-order: { partial_credit: 0.8 }
+  naive/primary-only: { partial_credit: 0.2 }
+  naive/same-variable: { partial_credit: 0.6 }
