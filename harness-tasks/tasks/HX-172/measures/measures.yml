@@ -9,5 +9,12 @@ partial_credit:
     "88540/TakenCodeRefused": 1
   hidden_regressions: []
 reuse: null
+# A9 from gate-2026-11-13T13-42-26-454Z.json (tree 5cede3ae). The oracle does not compile against the
+# baseline (AL0132, new ChangePlanCode), so every row fails there and all six are weighted.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/copy-and-delete: { partial_credit: 0.5 }
+  naive/reassign-through-assignplan: { partial_credit: 0.8333333333333334 }
+  naive/rename-only: { partial_credit: 0.8333333333333334 }
+  naive/unfiltered-visits: { partial_credit: 0.8333333333333334 }
+  naive/visits-move-vehicles: { partial_credit: 0.8333333333333334 }
