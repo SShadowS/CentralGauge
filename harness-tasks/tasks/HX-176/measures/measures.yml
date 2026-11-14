@@ -1,0 +1,16 @@
+v: 1
+partial_credit:
+  weights:
+    "88600/BufferSummaryIgnoresStoredCharges": 1
+    "88600/ProposalSummaryIgnoresStoredCharges": 1
+    "88600/NotBilledLineAddsNothingToTheTotal": 1
+    "88600/EmptyBufferSummarizesToZero": 1
+  hidden_regressions: []
+reuse: null
+# A9 from gate-2026-11-14T01-12-26-447Z.json (tree 3cedaa52). The oracle does not compile against the
+# baseline (AL0132, new SummarizeReturnCharges), so every row fails there and all four are weighted.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/by-value-buffer: { partial_credit: 0.25 }
+  naive/caller-kept-inline: { partial_credit: 0.5 }
+  naive/total-all-lines: { partial_credit: 0.5 }

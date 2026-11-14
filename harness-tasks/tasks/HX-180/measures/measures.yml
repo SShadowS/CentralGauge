@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "88660/CancelBookingQueuesOutboxEntry": 1
+    "88660/ErasedContractIsSent": 1
+    "88660/PurgeThenCancelSendsOnlyCancel": 1
+  hidden_regressions:
+    - "88660/PurgeLeavesOutboxUnchanged"
+    - "88660/CancelBookingRefusesPostedContract"
+reuse: null
+# A9 from gate-2026-11-14T03-17-06-883Z.json (tree 83fbcde1). Weights are the three rows that fail on
+# baseline#1; the purge and refusal rows pass there and are hidden regressions.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/no-runtrigger-check: { partial_credit: 0.6666666666666666 }
+  naive/skip-posted: { partial_credit: 0.6666666666666666 }
+  naive/cancel-event-only: { partial_credit: 0.6666666666666666 }

@@ -1,0 +1,18 @@
+id: HX-177
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Leasing, Core]
+coupling: [events, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, InvoiceAmountUsesSetupPrecision, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 88615, procedures: [RunLogsEachInvoiceLine, OtherAppInsertIsLogged, OtherAppPlainInsertIsLogged, PreviewLeavesLogUnchanged, PreviewThenRunLogsOnlyTheRun] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
