@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88585/MidYearWeeksSummed": 1
+    "88585/NewYearWeekReportedOnce": 1
+    "88585/NewYearWeekOpensNextYear": 1
+    "88585/YearWithoutWeek53Listed": 1
+    "88585/YearWithWeek53Listed": 1
+  hidden_regressions: []
+reuse: null
+# Provisional: every fail_to_pass row weighted 1. The lane does A9 from the gate report.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
