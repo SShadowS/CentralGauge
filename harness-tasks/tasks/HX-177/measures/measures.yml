@@ -4,11 +4,16 @@ partial_credit:
     "88615/RunLogsEachInvoiceLine": 1
     "88615/OtherAppInsertIsLogged": 1
     "88615/OtherAppPlainInsertIsLogged": 1
-    "88615/PreviewLeavesLogUnchanged": 1
     "88615/PreviewThenRunLogsOnlyTheRun": 1
-  hidden_regressions: []
+  hidden_regressions:
+    - "88615/PreviewLeavesLogUnchanged"
 reuse: null
-# Provisional (A4): every fail_to_pass row weighted 1. The lane does A9 from the gate report;
-# PreviewLeavesLogUnchanged is predicted to pass on baseline and to become a hidden regression.
+# A9 from gate-2026-11-14T02-39-12-521Z.json (tree 5e1ae247). Weights are the four rows that fail on
+# baseline#1; PreviewLeavesLogUnchanged passes there and is a hidden regression.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/no-temp-guard: { partial_credit: 0.75 }
+  naive/runtrigger-guard: { partial_credit: 0.5 }
+  naive/runtrigger-and-temp-guard: { partial_credit: 0.75 }
+  naive/dedupe-guard: { partial_credit: 0.75 }
+  naive/run-event-only: { partial_credit: 0.5 }
