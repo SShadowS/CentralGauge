@@ -1,0 +1,18 @@
+id: HX-179
+refapp_version: refapp-v2
+kind: bugfix
+prompt: prompt.md
+touches: [Leasing]
+coupling: [internal]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80056, procedures: [InvoicesLinesDueUpToDate, NonWorkingDueDateMovesToNextWorkingDay, HandledLinesAreNotInserted, AfterEventSeesEveryCreatedLine] }
+fail_to_pass:
+  depends_on: [Core, Leasing]
+  tests:
+    - { codeunit: 88645, procedures: [LcyRaisedVATOverMaximumListed, LcyLoweredVATListed, LcyDifferenceAtMaximumNotListed, CurrencyLineOverItsLimitListed, CurrencyLineWithinItsLimitNotListed, CurrencyLoweredVATOverLimitListed, MixedBatchListsByEachLinesLimit] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

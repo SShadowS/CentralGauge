@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "88645/LcyLoweredVATListed": 1
+    "88645/CurrencyLineOverItsLimitListed": 1
+    "88645/CurrencyLineWithinItsLimitNotListed": 1
+    "88645/CurrencyLoweredVATOverLimitListed": 1
+    "88645/MixedBatchListsByEachLinesLimit": 1
+  hidden_regressions:
+    - "88645/LcyRaisedVATOverMaximumListed"
+    - "88645/LcyDifferenceAtMaximumNotListed"
+reuse: null
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/gl-max-for-all: { partial_credit: 0.2 }
+  naive/stricter-of-both: { partial_credit: 0.6 }
+  naive/lcy-converted-limit: { partial_credit: 0.6 }
