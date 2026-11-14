@@ -168,6 +168,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}task-oracle.test.ts`]: c(true, 1),
   [`${H}task-rev.test.ts`]: c(true, 1),
   [`${H}task-set-v1.test.ts`]: c(true, 0),
+  // M8-20: repo reads and a temp git repo only; 0.6 s standalone 2026-11-14.
+  [`${H}task-set-v2.test.ts`]: c(true, 1),
   [`${H}task.test.ts`]: c(true, 0),
   [`${H}test-rerun-runner.test.ts`]: c(true, 5),
   [`${H}test-rerun.test.ts`]: c(true, 0),
