@@ -129,7 +129,7 @@ export function select(pool: Eligible[], n: number, r: Rules, rank: Map<string, 
 Rules file: `harness-tasks/v2/screening.yml` (`v: 1`, `rules`, `candidates`); M11-13/15 read it with
 `--rules harness-tasks/v2/screening.yml`. Selection JSON `harness-tasks/v2/selection.json` (M8-19):
 `{ v: 1, status: "ok" | "too_few", head, seals: [{tag, commit}], campaigns: [{id, experiment}],
-held_out, confirmatory_tasks, held_out_tasks, candidates, selection: Selection }`; committed only with
+held_out, `amendment: <design|family|confirmatory|selection|simulation>` per owner-approved amendment (`selection`: H-91, a too_few selection recorded as `to` = { status, n, selected count, shortfalls, deviations } of the committed selection.json; `simulation`: H-97, from and to are full simulation blocks, only args.effect and args.grid may change, and a grid binds only through it)_tasks, held_out_tasks, candidates, selection: Selection }`; committed only with
 `status: "ok"`. M11-10 reads `status`, `held_out`, `selection.selected`, `selection.n`.
 
 ## 9. Seals, ledger and tags (M8; ruling 10)
@@ -155,14 +155,14 @@ held_out, confirmatory_tasks, held_out_tasks, candidates, selection: Selection }
 | --- | --- | --- | --- |
 | Document | `harness/preregistration/cc-v2-factorial.yml`; experiment key `preregistration: preregistration/cc-v2-factorial.yml` (added to `harness/experiments/cc-v2-factorial.yml` with `contrasts` and `interaction` by M11-16 Step 1) | M11-16, M11-17b | M11-10, M11-11, M12 |
 | Simulation outputs | stage A `harness/preregistration/cc-v2-factorial.sim-a.json` + `H:\cg-coord\m11\sim-a.md`; stage B `harness/preregistration/cc-v2-factorial.sim-b.json` + `H:\cg-coord\m11\sim-b.md` | M11-15, M11-17a | M8-07b, M8-12, M8-19, M11-16, M11-17b |
-| Stage A held-out | `held_out: { count: 4, rule: <text>, seal: "harness-v2-screen-start", tasks: [<4 ids from M8-15a>], in_family: false }` | M8-15a (ids), M11-16 | M11-10 (`selection.held_out` must equal `tasks`) |
+| Stage A held-out | `held_out: { count: 4, rule: <text>, seal: "harness-v2-screen-start", tasks: [<4 ids from M8-15a>], in_`amendment: <design|family|confirmatory|selection|simulation>` per owner-approved amendment (`selection`: H-91, a too_few selection recorded as `to` = { status, n, selected count, shortfalls, deviations } of the committed selection.json; `simulation`: H-97, from and to are full simulation blocks, only args.effect and args.grid may change, and a grid binds only through it): false }` | M8-15a (ids), M11-16 | M11-10 (`selection.held_out` must equal `tasks`) |
 | Stage A tag | `harness-v2-prereg-a`, annotated, message contains the line `protocol_sha256: <64 hex>` | M11-16 | M11-10 `verifyPrereg` |
 | Stage A decision file | `H:\cg-coord\decisions\<approval date>-harness-v2-prereg-a.md`, planned `2026-10-24-harness-v2-prereg-a.md`; consumers resolve the glob `*-harness-v2-prereg-a.md` (exactly one match). Lines: `protocol_sha256: <hex>`, `file_sha256: <hex>`, `tag: harness-v2-prereg-a`, `tag_object: <40 hex>`, `OWNER-APPROVED: <words> (<ISO time>)` | M11-16 | M8-15b, M11-10 (via `--prereg-decision`) |
 | Anchor verification | `verifyPrereg(..., decisionPath)`: decision file parses; `git rev-parse harness-v2-prereg-a` = `tag_object`; `protocolSha` of the document at the tag commit = decision `protocol_sha256`; `protocolSha(current doc)` and `doc.stage_a.sha256` both = decision `protocol_sha256`. Editing the document AND its `stage_a.sha256` therefore fails | M11-10 | `harness run`, `harness report` |
 | CLI | `harness run <exp>` and `harness report <exp>` take `--prereg-decision <stage-A decision>` and `--prereg-b-decision <stage-B decision>`, both required when the experiment has `preregistration` | M11-10, M11-11 | M12 |
 | Campaign record | `preregistration: { path, sha256, protocol_sha256, decision_sha256, stage_b_decision_sha256 }`; resume and report refuse a changed document or either decision file | M11-10 | M11-11 |
 | Stage B tag | `harness-v2-prereg-b`, annotated, message line `stage_b_sha256: <64 hex>` (sha256 of the yml text with CRLF normalized to LF) | M11-17b | M11-10 |
-| Stage B decision file | `H:\cg-coord\decisions\<date>-harness-v2-prereg-b.md`, planned `2026-11-06-harness-v2-prereg-b.md`. Lines: `stage_b_sha256: <hex>`, `tag: harness-v2-prereg-b`, `tag_object: <40 hex>`, one `amendment: <design\|family\|confirmatory\|selection>` per owner-approved amendment (`selection`: H-91, a too_few selection recorded as `to` = { status, n, selected count, shortfalls, deviations } of the committed selection.json), `OWNER-APPROVED: ...` | M11-17b | M11-10 (via `--prereg-b-decision`) |
+| Stage B decision file | `H:\cg-coord\decisions\<date>-harness-v2-prereg-b.md`, planned `2026-11-06-harness-v2-prereg-b.md`. Lines: `stage_b_sha256: <hex>`, `tag: harness-v2-prereg-b`, `tag_object: <40 hex>`, one `amendment: <design|family|confirmatory|selection|simulation>` per owner-approved amendment (`selection`: H-91, a too_few selection recorded as `to` = { status, n, selected count, shortfalls, deviations } of the committed selection.json; `simulation`: H-97, from and to are full simulation blocks, only args.effect and args.grid may change, and a grid binds only through it)\|family\|confirmatory\|selection>` per owner-approved amendment (`selection`: H-91, a too_few selection recorded as `to` = { status, n, selected count, shortfalls, deviations } of the committed selection.json), `OWNER-APPROVED: ...` | M11-17b | M11-10 (via `--prereg-b-decision`) |
 | Stage B anchor verification | current file text and the file at `harness-v2-prereg-b` both hash to `stage_b_sha256`; the tag resolves to `tag_object`; every amendment key in the document is listed in the decision file; approval text inside the document authorizes nothing; the design/simulation waiver needs an externally approved `design` amendment | M11-10 | `harness run`, `harness report` |
 | Pool factor | `pool_factor: 2` in `simulation.args` (section 12) | M11-15 | M11-10 tests, M8-12 |
 
@@ -180,7 +180,7 @@ M8-14 start set (10-20..21) -> M8-15a start seal + ledger + held-out ids (10-21)
    -> M8-19 select --n N (11-02) [-> M8-17/M8-18 -> M8-19 rerun, only on a shortfall]
    -> M8-20 / M8-21 freeze (11-03..05)
    -> M11-17b stage B binding: selection, design, experiment tasks/repeats, approval (11-06)
-   -> M12 first confirmatory cell
+   -> M12 first `amendment: <design|family|confirmatory|selection|simulation>` per owner-approved amendment (`selection`: H-91, a too_few selection recorded as `to` = { status, n, selected count, shortfalls, deviations } of the committed selection.json; `simulation`: H-97, from and to are full simulation blocks, only args.effect and args.grid may change, and a grid binds only through it) cell
 N_prelim: M11-15 sim-a.md (10-13) -> M8-07b capacity checkpoint (10-12, rerun 10-13) -> M8-12 wave 4 size
 ```
 
