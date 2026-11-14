@@ -10,6 +10,8 @@ partial_credit:
     - "88645/LcyRaisedVATOverMaximumListed"
     - "88645/LcyDifferenceAtMaximumNotListed"
 reuse: null
+# A9 from gate-2026-11-14T02-00-30-916Z.json (tree bdd41242). Weights are the five rows that fail on
+# baseline#1; the two LCY rows pass there and are hidden regressions. Naive credit is measured.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
   naive/gl-max-for-all: { partial_credit: 0.2 }
