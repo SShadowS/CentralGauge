@@ -108,6 +108,7 @@ candidates:
   - id: HX-035
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: null }
+    broken: decisions/2026-11-13-hx035-env-invalid.md
   - id: HX-036
     prior: easy
     size: { objects: 1, files: 1, reuse: null, traces: null }
