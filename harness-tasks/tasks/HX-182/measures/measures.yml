@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "88690/InPeriodDamagesCounted": 1
+    "88690/PeriodBoundsIncluded": 1
+    "88690/VehicleWithoutDamageListed": 1
+    "88690/DamagedOutsidePeriodListedAtZero": 1
+    "88690/WholeFleetOneFill": 1
+    "88690/SecondFillReplacesFirst": 1
+    "88690/AllTimeRosterUnchanged": 1
+  hidden_regressions: []
+reuse: null
+# Provisional (A4): every fail_to_pass row weighted 1. The lane does A9 from the gate report.
+# Baseline lacks FillPeriodRoster, so the oracle does not build on baseline and every row fails there;
+# AllTimeRosterUnchanged is the regression guard on FillRoster and may move to hidden_regressions at A9.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }

@@ -1,0 +1,18 @@
+id: HX-182
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Reporting, Fleet]
+coupling: [queries, temporary-table]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [DamageBlocksVehicle, RepairLastDamageUnblocks] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Leasing, Reporting]
+  tests:
+    - { codeunit: 88690, procedures: [InPeriodDamagesCounted, PeriodBoundsIncluded, VehicleWithoutDamageListed, DamagedOutsidePeriodListedAtZero, WholeFleetOneFill, SecondFillReplacesFirst, AllTimeRosterUnchanged] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }
