@@ -1,0 +1,19 @@
+v: 1
+partial_credit:
+  weights:
+    "88675/OpenDamagesBecomeFindings": 1
+    "88675/FailedChecksNamedWithReason": 1
+    "88675/HalfAuditedVehicleShowsNoFinding": 1
+    "88675/VehiclesBetweenFailuresKeepFindings": 1
+    "88675/MileageFilterScopesTheAudit": 1
+    "88675/EarlierAuditDateLimitsFindings": 1
+  hidden_regressions: []
+reuse: null
+# A9 from gate-2026-11-14T02-59-00-226Z.json (tree cd162674). The oracle does not compile against the
+# baseline (AL0132, new AuditVehicles), so every row fails there and all six are weighted.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/errors-only: { partial_credit: 0.5 }
+  naive/copy-check-buffer: { partial_credit: 0.5 }
+  naive/wipe-list: { partial_credit: 0.3333333333333333 }
+  naive/session-date-audit: { partial_credit: 0.8333333333333334 }

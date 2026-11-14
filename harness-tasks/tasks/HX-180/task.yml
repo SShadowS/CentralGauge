@@ -1,0 +1,18 @@
+id: HX-180
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Rental, Integration]
+coupling: [events]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80040, procedures: [PayloadCarriesVehicleNo, OutboxQueuesCheckout] }
+fail_to_pass:
+  depends_on: [Core, Fleet, Rental, Integration]
+  tests:
+    - { codeunit: 88660, procedures: [CancelBookingQueuesOutboxEntry, ErasedContractIsSent,PurgeLeavesOutboxUnchanged, PurgeThenCancelSendsOnlyCancel, CancelBookingRefusesPostedContract] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

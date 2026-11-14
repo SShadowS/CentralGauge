@@ -1,0 +1,17 @@
+v: 1
+partial_credit:
+  weights:
+    "88630/LeaseWithoutJobLinesCarryLeaseDimensions": 1
+    "88630/LinesFollowInvoiceLines": 1
+    "88630/JobLeaseLinesAreBookedToTheJob": 1
+    "88630/JobLeaseLinesKeepEveryLeaseDimension": 1
+    "88630/JobLeaseLinesKeepLeaseValues": 1
+  hidden_regressions: []
+reuse: null
+# A9 from gate-2026-11-14T02-16-51-972Z.json (tree 81fc0aaa). The oracle does not compile against the
+# baseline (AL0132, new TransferToGeneralJournal), so every row fails there and all five are weighted.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/dimensions-before-job: { partial_credit: 0.6 }
+  naive/job-defaults-win: { partial_credit: 0.8 }
+  naive/posting-on-due-date: { partial_credit: 0.8 }

@@ -404,6 +404,30 @@ candidates:
   - id: HX-174
     prior: intermediate
     size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-175
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-176
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-177
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Lease Invoice Line OnAfterInsertEvent" }
+  - id: HX-178
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-179
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-180
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: "CGR Rental Contract OnAfterDeleteEvent" }
+  - id: HX-181
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
+  - id: HX-182
+    prior: intermediate
+    size: { objects: 1, files: 1, reuse: null, traces: null }
 # H-68 protocol amendment (scripts/harness/prescreen.ts): one round per seal, appended when the
 # seal is made; the first is calibration. Rounds are appended only, never edited or removed.
 amendments:

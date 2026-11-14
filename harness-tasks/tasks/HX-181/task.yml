@@ -1,0 +1,18 @@
+id: HX-181
+refapp_version: refapp-v2
+kind: feature
+prompt: prompt.md
+touches: [Fleet]
+coupling: [temporary-table, commit-behavior]
+source: refapp
+attachments: []
+scorers: [build, pass_to_pass, fail_to_pass]
+pass_to_pass:
+  - { codeunit: 80020, procedures: [HeavyDutyStrategyFromFleetExtension, DamageBlocksVehicle, RepairLastDamageUnblocks] }
+fail_to_pass:
+  depends_on: [Core, Fleet]
+  tests:
+    - { codeunit: 88675, procedures: [OpenDamagesBecomeFindings, FailedChecksNamedWithReason, HalfAuditedVehicleShowsNoFinding, VehiclesBetweenFailuresKeepFindings, MileageFilterScopesTheAudit, EarlierAuditDateLimitsFindings] }
+mutants: []
+contamination: null
+limits: { timeout_min: 30 }

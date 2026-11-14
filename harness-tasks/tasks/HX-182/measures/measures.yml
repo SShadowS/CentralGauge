@@ -1,0 +1,20 @@
+v: 1
+partial_credit:
+  weights:
+    "88690/MayPostingsSummed": 1
+    "88690/FirstAndLastDayOfMayCount": 1
+    "88690/NeverPostedContractAtZero": 1
+    "88690/PostedOnlyBeforeAndAfterAtZero": 1
+    "88690/WholeContractBookInOneAnswer": 1
+    "88690/AugustAnswersForAugust": 1
+    "88690/AllTimeFiguresUnchanged": 1
+  hidden_regressions: []
+reuse: null
+# A9 from gate-2026-11-14T03-34-48-690Z.json (tree 46c83eea). The oracle does not compile against the
+# baseline (AL0132, new PostedRevenueBetween), so every row fails there and all seven are weighted,
+# AllTimeFiguresUnchanged included (A9 rule: weights are the rows that fail on baseline#1).
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
+  naive/period-filter-on-join: { partial_credit: 0.42857142857142855 }
+  naive/zero-from-alltime-postings: { partial_credit: 0.5714285714285714 }
+  naive/alltime-overwritten: { partial_credit: 0.5714285714285714 }
