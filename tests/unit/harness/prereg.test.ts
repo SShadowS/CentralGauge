@@ -1528,3 +1528,216 @@ Deno.test("parseStageBDecision (H-91): an amendment: selection line is an approv
   );
   assertEquals(d?.amendments, ["selection", "design"]);
 });
+
+// H-97: the owner-approved stage-B effect change 0.30 -> 0.37 at 39 tasks
+// (decisions/2026-11-14-n39-prereg-amendment.md, "Owner ruling: effect 0.37"),
+// recorded as a `simulation` amendment: only args.effect and args.grid move.
+const SIM_FROM = STAGE_A_N39.simulation;
+const GRID39 = { tasks: [39], repeats: [3, 5, 8] };
+const SIM_TO = {
+  ...SIM_FROM,
+  args: { ...SIM_FROM.args, effect: 0.37, grid: GRID39 },
+};
+const SIM_AM = {
+  key: "simulation",
+  from: SIM_FROM,
+  to: SIM_TO,
+  reason: "N=39: minimum detectable effect 0.30 -> 0.37 at 39 x 8 (H-96)",
+  approval: "OWNER-APPROVED: Amend effect to 0.37 (2026-11-14T19:45:00Z)",
+};
+/** A simulation amendment whose `to` is also the document's simulation block. */
+const docSim = (
+  to: unknown = SIM_TO,
+  o: Record<string, unknown> = {},
+) =>
+  doc39({
+    simulation: to,
+    amendments: [SEL_AM, { ...SIM_AM, to }],
+    ...o,
+  });
+const simOut = (args: unknown = SIM_TO.args) => ({
+  ...ctx().simulation,
+  json: {
+    ...ctx().simulation.json,
+    args,
+    decision: { design: { tasks: 39, repeats: 5 } },
+  },
+});
+const problemsSim = async (
+  doc: Promise<Parameters<typeof preregProblems>[0]>,
+  c: Parameters<typeof ctx39>[0] = {},
+) =>
+  (await preregProblems(
+    await doc,
+    ctx39({
+      approved: ["selection", "simulation"],
+      simulation: simOut(),
+      ...c,
+    }),
+  )).join("\n");
+
+Deno.test("simulation amendment (H-97): the approved effect 0.37 and grid 39 pass; stage A is unchanged", async () => {
+  const doc = await docSim();
+  assertEquals(await protocolSha(doc), APPROVED_N39);
+  assertEquals(await problemsSim(docSim()), "");
+});
+
+Deno.test("simulation amendment (H-97): a run that did not record the amended effect and grid is refused", async () => {
+  for (
+    const args of [
+      SIM_FROM.args,
+      { ...SIM_FROM.args, effect: 0.37 },
+      { ...SIM_FROM.args, grid: GRID39 },
+      { ...SIM_TO.args, effect: 0.3 },
+      { ...SIM_TO.args, grid: { tasks: [39], repeats: [8] } },
+    ]
+  ) {
+    const p = await problemsSim(docSim(), { simulation: simOut(args) });
+    assert(p.includes("frozen script and arguments"), p);
+  }
+});
+
+Deno.test("simulation amendment (H-97): no amendment line, edited bytes or no stage-B decision are refused", async () => {
+  const unapproved = await problemsSim(docSim(), { approved: ["selection"] });
+  assert(
+    unapproved.includes(
+      "amendment of simulation is not externally approved (stage-B decision file)",
+    ),
+    unapproved,
+  );
+  const edited = await problemsSim(docSim(), {
+    stageB: {
+      ...SB,
+      file_sha256: H("x"),
+      approved_amendments: ["selection", "simulation"],
+    },
+  });
+  assert(edited.includes("amendment of simulation is not externally approved"));
+  const none = await problemsSim(docSim(), { stageB: null });
+  assert(none.includes("amendment of simulation is not externally approved"));
+});
+
+Deno.test("simulation amendment (H-97): a `to` that is not the document's block, or a `from` that is not stage A, is refused", async () => {
+  const mismatch = await problemsSim(
+    doc39({
+      simulation: { ...SIM_TO, args: { ...SIM_TO.args, effect: 0.38 } },
+      amendments: [SEL_AM, SIM_AM],
+    }),
+  );
+  assert(
+    mismatch.includes("amendment of simulation does not match its value"),
+    mismatch,
+  );
+  // `from` is reverted by stageAOf, so a forged `from` breaks the stage-A anchor.
+  const from = { ...SIM_FROM, args: { ...SIM_FROM.args, sims: 2000 } };
+  const to = { ...SIM_TO, args: { ...SIM_TO.args, sims: 2000 } };
+  const forged = await problemsSim(
+    doc39({ simulation: to, amendments: [SEL_AM, { ...SIM_AM, from, to }] }),
+    { simulation: simOut(to.args) },
+  );
+  assert(forged.includes("differs from the approved stage A"), forged);
+  assert(forged.includes("does not descend from stage A"), forged);
+});
+
+Deno.test("simulation amendment (H-97): only args.effect and args.grid may change, effect in (0, 0.9)", async () => {
+  const scope =
+    "a simulation amendment may change only args.effect and args.grid";
+  for (
+    const to of [
+      { ...SIM_TO, args: { ...SIM_TO.args, seed: 1 } },
+      { ...SIM_TO, args: { ...SIM_TO.args, confirm_sims: 100 } },
+      { ...SIM_TO, args: { ...SIM_TO.args, power_gate: "stress" } },
+      { ...SIM_TO, script_sha256: H("7") },
+    ]
+  ) {
+    const p = await problemsSim(docSim(to), {
+      simulation: simOut(to.args),
+    });
+    assert(p.includes(scope), p);
+  }
+  const { sims: _s, ...dropped } = SIM_TO.args;
+  const drop = { ...SIM_TO, args: dropped };
+  const pd = await problemsSim(docSim(drop), { simulation: simOut(dropped) });
+  assert(pd.includes(scope), pd);
+  for (const effect of [0, 0.9, 0.95, -0.37]) {
+    const to = { ...SIM_TO, args: { ...SIM_TO.args, effect } };
+    const p = await problemsSim(docSim(to), { simulation: simOut(to.args) });
+    assert(p.includes(`simulation amendment effect ${effect}`), p);
+  }
+  // Nothing changed is not an amendment.
+  const noop = await problemsSim(docSim(SIM_FROM), {
+    simulation: simOut(SIM_FROM.args),
+  });
+  assert(noop.includes("simulation amendment changes nothing"), noop);
+});
+
+Deno.test("simulation amendment (H-97): two simulation amendments are refused", async () => {
+  const p = await problemsSim(
+    docSim(SIM_TO, { amendments: [SEL_AM, SIM_AM, SIM_AM] }),
+  );
+  assert(p.includes("at most one simulation amendment"), p);
+});
+
+Deno.test("simulation amendment (H-97): a grid needs a simulation amendment; stage A never carries one", () => {
+  const parses = (o: Record<string, unknown>) =>
+    PreregSchema.safeParse({ ...STAGE_A_N39, ...o }).success;
+  // A stage-A document with a grid.
+  assert(!parses({ simulation: SIM_TO }));
+  assert(!parses({ simulation: { ...SIM_FROM, args: SIM_TO.args } }));
+  // A stage-B document whose grid has no simulation amendment, or another one.
+  assert(!parses({ simulation: SIM_TO, amendments: [SEL_AM] }));
+  assert(
+    !parses({
+      simulation: SIM_TO,
+      amendments: [{
+        ...SIM_AM,
+        to: {
+          ...SIM_TO,
+          args: { ...SIM_TO.args, grid: { tasks: [40], repeats: [8] } },
+        },
+      }],
+    }),
+  );
+  assert(parses({ simulation: SIM_TO, amendments: [SIM_AM] }));
+  // Grid shape: positive integer lists of 1 to 5 values, nothing else.
+  for (
+    const grid of [
+      { tasks: [], repeats: [8] },
+      { tasks: [39.5], repeats: [8] },
+      { tasks: [0], repeats: [8] },
+      { tasks: [39], repeats: [1, 2, 3, 4, 5, 6] },
+      { tasks: [39] },
+      { tasks: [39], repeats: [8], extra: 1 },
+      "39x3,5,8",
+    ]
+  ) {
+    const to = { ...SIM_TO, args: { ...SIM_TO.args, grid } };
+    assert(
+      !parses({ simulation: to, amendments: [{ ...SIM_AM, to }] }),
+      JSON.stringify(grid),
+    );
+  }
+  // A simulation amendment's from and to are simulation blocks.
+  assert(
+    !parses({
+      amendments: [{ ...SIM_AM, from: SIM_FROM.script_sha256, to: H("7") }],
+    }),
+  );
+});
+
+Deno.test("simulation amendment (H-97): the paths without one are unchanged", async () => {
+  assertEquals(await preregProblems(await stageB(), ctx()), []);
+  assertEquals(await problems39(), "");
+  // The amended args never pass under the frozen block.
+  const p = await problemsSim(doc39(), { simulation: simOut() });
+  assert(p.includes("frozen script and arguments"), p);
+});
+
+Deno.test("parseStageBDecision (H-97): an amendment: simulation line is an approved key", () => {
+  const d = parseStageBDecision(
+    `stage_b_sha256: ${H("b")}\ntag: harness-v2-prereg-b\ntag_object: ${
+      "c".repeat(40)
+    }\namendment: selection\namendment: design\namendment: simulation\nOWNER-APPROVED: stage B (2026-11-14T20:00:00Z)\n`,
+  );
+  assertEquals(d?.amendments, ["selection", "design", "simulation"]);
+});
