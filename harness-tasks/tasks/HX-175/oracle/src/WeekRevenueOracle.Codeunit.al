@@ -24,6 +24,12 @@ codeunit 88585 "HX175 Week Revenue Oracle"
         WeekRevenue."Week No." := 20;
         WeekRevenue.Amount := 555;
         WeekRevenue.Insert();
+        WeekRevenue.Init();
+        WeekRevenue."Vehicle No." := 'HX175-B1';
+        WeekRevenue.Year := 2027;
+        WeekRevenue."Week No." := 30;
+        WeekRevenue.Amount := 777;
+        WeekRevenue.Insert();
 
         WeeklyRevenueMgt.BuildWeekRevenue('HX175-A1');
         WeeklyRevenueMgt.BuildWeekRevenue('HX175-A1');
@@ -41,7 +47,9 @@ codeunit 88585 "HX175 Week Revenue Oracle"
         Assert.AreEqual(20270315D, WeekRevenue."Week Start", 'Week 11 starts on Monday 15 March');
         WeekRevenue.Reset();
         WeekRevenue.SetRange("Vehicle No.", 'HX175-B1');
-        Assert.AreEqual(0, WeekRevenue.Count(), 'Another vehicle is not built');
+        Assert.AreEqual(1, WeekRevenue.Count(), 'Another vehicle is not built and keeps its rows');
+        Assert.IsTrue(WeekRevenue.Get('HX175-B1', 2027, 30), 'Another vehicle keeps its built row');
+        Assert.AreEqual(777, WeekRevenue.Amount, 'Another vehicle keeps its built amount');
     end;
 
     [Test]
@@ -113,7 +121,10 @@ codeunit 88585 "HX175 Week Revenue Oracle"
         InsertEntry('HX175-A3', 20270101D, 40);
         InsertEntry('HX175-A3', 20270104D, 25);
         InsertEntry('HX175-A3', 20270310D, 100);
+        InitVehicle('HX175-B3');
+        InsertEntry('HX175-B3', 20270112D, 333);
         WeeklyRevenueMgt.BuildWeekRevenue('HX175-A3');
+        WeeklyRevenueMgt.BuildWeekRevenue('HX175-B3');
         Commit();
 
         Runner.SetList('HX175-A3', 2027);
@@ -133,8 +144,8 @@ codeunit 88585 "HX175 Week Revenue Oracle"
         Assert.AreEqual(52, TempWeekBuffer."Week No.", 'The list ends with week 52');
         TempWeekBuffer.SetRange("Week No.", 2);
         TempWeekBuffer.FindFirst();
-        Assert.AreEqual(0, TempWeekBuffer.Amount, 'A week without a row is listed at 0');
-        Assert.AreEqual(0, TempWeekBuffer."Entry Count", 'A week without a row counts 0 entries');
+        Assert.AreEqual(0, TempWeekBuffer.Amount, 'A week without a row of this vehicle is listed at 0');
+        Assert.AreEqual(0, TempWeekBuffer."Entry Count", 'A week without a row of this vehicle counts 0 entries');
         TempWeekBuffer.SetRange("Week No.", 10);
         TempWeekBuffer.FindFirst();
         Assert.AreEqual(100, TempWeekBuffer.Amount, 'Week 10 shows its built amount');

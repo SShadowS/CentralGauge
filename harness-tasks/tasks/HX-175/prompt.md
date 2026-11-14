@@ -44,6 +44,6 @@ Add codeunit 70577 `CGR Weekly Revenue Mgt` (Reporting) with:
 - `procedure BuildWeekRevenue(VehicleNo: Code[20])`
 - `procedure GetYearWeeks(VehicleNo: Code[20]; Year: Integer; var WeekBuffer: Record "CGR Vehicle Week Revenue" temporary)`
 
-BuildWeekRevenue replaces the vehicle's rows with one row for each week in which the vehicle has ledger entries: "Week No." is the week's number, Year the year that week number belongs to, "Week Start" the week's Monday, Amount the sum of the week's entries and "Entry Count" their number. The week that spans New Year is reported once, as one row holding all seven of its days, like any other week. GetYearWeeks fills WeekBuffer with one row for every week of Year, from week 1 to the year's last week, with the vehicle's Amount and "Entry Count" from its built rows, and 0 for a week without one.
+BuildWeekRevenue replaces the vehicle's rows with one row for each week in which the vehicle has ledger entries: "Week No." is the week's number, Year the year that week number belongs to, "Week Start" the week's Monday, Amount the sum of the week's entries and "Entry Count" their number. The week that spans New Year is reported once, as one row holding all seven of its days, like any other week. GetYearWeeks fills WeekBuffer with one row for every week of Year, from week 1 to the year's last week, each holding the vehicle, Year, "Week No." and "Week Start", with the vehicle's Amount and "Entry Count" from its built rows, and 0 for a week without one.
 
 Write the AL for the new codeunit and explain briefly.
