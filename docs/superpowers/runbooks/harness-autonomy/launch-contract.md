@@ -57,12 +57,14 @@ Needs the owner: dropping pi, fewer than 6 tasks, changing the primary metric.
 - Paid API spend (non-subscription providers, for example OpenRouter for pi arms): hard stop
   at USD 150 total. Track it in `<coord>/decisions/spend.md`.
 - Campaigns start without asking, after a `--sample 1` dry run whose cost estimate fits the
-  remaining paid budget.
+  remaining paid budget. Screening and pre-screen campaigns on subscription accounts follow
+  standing grant 1 instead (`decisions\2026-11-08-standing-grants.md`).
 
 ## Forbidden without the owner
 
 - Starting, stopping, restarting, recreating or removing any BC container. A stopped container:
-  `coord ask`, move on to other work.
+  `coord ask`, move on to other work. Exception: lane-ops may start and stop Cronus281-283
+  under standing grant 3 (`decisions\2026-11-08-standing-grants.md`).
 - Production deploy (`wrangler deploy`, `npm run deploy`), `sync-catalog --apply`, any ingest
   to the site (`bench` must run with `--no-ingest`), D1 migrations.
 - Editing or weakening tests or oracles to make something pass. Changing safety hooks, hook
