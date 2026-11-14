@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88600/BufferSummaryIgnoresStoredCharges": 1
+    "88600/ProposalSummaryIgnoresStoredCharges": 1
+    "88600/NotBilledLineAddsNothingToTheTotal": 1
+    "88600/EmptyBufferSummarizesToZero": 1
+  hidden_regressions: []
+reuse: null
+# Provisional (builder). The oracle does not compile against the baseline (new SummarizeReturnCharges), so every
+# row fails there. The lane does A9 from the gate report.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
