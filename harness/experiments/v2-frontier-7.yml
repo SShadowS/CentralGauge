@@ -1,0 +1,12 @@
+# W2-24 frontier-hard pool, run 2 (owner, decisions\2026-11-14-parallel-work-r2.md item 1). Built like v2-frontier-1.
+# Exploratory only: the id must not start with v2-screen- or v2-prescreen-, which is what keeps it out of screening.ts and
+# prescreen.ts status, selection and the confirmatory analysis.
+id: v2-frontier-7
+hypothesis: "Exploratory: how hard the Sonnet 5 dead tasks with no Opus cells yet are for Opus 5.5 on the plain and realistic+LSP setups; never a screening or confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-frontier-opus-plain
+variants: [cc-v2-frontier-opus-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+# Orchestrator option C (2026-11-14): dead in screening.ts status with no Opus cells. HX-154 is the W2-13 reshaped tree.
+tasks: "harness-tasks/tasks/{HX-142,HX-151,HX-152,HX-154,HX-158,HX-163,HX-168}"
+repeats: 3
