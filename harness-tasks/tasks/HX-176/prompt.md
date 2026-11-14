@@ -9,4 +9,4 @@ The new structure:
 - Move the summary code out of BuildReturnProposal into a new public procedure `SummarizeReturnCharges` on `CGR Lease Return Proposal`. It takes the return charge buffer as its first parameter and `var LineCount: Integer` as its second, sets LineCount to the number of lines, and returns the total as a Decimal. Other apps call it with a buffer they built.
 - BuildReturnProposal uses SummarizeReturnCharges for its summary.
 
-Everything else stays as it is today: a line that is not billed to the customer counts as a line and adds nothing to the total, and an empty buffer gives 0 lines and a total of 0. A summary covers only the lines of the proposal or buffer it is given, also when return charges accepted earlier are stored for the same lease or for other leases.
+Everything else stays as it is today: a line that is not billed to the customer counts as a line and adds nothing to the total, and an empty buffer gives 0 lines and a total of 0.
