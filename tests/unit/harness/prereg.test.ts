@@ -1334,3 +1334,197 @@ Deno.test("protocol change (H-65): a provisional stage-B run with a --grid is no
   );
   assert(p.some((x) => x.includes("frozen script and arguments")), p.join());
 });
+
+// H-91: the owner-approved N=39 set (decisions/2026-11-14-n39-selection.md,
+// decisions/2026-11-14-n39-prereg-amendment.md). The fixture is the committed
+// selection.json itself: status too_few, selection.n 40, 39 selected.
+const REAL_SEL = JSON.parse(
+  await Deno.readTextFile("harness-tasks/v2/selection.json"),
+);
+const realSel = () => structuredClone(REAL_SEL);
+const STAGE_A_N39 = {
+  ...STAGE_A,
+  held_out: { ...STAGE_A.held_out, tasks: REAL_SEL.held_out },
+};
+const APPROVED_N39 = await protocolSha(PreregSchema.parse(STAGE_A_N39));
+const SEL_AM = {
+  key: "selection",
+  from: { status: "ok", n: 40, selected: 40, shortfalls: [], deviations: [] },
+  to: {
+    status: "too_few",
+    n: 40,
+    selected: 39,
+    shortfalls: ["stratum intermediate: 23 of 24"],
+    deviations: ["HX-159 (hard) fills the intermediate stratum"],
+  },
+  reason: "N=39: the replacement rounds left intermediate at 23 of 24",
+  approval: "OWNER-APPROVED: N=39 selection (2026-11-14T15:00:00Z)",
+};
+const selAm = (to: Record<string, unknown> = {}) => ({
+  ...SEL_AM,
+  to: { ...SEL_AM.to, ...to },
+});
+const doc39 = async (o: Record<string, unknown> = {}) =>
+  PreregSchema.parse({
+    ...(await stageB()),
+    held_out: STAGE_A_N39.held_out,
+    stage_a: { sha256: APPROVED_N39 },
+    selection: {
+      path: "harness-tasks/v2/selection.json",
+      sha256: H("5"),
+      selected: REAL_SEL.selection.selected,
+      held_out: REAL_SEL.held_out,
+    },
+    design: { tasks: 39, repeats: 5 },
+    amendments: [SEL_AM],
+    ...o,
+  });
+const ctx39 = (
+  o: { json?: unknown; approved?: string[]; [k: string]: unknown } = {},
+) => {
+  const { json = REAL_SEL, approved = ["selection"], ...rest } = o;
+  return ctx({
+    anchor: {
+      approved_protocol_sha256: APPROVED_N39,
+      tag_protocol_sha256: APPROVED_N39,
+      tag_moved: false,
+    },
+    taskIds: [...REAL_SEL.selection.selected, ...REAL_SEL.held_out],
+    selection: { sha256: H("5"), json },
+    simulation: {
+      ...ctx().simulation,
+      json: {
+        ...ctx().simulation.json,
+        decision: { design: { tasks: 39, repeats: 5 } },
+      },
+    },
+    stageB: { ...SB, approved_amendments: approved },
+    ...rest,
+  });
+};
+const problems39 = async (
+  d: Record<string, unknown> = {},
+  c: Parameters<typeof ctx39>[0] = {},
+) => (await preregProblems(await doc39(d), ctx39(c))).join("\n");
+
+Deno.test("selection amendment (H-91): the approved N=39 too_few selection passes", async () => {
+  assertEquals(REAL_SEL.status, "too_few");
+  assertEquals(await problems39(), "");
+});
+
+Deno.test("selection amendment (H-91): without it the too_few selection is refused exactly as before", async () => {
+  const p = await problems39({ amendments: [] });
+  assert(
+    p.includes(
+      "selection harness-tasks/v2/selection.json does not match the pre-registration",
+    ),
+    p,
+  );
+  assert(p.includes("selection.n 40 differs from 39 selected tasks"), p);
+});
+
+Deno.test("selection amendment (H-91): a different shortfall, deviation, count, n or status is refused", async () => {
+  for (
+    const to of [
+      { shortfalls: ["stratum intermediate: 22 of 24"] },
+      { shortfalls: [] },
+      { deviations: [] },
+      { deviations: ["HX-160 (hard) fills the intermediate stratum"] },
+      { selected: 38 },
+      { n: 39 },
+      { status: "ok" },
+    ]
+  ) {
+    const p = await problems39({ amendments: [selAm(to)] });
+    assert(p.includes("amendment of selection does not match its value"), p);
+    assert(p.includes("does not match the pre-registration"), p);
+  }
+  // The committed file differs from the recorded amendment.
+  const other = realSel();
+  other.selection.shortfalls = ["stratum intermediate: 22 of 24"];
+  const p = await problems39({}, { json: other });
+  assert(p.includes("amendment of selection does not match its value"), p);
+  assert(p.includes("does not match the pre-registration"), p);
+});
+
+Deno.test("selection amendment (H-91): no amendment line in the stage-B decision file is refused", async () => {
+  const p = await problems39({}, { approved: ["design"] });
+  assert(
+    p.includes(
+      "amendment of selection is not externally approved (stage-B decision file)",
+    ),
+    p,
+  );
+  assert(p.includes("does not match the pre-registration"), p);
+  assert(p.includes("selection.n 40 differs from 39 selected tasks"), p);
+});
+
+Deno.test("selection amendment (H-91): forged under a valid stage-A anchor is refused", async () => {
+  // The amendment was written into the document after the stage-B bytes were approved.
+  const edited = await problems39({}, {
+    stageB: { ...SB, file_sha256: H("x"), approved_amendments: ["selection"] },
+  });
+  assert(edited.includes("amendment of selection is not externally approved"));
+  assert(edited.includes("does not match the pre-registration"), edited);
+  const none = await problems39({}, { stageB: null });
+  assert(none.includes("amendment of selection is not externally approved"));
+  assert(none.includes("does not match the pre-registration"), none);
+  // Two selection amendments: refused even when both are approved.
+  const two = await problems39({ amendments: [SEL_AM, SEL_AM] });
+  assert(two.includes("at most one selection amendment"), two);
+});
+
+Deno.test("selection amendment (H-91): the ok path is unchanged; an amendment does not fit an ok selection", async () => {
+  assertEquals(await preregProblems(await stageB(), ctx()), []);
+  const ok = realSel();
+  ok.status = "ok";
+  ok.selection.n = 39;
+  ok.selection.shortfalls = [];
+  ok.selection.deviations = [];
+  assertEquals(await problems39({ amendments: [] }, { json: ok }), "");
+  assert(
+    (await problems39({}, { json: ok })).includes(
+      "amendment of selection does not match its value",
+    ),
+  );
+});
+
+Deno.test("selection amendment (H-91): design.tasks must still be 39; a design amendment to 39 works", async () => {
+  const p = await problems39({ design: { tasks: 40, repeats: 5 } });
+  assert(p.includes("design tasks 40 differ from the 39 selected tasks"), p);
+  const designAm = {
+    key: "design",
+    from: { tasks: 40, repeats: 5 },
+    to: { tasks: 39, repeats: 5 },
+    reason: "N=39",
+    approval: "OWNER-APPROVED: design 39x5 (2026-11-14T15:00:00Z)",
+  };
+  const sim40 = {
+    ...ctx().simulation,
+    json: {
+      ...ctx().simulation.json,
+      decision: { design: { tasks: 40, repeats: 5 } },
+    },
+  };
+  assertEquals(
+    await problems39({ amendments: [SEL_AM, designAm] }, {
+      simulation: sim40,
+      approved: ["selection", "design"],
+    }),
+    "",
+  );
+  assert(
+    (await problems39({ amendments: [SEL_AM, designAm] }, {
+      simulation: sim40,
+    })).includes("amendment of design is not externally approved"),
+  );
+});
+
+Deno.test("parseStageBDecision (H-91): an amendment: selection line is an approved key", () => {
+  const d = parseStageBDecision(
+    `stage_b_sha256: ${H("b")}\ntag: harness-v2-prereg-b\ntag_object: ${
+      "c".repeat(40)
+    }\namendment: selection\namendment: design\nOWNER-APPROVED: stage B (2026-11-14T15:00:00Z)\n`,
+  );
+  assertEquals(d?.amendments, ["selection", "design"]);
+});

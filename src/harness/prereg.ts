@@ -136,8 +136,13 @@ export const PreregSchema = z.strictObject({
   }).nullable(),
   compiler_identity: z.string().min(1).nullable(),
   stage_b_approval: Approval.nullable(),
+  /**
+   * `to` equals the document's value at `key`. H-91: a `selection` amendment
+   * instead records the committed selection.json as `to` = { status, n,
+   * selected (count), shortfalls, deviations } (selectionRecord).
+   */
   amendments: z.array(z.strictObject({
-    key: z.enum(["design", "family", "confirmatory"]),
+    key: z.enum(["design", "family", "confirmatory", "selection"]),
     from: z.json(),
     to: z.json(),
     reason: z.string().trim().min(1),
@@ -443,8 +448,31 @@ export async function preregProblems(
   }
   const authorized = (key: string) =>
     bOk && b!.approved_amendments.includes(key);
+  const sel = c.selection?.json as {
+    status?: string;
+    held_out?: string[];
+    selection?: {
+      n?: number;
+      selected?: string[];
+      shortfalls?: unknown;
+      deviations?: unknown;
+    };
+  } | undefined;
+  // H-91: what a selection amendment records about the committed selection.json.
+  const selectionRecord = {
+    status: sel?.status,
+    n: sel?.selection?.n,
+    selected: sel?.selection?.selected?.length,
+    shortfalls: sel?.selection?.shortfalls,
+    deviations: sel?.selection?.deviations,
+  };
+  const selAms = doc.amendments.filter((a) => a.key === "selection");
+  if (selAms.length > 1) out.push("at most one selection amendment");
   for (const am of doc.amendments) {
-    if (!same((doc as Record<string, unknown>)[am.key], am.to)) {
+    const value = am.key === "selection"
+      ? selectionRecord
+      : (doc as Record<string, unknown>)[am.key];
+    if (!same(value, am.to)) {
       out.push(`amendment of ${am.key} does not match its value`);
     }
     if (!authorized(am.key)) {
@@ -496,21 +524,30 @@ export async function preregProblems(
   if (!same(sorted(c.taskIds), sorted([...s.selected, ...s.held_out]))) {
     out.push("campaign task set differs from selected + held-out");
   }
-  const sel = c.selection?.json as {
-    status?: string;
-    held_out?: string[];
-    selection?: { n?: number; selected?: string[] };
-  } | undefined;
+  // H-91: a too_few selection binds only through exactly one externally
+  // approved selection amendment that records the committed file.
+  const selAm = selAms.length === 1 && authorized("selection") &&
+      same(selectionRecord, selAms[0]!.to)
+    ? selAms[0]!.to as { n: number }
+    : null;
+  const statusOk = sel?.status === "ok" ||
+    (selAm !== null && sel?.status === "too_few");
   // Appendix section 8: status, held_out, selection.selected and selection.n.
   if (
-    !c.selection || c.selection.sha256 !== s.sha256 || sel?.status !== "ok" ||
+    !c.selection || c.selection.sha256 !== s.sha256 || !statusOk ||
     !same(sorted(sel.selection?.selected ?? []), sorted(s.selected)) ||
     !same(sorted(sel.held_out ?? []), sorted(s.held_out))
   ) {
     out.push(`selection ${s.path} does not match the pre-registration`);
   }
   // A committed "ok" selection has no shortfalls, so its requested n is the selected count.
-  if (c.selection && sel?.selection?.n !== s.selected.length) {
+  if (selAm) {
+    if (sel?.selection?.n !== selAm.n) {
+      out.push(
+        `selection.n ${sel?.selection?.n} differs from the selection amendment's recorded n ${selAm.n}`,
+      );
+    }
+  } else if (c.selection && sel?.selection?.n !== s.selected.length) {
     out.push(
       `selection.n ${sel?.selection?.n} differs from ${s.selected.length} selected tasks`,
     );
@@ -628,7 +665,7 @@ export function parseStageBDecision(
   }
   const amendments = [
     ...text.matchAll(
-      /^amendment:[ \t]*(design|family|confirmatory)[ \t\r]*$/gm,
+      /^amendment:[ \t]*(design|family|confirmatory|selection)[ \t\r]*$/gm,
     ),
   ].map((m) => m[1]!);
   return { stage_b_sha256, tag, tag_object, amendments };
