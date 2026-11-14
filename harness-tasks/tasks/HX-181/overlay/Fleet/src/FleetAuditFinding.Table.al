@@ -4,15 +4,16 @@ table 70126 "CGR Fleet Audit Finding"
 
     fields
     {
-        field(1; "Vehicle No."; Code[20]) { }
-        field(2; "Line No."; Integer) { }
-        field(3; "Audit Date"; Date) { }
-        field(4; Finding; Text[250]) { }
-        field(5; "Check Failed"; Boolean) { }
+        field(1; "Damage Entry No."; Integer) { }
+        field(2; "Vehicle No."; Code[20]) { }
+        field(3; "Reported On"; Date) { }
+        field(4; Description; Text[100]) { }
+        field(5; "Audit Date"; Date) { }
     }
 
     keys
     {
-        key(PK; "Vehicle No.", "Line No.") { Clustered = true; }
+        key(PK; "Damage Entry No.") { Clustered = true; }
+        key(Vehicle; "Vehicle No.") { }
     }
 }

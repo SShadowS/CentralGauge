@@ -1,16 +1,15 @@
 v: 1
 partial_credit:
   weights:
-    "88675/PassingVehicleListsItsFindings": 1
-    "88675/VehicleWithoutFindingsHasNoLine": 1
-    "88675/FailedVehicleListsOnlyCheckFailedLine": 1
-    "88675/FailedVehicleShowsCheckError": 1
-    "88675/OtherVehiclesKeepFindings": 1
-    "88675/SelectionOnlyIsAudited": 1
-    "88675/AuditDateBoundsFindings": 1
+    "88675/OpenDamagesBecomeFindings": 1
+    "88675/FailedChecksNamedWithReason": 1
+    "88675/HalfAuditedVehicleShowsNoFinding": 1
+    "88675/VehiclesBetweenFailuresKeepFindings": 1
+    "88675/MileageFilterScopesTheAudit": 1
+    "88675/EarlierAuditDateLimitsFindings": 1
   hidden_regressions: []
 reuse: null
 # Provisional (A4). The oracle does not compile against the baseline (new AuditVehicles), so every
-# row fails there and all seven are weighted. The lane does A9 from the gate report.
+# row fails there and all six are weighted. The lane does A9 from the gate report.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }

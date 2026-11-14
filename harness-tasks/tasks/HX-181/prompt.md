@@ -1,13 +1,13 @@
-# Task 5181: Audit a selection of vehicles in one run
+# Task 5181: Run the damage audit for many vehicles at once
 
 Requested by Fleet operations.
 
-Before each season, fleet operations audit the vehicles they look after. Today they do it one vehicle at a time with `CGR Fleet Audit`.AuditVehicle in the Fleet app, which runs `CGR Vehicle Audit Check` for the vehicle on an audit date and returns its findings in a temporary `CGR Fleet Audit Finding` list. For the whole fleet that takes them a day, so they want the audit for a selection of vehicles in one run.
+The damage audit, `CGR Fleet Audit`.AuditVehicle in the Fleet app, lists the open damages of one vehicle as of an audit date in a temporary `CGR Fleet Audit Finding` list, one finding per damage entry; the work is done by `CGR Vehicle Audit Check`. Before the season starts, the fleet team wants to audit a whole group of vehicles with one call, and to see at the end which vehicles could not be audited and why.
 
-Add this procedure to `CGR Fleet Audit`:
+New procedure in `CGR Fleet Audit`:
 
-- `procedure AuditVehicles(var Vehicle: Record "CGR Vehicle"; AuditDate: Date; var Finding: Record "CGR Fleet Audit Finding" temporary)`
+- `procedure AuditVehicles(var Vehicle: Record "CGR Vehicle"; AuditDate: Date; var Finding: Record "CGR Fleet Audit Finding" temporary; var CheckErrors: Dictionary of [Code[20], Text])`
 
-For every vehicle in the caller's selection, the finding list holds the findings that `CGR Vehicle Audit Check` gives for that vehicle on AuditDate, as AuditVehicle lists them; a vehicle without findings has no line. Each vehicle is audited on its own, so a vehicle whose check fails does not stop the run: for that vehicle the finding list holds a single line, Line No. 0 with Check Failed set and the check's error text as its Finding, and none of the findings the check had already reported for it before it failed. The other vehicles keep their findings.
+Every vehicle that the filters on Vehicle select goes through `CGR Vehicle Audit Check` for AuditDate, and Finding ends up with the findings AuditVehicle would give for those vehicles. A vehicle the check cannot finish does not end the run: the run goes on with the next vehicle and records the vehicle number in CheckErrors, with the message the check stopped on. CheckErrors names no other vehicle. In Finding, a vehicle that is in CheckErrors shows no findings at all, also when the check had found open damages for it before it stopped, so the team never acts on half an audit.
 
-Keep `CGR Vehicle Audit Check` and AuditVehicle as they are.
+`CGR Vehicle Audit Check` and AuditVehicle stay unchanged.

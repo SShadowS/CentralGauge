@@ -12,7 +12,7 @@ pass_to_pass:
 fail_to_pass:
   depends_on: [Core, Fleet]
   tests:
-    - { codeunit: 88675, procedures: [PassingVehicleListsItsFindings, VehicleWithoutFindingsHasNoLine, FailedVehicleListsOnlyCheckFailedLine, FailedVehicleShowsCheckError, OtherVehiclesKeepFindings, SelectionOnlyIsAudited, AuditDateBoundsFindings] }
+    - { codeunit: 88675, procedures: [OpenDamagesBecomeFindings, FailedChecksNamedWithReason, HalfAuditedVehicleShowsNoFinding, VehiclesBetweenFailuresKeepFindings, MileageFilterScopesTheAudit, EarlierAuditDateLimitsFindings] }
 mutants: []
 contamination: null
 limits: { timeout_min: 30 }
