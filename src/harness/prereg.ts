@@ -42,6 +42,40 @@ const FileRef = z.strictObject({ path: z.string().min(1), sha256: Sha256Hex });
  */
 export const PREREG_P_VALUE = "bootstrap-t";
 
+/** H-97: power-sim's recorded --grid (GridSpec): 1 to 5 positive integers per list. */
+const GridLists = z.array(z.number().int().positive()).min(1).max(5);
+const GridSchema = z.strictObject({ tasks: GridLists, repeats: GridLists });
+
+const SimulationSchema = z.strictObject({
+  script_sha256: Sha256Hex,
+  // Every simulation argument is numeric except power_gate (M11-09b), an enum,
+  // and grid (H-97), which only a simulation amendment may carry.
+  args: z.record(z.string(), z.json())
+    .superRefine(
+      (args, ctx) => {
+        for (const [k, v] of Object.entries(args)) {
+          const ok = k === "power_gate"
+            ? v === "fitted" || v === "stress"
+            : k === "grid"
+            ? GridSchema.safeParse(v).success
+            : typeof v === "number";
+          if (!ok) {
+            ctx.addIssue({
+              code: "custom",
+              path: [k],
+              message: k === "power_gate"
+                ? 'power_gate must be "fitted" or "stress"'
+                : k === "grid"
+                ? "grid is { tasks, repeats }: 1 to 5 positive integers each"
+                : "simulation args are numeric",
+            });
+          }
+        }
+      },
+    ),
+});
+type Simulation = z.output<typeof SimulationSchema>;
+
 export const PreregSchema = z.strictObject({
   v: z.literal(1),
   experiment: z.string().min(1),
@@ -94,28 +128,7 @@ export const PreregSchema = z.strictObject({
     effort_execution: z.literal("every_attempt"),
   }),
   exploratory_metrics: z.array(z.string().min(1)).min(1),
-  simulation: z.strictObject({
-    script_sha256: Sha256Hex,
-    // Every simulation argument is numeric except power_gate (M11-09b), an enum.
-    args: z.record(z.string(), z.union([z.number(), z.string()])).superRefine(
-      (args, ctx) => {
-        for (const [k, v] of Object.entries(args)) {
-          const ok = k === "power_gate"
-            ? v === "fitted" || v === "stress"
-            : typeof v === "number";
-          if (!ok) {
-            ctx.addIssue({
-              code: "custom",
-              path: [k],
-              message: k === "power_gate"
-                ? 'power_gate must be "fitted" or "stress"'
-                : "simulation args are numeric",
-            });
-          }
-        }
-      },
-    ),
-  }),
+  simulation: SimulationSchema,
   design_rule: z.string().trim().min(1),
   // Stage B keys: empty in stage A.
   stage_a: z.strictObject({ sha256: Sha256Hex }).nullable(),
@@ -139,10 +152,18 @@ export const PreregSchema = z.strictObject({
   /**
    * `to` equals the document's value at `key`. H-91: a `selection` amendment
    * instead records the committed selection.json as `to` = { status, n,
-   * selected (count), shortfalls, deviations } (selectionRecord).
+   * selected (count), shortfalls, deviations } (selectionRecord). H-97: a
+   * `simulation` amendment's from and to are simulation blocks; it may change
+   * only args.effect and args.grid (simulationAmendmentProblems).
    */
   amendments: z.array(z.strictObject({
-    key: z.enum(["design", "family", "confirmatory", "selection"]),
+    key: z.enum([
+      "design",
+      "family",
+      "confirmatory",
+      "selection",
+      "simulation",
+    ]),
     from: z.json(),
     to: z.json(),
     reason: z.string().trim().min(1),
@@ -166,6 +187,35 @@ export const PreregSchema = z.strictObject({
     approval: Approval,
   })).optional(),
 }).superRefine((p, ctx) => {
+  // H-97: a simulation amendment records simulation blocks, never bare values.
+  p.amendments.forEach((am, i) => {
+    if (am.key !== "simulation") return;
+    for (const side of ["from", "to"] as const) {
+      if (!SimulationSchema.safeParse(am[side]).success) {
+        ctx.addIssue({
+          code: "custom",
+          message: `a simulation amendment's ${side} is a simulation block`,
+          path: ["amendments", i, side],
+        });
+      }
+    }
+  });
+  // H-97: a grid binds only through a simulation amendment that records it,
+  // so a stage-A document (no amendments) never carries one.
+  const grid = p.simulation.args["grid"];
+  if (
+    grid !== undefined &&
+    !p.amendments.some((am) =>
+      am.key === "simulation" &&
+      same((am.to as { args?: { grid?: unknown } })?.args?.grid, grid)
+    )
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "a simulation grid needs a simulation amendment that records it",
+      path: ["simulation", "args", "grid"],
+    });
+  }
   const inter = p.protocol.interaction?.status === "confirmatory";
   if (p.family.includes("interaction") !== (inter && p.confirmatory)) {
     ctx.addIssue({
@@ -274,6 +324,44 @@ function simScript(doc: Prereg): { script: string; problems: string[] } {
     out.push("protocol change replaces the script with itself");
   }
   return { script: ch.to, problems: out };
+}
+
+/**
+ * H-97 (decisions/2026-11-14-n39-prereg-amendment.md, "Owner ruling: effect
+ * 0.37"): the scope of a stage-B simulation amendment. Only args.effect (in
+ * the open interval (0, 0.9) power-sim's parseEffect accepts) and args.grid
+ * may differ from `from`; the script and every other argument stay frozen.
+ * `from` itself is pinned by the stage-A anchor (stageAOf reverts to it).
+ */
+function simulationAmendmentProblems(doc: Prereg): string[] {
+  const ams = doc.amendments.filter((a) => a.key === "simulation");
+  const out: string[] = [];
+  if (ams.length > 1) out.push("at most one simulation amendment");
+  for (const am of ams) {
+    // The schema refine guarantees both sides are simulation blocks.
+    const from = am.from as Simulation;
+    const to = am.to as Simulation;
+    const rest = (s: Simulation) => {
+      const { effect: _e, grid: _g, ...args } = s.args;
+      return { script_sha256: s.script_sha256, args };
+    };
+    if (!same(rest(from), rest(to))) {
+      out.push(
+        "a simulation amendment may change only args.effect and args.grid",
+      );
+    }
+    const effect = to.args["effect"];
+    if (
+      effect !== undefined &&
+      (typeof effect !== "number" || !(effect > 0 && effect < 0.9))
+    ) {
+      out.push(
+        `simulation amendment effect ${effect} is outside (0, 0.9)`,
+      );
+    }
+    if (same(from, to)) out.push("simulation amendment changes nothing");
+  }
+  return out;
 }
 
 export function protocolSha(doc: Prereg): Promise<string> {
@@ -468,6 +556,7 @@ export async function preregProblems(
   };
   const selAms = doc.amendments.filter((a) => a.key === "selection");
   if (selAms.length > 1) out.push("at most one selection amendment");
+  out.push(...simulationAmendmentProblems(doc));
   for (const am of doc.amendments) {
     const value = am.key === "selection"
       ? selectionRecord
@@ -665,7 +754,7 @@ export function parseStageBDecision(
   }
   const amendments = [
     ...text.matchAll(
-      /^amendment:[ \t]*(design|family|confirmatory|selection)[ \t\r]*$/gm,
+      /^amendment:[ \t]*(design|family|confirmatory|selection|simulation)[ \t\r]*$/gm,
     ),
   ].map((m) => m[1]!);
   return { stage_b_sha256, tag, tag_object, amendments };
