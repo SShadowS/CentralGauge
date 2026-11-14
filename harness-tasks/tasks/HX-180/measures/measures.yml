@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88660/CancelBookingQueuesOutboxEntry": 1
+    "88660/OtherAppDeleteIsSent": 1
+    "88660/PurgeLeavesOutboxUnchanged": 1
+    "88660/PurgeThenCancelSendsOnlyCancel": 1
+  hidden_regressions: []
+reuse: null
+# Provisional (A4): every fail_to_pass row weighted 1. The lane does A9 from the gate report;
+# PurgeLeavesOutboxUnchanged is predicted to pass on baseline and to become a hidden regression.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
