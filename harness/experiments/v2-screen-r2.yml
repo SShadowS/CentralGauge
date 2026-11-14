@@ -1,0 +1,11 @@
+# M8-18b: screen of the M8-17b replacement candidates (seal harness-v2-screen-r2, master 17b2a78b; ledger 8a0a32e3). Built
+# like v2-screen-r1. Tasks = the `next screen tasks:` line of `screening.ts status --stratify-env` on the M8-16a store after
+# the r2 seal (2026-11-14). No pre-screen. One rescreen at most (v2-screen-r2b). Developmental, never confirmatory.
+id: v2-screen-r2
+hypothesis: "Screening pilot of the M8-17b replacement candidates HX-175..HX-182 on the plain and realistic+LSP arms; developmental, excluded from every confirmatory result."
+primary_metric: pass_rate
+baseline: cc-v2-plain
+variants: [cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-175,HX-176,HX-177,HX-178,HX-179,HX-180,HX-181,HX-182}"
+repeats: 3
