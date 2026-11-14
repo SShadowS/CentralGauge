@@ -3,6 +3,7 @@ partial_credit:
   weights:
     "88615/RunLogsEachInvoiceLine": 1
     "88615/OtherAppInsertIsLogged": 1
+    "88615/OtherAppPlainInsertIsLogged": 1
     "88615/PreviewLeavesLogUnchanged": 1
     "88615/PreviewThenRunLogsOnlyTheRun": 1
   hidden_regressions: []

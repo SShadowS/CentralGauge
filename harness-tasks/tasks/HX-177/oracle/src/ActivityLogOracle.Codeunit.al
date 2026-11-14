@@ -45,6 +45,28 @@ codeunit 88615 "HX177 Activity Log Oracle"
     end;
 
     [Test]
+    procedure OtherAppPlainInsertIsLogged()
+    var
+        InvoiceLine: Record "CGR Lease Invoice Line";
+    begin
+        InitHX177();
+        SeedHX177Lease('HX177-E', 500.20);
+
+        InvoiceLine.Init();
+        InvoiceLine."Contract No." := 'HX177-E';
+        InvoiceLine."Schedule Line No." := 60000;
+        InvoiceLine."Vehicle No." := 'HX177-VE';
+        InvoiceLine."Customer Name" := 'Other App Customer';
+        InvoiceLine."Due Date" := 20270215D;
+        InvoiceLine."Invoice Date" := 20270215D;
+        InvoiceLine.Amount := 63.85;
+        InvoiceLine.Insert();
+
+        Assert.AreEqual(1, HX177EntryCount('HX177-E'), 'An invoice line another app inserts without triggers is logged once');
+        AssertHX177Entry('HX177-E', 60000, 63.85);
+    end;
+
+    [Test]
     procedure PreviewLeavesLogUnchanged()
     var
         Preview: Record "CGR Lease Invoice Line" temporary;
