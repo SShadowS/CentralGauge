@@ -8,6 +8,11 @@ partial_credit:
     "88585/YearWithWeek53Listed": 1
   hidden_regressions: []
 reuse: null
-# Provisional: every fail_to_pass row weighted 1. The lane does A9 from the gate report.
+# A9 from gate-2026-11-14T01-34-38-234Z.json (tree a8a53a4b). The oracle does not compile against the
+# baseline (AL0185, new codeunit and table), so every row fails there and all five are weighted.
 expect:
   correct: { partial_credit: 1, final_errors: 0 }
+  naive/calendar-year: { partial_credit: 0.4 }
+  naive/monday-year: { partial_credit: 0.8 }
+  naive/loop-to-week-53: { partial_credit: 0.8 }
+  naive/fifty-two-weeks: { partial_credit: 0.8 }
