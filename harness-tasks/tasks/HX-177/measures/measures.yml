@@ -1,0 +1,13 @@
+v: 1
+partial_credit:
+  weights:
+    "88615/RunLogsEachInvoiceLine": 1
+    "88615/OtherAppInsertIsLogged": 1
+    "88615/PreviewLeavesLogUnchanged": 1
+    "88615/PreviewThenRunLogsOnlyTheRun": 1
+  hidden_regressions: []
+reuse: null
+# Provisional (A4): every fail_to_pass row weighted 1. The lane does A9 from the gate report;
+# PreviewLeavesLogUnchanged is predicted to pass on baseline and to become a hidden regression.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
