@@ -1,0 +1,14 @@
+v: 1
+partial_credit:
+  weights:
+    "88630/LeaseWithoutJobLinesCarryLeaseDimensions": 1
+    "88630/LinesFollowInvoiceLines": 1
+    "88630/JobLeaseLinesAreBookedToTheJob": 1
+    "88630/JobLeaseLinesKeepEveryLeaseDimension": 1
+    "88630/JobLeaseLinesKeepLeaseValues": 1
+  hidden_regressions: []
+reuse: null
+# Provisional (A4). The oracle does not compile against the baseline (new TransferToGeneralJournal), so every
+# row fails there and all five are weighted. The lane does A9 from the gate report.
+expect:
+  correct: { partial_credit: 1, final_errors: 0 }
