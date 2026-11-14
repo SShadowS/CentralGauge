@@ -1,9 +1,9 @@
-# Feature 5182: Damage roster for a period
+# Feature 5182: Posted revenue per rental contract for a date range
 
-Requested by the workshop.
+Requested by Finance.
 
-Reporting has the damage roster: table `CGR Damage Roster Buffer` (70595), query `CGR Vehicle Damage Roster` (70596) and codeunit `CGR Damage Roster` (70597) with `FillRoster(var Buffer: Record "CGR Damage Roster Buffer" temporary)`, which lists every vehicle with the number of damage entries ever reported on it.
+Codeunit `CGR Contract Accrual` (70597, Reporting) answers `PostedRevenue(): Dictionary of [Code[20], Decimal]`: for every rental contract, keyed by its number, the sum of the Amount of its `CGR Rental Ledger Entry` rows. It reads query `CGR Contract Posted Revenue` (70596).
 
-The workshop plans its inspections per period and wants the same roster for a period. Add `FillPeriodRoster(FromDate: Date; ToDate: Date; var Buffer: Record "CGR Damage Roster Buffer" temporary)` to `CGR Damage Roster`. It lists every vehicle, as the roster does, with "Damages Reported" set to the number of the vehicle's `CGR Damage Entry` rows whose "Reported On" is within FromDate..ToDate, and 0 for a vehicle that had no damage reported in the period: the workshop gives its free inspection slots to exactly those vehicles. After a fill, the buffer holds only the rows of that fill.
+For the month-end close, Finance needs the same answer for a date range. Add `PostedRevenueBetween(FromDate: Date; ToDate: Date): Dictionary of [Code[20], Decimal]` to `CGR Contract Accrual`. Its answer has a key for every rental contract, holding the sum of the Amount of the contract's ledger entries with a Posting Date from FromDate to ToDate, both days included. A contract with nothing posted in that range has the value 0: Finance accrues exactly those contracts by hand, so a contract missing from the answer is never accrued.
 
-`FillRoster` keeps working as it does today.
+`PostedRevenue` gives the same answer as today.
