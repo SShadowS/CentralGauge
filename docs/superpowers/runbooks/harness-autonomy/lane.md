@@ -175,7 +175,47 @@ nothing in flight. After a clear, run your start procedure again.
 ## lane-ops specifics
 
 - Before any container work: check the container is running (README "Container leases").
-  Not running: `coord ask`, do not start it.
+  Not running: start it yourself only under standing grant 3 below (Cronus281, Cronus282,
+  Cronus283); any other container: `coord ask`, do not start it.
+- Standing grants (owner, `H:\cg-coord\decisions\2026-11-08-standing-grants.md`). They replace
+  the per-instance owner go in these cases only; anything outside their conditions still goes
+  to the owner.
+  1. Screening campaigns. lane-ops may start paid screening and pre-screen campaigns
+     (`v2-screen-*`, `v2-prescreen-*`) on sealed candidates without a per-campaign owner go,
+     provided: a dry run first, with no refusal; subscription accounts only (maxpriv2, max,
+     maxpriv, or another subscription the owner adds; MAXWork only once one real check cell, in
+     an experiment outside those two prefixes, has shown setup passes, addendum 2026-11-09);
+     Work stays retired; STOP on a RAM floor (4 GB free), on any refusal, and on a quarantine of
+     every container in the pool; cost is logged (no dollar cap,
+     `decisions\2026-11-08-m8-scale-up.md`); the orchestrator is told when a campaign starts and
+     ends. This replaces the dry-run-then-owner-confirm rule for these campaigns only. Benchmark
+     ingest and bench runs outside the harness screening flow are not covered. The orchestrator's
+     go on a campaign plan is still required where a task asks for it.
+  2. Pushes: the orchestrator's grant (orchestrator.md "Standing grants"). Lanes never push.
+  3. Containers. lane-ops may start and stop Cronus281, Cronus282 and Cronus283 for harness
+     work when starting leaves at least 18 GB free per extra container, with a graceful-stop
+     watcher (hostwatch registration plus the campaign's `watch.sh`, H-89), and must stop them
+     when idle. Cronus284, Cronus285, Cronus28, LethAL bc1-bc3 and any container leased by
+     someone else stay excluded (284 may be added later by a separate owner ruling). A recreate
+     still needs the owner (the per-container-root recreate of Cronus281 approved on 2026-11-08
+     was the one exception). Use `docker start` / `docker stop` with
+     `DOCKER_CONTEXT=desktop-windows`; `containers.ps1 start|stop` stays the owner's.
+- Per-container BCH root rollout (H-57 procedure; decision "Recorded: per-container-root
+  rollout to Cronus282/283"): one container at a time, between campaigns (no harness or bench
+  process running, since each reads `bch-roots.json` once at start), under a lease, owner's go
+  for the recreate. Steps: stage the golden .bak outside the shared root and check its sha;
+  recreate with `$bcContainerHelperConfig.hostHelperFolder = 'C:\ProgramData\BcContainerHelper-<C>'`
+  and the same New-BcContainer parameters (template `H:\cg-coord\tasks\H-57\recreate-281.ps1`);
+  add `<C>` to `H:\cg-coord\bch-roots.json` before any harness call; copy the golden .bak into
+  `<root>\Extensions\<C>\cg-official\` and check its sha; `harness baseline create`; the H-57
+  proof (compile, publish, SOAP and client-session tests, restart, verify-clean, server-mount
+  check); stop the container. Status 2026-11-14: done for Cronus285 (2026-11-07), Cronus281,
+  Cronus282 (2026-11-11) and Cronus283 (2026-11-12) under the owner's recreate decisions of
+  2026-11-09; `bch-roots.json` lists all four and their mounts show only their own root.
+  Cronus284 still mounts the shared root (its 2026-11-13 H-42 recreate kept it on purpose) and is
+  outside grant 3. Any later recreate of 281-283 keeps its own root (rename the old root aside to
+  `.old-<date>` when Remove-BcContainer leaves it undeletable, as in the 2026-11-09 addendum).
+  Owner clean-up still open: the `.old-*` and `.partial-*` roots.
 - Before any sandbox run: every secrets file the run needs in `H:\Temp3\harness-spike\secrets\`
   must exist and must not start with `REPLACE_ME`. Placeholder or missing: `coord ask`
   naming the file, checkpoint `--wait owner`. Never print or log a secret value.

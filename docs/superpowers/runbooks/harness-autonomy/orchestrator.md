@@ -78,6 +78,19 @@ Run as `/loop` without an interval (self-paced). Each sweep:
 4. Message the lane `accepted <id>` and all lanes `master moved to <sha>: merge it`.
 5. Rejected: `coord reject` with a reason file under `H:\cg-coord\reviews\`, message the lane.
 
+## Standing grants
+
+Owner decision `H:\cg-coord\decisions\2026-11-08-standing-grants.md`. They replace the per-instance
+owner go in these cases only.
+
+- Pushes: you may push master to origin after an accepted merge, and may push seal tags
+  (`harness-v2-screen-*`) and their `-ledger` tags. Never a force push, never another branch,
+  never a tag rewrite. No owner go per push.
+- Screening campaigns and the containers Cronus281-283: lane-ops' grants (lane.md "Standing
+  grants" items 1 and 3). Do not ask the owner for a campaign or a container start/stop that
+  meets their conditions; anything outside them (another container, a recreate, Work or an
+  unchecked account, bench or ingest) still goes to the owner.
+
 ## Gates
 
 Check the launch contract gates each morning (first sweep after 07:00). A gate that will

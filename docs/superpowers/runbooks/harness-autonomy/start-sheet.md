@@ -88,5 +88,7 @@ Then terminal 1:
 
 ## 4. Not done by agents (yours)
 
-Starting or restarting BC containers, production deploy, catalog sync, ingest, abandoning
-the three stale batch runs from 2026-09-11 (`4a914cb8`, `6d28a4b1`, `8dc8e7e3`).
+Starting or restarting BC containers (except lane-ops starting and stopping Cronus281-283 under
+the standing container grant, `decisions\2026-11-08-standing-grants.md` item 3), recreating
+containers, production deploy, catalog sync, ingest, abandoning the three stale batch runs from
+2026-09-11 (`4a914cb8`, `6d28a4b1`, `8dc8e7e3`).

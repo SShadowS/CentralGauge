@@ -18,7 +18,7 @@ permissions and approval rules.
 | `lane-infra` | `U:\Git\CentralGauge-wt\lane-infra` | `harness/lane-infra` | M1 to M3 code (TDD, subagents) | touches containers directly (asks lane-ops), edits specs or plans |
 | `lane-infra2` | `U:\Git\CentralGauge-wt\lane-infra2` | `harness/lane-infra2` | M1 part 2 stream B code (containment, sandbox, staging, BC lane, backend), same rules as lane-infra; coord lane `infra2` | touches containers directly (asks lane-ops), edits specs or plans |
 | `lane-content` | `U:\Git\CentralGauge-wt\lane-content` | `harness/lane-content` | refapp and task authoring (M0-01, M4) | touches containers directly (asks lane-ops), edits specs or plans |
-| `lane-ops` | `U:\Git\CentralGauge-wt\lane-ops` | `harness/lane-ops` | every container operation: spike measurements, gate runs for other lanes, campaigns | edits product code beyond spike scripts, starts or restarts BC containers |
+| `lane-ops` | `U:\Git\CentralGauge-wt\lane-ops` | `harness/lane-ops` | every container operation: spike measurements, gate runs for other lanes, campaigns | edits product code beyond spike scripts, starts or stops a BC container outside the standing container grant (lane.md "Standing grants" item 3), restarts or recreates one without the owner |
 | `lane-admin` | `U:\Git\CentralGauge-wt\lane-admin` | `harness/lane-admin` | runs ELEVATED, in auto or normal permission mode (never bypass): only the named admin jobs in `lane.md` "lane-admin specifics" (pktmon captures, the M1-33/M1-34 egress scripts, egress verify, the M1-34 drills); coord lane `admin` | writes or commits code, runs BC or benchmark container jobs, runs anything not on its job list, runs in bypass mode, changes firewall or services outside the named scripts |
 
 `.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks/` and
@@ -91,8 +91,11 @@ todo --claim--> doing --submit--> review --accept--> accepted
 - Container overview (read-only, allowed for agents): `pwsh -File U:\Git\CentralGauge\scripts\coord\containers.ps1 status`.
   Its `start` and `stop` actions are for the owner only.
 - Before leasing, check the container is up: `DOCKER_CONTEXT=desktop-windows docker inspect -f "{{.State.Running}}" <container>`.
-  Not `true`: do not start it. `coord ask "<container> is stopped" --task <id> --from lane-ops`,
-  checkpoint with `--wait owner`, move to other work.
+  Not `true`: Cronus281, Cronus282 and Cronus283 may be started by lane-ops under the standing
+  container grant (lane.md "Standing grants" item 3: at least 18 GB free per extra container, a
+  graceful-stop watcher, stopped when idle). Any other container: do not start it.
+  `coord ask "<container> is stopped" --task <id> --from lane-ops`, checkpoint with
+  `--wait owner`, move to other work.
 - A stale lease is never taken over. It becomes a question for the owner. Once the owner agrees,
   the orchestrator frees it with `coord break <container> --reason "<text>" --from cg-orchestrator`
   (stale leases in this root's allocation only; `coord timeline <container>` shows the history).
@@ -154,6 +157,9 @@ Bash `/` spans every drive).
   current `master` in the main checkout, run the checks listed in the task's acceptance
   section on that exact tree, commit the merge, `git push origin master`, then
   `coord accept` with the merge SHA. A conflict goes back to the lane (`coord reject`).
+- Pushes (standing grant, owner 2026-11-08): only the orchestrator pushes, and only master to
+  origin after an accepted merge, plus seal tags (`harness-v2-screen-*`) and their `-ledger`
+  tags. Never a force push, never another branch, never a tag rewrite. Lanes never push.
 - Commit messages end with the attribution lines required by the session.
 
 ## Subagent models
