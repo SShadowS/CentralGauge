@@ -38,13 +38,37 @@ async function unfrozenPins(
   });
 }
 
+interface Sel {
+  status: string;
+  selection: { selected: string[]; shortfalls: string[]; deviations: string[] };
+}
+
+/**
+ * The selection passes if select reported ok, or if it is exactly the
+ * owner-approved too_few set: N=39, intermediate 23 of 24 with HX-159 borrowed
+ * (decisions\2026-11-14-n39-selection.md, M8-20 ruling; M8-20 deviation).
+ * Any other shortfall or deviation fails.
+ */
+function selectionApproved(sel: Sel): boolean {
+  if (sel.status === "ok") return true;
+  const s = sel.selection;
+  return sel.status === "too_few" &&
+    JSON.stringify(s.shortfalls) ===
+      JSON.stringify(["stratum intermediate: 23 of 24"]) &&
+    JSON.stringify(s.deviations) ===
+      JSON.stringify(["HX-159 (hard) fills the intermediate stratum"]) &&
+    s.selected.length === 39;
+}
+
 Deno.test("v2 task set: frozen selection and held-out tasks pin refapp-v2", async () => {
   const sel = JSON.parse(
     await Deno.readTextFile("harness-tasks/v2/selection.json"),
   );
-  assertEquals(sel.status, "ok");
+  assertEquals(selectionApproved(sel), true);
   const ids: string[] = [...sel.selection.selected, ...sel.held_out].sort();
-  assertEquals(ids.length, sel.selection.n + 4);
+  // M8-20 ruling (decisions\2026-11-14-n39-selection.md): 39 selected + 4 held out.
+  assertEquals(ids.length, sel.selection.selected.length + sel.held_out.length);
+  assertEquals(ids.length, 43);
   const set = new Map(
     (await loadTaskSet("harness-tasks/tasks")).map((t) => [t.task.id, t.task]),
   );
@@ -57,6 +81,33 @@ Deno.test("v2 task set: frozen selection and held-out tasks pin refapp-v2", asyn
     await unfrozenPins(ids, (id) => set.get(id)?.refapp_version),
     [],
   );
+});
+
+Deno.test("v2 task set: only ok or the exact owner-approved too_few selection passes", () => {
+  const approved = {
+    status: "too_few",
+    selection: {
+      selected: Array.from({ length: 39 }, (_, i) => `HX-${i}`),
+      shortfalls: ["stratum intermediate: 23 of 24"],
+      deviations: ["HX-159 (hard) fills the intermediate stratum"],
+    },
+  };
+  const s = approved.selection;
+  assertEquals(selectionApproved({ status: "ok", selection: s }), true);
+  assertEquals(selectionApproved(approved), true);
+  for (
+    const selection of [
+      { ...s, shortfalls: ["stratum intermediate: 22 of 23"] },
+      { ...s, shortfalls: [...s.shortfalls, "kind refactor: 1 of 2"] },
+      { ...s, shortfalls: [] },
+      { ...s, deviations: [] },
+      { ...s, deviations: ["HX-160 (hard) fills the intermediate stratum"] },
+      { ...s, selected: s.selected.slice(1) },
+    ]
+  ) {
+    assertEquals(selectionApproved({ status: "too_few", selection }), false);
+  }
+  assertEquals(selectionApproved({ ...approved, status: "other" }), false);
 });
 
 Deno.test("v2 task set: a pin is frozen only at refapp-v2 or a same-tree refapp-v2-rc1", async () => {
