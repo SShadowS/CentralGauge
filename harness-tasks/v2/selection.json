@@ -1,0 +1,975 @@
+{
+  "v": 1,
+  "status": "too_few",
+  "head": "e490bc8ae7dcc039ac2bbbe7d1db268ab7960f7d",
+  "seals": [
+    {
+      "tag": "harness-v2-screen-start",
+      "commit": "487178a433cc86633366893ee21af7242b8d4c8f"
+    },
+    {
+      "tag": "harness-v2-screen-w4",
+      "commit": "356cb18b9331011aab8c0652bf46a5d716c27996"
+    },
+    {
+      "tag": "harness-v2-screen-w2r1",
+      "commit": "fb248148dc0b3c59d5a024a13144a48f81fe2a81"
+    },
+    {
+      "tag": "harness-v2-screen-w2r2",
+      "commit": "ff6198e6555948d20aa137c6b989366613ea3723"
+    },
+    {
+      "tag": "harness-v2-screen-w2r3",
+      "commit": "88d08e9c413332f8ddd35931f7cc0cc21cbaa9d7"
+    },
+    {
+      "tag": "harness-v2-screen-r1",
+      "commit": "b2527d81a0f5ff8c47cf5f36313d5cde3850d69e"
+    },
+    {
+      "tag": "harness-v2-screen-r2",
+      "commit": "17b2a78b208ee582c5e57502e40199d4908abc54"
+    }
+  ],
+  "campaigns": [
+    {
+      "id": "1bf200ed-24d2-4731-8ba6-5765a638f2c8",
+      "experiment": "v2-screen-5"
+    },
+    {
+      "id": "43dd2b28-355c-48d0-bdcf-9ba5818ae054",
+      "experiment": "v2-screen-3"
+    },
+    {
+      "id": "57965f60-c945-4701-ac16-43db4764a4d2",
+      "experiment": "v2-screen-2"
+    },
+    {
+      "id": "6a1c81a8-f209-4b9c-8fb6-54cc68fb071f",
+      "experiment": "v2-screen-4"
+    },
+    {
+      "id": "906b78cc-ae8f-4b8f-955c-7af4ff313c73",
+      "experiment": "v2-screen-r2"
+    },
+    {
+      "id": "cdf0f1bb-f97d-4c09-a07e-c8c6a077e176",
+      "experiment": "v2-screen-1"
+    },
+    {
+      "id": "d3991d4c-1a64-42f7-afa4-54317487aa72",
+      "experiment": "v2-screen-r1"
+    }
+  ],
+  "held_out": [
+    "HX-010",
+    "HX-030",
+    "HX-037",
+    "HX-039"
+  ],
+  "confirmatory_tasks": "harness-tasks/tasks/{HX-016,HX-021,HX-043,HX-045,HX-049,HX-051,HX-052,HX-053,HX-055,HX-059,HX-065,HX-066,HX-068,HX-071,HX-079,HX-082,HX-103,HX-132,HX-133,HX-135,HX-136,HX-140,HX-143,HX-144,HX-145,HX-146,HX-149,HX-150,HX-156,HX-157,HX-159,HX-160,HX-161,HX-164,HX-167,HX-170,HX-171,HX-177,HX-179}",
+  "held_out_tasks": "harness-tasks/tasks/{HX-010,HX-030,HX-037,HX-039}",
+  "candidates": {
+    "HX-007": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-008": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-009": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-010": {
+      "status": "held_out"
+    },
+    "HX-011": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-012": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-013": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-014": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-017": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-015": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-018": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-016": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-019": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-020": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-021": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-022": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-023": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-024": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-025": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-026": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-027": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-028": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-029": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-030": {
+      "status": "held_out"
+    },
+    "HX-031": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-032": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-033": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-034": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-035": {
+      "status": "broken",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-036": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-037": {
+      "status": "held_out"
+    },
+    "HX-038": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-039": {
+      "status": "held_out"
+    },
+    "HX-040": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-041": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-042": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-043": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-044": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-045": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-046": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-047": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-048": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-049": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-050": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-051": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-052": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-053": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-054": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-055": {
+      "status": "intermediate",
+      "solved": 2,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-056": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-057": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-058": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-059": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-060": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-061": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-062": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-063": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-064": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-065": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-066": {
+      "status": "intermediate",
+      "solved": 2,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-067": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-068": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-069": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-070": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-071": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-072": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-073": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-074": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-075": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-076": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-077": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-078": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-079": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-080": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-081": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-082": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-083": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-084": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-085": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-086": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-087": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-088": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-089": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-090": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-100": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-103": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-131": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-132": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-133": {
+      "status": "intermediate",
+      "solved": 2,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-134": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-135": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-136": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-137": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-138": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-139": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-140": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-141": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-142": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-143": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-144": {
+      "status": "intermediate",
+      "solved": 2,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-145": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-146": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-147": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-148": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-149": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-150": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-151": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-152": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-154": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-155": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-156": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-157": {
+      "status": "intermediate",
+      "solved": 2,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-158": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-159": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-160": {
+      "status": "hard",
+      "solved": 1,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-161": {
+      "status": "easy",
+      "solved": 5,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-162": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-163": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-164": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-167": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-168": {
+      "status": "dead",
+      "solved": 0,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-169": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-170": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-171": {
+      "status": "intermediate",
+      "solved": 4,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-172": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-173": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-174": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-175": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-176": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-177": {
+      "status": "intermediate",
+      "solved": 2,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-178": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-179": {
+      "status": "intermediate",
+      "solved": 3,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-180": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-181": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    },
+    "HX-182": {
+      "status": "saturated",
+      "solved": 6,
+      "scored": 6,
+      "complete": true
+    }
+  },
+  "selection": {
+    "n": 40,
+    "targets": {
+      "easy": 8,
+      "intermediate": 24,
+      "hard": 8
+    },
+    "selected": [
+      "HX-016",
+      "HX-021",
+      "HX-043",
+      "HX-045",
+      "HX-049",
+      "HX-051",
+      "HX-052",
+      "HX-053",
+      "HX-055",
+      "HX-059",
+      "HX-065",
+      "HX-066",
+      "HX-068",
+      "HX-071",
+      "HX-079",
+      "HX-082",
+      "HX-103",
+      "HX-132",
+      "HX-133",
+      "HX-135",
+      "HX-136",
+      "HX-140",
+      "HX-143",
+      "HX-144",
+      "HX-145",
+      "HX-146",
+      "HX-149",
+      "HX-150",
+      "HX-156",
+      "HX-157",
+      "HX-159",
+      "HX-160",
+      "HX-161",
+      "HX-164",
+      "HX-167",
+      "HX-170",
+      "HX-171",
+      "HX-177",
+      "HX-179"
+    ],
+    "by_stratum": {
+      "easy": [
+        "HX-052",
+        "HX-068",
+        "HX-079",
+        "HX-082",
+        "HX-103",
+        "HX-136",
+        "HX-145",
+        "HX-161"
+      ],
+      "intermediate": [
+        "HX-043",
+        "HX-049",
+        "HX-051",
+        "HX-053",
+        "HX-055",
+        "HX-059",
+        "HX-066",
+        "HX-071",
+        "HX-133",
+        "HX-135",
+        "HX-140",
+        "HX-144",
+        "HX-146",
+        "HX-149",
+        "HX-156",
+        "HX-157",
+        "HX-159",
+        "HX-164",
+        "HX-167",
+        "HX-170",
+        "HX-171",
+        "HX-177",
+        "HX-179"
+      ],
+      "hard": [
+        "HX-016",
+        "HX-021",
+        "HX-045",
+        "HX-065",
+        "HX-132",
+        "HX-143",
+        "HX-150",
+        "HX-160"
+      ]
+    },
+    "deviations": [
+      "HX-159 (hard) fills the intermediate stratum"
+    ],
+    "shortfalls": [
+      "stratum intermediate: 23 of 24"
+    ]
+  }
+}
