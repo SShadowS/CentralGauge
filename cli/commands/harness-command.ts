@@ -951,6 +951,8 @@ export async function harnessJudgeFixture(
       onPrem: h.env.onPrem,
       deploy: h.env.deploy,
       harnessCommit: h.env.harnessCommit,
+      // H-103: the judge build cache, as the campaign judge passes it (execution.ts).
+      ...(h.env.buildCache ? { buildCache: h.env.buildCache } : {}),
     }, h.env.now);
     const out = join(o.resultsDir, "fixtures", taskId, variant, judgment.id);
     await Deno.mkdir(out, { recursive: true });

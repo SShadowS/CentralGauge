@@ -1339,6 +1339,37 @@ Deno.test("harnessJudgeFixture: complete judgment and provenance persisted; vari
   );
 });
 
+Deno.test("harnessJudgeFixture (H-103): judges with the env's judge build cache, as the campaign judge does", async () => {
+  await using t = await makeEnv();
+  const used: string[] = [];
+  const cache = {
+    get: (k: string) => {
+      used.push(`get ${k}`);
+      return Promise.resolve(null);
+    },
+    put: (k: string) => {
+      used.push(`put ${k}`);
+      return Promise.resolve();
+    },
+  };
+  const open = () =>
+    Promise.resolve({
+      env: { ...t.env, buildCache: cache },
+      close: () => Promise.resolve(),
+    });
+  const pass = await harnessJudgeFixture(
+    "HX-001",
+    "correct",
+    cellOpts(t),
+    open,
+  );
+  assertEquals(pass.verdict, "pass");
+  assert(
+    used.some((u) => u.startsWith("put ")),
+    `judge-fixture never used the build cache: ${JSON.stringify(used)}`,
+  );
+});
+
 Deno.test("harnessImagesBuild: base needs a digest pin; the harness build gets the base and is verified by layers", async () => {
   const root = await Deno.realPath(await testTempDir());
   const docker = new FakeDocker();
