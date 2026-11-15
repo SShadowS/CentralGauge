@@ -68,7 +68,7 @@ while true; do
   # Standing grant 1: stop when every container of the pool is quarantined (cells after that only burn subscription).
   q=$(quarantined_count "$QD" $POOL) || q=ERR
   set -- $POOL
-  if [ "$q" = ERR ]; then stop "quarantine records unreadable (a failed jq or fork)"
+  if ! [[ "$q" =~ ^[0-9]+$ ]]; then stop "quarantine records unreadable ('$q': a failed jq or fork)"
   elif [ "$q" -ge $# ]; then stop "every pool container quarantined ($POOL)"; fi
   c=$(cid)
   if [ -n "$c" ]; then
