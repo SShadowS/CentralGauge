@@ -3312,7 +3312,7 @@ async function resumableVariant(
  * H-104 marker holds) or by its own latest judgment under this binding. The
  * verdict comes from the store, not from qualify.json.
  */
-async function mockCellHolds(
+export async function mockCellHolds(
   env: HarnessEnv,
   m: MockCellResult,
   j: JudgmentRecord,
@@ -3345,7 +3345,8 @@ async function mockCellHolds(
  * one mock cell each; index at results/harness/qualify/<manifest sha256>/.
  */
 export async function harnessQualify(
-  o: CellCliOptions & { manifest: string },
+  /** resume (H-105, default true): false judges every variant afresh. */
+  o: CellCliOptions & { manifest: string; resume?: boolean },
   open: Opener = openHarnessEnv,
 ): Promise<{ path: string; data: unknown }> {
   const m = await loadQualifyManifest(o.manifest);
@@ -3383,7 +3384,7 @@ export async function harnessQualify(
         // Graceful stop between variants: index.partial.json holds the finished ones.
         if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
         const expected = variant === t.positive ? "pass" : "fail";
-        const prior = binding &&
+        const prior = binding && o.resume !== false &&
           await resumableVariant(h.env, o, binding, taskId, variant, t.rev);
         if (prior) {
           entries.push(
@@ -4459,11 +4460,16 @@ export function registerHarnessCommand(
     .option("--manifest <path:string>", "Qualification manifest", {
       required: true,
     })
-    .action((opts: CellCliFlags & { manifest: string }) =>
+    .option(
+      "--no-resume",
+      "Judge every variant again, even one an earlier run finished with matching inputs",
+    )
+    .action((opts: CellCliFlags & { manifest: string; resume: boolean }) =>
       fail(async () =>
         void await harnessQualify({
           ...cliOpts(opts),
           manifest: resolve(opts.manifest),
+          resume: opts.resume,
         })
       )
     );
