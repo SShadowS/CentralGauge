@@ -208,6 +208,15 @@ import {
   variantAllowed,
 } from "../../src/harness/qualify.ts";
 import {
+  claimVariant,
+  defaultQueueDeps,
+  HEARTBEAT_MS,
+  joinQueue,
+  type QueueDeps,
+  type QueueOwner,
+  type VariantClaim,
+} from "../../src/harness/qualify-queue.ts";
+import {
   type IcaclsRunner,
   READ_PREFIX,
   realDocker,
@@ -3120,8 +3129,13 @@ interface QualifyEntry {
   reasons: string[];
   targets: string[];
   mock_cell: MockCellResult;
-  /** H-105: taken from an earlier run's matching judgment and mock cell. */
+  /**
+   * H-105: taken from an earlier run's matching judgment and mock cell.
+   * H-106 (--queue): judged in an earlier queue (another queue_id).
+   */
   resumed: boolean;
+  /** H-106: the containers of the process that judged it (null: not recorded). */
+  containers: string[] | null;
 }
 
 /** A variant's fixture judgment, its folder and its mock-cell result. */
@@ -3129,6 +3143,9 @@ interface VariantResult {
   dir: string;
   judgment: JudgmentRecord;
   mock_cell: MockCellResult;
+  /** H-106: from its qualify.json (null: none recorded). */
+  queue_id: string | null;
+  containers: string[] | null;
 }
 
 function qualifyEntry(
@@ -3156,6 +3173,7 @@ function qualifyEntry(
     ].sort(),
     mock_cell: r.mock_cell,
     resumed,
+    containers: r.containers,
   };
 }
 
@@ -3184,6 +3202,10 @@ interface QualifyRecord {
   judgment_id: string;
   binding: QualifyBinding;
   mock_cell: MockCellResult;
+  /** H-106: the queue it was judged in (absent: not judged under --queue). */
+  queue_id?: string;
+  /** H-106: the judging process's containers and private root. */
+  judged_by?: { containers: string[]; private_root: string };
 }
 
 /** H-105: this process's binding; null (no env_fp or harness commit) never resumes. */
@@ -3294,7 +3316,15 @@ async function resumableVariant(
         taskId,
         now.mock_arm,
       );
-      if (mock_cell) found.push({ dir, judgment: j, mock_cell });
+      if (mock_cell) {
+        found.push({
+          dir,
+          judgment: j,
+          mock_cell,
+          queue_id: q.queue_id ?? null,
+          containers: q.judged_by?.containers ?? null,
+        });
+      }
     } catch {
       continue;
     }
@@ -3345,8 +3375,9 @@ async function mockCellHolds(
  * one mock cell each; index at results/harness/qualify/<manifest sha256>/.
  */
 export async function harnessQualify(
-  o: CellCliOptions & { manifest: string },
+  o: CellCliOptions & { manifest: string; queue?: boolean },
   open: Opener = openHarnessEnv,
+  qdeps: QualifyQueueDeps = defaultQualifyQueueDeps(),
 ): Promise<{ path: string; data: unknown }> {
   const m = await loadQualifyManifest(o.manifest);
   const sha = Array.from(
@@ -3367,7 +3398,15 @@ export async function harnessQualify(
     const entries: QualifyEntry[] = [];
     // v2 (H-104): mock_cell.reused_judgment; a reused verdict is not a second judgment.
     // H-105: entries[].resumed; a resumed entry is the earlier run's, unchanged.
-    const data = {
+    // H-106: entries[].containers; with --queue, queue_id.
+    const data: {
+      v: 2;
+      manifest: string;
+      manifest_sha256: string;
+      refapp_version: string;
+      entries: QualifyEntry[];
+      queue_id?: string;
+    } = {
       v: 2,
       manifest: o.manifest,
       manifest_sha256: sha,
@@ -3375,6 +3414,15 @@ export async function harnessQualify(
       entries,
     };
     await Deno.mkdir(out, { recursive: true });
+    if (o.queue) {
+      if (!binding) {
+        throw new ConfigurationError(
+          "--queue needs a lineage (env_fp) and a known harness commit: without them no process can tell another's finished variants from stale ones",
+          o.manifest,
+        );
+      }
+      return await queuedQualify(h, o, m, shared, binding, data, out, qdeps);
+    }
     const partial = join(out, "index.partial.json");
     for (const [taskId, t] of Object.entries(m.tasks).sort()) {
       for (
@@ -3390,71 +3438,271 @@ export async function harnessQualify(
             qualifyEntry(o.root, taskId, variant, t.rev, expected, prior, true),
           );
         } else {
-          const j = await harnessJudgeFixture(taskId, variant, {
-            ...o,
-            rev: t.rev,
-          }, shared);
-          const dir = join(o.resultsDir, "fixtures", taskId, variant, j.id);
-          const mock_cell = await qualifyMockCell(
-            h.env,
-            o.root,
-            taskId,
+          const r = await judgeVariant(h.env, o, m, shared, binding, {
+            task: taskId,
             variant,
-            t.rev,
-            m,
-            {
-              judgment: j,
-              task_visible_hash: JSON.parse(
-                await Deno.readTextFile(join(dir, "provenance.json")),
-              ).task_visible_hash,
-            },
-            dir,
-          );
-          if (binding) {
-            const record: QualifyRecord = {
-              v: 1,
-              judgment_id: j.id,
-              binding,
-              mock_cell,
-            };
-            await Deno.writeTextFile(
-              join(dir, "qualify.json"),
-              JSON.stringify(record, null, 2) + "\n",
-              { createNew: true },
-            );
-          }
+            rev: t.rev,
+          }, null);
           entries.push(
-            qualifyEntry(o.root, taskId, variant, t.rev, expected, {
-              dir,
-              judgment: j,
-              mock_cell,
-            }, false),
+            qualifyEntry(o.root, taskId, variant, t.rev, expected, r!, false),
           );
         }
         // Written whole and renamed: a STOP or crash leaves a readable file.
-        await Deno.writeTextFile(
-          `${partial}.tmp`,
-          JSON.stringify(data, null, 2) + "\n",
-        );
-        await Deno.rename(`${partial}.tmp`, partial);
+        await writeWhole(partial, data);
       }
     }
     const path = join(out, "index.json");
     await Deno.writeTextFile(path, JSON.stringify(data, null, 2) + "\n");
     await Deno.remove(partial).catch(() => {});
-    const bad = entries.filter((e) =>
-      e.verdict !== e.expected || e.mock_cell.verdict !== e.expected
-    );
-    console.log(
-      `${bad.length === 0 ? colors.green("[OK]") : colors.red("[FAIL]")} ${
-        entries.length - bad.length
-      }/${entries.length} variants as expected (${path})`,
-    );
+    reportQualify(path, entries);
     return { path, data };
   } finally {
     await h.close();
   }
 }
+
+/** One manifest variant at its rev. */
+interface QualifyItem {
+  task: string;
+  variant: string;
+  rev: string;
+}
+
+/** The manifest's variants in index order: tasks sorted, positive, then naive. */
+function qualifyItems(m: QualifyManifest): (QualifyItem & {
+  expected: "pass" | "fail";
+})[] {
+  return Object.entries(m.tasks).sort().flatMap(([task, t]) =>
+    [t.positive, ...t.naive.map((n) => `naive/${n}`)].map((variant) => ({
+      task,
+      variant,
+      rev: t.rev,
+      expected: variant === t.positive ? "pass" as const : "fail" as const,
+    }))
+  );
+}
+
+/** Written in full to a unique tmp name and renamed: readers see a whole file. */
+async function writeWhole(path: string, data: unknown): Promise<void> {
+  const tmp = `${path}.tmp-${crypto.randomUUID().slice(0, 8)}`;
+  await Deno.writeTextFile(tmp, JSON.stringify(data, null, 2) + "\n");
+  await Deno.rename(tmp, path);
+}
+
+function reportQualify(path: string, entries: QualifyEntry[]): void {
+  const bad = entries.filter((e) =>
+    e.verdict !== e.expected || e.mock_cell.verdict !== e.expected
+  );
+  console.log(
+    `${bad.length === 0 ? colors.green("[OK]") : colors.red("[FAIL]")} ${
+      entries.length - bad.length
+    }/${entries.length} variants as expected (${path})`,
+  );
+}
+
+/**
+ * Judge-fixture and the mock cell of one variant; with a binding, its
+ * qualify.json. H-106: under a queue, `queue.holds` is checked just before
+ * qualify.json is written; a lost claim writes none and returns null (a
+ * duplicate judging at worst, never a record of two owners).
+ */
+async function judgeVariant(
+  env: HarnessEnv,
+  o: CellCliOptions & { manifest: string },
+  m: QualifyManifest,
+  shared: Opener,
+  binding: QualifyBinding | null,
+  v: QualifyItem,
+  queue: { queue_id: string; holds: () => Promise<boolean> } | null,
+): Promise<VariantResult | null> {
+  const j = await harnessJudgeFixture(v.task, v.variant, {
+    ...o,
+    rev: v.rev,
+  }, shared);
+  const dir = join(o.resultsDir, "fixtures", v.task, v.variant, j.id);
+  const mock_cell = await qualifyMockCell(
+    env,
+    o.root,
+    v.task,
+    v.variant,
+    v.rev,
+    m,
+    {
+      judgment: j,
+      task_visible_hash: JSON.parse(
+        await Deno.readTextFile(join(dir, "provenance.json")),
+      ).task_visible_hash,
+    },
+    dir,
+  );
+  const containers = [...env.lane.containers];
+  if (binding) {
+    if (queue && !await queue.holds()) {
+      console.warn(
+        colors.yellow(
+          `[WARN] ${v.task} ${v.variant}: claim lost while judging (reclaimed as stale); judgment ${j.id} is not recorded`,
+        ),
+      );
+      return null;
+    }
+    const record: QualifyRecord = {
+      v: 1,
+      judgment_id: j.id,
+      binding,
+      mock_cell,
+      ...(queue ? { queue_id: queue.queue_id } : {}),
+      judged_by: { containers, private_root: env.privateRoot },
+    };
+    await Deno.writeTextFile(
+      join(dir, "qualify.json"),
+      JSON.stringify(record, null, 2) + "\n",
+      { createNew: true },
+    );
+  }
+  return {
+    dir,
+    judgment: j,
+    mock_cell,
+    queue_id: queue?.queue_id ?? null,
+    containers,
+  };
+}
+
+/**
+ * H-106: `harness qualify --queue`. Processes with the same binding on one
+ * results root claim variants one at a time (src/harness/qualify-queue.ts).
+ * Each finished variant is a qualify.json; a variant is done when
+ * resumableVariant accepts one, under its claim. While every remaining
+ * variant is held by others, this waits (honouring STOP) and reclaims stale
+ * claims. The index is assembled from disk, not from what this process
+ * judged: per variant, resumableVariant's pick (latest ended_at, then the
+ * greatest judgment id), in manifest order. Whichever process sees the set
+ * complete writes it, so every writer writes the same entries.
+ */
+async function queuedQualify(
+  h: OpenEnv,
+  o: CellCliOptions & { manifest: string },
+  m: QualifyManifest,
+  shared: Opener,
+  binding: QualifyBinding,
+  data: { entries: QualifyEntry[]; queue_id?: string },
+  out: string,
+  qdeps: QualifyQueueDeps,
+): Promise<{ path: string; data: unknown }> {
+  const qdir = join(out, "queue");
+  const { queue_id } = await joinQueue(
+    qdir,
+    binding as unknown as Record<string, unknown>,
+    qdeps.now(),
+  );
+  data.queue_id = queue_id;
+  const owner: QueueOwner = {
+    token: crypto.randomUUID(),
+    pid: Deno.pid,
+    host: qdeps.host,
+    private_root: h.env.privateRoot,
+    containers: [...h.env.lane.containers],
+    env_fp: binding.env_fp,
+  };
+  const items = qualifyItems(m);
+  const key = (v: QualifyItem) => `${v.task}/${v.variant}`;
+  const entry = (v: (typeof items)[number], r: VariantResult) =>
+    qualifyEntry(
+      o.root,
+      v.task,
+      v.variant,
+      v.rev,
+      v.expected,
+      r,
+      r.queue_id !== queue_id,
+    );
+  const done = new Map<string, VariantResult>();
+  const partial = join(out, "index.partial.json");
+  let held: VariantClaim | null = null;
+  const beat = setInterval(
+    () => void held?.heartbeat().catch(() => {}),
+    HEARTBEAT_MS,
+  );
+  try {
+    while (true) {
+      for (const v of items) {
+        if (done.has(key(v))) continue;
+        if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
+        const c = await claimVariant(qdir, v.task, v.variant, owner, qdeps);
+        if (!c) continue;
+        held = c;
+        try {
+          const r = await resumableVariant(
+            h.env,
+            o,
+            binding,
+            v.task,
+            v.variant,
+            v.rev,
+          ) ??
+            await judgeVariant(h.env, o, m, shared, binding, v, {
+              queue_id,
+              holds: c.holds,
+            });
+          if (r) done.set(key(v), r);
+        } finally {
+          held = null;
+          await c.release();
+        }
+        data.entries = items.filter((x) => done.has(key(x))).map((x) =>
+          entry(x, done.get(key(x))!)
+        );
+        await writeWhole(partial, data).catch(() => {});
+      }
+      if (done.size === items.length) break;
+      // Every remaining variant is held by another process: wait for it.
+      if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
+      await qdeps.wait();
+    }
+  } finally {
+    clearInterval(beat);
+    await held?.release().catch(() => {});
+  }
+  // From disk, so every process that gets here writes the same entries.
+  const entries: QualifyEntry[] = [];
+  for (const v of items) {
+    const r = await resumableVariant(
+      h.env,
+      o,
+      binding,
+      v.task,
+      v.variant,
+      v.rev,
+    );
+    if (!r) {
+      throw new ConfigurationError(
+        `qualify queue: ${
+          key(v)
+        } was finished but no qualify.json for it holds now`,
+        qdir,
+      );
+    }
+    entries.push(entry(v, r));
+  }
+  data.entries = entries;
+  const path = join(out, "index.json");
+  await writeWhole(path, data);
+  await Deno.remove(partial).catch(() => {});
+  await Deno.remove(qdir, { recursive: true }).catch(() => {});
+  reportQualify(path, entries);
+  return { path, data };
+}
+
+/** H-106: the queue's clock, host and PID probe, and the wait between passes. */
+export type QualifyQueueDeps = QueueDeps & { wait: () => Promise<void> };
+
+/** Poll interval while every remaining variant is held by another process. */
+const QUEUE_POLL_MS = 60_000;
+
+const defaultQualifyQueueDeps = (): QualifyQueueDeps => ({
+  ...defaultQueueDeps(),
+  wait: () => new Promise((r) => setTimeout(r, QUEUE_POLL_MS)),
+});
 
 /** Credentials M1-34 Step 10 rotates before authorization (names in the rotation record). */
 export const ROTATED_CREDENTIALS = ["claude-oauth", "openrouter"] as const;
@@ -4459,11 +4707,16 @@ export function registerHarnessCommand(
     .option("--manifest <path:string>", "Qualification manifest", {
       required: true,
     })
-    .action((opts: CellCliFlags & { manifest: string }) =>
+    .option(
+      "--queue",
+      "Share the manifest with other --queue processes on this results root: claim variants one at a time (H-106)",
+    )
+    .action((opts: CellCliFlags & { manifest: string; queue?: boolean }) =>
       fail(async () =>
         void await harnessQualify({
           ...cliOpts(opts),
           manifest: resolve(opts.manifest),
+          queue: opts.queue === true,
         })
       )
     );
