@@ -1,0 +1,2 @@
+# bash fails on CRLF ($'\r': command not found), and a broken hook fails open.
+*.sh text eol=lf
