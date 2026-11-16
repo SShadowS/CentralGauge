@@ -7,7 +7,7 @@ import {
 } from "@std/assert";
 import { Command } from "@cliffy/command";
 import { stripAnsiCode } from "@std/fmt/colors";
-import { join, resolve } from "@std/path";
+import { dirname, join, resolve } from "@std/path";
 import { stub } from "@std/testing/mock";
 import {
   type CellCliOptions,
@@ -1977,6 +1977,303 @@ Deno.test("reusableJudgment (H-104): each judge input that differs, or is unknow
     reusableJudgment({ ...f, judgment: { ...j, verdict: "unscored" } }, same),
     false,
   );
+});
+
+/** H-105: one index entry, as harnessQualify writes it. */
+interface QEntry {
+  task: string;
+  variant: string;
+  verdict: string;
+  judgment_path: string;
+  provenance_path: string;
+  resumed: boolean;
+  mock_cell: {
+    execution_id: string;
+    verdict: string;
+    reused_judgment: string | null;
+  };
+}
+
+type Opener = NonNullable<Parameters<typeof harnessQualify>[1]>;
+
+/** H-105: qualify again over the same manifest qualifyWithLineage wrote. */
+const requalify = (t: TestEnv, open: Opener = opener(t)) =>
+  harnessQualify(
+    {
+      ...cellOpts(t, { supervised: false }),
+      manifest: join(t.env.privateRoot, "qualify-manifest.json"),
+    },
+    open,
+  ).then((r) => (r.data as { entries: QEntry[] }).entries);
+
+/** H-105: an opener whose stop is requested from the (n+1)-th check on. */
+const stopAfter = (t: TestEnv, n: number): Opener => {
+  let checks = 0;
+  return () =>
+    Promise.resolve({
+      env: t.env,
+      close: () => Promise.resolve(),
+      stopRequested: () => Promise.resolve(checks++ >= n),
+    });
+};
+
+async function editJson(
+  path: string,
+  // deno-lint-ignore no-explicit-any
+  edit: (x: any) => void,
+) {
+  const x = JSON.parse(await Deno.readTextFile(path));
+  edit(x);
+  await Deno.writeTextFile(path, JSON.stringify(x, null, 2) + "\n");
+}
+
+Deno.test("qualify (H-105): a rerun with the same manifest reuses a variant whose judgment, provenance and mock-cell result still match, and judges nothing again", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const first = (index.data as { entries: QEntry[] }).entries;
+  assertEquals(first.map((e) => e.resumed), [false, false]);
+  const judgments = (await t.env.store.allExecutions()).length;
+  const again = await requalify(t);
+  assertEquals(again.map((e) => e.resumed), [true, true]);
+  // The reused entry is the earlier one, field for field.
+  assertEquals(
+    again.map((e) => ({ ...e, resumed: false })),
+    first,
+  );
+  // No new mock execution, and no new fixture judgment.
+  assertEquals((await t.env.store.allExecutions()).length, judgments);
+  for (const e of first) {
+    const dirs = [];
+    for await (
+      const d of Deno.readDir(
+        join(t.env.resultsRoot, "fixtures", e.task, e.variant),
+      )
+    ) dirs.push(d.name);
+    assertEquals(dirs.length, 1, e.variant);
+  }
+});
+
+Deno.test("qualify (H-105): any one match field that differs judges the variant again", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  let cur = (index.data as { entries: QEntry[] }).entries[0]!;
+  const abs = (p: string) => join(t.repo.root, p);
+  const qualifyRecord = () =>
+    join(dirname(abs(cur.judgment_path)), "qualify.json");
+  const cases: [string, () => Promise<void>][] = [
+    [
+      "provenance rev",
+      () => editJson(abs(cur.provenance_path), (p) => p.rev = "other"),
+    ],
+    [
+      "provenance task_commit",
+      () =>
+        editJson(
+          abs(cur.provenance_path),
+          (p) => p.task_commit = "0".repeat(40),
+        ),
+    ],
+    [
+      "provenance variant_tree_hash",
+      () =>
+        editJson(
+          abs(cur.provenance_path),
+          (p) => p.variant_tree_hash = "0".repeat(64),
+        ),
+    ],
+    [
+      "provenance task_visible_hash",
+      () =>
+        editJson(
+          abs(cur.provenance_path),
+          (p) => p.task_visible_hash = "0".repeat(64),
+        ),
+    ],
+    [
+      "provenance oracle_hash",
+      () =>
+        editJson(
+          abs(cur.provenance_path),
+          (p) => p.oracle_hash = "0".repeat(64),
+        ),
+    ],
+    [
+      "provenance scorer_fingerprint",
+      () =>
+        editJson(
+          abs(cur.provenance_path),
+          (p) => p.scorer_fingerprint = "0".repeat(64),
+        ),
+    ],
+    [
+      "judgment scorer_fingerprint",
+      () =>
+        editJson(
+          abs(cur.judgment_path),
+          (j) => j.scorer_fingerprint = "0".repeat(64),
+        ),
+    ],
+    [
+      "judgment env_fp",
+      () =>
+        editJson(
+          abs(cur.judgment_path),
+          (j) => j.provenance.env_fp = "0".repeat(64),
+        ),
+    ],
+    [
+      "judgment harness_commit",
+      () =>
+        editJson(
+          abs(cur.judgment_path),
+          (j) =>
+            j.provenance.harness_commit = "e"
+              .repeat(
+                40,
+              ),
+        ),
+    ],
+    [
+      "binding policy_version",
+      () =>
+        editJson(
+          qualifyRecord(),
+          (q) => q.binding.policy_version = 99,
+        ),
+    ],
+    [
+      "binding lock_store",
+      () =>
+        editJson(
+          qualifyRecord(),
+          (q) => q.binding.lock_store = "elsewhere",
+        ),
+    ],
+    [
+      "binding symbol_ids",
+      () =>
+        editJson(
+          qualifyRecord(),
+          (q) => q.binding.symbol_ids = [],
+        ),
+    ],
+    [
+      "mock-cell result: reuse marker gone",
+      () =>
+        Deno.remove(
+          reuseMarkerPath(t.env.resultsRoot, cur.mock_cell.execution_id),
+        ),
+    ],
+    [
+      "mock-cell result: execution unknown",
+      () =>
+        editJson(
+          qualifyRecord(),
+          (q) =>
+            q.mock_cell.execution_id = crypto
+              .randomUUID(),
+        ),
+    ],
+    [
+      "this process: harness commit",
+      () => Promise.resolve(void (t.env.harnessCommit = "e".repeat(40))),
+    ],
+    [
+      "this process: env_fp (lineage)",
+      () =>
+        Promise.resolve(
+          void (t.env.deploy = {
+            ...t.env.deploy,
+            reset: { ...t.env.deploy.reset, compat: { lineage: "h105-other" } },
+          }),
+        ),
+    ],
+  ];
+  for (const [what, change] of cases) {
+    await change();
+    const [e] = await requalify(t);
+    assertEquals(e!.resumed, false, what);
+    assert(e!.judgment_path !== cur.judgment_path, what);
+    cur = e!;
+  }
+  // Unchanged since the last judging: reused.
+  assertEquals((await requalify(t))[0]!.resumed, true);
+});
+
+Deno.test("qualify (H-105): a STOP between variants leaves a readable partial index of the finished ones; the rerun resumes them and the final index keeps its shape", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const full = index.data as { entries: QEntry[] };
+  const out = dirname(index.path);
+  await Deno.remove(index.path);
+  // Fresh fixtures: drop the first run's qualify records so nothing resumes.
+  for (const e of full.entries) {
+    await Deno.remove(
+      join(dirname(join(t.repo.root, e.judgment_path)), "qualify.json"),
+    );
+  }
+  await assertRejects(
+    () => requalify(t, stopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  assertEquals(await exists(join(out, "index.json")), false);
+  const partial = JSON.parse(
+    await Deno.readTextFile(join(out, "index.partial.json")),
+  );
+  assertEquals(Object.keys(partial).sort(), Object.keys(full).sort());
+  assertEquals(partial.v, 2);
+  assertEquals(partial.entries.map((e: QEntry) => [e.variant, e.resumed]), [[
+    "correct",
+    false,
+  ]]);
+  const finished = partial.entries[0] as QEntry;
+  const r = await harnessQualify(
+    {
+      ...cellOpts(t, { supervised: false }),
+      manifest: join(t.env.privateRoot, "qualify-manifest.json"),
+    },
+    opener(t),
+  );
+  const data = r.data as { entries: QEntry[] };
+  assertEquals(data.entries.map((e) => [e.variant, e.resumed]), [[
+    "correct",
+    true,
+  ], ["naive/a", false]]);
+  assertEquals(data.entries[0], { ...finished, resumed: true });
+  assertEquals(Object.keys(data).sort(), Object.keys(full).sort());
+  for (const [i, e] of data.entries.entries()) {
+    assertEquals(Object.keys(e).sort(), Object.keys(full.entries[i]!).sort());
+  }
+  assertEquals(await exists(join(out, "index.partial.json")), false);
+  assertEquals(JSON.parse(await Deno.readTextFile(r.path)), r.data);
+});
+
+Deno.test("qualify (H-105): of two matching judgments the rerun takes the latest ended_at, then the greatest id", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const a = (index.data as { entries: QEntry[] }).entries[0]!;
+  const qa = join(dirname(join(t.repo.root, a.judgment_path)), "qualify.json");
+  const keep = await Deno.readTextFile(qa);
+  await Deno.remove(qa);
+  const b = (await requalify(t))[0]!;
+  assertEquals(b.resumed, false);
+  await Deno.writeTextFile(qa, keep);
+  // Both match now; b ended later.
+  assertEquals((await requalify(t))[0]!.judgment_path, b.judgment_path);
+  // Same ended_at: the greater judgment id wins.
+  const jb = JSON.parse(
+    await Deno.readTextFile(join(t.repo.root, b.judgment_path)),
+  );
+  await editJson(
+    join(t.repo.root, a.judgment_path),
+    (j) => j.ended_at = jb.ended_at,
+  );
+  const ja = JSON.parse(
+    await Deno.readTextFile(join(t.repo.root, a.judgment_path)),
+  );
+  const want = ja.id > jb.id ? a : b;
+  assertEquals((await requalify(t))[0]!.judgment_path, want.judgment_path);
 });
 
 /**

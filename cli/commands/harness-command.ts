@@ -91,6 +91,7 @@ import {
 import {
   compareInstant,
   isOwnerApproval,
+  JudgmentRecordSchema,
   outcomePolicy,
   RecordStore,
 } from "../../src/harness/records.ts";
@@ -245,6 +246,7 @@ import {
   type FixtureJudgment,
   type JudgeInputs,
   reusableJudgment,
+  reusedByReference,
   writeReuseMarker,
 } from "../../src/harness/judgment-reuse.ts";
 import {
@@ -2959,9 +2961,59 @@ async function qualifyMockCell(
   fixture: FixtureJudgment,
   /** The fixture's judgment.json and provenance.json folder. */
   fixtureDir: string,
-): Promise<
-  { execution_id: string; verdict: string; reused_judgment: string | null }
-> {
+): Promise<MockCellResult> {
+  const { config, armManifest, armManifestHash } = await mockArm(
+    env,
+    root,
+    variant,
+  );
+  const at = await loadTaskAt(
+    root,
+    taskId,
+    rev,
+    join(env.privateRoot, "work", `qualify-${crypto.randomUUID().slice(0, 8)}`),
+  );
+  const ids = await taskSetIdentity(root, [at.task], env.symbols);
+  const owed = new Map<string, { cell: CellRef; e: ExecutionRecord }>();
+  const r = await runCell(
+    {
+      ...env,
+      supervised: false,
+      qualifyManifest: manifest,
+      judgeLater: (cell, e) => void owed.set(e.id, { cell, e }),
+    },
+    {
+      campaignId: crypto.randomUUID(),
+      block: { index: 0, task_id: taskId, repeat: 1, order: [config.id] },
+      orderInBlock: 0,
+      arm: config.id,
+      armManifest,
+      armManifestHash,
+      task: at.task,
+      taskVisibleHash: ids.tasks[0]!.visible,
+      oracleHash: ids.tasks[0]!.oracle,
+      refapp: await resolveRefapp(root, at.task.task.refapp_version),
+    },
+  );
+  return await settleMockCell(
+    env,
+    r.executions.at(-1)!,
+    owed,
+    taskId,
+    fixture,
+    fixtureDir,
+  );
+}
+
+/** H-105: a mock cell's result, as the index records it. */
+interface MockCellResult {
+  execution_id: string;
+  verdict: string;
+  reused_judgment: string | null;
+}
+
+/** The internal mock arm (config, resolved manifest, its hash) for a variant. */
+async function mockArm(env: HarnessEnv, root: string, variant: string) {
   const config = HarnessConfigSchema.parse({
     id: "mock-qualify",
     harness: "mock",
@@ -2986,35 +3038,26 @@ async function qualifyMockCell(
     await readCatalog(join(root, "site", "catalog")),
   );
   const armManifest = await resolveManifest(env.harnessRoot, config, facts);
-  const at = await loadTaskAt(
-    root,
-    taskId,
-    rev,
-    join(env.privateRoot, "work", `qualify-${crypto.randomUUID().slice(0, 8)}`),
-  );
-  const ids = await taskSetIdentity(root, [at.task], env.symbols);
-  const owed = new Map<string, { cell: CellRef; e: ExecutionRecord }>();
-  const r = await runCell(
-    {
-      ...env,
-      supervised: false,
-      qualifyManifest: manifest,
-      judgeLater: (cell, e) => void owed.set(e.id, { cell, e }),
-    },
-    {
-      campaignId: crypto.randomUUID(),
-      block: { index: 0, task_id: taskId, repeat: 1, order: [config.id] },
-      orderInBlock: 0,
-      arm: config.id,
-      armManifest,
-      armManifestHash: await manifestHash(armManifest),
-      task: at.task,
-      taskVisibleHash: ids.tasks[0]!.visible,
-      oracleHash: ids.tasks[0]!.oracle,
-      refapp: await resolveRefapp(root, at.task.task.refapp_version),
-    },
-  );
-  const last = r.executions.at(-1)!;
+  return {
+    config,
+    armManifest,
+    armManifestHash: await manifestHash(armManifest),
+  };
+}
+
+/**
+ * H-104: the mock cell's last execution takes the fixture verdict by
+ * reference when every judge input matches; every other owed execution is
+ * judged.
+ */
+async function settleMockCell(
+  env: HarnessEnv,
+  last: ExecutionRecord,
+  owed: Map<string, { cell: CellRef; e: ExecutionRecord }>,
+  taskId: string,
+  fixture: FixtureJudgment,
+  fixtureDir: string,
+): Promise<MockCellResult> {
   const mine = owed.get(last.id);
   const art = mine ? await env.store.artifact(last.id) : null;
   const inputs: JudgeInputs | null = mine && art
@@ -3065,6 +3108,237 @@ async function qualifyMockCell(
   };
 }
 
+/** One qualify index entry (index v2). */
+interface QualifyEntry {
+  task: string;
+  variant: string;
+  rev: string;
+  judgment_path: string;
+  provenance_path: string;
+  verdict: string;
+  expected: "pass" | "fail";
+  reasons: string[];
+  targets: string[];
+  mock_cell: MockCellResult;
+  /** H-105: taken from an earlier run's matching judgment and mock cell. */
+  resumed: boolean;
+}
+
+/** A variant's fixture judgment, its folder and its mock-cell result. */
+interface VariantResult {
+  dir: string;
+  judgment: JudgmentRecord;
+  mock_cell: MockCellResult;
+}
+
+function qualifyEntry(
+  root: string,
+  task: string,
+  variant: string,
+  rev: string,
+  expected: "pass" | "fail",
+  r: VariantResult,
+  resumed: boolean,
+): QualifyEntry {
+  return {
+    task,
+    variant,
+    rev,
+    judgment_path: posixRel(root, join(r.dir, "judgment.json")),
+    provenance_path: posixRel(root, join(r.dir, "provenance.json")),
+    verdict: r.judgment.verdict,
+    expected,
+    reasons: judgmentReasons(r.judgment),
+    targets: [
+      ...new Set(
+        r.judgment.scorers.flatMap((s) => s.tests.map((x) => x.target)),
+      ),
+    ].sort(),
+    mock_cell: r.mock_cell,
+    resumed,
+  };
+}
+
+/**
+ * H-105: what a qualify process judged under. Everything a judgment depends
+ * on that its provenance does not record (OnPrem index, reset policy, ledger,
+ * symbol ids, lock store), plus the manifest and the provenance fields it
+ * does record, so a resume compares both.
+ */
+interface QualifyBinding {
+  manifest_sha256: string;
+  harness_commit: string;
+  env_fp: string;
+  scorer_fingerprint: string;
+  on_prem_lock_digest: string;
+  reset_id: string;
+  policy_version: number;
+  ledger_root: string;
+  lock_store: string;
+  symbol_ids: string[];
+}
+
+/** H-105: qualify.json beside a fixture judgment that qualify finished. */
+interface QualifyRecord {
+  v: 1;
+  judgment_id: string;
+  binding: QualifyBinding;
+  mock_cell: MockCellResult;
+}
+
+/** H-105: this process's binding; null (no env_fp or harness commit) never resumes. */
+async function qualifyBinding(
+  env: HarnessEnv,
+  manifestSha: string,
+): Promise<QualifyBinding | null> {
+  const env_fp = await laneEnvFp(env);
+  if (env_fp === null || env.harnessCommit === null) return null;
+  return {
+    manifest_sha256: manifestSha,
+    harness_commit: env.harnessCommit,
+    env_fp,
+    scorer_fingerprint: await currentScorerFingerprint(),
+    on_prem_lock_digest: env.onPrem.lockDigest,
+    reset_id: env.deploy.reset.id,
+    policy_version: env.deploy.reset.policyVersion,
+    ledger_root: env.deploy.ledgerRoot,
+    lock_store: env.symbolStore,
+    symbol_ids: env.symbols.map((s) => s.app_id.toLowerCase()).sort(),
+  };
+}
+
+/**
+ * H-105: the earlier fixture judgment and mock cell of this variant that a
+ * rerun may take instead of judging, or null (judge). A candidate must hold
+ * on every check below; of several, the latest ended_at wins, then the
+ * greatest judgment id.
+ */
+async function resumableVariant(
+  env: HarnessEnv,
+  o: CellCliOptions,
+  b: QualifyBinding,
+  taskId: string,
+  variant: string,
+  rev: string,
+): Promise<VariantResult | null> {
+  const base = join(o.resultsDir, "fixtures", taskId, variant);
+  const names: string[] = [];
+  try {
+    for await (const d of Deno.readDir(base)) {
+      if (d.isDirectory) names.push(d.name);
+    }
+  } catch {
+    return null;
+  }
+  if (names.length === 0) return null;
+  // The current task, variant and oracle at this rev.
+  let now;
+  try {
+    const at = await loadTaskAt(
+      o.root,
+      taskId,
+      rev,
+      join(
+        env.privateRoot,
+        "work",
+        `resume-${crypto.randomUUID().slice(0, 8)}`,
+      ),
+    );
+    const ids = await taskSetIdentity(o.root, [at.task], env.symbols);
+    now = {
+      task_commit: at.commit,
+      variant_tree_hash: await hashTree(join(at.task.dir, variant), "task"),
+      task_visible_hash: ids.tasks[0]!.visible,
+      oracle_hash: ids.tasks[0]!.oracle,
+      mock_arm: (await mockArm(env, o.root, variant)).armManifestHash,
+    };
+  } catch {
+    return null;
+  }
+  const found: VariantResult[] = [];
+  for (const name of names) {
+    const dir = join(base, name);
+    try {
+      const q = JSON.parse(
+        await Deno.readTextFile(join(dir, "qualify.json")),
+      ) as QualifyRecord;
+      const p = JSON.parse(
+        await Deno.readTextFile(join(dir, "provenance.json")),
+      );
+      const j = JudgmentRecordSchema.parse(
+        JSON.parse(await Deno.readTextFile(join(dir, "judgment.json"))),
+      );
+      const holds =
+        // The record: this judgment, written under this process's binding.
+        q.v === 1 && q.judgment_id === j.id && j.id === name &&
+        JSON.stringify(q.binding) === JSON.stringify(b) &&
+        // The provenance: this task and variant at this rev and tree.
+        p.task_id === taskId && p.variant === variant && p.rev === rev &&
+        p.task_commit === now.task_commit &&
+        p.variant_tree_hash === now.variant_tree_hash &&
+        p.task_visible_hash === now.task_visible_hash &&
+        p.oracle_hash === now.oracle_hash &&
+        p.scorer_fingerprint === b.scorer_fingerprint &&
+        // The judgment itself: scored under this scorer, commit and env_fp.
+        j.v === 2 && j.verdict !== "unscored" && !j.forced &&
+        j.task_id === taskId &&
+        j.scorer_fingerprint === b.scorer_fingerprint &&
+        j.provenance?.env_fp === b.env_fp &&
+        j.provenance.harness_commit === b.harness_commit;
+      if (!holds) continue;
+      const mock_cell = await mockCellHolds(
+        env,
+        q.mock_cell,
+        j,
+        b,
+        taskId,
+        now.mock_arm,
+      );
+      if (mock_cell) found.push({ dir, judgment: j, mock_cell });
+    } catch {
+      continue;
+    }
+  }
+  found.sort((x, y) =>
+    y.judgment.ended_at.localeCompare(x.judgment.ended_at) ||
+    (y.judgment.id < x.judgment.id ? -1 : y.judgment.id > x.judgment.id ? 1 : 0)
+  );
+  return found[0] ?? null;
+}
+
+/**
+ * H-105: the recorded mock cell still stands: its execution is in the store,
+ * of this task and this mock arm, and is judged by reference to `j` (its
+ * H-104 marker holds) or by its own latest judgment under this binding. The
+ * verdict comes from the store, not from qualify.json.
+ */
+async function mockCellHolds(
+  env: HarnessEnv,
+  m: MockCellResult,
+  j: JudgmentRecord,
+  b: QualifyBinding,
+  taskId: string,
+  armHash: string,
+): Promise<MockCellResult | null> {
+  const e = await env.store.execution(m.execution_id);
+  if (!e || e.task_id !== taskId || e.arm_manifest_hash !== armHash) {
+    return null;
+  }
+  if (m.reused_judgment !== null) {
+    return m.reused_judgment === j.id &&
+        await reusedByReference(env.resultsRoot, e)
+      ? { execution_id: e.id, verdict: j.verdict, reused_judgment: j.id }
+      : null;
+  }
+  const mj = latestJudgment(await env.store.judgments(e.id));
+  return mj && mj.verdict !== "unscored" &&
+      mj.scorer_fingerprint === b.scorer_fingerprint &&
+      mj.provenance?.env_fp === b.env_fp &&
+      mj.provenance.harness_commit === b.harness_commit
+    ? { execution_id: e.id, verdict: mj.verdict, reused_judgment: null }
+    : null;
+}
+
 /**
  * `harness qualify --manifest` (the agreed M4-14/M4-15 contract): per task at
  * its rev, judge-fixture for the positive and every named naive variant plus
@@ -3088,31 +3362,40 @@ export async function harnessQualify(
   const shared: Opener = () =>
     Promise.resolve({ env: h.env, close: () => Promise.resolve() });
   try {
-    const entries = [];
+    // H-105: null (no lineage or no harness commit) never resumes.
+    const binding = await qualifyBinding(h.env, sha);
+    const entries: QualifyEntry[] = [];
+    // v2 (H-104): mock_cell.reused_judgment; a reused verdict is not a second judgment.
+    // H-105: entries[].resumed; a resumed entry is the earlier run's, unchanged.
+    const data = {
+      v: 2,
+      manifest: o.manifest,
+      manifest_sha256: sha,
+      refapp_version: m.refapp_version,
+      entries,
+    };
+    await Deno.mkdir(out, { recursive: true });
+    const partial = join(out, "index.partial.json");
     for (const [taskId, t] of Object.entries(m.tasks).sort()) {
       for (
         const variant of [t.positive, ...t.naive.map((n) => `naive/${n}`)]
       ) {
-        // Graceful stop between variants: no partial index is written.
+        // Graceful stop between variants: index.partial.json holds the finished ones.
         if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
-        const j = await harnessJudgeFixture(taskId, variant, {
-          ...o,
-          rev: t.rev,
-        }, shared);
-        const dir = join(o.resultsDir, "fixtures", taskId, variant, j.id);
-        entries.push({
-          task: taskId,
-          variant,
-          rev: t.rev,
-          judgment_path: posixRel(o.root, join(dir, "judgment.json")),
-          provenance_path: posixRel(o.root, join(dir, "provenance.json")),
-          verdict: j.verdict,
-          expected: variant === t.positive ? "pass" : "fail",
-          reasons: judgmentReasons(j),
-          targets: [
-            ...new Set(j.scorers.flatMap((s) => s.tests.map((x) => x.target))),
-          ].sort(),
-          mock_cell: await qualifyMockCell(
+        const expected = variant === t.positive ? "pass" : "fail";
+        const prior = binding &&
+          await resumableVariant(h.env, o, binding, taskId, variant, t.rev);
+        if (prior) {
+          entries.push(
+            qualifyEntry(o.root, taskId, variant, t.rev, expected, prior, true),
+          );
+        } else {
+          const j = await harnessJudgeFixture(taskId, variant, {
+            ...o,
+            rev: t.rev,
+          }, shared);
+          const dir = join(o.resultsDir, "fixtures", taskId, variant, j.id);
+          const mock_cell = await qualifyMockCell(
             h.env,
             o.root,
             taskId,
@@ -3126,21 +3409,39 @@ export async function harnessQualify(
               ).task_visible_hash,
             },
             dir,
-          ),
-        });
+          );
+          if (binding) {
+            const record: QualifyRecord = {
+              v: 1,
+              judgment_id: j.id,
+              binding,
+              mock_cell,
+            };
+            await Deno.writeTextFile(
+              join(dir, "qualify.json"),
+              JSON.stringify(record, null, 2) + "\n",
+              { createNew: true },
+            );
+          }
+          entries.push(
+            qualifyEntry(o.root, taskId, variant, t.rev, expected, {
+              dir,
+              judgment: j,
+              mock_cell,
+            }, false),
+          );
+        }
+        // Written whole and renamed: a STOP or crash leaves a readable file.
+        await Deno.writeTextFile(
+          `${partial}.tmp`,
+          JSON.stringify(data, null, 2) + "\n",
+        );
+        await Deno.rename(`${partial}.tmp`, partial);
       }
     }
-    // v2 (H-104): mock_cell.reused_judgment; a reused verdict is not a second judgment.
-    const data = {
-      v: 2,
-      manifest: o.manifest,
-      manifest_sha256: sha,
-      refapp_version: m.refapp_version,
-      entries,
-    };
-    await Deno.mkdir(out, { recursive: true });
     const path = join(out, "index.json");
     await Deno.writeTextFile(path, JSON.stringify(data, null, 2) + "\n");
+    await Deno.remove(partial).catch(() => {});
     const bad = entries.filter((e) =>
       e.verdict !== e.expected || e.mock_cell.verdict !== e.expected
     );
