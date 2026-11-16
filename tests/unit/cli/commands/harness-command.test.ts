@@ -34,7 +34,10 @@ import {
   type RouteAuthorizeOptions,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
-import { claimVariant } from "../../../../src/harness/qualify-queue.ts";
+import {
+  claimVariant,
+  closeQueue,
+} from "../../../../src/harness/qualify-queue.ts";
 import {
   backendAddress,
   baselineCreate,
@@ -2537,7 +2540,7 @@ Deno.test("qualify --queue (H-106): a finished variant whose claim is still held
   assert(await stalled.holds(), "the stalled claim is left alone");
 });
 
-Deno.test("qualify --queue (H-106): one publisher per queue; a member that finds the publish claim held exits 0 without writing the index", async () => {
+Deno.test("qualify --queue (H-106): one publisher per queue; a member that finds the publish claim held waits until the holder closes the queue, then exits 0 without writing the index", async () => {
   const { t, out } = await freshQueue();
   await using _t = t;
   // A first member opens the queue and stops after one variant.
@@ -2564,16 +2567,69 @@ Deno.test("qualify --queue (H-106): one publisher per queue; a member that finds
     pidAlive: () => Promise.resolve(true),
   });
   assert(pub);
+  // This member finishes the variants, then waits on the publisher; on the
+  // 2nd wait the publisher closes the queue (its index is published).
+  let waits = 0;
   const r = await queueQualify(t, opener(t), {
     pidAlive: () => Promise.resolve(true),
+    wait: async () => {
+      if (++waits === 2) await closeQueue(qdir, queue_id);
+      if (waits > 5) throw new Error("never saw the queue closed");
+    },
   });
   assertEquals(
     (r.data as { entries: QEntry[] }).entries.map((e) => e.variant),
     ["correct", "naive/a"],
   );
+  assertEquals(waits, 2);
+  // It never wrote the index: the holder published.
   assertEquals(await exists(join(out, "index.json")), false);
-  assertEquals(await exists(join(qdir, `closed-${queue_id}`)), false);
   assert(await pub.holds());
+});
+
+Deno.test("qualify --queue (H-106): a publisher that died holding the publish claim is taken over, and the waiting member publishes", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  await assertRejects(
+    () => queueQualify(t, stopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  const qdir = join(out, "queue");
+  const { queue_id } = JSON.parse(
+    await Deno.readTextFile(join(qdir, "queue.json")),
+  );
+  const dead = await claimVariant(qdir, "publish", queue_id, {
+    token: "dead-publisher",
+    pid: 999_999,
+    host: Deno.hostname(),
+    private_root: "P:/other",
+    containers: ["Cronus282"],
+    env_fp: "0".repeat(64),
+  }, {
+    now: () => Date.now(),
+    host: Deno.hostname(),
+    pidAlive: () => Promise.resolve(false),
+  });
+  assert(dead);
+  // Fresh at first: the member waits; then 11 min pass with the PID gone.
+  let now = Date.now();
+  let waits = 0;
+  const r = await queueQualify(t, opener(t), {
+    now: () => now,
+    pidAlive: () => Promise.resolve(false),
+    wait: () => {
+      if (++waits > 5) throw new Error("never took over the dead publisher");
+      now += 11 * 60_000;
+      return Promise.resolve();
+    },
+  });
+  assertEquals(waits, 1);
+  assertEquals(await dead.holds(), false);
+  const saved = JSON.parse(await Deno.readTextFile(join(out, "index.json")));
+  assertEquals(saved.queue_id, queue_id);
+  assertEquals(saved.entries, (r.data as { entries: QEntry[] }).entries);
+  assert(await exists(join(qdir, `closed-${queue_id}`)));
 });
 
 Deno.test("qualify --queue (H-106): an index that cannot be written fails the run, even when something is already at index.json", async () => {

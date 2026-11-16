@@ -3704,26 +3704,71 @@ async function queuedQualify(
   // so a member that publishes holds the claim on an open queue and no newer
   // queue's index can exist yet; a late member of a closed queue publishes
   // nothing. A member that loses the claim exits 0: the holder publishes.
-  const pub = await claimVariant(qdir, "publish", queue_id, owner, qdeps);
-  if (!pub || await queueClosed(qdir, queue_id)) {
-    await pub?.release();
-    console.log(
-      `[OK] every variant is finished; queue ${queue_id} is published by another member (${path})`,
+  // A member that cannot get the claim waits until the queue is closed, and
+  // takes the claim over if its holder dies first (the claim rules), so a
+  // dead publisher never leaves the queue without an index.
+  while (true) {
+    if (await queueClosed(qdir, queue_id)) {
+      console.log(
+        `[OK] every variant is finished; queue ${queue_id} was published by another member (${path})`,
+      );
+      return { path, data };
+    }
+    const pub = await claimVariant(qdir, "publish", queue_id, owner, qdeps);
+    if (pub) {
+      const beat = setInterval(
+        () => void pub.heartbeat().catch(() => {}),
+        HEARTBEAT_MS,
+      );
+      try {
+        if (!await queueClosed(qdir, queue_id)) {
+          // Fenced as close to the rename as this filesystem allows: still
+          // this member's claim, and the queue still open. ponytail: a pause
+          // of over 10 min between this check and the rename, with the claim
+          // taken over from another host, is the residual window.
+          await writeWholeIf(
+            path,
+            data,
+            async () => await pub.holds() && !await queueClosed(qdir, queue_id),
+          );
+          await Deno.remove(partial).catch(() => {});
+          // A marker, never a rename or delete of queue.json or the dir: a
+          // member of this queue still looping keeps working. The next run
+          // reopens queue.json as a new queue.
+          await closeQueue(qdir, queue_id);
+          reportQualify(path, entries);
+          return { path, data };
+        }
+      } finally {
+        clearInterval(beat);
+        await pub.release();
+      }
+      continue;
+    }
+    if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
+    await qdeps.wait();
+  }
+}
+
+/**
+ * writeWhole, renaming only if `fence` still holds once the tmp file is
+ * written; otherwise the tmp file is removed and an error thrown.
+ */
+async function writeWholeIf(
+  path: string,
+  data: unknown,
+  fence: () => Promise<boolean>,
+): Promise<void> {
+  const tmp = `${path}.tmp-${crypto.randomUUID().slice(0, 8)}`;
+  await Deno.writeTextFile(tmp, JSON.stringify(data, null, 2) + "\n");
+  if (!await fence()) {
+    await Deno.remove(tmp).catch(() => {});
+    throw new ConfigurationError(
+      `qualify queue: lost the publish claim or the queue closed before ${path} was written; nothing published`,
+      path,
     );
-    return { path, data };
   }
-  try {
-    await writeWhole(path, data);
-    await Deno.remove(partial).catch(() => {});
-    // A marker, never a rename or delete of queue.json or the dir: a member
-    // of this queue still looping keeps working. The next run reopens
-    // queue.json as a new queue.
-    await closeQueue(qdir, queue_id);
-  } finally {
-    await pub.release();
-  }
-  reportQualify(path, entries);
-  return { path, data };
+  await Deno.rename(tmp, path);
 }
 
 /** H-106: the queue's clock, host and PID probe, and the wait between passes. */
