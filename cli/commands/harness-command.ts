@@ -38,6 +38,7 @@ import type {
   RunOptions,
 } from "../../src/harness/campaign.ts";
 import type {
+  CellRef,
   CellResult,
   HarnessEnv,
   SecretAccount,
@@ -238,7 +239,8 @@ import {
   writeVerdictLog,
 } from "../../src/harness/verdict.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
-import { renderEnvCheck } from "../../src/harness/environment.ts";
+import { envFpOf, renderEnvCheck } from "../../src/harness/environment.ts";
+import { lockDigestOf } from "../../src/harness/bc-lane.ts";
 import {
   archiveResults,
   guardResultsDir,
@@ -2909,9 +2911,73 @@ function judgmentReasons(j: JudgmentRecord): string[] {
 const posixRel = (from: string, to: string) =>
   relative(from, to).replaceAll("\\", "/");
 
+/** H-104: the judge inputs a reused judgment must match. */
+export interface JudgeInputs {
+  task_id: string;
+  /** visibleInputHash: the task's visible files, refapp and symbols (the pristine tree). */
+  task_visible_hash: string;
+  workspace_hash: string;
+  task_oracle_hash: string;
+  scorer_fingerprint: string;
+  env_fp: string | null;
+  harness_commit: string | null;
+}
+
+/** H-104: a judge-fixture judgment with its provenance's visible-input hash. */
+export interface FixtureJudgment {
+  judgment: JudgmentRecord;
+  task_visible_hash: string;
+}
+
+/**
+ * H-104: a judgment stands for a fresh one of `x` when every judge input
+ * matches. Unknown (null) env_fp or harness commit, an unscored verdict or a
+ * v1 record never match: the caller judges.
+ */
+export function reusableJudgment(f: FixtureJudgment, x: JudgeInputs): boolean {
+  const j = f.judgment;
+  return j.v === 2 && j.verdict !== "unscored" && !j.forced &&
+    x.env_fp !== null && x.harness_commit !== null &&
+    j.task_id === x.task_id &&
+    f.task_visible_hash === x.task_visible_hash &&
+    j.workspace_hash === x.workspace_hash &&
+    j.task_oracle_hash === x.task_oracle_hash &&
+    j.scorer_fingerprint === x.scorer_fingerprint &&
+    j.provenance?.env_fp === x.env_fp &&
+    j.provenance.harness_commit === x.harness_commit;
+}
+
+/**
+ * H-104: the env_fp a judgment on this env's lane records (verdict.ts envFp):
+ * null without a lineage, or when the lane's containers do not share one.
+ */
+async function laneEnvFp(env: HarnessEnv): Promise<string | null> {
+  const compat = env.deploy.reset.compat;
+  if (!compat) return null;
+  const lockDigest = await lockDigestOf({
+    store: env.symbolStore,
+    packages: env.symbols,
+  });
+  const fps = new Set<string>();
+  for (const c of env.lane.containers) {
+    fps.add(
+      await envFpOf({
+        compat,
+        mechanism: env.deploy.reset.id,
+        lockDigest,
+        compiler: await env.lane.bc.harnessCompilerIdentity(c),
+      }),
+    );
+  }
+  return fps.size === 1 ? [...fps][0]! : null;
+}
+
 /**
  * One mock cell (M1-35) applying a manifest variant at its rev: the pipeline
  * check beside judge-fixture. An internal mock arm, not a repo config.
+ * H-104: its judging is deferred; when the judge inputs equal the fixture
+ * judgment's (reusableJudgment) that verdict is reused and the execution is
+ * not judged again, else it is judged as a deferred execution.
  */
 async function qualifyMockCell(
   env: HarnessEnv,
@@ -2920,7 +2986,10 @@ async function qualifyMockCell(
   variant: string,
   rev: string,
   manifest: QualifyManifest,
-): Promise<{ execution_id: string; verdict: string }> {
+  fixture: FixtureJudgment,
+): Promise<
+  { execution_id: string; verdict: string; reused_judgment: string | null }
+> {
   const config = HarnessConfigSchema.parse({
     id: "mock-qualify",
     harness: "mock",
@@ -2952,8 +3021,14 @@ async function qualifyMockCell(
     join(env.privateRoot, "work", `qualify-${crypto.randomUUID().slice(0, 8)}`),
   );
   const ids = await taskSetIdentity(root, [at.task], env.symbols);
+  const owed = new Map<string, { cell: CellRef; e: ExecutionRecord }>();
   const r = await runCell(
-    { ...env, supervised: false, qualifyManifest: manifest },
+    {
+      ...env,
+      supervised: false,
+      qualifyManifest: manifest,
+      judgeLater: (cell, e) => void owed.set(e.id, { cell, e }),
+    },
     {
       campaignId: crypto.randomUUID(),
       block: { index: 0, task_id: taskId, repeat: 1, order: [config.id] },
@@ -2968,8 +3043,35 @@ async function qualifyMockCell(
     },
   );
   const last = r.executions.at(-1)!;
+  const mine = owed.get(last.id);
+  const art = mine ? await env.store.artifact(last.id) : null;
+  const reuse = mine !== undefined && art !== null &&
+    reusableJudgment(fixture, {
+      task_id: taskId,
+      task_visible_hash: mine.cell.taskVisibleHash,
+      workspace_hash: art.workspace_hash,
+      // computeIn judges against the cell's oracle hash.
+      task_oracle_hash: mine.cell.oracleHash,
+      scorer_fingerprint: await currentScorerFingerprint(),
+      env_fp: await laneEnvFp(env),
+      harness_commit: env.harnessCommit ?? null,
+    });
+  if (reuse) owed.delete(last.id);
+  // Every other owed execution is judged, as runCell judged it inline before.
+  for (const { cell, e } of owed.values()) await judgeDeferred(env, cell, e);
+  if (reuse) {
+    return {
+      execution_id: last.id,
+      verdict: fixture.judgment.verdict,
+      reused_judgment: fixture.judgment.id,
+    };
+  }
   const j = latestJudgment(await env.store.judgments(last.id));
-  return { execution_id: last.id, verdict: j?.verdict ?? "unscored" };
+  return {
+    execution_id: last.id,
+    verdict: j?.verdict ?? "unscored",
+    reused_judgment: null,
+  };
 }
 
 /**
@@ -3026,12 +3128,19 @@ export async function harnessQualify(
             variant,
             t.rev,
             m,
+            {
+              judgment: j,
+              task_visible_hash: JSON.parse(
+                await Deno.readTextFile(join(dir, "provenance.json")),
+              ).task_visible_hash,
+            },
           ),
         });
       }
     }
+    // v2 (H-104): mock_cell.reused_judgment; a reused verdict is not a second judgment.
     const data = {
-      v: 1,
+      v: 2,
       manifest: o.manifest,
       manifest_sha256: sha,
       refapp_version: m.refapp_version,

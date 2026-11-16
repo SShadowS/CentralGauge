@@ -29,6 +29,7 @@ import {
   parseRerunCell,
   publicationLockDir,
   registerHarnessCommand,
+  reusableJudgment,
   type RouteAuthorizeOptions,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
@@ -165,7 +166,7 @@ import {
 import { __setContextListerForTests } from "../../../../src/container/docker-context.ts";
 import { createCommandMock } from "../../../utils/command-mock.ts";
 import { ContainerHealthMonitor } from "../../../../src/health/monitor.ts";
-import { runCell } from "../../../../src/harness/execution.ts";
+import { judgmentOwed, runCell } from "../../../../src/harness/execution.ts";
 import {
   CATALOG,
   ccBehavior,
@@ -1811,6 +1812,129 @@ Deno.test("qualify judges every manifest variant at its rev and indexes judgment
       e.variant,
     ]);
   }
+  // H-104: without a lineage (env_fp null) the mock cell judges as before.
+  assertEquals(saved.v, 2);
+  for (const e of saved.entries) {
+    assertEquals(e.mock_cell.reused_judgment, null);
+    assertEquals(
+      (await t.env.store.judgments(e.mock_cell.execution_id)).length,
+      1,
+    );
+  }
+});
+
+/** H-104: qualify on an env whose reset carries a lineage (judgments get a non-null env_fp). */
+async function qualifyWithLineage() {
+  const t = await makeEnv();
+  await writeCatalog(t);
+  t.env.supervised = false;
+  t.env.deploy = {
+    ...t.env.deploy,
+    reset: { ...t.env.deploy.reset, compat: { lineage: "h104-test" } },
+  };
+  t.docker.behavior = mockImageBehavior();
+  await git(t.repo.root, "add", ".");
+  await git(t.repo.root, "commit", "-q", "-m", "tasks");
+  await git(t.repo.root, "tag", "refapp-v1-rc1");
+  const manifest = join(t.env.privateRoot, "qualify-manifest.json");
+  await Deno.writeTextFile(
+    manifest,
+    JSON.stringify({
+      v: 1,
+      refapp_version: "refapp-v1",
+      tasks: {
+        "HX-001": { rev: "refapp-v1-rc1", positive: "correct", naive: ["a"] },
+      },
+    }),
+  );
+  const index = await harnessQualify(
+    { ...cellOpts(t, { supervised: false }), manifest },
+    opener(t),
+  );
+  return { t, index };
+}
+
+Deno.test("qualify (H-104): the mock cell reuses the judge-fixture judgment when workspace, oracle, scorer fingerprint and env_fp match, and the index records it", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const saved = JSON.parse(await Deno.readTextFile(index.path));
+  assertEquals(saved.v, 2);
+  assertEquals(
+    saved.entries.map((
+      e: { verdict: string; mock_cell: { verdict: string } },
+    ) => [
+      e.verdict,
+      e.mock_cell.verdict,
+    ]),
+    [["pass", "pass"], ["fail", "fail"]],
+  );
+  for (const e of saved.entries) {
+    const j = JSON.parse(
+      await Deno.readTextFile(join(t.repo.root, e.judgment_path)),
+    );
+    assert(j.provenance.env_fp !== null, "the fixture judgment has an env_fp");
+    assertEquals(e.mock_cell.reused_judgment, j.id);
+    // (a) the mock execution was not judged again.
+    assertEquals(await t.env.store.judgments(e.mock_cell.execution_id), []);
+    const x = (await t.env.store.allExecutions()).find((y) =>
+      y.id === e.mock_cell.execution_id
+    )!;
+    // No judgment is written for it, so it stays owed: judge-pending on this
+    // results root would judge it (deliberately, H-104 report).
+    assertEquals(await judgmentOwed(t.env, x), true);
+    const art = await t.env.store.artifact(e.mock_cell.execution_id);
+    assertEquals(art!.workspace_hash, j.workspace_hash);
+  }
+});
+
+Deno.test("reusableJudgment (H-104): each judge input that differs, or is unknown, refuses the reuse", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const e = (index.data as {
+    entries: { judgment_path: string; provenance_path: string }[];
+  }).entries[0]!;
+  const j: JudgmentRecord = JSON.parse(
+    await Deno.readTextFile(join(t.repo.root, e.judgment_path)),
+  );
+  const visible: string = JSON.parse(
+    await Deno.readTextFile(join(t.repo.root, e.provenance_path)),
+  ).task_visible_hash;
+  const f = { judgment: j, task_visible_hash: visible };
+  const same = {
+    task_id: j.task_id,
+    task_visible_hash: visible,
+    workspace_hash: j.workspace_hash,
+    task_oracle_hash: j.task_oracle_hash,
+    scorer_fingerprint: j.scorer_fingerprint,
+    env_fp: j.provenance!.env_fp,
+    harness_commit: j.provenance!.harness_commit,
+  };
+  assert(reusableJudgment(f, same));
+  const other = "0".repeat(64);
+  for (
+    const [field, value] of [
+      ["task_id", "HX-002"],
+      ["task_visible_hash", other],
+      ["workspace_hash", other],
+      ["task_oracle_hash", other],
+      ["scorer_fingerprint", other],
+      ["env_fp", other],
+      ["env_fp", null],
+      ["harness_commit", "e".repeat(40)],
+      ["harness_commit", null],
+    ] as const
+  ) {
+    assertEquals(
+      reusableJudgment(f, { ...same, [field]: value }),
+      false,
+      `${field} ${value}`,
+    );
+  }
+  // An unscored judgment is never reused: the mock cell judges again.
+  assertEquals(
+    reusableJudgment({ ...f, judgment: { ...j, verdict: "unscored" } }, same),
+    false,
+  );
 });
 
 /**
