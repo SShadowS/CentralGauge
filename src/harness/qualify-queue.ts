@@ -114,6 +114,11 @@ export async function closeQueue(dir: string, id: string): Promise<void> {
   await createWhole(closedPath(dir, id), "").catch(() => {});
 }
 
+/** H-106: whether queue `id` is closed (its index was published). */
+export function queueClosed(dir: string, id: string): Promise<boolean> {
+  return exists(closedPath(dir, id));
+}
+
 /** Attempts at reading or reopening queue.json before giving up. */
 const JOIN_ATTEMPTS = 20;
 
@@ -238,12 +243,19 @@ async function takeOver(
   ) {
     return false;
   }
-  const now = await tokenOf(path);
-  if (now !== stale && !(now === null && stale.startsWith("mtime-"))) {
-    return false;
+  // The marker is this taker's now. It is removed when the step ends, won or
+  // lost, so only a taker that died mid-step leaves one behind. A late taker
+  // that re-creates it then finds the token changed and backs off.
+  try {
+    const now = await tokenOf(path);
+    if (now !== stale && !(now === null && stale.startsWith("mtime-"))) {
+      return false;
+    }
+    await Deno.remove(path).catch(() => {});
+    return await createWhole(path, text);
+  } finally {
+    await Deno.remove(marker).catch(() => {});
   }
-  await Deno.remove(path).catch(() => {});
-  return await createWhole(path, text);
 }
 
 /**

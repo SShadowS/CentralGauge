@@ -213,6 +213,7 @@ import {
   defaultQueueDeps,
   HEARTBEAT_MS,
   joinQueue,
+  queueClosed,
   type QueueDeps,
   type QueueOwner,
   type VariantClaim,
@@ -3698,19 +3699,29 @@ async function queuedQualify(
   }
   data.entries = entries;
   const path = join(out, "index.json");
+  // One publisher per queue: the publish claim (the same claim rules), and
+  // only while the queue is not closed. A queue is reopened only once closed,
+  // so a member that publishes holds the claim on an open queue and no newer
+  // queue's index can exist yet; a late member of a closed queue publishes
+  // nothing. A member that loses the claim exits 0: the holder publishes.
+  const pub = await claimVariant(qdir, "publish", queue_id, owner, qdeps);
+  if (!pub || await queueClosed(qdir, queue_id)) {
+    await pub?.release();
+    console.log(
+      `[OK] every variant is finished; queue ${queue_id} is published by another member (${path})`,
+    );
+    return { path, data };
+  }
   try {
     await writeWhole(path, data);
-  } catch (err) {
-    // Two members renaming at once is fine only if the index there is this
-    // queue's, with these entries; anything else (an older queue's) is an error.
-    const there = await Deno.readTextFile(path).catch(() => null);
-    if (there !== JSON.stringify(data, null, 2) + "\n") throw err;
+    await Deno.remove(partial).catch(() => {});
+    // A marker, never a rename or delete of queue.json or the dir: a member
+    // of this queue still looping keeps working. The next run reopens
+    // queue.json as a new queue.
+    await closeQueue(qdir, queue_id);
+  } finally {
+    await pub.release();
   }
-  await Deno.remove(partial).catch(() => {});
-  // A marker, never a rename or delete of queue.json or the dir: a member of
-  // this queue still looping keeps working, and a late member cannot close a
-  // newer queue. The next run reopens queue.json as a new queue.
-  await closeQueue(qdir, queue_id);
   reportQualify(path, entries);
   return { path, data };
 }

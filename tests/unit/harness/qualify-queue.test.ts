@@ -87,6 +87,13 @@ Deno.test("qualify queue (H-106): a claim older than 10 min whose PID is gone is
     assertEquals(got.filter((c) => c !== null).length, 1);
     const winner = got.find((c) => c !== null)!;
     assert(await winner.holds());
+    // The takeover's marker is gone once the step ends: none can linger
+    // owned by a live taker (and so none can block a later takeover).
+    const left = [];
+    for await (const d of Deno.readDir(join(dir, "claims"))) {
+      if (d.name.includes(".reclaim-")) left.push(d.name);
+    }
+    assertEquals(left, []);
     // The dead owner lost it: its token check fails, and its release leaves the new claim.
     assertEquals(await dead.holds(), false);
     await dead.release();

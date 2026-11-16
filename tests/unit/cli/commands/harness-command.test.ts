@@ -2537,6 +2537,45 @@ Deno.test("qualify --queue (H-106): a finished variant whose claim is still held
   assert(await stalled.holds(), "the stalled claim is left alone");
 });
 
+Deno.test("qualify --queue (H-106): one publisher per queue; a member that finds the publish claim held exits 0 without writing the index", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  // A first member opens the queue and stops after one variant.
+  await assertRejects(
+    () => queueQualify(t, stopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  const qdir = join(out, "queue");
+  const { queue_id } = JSON.parse(
+    await Deno.readTextFile(join(qdir, "queue.json")),
+  );
+  // Another member, live on this host, is publishing this queue.
+  const pub = await claimVariant(qdir, "publish", queue_id, {
+    token: "publisher",
+    pid: 999_999,
+    host: Deno.hostname(),
+    private_root: "P:/other",
+    containers: ["Cronus282"],
+    env_fp: "0".repeat(64),
+  }, {
+    now: () => Date.now(),
+    host: Deno.hostname(),
+    pidAlive: () => Promise.resolve(true),
+  });
+  assert(pub);
+  const r = await queueQualify(t, opener(t), {
+    pidAlive: () => Promise.resolve(true),
+  });
+  assertEquals(
+    (r.data as { entries: QEntry[] }).entries.map((e) => e.variant),
+    ["correct", "naive/a"],
+  );
+  assertEquals(await exists(join(out, "index.json")), false);
+  assertEquals(await exists(join(qdir, `closed-${queue_id}`)), false);
+  assert(await pub.holds());
+});
+
 Deno.test("qualify --queue (H-106): an index that cannot be written fails the run, even when something is already at index.json", async () => {
   const { t, out } = await freshQueue();
   await using _t = t;
