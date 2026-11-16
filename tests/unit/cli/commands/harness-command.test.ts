@@ -25,6 +25,7 @@ import {
   harnessReport,
   harnessRun,
   harnessSymbolsLock,
+  mockCellHolds,
   parseCoordLease,
   parseRerunCell,
   publicationLockDir,
@@ -2053,6 +2054,16 @@ Deno.test("qualify (H-105): a rerun with the same manifest reuses a variant whos
     ) dirs.push(d.name);
     assertEquals(dirs.length, 1, e.variant);
   }
+  // --no-resume judges every variant again.
+  const fresh = await harnessQualify({
+    ...cellOpts(t, { supervised: false }),
+    manifest: join(t.env.privateRoot, "qualify-manifest.json"),
+    resume: false,
+  }, opener(t));
+  assertEquals(
+    (fresh.data as { entries: QEntry[] }).entries.map((e) => e.resumed),
+    [false, false],
+  );
 });
 
 Deno.test("qualify (H-105): any one match field that differs judges the variant again", async () => {
@@ -2249,6 +2260,62 @@ Deno.test("qualify (H-105): a STOP between variants leaves a readable partial in
   }
   assertEquals(await exists(join(out, "index.partial.json")), false);
   assertEquals(JSON.parse(await Deno.readTextFile(r.path)), r.data);
+});
+
+Deno.test("qualify (H-105): a mock cell with its own current judgment (not reused) resumes; under a stale scorer, env_fp or harness commit it does not", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const e = (index.data as { entries: QEntry[] }).entries[0]!;
+  const id = e.mock_cell.execution_id;
+  // Drop the reference: the execution is owed, and judge-pending judges it.
+  await Deno.remove(reuseMarkerPath(t.env.resultsRoot, id));
+  assertEquals(
+    await harnessJudgePending(cellOpts(t, { supervised: false }), opener(t)),
+    1,
+  );
+  const own = await t.env.store.judgments(id);
+  assertEquals(own.length, 1);
+  const qr = join(dirname(join(t.repo.root, e.judgment_path)), "qualify.json");
+  await editJson(qr, (q) => q.mock_cell.reused_judgment = null);
+  const [r] = await requalify(t);
+  assertEquals(r!.resumed, true);
+  assertEquals(r!.judgment_path, e.judgment_path);
+  assertEquals(r!.mock_cell, {
+    execution_id: id,
+    verdict: own[0]!.verdict,
+    reused_judgment: null,
+  });
+  assertEquals((await t.env.store.judgments(id)).length, 1);
+  // mockCellHolds directly: current binding holds, a stale one does not.
+  const q = JSON.parse(await Deno.readTextFile(qr));
+  const j = JSON.parse(
+    await Deno.readTextFile(join(t.repo.root, e.judgment_path)),
+  );
+  const arm = (await t.env.store.execution(id))!.arm_manifest_hash;
+  const holds = (b: unknown) =>
+    mockCellHolds(t.env, q.mock_cell, j, b as never, "HX-001", arm);
+  assertEquals((await holds(q.binding))?.reused_judgment, null);
+  for (
+    const field of ["scorer_fingerprint", "env_fp", "harness_commit"] as const
+  ) {
+    assertEquals(
+      await holds({ ...q.binding, [field]: "0".repeat(64) }),
+      null,
+      field,
+    );
+  }
+  assertEquals(
+    // Another mock arm (image or config) is stale too.
+    await mockCellHolds(
+      t.env,
+      q.mock_cell,
+      j,
+      q.binding,
+      "HX-001",
+      "0".repeat(64),
+    ),
+    null,
+  );
 });
 
 Deno.test("qualify (H-105): of two matching judgments the rerun takes the latest ended_at, then the greatest id", async () => {
@@ -2475,6 +2542,21 @@ Deno.test("qualify --queue (H-106): a finished variant whose claim is still held
 Deno.test("qualify --queue (H-106): without a lineage there is no binding, and --queue is refused", async () => {
   const { t } = await qualifyWithLineage();
   await using _t = t;
+  // A queue counts variants done by resuming, so --no-resume cannot join one.
+  await assertRejects(
+    () =>
+      harnessQualify(
+        {
+          ...cellOpts(t, { supervised: false }),
+          manifest: join(t.env.privateRoot, "qualify-manifest.json"),
+          queue: true,
+          resume: false,
+        },
+        opener(t),
+      ),
+    ConfigurationError,
+    "--queue and --no-resume do not combine",
+  );
   t.env.deploy = {
     ...t.env.deploy,
     reset: { ...t.env.deploy.reset, compat: undefined as never },

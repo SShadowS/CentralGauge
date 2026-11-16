@@ -3342,7 +3342,7 @@ async function resumableVariant(
  * H-104 marker holds) or by its own latest judgment under this binding. The
  * verdict comes from the store, not from qualify.json.
  */
-async function mockCellHolds(
+export async function mockCellHolds(
   env: HarnessEnv,
   m: MockCellResult,
   j: JudgmentRecord,
@@ -3375,7 +3375,11 @@ async function mockCellHolds(
  * one mock cell each; index at results/harness/qualify/<manifest sha256>/.
  */
 export async function harnessQualify(
-  o: CellCliOptions & { manifest: string; queue?: boolean },
+  /**
+   * resume (H-105, default true): false judges every variant afresh.
+   * queue (H-106, default false): share the manifest with other --queue processes.
+   */
+  o: CellCliOptions & { manifest: string; resume?: boolean; queue?: boolean },
   open: Opener = openHarnessEnv,
   qdeps: QualifyQueueDeps = defaultQualifyQueueDeps(),
 ): Promise<{ path: string; data: unknown }> {
@@ -3415,6 +3419,12 @@ export async function harnessQualify(
     };
     await Deno.mkdir(out, { recursive: true });
     if (o.queue) {
+      if (o.resume === false) {
+        throw new ConfigurationError(
+          "--queue and --no-resume do not combine: a queue member counts a variant done by resuming another member's judgment; use a new --results-dir for a fresh queue",
+          o.manifest,
+        );
+      }
       if (!binding) {
         throw new ConfigurationError(
           "--queue needs a lineage (env_fp) and a known harness commit: without them no process can tell another's finished variants from stale ones",
@@ -3431,7 +3441,7 @@ export async function harnessQualify(
         // Graceful stop between variants: index.partial.json holds the finished ones.
         if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
         const expected = variant === t.positive ? "pass" : "fail";
-        const prior = binding &&
+        const prior = binding && o.resume !== false &&
           await resumableVariant(h.env, o, binding, taskId, variant, t.rev);
         if (prior) {
           entries.push(
@@ -4719,14 +4729,25 @@ export function registerHarnessCommand(
       required: true,
     })
     .option(
+      "--no-resume",
+      "Judge every variant again, even one an earlier run finished with matching inputs",
+    )
+    .option(
       "--queue",
       "Share the manifest with other --queue processes on this results root: claim variants one at a time (H-106)",
     )
-    .action((opts: CellCliFlags & { manifest: string; queue?: boolean }) =>
+    .action((
+      opts: CellCliFlags & {
+        manifest: string;
+        resume: boolean;
+        queue?: boolean;
+      },
+    ) =>
       fail(async () =>
         void await harnessQualify({
           ...cliOpts(opts),
           manifest: resolve(opts.manifest),
+          resume: opts.resume,
           queue: opts.queue === true,
         })
       )
