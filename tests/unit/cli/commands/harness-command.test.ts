@@ -29,7 +29,6 @@ import {
   parseRerunCell,
   publicationLockDir,
   registerHarnessCommand,
-  reusableJudgment,
   type RouteAuthorizeOptions,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
@@ -167,6 +166,10 @@ import { __setContextListerForTests } from "../../../../src/container/docker-con
 import { createCommandMock } from "../../../utils/command-mock.ts";
 import { ContainerHealthMonitor } from "../../../../src/health/monitor.ts";
 import { judgmentOwed, runCell } from "../../../../src/harness/execution.ts";
+import {
+  reusableJudgment,
+  reuseMarkerPath,
+} from "../../../../src/harness/judgment-reuse.ts";
 import {
   CATALOG,
   ccBehavior,
@@ -1879,12 +1882,51 @@ Deno.test("qualify (H-104): the mock cell reuses the judge-fixture judgment when
     const x = (await t.env.store.allExecutions()).find((y) =>
       y.id === e.mock_cell.execution_id
     )!;
-    // No judgment is written for it, so it stays owed: judge-pending on this
-    // results root would judge it (deliberately, H-104 report).
-    assertEquals(await judgmentOwed(t.env, x), true);
+    // Run 002: judged by reference (its reuse marker), so never owed.
+    assertEquals(await judgmentOwed(t.env, x), false);
     const art = await t.env.store.artifact(e.mock_cell.execution_id);
     assertEquals(art!.workspace_hash, j.workspace_hash);
   }
+  // judge-pending over the same results root skips the reused executions.
+  assertEquals(
+    await harnessJudgePending(cellOpts(t, { supervised: false }), opener(t)),
+    0,
+  );
+  for (const e of saved.entries) {
+    assertEquals(await t.env.store.judgments(e.mock_cell.execution_id), []);
+  }
+});
+
+Deno.test("qualify (H-104 run 002): a reuse marker whose judgment is missing, or whose inputs no longer match, leaves the execution owed", async () => {
+  const { t, index } = await qualifyWithLineage();
+  await using _t = t;
+  const e = (index.data as {
+    entries: { judgment_path: string; mock_cell: { execution_id: string } }[];
+  }).entries[0]!;
+  const x = (await t.env.store.allExecutions()).find((y) =>
+    y.id === e.mock_cell.execution_id
+  )!;
+  const marker = reuseMarkerPath(t.env.resultsRoot, x.id);
+  const text = await Deno.readTextFile(marker);
+  assertEquals(await judgmentOwed(t.env, x), false);
+  const m = JSON.parse(text);
+  for (
+    const tamper of [
+      { ...m, inputs: { ...m.inputs, workspace_hash: "0".repeat(64) } },
+      { ...m, inputs: { ...m.inputs, task_visible_hash: "0".repeat(64) } },
+      { ...m, inputs: { ...m.inputs, env_fp: "0".repeat(64) } },
+      { ...m, execution_id: crypto.randomUUID() },
+      { ...m, judgment_id: crypto.randomUUID() },
+    ]
+  ) {
+    await Deno.writeTextFile(marker, JSON.stringify(tamper));
+    assertEquals(await judgmentOwed(t.env, x), true, JSON.stringify(tamper));
+  }
+  await Deno.writeTextFile(marker, text);
+  assertEquals(await judgmentOwed(t.env, x), false);
+  // The referenced judgment is gone: owed again.
+  await Deno.remove(join(t.repo.root, e.judgment_path));
+  assertEquals(await judgmentOwed(t.env, x), true);
 });
 
 Deno.test("reusableJudgment (H-104): each judge input that differs, or is unknown, refuses the reuse", async () => {

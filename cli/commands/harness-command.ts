@@ -242,6 +242,12 @@ import { readCatalog } from "../../src/ingest/catalog/read.ts";
 import { envFpOf, renderEnvCheck } from "../../src/harness/environment.ts";
 import { lockDigestOf } from "../../src/harness/bc-lane.ts";
 import {
+  type FixtureJudgment,
+  type JudgeInputs,
+  reusableJudgment,
+  writeReuseMarker,
+} from "../../src/harness/judgment-reuse.ts";
+import {
   archiveResults,
   guardResultsDir,
   liveRunMarker,
@@ -2911,42 +2917,6 @@ function judgmentReasons(j: JudgmentRecord): string[] {
 const posixRel = (from: string, to: string) =>
   relative(from, to).replaceAll("\\", "/");
 
-/** H-104: the judge inputs a reused judgment must match. */
-export interface JudgeInputs {
-  task_id: string;
-  /** visibleInputHash: the task's visible files, refapp and symbols (the pristine tree). */
-  task_visible_hash: string;
-  workspace_hash: string;
-  task_oracle_hash: string;
-  scorer_fingerprint: string;
-  env_fp: string | null;
-  harness_commit: string | null;
-}
-
-/** H-104: a judge-fixture judgment with its provenance's visible-input hash. */
-export interface FixtureJudgment {
-  judgment: JudgmentRecord;
-  task_visible_hash: string;
-}
-
-/**
- * H-104: a judgment stands for a fresh one of `x` when every judge input
- * matches. Unknown (null) env_fp or harness commit, an unscored verdict or a
- * v1 record never match: the caller judges.
- */
-export function reusableJudgment(f: FixtureJudgment, x: JudgeInputs): boolean {
-  const j = f.judgment;
-  return j.v === 2 && j.verdict !== "unscored" && !j.forced &&
-    x.env_fp !== null && x.harness_commit !== null &&
-    j.task_id === x.task_id &&
-    f.task_visible_hash === x.task_visible_hash &&
-    j.workspace_hash === x.workspace_hash &&
-    j.task_oracle_hash === x.task_oracle_hash &&
-    j.scorer_fingerprint === x.scorer_fingerprint &&
-    j.provenance?.env_fp === x.env_fp &&
-    j.provenance.harness_commit === x.harness_commit;
-}
-
 /**
  * H-104: the env_fp a judgment on this env's lane records (verdict.ts envFp):
  * null without a lineage, or when the lane's containers do not share one.
@@ -2987,6 +2957,8 @@ async function qualifyMockCell(
   rev: string,
   manifest: QualifyManifest,
   fixture: FixtureJudgment,
+  /** The fixture's judgment.json and provenance.json folder. */
+  fixtureDir: string,
 ): Promise<
   { execution_id: string; verdict: string; reused_judgment: string | null }
 > {
@@ -3045,8 +3017,8 @@ async function qualifyMockCell(
   const last = r.executions.at(-1)!;
   const mine = owed.get(last.id);
   const art = mine ? await env.store.artifact(last.id) : null;
-  const reuse = mine !== undefined && art !== null &&
-    reusableJudgment(fixture, {
+  const inputs: JudgeInputs | null = mine && art
+    ? {
       task_id: taskId,
       task_visible_hash: mine.cell.taskVisibleHash,
       workspace_hash: art.workspace_hash,
@@ -3055,8 +3027,27 @@ async function qualifyMockCell(
       scorer_fingerprint: await currentScorerFingerprint(),
       env_fp: await laneEnvFp(env),
       harness_commit: env.harnessCommit ?? null,
+    }
+    : null;
+  const reuse = inputs !== null && reusableJudgment(fixture, inputs);
+  if (reuse) {
+    // Run 002: judged by reference; a crash before this write leaves it owed.
+    await writeReuseMarker(env.resultsRoot, {
+      v: 1,
+      execution_id: last.id,
+      judgment_id: fixture.judgment.id,
+      judgment_path: posixRel(
+        env.resultsRoot,
+        join(fixtureDir, "judgment.json"),
+      ),
+      provenance_path: posixRel(
+        env.resultsRoot,
+        join(fixtureDir, "provenance.json"),
+      ),
+      inputs,
     });
-  if (reuse) owed.delete(last.id);
+    owed.delete(last.id);
+  }
   // Every other owed execution is judged, as runCell judged it inline before.
   for (const { cell, e } of owed.values()) await judgeDeferred(env, cell, e);
   if (reuse) {
@@ -3134,6 +3125,7 @@ export async function harnessQualify(
                 await Deno.readTextFile(join(dir, "provenance.json")),
               ).task_visible_hash,
             },
+            dir,
           ),
         });
       }
