@@ -95,6 +95,45 @@ Deno.test("qualify queue (H-106): a claim older than 10 min whose PID is gone is
   }
 });
 
+Deno.test("qualify queue (H-106): a reclaimer that died after its marker never blocks the variant; a live reclaimer's marker does", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    assert(await claimVariant(dir, "HX-001", "correct", owner("A"), deps(T0)));
+    await age(dir, "HX-001", "correct", CLAIM_STALE_MS + 60_000);
+    const claim = join(
+      dir,
+      "claims",
+      `${encodeURIComponent("HX-001/correct")}.json`,
+    );
+    // Reclaimer R created the marker for A's stale claim, then nothing more.
+    const marker = `${claim}.reclaim-A`;
+    await Deno.writeTextFile(
+      marker,
+      JSON.stringify({ v: 1, owner: owner("R", { pid: 7 }) }),
+    );
+    // R is fresh (under 10 min): it is still reclaiming, leave it.
+    await Deno.utime(marker, new Date(T0), new Date(T0));
+    assertEquals(
+      await claimVariant(dir, "HX-001", "correct", owner("B"), deps(T0)),
+      null,
+    );
+    // R is stale and its PID is gone: B takes over the marker, then the claim.
+    const t = new Date(T0 - CLAIM_STALE_MS - 60_000);
+    await Deno.utime(marker, t, t);
+    const b = await claimVariant(
+      dir,
+      "HX-001",
+      "correct",
+      owner("B"),
+      deps(T0),
+    );
+    assert(b);
+    assert(await b.holds());
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("qualify queue (H-106): a fresh-but-slow claim is not reclaimed (under 10 min, or its PID alive on this host)", async () => {
   const dir = await Deno.makeTempDir();
   try {

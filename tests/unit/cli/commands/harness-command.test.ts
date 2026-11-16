@@ -2370,7 +2370,17 @@ Deno.test("qualify --queue (H-106): two processes on one manifest judge every va
   const saved = JSON.parse(await Deno.readTextFile(join(out, "index.json")));
   assertEquals(saved.entries, ex);
   assertEquals(typeof saved.queue_id, "string");
-  assertEquals(await exists(join(out, "queue")), false);
+  // Paths anchored at the shared results dir, not at a member's worktree.
+  assertEquals(saved.paths_relative_to, "results_dir");
+  for (const e of ex) {
+    assert(e.judgment_path.startsWith("fixtures/HX-001/"), e.judgment_path);
+    assert(await exists(join(t.env.resultsRoot, e.judgment_path)));
+  }
+  // Closed by renaming queue.json; the dir stays for members still looping.
+  assertEquals(await exists(join(out, "queue", "queue.json")), false);
+  assert(
+    await exists(join(out, "queue", `queue.done-${saved.queue_id}.json`)),
+  );
   assertEquals(await exists(join(out, "index.partial.json")), false);
 });
 
@@ -2439,6 +2449,27 @@ Deno.test("qualify --queue (H-106): a process that STOPs leaves the queue to the
     (again.data as { entries: QEntry[] }).entries.map((e) => e.resumed),
     [true, true],
   );
+});
+
+Deno.test("qualify --queue (H-106): a finished variant whose claim is still held (owner stalled after qualify.json) counts as done; the process exits", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  await queueQualify(t);
+  // A live owner holds correct, fresh, though its qualify.json is on disk.
+  const stalled = await plantClaim(out, 0, "stalled");
+  let waits = 0;
+  const r = await queueQualify(t, opener(t), {
+    pidAlive: () => Promise.resolve(true),
+    wait: () =>
+      ++waits > 2
+        ? Promise.reject(new Error("still waiting on a finished variant"))
+        : Promise.resolve(),
+  });
+  assertEquals(
+    (r.data as { entries: QEntry[] }).entries.map((e) => e.resumed),
+    [true, true],
+  );
+  assert(await stalled.holds(), "the stalled claim is left alone");
 });
 
 Deno.test("qualify --queue (H-106): without a lineage there is no binding, and --queue is refused", async () => {

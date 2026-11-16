@@ -155,6 +155,40 @@ async function tokenOf(path: string): Promise<string | null> {
   return (await readJson<ClaimFile>(path))?.owner?.token ?? null;
 }
 
+/** How many dead reclaimers in a row one takeover passes over. */
+const MAX_TAKEOVER_DEPTH = 4;
+
+/**
+ * Replaces the stale file at `path` with `text`; false when it is not stale or
+ * another process is taking it over. One taker per stale generation: the
+ * marker `<path>.reclaim-<stale token>` is created exclusively. A marker left
+ * by a taker that died is itself a stale file (the same age and PID rule), so
+ * it is taken over the same way, and a dead taker never blocks the variant.
+ */
+async function takeOver(
+  path: string,
+  text: string,
+  deps: QueueDeps,
+  depth = 0,
+): Promise<boolean> {
+  const stale = await staleToken(path, deps);
+  if (stale === null) return false;
+  const marker = `${path}.reclaim-${stale}`;
+  if (
+    !await createWhole(marker, text) &&
+    !(depth < MAX_TAKEOVER_DEPTH &&
+      await takeOver(marker, text, deps, depth + 1))
+  ) {
+    return false;
+  }
+  const now = await tokenOf(path);
+  if (now !== stale && !(now === null && stale.startsWith("mtime-"))) {
+    return false;
+  }
+  await Deno.remove(path).catch(() => {});
+  return await createWhole(path, text);
+}
+
 /**
  * Claims task/variant for `owner`, or null when another process holds it
  * (live, or being reclaimed by someone else).
@@ -176,17 +210,8 @@ export async function claimVariant(
     claimed_at: new Date(deps.now()).toISOString(),
   };
   const text = JSON.stringify(body, null, 2) + "\n";
-  if (!await createWhole(path, text)) {
-    const stale = await staleToken(path, deps);
-    if (stale === null) return null;
-    // One reclaimer per stale generation: the marker is keyed by its token.
-    if (!await createWhole(`${path}.reclaim-${stale}`, text)) return null;
-    const now = await tokenOf(path);
-    if (now !== stale && !(now === null && stale.startsWith("mtime-"))) {
-      return null;
-    }
-    await Deno.remove(path).catch(() => {});
-    if (!await createWhole(path, text)) return null;
+  if (!await createWhole(path, text) && !await takeOver(path, text, deps)) {
+    return null;
   }
   const holds = async () => await tokenOf(path) === owner.token;
   return {

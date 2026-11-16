@@ -3585,7 +3585,11 @@ async function queuedQualify(
   m: QualifyManifest,
   shared: Opener,
   binding: QualifyBinding,
-  data: { entries: QualifyEntry[]; queue_id?: string },
+  data: {
+    entries: QualifyEntry[];
+    queue_id?: string;
+    paths_relative_to?: "results_dir";
+  },
   out: string,
   qdeps: QualifyQueueDeps,
 ): Promise<{ path: string; data: unknown }> {
@@ -3596,6 +3600,9 @@ async function queuedQualify(
     qdeps.now(),
   );
   data.queue_id = queue_id;
+  // Members run from different worktrees: paths are anchored at the shared
+  // results dir, so the entries do not depend on which process writes them.
+  data.paths_relative_to = "results_dir";
   const owner: QueueOwner = {
     token: crypto.randomUUID(),
     pid: Deno.pid,
@@ -3608,7 +3615,7 @@ async function queuedQualify(
   const key = (v: QualifyItem) => `${v.task}/${v.variant}`;
   const entry = (v: (typeof items)[number], r: VariantResult) =>
     qualifyEntry(
-      o.root,
+      o.resultsDir,
       v.task,
       v.variant,
       v.rev,
@@ -3616,6 +3623,8 @@ async function queuedQualify(
       r,
       r.queue_id !== queue_id,
     );
+  const finished = (v: QualifyItem) =>
+    resumableVariant(h.env, o, binding, v.task, v.variant, v.rev);
   const done = new Map<string, VariantResult>();
   const partial = join(out, "index.partial.json");
   let held: VariantClaim | null = null;
@@ -3629,17 +3638,16 @@ async function queuedQualify(
         if (done.has(key(v))) continue;
         if (await h.stopRequested?.()) throw stoppedBetweenRows("qualify");
         const c = await claimVariant(qdir, v.task, v.variant, owner, qdeps);
-        if (!c) continue;
+        if (!c) {
+          // Held by another, which may have finished it and not released
+          // yet (or died, or stalled, after writing qualify.json).
+          const r = await finished(v);
+          if (r) done.set(key(v), r);
+          continue;
+        }
         held = c;
         try {
-          const r = await resumableVariant(
-            h.env,
-            o,
-            binding,
-            v.task,
-            v.variant,
-            v.rev,
-          ) ??
+          const r = await finished(v) ??
             await judgeVariant(h.env, o, m, shared, binding, v, {
               queue_id,
               holds: c.holds,
@@ -3666,14 +3674,7 @@ async function queuedQualify(
   // From disk, so every process that gets here writes the same entries.
   const entries: QualifyEntry[] = [];
   for (const v of items) {
-    const r = await resumableVariant(
-      h.env,
-      o,
-      binding,
-      v.task,
-      v.variant,
-      v.rev,
-    );
+    const r = await finished(v);
     if (!r) {
       throw new ConfigurationError(
         `qualify queue: ${
@@ -3686,9 +3687,19 @@ async function queuedQualify(
   }
   data.entries = entries;
   const path = join(out, "index.json");
-  await writeWhole(path, data);
+  try {
+    await writeWhole(path, data);
+  } catch (err) {
+    // Two writers renaming at once: the other's index has the same entries.
+    if (!await exists(path)) throw err;
+  }
   await Deno.remove(partial).catch(() => {});
-  await Deno.remove(qdir, { recursive: true }).catch(() => {});
+  // Closed by renaming queue.json, never by deleting the dir: a member still
+  // in its loop may be writing a claim there. The next run opens a new queue.
+  await Deno.rename(
+    join(qdir, "queue.json"),
+    join(qdir, `queue.done-${queue_id}.json`),
+  ).catch(() => {});
   reportQualify(path, entries);
   return { path, data };
 }
