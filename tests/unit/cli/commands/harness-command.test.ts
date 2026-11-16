@@ -2443,11 +2443,9 @@ Deno.test("qualify --queue (H-106): two processes on one manifest judge every va
     assert(e.judgment_path.startsWith("fixtures/HX-001/"), e.judgment_path);
     assert(await exists(join(t.env.resultsRoot, e.judgment_path)));
   }
-  // Closed by renaming queue.json; the dir stays for members still looping.
-  assertEquals(await exists(join(out, "queue", "queue.json")), false);
-  assert(
-    await exists(join(out, "queue", `queue.done-${saved.queue_id}.json`)),
-  );
+  // Closed by a marker; queue.json and the dir stay for members still looping.
+  assert(await exists(join(out, "queue", "queue.json")));
+  assert(await exists(join(out, "queue", `closed-${saved.queue_id}`)));
   assertEquals(await exists(join(out, "index.partial.json")), false);
 });
 
@@ -2537,6 +2535,14 @@ Deno.test("qualify --queue (H-106): a finished variant whose claim is still held
     [true, true],
   );
   assert(await stalled.holds(), "the stalled claim is left alone");
+});
+
+Deno.test("qualify --queue (H-106): an index that cannot be written fails the run, even when something is already at index.json", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  // Something at index.json that the rename cannot replace.
+  await Deno.mkdir(join(out, "index.json", "x"), { recursive: true });
+  await assertRejects(() => queueQualify(t));
 });
 
 Deno.test("qualify --queue (H-106): without a lineage there is no binding, and --queue is refused", async () => {

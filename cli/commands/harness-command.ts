@@ -209,6 +209,7 @@ import {
 } from "../../src/harness/qualify.ts";
 import {
   claimVariant,
+  closeQueue,
   defaultQueueDeps,
   HEARTBEAT_MS,
   joinQueue,
@@ -3700,16 +3701,16 @@ async function queuedQualify(
   try {
     await writeWhole(path, data);
   } catch (err) {
-    // Two writers renaming at once: the other's index has the same entries.
-    if (!await exists(path)) throw err;
+    // Two members renaming at once is fine only if the index there is this
+    // queue's, with these entries; anything else (an older queue's) is an error.
+    const there = await Deno.readTextFile(path).catch(() => null);
+    if (there !== JSON.stringify(data, null, 2) + "\n") throw err;
   }
   await Deno.remove(partial).catch(() => {});
-  // Closed by renaming queue.json, never by deleting the dir: a member still
-  // in its loop may be writing a claim there. The next run opens a new queue.
-  await Deno.rename(
-    join(qdir, "queue.json"),
-    join(qdir, `queue.done-${queue_id}.json`),
-  ).catch(() => {});
+  // A marker, never a rename or delete of queue.json or the dir: a member of
+  // this queue still looping keeps working, and a late member cannot close a
+  // newer queue. The next run reopens queue.json as a new queue.
+  await closeQueue(qdir, queue_id);
   reportQualify(path, entries);
   return { path, data };
 }

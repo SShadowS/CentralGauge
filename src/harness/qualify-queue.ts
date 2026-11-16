@@ -7,6 +7,8 @@
  * - `queue.json`: `{v, queue_id, binding, created_at}`, made once. A process
  *   with any other binding (env_fp included) is refused, so one index never
  *   spans two environments.
+ * - `closed-<queue_id>`: that queue's index is written. The next run reopens
+ *   queue.json as a new queue (`queue.json.reopen-<queue_id>`, one winner).
  * - `claims/<task/variant>.json`: one live claim per variant, holding the
  *   owner (token, pid, host, private root, containers, env_fp). Its mtime is
  *   the heartbeat.
@@ -78,6 +80,15 @@ async function createWhole(path: string, text: string): Promise<boolean> {
   }
 }
 
+async function exists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function readJson<T>(path: string): Promise<T | null> {
   try {
     return JSON.parse(await Deno.readTextFile(path)) as T;
@@ -86,9 +97,32 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
+interface QueueFile {
+  v: 1;
+  queue_id: string;
+  binding: Record<string, unknown>;
+  created_at: string;
+}
+
+const closedPath = (dir: string, id: string) => join(dir, `closed-${id}`);
+
+/**
+ * H-106: marks queue `id` closed (its index is written). Members never touch
+ * queue.json, so a late member of an old queue cannot close a newer one.
+ */
+export async function closeQueue(dir: string, id: string): Promise<void> {
+  await createWhole(closedPath(dir, id), "").catch(() => {});
+}
+
+/** Attempts at reading or reopening queue.json before giving up. */
+const JOIN_ATTEMPTS = 20;
+
 /**
  * Joins (or opens) the queue in `dir` under `binding`. Every member has the
- * same binding; a process with any other is refused, naming the keys.
+ * same binding; a process with any other is refused, naming the keys. A
+ * closed queue is reopened as a new one: one reopener per closed queue id
+ * (an exclusive `queue.json.reopen-<id>` marker) replaces queue.json; all
+ * others read again.
  */
 export async function joinQueue(
   dir: string,
@@ -97,18 +131,36 @@ export async function joinQueue(
 ): Promise<{ queue_id: string }> {
   await Deno.mkdir(join(dir, "claims"), { recursive: true });
   const path = join(dir, "queue.json");
-  const mine = {
+  const mine: QueueFile = {
     v: 1,
     queue_id: crypto.randomUUID(),
     binding,
     created_at: new Date(now).toISOString(),
   };
-  if (await createWhole(path, JSON.stringify(mine, null, 2) + "\n")) {
-    return { queue_id: mine.queue_id };
+  const text = JSON.stringify(mine, null, 2) + "\n";
+  let q: QueueFile | null = null;
+  for (let i = 0; i < JOIN_ATTEMPTS && q === null; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 50));
+    if (await createWhole(path, text)) return { queue_id: mine.queue_id };
+    const cur = await readJson<QueueFile>(path);
+    // Absent or unreadable: a reopener is between remove and create.
+    if (!cur || cur.v !== 1 || typeof cur.queue_id !== "string") continue;
+    if (!await exists(closedPath(dir, cur.queue_id))) {
+      q = cur;
+      continue;
+    }
+    if (await createWhole(`${path}.reopen-${cur.queue_id}`, text)) {
+      // Only this process replaces queue `cur`: re-read before removing.
+      if ((await readJson<QueueFile>(path))?.queue_id === cur.queue_id) {
+        await Deno.remove(path).catch(() => {});
+      }
+    }
   }
-  const q = await readJson<typeof mine>(path);
-  if (!q || q.v !== 1 || typeof q.queue_id !== "string") {
-    throw new ConfigurationError(`unreadable qualify queue ${path}`, path);
+  if (q === null) {
+    throw new ConfigurationError(
+      `qualify queue ${path} stayed unreadable or closed after ${JOIN_ATTEMPTS} attempts`,
+      path,
+    );
   }
   const keys = [
     ...new Set([...Object.keys(binding), ...Object.keys(q.binding)]),
@@ -155,29 +207,34 @@ async function tokenOf(path: string): Promise<string | null> {
   return (await readJson<ClaimFile>(path))?.owner?.token ?? null;
 }
 
-/** How many dead reclaimers in a row one takeover passes over. */
-const MAX_TAKEOVER_DEPTH = 4;
+/**
+ * A guard, not a policy: each level of a takeover is one dead taker, and a
+ * process dies once, so a chain is as long as the takers that died mid-step.
+ */
+const MAX_TAKEOVER_DEPTH = 64;
 
 /**
  * Replaces the stale file at `path` with `text`; false when it is not stale or
  * another process is taking it over. One taker per stale generation: the
- * marker `<path>.reclaim-<stale token>` is created exclusively. A marker left
+ * marker `<claim>.reclaim-<stale token>` is created exclusively. A marker left
  * by a taker that died is itself a stale file (the same age and PID rule), so
  * it is taken over the same way, and a dead taker never blocks the variant.
+ * Markers sit flat beside the claim (`base`), so names never grow.
  */
 async function takeOver(
   path: string,
   text: string,
   deps: QueueDeps,
+  base = path,
   depth = 0,
 ): Promise<boolean> {
   const stale = await staleToken(path, deps);
   if (stale === null) return false;
-  const marker = `${path}.reclaim-${stale}`;
+  const marker = `${base}.reclaim-${stale}`;
   if (
     !await createWhole(marker, text) &&
     !(depth < MAX_TAKEOVER_DEPTH &&
-      await takeOver(marker, text, deps, depth + 1))
+      await takeOver(marker, text, deps, base, depth + 1))
   ) {
     return false;
   }

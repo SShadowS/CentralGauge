@@ -3,6 +3,7 @@ import { join } from "@std/path";
 import {
   CLAIM_STALE_MS,
   claimVariant,
+  closeQueue,
   joinQueue,
   type QueueDeps,
   type QueueOwner,
@@ -129,6 +130,74 @@ Deno.test("qualify queue (H-106): a reclaimer that died after its marker never b
     );
     assert(b);
     assert(await b.holds());
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("qualify queue (H-106): a chain of five reclaimers that each died after their marker (real UUID tokens) still lets the next one claim", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const tok = () => crypto.randomUUID();
+    const first = tok();
+    assert(
+      await claimVariant(dir, "HX-001", "correct", owner(first), deps(T0)),
+    );
+    await age(dir, "HX-001", "correct", CLAIM_STALE_MS + 60_000);
+    const claim = join(
+      dir,
+      "claims",
+      `${encodeURIComponent("HX-001/correct")}.json`,
+    );
+    const old = new Date(T0 - CLAIM_STALE_MS - 60_000);
+    // R1 marked the claim, R2 marked R1's marker, ... each then died.
+    let prev = first;
+    for (let i = 0; i < 5; i++) {
+      const r = tok();
+      const m = `${claim}.reclaim-${prev}`;
+      await Deno.writeTextFile(
+        m,
+        JSON.stringify({ v: 1, owner: owner(r, { pid: 7 }) }),
+      );
+      await Deno.utime(m, old, old);
+      prev = r;
+    }
+    const b = await claimVariant(
+      dir,
+      "HX-001",
+      "correct",
+      owner(tok()),
+      deps(T0),
+    );
+    assert(b);
+    assert(await b.holds());
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("qualify queue (H-106): a closed queue reopens as one new queue; a late member closing the old one never closes the new one", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const b = { manifest_sha256: "a".repeat(64), env_fp: "1".repeat(64) };
+    const q1 = await joinQueue(dir, b, T0);
+    await closeQueue(dir, q1.queue_id);
+    // Two joiners after the close agree on one new queue.
+    const [x, y] = await Promise.all([
+      joinQueue(dir, b, T0),
+      joinQueue(dir, b, T0),
+    ]);
+    assertEquals(x.queue_id, y.queue_id);
+    assert(x.queue_id !== q1.queue_id);
+    // A late member of q1 closes q1 again: q2 stays open, and still refuses
+    // another binding.
+    await closeQueue(dir, q1.queue_id);
+    assertEquals((await joinQueue(dir, b, T0)).queue_id, x.queue_id);
+    await assertRejects(
+      () => joinQueue(dir, { ...b, env_fp: "2".repeat(64) }, T0),
+      ConfigurationError,
+      "env_fp",
+    );
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
