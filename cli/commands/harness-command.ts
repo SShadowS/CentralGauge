@@ -3725,7 +3725,10 @@ async function queuedQualify(
           // Fenced as close to the rename as this filesystem allows: still
           // this member's claim, and the queue still open. ponytail: a pause
           // of over 10 min between this check and the rename, with the claim
-          // taken over from another host, is the residual window.
+          // taken over from another host and a newer queue published, lets
+          // this stale index overwrite the newer one (accepted for
+          // single-host use, H-106). Upgrade: an interprocess lock held
+          // across both publication and reopen.
           await writeWholeIf(
             path,
             data,

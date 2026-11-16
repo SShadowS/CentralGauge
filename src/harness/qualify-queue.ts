@@ -156,6 +156,11 @@ export async function joinQueue(
     }
     if (await createWhole(`${path}.reopen-${cur.queue_id}`, text)) {
       // Only this process replaces queue `cur`: re-read before removing.
+      // ponytail: a reopener that dies between winning this marker and the
+      // remove leaves queue `cur` un-reopenable; later --queue runs fail
+      // ("stayed unreadable or closed") until queue.json is removed by hand
+      // (accepted for single-host use, H-106). Upgrade: an interprocess
+      // lock around reopen, or a stale rule on the reopen marker.
       if ((await readJson<QueueFile>(path))?.queue_id === cur.queue_id) {
         await Deno.remove(path).catch(() => {});
       }
