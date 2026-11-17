@@ -258,12 +258,12 @@ Deno.test("credential gate: refused without supervision or enforcement; supervis
   t.env.credentialLedger = join(t.env.privateRoot, "shared.jsonl");
   await Deno.writeTextFile(
     t.env.credentialLedger,
-    '{"lane":"M4-17"}\n'.repeat(3000),
+    '{"lane":"M4-17"}\n'.repeat(5000),
   );
   await assertRejects(
     async () => runCell(t.env, await cellFor(t)),
     ConfigurationError,
-    "3000 supervised",
+    "5000 supervised",
   );
   assertEquals(t.docker.runs, [], "no docker call before the reservation");
   enforce(t);
