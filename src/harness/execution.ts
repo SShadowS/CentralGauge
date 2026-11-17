@@ -101,6 +101,7 @@ import {
   RecordStore,
   retryProblem,
 } from "./records.ts";
+import { reusedByReference } from "./judgment-reuse.ts";
 import { warnJobRoot } from "./results-root.ts";
 import { tryAcquireBenchLock } from "../utils/bench-lock.ts";
 import type { Mutex } from "../parallel/semaphore.ts";
@@ -3955,7 +3956,9 @@ export async function judgmentOwed(env: HarnessEnv, e: ExecutionRecord) {
     !(outcomePolicy(e.termination, e.did_work).judge &&
       e.workspace_hash !== null &&
       (await env.store.judgments(e.id)).length === 0 &&
-      !await exists(privatePaths(env, e.id).stubMarker))
+      !await exists(privatePaths(env, e.id).stubMarker) &&
+      // H-104 run 002: judged by reference while its reuse marker holds.
+      !await reusedByReference(env.resultsRoot, e))
   ) return false;
   if (e.v < 3) return true;
   // H-44 (R7): nothing was released, so it is never judged.

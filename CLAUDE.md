@@ -328,15 +328,17 @@ deno fmt <changed-files>
 
 ## Claude Code automation in this repo
 
-Hooks live in `.claude/hooks/` and are wired in `.claude/settings.json`. All of
-them degrade to a silent no-op when `jq` is missing.
+Hooks live in `.claude/hooks/` and are wired in `.claude/settings.json` (exec
+form: `bash.exe` runs the script directly, no shell). Their source is
+`infra/claude-hooks/` (install steps and the old-vs-new oracle there). All of
+them degrade to a silent no-op when `jq` is missing, and each exits on a
+builtin `case` before forking anything when the input cannot match (H-108:
+each git-bash process leaks a kernel token on this host).
 
 | Hook | Event | Behavior |
 |---|---|---|
+| `guard.sh` | PreToolUse Bash, PowerShell | DENIES container-touching test runs while a bench is live (escape hatch: `--ignore=tests/unit/container`; `\` in paths reads as `/`). ASKS on `wrangler deploy` / `npm run deploy`, restating the migrations-first order. ASKS when `site/src` is newer than `.svelte-kit/output` and a vitest run is about to use the stale bundle. |
 | `deno-fmt-check.sh` | PostToolUse Edit/Write | `deno fmt` + `deno check` on the single changed `.ts` file. Skips `site/` (prettier owns it). Type errors come back as non-blocking context. |
-| `guard-bench-lock.sh` | PreToolUse Bash | DENIES container-touching test runs while a bench is live. Escape hatch: `--ignore=tests/unit/container`. |
-| `guard-deploy-order.sh` | PreToolUse Bash | ASKS on `wrangler deploy` / `npm run deploy`, restating the migrations-first order. |
-| `guard-stale-site-build.sh` | PreToolUse Bash | ASKS when `site/src` is newer than `.svelte-kit/output` and a vitest run is about to use the stale bundle. |
 
 Liveness for the bench guard comes from `src/utils/bench-lock.ts`: `bench`
 writes a heartbeat marker at `<output-dir>/.bench-running.json` and refreshes it

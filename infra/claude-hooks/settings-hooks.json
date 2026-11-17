@@ -1,0 +1,27 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "Bash|PowerShell",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "C:/Program Files/Git/usr/bin/bash.exe",
+          "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.sh"]
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "Edit|Write",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "C:/Program Files/Git/usr/bin/bash.exe",
+          "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/deno-fmt-check.sh"],
+          "timeout": 120
+        }
+      ]
+    }
+  ]
+}

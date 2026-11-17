@@ -171,6 +171,14 @@ nothing in flight. After a clear, run your start procedure again.
   `need container job: <exact command> for <id>, report to <session>`, checkpoint with
   `--wait process`, and continue with work that does not need the result.
 - A hook that blocks you: stop, report it (`coord ask`), do not work around it.
+- Watchers and daemons (H-107). Every watcher or long-running helper must exit by itself:
+  when its target logs EXIT (or its input is empty), at a max lifetime, or when its stop file
+  appears. Before re-arming a watcher, find the previous copy by PID and stop it (or confirm it
+  already exited); never start a second copy alongside. A process meant to outlive its Claude
+  session registers itself in `H:\cg-coord\daemons.tsv` (`H:\cg-coord\jobs\daemons\daemons.psm1`,
+  `Register-Daemon` / `Unregister-Daemon`) with its stop file and max lifetime; an unregistered
+  one is a reaper candidate. Prefer one pwsh or deno process that sleeps internally over a bash
+  while/sleep loop: each git-bash child leaks a kernel token (H-107).
 
 ## lane-ops specifics
 
