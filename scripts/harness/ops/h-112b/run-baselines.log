@@ -1,0 +1,81 @@
+2026-11-17T22:20:02Z start: Cronus281, Cronus282, Cronus283 at 7cf16d4d
+2026-11-17T22:20:03Z Cronus281 lease attempt 225, free 42.9 GB
+2026-11-17T22:20:03Z heartbeat started
+2026-11-17T22:20:05Z Cronus281 started (rc 0)
+2026-11-17T22:24:35Z Cronus281 web client up
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'baseline' 'create' 'Cronus281' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    [OK] Cronus281: baseline of golden-o09-v3, env_fp b9ba30b0855c
+2026-11-17T22:26:05Z Cronus281 baseline create rc 0: [OK] Cronus281: baseline of golden-o09-v3, env_fp b9ba30b0855c
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus281' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus281 env_fp b9ba30b0855c (baseline 2026-11-17T22:26:05.194Z)
+      [FAIL] NST egress is unenforced in this lineage: declare it with --unverified-bc-egress-ok <reason>
+    [FAIL] the containers do not share one admissible env_fp
+2026-11-17T22:26:11Z Cronus281 env check rc 1:   [OK] Cronus281 env_fp b9ba30b0855c (baseline 2026-11-17T22:26:05.194Z) |   [FAIL] NST egress is unenforced in this lineage: declare it with --unverified-bc-egress-ok <reason> | [FAIL] the containers do not share one admissible env_fp
+2026-11-17T22:26:18Z Cronus281 stopped (rc 0)
+2026-11-17T22:26:18Z Cronus281 lease released
+2026-11-17T22:26:18Z STOPPED at Cronus281
+2026-11-17T22:27:35Z start: Cronus282,Cronus283 at 7cf16d4d
+2026-11-17T22:27:36Z Cronus282,Cronus283 REFUSED: lease failed
+2026-11-17T22:27:49Z start: Cronus282, Cronus283 at 7cf16d4d
+2026-11-17T22:27:50Z Cronus282 lease attempt 149, free 45.7 GB
+2026-11-17T22:27:52Z Cronus282 started (rc 0)
+2026-11-17T22:28:23Z Cronus282 web client up
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'baseline' 'create' 'Cronus282' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    [OK] Cronus282: baseline of golden-o09-v3, env_fp b9ba30b0855c
+2026-11-17T22:29:33Z Cronus282 baseline create rc 0: [OK] Cronus282: baseline of golden-o09-v3, env_fp b9ba30b0855c
+2026-11-17T22:29:33Z Cronus282 env check skipped (held for the egress grant)
+2026-11-17T22:29:39Z Cronus282 stopped (rc 0)
+2026-11-17T22:29:39Z Cronus282 lease released
+2026-11-17T22:29:40Z Cronus283 lease attempt 116, free 46 GB
+2026-11-17T22:29:42Z Cronus283 started (rc 0)
+2026-11-17T22:30:13Z Cronus283 web client up
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'baseline' 'create' 'Cronus283' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    [OK] Cronus283: baseline of golden-o09-v3, env_fp b9ba30b0855c
+2026-11-17T22:31:30Z Cronus283 baseline create rc 0: [OK] Cronus283: baseline of golden-o09-v3, env_fp b9ba30b0855c
+2026-11-17T22:31:30Z Cronus283 env check skipped (held for the egress grant)
+2026-11-17T22:31:37Z Cronus283 stopped (rc 0)
+2026-11-17T22:31:37Z Cronus283 lease released
+2026-11-17T22:31:37Z done: all containers baselined
+2026-11-17T22:31:44Z start: Cronus281, Cronus282, Cronus283 at 7cf16d4d
+2026-11-17T22:31:45Z Cronus281 lease attempt 226, free 40.9 GB
+2026-11-17T22:31:48Z Cronus281 started (rc 0)
+2026-11-17T22:32:48Z Cronus281 web client up
+2026-11-17T22:32:48Z Cronus281 baseline skipped (-EnvOnly)
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus281' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus281 env_fp b9ba30b0855c (baseline 2026-11-17T22:26:05.194Z)
+      [WARN] NST egress NOT enforced (--unverified-bc-egress-ok): owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)
+2026-11-17T22:32:55Z Cronus281 env check rc 0:   [OK] Cronus281 env_fp b9ba30b0855c (baseline 2026-11-17T22:26:05.194Z)
+2026-11-17T22:33:02Z Cronus281 stopped (rc 0)
+2026-11-17T22:33:02Z Cronus281 lease released
+2026-11-17T22:33:02Z Cronus282 lease attempt 150, free 47.8 GB
+2026-11-17T22:33:04Z Cronus282 started (rc 0)
+2026-11-17T22:33:35Z Cronus282 web client up
+2026-11-17T22:33:35Z Cronus282 baseline skipped (-EnvOnly)
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus282' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus282 env_fp b9ba30b0855c (baseline 2026-11-17T22:29:33.390Z)
+      [WARN] NST egress NOT enforced (--unverified-bc-egress-ok): owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)
+2026-11-17T22:33:42Z Cronus282 env check rc 0:   [OK] Cronus282 env_fp b9ba30b0855c (baseline 2026-11-17T22:29:33.390Z)
+2026-11-17T22:33:48Z Cronus282 stopped (rc 0)
+2026-11-17T22:33:48Z Cronus282 lease released
+2026-11-17T22:33:48Z Cronus283 lease attempt 117, free 47.9 GB
+2026-11-17T22:33:50Z Cronus283 started (rc 0)
+2026-11-17T22:34:21Z Cronus283 web client up
+2026-11-17T22:34:21Z Cronus283 baseline skipped (-EnvOnly)
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus283' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus283 env_fp b9ba30b0855c (baseline 2026-11-17T22:31:30.670Z)
+      [WARN] NST egress NOT enforced (--unverified-bc-egress-ok): owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)
+2026-11-17T22:34:29Z Cronus283 env check rc 0:   [OK] Cronus283 env_fp b9ba30b0855c (baseline 2026-11-17T22:31:30.670Z)
+2026-11-17T22:34:36Z Cronus283 stopped (rc 0)
+2026-11-17T22:34:36Z Cronus283 lease released
+2026-11-17T22:34:36Z done: all containers baselined
