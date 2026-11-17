@@ -845,3 +845,81 @@ Deno.test("H-35 run 004 #4 lineage nst_config: the canonical digest section load
     );
   }
 });
+
+/** H-112 (decisions/2026-11-17-wuauserv-lineage-v3.md): v3 is v2 plus one exclusion. */
+const V2_PATH = "infra/harness-reset/lineages/golden-o09-v2.json";
+const V3_PATH = "infra/harness-reset/lineages/golden-o09-v3.json";
+
+Deno.test("H-112: golden-o09-v3 differs from v2 only in its id and one dir_time_only C:\\Windows\\Temp exclusion", async () => {
+  const v2 = JSON.parse(await Deno.readTextFile(V2_PATH));
+  const v3 = JSON.parse(await Deno.readTextFile(V3_PATH));
+  const added = v3.fs.exclude.at(-1);
+  assertEquals(added, {
+    disposition: "platform_cache",
+    base: "C:\\Windows",
+    files: "^(?!)$",
+    dirs: "^Temp$",
+    dir_time_only: true,
+    reason: added.reason,
+  });
+  assert(added.reason.length > 0);
+  assertEquals(v3.id, "golden-o09-v3");
+  v3.id = v2.id;
+  v3.fs.exclude.pop();
+  assertEquals(v3, v2);
+});
+
+Deno.test("H-112: under v3 a C:\\Windows\\Temp last-write-time-only change is tolerated; a file in it, or the same change under v2, is a difference", async () => {
+  const caches = async (path: string) =>
+    goldenReset({
+      repoRoot: ".",
+      lineagePath: path,
+      lineage: await loadLineage(path),
+      dockerEnv: {},
+    }).fsCaches ?? [];
+  const v2 = await caches(V2_PATH), v3 = await caches(V3_PATH);
+  const temp = "C:\\Windows\\Temp";
+  const silconfig = `F|${"a".repeat(64)}|102|32|5|4c6f|${temp}\\silconfig.log`;
+  const cap = (...l: string[]) => [...l, `T|${l.length}`];
+  // the measured trip (Cronus282, 2026-11-17): only the directory's ticks moved
+  const before = cap(`D|16|639251370082521312|${temp}`, silconfig);
+  const moved = cap(`D|16|639304808398689679|${temp}`, silconfig);
+  assertEquals(fsDiff(before, moved, [], [], v3).diff, []);
+  assertEquals(fsDiff(before, moved, [], [], v2).diff.length, 1);
+  // a file left behind still trips L4, and so does a changed one
+  const left = cap(
+    `D|16|639304808398689679|${temp}`,
+    silconfig,
+    `F|${"b".repeat(64)}|10|32|6|0000|${temp}\\wu.tmp`,
+  );
+  assertEquals(fsDiff(before, left, [], [], v3).diff.map((d) => d.path), [
+    `${temp}\\wu.tmp`,
+  ]);
+  const changed = cap(
+    `D|16|639304808398689679|${temp}`,
+    `F|${"c".repeat(64)}|102|32|7|4c6f|${temp}\\silconfig.log`,
+  );
+  assertEquals(fsDiff(before, changed, [], [], v3).diff.length, 1);
+  // a new subfolder, or the directory's attributes changing, stay differences
+  assertEquals(
+    fsDiff(
+      before,
+      cap(`D|16|639304808398689679|${temp}`, silconfig, `D|16|1|${temp}\\x`),
+      [],
+      [],
+      v3,
+    ).diff.length,
+    1,
+  );
+  assertEquals(
+    fsDiff(
+      before,
+      cap(`D|18|639304808398689679|${temp}`, silconfig),
+      [],
+      [],
+      v3,
+    )
+      .diff.length,
+    1,
+  );
+});
