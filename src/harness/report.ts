@@ -65,6 +65,7 @@ import {
   compareArms,
   type Comparison,
   type ContrastResult,
+  type Decision,
   exploratoryNote,
   ineligible,
   testContrasts,
@@ -307,6 +308,35 @@ export interface ContrastsAnalysis {
   tasks: string[];
   results: ContrastResult[];
   held_out: { tasks: string[]; arms: ArmSummary[] };
+  /** D-7 (decision 2026-11-17): per contrast id, pairs lost to unknown cost of the planned selected tasks x repeats. */
+  missing?: {
+    planned: number;
+    contrasts: Record<string, { dropped: number; tasks_affected: string[] }>;
+  };
+  /**
+   * D-7 bounds sensitivity, present only when a selected-task cell has unknown
+   * cost: decisions with that spend imputed at known_spend_usd (lower) and at
+   * the highest known cell spend (upper). Never changes `results`.
+   */
+  sensitivity?: {
+    upper_spend_usd: number;
+    lower: Record<string, Decision>;
+    upper: Record<string, Decision>;
+    label: Record<string, "robust" | "sensitive to missing cost">;
+  };
+}
+
+/**
+ * D-7 backstop: why unknown cost withholds the family, or null. Pass family
+ * contrasts only; `by_task` counts each selected task's pairs lost to
+ * unknown cost.
+ */
+export function costBackstop(
+  _lost: { id: string; by_task: Record<string, number> }[],
+  _planned: number,
+  _repeats: number,
+): string | null {
+  return null;
 }
 
 export type PartialReason = "provisional" | "repeat_cut";
