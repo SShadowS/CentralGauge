@@ -1,0 +1,13 @@
+# Harness v2 operational smoke (M12-02): the four cc-v2-factorial arms, unchanged, on two
+# tasks outside the frozen population (neither selected nor held out), 2 repeats = 16 cells.
+# Task rule, fixed before anything else was read: the two lowest ids in
+# harness-tasks/v2/selection.json `candidates` whose status is `saturated` (HX-007, HX-008).
+# Never pre-registered: no preregistration, contrasts or interaction key.
+id: cc-v2-smoke
+hypothesis: "Operational smoke, not confirmatory, never reported with outcomes."
+primary_metric: cost_per_solved_task
+baseline: cc-v2-plain
+variants: [cc-v2-plain-lsp, cc-v2-realistic, cc-v2-realistic-lsp]
+vary: [instructions, skills, agents, mcp, lsp]
+tasks: "harness-tasks/tasks/{HX-007,HX-008}"
+repeats: 2
