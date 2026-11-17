@@ -123,6 +123,8 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}pwsh-marker.test.ts`]: c(true, 3),
   [`${H}quarantine.test.ts`]: c(true, 1),
   [`${H}qualify.test.ts`]: c(true, 0),
+  // H-106: fake container names, no subprocess; seconds measured standalone 2026-11-17.
+  [`${H}qualify-queue.test.ts`]: c(true, 0),
   // H-78: temp dirs only; seconds measured standalone 2026-11-08.
   [`${H}progress-text.test.ts`]: c(true, 0),
   [`${H}progress.test.ts`]: c(true, 1),
