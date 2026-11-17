@@ -1910,7 +1910,12 @@ Deno.test("renderReport (M12-03b D-7 items 5, 6): the confirmatory section state
   const end = text.indexOf("Held-out tasks (");
   assert(start >= 0 && end > start);
   const at = [...text.matchAll(/unpaired by arm/g)].map((m) => m.index!);
-  assertEquals(at.length, 4);
+  // One per two-arm contrast; the interaction reports blocks, not arms.
+  assertEquals(at.length, 3);
+  assertStringIncludes(
+    text,
+    "interaction blocks used 17 of 18, dropped 1 to unknown cost, tasks affected HX-001",
+  );
   assert(at.every((i) => i > start && i < end), text);
 });
 
