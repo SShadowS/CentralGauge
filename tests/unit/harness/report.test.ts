@@ -1867,7 +1867,7 @@ Deno.test("buildReport (M12-03b D-7 item 2): bounds sensitivity imputes known sp
   );
   assertStringIncludes(
     text,
-    "Bounds sensitivity (each unknown-cost cell at its known spend, then at $1000.000, the highest known cell spend; never changes a decision):",
+    "Bounds sensitivity (each unknown-cost cell at its known spend, then at the higher of its known spend and $1000.000, the highest known cell spend; never changes a decision):",
   );
   assertStringIncludes(
     text,
@@ -2004,15 +2004,48 @@ Deno.test("buildReport (M12-03b D-7 item 2, review r1): the lower bound imputes 
   );
   assertEquals(unscored.results[0]!.pairs, 17);
   assertEquals(Object.keys(unscored.sensitivity!.label), ["C1", "C2", "C3"]);
-  // A primary no_decision stays no_decision whatever the bounds say.
-  const c3 = confirmed(
+  // Both bound runs ran on it, with the upper floor at the highest known spend.
+  assertEquals(unscored.sensitivity!.upper_spend_usd, 2);
+  assertEquals(Object.keys(unscored.sensitivity!.lower!), ["C1", "C2", "C3"]);
+  assertEquals(Object.keys(unscored.sensitivity!.upper!), ["C1", "C2", "C3"]);
+  // A primary no_decision stays no_decision whatever the bounds say. cc-r
+  // solves only HX-001, HX-002 (repeat 1 only), HX-003 and HX-004; the
+  // unknown-cost cell is cc-r HX-002/1. The primary drops that pair, leaving
+  // 3 solving tasks: P(no solve in a resample) = (1/2)^6 = 1.6%, defined
+  // share 98.4% under the 0.99 share, so C2 (cc-r baseline) is no_decision.
+  // The upper bound keeps the passing cell (4 solving tasks, 0.14% undefined)
+  // and decides C2.
+  const dead = base.executions.filter((e) =>
+    e.arm === "cc-r" &&
+    (["HX-005", "HX-006"].includes(e.task_id) ||
+      (e.task_id === "HX-002" && e.repeat > 1))
+  ).map((e) => e.id);
+  const sparse = {
+    ...base,
+    judgments: base.judgments.map((j) =>
+      dead.includes(j.execution_id)
+        ? judgment(
+          base.campaign,
+          base.executions.find((e) => e.id === j.execution_id)!,
+          false,
+        )
+        : j
+    ),
+  };
+  const c2 = confirmed(
     await buildReport(
-      knownThenUnknown(base, ["HX-002", 1, "cc-r"], 50, true),
+      knownThenUnknown(sparse, ["HX-002", 1, "cc-r"], 0.5, true),
       { prereg },
     ),
   );
-  assertEquals(c3.results[2]!.decision, "no_decision");
-  assert(c3.sensitivity!.label["C3"] !== undefined);
+  assertEquals(c2.results[1]!.decision, "no_decision");
+  // A bound decides C2 here, yet the primary stays no_decision.
+  assert(
+    c2.sensitivity!.lower!["C2"] !== "no_decision" ||
+      c2.sensitivity!.upper!["C2"] !== "no_decision",
+    JSON.stringify(c2.sensitivity),
+  );
+  assertEquals(c2.sensitivity!.label["C2"], "sensitive to missing cost");
 });
 
 Deno.test("buildReport (M12-03b D-7 item 1, review r1): a pair with both arms of a contrast unknown-cost is dropped once", async () => {

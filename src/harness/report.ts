@@ -1855,7 +1855,7 @@ export function renderReport(r: HarnessReport): string {
     const s = conf?.sensitivity;
     if (s && s.lower && s.upper) {
       out.push(
-        `  Bounds sensitivity (each unknown-cost cell at its known spend, then at ${
+        `  Bounds sensitivity (each unknown-cost cell at its known spend, then at the higher of its known spend and ${
           usd(s.upper_spend_usd ?? null)
         }, the highest known cell spend; never changes a decision): ${
           Object.entries(s.label).map(([id, label]) =>
