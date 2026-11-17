@@ -314,14 +314,15 @@ export interface ContrastsAnalysis {
     contrasts: Record<string, { dropped: number; tasks_affected: string[] }>;
   };
   /**
-   * D-7 bounds sensitivity, present only when a selected-task cell has unknown
-   * cost: decisions with that spend imputed at known_spend_usd (lower) and at
-   * the highest known cell spend (upper). Never changes `results`.
+   * D-7 bounds sensitivity (cost metric, confirmatory family). With an
+   * unknown-cost selected cell: decisions with that spend imputed at
+   * known_spend_usd (lower) and at the highest known cell spend (upper). With
+   * none, only `label` (all "robust"; no reruns). Never changes `results`.
    */
   sensitivity?: {
-    upper_spend_usd: number;
-    lower: Record<string, Decision>;
-    upper: Record<string, Decision>;
+    upper_spend_usd?: number;
+    lower?: Record<string, Decision>;
+    upper?: Record<string, Decision>;
     label: Record<string, "robust" | "sensitive to missing cost">;
   };
 }
@@ -1025,7 +1026,14 @@ export async function buildReport(
       c.spend_usd === null ? [] : [c.spend_usd]
     );
     let sensitivity: ContrastsAnalysis["sensitivity"];
-    if (unknown.length > 0 && known.length > 0 && family.length > 0) {
+    if (
+      metric === "cost_per_solved_task" && unknown.length === 0 &&
+      family.length > 0
+    ) {
+      sensitivity = {
+        label: Object.fromEntries(family.map((id) => [id, "robust" as const])),
+      };
+    } else if (unknown.length > 0 && known.length > 0 && family.length > 0) {
       const top = Math.max(...known);
       const decisions = (spend: (c: CellRecord) => number) =>
         Object.fromEntries(
@@ -1036,7 +1044,9 @@ export async function buildReport(
           ).filter((x) => family.includes(x.id)).map((x) => [x.id, x.decision]),
         );
       const lower = decisions((c) => c.known_spend_usd);
-      const upper = decisions(() => top);
+      // A cell's known spend is a floor of its true spend, so the upper
+      // imputation is never below it.
+      const upper = decisions((c) => Math.max(top, c.known_spend_usd));
       sensitivity = {
         upper_spend_usd: top,
         lower,
@@ -1720,6 +1730,9 @@ export function renderReport(r: HarnessReport): string {
     const sample =
       `${k.bootstrap.resamples} resamples, seed ${k.bootstrap.seed}, ${k.tasks.length} selected tasks`;
     const bonferroni = +((1 - k.alpha / k.family.length) * 100).toFixed(1);
+    const costMetric = k.results.some((c) =>
+      c.metric === "cost_per_solved_task"
+    );
     if (conf) {
       h(`Confirmatory contrasts (${ids}, Holm at ${k.alpha}, ${sample})`);
       out.push(
@@ -1727,14 +1740,14 @@ export function renderReport(r: HarnessReport): string {
           k.family.join(", ")
         }); the intervals are descriptive and can disagree with it at the boundary.`,
       );
-      if (k.missing) {
+      if (k.missing && costMetric) {
         const fam = k.family.filter((id) => id !== "interaction");
         out.push(
           `  Unknown cost: a cell without cost data drops its pairs per contrast. The family is withheld if a family contrast (${
             fam.join(", ")
           }) loses more than 7% of its planned pairs (dropped x 100 > 7 x planned, planned = selected tasks x experiment repeats = ${k.missing.planned}) or every pair of a task.`,
           "  The interaction (exploratory) uses a (task, repeat) block only when all four arms have an eligible cell; the 7% backstop does not count it.",
-          "  Unpaired counts by arm appear only in this section of the report.",
+          "  Unpaired counts by arm per contrast are listed in this section. The report as a whole is run only after the campaign closes.",
         );
         const twoArm = k.results.filter((c) => c.id !== "interaction");
         const shared = twoArm.flatMap((a, i) =>
@@ -1817,18 +1830,22 @@ export function renderReport(r: HarnessReport): string {
       const m = conf ? k.missing?.contrasts[c.id] : undefined;
       if (m && c.id === "interaction") {
         out.push(
-          `    interaction blocks used ${c.pairs} of ${
-            k.missing!.planned
-          }, dropped ${m.dropped} to unknown cost, tasks affected ${
-            m.tasks_affected.join(", ") || "none"
+          `    interaction blocks used ${c.pairs} of ${k.missing!.planned}${
+            costMetric
+              ? `, dropped ${m.dropped} to unknown cost, tasks affected ${
+                m.tasks_affected.join(", ") || "none"
+              }`
+              : ""
           }`,
         );
       } else if (m) {
         out.push(
-          `    ${c.id} pairs used ${c.pairs} of ${
-            k.missing!.planned
-          }, dropped ${m.dropped} to unknown cost, tasks affected ${
-            m.tasks_affected.join(", ") || "none"
+          `    ${c.id} pairs used ${c.pairs} of ${k.missing!.planned}${
+            costMetric
+              ? `, dropped ${m.dropped} to unknown cost, tasks affected ${
+                m.tasks_affected.join(", ") || "none"
+              }`
+              : ""
           }; unpaired by arm: ${c.baseline} ${
             reasons(c.excluded.baseline)
           }; ${c.variant} ${reasons(c.excluded.variant)}`,
@@ -1836,16 +1853,24 @@ export function renderReport(r: HarnessReport): string {
       }
     }
     const s = conf?.sensitivity;
-    if (s) {
+    if (s && s.lower && s.upper) {
       out.push(
         `  Bounds sensitivity (each unknown-cost cell at its known spend, then at ${
-          usd(s.upper_spend_usd)
+          usd(s.upper_spend_usd ?? null)
         }, the highest known cell spend; never changes a decision): ${
           Object.entries(s.label).map(([id, label]) =>
-            `${id} ${label} (lower ${s.lower[id]!.replace("_", " ")}, upper ${
-              s.upper[id]!.replace("_", " ")
+            `${id} ${label} (lower ${s.lower![id]!.replace("_", " ")}, upper ${
+              s.upper![id]!.replace("_", " ")
             })`
           ).join("; ")
+        }`,
+      );
+    } else if (s) {
+      out.push(
+        `  Bounds sensitivity: no unknown-cost cell in a selected task; ${
+          Object.entries(s.label).map(([id, label]) => `${id} ${label}`).join(
+            "; ",
+          )
         }`,
       );
     }

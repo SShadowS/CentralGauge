@@ -1856,8 +1856,8 @@ Deno.test("buildReport (M12-03b D-7 item 2): bounds sensitivity imputes known sp
   const c2 = wild.results.find((x) => x.id === "C2")!;
   assertEquals(c2.decision, "variant_lower");
   const s = wild.sensitivity!;
-  assertEquals(s.lower["C2"], "variant_lower");
-  assert(s.upper["C2"] !== "variant_lower");
+  assertEquals(s.lower!["C2"], "variant_lower");
+  assert(s.upper!["C2"] !== "variant_lower");
   assertEquals(s.label["C2"], "sensitive to missing cost");
   assertEquals(s.label["C1"], "robust");
   const text = stripAnsiCode(
@@ -1874,11 +1874,196 @@ Deno.test("buildReport (M12-03b D-7 item 2): bounds sensitivity imputes known sp
     "C2 sensitive to missing cost (lower variant lower, upper ",
   );
   assertStringIncludes(text, "C1 robust");
-  // No unknown cost, no sensitivity.
-  assertEquals(
-    confirmed(await buildReport(base, { prereg })).sensitivity,
-    undefined,
+  // No unknown cost: every family contrast is robust, no reruns, no bounds.
+  const none = confirmed(await buildReport(base, { prereg }));
+  assertEquals(none.sensitivity, {
+    label: { C1: "robust", C2: "robust", C3: "robust" },
+  });
+  assertStringIncludes(
+    stripAnsiCode(renderReport(await buildReport(base, { prereg }))),
+    "Bounds sensitivity: no unknown-cost cell in a selected task; C1 robust; C2 robust; C3 robust",
   );
+});
+
+/**
+ * `recs` with one cell unknown-cost but with known spend `known`: its planned
+ * execution costs `known` and a manual rerun (attempt 2) has no cost data.
+ * `pass` is the planned execution's judged result (null = unscored).
+ */
+function knownThenUnknown(
+  recs: CampaignRecords,
+  [task, repeat, arm]: [string, number, string],
+  known: number,
+  pass: boolean | null,
+): CampaignRecords {
+  const c = recs.campaign;
+  const planned = recs.executions.find((e) =>
+    e.task_id === task && e.repeat === repeat && e.arm === arm
+  )!;
+  const p = { ...planned, telemetry: telemetry(known) };
+  const rerun = execution(c, {
+    task,
+    repeat,
+    arm,
+    attempt: 2,
+    run_kind: "manual_rerun",
+  }, {
+    telemetry: telemetry(null),
+    validity: {
+      ...planned.validity,
+      incomplete_telemetry: ["cost_usd" as const],
+    },
+  });
+  return {
+    ...recs,
+    executions: [...recs.executions.map((e) => e === planned ? p : e), rerun],
+    judgments: recs.judgments.map((j) =>
+      j.execution_id === planned.id ? judgment(c, p, pass) : j
+    ),
+  };
+}
+
+Deno.test("buildReport (M12-03b D-7 item 2, review r1): the lower bound imputes the cell's known spend (not 0), the upper bound is never below it, and primary decisions never change", async () => {
+  const base = await factorialRecords(100, "cost_per_solved_task", true, 3);
+  const prereg = preregOf(
+    base,
+    await stageBFor(base.campaign, {
+      design: { tasks: 6, repeats: 3 },
+      zero_solve: { rule: "min_defined_share", share: 0.99 },
+    }),
+  );
+  // Primary: the unknown cell drops, C1 (cc-l vs cc-p) is variant_lower.
+  const calm = confirmed(
+    await buildReport(
+      knownThenUnknown(base, ["HX-002", 1, "cc-l"], 0.5, true),
+      { prereg },
+    ),
+  );
+  assertEquals(calm.results[0]!.decision, "variant_lower");
+  assertEquals(calm.results[0]!.pairs, 17);
+  // The cell's known spend is $50, above every known cell spend ($2): the
+  // lower run imputes $50 (a 0 imputation would keep variant_lower), and the
+  // upper run must impute max(top, known) = $50 too, never the lower top.
+  for (const pass of [true, false]) {
+    const recs = knownThenUnknown(base, ["HX-002", 1, "cc-l"], 50, pass);
+    const k = confirmed(await buildReport(recs, { prereg }));
+    const s = k.sensitivity!;
+    assertEquals(s.upper_spend_usd, 2, String(pass));
+    assertEquals(k.results[0]!.decision, "variant_lower", String(pass));
+    assert(s.lower!["C1"] !== "variant_lower", `lower ${pass}`);
+    assertEquals(s.upper!["C1"], s.lower!["C1"], `upper ${pass}`);
+    assertEquals(s.label["C1"], "sensitive to missing cost", String(pass));
+    // The primary decisions are exactly those of the data without the bounds.
+    assertEquals(
+      k.results.map((x) => x.decision),
+      confirmed(
+        await buildReport(
+          unknownCost(base, [["HX-002", 1, "cc-l"]]),
+          { prereg },
+        ),
+      ).results.map((x) => x.decision),
+      String(pass),
+    );
+  }
+  // A terminally unscored unknown-cost cell (setup_failed, then its one
+  // automatic retry failing the same way) is analysed too.
+  const cl = base.executions.find((e) =>
+    e.task_id === "HX-002" && e.repeat === 1 && e.arm === "cc-l"
+  )!;
+  const failed = {
+    ...cl,
+    termination: "setup_failed" as const,
+    did_work: false,
+    telemetry: telemetry(0.4),
+  };
+  const retry = execution(base.campaign, {
+    task: "HX-002",
+    repeat: 1,
+    arm: "cc-l",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: cl.id,
+  }, {
+    termination: "setup_failed",
+    did_work: false,
+    telemetry: telemetry(null),
+    validity: {
+      ...cl.validity,
+      incomplete_telemetry: ["cost_usd" as const],
+    },
+  });
+  const unscored = confirmed(
+    await buildReport({
+      ...base,
+      executions: [
+        ...base.executions.map((e) => e === cl ? failed : e),
+        retry,
+      ],
+      judgments: base.judgments.filter((j) => j.execution_id !== cl.id),
+    }, { prereg }),
+  );
+  assertEquals(unscored.results[0]!.pairs, 17);
+  assertEquals(Object.keys(unscored.sensitivity!.label), ["C1", "C2", "C3"]);
+  // A primary no_decision stays no_decision whatever the bounds say.
+  const c3 = confirmed(
+    await buildReport(
+      knownThenUnknown(base, ["HX-002", 1, "cc-r"], 50, true),
+      { prereg },
+    ),
+  );
+  assertEquals(c3.results[2]!.decision, "no_decision");
+  assert(c3.sensitivity!.label["C3"] !== undefined);
+});
+
+Deno.test("buildReport (M12-03b D-7 item 1, review r1): a pair with both arms of a contrast unknown-cost is dropped once", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  const k = confirmed(
+    await buildReport(
+      unknownCost(recs, [["HX-001", 1, "cc-p"], ["HX-001", 1, "cc-l"]]),
+      { prereg },
+    ),
+  );
+  assertEquals(k.missing!.contrasts["C1"], {
+    dropped: 1,
+    tasks_affected: ["HX-001"],
+  });
+});
+
+Deno.test("costBackstop (M12-03b D-7, review r1): the 7% rule is strict, 7 of 100 does not withhold and 8 does", () => {
+  const spread = (n: number) =>
+    Object.fromEntries(
+      Array.from({ length: n }, (_, i) => [`T${i}`, 1]),
+    );
+  assertEquals(costBackstop([{ id: "C1", by_task: spread(7) }], 100, 6), null);
+  assertEquals(
+    costBackstop([{ id: "C1", by_task: spread(8) }], 100, 6),
+    "C1 lost 8 of 100 pairs to unknown cost (over 7%)",
+  );
+});
+
+Deno.test("renderReport (M12-03b D-7 item 7, review r1): the unknown-cost wording is printed only for the cost metric", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  const r = await buildReport(unknownCost(recs, [["HX-001", 1, "cc-p"]]), {
+    prereg,
+  });
+  const cost = stripAnsiCode(renderReport(r));
+  assertStringIncludes(cost, "Unknown cost: a cell without cost data");
+  assertStringIncludes(cost, "to unknown cost");
+  const pr = structuredClone(r);
+  const k = confirmed(pr);
+  for (const x of k.results) x.metric = "pass_rate";
+  const text = stripAnsiCode(renderReport(pr));
+  assert(!text.includes("Unknown cost:"), text);
+  assert(!text.includes("to unknown cost"), text);
+  assertStringIncludes(text, "C1 pairs used 17 of 18");
 });
 
 Deno.test("renderReport (M12-03b D-7 items 5, 6): the confirmatory section states both rules, the interaction's own rule, and holds the unpaired-by-arm counts", async () => {
@@ -1904,8 +2089,9 @@ Deno.test("renderReport (M12-03b D-7 items 5, 6): the confirmatory section state
   );
   assertStringIncludes(
     text,
-    "Unpaired counts by arm appear only in this section of the report.",
+    "Unpaired counts by arm per contrast are listed in this section. The report as a whole is run only after the campaign closes.",
   );
+  assert(!text.includes("appear only in this section"), text);
   const start = text.indexOf("Confirmatory contrasts (");
   const end = text.indexOf("Held-out tasks (");
   assert(start >= 0 && end > start);
