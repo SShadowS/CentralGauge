@@ -4,7 +4,7 @@
  * records a reuse marker beside the execution; judgmentOwed treats an
  * execution with a marker that still holds as judged.
  */
-import { dirname, join } from "@std/path";
+import { basename, dirname, join } from "@std/path";
 import type { ExecutionRecord, JudgmentRecord } from "./records.ts";
 import { JudgmentRecordSchema } from "./records.ts";
 
@@ -49,8 +49,23 @@ export const reuseMarkerPath = (resultsRoot: string, executionId: string) =>
   join(resultsRoot, "runs", executionId, "judgment-reuse.json");
 
 /**
- * H-104 run 002: an execution judged by reference. Paths are relative to the
- * results root, POSIX; `inputs` are the eight matched judge inputs.
+ * H-109: the results root a marker's fixture paths are relative to. qualify
+ * records under <results>/qualify/<sha256> while judge-fixture writes under
+ * <results>/fixtures, so a qualify root resolves to <results>; any other root
+ * is its own.
+ */
+export function fixturesRootOf(resultsRoot: string): string {
+  const parent = dirname(resultsRoot);
+  return basename(parent) === "qualify" &&
+      /^[0-9a-f]{64}$/.test(basename(resultsRoot))
+    ? dirname(parent)
+    : resultsRoot;
+}
+
+/**
+ * H-104 run 002: an execution judged by reference. Paths are relative to
+ * fixturesRootOf(results root), POSIX; `inputs` are the eight matched judge
+ * inputs.
  */
 export interface ReuseMarker {
   v: 1;
@@ -100,11 +115,12 @@ export async function reusedByReference(
       x.task_id !== e.task_id || x.workspace_hash !== e.workspace_hash ||
       x.task_visible_hash !== e.task_visible_hash
     ) return false;
+    const root = fixturesRootOf(resultsRoot);
     const j = JudgmentRecordSchema.parse(
-      JSON.parse(await Deno.readTextFile(join(resultsRoot, m.judgment_path))),
+      JSON.parse(await Deno.readTextFile(join(root, m.judgment_path))),
     );
     const p = JSON.parse(
-      await Deno.readTextFile(join(resultsRoot, m.provenance_path)),
+      await Deno.readTextFile(join(root, m.provenance_path)),
     ) as { task_visible_hash?: unknown };
     return j.id === m.judgment_id && typeof p.task_visible_hash === "string" &&
       reusableJudgment(
