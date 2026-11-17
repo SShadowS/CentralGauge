@@ -19,7 +19,9 @@
 # is readable again). The memlog has no CPU column, so busy is judged on memory only.
 # Log: <prefix dir>\watch.log. One watcher per prefix: lock dir <Prefix>.watch-ps.lock (stops.sh lock_take
 # semantics, through hostwatch.ps1's Lock-Take); a second instance exits 3.
-# Exits (logged): the run log's "EXIT " (or harness "exit ") line, <Prefix>.STOP-watch, -MaxHours, -Iter polls
+# Exits (logged): the run log's "EXIT " (or harness "exit ") line, <prefix dir>\watch.STOP, -MaxHours, -Iter polls
+# (tests). watch.STOP is outside P.* on purpose: stops.sh active_stops counts every P.* file, so a P.* name would
+# also block resume chains (M12-05 run 002).
 # (tests). Registers in H:\cg-coord\daemons.tsv (or -DaemonRegistry) after the lock and unregisters on every exit,
 # unless -NoRegister.
 # Start detached with no window:
@@ -52,6 +54,7 @@ $ErrorActionPreference = 'Continue'
 $Dir = Split-Path -Parent $Prefix
 $script:LOG = Join-Path $Dir 'watch.log'; $script:LockLog = $script:LOG
 $CostLog = Join-Path $Dir 'cost.log'
+$WatchStop = Join-Path $Dir 'watch.STOP'
 $PoolNames = @($Pool -split '[,\s]+' | Where-Object { $_ })
 $Allow = @($QuietAllow -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 function Say([string]$m) { if (-not (Add-Line $script:LOG "[watch] $(Get-Utc) $m")) { [Console]::Error.WriteLine("watch-campaign: $m") } }
@@ -203,7 +206,7 @@ try {
   if (-not $NoRegister) {
     try {
       Import-Module 'H:\cg-coord\jobs\daemons\daemons.psm1' -ErrorAction Stop
-      Register-Daemon -ProcessId $PID -Script $PSCommandPath -Owner ops -Path $DaemonRegistry -StopFile "$Prefix.STOP-watch" `
+      Register-Daemon -ProcessId $PID -Script $PSCommandPath -Owner ops -Path $DaemonRegistry -StopFile $WatchStop `
         -MaxHours "$MaxHours" -Purpose "M12-05 campaign watcher for $Prefix (pool $($PoolNames -join ','))"
       $registered = $true
     } catch { Say "ALERT daemon registry write failed: $($_.Exception.Message)" }
@@ -214,7 +217,7 @@ try {
   $nextCost = 20
   while ($true) {
     $k++
-    if ([IO.File]::Exists("$Prefix.STOP-watch")) { $why = 'STOP-watch'; break }
+    if ([IO.File]::Exists($WatchStop)) { $why = 'watch.STOP'; break }
     if ($sw.Elapsed.TotalHours -ge $MaxHours) { $why = "max lifetime $MaxHours h"; break }
     $free = Read-FreeGb $k
     $now = $sw.Elapsed.TotalSeconds
@@ -245,9 +248,9 @@ try {
     Read-Memlog
     if (Test-RunEnded) { $why = 'run log EXIT'; break }
     if ($Iter -gt 0 -and $k -ge $Iter) { $why = "$Iter polls (test)"; break }
-    # sleep in short steps so STOP-watch is seen quickly
+    # sleep in short steps so watch.STOP is seen quickly
     $until = $sw.Elapsed.TotalSeconds + $EverySeconds
-    while ($sw.Elapsed.TotalSeconds -lt $until -and -not [IO.File]::Exists("$Prefix.STOP-watch")) { Start-Sleep -Milliseconds 500 }
+    while ($sw.Elapsed.TotalSeconds -lt $until -and -not [IO.File]::Exists($WatchStop)) { Start-Sleep -Milliseconds 500 }
   }
 } catch {
   Say "exiting on error: $($_.Exception.Message)"; $code = 4

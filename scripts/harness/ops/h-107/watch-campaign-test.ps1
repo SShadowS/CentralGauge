@@ -2,7 +2,7 @@
 # M12-05 dry test for watch-campaign.ps1: scratch dir, dummy targets, injected RAM readings (-Feed), a scratch
 # daemon registry and memlog. No container, no live registry, no live stop file. Each case is named like the
 # watch.sh checks of hostwatch-dry-test.sh (w-*), plus the exit, cost, registry and HOST-BUSY cases.
-# It never kills: every run ends by the watcher's own exit paths (-Iter, EXIT, STOP-watch, -MaxHours); a run that
+# It never kills: every run ends by the watcher's own exit paths (-Iter, EXIT, <prefix dir>\watch.STOP, -MaxHours); a run that
 # does not end in time gets its stop file and then fails its check.
 # Usage: pwsh -NoProfile -File scripts/harness/ops/h-107/watch-campaign-test.ps1   (exit = number of failures)
 $ErrorActionPreference = 'Stop'
@@ -22,6 +22,7 @@ function Setup([string]$name) {
     D = $D; P = Join-Path $D 'camp\STOP'; Log = Join-Path $D 'run.log'; Hb = Join-Path $D 'heartbeat'
     Reg = Join-Path $D 'targets.tsv'; Q = Join-Path $D 'q'; Results = Join-Path $D 'results'; Mem = Join-Path $D 'memlog'
     Feed = Join-Path $D 'feed.txt'; Daemons = Join-Path $D 'reg\daemons.tsv'; WLog = Join-Path $D 'camp\watch.log'
+    WStop = Join-Path $D 'camp\watch.STOP'
   }
   Set-Content $c.Log 'run started'
   Set-Content $c.Hb 'ok'
@@ -52,7 +53,7 @@ function Run($c, [string[]]$extra, [int]$waitS = 60, [scriptblock]$during = {}) 
   $p = Start-Process 'C:\Program Files\PowerShell\7\pwsh.exe' -ArgumentList $a -PassThru -WindowStyle Hidden
   & $during $p
   if (-not $p.WaitForExit($waitS * 1000)) {
-    New-Item -ItemType File "$($c.P).STOP-watch" -Force | Out-Null; [void]$p.WaitForExit(20000)
+    New-Item -ItemType File $c.WStop -Force | Out-Null; [void]$p.WaitForExit(20000)
     return @{ Ok = $false; Code = -1 }
   }
   return @{ Ok = $true; Code = $p.ExitCode }
@@ -111,10 +112,18 @@ try {
     param($p)
     Start-Sleep -Seconds 4
     $script:second = Run $c ($reg + @('-Iter', '1')) 30
-    New-Item -ItemType File "$($c.P).STOP-watch" | Out-Null
+    New-Item -ItemType File $c.WStop | Out-Null
   }
   Check 'w-single: a second instance refuses (exit 3)' ($second.Ok -and $second.Code -eq 3) "second exit $($second.Code)"
-  Check 'w-single: the first ends on <P>.STOP-watch' ($r.Ok -and $r.Code -eq 0 -and (LogText $c) -match 'exiting: STOP-watch')
+  Check 'w-single: the first ends on <prefix dir>\watch.STOP' ($r.Ok -and $r.Code -eq 0 -and (LogText $c) -match 'exiting: watch\.STOP')
+  # run 002: the watcher's stop file is outside P.*, so stops.sh active_stops does not count it (no resume is blocked)
+  $msys = '/' + $c.P.Substring(0, 1).ToLower() + ($c.P.Substring(2) -replace '\\', '/')
+  $stops = (Join-Path $PSScriptRoot '..\stops.sh') -replace '\\', '/'
+  $out = & 'C:\Program Files\Git\bin\bash.exe' -c ". '$stops'; active_stops '$msys'" 2>&1
+  Check 'w-single: active_stops does not count watch.STOP (prints CLEAR)' ((Test-Path $c.WStop) -and ("$out".Trim() -eq 'CLEAR')) "active_stops: $out"
+  New-Item -ItemType File "$($c.P).watch" | Out-Null
+  $out = & 'C:\Program Files\Git\bin\bash.exe' -c ". '$stops'; active_stops '$msys'" 2>&1
+  Check 'w-single: (self-check) active_stops does count <P>.watch' ("$out" -match 'STOP\.watch')
 
   # exits: the run log's EXIT line, and -MaxHours
   $c = Setup 'x-exit'
