@@ -1,0 +1,109 @@
+== services
+wuauserv start=Manual state=Running delayed=False
+UsoSvc start=Auto state=Running delayed=True
+WaaSMedicSvc start=Disabled state=Stopped delayed=False
+BITS start=Manual state=Stopped delayed=False
+TrustedInstaller start=Manual state=Stopped delayed=False
+DoSvc start=Manual state=Stopped delayed=False
+== wuauserv triggers
+[SC] QueryServiceConfig2 SUCCESS
+
+SERVICE_NAME: wuauserv
+
+        START SERVICE 
+          GROUP POLICY                 : 659fcae6-5bdb-4da9-b1ff-ca2a178d46e0 [MACHINE POLICY PRESENT]
+        START SERVICE 
+          GROUP POLICY                 : 54fb46c8-f089-464c-b1fd-59d1b62c3b50 [USER POLICY PRESENT]
+== UsoSvc triggers
+[SC] QueryServiceConfig2 SUCCESS
+
+    The service UsoSvc has not registered for any start or stop triggers.
+== System log: service state changes for update services (7036/7040/7042)
+2026-11-17T22:06:16Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-17T22:04:11Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-17T22:04:06Z id=7036 The Windows Update service entered the running state.
+2026-11-17T22:04:06Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-17T19:18:29Z id=7036 The Update Orchestrator Service service entered the stopped state.
+2026-11-17T06:32:44Z id=7036 The Windows Update service entered the stopped state.
+2026-11-17T06:22:42Z id=7036 The Windows Update service entered the running state.
+2026-11-17T02:55:06Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-17T02:52:15Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-16T22:42:55Z id=7036 The Windows Update service entered the stopped state.
+2026-11-16T22:36:54Z id=7036 The Delivery Optimization service entered the stopped state.
+2026-11-16T22:34:53Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-16T22:29:24Z id=7040 The start type of the Windows Modules Installer service was changed from auto start to demand start.
+2026-11-16T22:29:20Z id=7040 The start type of the Windows Modules Installer service was changed from demand start to auto start.
+2026-11-16T22:29:17Z id=7040 The start type of the Windows Modules Installer service was changed from auto start to demand start.
+2026-11-16T22:28:31Z id=7040 The start type of the Windows Modules Installer service was changed from demand start to auto start.
+2026-11-16T22:28:31Z id=7040 The start type of the Windows Modules Installer service was changed from auto start to demand start.
+2026-11-16T22:27:27Z id=7040 The start type of the Windows Modules Installer service was changed from demand start to auto start.
+2026-11-16T22:26:56Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-16T22:26:54Z id=7036 The Delivery Optimization service entered the running state.
+2026-11-16T22:26:44Z id=7036 The Delivery Optimization service entered the stopped state.
+2026-11-16T22:21:44Z id=7036 The Delivery Optimization service entered the running state.
+2026-11-16T22:14:51Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-16T22:12:47Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-16T22:12:42Z id=7036 The Windows Update service entered the running state.
+2026-11-16T12:43:59Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-16T12:41:27Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-16T12:38:15Z id=7036 The Update Orchestrator Service service entered the stopped state.
+2026-11-15T22:27:55Z id=7036 The Windows Update service entered the stopped state.
+2026-11-15T22:14:52Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-15T22:12:48Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-15T22:12:42Z id=7036 The Windows Update service entered the running state.
+2026-11-15T04:35:47Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-15T04:33:39Z id=7036 The Update Orchestrator Service service entered the stopped state.
+2026-11-15T02:58:46Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-15T02:56:36Z id=7036 The Update Orchestrator Service service entered the stopped state.
+2026-11-15T02:40:14Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-15T02:37:33Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-15T00:19:37Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-15T00:17:27Z id=7036 The Update Orchestrator Service service entered the stopped state.
+2026-11-14T22:39:07Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-11-14T22:28:28Z id=7036 The Windows Update service entered the stopped state.
+2026-11-14T22:15:21Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-11-14T22:12:53Z id=7036 The Windows Modules Installer service entered the running state.
+2026-11-14T22:12:45Z id=7036 The Windows Update service entered the running state.
+2026-11-14T22:12:43Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-09-16T06:30:09Z id=7036 The Update Orchestrator Service service entered the stopped state.
+2026-09-16T06:30:09Z id=7036 The Windows Update service entered the stopped state.
+2026-09-16T06:14:00Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-09-16T06:11:23Z id=7040 The start type of the Windows Modules Installer service was changed from auto start to demand start.
+2026-09-16T06:10:52Z id=7036 The Windows Update service entered the running state.
+2026-09-16T06:10:51Z id=7040 The start type of the Windows Update service was changed from disabled to demand start.
+2026-09-16T06:10:50Z id=7036 The Update Orchestrator Service service entered the running state.
+2026-09-16T06:10:22Z id=7040 The start type of the Windows Modules Installer service was changed from demand start to auto start.
+2026-09-16T06:08:54Z id=7036 The Windows Modules Installer service entered the running state.
+2026-09-08T21:08:20Z id=7036 The Windows Modules Installer service entered the stopped state.
+2026-09-08T21:07:46Z id=7040 The start type of the Windows Modules Installer service was changed from auto start to demand start.
+2026-09-08T21:07:30Z id=7040 The start type of the Windows Modules Installer service was changed from demand start to auto start.
+2026-09-08T21:07:27Z id=7036 The Windows Modules Installer service entered the running state.
+== System log oldest event
+2026-09-05T17:47:17Z
+== scheduled tasks under UpdateOrchestrator / WindowsUpdate / WaaSMedic
+\Microsoft\Windows\WaaSMedic\PerformRemediation state=Disabled last=30-11-1999 00:00:00 next=22-11-2026 05:54:50
+== C:\Windows\Temp
+dir LastWriteTimeUtc=2026-09-16T06:30:08.2521312Z attrs=16
+  silconfig.log 102 2026-11-17T22:03:06.3599821Z
+== C:\Windows\SoftwareDistribution
+  DataStore 2026-09-16T06:10:52.1752544Z
+  Download 2026-11-16T22:26:53.5976055Z
+  PostRebootEventCache.V2 2026-09-16T06:10:52.9505220Z
+  SLS 2026-09-16T06:12:25.3674400Z
+  ReportingEvents.log 2026-11-16T22:32:58.4354384Z
+== WindowsUpdate policy keys
+HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate
+
+HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU
+
+
+AUOptions    : 3
+PSPath       : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU
+PSParentPath : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate
+PSChildName  : AU
+PSDrive      : HKLM
+PSProvider   : Microsoft.PowerShell.Core\Registry
+
+
+
+
