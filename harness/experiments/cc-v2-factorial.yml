@@ -4,16 +4,17 @@
 #   cc-v2-realistic      realistic on,  LSP off   C3 = realistic vs plain ("realistic effect without LSP")
 #   cc-v2-realistic-lsp  realistic on,  LSP on    C2 = realistic-lsp vs realistic
 # Contrasts, Holm family, seeds and arm-order randomization: M11 pre-registration stage A.
-# tasks and repeats: set at the M8 freeze (stage B design numbers); the v1 set stands in until
-# then so `harness validate` stays green. Arms resolve only on the one r3 image (M9-17).
+# tasks and repeats: stage B design 39 x 8 (M11-17b step 1). tasks = the 39 selected ids of
+# harness-tasks/v2/selection.json, then its 4 held-out ids (HX-010,HX-030,HX-037,HX-039).
+# Arms resolve only on the one r3 image (M9-17).
 id: cc-v2-factorial
 hypothesis: "The AL language server and the realistic team setup each lower Claude Code's cost per solved task on the frozen v2 task population."
 primary_metric: cost_per_solved_task
 baseline: cc-v2-plain
 variants: [cc-v2-plain-lsp, cc-v2-realistic, cc-v2-realistic-lsp]
 vary: [instructions, skills, agents, mcp, lsp]
-tasks: "harness-tasks/tasks/*"
-repeats: 5
+tasks: "harness-tasks/tasks/{HX-016,HX-021,HX-043,HX-045,HX-049,HX-051,HX-052,HX-053,HX-055,HX-059,HX-065,HX-066,HX-068,HX-071,HX-079,HX-082,HX-103,HX-132,HX-133,HX-135,HX-136,HX-140,HX-143,HX-144,HX-145,HX-146,HX-149,HX-150,HX-156,HX-157,HX-159,HX-160,HX-161,HX-164,HX-167,HX-170,HX-171,HX-177,HX-179,HX-010,HX-030,HX-037,HX-039}"
+repeats: 8
 contrasts:
   - { id: C1, name: "LSP effect without the realistic setup", baseline: cc-v2-plain, variant: cc-v2-plain-lsp }
   - { id: C2, name: "LSP effect with the realistic setup", baseline: cc-v2-realistic, variant: cc-v2-realistic-lsp }
