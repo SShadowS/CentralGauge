@@ -326,3 +326,24 @@ Deno.test("H-10 realistic probe: cc-v2-probe-realistic with id, latest and 3-dev
     assert(!text.includes(id), `${e.name} names ${id}`);
   }
 });
+
+Deno.test("cc-v2-smoke: the four campaign arms, no frozen task, never pre-registered", async () => {
+  const smoke = (await loadExperiment("harness", "cc-v2-smoke")).experiment;
+  const real = (await loadExperiment("harness", "cc-v2-factorial")).experiment;
+  assertEquals(
+    [smoke.baseline, ...smoke.variants],
+    [real.baseline, ...real.variants],
+  );
+  assertEquals(
+    [smoke.preregistration, smoke.contrasts, smoke.interaction],
+    [undefined, undefined, undefined],
+  );
+  const sel = JSON.parse(
+    await Deno.readTextFile("harness-tasks/v2/selection.json"),
+  );
+  const frozen: string[] = [...sel.selection.selected, ...sel.held_out];
+  const ids = [...smoke.tasks.matchAll(/HX-\d+/g)].map((m) => m[0]);
+  assertEquals(ids.length, 2);
+  assertEquals(ids.filter((id) => frozen.includes(id)), []);
+  assertEquals(smoke.repeats, 2);
+});
