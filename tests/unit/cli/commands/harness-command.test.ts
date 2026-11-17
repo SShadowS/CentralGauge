@@ -29,10 +29,15 @@ import {
   parseCoordLease,
   parseRerunCell,
   publicationLockDir,
+  type QualifyQueueDeps,
   registerHarnessCommand,
   type RouteAuthorizeOptions,
   validateHarness,
 } from "../../../../cli/commands/harness-command.ts";
+import {
+  claimVariant,
+  closeQueue,
+} from "../../../../src/harness/qualify-queue.ts";
 import {
   backendAddress,
   baselineCreate,
@@ -2440,6 +2445,347 @@ Deno.test("qualify (H-105): of two matching judgments the rerun takes the latest
   );
   const want = ja.id > jb.id ? a : b;
   assertEquals((await requalify(t))[0]!.judgment_path, want.judgment_path);
+});
+
+/** H-106: `qualify --queue` over qualifyWithLineage's manifest, with test queue deps. */
+const queueQualify = (
+  t: TestEnv,
+  open: Opener = opener(t),
+  qd: Partial<QualifyQueueDeps> = {},
+) =>
+  harnessQualify(
+    {
+      ...cellOpts(t, { supervised: false }),
+      manifest: join(t.env.privateRoot, "qualify-manifest.json"),
+      queue: true,
+    },
+    open,
+    {
+      now: () => Date.now(),
+      host: Deno.hostname(),
+      pidAlive: () => Promise.resolve(false),
+      wait: () => new Promise((r) => setTimeout(r, 5)),
+      ...qd,
+    },
+  );
+
+/** H-106: qualifyWithLineage, then no index and no qualify.json: nothing resumes. */
+async function freshQueue() {
+  const { t, index } = await qualifyWithLineage();
+  const full = (index.data as { entries: QEntry[] }).entries;
+  await Deno.remove(index.path);
+  for (const e of full) {
+    await Deno.remove(
+      join(dirname(join(t.repo.root, e.judgment_path)), "qualify.json"),
+    );
+  }
+  return { t, out: dirname(index.path) };
+}
+
+/** H-106: fixture judgment folders of one variant. */
+async function judgmentDirs(t: TestEnv, variant: string) {
+  const dirs: string[] = [];
+  for await (
+    const d of Deno.readDir(
+      join(t.env.resultsRoot, "fixtures", "HX-001", variant),
+    )
+  ) dirs.push(d.name);
+  return dirs;
+}
+
+/** H-106: a claim on HX-001/correct by another process, aged `ms`. */
+async function plantClaim(out: string, ms: number, token: string) {
+  const qdir = join(out, "queue");
+  const c = await claimVariant(qdir, "HX-001", "correct", {
+    token,
+    pid: 999_999,
+    host: Deno.hostname(),
+    private_root: "P:/other",
+    containers: ["Cronus282"],
+    env_fp: "0".repeat(64),
+  }, {
+    now: () => Date.now(),
+    host: Deno.hostname(),
+    pidAlive: () => Promise.resolve(false),
+  });
+  assert(c);
+  const at = new Date(Date.now() - ms);
+  await Deno.utime(c.path, at, at);
+  return c;
+}
+
+Deno.test("qualify --queue (H-106): two processes on one manifest judge every variant exactly once and write the same index, covering the manifest once", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  const before = {
+    correct: (await judgmentDirs(t, "correct")).length,
+    a: (await judgmentDirs(t, "naive/a")).length,
+  };
+  const [x, y] = await Promise.all([queueQualify(t), queueQualify(t)]);
+  const ex = (x.data as { entries: QEntry[] }).entries;
+  // Whichever process assembled it, the entries are the same.
+  assertEquals(ex, (y.data as { entries: QEntry[] }).entries);
+  assertEquals(ex.map((e) => [e.variant, e.resumed]), [
+    ["correct", false],
+    ["naive/a", false],
+  ]);
+  assertEquals(
+    ex.map((e) => (e as QEntry & { containers: string[] }).containers),
+    [t.env.lane.containers, t.env.lane.containers],
+  );
+  // One new fixture judgment per variant: never judged by both.
+  assertEquals((await judgmentDirs(t, "correct")).length, before.correct + 1);
+  assertEquals((await judgmentDirs(t, "naive/a")).length, before.a + 1);
+  const saved = JSON.parse(await Deno.readTextFile(join(out, "index.json")));
+  assertEquals(saved.entries, ex);
+  assertEquals(typeof saved.queue_id, "string");
+  // Paths anchored at the shared results dir, not at a member's worktree.
+  assertEquals(saved.paths_relative_to, "results_dir");
+  for (const e of ex) {
+    assert(e.judgment_path.startsWith("fixtures/HX-001/"), e.judgment_path);
+    assert(await exists(join(t.env.resultsRoot, e.judgment_path)));
+  }
+  // Closed by a marker; queue.json and the dir stay for members still looping.
+  assert(await exists(join(out, "queue", "queue.json")));
+  assert(await exists(join(out, "queue", `closed-${saved.queue_id}`)));
+  assertEquals(await exists(join(out, "index.partial.json")), false);
+});
+
+Deno.test("qualify --queue (H-106): a crash mid-variant (claim left, no qualify.json) is reclaimed once 10 min old with its PID gone, and judged", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  const before = (await judgmentDirs(t, "correct")).length;
+  await plantClaim(out, 11 * 60_000, "crashed");
+  let waits = 0;
+  const r = await queueQualify(t, opener(t), {
+    // A queue that never reclaims would wait on the dead claim forever.
+    wait: () =>
+      ++waits > 3
+        ? Promise.reject(new Error("still waiting: never reclaimed"))
+        : Promise.resolve(),
+  });
+  assertEquals(typeof (r.data as { queue_id?: string }).queue_id, "string");
+  const es = (r.data as { entries: QEntry[] }).entries;
+  assertEquals(es.map((e) => [e.variant, e.resumed]), [
+    ["correct", false],
+    ["naive/a", false],
+  ]);
+  assertEquals((await judgmentDirs(t, "correct")).length, before + 1);
+});
+
+Deno.test("qualify --queue (H-106): a fresh-but-slow claim (PID alive on this host) is not reclaimed; the process judges the rest, waits, and honours STOP", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  const before = (await judgmentDirs(t, "correct")).length;
+  const slow = await plantClaim(out, 11 * 60_000, "slow");
+  // Checks: before correct, before naive/a, before the wait; the 4th (next pass) stops.
+  await assertRejects(
+    () =>
+      queueQualify(t, stopAfter(t, 3), {
+        pidAlive: () => Promise.resolve(true),
+      }),
+    ConfigurationError,
+    "stopped",
+  );
+  assert(await slow.holds(), "the slow owner keeps its claim");
+  assertEquals((await judgmentDirs(t, "correct")).length, before);
+  assertEquals(await exists(join(out, "index.json")), false);
+  const partial = JSON.parse(
+    await Deno.readTextFile(join(out, "index.partial.json")),
+  );
+  assertEquals(partial.entries.map((e: QEntry) => e.variant), ["naive/a"]);
+});
+
+Deno.test("qualify --queue (H-106): a process that STOPs leaves the queue to the next; its variants count as this queue's (not resumed), a later queue resumes all", async () => {
+  const { t } = await freshQueue();
+  await using _t = t;
+  await assertRejects(
+    () => queueQualify(t, stopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  const r = await queueQualify(t);
+  assertEquals(
+    (r.data as { entries: QEntry[] }).entries.map((
+      e,
+    ) => [e.variant, e.resumed]),
+    [["correct", false], ["naive/a", false]],
+  );
+  const again = await queueQualify(t);
+  assertEquals(
+    (again.data as { entries: QEntry[] }).entries.map((e) => e.resumed),
+    [true, true],
+  );
+});
+
+Deno.test("qualify --queue (H-106): a finished variant whose claim is still held (owner stalled after qualify.json) counts as done; the process exits", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  await queueQualify(t);
+  // A live owner holds correct, fresh, though its qualify.json is on disk.
+  const stalled = await plantClaim(out, 0, "stalled");
+  let waits = 0;
+  const r = await queueQualify(t, opener(t), {
+    pidAlive: () => Promise.resolve(true),
+    wait: () =>
+      ++waits > 2
+        ? Promise.reject(new Error("still waiting on a finished variant"))
+        : Promise.resolve(),
+  });
+  assertEquals(
+    (r.data as { entries: QEntry[] }).entries.map((e) => e.resumed),
+    [true, true],
+  );
+  assert(await stalled.holds(), "the stalled claim is left alone");
+});
+
+Deno.test("qualify --queue (H-106): one publisher per queue; a member that finds the publish claim held waits until the holder closes the queue, then exits 0 without writing the index", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  // A first member opens the queue and stops after one variant.
+  await assertRejects(
+    () => queueQualify(t, stopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  const qdir = join(out, "queue");
+  const { queue_id } = JSON.parse(
+    await Deno.readTextFile(join(qdir, "queue.json")),
+  );
+  // Another member, live on this host, is publishing this queue.
+  const pub = await claimVariant(qdir, "publish", queue_id, {
+    token: "publisher",
+    pid: 999_999,
+    host: Deno.hostname(),
+    private_root: "P:/other",
+    containers: ["Cronus282"],
+    env_fp: "0".repeat(64),
+  }, {
+    now: () => Date.now(),
+    host: Deno.hostname(),
+    pidAlive: () => Promise.resolve(true),
+  });
+  assert(pub);
+  // This member finishes the variants, then waits on the publisher; on the
+  // 2nd wait the publisher closes the queue (its index is published).
+  let waits = 0;
+  const r = await queueQualify(t, opener(t), {
+    pidAlive: () => Promise.resolve(true),
+    wait: async () => {
+      if (++waits === 2) await closeQueue(qdir, queue_id);
+      if (waits > 5) throw new Error("never saw the queue closed");
+    },
+  });
+  assertEquals(
+    (r.data as { entries: QEntry[] }).entries.map((e) => e.variant),
+    ["correct", "naive/a"],
+  );
+  assertEquals(waits, 2);
+  // It never wrote the index: the holder published.
+  assertEquals(await exists(join(out, "index.json")), false);
+  assert(await pub.holds());
+});
+
+Deno.test("qualify --queue (H-106): a publisher that died holding the publish claim is taken over, and the waiting member publishes", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  await assertRejects(
+    () => queueQualify(t, stopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  const qdir = join(out, "queue");
+  const { queue_id } = JSON.parse(
+    await Deno.readTextFile(join(qdir, "queue.json")),
+  );
+  const dead = await claimVariant(qdir, "publish", queue_id, {
+    token: "dead-publisher",
+    pid: 999_999,
+    host: Deno.hostname(),
+    private_root: "P:/other",
+    containers: ["Cronus282"],
+    env_fp: "0".repeat(64),
+  }, {
+    now: () => Date.now(),
+    host: Deno.hostname(),
+    pidAlive: () => Promise.resolve(false),
+  });
+  assert(dead);
+  // Fresh at first: the member waits; then 11 min pass with the PID gone.
+  let now = Date.now();
+  let waits = 0;
+  const r = await queueQualify(t, opener(t), {
+    now: () => now,
+    pidAlive: () => Promise.resolve(false),
+    wait: () => {
+      if (++waits > 5) throw new Error("never took over the dead publisher");
+      now += 11 * 60_000;
+      return Promise.resolve();
+    },
+  });
+  assertEquals(waits, 1);
+  assertEquals(await dead.holds(), false);
+  const saved = JSON.parse(await Deno.readTextFile(join(out, "index.json")));
+  assertEquals(saved.queue_id, queue_id);
+  assertEquals(saved.entries, (r.data as { entries: QEntry[] }).entries);
+  assert(await exists(join(qdir, `closed-${queue_id}`)));
+});
+
+Deno.test("qualify --queue (H-106): an index that cannot be written fails the run, even when something is already at index.json", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  // Something at index.json that the rename cannot replace.
+  await Deno.mkdir(join(out, "index.json", "x"), { recursive: true });
+  await assertRejects(() => queueQualify(t));
+});
+
+Deno.test("qualify --queue (H-106): without a lineage there is no binding, and --queue is refused", async () => {
+  const { t } = await qualifyWithLineage();
+  await using _t = t;
+  // A queue counts variants done by resuming, so --no-resume cannot join one.
+  await assertRejects(
+    () =>
+      harnessQualify(
+        {
+          ...cellOpts(t, { supervised: false }),
+          manifest: join(t.env.privateRoot, "qualify-manifest.json"),
+          queue: true,
+          resume: false,
+        },
+        opener(t),
+      ),
+    ConfigurationError,
+    "--queue and --no-resume do not combine",
+  );
+  t.env.deploy = {
+    ...t.env.deploy,
+    reset: { ...t.env.deploy.reset, compat: undefined as never },
+  };
+  await assertRejects(
+    () => queueQualify(t),
+    ConfigurationError,
+    "--queue needs a lineage",
+  );
+});
+
+Deno.test("qualify --queue (H-106): a process under another binding is refused by a live queue", async () => {
+  const { t, out } = await freshQueue();
+  await using _t = t;
+  await Deno.mkdir(join(out, "queue"), { recursive: true });
+  await Deno.writeTextFile(
+    join(out, "queue", "queue.json"),
+    JSON.stringify({
+      v: 1,
+      queue_id: "other",
+      binding: { env_fp: "0".repeat(64) },
+      created_at: new Date().toISOString(),
+    }),
+  );
+  await assertRejects(
+    () => queueQualify(t),
+    ConfigurationError,
+    "env_fp",
+  );
 });
 
 /**
