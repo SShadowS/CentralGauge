@@ -168,6 +168,7 @@ import { createCommandMock } from "../../../utils/command-mock.ts";
 import { ContainerHealthMonitor } from "../../../../src/health/monitor.ts";
 import { judgmentOwed, runCell } from "../../../../src/harness/execution.ts";
 import {
+  fixturesRootOf,
   reusableJudgment,
   reuseMarkerPath,
 } from "../../../../src/harness/judgment-reuse.ts";
@@ -1859,7 +1860,7 @@ Deno.test("qualify judges every manifest variant at its rev and indexes judgment
 });
 
 /** H-104: qualify on an env whose reset carries a lineage (judgments get a non-null env_fp). */
-async function qualifyWithLineage() {
+async function qualifyWithLineage(open: (t: TestEnv) => Opener = opener) {
   const t = await makeEnv();
   await writeCatalog(t);
   t.env.supervised = false;
@@ -1884,7 +1885,7 @@ async function qualifyWithLineage() {
   );
   const index = await harnessQualify(
     { ...cellOpts(t, { supervised: false }), manifest },
-    opener(t),
+    open(t),
   );
   return { t, index };
 }
@@ -1949,6 +1950,12 @@ Deno.test("qualify (H-104 run 002): a reuse marker whose judgment is missing, or
       { ...m, inputs: { ...m.inputs, env_fp: "0".repeat(64) } },
       { ...m, execution_id: crypto.randomUUID() },
       { ...m, judgment_id: crypto.randomUUID() },
+      // H-109: a backslash path is refused even where it names the same file.
+      {
+        ...m,
+        judgment_path: "fixtures/" +
+          m.judgment_path.slice("fixtures/".length).replaceAll("/", "\\"),
+      },
     ]
   ) {
     await Deno.writeTextFile(marker, JSON.stringify(tamper));
@@ -2289,6 +2296,67 @@ Deno.test("qualify (H-105): a STOP between variants leaves a readable partial in
   }
   assertEquals(await exists(join(out, "index.partial.json")), false);
   assertEquals(JSON.parse(await Deno.readTextFile(r.path)), r.data);
+});
+
+/** H-109: rootedOpener (qualify at <results>/qualify/<sha>) whose stop is requested from the (n+1)-th check on. */
+const rootedStopAfter = (t: TestEnv, n: number): Opener => {
+  let checks = 0;
+  return (o) =>
+    rootedOpener(t)(o).then((h) => ({
+      ...h,
+      stopRequested: () => Promise.resolve(checks++ >= n),
+    }));
+};
+
+Deno.test("fixturesRootOf (H-109): only <results>/qualify/<sha256> maps to <results>", () => {
+  const r = join("x", "results");
+  const sha = "a".repeat(64);
+  assertEquals(fixturesRootOf(join(r, "qualify", sha)), r);
+  for (
+    const own of [
+      r,
+      join(r, "cells"),
+      join(r, "qualify"),
+      join(r, "qualify", "A".repeat(64)),
+      join(r, "qualify", sha.slice(1)),
+      join(r, "other", sha),
+    ]
+  ) assertEquals(fixturesRootOf(own), own);
+});
+
+Deno.test("qualify (H-109): on a qualify/<sha> root, a variant judged by reference is never owed, and after a STOP the rerun resumes it", async () => {
+  const { t, index } = await qualifyWithLineage(rootedOpener);
+  await using _t = t;
+  const out = dirname(index.path);
+  const q = { ...t.env, resultsRoot: out, store: new RecordStore(out) };
+  const full = index.data as { entries: QEntry[] };
+  for (const e of full.entries) {
+    assert(e.mock_cell.reused_judgment !== null, "judged by reference");
+    const m = JSON.parse(
+      await Deno.readTextFile(reuseMarkerPath(out, e.mock_cell.execution_id)),
+    );
+    assert(m.judgment_path.startsWith("fixtures/"), m.judgment_path);
+    const x = (await q.store.execution(e.mock_cell.execution_id))!;
+    assertEquals(await judgmentOwed(q, x), false);
+  }
+  // STOP after the first variant of a fresh run, then resume.
+  await Deno.remove(index.path);
+  for (const e of full.entries) {
+    await Deno.remove(
+      join(dirname(join(t.repo.root, e.judgment_path)), "qualify.json"),
+    );
+  }
+  await assertRejects(
+    () => requalify(t, rootedStopAfter(t, 1)),
+    ConfigurationError,
+    "stopped",
+  );
+  const again = await requalify(t, rootedOpener(t));
+  assertEquals(again.map((e) => [e.variant, e.resumed]), [
+    ["correct", true],
+    ["naive/a", false],
+  ]);
+  assertEquals(again[0]!.mock_cell.reused_judgment !== null, true);
 });
 
 Deno.test("qualify (H-105): a mock cell with its own current judgment (not reused) resumes; under a stale scorer, env_fp or harness commit it does not", async () => {

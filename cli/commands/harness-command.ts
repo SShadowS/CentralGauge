@@ -244,6 +244,7 @@ import { envFpOf, renderEnvCheck } from "../../src/harness/environment.ts";
 import { lockDigestOf } from "../../src/harness/bc-lane.ts";
 import {
   type FixtureJudgment,
+  fixturesRootOf,
   type JudgeInputs,
   reusableJudgment,
   reusedByReference,
@@ -3081,12 +3082,13 @@ async function settleMockCell(
       v: 1,
       execution_id: last.id,
       judgment_id: fixture.judgment.id,
+      // H-109: relative to the fixtures' root, not the qualify/<sha> root.
       judgment_path: posixRel(
-        env.resultsRoot,
+        fixturesRootOf(env.resultsRoot),
         join(fixtureDir, "judgment.json"),
       ),
       provenance_path: posixRel(
-        env.resultsRoot,
+        fixturesRootOf(env.resultsRoot),
         join(fixtureDir, "provenance.json"),
       ),
       inputs,
