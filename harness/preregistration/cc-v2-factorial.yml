@@ -1,5 +1,5 @@
 # Stage A pre-registration of cc-v2-factorial (M11-16; PreregSchema in src/harness/prereg.ts).
-# Frozen before screening; stage B (M11-17) fills only the stage-B keys.
+# Frozen before screening; stage B (M11-17b, at the M8-21 freeze) fills the stage-B keys and records the amendments.
 v: 1
 experiment: cc-v2-factorial
 protocol:
@@ -66,21 +66,63 @@ exploratory_metrics:
   - pass_k
 simulation:
   script_sha256: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2"
-  args: { sims: 1000, resamples: 1000, confirm_sims: 600, confirm_resamples: 10000, seed: 20261003, pool_factor: 3, rule_b_share: 0.99, effect: 0.3, power_gate: fitted }
+  args: { sims: 1000, resamples: 1000, confirm_sims: 600, confirm_resamples: 10000, seed: 20261003, pool_factor: 3, rule_b_share: 0.99, effect: 0.37, power_gate: fitted, grid: { tasks: [39], repeats: [3, 5, 8] } }
 design_rule: >-
   Smallest tasks x repeats meeting the fitted power, error-control, suppression and coverage gates
   under the frozen rule (M11-13 chooseDesign), confirmed at 10000 resamples; stage-A simulation
   chose 40 tasks x 8 repeats (N_prelim 40, R 8). `unscreenable` candidates (incomplete after the
   one rescreen) are dropped as missing (owner-approved missingness rule). `lsp_shell_calls` is
   reported per arm as exploratory; no cell is excluded or re-run because of it.
-stage_a: null
-experiment_hash: null
-selection: null
-design: null
-power_simulation: null
-compiler_identity: null
-stage_b_approval: null
-amendments: []
+stage_a: { sha256: "779d2e39e8160a3a590dcb19c0d8adea623b0e85385b856975cad37b0447e6fb" }
+experiment_hash: "1d6b5f6e827321e2a47b3719437d2867348ff5db2ed0cf01d40572f7d9af2f0a"
+selection:
+  path: harness-tasks/v2/selection.json
+  sha256: "f7f2f178b66ccf0b317ff361a9dcf9c57f547568113413cd94a8ebb67ada5a4e"
+  selected: [HX-016, HX-021, HX-043, HX-045, HX-049, HX-051, HX-052, HX-053, HX-055, HX-059, HX-065, HX-066, HX-068, HX-071, HX-079, HX-082, HX-103, HX-132, HX-133, HX-135, HX-136, HX-140, HX-143, HX-144, HX-145, HX-146, HX-149, HX-150, HX-156, HX-157, HX-159, HX-160, HX-161, HX-164, HX-167, HX-170, HX-171, HX-177, HX-179]
+  held_out: [HX-010, HX-030, HX-037, HX-039]
+design: { tasks: 39, repeats: 8 }
+power_simulation:
+  inputs:
+    - { path: scripts/harness/power-sim.ts, sha256: "bc4a1c466e718b4ebe5f1b64e132311f01af933f72c0edf52fe5253831798d55" }
+    - { path: "H:/cg-coord/tasks/H-92/sim-c37/prereg-b-input.yml", sha256: "dbc3634598e641ff2d16e4738175e65bad7fd83f1a76cadad7963fe85bcb1702" }
+    - { path: "H:/cg-coord/tasks/H-92/sim-c/fit-tasks.json", sha256: "1718b496d6cf2e561eaf1e96ca247263b1653c77cd4bddd5f2fd647c46e9e4b7" }
+    - { path: harness-tasks/v2/screening.yml, sha256: "77c6a835f12fa1d0404e483083f22d59d753f362ed37235ee49a92ac4c98bb92" }
+    - { path: "H:/cg-coord/m6/reports/cc-mcp-vs-plain.campaign.json", sha256: "9dce74d0ac23cfe756495910c72a0ec39c496432cec2de0603f86e6f841eae74" }
+    - { path: "H:/cg-coord/m6/reports/cc-skills-vs-plain.campaign.json", sha256: "b99b8ad8617732a79417d6c5712fbcbb587c0a9d14daf6b4590fe431362d2432" }
+    - { path: "H:/cg-coord/m6/reports/cc-vs-pi.campaign.json", sha256: "6c79ac6ede55efab98423dafdd5f37dc3ba614eb5aba6a6cff486f7fc12d585c" }
+    - { path: "H:/cg-coord/tasks/M8-16a/report-v2-screen-1.json", sha256: "3dd192b9d2c0f39415308c1747494869e8a11f2ddc424efbb8c6029b4845f6b6" }
+    - { path: "H:/cg-coord/jobs/M8-16b/report-final.json", sha256: "930262d064d3efcaffb957c8e292c9a829d3bb6d9dfb2e12857e343734a10e62" }
+    - { path: "H:/cg-coord/tasks/H-92/cells/screen-3-report.json", sha256: "ba8f1fd5afcd333c6950834da064a497444bcb46cabfb3030c1531f48366830b" }
+    - { path: "H:/cg-coord/jobs/W2-12/screen-4-report.json", sha256: "343e214d1358ab7ac611cc6494b94513da826dc101ad61c1a32e62205edeb78e" }
+    - { path: "H:/cg-coord/tasks/W2-19/screen-5-report.json", sha256: "8b3bc0e6498b282caad355fc98202b6fccdfdeef1a4955345fe7ade89e9d386d" }
+    - { path: "H:/cg-coord/tasks/M8-18/screen-r1-report.json", sha256: "f11a0ac5d87f82f938ecc1c3542dec99812bd02626d6bba6b61d0018c605b64e" }
+    - { path: "H:/cg-coord/tasks/M8-18b/screen-r2-report.json", sha256: "0f9ad6da3da2e6a64f5c2f4a5f95c81f96f886f436ef5a756467d18f621e513b" }
+  output: { path: harness/preregistration/cc-v2-factorial.sim-c37.json, sha256: "1ba43716d4dccbfb0b5fbdb77c8629a3c5671b0739b0857128e77693142ac24e" }
+compiler_identity: "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/sandbox/28.4.53241.53758/dk|bccontainerhelper 6.1.14"
+stage_b_approval: "OWNER-APPROVED: Approve as drafted (Recommended) (2026-11-17T21:42:59Z)"
+amendments:
+  - key: simulation
+    from: { script_sha256: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2", args: { sims: 1000, resamples: 1000, confirm_sims: 600, confirm_resamples: 10000, seed: 20261003, pool_factor: 3, rule_b_share: 0.99, effect: 0.3, power_gate: fitted } }
+    to: { script_sha256: "d26a22f43b52761cc5354cbf5cf848b2399b65fad4d6f3820cc497f86a4f97e2", args: { sims: 1000, resamples: 1000, confirm_sims: 600, confirm_resamples: 10000, seed: 20261003, pool_factor: 3, rule_b_share: 0.99, effect: 0.37, power_gate: fitted, grid: { tasks: [39], repeats: [3, 5, 8] } } }
+    reason: >-
+      N=39 (decisions/2026-11-14-n39-selection.md): sim-c returned null at effect 0.30; H-96 found 0.37 reaches the
+      0.8 gate at 39 x 8. The minimum detectable effect changes 0.30 -> 0.37 before any confirmatory cell; the grid
+      records the 39-task design space (decisions/2026-11-14-n39-prereg-amendment.md).
+    approval: "OWNER-APPROVED: Amend effect to 0.37 (Rec.) (2026-11-14T19:45:00Z)"
+  - key: selection
+    from: { status: ok, n: 40, selected: 40, shortfalls: [], deviations: [] }
+    to: { status: too_few, n: 40, selected: 39, shortfalls: ["stratum intermediate: 23 of 24"], deviations: ["HX-159 (hard) fills the intermediate stratum"] }
+    reason: >-
+      Screening yielded 39 of the 40 planned tasks (one short in the intermediate stratum); the owner chose N=39
+      over another mining round (decisions/2026-11-14-n39-selection.md, decisions/2026-11-14-n39-prereg-amendment.md).
+    approval: "OWNER-APPROVED: Amend + re-simulate (Rec.) (2026-11-14T15:00:00Z)"
+  - key: design
+    from: { tasks: 40, repeats: 8 }
+    to: { tasks: 39, repeats: 8 }
+    reason: >-
+      N=39: sim-c37 (effect 0.37, grid 39 x 3,5,8, script bc4a1c46) chose and confirmed 39 tasks x 8 repeats; stage A
+      planned 40 x 8 (decisions/2026-11-14-n39-prereg-amendment.md).
+    approval: "OWNER-APPROVED: Amend + re-simulate (Rec.) (2026-11-14T15:00:00Z)"
 protocol_changes:
   - kind: simulation_script
     decision: decisions/2026-11-06-m11-sim-model-fix-and-mining.md
