@@ -168,6 +168,7 @@ import { createCommandMock } from "../../../utils/command-mock.ts";
 import { ContainerHealthMonitor } from "../../../../src/health/monitor.ts";
 import { judgmentOwed, runCell } from "../../../../src/harness/execution.ts";
 import {
+  fixturesRootOf,
   reusableJudgment,
   reuseMarkerPath,
 } from "../../../../src/harness/judgment-reuse.ts";
@@ -1949,6 +1950,12 @@ Deno.test("qualify (H-104 run 002): a reuse marker whose judgment is missing, or
       { ...m, inputs: { ...m.inputs, env_fp: "0".repeat(64) } },
       { ...m, execution_id: crypto.randomUUID() },
       { ...m, judgment_id: crypto.randomUUID() },
+      // H-109: a backslash path is refused even where it names the same file.
+      {
+        ...m,
+        judgment_path: "fixtures/" +
+          m.judgment_path.slice("fixtures/".length).replaceAll("/", "\\"),
+      },
     ]
   ) {
     await Deno.writeTextFile(marker, JSON.stringify(tamper));
@@ -2300,6 +2307,22 @@ const rootedStopAfter = (t: TestEnv, n: number): Opener => {
       stopRequested: () => Promise.resolve(checks++ >= n),
     }));
 };
+
+Deno.test("fixturesRootOf (H-109): only <results>/qualify/<sha256> maps to <results>", () => {
+  const r = join("x", "results");
+  const sha = "a".repeat(64);
+  assertEquals(fixturesRootOf(join(r, "qualify", sha)), r);
+  for (
+    const own of [
+      r,
+      join(r, "cells"),
+      join(r, "qualify"),
+      join(r, "qualify", "A".repeat(64)),
+      join(r, "qualify", sha.slice(1)),
+      join(r, "other", sha),
+    ]
+  ) assertEquals(fixturesRootOf(own), own);
+});
 
 Deno.test("qualify (H-109): on a qualify/<sha> root, a variant judged by reference is never owed, and after a STOP the rerun resumes it", async () => {
   const { t, index } = await qualifyWithLineage(rootedOpener);

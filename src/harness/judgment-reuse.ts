@@ -90,7 +90,7 @@ export async function writeReuseMarker(
 
 /** A marker path: under the results root's fixtures, never outside it. */
 const fixturePath = (p: unknown): p is string =>
-  typeof p === "string" && p.startsWith("fixtures/") &&
+  typeof p === "string" && p.startsWith("fixtures/") && !p.includes("\\") &&
   !p.split("/").includes("..");
 
 /**
