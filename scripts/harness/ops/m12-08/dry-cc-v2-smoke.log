@@ -1,0 +1,19 @@
+START 2026-11-18T01:23:04Z cc-v2-smoke dry CONC=fixed HEAD 82f30dac
+[0m[32mTask[0m [0m[36mstart[0m deno run --allow-all cli/centralgauge.ts 'harness' 'run' 'cc-v2-smoke' '--results-dir' 'H:\cg-coord\results\harness' '--private-dir' 'H:\cg-coord\m12\private-cc-v2-smoke' '--containers' 'Cronus281,Cronus282,Cronus283' '--backend-port' '3270' '--secrets-dir' 'max=H:\Temp3\harness-spike\secrets' '--secrets-dir' 'maxpriv=H:\Temp3\harness-spike\secrets-MaxPriv' '--secrets-dir' 'maxpriv2=H:\Temp3\harness-spike\secrets-MaxPriv2' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--credential-ledger' 'H:\cg-coord\ledgers\credential-runs.jsonl' '--unverified-egress-ok' 'owner grant decisions/2026-11-18-m12-concurrency-and-sandbox-egress.md: M12 smoke and confirmatory campaign, sandbox egress unverified as in screening (disclosed), no ingest' '--concurrency' '3' '--stop-file' 'H:\cg-coord\tasks\M12-08\STOP-cc-v2-smoke' '--stop-file' 'H:\cg-coord\tasks\M12-08\STOP-cc-v2-smoke.watch' '--stop-file' 'H:\cg-coord\tasks\M12-08\STOP-cc-v2-smoke.host-low' '--stop-file' 'H:\cg-coord\tasks\M12-08\STOP-cc-v2-smoke.host-all' '--stop-file' 'H:\cg-coord\tasks\M12-08\STOP-cc-v2-smoke.planned' '--dry-run'
+[MCP] Warning: No credentials found in environment. Using defaults.
+[WARN] egress NOT enforced (owner override --unverified-egress-ok): owner grant decisions/2026-11-18-m12-concurrency-and-sandbox-egress.md: M12 smoke and confirmatory campaign, sandbox egress unverified as in screening (disclosed), no ingest
+[DRY] centralgauge/harness-claude-code:latest-r3: shipped MCP definition not verified (a real run reads it)
+[DRY] centralgauge/harness-claude-code:latest-r3: shipped MCP definition not verified (a real run reads it)
+[DRY] centralgauge/harness-claude-code:latest-r3: shipped MCP definition not verified (a real run reads it)
+[DRY] centralgauge/harness-claude-code:latest-r3: shipped MCP definition not verified (a real run reads it)
+HX-007#1: cc-v2-realistic-lsp -> cc-v2-realistic -> cc-v2-plain -> cc-v2-plain-lsp [max]
+HX-008#1: cc-v2-plain -> cc-v2-realistic -> cc-v2-realistic-lsp -> cc-v2-plain-lsp [maxpriv]
+HX-007#2: cc-v2-plain-lsp -> cc-v2-realistic -> cc-v2-realistic-lsp -> cc-v2-plain [maxpriv2]
+HX-008#2: cc-v2-realistic -> cc-v2-plain -> cc-v2-realistic-lsp -> cc-v2-plain-lsp [max]
+[DRY] estimate cc-v2-plain: 4 cells x 1 attempts x 19.4 min = 1.3 h (6 samples)
+[DRY] estimate cc-v2-plain-lsp: 4 cells; no prior executions of this manifest
+[DRY] estimate cc-v2-realistic: 4 cells; no prior executions of this manifest
+[DRY] estimate cc-v2-realistic-lsp: 4 cells x 1 attempts x 708.0 min = 47.2 h (6 samples)
+[DRY] total unknown at concurrency 1; paid projected none (no paid arm)
+[2m[DRY][22m 16 cells in a new campaign; nothing written
+EXIT 0 2026-11-18T01:23:13Z
