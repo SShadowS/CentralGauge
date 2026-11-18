@@ -911,39 +911,52 @@ function v2Csvs(reports: Report[]): OutFile[] {
         "withheld",
         ...Array(18).fill(null),
         k.withheld,
-        ...Array(6).fill(null),
+        ...Array(10).fill(null),
       ]];
     }
-    return k.results.map((c) => [
-      ...id(r),
-      c.id,
-      c.name,
-      c.confirmatory,
-      c.baseline,
-      c.variant,
-      c.pairs,
-      c.tasks,
-      c.delta,
-      c.ratio,
-      c.ci?.[0] ?? null,
-      c.ci?.[1] ?? null,
-      c.level,
-      c.bonferroni_ci?.[0] ?? null,
-      c.bonferroni_ci?.[1] ?? null,
-      c.undefined_share,
-      c.p_value ?? null,
-      c.p_holm,
-      k.alpha,
-      c.decision,
-      contrastVerdictText(c),
-      // M12-04b: the ratio-scale interval the bootstrap-t decision goes with.
-      c.method ?? null,
-      c.ci_ratio?.[0] ?? null,
-      c.ci_ratio?.[1] ?? null,
-      c.bonferroni_ci_ratio?.[0] ?? null,
-      c.bonferroni_ci_ratio?.[1] ?? null,
-      c.theta ?? null,
-    ]);
+    return k.results.map((c) => {
+      // M12-04b, D-7 (M12-03b fields): pairs lost to unknown cost, bounds label.
+      const lost = k.missing?.contrasts[c.id]?.dropped ?? null;
+      const label = k.sensitivity?.label[c.id];
+      return [
+        ...id(r),
+        c.id,
+        c.name,
+        c.confirmatory,
+        c.baseline,
+        c.variant,
+        c.pairs,
+        c.tasks,
+        c.delta,
+        c.ratio,
+        c.ci?.[0] ?? null,
+        c.ci?.[1] ?? null,
+        c.level,
+        c.bonferroni_ci?.[0] ?? null,
+        c.bonferroni_ci?.[1] ?? null,
+        c.undefined_share,
+        c.p_value ?? null,
+        c.p_holm,
+        k.alpha,
+        c.decision,
+        contrastVerdictText(c),
+        // M12-04b: the ratio-scale interval the bootstrap-t decision goes with.
+        c.method ?? null,
+        c.ci_ratio?.[0] ?? null,
+        c.ci_ratio?.[1] ?? null,
+        c.bonferroni_ci_ratio?.[0] ?? null,
+        c.bonferroni_ci_ratio?.[1] ?? null,
+        c.theta ?? null,
+        c.pairs,
+        lost,
+        lost === null || !k.missing?.planned ? null : lost / k.missing.planned,
+        label === undefined
+          ? null
+          : label === "robust"
+          ? "robust"
+          : "sensitive",
+      ];
+    });
   });
   const held = reports.flatMap((r) => {
     const k = analysisOf(r);
@@ -1032,6 +1045,10 @@ function v2Csvs(reports: Report[]): OutFile[] {
         "bonferroni_ratio_lo",
         "bonferroni_ratio_hi",
         "theta",
+        "pairs_used",
+        "pairs_dropped_unknown_cost",
+        "dropped_share",
+        "cost_sensitivity",
       ], contrasts),
     },
     {

@@ -1602,16 +1602,16 @@ const sha256 = async (s: string) =>
     (b) => b.toString(16).padStart(2, "0"),
   ).join("");
 const CONTRASTS_HEAD =
-  "experiment,campaign,id,name,confirmatory,baseline,variant,pairs,tasks,delta,ratio,ci_lo,ci_hi,level,bonferroni_lo,bonferroni_hi,undefined_share,p,p_holm,alpha,decision,verdict_text,method,ci_ratio_lo,ci_ratio_hi,bonferroni_ratio_lo,bonferroni_ratio_hi,theta";
+  "experiment,campaign,id,name,confirmatory,baseline,variant,pairs,tasks,delta,ratio,ci_lo,ci_hi,level,bonferroni_lo,bonferroni_hi,undefined_share,p,p_holm,alpha,decision,verdict_text,method,ci_ratio_lo,ci_ratio_hi,bonferroni_ratio_lo,bonferroni_ratio_hi,theta,pairs_used,pairs_dropped_unknown_cost,dropped_share,cost_sensitivity";
 
 Deno.test("charts (M12-04 1): contrasts.csv has the header and one row per result with the exact decisions; CI suppressed for the suppressed one", async () => {
   const csv = get(renderCharts([await v2()]), "contrasts.csv");
   assertEquals(csv.split("\n"), [
     CONTRASTS_HEAD,
-    `${V2_ID},C1,LSP effect without the realistic setup,true,cc-v2-plain,cc-v2-plain-lsp,2,1,-0.58,0.36,-0.8,-0.3,0.95,-0.85,-0.25,0,0.004,0.012,0.05,variant_lower,variant lower,bootstrap-t,0.2,0.65,0.18,0.72,-1.03`,
-    `${V2_ID},C2,LSP effect with the realistic setup,true,cc-v2-realistic,cc-v2-realistic-lsp,2,1,0.2,1.17,-0.1,0.5,0.95,-0.15,0.55,0,0.3,0.6,0.05,no_decision,no decision,bootstrap-t,0.72,1.92,0.65,2.12,0.16`,
-    `${V2_ID},C3,realistic effect without LSP,true,cc-v2-plain,cc-v2-realistic,2,1,0.25,1.28,n/a,n/a,0.95,n/a,n/a,0.01,0.21,0.42,0.05,no_decision,no decision (CI suppressed),bootstrap-t,0.74,2.2,0.67,2.44,0.25`,
-    `${V2_ID},interaction,LSP effect differs by realistic level,false,cc-v2-plain,cc-v2-realistic-lsp,2,1,0.78,n/a,-0.2,1.7,0.95,n/a,n/a,0,0.15,n/a,0.05,no_decision,no decision,bootstrap-t,0.84,3.97,n/a,n/a,0.6`,
+    `${V2_ID},C1,LSP effect without the realistic setup,true,cc-v2-plain,cc-v2-plain-lsp,2,1,-0.58,0.36,-0.8,-0.3,0.95,-0.85,-0.25,0,0.004,0.012,0.05,variant_lower,variant lower,bootstrap-t,0.2,0.65,0.18,0.72,-1.03,2,0,0,robust`,
+    `${V2_ID},C2,LSP effect with the realistic setup,true,cc-v2-realistic,cc-v2-realistic-lsp,2,1,0.2,1.17,-0.1,0.5,0.95,-0.15,0.55,0,0.3,0.6,0.05,no_decision,no decision,bootstrap-t,0.72,1.92,0.65,2.12,0.16,2,0,0,robust`,
+    `${V2_ID},C3,realistic effect without LSP,true,cc-v2-plain,cc-v2-realistic,2,1,0.25,1.28,n/a,n/a,0.95,n/a,n/a,0.01,0.21,0.42,0.05,no_decision,no decision (CI suppressed),bootstrap-t,0.74,2.2,0.67,2.44,0.25,2,0,0,robust`,
+    `${V2_ID},interaction,LSP effect differs by realistic level,false,cc-v2-plain,cc-v2-realistic-lsp,2,1,0.78,n/a,-0.2,1.7,0.95,n/a,n/a,0,0.15,n/a,0.05,no_decision,no decision,bootstrap-t,0.84,3.97,n/a,n/a,0.6,2,0,0,n/a`,
     "",
   ]);
   // M12-04b M1: a decision with a suppressed percentile CI keeps the decision.
@@ -1631,6 +1631,27 @@ Deno.test("charts (M12-04 1): contrasts.csv has the header and one row per resul
     get(renderCharts([decided]), "contrasts.csv"),
     ",variant_lower,variant lower (CI suppressed),bootstrap-t,",
   );
+  // M12-04b D-7: pairs lost to unknown cost and the bounds label per contrast;
+  // without the missing / sensitivity blocks every D-7 column is n/a.
+  const lossy = {
+    ...r0,
+    confirmatory: {
+      ...k0,
+      missing: {
+        planned: 2,
+        contrasts: { C2: { dropped: 1, tasks_affected: ["HX-001"] } },
+      },
+      sensitivity: { label: { C2: "sensitive to missing cost" as const } },
+    },
+  };
+  const rows = get(renderCharts([lossy]), "contrasts.csv").split("\n");
+  assert(rows[2]!.endsWith(",0.16,2,1,0.5,sensitive"), rows[2]);
+  assert(rows[1]!.endsWith(",-1.03,2,n/a,n/a,n/a"), rows[1]);
+  const { missing: _m, sensitivity: _s, ...bare } = k0;
+  assert(
+    get(renderCharts([{ ...r0, confirmatory: bare }]), "contrasts.csv")
+      .split("\n")[1]!.endsWith(",-1.03,2,n/a,n/a,n/a"),
+  );
   // A variant_higher decision reads "variant higher".
   const r = await v2();
   const k = r.confirmatory as Exclude<
@@ -1646,7 +1667,7 @@ Deno.test("charts (M12-04 1): contrasts.csv has the header and one row per resul
   };
   assert(
     get(renderCharts([up]), "contrasts.csv").trim().endsWith(
-      ",variant_higher,variant higher,bootstrap-t,0.72,1.92,0.65,2.12,0.16",
+      ",variant_higher,variant higher,bootstrap-t,0.72,1.92,0.65,2.12,0.16,2,0,0,robust",
     ),
   );
 });
@@ -1660,7 +1681,7 @@ Deno.test("charts (M12-04 2): a withheld confirmatory gives one withheld row and
   assertEquals(get(fs, "contrasts.csv").split("\n"), [
     CONTRASTS_HEAD,
     `${V2_ID},withheld,${Array(18).fill("n/a").join(",")},${reason},${
-      Array(6).fill("n/a").join(",")
+      Array(10).fill("n/a").join(",")
     }`,
     "",
   ]);
