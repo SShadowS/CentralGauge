@@ -1,0 +1,1 @@
+{planned_cells, finished_cells, judged_cells, unscored_cells, unscored_policy_cells, awaiting_judgment_cells, unknown_cells, executions, terminations, eta, unreadable, load, finished_by_arm: (.arms | map_values(.finished)), cost_missing: ([.arms[].cost_missing] | add), cost_total: ([.arms[].cost_usd] | add)}

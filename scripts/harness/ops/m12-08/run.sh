@@ -7,13 +7,12 @@
 # decisions\2026-11-18-m12-concurrency-and-sandbox-egress.md, exact reason texts. Accounts (D-3):
 # decisions\2026-11-18-m12-credential-limit-and-pool.md: max, maxpriv, maxpriv2; never Work; no label added on a resume.
 # Concurrency (D-4): CONC=fixed (default) runs 3 blocks at once; CONC=dynamic is the H-114b form, bounds 2..4, admission
-# at 30 GiB free (its flags exist only once H-114b is merged and the campaign commit moves to it; until then the
-# harness refuses them as unknown options).
+# at 30 GiB free (flag names confirmed against 495f6fa8, merged in 0936645c).
 # Container starts are not this script's job: leases are taken before (jobs\W2-10\lease-<n>.json). A start probe is
 # made from a fresh process before a start is declared failed (M12-06 finding).
 # usage: [CONC=fixed|dynamic] run.sh <experiment: cc-v2-smoke|cc-v2-factorial> <mode: dry|full|resume> [campaign id]
 exp=$1; mode=$2; cid=$3
-CAMPAIGN_COMMIT=82f30dac   # orchestrator-named campaign commit (master with M12-02, H-115, M12-03b); change only on its word
+CAMPAIGN_COMMIT=0936645c   # orchestrator-named campaign commit (master with M12-02, H-115, M12-03b, H-114b); change only on its word. Records carry `load` from here: progress, report and resume run from it too
 T='H:\cg-coord\tasks\M12-08'
 W=/h/cg-coord/jobs/M12-run
 POOL='281 282 283'
@@ -26,7 +25,7 @@ case $mode in
 esac
 case $CONC in
   fixed) conc_args=(--concurrency 3) ;;
-  dynamic) conc_args=(--concurrency 2 --concurrency-max 4 --admit-free-gib 30) ;;   # H-114b flag names: confirm when it lands
+  dynamic) conc_args=(--concurrency 2 --concurrency-max 4 --admit-free-gib 30) ;;   # H-114b flags (495f6fa8)
   *) echo "CONC: fixed|dynamic"; exit 2 ;;
 esac
 P="$T\\STOP-$exp"
