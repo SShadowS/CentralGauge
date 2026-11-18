@@ -1,0 +1,51 @@
+2026-11-17T23:50:08Z start: Cronus281, Cronus282, Cronus283 at fe8c3ab1; free RAM 39.1 GB
+2026-11-17T23:50:08Z no bench live
+2026-11-17T23:50:09Z Cronus281 lease attempt 227, free before start 39 GB
+2026-11-17T23:50:10Z heartbeat started
+2026-11-17T23:50:12Z Cronus281 started (rc 0)
+2026-11-17T23:52:13Z Cronus281 web client up; free RAM 33.5 GB (60 s after up)
+2026-11-17T23:52:14Z Cronus282 lease attempt 151, free before start 33.1 GB
+2026-11-17T23:52:17Z Cronus282 started (rc 0)
+2026-11-18T00:22:18Z Cronus282 FAIL: web client not up after 20 min
+2026-11-18T00:22:24Z Cronus282 lease released
+2026-11-18T00:22:24Z pass: up Cronus281; free RAM with all up 45 GB
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus281' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus281 env_fp b9ba30b0855c (baseline 2026-11-17T22:26:05.194Z)
+      [WARN] NST egress NOT enforced (--unverified-bc-egress-ok): owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)
+2026-11-18T00:22:49Z env check [Cronus281] rc 0
+2026-11-18T00:22:55Z Cronus281 stopped (rc 0)
+2026-11-18T00:22:55Z Cronus281 lease released
+2026-11-18T00:22:55Z Cronus282 lease attempt 152, free before start 49.5 GB
+2026-11-18T00:22:58Z Cronus282 started (rc 0)
+2026-11-18T00:52:58Z Cronus282 FAIL: web client not up after 20 min
+2026-11-18T00:53:05Z Cronus282 lease released
+2026-11-18T00:53:05Z STOPPED: none of Cronus282,Cronus283 could start
+2026-11-18T00:57:10Z manual (fresh pwsh): Cronus282 probe 302 from 2nd try; env check rc 0
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus282' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus282 env_fp b9ba30b0855c (baseline 2026-11-17T22:29:33.390Z)
+      [WARN] NST egress NOT enforced (--unverified-bc-egress-ok): owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)
+2026-11-18T00:57:22Z Cronus281 lease attempt 228, free before start 45 GB
+2026-11-18T01:07:44Z Cronus281 web client up (curl.exe probe; in-process Invoke-WebRequest loop stuck); free RAM 41.5 GB
+2026-11-18T01:07:45Z Cronus283 lease attempt 118, free before start 41.5 GB
+2026-11-18T01:19:02Z Cronus283 web client up; free RAM 33.6 GB (60 s after up)
+2026-11-18T01:19:03Z all-up reading (281, 282, 283): free RAM 33.6 GB
+    Task start deno run --allow-all cli/centralgauge.ts 'harness' 'env' 'check' '--lineage' 'infra\harness-reset\lineages\golden-o09-v3.json' '--containers' 'Cronus281,Cronus282,Cronus283' '--symbol-store' 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' '--results-dir' 'H:\cg-coord\results\harness' '--unverified-bc-egress-ok' 'owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)'
+    [MCP] Warning: No credentials found in environment. Using defaults.
+    environment: lineage golden-o09-v3
+      [OK] Cronus281 env_fp b9ba30b0855c (baseline 2026-11-17T22:26:05.194Z)
+      [OK] Cronus282 env_fp b9ba30b0855c (baseline 2026-11-17T22:29:33.390Z)
+      [OK] Cronus283 env_fp b9ba30b0855c (baseline 2026-11-17T22:31:30.670Z)
+      [WARN] NST egress NOT enforced (--unverified-bc-egress-ok): owner grant decisions/2026-11-17-egress-grant-m12.md: M12 setup, smoke and confirmatory campaign, no ingest, NST egress unenforced in golden-o09-v3 (disclosed)
+2026-11-18T01:19:35Z env check [Cronus281,Cronus282,Cronus283] rc 0; free RAM 36.5 GB
+2026-11-18T01:19:41Z Cronus281 stopped (rc 0)
+2026-11-18T01:19:41Z Cronus281 lease released
+2026-11-18T01:19:47Z Cronus282 stopped (rc 0)
+2026-11-18T01:19:47Z Cronus282 lease released
+2026-11-18T01:20:03Z Cronus283 stopped (rc 0)
+2026-11-18T01:20:03Z Cronus283 lease released
+2026-11-18T01:20:03Z quarantine records for Cronus281-283: 0 
+2026-11-18T01:20:03Z done; free RAM 49.4 GB
