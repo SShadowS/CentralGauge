@@ -65,6 +65,7 @@ import {
   compareArms,
   type Comparison,
   type ContrastResult,
+  type Decision,
   exploratoryNote,
   ineligible,
   testContrasts,
@@ -307,6 +308,49 @@ export interface ContrastsAnalysis {
   tasks: string[];
   results: ContrastResult[];
   held_out: { tasks: string[]; arms: ArmSummary[] };
+  /** D-7 (decision 2026-11-17): per contrast id, pairs lost to unknown cost of the planned selected tasks x repeats. */
+  missing?: {
+    planned: number;
+    contrasts: Record<string, { dropped: number; tasks_affected: string[] }>;
+  };
+  /**
+   * D-7 bounds sensitivity (cost metric, confirmatory family). With an
+   * unknown-cost selected cell: decisions with that spend imputed at
+   * known_spend_usd (lower) and at the highest known cell spend (upper). With
+   * none, only `label` (all "robust"; no reruns). Never changes `results`.
+   */
+  sensitivity?: {
+    upper_spend_usd?: number;
+    lower?: Record<string, Decision>;
+    upper?: Record<string, Decision>;
+    label: Record<string, "robust" | "sensitive to missing cost">;
+  };
+}
+
+/**
+ * D-7 backstop: why unknown cost withholds the family, or null. Pass family
+ * contrasts only; `by_task` counts each selected task's pairs lost to
+ * unknown cost.
+ */
+export function costBackstop(
+  lost: { id: string; by_task: Record<string, number> }[],
+  planned: number,
+  repeats: number,
+): string | null {
+  const why = lost.flatMap(({ id, by_task }) => {
+    const dropped = Object.values(by_task).reduce((a, b) => a + b, 0);
+    return [
+      ...(dropped * 100 > 7 * planned
+        ? [
+          `${id} lost ${dropped} of ${planned} pairs to unknown cost (over 7%)`,
+        ]
+        : []),
+      ...Object.entries(by_task).filter(([, n]) => n >= repeats).map((
+        [task],
+      ) => `${id} lost every pair of task ${task} to unknown cost`),
+    ];
+  });
+  return why.length > 0 ? why.join("; ") : null;
 }
 
 export type PartialReason = "provisional" | "repeat_cut";
@@ -893,48 +937,129 @@ export async function buildReport(
       open.filter((c) => c.status === "unrun").length
     } unrun cells`
     : null;
-  // Holm must never run on fewer than the frozen observations: a terminal
-  // cell of a selected task without the tested metric's data loses its pairs.
   const metric = d?.primary_metric ?? "cost_per_solved_task";
-  const noData = selection
-    ? cells.filter((c) =>
-      selection.selected.includes(c.task) && ineligible(c, metric) !== null
-    ).length
-    : 0;
+  const inSelected = selection
+    ? cells.filter((c) => selection.selected.includes(c.task))
+    : [];
+  // Any other terminal cell of a selected task without the tested metric's
+  // data (pass_rate: unscored) still withholds the family.
+  const noData = inSelected.filter((c) => {
+    const why = ineligible(c, metric);
+    return why !== null && why !== "unknown_spend";
+  }).length;
+  // D-7 (decision 2026-11-17-m12-missing-data): a selected-task cell with
+  // unknown cost drops only its own pairs, per contrast (compareArms). The
+  // interaction keeps its own rule (compareInteraction): a (task, repeat)
+  // block counts only when all four arms are eligible, and no backstop.
+  const unknown = inSelected.filter((c) =>
+    ineligible(c, metric) === "unknown_spend"
+  );
+  const lostBy = (armsOf: string[]): Record<string, number> => {
+    const by = new Map<string, Set<number>>();
+    for (const c of unknown.filter((c) => armsOf.includes(c.arm))) {
+      by.set(c.task, (by.get(c.task) ?? new Set()).add(c.repeat));
+    }
+    return Object.fromEntries(
+      [...by].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([t, s]) => [t, s.size]),
+    );
+  };
+  const ia = exp.interaction;
+  const lost = [
+    ...(exp.contrasts ?? []).map((c) => ({
+      id: c.id,
+      by_task: lostBy([c.baseline, c.variant]),
+    })),
+    ...(ia
+      ? [{
+        id: "interaction",
+        by_task: lostBy([ia.plain, ia.lsp, ia.realistic, ia.realistic_lsp]),
+      }]
+      : []),
+  ];
+  const planned = (selection?.selected.length ?? 0) * exp.repeats;
   const reason = withheld ??
     (noData > 0
       ? `${noData} cells without ${
         metric === "cost_per_solved_task" ? "cost" : metric
       } data`
+      : d?.confirmatory
+      ? costBackstop(
+        lost.filter((x) => x.id !== "interaction" && d.family.includes(x.id)),
+        planned,
+        exp.repeats,
+      )
       : null);
   const analysis = (): ContrastsAnalysis => {
-    const selected = new Set(selection!.selected);
     const held = new Set(selection!.held_out);
     const family = d!.confirmatory ? d!.family : [];
     const { resamples, seed, level } = d!.bootstrap;
     // H-18: run the declared test, and refuse any row that ran another one.
     const declared = d!.test.p_value;
-    const results = testContrasts(
-      cells.filter((c) => selected.has(c.task)),
-      exp.contrasts!,
-      exp.interaction ? { ...exp.interaction } : null,
-      metric,
-      {
-        resamples,
-        seed,
-        level,
-        alpha: d!.alpha,
-        zeroSolve: d!.zero_solve,
-        family,
-        method: declared,
-      },
-    );
+    const run = (cs: CellRecord[]) =>
+      testContrasts(
+        cs,
+        exp.contrasts!,
+        exp.interaction ? { ...exp.interaction } : null,
+        metric,
+        {
+          resamples,
+          seed,
+          level,
+          alpha: d!.alpha,
+          zeroSolve: d!.zero_solve,
+          family,
+          method: declared,
+        },
+      );
+    const results = run(inSelected);
     const off = results.filter((x) => (x.method ?? "percentile") !== declared);
     if (off.length > 0) {
       const msg = `declared test ${declared} is not the executed test of ${
         off.map((x) => `${x.id} (${x.method ?? "percentile"})`).join(", ")
       }`;
       throw new ValidationError(msg, [msg]);
+    }
+    // D-7 bounds sensitivity: unknown-cost cells keep their pass state and
+    // get spend imputed; it only labels, never changes, a primary decision.
+    const known = inSelected.flatMap((c) =>
+      c.spend_usd === null ? [] : [c.spend_usd]
+    );
+    let sensitivity: ContrastsAnalysis["sensitivity"];
+    if (
+      metric === "cost_per_solved_task" && unknown.length === 0 &&
+      family.length > 0
+    ) {
+      sensitivity = {
+        label: Object.fromEntries(family.map((id) => [id, "robust" as const])),
+      };
+    } else if (unknown.length > 0 && known.length > 0 && family.length > 0) {
+      const top = Math.max(...known);
+      const decisions = (spend: (c: CellRecord) => number) =>
+        Object.fromEntries(
+          run(
+            inSelected.map((c) =>
+              c.spend_usd === null ? { ...c, spend_usd: spend(c) } : c
+            ),
+          ).filter((x) => family.includes(x.id)).map((x) => [x.id, x.decision]),
+        );
+      const lower = decisions((c) => c.known_spend_usd);
+      // A cell's known spend is a floor of its true spend, so the upper
+      // imputation is never below it.
+      const upper = decisions((c) => Math.max(top, c.known_spend_usd));
+      sensitivity = {
+        upper_spend_usd: top,
+        lower,
+        upper,
+        label: Object.fromEntries(
+          results.filter((x) => family.includes(x.id)).map((x) => [
+            x.id,
+            lower[x.id] === x.decision && upper[x.id] === x.decision
+              ? "robust" as const
+              : "sensitive to missing cost" as const,
+          ]),
+        ),
+      };
     }
     return {
       preregistration: {
@@ -957,6 +1082,14 @@ export async function buildReport(
           armSummary(cells.filter((c) => held.has(c.task)), a, reported)
         ),
       },
+      missing: {
+        planned,
+        contrasts: Object.fromEntries(lost.map((x) => [x.id, {
+          dropped: Object.values(x.by_task).reduce((a, b) => a + b, 0),
+          tasks_affected: Object.keys(x.by_task),
+        }])),
+      },
+      ...(sensitivity ? { sensitivity } : {}),
     };
   };
   const ready = d && pre && selection && exp.contrasts;
@@ -1597,6 +1730,9 @@ export function renderReport(r: HarnessReport): string {
     const sample =
       `${k.bootstrap.resamples} resamples, seed ${k.bootstrap.seed}, ${k.tasks.length} selected tasks`;
     const bonferroni = +((1 - k.alpha / k.family.length) * 100).toFixed(1);
+    const costMetric = k.results.some((c) =>
+      c.metric === "cost_per_solved_task"
+    );
     if (conf) {
       h(`Confirmatory contrasts (${ids}, Holm at ${k.alpha}, ${sample})`);
       out.push(
@@ -1604,6 +1740,34 @@ export function renderReport(r: HarnessReport): string {
           k.family.join(", ")
         }); the intervals are descriptive and can disagree with it at the boundary.`,
       );
+      if (k.missing && costMetric) {
+        const fam = k.family.filter((id) => id !== "interaction");
+        out.push(
+          `  Unknown cost: a cell without cost data drops its pairs per contrast. The family is withheld if a family contrast (${
+            fam.join(", ")
+          }) loses more than 7% of its planned pairs (dropped x 100 > 7 x planned, planned = selected tasks x experiment repeats = ${k.missing.planned}) or every pair of a task.`,
+          "  The interaction (exploratory) uses a (task, repeat) block only when all four arms have an eligible cell; the 7% backstop does not count it.",
+          "  Unpaired counts by arm per contrast are listed in this section. The report as a whole is run only after the campaign closes.",
+        );
+        const twoArm = k.results.filter((c) => c.id !== "interaction");
+        const shared = twoArm.flatMap((a, i) =>
+          twoArm.slice(i + 1).flatMap((b) =>
+            [a.baseline, a.variant].filter((x) =>
+              x === b.baseline || x === b.variant
+            ).map((x) => `${a.id} and ${b.id} share ${x}`)
+          )
+        );
+        const dropped = Object.values(k.missing.contrasts).some((m) =>
+          m.dropped > 0
+        );
+        if (dropped && shared.length > 0) {
+          out.push(
+            `  Contrasts that share an arm may run on different pair sets (${
+              shared.join("; ")
+            }).`,
+          );
+        }
+      }
     } else {
       h(
         `Exploratory contrasts (${ids}, amended to exploratory: no decision rule applied, ${sample})`,
@@ -1662,6 +1826,52 @@ export function renderReport(r: HarnessReport): string {
         `  ${c.id} ${c.name}: ${c.variant} vs ${c.baseline} over ${c.tasks} of ${k.tasks.length} selected tasks: ${
           c.delta === null ? "n/a" : f(c.delta)
         }, ${ci}; ${tail}${btText}`,
+      );
+      const m = conf ? k.missing?.contrasts[c.id] : undefined;
+      if (m && c.id === "interaction") {
+        out.push(
+          `    interaction blocks used ${c.pairs} of ${k.missing!.planned}${
+            costMetric
+              ? `, dropped ${m.dropped} to unknown cost, tasks affected ${
+                m.tasks_affected.join(", ") || "none"
+              }`
+              : ""
+          }`,
+        );
+      } else if (m) {
+        out.push(
+          `    ${c.id} pairs used ${c.pairs} of ${k.missing!.planned}${
+            costMetric
+              ? `, dropped ${m.dropped} to unknown cost, tasks affected ${
+                m.tasks_affected.join(", ") || "none"
+              }`
+              : ""
+          }; unpaired by arm: ${c.baseline} ${
+            reasons(c.excluded.baseline)
+          }; ${c.variant} ${reasons(c.excluded.variant)}`,
+        );
+      }
+    }
+    const s = conf?.sensitivity;
+    if (s && s.lower && s.upper) {
+      out.push(
+        `  Bounds sensitivity (each unknown-cost cell at its known spend, then at the higher of its known spend and ${
+          usd(s.upper_spend_usd ?? null)
+        }, the highest known cell spend; never changes a decision): ${
+          Object.entries(s.label).map(([id, label]) =>
+            `${id} ${label} (lower ${s.lower![id]!.replace("_", " ")}, upper ${
+              s.upper![id]!.replace("_", " ")
+            })`
+          ).join("; ")
+        }`,
+      );
+    } else if (s) {
+      out.push(
+        `  Bounds sensitivity: no unknown-cost cell in a selected task; ${
+          Object.entries(s.label).map(([id, label]) => `${id} ${label}`).join(
+            "; ",
+          )
+        }`,
       );
     }
     h(

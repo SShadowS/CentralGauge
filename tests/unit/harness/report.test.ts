@@ -19,6 +19,7 @@ import {
 } from "../../../src/harness/records.ts";
 import {
   buildReport,
+  costBackstop,
   type HarnessReport,
   partialText,
   renderReport,
@@ -1142,7 +1143,9 @@ async function factorialRecords(
   // M11-09b: bootstrap-t is undefined at zero variance (SE = 0); `varied`
   // gives the LSP arms a task-dependent cost so the studentized test can run.
   varied = false,
+  repeats = 2,
 ): Promise<CampaignRecords> {
+  const reps = Array.from({ length: repeats }, (_, i) => i + 1);
   const experiment = ExperimentSchema.parse({
     id: "cc-v2-factorial",
     hypothesis: "LSP and the realistic setup cut cost per solved task.",
@@ -1151,7 +1154,7 @@ async function factorialRecords(
     variants: ["cc-l", "cc-r", "cc-rl"],
     vary: ["skills"],
     tasks: "harness-tasks/tasks/*",
-    repeats: 2,
+    repeats,
     contrasts: F_CONTRASTS,
     interaction: F_INTERACTION,
     preregistration: F_REL,
@@ -1184,7 +1187,7 @@ async function factorialRecords(
       limits: {},
     })),
     arms,
-    blocks: planBlocks(F_TASKS, 2, F_ARMS, base.seed),
+    blocks: planBlocks(F_TASKS, repeats, F_ARMS, base.seed),
     preregistration: {
       path: F_REL,
       sha256: H("9"),
@@ -1197,7 +1200,7 @@ async function factorialRecords(
   const judgments = [];
   for (const arm of F_ARMS) {
     for (const task of F_TASKS) {
-      for (const repeat of [1, 2]) {
+      for (const repeat of reps) {
         const cost = arm === "cc-l" && F_HELD.includes(task)
           ? heldOutLCost
           : F_COST[arm]! *
@@ -1667,13 +1670,15 @@ Deno.test("buildReport (M11 review): exploratory comparison rows carry no interv
   assert(v1.comparisons.some((c) => c.distinguishable !== null));
 });
 
-Deno.test("buildReport (M11 run 002): a terminal cell without cost data in a selected task withholds the confirmatory analysis", async () => {
-  const recs = await factorialRecords();
-  const prereg = preregOf(recs, await stageBFor(recs.campaign));
-  const unknownCost = (task: string) => ({
+/** `recs` with the cost of the given (task, repeat, arm) cells unknown. */
+function unknownCost(
+  recs: CampaignRecords,
+  at: Array<[string, number, string]>,
+): CampaignRecords {
+  return {
     ...recs,
     executions: recs.executions.map((e) =>
-      e.task_id === task && e.repeat === 1 && e.arm === "cc-p"
+      at.some(([t, r, a]) => e.task_id === t && e.repeat === r && e.arm === a)
         ? {
           ...e,
           telemetry: telemetry(null),
@@ -1684,23 +1689,456 @@ Deno.test("buildReport (M11 run 002): a terminal cell without cost data in a sel
         }
         : e
     ),
-  });
-  const r = await buildReport(unknownCost("HX-001"), { prereg });
-  assertEquals(r.confirmatory, { withheld: "1 cells without cost data" });
-  assert(
-    stripAnsiCode(renderReport(r)).includes(
-      "Confirmatory analysis withheld: 1 cells without cost data",
+  };
+}
+
+/** `recs` with the given (task, repeat, arm) cells costing `usd`. */
+function costAt(
+  recs: CampaignRecords,
+  at: [string, number, string],
+  usd: number,
+): CampaignRecords {
+  const [t, r, a] = at;
+  return {
+    ...recs,
+    executions: recs.executions.map((e) =>
+      e.task_id === t && e.repeat === r && e.arm === a
+        ? { ...e, telemetry: telemetry(usd) }
+        : e
     ),
+  };
+}
+
+Deno.test("buildReport (M12-03b D-7 item 1, 3): one terminal cell without cost data in a selected task drops its pairs per contrast and does not withhold", async () => {
+  // 6 selected tasks x 3 repeats = 18 planned pairs; 1 of 18 is under 7%.
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
   );
-  // The same loss in a held-out task is not part of C1-C3.
+  const r = await buildReport(unknownCost(recs, [["HX-001", 1, "cc-p"]]), {
+    prereg,
+  });
+  const k = confirmed(r);
+  assertEquals(k.tasks.length, 6);
+  // C1 and C3 use cc-p and lose the pair; C2 does not touch cc-p.
   assertEquals(
-    confirmed(await buildReport(unknownCost("HX-007"), { prereg })).tasks
-      .length,
-    6,
+    k.results.map((x) => [x.id, x.pairs]),
+    [["C1", 17], ["C2", 18], ["C3", 17], ["interaction", 17]],
+  );
+  assertEquals(k.missing!.planned, 18);
+  assertEquals(k.missing!.contrasts, {
+    C1: { dropped: 1, tasks_affected: ["HX-001"] },
+    C2: { dropped: 0, tasks_affected: [] },
+    C3: { dropped: 1, tasks_affected: ["HX-001"] },
+    interaction: { dropped: 1, tasks_affected: ["HX-001"] },
+  });
+  assertEquals(k.results[0]!.excluded, {
+    baseline: { unknown_spend: 1 },
+    variant: {},
+  });
+  const text = stripAnsiCode(renderReport(r));
+  assert(!text.includes("Confirmatory analysis withheld"), text);
+  assertStringIncludes(
+    text,
+    "C1 pairs used 17 of 18, dropped 1 to unknown cost, tasks affected HX-001; unpaired by arm: cc-p unknown_spend 1; cc-l none",
+  );
+  assertStringIncludes(
+    text,
+    "C2 pairs used 18 of 18, dropped 0 to unknown cost, tasks affected none; unpaired by arm: cc-r none; cc-rl none",
+  );
+  assertStringIncludes(
+    text,
+    "Contrasts that share an arm may run on different pair sets (C1 and C3 share cc-p; C2 and C3 share cc-r).",
+  );
+  // Nothing dropped, no pair-set line.
+  const full = stripAnsiCode(
+    renderReport(await buildReport(recs, { prereg })),
+  );
+  assert(!full.includes("may run on different pair sets"), full);
+  // The same loss in a held-out task is not part of C1-C3.
+  const held = confirmed(
+    await buildReport(unknownCost(recs, [["HX-007", 1, "cc-p"]]), { prereg }),
+  );
+  assertEquals(held.tasks.length, 6);
+  assertEquals(held.results.map((x) => x.pairs), [18, 18, 18, 18]);
+});
+
+Deno.test("buildReport (M12-03b D-7 item 1): a family contrast losing more than 7% of its planned pairs, or every pair of a task, withholds the family", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  // cc-l is only in C1 (and the interaction, outside the family).
+  const two = await buildReport(
+    unknownCost(recs, [["HX-001", 1, "cc-l"], ["HX-002", 1, "cc-l"]]),
+    { prereg },
+  );
+  assertEquals(two.confirmatory, {
+    withheld: "C1 lost 2 of 18 pairs to unknown cost (over 7%)",
+  });
+  assertStringIncludes(
+    stripAnsiCode(renderReport(two)),
+    "Confirmatory analysis withheld: C1 lost 2 of 18 pairs to unknown cost (over 7%)",
+  );
+  const task = await buildReport(
+    unknownCost(recs, [1, 2, 3].map((n) => ["HX-001", n, "cc-l"])),
+    { prereg },
+  );
+  const k = task.confirmatory;
+  assert(k && "withheld" in k);
+  assertStringIncludes(
+    k.withheld,
+    "C1 lost every pair of task HX-001 to unknown cost",
+  );
+  // A held-out task never counts toward the backstop.
+  confirmed(
+    await buildReport(
+      unknownCost(recs, [1, 2, 3].map((n) => ["HX-007", n, "cc-l"])),
+      { prereg },
+    ),
   );
 });
 
-Deno.test("buildReport (M11-10c): a pass_rate experiment with a cost pre-registration is refused; on a cost experiment missing cost withholds the family", async () => {
+Deno.test("costBackstop (M12-03b D-7 item 1): at M12 scale 21 of 312 pairs does not withhold, 22 of 312 does; every pair of a task withholds", () => {
+  // 52 tasks x 6 repeats = 312; spread so that no task loses all 6.
+  const spread = (n: number) =>
+    Object.fromEntries(
+      Array.from({ length: Math.ceil(n / 3) }, (_, i) => [
+        `T${i}`,
+        Math.min(3, n - 3 * i),
+      ]),
+    );
+  assertEquals(costBackstop([{ id: "C2", by_task: spread(21) }], 312, 6), null);
+  assertEquals(
+    costBackstop([{ id: "C2", by_task: spread(22) }], 312, 6),
+    "C2 lost 22 of 312 pairs to unknown cost (over 7%)",
+  );
+  assertEquals(
+    costBackstop(
+      [{ id: "C1", by_task: { "HX-001": 6 } }, { id: "C2", by_task: {} }],
+      312,
+      6,
+    ),
+    "C1 lost every pair of task HX-001 to unknown cost",
+  );
+});
+
+Deno.test("buildReport (M12-03b D-7 item 2): bounds sensitivity imputes known spend and the highest known spend, labels each family contrast, and never changes a primary decision", async () => {
+  const base = await factorialRecords(100, "cost_per_solved_task", true, 3);
+  const prereg = preregOf(
+    base,
+    await stageBFor(base.campaign, {
+      design: { tasks: 6, repeats: 3 },
+      zero_solve: { rule: "min_defined_share", share: 0.99 },
+    }),
+  );
+  const lost = unknownCost(base, [["HX-002", 1, "cc-rl"]]);
+  // Calm: the highest known cell spend is cc-p's $2.
+  const calm = confirmed(await buildReport(lost, { prereg }));
+  assertEquals(calm.sensitivity!.upper_spend_usd, 2);
+  assertEquals(
+    calm.results.map((x) => x.decision).slice(0, 3),
+    ["variant_lower", "variant_lower", "no_decision"],
+  );
+  assertEquals(calm.sensitivity!.label, {
+    C1: "robust",
+    C2: "robust",
+    C3: "robust",
+  });
+  // One $1000 cell in cc-p (no unknown cost there) makes the upper bound
+  // $1000, which flips C2 in the upper run only.
+  const wild = confirmed(
+    await buildReport(costAt(lost, ["HX-003", 1, "cc-p"], 1000), { prereg }),
+  );
+  assertEquals(wild.sensitivity!.upper_spend_usd, 1000);
+  const c2 = wild.results.find((x) => x.id === "C2")!;
+  assertEquals(c2.decision, "variant_lower");
+  const s = wild.sensitivity!;
+  assertEquals(s.lower!["C2"], "variant_lower");
+  assert(s.upper!["C2"] !== "variant_lower");
+  assertEquals(s.label["C2"], "sensitive to missing cost");
+  assertEquals(s.label["C1"], "robust");
+  const text = stripAnsiCode(
+    renderReport(
+      await buildReport(costAt(lost, ["HX-003", 1, "cc-p"], 1000), { prereg }),
+    ),
+  );
+  assertStringIncludes(
+    text,
+    "Bounds sensitivity (each unknown-cost cell at its known spend, then at the higher of its known spend and $1000.000, the highest known cell spend; never changes a decision):",
+  );
+  assertStringIncludes(
+    text,
+    "C2 sensitive to missing cost (lower variant lower, upper ",
+  );
+  assertStringIncludes(text, "C1 robust");
+  // No unknown cost: every family contrast is robust, no reruns, no bounds.
+  const none = confirmed(await buildReport(base, { prereg }));
+  assertEquals(none.sensitivity, {
+    label: { C1: "robust", C2: "robust", C3: "robust" },
+  });
+  assertStringIncludes(
+    stripAnsiCode(renderReport(await buildReport(base, { prereg }))),
+    "Bounds sensitivity: no unknown-cost cell in a selected task; C1 robust; C2 robust; C3 robust",
+  );
+});
+
+/**
+ * `recs` with one cell unknown-cost but with known spend `known`: its planned
+ * execution costs `known` and a manual rerun (attempt 2) has no cost data.
+ * `pass` is the planned execution's judged result (null = unscored).
+ */
+function knownThenUnknown(
+  recs: CampaignRecords,
+  [task, repeat, arm]: [string, number, string],
+  known: number,
+  pass: boolean | null,
+): CampaignRecords {
+  const c = recs.campaign;
+  const planned = recs.executions.find((e) =>
+    e.task_id === task && e.repeat === repeat && e.arm === arm
+  )!;
+  const p = { ...planned, telemetry: telemetry(known) };
+  const rerun = execution(c, {
+    task,
+    repeat,
+    arm,
+    attempt: 2,
+    run_kind: "manual_rerun",
+  }, {
+    telemetry: telemetry(null),
+    validity: {
+      ...planned.validity,
+      incomplete_telemetry: ["cost_usd" as const],
+    },
+  });
+  return {
+    ...recs,
+    executions: [...recs.executions.map((e) => e === planned ? p : e), rerun],
+    judgments: recs.judgments.map((j) =>
+      j.execution_id === planned.id ? judgment(c, p, pass) : j
+    ),
+  };
+}
+
+Deno.test("buildReport (M12-03b D-7 item 2, review r1): the lower bound imputes the cell's known spend (not 0), the upper bound is never below it, and primary decisions never change", async () => {
+  const base = await factorialRecords(100, "cost_per_solved_task", true, 3);
+  const prereg = preregOf(
+    base,
+    await stageBFor(base.campaign, {
+      design: { tasks: 6, repeats: 3 },
+      zero_solve: { rule: "min_defined_share", share: 0.99 },
+    }),
+  );
+  // Primary: the unknown cell drops, C1 (cc-l vs cc-p) is variant_lower.
+  const calm = confirmed(
+    await buildReport(
+      knownThenUnknown(base, ["HX-002", 1, "cc-l"], 0.5, true),
+      { prereg },
+    ),
+  );
+  assertEquals(calm.results[0]!.decision, "variant_lower");
+  assertEquals(calm.results[0]!.pairs, 17);
+  // The cell's known spend is $50, above every known cell spend ($2): the
+  // lower run imputes $50 (a 0 imputation would keep variant_lower), and the
+  // upper run must impute max(top, known) = $50 too, never the lower top.
+  for (const pass of [true, false]) {
+    const recs = knownThenUnknown(base, ["HX-002", 1, "cc-l"], 50, pass);
+    const k = confirmed(await buildReport(recs, { prereg }));
+    const s = k.sensitivity!;
+    assertEquals(s.upper_spend_usd, 2, String(pass));
+    assertEquals(k.results[0]!.decision, "variant_lower", String(pass));
+    assert(s.lower!["C1"] !== "variant_lower", `lower ${pass}`);
+    assertEquals(s.upper!["C1"], s.lower!["C1"], `upper ${pass}`);
+    assertEquals(s.label["C1"], "sensitive to missing cost", String(pass));
+    // The primary decisions are exactly those of the data without the bounds.
+    assertEquals(
+      k.results.map((x) => x.decision),
+      confirmed(
+        await buildReport(
+          unknownCost(base, [["HX-002", 1, "cc-l"]]),
+          { prereg },
+        ),
+      ).results.map((x) => x.decision),
+      String(pass),
+    );
+  }
+  // A terminally unscored unknown-cost cell (setup_failed, then its one
+  // automatic retry failing the same way) is analysed too.
+  const cl = base.executions.find((e) =>
+    e.task_id === "HX-002" && e.repeat === 1 && e.arm === "cc-l"
+  )!;
+  const failed = {
+    ...cl,
+    termination: "setup_failed" as const,
+    did_work: false,
+    telemetry: telemetry(0.4),
+  };
+  const retry = execution(base.campaign, {
+    task: "HX-002",
+    repeat: 1,
+    arm: "cc-l",
+    attempt: 2,
+    run_kind: "auto_retry",
+    retry_of: cl.id,
+  }, {
+    termination: "setup_failed",
+    did_work: false,
+    telemetry: telemetry(null),
+    validity: {
+      ...cl.validity,
+      incomplete_telemetry: ["cost_usd" as const],
+    },
+  });
+  const unscored = confirmed(
+    await buildReport({
+      ...base,
+      executions: [
+        ...base.executions.map((e) => e === cl ? failed : e),
+        retry,
+      ],
+      judgments: base.judgments.filter((j) => j.execution_id !== cl.id),
+    }, { prereg }),
+  );
+  assertEquals(unscored.results[0]!.pairs, 17);
+  assertEquals(Object.keys(unscored.sensitivity!.label), ["C1", "C2", "C3"]);
+  // Both bound runs ran on it, with the upper floor at the highest known spend.
+  assertEquals(unscored.sensitivity!.upper_spend_usd, 2);
+  assertEquals(Object.keys(unscored.sensitivity!.lower!), ["C1", "C2", "C3"]);
+  assertEquals(Object.keys(unscored.sensitivity!.upper!), ["C1", "C2", "C3"]);
+  // A primary no_decision stays no_decision whatever the bounds say. cc-r
+  // solves only HX-001, HX-002 (repeat 1 only), HX-003 and HX-004; the
+  // unknown-cost cell is cc-r HX-002/1. The primary drops that pair, leaving
+  // 3 solving tasks: P(no solve in a resample) = (1/2)^6 = 1.6%, defined
+  // share 98.4% under the 0.99 share, so C2 (cc-r baseline) is no_decision.
+  // The upper bound keeps the passing cell (4 solving tasks, 0.14% undefined)
+  // and decides C2.
+  const dead = base.executions.filter((e) =>
+    e.arm === "cc-r" &&
+    (["HX-005", "HX-006"].includes(e.task_id) ||
+      (e.task_id === "HX-002" && e.repeat > 1))
+  ).map((e) => e.id);
+  const sparse = {
+    ...base,
+    judgments: base.judgments.map((j) =>
+      dead.includes(j.execution_id)
+        ? judgment(
+          base.campaign,
+          base.executions.find((e) => e.id === j.execution_id)!,
+          false,
+        )
+        : j
+    ),
+  };
+  const c2 = confirmed(
+    await buildReport(
+      knownThenUnknown(sparse, ["HX-002", 1, "cc-r"], 0.5, true),
+      { prereg },
+    ),
+  );
+  assertEquals(c2.results[1]!.decision, "no_decision");
+  // A bound decides C2 here, yet the primary stays no_decision.
+  assert(
+    c2.sensitivity!.lower!["C2"] !== "no_decision" ||
+      c2.sensitivity!.upper!["C2"] !== "no_decision",
+    JSON.stringify(c2.sensitivity),
+  );
+  assertEquals(c2.sensitivity!.label["C2"], "sensitive to missing cost");
+});
+
+Deno.test("buildReport (M12-03b D-7 item 1, review r1): a pair with both arms of a contrast unknown-cost is dropped once", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  const k = confirmed(
+    await buildReport(
+      unknownCost(recs, [["HX-001", 1, "cc-p"], ["HX-001", 1, "cc-l"]]),
+      { prereg },
+    ),
+  );
+  assertEquals(k.missing!.contrasts["C1"], {
+    dropped: 1,
+    tasks_affected: ["HX-001"],
+  });
+});
+
+Deno.test("costBackstop (M12-03b D-7, review r1): the 7% rule is strict, 7 of 100 does not withhold and 8 does", () => {
+  const spread = (n: number) =>
+    Object.fromEntries(
+      Array.from({ length: n }, (_, i) => [`T${i}`, 1]),
+    );
+  assertEquals(costBackstop([{ id: "C1", by_task: spread(7) }], 100, 6), null);
+  assertEquals(
+    costBackstop([{ id: "C1", by_task: spread(8) }], 100, 6),
+    "C1 lost 8 of 100 pairs to unknown cost (over 7%)",
+  );
+});
+
+Deno.test("renderReport (M12-03b D-7 item 7, review r1): the unknown-cost wording is printed only for the cost metric", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  const r = await buildReport(unknownCost(recs, [["HX-001", 1, "cc-p"]]), {
+    prereg,
+  });
+  const cost = stripAnsiCode(renderReport(r));
+  assertStringIncludes(cost, "Unknown cost: a cell without cost data");
+  assertStringIncludes(cost, "to unknown cost");
+  const pr = structuredClone(r);
+  const k = confirmed(pr);
+  for (const x of k.results) x.metric = "pass_rate";
+  const text = stripAnsiCode(renderReport(pr));
+  assert(!text.includes("Unknown cost:"), text);
+  assert(!text.includes("to unknown cost"), text);
+  assertStringIncludes(text, "C1 pairs used 17 of 18");
+});
+
+Deno.test("renderReport (M12-03b D-7 items 5, 6): the confirmatory section states both rules, the interaction's own rule, and holds the unpaired-by-arm counts", async () => {
+  const recs = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  const text = stripAnsiCode(
+    renderReport(
+      await buildReport(unknownCost(recs, [["HX-001", 1, "cc-p"]]), {
+        prereg,
+      }),
+    ),
+  );
+  assertStringIncludes(
+    text,
+    "Unknown cost: a cell without cost data drops its pairs per contrast. The family is withheld if a family contrast (C1, C2, C3) loses more than 7% of its planned pairs (dropped x 100 > 7 x planned, planned = selected tasks x experiment repeats = 18) or every pair of a task.",
+  );
+  assertStringIncludes(
+    text,
+    "The interaction (exploratory) uses a (task, repeat) block only when all four arms have an eligible cell; the 7% backstop does not count it.",
+  );
+  assertStringIncludes(
+    text,
+    "Unpaired counts by arm per contrast are listed in this section. The report as a whole is run only after the campaign closes.",
+  );
+  assert(!text.includes("appear only in this section"), text);
+  const start = text.indexOf("Confirmatory contrasts (");
+  const end = text.indexOf("Held-out tasks (");
+  assert(start >= 0 && end > start);
+  const at = [...text.matchAll(/unpaired by arm/g)].map((m) => m.index!);
+  // One per two-arm contrast; the interaction reports blocks, not arms.
+  assertEquals(at.length, 3);
+  assertStringIncludes(
+    text,
+    "interaction blocks used 17 of 18, dropped 1 to unknown cost, tasks affected HX-001",
+  );
+  assert(at.every((i) => i > start && i < end), text);
+});
+
+Deno.test("buildReport (M11-10c, M12-03b): a pass_rate experiment with a cost pre-registration is refused; on a cost experiment missing cost drops pairs, never the metric", async () => {
   const mismatched = await factorialRecords(100, "pass_rate");
   const err = await assertRejects(
     async () =>
@@ -1714,25 +2152,17 @@ Deno.test("buildReport (M11-10c): a pass_rate experiment with a cost pre-registr
   );
   assertStringIncludes(err.message, "pass_rate");
   assertStringIncludes(err.message, "cost_per_solved_task");
-  const base = await factorialRecords(100);
-  const recs = {
-    ...base,
-    executions: base.executions.map((e) =>
-      e.task_id === "HX-001" && e.repeat === 1 && e.arm === "cc-p"
-        ? {
-          ...e,
-          telemetry: telemetry(null),
-          validity: {
-            ...e.validity,
-            incomplete_telemetry: ["cost_usd" as const],
-          },
-        }
-        : e
-    ),
-  };
-  const prereg = preregOf(recs, await stageBFor(recs.campaign));
-  const r = await buildReport(recs, { prereg });
-  assertEquals(r.confirmatory, { withheld: "1 cells without cost data" });
+  const base = await factorialRecords(100, "cost_per_solved_task", false, 3);
+  const recs = unknownCost(base, [["HX-001", 1, "cc-p"]]);
+  const prereg = preregOf(
+    recs,
+    await stageBFor(recs.campaign, { design: { tasks: 6, repeats: 3 } }),
+  );
+  const lost = confirmed(await buildReport(recs, { prereg }));
+  assertEquals(
+    lost.results.map((x) => [x.metric, x.pairs]),
+    [17, 18, 17, 17].map((n) => ["cost_per_solved_task", n]),
+  );
   const full = confirmed(
     await buildReport(base, { prereg: preregOf(base, prereg.doc) }),
   );
