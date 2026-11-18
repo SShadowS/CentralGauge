@@ -286,17 +286,32 @@ interface StubApp {
 }
 
 const STUBS = `
+$global:calls = @()
+$global:sleeps = @()
+function Start-Sleep { param($Seconds, $Milliseconds) $global:sleeps += "$Seconds" }
+# H-116 item 2: the named step of the named app throws a SQL lock timeout $global:lockLeft times
+function Lock-Maybe($step, $name) {
+  $global:calls += "$($step):$name"
+  if ($global:lockStep -eq $step -and $global:lockApp -eq $name -and $global:lockLeft -gt 0) {
+    $global:lockLeft--
+    # review r1 L2: the lock timeout only as the inner exception of a neutral outer one
+    if ($global:lockInner) { throw [System.Exception]::new('The operation failed.', [System.Exception]::new('Microsoft.Dynamics.Nav.Types.Exceptions.NavCSideSQLLockTimeoutException: a record was locked by another user.')) }
+    throw 'Microsoft.Dynamics.Nav.Types.Exceptions.NavCSideSQLLockTimeoutException: The operation could not complete because a record was locked by another user. Please retry the activity.'
+  } }
 function Get-NAVAppInfo { param($ServerInstance, $Id, $Version, $Tenant, [switch]$TenantSpecificProperties)
   @($global:apps | Where-Object { $_.AppId -eq $Id -and (-not $Version -or "$($_.Version)" -eq "$Version") }) }
 function Uninstall-NAVApp { param($ServerInstance, $Name, $Publisher, $Version, $Tenant, [switch]$DoNotSaveData)
+  Lock-Maybe 'uninstall' $Name
   if ($global:fail -eq 'uninstall') { throw 'uninstall boom' }
   $dep = $global:deps[$Name]
   if ($dep -and @($global:apps | Where-Object { $_.Name -eq $dep -and $_.IsInstalled }).Count -gt 0) { throw "$dep depends on $Name" }
   if ($global:fail -ne 'verify-uninstalled') { $global:apps | Where-Object { $_.Name -eq $Name } | ForEach-Object { $_.IsInstalled = $false } } }
 function Sync-NAVApp { param($ServerInstance, $Name, $Publisher, $Version, $Mode, [switch]$Force)
+  Lock-Maybe 'clean' $Name
   if ($global:fail -eq 'clean') { throw 'clean boom' }
   if ($Mode -ne 'Clean') { throw 'not clean' } }
 function Unpublish-NAVApp { param($ServerInstance, $Name, $Publisher, $Version, $Tenant)
+  Lock-Maybe 'unpublish' $Name
   if ($global:fail -eq 'unpublish') { throw 'unpublish boom' }
   if ($global:fail -ne 'verify-gone') { $global:apps = @($global:apps | Where-Object { $_.Name -ne $Name }) } }
 `;
@@ -307,12 +322,23 @@ async function runRemoval(
   allow: Record<string, string>,
   fail = "",
   deps: Record<string, string> = {},
+  lock:
+    | { step: string; app: string; times: number; inner?: boolean }
+    | null = null,
 ): Promise<string> {
   const dir = await testTempDir();
   const ps = (s: string) => `'${s.replaceAll("'", "''")}'`;
   const script = [
     "$ErrorActionPreference = 'Stop'",
     `$global:fail = ${ps(fail)}`,
+    ...(lock
+      ? [
+        `$global:lockStep = ${ps(lock.step)}`,
+        `$global:lockApp = ${ps(lock.app)}`,
+        `$global:lockLeft = ${lock.times}`,
+        `$global:lockInner = ${lock.inner ? "$true" : "$false"}`,
+      ]
+      : []),
     `$global:deps = @{ ${
       Object.entries(deps).map(([k, v]) => `${ps(k)} = ${ps(v)}`).join("; ")
     } }`,
@@ -330,6 +356,8 @@ async function runRemoval(
     `& $sb @(${ids.map(ps).join(", ")}) @{ ${
       Object.entries(allow).map(([k, v]) => `${ps(k)} = ${ps(v)}`).join("; ")
     } }`,
+    `Write-Output ("CALLS:" + ($global:calls -join ","))`,
+    `Write-Output ("SLEEPS:" + ($global:sleeps -join ","))`,
   ].join("\n");
   await Deno.writeTextFile(join(dir, "t.ps1"), script);
   const out = await new Deno.Command("pwsh", {
@@ -414,6 +442,136 @@ Deno.test({
     assert(!out.includes("SYNC_REMOVE_FAILED"), out);
     assertStringIncludes(out, `SYNC_REMOVE:${IDS.rental} v1.0.0.0`);
     assertStringIncludes(out, `SYNC_REMOVE:${IDS.core} v1.0.5.5`);
+    // a non-lock error is retried in the next pass, never slept on in place
+    assertEquals(field(out, "SLEEPS"), "");
+  },
+});
+
+// ---- H-116 item 2 (issue #34): an in-place retry of a SQL lock timeout ----
+
+const TESTAPP: StubApp = {
+  AppId: IDS.test,
+  Name: "CGR Test",
+  Publisher: "CentralGauge",
+  Version: "1.0.0.0",
+  IsInstalled: true,
+};
+const ALLOW3 = { ...ALLOW, [IDS.test]: "^CGR Test$" };
+/** Rental depends on Core, Test on Rental; listed dependent-first. */
+const CHAIN = { "CGR Core": "CGR Rental", "CGR Rental": "CGR Test" };
+/** The value of a `<KEY>:<value>` output line. */
+const field = (out: string, key: string) =>
+  new RegExp(`^${key}:(.*?)\\r?$`, "m").exec(out)?.[1];
+const removeLines = (out: string) =>
+  out.split(/\r?\n/).filter((l) => l.startsWith("SYNC_REMOVE"));
+
+Deno.test({
+  name:
+    "H-116 item 2: two lock timeouts then success remove every app in order, sleeping 5 s then 15 s; no FAILED",
+  ignore: !isWindows,
+  async fn() {
+    const out = await runRemoval(
+      [TESTAPP, RENTAL, CORE],
+      [IDS.test, IDS.rental, IDS.core],
+      ALLOW3,
+      "",
+      CHAIN,
+      { step: "uninstall", app: "CGR Test", times: 2 },
+    );
+    assertEquals(removeLines(out), [
+      `SYNC_REMOVE:${IDS.test} v1.0.0.0`,
+      `SYNC_REMOVE:${IDS.rental} v1.0.0.0`,
+      `SYNC_REMOVE:${IDS.core} v1.0.5.5`,
+    ], out);
+    assertEquals(field(out, "SLEEPS"), "5,15");
+  },
+});
+
+Deno.test({
+  name:
+    "H-116 item 2: the clean and the unpublish retry a lock timeout in place too",
+  ignore: !isWindows,
+  async fn() {
+    for (const step of ["clean", "unpublish"]) {
+      const out = await runRemoval([CORE], [IDS.core], ALLOW, "", {}, {
+        step,
+        app: "CGR Core",
+        times: 2,
+      });
+      assertEquals(
+        removeLines(out),
+        [`SYNC_REMOVE:${IDS.core} v1.0.5.5`],
+        `${step}: ${out}`,
+      );
+      assertEquals(field(out, "SLEEPS"), "5,15", step);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-116 item 2: a lock timeout seen only as an inner exception is retried too",
+  ignore: !isWindows,
+  async fn() {
+    const out = await runRemoval([CORE], [IDS.core], ALLOW, "", {}, {
+      step: "uninstall",
+      app: "CGR Core",
+      times: 2,
+      inner: true,
+    });
+    assertEquals(removeLines(out), [`SYNC_REMOVE:${IDS.core} v1.0.5.5`], out);
+    assertEquals(field(out, "SLEEPS"), "5,15");
+  },
+});
+
+Deno.test({
+  name:
+    "H-116 item 2: a persistent lock timeout fails after 3 tries and stops the pass; a dependency's uninstall is never called",
+  ignore: !isWindows,
+  async fn() {
+    const out = await runRemoval(
+      [RENTAL, CORE],
+      [IDS.rental, IDS.core],
+      ALLOW,
+      "",
+      { "CGR Core": "CGR Rental" },
+      { step: "uninstall", app: "CGR Rental", times: 99 },
+    );
+    const lines = removeLines(out);
+    assertEquals(lines.length, 1, out);
+    assert(
+      lines[0]!.startsWith(`SYNC_REMOVE_FAILED:${IDS.rental} uninstall `),
+      out,
+    );
+    assertStringIncludes(lines[0]!, "NavCSideSQLLockTimeoutException");
+    const calls = field(out, "CALLS")?.split(",") ?? [];
+    assertEquals(calls.filter((c) => c === "uninstall:CGR Rental").length, 3);
+    assert(!calls.includes("uninstall:CGR Core"), out);
+    assertEquals(field(out, "SLEEPS"), "5,15");
+    for (const step of ["clean", "unpublish"]) {
+      const o = await runRemoval([CORE], [IDS.core], ALLOW, "", {}, {
+        step,
+        app: "CGR Core",
+        times: 99,
+      });
+      assertEquals(removeLines(o).length, 1, o);
+      assertStringIncludes(o, `SYNC_REMOVE_FAILED:${IDS.core} ${step}`);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "H-116 item 2: a non-lock uninstall error keeps today's behaviour (no in-place retry, no sleep)",
+  ignore: !isWindows,
+  async fn() {
+    const out = await runRemoval([CORE], [IDS.core], ALLOW, "uninstall");
+    assertStringIncludes(
+      out,
+      `SYNC_REMOVE_FAILED:${IDS.core} uninstall uninstall boom`,
+    );
+    assertEquals(field(out, "CALLS"), "uninstall:CGR Core");
+    assertEquals(field(out, "SLEEPS"), "");
   },
 });
 
@@ -458,7 +616,13 @@ function Get-NAVAppInfo { param($ServerInstance, $Id, $Name, $Publisher, $Tenant
   }) }
 function Sync-NAVApp { param($ServerInstance, $Tenant, $Name, $Publisher, $Version, $Mode, [switch]$Force)
   $global:syncCalls += "$Name|$Mode"
+  if ($global:cleanLocks -gt 0) {
+    $global:cleanLocks--
+    throw 'Transaction (Process ID 61) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.'
+  }
   if ($global:cleanThrows) { throw 'clean boom' } }
+$global:sleeps = @()
+function Start-Sleep { param($Seconds, $Milliseconds) $global:sleeps += "$Seconds" }
 `;
 
 async function runClean(
@@ -467,6 +631,7 @@ async function runClean(
   items: { id: string; name: string }[],
   allow: Record<string, string>,
   cleanThrows = false,
+  cleanLocks = 0,
 ): Promise<string> {
   const dir = await testTempDir();
   const ps = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -483,6 +648,7 @@ async function runClean(
     `$global:published = ${apps(published)}`,
     `$global:tenantApps = ${apps(tenantApps)}`,
     `$global:cleanThrows = $${cleanThrows}`,
+    `$global:cleanLocks = ${cleanLocks}`,
     "$global:syncCalls = @()",
     CLEAN_STUBS,
     `$sb = [scriptblock]::Create(${ps(buildHarnessCleanBlock())})`,
@@ -492,6 +658,7 @@ async function runClean(
       Object.entries(allow).map(([k, v]) => `${ps(k)} = ${ps(v)}`).join("; ")
     } }`,
     `Write-Output ("SYNC_CALLS:" + ($global:syncCalls -join ","))`,
+    `Write-Output ("SLEEPS:" + ($global:sleeps -join ","))`,
   ].join("\n");
   await Deno.writeTextFile(join(dir, "t.ps1"), script);
   const out = await new Deno.Command("pwsh", {
@@ -558,6 +725,27 @@ Deno.test({
     const out = await runClean([], [], CORE_ITEM, CLEAN_ALLOW, true);
     assertStringIncludes(out, `SYNC_CLEAN_FAILED:${IDS.core}`);
     assert(!out.includes("SYNC_CLEAN_WARN"));
+    assertEquals(field(out, "SLEEPS"), "");
+  },
+});
+
+Deno.test({
+  name:
+    "H-116 item 2: the clean block retries a deadlock in place (5 s, 15 s); a persistent one is SYNC_CLEAN_FAILED after 3 tries",
+  ignore: !isWindows,
+  async fn() {
+    const ok = await runClean([], [], CORE_ITEM, CLEAN_ALLOW, false, 2);
+    assertStringIncludes(ok, `SYNC_CLEAN:${IDS.core}`);
+    assert(!ok.includes("SYNC_CLEAN_FAILED"), ok);
+    assertEquals(
+      field(ok, "SYNC_CALLS"),
+      "CGR Core|Clean,CGR Core|Clean,CGR Core|Clean",
+    );
+    assertEquals(field(ok, "SLEEPS"), "5,15");
+    const stuck = await runClean([], [], CORE_ITEM, CLEAN_ALLOW, false, 99);
+    assertStringIncludes(stuck, `SYNC_CLEAN_FAILED:${IDS.core}`);
+    assertStringIncludes(stuck, "deadlock");
+    assertEquals(field(stuck, "SYNC_CALLS")?.split(",").length, 3);
   },
 });
 

@@ -91,10 +91,18 @@ function Test-NstSuspended([string]$Container) {
 #   expired|... / released|... / failed|<holder pid>|<reason>
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
 # C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
+# H-116 1b (issue #34): the start of the freeze has $StartSeconds from the holder's launch (powershell start plus the
+# Add-Type compile) to publish frozen; the hold bound counts from the attach, so this never lengthens a freeze. At the
+# deadline the coordinator writes the release file and waits for the holder to exit by itself (it checks the release
+# just before the attach, `aborted before attach`, and its hold loop releases); it kills only a holder that did not,
+# and a holder that survives the kill is `FAILED STUCK holder <pid>` with its marker kept (1a). Marker phase before the
+# attach: attaching|<holder pid>.
 $NstFreezeDir = 'C:\ProgramData\cg-harness'
 $NstHoldSeconds = 55
-function Enable-NstFreeze([string]$Container, [int]$Seconds = $NstHoldSeconds, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0) {
-  $t = Invoke-InContainer $Container { param($s, $dir, $tpid)
+$NstFreezeStartSeconds = 90
+function Enable-NstFreeze([string]$Container, [int]$Seconds = $NstHoldSeconds, [string]$Dir = $NstFreezeDir, [int]$TargetPid = 0,
+  [int]$StartSeconds = $NstFreezeStartSeconds) {
+  $t = Invoke-InContainer $Container { param($s, $dir, $tpid, $start)
     New-Item -ItemType Directory -Force (Join-Path $dir 'tmp') | Out-Null
     $g = [guid]::NewGuid().ToString('N')
     $marker = Join-Path $dir "nst-freeze.$g"
@@ -110,6 +118,10 @@ try {
     if (`$a.Count -ne 1) { throw "expected one NST process, found `$(`$a.Count)" }
     `$a[0]
   }
+  # H-116 1a/1b: name the phase, then honour a release the coordinator wrote at its deadline (never attach after it)
+  # pid and start time, as the frozen marker, so Clear-NstFreezeLeftover can end exactly this holder (review r1 M1)
+  Put "attaching|`$PID|`$((Get-Process -Id `$PID).StartTime.Ticks)"
+  if (Test-Path -LiteralPath `$release) { throw 'aborted before attach' }
   if (-not [CgDbg]::DebugActiveProcess(`$p.Id)) { throw "DebugActiveProcess: error `$([CgDbg]::Err())" }
   # Sol hold M2: the bound is monotonic and counts from the attach
   `$sw = [Diagnostics.Stopwatch]::StartNew()
@@ -142,20 +154,31 @@ try {
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     $h = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
       -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
-    $deadline = (Get-Date).AddSeconds(30)
+    # H-116 1b: counted from the launch, monotonic
+    $sw = [Diagnostics.Stopwatch]::StartNew()
     do {
       $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
       # Sol hold M1: the token carries the holder's start time, its identity beyond a reusable pid
       if ($m -match '^frozen\|\d+\|(\d+)\|') { return "$g|$($h.Id)|$($Matches[1])|$marker" }
       if ($m -like 'failed|*') { break }
       Start-Sleep -Milliseconds 200
-    } while ((Get-Date) -lt $deadline)
-    # ending the holder ends its debug session (kill-on-exit off): the NST runs on
-    Stop-Process -Id $h.Id -Force -ErrorAction SilentlyContinue
-    Wait-Process -Id $h.Id -Timeout 10 -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $marker, "$marker.tmp" -Force -ErrorAction SilentlyContinue
-    "FAILED $(if ($m) { $m } else { 'no freeze within 30 s' })"
-  } $Seconds, $Dir, $TargetPid
+    } while ($sw.Elapsed.TotalSeconds -lt $start)
+    # H-116 1a: ask the holder to stop (before its attach it aborts; attached, its hold loop releases) and wait for it,
+    # as Disable-NstFreeze does. Only a holder that did not exit is killed, through the handle this call started.
+    Set-Content -LiteralPath "$marker.release" -Value '' -Encoding ascii -NoNewline
+    if (-not $h.WaitForExit(15000)) {
+      # ending the holder ends its debug session (kill-on-exit off): the NST runs on
+      Stop-Process -InputObject $h -Force -ErrorAction SilentlyContinue
+      if (-not $h.WaitForExit(10000)) {
+        # orch r004 barrier M2: a holder that did not exit keeps its marker (evidence) and fails closed
+        $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+        return "FAILED STUCK holder $($h.Id) did not exit (marker '$m')"
+      }
+    }
+    $m = Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $marker, "$marker.tmp", "$marker.release" -Force -ErrorAction SilentlyContinue
+    "FAILED $(if ($m) { $m } else { "no freeze within $start s" })"
+  } $Seconds, $Dir, $TargetPid, $StartSeconds
   if ("$t".Trim() -notmatch '^[0-9a-f]{32}\|\d+\|\d+\|.+$') { throw "NST freeze failed: $("$t".Trim())" }
   "$t".Trim()
 }
@@ -223,7 +246,7 @@ function Clear-NstFreezeLeftover([string]$Container, [string]$Dir = $NstFreezeDi
     $live = 0
     foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter 'nst-freeze.*' -File -ErrorAction SilentlyContinue)) {
       $m = Get-Content -LiteralPath $f.FullName -Raw -ErrorAction SilentlyContinue
-      if ($f.Name -match '^nst-freeze\.[0-9a-f]{32}$' -and "$m" -match '^frozen\|(\d+)\|(\d+)\|') {
+      if ($f.Name -match '^nst-freeze\.[0-9a-f]{32}$' -and "$m" -match '^(?:frozen|attaching)\|(\d+)\|(\d+)(?:\||\s*$)') {
         $start = [long]$Matches[2]
         $h = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         # Sol hold M1: only the recorded holder (pid AND start time), through the handle just checked

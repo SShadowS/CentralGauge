@@ -131,7 +131,11 @@ export interface FsHoldTiming {
    * H-79: the capture was run a second time because its first run's hold
    * expired (and nothing else failed); this record is the second run's.
    */
-  retry?: { reason: "hold expired"; first: FsHoldTiming | null };
+  retry?: {
+    /** H-116 3a: "freeze failed" retries an AFTER capture whose hold never started. */
+    reason: "hold expired" | "freeze failed";
+    first: FsHoldTiming | null;
+  };
 }
 
 /** R-09: held_ms and bound_s of a capture's T| marker, or null. */
@@ -867,6 +871,29 @@ export function fsHoldExpiredOnly(
   const expiries = errors.filter((e) => FS_HOLD_EXPIRED.test(e));
   return exits.length === 1 && expiries.length > 0 &&
     exits.length + expiries.length === errors.length;
+}
+
+/**
+ * H-116 3a: fs-digest.ps1's line when Enable-NstFreeze failed, path field
+ * exactly `(fs-capture)`. A stuck holder (`FAILED STUCK holder`) may still
+ * hold the NST, so it is not one.
+ */
+const FS_FREEZE_FAILED_LINE =
+  /^E\|\(fs-capture\)\|NST freeze failed: FAILED (?!STUCK )[^|]*$/;
+
+/**
+ * H-116 3a (issue #34): the capture's only content is the NST-freeze-failed
+ * line, its T| marker counting that one line and recording no hold
+ * (held_ms null), and fsDigest's exit line: no hold started, so no walk
+ * ran and nothing it could have seen is lost by running it again. Only
+ * such an AFTER capture is retried; an expired hold after a walk is not.
+ */
+export function fsFreezeFailedOnly(raw: readonly string[]): boolean {
+  const { lines, exit } = splitExit(raw);
+  if (exit === null || lines.length !== 2) return false;
+  const mark = parseMark(lines[1]!);
+  return FS_FREEZE_FAILED_LINE.test(lines[0]!) && mark?.count === 1 &&
+    mark.timing !== null && mark.timing.held_ms === null;
 }
 
 /**
