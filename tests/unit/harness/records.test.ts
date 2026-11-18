@@ -121,6 +121,48 @@ Deno.test("H-13: egress_override is optional on execution and campaign records; 
   }
 });
 
+Deno.test("H-114b: load is optional; cells_in_flight an integer >= 1, free_ram_gib a number or null, no other key", async () => {
+  const c = await campaign();
+  const e = execution(c);
+  const v3 = { ...e, v: 3, redaction_anchor: null };
+  for (const r of [e, v3]) {
+    assertEquals(
+      (ExecutionRecordSchema.parse(r) as { load?: unknown }).load,
+      undefined,
+      "records without load still parse",
+    );
+  }
+  for (
+    const ok of [
+      { cells_in_flight: 1, free_ram_gib: 39.86 },
+      { cells_in_flight: 4, free_ram_gib: null },
+    ]
+  ) {
+    assertEquals(
+      (ExecutionRecordSchema.parse({ ...v3, load: ok }) as { load?: unknown })
+        .load,
+      ok,
+    );
+  }
+  for (
+    const bad of [
+      { cells_in_flight: 0, free_ram_gib: 40 },
+      { cells_in_flight: -1, free_ram_gib: 40 },
+      { cells_in_flight: 1.5, free_ram_gib: 40 },
+      { cells_in_flight: 2 },
+      { cells_in_flight: 2, free_ram_gib: "40" },
+      { cells_in_flight: 2, free_ram_gib: 40, arm: "x" },
+    ]
+  ) {
+    assertThrows(
+      () => ExecutionRecordSchema.parse({ ...v3, load: bad }),
+      Error,
+      undefined,
+      JSON.stringify(bad),
+    );
+  }
+});
+
 Deno.test("H-13b: calibration_waived is optional, only true, and only next to egress_override", async () => {
   const c = await campaign();
   const e = execution(c);

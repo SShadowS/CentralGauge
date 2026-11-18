@@ -50,7 +50,10 @@ export const CLASSES: Record<string, FileClass> = {
   [`${H}bc-sync-provider.test.ts`]: c(true, 4),
   [`${H}bch-root.test.ts`]: c(true, 4),
   [`${H}build-log.test.ts`]: c(true, 0),
-  [`${H}campaign.test.ts`]: c(true, 138),
+  // H-114b: +11 dynamic-concurrency tests (fake clock, mock cells), ~110 s.
+  [`${H}campaign.test.ts`]: c(true, 250),
+  // H-114b: the admission gate, pure (fake clock, stubbed systemMemoryInfo).
+  [`${H}campaign-admission.test.ts`]: c(true, 0),
   [`${H}classify.test.ts`]: c(true, 0),
   [`${H}claude-code.test.ts`]: c(true, 4),
   [`${H}claude-trace.test.ts`]: c(true, 0),

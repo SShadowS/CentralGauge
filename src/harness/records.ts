@@ -329,6 +329,12 @@ const RederivedSchema = z.strictObject({
   from_termination: z.enum(TERMINATIONS),
 });
 
+export const ExecutionLoadSchema = z.strictObject({
+  cells_in_flight: z.number().int().min(1),
+  free_ram_gib: z.number().nullable(),
+});
+export type ExecutionLoad = z.infer<typeof ExecutionLoadSchema>;
+
 export const ExecutionRecordSchema = z.strictObject({
   /**
    * 1: Part 1; 2: Part 2 (M1-22), adds validity.incomplete_observed; 3:
@@ -392,6 +398,12 @@ export const ExecutionRecordSchema = z.strictObject({
   account: z.string().min(1).optional(),
   /** H-53: why a pool campaign gave the cell its account; absent outside a pool (2+ labels). */
   account_choice: z.enum(ACCOUNT_CHOICES).optional(),
+  /**
+   * H-114b: the host load when the cell started: campaign cells in flight
+   * (this one counted) and free RAM in GiB (null: unreadable). Absent before
+   * H-114b; a record with it does not parse under older code.
+   */
+  load: ExecutionLoadSchema.optional(),
   /** R-10: present only on a record read back with a re-derivation applied. */
   rederived: RederivedSchema.optional(),
   /**

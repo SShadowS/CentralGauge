@@ -135,6 +135,7 @@ import {
 } from "../../src/harness/measures.ts";
 import {
   cellRefFor,
+  checkDynamicConcurrency,
   checkJudgeConcurrency,
   judgeQueue,
   judgmentOwed,
@@ -1777,6 +1778,10 @@ export interface RunCliOptions extends CellCliOptions {
   sample?: number;
   repeats?: number;
   concurrency: number;
+  /** H-114b: run only; dynamic concurrency up to this many (absent: fixed). */
+  concurrencyMax?: number;
+  /** H-114b: run only, with concurrencyMax: free GiB a block above the floor needs. */
+  admitFreeGib?: number;
   seed?: number;
   /** Longest usage-limit pause to wait out; 0 stops with a resume line. */
   maxPauseMin: number;
@@ -1905,6 +1910,8 @@ export async function harnessRun(
       "--add-accounts-reason and --added-by go together",
     );
   }
+  // H-114b: before any read or lock; the egress gates below see the peak.
+  const peak = checkDynamicConcurrency(o);
   const override = o.unverifiedEgressReason !== undefined
     ? { unverifiedEgressReason: o.unverifiedEgressReason }
     : {};
@@ -1921,6 +1928,10 @@ export async function harnessRun(
   };
   const ro = {
     concurrency: o.concurrency,
+    ...(o.concurrencyMax !== undefined
+      ? { concurrencyMax: o.concurrencyMax }
+      : {}),
+    ...(o.admitFreeGib !== undefined ? { admitFreeGib: o.admitFreeGib } : {}),
     ...(o.judgeConcurrency !== undefined
       ? { judgeConcurrency: o.judgeConcurrency }
       : {}),
@@ -1949,7 +1960,7 @@ export async function harnessRun(
   // M1-33c: before any lock, sweep or recovery writes (runCampaign rechecks),
   // led by the marker's proxy_isolation gate (M1-33e).
   const sharedResults = join(o.root, "results", "harness");
-  if (o.concurrency > 1 && await markerPlaces(sharedResults)) {
+  if (peak > 1 && await markerPlaces(sharedResults)) {
     const proxyIsolation = await markerProxyIsolation(sharedResults);
     const problem = placedConcurrencyProblem(
       {
@@ -1957,11 +1968,11 @@ export async function harnessRun(
         enforced: await markerAuthorized(sharedResults),
         proxyIsolation,
       },
-      o.concurrency,
+      peak,
       configs,
     );
     if (problem) {
-      throw placedConcurrencyRefusal(proxyIsolation, o.concurrency, problem);
+      throw placedConcurrencyRefusal(proxyIsolation, peak, problem);
     }
   }
   // M5-03 review: the pin, read-only, before any lock, sweep or recovery (runCampaign rechecks, with the arm manifests).
@@ -1994,7 +2005,7 @@ export async function harnessRun(
     ...envOptions(o, o.resultsDir, command),
     ...(o.judgeContainers ? { judgeContainers: o.judgeContainers } : {}),
     ...autoEnv(o),
-    concurrency: o.concurrency,
+    concurrency: peak,
     configs,
   });
   try {
@@ -4548,6 +4559,8 @@ export function registerHarnessCommand(
     sample?: number;
     repeats?: number;
     concurrency: number;
+    concurrencyMax?: number;
+    admitFreeGib?: number;
     seed?: number;
     maxPauseMin: number;
     yes?: boolean;
@@ -4578,6 +4591,10 @@ export function registerHarnessCommand(
     ...(f.poolWaitMin !== undefined ? { poolWaitMin: f.poolWaitMin } : {}),
     dryRun: f.dryRun === true,
     concurrency: f.concurrency,
+    ...(f.concurrencyMax !== undefined
+      ? { concurrencyMax: f.concurrencyMax }
+      : {}),
+    ...(f.admitFreeGib !== undefined ? { admitFreeGib: f.admitFreeGib } : {}),
     maxPauseMin: f.maxPauseMin,
     ...(f.sample !== undefined ? { sample: f.sample } : {}),
     ...(f.repeats !== undefined ? { repeats: f.repeats } : {}),
@@ -4631,6 +4648,16 @@ export function registerHarnessCommand(
     .option("--sample <n:integer>", "Run only the first N blocks")
     .option("--repeats <n:integer>", "Run only repeats 1..N")
     .option("--concurrency <n:integer>", "Blocks run at once", { default: 1 })
+    // H-114b: no cliffy default on either (absent = today's fixed path; the
+    // default T is applied in code, so --admit-free-gib alone is refused).
+    .option(
+      "--concurrency-max <n:integer>",
+      "H-114b: dynamic: admit blocks above --concurrency up to this many (<= 4) while free RAM allows",
+    )
+    .option(
+      "--admit-free-gib <n:number>",
+      "H-114b: with --concurrency-max: free RAM (GiB) a block above the floor needs (default 30)",
+    )
     .option(
       "--judge-containers <names:string>",
       "H-09: BC containers for judging (comma-separated, allocated, disjoint from --containers; default: the agents'). H-41: `auto` judges on a pool of the allocated containers that changes while the run goes on (needs --lineage)",

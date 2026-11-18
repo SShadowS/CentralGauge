@@ -81,8 +81,17 @@ export interface RunOptions {
   /** Run only blocks with repeat <= N (default: the experiment's repeats). */
   repeats?: number;
   dryRun: boolean;
-  /** Cells run at once (answer 17: default 1). */
+  /** Cells run at once (answer 17: default 1); with concurrencyMax, the floor. */
   concurrency: number;
+  /**
+   * H-114b: admit blocks above `concurrency`, up to this many, while free RAM
+   * allows (at most MAX_DYNAMIC_CONCURRENCY). Absent: fixed concurrency.
+   */
+  concurrencyMax?: number;
+  /** H-114b: with concurrencyMax, the free GiB a block above the floor needs (default ADMIT_FREE_GIB). */
+  admitFreeGib?: number;
+  /** H-114b: free RAM in GiB (default freeRamGib); tests inject it. */
+  freeRamGib?: () => number;
   /** H-09: judgments run at once (default: one per judge container). */
   judgeConcurrency?: number;
   /** Seed of a new campaign (default random); a resumed campaign keeps its own. */
@@ -413,6 +422,48 @@ export function judgeQueue(
 /** H-41 (14, R4-M1): unanswered-only pool losses requeue one W at most this often. */
 export const MAX_UNCERTAIN_REQUEUES = 3;
 
+/**
+ * H-114b: --concurrency-max is an integer above the floor and at most
+ * MAX_DYNAMIC_CONCURRENCY, not with --rerun; --admit-free-gib is positive and
+ * needs it. Returns the peak (cells at most in flight).
+ */
+export function checkDynamicConcurrency(o: {
+  concurrency: number;
+  concurrencyMax?: number | undefined;
+  admitFreeGib?: number | undefined;
+  rerun?: unknown;
+  reruns?: unknown;
+}): number {
+  const max = o.concurrencyMax;
+  if (
+    max !== undefined &&
+    (!Number.isInteger(max) || max <= o.concurrency ||
+      max > MAX_DYNAMIC_CONCURRENCY)
+  ) {
+    throw new ConfigurationError(
+      `--concurrency-max must be an integer above --concurrency (${o.concurrency}) and at most ${MAX_DYNAMIC_CONCURRENCY}: ${max}`,
+    );
+  }
+  if (o.admitFreeGib !== undefined) {
+    if (max === undefined) {
+      throw new ConfigurationError(
+        "--admit-free-gib applies only with --concurrency-max",
+      );
+    }
+    if (!Number.isFinite(o.admitFreeGib) || o.admitFreeGib <= 0) {
+      throw new ConfigurationError(
+        `--admit-free-gib must be a positive number: ${o.admitFreeGib}`,
+      );
+    }
+  }
+  if (max !== undefined && (o.rerun || o.reruns)) {
+    throw new ConfigurationError(
+      "--concurrency-max does not apply to --rerun (fixed --concurrency)",
+    );
+  }
+  return max ?? o.concurrency;
+}
+
 /** H-09: an explicit --judge-concurrency is a positive integer (unset: one per judge container). */
 export function checkJudgeConcurrency(n: number | undefined): void {
   if (n !== undefined && (!Number.isInteger(n) || n < 1)) {
@@ -530,6 +581,63 @@ export function planCampaign(
  * concurrency 2; raising it is a separate decision.
  */
 export const MAX_PLACED_CONCURRENCY = 2;
+
+/**
+ * H-114b (decisions/2026-11-18-m12-concurrency-and-sandbox-egress.md):
+ * dynamic concurrency. `--concurrency-max` is at most 4 (H-113: N=5 never
+ * fits this host); a block above the floor needs ADMIT_FREE_GIB free (owner:
+ * 18 headroom + 12 worst-case cell). Hold, settle and poll are knobs (D3).
+ */
+export const MAX_DYNAMIC_CONCURRENCY = 4;
+export const ADMIT_FREE_GIB = 30;
+export const ADMIT_HOLD_MS = 5 * 60_000;
+export const ADMIT_SETTLE_MS = 5 * 60_000;
+export const ADMIT_POLL_MS = 5_000;
+
+/** Free physical RAM in GiB. `.available` reads 0 on this host: never use it. */
+export const freeRamGib = (): number => Deno.systemMemoryInfo().free / 2 ** 30;
+
+/** A reading, or null when the reader throws or gives a non-finite value. */
+const readRam = (read: () => number): number | null => {
+  try {
+    const v = read();
+    return Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * H-114: admission above the floor. tryAdmit is synchronous: true only when
+ * every reading for `holdMs` was >= threshold and the last gated admission
+ * (or the gate's creation) is `settleMs` old. A true reserves at once (the
+ * settle restarts, the hold is rebuilt), so one reading admits one block.
+ */
+export function admissionGate(o: {
+  threshold: number;
+  holdMs: number;
+  settleMs: number;
+  read: () => number;
+  now: () => number;
+}): { tryAdmit(): boolean } {
+  let okSince: number | null = null;
+  let lastAdmit = o.now();
+  return {
+    tryAdmit() {
+      const t = o.now();
+      const ram = readRam(o.read);
+      if (ram === null || ram < o.threshold) {
+        okSince = null;
+        return false;
+      }
+      okSince ??= t;
+      if (t - okSince < o.holdMs || t - lastAdmit < o.settleMs) return false;
+      lastAdmit = t;
+      okSince = null;
+      return true;
+    },
+  };
+}
 
 /**
  * The first image revision per harness that runs the agent as ContainerUser
@@ -952,6 +1060,9 @@ async function campaignInvocation(
     );
   }
   checkJudgeConcurrency(o.judgeConcurrency);
+  const max = o.concurrencyMax;
+  // The placed-egress gate sees the peak.
+  const peak = checkDynamicConcurrency(o);
   // H-15 owner override (decisions/2026-10-15-p-01-egress-override.md).
   const ignoreReset = o.ignoreUsageReset?.trim();
   if (ignoreReset === "") {
@@ -980,12 +1091,9 @@ async function campaignInvocation(
   }
   // A placed environment without env.proxyIsolation is missing (fail closed).
   // The cheap conditions first, before any read; the arm images below.
-  const early = placedConcurrencyProblem(
-    placedGateOf(env),
-    o.concurrency,
-  );
+  const early = placedConcurrencyProblem(placedGateOf(env), peak);
   if (early) {
-    throw placedConcurrencyRefusal(env.proxyIsolation, o.concurrency, early);
+    throw placedConcurrencyRefusal(env.proxyIsolation, peak, early);
   }
   const rerunCells = [...(o.rerun ? [o.rerun] : []), ...(o.reruns ?? [])];
   if (rerunCells.length === 0 && o.reruns !== undefined) {
@@ -1026,15 +1134,11 @@ async function campaignInvocation(
   // Every arm's image, before any recovery, record or cell (new run and resume).
   const armProblem = placedConcurrencyProblem(
     placedGateOf(env),
-    o.concurrency,
+    peak,
     configs,
   );
   if (armProblem) {
-    throw placedConcurrencyRefusal(
-      env.proxyIsolation,
-      o.concurrency,
-      armProblem,
-    );
+    throw placedConcurrencyRefusal(env.proxyIsolation, peak, armProblem);
   }
   // Egress decision: a campaign runs unattended, so supervised campaigns do
   // not exist; a credential-bearing arm needs verified enforcement.
@@ -1482,6 +1586,15 @@ async function campaignInvocation(
     for (const line of await dryRunEstimate(env.store, c, data, blocks)) {
       io.log(line);
     }
+    if (max !== undefined) {
+      io.log(
+        `[DRY] concurrency ${o.concurrency}..${max}: above ${o.concurrency}, a block is admitted at >= ${
+          o.admitFreeGib ?? ADMIT_FREE_GIB
+        } GiB free (hold ${ADMIT_HOLD_MS / 60_000} min, settle ${
+          ADMIT_SETTLE_MS / 60_000
+        } min)`,
+      );
+    }
     return summary;
   }
 
@@ -1520,6 +1633,28 @@ async function campaignInvocation(
       return true;
     }
     return false;
+  };
+  // H-114b: every cell start records the load, read synchronously right
+  // before runCell (this cell counted; free RAM null when unreadable).
+  const readFree = o.freeRamGib ?? freeRamGib;
+  let cellsInFlight = 0;
+  const startCell = async (
+    base: HarnessEnv,
+    ...rest: Parameters<typeof runCell> extends [unknown, ...infer R] ? R
+      : never
+  ) => {
+    cellsInFlight++;
+    try {
+      return await runCell({
+        ...base,
+        load: {
+          cells_in_flight: cellsInFlight,
+          free_ram_gib: readRam(readFree),
+        },
+      }, ...rest);
+    } finally {
+      cellsInFlight--;
+    }
   };
   // R-08: a quarantine is loud in the log and counted in the summary.
   for (
@@ -1718,7 +1853,7 @@ async function campaignInvocation(
           pending: { at, prior: mine },
         };
       }
-      const r = await runCell(
+      const r = await startCell(
         pooledEnv(base, choice),
         cellRefFor(campaign, opened, block, arm, i),
         at,
@@ -1822,7 +1957,7 @@ async function campaignInvocation(
               finish(x);
               continue;
             }
-            const r = await runCell(
+            const r = await startCell(
               base,
               cellRefFor(campaign, opened, x.block, x.r.arm, x.i),
               target.at,
@@ -1907,13 +2042,41 @@ async function campaignInvocation(
   for (;;) {
     let paused: string | null = null;
     let next = 0;
+    // H-114b: workers 0..floor-1 take blocks as before; a worker above the
+    // floor takes one only when the gate admits it (fresh per pool start, so
+    // its first admission waits a full settle). Hostwatch wins: a stop, a
+    // pause or a halt is checked before every ask, and a waiting worker
+    // re-checks every ADMIT_POLL_MS. Nothing running is ever stopped.
+    const threshold = o.admitFreeGib ?? ADMIT_FREE_GIB;
+    const gate = max === undefined ? null : admissionGate({
+      threshold,
+      holdMs: ADMIT_HOLD_MS,
+      settleMs: ADMIT_SETTLE_MS,
+      read: readFree,
+      now,
+    });
     // Workers take whole blocks: the arms of one block run one after another
     // in its recorded order (the matched pair), blocks run in parallel.
-    const worker = async () => {
+    const worker = async (k: number) => {
       while (
         paused === null && !summary.stopped && !halted() &&
         next < blocks.length
       ) {
+        if (gate && k >= o.concurrency) {
+          if (await stopRequested()) break;
+          if (paused !== null || halted() || next >= blocks.length) break;
+          // No await from the ask to the take: the reservation is the take.
+          if (!gate.tryAdmit()) {
+            await io.sleep(ADMIT_POLL_MS);
+            continue;
+          }
+          const b = blocks[next]!;
+          io.log(
+            `[CONCURRENCY] admitted ${b.task_id}#${b.repeat} above the floor (worker ${
+              k + 1
+            } of ${max}; ${cellsInFlight} cells running; free RAM held >= ${threshold} GiB)`,
+          );
+        }
         const block = blocks[next++]!;
         for (let i = 0; i < block.order.length; i++) {
           const arm = block.order[i]!;
@@ -1964,7 +2127,7 @@ async function campaignInvocation(
           if (await stopRequested()) break;
           // Run 003: again after every await since admission, right before the start.
           if (halted()) break;
-          const r = await runCell(
+          const r = await startCell(
             agentEnv,
             cellRefFor(campaign, opened, block, arm, i),
             at,
@@ -1980,9 +2143,9 @@ async function campaignInvocation(
     // and the caller tears the environment down.
     await Promise.all(
       Array.from(
-        { length: Math.min(o.concurrency, blocks.length) },
-        () =>
-          worker().catch((err) => {
+        { length: Math.min(max ?? o.concurrency, blocks.length) },
+        (_, k) =>
+          worker(k).catch((err) => {
             crashed ??= { err };
             env.hooks?.workerThrew?.();
           }),

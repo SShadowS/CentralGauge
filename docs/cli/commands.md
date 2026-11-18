@@ -1417,6 +1417,44 @@ prints one `account <label>: ...` line each, and `analyze-campaign` writes
 `per_account` (over every attempt) into `summary.json`, so an account-level
 anomaly stays visible.
 
+### Dynamic concurrency (`--concurrency-max`)
+
+```bash
+centralgauge harness run <experiment> --concurrency 2 --concurrency-max 4 [--admit-free-gib 30] ...
+```
+
+`--concurrency` is the number of blocks run at once (default 1). With
+`--concurrency-max` (H-114b) it is the floor: workers 1 to `--concurrency`
+take blocks as before, and up to `--concurrency-max` workers (at most 4) take a
+block only while free physical RAM allows. A worker above the floor takes its
+next block when every reading for 5 minutes was at least `--admit-free-gib`
+(default 30 GiB) and the last block admitted above the floor (or the start of
+the run) is at least 5 minutes old. One admission reserves the slot at once,
+so two waiting workers never both start on one reading. Each admission logs a
+`[CONCURRENCY] admitted <task>#<repeat> above the floor ...` line, and a dry
+run prints the rule. The unit is the whole block, so a matched pair always runs
+on one worker. A waiting worker re-checks every 5 seconds; a stop file (for
+example hostwatch's `.host-low`, `.host-all` or the campaign's `.watch`), a
+stop request, a usage pause or a halt ends the wait, and no block is admitted
+while any of them is active. Nothing running is ever stopped: when RAM falls,
+N falls back toward the floor as blocks finish. Free RAM is read in-process
+(`Deno.systemMemoryInfo().free`, the figure hostwatch logs); commit headroom
+and nonpaged pool stay with hostwatch's stop files.
+
+`--admit-free-gib` without `--concurrency-max` is refused, as are a maximum at
+or below the floor, above 4 or not an integer, and `--concurrency-max` with
+`--rerun`. The placed-egress cap sees the peak (`--concurrency-max`). Without
+`--concurrency-max` the run is exactly the fixed path. A resume passes its own
+flags; the campaign record pins none of them.
+
+Every execution, fixed or dynamic, records an optional
+`load: { cells_in_flight, free_ram_gib }`: the campaign's cells in flight when
+it started (itself counted) and the free RAM in GiB then (`null` when it could
+not be read). An interrupted attempt keeps the load of its intent. Records
+without `load` still parse; records with `load` do not parse under code from
+before this change, so a campaign, its reports and any resume run from the same
+commit.
+
 ### harness campaign retire-account
 
 ```bash
@@ -1483,7 +1521,10 @@ used directly; an experiment id takes its newest campaign, or the one named by
 - estimated and reported cost by arm, with the count of executions without a
   cost, and the mean wall time per finished cell by arm,
 - per task, the cells done per arm,
-- an ETA from the remaining cells, the mean wall time and the concurrency.
+- an ETA from the remaining cells, the mean wall time and the concurrency,
+- in `--json` only, when executions record it, a pooled `load` block:
+  `executions`, `by_cells_in_flight` (executions per cells-in-flight count)
+  and `min_free_ram_gib`. It is never split by arm.
 
 The results store holds finished executions only, so "started" counts published
 executions and both it and the ETA are labelled `estimate`. The concurrency is

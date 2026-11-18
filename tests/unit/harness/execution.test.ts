@@ -501,6 +501,36 @@ Deno.test("unconfirmed termination: nothing is frozen or published; recovery fin
   assertEquals((await t.env.store.judgments(e!.id))[0]!.verdict, "pass");
 });
 
+Deno.test("H-114b: the record carries env.load as given; none without it; recovery keeps the intent's load", async () => {
+  const t = await makeEnv();
+  const cell = await cellFor(t);
+  const load = { cells_in_flight: 3, free_ram_gib: 31.25 };
+  const [ran] = (await runCell({ ...t.env, load }, cell)).executions;
+  assertEquals(ran!.load, load);
+  ExecutionRecordSchema.parse(ran);
+  const [plain] = (await runCell(t.env, await cellFor(t))).executions;
+  assert(!("load" in plain!), JSON.stringify(plain));
+  // Interrupted: the recovering command has no load of its own.
+  const u = await makeEnv();
+  const ucell = await cellFor(u);
+  u.docker.behavior = async (call, io) => {
+    u.docker.lingering.add(call.name);
+    return await ccBehavior(join(u.repo.tasksDir, "HX-001"), "correct")(
+      call,
+      io,
+    );
+  };
+  const nullRam = { cells_in_flight: 2, free_ram_gib: null };
+  await assertRejects(
+    () => runCell({ ...u.env, load: nullRam }, ucell),
+    ContainerError,
+    "termination not confirmed",
+  );
+  u.docker.lingering.clear();
+  const [e] = await recoverInterrupted(u.env, loadTask);
+  assertEquals(e!.load, nullRam);
+});
+
 Deno.test("H-13b: recovery records the interrupted run's egress override and calibration waiver, whatever command recovers", async () => {
   const t = await makeEnv();
   const cell = await cellFor(t);

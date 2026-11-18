@@ -76,6 +76,15 @@ export interface Progress {
     source: "flag" | "observed";
     estimate: true;
   };
+  /**
+   * H-114b: the host load at cell starts, pooled over every execution that
+   * records one (never split by arm: M12 blinding); absent when none does.
+   */
+  load?: {
+    executions: number;
+    by_cells_in_flight: Record<string, number>;
+    min_free_ram_gib: number | null;
+  };
   unreadable: Unreadable[];
 }
 
@@ -380,6 +389,14 @@ export async function buildProgress(
   const finished = latest.size;
   const concurrency = flag ?? observedConcurrency(execs);
   const meanAll = mean([...walls.values()].flat());
+  const loads = execs.flatMap((e) => e.load ? [e.load] : []);
+  const byInFlight: Record<string, number> = {};
+  for (const l of loads) {
+    byInFlight[l.cells_in_flight] = (byInFlight[l.cells_in_flight] ?? 0) + 1;
+  }
+  const rams = loads.flatMap((l) =>
+    l.free_ram_gib === null ? [] : [l.free_ram_gib]
+  );
   return {
     campaign_id: c.id,
     experiment_id: c.experiment.id,
@@ -413,6 +430,15 @@ export async function buildProgress(
       source: flag !== undefined ? "flag" : "observed",
       estimate: true,
     },
+    ...(loads.length > 0
+      ? {
+        load: {
+          executions: loads.length,
+          by_cells_in_flight: byInFlight,
+          min_free_ram_gib: rams.length ? Math.min(...rams) : null,
+        },
+      }
+      : {}),
     unreadable,
   };
 }

@@ -1623,6 +1623,119 @@ Deno.test("run --dry-run prints the plan without a lock", async () => {
   assertEquals(t.docker.runs.length, 0);
 });
 
+Deno.test("H-114b run --dry-run: --concurrency-max prints the dynamic rule with the code default T, or --admit-free-gib", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const dry = async (over: Record<string, unknown>) => {
+    const c = capture();
+    try {
+      await harnessRun(
+        "contract",
+        runOpts(t, { dryRun: true, concurrency: 2, ...over }),
+        () => Promise.reject(new Error("a dry run opens no environment")),
+        (eo) => openPlanEnv(eo, planDeps(t, [])),
+      );
+    } finally {
+      c.restore();
+    }
+    return stripAnsiCode(c.out.join("\n"));
+  };
+  assertStringIncludes(
+    await dry({ concurrencyMax: 4 }),
+    "[DRY] concurrency 2..4: above 2, a block is admitted at >= 30 GiB free (hold 5 min, settle 5 min)",
+  );
+  assertStringIncludes(
+    await dry({ concurrencyMax: 3, admitFreeGib: 23 }),
+    "[DRY] concurrency 2..3: above 2, a block is admitted at >= 23 GiB free",
+  );
+  assertEquals((await dry({})).includes("[DRY] concurrency"), false);
+});
+
+Deno.test("H-114b CLI: harness run maps --concurrency-max and --admit-free-gib (no cliffy defaults); the environment opens with the peak; --admit-free-gib alone is refused before it opens", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const stop = join(t.repo.root, "stop.json");
+  await Deno.writeTextFile(stop, "{}");
+  const seen: number[] = [];
+  const cli = new Command().name("centralgauge").noExit();
+  registerHarnessCommand(cli, (eo) => {
+    seen.push(eo.concurrency!);
+    return opener(t)();
+  });
+  const codes: (number | undefined)[] = [];
+  const cwd = Deno.cwd();
+  const c = capture();
+  try {
+    Deno.chdir(t.repo.root);
+    for (
+      const extra of [
+        ["--concurrency", "2"],
+        ["--concurrency", "2", "--concurrency-max", "4"],
+        ["--concurrency", "2", "--admit-free-gib", "30"],
+        ["--concurrency", "2", "--concurrency-max", "5"],
+      ]
+    ) {
+      await cli.parse([
+        "harness",
+        "run",
+        "contract",
+        "--stop-file",
+        stop,
+        "--secrets-dir",
+        t.env.privateRoot,
+        "--private-dir",
+        t.env.privateRoot,
+        ...extra,
+      ]);
+      codes.push(Deno.exitCode);
+      Deno.exitCode = 0;
+    }
+  } finally {
+    Deno.chdir(cwd);
+    c.restore();
+    Deno.exitCode = 0;
+  }
+  const err = stripAnsiCode(c.err.join("\n"));
+  assertEquals(codes, [0, 0, 1, 1]);
+  assertEquals(seen, [2, 4], "opened with the floor, then with the peak");
+  assertStringIncludes(
+    err,
+    "--admit-free-gib applies only with --concurrency-max",
+  );
+  assertStringIncludes(err, "at most 4");
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("H-114b run: the up-front placed gate sees the peak (--concurrency 1 --concurrency-max 3 on a placing marker is refused)", async () => {
+  await using t = await makeEnv();
+  await writeCatalog(t);
+  await mockExperiment(t);
+  const shared = join(t.repo.root, "results", "harness");
+  await Deno.mkdir(shared, { recursive: true });
+  await Deno.writeTextFile(
+    join(shared, EGRESS_MARKER),
+    JSON.stringify({
+      v: 1,
+      state: "authorized",
+      proxy_isolation: PROXY_ISOLATION,
+    }),
+  );
+  const never = () => Promise.reject(new Error("no environment may open"));
+  await assertRejects(
+    () =>
+      harnessRun(
+        "contract",
+        runOpts(t, { concurrency: 1, concurrencyMax: 3, dryRun: true }),
+        never,
+        never,
+      ),
+    ConfigurationError,
+    "exceeds the placed maximum 2",
+  );
+});
+
 Deno.test("run refuses a credential-bearing arm unless the verified state is authorized; a marker failing verification stops", async () => {
   await using t = await makeEnv();
   await writeCatalog(t);
