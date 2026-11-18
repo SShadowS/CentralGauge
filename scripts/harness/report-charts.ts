@@ -116,6 +116,20 @@ export const Ledger = z.strictObject({
       }, got ${l.paid_total_usd}`,
     });
   }
+  // M12-04b L1: nor does any of its experiments.
+  if (present.length === 0) {
+    l.experiments.forEach((e, i) => {
+      if (e.paid_usd !== null && e.paid_usd > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["experiments", i, "paid_usd"],
+          message: `paid_usd must be 0 or null without ${
+            V1_GROUP.join(", ")
+          }, got ${e.paid_usd} (${e.id})`,
+        });
+      }
+    });
+  }
 });
 export type Ledger = z.infer<typeof Ledger>;
 
@@ -739,31 +753,37 @@ const analysisOf = (r: Report): Analysis | null =>
     ? null
     : r.confirmatory;
 
-/** verdictText for a contrast: Holm decides; a suppressed interval says so first. */
+/** verdictText for a contrast: always the Holm decision; a suppressed percentile CI is a note beside it (M12-04b). */
 export function contrastVerdictText(c: Contrast): string {
-  if (c.ci === null) return "CI suppressed";
-  return c.decision.replace("_", " ");
+  const d = c.decision.replace("_", " ");
+  return c.ci === null ? `${d} (CI suppressed)` : d;
 }
 
-function contrastLine(c: Contrast): string {
+/** One contrast as text; `withId` false drops the leading id (the interaction line names it already). */
+function contrastLine(c: Contrast, withId = true): string {
   const f = METRIC[c.metric].num;
   const r = (x: number | null) => x === null ? "n/a" : x.toFixed(2);
+  const level = `${+(c.level * 100).toFixed(1)}%`;
   const ci = c.ci === null
-    ? `CI suppressed (${share(c.undefined_share)} undefined)`
-    : `${+(c.level * 100).toFixed(1)}% CI [${f(c.ci[0])}, ${
-      f(c.ci[1])
-    }] (unadjusted)`;
+    ? `percentile CI suppressed (${share(c.undefined_share)} undefined)`
+    : `${level} percentile CI [${f(c.ci[0])}, ${f(c.ci[1])}] (unadjusted)`;
   const ratioCi = c.ci_ratio
-    ? `, ratio CI [${r(c.ci_ratio[0])}, ${r(c.ci_ratio[1])}]`
+    ? `, ${level} ${c.method ?? "percentile"} ratio CI [${r(c.ci_ratio[0])}, ${
+      r(c.ci_ratio[1])
+    }] (unadjusted)`
     : "";
   const holm = c.confirmatory
     ? `Holm p ${c.p_holm?.toFixed(4) ?? "n/a"} -> ${
       c.decision.replace("_", " ")
     }`
     : `p ${c.p_value?.toFixed(4) ?? "n/a"}, no decision`;
-  return `${c.id}: ${c.variant} vs ${c.baseline} over ${c.pairs} pairs, ${c.tasks} tasks: ratio ${
-    r(c.ratio)
-  }, delta ${c.delta === null ? "n/a" : f(c.delta)}; ${ci}${ratioCi}; ${holm}`;
+  return `${
+    withId ? `${c.id}: ` : ""
+  }${c.variant} vs ${c.baseline} over ${c.pairs} pair${
+    c.pairs === 1 ? "" : "s"
+  }, ${c.tasks} task${c.tasks === 1 ? "" : "s"}: ratio ${r(c.ratio)}, delta ${
+    c.delta === null ? "n/a" : f(c.delta)
+  }; ${ci}${ratioCi}; ${holm}`;
 }
 
 function contrastsChart(r: Report, k: Analysis): string {
@@ -786,7 +806,7 @@ function contrastsChart(r: Report, k: Analysis): string {
       { text: "", rule: true },
       ...inter.map((c) => ({
         text: `Interaction (exploratory, outside the Holm family): ${c.name}. ${
-          contrastLine(c)
+          contrastLine(c, false)
         }`,
         size: 12,
         fill: "#666",
@@ -886,7 +906,13 @@ function v2Csvs(reports: Report[]): OutFile[] {
     const k = r.confirmatory;
     if (k === undefined) return [];
     if ("withheld" in k) {
-      return [[...id(r), "withheld", ...Array(18).fill(null), k.withheld]];
+      return [[
+        ...id(r),
+        "withheld",
+        ...Array(18).fill(null),
+        k.withheld,
+        ...Array(6).fill(null),
+      ]];
     }
     return k.results.map((c) => [
       ...id(r),
@@ -910,6 +936,13 @@ function v2Csvs(reports: Report[]): OutFile[] {
       k.alpha,
       c.decision,
       contrastVerdictText(c),
+      // M12-04b: the ratio-scale interval the bootstrap-t decision goes with.
+      c.method ?? null,
+      c.ci_ratio?.[0] ?? null,
+      c.ci_ratio?.[1] ?? null,
+      c.bonferroni_ci_ratio?.[0] ?? null,
+      c.bonferroni_ci_ratio?.[1] ?? null,
+      c.theta ?? null,
     ]);
   });
   const held = reports.flatMap((r) => {
@@ -993,6 +1026,12 @@ function v2Csvs(reports: Report[]): OutFile[] {
         "alpha",
         "decision",
         "verdict_text",
+        "method",
+        "ci_ratio_lo",
+        "ci_ratio_hi",
+        "bonferroni_ratio_lo",
+        "bonferroni_ratio_hi",
+        "theta",
       ], contrasts),
     },
     {

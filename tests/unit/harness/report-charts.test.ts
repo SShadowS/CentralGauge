@@ -1602,18 +1602,35 @@ const sha256 = async (s: string) =>
     (b) => b.toString(16).padStart(2, "0"),
   ).join("");
 const CONTRASTS_HEAD =
-  "experiment,campaign,id,name,confirmatory,baseline,variant,pairs,tasks,delta,ratio,ci_lo,ci_hi,level,bonferroni_lo,bonferroni_hi,undefined_share,p,p_holm,alpha,decision,verdict_text";
+  "experiment,campaign,id,name,confirmatory,baseline,variant,pairs,tasks,delta,ratio,ci_lo,ci_hi,level,bonferroni_lo,bonferroni_hi,undefined_share,p,p_holm,alpha,decision,verdict_text,method,ci_ratio_lo,ci_ratio_hi,bonferroni_ratio_lo,bonferroni_ratio_hi,theta";
 
 Deno.test("charts (M12-04 1): contrasts.csv has the header and one row per result with the exact decisions; CI suppressed for the suppressed one", async () => {
   const csv = get(renderCharts([await v2()]), "contrasts.csv");
   assertEquals(csv.split("\n"), [
     CONTRASTS_HEAD,
-    `${V2_ID},C1,LSP effect without the realistic setup,true,cc-v2-plain,cc-v2-plain-lsp,2,1,-0.58,0.36,-0.8,-0.3,0.95,-0.85,-0.25,0,0.004,0.012,0.05,variant_lower,variant lower`,
-    `${V2_ID},C2,LSP effect with the realistic setup,true,cc-v2-realistic,cc-v2-realistic-lsp,2,1,0.2,1.17,-0.1,0.5,0.95,-0.15,0.55,0,0.3,0.6,0.05,no_decision,no decision`,
-    `${V2_ID},C3,realistic effect without LSP,true,cc-v2-plain,cc-v2-realistic,2,1,0.25,1.28,n/a,n/a,0.95,n/a,n/a,0.01,0.21,0.42,0.05,no_decision,CI suppressed`,
-    `${V2_ID},interaction,LSP effect differs by realistic level,false,cc-v2-plain,cc-v2-realistic-lsp,2,1,0.78,n/a,-0.2,1.7,0.95,n/a,n/a,0,0.15,n/a,0.05,no_decision,no decision`,
+    `${V2_ID},C1,LSP effect without the realistic setup,true,cc-v2-plain,cc-v2-plain-lsp,2,1,-0.58,0.36,-0.8,-0.3,0.95,-0.85,-0.25,0,0.004,0.012,0.05,variant_lower,variant lower,bootstrap-t,0.2,0.65,0.18,0.72,-1.03`,
+    `${V2_ID},C2,LSP effect with the realistic setup,true,cc-v2-realistic,cc-v2-realistic-lsp,2,1,0.2,1.17,-0.1,0.5,0.95,-0.15,0.55,0,0.3,0.6,0.05,no_decision,no decision,bootstrap-t,0.72,1.92,0.65,2.12,0.16`,
+    `${V2_ID},C3,realistic effect without LSP,true,cc-v2-plain,cc-v2-realistic,2,1,0.25,1.28,n/a,n/a,0.95,n/a,n/a,0.01,0.21,0.42,0.05,no_decision,no decision (CI suppressed),bootstrap-t,0.74,2.2,0.67,2.44,0.25`,
+    `${V2_ID},interaction,LSP effect differs by realistic level,false,cc-v2-plain,cc-v2-realistic-lsp,2,1,0.78,n/a,-0.2,1.7,0.95,n/a,n/a,0,0.15,n/a,0.05,no_decision,no decision,bootstrap-t,0.84,3.97,n/a,n/a,0.6`,
     "",
   ]);
+  // M12-04b M1: a decision with a suppressed percentile CI keeps the decision.
+  const r0 = await v2();
+  const k0 = r0.confirmatory as Exclude<
+    NonNullable<HarnessReport["confirmatory"]>,
+    { withheld: string }
+  >;
+  const decided = {
+    ...r0,
+    confirmatory: {
+      ...k0,
+      results: [{ ...k0.results[2]!, decision: "variant_lower" as const }],
+    },
+  };
+  assertStringIncludes(
+    get(renderCharts([decided]), "contrasts.csv"),
+    ",variant_lower,variant lower (CI suppressed),bootstrap-t,",
+  );
   // A variant_higher decision reads "variant higher".
   const r = await v2();
   const k = r.confirmatory as Exclude<
@@ -1629,7 +1646,7 @@ Deno.test("charts (M12-04 1): contrasts.csv has the header and one row per resul
   };
   assert(
     get(renderCharts([up]), "contrasts.csv").trim().endsWith(
-      ",variant_higher,variant higher",
+      ",variant_higher,variant higher,bootstrap-t,0.72,1.92,0.65,2.12,0.16",
     ),
   );
 });
@@ -1642,7 +1659,9 @@ Deno.test("charts (M12-04 2): a withheld confirmatory gives one withheld row and
   }]);
   assertEquals(get(fs, "contrasts.csv").split("\n"), [
     CONTRASTS_HEAD,
-    `${V2_ID},withheld,${Array(18).fill("n/a").join(",")},${reason}`,
+    `${V2_ID},withheld,${Array(18).fill("n/a").join(",")},${reason},${
+      Array(6).fill("n/a").join(",")
+    }`,
     "",
   ]);
   assertEquals(fs.filter((f) => f.name.endsWith("-contrasts.svg")), []);
@@ -1745,6 +1764,17 @@ Deno.test("charts (M12-04 6): a ledger without the four OpenRouter and pi-stop k
     Error,
     "paid_total_usd",
   );
+  // M12-04b L1: nor any per-experiment cash (0 and null stay valid).
+  assert(l2.experiments.length > 0);
+  const paid = (usd: number | null): Ledger => ({
+    ...(l2 as Ledger),
+    experiments: (l2 as Ledger).experiments.map((e, i) =>
+      i === 0 ? { ...e, paid_usd: usd } : e
+    ),
+  });
+  assert(Ledger.safeParse(paid(0)).success);
+  assert(Ledger.safeParse(paid(null)).success);
+  assertThrows(() => renderCharts([r], paid(5)), Error, "paid_usd");
 });
 
 Deno.test("charts (M12-04): the contrasts SVG shows C1-C3 as ratios with the unadjusted interval and the Holm decision, the interaction below a rule as exploratory", async () => {
@@ -1763,6 +1793,17 @@ Deno.test("charts (M12-04): the contrasts SVG shows C1-C3 as ratios with the una
     ]
   ) assertStringIncludes(t, s);
   assert(svg.includes("<line "), "a rule above the interaction");
+  // M12-04b L3: both intervals say which they are; L4: plural and no repeated id.
+  for (
+    const s of [
+      "95% percentile CI [",
+      "95% bootstrap-t ratio CI [0.20, 0.65] (unadjusted)",
+      "over 2 pairs, 1 task:",
+      "realistic level. cc-v2-realistic-lsp vs cc-v2-plain",
+    ]
+  ) assertStringIncludes(t, s);
+  assert(!t.includes(" 1 tasks"), t);
+  assert(!t.includes("level. interaction:"), t);
   assertEquals(overflowing(svg), []);
   assert(!svg.includes("NaN"));
   // The CLI writes the four new files.
