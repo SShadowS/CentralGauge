@@ -18,6 +18,7 @@ import type { ResolvedManifest } from "./manifest.ts";
 import type {
   AccountChoice,
   Block,
+  ExecutionLoad,
   ExecutionRecord,
   JudgmentRecord,
   RunKind,
@@ -228,6 +229,8 @@ export interface HarnessEnv {
    * absent: the block's account (pickAccount), as before pools.
    */
   accountChoice?: { label: string; choice: AccountChoice };
+  /** H-114b: the host load the campaign scheduler saw at this cell's start. */
+  load?: ExecutionLoad;
   /**
    * H-53: false once another cell parked that label; runCell then starts no
    * inner retry on it (the cell stays due and the scheduler picks again).
@@ -541,6 +544,8 @@ interface Intent {
   account?: string;
   /** H-53: why the pool gave it that label; recovery copies it too. */
   account_choice?: AccountChoice;
+  /** H-114b: the load at the start; recovery copies it. */
+  load?: ExecutionLoad;
   /** H-44 (M3): the key custody dir its bundle is exported to, whatever command publishes it; absent: none. */
   key_custody?: string;
 }
@@ -1773,6 +1778,8 @@ interface DraftInput {
   account?: string | null;
   /** H-53: why a pool gave the cell its label (absent outside a pool). */
   accountChoice?: AccountChoice | null;
+  /** H-114b: the load at the start (absent: none recorded). */
+  load?: ExecutionLoad | null;
   /** H-44 (B3): the record version the intent names (2 only for a pre-H-44 intent's rebuild). */
   recordV: 2 | 3;
 }
@@ -2145,6 +2152,7 @@ async function buildDraft(env: HarnessEnv, f: DraftInput): Promise<Draft> {
     ...(f.account && f.accountChoice
       ? { account_choice: f.accountChoice }
       : {}),
+    ...(f.load ? { load: f.load } : {}),
     ...(f.recordV === 3
       ? { redaction_anchor: bundle ? await sha256Hex(bundle.bytes) : null }
       : {}),
@@ -2510,6 +2518,7 @@ export async function runExecution(
     ...(account?.label && accountChoice
       ? { account_choice: accountChoice }
       : {}),
+    ...(env.load ? { load: env.load } : {}),
     // H-44 (M3): the export destination, persisted with the attempt.
     ...(env.keyCustody ? { key_custody: env.keyCustody } : {}),
   };
@@ -3189,6 +3198,7 @@ export async function runExecution(
     undrained,
     account: account?.label ?? null,
     accountChoice,
+    load: env.load ?? null,
     recordV: 3,
   });
   holdNamespace(env, nothingPublished);
@@ -4733,6 +4743,7 @@ export async function recoverInterrupted(
         // R-02: the label the attempt recorded in its intent, whatever command recovers.
         account: intent.account ?? null,
         accountChoice: intent.account_choice ?? null,
+        load: intent.load ?? null,
         recordV,
       });
     }

@@ -14,8 +14,14 @@ import {
   ValidationError,
 } from "../../../src/errors.ts";
 import type { CellRef, HarnessEnv } from "../../../src/harness/execution.ts";
-import type { ExecutionRecord } from "../../../src/harness/records.ts";
+import type {
+  CampaignRecord,
+  ExecutionRecord,
+} from "../../../src/harness/records.ts";
 import {
+  ADMIT_HOLD_MS,
+  ADMIT_POLL_MS,
+  ADMIT_SETTLE_MS,
   judgeQueue,
   loadCampaignData,
   planCampaign,
@@ -2602,4 +2608,430 @@ Deno.test("R-08: a mid-campaign quarantine prints one [QUARANTINE] line with the
   assertEquals(log.lines.length, before);
   assertEquals(s.quarantined, 1);
   assertEquals(t.env.lane.onQuarantine, undefined);
+});
+
+// H-114b: dynamic concurrency. A fake clock pumped one POLL per real
+// millisecond; every sleeper of one tick wakes on that tick (same instant).
+function fakeTime(t: TestEnv) {
+  let clock = Date.now();
+  let wake = () => {};
+  let tick = new Promise<void>((r) => (wake = r));
+  let frozen = false;
+  const timer = setInterval(() => {
+    if (frozen) return;
+    clock += ADMIT_POLL_MS;
+    const w = wake;
+    tick = new Promise<void>((r) => (wake = r));
+    w();
+  }, 1);
+  t.env.now = () => new Date(clock);
+  const until = async (at: number) => {
+    while (clock < at) await tick;
+  };
+  return {
+    now: () => clock,
+    until,
+    sleep: (ms: number) => until(clock + ms),
+    freeze: () => void (frozen = true),
+    thaw: () => void (frozen = false),
+    stop: () => clearInterval(timer),
+  };
+}
+
+const CELL_MS = 10 * 60_000;
+const ADMIT = "[CONCURRENCY] admitted";
+const GAP = Math.max(ADMIT_HOLD_MS, ADMIT_SETTLE_MS);
+
+/**
+ * A dynamic run's harness: `repeats` blocks of two arms, each cell CELL_MS
+ * of fake time, the RAM reader `ram` (spied), cells in flight per sandbox run.
+ */
+async function dynamicEnv(repeats = 6, arms = ["mock-naive-a"]) {
+  const t = await mockEnv();
+  await experiment(t, "dyn", "mock-positive", arms, "[settings]", repeats);
+  const ft = fakeTime(t);
+  const s = {
+    ram: (): number => 10,
+    reads: [] as number[],
+    inFlight: new Set<string>(),
+    maxInFlight: 0,
+    starts: [] as number[],
+    lines: [] as { t: number; line: string }[],
+  };
+  const behave = t.docker.behavior;
+  t.docker.behavior = async (call, run) => {
+    const id = call.labels.get(EXECUTION_LABEL)!;
+    s.inFlight.add(id);
+    s.starts.push(ft.now());
+    s.maxInFlight = Math.max(s.maxInFlight, s.inFlight.size);
+    try {
+      await ft.until(ft.now() + CELL_MS);
+      return await behave(call, run);
+    } finally {
+      s.inFlight.delete(id);
+    }
+  };
+  const out = {
+    log: (line: string) => void s.lines.push({ t: ft.now(), line }),
+    sleep: ft.sleep,
+    catalog: CATALOG,
+  };
+  const run = (over: Partial<RunOptions> = {}) =>
+    runCampaign(
+      t.env,
+      "dyn",
+      opts({
+        freeRamGib: () => {
+          s.reads.push(ft.now());
+          return s.ram();
+        },
+        ...over,
+      }),
+      out,
+    );
+  const admissions = () => s.lines.filter((l) => l.line.startsWith(ADMIT));
+  const executions = async () => {
+    const c = (await t.env.store.campaigns("dyn"))[0]!;
+    return await t.env.store.executions(c.id);
+  };
+  return { t, ft, s, run, admissions, executions };
+}
+
+Deno.test("H-114b: RAM always below T: floor 2, max 4 keeps 2 in flight, never admits, every cell runs", async () => {
+  const d = await dynamicEnv();
+  try {
+    const sum = await d.run({ concurrency: 2, concurrencyMax: 4 });
+    assertEquals(sum.ran, 12);
+    assertEquals(d.s.maxInFlight, 2);
+    assertEquals(d.admissions(), []);
+    const es = await d.executions();
+    assertEquals(es.length, 12);
+    assert(es.every((e) => e.load!.cells_in_flight <= 2), "never above 2");
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b: RAM always high: in flight reaches 4, never 5; each admit waits a full SETTLE and HOLD after the one before (gated workers wake on one tick)", async () => {
+  const d = await dynamicEnv();
+  try {
+    d.s.ram = () => 60;
+    const start = d.ft.now();
+    const sum = await d.run({ concurrency: 2, concurrencyMax: 4 });
+    assertEquals(sum.ran, 12);
+    assertEquals(d.s.maxInFlight, 4);
+    const es = await d.executions();
+    assertEquals(Math.max(...es.map((e) => e.load!.cells_in_flight)), 4);
+    assert(es.every((e) => e.load!.free_ram_gib === 60));
+    const a = d.admissions().map((l) => l.t);
+    assert(a.length >= 2, d.s.lines.map((l) => l.line).join("\n"));
+    assert(a[0]! - start >= GAP, "the first admit waits from the start");
+    for (let i = 1; i < a.length; i++) {
+      assert(
+        a[i]! - a[i - 1]! >= GAP,
+        `admissions ${i - 1} and ${i}: ${a[i]! - a[i - 1]!} ms apart`,
+      );
+    }
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b: admitFreeGib reaches the gate: 25 GiB free admits at T=23, not at the default T", async () => {
+  for (
+    const [admitFreeGib, admits] of [[23, true], [undefined, false]] as const
+  ) {
+    const d = await dynamicEnv();
+    try {
+      d.s.ram = () => 25;
+      await d.run({
+        concurrency: 2,
+        concurrencyMax: 4,
+        ...(admitFreeGib === undefined ? {} : { admitFreeGib }),
+      });
+      assertEquals(d.admissions().length > 0, admits, `T=${admitFreeGib}`);
+    } finally {
+      d.ft.stop();
+    }
+  }
+});
+
+Deno.test("H-114b: never above the remaining blocks: 3 blocks under max 4 run at most 3 at once", async () => {
+  const d = await dynamicEnv(3);
+  try {
+    d.s.ram = () => 60;
+    await d.run({ concurrency: 2, concurrencyMax: 4 });
+    assert(d.s.maxInFlight <= 3, String(d.s.maxInFlight));
+    assertEquals((await d.executions()).length, 6);
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b: RAM drops after two admissions: running cells end normally, no further admission, gated blocks finish their arms in order", async () => {
+  const d = await dynamicEnv();
+  try {
+    d.s.ram = () => d.admissions().length >= 2 ? 10 : 60;
+    const sum = await d.run({ concurrency: 2, concurrencyMax: 4 });
+    assertEquals(sum.ran, 12);
+    assertEquals(d.admissions().length, 2);
+    assertEquals(d.s.maxInFlight, 4);
+    const es = await d.executions();
+    assert(es.every((e) => e.termination === "completed"), "none pre-empted");
+    assert(es.every((e) => e.run_kind === "planned"), "no interrupted retry");
+    const c = (await d.t.env.store.campaigns("dyn"))[0]!;
+    for (const b of c.blocks) {
+      const mine = es.filter((e) => e.block === b.index).sort((x, y) =>
+        Date.parse(x.started_at) - Date.parse(y.started_at)
+      );
+      assertEquals(mine.map((e) => e.arm), b.order, "planned order");
+      assert(
+        Date.parse(mine[0]!.ended_at) <= Date.parse(mine[1]!.started_at),
+        "arms never overlap",
+      );
+    }
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b: without concurrencyMax the gate never runs: in flight equals concurrency, one RAM read per cell for load only", async () => {
+  const d = await dynamicEnv();
+  try {
+    d.s.ram = () => 60;
+    const sum = await d.run({ concurrency: 2 });
+    assertEquals(sum.ran, 12);
+    assertEquals(d.s.maxInFlight, 2);
+    assertEquals(d.admissions(), []);
+    const es = await d.executions();
+    assertEquals(d.s.reads.length, es.length, "no gate polls");
+    assert(
+      es.every((e) =>
+        e.load!.free_ram_gib === 60 && e.load!.cells_in_flight <= 2
+      ),
+    );
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b hostwatch wins: a stop file appearing while gated workers wait stops the run; a waiting worker sees it within one POLL; nothing starts after", async () => {
+  const d = await dynamicEnv();
+  const stop = join(await testTempDir(), "host-low");
+  let created = 0;
+  try {
+    // RAM never admits: workers 3 and 4 wait at the gate.
+    const behave = d.t.docker.behavior;
+    d.t.docker.behavior = async (call, run) => {
+      if (created === 0) {
+        created = -1;
+        await d.ft.until(d.ft.now() + 60_000);
+        await Deno.writeTextFile(stop, "");
+        created = d.ft.now();
+      }
+      return await behave(call, run);
+    };
+    const sum = await d.run({
+      concurrency: 2,
+      concurrencyMax: 4,
+      stopFiles: [stop],
+    });
+    assert(sum.stopped);
+    const seen = d.s.lines.find((l) => l.line.includes("stop file"))!;
+    assert(seen.t - created <= ADMIT_POLL_MS, `${seen.t - created} ms`);
+    assert(d.s.starts.every((x) => x <= created), "no cell after the stop");
+    assertEquals(d.admissions(), []);
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b hostwatch wins: a usage pause while RAM is high: gated workers admit nothing, the run pauses", async () => {
+  const d = await dynamicEnv(6, ["mock-usage"]);
+  try {
+    d.s.ram = () => 60;
+    // Every cell is limited until 30 days of fake time from now (mock.ps1's
+    // own reset is one real hour, which the fake clock passes in a second).
+    d.t.docker.behavior = async (_call, run) => {
+      await run.stdout(
+        '{"type":"mock_init","version":"2","mode":"usage-limit"}',
+      );
+      await run.stdout(JSON.stringify({
+        type: "mock_usage_limit",
+        resets_at: Math.floor(d.ft.now() / 1000) + 30 * 86_400,
+      }));
+      return 2;
+    };
+    // Fake time stands still until both floor cells are published and their
+    // workers have set the pause (1 s of real time later); only then can
+    // the waiting gated workers wake.
+    d.ft.freeze();
+    const frozenAt = d.ft.now();
+    let published = 0;
+    d.t.env.hooks = {
+      afterPublished: () => {
+        if (++published === 2) setTimeout(() => d.ft.thaw(), 1000);
+        return Promise.resolve();
+      },
+    };
+    const sum = await d.run({ concurrency: 2, concurrencyMax: 4 });
+    assert(sum.paused !== null, "paused");
+    assertEquals(d.admissions(), [], "no gated admit while paused");
+    assert(
+      d.s.reads.every((t) => t === frozenAt),
+      "no gate poll after the pause: each waiting worker left on its first wake",
+    );
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b resume: stopped under max 4, resumed under max 3 (fresh gate, in flight <= 3), then under fixed 2 (no gate); one execution per cell", async () => {
+  const d = await dynamicEnv();
+  const stop = join(await testTempDir(), "planned");
+  try {
+    d.s.ram = () => 60;
+    const behave = d.t.docker.behavior;
+    // Stop once the first admission has happened.
+    d.t.docker.behavior = async (call, run) => {
+      if (d.admissions().length >= 1) await Deno.writeTextFile(stop, "");
+      return await behave(call, run);
+    };
+    const first = await d.run({
+      concurrency: 2,
+      concurrencyMax: 4,
+      stopFiles: [stop],
+    });
+    assert(first.stopped && first.created);
+    const id = first.campaignId;
+    await Deno.remove(stop);
+    // Resume under max 3: stop again once it has admitted once.
+    d.s.maxInFlight = 0;
+    const before = d.admissions().length;
+    const resumeAt = d.ft.now();
+    d.t.docker.behavior = async (call, run) => {
+      if (d.admissions().length > before) await Deno.writeTextFile(stop, "");
+      return await behave(call, run);
+    };
+    const second = await d.run({
+      concurrency: 2,
+      concurrencyMax: 3,
+      stopFiles: [stop],
+    });
+    assertEquals([second.campaignId, second.created], [id, false]);
+    assert(d.s.maxInFlight <= 3, String(d.s.maxInFlight));
+    const again = d.admissions().slice(before);
+    assert(again.length >= 1, d.s.lines.map((l) => l.line).join("\n"));
+    assert(
+      again[0]!.t - resumeAt >= GAP,
+      "the first admission after a resume waits a full SETTLE",
+    );
+    await Deno.remove(stop);
+    d.t.docker.behavior = behave;
+    // Fixed 2: no gate polls, the rest of the plan.
+    d.s.maxInFlight = 0;
+    const n = (await d.executions()).length;
+    d.s.reads = [];
+    const third = await d.run({ concurrency: 2 });
+    assertEquals(third.campaignId, id);
+    assert(d.s.maxInFlight <= 2);
+    const es = await d.executions();
+    assertEquals(d.s.reads.length, es.length - n, "reads for load only");
+    assertEquals(es.length, 12, "no duplicate cell");
+    assertEquals(new Set(es.map((e) => `${e.block}|${e.arm}`)).size, 12);
+  } finally {
+    d.ft.stop();
+  }
+});
+
+Deno.test("H-114b validation: refused before any write", async () => {
+  const bad: [Partial<RunOptions>, string][] = [
+    [{ concurrency: 2, concurrencyMax: 2 }, "--concurrency-max"],
+    [{ concurrency: 2, concurrencyMax: 5 }, "at most 4"],
+    [{ concurrency: 1, concurrencyMax: 2.5 }, "--concurrency-max"],
+    [
+      { concurrency: 2, concurrencyMax: 4, admitFreeGib: 0 },
+      "--admit-free-gib",
+    ],
+    [
+      { concurrency: 2, concurrencyMax: 4, admitFreeGib: NaN },
+      "--admit-free-gib",
+    ],
+    [{ concurrency: 2, admitFreeGib: 30 }, "--admit-free-gib"],
+    [{
+      concurrency: 2,
+      concurrencyMax: 4,
+      rerun: { task: "HX-001", repeat: 1, arm: "mock-positive" },
+    }, "--rerun"],
+  ];
+  for (const [over, msg] of bad) {
+    const t = await mockEnv();
+    await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+    await assertRejects(
+      () => runCampaign(t.env, "contract", opts(over), io()),
+      ConfigurationError,
+      msg,
+    );
+    assertEquals(await t.env.store.campaigns("contract"), []);
+    assertEquals(t.docker.runs.length, 0);
+  }
+  // A placed environment: the gate sees the peak, not the floor.
+  const t = await gated();
+  await assertRejects(
+    () =>
+      runCampaign(
+        t.env,
+        "contract",
+        opts({ concurrency: 1, concurrencyMax: 3 }),
+        io(),
+      ),
+    ConfigurationError,
+    "exceeds the placed maximum 2",
+  );
+  assertEquals(t.docker.runs.length, 0);
+});
+
+Deno.test("H-114b: a dry run names the dynamic rule; a fixed run's dry run does not", async () => {
+  const t = await mockEnv();
+  await experiment(t, "contract", "mock-positive", ["mock-naive-a"]);
+  const out = io();
+  await runCampaign(
+    t.env,
+    "contract",
+    opts({ dryRun: true, concurrency: 2, concurrencyMax: 4 }),
+    out,
+  );
+  assert(
+    out.lines.includes(
+      "[DRY] concurrency 2..4: above 2, a block is admitted at >= 30 GiB free (hold 5 min, settle 5 min)",
+    ),
+    out.lines.join("\n"),
+  );
+  const plain = io();
+  await runCampaign(t.env, "contract", opts({ dryRun: true }), plain);
+  assert(!plain.lines.some((l) => l.includes("[DRY] concurrency")));
+});
+
+Deno.test("H-114b binding: the same seed with and without concurrencyMax gives the same experiment_hash, manifests, task set and record keys; every execution has load", async () => {
+  const runs: CampaignRecord[] = [];
+  for (const over of [{}, { concurrency: 2, concurrencyMax: 4 }]) {
+    const d = await dynamicEnv(2);
+    try {
+      await d.run(over);
+      const es = await d.executions();
+      assert(es.length === 4 && es.every((e) => e.load !== undefined));
+      runs.push((await d.t.env.store.campaigns("dyn"))[0]!);
+    } finally {
+      d.ft.stop();
+    }
+  }
+  const [a, b] = runs as [CampaignRecord, CampaignRecord];
+  assertEquals(a.experiment_hash, b.experiment_hash);
+  assertEquals(
+    a.arms.map((x) => x.manifest_hash),
+    b.arms.map((x) => x.manifest_hash),
+  );
+  assertEquals(a.task_set.identity, b.task_set.identity);
+  assertEquals(a.blocks, b.blocks);
+  assertEquals(Object.keys(a).sort(), Object.keys(b).sort());
 });

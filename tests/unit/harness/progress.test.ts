@@ -105,6 +105,36 @@ Deno.test("progress: counts, retries, terminations, cost, wall, tasks", async ()
   assertEquals(text.includes("—"), false);
 });
 
+Deno.test("H-114b progress: a pooled load block (executions by cells in flight, minimum free RAM), never per arm; absent without load", async () => {
+  const { root, store, c } = await setup();
+  const e1 = execution(c, { task: "HX-001", arm: "plain" });
+  await store.writeExecution(e1);
+  const none = await buildProgress(root, c.id);
+  assertEquals("load" in none, false);
+  const loads = [
+    { cells_in_flight: 2, free_ram_gib: 31.5 },
+    { cells_in_flight: 3, free_ram_gib: null },
+    { cells_in_flight: 3, free_ram_gib: 30.25 },
+  ];
+  const cells = [
+    { task: "HX-001", arm: "skills" },
+    { task: "HX-002", arm: "plain" },
+    { task: "HX-002", arm: "skills" },
+  ];
+  for (const [i, load] of loads.entries()) {
+    await store.writeExecution(execution(c, cells[i]!, { load }));
+  }
+  const p = await buildProgress(root, c.id);
+  assertEquals(p.load, {
+    executions: 3,
+    by_cells_in_flight: { "2": 1, "3": 2 },
+    min_free_ram_gib: 30.25,
+  });
+  // Blinding (M12-11): no arm split anywhere, only the one pooled key.
+  for (const a of Object.values(p.arms)) assertEquals("load" in a, false);
+  assertEquals(JSON.stringify(p).match(/"load"/g)?.length, 1);
+});
+
 Deno.test("progress: resolves campaign id or experiment id, newest wins", async () => {
   const { root, store, c } = await setup();
   const newer = await campaign({
