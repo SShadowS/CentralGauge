@@ -1,0 +1,12 @@
+// M12-06 (from H-100): harnessCompilerIdentity per container, as the campaign checkout computes it (docker inspect only, read-only).
+import { BcContainerProvider } from "file:///H:/cg-coord/jobs/M12-run/src/container/bc-container-provider.ts";
+
+const bc = new BcContainerProvider();
+for (const c of Deno.args) {
+  try {
+    console.log(`${c}\t${await bc.harnessCompilerIdentity(c)}`);
+  } catch (e) {
+    console.log(`${c}\tERROR ${(e as Error).message}`);
+  }
+}
+Deno.exit(0);
