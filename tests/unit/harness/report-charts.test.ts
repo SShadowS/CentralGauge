@@ -1243,7 +1243,7 @@ Deno.test("charts (M6-02c): the spend is the ledger reference minus the latest b
     () =>
       renderCharts(
         [r],
-        refLedger({ ...ref, usd: 60 }, [ok.openrouter_balance_readings[1]]),
+        refLedger({ ...ref, usd: 60 }, [ok.openrouter_balance_readings![1]]),
       ),
     Error,
     "openrouter_reference",
@@ -1585,4 +1585,210 @@ Deno.test("charts (M6-02e): the SVG footnote carries the conditioning-bias warni
     "not a confidence interval: [-0.40, 0.10]; conditioning on solves can bias this interval, including its direction; it is not evidence of a difference",
   );
   assertEquals(overflowing(svg), []);
+});
+
+// --- M12-04: contrasts, held-out and exploratory outputs; the v2 ledger ---
+
+const v2 = async (): Promise<HarnessReport> =>
+  JSON.parse(
+    await Deno.readTextFile("tests/fixtures/harness/report-v2-factorial.json"),
+  );
+const V2_ID = "cc-v2-factorial,0f12a9c4-7b3e-4d21-9a6c-5e8b1d2f3a40";
+const sha256 = async (s: string) =>
+  Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)),
+    ),
+    (b) => b.toString(16).padStart(2, "0"),
+  ).join("");
+const CONTRASTS_HEAD =
+  "experiment,campaign,id,name,confirmatory,baseline,variant,pairs,tasks,delta,ratio,ci_lo,ci_hi,level,bonferroni_lo,bonferroni_hi,undefined_share,p,p_holm,alpha,decision,verdict_text";
+
+Deno.test("charts (M12-04 1): contrasts.csv has the header and one row per result with the exact decisions; CI suppressed for the suppressed one", async () => {
+  const csv = get(renderCharts([await v2()]), "contrasts.csv");
+  assertEquals(csv.split("\n"), [
+    CONTRASTS_HEAD,
+    `${V2_ID},C1,LSP effect without the realistic setup,true,cc-v2-plain,cc-v2-plain-lsp,2,1,-0.58,0.36,-0.8,-0.3,0.95,-0.85,-0.25,0,0.004,0.012,0.05,variant_lower,variant lower`,
+    `${V2_ID},C2,LSP effect with the realistic setup,true,cc-v2-realistic,cc-v2-realistic-lsp,2,1,0.2,1.17,-0.1,0.5,0.95,-0.15,0.55,0,0.3,0.6,0.05,no_decision,no decision`,
+    `${V2_ID},C3,realistic effect without LSP,true,cc-v2-plain,cc-v2-realistic,2,1,0.25,1.28,n/a,n/a,0.95,n/a,n/a,0.01,0.21,0.42,0.05,no_decision,CI suppressed`,
+    `${V2_ID},interaction,LSP effect differs by realistic level,false,cc-v2-plain,cc-v2-realistic-lsp,2,1,0.78,n/a,-0.2,1.7,0.95,n/a,n/a,0,0.15,n/a,0.05,no_decision,no decision`,
+    "",
+  ]);
+  // A variant_higher decision reads "variant higher".
+  const r = await v2();
+  const k = r.confirmatory as Exclude<
+    NonNullable<HarnessReport["confirmatory"]>,
+    { withheld: string }
+  >;
+  const up = {
+    ...r,
+    confirmatory: {
+      ...k,
+      results: [{ ...k.results[1]!, decision: "variant_higher" as const }],
+    },
+  };
+  assert(
+    get(renderCharts([up]), "contrasts.csv").trim().endsWith(
+      ",variant_higher,variant higher",
+    ),
+  );
+});
+
+Deno.test("charts (M12-04 2): a withheld confirmatory gives one withheld row and no contrasts SVG", async () => {
+  const reason = "3 pending and 0 unrun cells";
+  const fs = renderCharts([{
+    ...(await v2()),
+    confirmatory: { withheld: reason },
+  }]);
+  assertEquals(get(fs, "contrasts.csv").split("\n"), [
+    CONTRASTS_HEAD,
+    `${V2_ID},withheld,${Array(18).fill("n/a").join(",")},${reason}`,
+    "",
+  ]);
+  assertEquals(fs.filter((f) => f.name.endsWith("-contrasts.svg")), []);
+  // Held-out rows exist only with an analysis.
+  assertEquals(get(fs, "held_out.csv").trim().split("\n").length, 1);
+});
+
+Deno.test("charts (M12-04 3): held_out.csv has the arms.csv columns plus tasks, one descriptive row per arm", async () => {
+  const fs = renderCharts([await v2()]);
+  const [head, ...rows] = get(fs, "held_out.csv").trim().split("\n");
+  const armsHead = get(fs, "arms.csv").split("\n")[0];
+  assertEquals(head, `${armsHead},tasks,label`);
+  assertEquals(rows.length, 4);
+  for (const row of rows) {
+    assert(row.endsWith(",HX-901 HX-902 HX-903 HX-904,descriptive"), row);
+  }
+  assertEquals(
+    rows[0],
+    "cc-v2-factorial,0f12a9c4-7b3e-4d21-9a6c-5e8b1d2f3a40,campaign,cc-v2-plain,8,8,8,0,0,0,0,0,0,3.2,0,n/a,n/a,n/a,n/a,0.8,,0.5,0.25,4,n/a,n/a,n/a,false,HX-901 HX-902 HX-903 HX-904,descriptive",
+  );
+  assert(rows[3]!.includes(",n/a,no solves,0,0,3,"), rows[3]);
+});
+
+Deno.test("charts (M12-04 4): exploratory.csv labels every row exploratory; a missing value prints n/a, never 0", async () => {
+  const rows = csvRows(get(renderCharts([await v2()]), "exploratory.csv"));
+  assertEquals(rows.length, 8 + 6);
+  for (const row of rows) assertEquals(row.label, "exploratory");
+  const turns = rows.find((x) =>
+    x.kind === "arm" && x.arm === "cc-v2-realistic" && x.metric === "turns"
+  )!;
+  assertEquals([turns.value, turns.missing, turns.cells], ["n/a", "2", "2"]);
+  const delta = rows.find((x) =>
+    x.kind === "delta" && x.variant === "cc-v2-realistic" &&
+    x.metric === "turns"
+  )!;
+  assertEquals([delta.value, delta.missing, delta.pairs], ["n/a", "2", "0"]);
+  const tokens = rows.find((x) =>
+    x.kind === "delta" && x.variant === "cc-v2-plain-lsp" &&
+    x.metric === "tokens_out"
+  )!;
+  assertEquals([tokens.value, tokens.missing], ["-3000", "0"]);
+});
+
+Deno.test("charts (M12-04 5): the mock-contract fixture renders exactly the files and bytes it rendered before", async () => {
+  // sha256 of each file as rendered at master 0936645c, before M12-04.
+  const before: Record<string, string> = {
+    "mock-contract__87129b95__campaign-primary.svg":
+      "9cfe21ab5a4de1854986ae82cdb7a67079c89590b38f54c1b0cea7b4bc3bc8b5",
+    "mock-contract__87129b95__campaign-outcome.svg":
+      "72961915b5882bfa38d1125b4679708845af88bc7a5b303b5e097cb1030017d3",
+    "mock-contract__87129b95__campaign-tasks.svg":
+      "207aec6b520fae6ab3b27a4d0c5753a25cd05a14b1b7dbe07b2308f4f47e7fa1",
+    "arms.csv":
+      "a2be2fe4f7231f1dca1ecd8a2834a11441215cc144d3cc1ff5283a605a5dda95",
+    "comparisons.csv":
+      "2d3328623990e4bee478dc5dc0f94fd3a407aba139a12224ad777c926f565359",
+    "provenance.csv":
+      "d9d41c196797f1bf9e3c22cba47347417512e3e2efc69622ef6fb022300aecdd",
+  };
+  const fs = renderCharts([await base()]);
+  assertEquals(fs.map((f) => f.name), Object.keys(before));
+  for (const f of fs) {
+    assertEquals(await sha256(f.content), before[f.name], f.name);
+  }
+});
+
+Deno.test("charts (M12-04 6): a ledger without the four OpenRouter and pi-stop keys parses; a v1 ledger renders the same ledger.csv", async () => {
+  const r = await base();
+  const v1 = ledgerOf(r);
+  // sha256 at master 0936645c, before M12-04.
+  assertEquals(
+    await sha256(get(renderCharts([r], v1), "ledger.csv")),
+    "3d48bbf87ca0106b9d6111967e63886ae8c95e9acdc3e249e176187c97bb685d",
+  );
+  const {
+    openrouter_reference: _a,
+    openrouter_balance_readings: _b,
+    openrouter_actual_usd: _c,
+    pi_stop: _d,
+    ...rest
+  } = v1;
+  const l2 = { ...rest, paid_total_usd: 0, claude_code_cash_usd: 0 };
+  assert(Ledger.safeParse(l2).success);
+  const csv = get(renderCharts([r], l2), "ledger.csv");
+  assertEquals(csv.split("\n").slice(0, 3), [
+    "kind,experiment,campaign,key,value,scope,decision",
+    "scalar,,,paid_total_usd,0,all,",
+    "scalar,,,claude_code_cash_usd,0,all,",
+  ]);
+  assert(!csv.includes("openrouter") && !csv.includes("pi_stop"), csv);
+  // The four keys are one group: all or none.
+  assertThrows(
+    () => renderCharts([r], { ...l2, pi_stop: v1.pi_stop }),
+    Error,
+    "openrouter_reference",
+  );
+  // Without OpenRouter there is no cash to pay.
+  assertThrows(
+    () => renderCharts([r], { ...l2, paid_total_usd: 1 }),
+    Error,
+    "paid_total_usd",
+  );
+});
+
+Deno.test("charts (M12-04): the contrasts SVG shows C1-C3 as ratios with the unadjusted interval and the Holm decision, the interaction below a rule as exploratory", async () => {
+  const fs = renderCharts([await v2()]);
+  const svg = get(fs, "cc-v2-factorial__0f12a9c4__campaign-contrasts.svg");
+  const t = texts(svg).join(" ");
+  for (
+    const s of [
+      "C1 LSP effect without the realistic setup",
+      "ratio 0.36",
+      "variant lower",
+      "C3 realistic effect without LSP",
+      "CI suppressed",
+      "Interaction (exploratory, outside the Holm family)",
+      "1 selected task, 10,000 resamples, seed 4242",
+    ]
+  ) assertStringIncludes(t, s);
+  assert(svg.includes("<line "), "a rule above the interaction");
+  assertEquals(overflowing(svg), []);
+  assert(!svg.includes("NaN"));
+  // The CLI writes the four new files.
+  const dir = await testTempDir();
+  try {
+    const out = join(dir, "charts");
+    assertEquals(
+      await main([
+        "--out",
+        out,
+        "--report",
+        "tests/fixtures/harness/report-v2-factorial.json",
+      ]),
+      0,
+    );
+    const names = [];
+    for await (const e of Deno.readDir(out)) names.push(e.name);
+    for (
+      const n of [
+        "contrasts.csv",
+        "held_out.csv",
+        "exploratory.csv",
+        "cc-v2-factorial__0f12a9c4__campaign-contrasts.svg",
+      ]
+    ) assert(names.includes(n), n);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });

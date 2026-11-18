@@ -46,19 +46,27 @@ const Action = {
   execution: Id,
 };
 
+/** M12-04: present together (a v1 ledger) or absent together (v2, no OpenRouter, no pi). */
+const V1_GROUP = [
+  "openrouter_reference",
+  "openrouter_balance_readings",
+  "openrouter_actual_usd",
+  "pi_stop",
+] as const;
+
 /** Typed source for cash and actions (plan B10; schema rulings 2026-09-27). */
 export const Ledger = z.strictObject({
   v: z.literal(1),
   paid_total_usd: z.number().nonnegative(),
-  openrouter_actual_usd: z.number().nonnegative(),
+  openrouter_actual_usd: z.number().nonnegative().optional(),
   /** M6-02c: the OpenRouter balance the actual spend is measured from, and when it was read. */
   openrouter_reference: z.strictObject({
     usd: z.number().nonnegative(),
     at: z.iso.datetime(),
-  }),
+  }).optional(),
   openrouter_balance_readings: z.array(
     z.strictObject({ at: z.iso.datetime(), balance_usd: z.number() }),
-  ).min(1),
+  ).min(1).optional(),
   claude_code_cash_usd: z.literal(0),
   /** Ruling 3: totals of every experiment, headline or not. */
   experiments: z.array(z.strictObject({
@@ -87,7 +95,27 @@ export const Ledger = z.strictObject({
     at: z.iso.datetime().nullable(),
     last_complete_repeat: z.number().int().positive().nullable(),
     decision: Text.nullable(),
-  }),
+  }).optional(),
+}).superRefine((l, ctx) => {
+  const present = V1_GROUP.filter((k) => l[k] !== undefined);
+  if (present.length > 0 && present.length < V1_GROUP.length) {
+    ctx.addIssue({
+      code: "custom",
+      message: `${V1_GROUP.join(", ")} are one group, all or none; present: ${
+        present.join(", ")
+      }`,
+    });
+  }
+  // A v2 ledger (no OpenRouter) pays no cash.
+  if (present.length === 0 && l.paid_total_usd !== 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["paid_total_usd"],
+      message: `paid_total_usd must be 0 without ${
+        V1_GROUP.join(", ")
+      }, got ${l.paid_total_usd}`,
+    });
+  }
 });
 export type Ledger = z.infer<typeof Ledger>;
 
@@ -308,31 +336,36 @@ function checkLedger(reports: Report[], raw: unknown) {
       );
     }
   }
+  // The schema keeps the V1_GROUP keys together: all set (v1) or none (v2).
   const ref = l.openrouter_reference;
-  const early = l.openrouter_balance_readings.find((b) =>
-    Date.parse(b.at) < Date.parse(ref.at)
-  );
-  if (early) {
-    fail(
-      `openrouter balance reading ${early.at} is before the openrouter_reference (${ref.at})`,
-    );
-  }
-  const latest = [...l.openrouter_balance_readings].sort((a, b) =>
-    Date.parse(a.at) - Date.parse(b.at)
-  ).at(-1)!;
-  const expected = ref.usd - latest.balance_usd;
-  if (Math.abs(expected - l.openrouter_actual_usd) > 1e-9) {
-    fail(
-      `openrouter_actual_usd ${l.openrouter_actual_usd} is not the openrouter_reference ${ref.usd} (${ref.at}) minus the latest balance ${latest.balance_usd} (${latest.at})`,
-    );
-  }
-  if (l.paid_total_usd < l.openrouter_actual_usd) {
-    fail(
-      `ledger paid_total_usd ${l.paid_total_usd} is below openrouter_actual_usd ${l.openrouter_actual_usd}`,
-    );
-  }
+  const readings = l.openrouter_balance_readings;
+  const actual = l.openrouter_actual_usd;
   const s = l.pi_stop;
-  if (s.fired) {
+  if (ref && readings && actual !== undefined) {
+    const early = readings.find((b) => Date.parse(b.at) < Date.parse(ref.at));
+    if (early) {
+      fail(
+        `openrouter balance reading ${early.at} is before the openrouter_reference (${ref.at})`,
+      );
+    }
+    const latest = [...readings].sort((a, b) =>
+      Date.parse(a.at) - Date.parse(b.at)
+    ).at(-1)!;
+    const expected = ref.usd - latest.balance_usd;
+    if (Math.abs(expected - actual) > 1e-9) {
+      fail(
+        `openrouter_actual_usd ${actual} is not the openrouter_reference ${ref.usd} (${ref.at}) minus the latest balance ${latest.balance_usd} (${latest.at})`,
+      );
+    }
+    if (l.paid_total_usd < actual) {
+      fail(
+        `ledger paid_total_usd ${l.paid_total_usd} is below openrouter_actual_usd ${actual}`,
+      );
+    }
+  }
+  if (s === undefined) {
+    // v2 ledger: no pi stop to check.
+  } else if (s.fired) {
     if (s.experiment === null || s.at === null || s.decision === null) {
       fail("pi_stop fired but lacks its experiment, time or decision");
     }
@@ -382,20 +415,25 @@ function ledgerCsv(l: Ledger, actions: Scoped[]): string {
     key: string,
     value: unknown,
   ) => ["scalar", experiment, "", key, value as string, "all", ""];
+  // A v2 ledger (no V1_GROUP keys) has no OpenRouter or pi_stop rows.
+  const ref = l.openrouter_reference;
+  const pi = l.pi_stop;
   const rows = [
     scalar("", "paid_total_usd", l.paid_total_usd),
-    scalar("", "openrouter_actual_usd", l.openrouter_actual_usd),
-    scalar("", "openrouter_reference_usd", l.openrouter_reference.usd),
-    scalar("", "openrouter_reference_at", l.openrouter_reference.at),
+    ...(ref === undefined ? [] : [
+      scalar("", "openrouter_actual_usd", l.openrouter_actual_usd),
+      scalar("", "openrouter_reference_usd", ref.usd),
+      scalar("", "openrouter_reference_at", ref.at),
+    ]),
     scalar("", "claude_code_cash_usd", l.claude_code_cash_usd),
-    ...([
+    ...(pi === undefined ? [] : ([
       "fired",
       "experiment",
       "at",
       "last_complete_repeat",
       "decision",
     ] as const)
-      .map((k) => scalar("", `pi_stop.${k}`, l.pi_stop[k])),
+      .map((k) => scalar("", `pi_stop.${k}`, pi[k]))),
     ...l.experiments.flatMap((e) => [
       scalar(e.id, `${e.id}.attempted_cells`, e.attempted_cells),
       scalar(e.id, `${e.id}.executions`, e.executions),
@@ -424,6 +462,8 @@ interface Line {
   size?: number;
   bold?: boolean;
   fill?: string;
+  /** A horizontal rule instead of text (M12-04: above the interaction). */
+  rule?: boolean;
 }
 
 function header(r: Report, title: string): Line[] {
@@ -503,6 +543,13 @@ function svg(top: Line[], bars: Bar[], bottom: Line[]): string {
       } fill="${l.fill ?? "#222"}">${esc(t)}</text>`,
     );
   const text = (l: Line, x = 24) => {
+    if (l.rule) {
+      y += 12;
+      out.push(
+        `<line x1="${x}" y1="${y}" x2="${W - 24}" y2="${y}" stroke="#999"/>`,
+      );
+      return;
+    }
     const size = l.size ?? 13;
     for (const t of wrap(l.text, charsFit(W - x - 24, size))) {
       y += size + 8;
@@ -680,6 +727,302 @@ function tasksChart(r: Report): string {
   return svg(header(r, "Per-task pass rate (exploratory)"), bars, []);
 }
 
+// --- M12-04: pre-registered contrasts, held-out tasks, exploratory rollups ---
+
+type Analysis = Exclude<
+  NonNullable<Report["confirmatory"]>,
+  { withheld: string }
+>;
+type Contrast = Analysis["results"][number];
+const analysisOf = (r: Report): Analysis | null =>
+  r.confirmatory === undefined || "withheld" in r.confirmatory
+    ? null
+    : r.confirmatory;
+
+/** verdictText for a contrast: Holm decides; a suppressed interval says so first. */
+export function contrastVerdictText(c: Contrast): string {
+  if (c.ci === null) return "CI suppressed";
+  return c.decision.replace("_", " ");
+}
+
+function contrastLine(c: Contrast): string {
+  const f = METRIC[c.metric].num;
+  const r = (x: number | null) => x === null ? "n/a" : x.toFixed(2);
+  const ci = c.ci === null
+    ? `CI suppressed (${share(c.undefined_share)} undefined)`
+    : `${+(c.level * 100).toFixed(1)}% CI [${f(c.ci[0])}, ${
+      f(c.ci[1])
+    }] (unadjusted)`;
+  const ratioCi = c.ci_ratio
+    ? `, ratio CI [${r(c.ci_ratio[0])}, ${r(c.ci_ratio[1])}]`
+    : "";
+  const holm = c.confirmatory
+    ? `Holm p ${c.p_holm?.toFixed(4) ?? "n/a"} -> ${
+      c.decision.replace("_", " ")
+    }`
+    : `p ${c.p_value?.toFixed(4) ?? "n/a"}, no decision`;
+  return `${c.id}: ${c.variant} vs ${c.baseline} over ${c.pairs} pairs, ${c.tasks} tasks: ratio ${
+    r(c.ratio)
+  }, delta ${c.delta === null ? "n/a" : f(c.delta)}; ${ci}${ratioCi}; ${holm}`;
+}
+
+function contrastsChart(r: Report, k: Analysis): string {
+  const family = k.results.filter((c) => c.id !== "interaction");
+  const inter = k.results.filter((c) => c.id === "interaction");
+  const ratios = family.flatMap((c) => c.ratio === null ? [] : [c.ratio]);
+  const max = Math.max(1, ...ratios);
+  const bars = family.map((c, i) => ({
+    label: `${c.id} ${c.name}: ratio ${
+      c.ratio === null ? "n/a" : c.ratio.toFixed(2)
+    } (${c.variant} / ${c.baseline})`,
+    value: c.ratio,
+    max,
+    color: PALETTE[i % PALETTE.length]!,
+  }));
+  const n = k.tasks.length;
+  const bottom: Line[] = [
+    ...family.map((c) => ({ text: contrastLine(c), size: 12 })),
+    ...(inter.length === 0 ? [] : [
+      { text: "", rule: true },
+      ...inter.map((c) => ({
+        text: `Interaction (exploratory, outside the Holm family): ${c.name}. ${
+          contrastLine(c)
+        }`,
+        size: 12,
+        fill: "#666",
+      })),
+    ]),
+    {
+      text: `${n} selected task${n === 1 ? "" : "s"}, ${
+        k.bootstrap.resamples.toLocaleString("en-US")
+      } resamples, seed ${k.bootstrap.seed}; Holm at ${k.alpha} over ${
+        k.family.join(", ")
+      } is the only decision rule, the intervals are descriptive.`,
+      size: 12,
+    },
+  ];
+  return svg(
+    header(r, "Pre-registered contrasts (confirmatory, Holm)"),
+    bars,
+    bottom,
+  );
+}
+
+const ARMS_HEAD = [
+  "experiment",
+  "campaign",
+  "judging",
+  "arm",
+  "planned_cells",
+  "attempted_cells",
+  "scored_cells",
+  "unscored_cells",
+  "rejudge_budget_cells",
+  "pending_cells",
+  "unrun_cells",
+  "unknown_spend_cells",
+  "unknown_spend_terminal_cells",
+  "total_spend_usd",
+  "pending_spend_usd",
+  "unscored_spend_usd",
+  "campaign_raw_spend_usd",
+  "excluded_cells",
+  "excluded_known_spend_usd",
+  "cost_per_solved_task",
+  "cost_null_reason",
+  "pass_rate",
+  "pass_k",
+  "pass_k_tasks",
+  "infra_exposed",
+  "manual_reruns",
+  "rejudges",
+  "provisional",
+];
+
+/** One arms.csv row; held_out.csv reuses it without coverage (n/a). */
+function armRow(
+  id: string[],
+  a: Report["arms"][number],
+  cov: Report["coverage"][number] | undefined,
+  unscored: number | "" | null,
+  rejudges: number | null,
+  provisional: boolean,
+): (string | number | boolean | null)[] {
+  return [
+    ...id,
+    a.arm,
+    a.planned_cells,
+    a.attempted_cells,
+    a.scored_cells,
+    a.unscored_cells,
+    // H-04b; n/a for a report from before the field existed.
+    a.rejudge_budget_cells ?? null,
+    a.pending_cells,
+    a.unrun_cells,
+    a.unknown_spend_cells,
+    a.unknown_spend_terminal_cells,
+    a.total_spend_usd,
+    a.pending_spend_usd,
+    unscored,
+    cov?.campaign_raw_spend_usd ?? null,
+    cov?.excluded_cells ?? null,
+    cov?.excluded_known_spend_usd ?? null,
+    a.cost_per_solved_task,
+    costNullReason(a),
+    a.pass_rate,
+    a.pass_k,
+    a.pass_k_tasks,
+    cov?.infra_exposed ?? null,
+    cov?.manual_reruns ?? null,
+    rejudges,
+    provisional,
+  ];
+}
+
+/** contrasts.csv, held_out.csv and exploratory.csv (M12-04). */
+function v2Csvs(reports: Report[]): OutFile[] {
+  const id = (r: Report) => [r.experiment.id, r.campaign.id];
+  const contrasts = reports.flatMap((r) => {
+    const k = r.confirmatory;
+    if (k === undefined) return [];
+    if ("withheld" in k) {
+      return [[...id(r), "withheld", ...Array(18).fill(null), k.withheld]];
+    }
+    return k.results.map((c) => [
+      ...id(r),
+      c.id,
+      c.name,
+      c.confirmatory,
+      c.baseline,
+      c.variant,
+      c.pairs,
+      c.tasks,
+      c.delta,
+      c.ratio,
+      c.ci?.[0] ?? null,
+      c.ci?.[1] ?? null,
+      c.level,
+      c.bonferroni_ci?.[0] ?? null,
+      c.bonferroni_ci?.[1] ?? null,
+      c.undefined_share,
+      c.p_value ?? null,
+      c.p_holm,
+      k.alpha,
+      c.decision,
+      contrastVerdictText(c),
+    ]);
+  });
+  const held = reports.flatMap((r) => {
+    const k = analysisOf(r);
+    if (k === null) return [];
+    const tasks = k.held_out.tasks.join(" ");
+    // Report-wide coverage, unscored spend and ledger counts do not apply.
+    return k.held_out.arms.map((a) => [
+      ...armRow(
+        [...id(r), r.judging.source],
+        a,
+        undefined,
+        null,
+        null,
+        a.provisional,
+      ),
+      tasks,
+      "descriptive",
+    ]);
+  });
+  const explo = reports.flatMap((r) => {
+    const e = r.exploratory;
+    if (e === undefined) return [];
+    const head = [...id(r), r.judging.source, e.label];
+    return [
+      ...e.arms.map((a) => [
+        ...head,
+        "arm",
+        a.arm,
+        "",
+        "",
+        a.metric,
+        a.value,
+        a.cells,
+        "",
+        "",
+        a.missing,
+        a.no_build,
+        a.not_applicable,
+      ]),
+      ...e.deltas.map((d) => [
+        ...head,
+        "delta",
+        "",
+        d.baseline,
+        d.variant,
+        d.metric,
+        d.delta,
+        "",
+        d.pairs,
+        d.tasks,
+        d.missing_pairs,
+        "",
+        "",
+      ]),
+    ];
+  });
+  return [
+    {
+      name: "contrasts.csv",
+      content: csv([
+        "experiment",
+        "campaign",
+        "id",
+        "name",
+        "confirmatory",
+        "baseline",
+        "variant",
+        "pairs",
+        "tasks",
+        "delta",
+        "ratio",
+        "ci_lo",
+        "ci_hi",
+        "level",
+        "bonferroni_lo",
+        "bonferroni_hi",
+        "undefined_share",
+        "p",
+        "p_holm",
+        "alpha",
+        "decision",
+        "verdict_text",
+      ], contrasts),
+    },
+    {
+      name: "held_out.csv",
+      content: csv([...ARMS_HEAD, "tasks", "label"], held),
+    },
+    {
+      name: "exploratory.csv",
+      content: csv([
+        "experiment",
+        "campaign",
+        "judging",
+        "label",
+        "kind",
+        "arm",
+        "baseline",
+        "variant",
+        "metric",
+        "value",
+        "cells",
+        "pairs",
+        "tasks",
+        "missing",
+        "no_build",
+        "not_applicable",
+      ], explo),
+    },
+  ];
+}
+
 // --- entry ---
 
 export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
@@ -737,74 +1080,27 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
       { name: `${p}-outcome.svg`, content: outcomeChart(r) },
       { name: `${p}-tasks.svg`, content: tasksChart(r) },
     );
+    const k = analysisOf(r);
+    if (k !== null) {
+      files.push({ name: `${p}-contrasts.svg`, content: contrastsChart(r, k) });
+    }
   }
   const id = (r: Report) => [r.experiment.id, r.campaign.id, r.judging.source];
   files.push({
     name: "arms.csv",
     content: csv(
-      [
-        "experiment",
-        "campaign",
-        "judging",
-        "arm",
-        "planned_cells",
-        "attempted_cells",
-        "scored_cells",
-        "unscored_cells",
-        "rejudge_budget_cells",
-        "pending_cells",
-        "unrun_cells",
-        "unknown_spend_cells",
-        "unknown_spend_terminal_cells",
-        "total_spend_usd",
-        "pending_spend_usd",
-        "unscored_spend_usd",
-        "campaign_raw_spend_usd",
-        "excluded_cells",
-        "excluded_known_spend_usd",
-        "cost_per_solved_task",
-        "cost_null_reason",
-        "pass_rate",
-        "pass_k",
-        "pass_k_tasks",
-        "infra_exposed",
-        "manual_reruns",
-        "rejudges",
-        "provisional",
-      ],
+      ARMS_HEAD,
       reports.flatMap((r) =>
         r.arms.map((a) => {
-          const cov = r.coverage.find((c) => c.arm === a.arm);
           const unscored = unscoredSpend(r, a.arm).usd;
-          return [
-            ...id(r),
-            a.arm,
-            a.planned_cells,
-            a.attempted_cells,
-            a.scored_cells,
-            a.unscored_cells,
-            // H-04b; n/a for a report from before the field existed.
-            a.rejudge_budget_cells ?? null,
-            a.pending_cells,
-            a.unrun_cells,
-            a.unknown_spend_cells,
-            a.unknown_spend_terminal_cells,
-            a.total_spend_usd,
-            a.pending_spend_usd,
+          return armRow(
+            id(r),
+            a,
+            r.coverage.find((c) => c.arm === a.arm),
             unscored === null ? "" : unscored,
-            cov?.campaign_raw_spend_usd ?? null,
-            cov?.excluded_cells ?? null,
-            cov?.excluded_known_spend_usd ?? null,
-            a.cost_per_solved_task,
-            costNullReason(a),
-            a.pass_rate,
-            a.pass_k,
-            a.pass_k_tasks,
-            cov?.infra_exposed ?? null,
-            cov?.manual_reruns ?? null,
             lg === null ? null : lg.reportedCount("rejudge", r, a.arm),
             r.provisional,
-          ];
+          );
         })
       ),
     ),
@@ -907,6 +1203,10 @@ export function renderCharts(reports: Report[], ledger?: Ledger): OutFile[] {
       ]),
     ),
   });
+  // M12-04: only with `confirmatory`, so a report without it renders as before.
+  if (reports.some((r) => r.confirmatory !== undefined)) {
+    files.push(...v2Csvs(reports));
+  }
   if (lg !== null) {
     files.push({ name: "ledger.csv", content: ledgerCsv(lg.l, lg.actions) });
   }

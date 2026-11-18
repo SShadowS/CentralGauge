@@ -1,0 +1,1165 @@
+{
+  "v": 1,
+  "experiment": {
+    "id": "cc-v2-factorial",
+    "hypothesis": "Fixture (M12-04, invented numbers): the AL language server and the realistic team setup each lower cost per solved task.",
+    "primary_metric": "cost_per_solved_task",
+    "baseline": "cc-v2-plain",
+    "variants": [
+      "cc-v2-plain-lsp",
+      "cc-v2-realistic",
+      "cc-v2-realistic-lsp"
+    ]
+  },
+  "campaign": {
+    "id": "0f12a9c4-7b3e-4d21-9a6c-5e8b1d2f3a40",
+    "created_at": "2026-11-18T09:00:00.000Z",
+    "task_set_identity": "1111111111111111111111111111111111111111111111111111111111111111",
+    "tasks": 5
+  },
+  "judging": {
+    "source": "campaign",
+    "identity": "1111111111111111111111111111111111111111111111111111111111111111",
+    "tasks_with_other_oracle": []
+  },
+  "provisional": false,
+  "repeats": {
+    "planned": 2,
+    "reported": 2
+  },
+  "partial": null,
+  "metric_labels": {
+    "cost_per_solved_task": "primary",
+    "pass_rate": "exploratory",
+    "pass_k": "exploratory"
+  },
+  "coverage": [
+    {
+      "arm": "cc-v2-plain",
+      "executions": 2,
+      "manual_reruns": 0,
+      "infra_exposed": 0,
+      "incomplete_telemetry": {},
+      "unverified_components": [],
+      "cost_assumptions": {},
+      "trace": {
+        "executions": 2,
+        "with_trace": 2,
+        "complete": 2,
+        "invalid": 0,
+        "tool_calls": 40,
+        "rule_classified": 40,
+        "unclassified": 0,
+        "unreplayable": 0,
+        "rules": "rules@1"
+      },
+      "excluded_cells": 0,
+      "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
+      "campaign_raw_spend_usd": 0.9
+    },
+    {
+      "arm": "cc-v2-plain-lsp",
+      "executions": 2,
+      "manual_reruns": 0,
+      "infra_exposed": 0,
+      "incomplete_telemetry": {},
+      "unverified_components": [],
+      "cost_assumptions": {},
+      "trace": {
+        "executions": 2,
+        "with_trace": 2,
+        "complete": 2,
+        "invalid": 0,
+        "tool_calls": 30,
+        "rule_classified": 30,
+        "unclassified": 0,
+        "unreplayable": 0,
+        "rules": "rules@1"
+      },
+      "excluded_cells": 0,
+      "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
+      "campaign_raw_spend_usd": 0.64
+    },
+    {
+      "arm": "cc-v2-realistic",
+      "executions": 2,
+      "manual_reruns": 0,
+      "infra_exposed": 0,
+      "incomplete_telemetry": {},
+      "unverified_components": [],
+      "cost_assumptions": {},
+      "trace": {
+        "executions": 2,
+        "with_trace": 2,
+        "complete": 2,
+        "invalid": 0,
+        "tool_calls": 50,
+        "rule_classified": 50,
+        "unclassified": 0,
+        "unreplayable": 0,
+        "rules": "rules@1"
+      },
+      "excluded_cells": 0,
+      "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
+      "campaign_raw_spend_usd": 1.15
+    },
+    {
+      "arm": "cc-v2-realistic-lsp",
+      "executions": 2,
+      "manual_reruns": 0,
+      "infra_exposed": 0,
+      "incomplete_telemetry": {},
+      "unverified_components": [],
+      "cost_assumptions": {},
+      "trace": {
+        "executions": 2,
+        "with_trace": 2,
+        "complete": 2,
+        "invalid": 0,
+        "tool_calls": 44,
+        "rule_classified": 44,
+        "unclassified": 0,
+        "unreplayable": 0,
+        "rules": "rules@1"
+      },
+      "excluded_cells": 0,
+      "excluded_known_spend_usd": 0,
+      "excluded_trace_invalid": 0,
+      "campaign_raw_spend_usd": 1.35
+    }
+  ],
+  "trace_invalid": [],
+  "diffs": [
+    {
+      "variant": "cc-v2-plain-lsp",
+      "differing": [
+        "settings"
+      ]
+    },
+    {
+      "variant": "cc-v2-realistic",
+      "differing": [
+        "settings"
+      ]
+    },
+    {
+      "variant": "cc-v2-realistic-lsp",
+      "differing": [
+        "settings"
+      ]
+    }
+  ],
+  "arms": [
+    {
+      "arm": "cc-v2-plain",
+      "planned_cells": 2,
+      "attempted_cells": 2,
+      "scored_cells": 2,
+      "unscored_cells": 0,
+      "rejudge_budget_cells": 0,
+      "pending_cells": 0,
+      "unrun_cells": 0,
+      "unknown_spend_cells": 0,
+      "unknown_spend_terminal_cells": 0,
+      "total_spend_usd": 0.9,
+      "pending_spend_usd": 0,
+      "cost_per_solved_task": 0.9,
+      "pass_rate": 0.5,
+      "pass_k": 0,
+      "pass_k_tasks": 1,
+      "provisional": false
+    },
+    {
+      "arm": "cc-v2-plain-lsp",
+      "planned_cells": 2,
+      "attempted_cells": 2,
+      "scored_cells": 2,
+      "unscored_cells": 0,
+      "rejudge_budget_cells": 0,
+      "pending_cells": 0,
+      "unrun_cells": 0,
+      "unknown_spend_cells": 0,
+      "unknown_spend_terminal_cells": 0,
+      "total_spend_usd": 0.64,
+      "pending_spend_usd": 0,
+      "cost_per_solved_task": 0.32,
+      "pass_rate": 1,
+      "pass_k": 1,
+      "pass_k_tasks": 1,
+      "provisional": false
+    },
+    {
+      "arm": "cc-v2-realistic",
+      "planned_cells": 2,
+      "attempted_cells": 2,
+      "scored_cells": 2,
+      "unscored_cells": 0,
+      "rejudge_budget_cells": 0,
+      "pending_cells": 0,
+      "unrun_cells": 0,
+      "unknown_spend_cells": 0,
+      "unknown_spend_terminal_cells": 0,
+      "total_spend_usd": 1.15,
+      "pending_spend_usd": 0,
+      "cost_per_solved_task": 1.15,
+      "pass_rate": 0.5,
+      "pass_k": 0,
+      "pass_k_tasks": 1,
+      "provisional": false
+    },
+    {
+      "arm": "cc-v2-realistic-lsp",
+      "planned_cells": 2,
+      "attempted_cells": 2,
+      "scored_cells": 2,
+      "unscored_cells": 0,
+      "rejudge_budget_cells": 0,
+      "pending_cells": 0,
+      "unrun_cells": 0,
+      "unknown_spend_cells": 0,
+      "unknown_spend_terminal_cells": 0,
+      "total_spend_usd": 1.35,
+      "pending_spend_usd": 0,
+      "cost_per_solved_task": 1.35,
+      "pass_rate": 0.5,
+      "pass_k": 0,
+      "pass_k_tasks": 1,
+      "provisional": false
+    }
+  ],
+  "comparisons": [
+    {
+      "metric": "cost_per_solved_task",
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-plain-lsp",
+      "pairs": 2,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {}
+      },
+      "level": 0.95,
+      "resamples": 10000,
+      "seed": 4242,
+      "provisional": false,
+      "delta": -0.58,
+      "ci": [
+        -0.8,
+        -0.3
+      ],
+      "undefined_share": 0,
+      "distinguishable": true,
+      "primary": true,
+      "label": "primary",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "metric": "cost_per_solved_task",
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-realistic",
+      "pairs": 2,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {}
+      },
+      "level": 0.95,
+      "resamples": 10000,
+      "seed": 4242,
+      "provisional": false,
+      "delta": 0.25,
+      "ci": null,
+      "undefined_share": 0.01,
+      "distinguishable": null,
+      "primary": true,
+      "label": "primary",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "metric": "cost_per_solved_task",
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-realistic-lsp",
+      "pairs": 2,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {}
+      },
+      "level": 0.95,
+      "resamples": 10000,
+      "seed": 4242,
+      "provisional": false,
+      "delta": 0.45,
+      "ci": [
+        0.05,
+        0.9
+      ],
+      "undefined_share": 0,
+      "distinguishable": true,
+      "primary": true,
+      "label": "primary",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "metric": "pass_rate",
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-plain-lsp",
+      "pairs": 2,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {}
+      },
+      "level": 0.95,
+      "resamples": 10000,
+      "seed": 4242,
+      "provisional": false,
+      "delta": 0.5,
+      "ci": [
+        0,
+        1
+      ],
+      "undefined_share": 0,
+      "distinguishable": false,
+      "primary": false,
+      "label": "exploratory",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "metric": "pass_rate",
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-realistic",
+      "pairs": 2,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {}
+      },
+      "level": 0.95,
+      "resamples": 10000,
+      "seed": 4242,
+      "provisional": false,
+      "delta": 0,
+      "ci": [
+        -0.5,
+        0.5
+      ],
+      "undefined_share": 0,
+      "distinguishable": false,
+      "primary": false,
+      "label": "exploratory",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "metric": "pass_rate",
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-realistic-lsp",
+      "pairs": 2,
+      "tasks": 1,
+      "tasks_dropped": 0,
+      "excluded": {
+        "baseline": {},
+        "variant": {}
+      },
+      "level": 0.95,
+      "resamples": 10000,
+      "seed": 4242,
+      "provisional": false,
+      "delta": 0,
+      "ci": [
+        -0.5,
+        0.5
+      ],
+      "undefined_share": 0,
+      "distinguishable": false,
+      "primary": false,
+      "label": "exploratory",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "flips": [
+    {
+      "task": "HX-001",
+      "kind": "bugfix",
+      "coupling": [
+        "events"
+      ],
+      "pass_rate": {
+        "cc-v2-plain": 0.5,
+        "cc-v2-plain-lsp": 1,
+        "cc-v2-realistic": 0.5,
+        "cc-v2-realistic-lsp": 0.5
+      }
+    }
+  ],
+  "efficiency": [
+    {
+      "arm": "cc-v2-plain",
+      "host_logs": 0,
+      "backend_requests": 6,
+      "logical_builds": 4,
+      "per_app_compiles": 8,
+      "test_runs": 2,
+      "diagnostics_per_build": 1.5,
+      "verdict_ms_median": 60000,
+      "verdict_queue_ms_median": 10,
+      "backend_queue_ms_median": 20
+    },
+    {
+      "arm": "cc-v2-plain-lsp",
+      "host_logs": 0,
+      "backend_requests": 4,
+      "logical_builds": 2,
+      "per_app_compiles": 4,
+      "test_runs": 2,
+      "diagnostics_per_build": 0.5,
+      "verdict_ms_median": 55000,
+      "verdict_queue_ms_median": 10,
+      "backend_queue_ms_median": 20
+    },
+    {
+      "arm": "cc-v2-realistic",
+      "host_logs": 0,
+      "backend_requests": 8,
+      "logical_builds": 5,
+      "per_app_compiles": 10,
+      "test_runs": 3,
+      "diagnostics_per_build": 2,
+      "verdict_ms_median": 65000,
+      "verdict_queue_ms_median": 10,
+      "backend_queue_ms_median": 20
+    },
+    {
+      "arm": "cc-v2-realistic-lsp",
+      "host_logs": 0,
+      "backend_requests": 7,
+      "logical_builds": 4,
+      "per_app_compiles": 8,
+      "test_runs": 3,
+      "diagnostics_per_build": 1,
+      "verdict_ms_median": 62000,
+      "verdict_queue_ms_median": 10,
+      "backend_queue_ms_median": 20
+    }
+  ],
+  "slices": [
+    {
+      "by": "kind",
+      "value": "bugfix",
+      "tasks": 1,
+      "pass_rate": {
+        "cc-v2-plain": 0.5,
+        "cc-v2-plain-lsp": 1,
+        "cc-v2-realistic": 0.5,
+        "cc-v2-realistic-lsp": 0.5
+      }
+    }
+  ],
+  "both_pass": [
+    {
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-plain-lsp",
+      "pairs": 2,
+      "both_pass": 1,
+      "baseline_only": 0,
+      "variant_only": 1,
+      "neither": 0
+    },
+    {
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-realistic",
+      "pairs": 2,
+      "both_pass": 1,
+      "baseline_only": 0,
+      "variant_only": 0,
+      "neither": 1
+    },
+    {
+      "baseline": "cc-v2-plain",
+      "variant": "cc-v2-realistic-lsp",
+      "pairs": 2,
+      "both_pass": 1,
+      "baseline_only": 0,
+      "variant_only": 0,
+      "neither": 1
+    }
+  ],
+  "confirmatory": {
+    "preregistration": {
+      "path": "harness/preregistration/fixture.yml",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "protocol_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "amendments": [],
+    "alpha": 0.05,
+    "family": [
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "zero_solve": {
+      "rule": "suppress_any_undefined"
+    },
+    "bootstrap": {
+      "resamples": 10000,
+      "seed": 4242,
+      "level": 0.95
+    },
+    "tasks": [
+      "HX-001"
+    ],
+    "results": [
+      {
+        "metric": "cost_per_solved_task",
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-plain-lsp",
+        "pairs": 2,
+        "tasks": 1,
+        "tasks_dropped": 0,
+        "excluded": {
+          "baseline": {},
+          "variant": {}
+        },
+        "level": 0.95,
+        "resamples": 10000,
+        "seed": 4242,
+        "provisional": false,
+        "delta": -0.58,
+        "ci": [
+          -0.8,
+          -0.3
+        ],
+        "undefined_share": 0,
+        "distinguishable": null,
+        "p_value": 0.004,
+        "values": {
+          "baseline": 0.9,
+          "variant": 0.32
+        },
+        "zero_solve": {
+          "rule": "suppress_any_undefined"
+        },
+        "method": "bootstrap-t",
+        "theta": -1.03,
+        "se": 0.3,
+        "t": -3.43,
+        "ci_log": [
+          -1.61,
+          -0.43
+        ],
+        "ci_ratio": [
+          0.2,
+          0.65
+        ],
+        "bt_undefined_share": 0,
+        "id": "C1",
+        "name": "LSP effect without the realistic setup",
+        "confirmatory": true,
+        "p_holm": 0.012,
+        "decision": "variant_lower",
+        "bonferroni_ci": [
+          -0.85,
+          -0.25
+        ],
+        "bonferroni_ci_log": [
+          -1.71,
+          -0.33
+        ],
+        "bonferroni_ci_ratio": [
+          0.18,
+          0.72
+        ],
+        "ratio": 0.36
+      },
+      {
+        "metric": "cost_per_solved_task",
+        "baseline": "cc-v2-realistic",
+        "variant": "cc-v2-realistic-lsp",
+        "pairs": 2,
+        "tasks": 1,
+        "tasks_dropped": 0,
+        "excluded": {
+          "baseline": {},
+          "variant": {}
+        },
+        "level": 0.95,
+        "resamples": 10000,
+        "seed": 4242,
+        "provisional": false,
+        "delta": 0.2,
+        "ci": [
+          -0.1,
+          0.5
+        ],
+        "undefined_share": 0,
+        "distinguishable": null,
+        "p_value": 0.3,
+        "values": {
+          "baseline": 1.15,
+          "variant": 1.35
+        },
+        "zero_solve": {
+          "rule": "suppress_any_undefined"
+        },
+        "method": "bootstrap-t",
+        "theta": 0.16,
+        "se": 0.25,
+        "t": 0.64,
+        "ci_log": [
+          -0.33,
+          0.65
+        ],
+        "ci_ratio": [
+          0.72,
+          1.92
+        ],
+        "bt_undefined_share": 0,
+        "id": "C2",
+        "name": "LSP effect with the realistic setup",
+        "confirmatory": true,
+        "p_holm": 0.6,
+        "decision": "no_decision",
+        "bonferroni_ci": [
+          -0.15,
+          0.55
+        ],
+        "bonferroni_ci_log": [
+          -0.43,
+          0.75
+        ],
+        "bonferroni_ci_ratio": [
+          0.65,
+          2.12
+        ],
+        "ratio": 1.17
+      },
+      {
+        "metric": "cost_per_solved_task",
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-realistic",
+        "pairs": 2,
+        "tasks": 1,
+        "tasks_dropped": 0,
+        "excluded": {
+          "baseline": {},
+          "variant": {}
+        },
+        "level": 0.95,
+        "resamples": 10000,
+        "seed": 4242,
+        "provisional": false,
+        "delta": 0.25,
+        "ci": null,
+        "undefined_share": 0.01,
+        "distinguishable": null,
+        "p_value": 0.21,
+        "values": {
+          "baseline": 0.9,
+          "variant": 1.15
+        },
+        "zero_solve": {
+          "rule": "suppress_any_undefined"
+        },
+        "method": "bootstrap-t",
+        "theta": 0.25,
+        "se": 0.28,
+        "t": 0.89,
+        "ci_log": [
+          -0.3,
+          0.79
+        ],
+        "ci_ratio": [
+          0.74,
+          2.2
+        ],
+        "bt_undefined_share": 0.01,
+        "id": "C3",
+        "name": "realistic effect without LSP",
+        "confirmatory": true,
+        "p_holm": 0.42,
+        "decision": "no_decision",
+        "bonferroni_ci": null,
+        "bonferroni_ci_log": [
+          -0.4,
+          0.89
+        ],
+        "bonferroni_ci_ratio": [
+          0.67,
+          2.44
+        ],
+        "ratio": 1.28
+      },
+      {
+        "metric": "cost_per_solved_task",
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-realistic-lsp",
+        "pairs": 2,
+        "tasks": 1,
+        "tasks_dropped": 0,
+        "excluded": {
+          "baseline": {
+            "missing": 0
+          },
+          "variant": {}
+        },
+        "level": 0.95,
+        "resamples": 10000,
+        "seed": 4242,
+        "provisional": false,
+        "values": {
+          "baseline": null,
+          "variant": null
+        },
+        "delta": 0.78,
+        "ci": [
+          -0.2,
+          1.7
+        ],
+        "undefined_share": 0,
+        "distinguishable": null,
+        "p_value": 0.15,
+        "zero_solve": {
+          "rule": "suppress_any_undefined"
+        },
+        "method": "bootstrap-t",
+        "theta": 0.6,
+        "se": 0.4,
+        "t": 1.5,
+        "ci_log": [
+          -0.18,
+          1.38
+        ],
+        "ci_ratio": [
+          0.84,
+          3.97
+        ],
+        "bt_undefined_share": 0,
+        "id": "interaction",
+        "name": "LSP effect differs by realistic level",
+        "confirmatory": false,
+        "p_holm": null,
+        "decision": "no_decision",
+        "bonferroni_ci": null,
+        "bonferroni_ci_log": null,
+        "bonferroni_ci_ratio": null,
+        "ratio": null
+      }
+    ],
+    "held_out": {
+      "tasks": [
+        "HX-901",
+        "HX-902",
+        "HX-903",
+        "HX-904"
+      ],
+      "arms": [
+        {
+          "arm": "cc-v2-plain",
+          "planned_cells": 8,
+          "attempted_cells": 8,
+          "scored_cells": 8,
+          "unscored_cells": 0,
+          "rejudge_budget_cells": 0,
+          "pending_cells": 0,
+          "unrun_cells": 0,
+          "unknown_spend_cells": 0,
+          "unknown_spend_terminal_cells": 0,
+          "total_spend_usd": 3.2,
+          "pending_spend_usd": 0,
+          "cost_per_solved_task": 0.8,
+          "pass_rate": 0.5,
+          "pass_k": 0.25,
+          "pass_k_tasks": 4,
+          "provisional": false
+        },
+        {
+          "arm": "cc-v2-plain-lsp",
+          "planned_cells": 8,
+          "attempted_cells": 8,
+          "scored_cells": 8,
+          "unscored_cells": 0,
+          "rejudge_budget_cells": 0,
+          "pending_cells": 0,
+          "unrun_cells": 0,
+          "unknown_spend_cells": 0,
+          "unknown_spend_terminal_cells": 0,
+          "total_spend_usd": 2.4,
+          "pending_spend_usd": 0,
+          "cost_per_solved_task": 0.4,
+          "pass_rate": 0.75,
+          "pass_k": 0.5,
+          "pass_k_tasks": 4,
+          "provisional": false
+        },
+        {
+          "arm": "cc-v2-realistic",
+          "planned_cells": 8,
+          "attempted_cells": 8,
+          "scored_cells": 8,
+          "unscored_cells": 0,
+          "rejudge_budget_cells": 0,
+          "pending_cells": 0,
+          "unrun_cells": 0,
+          "unknown_spend_cells": 0,
+          "unknown_spend_terminal_cells": 0,
+          "total_spend_usd": 4,
+          "pending_spend_usd": 0,
+          "cost_per_solved_task": 1,
+          "pass_rate": 0.5,
+          "pass_k": 0.25,
+          "pass_k_tasks": 4,
+          "provisional": false
+        },
+        {
+          "arm": "cc-v2-realistic-lsp",
+          "planned_cells": 8,
+          "attempted_cells": 8,
+          "scored_cells": 7,
+          "unscored_cells": 1,
+          "rejudge_budget_cells": 0,
+          "pending_cells": 0,
+          "unrun_cells": 0,
+          "unknown_spend_cells": 0,
+          "unknown_spend_terminal_cells": 0,
+          "total_spend_usd": 3.5,
+          "pending_spend_usd": 0,
+          "cost_per_solved_task": null,
+          "pass_rate": 0,
+          "pass_k": 0,
+          "pass_k_tasks": 3,
+          "provisional": false
+        }
+      ]
+    },
+    "missing": {
+      "planned": 2,
+      "contrasts": {
+        "C1": {
+          "dropped": 0,
+          "tasks_affected": []
+        },
+        "C2": {
+          "dropped": 0,
+          "tasks_affected": []
+        },
+        "C3": {
+          "dropped": 0,
+          "tasks_affected": []
+        },
+        "interaction": {
+          "dropped": 0,
+          "tasks_affected": []
+        }
+      }
+    },
+    "sensitivity": {
+      "label": {
+        "C1": "robust",
+        "C2": "robust",
+        "C3": "robust"
+      }
+    }
+  },
+  "cells": [
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-plain",
+      "repeat": 1,
+      "status": "scored",
+      "pass": true,
+      "spend_usd": 0.5,
+      "known_spend_usd": 0.5,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a01",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b01",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-plain",
+      "repeat": 2,
+      "status": "scored",
+      "pass": false,
+      "spend_usd": 0.4,
+      "known_spend_usd": 0.4,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a02",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b02",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-plain-lsp",
+      "repeat": 1,
+      "status": "scored",
+      "pass": true,
+      "spend_usd": 0.3,
+      "known_spend_usd": 0.3,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a03",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b03",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-plain-lsp",
+      "repeat": 2,
+      "status": "scored",
+      "pass": true,
+      "spend_usd": 0.34,
+      "known_spend_usd": 0.34,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a04",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b04",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-realistic",
+      "repeat": 1,
+      "status": "scored",
+      "pass": true,
+      "spend_usd": 0.6,
+      "known_spend_usd": 0.6,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a05",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b05",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-realistic",
+      "repeat": 2,
+      "status": "scored",
+      "pass": false,
+      "spend_usd": 0.55,
+      "known_spend_usd": 0.55,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a06",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b06",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-realistic-lsp",
+      "repeat": 1,
+      "status": "scored",
+      "pass": true,
+      "spend_usd": 0.7,
+      "known_spend_usd": 0.7,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a07",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b07",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    },
+    {
+      "task": "HX-001",
+      "arm": "cc-v2-realistic-lsp",
+      "repeat": 2,
+      "status": "scored",
+      "pass": false,
+      "spend_usd": 0.65,
+      "known_spend_usd": 0.65,
+      "attempts": 1,
+      "used_execution": "00000000-0000-4000-a000-000000000a08",
+      "used_kind": "planned",
+      "judgment_id": "00000000-0000-4000-a000-000000000b08",
+      "oracle_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scorer_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "manual_reruns": 0
+    }
+  ],
+  "exploratory": {
+    "label": "exploratory",
+    "arms": [
+      {
+        "arm": "cc-v2-plain",
+        "metric": "tokens_out",
+        "value": 12000,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-plain",
+        "metric": "turns",
+        "value": 30,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-plain-lsp",
+        "metric": "tokens_out",
+        "value": 9000,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-plain-lsp",
+        "metric": "turns",
+        "value": 22,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-realistic",
+        "metric": "tokens_out",
+        "value": 15000,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-realistic",
+        "metric": "turns",
+        "value": null,
+        "cells": 2,
+        "missing": 2,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-realistic-lsp",
+        "metric": "tokens_out",
+        "value": 14000,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      },
+      {
+        "arm": "cc-v2-realistic-lsp",
+        "metric": "turns",
+        "value": 35,
+        "cells": 2,
+        "missing": 0,
+        "no_build": 0,
+        "not_applicable": 0
+      }
+    ],
+    "deltas": [
+      {
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-plain-lsp",
+        "metric": "tokens_out",
+        "delta": -3000,
+        "pairs": 2,
+        "tasks": 1,
+        "missing_pairs": 0
+      },
+      {
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-plain-lsp",
+        "metric": "turns",
+        "delta": -8,
+        "pairs": 2,
+        "tasks": 1,
+        "missing_pairs": 0
+      },
+      {
+        "baseline": "cc-v2-realistic",
+        "variant": "cc-v2-realistic-lsp",
+        "metric": "tokens_out",
+        "delta": -1000,
+        "pairs": 2,
+        "tasks": 1,
+        "missing_pairs": 0
+      },
+      {
+        "baseline": "cc-v2-realistic",
+        "variant": "cc-v2-realistic-lsp",
+        "metric": "turns",
+        "delta": null,
+        "pairs": 0,
+        "tasks": 0,
+        "missing_pairs": 2
+      },
+      {
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-realistic",
+        "metric": "tokens_out",
+        "delta": 3000,
+        "pairs": 2,
+        "tasks": 1,
+        "missing_pairs": 0
+      },
+      {
+        "baseline": "cc-v2-plain",
+        "variant": "cc-v2-realistic",
+        "metric": "turns",
+        "delta": null,
+        "pairs": 0,
+        "tasks": 0,
+        "missing_pairs": 2
+      }
+    ],
+    "usage_reconciliation": {
+      "cc-v2-plain": {
+        "exact": 2,
+        "compaction_excess": 0,
+        "web_excess": 0,
+        "unreconciled": 0,
+        "absent": 0
+      },
+      "cc-v2-plain-lsp": {
+        "exact": 2,
+        "compaction_excess": 0,
+        "web_excess": 0,
+        "unreconciled": 0,
+        "absent": 0
+      },
+      "cc-v2-realistic": {
+        "exact": 2,
+        "compaction_excess": 0,
+        "web_excess": 0,
+        "unreconciled": 0,
+        "absent": 0
+      },
+      "cc-v2-realistic-lsp": {
+        "exact": 2,
+        "compaction_excess": 0,
+        "web_excess": 0,
+        "unreconciled": 0,
+        "absent": 0
+      }
+    },
+    "compaction_excess": []
+  }
+}
