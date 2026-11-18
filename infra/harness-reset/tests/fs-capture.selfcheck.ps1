@@ -59,6 +59,74 @@ try {
   Assert ((Clear-NstFreezeLeftover 'x' $wd) -eq 1) 'one live leftover'
   Assert (Gone $t) 'leftover holder ended'
   Assert (Runs) 'runs after the leftover is cleared'
+
+  # H-116 1a/1b (issue #34): the start-of-freeze deadline (a parameter, default ~90 s from launch) ends a holder that
+  # has not attached by writing its release file. Forced to 0 s the release is there before the attach: the holder
+  # exits by itself ('aborted before attach', never attached), no kill, the target runs on, no hold file is left.
+  Assert ($NstFreezeStartSeconds -ge 85 -and $NstFreezeStartSeconds -le 95) "start deadline ~90 s: $NstFreezeStartSeconds"
+  Assert ($NstHoldSeconds -eq 55) "hold bound unchanged: $NstHoldSeconds"
+  if (-not ('CgSelfDbg' -as [type])) {
+    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CgSelfDbg { [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CheckRemoteDebuggerPresent(IntPtr h, ref bool p); }'
+  }
+  function Debugged { $d = $false; [void][CgSelfDbg]::CheckRemoteDebuggerPresent($busy.Handle, [ref]$d); $d }
+  $global:cgKilled = [Collections.Generic.List[string]]::new()
+  $global:cgLaunched = [Collections.Generic.List[int]]::new()
+  # every holder this check starts, by pid (the real launch, recorded); a kill is recorded, never done
+  function global:Start-Process($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru) {
+    $p = Microsoft.PowerShell.Management\Start-Process $FilePath -ArgumentList $ArgumentList -WindowStyle $WindowStyle -PassThru
+    $global:cgLaunched.Add($p.Id)
+    $p
+  }
+  function global:Stop-Process { $global:cgKilled.Add("$args") }
+  try {
+    $err = ''
+    try { Enable-NstFreeze 'x' 30 $wd $busy.Id 0 | Out-Null } catch { $err = $_.Exception.Message }
+    Assert ($err -match '^NST freeze failed: FAILED failed\|\d+\|aborted before attach$') "aborted before attach: '$err'"
+    Assert ($global:cgKilled.Count -eq 0) "no kill: $($global:cgKilled -join '; ')"
+    Assert ($global:cgLaunched.Count -eq 1) "one holder: $($global:cgLaunched -join ',')"
+    $h = Get-Process -Id $global:cgLaunched[0] -ErrorAction SilentlyContinue
+    Assert ((-not $h) -or $h.HasExited) 'the holder exited by itself'
+    Assert (-not (Debugged)) 'no debugger attached to the target'
+    Assert (Runs) 'the target runs on'
+    Assert (-not (Get-ChildItem -LiteralPath $wd -Filter 'nst-freeze.*' -File)) 'no hold file left'
+  } finally {
+    Remove-Item function:Start-Process, function:Stop-Process -ErrorAction SilentlyContinue
+  }
+  # 1b: the phase marker names the attach before it happens (the deadline's failure text carries the last marker)
+  $src = (Get-Command Enable-NstFreeze).ScriptBlock.ToString()
+  $ia = $src.IndexOf('Put "attaching|`$PID|'); $ir = $src.IndexOf('aborted before attach'); $id = $src.IndexOf('[CgDbg]::DebugActiveProcess(`$p.Id)')
+  Assert ($ia -gt 0 -and $ia -lt $ir -and $ir -lt $id) "attaching marker, then the release check, then the attach ($ia, $ir, $id)"
+
+  # 1a: a holder that neither exits on the release nor dies on the kill: 'FAILED STUCK holder <pid>', marker kept.
+  # Stand-in holder: a process this check starts that writes the phase marker and spins (the real launch is replaced).
+  $global:cgStuck = $null
+  function global:Start-Process($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru) {
+    $enc = "$ArgumentList" -split ' ' | Select-Object -Last 1
+    $mk = [regex]::Match([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($enc)), "marker = '([^']+)'").Groups[1].Value
+    $global:cgStuck = Microsoft.PowerShell.Management\Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList "-NoProfile -Command `"Set-Content -LiteralPath '$mk' -Value ('attaching|' + `$PID + '|' + (Get-Process -Id `$PID).StartTime.Ticks) -NoNewline; while (`$true) { }`""
+    $global:cgStuck
+  }
+  function global:Stop-Process { $global:cgKilled.Add("$args") }
+  try {
+    $err = ''
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    try { Enable-NstFreeze 'x' 30 $wd $busy.Id 2 | Out-Null } catch { $err = $_.Exception.Message }
+    Assert ($global:cgStuck) 'the stand-in holder started'
+    Assert ($err -match "^NST freeze failed: FAILED STUCK holder $($global:cgStuck.Id)\b") "stuck: '$err'"
+    Assert ($err -match "attaching\|$($global:cgStuck.Id)") "the last phase is named: '$err'"
+    Assert ($global:cgKilled.Count -eq 1) "killed once as the last resort: $($global:cgKilled -join '; ')"
+    Assert ($sw.Elapsed.TotalSeconds -ge 15) "waited for a self-exit first: $($sw.Elapsed.TotalSeconds) s"
+    $kept = @(Get-ChildItem -LiteralPath $wd -Filter 'nst-freeze.*' -File | Where-Object { $_.Name -match '^nst-freeze\.[0-9a-f]{32}$' })
+    Assert ($kept.Count -eq 1 -and (Get-Content -LiteralPath $kept[0].FullName -Raw) -like 'attaching|*') "marker kept: $($kept.Name -join ',')"
+    # Review r1 M1: the next capture's sweep treats a kept attaching marker as a live holder (ends it), never as a
+    # stale file it may silently delete.
+    Assert ((Clear-NstFreezeLeftover 'x' $wd) -eq 1) 'a kept attaching marker is a live leftover'
+    Assert ($global:cgStuck.WaitForExit(10000)) 'the sweep ended the stuck holder'
+  } finally {
+    Remove-Item function:Start-Process, function:Stop-Process -ErrorAction SilentlyContinue
+    if ($global:cgStuck) { Stop-Process -Id $global:cgStuck.Id -Force -ErrorAction SilentlyContinue }
+  }
+  Remove-Item -Path (Join-Path $wd "nst-freeze.*") -Force -ErrorAction SilentlyContinue
 } finally {
   Stop-Process -Id $busy.Id -Force -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force $wd -ErrorAction SilentlyContinue

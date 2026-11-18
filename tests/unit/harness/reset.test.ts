@@ -7,6 +7,7 @@ import {
   failedReset,
   fsCaptureTiming,
   fsDiff,
+  fsFreezeFailedOnly,
   fsHoldExpiredOnly,
   fsHoldTiming,
   fsLineRestored,
@@ -687,6 +688,76 @@ Deno.test("H-79 part 2: a capture retries only when the hold's bound elapsing is
   assert(!fsHoldExpiredOnly(failedCap("garbage", RELEASE_EXPIRED)));
   assert(!fsHoldExpiredOnly(failedCap(...body)));
   assert(!fsHoldExpiredOnly([]));
+});
+
+/** H-116 3a: a capture as fs-capture.ps1 prints it when Enable-NstFreeze failed: no hold, no walk. */
+const NO_HOLD_T =
+  `{"hold_setup_ms":null,"held_ms":null,"w1_ms":null,"walk_ms":null,"w2_ms":null,"assert_ms":null,"bound_s":55,"roots":[]}`;
+const FREEZE_FAILED =
+  "E|(fs-capture)|NST freeze failed: FAILED failed 4242 aborted before attach";
+const noHoldCap = (...lines: string[]) => [
+  ...lines,
+  `T|${lines.length}|${NO_HOLD_T}`,
+  "E|(fs-capture)|exit 1",
+];
+
+Deno.test("H-116 3a: a capture retries only when the NST freeze failing is its only content (no hold, no walk)", () => {
+  assert(fsFreezeFailedOnly(noHoldCap(FREEZE_FAILED)));
+  assert(
+    fsFreezeFailedOnly(
+      noHoldCap(
+        "E|(fs-capture)|NST freeze failed: FAILED no freeze within 90 s",
+      ),
+    ),
+  );
+  // a stuck holder may still hold the NST: never retried
+  assert(
+    !fsFreezeFailedOnly(
+      noHoldCap(
+        "E|(fs-capture)|NST freeze failed: FAILED STUCK holder 4242 did not exit (marker 'attaching 4242')",
+      ),
+    ),
+  );
+  // anything a walk printed, or any other error line, is no retry
+  assert(!fsFreezeFailedOnly(noHoldCap(F("C:/W/a.txt"), FREEZE_FAILED)));
+  assert(
+    !fsFreezeFailedOnly(
+      noHoldCap(FREEZE_FAILED, "E|(fs-capture)|NST not quiescent after"),
+    ),
+  );
+  // a hold that started (held_ms set) is not this case: an expired hold after a walk still fails closed
+  assert(
+    !fsFreezeFailedOnly([
+      FREEZE_FAILED,
+      `T|1|{"held_ms":39000,"bound_s":55}`,
+      "E|(fs-capture)|exit 1",
+    ]),
+  );
+  assert(
+    !fsFreezeFailedOnly(
+      failedCap(w("D|16|5|C:/W"), F("C:/W/a.txt"), RELEASE_EXPIRED),
+    ),
+  );
+  // the path field must be exactly (fs-capture); the fsDigest wrapper's own line is no retry
+  assert(
+    !fsFreezeFailedOnly(
+      noHoldCap("E|(fs-capture): NST freeze failed|FAILED x"),
+    ),
+  );
+  assert(
+    !fsFreezeFailedOnly(["E|(fsDigest)|NST freeze failed: FAILED failed 1 x"]),
+  );
+  // only a failed, complete capture: exit 0, no T|, a wrong count
+  assert(!fsFreezeFailedOnly(noHoldCap(FREEZE_FAILED).slice(0, -1)));
+  assert(!fsFreezeFailedOnly([FREEZE_FAILED, "E|(fs-capture)|exit 1"]));
+  assert(
+    !fsFreezeFailedOnly([
+      FREEZE_FAILED,
+      `T|2|${NO_HOLD_T}`,
+      "E|(fs-capture)|exit 1",
+    ]),
+  );
+  assert(!fsFreezeFailedOnly([]));
 });
 
 Deno.test("H-35 Sol S3 r1 #5: a capture without its T| marker, with a wrong count, malformed fields, a duplicate key, or a declared root it does not cover is an error (fail closed); empty captures never compare clean", () => {

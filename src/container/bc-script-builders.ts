@@ -714,6 +714,29 @@ export function buildListHarnessAppsScript(containerName: string): string {
 }
 
 /**
+ * H-116 item 2 (issue #34): the in-place retry the clean and removal blocks
+ * share. Only a SQL lock timeout or deadlock (exception type or message,
+ * inner exceptions too) is retried: 3 tries, sleeping 5 s then 15 s. Any
+ * other error, or the third lock timeout, is rethrown unchanged.
+ * Test-CgLock tells the caller which kind it got.
+ */
+const HARNESS_LOCK_RETRY = `
+            function Test-CgLock($err) {
+              $e = $err.Exception; $t = ''
+              while ($e) { $t += " $($e.GetType().FullName) $($e.Message)"; $e = $e.InnerException }
+              $t -match 'NavCSideSQLLockTimeoutException|lock (request )?time ?out|deadlock'
+            }
+            function Invoke-CgLockRetry([scriptblock]$op) {
+              for ($try = 1; ; $try++) {
+                try { & $op; return }
+                catch {
+                  if ($try -ge 3 -or -not (Test-CgLock $_)) { throw }
+                  Start-Sleep -Seconds @(5, 15)[$try - 1]
+                }
+              }
+            }`;
+
+/**
  * The in-container clean scriptblock body (param($items, $allow)) for owned
  * apps about to be published whose tenant data may be kept at a higher
  * version (M1-15a). Sync-NAVApp -Name -Publisher selects by name and
@@ -721,12 +744,14 @@ export function buildListHarnessAppsScript(containerName: string): string {
  * published or known to the tenant, must carry the owned id (else
  * SYNC_CLEAN_REFUSED); if one is published the clean is skipped (the removal
  * path owns it). Any clean error is SYNC_CLEAN_FAILED: no "nothing to clean"
- * form is allowed until one is observed on a real container.
+ * form is allowed until one is observed on a real container. H-116: a lock
+ * timeout is retried in place first (HARNESS_LOCK_RETRY).
  * Exported so unit tests run it in pwsh against stubbed cmdlets.
  */
 export function buildHarnessCleanBlock(): string {
   return `
             param($items, [hashtable]$allow)
+${HARNESS_LOCK_RETRY}
             foreach ($it in $items) {
               $id = "$($it.id)"
               $name = "$($it.name)"
@@ -743,7 +768,7 @@ export function buildHarnessCleanBlock(): string {
               }
               if ($published.Count -gt 0) { continue }
               try {
-                Sync-NAVApp -ServerInstance BC -Tenant default -Name $name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop
+                Invoke-CgLockRetry { Sync-NAVApp -ServerInstance BC -Tenant default -Name $name -Publisher 'CentralGauge' -Mode Clean -Force -ErrorAction Stop }
                 Write-Output "SYNC_CLEAN:$id"
               } catch {
                 Write-Output "SYNC_CLEAN_FAILED:$id $($_.Exception.Message)"
@@ -763,28 +788,37 @@ export function buildHarnessCleanBlock(): string {
  * SYNC_REMOVE_FAILED:<id> <step> <message> and stops the block. The one
  * retry: an uninstall that fails in a pass is retried in the next pass (a
  * dependent listed later goes first); a pass with no progress fails.
+ * H-116 (issue #34): a SQL lock timeout of the uninstall, the clean or
+ * either unpublish is retried in place first (HARNESS_LOCK_RETRY); when its
+ * tries run out the app fails and the pass stops (no -Force: that would
+ * uninstall dependents the per-app check never saw).
  * Exported so unit tests run it in pwsh against stubbed cmdlets.
  */
 export function buildHarnessRemoveBlock(): string {
   return `
             param([string[]]$ids, [hashtable]$allow)
+${HARNESS_LOCK_RETRY}
             function Remove-CgApp($id, $app) {
               if ($app.Publisher -ne 'CentralGauge' -or -not $allow.ContainsKey($id) -or "$($app.Name)" -cnotmatch $allow[$id]) {
                 return "failed check publisher=$($app.Publisher) name=$($app.Name)"
               }
               $st = @(Get-NAVAppInfo -ServerInstance BC -Id $id -Version $app.Version -Tenant default -TenantSpecificProperties)
               if (@($st | Where-Object { $_.IsInstalled }).Count -gt 0) {
-                try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -DoNotSaveData -ErrorAction Stop }
-                catch { return "retry uninstall $($_.Exception.Message)" }
+                try { Invoke-CgLockRetry { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -DoNotSaveData -ErrorAction Stop } }
+                catch {
+                  # H-116: lock retries exhausted stop the pass; its dependencies are never tried
+                  if (Test-CgLock $_) { return "failed uninstall $($_.Exception.Message)" }
+                  return "retry uninstall $($_.Exception.Message)"
+                }
               }
               $st = @(Get-NAVAppInfo -ServerInstance BC -Id $id -Version $app.Version -Tenant default -TenantSpecificProperties)
               if (@($st | Where-Object { $_.IsInstalled }).Count -gt 0) { return "failed verify-uninstalled still installed" }
-              try { Sync-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Mode Clean -Force -ErrorAction Stop }
+              try { Invoke-CgLockRetry { Sync-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Mode Clean -Force -ErrorAction Stop } }
               catch { return "failed clean $($_.Exception.Message)" }
-              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop }
+              try { Invoke-CgLockRetry { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop } }
               catch {
                 $tenantError = $_.Exception.Message
-                try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop }
+                try { Invoke-CgLockRetry { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop } }
                 catch { return "failed unpublish tenant: $tenantError; global: $($_.Exception.Message)" }
               }
               if (@(Get-NAVAppInfo -ServerInstance BC -Id $id -Version $app.Version).Count -gt 0) { return "failed verify-gone still published" }

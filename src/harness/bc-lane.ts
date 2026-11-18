@@ -57,6 +57,7 @@ import {
   type FsCheckRecord,
   fsDiff,
   type FsDiffEntry,
+  fsFreezeFailedOnly,
   fsHoldExpiredOnly,
   type FsHoldTiming,
   fsHoldTiming,
@@ -2274,13 +2275,35 @@ export async function deployAndTest(
     );
     return await captureOnce(m);
   };
-  const withRetry = (t: FsHoldTiming | null): FsHoldTiming | null =>
-    fsFirst
+  // H-116 3a (issue #34, owner-approved): an AFTER capture whose NST freeze
+  // never started (Enable-NstFreeze failed, so no walk ran and the NST was
+  // left running) runs once more; there is no first walk whose dirt a retry
+  // could discard. An expired hold after a walk still fails closed.
+  let fsAfterFirst: { t: FsHoldTiming | null } | null = null;
+  const captureAfter = async (m: ResetMechanism): Promise<string[]> => {
+    const first = await captureOnce(m);
+    if (!fsFreezeFailedOnly(first)) return first;
+    fsAfterFirst = { t: fsHoldTiming(first) };
+    console.warn(
+      `[WARN] [fs] ${container}: L4 after capture's NST freeze did not start (${
+        first[0]!.slice("E|(fs-capture)|".length)
+      }); retrying once`,
+    );
+    return await captureOnce(m);
+  };
+  const retried = (
+    t: FsHoldTiming | null,
+    first: { t: FsHoldTiming | null } | null,
+    reason: "hold expired" | "freeze failed",
+  ): FsHoldTiming | null =>
+    first
       ? {
         ...(t ?? { held_ms: null, bound_s: null }),
-        retry: { reason: "hold expired", first: fsFirst.t },
+        retry: { reason, first: first.t },
       }
       : t;
+  const withRetry = (t: FsHoldTiming | null) =>
+    retried(t, fsFirst, "hold expired");
   const fsChecked = (
     diff: FsDiffEntry[],
     errors: string[],
@@ -2288,7 +2311,11 @@ export async function deployAndTest(
   ) => {
     // R-09: the walk timing of both captures, when either carried one
     const before = withRetry(fsBefore ? fsHoldTiming(fsBefore) : null);
-    const afterT = after ? fsHoldTiming(after) : null;
+    const afterT = retried(
+      after ? fsHoldTiming(after) : null,
+      fsAfterFirst,
+      "freeze failed",
+    );
     fsCheck = {
       container,
       ok: diff.length === 0 && errors.length === 0,
@@ -2325,7 +2352,7 @@ export async function deployAndTest(
     // Sol S3 r1 #1: the second capture whatever the cleanup's outcome, so a
     // dirty host is never scored behind a cleanup failure.
     if (fsBefore && m.fsDigest) {
-      const after = await captureOnce(m);
+      const after = await captureAfter(m);
       const d = fsDiff(
         fsBefore,
         after,

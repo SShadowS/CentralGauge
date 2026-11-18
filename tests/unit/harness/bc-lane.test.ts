@@ -39,6 +39,7 @@ import {
   deploy,
   deployAndTest,
   dirBuildCache,
+  fsEvidence,
   harvestAppInfo,
   LaneCancelledError,
   type LockedSymbols,
@@ -3102,6 +3103,74 @@ Deno.test("H-79 part 2 (e): a held-check whose marker reads failed|... or frozen
     assertEquals(r.runs(), 1, m);
     assertEquals(warns, [], m);
   }
+});
+
+// ---- H-116 3a (issue #34): one retry of an AFTER capture whose NST freeze never started ----
+
+/** fs-capture.ps1's output when Enable-NstFreeze failed: no hold, no walk (fsDigest adds the exit line). */
+const freezeFailedCap = () => [
+  "E|(fs-capture)|NST freeze failed: FAILED failed 4242 aborted before attach",
+  `T|1|{"hold_setup_ms":null,"held_ms":null,"walk_ms":null,"bound_s":55,"roots":[]}`,
+  "E|(fs-capture)|exit 1",
+];
+
+Deno.test("H-116 3a: an AFTER capture whose freeze failed (no walk ran) runs once more; a clean retry is no quarantine and the first attempt is in the timing", async () => {
+  const { v, err, r, warns } = await digestRun(okBc(), [
+    rawCap(13000, 0, A),
+    freezeFailedCap(),
+    rawCap(21000, 0, A),
+  ]);
+  assertEquals(err, null);
+  assertEquals(r.runs(), 3);
+  assertEquals(r.args, [["C1"], ["C1"], ["C1"]]);
+  assertEquals(v?.fsCheck?.ok, true);
+  assertEquals(v?.fsCheck?.timing, {
+    before: { held_ms: 13000, bound_s: 38 },
+    after: {
+      held_ms: 21000,
+      bound_s: 38,
+      retry: {
+        reason: "freeze failed",
+        first: { held_ms: null, bound_s: 55 },
+      },
+    },
+  });
+  assertEquals(warns.length, 1);
+  assertStringIncludes(warns[0]!, "C1");
+  assertStringIncludes(warns[0]!, "after");
+  assertStringIncludes(warns[0]!, "aborted before attach");
+});
+
+Deno.test("H-116 3a: a freeze that fails twice fails closed after exactly two AFTER runs: quarantine with no trustworthy capture (fs_captured=false)", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(13000, 0, A),
+    freezeFailedCap(),
+    freezeFailedCap(),
+    rawCap(21000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertStringIncludes(String(err), "NST freeze failed");
+  assertEquals(r.runs(), 3);
+  assertEquals(warns.length, 1);
+  // the lane persists fsEvidence(record) as fs_diff; null is fs_captured=false
+  assertEquals(fsEvidence(err.record), null);
+  assertEquals(r.checks[0]?.timing?.after, {
+    held_ms: null,
+    bound_s: 55,
+    retry: { reason: "freeze failed", first: { held_ms: null, bound_s: 55 } },
+  });
+});
+
+Deno.test("H-116 3a: an AFTER hold that expired after its walk still fails closed with no retry", async () => {
+  const { err, r, warns } = await digestRun(okBc(), [
+    rawCap(13000, 0, A),
+    rawCap(39000, 1, A, HOLD_EXPIRED, RELEASE_EXPIRED),
+    rawCap(21000, 0, A),
+  ]);
+  assert(err instanceof HostDirtyError, String(err));
+  assertEquals(r.runs(), 2);
+  assertEquals(warns, []);
+  assertEquals(fsEvidence((err as HostDirtyError).record), null);
 });
 
 // ---- H-35 S3 L2a: no outbound HttpClient for agent extensions (design-r5 2.2) ----
