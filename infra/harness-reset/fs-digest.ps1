@@ -88,6 +88,8 @@ function Test-NstSuspended([string]$Container) {
 # a later hold (and a second debugger cannot attach while one holds). Marker values:
 #   frozen|<holder pid>|<holder start ticks>|<nst pid>|<nst cpu ticks>|<nst cycles>   held; cpu = TotalProcessorTime
 #     (user + kernel) and cycles = QueryProcessCycleTime (diagnostic) at the freeze; the bound is a monotonic clock from the attach
+#   attaching|<holder pid>|<holder start ticks>   before the attach (H-116 1b); a kept one is a live holder for
+#     Clear-NstFreezeLeftover, as frozen is
 #   expired|... / released|... / failed|<holder pid>|<reason>
 # The holder's code goes in -EncodedCommand (no script file). Its files, and its TEMP (Add-Type), live under
 # C:\ProgramData\cg-harness, outside every fs root of the lineage (L4 ruling item 3). Returns "<G>|<holder pid>|<holder start ticks>|<marker>".
@@ -96,7 +98,7 @@ function Test-NstSuspended([string]$Container) {
 # deadline the coordinator writes the release file and waits for the holder to exit by itself (it checks the release
 # just before the attach, `aborted before attach`, and its hold loop releases); it kills only a holder that did not,
 # and a holder that survives the kill is `FAILED STUCK holder <pid>` with its marker kept (1a). Marker phase before the
-# attach: attaching|<holder pid>.
+# attach: attaching|<holder pid>|<holder start ticks>.
 $NstFreezeDir = 'C:\ProgramData\cg-harness'
 $NstHoldSeconds = 55
 $NstFreezeStartSeconds = 90
