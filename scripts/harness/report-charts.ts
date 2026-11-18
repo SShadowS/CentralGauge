@@ -916,7 +916,8 @@ function v2Csvs(reports: Report[]): OutFile[] {
     }
     return k.results.map((c) => {
       // M12-04b, D-7 (M12-03b fields): pairs lost to unknown cost, bounds label.
-      const lost = k.missing?.contrasts[c.id]?.dropped ?? null;
+      const miss = k.missing?.contrasts[c.id];
+      const lost = miss?.dropped ?? null;
       const label = k.sensitivity?.label[c.id];
       return [
         ...id(r),
@@ -947,8 +948,8 @@ function v2Csvs(reports: Report[]): OutFile[] {
         c.bonferroni_ci_ratio?.[0] ?? null,
         c.bonferroni_ci_ratio?.[1] ?? null,
         c.theta ?? null,
-        c.pairs,
         lost,
+        miss ? miss.tasks_affected.join(" ") : null,
         lost === null || !k.missing?.planned ? null : lost / k.missing.planned,
         label === undefined
           ? null
@@ -1045,10 +1046,10 @@ function v2Csvs(reports: Report[]): OutFile[] {
         "bonferroni_ratio_lo",
         "bonferroni_ratio_hi",
         "theta",
-        "pairs_used",
-        "pairs_dropped_unknown_cost",
-        "dropped_share",
-        "cost_sensitivity",
+        "pairs_dropped",
+        "tasks_affected",
+        "backstop_share",
+        "robustness",
       ], contrasts),
     },
     {
