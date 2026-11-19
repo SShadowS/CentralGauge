@@ -57,6 +57,16 @@ import {
 } from "../../../src/harness/egress-proxy.ts";
 import { blobB64, hns, networkBlob, REAL_HNS } from "../../utils/hns-blob.ts";
 import { testTempDir } from "../../utils/temp-dir.ts";
+import {
+  type AcknowledgedBlock,
+  type ForeignBlockRule,
+  parseAcknowledgedBlocks,
+} from "../../../src/harness/egress.ts";
+import {
+  __setContextListerForTests,
+  DOCKER_CONTEXT_ENV,
+} from "../../../src/container/docker-context.ts";
+import { main as egressScriptsMain } from "../../../scripts/harness/egress-scripts.ts";
 
 const IDX = 42;
 const HNS_ID = "5F2A9C31-0B7E-4D12-9A3B-6C4D5E6F7A8B";
@@ -405,7 +415,11 @@ Deno.test("verifyEgressState: effective-policy mutations are each a named proble
     ["default outbound", (s) => (s.profiles[1]!.outbound = "Block")],
     [
       "foreign block",
-      (s) => (s.foreignBlockRules = ["Some app block (policy)"]),
+      (s) => (s.foreignBlockRules = [{
+        name: "app-block",
+        display: "Some app block (policy)",
+        identity: "Direction=Inbound",
+      }]),
     ],
     ["profiles", (s) => (s.profiles = [])],
     [
@@ -843,7 +857,11 @@ function rawObservation() {
       interface: each(() => ({ InterfaceIndex: [IDX] as (number | null)[] })),
       interfaceType: each(() => ({ InterfaceType: "Any" })),
     },
-    foreignBlockRules: [] as string[],
+    foreignBlockRules: [] as {
+      Name: string;
+      DisplayName: string;
+      Identity: string;
+    }[],
     marker: {
       v: 1,
       state: "qualified",
@@ -2012,7 +2030,11 @@ Deno.test("collectEgressState (M1-34c): changed group rules and a foreign block 
     }],
     [
       "foreign block rule is effective",
-      (r) => (r.foreignBlockRules = ["Block all [x, Inbound, GroupPolicy]"]),
+      (r) => (r.foreignBlockRules = [{
+        Name: "x",
+        DisplayName: "Block all",
+        Identity: "Direction=Inbound; PolicyStoreSource=GroupPolicy",
+      }]),
     ],
   ];
   for (const [word, mut] of cases) {
@@ -2679,19 +2701,22 @@ Deno.test("egress-scripts.ts apply (H-90): --keep-inbound gives the keep-inbound
           join(dir, out),
           ...extra,
         ],
+        // H-119: the operator override pins the context, so the child never runs docker.
+        env: { CENTRALGAUGE_DOCKER_CONTEXT: "desktop-windows" },
         stdout: "null",
         stderr: "null",
       }).output();
       assertEquals(code, 0);
       return await Deno.readTextFile(join(dir, out));
     };
+    const ctx = { ...H90, dockerContext: "desktop-windows" };
     assertEquals(
       await gen("a1.ps1", []),
-      "\uFEFF" + applyScript(firewallPlan(IDX), H90),
+      "\uFEFF" + applyScript(firewallPlan(IDX), ctx),
     );
     assertEquals(
       await gen("a2.ps1", ["--keep-inbound"]),
-      "\uFEFF" + applyScript(firewallPlan(IDX), { ...H90, keepInbound: true }),
+      "\uFEFF" + applyScript(firewallPlan(IDX), { ...ctx, keepInbound: true }),
     );
     // Review r1 H1: a mistyped flag refuses and writes nothing.
     await assertRejects(() => gen("a3.ps1", ["--keep-inbond"]));
@@ -2699,4 +2724,725 @@ Deno.test("egress-scripts.ts apply (H-90): --keep-inbound gives the keep-inbound
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// H-119 (GH #33 follow-up): the apply uses the resolved Docker context; foreign
+// block rules the owner acknowledged (--acknowledge-blocks) are honoured by the
+// apply and by verify.
+
+const INSPECT_PLAIN =
+  `$inspect = & docker network inspect ${SANDBOX_NETWORK.name}`;
+/** Today's no-flag refusal, kept verbatim. */
+const OWNER_DECISION =
+  `if ($foreign.Count -gt 0) { throw "owner decision required: $($foreign.Count) effective block rules exist outside ${RULE_GROUP}; see fw-block-inventory-inv1.json" }`;
+const TODAY_RECORD =
+  "$record = [ordered]@{ invocation = 'inv1'; snapshot = $snapshot; created = $created }";
+
+Deno.test("applyScript (H-119 item 1): docker network inspect runs under the given context, pinned with --context, or inherits the machine's; no hardcoded fallback", () => {
+  const none = applyScript(firewallPlan(IDX), H90);
+  const n = none.split("\r\n");
+  assert(n.includes(INSPECT_PLAIN));
+  for (const w of ["--context", "DOCKER_CONTEXT", "desktop-windows"]) {
+    assert(!none.includes(w), w);
+  }
+  const pinned = applyScript(firewallPlan(IDX), {
+    ...H90,
+    dockerContext: "desktop-windows",
+  });
+  const p = pinned.split("\r\n");
+  assertEquals(p.filter((l) => !n.includes(l)), [
+    `$inspect = & docker --context 'desktop-windows' network inspect ${SANDBOX_NETWORK.name}`,
+  ]);
+  assertEquals(n.filter((l) => !p.includes(l)), [INSPECT_PLAIN]);
+  for (const bad of ["", "a b", "x'y", "-H", "a\nb", "a;b"]) {
+    assertThrows(
+      () => applyScript(firewallPlan(IDX), { ...H90, dockerContext: bad }),
+      ConfigurationError,
+      "docker context",
+    );
+  }
+});
+
+/** Run egress-scripts.ts apply in-process with a faked `docker context ls`. */
+async function genApply(
+  dir: string,
+  out: string,
+  extra: string[],
+  contexts: string[] | undefined = ["default"],
+): Promise<string> {
+  const saved = Deno.env.get(DOCKER_CONTEXT_ENV);
+  Deno.env.delete(DOCKER_CONTEXT_ENV);
+  __setContextListerForTests(() => contexts);
+  try {
+    await egressScriptsMain([
+      "apply",
+      "--invocation",
+      "inv1",
+      "--dir",
+      "C:\\fw",
+      "--interface-index",
+      String(IDX),
+      "--interface-alias",
+      "vEthernet (a1b2c3)",
+      "--hns-id",
+      "hns1",
+      "--out",
+      join(dir, out),
+      ...extra,
+    ]);
+    return await Deno.readTextFile(join(dir, out));
+  } finally {
+    __setContextListerForTests(undefined);
+    if (saved !== undefined) Deno.env.set(DOCKER_CONTEXT_ENV, saved);
+  }
+}
+
+Deno.test({
+  name:
+    "egress-scripts.ts apply (H-119 item 1): the generator passes the resolved context: none without desktop-windows, desktop-windows where it exists",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const dir = await testTempDir();
+    try {
+      assertEquals(
+        await genApply(dir, "a1.ps1", [], ["default"]),
+        "\uFEFF" + applyScript(firewallPlan(IDX), H90),
+      );
+      assertEquals(
+        await genApply(dir, "a2.ps1", [], ["default", "desktop-windows"]),
+        "\uFEFF" +
+          applyScript(firewallPlan(IDX), {
+            ...H90,
+            dockerContext: "desktop-windows",
+          }),
+      );
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
+const ACK: AcknowledgedBlock[] = [
+  { name: "A", identity: "Direction=Inbound; RemoteAddress=10.0.0.1" },
+  { name: "B", identity: "it's B" },
+];
+
+Deno.test("applyScript (H-119): without acknowledgedBlocks the apply is today's: the same refusal, the same record, nothing acknowledged", () => {
+  const s = applyScript(firewallPlan(IDX), H90);
+  assertEquals(
+    applyScript(firewallPlan(IDX), { ...H90, acknowledgedBlocks: undefined }),
+    s,
+  );
+  const lines = s.split("\r\n");
+  assertEquals(lines.filter((l) => l === OWNER_DECISION).length, 1);
+  assertEquals(
+    lines[lines.indexOf(OWNER_DECISION) - 1],
+    "Save-Json (Join-Path $dir 'fw-block-inventory-inv1.json') $foreign",
+  );
+  assert(lines.includes(TODAY_RECORD));
+  assert(!/acknowledg/i.test(s));
+  assert(lines.includes("$foreign = @(Get-ForeignBlockRules)"));
+  const keep = applyScript(firewallPlan(IDX), { ...H90, keepInbound: true });
+  assert(!/acknowledg/i.test(keep));
+  assert(keep.split("\r\n").includes(OWNER_DECISION));
+});
+
+Deno.test("applyScript (H-119 item 2): acknowledged rules are embedded as literals; the guard runs after the inventory and before any change; the record names them", () => {
+  for (const keepInbound of [false, true]) {
+    const s = applyScript(firewallPlan(IDX), {
+      ...H90,
+      keepInbound,
+      acknowledgedBlocks: ACK,
+    });
+    const lines = s.split("\r\n");
+    assert(
+      lines.includes(
+        "$acknowledged = @([ordered]@{ Name = 'A'; Identity = 'Direction=Inbound; RemoteAddress=10.0.0.1' }, [ordered]@{ Name = 'B'; Identity = 'it''s B' })",
+      ),
+      s,
+    );
+    assert(!lines.includes(OWNER_DECISION));
+    const at = (x: string) => {
+      const i = s.indexOf(x);
+      assert(i >= 0, x);
+      return i;
+    };
+    const order = [
+      at("Save-Json (Join-Path $dir 'fw-block-inventory-inv1.json')"),
+      at("$acknowledged = "),
+      at("are not acknowledged"),
+      at("changed since acknowledged"),
+      at("no longer effective"),
+      at("$active = @(Get-NetFirewallProfile"),
+      at("Save-JsonAtomic (Join-Path $dir 'fw-snapshot-inv1.json')"),
+      at("Set-NetFirewallProfile"),
+      at("New-NetFirewallRule"),
+    ];
+    assertEquals([...order].sort((a, b) => a - b), order);
+    assert(
+      lines.includes(
+        `$record = [ordered]@{ invocation = 'inv1'; snapshot = $snapshot; created = $created${
+          keepInbound ? "; keptInbound = $true" : ""
+        }; acknowledgedBlocks = $acknowledged }`,
+      ),
+    );
+  }
+  const bad: AcknowledgedBlock[][] = [
+    [],
+    [ACK[0]!, ACK[0]!],
+    [{ name: "", identity: "x" }],
+    [{ name: "A", identity: "" }],
+    [{ name: "A", identity: "a\nb" }],
+    [{ name: "A\r", identity: "x" }],
+  ];
+  for (const b of bad) {
+    assertThrows(
+      () => applyScript(firewallPlan(IDX), { ...H90, acknowledgedBlocks: b }),
+      ConfigurationError,
+    );
+  }
+});
+
+Deno.test("COLLECT_PS and applyScript (H-119): one shared foreign-rule read with the identity fields, filters by association", () => {
+  const fns = (t: string) =>
+    t.split(/\r?\n/).filter((l) =>
+      /^function (Join-Sorted|Get-FieldText|Get-ForeignBlockRules)\b/.test(l)
+    );
+  const apply = fns(applyScript(firewallPlan(IDX), H90));
+  assertEquals(apply.length, 3);
+  assertEquals(fns(COLLECT_PS), apply);
+  assert(
+    COLLECT_PS.split("\n").includes("$foreign = @(Get-ForeignBlockRules)"),
+  );
+  const read = apply.find((l) =>
+    l.startsWith("function Get-ForeignBlockRules")
+  )!;
+  for (
+    const w of [
+      "Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block",
+      `$_.Group -ne '${RULE_GROUP}'`,
+      "Assert-NotFoundOnly $e 'the effective block rules'",
+      "Get-NetFirewallPortFilter -ErrorAction Stop",
+      "Get-NetFirewallAddressFilter -ErrorAction Stop",
+      "Get-NetFirewallApplicationFilter -ErrorAction Stop",
+      "Get-NetFirewallServiceFilter -ErrorAction Stop",
+      "Get-NetFirewallInterfaceFilter -ErrorAction Stop",
+      "Get-NetFirewallInterfaceTypeFilter -ErrorAction Stop",
+      "Get-NetFirewallSecurityFilter -ErrorAction Stop",
+      "'Direction', 'Action', 'Enabled', 'Profile', 'PolicyStoreSource', 'PolicyStoreSourceType', 'EdgeTraversalPolicy'",
+      "'Protocol', 'LocalPort', 'RemotePort', 'IcmpType'",
+      "'LocalAddress', 'RemoteAddress'",
+      "'Program', 'Package'",
+      "'Service'",
+      "'InterfaceAlias'",
+      "'InterfaceType'",
+      "'Authentication', 'Encryption', 'RemoteUser', 'RemoteMachine', 'LocalUser'",
+    ]
+  ) {
+    assertStringIncludes(read, w);
+  }
+  assert(!/\s-All\b/.test(read), "no class-wide filter enumeration");
+});
+
+const FR = (name: string, identity = `id-${name}`): ForeignBlockRule => ({
+  name,
+  display: `${name} rule`,
+  identity,
+});
+const ackOf = (...rs: ForeignBlockRule[]): AcknowledgedBlock[] =>
+  rs.map((r) => ({ name: r.name, identity: r.identity }));
+
+Deno.test("verifyEgressState (H-119): acknowledged rules with the same identity are clean; a changed or unacknowledged rule is named; a missing acknowledged rule is clean", () => {
+  const A = FR("A"), B = FR("B"), C = FR("C");
+  const s = { ...goodState(), foreignBlockRules: [A, B] };
+  // No acknowledgement (none given, an empty list, or a marker without one): today's problems.
+  for (const ack of [undefined, []]) {
+    assertEquals(verifyEgressState(s, ack), [
+      "foreign block rule is effective: A rule [A]",
+      "foreign block rule is effective: B rule [B]",
+    ]);
+  }
+  assertEquals(verifyEgressState(s, ackOf(A, B)), []);
+  assertEquals(verifyEgressState(s, ackOf(B, A)), []);
+  // The marker's list is the default (credential release, harness-env).
+  const marked = {
+    ...s,
+    marker: { ...s.marker!, acknowledgedBlocks: ackOf(A, B) },
+  };
+  assertEquals(verifyEgressState(marked), []);
+  assertEquals(verifyEgressState(marked, []).length, 2, "explicit list wins");
+  // Changed since acknowledged.
+  assertEquals(
+    verifyEgressState(s, [{ name: "A", identity: "id-A2" }, ...ackOf(B)]),
+    ["acknowledged block rule changed since acknowledged: A rule [A]"],
+  );
+  assertEquals(
+    verifyEgressState(s, [{ name: "A", identity: "ID-A" }, ...ackOf(B)])
+      .length,
+    1,
+    "identity is compared exactly",
+  );
+  // New (unacknowledged) rule.
+  assertEquals(
+    verifyEgressState({ ...s, foreignBlockRules: [A, B, C] }, ackOf(A, B)),
+    ["foreign block rule is effective: C rule [C]"],
+  );
+  // Owner ruling: an acknowledged rule that is now missing is clean.
+  assertEquals(
+    verifyEgressState({ ...s, foreignBlockRules: [A] }, ackOf(A, B)),
+    [],
+  );
+  assertEquals(
+    verifyEgressState({ ...s, foreignBlockRules: [] }, ackOf(A, B)),
+    [],
+  );
+});
+
+Deno.test("collectEgressState (H-119): a foreign block rule is exactly {Name, DisplayName, Identity}; the marker's acknowledged_blocks is optional and strict", async () => {
+  const raw = rawObservation();
+  raw.foreignBlockRules = [{
+    Name: "A",
+    DisplayName: "A rule",
+    Identity: "id-A",
+  }];
+  const s = await collectRaw(raw);
+  assertEquals(s.foreignBlockRules, [FR("A")]);
+  assert(!("acknowledgedBlocks" in s.marker!), "an old marker still parses");
+  const shapes: unknown[] = [
+    ["A rule [A, Inbound, GroupPolicy]"],
+    [{ Name: "A", DisplayName: "A rule" }],
+    [{ Name: "A", DisplayName: "A rule", Identity: "" }],
+    [{ Name: "", DisplayName: "A rule", Identity: "id-A" }],
+    [{ Name: "A", DisplayName: "A rule", Identity: "id-A", Direction: "In" }],
+    { Name: "A", DisplayName: "A rule", Identity: "id-A" },
+  ];
+  for (const shape of shapes) {
+    await rejectsRaw(
+      // deno-lint-ignore no-explicit-any
+      (r) => ((r as any).foreignBlockRules = shape),
+      "foreignBlockRules",
+    );
+  }
+  const withAck = rawObservation();
+  withAck.foreignBlockRules = raw.foreignBlockRules;
+  Object.assign(withAck.marker, {
+    acknowledged_blocks: [{ name: "A", identity: "id-A" }],
+  });
+  const m = await collectRaw(withAck);
+  assertEquals(m.marker!.acknowledgedBlocks, ackOf(FR("A")));
+  assertEquals(verifyEgressState(m), []);
+  for (
+    const bad of [
+      "A",
+      [{ name: "A" }],
+      [{ name: "A", identity: "" }],
+      [{ name: "A", identity: "id-A", display: "x" }],
+    ]
+  ) {
+    await rejectsRaw(
+      (r) => Object.assign(r.marker, { acknowledged_blocks: bad }),
+      "marker",
+    );
+  }
+});
+
+Deno.test("egress-scripts.ts apply --acknowledge-blocks (H-119): the owner-trimmed inventory is embedded; a missing or malformed file refuses and writes nothing", async () => {
+  const dir = await testTempDir();
+  try {
+    const inv = join(dir, "fw-block-inventory-inv0.json");
+    const entries = [
+      { Name: "A", DisplayName: "A rule", Identity: "id-A" },
+      { Name: "B", DisplayName: "B rule", Identity: "id-B" },
+    ];
+    await Deno.writeTextFile(inv, JSON.stringify(entries));
+    const want = "\uFEFF" +
+      applyScript(firewallPlan(IDX), {
+        ...H90,
+        acknowledgedBlocks: ackOf(FR("A"), FR("B")),
+      });
+    assertEquals(
+      await genApply(dir, "ok.ps1", ["--acknowledge-blocks", inv]),
+      want,
+    );
+    // A BOM (an editor's save) and a missing DisplayName are fine.
+    await Deno.writeTextFile(
+      inv,
+      "\uFEFF" +
+        JSON.stringify(
+          entries.map(({ Name, Identity }) => ({ Name, Identity })),
+        ),
+    );
+    assertEquals(
+      await genApply(dir, "bom.ps1", ["--acknowledge-blocks", inv]),
+      want,
+    );
+    const bad: [string, string][] = [
+      ["not json", "{"],
+      ["object", JSON.stringify(entries[0])],
+      ["empty", "[]"],
+      ["no identity", JSON.stringify([{ Name: "A", DisplayName: "A rule" }])],
+      ["empty identity", JSON.stringify([{ Name: "A", Identity: "" }])],
+      ["no name", JSON.stringify([{ Identity: "id-A" }])],
+      ["extra key", JSON.stringify([{ ...entries[0], Direction: "Inbound" }])],
+      ["duplicate", JSON.stringify([entries[0], entries[0]])],
+      ["newline", JSON.stringify([{ Name: "A", Identity: "a\nb" }])],
+    ];
+    for (const [what, text] of bad) {
+      const f = join(dir, `bad-${what.replaceAll(" ", "-")}.json`);
+      await Deno.writeTextFile(f, text);
+      const out = `bad-${what.replaceAll(" ", "-")}.ps1`;
+      await assertRejects(
+        () => genApply(dir, out, ["--acknowledge-blocks", f]),
+        Error,
+        undefined,
+        what,
+      );
+      await assertRejects(
+        () => Deno.stat(join(dir, out)),
+        Deno.errors.NotFound,
+      );
+    }
+    await assertRejects(
+      () =>
+        genApply(dir, "missing.ps1", [
+          "--acknowledge-blocks",
+          join(dir, "nope.json"),
+        ]),
+      Error,
+      "nope.json",
+    );
+    await assertRejects(() => Deno.stat(join(dir, "missing.ps1")));
+    await assertRejects(
+      () =>
+        egressScriptsMain([
+          "revert",
+          "--dir",
+          "C:\\fw",
+          "--out",
+          join(dir, "r.ps1"),
+          "--acknowledge-blocks",
+          inv,
+        ]),
+      Error,
+      "--acknowledge-blocks",
+    );
+    assertEquals(
+      parseAcknowledgedBlocks(JSON.stringify(entries), "inv"),
+      ackOf(FR("A"), FR("B")),
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+// The guard against fakes: functions named like the NetSecurity cmdlets shadow
+// them, so nothing reads or changes the host firewall.
+
+interface FakeRule {
+  name: string;
+  remote?: string | string[];
+  group?: string;
+  program?: string;
+}
+/** A fake's PowerShell literal: every PowerShell single quote (ASCII and curly) doubled. */
+const psOne = (x: string) => `'${x.replace(/['‘’‚‛]/g, "$&$&")}'`;
+const psLit = (v: string | string[]) =>
+  Array.isArray(v) ? `@(${v.map(psOne).join(", ")})` : psOne(v);
+/**
+ * One host state: the effective block rules (always with one group rule) and
+ * their filters. `filters` "empty" makes every Security filter read return
+ * nothing, "throw" makes every filter read throw (review r1 L1).
+ */
+function fakeHost(
+  rules: FakeRule[],
+  filters: "ok" | "empty" | "throw" = "ok",
+): string {
+  const all = [...rules, { name: `${RULE_GROUP}-tcp-1`, group: RULE_GROUP }];
+  const r = all.map((x) =>
+    `[pscustomobject]@{ Name = '${x.name}'; DisplayName = '${x.name} rule'; Group = '${
+      x.group ?? ""
+    }'; Direction = 'Inbound'; Action = 'Block'; Enabled = 'True'; Profile = 'Domain, Public'; PolicyStoreSource = 'GroupPolicy'; PolicyStoreSourceType = 'GroupPolicy'; EdgeTraversalPolicy = 'Block' }`
+  );
+  const f = all.map((x) =>
+    `'${x.name}' = @{ Port = [pscustomobject]@{ Protocol = 'TCP'; LocalPort = @('445', '139'); RemotePort = 'Any'; IcmpType = 'Any' }; Address = [pscustomobject]@{ LocalAddress = 'Any'; RemoteAddress = ${
+      psLit("remote" in x && x.remote !== undefined ? x.remote : "Any")
+    } }; Application = [pscustomobject]@{ Program = ${
+      psLit("program" in x && x.program !== undefined ? x.program : "Any")
+    }; Package = '' }; Service = [pscustomobject]@{ Service = 'Any' }; Interface = [pscustomobject]@{ InterfaceAlias = 'Any' }; InterfaceType = [pscustomobject]@{ InterfaceType = 'Any' }; Security = [pscustomobject]@{ Authentication = 'NotRequired'; Encryption = 'NotRequired'; RemoteUser = ''; RemoteMachine = ''; LocalUser = '' } }`
+  );
+  return `$script:rules = @(${r.join(", ")}); $script:filters = @{ ${
+    f.join("; ")
+  } }; $script:filterMode = '${filters}'`;
+}
+
+const FILTER_KINDS = [
+  "Port",
+  "Address",
+  "Application",
+  "Service",
+  "Interface",
+  "InterfaceType",
+  "Security",
+];
+
+/**
+ * Run an apply script's foreign-rule section (the shared read, the inventory
+ * write and the guard) in Windows PowerShell against each fake host. Per
+ * host: the verdict and the inventory the apply wrote.
+ */
+async function runForeignGuard(
+  apply: string,
+  hosts: string[],
+): Promise<{ verdict: string; inventory: unknown }[]> {
+  const lines = apply.split("\r\n");
+  const from = lines.findIndex((l) => l.startsWith("function Join-Sorted"));
+  const to = lines.findIndex((l) => l.startsWith("$active = "));
+  assert(from > 0 && to > from, "foreign section found");
+  const dir = await testTempDir();
+  try {
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      // Non-ASCII names and paths (review r1 M1) reach the test intact.
+      "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false",
+      lines.find((l) => l.startsWith("function Assert-NotFoundOnly"))!,
+      "function Save-Json($path, $value) { $script:saved = $value }",
+      "function Get-NetFirewallRule { [CmdletBinding()] param($PolicyStore, $Enabled, $Action, $Group) if ($PolicyStore -ne 'ActiveStore' -or [string]$Enabled -ne 'True' -or [string]$Action -ne 'Block' -or $Group) { throw 'unexpected rule query' }; $script:rules }",
+      ...FILTER_KINDS.map((k) =>
+        `function Get-NetFirewall${k}Filter { [CmdletBinding()] param([Parameter(ValueFromPipeline = $true)] $AssociatedNetFirewallRule) process { if ($script:filterMode -eq 'throw') { throw 'Access is denied.' }; if ($script:filterMode -eq 'empty' -and '${k}' -eq 'Security') { return }; $script:filters[[string]$AssociatedNetFirewallRule.Name].${k} } }`
+      ),
+      "$dir = 'C:\\fw'",
+      "$hosts = @()",
+      ...hosts.map((h) => `$hosts += ,{ ${h} }`),
+      "foreach ($h in $hosts) {",
+      "  & $h",
+      "  $script:saved = $null",
+      "  try { $out = @(& {",
+      ...lines.slice(from, to),
+      "  }); ('PASS ' + ($out -join ' / ')).Trim() } catch { 'REFUSE ' + $_.Exception.Message }",
+      "  'INV ' + (ConvertTo-Json -InputObject @($script:saved) -Depth 4 -Compress)",
+      "}",
+    ].join("\r\n");
+    const file = join(dir, "foreign.ps1");
+    await Deno.writeTextFile(file, "\uFEFF" + script);
+    const out = await new Deno.Command("powershell.exe", {
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        file,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    const text = new TextDecoder().decode(out.stdout);
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr) + text);
+    const got = text.split(/\r?\n/).filter((l) => l !== "");
+    assertEquals(got.length, hosts.length * 2, text);
+    return hosts.map((_, i) => {
+      assert(got[2 * i + 1]!.startsWith("INV "), got[2 * i + 1]);
+      return {
+        verdict: got[2 * i]!,
+        inventory: JSON.parse(got[2 * i + 1]!.slice(4)),
+      };
+    });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+Deno.test({
+  name:
+    "apply guard (H-119): in Windows PowerShell 5.1 against faked NetSecurity cmdlets, the acknowledged foreign set is honoured by identity",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const A: FakeRule = { name: "A", remote: "10.0.0.1" };
+    const B: FakeRule = { name: "B", remote: ["10.0.0.2", "10.0.0.3"] };
+    // 1. No flag: today's apply. The refused attempt writes the inventory the owner trims.
+    const [empty, refused] = await runForeignGuard(
+      applyScript(firewallPlan(IDX), H90),
+      [fakeHost([]), fakeHost([A, B])],
+    );
+    assertEquals(empty!.verdict, "PASS");
+    assertEquals(empty!.inventory, []);
+    assertEquals(
+      refused!.verdict,
+      `REFUSE owner decision required: 2 effective block rules exist outside ${RULE_GROUP}; see fw-block-inventory-inv1.json`,
+    );
+    const inv = refused!.inventory as {
+      Name: string;
+      DisplayName: string;
+      Identity: string;
+    }[];
+    assertEquals(inv.map((x) => [x.Name, x.DisplayName]), [
+      ["A", "A rule"],
+      ["B", "B rule"],
+    ]);
+    assertEquals(
+      inv[0]!.Identity,
+      "Direction=Inbound; Action=Block; Enabled=True; Profile=Domain, Public; PolicyStoreSource=GroupPolicy; PolicyStoreSourceType=GroupPolicy; EdgeTraversalPolicy=Block; Protocol=TCP; LocalPort=139,445; RemotePort=Any; IcmpType=Any; LocalAddress=Any; RemoteAddress=10.0.0.1; Program=Any; Package=; Service=Any; InterfaceAlias=Any; InterfaceType=Any; Authentication=NotRequired; Encryption=NotRequired; RemoteUser=; RemoteMachine=; LocalUser=",
+    );
+    assertStringIncludes(inv[1]!.Identity, "RemoteAddress=10.0.0.2,10.0.0.3;");
+    // 2. Both acknowledged, from that inventory.
+    const both = parseAcknowledgedBlocks(JSON.stringify(inv), "inventory");
+    const r = await runForeignGuard(
+      applyScript(firewallPlan(IDX), { ...H90, acknowledgedBlocks: both }),
+      [
+        fakeHost([A, B]),
+        // A single value vs a one-element array, and the address order.
+        fakeHost([{ name: "A", remote: ["10.0.0.1"] }, {
+          name: "B",
+          remote: ["10.0.0.3", "10.0.0.2"],
+        }]),
+        fakeHost([{ name: "A", remote: "10.9.9.9" }, B]),
+        fakeHost([A]),
+        fakeHost([]),
+        fakeHost([A, B, { name: "C" }]),
+      ],
+    );
+    const v = r.map((x) => x.verdict);
+    assertEquals(v[0], "PASS", "all acknowledged");
+    assertEquals(v[1], "PASS", "array vs single value, address order");
+    assertEquals(
+      v[2],
+      "REFUSE acknowledged block rules changed since acknowledged: A rule [A]; regenerate the apply with --acknowledge-blocks from the new fw-block-inventory-inv1.json",
+    );
+    assertEquals(
+      v[3],
+      "PASS [INFO] acknowledged block rules no longer effective (clean): B",
+    );
+    assertEquals(
+      v[4],
+      "PASS [INFO] acknowledged block rules no longer effective (clean): A, B",
+    );
+    assertEquals(
+      v[5],
+      `REFUSE owner decision required: 1 effective block rules exist outside ${RULE_GROUP} and are not acknowledged: C rule [C]; see fw-block-inventory-inv1.json`,
+    );
+    // Every attempt writes the inventory first, the refused ones included.
+    assertEquals(
+      r.map((x) => (x.inventory as { Name: string }[]).map((y) => y.Name)),
+      [["A", "B"], ["A", "B"], ["A", "B"], ["A"], [], ["A", "B", "C"]],
+    );
+    // 3. Only B acknowledged (the owner trimmed A).
+    const [onlyB] = await runForeignGuard(
+      applyScript(firewallPlan(IDX), {
+        ...H90,
+        acknowledgedBlocks: both.filter((x) => x.name === "B"),
+      }),
+      [fakeHost([A, B])],
+    );
+    assertEquals(
+      onlyB!.verdict,
+      `REFUSE owner decision required: 1 effective block rules exist outside ${RULE_GROUP} and are not acknowledged: A rule [A]; see fw-block-inventory-inv1.json`,
+    );
+  },
+});
+
+// Review r1 M1: PowerShell also reads U+2018, U+2019, U+201A and U+201B as
+// single quotes; a firewall-derived Name or Identity must stay one literal.
+const INJECTED_NAME = "x\u2019 }); Write-Output INJECTED; $z = @(@{ a = \u2019";
+const CURLY_IDENTITY = "it\u2019s \u2018q\u2018 \u201Alow\u201B";
+
+Deno.test({
+  name:
+    "applyScript (H-119 review r1 M1): curly single quotes in an acknowledged Name or Identity stay inside one literal (parse only, Windows PowerShell)",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const dir = await testTempDir();
+    try {
+      const apply = join(dir, "apply.ps1");
+      await Deno.writeTextFile(
+        apply,
+        "\uFEFF" +
+          applyScript(firewallPlan(IDX), {
+            ...H90,
+            acknowledgedBlocks: [{
+              name: INJECTED_NAME,
+              identity: CURLY_IDENTITY,
+            }],
+          }),
+      );
+      // Parse only: the generated script is never run.
+      const probe = join(dir, "parse.ps1");
+      await Deno.writeTextFile(
+        probe,
+        "\uFEFF" + [
+          "$ErrorActionPreference = 'Stop'",
+          "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false",
+          "$text = [IO.File]::ReadAllText($args[0])",
+          "$t = $null; $err = $null",
+          "$ast = [System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$t, [ref]$err)",
+          "'ERRORS ' + $err.Count",
+          "'INJECTED ' + @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.Extent.Text -match 'INJECTED' }, $true)).Count",
+          "$a = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$acknowledged' }, $true))",
+          "'ASSIGN ' + $a.Count",
+          "'STRS ' + (ConvertTo-Json -Compress -InputObject @($a[0].Right.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true) | ForEach-Object { $_.Value }))",
+        ].join("\r\n"),
+      );
+      const out = await new Deno.Command("powershell.exe", {
+        args: [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          probe,
+          apply,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const text = new TextDecoder().decode(out.stdout);
+      assertEquals(out.code, 0, new TextDecoder().decode(out.stderr) + text);
+      const got = text.split(/\r?\n/).filter((l) => l !== "");
+      assertEquals(got.slice(0, 3), ["ERRORS 0", "INJECTED 0", "ASSIGN 1"]);
+      const strs = JSON.parse(got[3]!.slice(5)) as string[];
+      assert(strs.includes(INJECTED_NAME), got[3]);
+      assert(strs.includes(CURLY_IDENTITY), got[3]);
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "apply guard (H-119 review r1): a curly quote in a Program path round-trips as acknowledged; a filter read that returns nothing or throws refuses",
+  ignore: Deno.build.os !== "windows",
+  fn: async () => {
+    const P: FakeRule = {
+      name: "P",
+      program: "C:\\Users\\O\u2019Neil\\app.exe",
+    };
+    const A: FakeRule = { name: "A", remote: "10.0.0.1" };
+    const [refused] = await runForeignGuard(
+      applyScript(firewallPlan(IDX), H90),
+      [fakeHost([P, A])],
+    );
+    const inv = refused!.inventory as { Identity: string }[];
+    assertStringIncludes(
+      inv[0]!.Identity,
+      "Program=C:\\Users\\O\u2019Neil\\app.exe;",
+    );
+    const acks = parseAcknowledgedBlocks(JSON.stringify(inv), "inventory");
+    const r = await runForeignGuard(
+      applyScript(firewallPlan(IDX), { ...H90, acknowledgedBlocks: acks }),
+      [
+        fakeHost([P, A]),
+        fakeHost([P, A], "empty"),
+        fakeHost([P, A], "throw"),
+      ],
+    );
+    assertEquals(r.map((x) => x.verdict), [
+      "PASS",
+      "REFUSE foreign block rule P: 0 security filters, expected 1",
+      "REFUSE Access is denied.",
+    ]);
+    // A failed read writes no inventory.
+    assertEquals(r[1]!.inventory, [null]);
+    assertEquals(r[2]!.inventory, [null]);
+  },
 });

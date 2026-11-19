@@ -3882,6 +3882,9 @@ function markerAwareCollector(mutate: (s: EgressState) => void = () => {}) {
         state: m.state,
         networkId: m.network_id,
         interfaceIndex: m.interface_index,
+        ...(m.acknowledged_blocks !== undefined
+          ? { acknowledgedBlocks: m.acknowledged_blocks }
+          : {}),
       };
     } catch { /* no marker */ }
     return s;
@@ -3893,7 +3896,11 @@ Deno.test("harness egress verify: problems fail; without --mark the marker is pa
   const marker = join(root, "results", "harness", EGRESS_MARKER);
   const p = await harnessEgressVerify(
     { root, mark: "candidate" },
-    markerAwareCollector((s) => (s.foreignBlockRules = ["x"])),
+    markerAwareCollector(
+      (
+        s,
+      ) => (s.foreignBlockRules = [{ name: "x", display: "x", identity: "i" }]),
+    ),
   );
   assertStringIncludes(p.join("\n"), "foreign block");
   await assertRejects(() => Deno.stat(marker), Deno.errors.NotFound);
@@ -4168,6 +4175,202 @@ Deno.test("harness egress verify --mark authorized: needs recorded rotation, rec
       probeEvidence: await probeEvidence(root),
     }, c)).join("\n"),
     "downgrade",
+  );
+});
+
+Deno.test("harness egress verify --apply-record (H-119): candidate copies the acknowledged blocks into the marker; qualified and authorized carry them; every later verify honours them", async () => {
+  const root = await Deno.realPath(await testTempDir());
+  const markerPath = join(root, "results", "harness", EGRESS_MARKER);
+  const A = { name: "A", display: "A rule", identity: "id-A" };
+  const c = markerAwareCollector((s) => (s.foreignBlockRules = [A]));
+  const record = join(root, "fw-apply-inv1.json");
+  const writeRecord = (acks?: unknown) =>
+    Deno.writeTextFile(
+      record,
+      JSON.stringify({
+        invocation: "inv1",
+        snapshot: [],
+        created: [],
+        ...(acks !== undefined ? { acknowledgedBlocks: acks } : {}),
+      }),
+    );
+  const marker = async () =>
+    JSON.parse(await Deno.readTextFile(markerPath)).acknowledged_blocks;
+  // Without a record: today's refusal.
+  assertStringIncludes(
+    (await harnessEgressVerify({ root, mark: "candidate" }, c)).join("\n"),
+    "foreign block rule is effective: A rule [A]",
+  );
+  // A record without acknowledgements (a no-flag apply) acknowledges nothing.
+  await writeRecord();
+  assertStringIncludes(
+    (await harnessEgressVerify({ root, applyRecord: record }, c)).join("\n"),
+    "foreign block rule is effective",
+  );
+  // A malformed record or a missing file refuses, naming it.
+  await writeRecord([{ Name: "A" }]);
+  assertStringIncludes(
+    (await harnessEgressVerify({ root, applyRecord: record }, c)).join("\n"),
+    record,
+  );
+  assertStringIncludes(
+    (await harnessEgressVerify({
+      root,
+      applyRecord: join(root, "nope.json"),
+    }, c)).join("\n"),
+    "nope.json",
+  );
+  // A record whose identity differs: changed since acknowledged.
+  await writeRecord([{ Name: "A", Identity: "id-old" }]);
+  assertStringIncludes(
+    (await harnessEgressVerify({ root, applyRecord: record }, c)).join("\n"),
+    "changed since acknowledged: A rule [A]",
+  );
+  await writeRecord([{ Name: "A", Identity: "id-A" }]);
+  assertEquals(await harnessEgressVerify({ root, applyRecord: record }, c), []);
+  await assertRejects(() => Deno.stat(markerPath), Deno.errors.NotFound);
+  assertEquals(
+    await harnessEgressVerify(
+      { root, mark: "candidate", applyRecord: record },
+      c,
+    ),
+    [],
+  );
+  const ack = [{ name: "A", identity: "id-A" }];
+  assertEquals(await marker(), ack);
+  // Plain verify (and so every check that reads the marker) honours the marker's list.
+  assertEquals(await harnessEgressVerify({ root }, c), []);
+  assertStringIncludes(
+    (await harnessEgressVerify(
+      { root },
+      markerAwareCollector((
+        s,
+      ) => (s.foreignBlockRules = [{ ...A, identity: "id-A2" }])),
+    )).join("\n"),
+    "changed since acknowledged",
+  );
+  // An acknowledged rule that is gone is clean (owner ruling).
+  assertEquals(await harnessEgressVerify({ root }, markerAwareCollector()), []);
+  // --apply-record belongs to plain verify and candidate only.
+  assertStringIncludes(
+    (await harnessEgressVerify({
+      root,
+      mark: "qualified",
+      applyRecord: record,
+      probeEvidence: await probeEvidence(root),
+    }, c)).join("\n"),
+    "--apply-record",
+  );
+  assertEquals(
+    await harnessEgressVerify({
+      root,
+      mark: "qualified",
+      probeEvidence: await probeEvidence(root),
+    }, c),
+    [],
+  );
+  assertEquals(await marker(), ack);
+  // Review r1 L3: once the marker is qualified, plain verify uses only the
+  // marker's list (as the release check does); --apply-record is refused before
+  // the record or the host is read.
+  const noRead = (): Promise<EgressState> => {
+    throw new Error("the host was read");
+  };
+  const missing = join(root, "never-read.json");
+  for (const mark of [undefined, "authorized"] as const) {
+    assertStringIncludes(
+      (await harnessEgressVerify({
+        root,
+        applyRecord: missing,
+        ...(mark ? { mark } : {}),
+      }, noRead)).join("\n"),
+      "--apply-record",
+    );
+  }
+  // authorized: the minimum the authorized test sets up.
+  const past = (min: number) =>
+    new Date(Date.now() + min * 60_000).toISOString();
+  const rotation = join(root, "rotation.json");
+  await Deno.writeTextFile(
+    rotation,
+    JSON.stringify({
+      v: 1,
+      credentials: ["claude-oauth", "openrouter"].map((name) => ({
+        name,
+        revoked_at: past(1),
+        created_at: past(1),
+      })),
+    }),
+  );
+  const cells = join(root, "results", "harness", "cells");
+  await Deno.mkdir(join(cells, "executions", "camp1"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "executions", "camp1", "cell-ok.json"),
+    JSON.stringify({
+      id: "cell-ok",
+      manifest: {
+        harness: "claude-code",
+        provider_routes: { main: "anthropic:first-party-oauth" },
+      },
+      termination: "completed",
+      started_at: past(2),
+    }),
+  );
+  await Deno.mkdir(join(cells, "runs", "cell-ok"), { recursive: true });
+  await Deno.writeTextFile(
+    join(cells, "runs", "cell-ok", "record-mode.json"),
+    JSON.stringify({
+      v: 1,
+      execution_id: "cell-ok",
+      record_mode: true,
+      supervised: true,
+      credential_bearing: true,
+      harness: "claude-code",
+      termination: "completed",
+    }),
+  );
+  await Deno.writeTextFile(
+    join(cells, "runs", "cell-ok", "egress.jsonl"),
+    jsonl(tagged()),
+  );
+  await Deno.mkdir(join(root, "harness", "egress"), { recursive: true });
+  await Deno.writeTextFile(
+    join(root, ...RECORDED_HOSTS_PATH.split("/")),
+    JSON.stringify({
+      v: 1,
+      source: "record mode execution cell-ok",
+      routes: { "anthropic:first-party-oauth": ["oauth.example.test"] },
+    }),
+  );
+  assertEquals(
+    await harnessEgressVerify({
+      root,
+      mark: "authorized",
+      rotation,
+      cell: "cell-ok",
+      evidence: "M1-34/001",
+    }, c),
+    [],
+  );
+  assertEquals(await marker(), ack);
+  assertEquals(await harnessEgressVerify({ root }, c), []);
+  assertStringIncludes(
+    (await harnessEgressVerify({ root, applyRecord: missing }, noRead)).join(
+      "\n",
+    ),
+    "--apply-record",
+  );
+  // Review r1 L7: --apply-record with --authorize-route refuses, never ignored.
+  assertStringIncludes(
+    (await harnessEgressAuthorizeRoute({
+      root,
+      route: "openai-codex:oauth",
+      cell: "cell-ok",
+      rotation,
+      evidence: "M1-34/002",
+      applyRecord: record,
+    })).join("\n"),
+    "--apply-record",
   );
 });
 

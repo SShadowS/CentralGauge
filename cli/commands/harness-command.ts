@@ -160,6 +160,8 @@ import {
 } from "../../src/harness/fsutil.ts";
 import { hashTree, sha256Hex } from "../../src/harness/hash.ts";
 import {
+  type AcknowledgedBlock,
+  applyRecordAcknowledgedBlocks,
   authorizedAllowlist,
   authorizedMarkerProblems,
   collectEgressState,
@@ -3814,6 +3816,11 @@ export interface EgressVerifyOptions {
   cell?: string;
   /** authorized: the evidence reference, e.g. M1-34/003. */
   evidence?: string;
+  /**
+   * H-119, plain verify and candidate: the apply record (fw-apply-<inv>.json)
+   * whose acknowledgedBlocks are honoured; candidate copies them into the marker.
+   */
+  applyRecord?: string;
 }
 
 const RotationSchema = z.object({
@@ -3941,6 +3948,8 @@ export interface RouteAuthorizeOptions {
   /** The rotation record naming the route's credential. */
   rotation: string;
   evidence: string;
+  /** H-119 review r1 L7: never meaningful here; given, it refuses. */
+  applyRecord?: string;
 }
 
 /**
@@ -3956,6 +3965,11 @@ export async function harnessEgressAuthorizeRoute(
   o: RouteAuthorizeOptions,
 ): Promise<string[]> {
   const markerPath = join(o.root, "results", "harness", MARKER_FILE);
+  if (o.applyRecord !== undefined) {
+    return [
+      "--apply-record does not apply to --authorize-route (the authorized marker carries its acknowledged_blocks)",
+    ];
+  }
   if (!ROUTE_AUTHORIZED_ROUTES.includes(o.route)) {
     return [
       `${o.route} is not a route authorized on its own (${
@@ -4029,9 +4043,43 @@ export async function harnessEgressVerify(
     collectEgressState(realEgressCollector(m)),
 ): Promise<string[]> {
   const markerPath = join(o.root, "results", "harness", MARKER_FILE);
+  // H-119: the apply record's acknowledged foreign block rules; without one,
+  // verifyEgressState takes the marker's (qualified and authorized carry them).
+  let acknowledged: AcknowledgedBlock[] | undefined;
+  if (o.applyRecord !== undefined) {
+    if (o.mark && o.mark !== "candidate") {
+      return [
+        `--apply-record belongs to plain verify and --mark candidate; --mark ${o.mark} carries the marker's acknowledged_blocks`,
+      ];
+    }
+    // Review r1 L3: a qualified or authorized marker's list is what the
+    // release check uses, so plain verify uses it too.
+    if (!o.mark && await exists(markerPath)) {
+      const state = (await readJsonFile(markerPath, "egress marker") as {
+        state?: unknown;
+      }).state;
+      if (state === "qualified" || state === "authorized") {
+        return [
+          `--apply-record is refused with a ${state} marker: verify, like every credential release, uses the marker's acknowledged_blocks`,
+        ];
+      }
+    }
+    try {
+      acknowledged = applyRecordAcknowledgedBlocks(
+        await Deno.readTextFile(o.applyRecord),
+        `apply record ${o.applyRecord}`,
+      );
+    } catch (err) {
+      return [
+        `cannot use the apply record ${o.applyRecord}: ${
+          (err as Error).message
+        }`,
+      ];
+    }
+  }
   const s = await collect(markerPath);
   if (!o.mark) {
-    const p = verifyEgressState(s);
+    const p = verifyEgressState(s, acknowledged);
     if (s.marker?.state === "authorized" && await exists(markerPath)) {
       const m = await readJsonFile(markerPath, "egress marker") as Record<
         string,
@@ -4087,10 +4135,16 @@ export async function harnessEgressVerify(
   }
   const problems = verifyEgressState(
     o.mark === "candidate" ? { ...s, marker: null } : s,
+    acknowledged,
   );
   if (problems.length > 0) return problems;
   if (!s.network || !s.gatewayAdapter) return ["nothing to mark"];
   const extra: Record<string, unknown> = {};
+  // H-119: candidate takes the apply record's list; later states carry the marker's, like probe_evidence.
+  const carried = o.mark === "candidate"
+    ? (acknowledged?.length ? acknowledged : undefined)
+    : (current as Record<string, unknown> | null)?.["acknowledged_blocks"];
+  if (carried !== undefined) extra["acknowledged_blocks"] = carried;
   if (o.mark === "qualified") {
     const p = await probeProblems(s, o.probeEvidence);
     if (p.length > 0) return p;
@@ -5045,6 +5099,10 @@ export function registerHarnessCommand(
         "authorized: evidence reference (M1-34/nnn)",
       )
       .option(
+        "--apply-record <path:string>",
+        "H-119, plain verify and --mark candidate: the apply record fw-apply-<inv>.json; its acknowledged foreign block rules are honoured, and candidate copies them into the marker",
+      )
+      .option(
         "--authorize-route <route:string>",
         "H-02: authorize one later route (openai-codex:oauth) in the authorized marker, with --cell (its record-mode cell), --rotation and --evidence",
       )
@@ -5057,6 +5115,9 @@ export function registerHarnessCommand(
               cell: opts.cell ?? "",
               rotation: opts.rotation ? resolve(opts.rotation) : "",
               evidence: opts.evidence ?? "",
+              ...(opts.applyRecord
+                ? { applyRecord: resolve(opts.applyRecord) }
+                : {}),
             })
             : await harnessEgressVerify({
               root: Deno.cwd(),
@@ -5067,6 +5128,9 @@ export function registerHarnessCommand(
               ...(opts.rotation ? { rotation: resolve(opts.rotation) } : {}),
               ...(opts.cell ? { cell: opts.cell } : {}),
               ...(opts.evidence ? { evidence: opts.evidence } : {}),
+              ...(opts.applyRecord
+                ? { applyRecord: resolve(opts.applyRecord) }
+                : {}),
             });
           for (const p of problems) {
             console.error(`${colors.red("[FAIL]")} ${p}`);

@@ -443,12 +443,16 @@ export function allowPlan(interfaceIndex: number): FirewallRule[] {
   }));
 }
 
-/** A PowerShell single-quoted literal; refuses what cannot be one line. */
+/**
+ * A PowerShell single-quoted literal; refuses what cannot be one line.
+ * PowerShell also reads U+2018, U+2019, U+201A and U+201B as single quotes,
+ * so each is doubled too (H-119 review r1 M1: firewall-derived names).
+ */
 function psq(s: string, what: string): string {
   if (/[\r\n\0]/.test(s) || s === "") {
     throw new ConfigurationError(`${what} must be one non-empty line`);
   }
-  return `'${s.replaceAll("'", "''")}'`;
+  return `'${s.replace(/['‘’‚‛]/g, "$&$&")}'`;
 }
 
 const PS_HEAD = [
@@ -464,12 +468,122 @@ const PS_HEAD = [
 ];
 
 /**
+ * H-119: the effective block rules outside the group, one shared Windows
+ * PowerShell 5.1 read for the apply and COLLECT_PS (both define
+ * Assert-NotFoundOnly). Per rule: Name, DisplayName (messages only) and
+ * Identity, the rule's effective fields as one readable string with every
+ * multi-valued field sorted (ordinal), so a single value and a one-element
+ * list, or the same addresses in another order, give the same identity. The
+ * filters are read by association from each foreign rule, so only when one
+ * exists; each kind must be read exactly once.
+ */
+const FOREIGN_BLOCKS_PS = [
+  "function Join-Sorted($v) { $a = [string[]]@($v | ForEach-Object { [string]$_ }); [Array]::Sort($a, [StringComparer]::Ordinal); $a -join ',' }",
+  'function Get-FieldText($o, $names) { foreach ($k in $names) { "$($k)=$(Join-Sorted $o.$k)" } }',
+  `function Get-ForeignBlockRules { $e = $null; $rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block -ErrorAction SilentlyContinue -ErrorVariable e | Where-Object { $_.Group -ne '${RULE_GROUP}' }); Assert-NotFoundOnly $e 'the effective block rules'; foreach ($r in $rules) { $f = [ordered]@{ port = @($r | Get-NetFirewallPortFilter -ErrorAction Stop); address = @($r | Get-NetFirewallAddressFilter -ErrorAction Stop); application = @($r | Get-NetFirewallApplicationFilter -ErrorAction Stop); service = @($r | Get-NetFirewallServiceFilter -ErrorAction Stop); interface = @($r | Get-NetFirewallInterfaceFilter -ErrorAction Stop); interfaceType = @($r | Get-NetFirewallInterfaceTypeFilter -ErrorAction Stop); security = @($r | Get-NetFirewallSecurityFilter -ErrorAction Stop) }; foreach ($k in @($f.Keys)) { if ($f[$k].Count -ne 1) { throw "foreign block rule $($r.Name): $($f[$k].Count) $k filters, expected 1" } }; $id =@(Get-FieldText $r 'Direction', 'Action', 'Enabled', 'Profile', 'PolicyStoreSource', 'PolicyStoreSourceType', 'EdgeTraversalPolicy') + @(Get-FieldText $f.port[0] 'Protocol', 'LocalPort', 'RemotePort', 'IcmpType') + @(Get-FieldText $f.address[0] 'LocalAddress', 'RemoteAddress') + @(Get-FieldText $f.application[0] 'Program', 'Package') + @(Get-FieldText $f.service[0] 'Service') + @(Get-FieldText $f.interface[0] 'InterfaceAlias') + @(Get-FieldText $f.interfaceType[0] 'InterfaceType') + @(Get-FieldText $f.security[0] 'Authentication', 'Encryption', 'RemoteUser', 'RemoteMachine', 'LocalUser'); [ordered]@{ Name = [string]$r.Name; DisplayName = [string]$r.DisplayName; Identity = $id -join '; ' } } }`,
+];
+
+/** One acknowledged entry: the inventory's (or the apply record's) Name and Identity. */
+const AcknowledgedEntry = z.object({
+  Name: z.string().min(1),
+  DisplayName: z.string().optional(),
+  Identity: z.string().min(1),
+}).strict();
+
+/** Each acknowledged rule once, by name; every value one line (it becomes a PowerShell literal). */
+function checkAcknowledged(acks: AcknowledgedBlock[], what: string): void {
+  if (acks.length === 0) {
+    throw new ConfigurationError(`${what} acknowledges no rule`);
+  }
+  const seen = new Set<string>();
+  for (const a of acks) {
+    if (
+      a.name === "" || a.identity === "" || /[\r\n\0]/.test(a.name + a.identity)
+    ) {
+      throw new ConfigurationError(
+        `${what}: every Name and Identity must be one non-empty line`,
+      );
+    }
+    if (seen.has(a.name)) {
+      throw new ConfigurationError(`${what}: ${a.name} is listed twice`);
+    }
+    seen.add(a.name);
+  }
+}
+
+function acknowledgedList(v: unknown, what: string): AcknowledgedBlock[] {
+  const r = z.array(AcknowledgedEntry).safeParse(v);
+  if (!r.success) {
+    throw new ConfigurationError(
+      `${what} must be a list of {Name, Identity} entries (the trimmed fw-block-inventory): ${
+        r.error.issues.map((i) =>
+          `${i.path.join(".") || "(root)"}: ${i.message}`
+        )
+          .join("; ")
+      }`,
+    );
+  }
+  const acks = r.data.map((x) => ({ name: x.Name, identity: x.Identity }));
+  checkAcknowledged(acks, what);
+  return acks;
+}
+
+/**
+ * H-119: the owner-trimmed fw-block-inventory-<inv>.json a refused apply
+ * wrote, as the acknowledged rules (`--acknowledge-blocks`). Anything else
+ * refuses.
+ */
+export function parseAcknowledgedBlocks(
+  text: string,
+  what: string,
+): AcknowledgedBlock[] {
+  let v: unknown;
+  try {
+    v = JSON.parse(text.replace(/^﻿/, ""));
+  } catch (err) {
+    throw new ConfigurationError(
+      `${what} is not JSON: ${(err as Error).message}`,
+    );
+  }
+  return acknowledgedList(v, what);
+}
+
+/**
+ * H-119: the acknowledged rules an apply recorded (fw-apply-<inv>.json);
+ * an apply generated without --acknowledge-blocks recorded none.
+ */
+export function applyRecordAcknowledgedBlocks(
+  text: string,
+  what: string,
+): AcknowledgedBlock[] {
+  let v: unknown;
+  try {
+    v = JSON.parse(text.replace(/^﻿/, ""));
+  } catch (err) {
+    throw new ConfigurationError(
+      `${what} is not JSON: ${(err as Error).message}`,
+    );
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) {
+    throw new ConfigurationError(`${what} is not an apply record`);
+  }
+  const acks = (v as Record<string, unknown>)["acknowledgedBlocks"];
+  return acks === undefined ? [] : acknowledgedList(acks, what);
+}
+
+/**
  * Transactional apply (run elevated by ops, M1-34). Refuses before any
  * change (existing group, wrong adapter, adapter not the vEthernet of the
  * inspected HNS network, foreign effective blocks); writes the apply record
  * with the profile snapshot before the first change; records every rule it
  * creates; on any error removes only those and restores the profiles, and
  * keeps the record for revert when that rollback is incomplete.
+ * H-119: `dockerContext` (the generator's resolveDockerContext(), as verify
+ * uses) pins `docker --context`; without it docker inherits the machine's
+ * context. `acknowledgedBlocks` (--acknowledge-blocks) lets the apply run
+ * when every effective foreign block rule is acknowledged with the same
+ * identity (one gone is clean) and records them; without it any foreign
+ * block refuses, as before.
  * Deterministic: the same inputs give the same script.
  */
 export function applyScript(
@@ -488,6 +602,8 @@ export function applyScript(
      * anything but Allow (H-90 review r1 H1).
      */
     keepInbound?: boolean;
+    dockerContext?: string | undefined;
+    acknowledgedBlocks?: AcknowledgedBlock[] | undefined;
   },
 ): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(o.invocation)) {
@@ -507,10 +623,26 @@ export function applyScript(
       "applyScript takes exactly firewallPlan(interfaceIndex)",
     );
   }
+  if (
+    o.dockerContext !== undefined &&
+    !/^[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}$/.test(o.dockerContext)
+  ) {
+    throw new ConfigurationError(
+      `docker context must be a context name (letters, digits, _ . + -; got ${
+        JSON.stringify(o.dockerContext)
+      })`,
+    );
+  }
+  const ctx = o.dockerContext === undefined
+    ? null
+    : psq(o.dockerContext, "docker context");
   const dir = psq(o.dir, "dir");
   const alias = psq(o.interfaceAlias, "interface alias");
+  const acks = o.acknowledgedBlocks;
+  if (acks) checkAcknowledged(acks, "acknowledgedBlocks");
   const f = (kind: string) =>
     `(Join-Path $dir 'fw-${kind}-${o.invocation}.json')`;
+  const inventory = `fw-block-inventory-${o.invocation}.json`;
   const lines = [
     `# Generated by scripts/harness/egress-scripts.ts (M1-33) for invocation ${o.invocation}. Run elevated (M1-34); do not edit.`,
     ...PS_HEAD,
@@ -523,8 +655,10 @@ export function applyScript(
     `Assert-NotFoundOnly $e 'the ${RULE_GROUP} group'`,
     `if ($existing.Count -gt 0) { throw 'group ${RULE_GROUP} exists: revert first' }`,
     "# The HNS network is the Docker sandbox network's own; the caller's id must agree.",
-    "$dockerContext = if ($env:DOCKER_CONTEXT) { $env:DOCKER_CONTEXT } else { 'desktop-windows' }",
-    `$inspect = & docker --context $dockerContext network inspect ${SANDBOX_NETWORK.name}`,
+    // H-119: the context the generator resolved (as verify does), or the machine's.
+    `$inspect = & docker${
+      ctx ? ` --context ${ctx}` : ""
+    } network inspect ${SANDBOX_NETWORK.name}`,
     `if ($LASTEXITCODE -ne 0) { throw "docker network inspect ${SANDBOX_NETWORK.name} failed (exit $LASTEXITCODE)" }`,
     '$net = ConvertFrom-Json ($inspect -join "`n")',
     "$net = @($net)",
@@ -539,11 +673,29 @@ export function applyScript(
     `if ($hns.Count -ne 1) { throw "HNS network ${o.hnsId} not found (found $($hns.Count)): regenerate the scripts" }`,
     '$vEthernet = @("vEthernet ($([string]$hns[0].Name))", "vEthernet ($([string]$hns[0].Id))")',
     `if ($vEthernet -notcontains [string]$ip.InterfaceAlias) { throw "adapter '$($ip.InterfaceAlias)' is not the vEthernet of HNS network ${o.hnsId} ($($hns[0].Name)): refusing" }`,
-    "$e = $null",
-    `$foreign = @(Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block -ErrorAction SilentlyContinue -ErrorVariable e | Where-Object { $_.Group -ne '${RULE_GROUP}' } | ForEach-Object { [ordered]@{ Name = [string]$_.Name; DisplayName = [string]$_.DisplayName; Direction = [string]$_.Direction; Profile = [string]$_.Profile; Source = [string]$_.PolicyStoreSource } })`,
-    "Assert-NotFoundOnly $e 'the effective block rules'",
+    ...FOREIGN_BLOCKS_PS,
+    "$foreign = @(Get-ForeignBlockRules)",
     `Save-Json ${f("block-inventory")} $foreign`,
-    `if ($foreign.Count -gt 0) { throw "owner decision required: $($foreign.Count) effective block rules exist outside ${RULE_GROUP}; see ${`fw-block-inventory-${o.invocation}.json`}" }`,
+    ...(acks
+      ? [
+        "# Generated with --acknowledge-blocks (H-119): every effective foreign block rule must be acknowledged with the same identity; an acknowledged rule that is gone is clean (owner ruling).",
+        `$acknowledged = @(${
+          acks.map((a) =>
+            `[ordered]@{ Name = ${
+              psq(a.name, "acknowledged name")
+            }; Identity = ${psq(a.identity, "acknowledged identity")} }`
+          ).join(", ")
+        })`,
+        "$unacknowledged = @($foreign | Where-Object { $n = $_.Name; @($acknowledged | Where-Object { $_.Name -ceq $n }).Count -eq 0 })",
+        `if ($unacknowledged.Count -gt 0) { throw "owner decision required: $($unacknowledged.Count) effective block rules exist outside ${RULE_GROUP} and are not acknowledged: $(($unacknowledged | ForEach-Object { "$($_.DisplayName) [$($_.Name)]" }) -join ', '); see ${inventory}" }`,
+        "$changed = @($foreign | Where-Object { $x = $_; @($acknowledged | Where-Object { $_.Name -ceq $x.Name -and $_.Identity -cne $x.Identity }).Count -gt 0 })",
+        `if ($changed.Count -gt 0) { throw "acknowledged block rules changed since acknowledged: $(($changed | ForEach-Object { "$($_.DisplayName) [$($_.Name)]" }) -join ', '); regenerate the apply with --acknowledge-blocks from the new ${inventory}" }`,
+        "$gone = @($acknowledged | Where-Object { $n = $_.Name; @($foreign | Where-Object { $_.Name -ceq $n }).Count -eq 0 })",
+        `if ($gone.Count -gt 0) { Write-Output "[INFO] acknowledged block rules no longer effective (clean): $(($gone | ForEach-Object { $_.Name }) -join ', ')" }`,
+      ]
+      : [
+        `if ($foreign.Count -gt 0) { throw "owner decision required: $($foreign.Count) effective block rules exist outside ${RULE_GROUP}; see ${inventory}" }`,
+      ]),
     ...(o.keepInbound
       ? [
         "# Generated with --keep-inbound: the effective inbound default must be Block on at least one profile and Allow or Block on each; a disabled Block profile refuses (enabling it would block the host).",
@@ -561,7 +713,7 @@ export function applyScript(
     // keptInbound tells the opt-in revert that the inbound defaults were left as the snapshot holds them.
     `$record = [ordered]@{ invocation = '${o.invocation}'; snapshot = $snapshot; created = $created${
       o.keepInbound ? "; keptInbound = $true" : ""
-    } }`,
+    }${acks ? "; acknowledgedBlocks = $acknowledged" : ""} }`,
     `$applied = ${f("apply")}`,
     "Save-JsonAtomic $applied $record",
     "$changedProfiles = $false",
@@ -728,14 +880,31 @@ export interface EgressState {
     outbound: string;
   }[];
   groupRules: FirewallRule[];
-  foreignBlockRules: string[];
+  foreignBlockRules: ForeignBlockRule[];
   marker: {
     state: string;
     networkId: string;
     interfaceIndex: number;
     /** The proxy isolation model the marker was written for (absent on older markers). */
     proxyIsolation?: unknown;
+    /** H-119: the foreign block rules the owner acknowledged (absent on older markers). */
+    acknowledgedBlocks?: AcknowledgedBlock[];
   } | null;
+}
+
+/** H-119: an effective block rule outside the group, read by the shared PowerShell snippet. */
+export interface ForeignBlockRule {
+  name: string;
+  /** DisplayName, for messages only. */
+  display: string;
+  /** The rule's effective fields as one readable string (multi-valued fields sorted). */
+  identity: string;
+}
+
+/** H-119: a foreign block rule the owner acknowledged, by name and identity. */
+export interface AcknowledgedBlock {
+  name: string;
+  identity: string;
 }
 
 const FIELDS = [
@@ -767,7 +936,17 @@ const LABEL: Record<(typeof FIELDS)[number], string> = {
   interfaceType: "interface type",
 };
 
-export function verifyEgressState(s: EgressState): string[] {
+/**
+ * The effective state's problems. H-119: `acknowledged` (by default the
+ * marker's acknowledged_blocks, so every check before a credential release
+ * honours them) are foreign block rules the owner accepted: one still
+ * effective with the same identity is clean, one whose identity differs is
+ * named, and one no longer effective is clean (owner ruling 2026-11-19).
+ */
+export function verifyEgressState(
+  s: EgressState,
+  acknowledged: AcknowledgedBlock[] = s.marker?.acknowledgedBlocks ?? [],
+): string[] {
   const p: string[] = [];
   const n = s.network;
   if (!n) p.push(`network ${SANDBOX_NETWORK.name} is missing`);
@@ -895,8 +1074,16 @@ export function verifyEgressState(s: EgressState): string[] {
       p.push(`profile ${pr.name}: default outbound is ${pr.outbound}`);
     }
   }
+  const ack = new Map(acknowledged.map((a) => [a.name, a.identity]));
   for (const f of s.foreignBlockRules) {
-    p.push(`foreign block rule is effective: ${f}`);
+    const want = ack.get(f.name);
+    if (want === undefined) {
+      p.push(`foreign block rule is effective: ${f.display} [${f.name}]`);
+    } else if (want !== f.identity) {
+      p.push(
+        `acknowledged block rule changed since acknowledged: ${f.display} [${f.name}]`,
+      );
+    }
   }
   return p;
 }
@@ -1114,13 +1301,24 @@ const RawSchema = z.object({
     }),
     interfaceType: filterList({ InterfaceType: z.string() }),
   }).strict(),
-  foreignBlockRules: z.array(z.string()),
+  foreignBlockRules: z.array(
+    z.object({
+      Name: z.string().min(1),
+      DisplayName: z.string(),
+      Identity: z.string().min(1),
+    }).strict(),
+  ),
   marker: z.object({
     v: z.literal(1),
     state: z.enum(MARKER_STATES),
     network_id: z.string().min(1),
     interface_index: z.number().int(),
     proxy_isolation: z.unknown().optional(),
+    // H-119: optional, so a marker written before it still parses.
+    acknowledged_blocks: z.array(
+      z.object({ name: z.string().min(1), identity: z.string().min(1) })
+        .strict(),
+    ).optional(),
   }).nullable(),
 }).strict();
 
@@ -1274,13 +1472,20 @@ export async function collectEgressState(
         interfaceType: itf(id).InterfaceType,
       };
     }),
-    foreignBlockRules: d.foreignBlockRules,
+    foreignBlockRules: d.foreignBlockRules.map((x) => ({
+      name: x.Name,
+      display: x.DisplayName,
+      identity: x.Identity,
+    })),
     marker: d.marker && {
       state: d.marker.state,
       networkId: d.marker.network_id,
       interfaceIndex: d.marker.interface_index,
       ...(d.marker.proxy_isolation !== undefined
         ? { proxyIsolation: d.marker.proxy_isolation }
+        : {}),
+      ...(d.marker.acknowledged_blocks !== undefined
+        ? { acknowledgedBlocks: d.marker.acknowledged_blocks }
         : {}),
     },
   };
@@ -1314,9 +1519,9 @@ export const COLLECT_PS = [
   "  $filters.interface = @($rules | Get-NetFirewallInterfaceFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; InterfaceIndex = @($_.InterfaceAlias | ForEach-Object { if ([string]$_ -eq 'Any') { 0 } elseif ($ifIndex.ContainsKey([string]$_)) { $ifIndex[[string]$_] } else { $null } }) } })",
   "  $filters.interfaceType = @($rules | Get-NetFirewallInterfaceTypeFilter -ErrorAction Stop | ForEach-Object { [ordered]@{ InstanceID = [string]$_.InstanceID; InterfaceType = [string]$_.InterfaceType } })",
   "}",
-  "$e = $null",
-  `$foreign = @(Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -Action Block -ErrorAction SilentlyContinue -ErrorVariable e | Where-Object { $_.Group -ne '${RULE_GROUP}' } | ForEach-Object { \"$($_.DisplayName) [$($_.Name), $($_.Direction), $($_.PolicyStoreSource)]\" })`,
-  "Assert-NotFoundOnly $e 'the effective block rules'",
+  "# H-119: the apply's own foreign-rule read, so verify compares the identity the owner acknowledged.",
+  ...FOREIGN_BLOCKS_PS,
+  "$foreign = @(Get-ForeignBlockRules)",
   "$profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Enabled = [string]$_.Enabled; DefaultInboundAction = [string]$_.DefaultInboundAction; DefaultOutboundAction = [string]$_.DefaultOutboundAction } })",
   "$e = $null",
   "$ip = @(Get-NetIPAddress -IPAddress $gw -ErrorAction SilentlyContinue -ErrorVariable e)",
