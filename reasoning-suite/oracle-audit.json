@@ -1,0 +1,348 @@
+{
+ "CG-AL-E007": {
+  "tests": [
+   "TestReportCanBeRun",
+   "TestReportWithSingleCustomer",
+   "TestReportWithMultipleCustomers",
+   "TestReportWithFilteredCustomers",
+   "TestReportWithEmptyDataset",
+   "TestReportSavesToStream",
+   "TestReportColumnValues"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestReportCanBeRun",
+   "TestReportWithSingleCustomer",
+   "TestReportWithMultipleCustomers",
+   "TestReportWithFilteredCustomers",
+   "TestReportWithEmptyDataset"
+  ],
+  "placeholders": 5,
+  "hollowOracle": false,
+  "tier": "easy",
+  "path": "tests/al/easy/CG-AL-E007.Test.al"
+ },
+ "CG-AL-E008": {
+  "tests": [
+   "TestInterfaceCompiles",
+   "TestInterfaceCanBeDeclared",
+   "TestInterfaceProceduresExist",
+   "TestProcessPayment",
+   "TestValidatePayment",
+   "TestGetTransactionFee"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestInterfaceCompiles",
+   "TestInterfaceCanBeDeclared",
+   "TestInterfaceProceduresExist"
+  ],
+  "placeholders": 3,
+  "hollowOracle": false,
+  "tier": "easy",
+  "path": "tests/al/easy/CG-AL-E008.Test.al"
+ },
+ "CG-AL-H003": {
+  "tests": [
+   "TestHighInventoryDiscount",
+   "TestMinDiscountFilter",
+   "TestFinalPriceCalculation",
+   "TestTempTableCleared",
+   "TestZeroPriceItemsExcluded"
+  ],
+  "vacuousTests": [
+   "TestHighInventoryDiscount"
+  ],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [],
+  "placeholders": 0,
+  "hollowOracle": false,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-H003.Test.al"
+ },
+ "CG-AL-H011": {
+  "tests": [
+   "TestQueryHasCorrectProperties",
+   "TestQueryReturnsAggregatedData",
+   "TestQueryFiltersByOrderType",
+   "TestQueryHasSumColumn",
+   "TestQueryHasCountColumn"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestQueryHasCorrectProperties",
+   "TestQueryReturnsAggregatedData",
+   "TestQueryFiltersByOrderType",
+   "TestQueryHasSumColumn",
+   "TestQueryHasCountColumn"
+  ],
+  "placeholders": 5,
+  "hollowOracle": true,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-H011.Test.al"
+ },
+ "CG-AL-H017": {
+  "tests": [
+   "TestQueryCompiles",
+   "TestQueryHasCrossJoinBehavior",
+   "TestQueryColumnsAccessible"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestQueryCompiles",
+   "TestQueryHasCrossJoinBehavior",
+   "TestQueryColumnsAccessible"
+  ],
+  "placeholders": 3,
+  "hollowOracle": true,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-H017.Test.al"
+ },
+ "CG-AL-H019": {
+  "tests": [
+   "TestGetPublicData_ReturnsValue",
+   "TestProcessSensitiveData_ProcessesInput",
+   "TestTryProcessData_ReportsSuccess",
+   "TestCodeunitAccessible"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [],
+  "placeholders": 2,
+  "hollowOracle": false,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-H019.Test.al"
+ },
+ "CG-AL-H031": {
+  "tests": [
+   "TestGetFieldClassText_FlowField",
+   "TestGetFieldClassText_Normal",
+   "TestGetFieldClassText_Missing",
+   "TestIsFlowField_True",
+   "TestIsFlowField_False_Normal",
+   "TestIsFlowField_False_Missing",
+   "TestCalcIfFlowField_True",
+   "TestCalcIfFlowField_False_Normal",
+   "TestCalcIfFlowField_False_Missing",
+   "TestGetCalculatedDecimal_FlowField",
+   "TestGetCalculatedDecimal_Missing",
+   "TestIsFlowFilter_True",
+   "TestIsFlowFilter_False_FlowField",
+   "TestIsFlowFilter_False_Normal",
+   "TestGetClassOrdinal_Normal",
+   "TestGetClassOrdinal_FlowField",
+   "TestGetClassOrdinal_FlowFilter",
+   "TestGetClassOrdinal_Missing",
+   "TestSumFieldByFilter_GroupA",
+   "TestSumFieldByFilter_GroupB",
+   "TestSumFieldByFilter_NoMatch",
+   "TestCalcIfFlowField_OnGroup_TotalAmount"
+  ],
+  "vacuousTests": [
+   "TestCalcIfFlowField_True"
+  ],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [],
+  "placeholders": 0,
+  "hollowOracle": false,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-H031.Test.al"
+ },
+ "CG-AL-X083": {
+  "tests": [
+   "ImportCountsEveryPackageAndKeepsOtherFieldsAccurate",
+   "ImportCountsEveryPackageWhenTheSenderFormatsTheMessageDifferently",
+   "ForeignPackagesFromOtherPartnersNeverInflateTheCount",
+   "APackageThatCarriesNoShipmentIdentityIsNeverCounted",
+   "EmptyShipmentReportsZeroPackagesWithoutError",
+   "TheOldMessageFormatStillImportsAnEmptyShipmentCleanly",
+   "GetLastImportedPackageCountMatchesTheMostRecentImportForThatShipment",
+   "GetLastImportedPackageCountReflectsOnlyItsOwnShipmentAfterALaterImportOfAnother",
+   "GetLastImportedPackageCountIsZeroForAShipmentNeverImported"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [
+   "sub-day wall clock (CurrentDateTime/Time)"
+  ],
+  "hollowTests": [],
+  "placeholders": 0,
+  "hollowOracle": false,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-X083.Test.al"
+ },
+ "CG-AL-X096": {
+  "tests": [
+   "RefreshRateRecoversFromRepeatedServerErrorBursts",
+   "RefreshRateAlreadyRecoversFromTheFamiliarServerError",
+   "RefreshRateRecoversFromRateLimiting",
+   "RefreshRateFailsWhenTheProviderNeverRecovers",
+   "GivesUpImmediatelyOnANotFoundResponse",
+   "GivesUpImmediatelyOnABadRequestResponse",
+   "GivesUpImmediatelyJustBelowTheServerErrorRange",
+   "GivesUpImmediatelyOnAMidRangeClientError",
+   "RecoversFromALessCommonServerErrorCode",
+   "RecoversFromTheHighestServerErrorCode",
+   "RecoversFromEveryServerErrorStatusInTheFullRange",
+   "SucceedsImmediatelyOnAnyTwoHundredStatus",
+   "ASingleAllowedAttemptMeansNoRetryEvenForAServerError",
+   "BackoffTallyStartsFreshOnEveryCall",
+   "AttemptsThatReportNoStatusAreNeverTreatedAsARepeatOfTheAttemptBeforeThem",
+   "GetLastImportedPackageCountReflectsOnlyItsOwnShipmentAfterALaterImportOfAnother",
+   "ImportCountsEveryPackageAndKeepsOtherFieldsAccurate",
+   "ImportCountsEveryPackageWhenTheSenderFormatsTheMessageDifferently",
+   "ForeignPackagesFromOtherPartnersNeverInflateTheCount",
+   "APackageThatCarriesNoShipmentIdentityIsNeverCounted",
+   "EmptyShipmentReportsZeroPackagesWithoutError",
+   "TheOldMessageFormatStillImportsAnEmptyShipmentCleanly",
+   "GetLastImportedPackageCountMatchesTheMostRecentImportForThatShipment",
+   "GetLastImportedPackageCountIsZeroForAShipmentNeverImported",
+   "ToWireDecimalRendersPlainDigitsWithDotSeparator",
+   "ToWireDecimalKeepsLeadingMinusForNegativeValues",
+   "ToWireDecimalStaysPlainBelowTheFirstGroupingBoundary",
+   "ToWireDecimalHasNoGroupSeparatorAtTheGroupingBoundary",
+   "ToWireDateRendersYearMonthDay",
+   "ToWireDatePadsSingleDigitMonthAndDay",
+   "FromWireDecimalParsesValidWireText",
+   "FromWireDecimalParsesNegativeWireText",
+   "FromWireDecimalRejectsCommaFormattedText",
+   "FromWireDecimalRejectsGarbageWithoutError",
+   "FromWireDateParsesValidWireText",
+   "FromWireDateRejectsLocaleFormattedText",
+   "FromWireDateRejectsGarbageWithoutError",
+   "DecimalRoundTripSweepSurvivesThroughWireText",
+   "DateRoundTripSweepSurvivesThroughWireText",
+   "ExportedDocumentIsWellFormedJson",
+   "HeaderFieldsRoundTripToTheExportedDocument",
+   "OrderDateWithSingleDigitDayAndMonthSerializesAsExactIsoString",
+   "OrderDateWithDoubleDigitDayAndMonthSerializesAsExactIsoString",
+   "UnitPriceSerializesAsAPlainJsonNumberNotAText",
+   "QuantityAndLineAmountSerializeAsPlainJsonNumbers",
+   "LineAmountIsTheStoredValueNotARecomputation",
+   "LinesArrayCoversOnlyThisOrdersOwnLinesInLineNoOrder",
+   "DescriptionsWithQuotesAndBackslashesRoundTripUnchanged",
+   "OrderWithoutLinesSerializesAnEmptyLinesArray"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [
+   "sub-day wall clock (CurrentDateTime/Time)"
+  ],
+  "hollowTests": [],
+  "placeholders": 0,
+  "hollowOracle": false,
+  "tier": "hard",
+  "path": "tests/al/hard/CG-AL-X096.Test.al"
+ },
+ "CG-AL-M005": {
+  "tests": [
+   "TestSendPaymentRequestReturnsBoolean",
+   "TestValidatePaymentResponseApproved",
+   "TestValidatePaymentResponseMissingStatus",
+   "TestValidatePaymentResponseMissingTransactionId",
+   "TestValidatePaymentResponseMissingAmount",
+   "TestValidatePaymentResponseDeclined",
+   "TestValidatePaymentResponsePending",
+   "TestValidatePaymentResponseEmptyJson",
+   "TestGetPaymentStatusReturnsText",
+   "TestHandlePaymentWebhookPaymentCompleted",
+   "TestHandlePaymentWebhookPaymentFailed",
+   "TestHandlePaymentWebhookMissingEvent",
+   "TestHandlePaymentWebhookEmptyPayload",
+   "TestLogPaymentTransactionExecutes",
+   "TestLogPaymentTransactionDifferentStatuses",
+   "TestJsonSerializationRoundtrip",
+   "TestJsonDeserializationWithNestedObjects",
+   "TestSendPaymentRequestWithVariousCurrencies",
+   "TestSendPaymentRequestWithZeroAmount",
+   "TestSendPaymentRequestWithNegativeAmount",
+   "TestSendPaymentRequestWithLargeAmount",
+   "TestHandlePaymentWebhookRefundEvent"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestLogPaymentTransactionExecutes",
+   "TestLogPaymentTransactionDifferentStatuses",
+   "TestSendPaymentRequestWithVariousCurrencies"
+  ],
+  "placeholders": 11,
+  "hollowOracle": false,
+  "tier": "medium",
+  "path": "tests/al/medium/CG-AL-M005.Test.al"
+ },
+ "CG-AL-M009": {
+  "tests": [
+   "TestInterfaceCompiles",
+   "TestInterfaceCanBeDeclared",
+   "TestMockImplementsInterface",
+   "TestCalculateShippingCost",
+   "TestEstimateDeliveryTime",
+   "TestCreateShipment",
+   "TestTrackShipment",
+   "TestValidateAddressValid",
+   "TestValidateAddressInvalid",
+   "TestShippingCostByWeight",
+   "TestDeliveryTimeByService"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestInterfaceCompiles",
+   "TestInterfaceCanBeDeclared",
+   "TestMockImplementsInterface"
+  ],
+  "placeholders": 3,
+  "hollowOracle": false,
+  "tier": "medium",
+  "path": "tests/al/medium/CG-AL-M009.Test.al"
+ },
+ "CG-AL-M010": {
+  "tests": [
+   "TestProjectTableHasRequiredFields",
+   "TestProjectTaskTableHasRequiredFields",
+   "TestProjectStatusOptions",
+   "TestProjectTaskStatusOptions",
+   "TestProjectCardPageExists",
+   "TestProjectManagementCodeunitExists",
+   "TestCreateProject",
+   "TestCreateProjectTask",
+   "TestProjectTaskCompositeKey",
+   "TestProjectTaskTableRelation",
+   "TestProjectTaskRelationshipMultipleTasks",
+   "TestCalculateTotalEstimatedHours",
+   "TestCalculateTotalEstimatedHoursNoTasks",
+   "TestProjectCardDisplaysProjectData",
+   "TestProjectManagementCreateProject",
+   "TestProjectManagementActivateProject",
+   "TestProjectManagementCompleteProjectSuccess",
+   "TestProjectCompleteWithOpenTasksFails",
+   "TestProjectCompleteWithInProgressTasksFails",
+   "TestCascadeDeleteRemovesAllTasks",
+   "TestCascadeDeleteWithNoTasks"
+  ],
+  "vacuousTests": [],
+  "nondeterminismSources": [],
+  "nondeterminismAdvisory": [],
+  "hollowTests": [
+   "TestProjectManagementCodeunitExists"
+  ],
+  "placeholders": 1,
+  "hollowOracle": false,
+  "tier": "medium",
+  "path": "tests/al/medium/CG-AL-M010.Test.al"
+ }
+}

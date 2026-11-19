@@ -1,0 +1,463 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-26T09:05:03.127660Z",
+  "what": "The .probe.json verdict each task carried BEFORE the phase-1 determinism backfill re-probed it. Archived because re-probing overwrites .probe.json in place, so without this the pre-backfill state would be unrecoverable and the 'did the verdict change?' comparison would have nothing to compare against.",
+  "baselines": {
+    "CG-AL-X055": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T11:45:37.771Z"
+    },
+    "CG-AL-X056": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T12:51:54.758Z"
+    },
+    "CG-AL-X057": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T12:53:39.699Z"
+    },
+    "CG-AL-X058": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T13:00:59.856Z"
+    },
+    "CG-AL-X059": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T13:02:06.791Z"
+    },
+    "CG-AL-X060": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T13:03:09.552Z"
+    },
+    "CG-AL-X061": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T13:23:52.104Z"
+    },
+    "CG-AL-X062": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T13:25:03.056Z"
+    },
+    "CG-AL-X063": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-20T13:26:13.304Z"
+    },
+    "CG-AL-X064": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-22T20:07:12.572Z"
+    },
+    "CG-AL-X065": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T14:24:10.271Z"
+    },
+    "CG-AL-X066": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:37:34.033Z"
+    },
+    "CG-AL-X067": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:38:31.033Z"
+    },
+    "CG-AL-X068": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T19:00:17.563Z"
+    },
+    "CG-AL-X069": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T19:03:04.967Z"
+    },
+    "CG-AL-X070": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T18:38:35.853Z"
+    },
+    "CG-AL-X071": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T18:46:31.547Z"
+    },
+    "CG-AL-X072": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T19:03:46.475Z"
+    },
+    "CG-AL-X073": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:39:33.929Z"
+    },
+    "CG-AL-X074": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:40:21.451Z"
+    },
+    "CG-AL-X075": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T18:33:40.762Z"
+    },
+    "CG-AL-X076": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T20:35:02.951Z"
+    },
+    "CG-AL-X077": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T07:25:05.220Z"
+    },
+    "CG-AL-X078": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T20:00:54.626Z"
+    },
+    "CG-AL-X079": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T20:38:33.976Z"
+    },
+    "CG-AL-X080": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T20:37:54.188Z"
+    },
+    "CG-AL-X081": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T20:34:23.852Z"
+    },
+    "CG-AL-X082": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:41:51.236Z"
+    },
+    "CG-AL-X083": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:42:36.501Z"
+    },
+    "CG-AL-X084": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:43:26.503Z"
+    },
+    "CG-AL-X085": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T20:32:26.941Z"
+    },
+    "CG-AL-X086": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:27:06.122Z"
+    },
+    "CG-AL-X087": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:40:47.724Z"
+    },
+    "CG-AL-X088": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:28:01.076Z"
+    },
+    "CG-AL-X089": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:29:00.021Z"
+    },
+    "CG-AL-X090": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:26:09.164Z"
+    },
+    "CG-AL-X091": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:30:58.566Z"
+    },
+    "CG-AL-X092": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:30:13.253Z"
+    },
+    "CG-AL-X093": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:33:11.987Z"
+    },
+    "CG-AL-X094": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:22:59.830Z"
+    },
+    "CG-AL-X095": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:44:11.228Z"
+    },
+    "CG-AL-X096": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:44:57.490Z"
+    },
+    "CG-AL-X097": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:45:43.512Z"
+    },
+    "CG-AL-X098": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:46:30.487Z"
+    },
+    "CG-AL-X099": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T12:47:19.161Z"
+    },
+    "CG-AL-X100": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-23T21:58:44.211Z"
+    },
+    "CG-AL-X101": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T19:40:49.624Z"
+    },
+    "CG-AL-X102": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T13:40:57.289Z"
+    },
+    "CG-AL-X103": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T14:07:02.887Z"
+    },
+    "CG-AL-X104": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T13:49:09.314Z"
+    },
+    "CG-AL-X105": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T14:02:45.475Z"
+    },
+    "CG-AL-X106": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T14:03:35.257Z"
+    },
+    "CG-AL-X107": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T14:04:26.429Z"
+    },
+    "CG-AL-X108": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T13:50:50.645Z"
+    },
+    "CG-AL-X109": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-24T14:05:21.950Z"
+    },
+    "CG-AL-X110": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T19:41:31.106Z"
+    },
+    "CG-AL-X111": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:14:46.346Z"
+    },
+    "CG-AL-X112": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:15:26.233Z"
+    },
+    "CG-AL-X113": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T19:49:38.806Z"
+    },
+    "CG-AL-X114": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:11:13.359Z"
+    },
+    "CG-AL-X115": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T19:50:58.932Z"
+    },
+    "CG-AL-X116": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:11:54.006Z"
+    },
+    "CG-AL-X117": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:12:57.196Z"
+    },
+    "CG-AL-X118": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:17:39.192Z"
+    },
+    "CG-AL-X119": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T19:53:04.793Z"
+    },
+    "CG-AL-X120": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-25T20:04:04.882Z"
+    },
+    "CG-AL-X121": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:53:17.386Z"
+    },
+    "CG-AL-X122": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:54:25.556Z"
+    },
+    "CG-AL-X123": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:37:35.419Z"
+    },
+    "CG-AL-X124": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:36:27.205Z"
+    },
+    "CG-AL-X125": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:51:18.732Z"
+    },
+    "CG-AL-X126": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:38:15.658Z"
+    },
+    "CG-AL-X127": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:39:03.098Z"
+    },
+    "CG-AL-X128": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:39:44.515Z"
+    },
+    "CG-AL-X129": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:32:23.267Z"
+    },
+    "CG-AL-X130": {
+      "correct": "pass",
+      "naive": "fail",
+      "discriminates": true,
+      "at": "2026-08-26T06:52:00.732Z"
+    }
+  }
+}

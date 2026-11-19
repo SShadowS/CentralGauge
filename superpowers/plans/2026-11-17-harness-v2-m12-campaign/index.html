@@ -1,0 +1,3089 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-11-17-harness-v2-m12-campaign/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Harness Bench v2, M12 Confirmatory Campaign and Analysis (gate 4) Implementation Plan - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#harness-bench-v2-m12-confirmatory-campaign-and-analysis-gate-4-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Harness Bench v2, M12 Confirmatory Campaign and Analysis (gate 4) Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../task-authoring-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trap Task Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-exists-today-checked-2026-11-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What exists today (checked 2026-11-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#size-wall-time-and-cost-from-stored-records-counts-and-timings-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Size, wall time and cost (from stored records, counts and timings only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-counts-as-a-deviation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What counts as a deviation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#owner-decision-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Owner decision points
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schedule-planned-start-2026-11-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schedule (planned; start 2026-11-18)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Schedule (planned; start 2026-11-18)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-01-campaign-protocol-and-deviations-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-01: Campaign protocol and deviations log
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-02-smoke-experiment-that-is-not-confirmatory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-02: Smoke experiment that is not confirmatory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-03-pin-the-missing-data-behaviour-before-the-first-cell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-03: Pin the missing-data behaviour before the first cell
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-04-charts-and-csvs-for-the-pre-registered-contrasts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-04: Charts and CSVs for the pre-registered contrasts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-05-low-churn-campaign-watcher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-05: Low-churn campaign watcher
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-06-preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-06: Preflight
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-07-windows-update-mitigation-and-the-host-quiet-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-07: Windows Update mitigation and the host-quiet rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-08-launch-kit-and-dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-08: Launch kit and dry run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-09-smoke-campaign-not-confirmatory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-09: Smoke campaign (not confirmatory)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-10-go-decision-and-launch-of-the-confirmatory-campaign" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-10: Go decision and launch of the confirmatory campaign
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-11-monitoring-resume-and-stop-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-11: Monitoring, resume and stop rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-12-close-the-campaign" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-12: Close the campaign
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-13-quiesce-and-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-13: Quiesce and snapshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-14-reports-analysis-outputs-and-charts-from-the-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-14: Reports, analysis outputs and charts from the snapshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-15-analysis-check-and-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-15: Analysis check and review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-16-caveats-register-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-16: Caveats register v2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-17-write-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-17: Write-up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-m12-18-v2-data-freeze" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task M12-18: v2 data freeze
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#risk-register-the-six-known-risks-and-where-they-are-handled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risk register (the six known risks and where they are handled)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-questions-for-the-owner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open questions for the owner
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-11-17-harness-v2-m12-campaign.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="harness-bench-v2-m12-confirmatory-campaign-and-analysis-gate-4-implementation-plan">Harness Bench v2, M12 Confirmatory Campaign and Analysis (gate 4) Implementation Plan<a class="headerlink" href="#harness-bench-v2-m12-confirmatory-campaign-and-analysis-gate-4-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>Shared interfaces:</strong> every cross-plan name, path, record shape, tag and flag in this plan is defined in <code>docs/superpowers/plans/2026-10-03-harness-v2-interfaces.md</code> (the appendix). M12 is a consumer of sections 1, 6, 10 and 12. Where this plan and the appendix differ, the appendix wins and this plan is the bug.</p>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Run the one pre-registered confirmatory campaign <code>cc-v2-factorial</code> (4 arms x 43 tasks x 8 repeats = 1,376 cells), analyse it exactly as <code>harness/preregistration/cc-v2-factorial.yml</code> says, freeze the v2 data like M6 froze v1, and hand the owner a write-up in which every number is bound to a hashed snapshot.</p>
+<p><strong>Architecture:</strong> No new statistics. <code>harness run</code> creates and resumes the campaign under the two decision files. <code>harness report</code> computes C1 to C3 with Holm from the pre-registration, and withholds them unless the design is complete. M12 adds four small things that do not exist yet: a smoke experiment that is not confirmatory, a low-churn campaign watcher, chart and CSV output for contrasts, and a written campaign protocol with a deviations log. Everything else is operations: preflight, launch by the owner, monitoring, resume, close, snapshot, reports, write-up, freeze.</p>
+<p><strong>Tech Stack:</strong> Deno + TypeScript (<code>cli/commands/harness-command.ts</code>, <code>src/harness/campaign.ts</code>, <code>prereg.ts</code>, <code>report.ts</code>, <code>stats.ts</code>), <code>scripts/harness/freeze-archive.ts</code>, <code>scripts/harness/report-charts.ts</code>, <code>scripts/harness/analyze-campaign.ts</code>, PowerShell 7 watchers (<code>scripts/harness/ops/h-107/</code>), <code>coord</code>, <code>jq</code>.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-10-03-harness-v2-design.md</code>, sections 6, 7, 8 (gate 4), 9 and 10 (M12). Bound inputs: stage-B pre-registration <code>harness/preregistration/cc-v2-factorial.yml</code> (tag <code>harness-v2-prereg-b</code>), decision files <code>H:\cg-coord\decisions\2026-10-17-harness-v2-prereg-a.md</code> and <code>H:\cg-coord\decisions\2026-11-17-harness-v2-prereg-b.md</code>, experiment <code>harness/experiments/cc-v2-factorial.yml</code>, freeze record <code>H:\Temp3\harness-spike\M8\freeze\task-set.json</code> and <code>pipeline.md</code> (M8-21 accepted). Freeze precedent: <code>docs/superpowers/plans/2026-10-14-harness-analysis.md</code> (M6-01 to M6-08). Runbooks: <code>docs/superpowers/runbooks/harness-autonomy/README.md</code>, <code>lane.md</code>, <code>orchestrator.md</code>.</p>
+<p><strong>Checked against:</strong> master 41567634 (2026-11-17). Every command and flag below was read in <code>cli/commands/harness-command.ts</code> or the named script at that commit.</p>
+<h2 id="what-exists-today-checked-2026-11-17">What exists today (checked 2026-11-17)<a class="headerlink" href="#what-exists-today-checked-2026-11-17" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>harness run &lt;experiment&gt;</code> (<code>harness-command.ts:4621</code>): <code>--dry-run</code>, <code>--sample &lt;n&gt;</code>, <code>--repeats &lt;n&gt;</code>, <code>--concurrency &lt;n&gt;</code>, <code>--judge-containers &lt;names|auto&gt;</code>, <code>--pool-wait-min</code>, <code>--judge-concurrency</code>, <code>--seed</code>, <code>--max-pause-min</code>, <code>--stop-file</code> (repeatable), <code>--campaign &lt;id&gt;</code>, <code>--rerun &lt;task:repeat:arm&gt;</code>, <code>--rerun-file &lt;path&gt;</code>, <code>--prereg-decision</code>, <code>--prereg-b-decision</code>, <code>--unverified-egress-ok &lt;reason&gt;</code>, <code>--ignore-usage-reset &lt;reason&gt;</code>, <code>--add-accounts-reason &lt;reason&gt;</code> with <code>--added-by &lt;who&gt;</code>. Shared options (<code>:4402</code>): <code>--results-dir</code>, <code>--containers</code>, <code>--backend-host</code>, <code>--backend-port</code>, <code>--secrets-dir</code> (repeat as <code>label=dir</code>), <code>--symbol-store</code>, <code>--private-dir</code>, <code>--credential-ledger</code>, <code>--rev</code>, <code>--lineage</code>, <code>--unverified-bc-egress-ok &lt;reason&gt;</code>, <code>--coord-lease &lt;container&gt;=&lt;token&gt;</code>, <code>--key-custody</code>, <code>--lane</code>.</li>
+<li>Campaign creation (<code>src/harness/campaign.ts:1174-1264</code>): with a <code>preregistration</code> key both decision files are required, <code>verifyPrereg</code> must return no problems, and the record stores <code>preregistration: { path, sha256, protocol_sha256, decision_sha256, stage_b_decision_sha256 }</code>. A resume re-verifies and refuses a changed document or decision file (<code>:1369</code>).</li>
+<li>A run without <code>--campaign</code> that finds drift (experiment, task set or arm manifests changed) prints a <code>[WARN]</code> and <strong>starts a new campaign</strong> (<code>campaign.ts:1210</code>). With <code>--campaign &lt;id&gt;</code> it refuses instead.</li>
+<li>Retry policy in code (<code>src/harness/records.ts:845</code> <code>outcomePolicy</code>): <code>completed</code>, <code>timeout</code>, <code>budget_exhausted</code>, <code>refusal</code> are judged, no retry. <code>harness_crash</code> without work and <code>setup_failed</code> get one automatic retry. <code>usage_limited</code> retries after the usage reset. A manual rerun (<code>--rerun</code>) is allowed only for a cell that is unscored, once.</li>
+<li>Placed concurrency is capped at 2 (<code>MAX_PLACED_CONCURRENCY</code>, <code>campaign.ts:532</code>; owner decision <code>2026-10-03-m7-concurrency.md</code>).</li>
+<li><code>harness report &lt;experiment&gt;</code> (<code>:4169</code>): <code>--judging campaign|current</code> (required), <code>--campaign</code>, <code>--results-dir</code>, <code>--json</code>, <code>--resamples</code> (default 2000), <code>--seed</code> (default 1), <code>--repeats</code>, <code>--root</code>, <code>--prereg-decision</code>, <code>--prereg-b-decision</code>. For a pre-registered campaign it re-verifies the pre-registration and the confirmatory block takes resamples, seed, level, alpha, zero-solve rule, family and test from the document (<code>report.ts:909-960</code>), not from the flags. The flags drive only the exploratory comparisons.</li>
+<li>The confirmatory block is <strong>withheld</strong> (<code>confirmatory: { withheld: "&lt;reason&gt;" }</code>) when judging is not the campaign's, when repeats are cut, when any cell is pending or unrun, or when any terminal cell of a selected task has no cost data (<code>report.ts:882-908</code>; ruling <code>decisions\2026-10-03-m11-11-confirmatory-gate.md</code>).</li>
+<li>Held-out tasks are excluded from the contrasts and summarised per arm in <code>confirmatory.held_out</code> (<code>report.ts:954</code>). Exploratory rollups are in <code>exploratory</code> (M11-12).</li>
+<li><code>harness measure &lt;experiment&gt;</code> (<code>:4764</code>) writes the exploratory measures (final-code check, reuse, partial credit) for judged cells. It opens a harness environment, so it is a container job.</li>
+<li><code>harness progress &lt;id&gt;</code> (<code>:4229</code>) is read-only. Its output contains <code>pass_cells</code>, <code>fail_cells</code> and per-arm cost (<code>src/harness/progress.ts:31-70</code>).</li>
+<li><code>harness env check</code>, <code>harness baseline create</code>, <code>harness recover [--recreated &lt;dir&gt;]</code>, <code>harness egress verify</code>, <code>harness validate</code>, <code>harness archive</code> exist as named.</li>
+<li><code>scripts/harness/freeze-archive.ts pack|verify|bind</code> exists (M6-03). <code>scripts/harness/report-charts.ts</code> exists (M6-02) but has no contrast, held-out or exploratory-rollup output, and its <code>Ledger</code> schema requires the v1 keys <code>openrouter_reference</code> and <code>pi_stop</code>.</li>
+<li>Watchers: <code>scripts/harness/ops/hostwatch.sh</code>, <code>watch.sh</code>, <code>stops.sh</code>; low-churn ports <code>scripts/harness/ops/h-107/hostwatch.ps1</code>, <code>stop-bridge.ps1</code>, <code>watch-qualify.ps1</code>. There is no low-churn port of the per-campaign <code>watch.sh</code>.</li>
+<li>No smoke experiment for the four v2 arms exists. <code>--sample</code> on <code>cc-v2-factorial</code> would create the confirmatory campaign itself, so it is not a smoke.</li>
+</ul>
+<h2 id="size-wall-time-and-cost-from-stored-records-counts-and-timings-only">Size, wall time and cost (from stored records, counts and timings only)<a class="headerlink" href="#size-wall-time-and-cost-from-stored-records-counts-and-timings-only" title="Permanent link">&para;</a></h2>
+<p>Sources. Wall time: the H-110 measurement, <code>scripts/harness/ops/h-110/run-001-report.md</code> (master a52ccd0f); these numbers bind and are not re-derived here. Cost and retries: execution records of the seven <code>v2-screen-*</code> campaigns under <code>H:\cg-coord\jobs\M8-16a\results\harness</code> (957 executions) and the four-arm pilot <code>cc-v2-pilot-night2</code> (264). Pooled over arms and tasks on purpose. No per-arm or per-task figure was read out.</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cells</td>
+<td>43 tasks x 8 repeats x 4 arms = 1,376 (344 blocks; 1,248 confirmatory + 128 held-out)</td>
+</tr>
+<tr>
+<td>Cells per arm</td>
+<td>344</td>
+</tr>
+<tr>
+<td>Container time per cell (H-110, last screening campaigns)</td>
+<td>about 12 to 15 container-minutes</td>
+</tr>
+<tr>
+<td>Campaign container time (H-110)</td>
+<td>1,376 cells, about 310 container-hours</td>
+</tr>
+<tr>
+<td>Campaign wall time, running time only (H-110)</td>
+<td>about 103 hours on 3 containers (4.3 days). On 2 containers, the D-4 default under the concurrency cap of 2, the same 310 container-hours are about 155 hours (6.5 days)</td>
+</tr>
+<tr>
+<td>Heavy host use (H-110)</td>
+<td>costs about 0.17 hours per hour of use. A busy host for the whole campaign adds about 17.5 hours. Upper bound: model API time may not slow</td>
+</tr>
+<tr>
+<td>Calendar plan</td>
+<td>7 to 10 days with usage-limit pauses, planned stops and a possible recreate; owner review at 14 days (stop rule h)</td>
+</tr>
+<tr>
+<td>List-price cost per execution, campaign means</td>
+<td>USD 1.02 to 2.30; pooled USD 1.42 (USD 1.59 without the 105 <code>setup_failed</code> executions of the Work account)</td>
+</tr>
+<tr>
+<td>Campaign list-price cost</td>
+<td>planned USD 2,000 to 2,200; range USD 1,400 to 3,200</td>
+</tr>
+<tr>
+<td>Per arm</td>
+<td>344 cells, about 78 container-hours and about USD 500 to 550 each; range USD 350 to 800. The same figure for each arm: a per-arm split of screening data is blinded</td>
+</tr>
+<tr>
+<td>Hard ceiling</td>
+<td>1,376 x USD 5 budget = USD 6,880; with the 1.2 overshoot bound USD 8,256</td>
+</tr>
+<tr>
+<td>Retries seen in screening</td>
+<td>0 to 2 per campaign, except the campaign that had the Work account in its pool (108)</td>
+</tr>
+<tr>
+<td>Judging overhead per reset, quiet-host baseline (H-110)</td>
+<td>about 62 s golden-restore reset plus about 37 s candidate publish, so about 99 s per reset before tests run</td>
+</tr>
+<tr>
+<td>Same under a busy host (H-110)</td>
+<td>resets about 17 percent slower on every container in step, so about 73 s per reset; it recovers by itself when the host is quiet again</td>
+</tr>
+</tbody>
+</table>
+<p>Cost is a list-price estimate of subscription usage, not cash. The later screening campaigns sit in the upper half of both ranges, so plan for the upper half. The wall-time plan assumes a quiet host (see the host-quiet rule). The 103-hour figure needs three containers working at once, while placed concurrency is capped at 2 in code (<code>MAX_PLACED_CONCURRENCY</code>); D-4 decides the layout and M12-08's dry run shows what the code accepts. lane-ops compares the daily medians with the 62 s and 37 s baselines (M12-11 Step 3).</p>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>One confirmatory campaign.</strong> Exactly one campaign record of <code>cc-v2-factorial</code> may ever exist. A second one is a deviation that needs the owner before it is created.</li>
+<li><strong>The owner launches.</strong> The owner starts the smoke campaign, the confirmatory campaign and every resume that follows an unplanned stop. Lanes prepare the command and verify the result. lane-ops' standing grant covers screening campaigns only (<code>lane.md</code>, grant 1).</li>
+<li><strong>Only lane-ops touches containers.</strong> Containers: Cronus281, Cronus282, Cronus283 only. A start needs at least 18 GB free RAM per extra container after the start. A recreate needs the owner.</li>
+<li><strong>Campaign image:</strong> <code>centralgauge/harness-claude-code:2.1.282-r3</code>, <code>image_revision: "3"</code>, label <code>centralgauge.harness.revision=3</code>. No <code>-dev-</code> revision in any arm (<code>loadExperiment</code> refuses it).</li>
+<li><strong>Code freeze.</strong> The campaign runs from one clean checkout, <code>H:\cg-coord\jobs\M12-run</code>, at one commit. Nothing is merged into it while the campaign is open. A harness fix during the campaign is a deviation.</li>
+<li><strong>Blinding during the campaign.</strong> Until M12-12 is accepted nobody runs <code>harness report</code> on the confirmatory campaign and nobody reads <code>pass_cells</code>, <code>fail_cells</code> or per-arm cost from <code>harness progress</code>. Monitoring uses the projection in M12-11 Step 2. Smoke results are reported as counts, terminations and timings only.</li>
+<li><strong>Host-quiet rule.</strong> While a confirmatory cell runs, no heavy interactive app runs on the host (a game, a video encode, a large local build, a second benchmark). H-110 showed that such an app made every container reset about 17 percent slower on both containers at once, and that it recovered without a restart. If one runs anyway, its window (start, end, process name) is logged as a deviation row, class Operational. Cost per solved task does not read wall time, so no cell is excluded or rerun for it; durations stay exploratory.</li>
+<li><strong>Never the Work account.</strong> No <code>--secrets-dir</code> label or directory of the Work account. <code>MAXWork</code> only if the owner adds it in D-3.</li>
+<li><strong>Resume always with <code>--campaign &lt;id&gt;</code>.</strong> A resume without it can start a second campaign.</li>
+<li><strong>Never taskkill a harness process.</strong> Stop with a stop file (<code>lane.md</code>, H-59 and H-89).</li>
+<li><strong>Watchers self-exit and register</strong> in <code>H:\cg-coord\daemons.tsv</code> (H-107). One pwsh process that sleeps, no bash loop.</li>
+<li><strong>No ingest, site, deploy, <code>sync-catalog --apply</code> or <code>publish-setup --apply</code>.</strong> M12 deliverables go to <code>H:\cg-coord\m12\</code>.</li>
+<li><strong>Analysis is the pre-registration.</strong> Primary metric cost per solved task. Family C1, C2, C3, Holm, alpha 0.05, two-sided bootstrap-t p-values, 10,000 task resamples, seed 20261021, level 0.95. Zero-solve rule <code>suppress_any_undefined</code>. Interaction exploratory. Held-out tasks outside the family. No interval-derived verdict anywhere.</li>
+<li>Code tasks: TDD, <code>deno check</code>, <code>deno lint</code>, <code>deno fmt</code> on touched files only, <code>[OK]</code>/<code>[FAIL]</code> tags, no emoji, no em dash. Container-free tests: <code>deno task test:unit:no-container</code> or one file with <code>deno test --allow-all &lt;file&gt;</code>. Never the full <code>test:unit</code> while a run is live.</li>
+</ul>
+<h2 id="what-counts-as-a-deviation">What counts as a deviation<a class="headerlink" href="#what-counts-as-a-deviation" title="Permanent link">&para;</a></h2>
+<p>A deviation is anything that makes the campaign differ from the pre-registration, the experiment file, the freeze record or <code>H:\cg-coord\m12\protocol.md</code>. Each one gets a row in <code>H:\cg-coord\m12\deviations.md</code> before the work continues, and the ones marked "owner" stop the campaign until the owner answers.</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Examples</th>
+<th>Who decides</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Protocol</td>
+<td>a second campaign record; a change of arms, tasks, repeats, model, image, budget or timeout; <code>--repeats</code> or <code>--sample</code> on the confirmatory campaign; <code>--judging current</code>; any edit of the stage-B file</td>
+<td>owner; needs a new stage-B tag and decision</td>
+</tr>
+<tr>
+<td>Analysis</td>
+<td>another estimator, seed, resample count or zero-solve rule; an interim look at outcomes; a metric added to the confirmatory family</td>
+<td>owner; reported as post hoc</td>
+</tr>
+<tr>
+<td>Environment</td>
+<td>container recreate; lineage, baseline or compiler identity change; harness code change in <code>M12-run</code>; egress mode change; container swap</td>
+<td>owner</td>
+</tr>
+<tr>
+<td>Accounts</td>
+<td>a label added or retired; <code>--ignore-usage-reset</code></td>
+<td>owner (pre-authorised cases in D-3)</td>
+</tr>
+<tr>
+<td>Execution</td>
+<td>manual rerun; a rejudge; a rederive; a cell cut by quota</td>
+<td>orchestrator proposes, owner approves the list (D-10)</td>
+</tr>
+<tr>
+<td>Operational, no approval needed, still logged</td>
+<td>planned pause, usage-limit pause, hostwatch stop, resume with the same command, a host-busy window (heavy interactive app on the host while cells ran)</td>
+<td>lane-ops logs it</td>
+</tr>
+</tbody>
+</table>
+<p>Row format: <code>id | UTC time | class | what happened | cells affected (count, never outcomes) | decided by | decision file | effect on analysis</code>.</p>
+<h2 id="owner-decision-points">Owner decision points<a class="headerlink" href="#owner-decision-points" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Id</th>
+<th>Decision</th>
+<th>Task</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-1</td>
+<td>Approve the campaign protocol (retry, stop and deviation rules)</td>
+<td>M12-01</td>
+</tr>
+<tr>
+<td>D-2</td>
+<td>Egress mode: sandbox side (<code>--unverified-egress-ok</code> or an authorized marker) and BC side (<code>--unverified-bc-egress-ok</code>, inner_only, per <code>2026-11-04-h-36-park-inner-only.md</code>), with the exact reason texts</td>
+<td>M12-01</td>
+</tr>
+<tr>
+<td>D-3</td>
+<td>Account pool: labels and directories, and whether lane-ops may add a named reserve label on a resume</td>
+<td>M12-01</td>
+</tr>
+<tr>
+<td>D-4</td>
+<td>Containers and concurrency: two containers at concurrency 2 with the third as a cold spare, or another layout</td>
+<td>M12-01</td>
+</tr>
+<tr>
+<td>D-5</td>
+<td>Windows Update: the H-111 mitigation, or accept the exposure with a pre-approved recreate procedure</td>
+<td>M12-07</td>
+</tr>
+<tr>
+<td>D-6</td>
+<td>Host-quiet rule: the owner keeps heavy interactive apps off the host during the campaign, or accepts that each such window is logged as a deviation; and whether a detected window only logs or also pauses the campaign</td>
+<td>M12-07</td>
+</tr>
+<tr>
+<td>D-7</td>
+<td>Missing cost data: keep the fail-closed gate and name the fallback now</td>
+<td>M12-03</td>
+</tr>
+<tr>
+<td>D-8</td>
+<td>Exploratory bootstrap settings</td>
+<td>M12-01</td>
+</tr>
+<tr>
+<td>D-9</td>
+<td>Launch the smoke campaign; accept or repeat it</td>
+<td>M12-09</td>
+</tr>
+<tr>
+<td>D-10</td>
+<td>Go or no-go, then launch the confirmatory campaign</td>
+<td>M12-10</td>
+</tr>
+<tr>
+<td>D-11</td>
+<td>Every resume after an unplanned stop; every deviation marked "owner"; every stop rule that fires</td>
+<td>M12-11</td>
+</tr>
+<tr>
+<td>D-12</td>
+<td>Approve the manual rerun list; declare the campaign closed</td>
+<td>M12-12</td>
+</tr>
+<tr>
+<td>D-13</td>
+<td>Sign off the headline wording</td>
+<td>M12-17</td>
+</tr>
+<tr>
+<td>D-14</td>
+<td>Approve the v2 data freeze and the push of the freeze tag</td>
+<td>M12-18</td>
+</tr>
+</tbody>
+</table>
+<h2 id="file-map">File map<a class="headerlink" href="#file-map" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Task</th>
+<th>Lane</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>H:\cg-coord\m12\protocol.md</code>, <code>H:\cg-coord\m12\deviations.md</code></td>
+<td>M12-01</td>
+<td>orchestrator</td>
+</tr>
+<tr>
+<td><code>harness/experiments/cc-v2-smoke.yml</code>, <code>tests/unit/harness/v2-configs.test.ts</code></td>
+<td>M12-02</td>
+<td>infra</td>
+</tr>
+<tr>
+<td><code>tests/unit/harness/report.test.ts</code>, <code>H:\cg-coord\m12\missing-data.md</code></td>
+<td>M12-03</td>
+<td>infra2</td>
+</tr>
+<tr>
+<td><code>scripts/harness/report-charts.ts</code>, <code>tests/unit/harness/report-charts.test.ts</code>, <code>tests/fixtures/harness/report-v2-factorial.json</code></td>
+<td>M12-04</td>
+<td>infra</td>
+</tr>
+<tr>
+<td><code>scripts/harness/ops/h-107/watch-campaign.ps1</code>, <code>watch-campaign-test.ps1</code></td>
+<td>M12-05</td>
+<td>ops</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\preflight.md</code></td>
+<td>M12-06</td>
+<td>ops</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\risks.md</code></td>
+<td>M12-07</td>
+<td>ops, orchestrator</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\tasks\M12-08\run.sh</code>, <code>dry-cc-v2-factorial.log</code></td>
+<td>M12-08</td>
+<td>ops</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\smoke.md</code></td>
+<td>M12-09</td>
+<td>ops, owner</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\decisions\&lt;date&gt;-m12-go.md</code>, <code>H:\cg-coord\m12\launch.md</code></td>
+<td>M12-10</td>
+<td>orchestrator, owner</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\daily\&lt;date&gt;.md</code></td>
+<td>M12-11</td>
+<td>ops</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\close.md</code>, <code>reruns.txt</code></td>
+<td>M12-12</td>
+<td>ops, orchestrator</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\archive\</code></td>
+<td>M12-13</td>
+<td>ops</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\reports\</code>, <code>charts\</code>, <code>ledger.json</code>, <code>H:\cg-coord\analysis\cc-v2-factorial\</code></td>
+<td>M12-14</td>
+<td>ops</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\analysis-check.md</code>, <code>H:\cg-coord\reviews\M12-15\</code></td>
+<td>M12-15</td>
+<td>orchestrator</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\caveats.md</code></td>
+<td>M12-16</td>
+<td>content</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\m12\writeup-template.md</code>, <code>writeup.md</code></td>
+<td>M12-17</td>
+<td>content</td>
+</tr>
+<tr>
+<td><code>H:\cg-coord\decisions\&lt;date&gt;-v2-data-freeze.md</code>, tag <code>harness-v2-data-freeze-&lt;date&gt;</code></td>
+<td>M12-18</td>
+<td>orchestrator, owner</td>
+</tr>
+</tbody>
+</table>
+<h2 id="schedule-planned-start-2026-11-18">Schedule (planned; start 2026-11-18)<a class="headerlink" href="#schedule-planned-start-2026-11-18" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Window</th>
+<th>infra</th>
+<th>infra2</th>
+<th>content</th>
+<th>ops</th>
+<th>orchestrator / owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>11-18 to 11-20</td>
+<td>M12-02, M12-04</td>
+<td>M12-03</td>
+<td>M12-16 first version, M12-17 template</td>
+<td>M12-05, M12-06, M12-07</td>
+<td>M12-01 (D-1 to D-4, D-8)</td>
+</tr>
+<tr>
+<td>11-20 to 11-21</td>
+<td></td>
+<td></td>
+<td></td>
+<td>M12-08, M12-09</td>
+<td>D-5, D-6, D-7, D-9</td>
+</tr>
+<tr>
+<td>11-22</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>M12-10 (D-10)</td>
+</tr>
+<tr>
+<td>11-22 to about 12-02 (range to 12-07)</td>
+<td></td>
+<td></td>
+<td></td>
+<td>M12-11</td>
+<td>D-11 as needed</td>
+</tr>
+<tr>
+<td>+1 to +2 days</td>
+<td></td>
+<td></td>
+<td></td>
+<td>M12-12, M12-13, M12-14</td>
+<td>D-12, M12-15</td>
+</tr>
+<tr>
+<td>+3 to +5 days</td>
+<td></td>
+<td></td>
+<td>M12-16 final, M12-17</td>
+<td></td>
+<td>D-13, M12-18 (D-14)</td>
+</tr>
+</tbody>
+</table>
+<p>Deps: M7 to M11 accepted, M8-21 accepted, stage B approved (all true at 41567634). H-110 and H-111 results are inputs to M12-07.</p>
+<hr />
+<h3 id="task-m12-01-campaign-protocol-and-deviations-log">Task M12-01: Campaign protocol and deviations log<a class="headerlink" href="#task-m12-01-campaign-protocol-and-deviations-log" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> orchestrator drafts, owner approves. <strong>Deps:</strong> none. <strong>Window:</strong> 11-18 to 11-20. <strong>Owner decisions:</strong> D-1, D-2, D-3, D-4, D-8.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\protocol.md</code>, <code>H:\cg-coord\m12\deviations.md</code>, <code>H:\cg-coord\decisions\&lt;date&gt;-m12-protocol.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Write <code>protocol.md</code> with these fixed sections, copied from this plan and made exact: (1) identity: experiment, experiment_hash <code>1d6b5f6e...</code>, stage-B sha <code>e04fe834...</code>, both decision files, freeze commit <code>2fb244fe</code>, task count 43; (2) the launch and resume commands of M12-10 with every value filled; (3) the retry policy (below); (4) the stop rules (below); (5) the deviation table of this plan; (6) blinding rules; (7) analysis settings.</li>
+<li>[ ] <strong>Step 2: Retry policy (D-1).</strong> Automatic retries are the code's and nothing else: one retry for <code>setup_failed</code> and for <code>harness_crash</code> without work, a retry after the reset for <code>usage_limited</code>, none for <code>completed</code>, <code>timeout</code>, <code>budget_exhausted</code>, <code>refusal</code>. Manual reruns happen only at close (M12-12), only for cells the report shows as unscored for an infrastructure reason, for every such cell regardless of arm, once per cell (the code allows no second one), from one list the owner approves. Never a rerun of a scored cell. Never a rerun chosen by arm, task or outcome.</li>
+<li>[ ] <strong>Step 3: Stop rules (D-1).</strong> The campaign pauses (stop file, then a <code>coord ask</code>) when: (a) hostwatch or the campaign watcher writes a stop; (b) every pool container is quarantined; (c) one container is quarantined, until D-5's procedure is done; (d) <code>setup_failed</code> reaches 5 in a row or 20 in total; (e) a refusal of any kind from <code>harness run</code>; (f) unknown-cost terminal cells on selected tasks reach 15 in total (D-7, decisions/2026-11-17-m12-missing-data.md: pairs drop per contrast and the family is withheld above 21 of 312 per contrast; 15 cells is the early warning, counted over all arms so blinding holds; owner review, not an abort); (g) list-price spend passes USD 4,000 (owner review, not an abort); (h) elapsed time passes 14 days; (i) the Work account, or any label outside D-3, appears in an execution record; (j) free disk on the results or docker drive falls under 50 GB. The campaign is never stopped or shortened because of outcomes.</li>
+<li>[ ] <strong>Step 4: D-2, D-3, D-4, D-8.</strong> Ask the owner with AskUserQuestion and record the answers in the decision file with an <code>OWNER-APPROVED: &lt;words&gt; (&lt;ISO time&gt;)</code> line each:</li>
+<li>D-2: the sandbox egress mode. Run <code>deno task start harness egress verify</code> (read-only) and quote it. If it is not authorized, the confirmatory run needs <code>--unverified-egress-ok "&lt;reason&gt;"</code> (owner only; it also records <code>calibration_waived</code>). The BC side needs <code>--unverified-bc-egress-ok "&lt;reason&gt;"</code> because <code>golden-o09-v2</code> has no enforced NST egress (inner_only, owner 2026-11-04). The egress grants so far end 2026-11-17T23:59Z and exclude confirmatory runs, so the reasons must cite a new decision.</li>
+<li>D-3: pool labels and secret directories (screening used <code>max</code> and <code>maxpriv2</code>, earlier also <code>maxpriv</code>), whether <code>MAXWork</code> joins, and which one reserve label lane-ops may add on a resume with <code>--add-accounts-reason "&lt;reason&gt;" --added-by lane-ops</code>.</li>
+<li>D-4: default <code>--containers Cronus281,Cronus282 --concurrency 2</code>, Cronus283 stopped as a cold spare (about 155 running hours). Alternative: three containers (H-110's 103 hours). That needs <code>--concurrency 3</code>, which the code refuses today in a placed or enforced egress environment (cap 2, owner decision 2026-10-03), so it needs a new owner decision and a code change before launch, or a third container used for judging only (<code>--judge-containers</code>), whose gain is unmeasured.</li>
+<li>D-8: exploratory comparisons use <code>--resamples 10000 --seed 20261021</code> (the same as the confirmatory block) or the CLI defaults 2000 and 1. Recommended: the same as the confirmatory block, so one setting is disclosed.</li>
+<li>[ ] <strong>Step 5:</strong> Create <code>deviations.md</code> with the header row of "What counts as a deviation" and no rows. Carry over as row 0 the pre-campaign items already approved (the three stage-B amendments and the protocol change), marked "pre-registered, not a deviation".</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> the decision file has one <code>OWNER-APPROVED</code> line per decision; <code>protocol.md</code> contains no placeholder (<code>grep -n "&lt;" protocol.md</code> shows only quoted flag syntax); <code>deviations.md</code> exists.</p>
+<hr />
+<h3 id="task-m12-02-smoke-experiment-that-is-not-confirmatory">Task M12-02: Smoke experiment that is not confirmatory<a class="headerlink" href="#task-m12-02-smoke-experiment-that-is-not-confirmatory" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> infra. <strong>Deps:</strong> none. <strong>Window:</strong> 11-18 to 11-19.</p>
+<p><strong>Files:</strong> Create <code>harness/experiments/cc-v2-smoke.yml</code>. Modify <code>tests/unit/harness/v2-configs.test.ts</code>.</p>
+<p>The smoke uses the four campaign arm configs unchanged, two tasks that are in neither the selected nor the held-out list, 2 repeats (16 cells), and no <code>preregistration</code>, <code>contrasts</code> or <code>interaction</code> key. Task rule, fixed before looking at anything else: the two lowest ids in <code>harness-tasks/v2/selection.json</code> <code>candidates</code> whose <code>status</code> is <code>saturated</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing test</strong> appended to <code>tests/unit/harness/v2-configs.test.ts</code> (follow the file's existing imports and root helper):</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nx">Deno</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="s2">"cc-v2-smoke: the four campaign arms, no frozen task, never pre-registered"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">smoke</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">loadExperiment</span><span class="p">(</span><span class="s2">"harness"</span><span class="p">,</span><span class="w"> </span><span class="s2">"cc-v2-smoke"</span><span class="p">)).</span><span class="nx">experiment</span><span class="p">;</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">real</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">loadExperiment</span><span class="p">(</span><span class="s2">"harness"</span><span class="p">,</span><span class="w"> </span><span class="s2">"cc-v2-factorial"</span><span class="p">)).</span><span class="nx">experiment</span><span class="p">;</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="p">[</span><span class="nx">smoke</span><span class="p">.</span><span class="nx">baseline</span><span class="p">,</span><span class="w"> </span><span class="p">...</span><span class="nx">smoke</span><span class="p">.</span><span class="nx">variants</span><span class="p">],</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">[</span><span class="nx">real</span><span class="p">.</span><span class="nx">baseline</span><span class="p">,</span><span class="w"> </span><span class="p">...</span><span class="nx">real</span><span class="p">.</span><span class="nx">variants</span><span class="p">],</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="p">);</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="p">[</span><span class="nx">smoke</span><span class="p">.</span><span class="nx">preregistration</span><span class="p">,</span><span class="w"> </span><span class="nx">smoke</span><span class="p">.</span><span class="nx">contrasts</span><span class="p">,</span><span class="w"> </span><span class="nx">smoke</span><span class="p">.</span><span class="nx">interaction</span><span class="p">],</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="p">[</span><span class="kc">undefined</span><span class="p">,</span><span class="w"> </span><span class="kc">undefined</span><span class="p">,</span><span class="w"> </span><span class="kc">undefined</span><span class="p">],</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="p">);</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">sel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">Deno</span><span class="p">.</span><span class="nx">readTextFile</span><span class="p">(</span><span class="s2">"harness-tasks/v2/selection.json"</span><span class="p">),</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="p">);</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">frozen</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[...</span><span class="nx">sel</span><span class="p">.</span><span class="nx">selection</span><span class="p">.</span><span class="nx">selected</span><span class="p">,</span><span class="w"> </span><span class="p">...</span><span class="nx">sel</span><span class="p">.</span><span class="nx">held_out</span><span class="p">];</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[...</span><span class="nx">smoke</span><span class="p">.</span><span class="nx">tasks</span><span class="p">.</span><span class="nx">matchAll</span><span class="p">(</span><span class="sr">/HX-\d+/g</span><span class="p">)].</span><span class="nx">map</span><span class="p">((</span><span class="nx">m</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">m</span><span class="p">[</span><span class="mf">0</span><span class="p">]);</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span><span class="nx">ids</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span><span class="w"> </span><span class="mf">2</span><span class="p">);</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span><span class="nx">ids</span><span class="p">.</span><span class="nx">filter</span><span class="p">((</span><span class="nx">id</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">frozen</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">id</span><span class="p">)),</span><span class="w"> </span><span class="p">[]);</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="nx">assertEquals</span><span class="p">(</span><span class="nx">smoke</span><span class="p">.</span><span class="nx">repeats</span><span class="p">,</span><span class="w"> </span><span class="mf">2</span><span class="p">);</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">});</span>
+</code></pre></div>
+<p>Run <code>deno test --allow-all tests/unit/harness/v2-configs.test.ts</code>. Expected: FAIL (experiment file missing). If <code>loadExperiment</code> returns another shape than <code>{ experiment }</code>, adapt the two access lines to what <code>src/harness/config.ts:277</code> returns, nothing else.
+- [ ] <strong>Step 2:</strong> Write <code>harness/experiments/cc-v2-smoke.yml</code>: <code>id: cc-v2-smoke</code>, a hypothesis line that says "operational smoke, not confirmatory, never reported with outcomes", <code>primary_metric: cost_per_solved_task</code>, the same <code>baseline</code>, <code>variants</code> and <code>vary</code> as <code>cc-v2-factorial.yml</code>, <code>tasks: "harness-tasks/tasks/{&lt;id1&gt;,&lt;id2&gt;}"</code>, <code>repeats: 2</code>.
+- [ ] <strong>Step 3:</strong> Test passes. <code>deno task start harness validate</code> prints <code>[OK]</code>. Prove the confirmatory experiment did not move: <code>deno task start harness run cc-v2-factorial --dry-run --secrets-dir &lt;any dir&gt; --prereg-decision 'H:\cg-coord\decisions\2026-10-17-harness-v2-prereg-a.md' --prereg-b-decision 'H:\cg-coord\decisions\2026-11-17-harness-v2-prereg-b.md'</code> raises no pre-registration refusal (other refusals of a dry run without containers are fine; quote the output).
+- [ ] <strong>Step 4:</strong> <code>deno check</code>, <code>deno lint</code>, <code>deno fmt</code> on the test file. Commit <code>feat(harness): cc-v2-smoke, a non-confirmatory four-arm smoke experiment (M12-02)</code>.</p>
+<p><strong>Acceptance (orchestrator):</strong> test green; <code>git diff 41567634 -- harness/experiments/cc-v2-factorial.yml harness/preregistration harness-tasks</code> is empty; both tags <code>harness-v2-prereg-a</code> and <code>harness-v2-prereg-b</code> still resolve to the objects in the decision files.</p>
+<hr />
+<h3 id="task-m12-03-pin-the-missing-data-behaviour-before-the-first-cell">Task M12-03: Pin the missing-data behaviour before the first cell<a class="headerlink" href="#task-m12-03-pin-the-missing-data-behaviour-before-the-first-cell" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> infra2. <strong>Deps:</strong> none. <strong>Window:</strong> 11-18 to 11-20. <strong>Owner decision:</strong> D-7.</p>
+<p><strong>Files:</strong> Modify <code>tests/unit/harness/report.test.ts</code> (only if a test below is missing). Create <code>H:\cg-coord\m12\missing-data.md</code>.</p>
+<p>The pre-registration says <code>missing_pairs: per_contrast_matched</code>. The report is stricter: one terminal cell of a selected task without cost data withholds every confirmatory decision (<code>report.ts:894-908</code>). For the cost metric an unscored terminal cell is eligible and counts as unsolved with its spend (<code>stats.ts:118-125</code>); only <code>spend_usd === null</code> is "no data". A scored cell cannot be rerun, so one unreconciled cell could withhold the whole family for good.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> <code>grep -n "withheld" tests/unit/harness/report*.test.ts</code>. List which of these four cases already have a test: (a) one pending cell; (b) <code>--repeats</code> below planned; (c) one unknown-spend terminal cell on a selected task; (d) one unknown-spend terminal cell on a held-out task (must NOT withhold).</li>
+<li>[ ] <strong>Step 2:</strong> For each missing case write the failing test first with the file's existing record builders, asserting the exact <code>withheld</code> text (<code>"1 cells without cost data"</code> for (c)) or, for (d), that <code>confirmatory</code> has <code>results</code>. Run, see it fail or pass, and report which. A test that passes at once is kept as a pin. No change to <code>src/</code> in this task.</li>
+<li>[ ] <strong>Step 3:</strong> Write <code>missing-data.md</code>: the behaviour per case, how often screening produced a cell with unknown cost (a count from <code>usage_reconciliation</code> statuses in the stored screening executions, pooled, no arm split), and the routes back to data: <code>harness rederive &lt;campaign&gt; --execution &lt;ids&gt; --reason "&lt;text&gt;"</code> when the parser refused a log, nothing else.</li>
+<li>[ ] <strong>Step 4 (orchestrator, D-7):</strong> Ask the owner to choose now, before any outcome: (A, recommended) keep the fail-closed gate; if an unknown-cost cell on a selected task survives the close, the contrasts are reported as withheld, the same analysis is shown as exploratory in the write-up with the cell count, and the deviation is logged; (B) implement per-contrast matched dropping for unknown-cost cells before the campaign (a new TDD task on lane-infra2, a Sol review, and a note that the M11-13 simulation assumed the full design). Record the answer in <code>decisions\&lt;date&gt;-m12-missing-data.md</code>.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> four cases pinned by named tests; decision file with the owner's line; if B was chosen, its task is accepted before M12-10.</p>
+<hr />
+<h3 id="task-m12-04-charts-and-csvs-for-the-pre-registered-contrasts">Task M12-04: Charts and CSVs for the pre-registered contrasts<a class="headerlink" href="#task-m12-04-charts-and-csvs-for-the-pre-registered-contrasts" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> infra. <strong>Deps:</strong> none. <strong>Window:</strong> 11-18 to 11-20.</p>
+<p><strong>Files:</strong> Modify <code>scripts/harness/report-charts.ts</code>, <code>tests/unit/harness/report-charts.test.ts</code>. Create <code>tests/fixtures/harness/report-v2-factorial.json</code>.</p>
+<p><code>renderCharts(reports, ledger?)</code> (<code>report-charts.ts:685</code>) writes <code>arms.csv</code>, <code>comparisons.csv</code>, <code>provenance.csv</code>, <code>ledger.csv</code> and three SVGs per report. It knows nothing of <code>confirmatory</code>, <code>held_out</code> or <code>exploratory</code>, and <code>Ledger</code> requires <code>openrouter_reference</code> and <code>pi_stop</code>.</p>
+<p><strong>Interfaces added (nothing existing changes its output for a report without <code>confirmatory</code>):</strong>
+- <code>contrasts.csv</code>: <code>experiment,campaign,id,name,confirmatory,baseline,variant,pairs,tasks,delta,ratio,ci_lo,ci_hi,level,bonferroni_lo,bonferroni_hi,undefined_share,p,p_holm,alpha,decision,verdict_text,method,ci_ratio_lo,ci_ratio_hi,bonferroni_ratio_lo,bonferroni_ratio_hi,theta,pairs_dropped,tasks_affected,backstop_share,robustness</code> (the last ten added by M12-04b; the D-7 four from the M12-03b <code>missing</code> and <code>sensitivity</code> fields, <code>n/a</code> when absent; pairs used is <code>pairs</code>). One row per entry of <code>confirmatory.results</code> (C1, C2, C3 and the interaction). <code>verdict_text</code>: <code>variant lower</code>, <code>variant higher</code> or <code>no decision</code>, with <code>(CI suppressed)</code> appended when the percentile CI is null (M12-04b: the decision is never replaced). When the report has <code>confirmatory.withheld</code>, one row with <code>id</code> <code>withheld</code> and the reason in <code>verdict_text</code>. Null prints <code>n/a</code>.
+- <code>held_out.csv</code>: one row per arm from <code>confirmatory.held_out.arms</code> with the <code>arms.csv</code> columns, plus <code>tasks</code> (the four ids joined by a space). Every row is labelled <code>descriptive</code>.
+- <code>exploratory.csv</code>: one row per arm and metric from <code>exploratory.arms</code>, and one per delta from <code>exploratory.deltas</code>, with a <code>missing</code> count column. Label column <code>exploratory</code> on every row.
+- <code>&lt;prefix&gt;-contrasts.svg</code>: C1 to C3 as ratio with the unadjusted interval, the Holm decision as text, the interaction below a rule, labelled exploratory. The caption states the task count, 10,000 resamples and the seed from <code>confirmatory.bootstrap</code>.
+- <code>Ledger</code>: <code>openrouter_reference</code>, <code>openrouter_balance_readings</code>, <code>openrouter_actual_usd</code> and <code>pi_stop</code> become optional as one group. A v1 ledger still parses and renders byte-identically. A v2 ledger has <code>paid_total_usd: 0</code>, <code>claude_code_cash_usd: 0</code>, <code>experiments</code>, <code>manual_reruns</code>, <code>rejudges</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Fixture.</strong> Build <code>report-v2-factorial.json</code> by hand as a minimal <code>HarnessReport</code>: copy <code>tests/fixtures/harness/report-mock-contract.json</code>, rename the arms to the four v2 arm ids, and add a <code>confirmatory</code> block with three results (one <code>variant_lower</code>, one <code>no_decision</code>, one with <code>ci: null</code> and <code>undefined_share: 0.01</code>), an exploratory interaction row, <code>held_out</code> with four ids and four arm summaries, and an <code>exploratory</code> block with two metrics. Invented numbers only. Never copy a number from a stored campaign.</li>
+<li>[ ] <strong>Step 2: Failing tests</strong> in <code>report-charts.test.ts</code>: (1) <code>contrasts.csv</code> has the header above and four rows with the exact decisions and <code>CI suppressed</code> for the suppressed one; (2) a report with <code>confirmatory: { withheld: "3 pending and 0 unrun cells" }</code> gives one <code>withheld</code> row and no contrasts SVG; (3) <code>held_out.csv</code> has four rows, each <code>descriptive</code>; (4) <code>exploratory.csv</code> rows all carry <code>exploratory</code> and a missing value prints <code>n/a</code>, never <code>0</code>; (5) the existing mock-contract fixture renders exactly the files it rendered before (no <code>contrasts.csv</code>); (6) a ledger without the four v1 keys parses, and a v1 ledger renders the same <code>ledger.csv</code> as before. Run <code>deno test --allow-all tests/unit/harness/report-charts.test.ts</code>. Expected: FAIL.</li>
+<li>[ ] <strong>Step 3: Implement</strong> the three CSV writers and the SVG beside the existing ones, reusing the file's <code>csv</code> and <code>esc</code> helpers and <code>verdictText</code> pattern. No new dependency.</li>
+<li>[ ] <strong>Step 4:</strong> Tests pass; <code>deno check</code>, <code>deno lint</code>, <code>deno fmt</code> on the two <code>.ts</code> files; commit <code>feat(harness): contrast, held-out and exploratory outputs in report-charts (M12-04)</code>.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> tests green; <code>deno run --allow-read --allow-write scripts/harness/report-charts.ts --out &lt;scratch&gt; --report tests/fixtures/harness/report-v2-factorial.json</code> exits 0 and writes the four new files; the v1 rehearsal reports under <code>H:\cg-coord\m6\reports\</code> still render to the same bytes as <code>H:\cg-coord\m6\charts\</code> (diff quoted).</p>
+<hr />
+<h3 id="task-m12-05-low-churn-campaign-watcher">Task M12-05: Low-churn campaign watcher<a class="headerlink" href="#task-m12-05-low-churn-campaign-watcher" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> none. <strong>Window:</strong> 11-18 to 11-20.</p>
+<p><strong>Files:</strong> Create <code>scripts/harness/ops/h-107/watch-campaign.ps1</code>, <code>scripts/harness/ops/h-107/watch-campaign-test.ps1</code>.</p>
+<p><code>scripts/harness/ops/watch.sh</code> is a bash loop that forks every 60 s. Over a 7 to 15 day campaign that feeds the kernel token leak (H-107). <code>harness run</code> reads its stop files itself, so no bridge is needed, only the watcher's own stop.</p>
+<ul>
+<li>[ ] <strong>Step 1: Failing dry test</strong> <code>watch-campaign-test.ps1</code>, modelled on <code>hostwatch-dry-test.ps1</code> and <code>watchers-test.ps1</code>, with dummy targets in a scratch dir and injected readings. Cases, each named as in the <code>watch.sh</code> section of <code>hostwatch-dry-test.sh</code> (the nine <code>w-*</code> checks): fresh heartbeat and registry listing: no stop; free RAM under 4 GB: <code>&lt;P&gt;.watch</code> written; no good RAM reading for 90 s: written; heartbeat older than 180 s or missing: written; target missing from the registry: written; every pool container quarantined: written; one of two quarantined: not written, an <code>ALERT</code> line logged; a second instance refuses (exit 3); the watcher exits on the run log's <code>EXIT</code> line, on its own stop file <code>&lt;prefix dir&gt;\watch.STOP</code> (outside the <code>&lt;P&gt;.*</code> namespace, so <code>stops.sh</code> active_stops never counts it; orchestrator, M12-05 run 001 review), and at <code>-MaxHours</code>. Run it: FAIL (script missing).</li>
+<li>[ ] <strong>Step 2: Implement</strong> as one pwsh process with no child per poll: parameters <code>-Prefix &lt;stop prefix&gt; -RunLog &lt;path&gt; -Pool &lt;names&gt; -Results &lt;root&gt; [-EverySeconds 60] [-MaxHours 400] [-Heartbeat &lt;path&gt;] [-Registry &lt;path&gt;] [-QuarantineDir &lt;path&gt;] [-NoRegister]</code>. It writes only <code>&lt;Prefix&gt;.watch</code> (the <code>watch</code> name of <code>stops.sh</code>), logs total list-price cost every 20 executions as one number (never per arm), registers with <code>Register-Daemon</code> and unregisters on exit.</li>
+<li>[ ] <strong>Step 2b: Host-busy detection (log only, never a stop).</strong> The memory log (<code>H:\cg-coord\jobs\W2-10\memlog</code>, 15 s samples with the top processes) already shows a heavy interactive app. Add to the dry test first: a memlog sample whose top-process list holds a process outside the allow-list (<code>-QuietAllow</code>, default: docker, vmmem, the BC and SQL service processes, deno, pwsh, claude, node) above <code>-BusyMb</code> working set or <code>-BusyCpu</code> percent for three samples in a row gives one <code>HOST-BUSY start &lt;process&gt; &lt;UTC&gt;</code> line, and three quiet samples give <code>HOST-BUSY end &lt;UTC&gt;</code>; a missing or stale memlog gives <code>HOST-BUSY unknown</code>, never silence. Then implement it by reading the newest memlog file in-process. The exact column names come from a real memlog file; read one before writing the parser. lane-ops turns each start and end pair into a deviation row.</li>
+<li>[ ] <strong>Step 3:</strong> Dry test passes; <code>pwsh -NoProfile -File scripts/harness/ops/h-107/watch-campaign-test.ps1</code> output quoted. Commit <code>feat(harness-ops): low-churn campaign watcher (M12-05)</code>.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> dry test output with zero failures; the script has no <code>bash</code>, <code>Start-Process</code> or child <code>pwsh</code> call in its loop (<code>grep</code> quoted); a 10-minute run against a dummy target adds one row to <code>daemons.tsv</code> and removes it on exit.</p>
+<hr />
+<h3 id="task-m12-06-preflight">Task M12-06: Preflight<a class="headerlink" href="#task-m12-06-preflight" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M12-01 (D-2 to D-4). <strong>Window:</strong> 11-19 to 11-21. Repeat Steps 2 to 9 on launch day (M12-10 Step 1).</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\preflight.md</code> (one section per step, output quoted).</p>
+<ul>
+<li>[ ] <strong>Step 1: Run checkout.</strong> <code>git worktree add H:\cg-coord\jobs\M12-run &lt;campaign commit&gt;</code> (the commit the orchestrator names: master with M12-02 merged). Clean tree. <code>git diff 2fb244fe HEAD -- harness-tasks/refapp</code> and the same for the 43 task folders is empty. <code>git rev-parse harness-v2-prereg-a harness-v2-prereg-b</code> equals the <code>tag_object</code> lines of the two decision files.</li>
+<li>[ ] <strong>Step 2: Image.</strong> <code>DOCKER_CONTEXT=desktop-windows docker image inspect centralgauge/harness-claude-code:2.1.282-r3 --format '{{.Id}} {{index .Config.Labels "centralgauge.harness.revision"}} {{index .Config.Labels "centralgauge.lsp.al"}}'</code>. The revision label is <code>3</code>, the LSP label is present, and the id equals the id recorded at M9-17 (<code>results\harness\image-builds</code>). The four arm configs say <code>image_revision: "3"</code> and <code>harness_version: "latest"</code>: the dry run in M12-08 must show all four arms resolving to this image id.</li>
+<li>[ ] <strong>Step 3: Model.</strong> <code>deno task start models anthropic/claude-sonnet-5 --check</code> green (the id in all four configs).</li>
+<li>[ ] <strong>Step 4: Lineage and baselines.</strong> No bench live (<code>find results/.bench-running.json -mmin -2</code> prints nothing). For the D-4 containers plus the spare: <code>deno task start harness env check --lineage 'infra\harness-reset\lineages\golden-o09-v2.json' --containers &lt;names&gt; --results-dir 'H:\cg-coord\results\harness' --symbol-store 'H:\cg-coord\jobs\M8-16a\results\harness\symbols' --unverified-bc-egress-ok "&lt;D-2 reason&gt;"</code>. Expected: one admissible <code>env_fp</code> (<code>2552e6986e78</code> at M8-21). No quarantine record for them in <code>H:\cg-coord\harness-quarantine</code>.</li>
+<li>[ ] <strong>Step 5: Compiler identity.</strong> Repeat M11-17b Step 2 on each of those containers: the backend <code>Microsoft.Dynamics.Nav.CodeAnalysis.dll</code> sha256 equals <code>lineage.backend.sha256</code> in <code>harness/images/claude-code/lsp/al-lsp.json</code>, and the compiler identity string equals the pre-registered <code>compiler_identity</code> (<code>...sandbox/28.4.53241.53758/dk|bccontainerhelper 6.1.14</code>). Cronus282 was recreated on 2026-11-17, so it is checked again whatever the stage-B note says. A mismatch: stop, <code>coord ask</code>.</li>
+<li>[ ] <strong>Step 6: Accounts.</strong> Every D-3 secrets directory exists and no file in it starts with <code>REPLACE_ME</code> (never print a value). The label list contains no <code>work</code>. <code>H:\cg-coord\ledgers\credential-runs.jsonl</code> is writable and has no open reservation of another lane. Ask the owner for the current usage headroom of each label (the lane does not read it).</li>
+<li>[ ] <strong>Step 7: Leases and holders.</strong> <code>coord holder Cronus281</code>, <code>Cronus282</code>, <code>Cronus283</code> free; <code>coord doctor</code> clean; <code>H:\cg-coord\allocation.json</code> lists them for this project; <code>H:\cg-coord\bch-roots.json</code> lists every one that has its own BCH root.</li>
+<li>[ ] <strong>Step 8: RAM and disk.</strong> Free RAM with every pool container up and nothing else of ours running: at least 18 GB per extra container at start, and at least 14 GB free after the last start (spec gate 5 resume bar). Host is 93.7 GB; the budget is two BC containers plus two 3 GB sandboxes plus judging. Free disk: at least 200 GB on <code>H:</code>, and at least 100 GB on the drive Docker keeps Windows images and sandboxes on (record which drive that is).</li>
+<li>[ ] <strong>Step 9: Watchers.</strong> The registered hostwatch (<code>daemons.tsv</code>) is alive and its heartbeat is younger than 180 s. <code>daemons.tsv</code> holds no dead pid. The kernel pool reading (<code>scripts/harness/ops/h-107/pooltags2.ps1</code>) is recorded as the start value. <code>scripts/harness/ops/h-107/hostwatch-dry-test.ps1 -SkipChurn</code> passes.</li>
+<li>[ ] <strong>Step 10: Egress.</strong> <code>deno task start harness egress verify</code> output quoted and consistent with D-2.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> every step has quoted output and <code>[OK]</code>; any <code>[FAIL]</code> is a <code>coord ask</code>, never worked around.</p>
+<hr />
+<h3 id="task-m12-07-windows-update-mitigation-and-the-host-quiet-rule">Task M12-07: Windows Update mitigation and the host-quiet rule<a class="headerlink" href="#task-m12-07-windows-update-mitigation-and-the-host-quiet-rule" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops proposes, orchestrator asks, owner decides. <strong>Deps:</strong> H-110 (done: the slowdown is host load, owner confirmed) and the H-111 report (if it is not accepted by 11-20, this task uses what it has and says so). <strong>Window:</strong> 11-19 to 11-21. <strong>Owner decisions:</strong> D-5, D-6.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\risks.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Windows Update (risk 1).</strong> State the exposure in numbers from the M8-21 record only: one quarantine in about three days of two-container qualification. Over a 7 to 15 day campaign on two containers, expect two to five. List the options from H-111 with their cost: (A) stop the trigger inside the containers and re-baseline (changes the container state; needs the lineage and <code>env_fp</code> to stay admissible, and a decision that this is not a judging-environment change); (B) accept the exposure and pre-approve the recreate. For B write the exact runbook, taken from <code>H:\cg-coord\tasks\M8-21\ops\quarantine-282-20261117.md</code> and the <code>2026-11-17-cronus282-recreate.md</code> decision: planned stop, wait for exit, recreate under the ops lease with the container's own BCH root, <code>harness recover &lt;container&gt; --lineage &lt;path&gt; --recreated &lt;evidence dir&gt;</code>, <code>harness baseline create</code>, M12-06 Steps 4 and 5 again, deviation row, then the owner resumes. State how the pool behaves meanwhile: with two containers the run stops; with the cold spare, see M12-09 Step 5 for whether a resume accepts a changed <code>--containers</code> list.</li>
+<li>[ ] <strong>Step 2: Host load (risk 2).</strong> H-110 result: the M8-21 slowdown came from an interactive desktop app (a game) on the host. Every container reset was about 17 percent slower, on both containers in step, and it recovered by itself with no restart. So no container restart is planned and none is a mitigation. Quiet-host baselines: about 62 s per golden-restore reset and about 37 s candidate publish per reset. What already limits the effect: arm order is randomised inside every block, so a busy window hits all four arms of a block alike; cost per solved task does not read wall time; the cell timeout is 60 min. The residual risk is a slow reset or build pushing a cell into <code>timeout</code>. Proposal for D-6: the host-quiet rule of the Global Constraints; a detected window is logged as a deviation and the campaign continues. Alternative the owner may pick: a detected window writes the planned stop and the campaign resumes when the host is quiet.</li>
+<li>[ ] <strong>Step 3:</strong> The timing log: lane-ops records per day the median and p90 <code>telemetry.wall_ms</code> over all executions of that day (pooled, no arm split), the median reset and candidate-publish times from the host logs against the 62 s and 37 s baselines, and every <code>HOST-BUSY</code> window of the watcher (M12-05 Step 2b) in the daily note (M12-11). A day whose median reset is more than 10 percent over the baseline with no logged window is reported to the orchestrator. It all goes into the caveats register.</li>
+<li>[ ] <strong>Step 4 (orchestrator):</strong> Ask D-5 and D-6; write <code>decisions\&lt;date&gt;-m12-risks.md</code>; copy the chosen procedures into <code>protocol.md</code>.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> decision file with both owner lines; <code>protocol.md</code> updated; the recreate runbook names every command.</p>
+<hr />
+<h3 id="task-m12-08-launch-kit-and-dry-run">Task M12-08: Launch kit and dry run<a class="headerlink" href="#task-m12-08-launch-kit-and-dry-run" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M12-01, M12-02, M12-05, M12-06. <strong>Window:</strong> 11-20 to 11-21.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\tasks\M12-08\run.sh</code> (a copy of <code>H:\cg-coord\tasks\M8-18b\run.sh</code>, changed as below), <code>dry-cc-v2-factorial.log</code>, <code>dry-cc-v2-smoke.log</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> <code>run.sh &lt;experiment: cc-v2-smoke|cc-v2-factorial&gt; &lt;mode: dry|full|resume&gt; [campaign id]</code>. Changes against the M8-18b script: checkout <code>H:\cg-coord\jobs\M12-run</code> at the campaign commit, clean; results root <code>H:\cg-coord\results\harness</code>; <code>--private-dir 'H:\cg-coord\m12\private-&lt;experiment&gt;'</code>; stop prefix <code>H:\cg-coord\tasks\M12-08\STOP-&lt;experiment&gt;</code> through <code>stop_args</code> (five <code>--stop-file</code> arguments; the count check stays); the D-3 <code>--secrets-dir label=dir</code> list; the D-2 reasons; <code>--lineage 'infra\harness-reset\lineages\golden-o09-v2.json'</code>; <code>--symbol-store 'H:\cg-coord\jobs\M8-16a\results\harness\symbols'</code>; <code>--credential-ledger 'H:\cg-coord\ledgers\credential-runs.jsonl'</code>; <code>--concurrency 2</code>; <code>--max-pause-min 120</code>; for <code>cc-v2-factorial</code> the two <code>--prereg-decision</code> flags; mode <code>resume</code> requires the campaign id and adds <code>--campaign &lt;id&gt;</code>; mode <code>full</code> on <code>cc-v2-factorial</code> refuses when <code>H:\cg-coord\results\harness\campaigns\</code> already holds a record of that experiment. The script prints <code>START</code>, the HEAD and <code>EXIT &lt;rc&gt;</code> lines like the M8-21 scripts.</li>
+<li>[ ] <strong>Step 2: Dry run of the smoke:</strong> <code>bash run.sh cc-v2-smoke dry &gt; dry-cc-v2-smoke.log</code>. No refusal; 16 cells in 4 blocks.</li>
+<li>[ ] <strong>Step 3: Dry run of the campaign:</strong> <code>bash run.sh cc-v2-factorial dry &gt; dry-cc-v2-factorial.log</code>. <code>--dry-run</code> takes no lock, touches no container and writes nothing. Expected: no pre-registration refusal, 344 blocks, 1,376 cells, four arms on the r3 image, 43 tasks. Check afterwards that no campaign record of <code>cc-v2-factorial</code> exists (<code>grep -l '"cc-v2-factorial"' campaigns/*.json</code> prints nothing).</li>
+<li>[ ] <strong>Step 4:</strong> Register the stop prefixes in the hostwatch registry (<code>targets.tsv</code>) with the priority the orchestrator gives (the confirmatory campaign is the highest: stopped last).</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> both dry logs without a refusal; the cell counts; no record written; <code>run.sh</code> diff against the M8-18b script reviewed line by line.</p>
+<hr />
+<h3 id="task-m12-09-smoke-campaign-not-confirmatory">Task M12-09: Smoke campaign (not confirmatory)<a class="headerlink" href="#task-m12-09-smoke-campaign-not-confirmatory" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops prepares and verifies, <strong>the owner launches (D-9)</strong>. <strong>Deps:</strong> M12-08, M12-07. <strong>Window:</strong> 11-20 to 11-21. About 16 cells, 2 to 4 hours, USD 15 to 40 list price.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\smoke.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> Lease the D-4 containers (<code>coord lease &lt;container&gt; ops</code>, heartbeat every 5 min), start <code>watch-campaign.ps1</code> headless as its header says, and hand the owner one line: <code>cd /h/cg-coord/tasks/M12-08 &amp;&amp; bash run.sh cc-v2-smoke full</code>.</li>
+<li>[ ] <strong>Step 2 (owner):</strong> run it.</li>
+<li>[ ] <strong>Step 3: Resume drill (risk 3).</strong> After the fourth finished cell, lane-ops writes the planned stop (<code>&lt;prefix&gt;.planned</code>). The run exits non-zero at the next cell boundary. Quote the exit line. On the orchestrator's go rename the stop to <code>&lt;prefix&gt;.cleared-&lt;UTC stamp&gt;</code>; <code>stops_clear</code> must print <code>CLEAR</code>. The owner runs <code>bash run.sh cc-v2-smoke resume &lt;campaign id&gt;</code>. Expected: no finished cell runs again, the execution count grows only by the remaining cells, the same campaign id.</li>
+<li>[ ] <strong>Step 4: Rerun dry check.</strong> <code>deno task start harness run cc-v2-smoke --campaign &lt;id&gt; --rerun &lt;task:repeat:arm of one scored cell&gt; --dry-run ...</code> is refused or skipped with the cell's status (a scored cell is never rerun). Quote it.</li>
+<li>[ ] <strong>Step 5: Container swap check.</strong> <code>bash run.sh cc-v2-smoke resume &lt;id&gt;</code> in dry mode with the spare in place of one pool container (edit <code>POOL</code> only). Record whether the resume accepts a changed container list. This decides whether the cold spare can replace a quarantined container without a new decision.</li>
+<li>[ ] <strong>Step 6: Evidence in <code>smoke.md</code>, counts and timings only:</strong> cells planned, finished, judged; terminations by kind; executions by <code>run_kind</code>; <code>jq '.accounts'</code> of the campaign record (no <code>work</code>); per account label the number of executions; all four arms have 4 finished cells; every execution's <code>usage_reconciliation.status</code> count; median wall time; total list-price cost as one number; the inventory line <code>cg_inventory ok</code> count per arm equals the arm's cells; the watcher wrote no stop of its own; <code>daemons.tsv</code> is clean after exit. No pass or fail figure, no per-arm cost.</li>
+<li>[ ] <strong>Step 7:</strong> <code>harness measure cc-v2-smoke --campaign &lt;id&gt; --yes</code> with the same environment flags on the pool containers. Expected: every judged cell measured, and the recorded analyzer <code>compiler</code> equals the pre-registered <code>compiler_identity</code> (<code>jq</code> over the <code>measures</code> side files; quote the distinct values).</li>
+<li>[ ] <strong>Step 7b: Concurrency measurement (owner, 2026-11-17; only if H-113's change is accepted and D-4 allows more than 2).</strong> Run the smoke (or a second smoke campaign) at the highest concurrency D-4 allows (target 4), on that many v3-baselined containers. Record from memlog/hostwatch: minimum free RAM and when, peak commit, per-cell wall time and per-reset time against the 2-container smoke, any hostwatch stop or pause, any account pause, and the proxy-isolation evidence H-113 names. Counts and timings only. The result sets the confirmatory <code>--concurrency</code> at D-10.</li>
+<li>[ ] <strong>Step 8:</strong> Release the leases; stop the watcher by its stop file.</li>
+</ul>
+<p><strong>Acceptance (orchestrator, then D-9):</strong> 16 of 16 cells terminal and judged or policy-unscored; the resume drill added no duplicate; no Work label; Step 5 answered; one compiler identity. A failed smoke is fixed and repeated under a new experiment id suffix (<code>cc-v2-smoke-2</code>), never by reusing the record.</p>
+<hr />
+<h3 id="task-m12-10-go-decision-and-launch-of-the-confirmatory-campaign">Task M12-10: Go decision and launch of the confirmatory campaign<a class="headerlink" href="#task-m12-10-go-decision-and-launch-of-the-confirmatory-campaign" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> orchestrator prepares, <strong>the owner decides and launches (D-10)</strong>. <strong>Deps:</strong> M12-01 to M12-09 accepted, M12-03's decision. <strong>Window:</strong> 11-22.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\decisions\&lt;date&gt;-m12-go.md</code>, <code>H:\cg-coord\m12\launch.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1 (ops):</strong> Repeat M12-06 Steps 2 to 9 on the day. Start the pool containers under grant 3 if they are stopped. Lease them. Start <code>watch-campaign.ps1</code> for the confirmatory prefix. <code>stops_clear</code> on the prefix prints <code>CLEAR</code>.</li>
+<li>[ ] <strong>Step 2 (orchestrator):</strong> Checklist in the go decision, each with its evidence path: stage B approved; M8-21 accepted; smoke accepted; D-1 to D-9 recorded; preflight green today; no other campaign or gate pool registered at a higher priority; <code>deviations.md</code> has only row 0.</li>
+<li>[ ] <strong>Step 3 (owner, D-10):</strong> Answer go or no-go. On go, run in the owner's terminal:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>/h/cg-coord/tasks/M12-08<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>bash<span class="w"> </span>run.sh<span class="w"> </span>cc-v2-factorial<span class="w"> </span>full
+</code></pre></div>
+<p>which expands to (values from D-2 to D-4; tokens from the lease files):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">cd</span><span class="w"> </span>/h/cg-coord/jobs/M12-run
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">CG_LANE</span><span class="o">=</span>ops<span class="w"> </span>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>harness<span class="w"> </span>run<span class="w"> </span>cc-v2-factorial<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--prereg-decision<span class="w"> </span><span class="s1">'H:\cg-coord\decisions\2026-10-17-harness-v2-prereg-a.md'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--prereg-b-decision<span class="w"> </span><span class="s1">'H:\cg-coord\decisions\2026-11-17-harness-v2-prereg-b.md'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--results-dir<span class="w"> </span><span class="s1">'H:\cg-coord\results\harness'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span>--private-dir<span class="w"> </span><span class="s1">'H:\cg-coord\m12\private-cc-v2-factorial'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--containers<span class="w"> </span>Cronus281,Cronus282<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--coord-lease<span class="w"> </span><span class="s2">"Cronus281=&lt;token&gt;"</span><span class="w"> </span>--coord-lease<span class="w"> </span><span class="s2">"Cronus282=&lt;token&gt;"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--backend-port<span class="w"> </span><span class="m">3250</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span>--secrets-dir<span class="w"> </span><span class="s1">'max=H:\Temp3\harness-spike\secrets'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span>--secrets-dir<span class="w"> </span><span class="s1">'maxpriv2=H:\Temp3\harness-spike\secrets-MaxPriv2'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span>--lineage<span class="w"> </span><span class="s1">'infra\harness-reset\lineages\golden-o09-v2.json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--unverified-bc-egress-ok<span class="w"> </span><span class="s1">'&lt;D-2 BC reason&gt;'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span>--unverified-egress-ok<span class="w"> </span><span class="s1">'&lt;D-2 sandbox reason, only if D-2 says so&gt;'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span>--symbol-store<span class="w"> </span><span class="s1">'H:\cg-coord\jobs\M8-16a\results\harness\symbols'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span>--credential-ledger<span class="w"> </span><span class="s1">'H:\cg-coord\ledgers\credential-runs.jsonl'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span>--concurrency<span class="w"> </span><span class="m">2</span><span class="w"> </span>--max-pause-min<span class="w"> </span><span class="m">120</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span>--stop-file<span class="w"> </span><span class="s1">'H:\cg-coord\tasks\M12-08\STOP-cc-v2-factorial'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span>--stop-file<span class="w"> </span><span class="s1">'H:\cg-coord\tasks\M12-08\STOP-cc-v2-factorial.watch'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span>--stop-file<span class="w"> </span><span class="s1">'H:\cg-coord\tasks\M12-08\STOP-cc-v2-factorial.host-low'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">  </span>--stop-file<span class="w"> </span><span class="s1">'H:\cg-coord\tasks\M12-08\STOP-cc-v2-factorial.host-all'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">  </span>--stop-file<span class="w"> </span><span class="s1">'H:\cg-coord\tasks\M12-08\STOP-cc-v2-factorial.planned'</span>
+</code></pre></div>
+<p>No <code>--seed</code> (the block order seed is drawn and stored in the record), no <code>--sample</code>, no <code>--repeats</code>, no <code>--rev</code>.
+- [ ] <strong>Step 4 (ops, within 10 minutes of the first cell):</strong> Write <code>launch.md</code>: campaign id; <code>created_at</code>; <code>seed</code>; <code>jq '.preregistration'</code> (its three hashes equal the stage-B sha <code>e04fe834...</code> and the sha256 of the two decision files); <code>jq '.accounts'</code>; <code>jq '.blocks | length'</code> = 344; <code>jq '.task_set.tasks | length'</code> = 43; <code>egress_override</code>, <code>bc_egress_override</code>, <code>calibration_waived</code> as D-2 expects; HEAD of <code>M12-run</code>; image id. The first execution of every arm has <code>cg_inventory ok</code>. Any mismatch: planned stop, <code>coord ask</code>.</p>
+<p><strong>Acceptance (orchestrator):</strong> go decision with the owner's line; <code>launch.md</code> complete; exactly one <code>cc-v2-factorial</code> campaign record exists.</p>
+<hr />
+<h3 id="task-m12-11-monitoring-resume-and-stop-rules">Task M12-11: Monitoring, resume and stop rules<a class="headerlink" href="#task-m12-11-monitoring-resume-and-stop-rules" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M12-10. <strong>Window:</strong> the whole campaign (planned 7 to 10 days, review at 14). <strong>Owner decisions:</strong> D-11.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\daily\&lt;UTC date&gt;.md</code> per day. Append to <code>H:\cg-coord\m12\deviations.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Leases.</strong> Heartbeat every 5 minutes from one pwsh process that sleeps (<code>scripts/harness/ops/h-107/heartbeat.ps1</code>), registered in <code>daemons.tsv</code>, with a stop file and a max lifetime.</li>
+<li>[ ] <strong>Step 2: Blinded progress, at most every 30 minutes:</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>harness<span class="w"> </span>progress<span class="w"> </span>cc-v2-factorial<span class="w"> </span>--campaign<span class="w"> </span>&lt;id&gt;<span class="w"> </span>--results-dir<span class="w"> </span><span class="s1">'H:\cg-coord\results\harness'</span><span class="w"> </span>--json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'{planned_cells, finished_cells, judged_cells, unscored_cells, unscored_policy_cells, awaiting_judgment_cells, unknown_cells, executions, terminations, eta, unreadable, finished_by_arm: (.arms | map_values(.finished)), cost_missing: ([.arms[].cost_missing] | add), cost_total: ([.arms[].cost_usd] | add)}'</span>
+</code></pre></div>
+<p>Never print the unprojected JSON, <code>pass_cells</code>, <code>fail_cells</code> or a per-arm cost. <code>harness report</code> is not run on this campaign before M12-12 is accepted.
+- [ ] <strong>Step 3: Daily note:</strong> the Step 2 projection; executions and retries of the day; terminations by kind; pauses with cause and length; pooled median and p90 <code>wall_ms</code> of the day, median reset and publish times against the 62 s and 37 s baselines, and every <code>HOST-BUSY</code> window with its deviation row (timing log, M12-07 Step 3); free RAM low-water mark; free disk; kernel pool reading; <code>daemons.tsv</code> row count; quarantine records; usage-limit pauses per account label; stop rules checked one by one. Send the path to the orchestrator.
+- [ ] <strong>Step 4: A stop fired.</strong> Record which stop file and why. Wait for the run's <code>EXIT</code> line; never kill. Then by cause:
+  - usage limit with <code>--max-pause-min 120</code> exceeded: the run exits with a resume line. Operational. Resume after the reset.
+  - planned pause (a host-busy window, if D-6 says a window pauses): wait until the watcher logs <code>HOST-BUSY end</code>, clear the stop by renaming it to <code>.cleared-&lt;UTC stamp&gt;</code> on the orchestrator's go, resume. No container restart.
+  - hostwatch or watcher stop: find what took the memory; resume only when free RAM is at least 14 GB.
+  - quarantine: D-5's procedure. Recreate only with the owner's approval. Deviation row, class Environment.
+  - a <code>harness run</code> refusal or any stop rule (d) to (j): <code>coord ask</code>; nothing resumes until the owner answers.
+- [ ] <strong>Step 5: Resume (risk 3).</strong> The owner runs <code>cd /h/cg-coord/tasks/M12-08 &amp;&amp; bash run.sh cc-v2-factorial resume &lt;campaign id&gt;</code>; for a usage-limit or planned pause lane-ops may run it if D-1 says so. Always with the campaign id. Before it: <code>stops_clear</code> prints <code>CLEAR</code>, leases held, watcher alive, preflight Steps 4, 7, 8 again. After it: the execution count did not jump, the campaign id is the same, no second record of the experiment exists.
+- [ ] <strong>Step 6: Accounts.</strong> A label is added only as D-3 pre-authorised, on a resume, with <code>--add-accounts-reason "&lt;reason&gt;" --added-by lane-ops</code>. Anything else is the owner's. <code>--ignore-usage-reset</code> is never used (it is refused on a pool anyway).
+- [ ] <strong>Step 7: Never during the campaign:</strong> a merge into <code>M12-run</code>; the full <code>test:unit</code>; a gate or qualify job on a pool container; <code>harness rejudge</code>; <code>harness report</code>; a container start, stop or restart outside D-5; a heavy interactive app on the host without a deviation row.</p>
+<p><strong>Acceptance (orchestrator):</strong> a daily note for every campaign day; every pause and resume has a deviation or operational row; the campaign reaches Step 1 of M12-12.</p>
+<hr />
+<h3 id="task-m12-12-close-the-campaign">Task M12-12: Close the campaign<a class="headerlink" href="#task-m12-12-close-the-campaign" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops, orchestrator. <strong>Deps:</strong> M12-11. <strong>Window:</strong> +1 day. <strong>Owner decision:</strong> D-12.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\close.md</code>, <code>H:\cg-coord\m12\reruns.txt</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Run to the end.</strong> The last <code>harness run</code> exits 0 with nothing pending. The Step 2 projection shows <code>finished_cells</code> 1,376, <code>awaiting_judgment_cells</code> 0, <code>unknown_cells</code> 0.</li>
+<li>[ ] <strong>Step 2: Unscored cells, blinded.</strong> List every unscored cell with its termination chain and the infrastructure cause, as <code>task:repeat:arm</code> lines without any outcome of other cells. Classify each: (i) infrastructure (<code>setup_failed</code> twice, <code>harness_crash</code> without work twice, a judging environment failure); (ii) policy outcome that stays as it is. The orchestrator checks five at random against their host logs.</li>
+<li>[ ] <strong>Step 3 (D-12):</strong> The owner approves <code>reruns.txt</code> (every class (i) cell, all arms, one per line, <code>#</code> comments allowed). Then the owner runs <code>bash run.sh cc-v2-factorial resume &lt;id&gt;</code> with <code>--rerun-file 'H:\cg-coord\m12\reruns.txt'</code> appended (extra arguments pass through <code>run.sh</code>). A run with reruns runs only the named cells. A cell still unscored after its one manual rerun stays unscored and counts as unsolved with its spend. Each rerun is a deviation row, class Execution.</li>
+<li>[ ] <strong>Step 4: Unknown cost.</strong> Count terminal cells with no cost on selected tasks (the report would say <code>&lt;n&gt; cells without cost data</code>). For a log the parser refused: <code>deno task start harness rederive &lt;campaign id&gt; --execution &lt;ids&gt; --reason "&lt;text&gt;" --results-dir 'H:\cg-coord\results\harness'</code>, a deviation row. What remains follows D-7.</li>
+<li>[ ] <strong>Step 5: Measures.</strong> <code>deno task start harness measure cc-v2-factorial --campaign &lt;id&gt; --yes</code> with the campaign's environment flags, on the pool containers, under the leases. Expected: every judged cell measured; one analyzer compiler identity, equal to the pre-registered one.</li>
+<li>[ ] <strong>Step 6:</strong> Release the leases, stop the watchers by their stop files, stop the containers (grant 3). <code>close.md</code>: the final projection, rerun and rederive counts, the measure count, the D-7 state. The owner declares the campaign closed (D-12). From here on the blinding ends.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> 1,376 terminal cells; zero pending and unrun; rerun list approved and executed once; measures complete; closure recorded in <code>decisions\&lt;date&gt;-m12-closed.md</code>.</p>
+<hr />
+<h3 id="task-m12-13-quiesce-and-snapshot">Task M12-13: Quiesce and snapshot<a class="headerlink" href="#task-m12-13-quiesce-and-snapshot" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M12-12. <strong>Window:</strong> same day. Mirrors M6-06.</p>
+<ul>
+<li>[ ] <strong>Step 1: Quiesce.</strong> The orchestrator writes the confirmatory stop prefix file itself (<code>STOP-cc-v2-factorial</code>) and leaves it in place, so no resume chain can start. Quote: no <code>harness</code> process running; <code>coord holder</code> free for Cronus281 to 283; no file under <code>H:\cg-coord\results\harness</code> written in the last 10 minutes.</li>
+<li>[ ] <strong>Step 2: Pack and verify</strong> (secret files: every file in every D-3 secrets directory and the generation files M5-00 lists that still exist; a listed file that is gone is written in the evidence):</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">cd</span><span class="w"> </span>/h/cg-coord/jobs/M12-run
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>deno<span class="w"> </span>run<span class="w"> </span>--allow-all<span class="w"> </span>scripts/harness/freeze-archive.ts<span class="w"> </span>pack<span class="w"> </span><span class="s1">'H:\cg-coord\results\harness'</span><span class="w"> </span><span class="s1">'H:\cg-coord\m12\archive'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--secret-file<span class="w"> </span>&lt;each<span class="w"> </span>file&gt;<span class="w"> </span>--meta<span class="w"> </span><span class="nv">git</span><span class="o">=</span>&lt;M12-run<span class="w"> </span>sha&gt;<span class="w"> </span>--meta<span class="w"> </span><span class="nv">task_set</span><span class="o">=</span>098ffb70afae<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--meta<span class="w"> </span><span class="nv">freeze_commit</span><span class="o">=</span>2fb244fe<span class="w"> </span>--meta<span class="w"> </span><span class="nv">image</span><span class="o">=</span>&lt;r3<span class="w"> </span>image<span class="w"> </span>id&gt;<span class="w"> </span>--meta<span class="w"> </span><span class="nv">campaign</span><span class="o">=</span>&lt;id&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--meta<span class="w"> </span><span class="nv">prereg_stage_b</span><span class="o">=</span>e04fe8349652f176dc7d0d496d2a6b87e691cfc61e2e6c1715c0caa74e5f5d59
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>deno<span class="w"> </span>run<span class="w"> </span>--allow-all<span class="w"> </span>scripts/harness/freeze-archive.ts<span class="w"> </span>verify<span class="w"> </span><span class="s1">'H:\cg-coord\m12\archive'</span>
+</code></pre></div>
+<p>Exit 1 or 2: stop, <code>coord ask</code>, no reports. The pack walks the whole shared root, so the snapshot also holds the screening and v1 campaigns; the write-up reads only the one campaign id.</p>
+<p><strong>Acceptance (orchestrator):</strong> both exit codes 0; <code>sums_sha256</code> quoted; the scan count equals the listed secret files.</p>
+<hr />
+<h3 id="task-m12-14-reports-analysis-outputs-and-charts-from-the-snapshot">Task M12-14: Reports, analysis outputs and charts from the snapshot<a class="headerlink" href="#task-m12-14-reports-analysis-outputs-and-charts-from-the-snapshot" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> ops. <strong>Deps:</strong> M12-13, M12-04. <strong>Window:</strong> +1 day. Mirrors M6-07.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\reports\cc-v2-factorial.campaign.json</code> and <code>.txt</code>, <code>H:\cg-coord\m12\ledger.json</code>, <code>H:\cg-coord\m12\charts\</code>, <code>H:\cg-coord\analysis\cc-v2-factorial\</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: The report, from the snapshot, in the <code>M12-run</code> checkout:</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>harness<span class="w"> </span>report<span class="w"> </span>cc-v2-factorial<span class="w"> </span>--campaign<span class="w"> </span>&lt;id&gt;<span class="w"> </span>--judging<span class="w"> </span>campaign<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--results-dir<span class="w"> </span><span class="s1">'H:\cg-coord\m12\archive\results'</span><span class="w"> </span>--root<span class="w"> </span>.<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--prereg-decision<span class="w"> </span><span class="s1">'H:\cg-coord\decisions\2026-10-17-harness-v2-prereg-a.md'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--prereg-b-decision<span class="w"> </span><span class="s1">'H:\cg-coord\decisions\2026-11-17-harness-v2-prereg-b.md'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--resamples<span class="w"> </span>&lt;D-8&gt;<span class="w"> </span>--seed<span class="w"> </span>&lt;D-8&gt;<span class="w"> </span>--json<span class="w"> </span>&gt;<span class="w"> </span><span class="s1">'H:\cg-coord\m12\reports\cc-v2-factorial.campaign.json'</span>
+</code></pre></div>
+<p>and the same without <code>--json</code> into <code>.txt</code>. Never <code>--repeats</code>, never <code>--judging current</code>. The report refuses a changed pre-registration or decision file; a refusal is a <code>coord ask</code>.
+- [ ] <strong>Step 2: Shape checks with <code>jq</code>, quoted:</strong> <code>.confirmatory.withheld</code> is absent (or D-7's fallback applies and says so); <code>.confirmatory.family</code> is <code>["C1","C2","C3"]</code>; <code>.confirmatory.alpha</code> 0.05; <code>.confirmatory.bootstrap</code> is <code>{resamples: 10000, seed: 20261021, level: 0.95}</code>; <code>.confirmatory.zero_solve.rule</code> is <code>suppress_any_undefined</code>; <code>.confirmatory.tasks | length</code> 39; <code>.confirmatory.held_out.tasks</code> are the four held-out ids; four entries in <code>.confirmatory.results</code>, the interaction with <code>confirmatory: false</code>; every result's <code>distinguishable</code> is null; <code>.preregistration.amendments | length</code> 3; <code>.provisional</code> false; per arm <code>unscored_cells</code>, <code>pending_cells</code>, <code>unknown_spend_terminal_cells</code>, <code>manual_reruns</code>; <code>.exploratory.usage_reconciliation</code> per arm.
+- [ ] <strong>Step 3: Post-campaign analysis (runbook README):</strong> <code>deno run --allow-all scripts/harness/analyze-campaign.ts &lt;campaign id&gt; --results 'H:\cg-coord\m12\archive\results' --rev 2fb244fe --out 'H:\cg-coord\analysis\cc-v2-factorial'</code>. Exploratory only, never a headline.
+- [ ] <strong>Step 4 (orchestrator):</strong> Write <code>ledger.json</code> in the v2 form of M12-04: cash 0, the Claude Code list-price total labelled an estimate, every manual rerun and rederive with its decision path. Check it against <code>deviations.md</code> row by row.
+- [ ] <strong>Step 5: Charts:</strong> <code>deno run --allow-read --allow-write scripts/harness/report-charts.ts --out 'H:\cg-coord\m12\charts' --ledger 'H:\cg-coord\m12\ledger.json' --report 'H:\cg-coord\m12\reports\cc-v2-factorial.campaign.json'</code>. A ledger mismatch stops the task.
+- [ ] <strong>Step 6: Bind, in this order:</strong> <code>freeze-archive.ts bind 'H:\cg-coord\m12\archive' &lt;both report files&gt;</code>; then every SVG and CSV and <code>ledger.json</code>; then the pre-registration inputs (M11 plan, "M12 binds"): <code>harness/preregistration/cc-v2-factorial.yml</code>, <code>cc-v2-factorial.sim-c37.json</code>, <code>harness-tasks/v2/selection.json</code>, both decision files, <code>H:\Temp3\harness-spike\M8\freeze\task-set.json</code>, <code>protocol.md</code>, <code>deviations.md</code>. <code>verify</code> prints <code>[OK]</code>.</p>
+<p><strong>Acceptance (orchestrator):</strong> report, charts, the three new CSVs, <code>derived.json</code> listing every bound file, verify <code>[OK]</code>, Step 2 output quoted.</p>
+<hr />
+<h3 id="task-m12-15-analysis-check-and-review">Task M12-15: Analysis check and review<a class="headerlink" href="#task-m12-15-analysis-check-and-review" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> orchestrator. <strong>Deps:</strong> M12-14. <strong>Window:</strong> +1 to +2 days.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\analysis-check.md</code>, <code>H:\cg-coord\reviews\M12-15\</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Holm by hand.</strong> From <code>.confirmatory.results</code> take the three family p-values. Sort ascending; adjusted values are <code>max</code> over the running sequence of <code>p(1) x 3</code>, <code>p(2) x 2</code>, <code>p(3) x 1</code>, capped at 1. They must equal <code>p_holm</code>. A contrast is decided when <code>p_holm &lt;= 0.05</code>; the direction is the sign of its delta (<code>variant_lower</code> or <code>variant_higher</code>); otherwise <code>no_decision</code>. A contrast whose interval is suppressed by the zero-solve rule has no p-value and no decision; say so, with its undefined share. Write the table.</li>
+<li>[ ] <strong>Step 2: Pre-registration conformance, one line each:</strong> primary metric; family; alpha; sides; bootstrap unit task, 10,000 resamples, seed 20261021, level 0.95; reported intervals per contrast unadjusted with the Bonferroni interval beside them from the same draws; zero-solve rule and which contrasts it hit; missing pairs (pairs and tasks per contrast, tasks dropped, and the D-7 state); interaction reported as exploratory; held-out excluded from the family and reported per arm as a descriptive robustness check, never pooled with the 39 and never read as evidence for BC coding in general; <code>lsp_shell_calls</code> reported per arm, no cell excluded for it; every exploratory metric of the pre-registration list present or listed as missing with the reason.</li>
+<li>[ ] <strong>Step 3: Effect size against the design.</strong> The minimum detectable effect was 0.37 at 39 x 8 (confirmation power 0.81 to 0.84). A <code>no_decision</code> is worded "not shown at this design", never "no effect".</li>
+<li>[ ] <strong>Step 4: Rerun determinism.</strong> Run Step 1 of M12-14 a second time into a scratch file. The two JSON files are equal apart from a generation time, if any. Quote the diff.</li>
+<li>[ ] <strong>Step 5: Review.</strong> Freeze the report JSON, the pre-registration, <code>protocol.md</code>, <code>deviations.md</code> and <code>analysis-check.md</code> into <code>H:\cg-coord\reviews\M12-15\</code> and ask gpt-6.1-sol (runbook "Reviews"): does every decision follow from the pre-registered rule; is anything reported as confirmatory that is not in the family; are the deviations complete. At most two rounds. Verdict into <code>decisions\&lt;date&gt;-m12-analysis.md</code>.</li>
+</ul>
+<p><strong>Acceptance:</strong> Holm table equal to the report; conformance list complete; review verdict recorded.</p>
+<hr />
+<h3 id="task-m12-16-caveats-register-v2">Task M12-16: Caveats register v2<a class="headerlink" href="#task-m12-16-caveats-register-v2" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> content. <strong>Deps:</strong> first version none; final after M12-15. <strong>Window:</strong> first version 11-18 to 11-20, final +3 days. Mirrors M6-01.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\caveats.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Inventory.</strong> Start from <code>H:\cg-coord\m6\caveats.md</code> (which rows still apply to v2). Then read every decision file since 2026-10-03, whatever words it uses, and <code>grep -il "caveat\|accepted risk\|owner-accepted\|residual\|limit\|disclos\|deviation" H:\cg-coord\decisions\*.md</code> for anything missed.</li>
+<li>[ ] <strong>Step 2: One table:</strong> <code>id | caveat (one sentence) | applies to (all, arm, contrast) | status (open, reduced, closed, dropped) | source path | owner action</code>. Rows that must be present: population scoped to the screened set (screening on the two diagonal arms); the 0/6 and 6/6 filter is a screen; N = 39 of 40 with the stratum deviation; effect 0.37 instead of 0.30; the simulation script change; held-out is same refapp and same authors; cost is a list-price estimate of subscription usage; the credential is readable by the agent, so cost is a lower bound for a cell that spends outside the guard (spec 6); NST egress not enforced (inner_only) and the sandbox egress mode of D-2; <code>calibration_waived</code> if set; compile-workflow burden is not knowledge; <code>lsp_shell_calls</code> is a best-effort audit; LSP passive diagnostics are not observable; concurrency 2 and host load (H-110: a heavy interactive app slows every reset by about 17 percent; each logged window; durations exploratory); container recreates during the campaign; account pool and usage-limit pauses; manual reruns; unknown-cost cells; the test-authoring discovery limit (C156 / M4-17a).</li>
+<li>[ ] <strong>Step 3 (final):</strong> add every row of <code>deviations.md</code> as a caveat or cite it under "checked, no caveat".</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> every source path exists (<code>test -f</code> loop quoted); every decision file since 2026-10-03 is cited or listed under "checked, no caveat"; every deviation row is mapped.</p>
+<hr />
+<h3 id="task-m12-17-write-up">Task M12-17: Write-up<a class="headerlink" href="#task-m12-17-write-up" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> content. <strong>Deps:</strong> template: M12-04 accepted; final: M12-14, M12-15, M12-16. <strong>Window:</strong> template 11-18 to 11-20, draft +3 days. <strong>Owner decision:</strong> D-13. Mirrors M6-04 and M6-08 Step 1.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\m12\writeup-template.md</code>, <code>H:\cg-coord\m12\writeup.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Template sections:</strong> (1) question and design: the 2x2, the population, 39 x 8, the pre-registration identity and its three amendments; (2) confirmatory result: C1, C2, C3 with delta, ratio, unadjusted interval, Bonferroni interval, Holm-adjusted p and the decision text, over N pairs and tasks, and nothing else under this heading; (3) interaction, labelled exploratory; (4) held-out, labelled descriptive, per arm; (5) exploratory metrics per arm and as paired deltas, each labelled exploratory, missing shown as missing; (6) coverage: cells planned, scored, unscored, unknown cost, manual reruns, per arm; usage reconciliation status counts; (7) charts with captions; (8) deviations, the full table; (9) top caveats and a link to <code>caveats.md</code>; (10) spend: cash 0, list-price estimate labelled as an estimate; (11) reproducibility: <code>M12-run</code> sha, freeze commit, image id, campaign id, seed, archive <code>sums_sha256</code>, <code>derived.json</code>; (12) owner follow-ups.</li>
+<li>[ ] <strong>Step 2:</strong> Every number in the template is a placeholder <code>{{&lt;csv&gt;:&lt;key columns&gt;:&lt;column&gt;}}</code> naming a column of <code>arms.csv</code>, <code>comparisons.csv</code>, <code>contrasts.csv</code>, <code>held_out.csv</code>, <code>exploratory.csv</code>, <code>provenance.csv</code> or <code>ledger.csv</code>. No number is typed by hand.</li>
+<li>[ ] <strong>Step 3 (final):</strong> Fill <code>writeup.md</code> from the CSVs. Wording rules: a decided contrast says which arm has the lower cost per solved task; <code>no_decision</code> says "not shown at this design (minimum detectable effect 0.37)"; a suppressed interval says "CI suppressed" with the undefined share; never "equal", never "no effect", never a verdict from an interval. C3 is "realistic effect without LSP", never a general main effect. Claims are scoped to the frozen, screened task population. Plain sentences, no em dash.</li>
+<li>[ ] <strong>Step 4:</strong> <code>freeze-archive.ts bind 'H:\cg-coord\m12\archive' 'H:\cg-coord\m12\writeup.md' 'H:\cg-coord\m12\caveats.md'</code>; <code>verify</code> <code>[OK]</code>.</li>
+<li>[ ] <strong>Step 5 (D-13):</strong> the owner reads section 2 and signs off the headline wording.</li>
+</ul>
+<p><strong>Acceptance (orchestrator):</strong> sections 1 to 12 present; every placeholder resolves to an existing column; the orchestrator diffs every number in <code>writeup.md</code> against the CSVs and the report JSON with <code>jq</code>; both documents bound.</p>
+<hr />
+<h3 id="task-m12-18-v2-data-freeze">Task M12-18: v2 data freeze<a class="headerlink" href="#task-m12-18-v2-data-freeze" title="Permanent link">&para;</a></h3>
+<p><strong>Lane:</strong> orchestrator, <strong>owner approves (D-14)</strong>. <strong>Deps:</strong> M12-15, M12-17. <strong>Window:</strong> +5 days. Mirrors M6-08 Steps 2 and 3.</p>
+<p><strong>Files:</strong> Create <code>H:\cg-coord\decisions\&lt;date&gt;-v2-data-freeze.md</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1:</strong> <code>freeze-archive.ts verify 'H:\cg-coord\m12\archive'</code> prints <code>[OK]</code> on the day. <code>derived.json</code> lists the reports, charts, CSVs, ledger, pre-registration inputs, protocol, deviations, caveats and write-up.</li>
+<li>[ ] <strong>Step 2:</strong> Review by gpt-6.1-sol with frozen inputs: does every claim in the write-up follow from the bound report; is every caveat sourced; is every deviation disclosed. At most two rounds.</li>
+<li>[ ] <strong>Step 3:</strong> Decision file: master sha, <code>M12-run</code> sha, campaign id, <code>sums_sha256</code>, the sha256 of <code>derived.json</code>, stage-B sha, review path, and the freeze statement: the campaign record is closed, <code>STOP-cc-v2-factorial</code> stays in place, no rerun, rejudge, rederive or measure on this campaign without a new owner decision, and <code>--judging current</code> is used only after an owner-approved oracle fix and is reported beside, never instead of, the campaign judging.</li>
+<li>[ ] <strong>Step 4 (D-14):</strong> the owner approves the freeze and the push. Then: annotated tag <code>harness-v2-data-freeze-&lt;date&gt;</code> on master with the message line <code>sums_sha256: &lt;hex&gt;</code>, pushed (this tag kind is outside the orchestrator's standing push grant, so the approval must name it). <code>coord ask</code> plus a push notification with the write-up path.</li>
+<li>[ ] <strong>Step 5:</strong> Clean-up owed to the owner, listed in the decision: stop Cronus281 to 283; <code>harness archive</code> is not needed (the campaign ran on the shared root); the <code>M12-run</code> worktree stays until the owner says otherwise; credential rotation; the <code>.old-*</code> container roots.</li>
+</ul>
+<p><strong>Acceptance:</strong> review verdict recorded; owner's <code>OWNER-APPROVED</code> line; tag pushed; owner notified.</p>
+<hr />
+<h2 id="risk-register-the-six-known-risks-and-where-they-are-handled">Risk register (the six known risks and where they are handled)<a class="headerlink" href="#risk-register-the-six-known-risks-and-where-they-are-handled" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Risk</th>
+<th>Handling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Windows Update writes to <code>C:\Windows\Temp</code> in a BC container and trips the L4 quarantine; recovery needs a recreate and the owner</td>
+<td>M12-07 (D-5), stop rule (c), M12-11 Step 4, deviation class Environment, compiler identity re-check after every recreate (M12-06 Step 5)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Per-variant wall time rises when a heavy interactive desktop app (a game) runs on the host: every container reset about 17 percent slower, on all containers in step, recovering by itself without a restart (H-110, owner confirmed)</td>
+<td>The host-quiet rule (Global Constraints, D-6), <code>HOST-BUSY</code> detection from memlog's top-process samples (M12-05 Step 2b), each window a deviation row, the timing log against the 62 s reset and 37 s publish baselines (M12-07 Step 3, M12-11 Step 3), block-level arm randomisation, durations stay exploratory, caveat row</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Resume correctness (qualify resume bug fixed in H-109)</td>
+<td>M12-09 Step 3 exercises a stop and a resume on the smoke; every resume names <code>--campaign</code>; M12-11 Step 5 checks counts after each resume</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Kernel token leak from git-bash process churn</td>
+<td>M12-05 (pwsh watcher), heartbeat in one sleeping pwsh process, <code>daemons.tsv</code> checks in preflight, daily and after the smoke, the pool reading in the daily note</td>
+</tr>
+<tr>
+<td>5</td>
+<td>The Work account in the pool (<code>setup_failed</code>)</td>
+<td>D-3, M12-06 Step 6, <code>jq '.accounts'</code> at smoke and launch, stop rules (d) and (i)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Host RAM ceiling of 93.7 GB</td>
+<td>D-4 (two containers, concurrency 2), M12-06 Step 8, hostwatch and the campaign watcher, resume bar 14 GB</td>
+</tr>
+</tbody>
+</table>
+<h2 id="open-questions-for-the-owner">Open questions for the owner<a class="headerlink" href="#open-questions-for-the-owner" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Egress mode (D-2).</strong> The egress grants ended 2026-11-17T23:59Z and exclude confirmatory runs. Does the confirmatory campaign run with <code>--unverified-egress-ok</code> on the sandbox side, as screening did, or does it wait for an authorized marker? The first also records <code>calibration_waived</code> on the campaign.</li>
+<li><strong>Missing-data rule (D-7).</strong> The pre-registration says per-contrast matched pairs; the report withholds every decision if one selected-task cell has no cost. Keep the stricter code and name the fallback, or change the code before the campaign?</li>
+<li><strong>Windows Update (D-5).</strong> Change the containers (and re-baseline), or accept two to five recreates during the campaign with a pre-approved runbook?</li>
+<li><strong>Host-quiet rule (D-6).</strong> Will the host stay free of heavy interactive apps for the 7 to 15 days, or do we log each window as a deviation? Should a detected window only be logged, or also pause the campaign?</li>
+<li><strong>Account pool (D-3).</strong> Which labels, is <code>MAXWork</code> in, and may lane-ops add one named reserve label on a resume? Is about USD 2,000 to 3,200 of list-price usage over 7 to 15 days within the weekly limits of the pool?</li>
+<li><strong>Containers (D-4).</strong> Two containers with a cold spare, or three?</li>
+<li><strong>Who resumes.</strong> May lane-ops resume after a usage-limit pause or a planned pause, or does the owner run every resume?</li>
+<li><strong>Exploratory bootstrap settings (D-8).</strong> The pre-registered 10,000 and 20261021 for the exploratory comparisons too, or the CLI defaults?</li>
+<li><strong>RAM bars.</strong> Spec gate 5 says stop under 10 GB and resume at 14 GB. Hostwatch stops the lowest priority at 8 GB free and everything at 4 GB. Which bars bind for this campaign?</li>
+<li><strong>Freeze tag push (D-14)</strong> and whether any v2 result goes to the site later (<code>publish-setup</code>). This plan publishes nothing.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

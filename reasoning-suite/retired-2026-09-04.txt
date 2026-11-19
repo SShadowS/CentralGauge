@@ -1,0 +1,75 @@
+# Retired 2026-09-04: saturated at the frontier
+#
+# Every task below is passed on every attempt by all three of
+# anthropic/claude-fable-5, gemini/gemini-3.1-pro-preview and
+# anthropic/claude-opus-4-8, measured on the published task set
+# b31c942bd4e8 (9 models, /api/v1/matrix). They cannot separate models at
+# the frontier and cost a share of every campaign, so they leave the set.
+#
+# 60 tasks: 13 easy, 14 medium, 33 hard. All are build-from-spec format.
+# The rule that produced this list, and the intent to re-run it after each
+# campaign, is Decision 3 in FallRelease.md.
+#
+# Deleting these moves task_sets.hash. Nothing published depends on them
+# beyond the b31c942bd4e8 set itself, which stays queryable under its own
+# hash.
+CG-AL-E002
+CG-AL-E003
+CG-AL-E004
+CG-AL-E005
+CG-AL-E007
+CG-AL-E008
+CG-AL-E009
+CG-AL-E031
+CG-AL-E032
+CG-AL-E045
+CG-AL-E051
+CG-AL-E053
+CG-AL-E055
+CG-AL-H001
+CG-AL-H002
+CG-AL-H003
+CG-AL-H004
+CG-AL-H005
+CG-AL-H006
+CG-AL-H008
+CG-AL-H009
+CG-AL-H010
+CG-AL-H013
+CG-AL-H015
+CG-AL-H016
+CG-AL-H018
+CG-AL-H019
+CG-AL-H022
+CG-AL-H024
+CG-AL-H025
+CG-AL-H026
+CG-AL-H028
+CG-AL-H032
+CG-AL-H033
+CG-AL-H035
+CG-AL-H038
+CG-AL-H039
+CG-AL-H040
+CG-AL-H042
+CG-AL-H043
+CG-AL-H051
+CG-AL-H052
+CG-AL-H053
+CG-AL-H057
+CG-AL-H058
+CG-AL-H205
+CG-AL-M002
+CG-AL-M005
+CG-AL-M021
+CG-AL-M022
+CG-AL-M024
+CG-AL-M033
+CG-AL-M035
+CG-AL-M038
+CG-AL-M041
+CG-AL-M043
+CG-AL-M044
+CG-AL-M045
+CG-AL-M088
+CG-AL-M112
