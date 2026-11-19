@@ -319,7 +319,11 @@ another lane elevated (owner decision 2026-09-26).
   - packet capture: `pktmon` start, stop and convert for the sandbox subnet during a
     supervised run, and always `pktmon stop` plus filter removal afterwards;
   - egress (M1-33/M1-34): the generated `egress-scripts.ts` apply and revert scripts,
-    `harness egress verify`, and the M1-34 revert and re-apply drills;
+    `harness egress verify`, and the M1-34 revert and re-apply drills. An apply refused for
+    foreign block rules writes `fw-block-inventory-<inv>.json`; only after the owner
+    acknowledges them is the apply regenerated with `--acknowledge-blocks <that file, trimmed by
+    the owner>`, and verify then takes `--apply-record <fw-apply-<inv>.json>` (plain verify and
+    `--mark candidate`, H-119);
   - read-only elevated diagnostics that a task names (`Get-NetFirewallRule`,
     `Get-HnsNetwork`, `Get-NetFirewallProfile`);
   - restart of the network services `SharedAccess` (ICS, the WSL NAT) and `WinNat`, with the
