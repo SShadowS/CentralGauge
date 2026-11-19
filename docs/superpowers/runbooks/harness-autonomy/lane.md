@@ -323,7 +323,8 @@ another lane elevated (owner decision 2026-09-26).
     foreign block rules writes `fw-block-inventory-<inv>.json`; only after the owner
     acknowledges them is the apply regenerated with `--acknowledge-blocks <that file, trimmed by
     the owner>`, and verify then takes `--apply-record <fw-apply-<inv>.json>` (plain verify and
-    `--mark candidate`, H-119);
+    `--mark candidate`, H-119) until the marker is qualified; after that verify uses the
+    marker's `acknowledged_blocks` and refuses `--apply-record`;
   - read-only elevated diagnostics that a task names (`Get-NetFirewallRule`,
     `Get-HnsNetwork`, `Get-NetFirewallProfile`);
   - restart of the network services `SharedAccess` (ICS, the WSL NAT) and `WinNat`, with the
